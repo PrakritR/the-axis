@@ -1,0 +1,27 @@
+<svg width="1200" height="800" viewBox="0 0 1200 800" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="floorBg" x1="0" y1="0" x2="1200" y2="800" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#F8FAFC"/>
+      <stop offset="1" stop-color="#E2E8F0"/>
+    </linearGradient>
+  </defs>
+  <rect width="1200" height="800" rx="28" fill="url(#floorBg)"/>
+  <rect x="84" y="82" width="1032" height="636" rx="26" fill="white" stroke="#CBD5E1" stroke-width="10"/>
+  <text x="98" y="52" fill="#0F172A" font-family="Inter, Arial, sans-serif" font-size="38" font-weight="800">Second Floor Layout</text>
+  <rect x="126" y="126" width="220" height="220" rx="18" fill="#CCFBF1" stroke="#0F766E" stroke-width="6"/>
+  <text x="171" y="246" fill="#115E59" font-family="Inter, Arial, sans-serif" font-size="36" font-weight="700">Unit 1</text>
+  <rect x="378" y="126" width="220" height="220" rx="18" fill="#CCFBF1" stroke="#0F766E" stroke-width="6"/>
+  <text x="423" y="246" fill="#115E59" font-family="Inter, Arial, sans-serif" font-size="36" font-weight="700">Unit 2</text>
+  <rect x="126" y="458" width="220" height="220" rx="18" fill="#CCFBF1" stroke="#0F766E" stroke-width="6"/>
+  <text x="171" y="578" fill="#115E59" font-family="Inter, Arial, sans-serif" font-size="36" font-weight="700">Unit 3</text>
+  <rect x="378" y="458" width="220" height="220" rx="18" fill="#CCFBF1" stroke="#0F766E" stroke-width="6"/>
+  <text x="423" y="578" fill="#115E59" font-family="Inter, Arial, sans-serif" font-size="36" font-weight="700">Unit 4</text>
+  <rect x="646" y="126" width="158" height="552" rx="16" fill="#E2E8F0" stroke="#94A3B8" stroke-width="6"/>
+  <text x="676" y="420" fill="#475569" font-family="Inter, Arial, sans-serif" font-size="32" font-weight="700" transform="rotate(-90 676 420)">Shared Hall</text>
+  <rect x="836" y="126" width="238" height="166" rx="18" fill="#F1F5F9" stroke="#94A3B8" stroke-width="6"/>
+  <text x="890" y="218" fill="#334155" font-family="Inter, Arial, sans-serif" font-size="32" font-weight="700">Bath</text>
+  <rect x="836" y="324" width="238" height="166" rx="18" fill="#F1F5F9" stroke="#94A3B8" stroke-width="6"/>
+  <text x="870" y="416" fill="#334155" font-family="Inter, Arial, sans-serif" font-size="32" font-weight="700">Laundry</text>
+  <rect x="836" y="522" width="238" height="156" rx="18" fill="#F1F5F9" stroke="#94A3B8" stroke-width="6"/>
+  <text x="886" y="608" fill="#334155" font-family="Inter, Arial, sans-serif" font-size="32" font-weight="700">Storage</text>
+</svg>

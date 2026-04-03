@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://axis-seattle.netlify.app/sitemap.xml

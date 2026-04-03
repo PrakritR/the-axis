@@ -1,0 +1,165 @@
+@import url('https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Newsreader:opsz,wght@6..72,500;6..72,600;6..72,700&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ── Reset & base ─────────────────────────────────────────────────────────── */
+
+html {
+  scroll-behavior: smooth;
+  -webkit-text-size-adjust: 100%;
+}
+
+:root {
+  --page-gutter: clamp(0.875rem, 2vw, 2rem);
+}
+
+html, body, #root {
+  width: 100%;
+  max-width: 100%;
+  overflow-x: hidden;
+}
+
+body {
+  margin: 0;
+  padding: 0;
+  @apply bg-white text-slate-900 antialiased;
+  font-family: 'Manrope', 'Avenir Next', 'Segoe UI', sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  font-feature-settings: 'kern' 1, 'liga' 1;
+  /* Prevent horizontal bounce on iOS */
+  overscroll-behavior-x: none;
+}
+
+#root {
+  width: 100%;
+}
+
+/* ── App shell ────────────────────────────────────────────────────────────── */
+
+.app-shell {
+  min-height: 100vh;
+  min-height: 100svh;
+  width: 100%;
+  max-width: 100%;
+  overflow-x: hidden;
+}
+
+@supports (min-height: 100dvh) {
+  .app-shell { min-height: 100dvh; }
+}
+
+/* ── Images ───────────────────────────────────────────────────────────────── */
+
+img, video, iframe, canvas, svg {
+  max-width: 100%;
+}
+
+button, a, input, select, textarea {
+  touch-action: manipulation;
+}
+
+/* Prevent iOS auto-zoom on input focus (requires font-size >= 16px) */
+@media screen and (max-width: 767px) {
+  input[type="text"],
+  input[type="email"],
+  input[type="tel"],
+  input[type="number"],
+  input[type="search"],
+  input[type="password"],
+  input[type="url"],
+  select,
+  textarea {
+    font-size: 16px;
+  }
+}
+
+/* ── Typography ───────────────────────────────────────────────────────────── */
+
+h1, h2, h3, h4 {
+  text-wrap: balance;
+}
+
+.font-editorial {
+  font-family: 'Newsreader', Georgia, serif;
+  letter-spacing: -0.03em;
+}
+
+/* ── Focus ────────────────────────────────────────────────────────────────── */
+
+:focus-visible {
+  outline: 2px solid #0ea5a4;
+  outline-offset: 3px;
+  border-radius: 4px;
+}
+
+/* ── Transitions ──────────────────────────────────────────────────────────── */
+
+a, button {
+  transition-property: color, background-color, border-color, box-shadow, opacity, transform;
+  transition-duration: 180ms;
+  transition-timing-function: cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/* ── Utility classes ──────────────────────────────────────────────────────── */
+
+.bg-axis { background-color: #0ea5a4; }
+.text-axis { color: #0ea5a4; }
+.shadow-soft { box-shadow: 0 2px 8px rgba(15,23,42,0.06), 0 8px 24px rgba(15,23,42,0.04); }
+
+/* ── Gallery / property ───────────────────────────────────────────────────── */
+
+.property-gallery { width: 100%; max-width: 100%; }
+
+/* ── Safe area padding on mobile ──────────────────────────────────────────── */
+
+@media (max-width: 767px) {
+  html, body {
+    overflow-x: hidden;
+  }
+
+  .page-wrapper {
+    padding-left: env(safe-area-inset-left, 0px);
+    padding-right: env(safe-area-inset-right, 0px);
+  }
+
+  .container {
+    padding-left: max(var(--page-gutter), env(safe-area-inset-left));
+    padding-right: max(var(--page-gutter), env(safe-area-inset-right));
+  }
+
+  h1, h2, h3 {
+    text-wrap: pretty;
+  }
+}
+
+/* Prevent page scroll-through inside modal/overlay scroll areas */
+.overflow-y-auto,
+.overflow-y-scroll {
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Scrollbar hidden utility (section nav) */
+.scrollbar-none {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.scrollbar-none::-webkit-scrollbar {
+  display: none;
+}
+
+/* ── Application form ─────────────────────────────────────────────────────── */
+
+.btn-pill { @apply rounded-full px-8 py-3 shadow-sm; }
+.progress-track { @apply h-2 rounded-full bg-gray-200 overflow-hidden; }
+.progress-fill { @apply h-full bg-teal-500 rounded-full transition-all duration-300; }
+.back-btn { @apply inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-gray-200 bg-white text-sm text-slate-700; }
+.field { @apply w-full rounded-xl border border-slate-200 px-4 py-3 bg-white text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent; }
+.muted-box { @apply bg-slate-50 rounded-xl border border-slate-200 p-4 text-sm text-slate-600; }
+
+/* ── Property page ────────────────────────────────────────────────────────── */
+
+.price-box { @apply bg-white rounded-xl border border-slate-200 p-5 shadow-soft; }

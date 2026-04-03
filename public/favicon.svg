@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Axis Seattle">
+  <defs>
+    <linearGradient id="axis-bg" x1="8" y1="8" x2="56" y2="56" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#0f172a" />
+      <stop offset="100%" stop-color="#1e293b" />
+    </linearGradient>
+    <linearGradient id="axis-accent" x1="18" y1="18" x2="46" y2="46" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#2dd4bf" />
+      <stop offset="100%" stop-color="#14b8a6" />
+    </linearGradient>
+  </defs>
+  <rect x="4" y="4" width="56" height="56" rx="18" fill="url(#axis-bg)" />
+  <path d="M17 42 L25 20 L33 42" fill="none" stroke="#ffffff" stroke-width="4" stroke-linecap="round" stroke-linejoin="round" />
+  <line x1="20" y1="34" x2="30" y2="34" stroke="#ffffff" stroke-width="4" stroke-linecap="round" />
+  <line x1="35" y1="21" x2="47" y2="43" stroke="#ffffff" stroke-width="4" stroke-linecap="round" />
+  <line x1="47" y1="21" x2="35" y2="43" stroke="url(#axis-accent)" stroke-width="4" stroke-linecap="round" />
+</svg>

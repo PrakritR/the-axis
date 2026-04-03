@@ -1,0 +1,46 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+dist-backup-*/
+netlify-drop*/
+
+# Environment variables — never commit these
+.env
+.env.local
+.env.*.local
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editor
+.vscode/
+.idea/
+
+# Large media — stored locally and in deployment, not in git
+Assets/**/*.MOV
+Assets/**/*.mov
+Assets/**/*.MP4
+Assets/**/*.mp4
+Assets/**/*.HEIC
+Assets/**/*.heic
+
+# Misc
+*.zip
+netlify-upload.zip
+package-lock 2.json
+package-lock 3.json
+
+# Hosting / deploy
+.vercel
+netlify/
+
+# Vite
+.vite/
+
+# Claude / agent internals
+.agents/
+.claude/
+skills-lock.json
