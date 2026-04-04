@@ -174,13 +174,32 @@ export default function Contact(){
                     Slots added to your Google Calendar automatically.
                   </div>
                 </div>
-                <iframe
-                  src={GOOGLE_CALENDAR_BOOKING_URL}
-                  style={{ border: 0, width: '100%', minHeight: '600px' }}
-                  frameBorder="0"
-                  scrolling="no"
-                  title="Schedule a tour with Axis Seattle"
-                />
+
+                <div className="flex flex-col items-center justify-center gap-6 rounded-2xl border border-slate-100 bg-slate-50 px-8 py-14 text-center">
+                  <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-white shadow-sm">
+                    <svg className="h-8 w-8 text-axis" fill="none" stroke="currentColor" strokeWidth={1.5} viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 012.25-2.25h13.5A2.25 2.25 0 0121 7.5v11.25m-18 0A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75m-18 0v-7.5A2.25 2.25 0 015.25 9h13.5A2.25 2.25 0 0121 11.25v7.5" />
+                    </svg>
+                  </div>
+                  <div>
+                    <div className="text-xl font-black tracking-tight text-slate-900">View available tour times</div>
+                    <p className="mt-2 max-w-sm text-sm leading-6 text-slate-500">
+                      Opens Google Calendar booking — pick a date and time, and we'll confirm your tour.
+                    </p>
+                  </div>
+                  <a
+                    href={GOOGLE_CALENDAR_BOOKING_URL}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-2 rounded-full bg-slate-900 px-8 py-3.5 text-sm font-semibold text-white hover:bg-slate-700 transition-colors"
+                  >
+                    <svg className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 012.25-2.25h13.5A2.25 2.25 0 0121 7.5v11.25m-18 0A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75m-18 0v-7.5A2.25 2.25 0 015.25 9h13.5A2.25 2.25 0 0121 11.25v7.5" />
+                    </svg>
+                    Schedule a Tour
+                  </a>
+                  <p className="text-xs text-slate-400">You'll be taken to Google Calendar to pick your time</p>
+                </div>
               </div>
             ) : (
               <div>
