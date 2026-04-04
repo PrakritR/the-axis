@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { Seo } from '../lib/seo'
 
 const CONTACT_PHONE_DISPLAY = '(510) 309-8345'
@@ -16,7 +16,13 @@ const CONTACT_PROMISES = [
   ['Clear follow-up', 'Room questions get room-specific answers.'],
 ]
 
+// Paste your Google Calendar appointment scheduling link here.
+// To get it: Google Calendar → Create → "Appointment schedule" → Share → copy the booking page URL.
+const GOOGLE_CALENDAR_BOOKING_URL = 'https://calendar.app.google/Vim4nAuCuhQvj4Rg9'
+
 export default function Contact(){
+  const [activeTab, setActiveTab] = useState('tour')
+
   useEffect(() => {
     const script = document.createElement('script')
     script.src = 'https://www.cognitoforms.com/f/iframe.js'
@@ -124,26 +130,82 @@ export default function Contact(){
           </div>
 
           <div className="rounded-[28px] border border-slate-200 bg-white p-6 shadow-soft sm:p-8">
-            <div className="mb-6 flex flex-col gap-4 border-b border-slate-100 pb-6 sm:flex-row sm:items-end sm:justify-between">
-              <div>
-                <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-axis">Send a message</div>
-                <h2 className="mt-2 text-3xl font-black tracking-tight text-slate-900">Tell us what you need</h2>
-                <p className="mt-3 max-w-2xl text-sm leading-7 text-slate-600">
-                  Tell us what you need and we'll follow up.
-                </p>
-              </div>
-              <div className="rounded-2xl border border-teal-100 bg-teal-50 px-4 py-3 text-sm text-teal-900">
-                Best for tour requests and availability questions.
-              </div>
+            {/* Tab switcher */}
+            <div className="mb-6 flex gap-1 rounded-2xl border border-slate-100 bg-slate-50 p-1">
+              <button
+                onClick={() => setActiveTab('tour')}
+                className={`flex flex-1 items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold transition-all ${
+                  activeTab === 'tour'
+                    ? 'bg-white text-slate-900 shadow-sm'
+                    : 'text-slate-500 hover:text-slate-700'
+                }`}
+              >
+                <svg className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                </svg>
+                Schedule a Tour
+              </button>
+              <button
+                onClick={() => setActiveTab('message')}
+                className={`flex flex-1 items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold transition-all ${
+                  activeTab === 'message'
+                    ? 'bg-white text-slate-900 shadow-sm'
+                    : 'text-slate-500 hover:text-slate-700'
+                }`}
+              >
+                <svg className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                </svg>
+                Send a Message
+              </button>
             </div>
-            <iframe
-              src="https://www.cognitoforms.com/f/zIns1FUelkCIZ-tnBbSN-Q/1"
-              allow="payment"
-              style={{ border: 0, width: '100%' }}
-              height="901"
-            />
+
+            {activeTab === 'tour' ? (
+              <div>
+                <div className="mb-6 flex flex-col gap-4 border-b border-slate-100 pb-6 sm:flex-row sm:items-end sm:justify-between">
+                  <div>
+                    <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-axis">Book a tour</div>
+                    <h2 className="mt-2 text-3xl font-black tracking-tight text-slate-900">Pick a time that works</h2>
+                    <p className="mt-3 max-w-2xl text-sm leading-7 text-slate-600">
+                      Choose an available slot and we'll confirm your tour of the property.
+                    </p>
+                  </div>
+                  <div className="rounded-2xl border border-teal-100 bg-teal-50 px-4 py-3 text-sm text-teal-900">
+                    Slots added to your Google Calendar automatically.
+                  </div>
+                </div>
+                <iframe
+                  src={GOOGLE_CALENDAR_BOOKING_URL}
+                  style={{ border: 0, width: '100%', minHeight: '600px' }}
+                  frameBorder="0"
+                  scrolling="no"
+                  title="Schedule a tour with Axis Seattle"
+                />
+              </div>
+            ) : (
+              <div>
+                <div className="mb-6 flex flex-col gap-4 border-b border-slate-100 pb-6 sm:flex-row sm:items-end sm:justify-between">
+                  <div>
+                    <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-axis">Send a message</div>
+                    <h2 className="mt-2 text-3xl font-black tracking-tight text-slate-900">Tell us what you need</h2>
+                    <p className="mt-3 max-w-2xl text-sm leading-7 text-slate-600">
+                      Tell us what you need and we'll follow up.
+                    </p>
+                  </div>
+                  <div className="rounded-2xl border border-teal-100 bg-teal-50 px-4 py-3 text-sm text-teal-900">
+                    Best for tour requests and availability questions.
+                  </div>
+                </div>
+                <iframe
+                  src="https://www.cognitoforms.com/f/zIns1FUelkCIZ-tnBbSN-Q/1"
+                  allow="payment"
+                  style={{ border: 0, width: '100%' }}
+                  height="901"
+                />
+              </div>
+            )}
+          </div>
         </div>
-      </div>
       </div>
     </div>
   )
