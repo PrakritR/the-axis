@@ -50,7 +50,7 @@ const roomVideo = (name, price, available, videoPath, details) => ({
   price,
   available,
   ...(details ? { details } : {}),
-  video: asset(videoPath),
+  video: videoPath.startsWith('http') ? videoPath : asset(videoPath),
 })
 
 const leaseTerms = ({
@@ -442,29 +442,29 @@ export const properties = [
         title: 'First Floor',
         priceRange: '$840/month',
         roomsAvailable: 1,
-        rooms: [roomVideo('Room 1', '$840/month', 'Available after April 14, 2026', '5259 house videos/Room 0.MOV', 'Shares bathroom with Room 2')],
+        rooms: [roomVideo('Room 1', '$840/month', 'Available after April 14, 2026', 'https://res.cloudinary.com/dhls60o2m/video/upload/v1775273591/Room_0_ofos7s.mov', 'Shares bathroom with Room 2')],
       },
       {
         title: 'Second Floor',
         priceRange: '$800-$840/month',
         roomsAvailable: 4,
         rooms: [
-          roomVideo('Room 2', '$840/month', 'Available after April 14, 2026', '5259 house videos/Room 1.MOV', 'Shares bathroom with Room 1'),
+          roomVideo('Room 2', '$840/month', 'Available after April 14, 2026', 'https://res.cloudinary.com/dhls60o2m/video/upload/v1775273592/Room_1_mrqdvq.mov', 'Shares bathroom with Room 1'),
           roomVideo(
             'Room 3',
             '$800/month',
             'Available April 14, 2026-May 15, 2026 and after August 14, 2026',
-            '5259 house videos/Room 2.MOV',
+            'https://res.cloudinary.com/dhls60o2m/video/upload/v1775273592/Room_2_y4zhpf.mov',
             'Shares bathroom with Rooms 4 and 5',
           ),
           roomVideo(
             'Room 4',
             '$800/month',
             'Available April 14, 2026-May 15, 2026 and after August 14, 2026',
-            '5259 house videos/Room 3.MOV',
+            'https://res.cloudinary.com/dhls60o2m/video/upload/v1775273594/Room_3_nn3qhs.mov',
             'Shares bathroom with Rooms 3 and 5',
           ),
-          roomVideo('Room 5', '$800/month', 'Available after April 14, 2026', '5259 house videos/Room 4.MOV', 'Shares bathroom with Rooms 3 and 4'),
+          roomVideo('Room 5', '$800/month', 'Available after April 14, 2026', 'https://res.cloudinary.com/dhls60o2m/video/upload/v1775273594/Room_4_cyih5v.mov', 'Shares bathroom with Rooms 3 and 4'),
         ],
       },
       {
@@ -472,10 +472,10 @@ export const properties = [
         priceRange: '$775/month',
         roomsAvailable: 4,
         rooms: [
-          roomVideo('Room 6', '$775/month', 'Available after April 14, 2026', '5259 house videos/Room 5.MOV', 'Shares bathroom with Rooms 7, 8, and 9'),
-          roomVideo('Room 7', '$775/month', 'Available after April 14, 2026', '5259 house videos/Room 6.MOV', 'Shares bathroom with Rooms 6, 8, and 9'),
-          roomVideo('Room 8', '$775/month', 'Available after April 14, 2026', '5259 house videos/Room 7.MOV', 'Shares bathroom with Rooms 6, 7, and 9'),
-          roomVideo('Room 9', '$775/month', 'Available after April 14, 2026', '5259 house videos/Room 8.MOV', 'Shares bathroom with Rooms 6, 7, and 8'),
+          roomVideo('Room 6', '$775/month', 'Available after April 14, 2026', 'https://res.cloudinary.com/dhls60o2m/video/upload/v1775273594/Room_5_vshdju.mov', 'Shares bathroom with Rooms 7, 8, and 9'),
+          roomVideo('Room 7', '$775/month', 'Available after April 14, 2026', 'https://res.cloudinary.com/dhls60o2m/video/upload/v1775273596/Room_6_vdwgz5.mov', 'Shares bathroom with Rooms 6, 8, and 9'),
+          roomVideo('Room 8', '$775/month', 'Available after April 14, 2026', 'https://res.cloudinary.com/dhls60o2m/video/upload/v1775273597/Room_7_snwqgt.mov', 'Shares bathroom with Rooms 6, 7, and 9'),
+          roomVideo('Room 9', '$775/month', 'Available after April 14, 2026', 'https://res.cloudinary.com/dhls60o2m/video/upload/v1775273599/Room_8_vtixnx.mov', 'Shares bathroom with Rooms 6, 7, and 8'),
         ],
       },
     ],
