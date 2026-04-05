@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback } from 'react'
 import { supabase, supabaseReady } from '../lib/supabase'
-import { createWorkOrder, getWorkOrders, getMessages, sendMessage } from '../lib/airtable'
+import { getWorkOrders, getMessages, sendMessage } from '../lib/airtable'
 
 const CATEGORIES = [
   { id: 'maintenance', label: 'Maintenance / Repair', icon: '🔧' },
@@ -116,87 +116,19 @@ function LoginScreen({ onLogin }) {
   )
 }
 
-// ─── New Request Form ─────────────────────────────────────────────────────────
-function NewRequestForm({ user, onSubmitted }) {
-  const [category, setCategory] = useState('')
-  const [title, setTitle] = useState('')
-  const [description, setDescription] = useState('')
-  const [priority, setPriority] = useState('normal')
-  const [loading, setLoading] = useState(false)
-  const [error, setError] = useState('')
-
-  async function handleSubmit(e) {
-    e.preventDefault()
-    setError(''); setLoading(true)
-    try {
-      await createWorkOrder({
-        residentId: user.id,
-        residentEmail: user.email,
-        category,
-        title,
-        description,
-        priority,
-      })
-      onSubmitted()
-    } catch (err) {
-      setError(err.message)
-    } finally {
-      setLoading(false)
-    }
-  }
-
+// ─── New Request Form (Airtable embed) ───────────────────────────────────────
+function NewRequestForm() {
   return (
-    <form onSubmit={handleSubmit} className="space-y-5">
-      {error && <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>}
-
-      <div>
-        <label className="mb-3 block text-sm font-semibold text-slate-700">Category</label>
-        <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-          {CATEGORIES.map(c => (
-            <button key={c.id} type="button" onClick={() => setCategory(c.id)}
-              className={`flex flex-col items-center gap-1.5 rounded-xl border px-3 py-3 text-xs font-semibold transition-all ${category === c.id ? 'border-slate-900 bg-slate-900 text-white' : 'border-slate-200 bg-white text-slate-700 hover:border-slate-400'}`}>
-              <span className="text-lg">{c.icon}</span>
-              {c.label}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      <div>
-        <label className="mb-1.5 block text-sm font-semibold text-slate-700">Title <span className="text-red-400">*</span></label>
-        <input required value={title} onChange={e => setTitle(e.target.value)}
-          placeholder="e.g. Kitchen sink is leaking"
-          className="w-full rounded-xl border border-slate-200 px-4 py-2.5 text-sm outline-none placeholder:text-slate-300 focus:border-slate-900 focus:ring-2 focus:ring-slate-900/8 transition-colors" />
-      </div>
-
-      <div>
-        <label className="mb-1.5 block text-sm font-semibold text-slate-700">Description <span className="text-red-400">*</span></label>
-        <textarea required value={description} onChange={e => setDescription(e.target.value)} rows={4}
-          placeholder="Describe the issue in detail — when it started, how severe it is, etc."
-          className="w-full resize-none rounded-xl border border-slate-200 px-4 py-3 text-sm leading-6 outline-none placeholder:text-slate-300 focus:border-slate-900 focus:ring-2 focus:ring-slate-900/8 transition-colors" />
-      </div>
-
-      <div>
-        <label className="mb-2 block text-sm font-semibold text-slate-700">Priority</label>
-        <div className="flex gap-2">
-          {[['low','Low','bg-slate-50 text-slate-600'],['normal','Normal','bg-amber-50 text-amber-700'],['urgent','Urgent','bg-red-50 text-red-700']].map(([val, label, style]) => (
-            <button key={val} type="button" onClick={() => setPriority(val)}
-              className={`flex-1 rounded-xl border px-3 py-2 text-sm font-semibold transition-all ${priority === val ? 'border-slate-900 bg-slate-900 text-white' : `border-slate-200 ${style} hover:border-slate-400`}`}>
-              {label}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      <div className="flex justify-end pt-2">
-        <button type="submit" disabled={loading || !category || !title || !description}
-          className="inline-flex items-center gap-2 rounded-full bg-slate-900 px-7 py-2.5 text-sm font-semibold text-white hover:bg-slate-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors">
-          {loading
-            ? <><svg className="h-4 w-4 animate-spin" viewBox="0 0 24 24" fill="none"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/></svg> Submitting…</>
-            : 'Submit Request'}
-        </button>
-      </div>
-    </form>
+    <div className="-m-6 sm:-m-8 overflow-hidden rounded-[24px]">
+      <iframe
+        src="https://airtable.com/embed/appol57LKtMKaQ75T/pagb6VcVzGGWZyOjo/form"
+        title="Submit Maintenance Request"
+        frameBorder="0"
+        width="100%"
+        height="700"
+        style={{ background: 'transparent', display: 'block' }}
+      />
+    </div>
   )
 }
 
@@ -355,7 +287,7 @@ function Dashboard({ user, onLogout }) {
 
         <div className="rounded-[24px] border border-slate-200 bg-white p-6 shadow-soft sm:p-8">
           {tab === 'new' && (
-            <NewRequestForm user={user} onSubmitted={() => { fetchRequests(); setTab('requests') }} />
+            <NewRequestForm />
           )}
 
           {tab === 'requests' && (
