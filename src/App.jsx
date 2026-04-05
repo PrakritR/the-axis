@@ -11,6 +11,7 @@ import Chatbot from './components/Chatbot'
 const PropertyPage = lazy(() => import('./pages/PropertyPage'))
 const Contact = lazy(() => import('./pages/Contact'))
 const Apply = lazy(() => import('./pages/Apply'))
+const Resident = lazy(() => import('./pages/Resident'))
 
 function ScrollToTop() {
   const { pathname, hash, search } = useLocation()
@@ -95,6 +96,7 @@ export default function App(){
               <Route path="*" element={<AnimatedPage><div className="container mx-auto px-6 py-12">Page not found</div></AnimatedPage>} />
               <Route path="/contact" element={<AnimatedPage><Contact/></AnimatedPage>} />
               <Route path="/apply" element={<AnimatedPage><Apply/></AnimatedPage>} />
+              <Route path="/resident" element={<AnimatedPage><Resident/></AnimatedPage>} />
             </Routes>
           </AnimatePresence>
         </Suspense>

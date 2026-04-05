@@ -114,11 +114,11 @@ export default function Navbar() {
 
         <div className="flex items-center gap-2 sm:gap-3">
           <Link
-            to={`/contact?subject=${encodeURIComponent('Tour request')}`}
+            to="/resident"
             onClick={scrollToTop}
             className="hidden rounded-full border border-white/20 px-4 py-2 text-sm font-semibold text-white/80 transition hover:border-axis hover:text-axis sm:inline-flex"
           >
-            Request tour
+            Resident Login
           </Link>
           <Link
             to="/apply"

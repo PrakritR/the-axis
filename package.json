@@ -12,6 +12,7 @@
   "dependencies": {
     "@anthropic-ai/sdk": "^0.82.0",
     "@emailjs/browser": "^4.4.1",
+    "@supabase/supabase-js": "^2.101.1",
     "framer-motion": "^12.38.0",
     "leaflet": "^1.9.4",
     "react": "^18.2.0",
