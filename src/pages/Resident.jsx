@@ -70,13 +70,17 @@ function SetupRequired() {
   )
 }
 
-function EmailLogin() {
+function EmailLogin({ initialError = '' }) {
   const [mode, setMode] = useState('login')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [loading, setLoading] = useState(false)
   const [message, setMessage] = useState('')
-  const [error, setError] = useState('')
+  const [error, setError] = useState(initialError)
+
+  useEffect(() => {
+    setError(initialError)
+  }, [initialError])
 
   async function handleSubmit(event) {
     event.preventDefault()
@@ -122,7 +126,7 @@ function EmailLogin() {
 
       if (signInError) throw signInError
     } catch (err) {
-      setError(err.message || 'Could not send magic link.')
+      setError(err.message || 'Authentication failed.')
     } finally {
       setLoading(false)
     }
@@ -224,6 +228,113 @@ function EmailLogin() {
                   ? 'Create account'
                   : 'Send reset email'}
           </button>
+        </form>
+      </div>
+    </div>
+  )
+}
+
+function PasswordRecovery({ onDone }) {
+  const [password, setPassword] = useState('')
+  const [confirmPassword, setConfirmPassword] = useState('')
+  const [loading, setLoading] = useState(false)
+  const [message, setMessage] = useState('')
+  const [error, setError] = useState('')
+
+  async function handleSubmit(event) {
+    event.preventDefault()
+    setMessage('')
+    setError('')
+
+    if (password.length < 8) {
+      setError('Use at least 8 characters for the new password.')
+      return
+    }
+
+    if (password !== confirmPassword) {
+      setError('Passwords do not match.')
+      return
+    }
+
+    setLoading(true)
+    try {
+      const { error: updateError } = await supabase.auth.updateUser({ password })
+      if (updateError) throw updateError
+
+      setMessage('Password updated successfully. You can now continue into the resident portal.')
+    } catch (err) {
+      setError(err.message || 'Could not update password.')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  return (
+    <div className="flex min-h-screen items-center justify-center bg-[linear-gradient(180deg,#f8fafc_0%,#ffffff_100%)] px-4">
+      <div className="w-full max-w-md rounded-[28px] border border-slate-200 bg-white p-8 shadow-soft">
+        <div className="text-center">
+          <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-slate-900 text-white">
+            <svg className="h-7 w-7" fill="none" stroke="currentColor" strokeWidth={1.8} viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M16.5 10.5V6.75a4.5 4.5 0 10-9 0v3.75m-.75 0h10.5A2.25 2.25 0 0119.5 12.75v6A2.25 2.25 0 0117.25 21h-10.5A2.25 2.25 0 014.5 18.75v-6A2.25 2.25 0 016.75 10.5z" />
+            </svg>
+          </div>
+          <h1 className="mt-5 text-3xl font-black text-slate-900">Set a New Password</h1>
+          <p className="mt-2 text-sm leading-7 text-slate-500">
+            Choose a new password for your resident account, then return to the portal.
+          </p>
+        </div>
+
+        <form onSubmit={handleSubmit} className="mt-8 space-y-4">
+          <div>
+            <label className="mb-2 block text-sm font-semibold text-slate-700">New Password</label>
+            <input
+              type="password"
+              required
+              value={password}
+              onChange={(event) => setPassword(event.target.value)}
+              className="w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm outline-none transition focus:border-slate-900 focus:ring-2 focus:ring-slate-900/10"
+            />
+          </div>
+
+          <div>
+            <label className="mb-2 block text-sm font-semibold text-slate-700">Confirm Password</label>
+            <input
+              type="password"
+              required
+              value={confirmPassword}
+              onChange={(event) => setConfirmPassword(event.target.value)}
+              className="w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm outline-none transition focus:border-slate-900 focus:ring-2 focus:ring-slate-900/10"
+            />
+          </div>
+
+          {message ? (
+            <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
+              {message}
+            </div>
+          ) : null}
+
+          {error ? (
+            <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+              {error}
+            </div>
+          ) : null}
+
+          <div className="flex gap-2">
+            <button
+              type="submit"
+              disabled={loading}
+              className="flex-1 rounded-full bg-slate-900 py-3 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:opacity-50"
+            >
+              {loading ? 'Updating...' : 'Update password'}
+            </button>
+            <button
+              type="button"
+              onClick={onDone}
+              className="rounded-full border border-slate-300 px-5 py-3 text-sm font-semibold text-slate-700 transition hover:border-slate-500"
+            >
+              Back
+            </button>
+          </div>
         </form>
       </div>
     </div>
@@ -738,6 +849,8 @@ export default function Resident() {
   const [session, setSession] = useState(null)
   const [resident, setResident] = useState(null)
   const [loading, setLoading] = useState(true)
+  const [authMode, setAuthMode] = useState('default')
+  const [authError, setAuthError] = useState('')
 
   useEffect(() => {
     if (!supabaseReady || !airtableReady) {
@@ -783,6 +896,28 @@ export default function Resident() {
     }
   }, [])
 
+  useEffect(() => {
+    const hash = window.location.hash.startsWith('#') ? window.location.hash.slice(1) : ''
+    if (!hash) return
+
+    const params = new URLSearchParams(hash)
+    const errorDescription = params.get('error_description')
+    const errorCode = params.get('error_code')
+    const type = params.get('type')
+
+    if (type === 'recovery') {
+      setAuthMode('recovery')
+    } else if (errorDescription || errorCode) {
+      const decoded = errorDescription
+        ? decodeURIComponent(errorDescription.replace(/\+/g, ' '))
+        : 'Authentication link is invalid or expired.'
+      setAuthError(decoded)
+      setAuthMode('default')
+    }
+
+    window.history.replaceState(null, '', window.location.pathname + window.location.search)
+  }, [])
+
   async function handleSignOut() {
     await supabase.auth.signOut()
   }
@@ -795,7 +930,10 @@ export default function Resident() {
       </div>
     )
   }
-  if (!session) return <EmailLogin />
+  if (!session && authMode === 'recovery') {
+    return <PasswordRecovery onDone={() => setAuthMode('default')} />
+  }
+  if (!session) return <EmailLogin initialError={authError} />
   if (!resident) return <NotAuthorized email={session.user.email} onSignOut={handleSignOut} />
 
   return (
