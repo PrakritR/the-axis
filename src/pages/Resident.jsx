@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { supabase } from '../lib/supabase'
+import { supabase, supabaseReady } from '../lib/supabase'
 
 const CATEGORIES = [
   { id: 'maintenance', label: 'Maintenance / Repair', icon: '🔧' },
@@ -392,12 +392,41 @@ function Dashboard({ user, onLogout }) {
   )
 }
 
+// ─── Setup required screen ────────────────────────────────────────────────────
+function SetupRequired() {
+  return (
+    <div className="flex min-h-screen items-center justify-center bg-[linear-gradient(180deg,#f8fafc_0%,#ffffff_100%)] px-4">
+      <div className="w-full max-w-md text-center">
+        <div className="mx-auto mb-5 flex h-14 w-14 items-center justify-center rounded-2xl bg-slate-100">
+          <svg className="h-7 w-7 text-slate-500" fill="none" stroke="currentColor" strokeWidth={1.8} viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M11.42 15.17L17.25 21A2.652 2.652 0 0021 17.25l-5.877-5.877M11.42 15.17l2.496-3.03c.317-.384.74-.626 1.208-.766M11.42 15.17l-4.655 5.653a2.548 2.548 0 11-3.586-3.586l6.837-5.63m5.108-.233c.55-.164 1.163-.188 1.743-.14a4.5 4.5 0 004.486-6.336l-3.276 3.277a3.004 3.004 0 01-2.25-2.25l3.276-3.276a4.5 4.5 0 00-6.336 4.486c.091 1.076-.071 2.264-.904 2.95l-.102.085m-1.745 1.437L5.909 7.5H4.5L2.25 3.75l1.5-1.5L7.5 4.5v1.409l4.26 4.26m-1.745 1.437l1.745-1.437m6.615 8.206L15.75 15.75M4.867 19.125h.008v.008h-.008v-.008z" />
+          </svg>
+        </div>
+        <h1 className="text-2xl font-black text-slate-900">Resident Portal Setup Required</h1>
+        <p className="mt-3 text-sm leading-7 text-slate-500">
+          The resident portal needs Supabase configured to work. Add your Supabase credentials to Vercel environment variables to activate it.
+        </p>
+        <div className="mt-6 rounded-2xl border border-slate-200 bg-white p-5 text-left shadow-soft">
+          <div className="text-xs font-bold uppercase tracking-widest text-slate-400 mb-3">Required env vars</div>
+          <div className="space-y-2 font-mono text-xs text-slate-700">
+            <div className="rounded-lg bg-slate-50 px-3 py-2">VITE_SUPABASE_URL</div>
+            <div className="rounded-lg bg-slate-50 px-3 py-2">VITE_SUPABASE_ANON_KEY</div>
+          </div>
+          <p className="mt-4 text-xs text-slate-400">Get these from supabase.com → your project → Settings → API</p>
+        </div>
+        <a href="/" className="mt-6 inline-block text-sm font-semibold text-slate-500 hover:text-slate-900">← Back to site</a>
+      </div>
+    </div>
+  )
+}
+
 // ─── Main export ──────────────────────────────────────────────────────────────
 export default function Resident() {
   const [user, setUser] = useState(null)
   const [checking, setChecking] = useState(true)
 
   useEffect(() => {
+    if (!supabaseReady) { setChecking(false); return }
     supabase.auth.getSession().then(({ data: { session } }) => {
       setUser(session?.user ?? null)
       setChecking(false)
@@ -413,10 +442,8 @@ export default function Resident() {
     setUser(null)
   }
 
-  if (checking) {
-    return <div className="flex min-h-screen items-center justify-center text-sm text-slate-400">Loading…</div>
-  }
-
+  if (!supabaseReady) return <SetupRequired />
+  if (checking) return <div className="flex min-h-screen items-center justify-center text-sm text-slate-400">Loading…</div>
   if (!user) return <LoginScreen onLogin={() => {}} />
   return <Dashboard user={user} onLogout={handleLogout} />
 }
