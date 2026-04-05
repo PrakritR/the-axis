@@ -870,6 +870,7 @@ function AnnouncementsPanel({ items }) {
 
 function ProfilePanel({ resident, onUpdated }) {
   const defaultHouse = resident.House || houseOptions[0]?.house || ''
+  const [name, setName] = useState(resident.Name || '')
   const [house, setHouse] = useState(defaultHouse)
   const [phone, setPhone] = useState(resident.Phone || '')
   const [unitNumber, setUnitNumber] = useState(resident['Unit Number'] || getUnitsForHouse(defaultHouse)[0] || '')
@@ -881,6 +882,7 @@ function ProfilePanel({ resident, onUpdated }) {
 
   useEffect(() => {
     const nextHouse = resident.House || houseOptions[0]?.house || ''
+    setName(resident.Name || '')
     setHouse(nextHouse)
     setPhone(resident.Phone || '')
     setUnitNumber(resident['Unit Number'] || getUnitsForHouse(nextHouse)[0] || '')
@@ -901,6 +903,7 @@ function ProfilePanel({ resident, onUpdated }) {
     setMessage('')
     try {
       const updated = await updateResident(resident.id, {
+        Name: name,
         House: house,
         'Unit Number': unitNumber,
         Phone: phone,
@@ -922,6 +925,10 @@ function ProfilePanel({ resident, onUpdated }) {
           <div className="mt-1 text-sm font-semibold text-slate-700">{resident.Name || 'Not set'}</div>
         </div>
         <div className="rounded-2xl bg-slate-50 px-4 py-3">
+          <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">Email</div>
+          <div className="mt-1 text-sm font-semibold text-slate-700">{resident.Email}</div>
+        </div>
+        <div className="rounded-2xl bg-slate-50 px-4 py-3">
           <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">House</div>
           <div className="mt-1 text-sm font-semibold text-slate-700">{resident.House || 'Not set'}</div>
         </div>
@@ -930,20 +937,31 @@ function ProfilePanel({ resident, onUpdated }) {
           <div className="mt-1 text-sm font-semibold text-slate-700">{resident['Unit Number'] || 'Not set'}</div>
         </div>
         <div className="rounded-2xl bg-slate-50 px-4 py-3">
-          <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">Email</div>
-          <div className="mt-1 text-sm font-semibold text-slate-700">{resident.Email}</div>
+          <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">Phone</div>
+          <div className="mt-1 text-sm font-semibold text-slate-700">{resident.Phone || 'Not set'}</div>
         </div>
         <div className="rounded-2xl bg-slate-50 px-4 py-3">
-          <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">Lease Start Date</div>
+          <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">Lease Start</div>
           <div className="mt-1 text-sm font-semibold text-slate-700">{formatDate(resident['Lease Start Date'])}</div>
         </div>
-        <div className="rounded-2xl bg-slate-50 px-4 py-3">
-          <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">Lease End Date</div>
+        <div className="rounded-2xl bg-slate-50 px-4 py-3 sm:col-span-2">
+          <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">Lease End</div>
           <div className="mt-1 text-sm font-semibold text-slate-700">{formatDate(resident['Lease End Date'])}</div>
         </div>
       </div>
 
       <form onSubmit={handleSubmit} className="mt-5 max-w-md space-y-3">
+        <div>
+          <label className="mb-2 block text-sm font-semibold text-slate-700">Full Name</label>
+          <input
+            type="text"
+            required
+            value={name}
+            onChange={(event) => setName(event.target.value)}
+            placeholder="Your full name"
+            className="w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm outline-none transition focus:border-slate-900 focus:ring-2 focus:ring-slate-900/10"
+          />
+        </div>
         <div>
           <label className="mb-2 block text-sm font-semibold text-slate-700">House</label>
           <select
