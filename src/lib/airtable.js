@@ -31,7 +31,7 @@ export async function createWorkOrder({ residentEmail, residentId, category, tit
 
 export async function getWorkOrders(residentId) {
   const formula = encodeURIComponent(`{Resident ID} = "${residentId}"`)
-  const res = await fetch(`${BASE_URL}/Work%20Orders?filterByFormula=${formula}&sort[0][field]=Created&sort[0][direction]=desc`, {
+  const res = await fetch(`${BASE_URL}/Work%20Orders?filterByFormula=${formula}`, {
     headers: headers(),
   })
   if (!res.ok) throw new Error(await res.text())
@@ -53,7 +53,7 @@ export async function updateWorkOrderStatus(recordId, status) {
 
 export async function getMessages(workOrderId) {
   const formula = encodeURIComponent(`{Work Order ID} = "${workOrderId}"`)
-  const res = await fetch(`${BASE_URL}/Messages?filterByFormula=${formula}&sort[0][field]=Created&sort[0][direction]=asc`, {
+  const res = await fetch(`${BASE_URL}/Messages?filterByFormula=${formula}`, {
     headers: headers(),
   })
   if (!res.ok) throw new Error(await res.text())
