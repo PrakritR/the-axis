@@ -67,19 +67,27 @@ function BookingScheduler() {
 
   function reset() { setBookingType(null); setStep(1); setProperty(null); setRoom(''); setTourType('in-person') }
 
-  // Build Calendly URL with prefill params
+  // Build Calendly URL with all details formatted into the notes field
   function getCalendlyUrl() {
+    const base = bookingType === 'meeting' ? CALENDLY_MEETING_URL : CALENDLY_TOUR_URL
+    const enc = encodeURIComponent
+
     if (bookingType === 'meeting') {
-      return `${CALENDLY_MEETING_URL}?hide_gdpr_banner=1&primary_color=0f172a&a1=General+Discussion`
+      const notes = `Meeting Type: General Discussion with Leasing\nScheduled via Axis Seattle website`
+      return `${base}?hide_gdpr_banner=1&primary_color=0f172a&a1=${enc(notes)}`
     }
-    const params = new URLSearchParams({
-      hide_gdpr_banner: '1',
-      primary_color: '0f172a',
-      a1: selectedProperty?.name || '',
-      a2: room,
-      a3: tourType === 'in-person' ? 'In-Person' : 'Virtual',
-    })
-    return `${CALENDLY_TOUR_URL}?${params.toString()}`
+
+    const format = tourType === 'in-person' ? 'In-Person' : 'Virtual'
+    // Pack all tour details into a1 as a readable block — shows up in calendar event
+    const notes = [
+      `Property: ${selectedProperty?.name}`,
+      `Address: ${selectedProperty?.address}`,
+      `Room: ${room}`,
+      `Tour Format: ${format}`,
+      `Scheduled via Axis Seattle website`,
+    ].join('\n')
+
+    return `${base}?hide_gdpr_banner=1&primary_color=0f172a&a1=${enc(notes)}`
   }
 
   // Step 0: Choose booking type
