@@ -249,11 +249,6 @@ export default function Contact(){
   const [activeTab, setActiveTab] = useState('tour')
 
   useEffect(() => {
-    const script = document.createElement('script')
-    script.src = 'https://www.cognitoforms.com/f/iframe.js'
-    script.async = true
-    document.body.appendChild(script)
-    return () => document.body.removeChild(script)
   }, [])
 
   return (
@@ -402,10 +397,11 @@ export default function Contact(){
                   </div>
                 </div>
                 <iframe
-                  src="https://www.cognitoforms.com/f/zIns1FUelkCIZ-tnBbSN-Q/1"
-                  allow="payment"
-                  style={{ border: 0, width: '100%' }}
-                  height="901"
+                  className="airtable-embed"
+                  src="https://airtable.com/embed/appNBX2inqfJMyqYV/pagjUTobVZF3ZwGl7/form"
+                  width="100%"
+                  height="533"
+                  style={{ background: 'transparent', border: '1px solid #ccc', borderRadius: '16px' }}
                 />
               </div>
             )}
