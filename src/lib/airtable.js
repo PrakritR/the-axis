@@ -107,6 +107,7 @@ export async function syncResidentFromAuth({ user, resident = null, profile = {}
 
   fields.Name = profile.name || resident?.Name || titleCaseFromEmail(email)
 
+  if (profile.house) fields.House = profile.house
   if (profile.unitNumber) fields['Unit Number'] = profile.unitNumber
   if (profile.phone) fields.Phone = profile.phone
 
@@ -127,10 +128,9 @@ export async function getAnnouncements() {
 }
 
 export async function getWorkOrdersForResident(resident) {
-  const residentEmail = resident.Email || resident.email
   const residentId = resident.id
   const supabaseUserId = resident['Supabase User ID'] || ''
-  const formula = `OR(FIND("${escapeFormulaValue(residentId)}", ARRAYJOIN({Resident})) > 0, {Resident Email} = "${escapeFormulaValue(residentEmail)}", {Resident ID} = "${escapeFormulaValue(residentId)}", {Supabase User ID} = "${escapeFormulaValue(supabaseUserId)}")`
+  const formula = `OR(FIND("${escapeFormulaValue(residentId)}", ARRAYJOIN({Resident})) > 0, {Supabase User ID} = "${escapeFormulaValue(supabaseUserId)}")`
   const data = await request(buildUrl(TABLES.workOrders, {
     filterByFormula: formula,
   }))
@@ -147,27 +147,29 @@ export async function createWorkOrder({
   urgency,
   description,
   preferredEntry,
+  photoAttachment = null,
 }) {
-  const residentEmail = resident.Email || resident.email
   const residentId = resident.id
   const supabaseUserId = resident['Supabase User ID'] || ''
+  const fields = {
+    Title: title,
+    Description: description,
+    Category: category,
+    Priority: urgency,
+    Status: 'Submitted',
+    'Preferred Entry Time': preferredEntry,
+    Resident: [residentId],
+    'Supabase User ID': supabaseUserId,
+  }
+
+  if (photoAttachment?.url) {
+    fields.Photo = [{ url: photoAttachment.url, filename: photoAttachment.filename || 'issue-photo' }]
+  }
 
   const data = await request(tableUrl(TABLES.workOrders), {
     method: 'POST',
     body: JSON.stringify({
-      fields: {
-        Title: title,
-        Description: description,
-        Category: category,
-        Priority: urgency,
-        Status: 'Submitted',
-        'Preferred Entry Time': preferredEntry,
-        'Preferred Date/Time': preferredEntry,
-        Resident: [residentId],
-        'Resident Email': residentEmail,
-        'Resident ID': residentId,
-        'Supabase User ID': supabaseUserId,
-      },
+      fields,
     }),
   })
 

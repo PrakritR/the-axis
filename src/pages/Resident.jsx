@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react'
+import { properties } from '../data/properties'
 import {
   airtableReady,
   createWorkOrder,
@@ -10,11 +11,33 @@ import {
   syncResidentFromAuth,
   updateResident,
 } from '../lib/airtable'
-import { supabase, supabaseReady } from '../lib/supabase'
+import { supabase, supabaseReady, uploadResidentPhoto } from '../lib/supabase'
 
 const requestCategories = ['Plumbing', 'Electrical', 'HVAC', 'Appliance', 'Pest', 'Structural', 'Other']
 const urgencyOptions = ['Routine', 'Urgent', 'Emergency']
 const entryOptions = ['Morning', 'Afternoon', 'Evening']
+
+function normalizeUnitLabel(value) {
+  return String(value || '').replace(/^Room\s+/i, 'Unit ').trim()
+}
+
+const houseOptions = properties.map((property) => {
+  const floorPlanUnits = (property.floorPlans || []).flatMap((plan) => plan.units || [])
+  const roomPlanUnits = (property.roomPlans || [])
+    .flatMap((plan) => plan.rooms || [])
+    .map((room) => normalizeUnitLabel(room.name))
+
+  const units = Array.from(new Set([...floorPlanUnits, ...roomPlanUnits].filter(Boolean)))
+
+  return {
+    house: property.name,
+    units,
+  }
+})
+
+function getUnitsForHouse(house) {
+  return houseOptions.find((option) => option.house === house)?.units || []
+}
 
 const statusStyles = {
   Submitted: 'border-slate-200 bg-slate-100 text-slate-700',
@@ -72,15 +95,26 @@ function SetupRequired() {
 }
 
 function EmailLogin({ initialError = '' }) {
+  const defaultHouse = houseOptions[0]?.house || ''
+  const defaultUnit = getUnitsForHouse(defaultHouse)[0] || ''
   const [mode, setMode] = useState('login')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [fullName, setFullName] = useState('')
-  const [unitNumber, setUnitNumber] = useState('')
+  const [house, setHouse] = useState(defaultHouse)
+  const [unitNumber, setUnitNumber] = useState(defaultUnit)
   const [phone, setPhone] = useState('')
   const [loading, setLoading] = useState(false)
   const [message, setMessage] = useState('')
   const [error, setError] = useState(initialError)
+  const availableUnits = useMemo(() => getUnitsForHouse(house), [house])
+
+  useEffect(() => {
+    if (!availableUnits.length) return
+    if (!availableUnits.includes(unitNumber)) {
+      setUnitNumber(availableUnits[0])
+    }
+  }, [availableUnits, unitNumber])
 
   useEffect(() => {
     setError(initialError)
@@ -110,6 +144,7 @@ function EmailLogin({ initialError = '' }) {
           resident: existingResident,
           profile: {
             name: fullName,
+            house,
             unitNumber,
             phone,
           },
@@ -119,7 +154,8 @@ function EmailLogin({ initialError = '' }) {
         setMode('login')
         setPassword('')
         setFullName('')
-        setUnitNumber('')
+        setHouse(defaultHouse)
+        setUnitNumber(defaultUnit)
         setPhone('')
         return
       }
@@ -188,7 +224,8 @@ function EmailLogin({ initialError = '' }) {
                 setPassword('')
                 if (id !== 'signup') {
                   setFullName('')
-                  setUnitNumber('')
+                  setHouse(defaultHouse)
+                  setUnitNumber(defaultUnit)
                   setPhone('')
                 }
               }}
@@ -230,15 +267,27 @@ function EmailLogin({ initialError = '' }) {
               </div>
 
               <div>
-                <label className="mb-2 block text-sm font-semibold text-slate-700">Unit Number</label>
-                <input
-                  type="text"
+                <label className="mb-2 block text-sm font-semibold text-slate-700">House</label>
+                <select
+                  required
+                  value={house}
+                  onChange={(event) => setHouse(event.target.value)}
+                  className="w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm outline-none transition focus:border-slate-900 focus:ring-2 focus:ring-slate-900/10"
+                >
+                  {houseOptions.map((option) => <option key={option.house}>{option.house}</option>)}
+                </select>
+              </div>
+
+              <div>
+                <label className="mb-2 block text-sm font-semibold text-slate-700">Unit</label>
+                <select
                   required
                   value={unitNumber}
                   onChange={(event) => setUnitNumber(event.target.value)}
-                  placeholder="101"
                   className="w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm outline-none transition focus:border-slate-900 focus:ring-2 focus:ring-slate-900/10"
-                />
+                >
+                  {availableUnits.map((option) => <option key={option}>{option}</option>)}
+                </select>
               </div>
 
               <div>
@@ -435,6 +484,7 @@ function RequestComposer({ resident, onCreated }) {
     preferredEntry: entryOptions[0],
     description: '',
   })
+  const [photo, setPhoto] = useState(null)
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
@@ -446,6 +496,23 @@ function RequestComposer({ resident, onCreated }) {
     setSuccess('')
 
     try {
+      let photoAttachment = null
+
+      if (photo) {
+        if (!photo.type.startsWith('image/')) {
+          throw new Error('Please upload an image file for the issue photo.')
+        }
+
+        if (photo.size > 10 * 1024 * 1024) {
+          throw new Error('Please keep the issue photo under 10 MB.')
+        }
+
+        photoAttachment = await uploadResidentPhoto({
+          file: photo,
+          residentId: resident.id,
+        })
+      }
+
       const created = await createWorkOrder({
         resident,
         title: form.title,
@@ -453,6 +520,7 @@ function RequestComposer({ resident, onCreated }) {
         urgency: form.urgency,
         preferredEntry: form.preferredEntry,
         description: form.description,
+        photoAttachment,
       })
 
       setForm({
@@ -462,6 +530,7 @@ function RequestComposer({ resident, onCreated }) {
         preferredEntry: entryOptions[0],
         description: '',
       })
+      setPhoto(null)
       setSuccess('Request submitted successfully.')
       onCreated(created)
     } catch (err) {
@@ -534,10 +603,22 @@ function RequestComposer({ resident, onCreated }) {
           </select>
         </div>
 
-        <div className="flex items-end">
-          <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs leading-6 text-amber-800">
-            Photo uploads are not enabled yet in this version. Include as much detail as possible in the description.
-          </div>
+        <div>
+          <label className="mb-2 block text-sm font-semibold text-slate-700">Issue Photo</label>
+          <label className="flex min-h-[120px] cursor-pointer flex-col items-center justify-center rounded-2xl border border-dashed border-slate-300 bg-slate-50 px-4 py-5 text-center transition hover:border-slate-900 hover:bg-slate-100">
+            <span className="text-sm font-semibold text-slate-700">
+              {photo ? photo.name : 'Upload an image of the issue'}
+            </span>
+            <span className="mt-2 text-xs leading-6 text-slate-500">
+              Optional. JPG, PNG, or HEIC up to 10 MB. The photo will be attached to the Airtable work order.
+            </span>
+            <input
+              type="file"
+              accept="image/*"
+              onChange={(event) => setPhoto(event.target.files?.[0] || null)}
+              className="hidden"
+            />
+          </label>
         </div>
 
         {success ? (
@@ -668,7 +749,8 @@ function RequestsList({ requests, residentEmail }) {
         {requests.map((request) => {
           const status = request.Status || 'Submitted'
           const priority = request.Priority || 'Routine'
-          const notes = request.Notes
+          const notes = request['Management Notes']
+          const photo = Array.isArray(request.Photo) ? request.Photo[0] : null
           const isExpanded = expandedId === request.id
 
           return (
@@ -701,13 +783,26 @@ function RequestsList({ requests, residentEmail }) {
               <div className="mt-4 grid gap-3 sm:grid-cols-3">
                 <div className="rounded-2xl bg-slate-50 px-4 py-3">
                   <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">Preferred Entry</div>
-                  <div className="mt-1 text-sm font-semibold text-slate-700">{request['Preferred Date/Time'] || 'Not specified'}</div>
+                  <div className="mt-1 text-sm font-semibold text-slate-700">{request['Preferred Entry Time'] || 'Not specified'}</div>
                 </div>
                 <div className="rounded-2xl bg-slate-50 px-4 py-3 sm:col-span-2">
                   <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">Management Notes</div>
                   <div className="mt-1 text-sm text-slate-600">{notes || 'No management notes yet.'}</div>
                 </div>
               </div>
+
+              {photo?.url ? (
+                <div className="mt-4">
+                  <a
+                    href={photo.url}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="inline-flex rounded-full border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 transition hover:border-slate-500"
+                  >
+                    View attached photo
+                  </a>
+                </div>
+              ) : null}
 
               {isExpanded ? <RequestThread workOrder={request} residentEmail={residentEmail} /> : null}
             </div>
@@ -746,20 +841,38 @@ function AnnouncementsPanel({ items }) {
 }
 
 function ProfilePanel({ resident, onUpdated }) {
+  const defaultHouse = resident.House || houseOptions[0]?.house || ''
+  const [house, setHouse] = useState(defaultHouse)
   const [phone, setPhone] = useState(resident.Phone || '')
+  const [unitNumber, setUnitNumber] = useState(resident['Unit Number'] || getUnitsForHouse(defaultHouse)[0] || '')
   const [saving, setSaving] = useState(false)
   const [message, setMessage] = useState('')
+  const availableUnits = useMemo(() => getUnitsForHouse(house), [house])
 
   useEffect(() => {
+    const nextHouse = resident.House || houseOptions[0]?.house || ''
+    setHouse(nextHouse)
     setPhone(resident.Phone || '')
+    setUnitNumber(resident['Unit Number'] || getUnitsForHouse(nextHouse)[0] || '')
   }, [resident])
+
+  useEffect(() => {
+    if (!availableUnits.length) return
+    if (!availableUnits.includes(unitNumber)) {
+      setUnitNumber(availableUnits[0])
+    }
+  }, [availableUnits, unitNumber])
 
   async function handleSubmit(event) {
     event.preventDefault()
     setSaving(true)
     setMessage('')
     try {
-      const updated = await updateResident(resident.id, { Phone: phone })
+      const updated = await updateResident(resident.id, {
+        House: house,
+        'Unit Number': unitNumber,
+        Phone: phone,
+      })
       onUpdated(updated)
       setMessage('Profile updated.')
     } finally {
@@ -773,6 +886,10 @@ function ProfilePanel({ resident, onUpdated }) {
         <div className="rounded-2xl bg-slate-50 px-4 py-3">
           <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">Name</div>
           <div className="mt-1 text-sm font-semibold text-slate-700">{resident.Name || 'Not set'}</div>
+        </div>
+        <div className="rounded-2xl bg-slate-50 px-4 py-3">
+          <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">House</div>
+          <div className="mt-1 text-sm font-semibold text-slate-700">{resident.House || 'Not set'}</div>
         </div>
         <div className="rounded-2xl bg-slate-50 px-4 py-3">
           <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">Unit</div>
@@ -790,6 +907,26 @@ function ProfilePanel({ resident, onUpdated }) {
 
       <form onSubmit={handleSubmit} className="mt-5 max-w-md space-y-3">
         <div>
+          <label className="mb-2 block text-sm font-semibold text-slate-700">House</label>
+          <select
+            value={house}
+            onChange={(event) => setHouse(event.target.value)}
+            className="w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm outline-none transition focus:border-slate-900 focus:ring-2 focus:ring-slate-900/10"
+          >
+            {houseOptions.map((option) => <option key={option.house}>{option.house}</option>)}
+          </select>
+        </div>
+        <div>
+          <label className="mb-2 block text-sm font-semibold text-slate-700">Unit</label>
+          <select
+            value={unitNumber}
+            onChange={(event) => setUnitNumber(event.target.value)}
+            className="w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm outline-none transition focus:border-slate-900 focus:ring-2 focus:ring-slate-900/10"
+          >
+            {availableUnits.map((option) => <option key={option}>{option}</option>)}
+          </select>
+        </div>
+        <div>
           <label className="mb-2 block text-sm font-semibold text-slate-700">Phone Number</label>
           <input
             value={phone}
@@ -803,7 +940,7 @@ function ProfilePanel({ resident, onUpdated }) {
           disabled={saving}
           className="rounded-full bg-slate-900 px-6 py-3 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:opacity-50"
         >
-          {saving ? 'Saving...' : 'Save phone number'}
+          {saving ? 'Saving...' : 'Save profile'}
         </button>
       </form>
     </SectionCard>
