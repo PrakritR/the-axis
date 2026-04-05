@@ -270,21 +270,24 @@ function buildRoomPlanDisplay(property) {
   if (!Array.isArray(property.roomPlans)) return []
 
   if (property.slug !== '5259-brooklyn-ave-ne') {
-    return property.roomPlans.map((plan) => {
-      return {
-        ...plan,
-        rooms: plan.rooms.map((room) => ({
-          ...room,
-          floorTitle: plan.title,
-          videoPlaceholder: room.videoPlaceholder,
-          videoPlaceholderText: room.videoPlaceholderText,
-          bathroomVideo: getBathroomVideoMetaForRoom(room.name, plan.title, property.videos, property.slug)?.src,
-          bathroomVideoLabel: getBathroomVideoMetaForRoom(room.name, plan.title, property.videos, property.slug)?.label,
-          bathroomVideoPlaceholder: getBathroomVideoMetaForRoom(room.name, plan.title, property.videos, property.slug)?.placeholder,
-          bathroomVideoPlaceholderText: getBathroomVideoMetaForRoom(room.name, plan.title, property.videos, property.slug)?.placeholderText,
-        })),
-      }
-    })
+    return [...property.roomPlans]
+      .map((plan) => {
+        const sortedRooms = [...plan.rooms].sort(compareRoomNames)
+        return {
+          ...plan,
+          rooms: sortedRooms.map((room) => ({
+            ...room,
+            floorTitle: plan.title,
+            videoPlaceholder: room.videoPlaceholder,
+            videoPlaceholderText: room.videoPlaceholderText,
+            bathroomVideo: getBathroomVideoMetaForRoom(room.name, plan.title, property.videos, property.slug)?.src,
+            bathroomVideoLabel: getBathroomVideoMetaForRoom(room.name, plan.title, property.videos, property.slug)?.label,
+            bathroomVideoPlaceholder: getBathroomVideoMetaForRoom(room.name, plan.title, property.videos, property.slug)?.placeholder,
+            bathroomVideoPlaceholderText: getBathroomVideoMetaForRoom(room.name, plan.title, property.videos, property.slug)?.placeholderText,
+          })),
+        }
+      })
+      .sort((a, b) => compareRoomNames(a.rooms[0], b.rooms[0]))
   }
 
   const tierMeta = {

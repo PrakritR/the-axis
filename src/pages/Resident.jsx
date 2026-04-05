@@ -23,6 +23,21 @@ function normalizeUnitLabel(value) {
     .trim()
 }
 
+function extractRoomNumber(value) {
+  const match = String(value || '').match(/(\d+)/)
+  return match ? Number(match[1]) : Number.MAX_SAFE_INTEGER
+}
+
+function compareRoomLabels(a, b) {
+  const numberDiff = extractRoomNumber(a) - extractRoomNumber(b)
+  if (numberDiff !== 0) return numberDiff
+
+  return String(a || '').localeCompare(String(b || ''), undefined, {
+    numeric: true,
+    sensitivity: 'base',
+  })
+}
+
 const houseOptions = properties.map((property) => {
   const floorPlanUnits = (property.floorPlans || []).flatMap((plan) => plan.units || [])
   const roomPlanUnits = (property.roomPlans || [])
@@ -33,7 +48,7 @@ const houseOptions = properties.map((property) => {
     [...floorPlanUnits, ...roomPlanUnits]
       .filter(Boolean)
       .map(normalizeUnitLabel)
-  ))
+  )).sort(compareRoomLabels)
 
   return {
     house: property.name,
