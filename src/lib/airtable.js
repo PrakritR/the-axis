@@ -120,7 +120,6 @@ export async function createWorkOrder({
         Category: category,
         Priority: urgency,
         Status: 'Submitted',
-        'Date Submitted': new Date().toISOString(),
         'Preferred Date/Time': preferredEntry,
         'Resident Email': residentEmail,
         'Resident ID': residentId,
