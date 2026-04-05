@@ -71,7 +71,9 @@ function SetupRequired() {
 }
 
 function EmailLogin() {
+  const [mode, setMode] = useState('login')
   const [email, setEmail] = useState('')
+  const [password, setPassword] = useState('')
   const [loading, setLoading] = useState(false)
   const [message, setMessage] = useState('')
   const [error, setError] = useState('')
@@ -88,17 +90,37 @@ function EmailLogin() {
         throw new Error('That email is not listed in the Residents table yet. Ask Axis to add you first.')
       }
 
-      const redirectTo = `${window.location.origin}/resident`
-      const { error: signInError } = await supabase.auth.signInWithOtp({
+      if (mode === 'signup') {
+        const { error: signUpError } = await supabase.auth.signUp({
+          email,
+          password,
+        })
+
+        if (signUpError) throw signUpError
+
+        setMessage('Account created. You can now sign in with your email and password.')
+        setMode('login')
+        setPassword('')
+        return
+      }
+
+      if (mode === 'reset') {
+        const { error: resetError } = await supabase.auth.resetPasswordForEmail(email, {
+          redirectTo: `${window.location.origin}/resident`,
+        })
+
+        if (resetError) throw resetError
+
+        setMessage(`Password reset email sent to ${email}.`)
+        return
+      }
+
+      const { error: signInError } = await supabase.auth.signInWithPassword({
         email,
-        options: {
-          emailRedirectTo: redirectTo,
-        },
+        password,
       })
 
       if (signInError) throw signInError
-
-      setMessage(`Magic link sent to ${email}. Open that email on this device to finish signing in.`)
     } catch (err) {
       setError(err.message || 'Could not send magic link.')
     } finally {
@@ -117,8 +139,37 @@ function EmailLogin() {
           </div>
           <h1 className="mt-5 text-3xl font-black text-slate-900">Resident Portal</h1>
           <p className="mt-2 text-sm leading-7 text-slate-500">
-            Sign in with your resident email to view requests, updates, announcements, and your profile.
+            {mode === 'login'
+              ? 'Sign in with your resident email and password to view requests, updates, announcements, and your profile.'
+              : mode === 'signup'
+                ? 'Create your password-based resident account using the email already listed in Airtable.'
+                : 'Reset your password and we will email you a recovery link.'}
           </p>
+        </div>
+
+        <div className="mt-8 flex gap-1 rounded-2xl border border-slate-200 bg-slate-50 p-1">
+          {[
+            ['login', 'Sign in'],
+            ['signup', 'Create account'],
+            ['reset', 'Reset password'],
+          ].map(([id, label]) => (
+            <button
+              key={id}
+              type="button"
+              onClick={() => {
+                setMode(id)
+                setMessage('')
+                setError('')
+                setPassword('')
+              }}
+              className={classNames(
+                'flex-1 rounded-xl px-3 py-2.5 text-sm font-semibold transition',
+                mode === id ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-900'
+              )}
+            >
+              {label}
+            </button>
+          ))}
         </div>
 
         <form onSubmit={handleSubmit} className="mt-8 space-y-4">
@@ -133,6 +184,20 @@ function EmailLogin() {
               className="w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm outline-none transition focus:border-slate-900 focus:ring-2 focus:ring-slate-900/10"
             />
           </div>
+
+          {mode !== 'reset' ? (
+            <div>
+              <label className="mb-2 block text-sm font-semibold text-slate-700">Password</label>
+              <input
+                type="password"
+                required
+                value={password}
+                onChange={(event) => setPassword(event.target.value)}
+                placeholder={mode === 'signup' ? 'Create a password' : 'Enter your password'}
+                className="w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm outline-none transition focus:border-slate-900 focus:ring-2 focus:ring-slate-900/10"
+              />
+            </div>
+          ) : null}
 
           {message ? (
             <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
@@ -151,7 +216,13 @@ function EmailLogin() {
             disabled={loading}
             className="w-full rounded-full bg-slate-900 py-3 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:opacity-50"
           >
-            {loading ? 'Sending link...' : 'Email me a magic link'}
+            {loading
+              ? 'Please wait...'
+              : mode === 'login'
+                ? 'Sign in'
+                : mode === 'signup'
+                  ? 'Create account'
+                  : 'Send reset email'}
           </button>
         </form>
       </div>
