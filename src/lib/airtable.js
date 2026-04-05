@@ -58,6 +58,14 @@ function escapeFormulaValue(value) {
   return String(value).replace(/"/g, '\\"')
 }
 
+function titleCaseFromEmail(email) {
+  const local = String(email || '').split('@')[0]
+  return local
+    .replace(/[._-]+/g, ' ')
+    .trim()
+    .replace(/\b\w/g, (char) => char.toUpperCase()) || 'Resident'
+}
+
 export async function getResidentByEmail(email) {
   const formula = `{Email} = "${escapeFormulaValue(email)}"`
   const data = await request(buildUrl(TABLES.residents, {
@@ -69,6 +77,15 @@ export async function getResidentByEmail(email) {
   return resident ? mapRecord(resident) : null
 }
 
+export async function createResident(fields) {
+  const data = await request(tableUrl(TABLES.residents), {
+    method: 'POST',
+    body: JSON.stringify({ fields }),
+  })
+
+  return mapRecord(data)
+}
+
 export async function updateResident(recordId, fields) {
   const data = await request(`${tableUrl(TABLES.residents)}/${recordId}`, {
     method: 'PATCH',
@@ -76,6 +93,27 @@ export async function updateResident(recordId, fields) {
   })
 
   return mapRecord(data)
+}
+
+export async function syncResidentFromAuth({ user, resident = null }) {
+  const email = user?.email
+  if (!email) return null
+
+  const fields = {
+    Email: email,
+    'Supabase User ID': user.id,
+    Status: 'Active',
+  }
+
+  if (!resident?.Name) {
+    fields.Name = titleCaseFromEmail(email)
+  }
+
+  if (resident) {
+    return updateResident(resident.id, fields)
+  }
+
+  return createResident(fields)
 }
 
 export async function getAnnouncements() {
@@ -90,7 +128,8 @@ export async function getAnnouncements() {
 export async function getWorkOrdersForResident(resident) {
   const residentEmail = resident.Email || resident.email
   const residentId = resident.id
-  const formula = `OR({Resident Email} = "${escapeFormulaValue(residentEmail)}", {Resident ID} = "${escapeFormulaValue(residentId)}")`
+  const supabaseUserId = resident['Supabase User ID'] || ''
+  const formula = `OR(FIND("${escapeFormulaValue(residentId)}", ARRAYJOIN({Resident})) > 0, {Resident Email} = "${escapeFormulaValue(residentEmail)}", {Resident ID} = "${escapeFormulaValue(residentId)}", {Supabase User ID} = "${escapeFormulaValue(supabaseUserId)}")`
   const data = await request(buildUrl(TABLES.workOrders, {
     filterByFormula: formula,
   }))
@@ -110,6 +149,7 @@ export async function createWorkOrder({
 }) {
   const residentEmail = resident.Email || resident.email
   const residentId = resident.id
+  const supabaseUserId = resident['Supabase User ID'] || ''
 
   const data = await request(tableUrl(TABLES.workOrders), {
     method: 'POST',
@@ -120,9 +160,12 @@ export async function createWorkOrder({
         Category: category,
         Priority: urgency,
         Status: 'Submitted',
+        'Preferred Entry Time': preferredEntry,
         'Preferred Date/Time': preferredEntry,
+        Resident: [residentId],
         'Resident Email': residentEmail,
         'Resident ID': residentId,
+        'Supabase User ID': supabaseUserId,
       },
     }),
   })

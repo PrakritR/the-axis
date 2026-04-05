@@ -7,6 +7,7 @@ import {
   getResidentByEmail,
   getWorkOrdersForResident,
   sendMessage,
+  syncResidentFromAuth,
   updateResident,
 } from '../lib/airtable'
 import { supabase, supabaseReady } from '../lib/supabase'
@@ -89,18 +90,22 @@ function EmailLogin({ initialError = '' }) {
     setError('')
 
     try {
-      const resident = await getResidentByEmail(email)
-      if (!resident) {
-        throw new Error('That email is not listed in the Residents table yet. Ask Axis to add you first.')
-      }
-
       if (mode === 'signup') {
-        const { error: signUpError } = await supabase.auth.signUp({
+        const { data, error: signUpError } = await supabase.auth.signUp({
           email,
           password,
         })
 
         if (signUpError) throw signUpError
+
+        const existingResident = await getResidentByEmail(email)
+        await syncResidentFromAuth({
+          user: {
+            id: data?.user?.id || existingResident?.['Supabase User ID'] || `pending-${email}`,
+            email,
+          },
+          resident: existingResident,
+        })
 
         setMessage('Account created. You can now sign in with your email and password.')
         setMode('login')
@@ -347,8 +352,8 @@ function NotAuthorized({ email, onSignOut }) {
       <div className="w-full max-w-lg rounded-[28px] border border-slate-200 bg-white p-8 text-center shadow-soft">
         <h1 className="text-2xl font-black text-slate-900">Access Not Available</h1>
         <p className="mt-3 text-sm leading-7 text-slate-500">
-          <span className="font-semibold text-slate-700">{email}</span> is not listed in the Residents table yet.
-          Add this email to Airtable before signing in again.
+          We authenticated <span className="font-semibold text-slate-700">{email}</span>, but the resident profile could not be completed yet.
+          Try signing in again, or contact Axis if this email should already be active.
         </p>
         <button
           type="button"
@@ -874,7 +879,11 @@ export default function Resident() {
       setSession(nextSession)
 
       try {
-        const matchedResident = await getResidentByEmail(nextSession.user.email)
+        const existingResident = await getResidentByEmail(nextSession.user.email)
+        const matchedResident = await syncResidentFromAuth({
+          user: nextSession.user,
+          resident: existingResident,
+        })
         if (!mounted) return
         setResident(matchedResident)
       } finally {
