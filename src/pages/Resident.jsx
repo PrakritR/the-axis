@@ -18,7 +18,9 @@ const urgencyOptions = ['Routine', 'Urgent', 'Emergency']
 const entryOptions = ['Morning', 'Afternoon', 'Evening']
 
 function normalizeUnitLabel(value) {
-  return String(value || '').replace(/^Room\s+/i, 'Unit ').trim()
+  return String(value || '')
+    .replace(/^Unit\s+/i, 'Room ')
+    .trim()
 }
 
 const houseOptions = properties.map((property) => {
@@ -27,7 +29,11 @@ const houseOptions = properties.map((property) => {
     .flatMap((plan) => plan.rooms || [])
     .map((room) => normalizeUnitLabel(room.name))
 
-  const units = Array.from(new Set([...floorPlanUnits, ...roomPlanUnits].filter(Boolean)))
+  const units = Array.from(new Set(
+    [...floorPlanUnits, ...roomPlanUnits]
+      .filter(Boolean)
+      .map(normalizeUnitLabel)
+  ))
 
   return {
     house: property.name,
