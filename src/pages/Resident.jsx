@@ -75,6 +75,9 @@ function EmailLogin({ initialError = '' }) {
   const [mode, setMode] = useState('login')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
+  const [fullName, setFullName] = useState('')
+  const [unitNumber, setUnitNumber] = useState('')
+  const [phone, setPhone] = useState('')
   const [loading, setLoading] = useState(false)
   const [message, setMessage] = useState('')
   const [error, setError] = useState(initialError)
@@ -105,11 +108,19 @@ function EmailLogin({ initialError = '' }) {
             email,
           },
           resident: existingResident,
+          profile: {
+            name: fullName,
+            unitNumber,
+            phone,
+          },
         })
 
         setMessage('Account created. You can now sign in with your email and password.')
         setMode('login')
         setPassword('')
+        setFullName('')
+        setUnitNumber('')
+        setPhone('')
         return
       }
 
@@ -151,9 +162,14 @@ function EmailLogin({ initialError = '' }) {
             {mode === 'login'
               ? 'Sign in with your resident email and password to view requests, updates, announcements, and your profile.'
               : mode === 'signup'
-                ? 'Create your password-based resident account using the email already listed in Airtable.'
+                ? 'Create your resident account and we will create or update your Airtable resident profile automatically.'
                 : 'Reset your password and we will email you a recovery link.'}
           </p>
+          {mode === 'signup' ? (
+            <p className="mt-2 text-xs leading-6 text-slate-400">
+              Your password is stored securely in Supabase Auth. Airtable stores only resident profile data and request history.
+            </p>
+          ) : null}
         </div>
 
         <div className="mt-8 flex gap-1 rounded-2xl border border-slate-200 bg-slate-50 p-1">
@@ -170,6 +186,11 @@ function EmailLogin({ initialError = '' }) {
                 setMessage('')
                 setError('')
                 setPassword('')
+                if (id !== 'signup') {
+                  setFullName('')
+                  setUnitNumber('')
+                  setPhone('')
+                }
               }}
               className={classNames(
                 'flex-1 rounded-xl px-3 py-2.5 text-sm font-semibold transition',
@@ -193,6 +214,45 @@ function EmailLogin({ initialError = '' }) {
               className="w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm outline-none transition focus:border-slate-900 focus:ring-2 focus:ring-slate-900/10"
             />
           </div>
+
+          {mode === 'signup' ? (
+            <>
+              <div>
+                <label className="mb-2 block text-sm font-semibold text-slate-700">Full Name</label>
+                <input
+                  type="text"
+                  required
+                  value={fullName}
+                  onChange={(event) => setFullName(event.target.value)}
+                  placeholder="Your full name"
+                  className="w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm outline-none transition focus:border-slate-900 focus:ring-2 focus:ring-slate-900/10"
+                />
+              </div>
+
+              <div>
+                <label className="mb-2 block text-sm font-semibold text-slate-700">Unit Number</label>
+                <input
+                  type="text"
+                  required
+                  value={unitNumber}
+                  onChange={(event) => setUnitNumber(event.target.value)}
+                  placeholder="101"
+                  className="w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm outline-none transition focus:border-slate-900 focus:ring-2 focus:ring-slate-900/10"
+                />
+              </div>
+
+              <div>
+                <label className="mb-2 block text-sm font-semibold text-slate-700">Phone</label>
+                <input
+                  type="tel"
+                  value={phone}
+                  onChange={(event) => setPhone(event.target.value)}
+                  placeholder="(555) 555-5555"
+                  className="w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm outline-none transition focus:border-slate-900 focus:ring-2 focus:ring-slate-900/10"
+                />
+              </div>
+            </>
+          ) : null}
 
           {mode !== 'reset' ? (
             <div>

@@ -95,7 +95,7 @@ export async function updateResident(recordId, fields) {
   return mapRecord(data)
 }
 
-export async function syncResidentFromAuth({ user, resident = null }) {
+export async function syncResidentFromAuth({ user, resident = null, profile = {} }) {
   const email = user?.email
   if (!email) return null
 
@@ -105,9 +105,10 @@ export async function syncResidentFromAuth({ user, resident = null }) {
     Status: 'Active',
   }
 
-  if (!resident?.Name) {
-    fields.Name = titleCaseFromEmail(email)
-  }
+  fields.Name = profile.name || resident?.Name || titleCaseFromEmail(email)
+
+  if (profile.unitNumber) fields['Unit Number'] = profile.unitNumber
+  if (profile.phone) fields.Phone = profile.phone
 
   if (resident) {
     return updateResident(resident.id, fields)
