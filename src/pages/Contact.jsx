@@ -4,7 +4,10 @@ import { Seo } from '../lib/seo'
 const CONTACT_PHONE_DISPLAY = '(510) 309-8345'
 const CONTACT_PHONE_RAW = '15103098345'
 const CONTACT_EMAIL = 'info@axis-seattle-housing.com'
-const CALENDLY_URL = 'https://calendly.com/ramachandranprakrit/30min'
+
+// Calendly event URLs — create a second event type in Calendly for "Discussion"
+const CALENDLY_TOUR_URL = 'https://calendly.com/ramachandranprakrit/30min'
+const CALENDLY_MEETING_URL = 'https://calendly.com/ramachandranprakrit/30min' // replace with your "discussion" event URL
 
 const CONTACT_TOPICS = [
   'Schedule a tour',
@@ -24,58 +27,37 @@ const PROPERTIES = [
   { id: '5259',  name: '5259 Brooklyn Ave NE', address: '5259 Brooklyn Ave NE, Seattle, WA', rooms: ['Room 1','Room 2','Room 3','Room 4','Room 5','Room 6','Room 7','Room 8','Room 9'] },
 ]
 
-function CalendlyEmbed({ property, room, tourType }) {
+function CalendlyEmbed({ url }) {
   const containerRef = useRef(null)
 
-  // Build URL with tour details passed as custom question prefills
-  const params = new URLSearchParams({
-    hide_gdpr_banner: '1',
-    primary_color: '0f172a',
-    a1: property,   // custom question 1: Property
-    a2: room,       // custom question 2: Room
-    a3: tourType === 'in-person' ? 'In-Person' : 'Virtual', // custom question 3: Format
-  })
-  const embedUrl = `${CALENDLY_URL}?${params.toString()}`
-
   useEffect(() => {
-    // Load Calendly widget script if not already loaded
     if (!document.querySelector('script[src*="calendly.com/assets/external/widget.js"]')) {
       const script = document.createElement('script')
       script.src = 'https://assets.calendly.com/assets/external/widget.js'
       script.async = true
       document.head.appendChild(script)
     }
-    // Re-init widget after script loads / on URL change
     const init = () => {
       if (window.Calendly && containerRef.current) {
+        containerRef.current.innerHTML = ''
         window.Calendly.initInlineWidget({
-          url: embedUrl,
+          url,
           parentElement: containerRef.current,
-          prefill: {},
-          utm: {},
         })
       }
     }
-    const existing = document.querySelector('script[src*="calendly.com/assets/external/widget.js"]')
-    if (window.Calendly) {
-      init()
-    } else {
-      existing?.addEventListener('load', init)
-      return () => existing?.removeEventListener('load', init)
-    }
-  }, [embedUrl])
+    const script = document.querySelector('script[src*="calendly.com/assets/external/widget.js"]')
+    if (window.Calendly) { init() }
+    else { script?.addEventListener('load', init); return () => script?.removeEventListener('load', init) }
+  }, [url])
 
   return (
-    <div
-      ref={containerRef}
-      className="calendly-inline-widget"
-      data-url={embedUrl}
-      style={{ minWidth: '320px', height: '700px' }}
-    />
+    <div ref={containerRef} className="calendly-inline-widget" data-url={url} style={{ minWidth: '320px', height: '700px' }} />
   )
 }
 
-function TourScheduler() {
+function BookingScheduler() {
+  const [bookingType, setBookingType] = useState(null) // 'tour' | 'meeting'
   const [step, setStep] = useState(1)
   const [property, setProperty] = useState(null)
   const [room, setRoom] = useState('')
@@ -83,67 +65,135 @@ function TourScheduler() {
 
   const selectedProperty = PROPERTIES.find(p => p.id === property)
 
+  function reset() { setBookingType(null); setStep(1); setProperty(null); setRoom(''); setTourType('in-person') }
+
+  // Build Calendly URL with prefill params
+  function getCalendlyUrl() {
+    if (bookingType === 'meeting') {
+      return `${CALENDLY_MEETING_URL}?hide_gdpr_banner=1&primary_color=0f172a&a1=General+Discussion`
+    }
+    const params = new URLSearchParams({
+      hide_gdpr_banner: '1',
+      primary_color: '0f172a',
+      a1: selectedProperty?.name || '',
+      a2: room,
+      a3: tourType === 'in-person' ? 'In-Person' : 'Virtual',
+    })
+    return `${CALENDLY_TOUR_URL}?${params.toString()}`
+  }
+
+  // Step 0: Choose booking type
+  if (!bookingType) {
+    return (
+      <div>
+        <div className="mb-6 border-b border-slate-100 pb-6">
+          <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-axis">Book time with leasing</div>
+          <h2 className="mt-2 text-3xl font-black tracking-tight text-slate-900">What do you need?</h2>
+          <p className="mt-3 text-sm leading-7 text-slate-600">Choose a session type to get started.</p>
+        </div>
+        <div className="grid gap-4 sm:grid-cols-2">
+          <button
+            onClick={() => setBookingType('tour')}
+            className="group flex flex-col gap-4 rounded-2xl border border-slate-200 bg-white p-6 text-left transition-all hover:border-slate-900 hover:shadow-sm"
+          >
+            <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-slate-100 transition-colors group-hover:bg-slate-900">
+              <svg className="h-5 w-5 text-slate-600 transition-colors group-hover:text-white" fill="none" stroke="currentColor" strokeWidth={1.8} viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 12l8.954-8.955c.44-.439 1.152-.439 1.591 0L21.75 12M4.5 9.75v10.125c0 .621.504 1.125 1.125 1.125H9.75v-4.875c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125V21h4.125c.621 0 1.125-.504 1.125-1.125V9.75M8.25 21h8.25" />
+              </svg>
+            </div>
+            <div>
+              <div className="font-bold text-slate-900">Tour a Property</div>
+              <p className="mt-1 text-sm leading-6 text-slate-500">Walk through a specific room at one of our properties. In-person or virtual.</p>
+            </div>
+            <div className="mt-auto flex items-center gap-1.5 text-xs font-semibold text-axis">
+              Schedule tour
+              <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7"/></svg>
+            </div>
+          </button>
+
+          <button
+            onClick={() => { setBookingType('meeting'); setStep(3) }}
+            className="group flex flex-col gap-4 rounded-2xl border border-slate-200 bg-white p-6 text-left transition-all hover:border-slate-900 hover:shadow-sm"
+          >
+            <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-slate-100 transition-colors group-hover:bg-slate-900">
+              <svg className="h-5 w-5 text-slate-600 transition-colors group-hover:text-white" fill="none" stroke="currentColor" strokeWidth={1.8} viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M20.25 8.511c.884.284 1.5 1.128 1.5 2.097v4.286c0 1.136-.847 2.1-1.98 2.193-.34.027-.68.052-1.02.072v3.091l-3-3c-1.354 0-2.694-.055-4.02-.163a2.115 2.115 0 01-.825-.242m9.345-8.334a2.126 2.126 0 00-.476-.095 48.64 48.64 0 00-8.048 0c-1.131.094-1.976 1.057-1.976 2.192v4.286c0 .837.46 1.58 1.155 1.951m9.345-8.334V6.637c0-1.621-1.152-3.026-2.76-3.235A48.455 48.455 0 0011.25 3c-2.115 0-4.198.137-6.24.402-1.608.209-2.76 1.614-2.76 3.235v6.226c0 1.621 1.152 3.026 2.76 3.235.577.075 1.157.14 1.74.194V21l4.155-4.155" />
+              </svg>
+            </div>
+            <div>
+              <div className="font-bold text-slate-900">Discuss with Leasing</div>
+              <p className="mt-1 text-sm leading-6 text-slate-500">Talk through options, pricing, lease terms, or anything else before deciding.</p>
+            </div>
+            <div className="mt-auto flex items-center gap-1.5 text-xs font-semibold text-axis">
+              Book a meeting
+              <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7"/></svg>
+            </div>
+          </button>
+        </div>
+      </div>
+    )
+  }
+
+  // Tour flow — step indicator
+  const tourSteps = [['1','Property'],['2','Room & Type'],['3','Pick a Time']]
+
   return (
     <div>
-      <div className="mb-6 flex flex-col gap-4 border-b border-slate-100 pb-6 sm:flex-row sm:items-end sm:justify-between">
-        <div>
-          <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-axis">Book a tour</div>
-          <h2 className="mt-2 text-3xl font-black tracking-tight text-slate-900">Pick a time that works</h2>
-          <p className="mt-3 max-w-2xl text-sm leading-7 text-slate-600">
-            Select your property and room, then choose a time.
-          </p>
-        </div>
-        <div className="shrink-0 rounded-2xl border border-teal-100 bg-teal-50 px-4 py-3 text-sm text-teal-900">
-          In-person &amp; virtual available.
+      <div className="mb-6 border-b border-slate-100 pb-5">
+        <div className="flex items-center justify-between">
+          <div>
+            <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-axis">
+              {bookingType === 'tour' ? 'Tour a property' : 'Discuss with leasing'}
+            </div>
+            <h2 className="mt-1.5 text-3xl font-black tracking-tight text-slate-900">
+              {bookingType === 'meeting' ? 'Book a discussion' : step < 3 ? 'Select your room' : 'Pick a time'}
+            </h2>
+          </div>
+          <button onClick={reset} className="text-xs font-semibold text-slate-400 hover:text-slate-700">← Back</button>
         </div>
       </div>
 
-      {/* Step indicator */}
-      <div className="mb-8 flex items-center gap-2">
-        {[['1','Property'],['2','Room & Type'],['3','Pick a Time']].map(([s, label], idx) => (
-          <div key={s} className="flex items-center gap-1.5">
-            <div className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[11px] font-bold transition-colors ${
-              step > idx + 1 ? 'bg-teal-500 text-white' : step === idx + 1 ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-400'
-            }`}>
-              {step > idx + 1
-                ? <svg className="h-3 w-3" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5"/></svg>
-                : s}
+      {/* Step indicator for tours */}
+      {bookingType === 'tour' && (
+        <div className="mb-8 flex items-center gap-2">
+          {tourSteps.map(([s, label], idx) => (
+            <div key={s} className="flex items-center gap-1.5">
+              <div className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[11px] font-bold transition-colors ${
+                step > idx + 1 ? 'bg-teal-500 text-white' : step === idx + 1 ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-400'
+              }`}>
+                {step > idx + 1
+                  ? <svg className="h-3 w-3" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5"/></svg>
+                  : s}
+              </div>
+              <span className={`hidden text-xs font-medium sm:block ${step >= idx + 1 ? 'text-slate-700' : 'text-slate-400'}`}>{label}</span>
+              {idx < 2 && <div className={`h-px w-4 shrink-0 sm:w-6 ${step > idx + 1 ? 'bg-teal-400' : 'bg-slate-200'}`} />}
             </div>
-            <span className={`hidden text-xs font-medium sm:block ${step >= idx + 1 ? 'text-slate-700' : 'text-slate-400'}`}>{label}</span>
-            {idx < 2 && <div className={`h-px w-4 shrink-0 sm:w-6 ${step > idx + 1 ? 'bg-teal-400' : 'bg-slate-200'}`} />}
-          </div>
-        ))}
-      </div>
+          ))}
+        </div>
+      )}
 
       {/* Step 1: Property */}
-      {step === 1 && (
+      {bookingType === 'tour' && step === 1 && (
         <div className="space-y-3">
-          <div className="mb-4 text-sm font-semibold text-slate-700">Which property would you like to tour?</div>
+          <div className="mb-4 text-sm font-semibold text-slate-700">Which property?</div>
           {PROPERTIES.map((p) => (
-            <button
-              key={p.id}
-              onClick={() => { setProperty(p.id); setRoom(''); setStep(2) }}
-              className="group flex w-full items-center justify-between rounded-2xl border border-slate-200 bg-white px-5 py-4 text-left transition-all hover:border-slate-900 hover:shadow-sm"
-            >
+            <button key={p.id} onClick={() => { setProperty(p.id); setRoom(''); setStep(2) }}
+              className="group flex w-full items-center justify-between rounded-2xl border border-slate-200 bg-white px-5 py-4 text-left transition-all hover:border-slate-900 hover:shadow-sm">
               <div>
                 <div className="font-semibold text-slate-900">{p.name}</div>
                 <div className="mt-0.5 text-xs text-slate-500">{p.address}</div>
               </div>
-              <svg className="h-4 w-4 text-slate-400 transition-colors group-hover:text-slate-900" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
-              </svg>
+              <svg className="h-4 w-4 text-slate-400 group-hover:text-slate-900" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7"/></svg>
             </button>
           ))}
         </div>
       )}
 
-      {/* Step 2: Room + Tour type */}
-      {step === 2 && selectedProperty && (
+      {/* Step 2: Room + format */}
+      {bookingType === 'tour' && step === 2 && selectedProperty && (
         <div className="space-y-6">
           <div>
-            <div className="mb-3 text-sm font-semibold text-slate-700">
-              Which room? <span className="font-normal text-slate-400">({selectedProperty.name})</span>
-            </div>
+            <div className="mb-3 text-sm font-semibold text-slate-700">Which room? <span className="font-normal text-slate-400">({selectedProperty.name})</span></div>
             <div className="grid grid-cols-4 gap-2 sm:grid-cols-5">
               {selectedProperty.rooms.map((r) => (
                 <button key={r} onClick={() => setRoom(r)}
@@ -157,14 +207,10 @@ function TourScheduler() {
               </button>
             </div>
           </div>
-
           <div>
             <div className="mb-3 text-sm font-semibold text-slate-700">Tour format</div>
             <div className="flex gap-3">
-              {[
-                ['in-person','In-Person','M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0zM15 11a3 3 0 11-6 0 3 3 0 016 0z'],
-                ['virtual','Virtual','M15 10l4.553-2.069A1 1 0 0121 8.867v6.266a1 1 0 01-1.447.902L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z']
-              ].map(([val, label, path]) => (
+              {[['in-person','In-Person','M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0zM15 11a3 3 0 11-6 0 3 3 0 016 0z'],['virtual','Virtual','M15 10l4.553-2.069A1 1 0 0121 8.867v6.266a1 1 0 01-1.447.902L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z']].map(([val, label, path]) => (
                 <button key={val} onClick={() => setTourType(val)}
                   className={`flex flex-1 items-center justify-center gap-2 rounded-xl border px-4 py-3 text-sm font-semibold transition-all ${tourType === val ? 'border-slate-900 bg-slate-900 text-white' : 'border-slate-200 bg-white text-slate-700 hover:border-slate-400'}`}>
                   <svg className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d={path}/></svg>
@@ -173,9 +219,8 @@ function TourScheduler() {
               ))}
             </div>
           </div>
-
           <div className="flex gap-3 pt-2">
-            <button onClick={() => { setStep(1); setProperty(null); setRoom('') }} className="rounded-full border border-slate-200 px-5 py-2.5 text-sm font-semibold text-slate-600 hover:border-slate-400">Back</button>
+            <button onClick={() => setStep(1)} className="rounded-full border border-slate-200 px-5 py-2.5 text-sm font-semibold text-slate-600 hover:border-slate-400">Back</button>
             <button onClick={() => setStep(3)} disabled={!room}
               className="rounded-full bg-slate-900 px-6 py-2.5 text-sm font-semibold text-white hover:bg-slate-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors">
               Choose a Time
@@ -184,36 +229,119 @@ function TourScheduler() {
         </div>
       )}
 
-      {/* Step 3: Calendly inline */}
-      {step === 3 && selectedProperty && (
+      {/* Step 3: Calendly */}
+      {step === 3 && (
         <div>
-          <div className="mb-4 flex items-center justify-between">
-            <div className="flex items-center gap-3 rounded-2xl border border-slate-100 bg-slate-50 px-4 py-2.5 text-sm">
-              <span className="font-semibold text-slate-900">{selectedProperty.name}</span>
-              <span className="text-slate-300">·</span>
-              <span className="text-slate-600">{room}</span>
-              <span className="text-slate-300">·</span>
-              <span className="text-slate-600">{tourType === 'in-person' ? 'In-Person' : 'Virtual'}</span>
+          {bookingType === 'tour' && selectedProperty && (
+            <div className="mb-4 flex items-center justify-between">
+              <div className="flex flex-wrap items-center gap-2 rounded-2xl border border-slate-100 bg-slate-50 px-4 py-2.5 text-sm">
+                <span className="font-semibold text-slate-900">{selectedProperty.name}</span>
+                <span className="text-slate-300">·</span>
+                <span className="text-slate-600">{room}</span>
+                <span className="text-slate-300">·</span>
+                <span className="text-slate-600">{tourType === 'in-person' ? 'In-Person' : 'Virtual'}</span>
+              </div>
+              <button onClick={() => setStep(2)} className="ml-2 shrink-0 text-xs font-semibold text-slate-400 hover:text-slate-700">Edit</button>
             </div>
-            <button onClick={() => setStep(2)} className="text-xs font-semibold text-slate-400 hover:text-slate-700">
-              Edit
-            </button>
-          </div>
-          <CalendlyEmbed
-            property={selectedProperty.name}
-            room={room}
-            tourType={tourType}
-          />
+          )}
+          <CalendlyEmbed url={getCalendlyUrl()} />
         </div>
       )}
     </div>
   )
 }
 
-export default function Contact() {
-  const [activeTab, setActiveTab] = useState('tour')
+function QuestionForm() {
+  const [name, setName] = useState('')
+  const [email, setEmail] = useState('')
+  const [question, setQuestion] = useState('')
+  const [submitted, setSubmitted] = useState(false)
+  const [sending, setSending] = useState(false)
 
-  useEffect(() => {}, [])
+  function handleSubmit(e) {
+    e.preventDefault()
+    setSending(true)
+    const subject = encodeURIComponent(`Question from ${name} — Axis Seattle`)
+    const body = encodeURIComponent(`From: ${name}\nEmail: ${email}\n\nQuestion:\n${question}`)
+    window.location.href = `mailto:${CONTACT_EMAIL}?subject=${subject}&body=${body}`
+    setTimeout(() => { setSending(false); setSubmitted(true) }, 800)
+  }
+
+  if (submitted) {
+    return (
+      <div className="flex flex-col items-center justify-center gap-5 py-14 text-center">
+        <div className="flex h-14 w-14 items-center justify-center rounded-full bg-teal-50">
+          <svg className="h-7 w-7 text-teal-600" fill="none" stroke="currentColor" strokeWidth={1.5} viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
+          </svg>
+        </div>
+        <div>
+          <div className="text-xl font-black text-slate-900">Question sent!</div>
+          <p className="mt-2 max-w-sm text-sm leading-6 text-slate-500">
+            We'll reply directly to <span className="font-semibold text-slate-700">{email}</span> as soon as possible.
+          </p>
+        </div>
+        <button onClick={() => { setName(''); setEmail(''); setQuestion(''); setSubmitted(false) }}
+          className="rounded-full border border-slate-200 px-5 py-2.5 text-sm font-semibold text-slate-700 hover:border-slate-400">
+          Ask another question
+        </button>
+      </div>
+    )
+  }
+
+  return (
+    <div>
+      <div className="mb-6 border-b border-slate-100 pb-6">
+        <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-axis">Ask a question</div>
+        <h2 className="mt-2 text-3xl font-black tracking-tight text-slate-900">We'll respond directly</h2>
+        <p className="mt-3 text-sm leading-7 text-slate-600">
+          Send us any question — availability, pricing, lease terms — and we'll reply to your email.
+        </p>
+      </div>
+
+      <form onSubmit={handleSubmit} className="space-y-4">
+        <div className="grid gap-4 sm:grid-cols-2">
+          <div>
+            <label className="mb-1.5 block text-sm font-semibold text-slate-700">Your name <span className="text-red-400">*</span></label>
+            <input required value={name} onChange={e => setName(e.target.value)} placeholder="Jane Smith"
+              className="w-full rounded-xl border border-slate-200 px-4 py-2.5 text-sm outline-none placeholder:text-slate-300 focus:border-slate-900 focus:ring-2 focus:ring-slate-900/8 transition-colors" />
+          </div>
+          <div>
+            <label className="mb-1.5 block text-sm font-semibold text-slate-700">Email <span className="text-red-400">*</span></label>
+            <input required type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="you@email.com"
+              className="w-full rounded-xl border border-slate-200 px-4 py-2.5 text-sm outline-none placeholder:text-slate-300 focus:border-slate-900 focus:ring-2 focus:ring-slate-900/8 transition-colors" />
+          </div>
+        </div>
+        <div>
+          <label className="mb-1.5 block text-sm font-semibold text-slate-700">Your question <span className="text-red-400">*</span></label>
+          <textarea required value={question} onChange={e => setQuestion(e.target.value)} rows={5}
+            placeholder="e.g. Is Room 3 at 4709A available in September? What's the move-in process?"
+            className="w-full resize-none rounded-xl border border-slate-200 px-4 py-3 text-sm leading-6 outline-none placeholder:text-slate-300 focus:border-slate-900 focus:ring-2 focus:ring-slate-900/8 transition-colors" />
+        </div>
+
+        <div className="flex items-center justify-between pt-1">
+          <p className="text-xs text-slate-400">We reply to every question, usually within a few hours.</p>
+          <button type="submit" disabled={sending || !name || !email || !question}
+            className="inline-flex items-center gap-2 rounded-full bg-slate-900 px-6 py-2.5 text-sm font-semibold text-white hover:bg-slate-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors">
+            {sending
+              ? <><svg className="h-4 w-4 animate-spin" viewBox="0 0 24 24" fill="none"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/></svg> Sending…</>
+              : <><svg className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M6 12L3.269 3.126A59.768 59.768 0 0121.485 12 59.77 59.77 0 013.27 20.876L5.999 12zm0 0h7.5"/></svg> Send Question</>
+            }
+          </button>
+        </div>
+      </form>
+    </div>
+  )
+}
+
+export default function Contact() {
+  const [activeTab, setActiveTab] = useState('schedule')
+
+  const tabs = [
+    { id: 'schedule', label: 'Schedule', icon: 'M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z' },
+    { id: 'question', label: 'Ask a Question', icon: 'M8.625 12a.375.375 0 11-.75 0 .375.375 0 01.75 0zm0 0H8.25m4.125 0a.375.375 0 11-.75 0 .375.375 0 01.75 0zm0 0H12m4.125 0a.375.375 0 11-.75 0 .375.375 0 01.75 0zm0 0h-.375M21 12c0 4.556-4.03 8.25-9 8.25a9.764 9.764 0 01-2.555-.337A5.972 5.972 0 015.41 20.97a5.969 5.969 0 01-.474-.065 4.48 4.48 0 00.978-2.025c.09-.457-.133-.901-.467-1.226C3.93 16.178 3 14.189 3 12c0-4.556 4.03-8.25 9-8.25s9 3.694 9 8.25z' },
+    { id: 'message', label: 'Send a Message', icon: 'M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z' },
+  ]
 
   return (
     <div className="bg-[linear-gradient(180deg,#fcfcfa_0%,#ffffff_32%,#f8fafc_100%)]">
@@ -265,6 +393,7 @@ export default function Contact() {
         </section>
 
         <div className="mt-10 grid gap-8 lg:grid-cols-[0.82fr_1.18fr]">
+          {/* Left sidebar */}
           <div className="space-y-5">
             <div className="rounded-[24px] border border-slate-200 bg-stone-50 p-6">
               <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-500">Best uses</div>
@@ -290,31 +419,30 @@ export default function Contact() {
             </div>
           </div>
 
+          {/* Right panel */}
           <div className="rounded-[28px] border border-slate-200 bg-white p-6 shadow-soft sm:p-8">
+            {/* 3-tab switcher */}
             <div className="mb-8 flex gap-1 rounded-2xl border border-slate-100 bg-slate-50 p-1">
-              <button onClick={() => setActiveTab('tour')}
-                className={`flex flex-1 items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold transition-all ${activeTab === 'tour' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>
-                <svg className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
-                Schedule a Tour
-              </button>
-              <button onClick={() => setActiveTab('message')}
-                className={`flex flex-1 items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold transition-all ${activeTab === 'message' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>
-                <svg className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/></svg>
-                Send a Message
-              </button>
+              {tabs.map(({ id, label, icon }) => (
+                <button key={id} onClick={() => setActiveTab(id)}
+                  className={`flex flex-1 items-center justify-center gap-1.5 rounded-xl px-2 py-2.5 text-xs font-semibold transition-all sm:text-sm ${activeTab === id ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>
+                  <svg className="h-3.5 w-3.5 shrink-0" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" d={icon} />
+                  </svg>
+                  <span className="hidden sm:block">{label}</span>
+                  <span className="sm:hidden">{label.split(' ')[0]}</span>
+                </button>
+              ))}
             </div>
 
-            {activeTab === 'tour' ? (
-              <TourScheduler />
-            ) : (
+            {activeTab === 'schedule' && <BookingScheduler />}
+            {activeTab === 'question' && <QuestionForm />}
+            {activeTab === 'message' && (
               <div>
-                <div className="mb-6 flex flex-col gap-4 border-b border-slate-100 pb-6 sm:flex-row sm:items-end sm:justify-between">
-                  <div>
-                    <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-axis">Send a message</div>
-                    <h2 className="mt-2 text-3xl font-black tracking-tight text-slate-900">Tell us what you need</h2>
-                    <p className="mt-3 max-w-2xl text-sm leading-7 text-slate-600">Tell us what you need and we'll follow up.</p>
-                  </div>
-                  <div className="rounded-2xl border border-teal-100 bg-teal-50 px-4 py-3 text-sm text-teal-900">Best for availability questions.</div>
+                <div className="mb-6 border-b border-slate-100 pb-6">
+                  <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-axis">Send a message</div>
+                  <h2 className="mt-2 text-3xl font-black tracking-tight text-slate-900">Tell us what you need</h2>
+                  <p className="mt-3 text-sm leading-7 text-slate-600">Tell us what you need and we'll follow up.</p>
                 </div>
                 <iframe
                   className="airtable-embed"
