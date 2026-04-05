@@ -1,5 +1,6 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useCallback } from 'react'
 import { supabase, supabaseReady } from '../lib/supabase'
+import { createWorkOrder, getWorkOrders, getMessages, sendMessage } from '../lib/airtable'
 
 const CATEGORIES = [
   { id: 'maintenance', label: 'Maintenance / Repair', icon: '🔧' },
@@ -127,18 +128,21 @@ function NewRequestForm({ user, onSubmitted }) {
   async function handleSubmit(e) {
     e.preventDefault()
     setError(''); setLoading(true)
-    const { error } = await supabase.from('work_orders').insert({
-      resident_id: user.id,
-      resident_email: user.email,
-      category,
-      title,
-      description,
-      priority,
-      status: 'open',
-    })
-    setLoading(false)
-    if (error) { setError(error.message); return }
-    onSubmitted()
+    try {
+      await createWorkOrder({
+        residentId: user.id,
+        residentEmail: user.email,
+        category,
+        title,
+        description,
+        priority,
+      })
+      onSubmitted()
+    } catch (err) {
+      setError(err.message)
+    } finally {
+      setLoading(false)
+    }
   }
 
   return (
@@ -202,30 +206,29 @@ function RequestThread({ request, user, onBack }) {
   const [newMsg, setNewMsg] = useState('')
   const [sending, setSending] = useState(false)
 
-  useEffect(() => {
-    fetchMessages()
-    const sub = supabase
-      .channel(`work_order_${request.id}`)
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'work_order_messages', filter: `work_order_id=eq.${request.id}` }, () => fetchMessages())
-      .subscribe()
-    return () => supabase.removeChannel(sub)
+  const fetchMessages = useCallback(async () => {
+    const data = await getMessages(request.id)
+    setMessages(data)
   }, [request.id])
 
-  async function fetchMessages() {
-    const { data } = await supabase.from('work_order_messages').select('*').eq('work_order_id', request.id).order('created_at', { ascending: true })
-    setMessages(data || [])
-  }
+  useEffect(() => {
+    fetchMessages()
+    // Poll every 10s for new messages (Airtable has no realtime)
+    const interval = setInterval(fetchMessages, 10000)
+    return () => clearInterval(interval)
+  }, [fetchMessages])
 
-  async function sendMessage(e) {
+  async function handleSend(e) {
     e.preventDefault()
     if (!newMsg.trim()) return
     setSending(true)
-    await supabase.from('work_order_messages').insert({ work_order_id: request.id, sender_id: user.id, sender_email: user.email, is_admin: false, message: newMsg.trim() })
+    await sendMessage({ workOrderId: request.id, senderEmail: user.email, message: newMsg.trim(), isAdmin: false })
     setNewMsg('')
+    await fetchMessages()
     setSending(false)
   }
 
-  const cat = CATEGORIES.find(c => c.id === request.category)
+  const cat = CATEGORIES.find(c => c.id === request.Category || c.id === request.category)
 
   return (
     <div>
@@ -238,17 +241,17 @@ function RequestThread({ request, user, onBack }) {
         <div>
           <div className="flex items-center gap-2">
             <span className="text-lg">{cat?.icon}</span>
-            <h2 className="text-xl font-black text-slate-900">{request.title}</h2>
+            <h2 className="text-xl font-black text-slate-900">{request.Title || request.title}</h2>
           </div>
           <p className="mt-1 text-sm text-slate-500">Submitted {formatDate(request.created_at)}</p>
         </div>
-        <span className={`rounded-full border px-3 py-1 text-xs font-semibold ${STATUS_STYLES[request.status]}`}>
-          {STATUS_LABELS[request.status]}
+        <span className={`rounded-full border px-3 py-1 text-xs font-semibold ${STATUS_STYLES[request.Status || request.status] || STATUS_STYLES.open}`}>
+          {STATUS_LABELS[request.Status || request.status] || 'Open'}
         </span>
       </div>
 
       <div className="mb-5 rounded-2xl border border-slate-100 bg-slate-50 p-4 text-sm leading-6 text-slate-700">
-        {request.description}
+        {request.Description || request.description}
       </div>
 
       {/* Message thread */}
@@ -256,18 +259,21 @@ function RequestThread({ request, user, onBack }) {
         {messages.length === 0 && (
           <p className="py-6 text-center text-sm text-slate-400">No messages yet. Send an update below.</p>
         )}
-        {messages.map(msg => (
-          <div key={msg.id} className={`flex ${msg.is_admin ? 'justify-start' : 'justify-end'}`}>
-            <div className={`max-w-[80%] rounded-2xl px-4 py-3 text-sm leading-6 ${msg.is_admin ? 'rounded-tl-sm bg-slate-100 text-slate-800' : 'rounded-tr-sm bg-slate-900 text-white'}`}>
-              {msg.is_admin && <div className="mb-1 text-[11px] font-bold uppercase tracking-wider text-slate-500">Axis Leasing</div>}
-              <p>{msg.message}</p>
-              <p className={`mt-1 text-[11px] ${msg.is_admin ? 'text-slate-400' : 'text-white/50'}`}>{formatTime(msg.created_at)}</p>
+        {messages.map(msg => {
+          const isAdmin = msg['Is Admin'] || msg.is_admin
+          return (
+            <div key={msg.id} className={`flex ${isAdmin ? 'justify-start' : 'justify-end'}`}>
+              <div className={`max-w-[80%] rounded-2xl px-4 py-3 text-sm leading-6 ${isAdmin ? 'rounded-tl-sm bg-slate-100 text-slate-800' : 'rounded-tr-sm bg-slate-900 text-white'}`}>
+                {isAdmin && <div className="mb-1 text-[11px] font-bold uppercase tracking-wider text-slate-500">Axis Leasing</div>}
+                <p>{msg.Message || msg.message}</p>
+                <p className={`mt-1 text-[11px] ${isAdmin ? 'text-slate-400' : 'text-white/50'}`}>{formatTime(msg.created_at)}</p>
+              </div>
             </div>
-          </div>
-        ))}
+          )
+        })}
       </div>
 
-      <form onSubmit={sendMessage} className="flex gap-2">
+      <form onSubmit={handleSend} className="flex gap-2">
         <input value={newMsg} onChange={e => setNewMsg(e.target.value)}
           placeholder="Send a message or update…"
           className="flex-1 rounded-full border border-slate-200 px-4 py-2.5 text-sm outline-none placeholder:text-slate-300 focus:border-slate-900 focus:ring-2 focus:ring-slate-900/8 transition-colors" />
@@ -291,8 +297,12 @@ function Dashboard({ user, onLogout }) {
 
   async function fetchRequests() {
     setLoading(true)
-    const { data } = await supabase.from('work_orders').select('*').eq('resident_id', user.id).order('created_at', { ascending: false })
-    setRequests(data || [])
+    try {
+      const data = await getWorkOrders(user.id)
+      setRequests(data)
+    } catch (e) {
+      console.error(e)
+    }
     setLoading(false)
   }
 
@@ -365,18 +375,20 @@ function Dashboard({ user, onLogout }) {
             ) : (
               <div className="space-y-3">
                 {requests.map(req => {
-                  const cat = CATEGORIES.find(c => c.id === req.category)
+                  const cat = CATEGORIES.find(c => c.id === (req.Category || req.category))
+                  const status = req.Status || req.status || 'open'
+                  const priority = req.Priority || req.priority
                   return (
                     <button key={req.id} onClick={() => setSelectedRequest(req)}
                       className="group flex w-full items-start gap-4 rounded-2xl border border-slate-200 bg-white p-4 text-left transition-all hover:border-slate-900 hover:shadow-sm">
                       <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-slate-100 text-xl">{cat?.icon || '📋'}</div>
                       <div className="min-w-0 flex-1">
                         <div className="flex flex-wrap items-center gap-2">
-                          <span className="font-semibold text-slate-900">{req.title}</span>
-                          <span className={`rounded-full border px-2.5 py-0.5 text-[11px] font-semibold ${STATUS_STYLES[req.status]}`}>{STATUS_LABELS[req.status]}</span>
-                          {req.priority === 'urgent' && <span className="rounded-full border border-red-200 bg-red-50 px-2.5 py-0.5 text-[11px] font-semibold text-red-700">Urgent</span>}
+                          <span className="font-semibold text-slate-900">{req.Title || req.title}</span>
+                          <span className={`rounded-full border px-2.5 py-0.5 text-[11px] font-semibold ${STATUS_STYLES[status] || STATUS_STYLES.open}`}>{STATUS_LABELS[status] || 'Open'}</span>
+                          {priority === 'urgent' && <span className="rounded-full border border-red-200 bg-red-50 px-2.5 py-0.5 text-[11px] font-semibold text-red-700">Urgent</span>}
                         </div>
-                        <p className="mt-0.5 truncate text-sm text-slate-500">{req.description}</p>
+                        <p className="mt-0.5 truncate text-sm text-slate-500">{req.Description || req.description}</p>
                         <p className="mt-1 text-xs text-slate-400">{formatDate(req.created_at)}</p>
                       </div>
                       <svg className="h-4 w-4 shrink-0 text-slate-400 transition-colors group-hover:text-slate-900" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7"/></svg>
