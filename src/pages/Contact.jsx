@@ -259,95 +259,11 @@ function BookingScheduler() {
   )
 }
 
-function QuestionForm() {
-  const [name, setName] = useState('')
-  const [email, setEmail] = useState('')
-  const [question, setQuestion] = useState('')
-  const [submitted, setSubmitted] = useState(false)
-  const [sending, setSending] = useState(false)
-
-  function handleSubmit(e) {
-    e.preventDefault()
-    setSending(true)
-    const subject = encodeURIComponent(`Question from ${name} — Axis Seattle`)
-    const body = encodeURIComponent(`From: ${name}\nEmail: ${email}\n\nQuestion:\n${question}`)
-    window.location.href = `mailto:${CONTACT_EMAIL}?subject=${subject}&body=${body}`
-    setTimeout(() => { setSending(false); setSubmitted(true) }, 800)
-  }
-
-  if (submitted) {
-    return (
-      <div className="flex flex-col items-center justify-center gap-5 py-14 text-center">
-        <div className="flex h-14 w-14 items-center justify-center rounded-full bg-teal-50">
-          <svg className="h-7 w-7 text-teal-600" fill="none" stroke="currentColor" strokeWidth={1.5} viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
-          </svg>
-        </div>
-        <div>
-          <div className="text-xl font-black text-slate-900">Question sent!</div>
-          <p className="mt-2 max-w-sm text-sm leading-6 text-slate-500">
-            We'll reply directly to <span className="font-semibold text-slate-700">{email}</span> as soon as possible.
-          </p>
-        </div>
-        <button onClick={() => { setName(''); setEmail(''); setQuestion(''); setSubmitted(false) }}
-          className="rounded-full border border-slate-200 px-5 py-2.5 text-sm font-semibold text-slate-700 hover:border-slate-400">
-          Ask another question
-        </button>
-      </div>
-    )
-  }
-
-  return (
-    <div>
-      <div className="mb-6 border-b border-slate-100 pb-6">
-        <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-axis">Ask a question</div>
-        <h2 className="mt-2 text-3xl font-black tracking-tight text-slate-900">We'll respond directly</h2>
-        <p className="mt-3 text-sm leading-7 text-slate-600">
-          Send us any question — availability, pricing, lease terms — and we'll reply to your email.
-        </p>
-      </div>
-
-      <form onSubmit={handleSubmit} className="space-y-4">
-        <div className="grid gap-4 sm:grid-cols-2">
-          <div>
-            <label className="mb-1.5 block text-sm font-semibold text-slate-700">Your name <span className="text-red-400">*</span></label>
-            <input required value={name} onChange={e => setName(e.target.value)} placeholder="Jane Smith"
-              className="w-full rounded-xl border border-slate-200 px-4 py-2.5 text-sm outline-none placeholder:text-slate-300 focus:border-slate-900 focus:ring-2 focus:ring-slate-900/8 transition-colors" />
-          </div>
-          <div>
-            <label className="mb-1.5 block text-sm font-semibold text-slate-700">Email <span className="text-red-400">*</span></label>
-            <input required type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="you@email.com"
-              className="w-full rounded-xl border border-slate-200 px-4 py-2.5 text-sm outline-none placeholder:text-slate-300 focus:border-slate-900 focus:ring-2 focus:ring-slate-900/8 transition-colors" />
-          </div>
-        </div>
-        <div>
-          <label className="mb-1.5 block text-sm font-semibold text-slate-700">Your question <span className="text-red-400">*</span></label>
-          <textarea required value={question} onChange={e => setQuestion(e.target.value)} rows={5}
-            placeholder="e.g. Is Room 3 at 4709A available in September? What's the move-in process?"
-            className="w-full resize-none rounded-xl border border-slate-200 px-4 py-3 text-sm leading-6 outline-none placeholder:text-slate-300 focus:border-slate-900 focus:ring-2 focus:ring-slate-900/8 transition-colors" />
-        </div>
-
-        <div className="flex items-center justify-between pt-1">
-          <p className="text-xs text-slate-400">We reply to every question, usually within a few hours.</p>
-          <button type="submit" disabled={sending || !name || !email || !question}
-            className="inline-flex items-center gap-2 rounded-full bg-slate-900 px-6 py-2.5 text-sm font-semibold text-white hover:bg-slate-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors">
-            {sending
-              ? <><svg className="h-4 w-4 animate-spin" viewBox="0 0 24 24" fill="none"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/></svg> Sending…</>
-              : <><svg className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M6 12L3.269 3.126A59.768 59.768 0 0121.485 12 59.77 59.77 0 013.27 20.876L5.999 12zm0 0h7.5"/></svg> Send Question</>
-            }
-          </button>
-        </div>
-      </form>
-    </div>
-  )
-}
-
 export default function Contact() {
   const [activeTab, setActiveTab] = useState('schedule')
 
   const tabs = [
     { id: 'schedule', label: 'Schedule', icon: 'M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z' },
-    { id: 'question', label: 'Ask a Question', icon: 'M8.625 12a.375.375 0 11-.75 0 .375.375 0 01.75 0zm0 0H8.25m4.125 0a.375.375 0 11-.75 0 .375.375 0 01.75 0zm0 0H12m4.125 0a.375.375 0 11-.75 0 .375.375 0 01.75 0zm0 0h-.375M21 12c0 4.556-4.03 8.25-9 8.25a9.764 9.764 0 01-2.555-.337A5.972 5.972 0 015.41 20.97a5.969 5.969 0 01-.474-.065 4.48 4.48 0 00.978-2.025c.09-.457-.133-.901-.467-1.226C3.93 16.178 3 14.189 3 12c0-4.556 4.03-8.25 9-8.25s9 3.694 9 8.25z' },
     { id: 'message', label: 'Send a Message', icon: 'M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z' },
   ]
 
@@ -444,7 +360,6 @@ export default function Contact() {
             </div>
 
             {activeTab === 'schedule' && <BookingScheduler />}
-            {activeTab === 'question' && <QuestionForm />}
             {activeTab === 'message' && (
               <div>
                 <div className="mb-6 border-b border-slate-100 pb-6">
