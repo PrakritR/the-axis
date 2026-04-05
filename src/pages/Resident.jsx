@@ -62,6 +62,13 @@ function formatDate(value) {
   return new Date(value).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
 }
 
+function formatDateInput(value) {
+  if (!value) return ''
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return ''
+  return date.toISOString().slice(0, 10)
+}
+
 function classNames(...values) {
   return values.filter(Boolean).join(' ')
 }
@@ -851,6 +858,8 @@ function ProfilePanel({ resident, onUpdated }) {
   const [house, setHouse] = useState(defaultHouse)
   const [phone, setPhone] = useState(resident.Phone || '')
   const [unitNumber, setUnitNumber] = useState(resident['Unit Number'] || getUnitsForHouse(defaultHouse)[0] || '')
+  const [leaseStartDate, setLeaseStartDate] = useState(formatDateInput(resident['Lease Start Date']))
+  const [leaseEndDate, setLeaseEndDate] = useState(formatDateInput(resident['Lease End Date']))
   const [saving, setSaving] = useState(false)
   const [message, setMessage] = useState('')
   const availableUnits = useMemo(() => getUnitsForHouse(house), [house])
@@ -860,6 +869,8 @@ function ProfilePanel({ resident, onUpdated }) {
     setHouse(nextHouse)
     setPhone(resident.Phone || '')
     setUnitNumber(resident['Unit Number'] || getUnitsForHouse(nextHouse)[0] || '')
+    setLeaseStartDate(formatDateInput(resident['Lease Start Date']))
+    setLeaseEndDate(formatDateInput(resident['Lease End Date']))
   }, [resident])
 
   useEffect(() => {
@@ -878,6 +889,8 @@ function ProfilePanel({ resident, onUpdated }) {
         House: house,
         'Unit Number': unitNumber,
         Phone: phone,
+        'Lease Start Date': leaseStartDate || null,
+        'Lease End Date': leaseEndDate || null,
       })
       onUpdated(updated)
       setMessage('Profile updated.')
@@ -904,6 +917,10 @@ function ProfilePanel({ resident, onUpdated }) {
         <div className="rounded-2xl bg-slate-50 px-4 py-3">
           <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">Email</div>
           <div className="mt-1 text-sm font-semibold text-slate-700">{resident.Email}</div>
+        </div>
+        <div className="rounded-2xl bg-slate-50 px-4 py-3">
+          <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">Lease Start Date</div>
+          <div className="mt-1 text-sm font-semibold text-slate-700">{formatDate(resident['Lease Start Date'])}</div>
         </div>
         <div className="rounded-2xl bg-slate-50 px-4 py-3">
           <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">Lease End Date</div>
@@ -937,6 +954,24 @@ function ProfilePanel({ resident, onUpdated }) {
           <input
             value={phone}
             onChange={(event) => setPhone(event.target.value)}
+            className="w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm outline-none transition focus:border-slate-900 focus:ring-2 focus:ring-slate-900/10"
+          />
+        </div>
+        <div>
+          <label className="mb-2 block text-sm font-semibold text-slate-700">Lease Start Date</label>
+          <input
+            type="date"
+            value={leaseStartDate}
+            onChange={(event) => setLeaseStartDate(event.target.value)}
+            className="w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm outline-none transition focus:border-slate-900 focus:ring-2 focus:ring-slate-900/10"
+          />
+        </div>
+        <div>
+          <label className="mb-2 block text-sm font-semibold text-slate-700">Lease End Date</label>
+          <input
+            type="date"
+            value={leaseEndDate}
+            onChange={(event) => setLeaseEndDate(event.target.value)}
             className="w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm outline-none transition focus:border-slate-900 focus:ring-2 focus:ring-slate-900/10"
           />
         </div>

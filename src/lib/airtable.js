@@ -151,11 +151,15 @@ export async function createWorkOrder({
 }) {
   const residentId = resident.id
   const supabaseUserId = resident['Supabase User ID'] || ''
+  const airtablePriority = urgency === 'Emergency' ? 'Urgent' : urgency
+  const normalizedDescription = urgency === 'Emergency'
+    ? `Resident marked this request as Emergency.\n\n${description}`
+    : description
   const fields = {
     Title: title,
-    Description: description,
+    Description: normalizedDescription,
     Category: category,
-    Priority: urgency,
+    Priority: airtablePriority,
     Status: 'Submitted',
     'Preferred Entry Time': preferredEntry,
     Resident: [residentId],
