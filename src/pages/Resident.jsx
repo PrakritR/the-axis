@@ -878,6 +878,7 @@ function ProfilePanel({ resident, onUpdated }) {
   const [leaseEndDate, setLeaseEndDate] = useState(formatDateInput(resident['Lease End Date']))
   const [saving, setSaving] = useState(false)
   const [message, setMessage] = useState('')
+  const [saveError, setSaveError] = useState('')
   const availableUnits = useMemo(() => getUnitsForHouse(house), [house])
 
   useEffect(() => {
@@ -901,6 +902,7 @@ function ProfilePanel({ resident, onUpdated }) {
     event.preventDefault()
     setSaving(true)
     setMessage('')
+    setSaveError('')
     try {
       const updated = await updateResident(resident.id, {
         Name: name,
@@ -911,7 +913,9 @@ function ProfilePanel({ resident, onUpdated }) {
         'Lease End Date': leaseEndDate || null,
       })
       onUpdated(updated)
-      setMessage('Profile updated.')
+      setMessage('Profile updated successfully in Airtable.')
+    } catch (err) {
+      setSaveError(err.message || 'Could not save profile. Check your Airtable token permissions.')
     } finally {
       setSaving(false)
     }
@@ -1008,7 +1012,8 @@ function ProfilePanel({ resident, onUpdated }) {
             className="w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm outline-none transition focus:border-slate-900 focus:ring-2 focus:ring-slate-900/10"
           />
         </div>
-        {message ? <div className="text-sm text-emerald-700">{message}</div> : null}
+        {message ? <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">{message}</div> : null}
+        {saveError ? <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{saveError}</div> : null}
         <button
           type="submit"
           disabled={saving}
