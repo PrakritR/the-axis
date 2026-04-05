@@ -1,4 +1,4 @@
-const BASE_ID = 'appNBX2inqfJMyqYV'
+const BASE_ID = 'appol57LKtMKaQ75T'
 const API_KEY = import.meta.env.VITE_AIRTABLE_TOKEN
 const BASE_URL = `https://api.airtable.com/v0/${BASE_ID}`
 
