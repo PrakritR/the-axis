@@ -1,81 +1,165 @@
-const BASE_ID = 'appol57LKtMKaQ75T'
+const BASE_ID = import.meta.env.VITE_AIRTABLE_BASE_ID || 'appol57LKtMKaQ75T'
 const API_KEY = import.meta.env.VITE_AIRTABLE_TOKEN
 const BASE_URL = `https://api.airtable.com/v0/${BASE_ID}`
 
-const headers = () => ({
-  Authorization: `Bearer ${API_KEY}`,
-  'Content-Type': 'application/json',
-})
+const TABLES = {
+  workOrders: 'Work Orders',
+  messages: 'Messages',
+  residents: 'Residents',
+  announcements: 'Announcements',
+}
 
-// ─── Work Orders ──────────────────────────────────────────────────────────────
+function headers() {
+  return {
+    Authorization: `Bearer ${API_KEY}`,
+    'Content-Type': 'application/json',
+  }
+}
 
-export async function createWorkOrder({ residentEmail, residentId, category, title, description, priority }) {
-  const res = await fetch(`${BASE_URL}/Work%20Orders`, {
+function tableUrl(table) {
+  return `${BASE_URL}/${encodeURIComponent(table)}`
+}
+
+function buildUrl(table, params = {}) {
+  const url = new URL(tableUrl(table))
+  Object.entries(params).forEach(([key, value]) => {
+    if (value !== undefined && value !== null && value !== '') {
+      url.searchParams.set(key, value)
+    }
+  })
+  return url.toString()
+}
+
+async function request(url, options = {}) {
+  const response = await fetch(url, {
+    ...options,
+    headers: {
+      ...headers(),
+      ...(options.headers || {}),
+    },
+  })
+
+  if (!response.ok) {
+    throw new Error(await response.text())
+  }
+
+  return response.json()
+}
+
+function mapRecord(record) {
+  return {
+    id: record.id,
+    ...record.fields,
+    created_at: record.createdTime,
+  }
+}
+
+function escapeFormulaValue(value) {
+  return String(value).replace(/"/g, '\\"')
+}
+
+export async function getResidentByEmail(email) {
+  const formula = `{Email} = "${escapeFormulaValue(email)}"`
+  const data = await request(buildUrl(TABLES.residents, {
+    filterByFormula: formula,
+    maxRecords: 1,
+  }))
+
+  const resident = data.records?.[0]
+  return resident ? mapRecord(resident) : null
+}
+
+export async function updateResident(recordId, fields) {
+  const data = await request(`${tableUrl(TABLES.residents)}/${recordId}`, {
+    method: 'PATCH',
+    body: JSON.stringify({ fields }),
+  })
+
+  return mapRecord(data)
+}
+
+export async function getAnnouncements() {
+  const formula = 'OR({Active} = 1, {Active} = TRUE(), {Active} = "1")'
+  const data = await request(buildUrl(TABLES.announcements, {
+    filterByFormula: formula,
+  }))
+
+  return (data.records || []).map(mapRecord)
+}
+
+export async function getWorkOrdersForResident(resident) {
+  const residentEmail = resident.Email || resident.email
+  const residentId = resident.id
+  const formula = `OR({Resident Email} = "${escapeFormulaValue(residentEmail)}", {Resident ID} = "${escapeFormulaValue(residentId)}")`
+  const data = await request(buildUrl(TABLES.workOrders, {
+    filterByFormula: formula,
+  }))
+
+  return (data.records || [])
+    .map(mapRecord)
+    .sort((a, b) => new Date(b['Date Submitted'] || b.created_at) - new Date(a['Date Submitted'] || a.created_at))
+}
+
+export async function createWorkOrder({
+  resident,
+  title,
+  category,
+  urgency,
+  description,
+  preferredEntry,
+}) {
+  const residentEmail = resident.Email || resident.email
+  const residentId = resident.id
+
+  const data = await request(tableUrl(TABLES.workOrders), {
     method: 'POST',
-    headers: headers(),
     body: JSON.stringify({
       fields: {
         Title: title,
         Description: description,
         Category: category,
-        Priority: priority,
-        Status: 'open',
+        Priority: urgency,
+        Status: 'Submitted',
+        'Date Submitted': new Date().toISOString(),
+        'Preferred Date/Time': preferredEntry,
         'Resident Email': residentEmail,
         'Resident ID': residentId,
       },
     }),
   })
-  if (!res.ok) throw new Error(await res.text())
-  return res.json()
-}
 
-export async function getWorkOrders(residentId) {
-  const formula = encodeURIComponent(`{Resident ID} = "${residentId}"`)
-  const res = await fetch(`${BASE_URL}/Work%20Orders?filterByFormula=${formula}`, {
-    headers: headers(),
-  })
-  if (!res.ok) throw new Error(await res.text())
-  const data = await res.json()
-  return (data.records || []).map(r => ({ id: r.id, ...r.fields, created_at: r.createdTime }))
+  return mapRecord(data)
 }
-
-export async function updateWorkOrderStatus(recordId, status) {
-  const res = await fetch(`${BASE_URL}/Work%20Orders/${recordId}`, {
-    method: 'PATCH',
-    headers: headers(),
-    body: JSON.stringify({ fields: { Status: status } }),
-  })
-  if (!res.ok) throw new Error(await res.text())
-  return res.json()
-}
-
-// ─── Messages ─────────────────────────────────────────────────────────────────
 
 export async function getMessages(workOrderId) {
-  const formula = encodeURIComponent(`{Work Order ID} = "${workOrderId}"`)
-  const res = await fetch(`${BASE_URL}/Messages?filterByFormula=${formula}`, {
-    headers: headers(),
-  })
-  if (!res.ok) throw new Error(await res.text())
-  const data = await res.json()
-  return (data.records || []).map(r => ({ id: r.id, ...r.fields, created_at: r.createdTime }))
+  const formula = `FIND("${escapeFormulaValue(workOrderId)}", ARRAYJOIN({Work Order})) > 0`
+  const data = await request(buildUrl(TABLES.messages, {
+    filterByFormula: formula,
+  }))
+
+  return (data.records || [])
+    .map(mapRecord)
+    .sort((a, b) => new Date(a.Timestamp || a.created_at) - new Date(b.Timestamp || b.created_at))
 }
 
 export async function sendMessage({ workOrderId, senderEmail, message, isAdmin = false }) {
-  const res = await fetch(`${BASE_URL}/Messages`, {
+  const data = await request(tableUrl(TABLES.messages), {
     method: 'POST',
-    headers: headers(),
     body: JSON.stringify({
       fields: {
-        'Work Order ID': workOrderId,
-        'Sender Email': senderEmail,
         Message: message,
+        'Work Order': [workOrderId],
+        'Sender Email': senderEmail,
         'Is Admin': isAdmin,
       },
     }),
   })
-  if (!res.ok) throw new Error(await res.text())
-  return res.json()
+
+  return mapRecord(data)
 }
 
-export const airtableReady = Boolean(API_KEY && API_KEY !== 'your_airtable_token')
+export const airtableReady = Boolean(
+  BASE_ID &&
+  API_KEY &&
+  API_KEY !== 'your_airtable_token'
+)
