@@ -33,8 +33,8 @@ function AvailableBadge({ text, bookedFrom, bookedUntil }) {
   const dot = (isBooked || isUnavailable) ? 'bg-red-500' : isNow ? 'bg-emerald-500' : 'bg-amber-500'
 
   return (
-    <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold ${cls}`}>
-      <span className={`h-1.5 w-1.5 rounded-full ${dot}`} />
+    <span className={`inline-flex items-start gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold break-words ${cls}`} style={{ wordBreak: 'break-word', whiteSpace: 'normal' }}>
+      <span className={`mt-[3px] h-1.5 w-1.5 shrink-0 rounded-full ${dot}`} />
       {displayText}
     </span>
   )
@@ -393,10 +393,10 @@ function FloorPlanCard({plan, onDetail}){
       {/* Rows */}
       <div className="divide-y divide-slate-100 px-4 sm:px-6">
         {roomsToShow.map((r, idx) => (
-          <div key={idx} className="grid grid-cols-1 py-4 sm:grid-cols-12 sm:items-center sm:gap-3">
-            {/* Room name */}
+          <div key={idx} className="py-4 sm:grid sm:grid-cols-12 sm:items-center sm:gap-3">
+            {/* Room name — always shown */}
             <div className="sm:col-span-4">
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
                 <span className="font-semibold text-slate-900">{r.name}</span>
                 {r.video && (
                   <span className="inline-flex items-center gap-1 rounded-full bg-axis/10 px-2 py-0.5 text-[10px] font-semibold text-axis">
@@ -406,20 +406,32 @@ function FloorPlanCard({plan, onDetail}){
                 )}
               </div>
               {(r.floorTitle || r.details) && (
-                <div className="mt-0.5 text-xs text-slate-400">{[r.floorTitle, r.details].filter(Boolean).join(' · ')}</div>
+                <div className="mt-0.5 text-xs text-slate-400 break-words">{[r.floorTitle, r.details].filter(Boolean).join(' · ')}</div>
               )}
             </div>
-            {/* Price + Availability: 2-col side-by-side on mobile, individual columns on desktop */}
-            <div className="mt-3 grid grid-cols-2 gap-3 sm:contents">
-              <div className="sm:col-span-3">
-                <div className="text-[10px] font-bold uppercase tracking-[0.14em] text-slate-400">Price</div>
-                <div className="mt-0.5 font-bold text-slate-900">{r.price}</div>
+
+            {/* Mobile-only: Price and Availability stacked as separate full-width rows */}
+            <div className="mt-3 space-y-2.5 sm:hidden">
+              <div className="flex items-center justify-between gap-3">
+                <span className="shrink-0 text-[10px] font-bold uppercase tracking-[0.14em] text-slate-400">Price</span>
+                <span className="font-bold text-slate-900">{r.price}</span>
               </div>
-              <div className="sm:col-span-3">
-                <div className="text-[10px] font-bold uppercase tracking-[0.14em] text-slate-400">Availability</div>
-                <div className="mt-0.5"><AvailableBadge text={r.available} bookedFrom={r.bookedFrom} bookedUntil={r.bookedUntil} /></div>
+              <div>
+                <div className="mb-1.5 text-[10px] font-bold uppercase tracking-[0.14em] text-slate-400">Availability</div>
+                <AvailableBadge text={r.available} bookedFrom={r.bookedFrom} bookedUntil={r.bookedUntil} />
               </div>
             </div>
+
+            {/* Desktop-only: Price column */}
+            <div className="hidden sm:col-span-3 sm:block">
+              <div className="font-bold text-slate-900">{r.price}</div>
+            </div>
+
+            {/* Desktop-only: Availability column */}
+            <div className="hidden sm:col-span-3 sm:block">
+              <AvailableBadge text={r.available} bookedFrom={r.bookedFrom} bookedUntil={r.bookedUntil} />
+            </div>
+
             {/* Details button — full width on mobile */}
             <div className="mt-3 sm:col-span-2 sm:mt-0 sm:flex sm:justify-end">
               <button

@@ -21,6 +21,10 @@ html, body, #root {
   overflow-x: hidden;
 }
 
+.page-wrapper {
+  overflow-x: hidden;
+}
+
 body {
   margin: 0;
   padding: 0;
