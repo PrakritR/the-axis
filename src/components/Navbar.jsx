@@ -43,8 +43,7 @@ export default function Navbar() {
   const [scrolled, setScrolled] = useState(false)
   const location = useLocation()
   const isHome = location.pathname === '/'
-  /** Bottom dock on all routes except property detail (that page has its own glass CTA bar). */
-  const showMobileDock = !location.pathname.startsWith('/properties/')
+  const showMobileDock = ['/', '/apply', '/contact'].includes(location.pathname)
   const promoText = 'Sign up now. No application fee for a limited time.'
   const navLinks = [
     { label: 'Homes', to: { pathname: '/', hash: '#properties' }, isActive: isHome },
@@ -70,14 +69,12 @@ export default function Navbar() {
   function closeMobileMenu() { setMobileOpen(false) }
 
   return (
-    <header
-      className={`sticky top-0 z-30 w-full shrink-0 border-b border-white/15 pt-[env(safe-area-inset-top,0px)] transition-[background,box-shadow,backdrop-filter] duration-300 ${
-        scrolled
-          ? 'bg-navy-950/92 shadow-[0_12px_48px_rgba(0,0,0,0.42),inset_0_1px_0_0_rgba(255,255,255,0.12)] backdrop-blur-2xl backdrop-saturate-150 supports-[backdrop-filter]:bg-navy-950/78'
-          : 'bg-navy-950/88 shadow-[0_8px_32px_rgba(0,0,0,0.28),inset_0_1px_0_0_rgba(255,255,255,0.1)] backdrop-blur-xl backdrop-saturate-150 supports-[backdrop-filter]:bg-navy-950/72'
-      }`}
-    >
-      <div className="border-b border-white/15 bg-axis/96 text-white shadow-[inset_0_1px_0_0_rgba(255,255,255,0.18)] backdrop-blur-md">
+    <header className={`relative z-30 w-full shrink-0 border-b transition-all duration-300 md:sticky md:top-0 ${
+      scrolled
+        ? 'border-white/10 bg-navy-950 shadow-[0_1px_24px_rgba(0,0,0,0.22)] md:bg-navy-900/95 md:backdrop-blur-md'
+        : 'border-white/10 bg-navy-950 md:bg-navy-900/85 md:backdrop-blur-md'
+    }`}>
+      <div className="border-b border-white/10 bg-axis text-white" style={{ paddingTop: 'env(safe-area-inset-top)' }}>
         <div className="container mx-auto flex items-center justify-center gap-3 px-4 py-2 text-center sm:px-6">
           <p className="text-[11px] font-semibold uppercase tracking-[0.16em] sm:text-xs">
             {promoText}
@@ -165,7 +162,7 @@ export default function Navbar() {
             animate={{ opacity: 1, height: 'auto' }}
             exit={{ opacity: 0, height: 0 }}
             transition={{ duration: 0.22, ease: [0.2, 0.9, 0.2, 1] }}
-            className="overflow-hidden border-t border-white/15 bg-navy-950/95 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.08)] backdrop-blur-2xl backdrop-saturate-150 md:hidden"
+            className="overflow-hidden border-t border-white/10 bg-navy-900 md:hidden"
           >
             <nav className="container mx-auto flex flex-col gap-1 px-4 py-3 sm:px-6">
               <Link to={{ pathname: '/', hash: '#properties' }} onClick={closeMobileMenu} className="rounded-xl px-3 py-2.5 text-sm font-medium text-white/70 transition hover:bg-white/8 hover:text-white">Homes & Availability</Link>
