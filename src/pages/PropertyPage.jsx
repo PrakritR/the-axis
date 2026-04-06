@@ -1270,27 +1270,26 @@ export default function PropertyPage(){
       {/* Mobile bottom spacer so content doesn't hide behind sticky CTA */}
       <div className="h-20 md:hidden" aria-hidden />
 
-      {/* Mobile sticky CTA bar — only shows below md breakpoint */}
-      <div
-        className="fixed bottom-0 inset-x-0 z-[25] border-t border-slate-200 bg-white/95 backdrop-blur-md md:hidden"
-        style={{ paddingBottom: 'max(12px, env(safe-area-inset-bottom))', paddingTop: '12px', paddingLeft: '16px', paddingRight: '16px' }}
-      >
-        <div className="flex items-center gap-2.5">
-          <div className="flex-1 min-w-0">
-            <div className="text-[9px] font-bold uppercase tracking-[0.14em] text-slate-400">Starting from</div>
-            <div className="text-base font-black text-slate-900 truncate leading-tight">{startingRent}/mo</div>
+      {/* Mobile sticky CTA — floating liquid glass so it stays visible on white pages */}
+      <div className="pointer-events-none fixed inset-x-3 bottom-[calc(0.75rem+env(safe-area-inset-bottom))] z-[25] md:hidden">
+        <div
+          className="pointer-events-auto flex items-center gap-2.5 rounded-[22px] border border-slate-200/90 bg-white/80 px-4 py-3 shadow-[0_20px_50px_rgba(15,23,42,0.14),0_0_0_1px_rgba(15,23,42,0.06),inset_0_1px_0_0_rgba(255,255,255,0.95)] backdrop-blur-2xl backdrop-saturate-150"
+        >
+          <div className="min-w-0 flex-1">
+            <div className="text-[9px] font-bold uppercase tracking-[0.14em] text-slate-500">Starting from</div>
+            <div className="truncate text-base font-black leading-tight text-slate-900">{startingRent}/mo</div>
           </div>
           <button
             type="button"
             onClick={() => scrollToId('floor-plans')}
-            className="shrink-0 rounded-full border border-slate-300 px-4 py-2.5 text-sm font-semibold text-slate-700 transition active:scale-95"
+            className="shrink-0 rounded-full border border-slate-300/90 bg-white/60 px-4 py-2.5 text-sm font-semibold text-slate-800 shadow-sm backdrop-blur-sm transition active:scale-95"
           >
             Rooms
           </button>
           <Link
             to={`/apply?property=${p.slug}`}
             onClick={scrollToTop}
-            className="shrink-0 rounded-full bg-axis px-4 py-2.5 text-sm font-semibold text-white shadow-[0_0_12px_rgba(14,165,164,0.35)] transition active:scale-95"
+            className="shrink-0 rounded-full bg-axis px-4 py-2.5 text-sm font-semibold text-white shadow-[0_4px_16px_rgba(14,165,164,0.45)] transition active:scale-95"
           >
             Apply
           </Link>

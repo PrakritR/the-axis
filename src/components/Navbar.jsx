@@ -184,8 +184,11 @@ export default function Navbar() {
       </AnimatePresence>
 
       {showMobileDock && !mobileOpen ? (
-      <div className="fixed inset-x-3 bottom-[calc(0.75rem+env(safe-area-inset-bottom))] z-40 md:hidden">
-        <nav className="grid grid-cols-4 gap-1 rounded-[22px] border border-white/10 bg-navy-950/92 p-2 shadow-[0_12px_40px_rgba(0,0,0,0.35)] backdrop-blur-xl">
+      <div className="pointer-events-none fixed inset-x-3 bottom-[calc(0.75rem+env(safe-area-inset-bottom))] z-40 md:hidden">
+        <nav
+          aria-label="Mobile primary navigation"
+          className="pointer-events-auto grid grid-cols-4 gap-1 rounded-[22px] border border-white/25 bg-navy-950/95 p-2 shadow-[0_20px_50px_rgba(0,0,0,0.42),0_0_0_1px_rgba(15,23,42,0.65),inset_0_1px_0_0_rgba(255,255,255,0.22)] backdrop-blur-2xl backdrop-saturate-150"
+        >
           {mobileDockLinks.map((item) => (
             <Link
               key={item.label}
@@ -193,8 +196,8 @@ export default function Navbar() {
               onClick={() => { closeMobileMenu(); scrollToTop() }}
               className={`flex min-h-[56px] flex-col items-center justify-center gap-1 rounded-[16px] px-2 py-2 text-[11px] font-semibold transition ${
                 item.isActive
-                  ? 'bg-white/10 text-white'
-                  : 'text-white/65 active:scale-[0.98]'
+                  ? 'bg-white/14 text-white shadow-[inset_0_1px_0_0_rgba(255,255,255,0.12)]'
+                  : 'text-white/70 active:scale-[0.98] hover:bg-white/[0.07]'
               }`}
             >
               <span className={item.isActive ? 'text-axis' : ''}>{item.icon}</span>
