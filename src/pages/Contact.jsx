@@ -52,7 +52,7 @@ function CalendlyEmbed({ url }) {
   }, [url])
 
   return (
-    <div ref={containerRef} className="calendly-inline-widget" data-url={url} style={{ minWidth: '320px', height: '700px' }} />
+    <div ref={containerRef} className="calendly-inline-widget" data-url={url} style={{ minWidth: '320px', height: 'min(700px, max(500px, calc(100dvh - 200px)))' }} />
   )
 }
 
@@ -371,7 +371,7 @@ export default function Contact() {
                   className="airtable-embed"
                   src="https://airtable.com/embed/appNBX2inqfJMyqYV/pagjUTobVZF3ZwGl7/form"
                   width="100%"
-                  height="533"
+                  height="700"
                   style={{ background: 'transparent', border: '1px solid #ccc', borderRadius: '16px' }}
                 />
               </div>

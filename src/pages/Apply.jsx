@@ -16,7 +16,7 @@ export default function Apply() {
             className="airtable-embed"
             src="https://airtable.com/embed/appNBX2inqfJMyqYV/pagHuYqWpjJGDt9Oz/form"
             width="100%"
-            height="533"
+            height="700"
             style={{ background: 'transparent', border: '1px solid #ccc', borderRadius: '16px' }}
           />
         </div>

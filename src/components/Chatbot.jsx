@@ -226,7 +226,7 @@ export default function Chatbot() {
       <button
         onClick={() => setOpen(v => !v)}
         aria-label={open ? 'Close chat' : 'Open leasing assistant'}
-        className="fixed z-50 w-14 h-14 rounded-full shadow-lg flex items-center justify-center transition-all duration-200 hover:scale-105 active:scale-95 focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-[#0ea5a4]"
+        className="fixed z-50 w-14 h-14 rounded-full shadow-lg flex items-center justify-center transition-all duration-200 hover:scale-105 active:scale-95 focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-[#0ea5a4] chatbot-fab"
         style={{
           background: 'linear-gradient(135deg, #0ea5a4 0%, #0b8a89 100%)',
           color: 'white',
@@ -250,7 +250,7 @@ export default function Chatbot() {
         role="dialog"
         aria-label="Leasing assistant"
         aria-modal="true"
-        className="fixed z-50 flex flex-col rounded-2xl overflow-hidden transition-all duration-300 origin-bottom-right"
+        className="fixed z-50 flex flex-col rounded-2xl overflow-hidden transition-all duration-300 origin-bottom-right chatbot-panel"
         style={{
           width: 'min(380px, calc(100vw - 2rem))',
           height: 'min(540px, calc(100dvh - env(safe-area-inset-top) - env(safe-area-inset-bottom) - 8rem))',
