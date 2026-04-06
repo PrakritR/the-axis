@@ -50,23 +50,51 @@ const GEMINI_MODEL = 'gemini-2.0-flash-lite'
 function getLocalFallbackReply(question) {
   const text = question.toLowerCase()
 
-  if (text.includes('available') || text.includes('availability') || text.includes('room')) {
-    return 'For a quick local preview: 4709B is listed with rooms available now, and 5259 Brooklyn rooms are listed as available after April 14, 2026. For the latest confirmed availability, please use the Contact page.'
+  if (text.includes('available') || text.includes('availability')) {
+    return '**4709B 8th Ave NE** — all 9 rooms available now.\n\n**5259 Brooklyn Ave NE** — all 9 rooms available after April 14, 2026.\n\n**4709A 8th Ave NE** — select rooms available starting Aug–Sep 2026.\n\nContact us for the most up-to-date details!'
   }
 
-  if (text.includes('rent') || text.includes('price') || text.includes('pricing') || text.includes('cost')) {
-    return 'Rooms are generally listed between $725 and $850 per month depending on the property and room type. Some listings also include utilities, furnishing, cleaning, or deposit fees.'
+  if (text.includes('room') || text.includes('bedroom')) {
+    return 'All three properties are shared housing near UW:\n- **4709A** — 10 bedrooms, 3.5 baths ($725–$850/mo)\n- **4709B** — 9 bedrooms, 2.5 baths ($750–$775/mo)\n- **5259 Brooklyn** — 9 bedrooms, 3 baths ($775–$840/mo)\n\nAll rooms are furnished with a desk, bed, heating, and AC.'
+  }
+
+  if (text.includes('rent') || text.includes('price') || text.includes('pricing') || text.includes('cost') || text.includes('how much')) {
+    return 'Room prices range from **$725 to $850/month** depending on property and room:\n- 4709A: $725–$850/mo\n- 4709B: $750–$775/mo\n- 5259 Brooklyn: $775–$840/mo\n\nAdditional fees: Utilities ~$150/mo, Cleaning $25/mo, Furnishing $25/mo. App fee is $50.'
   }
 
   if (text.includes('apply') || text.includes('application')) {
-    return 'You can apply from the Apply page on this site. The top banner currently highlights a limited-time no application fee offer.'
+    return 'You can apply directly from the **Apply page** on this site. The application fee is $50. We typically get back to you within 2 business days.'
   }
 
-  if (text.includes('tour') || text.includes('visit') || text.includes('schedule')) {
-    return 'Use the Request tour button in the header or the Contact page to schedule a walkthrough.'
+  if (text.includes('tour') || text.includes('visit') || text.includes('schedule') || text.includes('see')) {
+    return 'To schedule a tour, visit the **Contact page** or use the "Request tour" button. You can also reach us at 510-309-8345.'
   }
 
-  return 'The local site is using a built-in fallback assistant because no AI API key is configured. You can still preview the full website and test the main flows normally.'
+  if (text.includes('includ') || text.includes('ameniti') || text.includes('utility') || text.includes('utilities') || text.includes('wifi') || text.includes('internet')) {
+    return 'All properties include:\n- Walk to UW campus\n- In-unit washer/dryer\n- Bi-monthly professional cleaning\n- WiFi + full kitchen\n- Public transit access\n- Furnished rooms (desk, bed, heating, AC)'
+  }
+
+  if (text.includes('lease') || text.includes('term') || text.includes('month') || text.includes('summer') || text.includes('academic')) {
+    return '4709B and 5259 Brooklyn offer three lease options:\n- **3-Month Summer**: Jun 16 – Sep 14\n- **9-Month Academic**: Sep 15 – Jun 15\n- **12-Month**: year-round\n\n4709A offers flexible month-to-month arrangements.'
+  }
+
+  if (text.includes('address') || text.includes('location') || text.includes('where') || text.includes('university') || text.includes('uw') || text.includes('campus')) {
+    return 'All three properties are in Seattle\'s **University District**, walking distance to the University of Washington campus:\n- 4709A & 4709B 8th Ave NE\n- 5259 Brooklyn Ave NE'
+  }
+
+  if (text.includes('contact') || text.includes('phone') || text.includes('email') || text.includes('reach') || text.includes('call')) {
+    return 'You can reach us through the **Contact page** on this site, or call/text us at **510-309-8345**. We\'re happy to answer any questions!'
+  }
+
+  if (text.includes('deposit') || text.includes('security')) {
+    return '5259 Brooklyn Ave NE requires a $600 security deposit. 4709A and 4709B do not have a security deposit.'
+  }
+
+  if (text.includes('hi') || text.includes('hello') || text.includes('hey')) {
+    return 'Hi there! I\'m the Axis Housing leasing assistant. I can help with room availability, pricing, lease terms, amenities, and the application process. What would you like to know?'
+  }
+
+  return 'I can help with questions about room availability, pricing, lease terms, amenities, how to apply, or scheduling a tour. What would you like to know?'
 }
 
 function SendIcon() {
@@ -91,6 +119,22 @@ function CloseIcon() {
       <path d="M18 6 6 18M6 6l12 12" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
     </svg>
   )
+}
+
+function renderContent(text) {
+  return text.split('\n').map((line, i) => {
+    const parts = line.split(/(\*\*[^*]+\*\*)/g)
+    return (
+      <React.Fragment key={i}>
+        {i > 0 && <br />}
+        {parts.map((part, j) =>
+          part.startsWith('**') && part.endsWith('**')
+            ? <strong key={j}>{part.slice(2, -2)}</strong>
+            : part
+        )}
+      </React.Fragment>
+    )
+  })
 }
 
 function SparkleIcon() {
@@ -189,14 +233,12 @@ export default function Chatbot() {
     } catch (err) {
       if (err.name !== 'AbortError') {
         console.error('Chatbot error:', err)
+        const fallback = getLocalFallbackReply(text)
         setMessages(prev => {
           const updated = [...prev]
           updated[updated.length - 1] = {
             ...updated[updated.length - 1],
-            content: import.meta.env.DEV
-              ? getLocalFallbackReply(text)
-              : "Sorry, I couldn't connect right now. Text or call us directly at 510-309-8345 and we'll get back to you!",
-            error: !import.meta.env.DEV,
+            content: fallback,
           }
           return updated
         })
@@ -324,13 +366,15 @@ export default function Chatbot() {
                       }),
                 }}
               >
-                {msg.content || (
-                  <span className="flex gap-1 items-center py-0.5">
-                    {[0, 1, 2].map(d => (
-                      <span key={d} className="w-1.5 h-1.5 rounded-full animate-bounce" style={{ background: '#94a3b8', animationDelay: `${d * 0.15}s` }} />
-                    ))}
-                  </span>
-                )}
+                {msg.content
+                  ? renderContent(msg.content)
+                  : (
+                    <span className="flex gap-1 items-center py-0.5">
+                      {[0, 1, 2].map(d => (
+                        <span key={d} className="w-1.5 h-1.5 rounded-full animate-bounce" style={{ background: '#94a3b8', animationDelay: `${d * 0.15}s` }} />
+                      ))}
+                    </span>
+                  )}
               </div>
             </div>
           ))}
