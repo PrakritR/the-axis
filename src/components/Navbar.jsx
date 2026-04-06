@@ -38,12 +38,22 @@ function TourIcon() {
   )
 }
 
+function ResidentIcon() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden>
+      <path d="M15 11a3 3 0 1 0-6 0" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+      <path d="M6 11V7a6 6 0 1 1 12 0v4" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+      <rect x="4" y="11" width="16" height="11" rx="2" stroke="currentColor" strokeWidth="1.8" />
+    </svg>
+  )
+}
+
 export default function Navbar() {
   const [mobileOpen, setMobileOpen] = useState(false)
   const [scrolled, setScrolled] = useState(false)
   const location = useLocation()
   const isHome = location.pathname === '/'
-  const showMobileDock = ['/', '/apply', '/contact'].includes(location.pathname)
+  const showMobileDock = ['/', '/apply', '/contact', '/resident'].includes(location.pathname)
   const promoText = 'Sign up now. No application fee for a limited time.'
   const navLinks = [
     { label: 'Homes', to: { pathname: '/', hash: '#properties' }, isActive: isHome },
@@ -56,6 +66,7 @@ export default function Navbar() {
     { label: 'Apply', to: '/apply', icon: <ApplyIcon />, isActive: location.pathname === '/apply' },
     { label: 'Contact', to: '/contact', icon: <ContactIcon />, isActive: location.pathname === '/contact' },
     { label: 'Tours', to: `/contact?subject=${encodeURIComponent('Tour request')}`, icon: <TourIcon />, isActive: false },
+    { label: 'Resident', to: '/resident', icon: <ResidentIcon />, isActive: location.pathname === '/resident' },
   ]
 
   useEffect(() => {
@@ -113,13 +124,14 @@ export default function Navbar() {
           ))}
         </nav>
 
-        <div className="flex items-center gap-2 sm:gap-3">
+        <div className="flex min-w-0 items-center gap-1.5 sm:gap-3">
           <Link
             to="/resident"
             onClick={scrollToTop}
-            className="hidden rounded-full border border-white/20 px-4 py-2 text-sm font-semibold text-white/80 transition hover:border-axis hover:text-axis sm:inline-flex"
+            className="inline-flex shrink-0 items-center rounded-full border border-white/20 px-2.5 py-1.5 text-[11px] font-semibold leading-tight text-white/80 transition hover:border-axis hover:text-axis sm:px-4 sm:py-2 sm:text-sm"
           >
-            Resident Login
+            <span className="sm:hidden">Resident</span>
+            <span className="hidden sm:inline">Resident Login</span>
           </Link>
           <Link
             to="/apply"
@@ -169,6 +181,15 @@ export default function Navbar() {
               <Link to="/apply" onClick={() => { closeMobileMenu(); scrollToTop() }} className="rounded-xl px-3 py-2.5 text-sm font-medium text-white/70 transition hover:bg-white/8 hover:text-white">Apply</Link>
               <Link to="/contact" onClick={() => { closeMobileMenu(); scrollToTop() }} className="rounded-xl px-3 py-2.5 text-sm font-medium text-white/70 transition hover:bg-white/8 hover:text-white">Contact</Link>
               <Link to="/join" onClick={() => { closeMobileMenu(); scrollToTop() }} className="rounded-xl px-3 py-2.5 text-sm font-medium text-white/70 transition hover:bg-white/8 hover:text-white">Join Us</Link>
+              <Link
+                to="/resident"
+                onClick={() => { closeMobileMenu(); scrollToTop() }}
+                className={`rounded-xl px-3 py-2.5 text-sm font-medium transition hover:bg-white/8 hover:text-white ${
+                  location.pathname === '/resident' ? 'bg-white/10 text-white' : 'text-white/70'
+                }`}
+              >
+                Resident login
+              </Link>
               <div className="mt-2 border-t border-white/10 pt-3 pb-1">
                 <Link
                   to={`/contact?subject=${encodeURIComponent('Tour request')}`}
@@ -187,14 +208,14 @@ export default function Navbar() {
       <div className="pointer-events-none fixed inset-x-3 bottom-[calc(0.75rem+env(safe-area-inset-bottom))] z-40 md:hidden">
         <nav
           aria-label="Mobile primary navigation"
-          className="pointer-events-auto grid grid-cols-4 gap-1 rounded-[22px] border border-white/25 bg-navy-950/95 p-2 shadow-[0_20px_50px_rgba(0,0,0,0.42),0_0_0_1px_rgba(15,23,42,0.65),inset_0_1px_0_0_rgba(255,255,255,0.22)] backdrop-blur-2xl backdrop-saturate-150"
+          className="pointer-events-auto grid grid-cols-5 gap-0.5 rounded-[22px] border border-white/25 bg-navy-950/95 p-1.5 sm:gap-1 sm:p-2 shadow-[0_20px_50px_rgba(0,0,0,0.42),0_0_0_1px_rgba(15,23,42,0.65),inset_0_1px_0_0_rgba(255,255,255,0.22)] backdrop-blur-2xl backdrop-saturate-150"
         >
           {mobileDockLinks.map((item) => (
             <Link
               key={item.label}
               to={item.to}
               onClick={() => { closeMobileMenu(); scrollToTop() }}
-              className={`flex min-h-[56px] flex-col items-center justify-center gap-1 rounded-[16px] px-2 py-2 text-[11px] font-semibold transition ${
+              className={`flex min-h-[52px] flex-col items-center justify-center gap-0.5 rounded-[14px] px-1 py-1.5 text-[10px] font-semibold leading-tight transition sm:min-h-[56px] sm:gap-1 sm:rounded-[16px] sm:px-2 sm:py-2 sm:text-[11px] ${
                 item.isActive
                   ? 'bg-white/14 text-white shadow-[inset_0_1px_0_0_rgba(255,255,255,0.12)]'
                   : 'text-white/70 active:scale-[0.98] hover:bg-white/[0.07]'

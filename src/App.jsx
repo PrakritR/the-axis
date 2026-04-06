@@ -74,7 +74,7 @@ function PageFallback() {
 
 export default function App(){
   const location = useLocation()
-  const showMobileDock = ['/', '/apply', '/contact'].includes(location.pathname)
+  const showMobileDock = ['/', '/apply', '/contact', '/resident'].includes(location.pathname)
   return (
     <div className="app-shell min-h-screen min-h-svh flex flex-col">
       <ScrollToTop />
