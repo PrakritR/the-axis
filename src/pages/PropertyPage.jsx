@@ -33,9 +33,11 @@ function AvailableBadge({ text, bookedFrom, bookedUntil }) {
   const dot = (isBooked || isUnavailable) ? 'bg-red-500' : isNow ? 'bg-emerald-500' : 'bg-amber-500'
 
   return (
-    <span className={`inline-flex items-start gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold break-words ${cls}`} style={{ wordBreak: 'break-word', whiteSpace: 'normal' }}>
+    <span
+      className={`flex min-w-0 max-w-full items-start gap-1.5 rounded-2xl px-2.5 py-1.5 text-xs font-semibold leading-snug break-words [overflow-wrap:anywhere] ${cls}`}
+    >
       <span className={`mt-[3px] h-1.5 w-1.5 shrink-0 rounded-full ${dot}`} />
-      {displayText}
+      <span className="min-w-0 flex-1">{displayText}</span>
     </span>
   )
 }
@@ -360,9 +362,9 @@ function FloorPlanCard({plan, onDetail}){
   const scarce = available === 1
 
   return (
-    <div className="w-full min-w-0 border border-slate-200 bg-white overflow-hidden rounded-xl">
+    <div className="w-full min-w-0 max-w-full border border-slate-200 bg-white overflow-hidden rounded-xl">
       {/* Header */}
-      <div className="px-4 py-4 sm:px-6 sm:py-5 border-b border-slate-100 flex items-start justify-between gap-3">
+      <div className="flex items-start justify-between gap-3 border-b border-slate-100 px-4 py-4 sm:px-6 sm:py-5">
         <div className="min-w-0 flex-1">
           <div className="text-[11px] font-bold uppercase tracking-[0.14em] text-slate-400 break-words">{plan.title}</div>
           <div className="mt-1.5 text-lg font-black text-slate-900 break-words">{plan.priceRange}
@@ -391,13 +393,13 @@ function FloorPlanCard({plan, onDetail}){
       </div>
 
       {/* Rows */}
-      <div className="divide-y divide-slate-100 overflow-hidden px-4 sm:px-6">
+      <div className="min-w-0 divide-y divide-slate-100 overflow-hidden px-4 sm:px-6">
         {roomsToShow.map((r, idx) => (
-          <div key={idx} className="py-4 sm:grid sm:grid-cols-12 sm:items-center sm:gap-3">
+          <div key={idx} className="min-w-0 py-4 sm:grid sm:grid-cols-12 sm:items-start sm:gap-3">
             {/* Room name — always shown */}
-            <div className="sm:col-span-4">
-              <div className="flex flex-wrap items-center gap-2">
-                <span className="font-semibold text-slate-900">{r.name}</span>
+            <div className="min-w-0 sm:col-span-4">
+              <div className="flex min-w-0 flex-wrap items-center gap-2">
+                <span className="min-w-0 break-words font-semibold text-slate-900">{r.name}</span>
                 {r.video && (
                   <span className="inline-flex items-center gap-1 rounded-full bg-axis/10 px-2 py-0.5 text-[10px] font-semibold text-axis">
                     <svg className="w-2.5 h-2.5" viewBox="0 0 24 24" fill="none" aria-hidden><polygon points="5,3 19,12 5,21" fill="currentColor"/></svg>
@@ -411,33 +413,33 @@ function FloorPlanCard({plan, onDetail}){
             </div>
 
             {/* Mobile-only: Price and Availability stacked as separate full-width rows */}
-            <div className="mt-3 space-y-2.5 sm:hidden">
-              <div className="flex items-center justify-between gap-3">
-                <span className="shrink-0 text-[10px] font-bold uppercase tracking-[0.14em] text-slate-400">Price</span>
-                <span className="font-bold text-slate-900">{r.price}</span>
+            <div className="mt-3 min-w-0 w-full max-w-full space-y-2.5 sm:hidden">
+              <div className="flex min-w-0 items-start justify-between gap-3">
+                <span className="shrink-0 pt-0.5 text-[10px] font-bold uppercase tracking-[0.14em] text-slate-400">Price</span>
+                <span className="min-w-0 break-words text-right font-bold text-slate-900">{r.price}</span>
               </div>
-              <div>
+              <div className="min-w-0 w-full max-w-full">
                 <div className="mb-1.5 text-[10px] font-bold uppercase tracking-[0.14em] text-slate-400">Availability</div>
                 <AvailableBadge text={r.available} bookedFrom={r.bookedFrom} bookedUntil={r.bookedUntil} />
               </div>
             </div>
 
             {/* Desktop-only: Price column */}
-            <div className="hidden sm:col-span-3 sm:block">
-              <div className="font-bold text-slate-900">{r.price}</div>
+            <div className="hidden min-w-0 sm:col-span-3 sm:block">
+              <div className="break-words font-bold text-slate-900">{r.price}</div>
             </div>
 
             {/* Desktop-only: Availability column */}
-            <div className="hidden sm:col-span-3 sm:block">
+            <div className="hidden min-w-0 sm:col-span-3 sm:block">
               <AvailableBadge text={r.available} bookedFrom={r.bookedFrom} bookedUntil={r.bookedUntil} />
             </div>
 
             {/* Details button — full width on mobile */}
-            <div className="mt-3 sm:col-span-2 sm:mt-0 sm:flex sm:justify-end">
+            <div className="mt-3 min-w-0 w-full sm:col-span-2 sm:mt-0 sm:flex sm:w-auto sm:justify-end">
               <button
                 type="button"
                 onClick={() => onDetail && onDetail(r)}
-                className="w-full sm:w-auto rounded-full border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-700 transition hover:border-axis hover:text-axis"
+                className="box-border w-full max-w-full rounded-full border border-slate-300 bg-white px-3 py-2.5 text-xs font-semibold text-slate-700 transition hover:border-axis hover:text-axis sm:w-auto sm:min-w-[5.5rem] sm:py-2"
               >
                 Details
               </button>
@@ -748,8 +750,8 @@ export default function PropertyPage(){
           <PropertyGallery images={galleryImages} videos={p.videos || []} />
         </div>
 
-      <div className="mx-auto mt-12 grid max-w-[1480px] gap-10 px-4 sm:px-6 md:grid-cols-12 lg:px-10">
-        <div className="md:col-span-9">
+      <div className="mx-auto mt-12 grid min-w-0 max-w-[1480px] gap-10 px-4 sm:px-6 md:grid-cols-12 lg:px-10">
+        <div className="min-w-0 md:col-span-9">
 
           <section className="grid gap-8 border-b border-slate-200 pb-10 lg:grid-cols-[minmax(0,1fr)_280px]">
             <div>
@@ -795,9 +797,9 @@ export default function PropertyPage(){
 
           {/* Floor Plans */}
           {displayedRoomPlans.length > 0 && (
-            <section id="floor-plans" ref={(node) => { sectionRefs.current['floor-plans'] = node }} className="mt-10 scroll-mt-28 md:scroll-mt-40">
-              <div className="flex items-end justify-between gap-3">
-                <div>
+            <section id="floor-plans" ref={(node) => { sectionRefs.current['floor-plans'] = node }} className="mt-10 min-w-0 scroll-mt-28 md:scroll-mt-40">
+              <div className="flex min-w-0 flex-wrap items-end justify-between gap-x-3 gap-y-2">
+                <div className="min-w-0 flex-1">
                   <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-500">{roomPlansLabel}</div>
                   <h2 className="font-editorial mt-2 text-3xl leading-tight text-slate-900 sm:text-4xl">{roomPlansHeading}</h2>
                 </div>
@@ -805,7 +807,7 @@ export default function PropertyPage(){
                   {displayedRoomPlans.reduce((acc, pl) => acc + pl.rooms.length, 0)} rooms listed
                 </div>
               </div>
-              <div className="mt-5 space-y-4">
+              <div className="mt-5 min-w-0 space-y-4">
                 {displayedRoomPlans.map((plan, i) => (
                   <FloorPlanCard key={i} plan={plan} onDetail={(room)=> setModalPlan({plan, room})} />
                 ))}
