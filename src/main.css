@@ -51,6 +51,13 @@ body {
   overflow-x: hidden;
 }
 
+@supports (overflow: clip) {
+  .app-shell {
+    /* clip avoids a scroll containment bug that can break position:sticky on the navbar */
+    overflow-x: clip;
+  }
+}
+
 @supports (min-height: 100dvh) {
   .app-shell { min-height: 100dvh; }
 }
