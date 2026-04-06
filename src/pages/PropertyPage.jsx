@@ -393,7 +393,8 @@ function FloorPlanCard({plan, onDetail}){
       {/* Rows */}
       <div className="divide-y divide-slate-100 px-4 sm:px-6">
         {roomsToShow.map((r, idx) => (
-          <div key={idx} className="grid grid-cols-1 items-center gap-2 py-4 sm:grid-cols-12 sm:gap-3">
+          <div key={idx} className="grid grid-cols-1 py-4 sm:grid-cols-12 sm:items-center sm:gap-3">
+            {/* Room name */}
             <div className="sm:col-span-4">
               <div className="flex items-center gap-2">
                 <span className="font-semibold text-slate-900">{r.name}</span>
@@ -408,15 +409,19 @@ function FloorPlanCard({plan, onDetail}){
                 <div className="mt-0.5 text-xs text-slate-400">{[r.floorTitle, r.details].filter(Boolean).join(' · ')}</div>
               )}
             </div>
-            <div className="sm:col-span-3 flex items-center justify-between sm:block">
-              <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-slate-400 sm:hidden">Price</span>
-              <div className="font-bold text-slate-900">{r.price}</div>
+            {/* Price + Availability: 2-col side-by-side on mobile, individual columns on desktop */}
+            <div className="mt-3 grid grid-cols-2 gap-3 sm:contents">
+              <div className="sm:col-span-3">
+                <div className="text-[10px] font-bold uppercase tracking-[0.14em] text-slate-400">Price</div>
+                <div className="mt-0.5 font-bold text-slate-900">{r.price}</div>
+              </div>
+              <div className="sm:col-span-3">
+                <div className="text-[10px] font-bold uppercase tracking-[0.14em] text-slate-400">Availability</div>
+                <div className="mt-0.5"><AvailableBadge text={r.available} bookedFrom={r.bookedFrom} bookedUntil={r.bookedUntil} /></div>
+              </div>
             </div>
-            <div className="sm:col-span-3 flex items-center justify-between sm:block">
-              <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-slate-400 sm:hidden">Availability</span>
-              <AvailableBadge text={r.available} bookedFrom={r.bookedFrom} bookedUntil={r.bookedUntil} />
-            </div>
-            <div className="sm:col-span-2 flex justify-end">
+            {/* Details button — full width on mobile */}
+            <div className="mt-3 sm:col-span-2 sm:mt-0 sm:flex sm:justify-end">
               <button
                 type="button"
                 onClick={() => onDetail && onDetail(r)}
