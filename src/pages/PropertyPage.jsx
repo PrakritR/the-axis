@@ -360,18 +360,18 @@ function FloorPlanCard({plan, onDetail}){
   const scarce = available === 1
 
   return (
-    <div className="border border-slate-200 bg-white overflow-hidden rounded-xl">
-      {/* Header — clean, typography-led */}
-      <div className="px-5 py-5 sm:px-6 border-b border-slate-100 flex items-start justify-between gap-4">
-        <div>
-          <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">{plan.title}</div>
-          <div className="mt-1.5 text-xl font-black text-slate-900">{plan.priceRange}
-            <span className="ml-1.5 text-sm font-medium text-slate-400">/ month</span>
+    <div className="w-full min-w-0 border border-slate-200 bg-white overflow-hidden rounded-xl">
+      {/* Header */}
+      <div className="px-4 py-4 sm:px-6 sm:py-5 border-b border-slate-100 flex items-start justify-between gap-3">
+        <div className="min-w-0 flex-1">
+          <div className="text-[11px] font-bold uppercase tracking-[0.14em] text-slate-400 break-words">{plan.title}</div>
+          <div className="mt-1.5 text-lg font-black text-slate-900 break-words">{plan.priceRange}
+            <span className="ml-1.5 text-sm font-medium text-slate-400">/ mo</span>
           </div>
-          {plan.summary && <div className="mt-1 text-sm text-slate-500">{plan.summary}</div>}
+          {plan.summary && <div className="mt-1 text-sm text-slate-500 break-words">{plan.summary}</div>}
           {scarce && (
             <div className="mt-2.5 inline-flex items-center gap-1.5 text-xs font-semibold text-amber-600">
-              <span className="h-1.5 w-1.5 rounded-full bg-amber-500" />
+              <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-amber-500" />
               1 room remaining at this price
             </div>
           )}
@@ -391,7 +391,7 @@ function FloorPlanCard({plan, onDetail}){
       </div>
 
       {/* Rows */}
-      <div className="divide-y divide-slate-100 px-4 sm:px-6">
+      <div className="divide-y divide-slate-100 overflow-hidden px-4 sm:px-6">
         {roomsToShow.map((r, idx) => (
           <div key={idx} className="py-4 sm:grid sm:grid-cols-12 sm:items-center sm:gap-3">
             {/* Room name — always shown */}
