@@ -12,6 +12,7 @@ const PropertyPage = lazy(() => import('./pages/PropertyPage'))
 const Contact = lazy(() => import('./pages/Contact'))
 const Apply = lazy(() => import('./pages/Apply'))
 const Resident = lazy(() => import('./pages/Resident'))
+const JoinUs = lazy(() => import('./pages/JoinUs'))
 
 function ScrollToTop() {
   const { pathname, hash, search } = useLocation()
@@ -97,6 +98,7 @@ export default function App(){
               <Route path="/contact" element={<AnimatedPage><Contact/></AnimatedPage>} />
               <Route path="/apply" element={<AnimatedPage><Apply/></AnimatedPage>} />
               <Route path="/resident" element={<AnimatedPage><Resident/></AnimatedPage>} />
+              <Route path="/join" element={<AnimatedPage><JoinUs/></AnimatedPage>} />
             </Routes>
           </AnimatePresence>
         </Suspense>

@@ -49,6 +49,7 @@ export default function Navbar() {
     { label: 'Homes', to: { pathname: '/', hash: '#properties' }, isActive: isHome },
     { label: 'Apply', to: '/apply', isActive: location.pathname === '/apply' },
     { label: 'Contact', to: '/contact', isActive: location.pathname === '/contact' },
+    { label: 'Join Us', to: '/join', isActive: location.pathname === '/join' },
   ]
   const mobileDockLinks = [
     { label: 'Homes', to: { pathname: '/', hash: '#properties' }, icon: <HomeIcon />, isActive: isHome },
@@ -167,6 +168,7 @@ export default function Navbar() {
               <Link to={{ pathname: '/', hash: '#properties' }} onClick={closeMobileMenu} className="rounded-xl px-3 py-2.5 text-sm font-medium text-white/70 transition hover:bg-white/8 hover:text-white">Homes & Availability</Link>
               <Link to="/apply" onClick={() => { closeMobileMenu(); scrollToTop() }} className="rounded-xl px-3 py-2.5 text-sm font-medium text-white/70 transition hover:bg-white/8 hover:text-white">Apply</Link>
               <Link to="/contact" onClick={() => { closeMobileMenu(); scrollToTop() }} className="rounded-xl px-3 py-2.5 text-sm font-medium text-white/70 transition hover:bg-white/8 hover:text-white">Contact</Link>
+              <Link to="/join" onClick={() => { closeMobileMenu(); scrollToTop() }} className="rounded-xl px-3 py-2.5 text-sm font-medium text-white/70 transition hover:bg-white/8 hover:text-white">Join Us</Link>
               <div className="mt-2 border-t border-white/10 pt-3 pb-1">
                 <Link
                   to={`/contact?subject=${encodeURIComponent('Tour request')}`}
