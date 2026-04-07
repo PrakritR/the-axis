@@ -3,7 +3,7 @@ import { Seo } from '../lib/seo'
 import { properties } from '../data/properties'
 
 const AIRTABLE_BASE_ID = import.meta.env.VITE_AIRTABLE_APPLICATIONS_BASE_ID || 'appNBX2inqfJMyqYV'
-const AIRTABLE_TABLE = 'Inquiries'
+const AIRTABLE_TABLE = import.meta.env.VITE_AIRTABLE_APPLICATIONS_TABLE || 'Inquiries'
 const AIRTABLE_TOKEN = import.meta.env.VITE_AIRTABLE_TOKEN
 
 const LEASE_TERMS = [

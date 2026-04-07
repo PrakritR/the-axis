@@ -261,7 +261,7 @@ function BookingScheduler() {
 }
 
 const AIRTABLE_BASE_ID = import.meta.env.VITE_AIRTABLE_APPLICATIONS_BASE_ID || 'appNBX2inqfJMyqYV'
-const AIRTABLE_INQUIRIES_TABLE = 'Inquiries'
+const AIRTABLE_INQUIRIES_TABLE = import.meta.env.VITE_AIRTABLE_APPLICATIONS_TABLE || 'Inquiries'
 const AIRTABLE_TOKEN = import.meta.env.VITE_AIRTABLE_TOKEN
 
 const inputCls = 'w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 placeholder-slate-400 outline-none transition focus:border-axis focus:bg-white focus:ring-2 focus:ring-axis/20'
