@@ -56,42 +56,6 @@ function ChevronDown({ open }) {
 
 // ── Data ─────────────────────────────────────────────────────────────────────
 
-const features = [
-  {
-    eyebrow: 'Furnished',
-    heading: 'Move-in ready rooms',
-    body: 'Bed, desk, chair, and closet included. Move in as-is.',
-    icon: (
-      <svg className="w-6 h-6" viewBox="0 0 24 24" fill="none" aria-hidden>
-        <path d="M3 10.5V18M21 10.5V18M3 13.5H21V8.25A1.5 1.5 0 0 0 19.5 6.75H4.5A1.5 1.5 0 0 0 3 8.25V13.5Z" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
-      </svg>
-    ),
-    dark: true,
-  },
-  {
-    eyebrow: 'All-inclusive',
-    heading: 'Utilities + WiFi included',
-    body: 'Water, electricity, gas, and WiFi included. No surprise bills.',
-    icon: (
-      <svg className="w-6 h-6" viewBox="0 0 24 24" fill="none" aria-hidden>
-        <path d="M1.5 8.5a15 15 0 0 1 21 0M5 12a12 12 0 0 1 14 0M8.5 15.5a7 7 0 0 1 7 0M12 19h.01" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
-      </svg>
-    ),
-    dark: false,
-  },
-  {
-    eyebrow: 'Location',
-    heading: 'Walk to campus',
-    body: 'Our homes are 0.3 miles from the University of Washington — a 5-minute walk to class.',
-    icon: (
-      <svg className="w-6 h-6" viewBox="0 0 24 24" fill="none" aria-hidden>
-        <path d="M12 2C8.686 2 6 4.686 6 8c0 5.25 6 14 6 14s6-8.75 6-14c0-3.314-2.686-6-6-6z" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
-        <circle cx="12" cy="8" r="2.25" stroke="currentColor" strokeWidth="1.5"/>
-      </svg>
-    ),
-    dark: true,
-  },
-]
 
 const steps = [
   { n: '01', title: 'Browse rooms', body: 'Compare locations, floor plans, and pricing across available homes.', color: 'text-axis' },
@@ -381,38 +345,6 @@ export default function Home() {
       {/* ── ROOM FINDER ── */}
       <RoomFinder />
 
-      {/* ── FEATURE CARDS ── */}
-      <section className="bg-cream-50 px-4 py-14 sm:px-6 sm:py-20">
-        <div className="mx-auto max-w-6xl">
-          <motion.div
-            className="grid gap-4 sm:grid-cols-3"
-            initial="hidden"
-            whileInView="show"
-            viewport={{ once: true, margin: '-48px' }}
-            variants={stagger}
-          >
-            {features.map((f) => (
-              <motion.div
-                key={f.eyebrow}
-                variants={up}
-                className={`group flex flex-col rounded-2xl p-5 sm:p-7 transition-transform hover:-translate-y-1 ${
-                  f.dark
-                    ? 'bg-navy-900 text-white'
-                    : 'bg-white border border-slate-200 text-slate-900'
-                }`}
-              >
-                <div className={`w-11 h-11 flex items-center justify-center rounded-xl mb-4 ${f.dark ? 'bg-white/10 text-axis' : 'bg-axis/10 text-axis'}`}>
-                  {f.icon}
-                </div>
-                <p className={`text-xs font-bold uppercase tracking-[0.18em] ${f.dark ? 'text-axis' : 'text-axis'}`}>{f.eyebrow}</p>
-                <h3 className={`mt-2 text-xl font-bold leading-snug ${f.dark ? 'text-white' : 'text-slate-900'}`}>{f.heading}</h3>
-                <p className={`mt-2.5 text-sm leading-6 ${f.dark ? 'text-white/55' : 'text-slate-500'}`}>{f.body}</p>
-              </motion.div>
-            ))}
-          </motion.div>
-        </div>
-      </section>
-
       {/* ── AVAILABLE ROOMS ── */}
       <section id="properties" className="scroll-mt-20 border-t border-slate-100 bg-white px-4 py-14 sm:px-6 sm:py-20">
         <div className="mx-auto max-w-6xl">
@@ -448,6 +380,52 @@ export default function Home() {
               </motion.div>
             ))}
           </motion.div>
+
+          {/* ── Quick highlights strip ── */}
+          <Reveal>
+            <div className="mt-10 grid gap-3 sm:grid-cols-3">
+              {[
+                {
+                  icon: (
+                    <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" aria-hidden>
+                      <path d="M3 10.5V18M21 10.5V18M3 13.5H21V8.25A1.5 1.5 0 0 0 19.5 6.75H4.5A1.5 1.5 0 0 0 3 8.25V13.5Z" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                    </svg>
+                  ),
+                  label: 'Furnished',
+                  body: 'Bed, desk, chair & closet included — move in as-is.',
+                },
+                {
+                  icon: (
+                    <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" aria-hidden>
+                      <path d="M1.5 8.5a15 15 0 0 1 21 0M5 12a12 12 0 0 1 14 0M8.5 15.5a7 7 0 0 1 7 0M12 19h.01" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                    </svg>
+                  ),
+                  label: 'Utilities + WiFi included',
+                  body: 'Water, electricity, gas & WiFi — no surprise bills.',
+                },
+                {
+                  icon: (
+                    <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" aria-hidden>
+                      <path d="M12 2C8.686 2 6 4.686 6 8c0 5.25 6 14 6 14s6-8.75 6-14c0-3.314-2.686-6-6-6z" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                      <circle cx="12" cy="8" r="2.25" stroke="currentColor" strokeWidth="1.5"/>
+                    </svg>
+                  ),
+                  label: '5-min walk to UW',
+                  body: '0.3 miles from the University of Washington main campus.',
+                },
+              ].map((item) => (
+                <div key={item.label} className="flex items-start gap-4 rounded-2xl border border-slate-200 bg-slate-50 px-5 py-4">
+                  <div className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-white text-axis shadow-soft">
+                    {item.icon}
+                  </div>
+                  <div>
+                    <div className="text-sm font-semibold text-slate-900">{item.label}</div>
+                    <div className="mt-0.5 text-xs leading-5 text-slate-500">{item.body}</div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </Reveal>
         </div>
       </section>
 
