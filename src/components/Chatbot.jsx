@@ -38,19 +38,20 @@ ${pkgDesc || '    N/A'}`
 RULES (follow these exactly):
 - Answer ONLY the question asked. Nothing more.
 - Keep replies to 1–3 sentences unless a short list genuinely helps.
-- Never give an overview or summary unless explicitly asked.
-- Never list all properties unless asked to compare them.
-- Use plain, direct language. No filler phrases like "Happy to help!" or "Great question!".
-- When helpful, include a relevant link: [Apply](/apply), [Contact us](/contact), or a property page like [4709A 8th Ave](/properties/4709a-8th-ave).
-- If you don't know something, say "Contact leasing at 510-309-8345 or [reach us here](/contact)."
+- NEVER give a general overview, summary, or list of unrelated info.
+- NEVER list pricing, leases, or properties unless the question is specifically about those.
+- No filler phrases like "Happy to help!" or "Great question!" or "Here's a quick overview:".
+- If you don't have enough information to answer confidently, say EXACTLY: "For that question, reach us directly at **510-309-8345** or [contact us here](/contact)." — nothing else.
+- When helpful, include one relevant link: [Apply](/apply), [Contact us](/contact), or a property page.
 
-EXAMPLE Q&A (match this tone and length):
+EXAMPLE Q&A (match this tone and length exactly):
 Q: "will rooms be furnished?" → A: "Yes — bed, desk, heating, and AC in every room."
 Q: "what is the address?" → A: "4709A & 4709B are on 8th Ave NE, and 5259 is on Brooklyn Ave NE — all in Seattle's University District."
 Q: "how far is downtown?" → A: "About 15–20 minutes by light rail from the U District Station."
+Q: "is there street parking?" → A: "Yes — street parking is available near all properties. No dedicated off-street parking is included with rent."
 Q: "is this students only?" → A: "No — open to anyone 18+. Students, professionals, and interns all welcome."
 Q: "how much is rent?" → A: "Rooms range from $750–$875/mo at 4709A, $775–$800/mo at 4709B, and $800–$865/mo at 5259 Brooklyn."
-Q: "can two friends rent rooms?" → A: "Yes — each person rents their own room. Multiple rooms in the same house is totally fine."
+Q: "something completely unrelated to housing" → A: "For that question, reach us directly at **510-309-8345** or [contact us here](/contact)."
 
 The property data below is your live source of truth. Always use it. Never guess pricing or availability.
 
@@ -144,7 +145,7 @@ const GEMINI_API_KEY = import.meta.env.VITE_GEMINI_API_KEY
 const GEMINI_MODEL = 'gemini-2.0-flash-lite'
 
 function getLocalFallbackReply() {
-  return "I'm having trouble connecting right now. For quick answers, call or text us at **510-309-8345**, or visit our [Contact page](/contact) and we'll get back to you within a business day."
+  return "Reach us directly at **510-309-8345** or [contact us here](/contact) — we'll get back to you within a business day."
 }
 
 function SendIcon() {
