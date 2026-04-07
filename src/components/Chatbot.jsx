@@ -33,14 +33,24 @@ Group Packages:
 ${pkgDesc || '    N/A'}`
   }).join('\n\n---\n\n')
 
-  return `You are an Axis Housing leasing assistant. Axis is a student-focused shared housing company in Seattle's University District. Be helpful, warm, and direct.
+  return `You are a leasing assistant for Axis Housing — a shared housing company in Seattle's University District. You answer questions from people interested in renting.
 
-CRITICAL RULES:
-1. Answer ONLY what was asked. Do not add extra context, overviews, or unrelated info.
-2. If someone asks "will rooms be furnished?" — answer that question only. Do not list properties.
-3. Keep replies to 1–4 lines unless a list is truly needed.
-4. Never volunteer pricing breakdowns unless asked about price.
-5. When relevant, include a link to the appropriate page (e.g. [Apply](/apply), [Contact us](/contact), or the specific property page).
+RULES (follow these exactly):
+- Answer ONLY the question asked. Nothing more.
+- Keep replies to 1–3 sentences unless a short list genuinely helps.
+- Never give an overview or summary unless explicitly asked.
+- Never list all properties unless asked to compare them.
+- Use plain, direct language. No filler phrases like "Happy to help!" or "Great question!".
+- When helpful, include a relevant link: [Apply](/apply), [Contact us](/contact), or a property page like [4709A 8th Ave](/properties/4709a-8th-ave).
+- If you don't know something, say "Contact leasing at 510-309-8345 or [reach us here](/contact)."
+
+EXAMPLE Q&A (match this tone and length):
+Q: "will rooms be furnished?" → A: "Yes — bed, desk, heating, and AC in every room."
+Q: "what is the address?" → A: "4709A & 4709B are on 8th Ave NE, and 5259 is on Brooklyn Ave NE — all in Seattle's University District."
+Q: "how far is downtown?" → A: "About 15–20 minutes by light rail from the U District Station."
+Q: "is this students only?" → A: "No — open to anyone 18+. Students, professionals, and interns all welcome."
+Q: "how much is rent?" → A: "Rooms range from $750–$875/mo at 4709A, $775–$800/mo at 4709B, and $800–$865/mo at 5259 Brooklyn."
+Q: "can two friends rent rooms?" → A: "Yes — each person rents their own room. Multiple rooms in the same house is totally fine."
 
 The property data below is your live source of truth. Always use it. Never guess pricing or availability.
 
@@ -133,156 +143,8 @@ const SYSTEM_PROMPT = buildSystemPrompt()
 const GEMINI_API_KEY = import.meta.env.VITE_GEMINI_API_KEY
 const GEMINI_MODEL = 'gemini-2.0-flash-lite'
 
-const MONTHS = ['january','february','march','april','may','june','july','august','september','october','november','december']
-
-function getLocalFallbackReply(question) {
-  const text = question.toLowerCase()
-
-  const hasMonth = MONTHS.some(m => text.includes(m))
-  const isMoveInQ = text.includes('move in') || text.includes('move-in') || text.includes('start') || text.includes('begin') || text.includes('from') || hasMonth
-  const isAvailQ = text.includes('avail') || text.includes('when') || isMoveInQ
-
-  if (isAvailQ) {
-    return 'Here\'s what\'s currently available:\n\n**4709B 8th Ave NE** — all 9 rooms now ($775–$800/mo) → [View rooms](/properties/4709b-8th-ave)\n\n**5259 Brooklyn Ave NE** — all rooms after Apr 14, 2026 ($800–$865/mo) → [View rooms](/properties/5259-brooklyn-ave-ne)\n\n**4709A 8th Ave NE** — select rooms Aug–Sep 2026 ($750–$875/mo) → [View rooms](/properties/4709a-8th-ave)\n\nNeed a custom date? +$25/mo surcharge applies. [Contact us](/contact) or call **510-309-8345**.'
-  }
-
-  if (text.includes('furniture') || text.includes('furnished') || text.includes('furnish')) {
-    return 'Yes — all rooms come **fully furnished**: bed, desk, heating, and AC. No extra furnishing fee.'
-  }
-
-  if (text.includes('room') || text.includes('bedroom') || text.includes('floor')) {
-    return 'All three properties are shared housing near UW:\n- **4709A** — 10 bedrooms, 3.5 baths ($750–$875/mo)\n- **4709B** — 9 bedrooms, 2.5 baths ($775–$800/mo)\n- **5259 Brooklyn** — 9 bedrooms, 3 baths ($800–$865/mo)\n\n[Browse all properties](/) to see room availability.'
-  }
-
-  if (text.includes('rent') || text.includes('price') || text.includes('pric') || text.includes('cost') || text.includes('how much') || text.includes('fee') || text.includes('pay')) {
-    return 'Room prices by property:\n- **4709A** 8th Ave: $750–$875/mo\n- **4709B** 8th Ave: $775–$800/mo\n- **5259 Brooklyn**: $800–$865/mo\n\nUtilities: flat **$175/mo** (covers bi-monthly cleaning, WiFi, water & trash). Application fee: $50. Rooms come furnished — no furnishing fee.'
-  }
-
-  if (text.includes('apply') || text.includes('application') || text.includes('sign') || text.includes('process')) {
-    return 'Ready to apply? Head to our [Apply page](/apply) — takes about 5 minutes.\n\n- $50 application fee (collected at move-in, not upfront)\n- We respond within 2 business days\n- Questions first? [Contact leasing](/contact) or call **510-309-8345**'
-  }
-
-  if (text.includes('tour') || text.includes('visit') || text.includes('schedule') || text.includes('view') || text.includes('show')) {
-    const prop = text.includes('4709a') || text.includes('8th') && !text.includes('4709b') ? '4709a-8th-ave'
-      : text.includes('4709b') ? '4709b-8th-ave'
-      : text.includes('brooklyn') || text.includes('5259') ? '5259-brooklyn-ave-ne'
-      : null
-    if (prop) {
-      return `You can book a tour for that property right here:\n[View property & schedule tour](/properties/${prop})\n\nOr contact us directly:\n[Contact page](/contact) · **510-309-8345**\n\nBoth in-person and virtual tours are available.`
-    }
-    return 'Schedule a tour on our [Contact page](/contact) or call/text **510-309-8345**.\n\nWant to see a specific property first?\n- [4709A 8th Ave](/properties/4709a-8th-ave)\n- [4709B 8th Ave](/properties/4709b-8th-ave)\n- [5259 Brooklyn Ave NE](/properties/5259-brooklyn-ave-ne)\n\nBoth in-person and virtual tours available.'
-  }
-
-  if (text.includes('includ') || text.includes('ameniti') || text.includes('util') || text.includes('wifi') || text.includes('internet') || text.includes('clean') || text.includes('laundry')) {
-    return 'All properties include:\n- Walk to UW campus\n- In-unit washer/dryer\n- Bi-monthly professional cleaning\n- WiFi, full kitchen, public transit access\n- Furnished rooms (desk, bed, heating, AC)\n\nAll included in a flat **$175/mo utilities** fee.'
-  }
-
-  if (text.includes('lease') || text.includes('term') || text.includes('summer') || text.includes('academic') || text.includes('month') || text.includes('long')) {
-    return 'Three lease options for all properties:\n- **3-Month Summer**: Jun 16 – Sep 14 (fixed dates)\n- **9-Month Academic**: Sep 15 – Jun 15 (fixed dates)\n- **12-Month**: flexible start (Sep 15 recommended)\n\n+$25/month for non-standard start dates.'
-  }
-
-  if (text.includes('group') || text.includes('friend') || text.includes('roommate') || text.includes('together') || text.includes('two') || text.includes('couple') || text.includes('share') || text.includes('multiple')) {
-    return 'Yes — multiple rooms can be rented together! Friend groups and roommates are welcome.\n\nFloor packages are available at grouped rates. Each person pays their own room\'s rent + $175/mo utilities. **5259 Brooklyn** is especially popular for groups.\n\nContact us at 510-309-8345 or theaxishousing.com/contact for details.'
-  }
-
-  if (text.includes('deposit') || text.includes('security')) {
-    return '**5259 Brooklyn Ave NE** — $600 security deposit.\n**4709A and 4709B** — $500 security deposit.\n\nDeposit is refundable after move-out minus any damages.'
-  }
-
-  if (text.includes('kitchen') || text.includes('cook') || text.includes('stove') || text.includes('fridge') || text.includes('oven') || text.includes('microwave') || text.includes('dishwasher')) {
-    return 'Each property has **one full shared kitchen** on the main floor, with a stove, oven, microwave, refrigerator, and dishwasher. Yes, you can cook!'
-  }
-
-  if (text.includes('bathroom') || text.includes('bath') || text.includes('shower') || text.includes('toilet') || text.includes('private')) {
-    return 'Bathrooms are shared between rooms on the same floor. Most rooms share a bathroom with 2–3 others. **Room 10 at 4709A** has a private bathroom. See specific room details on the property page for exact sharing arrangements.'
-  }
-
-  if (text.includes('laundry') || text.includes('washer') || text.includes('dryer') || text.includes('washing')) {
-    return 'All properties have an **in-unit washer and dryer** — no laundromat needed.'
-  }
-
-  if (text.includes('pet') || text.includes('dog') || text.includes('cat') || text.includes('animal')) {
-    return 'Pets **may be allowed** depending on the property and situation. Contact leasing to discuss: **510-309-8345** or theaxishousing.com/contact.'
-  }
-
-  if (text.includes('bed') || text.includes('desk')) {
-    return 'Yes — all rooms come **fully furnished**: bed, desk, heating, and AC. No extra furnishing fee.'
-  }
-
-  if (text.includes('total') || text.includes('all in') || text.includes('all-in') || text.includes('monthly cost') || text.includes('how much per month') || text.includes('monthly') || text.includes('breakdown')) {
-    return 'Total monthly cost = **room rent + $175/mo utilities**.\n\nUtilities cover cleaning, WiFi, water & trash — no surprise bills.\n\n**Example:** $800/mo room + $175 utilities = **$975/mo total**.\n\nMove-in day: first month\'s rent + security deposit ($500 or $600 at 5259).'
-  }
-
-  if (text.includes('move in cost') || text.includes('first month') || text.includes('due') || text.includes('upfront') || text.includes('move-in cost')) {
-    return '**Move-in day total:** First month\'s rent + security deposit.\n\n- 4709A & 4709B deposit: $500\n- 5259 Brooklyn deposit: $600\n- Application fee ($50) is collected at move-in, not upfront.\n\nExample: $800 room → $800 + $500 = **$1,300 due on move-in day**.'
-  }
-
-  if (text.includes('background') || text.includes('check') || text.includes('credit') || text.includes('screen') || text.includes('qualify') || text.includes('require')) {
-    return 'All applicants go through a **background and reference check**. We welcome students, working professionals, and interns. Apply at theaxishousing.com/apply — $50 fee collected at move-in.'
-  }
-
-  if (text.includes('approval') || text.includes('how long') && text.includes('appli') || text.includes('when will i hear')) {
-    return 'Applications are typically reviewed within **2–3 business days**. We\'ll follow up by email.'
-  }
-
-  if (text.includes('maintenance') || text.includes('repair') || text.includes('broken') || text.includes('fix') || text.includes('issue')) {
-    return 'Submit maintenance requests through the **resident portal** or contact leasing directly at **510-309-8345**. We aim to respond quickly to all issues.'
-  }
-
-  if (text.includes('noise') || text.includes('quiet') || text.includes('party') || text.includes('loud')) {
-    return 'These are shared homes — **respectful quiet hours** apply. The environment is suited to students and working professionals who value a calm, focused living space.'
-  }
-
-  if (text.includes('guest') || text.includes('visitor') || text.includes('friend stay') || text.includes('overnight')) {
-    return 'Guests are welcome for short visits. For extended stays, contact leasing to discuss arrangements: **510-309-8345**.'
-  }
-
-  if (text.includes('insurance') || text.includes('renters')) {
-    return 'Renters insurance is **recommended** but not currently required. It\'s typically inexpensive and covers your personal belongings.'
-  }
-
-  if (text.includes('early') || text.includes('break') || text.includes('terminate') || text.includes('leave early') || text.includes('cancel')) {
-    return 'Early termination terms are outlined in your lease agreement. Contact leasing directly to discuss your situation: **510-309-8345** or theaxishousing.com/contact.'
-  }
-
-  if (text.includes('when is rent due') || text.includes('rent due') || text.includes('due date') || text.includes('pay rent')) {
-    return 'Rent is due on the **1st of each month**.'
-  }
-
-  if (text.includes('gender') || text.includes('male') || text.includes('female') || text.includes('women') || text.includes('men') || text.includes('mixed') || text.includes('coed') || text.includes('co-ed')) {
-    return 'Our properties are **not gender-specific**. We welcome all genders. Mixed households are common — it\'s a respectful shared living environment.'
-  }
-
-  if (text.includes('college only') || text.includes('students only') || text.includes('only for student') || text.includes('have to be a student') || text.includes('non-student') || text.includes('not a student') || text.includes('working') || text.includes('professional') || text.includes('intern') || text.includes('only college') || text.includes('must be') || text.includes('eligib') || text.includes('who can') || text.includes('can anyone') || text.includes('open to')) {
-    return 'No — **not college students only**. Axis is open to anyone looking for quality shared housing near UW:\n- UW & Shoreline students ✓\n- Working professionals ✓\n- Interns (summer or full-year) ✓\n- Anyone 18+ looking for shared housing in Seattle ✓\n\nWe just happen to be located in the University District, which makes us especially convenient for students and those working nearby.'
-  }
-
-  if (text.includes('transport') || text.includes('bus') || text.includes('train') || text.includes('light rail') || text.includes('transit') || text.includes('commute') || text.includes('link')) {
-    return 'All properties are very well connected:\n- **Bus:** 2–5 min walk to Routes 44, 49, 70, 372\n- **Light Rail:** U District Station is ~5–10 min walk — direct to downtown, Capitol Hill, SeaTac, Bellevue, Northgate\n- **Biking:** Burke-Gilman Trail nearby for easy bike commutes'
-  }
-
-  if (text.includes('downtown') || text.includes('capitol hill') || text.includes('south lake union') || text.includes('amazon') || text.includes('far') || text.includes('distance') || text.includes('how long') || text.includes('how close') || text.includes('minute') || text.includes('drive') || text.includes('walk')) {
-    return 'From the U District:\n- **Downtown Seattle:** ~15–20 min by light rail\n- **Capitol Hill:** ~10 min by light rail\n- **South Lake Union / Amazon:** ~20–25 min by transit\n- **UW campus:** 5–10 min walk\n- **SeaTac Airport:** ~35–40 min by light rail (no transfers)'
-  }
-
-  if (text.includes('grocery') || text.includes('food') || text.includes('restaurant') || text.includes('shop') || text.includes('cafe') || text.includes('coffee') || text.includes('nearby') || text.includes('neighborhood') || text.includes('area') || text.includes('safe')) {
-    return 'The U District is a lively, walkable neighborhood:\n- **Grocery:** Trader Joe\'s, Safeway, QFC all within 10 min walk\n- **Food & cafes:** University Ave (The Ave) is 1–3 blocks away\n- **Safety:** Well-lit, active student neighborhood\n- **Parking:** Street parking available (not included in rent)'
-  }
-
-  if (text.includes('address') || text.includes('location') || text.includes('where') || text.includes('uw') || text.includes('campus') || text.includes('university') || text.includes('seattle')) {
-    return 'All properties are in Seattle\'s **University District**, walking distance to UW:\n- **4709A & 4709B** — 8th Ave NE\n- **5259** — Brooklyn Ave NE\n\nAll are close to campus, the Ave, light rail, and transit.'
-  }
-
-  if (text.includes('contact') || text.includes('phone') || text.includes('email') || text.includes('reach') || text.includes('call') || text.includes('text')) {
-    return 'You can reach us a few ways:\n- [Contact page](/contact) — send a message or book a meeting\n- **Phone/text:** 510-309-8345\n- **Email:** info@axis-seattle-housing.com\n\nWe typically respond within 1 business day.'
-  }
-
-  if (text.includes('hi') || text.includes('hello') || text.includes('hey') || text.includes('good morning') || text.includes('good afternoon')) {
-    return 'Hi there! I\'m the Axis Housing leasing assistant. I can help with room availability, pricing, lease terms, amenities, and how to apply. What would you like to know?'
-  }
-
-  // Generic catch-all — give them something useful instead of a non-answer
-  return 'Happy to help! Here\'s a quick overview:\n\n- **Rooms:** $750–$875/mo across 3 properties near UW\n- **Utilities:** $175/mo flat (cleaning, WiFi, water & trash included)\n- **Leases:** 3-month summer, 9-month academic, or 12-month\n\n[Browse properties](/properties) · [Apply now](/apply) · [Contact leasing](/contact)\n\nOr call/text **510-309-8345**'
+function getLocalFallbackReply() {
+  return "I'm having trouble connecting right now. For quick answers, call or text us at **510-309-8345**, or visit our [Contact page](/contact) and we'll get back to you within a business day."
 }
 
 function SendIcon() {
