@@ -59,7 +59,7 @@ export default function Navbar() {
     { label: 'Homes', to: { pathname: '/', hash: '#properties' }, isActive: isHome },
     { label: 'Apply', to: '/apply', isActive: location.pathname === '/apply' },
     { label: 'Contact', to: '/contact', isActive: location.pathname === '/contact' },
-    { label: 'Join Us', to: '/join', isActive: location.pathname === '/join' },
+    { label: 'List your property', to: '/join-us', isActive: location.pathname === '/join-us' },
   ]
   const mobileDockLinks = [
     { label: 'Homes', to: { pathname: '/', hash: '#properties' }, icon: <HomeIcon />, isActive: isHome },
@@ -180,7 +180,7 @@ export default function Navbar() {
               <Link to={{ pathname: '/', hash: '#properties' }} onClick={closeMobileMenu} className="rounded-xl px-3 py-2.5 text-sm font-medium text-white/70 transition hover:bg-white/8 hover:text-white">Homes & Availability</Link>
               <Link to="/apply" onClick={() => { closeMobileMenu(); scrollToTop() }} className="rounded-xl px-3 py-2.5 text-sm font-medium text-white/70 transition hover:bg-white/8 hover:text-white">Apply</Link>
               <Link to="/contact" onClick={() => { closeMobileMenu(); scrollToTop() }} className="rounded-xl px-3 py-2.5 text-sm font-medium text-white/70 transition hover:bg-white/8 hover:text-white">Contact</Link>
-              <Link to="/join" onClick={() => { closeMobileMenu(); scrollToTop() }} className="rounded-xl px-3 py-2.5 text-sm font-medium text-white/70 transition hover:bg-white/8 hover:text-white">Join Us</Link>
+              <Link to="/join-us" onClick={() => { closeMobileMenu(); scrollToTop() }} className="rounded-xl px-3 py-2.5 text-sm font-medium text-white/70 transition hover:bg-white/8 hover:text-white">List your property</Link>
               <Link
                 to="/resident"
                 onClick={() => { closeMobileMenu(); scrollToTop() }}

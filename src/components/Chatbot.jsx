@@ -6,35 +6,41 @@ const SYSTEM_PROMPT = `You are an Axis Housing leasing assistant. Axis is a stud
 
 ### 4709A 8th Ave NE (University District)
 - **Type:** Affordable shared housing | 10 bedrooms, 3.5 baths
-- **Rent:** $725–$850/month
-- **Layout:** 3 floors. Room 9 ($725/mo, Floor 1). Room 10 ($850/mo, Floor 1, private bath). Rooms 1–4 ($750/mo, Floor 2). Rooms 5–8 ($750/mo, Floor 3).
+- **Rent:** $750–$875/month
+- **Layout:** 3 floors. Room 9 ($750/mo, Floor 1). Room 10 ($875/mo, Floor 1, private bath). Rooms 1–4 ($775/mo, Floor 2). Rooms 5–8 ($775/mo, Floor 3).
 - **Availability:** Room 9 (Sep 1 2026+), Room 10 (Aug 10 2026+), Rooms 2 & 4 (Sep 2026+), Room 1 (Jan 2027+), Room 3 (unavailable), Room 8 (Mar–May 2026 then Aug 2026+), Rooms 5–7 (unavailable).
-- **Fees:** App $50 · Cleaning $25/mo · Utilities $150/mo · Furnishing $25/mo
-- **Leasing packages:** Full 2nd floor $3,000/mo; Full 3rd floor $3,000/mo
-- **Note:** Most flexible property — room-by-room availability calendar.
+- **Fees:** App $50 · Utilities $175/mo (includes cleaning, WiFi, water & trash)
+- **Leasing packages:** Full 2nd floor $3,100/mo; Full 3rd floor $3,100/mo
+- **Lease terms:** 3-Month Summer (Jun 16–Sep 14, $750/mo), 9-Month Academic (Sep 15–Jun 15, $775/mo), 12-Month (flexible start — Sep 15 recommended, $775/mo)
 
 ### 4709B 8th Ave NE (University District)
 - **Type:** Affordable shared housing | 9 bedrooms, 2.5 baths
-- **Rent:** $750–$775/month
-- **Lease terms:** 3-Month Summer (Jun 16–Sep 14, $750/mo), 9-Month Academic (Sep 15–Jun 15, $775/mo), 12-Month ($775/mo)
-- **Layout:** Room 1 ($750/mo, Floor 1). Rooms 2–5 ($775/mo, Floor 2). Rooms 6–9 ($775/mo, Floor 3).
+- **Rent:** $775–$800/month
+- **Lease terms:** 3-Month Summer (Jun 16–Sep 14, $775/mo — fixed dates), 9-Month Academic (Sep 15–Jun 15, $800/mo — fixed dates), 12-Month (flexible start — Sep 15 recommended, $800/mo)
+- **Layout:** Room 1 ($775/mo, Floor 1). Rooms 2–5 ($800/mo, Floor 2). Rooms 6–9 ($800/mo, Floor 3).
 - **Availability:** All rooms available now.
-- **Fees:** App $50 · Cleaning $25/mo · Utilities $150/mo · Furnishing $25/mo
-- **Leasing packages:** Full 2nd floor $3,100/mo; Full 3rd floor $3,100/mo
+- **Fees:** App $50 · Utilities $175/mo (includes cleaning, WiFi, water & trash)
+- **Leasing packages:** Full 2nd floor $3,200/mo; Full 3rd floor $3,200/mo
 
 ### 5259 Brooklyn Ave NE (University District)
 - **Type:** Modern multi-bedroom townhouse | 9 bedrooms, 3 baths
-- **Rent:** $775–$840/month
-- **Lease terms:** 3-Month Summer ($775/mo), 9-Month Academic ($775/mo), 12-Month ($775/mo)
-- **Layout:** Room 1 ($840/mo, Floor 1). Rooms 2 ($840/mo), 3–4 ($800/mo), 5 ($800/mo) on Floor 2. Rooms 6–9 ($775/mo, Floor 3).
+- **Rent:** $800–$865/month
+- **Lease terms:** 3-Month Summer ($800/mo — fixed dates), 9-Month Academic ($800/mo — fixed dates), 12-Month (flexible start — Sep 15 recommended, $800/mo)
+- **Layout:** Room 1 ($865/mo, Floor 1). Room 2 ($865/mo), Rooms 3–5 ($825/mo) on Floor 2. Rooms 6–9 ($800/mo, Floor 3).
 - **Availability:** All rooms available after April 14, 2026.
-- **Fees:** App $50 · Cleaning $25/mo · Furnishing $25/mo · Security deposit $600
-- **Leasing packages:** Rooms 1+2 $1,680/mo; Rooms 3–5 $2,400/mo; Rooms 6–9 $3,100/mo
+- **Fees:** App $50 · Utilities $175/mo (includes cleaning, WiFi, water & trash) · Security deposit $600
+- **Leasing packages:** Rooms 1+2 $1,730/mo; Rooms 3–5 $2,475/mo; Rooms 6–9 $3,200/mo
+
+## Leasing Rules
+- All three properties now offer 3-Month Summer, 9-Month Academic, and 12-Month lease options.
+- Summer (Jun 16) and Academic (Sep 15) start dates are fixed.
+- 12-Month start date is flexible. September 15 is recommended for students.
+- Any non-standard start date carries a +$25/month surcharge.
 
 ## All Properties Include
 - Walk to University of Washington campus
 - In-unit washer/dryer
-- Bi-monthly professional cleaning (twice a month)
+- Bi-monthly professional cleaning (included in utilities)
 - WiFi, full kitchen, public transportation access
 - Furnished rooms: desk, bed, heating, AC
 
@@ -55,7 +61,7 @@ function getLocalFallbackReply(question) {
   }
 
   if (text.includes('room') || text.includes('bedroom')) {
-    return 'All three properties are shared housing near UW:\n- **4709A** — 10 bedrooms, 3.5 baths ($725–$850/mo)\n- **4709B** — 9 bedrooms, 2.5 baths ($750–$775/mo)\n- **5259 Brooklyn** — 9 bedrooms, 3 baths ($775–$840/mo)\n\nAll rooms are furnished with a desk, bed, heating, and AC.'
+    return 'All three properties are shared housing near UW:\n- **4709A** — 10 bedrooms, 3.5 baths ($750–$875/mo)\n- **4709B** — 9 bedrooms, 2.5 baths ($775–$800/mo)\n- **5259 Brooklyn** — 9 bedrooms, 3 baths ($800–$865/mo)\n\nAll rooms are furnished with a desk, bed, heating, and AC.'
   }
 
   if (text.includes('rent') || text.includes('price') || text.includes('pricing') || text.includes('cost') || text.includes('how much')) {
@@ -71,11 +77,11 @@ function getLocalFallbackReply(question) {
   }
 
   if (text.includes('includ') || text.includes('ameniti') || text.includes('utility') || text.includes('utilities') || text.includes('wifi') || text.includes('internet')) {
-    return 'All properties include:\n- Walk to UW campus\n- In-unit washer/dryer\n- Bi-monthly professional cleaning\n- WiFi + full kitchen\n- Public transit access\n- Furnished rooms (desk, bed, heating, AC)'
+    return 'All properties include:\n- Walk to UW campus\n- In-unit washer/dryer\n- Bi-monthly professional cleaning (included in utilities)\n- WiFi + full kitchen\n- Public transit access\n- Furnished rooms (desk, bed, heating, AC)\n\nUtilities are a flat $175/mo and cover cleaning, WiFi, water & trash.'
   }
 
   if (text.includes('lease') || text.includes('term') || text.includes('month') || text.includes('summer') || text.includes('academic')) {
-    return '4709B and 5259 Brooklyn offer three lease options:\n- **3-Month Summer**: Jun 16 – Sep 14\n- **9-Month Academic**: Sep 15 – Jun 15\n- **12-Month**: year-round\n\n4709A offers flexible month-to-month arrangements.'
+    return 'All three properties offer the same three lease options:\n- **3-Month Summer**: Jun 16 – Sep 14 (fixed dates)\n- **9-Month Academic**: Sep 15 – Jun 15 (fixed dates)\n- **12-Month**: flexible start date (Sep 15 recommended for students)\n\nA +$25/month surcharge applies for non-standard start dates.'
   }
 
   if (text.includes('address') || text.includes('location') || text.includes('where') || text.includes('university') || text.includes('uw') || text.includes('campus')) {

@@ -98,7 +98,7 @@ export default function App(){
               <Route path="/contact" element={<AnimatedPage><Contact/></AnimatedPage>} />
               <Route path="/apply" element={<AnimatedPage><Apply/></AnimatedPage>} />
               <Route path="/resident" element={<AnimatedPage><Resident/></AnimatedPage>} />
-              <Route path="/join" element={<AnimatedPage><JoinUs/></AnimatedPage>} />
+              <Route path="/join-us" element={<AnimatedPage><JoinUs/></AnimatedPage>} />
             </Routes>
           </AnimatePresence>
         </Suspense>

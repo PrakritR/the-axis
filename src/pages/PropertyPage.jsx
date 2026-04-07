@@ -1111,12 +1111,10 @@ export default function PropertyPage(){
             <section className="mt-10 scroll-mt-28 md:scroll-mt-40">
               <div className="text-xs font-bold uppercase tracking-[0.18em] text-axis">Lease Options</div>
               <h2 className="mt-1 text-2xl font-black tracking-tight text-slate-900">
-                {['4709b-8th-ave', '5259-brooklyn-ave-ne'].includes(p.slug) ? 'Choose the lease timeline that fits your year' : 'Available Lease Terms'}
+                Choose the lease timeline that fits your year
               </h2>
               <p className="mt-2 text-sm text-slate-500">
-                {['4709b-8th-ave', '5259-brooklyn-ave-ne'].includes(p.slug)
-                  ? 'These homes follow a tighter fixed-term leasing structure: summer, academic year, or full year. If you want more room-by-room flexibility, 4709A is the better fit.'
-                  : 'Designed for students and interns. Three fixed terms — no flexible or month-to-month options.'}
+                Three lease terms available for all homes: 3-Month Summer, 9-Month Academic, and 12-Month. Summer and academic-year dates are fixed. The 12-month start date is flexible — September 15 is recommended for students. Non-standard start dates carry a +$25/month surcharge.
               </p>
               <div className="mt-5 grid gap-4 sm:grid-cols-3">
                 {p.leaseTerms.map((term) => (
@@ -1149,7 +1147,7 @@ export default function PropertyPage(){
                     <div className="mt-4 space-y-2.5">
                       <div className="flex items-start justify-between gap-2 text-sm">
                         <span className="font-medium text-slate-500">Move-in</span>
-                        <span className="font-bold text-slate-900 text-right">{term.moveInLabel || term.moveIn}</span>
+                        <span className={`font-bold text-right text-sm ${term.flexibleMoveIn ? 'text-axis' : 'text-slate-900'}`}>{term.moveInLabel || term.moveIn}</span>
                       </div>
                       <div className="flex items-start justify-between gap-2 text-sm">
                         <span className="font-medium text-slate-500">Lease runs through</span>
@@ -1163,6 +1161,7 @@ export default function PropertyPage(){
                   </div>
                 ))}
               </div>
+              <p className="mt-3 text-xs text-slate-400">* Flexible start date available for the 12-month lease. A +$25/month surcharge applies to any start date that differs from the published dates on all lease types.</p>
             </section>
           )}
 
@@ -1176,9 +1175,7 @@ export default function PropertyPage(){
                 { emoji:'📄', label:'Application', value: `Fee: ${p.applicationFee || 'Contact leasing'}` },
                 { emoji:'💲', label:'Move-in charges', value: `First month rent + ${p.securityDeposit || '$500'} deposit` },
                 { emoji:'🔒', label:'Security deposit', value: p.securityDeposit || '$500' },
-                { emoji:'🧹', label:'Cleaning fee', value: '$25 per month' },
-                { emoji:'📶', label:'Utilities', value: 'Flat fee: $150/month' },
-                { emoji:'🛋️', label:'Furnishing fee', value: p.furnishingFee || '$25' },
+                { emoji:'📶', label:'Utilities', value: 'Flat fee: $175/month — includes cleaning (bi-monthly), WiFi, water & trash' },
                 { emoji:'🐾', label:'Pets', value: 'Pets may be allowed' },
               ].map(({ emoji, label, value }, i, arr) => (
                 <div key={label} className={`flex items-start gap-3 px-0 py-4 sm:gap-4 sm:py-5 ${i < arr.length - 1 ? 'border-b border-slate-200' : ''}`}>
