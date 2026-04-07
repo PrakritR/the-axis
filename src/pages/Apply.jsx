@@ -2,8 +2,9 @@ import { useState } from 'react'
 import { Seo } from '../lib/seo'
 import { properties } from '../data/properties'
 
-const AIRTABLE_BASE_ID = 'appNBX2inqfJMyqYV'
-const AIRTABLE_TABLE = 'Applications'
+// Use VITE_AIRTABLE_APPLICATIONS_BASE_ID if set, otherwise fall back to the main base
+const AIRTABLE_BASE_ID = import.meta.env.VITE_AIRTABLE_APPLICATIONS_BASE_ID || import.meta.env.VITE_AIRTABLE_BASE_ID || 'appNBX2inqfJMyqYV'
+const AIRTABLE_TABLE = import.meta.env.VITE_AIRTABLE_APPLICATIONS_TABLE || 'Applications'
 const AIRTABLE_TOKEN = import.meta.env.VITE_AIRTABLE_TOKEN
 
 const LEASE_TERMS = [
@@ -35,13 +36,18 @@ const inputCls = 'w-full rounded-xl border border-slate-200 bg-white px-4 py-3 t
 const selectCls = `${inputCls} appearance-none cursor-pointer`
 
 async function submitToAirtable(fields) {
-  if (!AIRTABLE_TOKEN) throw new Error('No token')
+  if (!AIRTABLE_TOKEN) throw new Error('VITE_AIRTABLE_TOKEN is not set in environment variables.')
   const res = await fetch(`https://api.airtable.com/v0/${AIRTABLE_BASE_ID}/${encodeURIComponent(AIRTABLE_TABLE)}`, {
     method: 'POST',
     headers: { Authorization: `Bearer ${AIRTABLE_TOKEN}`, 'Content-Type': 'application/json' },
     body: JSON.stringify({ fields }),
   })
-  if (!res.ok) throw new Error(await res.text())
+  if (!res.ok) {
+    const body = await res.text()
+    let msg = `Airtable error ${res.status}`
+    try { msg += ': ' + JSON.parse(body)?.error?.message } catch { msg += ': ' + body }
+    throw new Error(msg)
+  }
 }
 
 function buildMailtoFallback(form) {
@@ -104,10 +110,9 @@ export default function Apply() {
     try {
       await submitToAirtable(fields)
       setSubmitted(true)
-    } catch {
-      // Fall back to mailto so no application is ever lost
-      window.location.href = buildMailtoFallback(form)
-      setSubmitted(true)
+    } catch (err) {
+      console.error('Airtable submission failed:', err)
+      setError(err.message || 'Submission failed.')
     } finally {
       setSubmitting(false)
     }
@@ -257,7 +262,17 @@ export default function Apply() {
           </div>
 
           {error && (
-            <p className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</p>
+            <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-4 text-sm text-red-700 space-y-3">
+              <p className="font-semibold">Submission failed — Airtable didn't accept the request.</p>
+              <p className="font-mono text-xs break-all text-red-600">{error}</p>
+              <p className="text-red-600 text-xs">As a backup, you can send your application by email instead:</p>
+              <a
+                href={buildMailtoFallback(form)}
+                className="inline-block rounded-lg bg-red-700 px-4 py-2 text-xs font-semibold text-white hover:bg-red-800"
+              >
+                Send via email instead
+              </a>
+            </div>
           )}
 
           <button
