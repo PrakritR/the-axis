@@ -1,40 +1,34 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { Seo } from '../lib/seo'
 import { properties } from '../data/properties'
 
 const AIRTABLE_BASE_ID = import.meta.env.VITE_AIRTABLE_APPLICATIONS_BASE_ID || 'appNBX2inqfJMyqYV'
-const AIRTABLE_TABLE = import.meta.env.VITE_AIRTABLE_APPLICATIONS_TABLE || 'Inquiries'
+const AIRTABLE_TABLE = import.meta.env.VITE_AIRTABLE_APPLICATIONS_TABLE || 'Applications'
 const AIRTABLE_TOKEN = import.meta.env.VITE_AIRTABLE_TOKEN
-const AIRTABLE_OTHER_INQUIRY_TYPE = 'Other'
 
-const INQUIRY_OPTIONS = [
-  'Rental application',
-  'Schedule a tour',
-  'Pricing and availability',
-  'Question about a property',
-  'Other',
-]
+const HISTORY_OPTIONS = ['No', 'Yes']
 
-const LEASE_TERMS = [
-  '3-Month Summer (Jun 16 – Sep 14)',
-  '9-Month Academic (Sep 15 – Jun 15)',
-  '12-Month (flexible start)',
-  'Other / Custom dates',
-]
+const PROPERTY_OPTIONS = properties
+  .map((property) => ({
+    id: property.slug,
+    name: property.name,
+    rooms: [...new Set((property.roomPlans || []).flatMap((plan) => plan.rooms || []).map((room) => room.name))]
+      .sort((a, b) => a.localeCompare(b, undefined, { numeric: true })),
+  }))
+  .sort((a, b) => a.name.localeCompare(b.name))
 
-const PROPERTY_OPTIONS = properties.map(p => ({
-  id: p.slug,
-  name: p.name,
-  rooms: (p.roomPlans || []).flatMap(plan => plan.rooms || []).map(r => r.name),
-}))
+function todayIsoDate() {
+  return new Date().toISOString().slice(0, 10)
+}
 
 function Field({ label, required, children, hint }) {
   return (
     <div>
-      <label className="block text-sm font-semibold text-slate-800 mb-1.5">
-        {label}{required && <span className="ml-1 text-axis">*</span>}
+      <label className="mb-1.5 block text-sm font-semibold text-slate-800">
+        {label}
+        {required && <span className="ml-1 text-axis">*</span>}
       </label>
-      {hint && <p className="text-xs text-slate-400 mb-1.5">{hint}</p>}
+      {hint && <p className="mb-1.5 text-xs text-slate-400">{hint}</p>}
       {children}
     </div>
   )
@@ -45,99 +39,133 @@ const selectCls = `${inputCls} appearance-none cursor-pointer`
 
 async function submitToAirtable(fields) {
   if (!AIRTABLE_TOKEN) throw new Error('VITE_AIRTABLE_TOKEN is not set in environment variables.')
-  const res = await fetch(`https://api.airtable.com/v0/${AIRTABLE_BASE_ID}/${encodeURIComponent(AIRTABLE_TABLE)}`, {
+
+  const response = await fetch(`https://api.airtable.com/v0/${AIRTABLE_BASE_ID}/${encodeURIComponent(AIRTABLE_TABLE)}`, {
     method: 'POST',
-    headers: { Authorization: `Bearer ${AIRTABLE_TOKEN}`, 'Content-Type': 'application/json' },
+    headers: {
+      Authorization: `Bearer ${AIRTABLE_TOKEN}`,
+      'Content-Type': 'application/json',
+    },
     body: JSON.stringify({ fields, typecast: true }),
   })
-  if (!res.ok) {
-    const body = await res.text()
-    let msg = `Airtable error ${res.status}`
-    try { msg += ': ' + JSON.parse(body)?.error?.message } catch { msg += ': ' + body }
-    throw new Error(msg)
+
+  if (!response.ok) {
+    const body = await response.text()
+    let message = `Airtable error ${response.status}`
+    try {
+      message += `: ${JSON.parse(body)?.error?.message}`
+    } catch {
+      message += `: ${body}`
+    }
+    throw new Error(message)
   }
 }
 
 function buildMailtoFallback(form) {
   const body = [
-    `Full Name: ${form.name}`,
-    `Email: ${form.email}`,
-    `Phone: ${form.phone || 'Not provided'}`,
-    `Desired Property: ${form.property}`,
-    `Preferred Room: ${form.room || 'Any'}`,
-    `Move-in Date: ${form.moveIn || 'Flexible'}`,
-    `Lease Term: ${form.leaseTerm}`,
-    `Student: ${form.isStudent}`,
-    `University / Employer: ${form.institution || 'Not provided'}`,
-    `About: ${form.about || 'Not provided'}`,
+    `Applicant Name: ${form.applicantName}`,
+    `Applicant Email: ${form.applicantEmail}`,
+    `Applicant Phone: ${form.applicantPhone}`,
+    `Driving License No.: ${form.drivingLicense}`,
+    `SSN No.: ${form.ssn || 'Not provided'}`,
+    `Applicant DOB: ${form.applicantDob}`,
+    `Property Name: ${form.propertyName}`,
+    `Room Number: ${form.roomNumber}`,
+    `Desired Move-in Date: ${form.desiredMoveInDate}`,
+    `Current Address: ${form.currentAddress || 'Not provided'}`,
+    `Employer: ${form.employer || 'Not provided'}`,
+    `Job Title: ${form.jobTitle || 'Not provided'}`,
+    `Reference 1: ${form.reference1 || 'Not provided'}`,
+    `Reference 2: ${form.reference2 || 'Not provided'}`,
+    `Occupants: ${form.occupants || 'Not provided'}`,
+    `Pets: ${form.pets || 'Not provided'}`,
+    `Vehicles: ${form.vehicles || 'Not provided'}`,
+    `Eviction History: ${form.evictionHistory}`,
+    `Criminal History: ${form.criminalHistory}`,
+    `Signature: ${form.signature || 'Not provided'}`,
+    `Date Signed: ${form.dateSigned}`,
   ].join('\n')
-  const subject = `Application — ${form.name} for ${form.property}`
+
+  const subject = `Application — ${form.applicantName} for ${form.propertyName}`
   return `mailto:info@axis-seattle-housing.com?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`
-}
-
-function buildApplicationSummary(form) {
-  const leaseTerm = form.leaseTerm === 'Other / Custom dates' ? `Other: ${form.leaseTermOther}` : form.leaseTerm
-
-  return [
-    '[AXIS PROPERTY INQUIRY]',
-    `Inquiry Type: ${form.inquiryType}`,
-    `Property: ${form.property}`,
-    form.room ? `Preferred Room: ${form.room}` : 'Preferred Room: No specific room selected',
-    form.moveIn ? `Desired Move-in Date: ${form.moveIn}` : 'Desired Move-in Date: Flexible',
-    `Lease Term: ${leaseTerm}`,
-    `Student Status: ${form.isStudent}`,
-    form.institution ? `University / Employer: ${form.institution}` : 'University / Employer: Not provided',
-    form.about ? `Message / Applicant Notes: ${form.about}` : 'Message / Applicant Notes: Not provided',
-  ].join('\n')
 }
 
 export default function Apply() {
   const [form, setForm] = useState({
-    name: '', email: '', phone: '',
-    property: '', room: '',
-    inquiryType: INQUIRY_OPTIONS[0], inquiryOther: '',
-    moveIn: '', leaseTerm: LEASE_TERMS[0], leaseTermOther: '',
-    isStudent: '', institution: '', about: '',
+    applicantName: '',
+    applicantEmail: '',
+    applicantPhone: '',
+    drivingLicense: '',
+    ssn: '',
+    applicantDob: '',
+    propertyName: '',
+    roomNumber: '',
+    desiredMoveInDate: '',
+    currentAddress: '',
+    employer: '',
+    jobTitle: '',
+    reference1: '',
+    reference2: '',
+    occupants: '',
+    pets: '',
+    vehicles: '',
+    evictionHistory: '',
+    criminalHistory: '',
+    signature: '',
+    dateSigned: todayIsoDate(),
   })
   const [submitting, setSubmitting] = useState(false)
   const [submitted, setSubmitted] = useState(false)
   const [error, setError] = useState('')
 
-  const selectedProp = PROPERTY_OPTIONS.find(p => p.name === form.property)
+  const selectedProperty = useMemo(
+    () => PROPERTY_OPTIONS.find((property) => property.name === form.propertyName),
+    [form.propertyName],
+  )
 
   function set(key, value) {
-    setForm(prev => {
+    setForm((prev) => {
       const next = { ...prev, [key]: value }
-      if (key === 'property') next.room = ''
+      if (key === 'propertyName') next.roomNumber = ''
       return next
     })
   }
 
-  async function handleSubmit(e) {
-    e.preventDefault()
+  async function handleSubmit(event) {
+    event.preventDefault()
     setSubmitting(true)
     setError('')
 
-    const summary = buildApplicationSummary(form)
-    const otherDetail = form.inquiryType === 'Other'
-      ? (form.inquiryOther || 'General Axis property inquiry')
-      : form.inquiryType
     const fields = {
-      'Name': form.name,
-      'Email': form.email,
-      'Phone Number': form.phone,
-      'Property': [form.property],
-      'Inquiry Type': AIRTABLE_OTHER_INQUIRY_TYPE,
-      'Other:': otherDetail,
-      'Message Summary': summary,
+      'Applicant Name': form.applicantName,
+      'Applicant Email': form.applicantEmail,
+      'Applicant Phone': form.applicantPhone,
+      'Driving License No.': form.drivingLicense,
+      'SSN No.': form.ssn || '',
+      'Applicant DOB': form.applicantDob,
+      'Property Name': form.propertyName,
+      'Room Number': form.roomNumber,
+      'Desired Move-in Date': form.desiredMoveInDate,
+      'Current Address': form.currentAddress || '',
+      'Employer': form.employer || '',
+      'Job Title': form.jobTitle || '',
+      'Reference 1': form.reference1 || '',
+      'Reference 2': form.reference2 || '',
+      'Occupants': form.occupants || '',
+      'Pets': form.pets || '',
+      'Vehicles': form.vehicles || '',
+      'Eviction History': form.evictionHistory,
+      'Criminal History': form.criminalHistory,
+      'Signature': form.signature || '',
+      'Date Signed': form.dateSigned,
     }
 
     try {
       await submitToAirtable(fields)
       setSubmitted(true)
-    } catch (err) {
-      console.error('Airtable submission failed:', err)
-      setError(err.message || 'Submission failed.')
+    } catch (submissionError) {
+      console.error('Airtable submission failed:', submissionError)
+      setError(submissionError.message || 'Submission failed.')
     } finally {
       setSubmitting(false)
     }
@@ -145,7 +173,7 @@ export default function Apply() {
 
   if (submitted) {
     return (
-      <div className="bg-cream-50 min-h-screen">
+      <div className="min-h-screen bg-cream-50">
         <Seo title="Application Submitted | Axis Seattle Housing" pathname="/apply" />
         <div className="mx-auto max-w-lg px-4 py-24 text-center">
           <div className="mx-auto mb-6 flex h-16 w-16 items-center justify-center rounded-full bg-teal-50">
@@ -155,8 +183,9 @@ export default function Apply() {
           </div>
           <h1 className="text-3xl font-black text-slate-900">Application received</h1>
           <p className="mt-4 text-base leading-7 text-slate-500">
-            Thanks, {form.name.split(' ')[0]}! We'll review your application and get back to you within 2 business days.
-            Questions? Call or text <a href="tel:15103098345" className="text-axis font-semibold">(510) 309-8345</a>.
+            Thanks, {form.applicantName.split(' ')[0]}! Your full application was sent to Axis and we&apos;ll review it
+            as soon as possible. Questions? Call or text{' '}
+            <a href="tel:15103098345" className="font-semibold text-axis">(510) 309-8345</a>.
           </p>
           <a href="/" className="mt-8 inline-block rounded-full bg-slate-900 px-6 py-3 text-sm font-semibold text-white hover:bg-slate-800">
             Back to home
@@ -167,153 +196,275 @@ export default function Apply() {
   }
 
   return (
-    <div className="bg-cream-50 min-h-screen">
+    <div className="min-h-screen bg-cream-50">
       <Seo
         title="Apply | Axis Seattle Housing"
-        description="Apply for a room at Axis Seattle shared housing near the University of Washington."
+        description="Submit a full rental application for Axis Seattle Housing."
         pathname="/apply"
       />
 
-      <div className="mx-auto max-w-2xl px-4 py-12 sm:px-6 sm:py-16">
-        {/* Header */}
+      <div className="mx-auto max-w-4xl px-4 py-12 sm:px-6 sm:py-16">
         <div className="mb-8">
-          <div className="text-[11px] font-bold uppercase tracking-[0.2em] text-slate-400">Rental application</div>
-          <h1 className="mt-2 text-3xl font-black tracking-tight text-slate-900 sm:text-4xl">Apply for a room</h1>
+          <div className="text-[11px] font-bold uppercase tracking-[0.2em] text-slate-400">Axis applications</div>
+          <h1 className="mt-2 text-3xl font-black tracking-tight text-slate-900 sm:text-4xl">Applications Form</h1>
           <p className="mt-2 text-sm leading-6 text-slate-500">
-            Fill out the form below. We collect the same inquiry details that go into Axis Airtable and review every
-            application personally within 2 business days.
-            A <strong className="text-slate-700">$50 application fee</strong> is collected at move-in, not upfront.
+            This page now mirrors the full Axis Airtable application form so the information submitted here lands in the
+            same application workflow without manual re-entry.
           </p>
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-6">
-          {/* Personal info */}
           <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-soft space-y-5">
-            <div className="text-xs font-bold uppercase tracking-[0.16em] text-slate-400">Personal info</div>
+            <h2 className="text-2xl font-black text-slate-900">Application Summary</h2>
 
-            <Field label="Full name" required>
-              <input required className={inputCls} placeholder="Jane Smith" value={form.name} onChange={e => set('name', e.target.value)} />
+            <Field label="Applicant Name" required>
+              <input
+                required
+                className={inputCls}
+                placeholder="Jane Smith"
+                value={form.applicantName}
+                onChange={(e) => set('applicantName', e.target.value)}
+              />
             </Field>
 
             <div className="grid gap-5 sm:grid-cols-2">
-              <Field label="Email" required>
-                <input required type="email" className={inputCls} placeholder="jane@email.com" value={form.email} onChange={e => set('email', e.target.value)} />
-              </Field>
-              <Field label="Phone number" required>
-                <input required type="tel" className={inputCls} placeholder="(206) 555-0100" value={form.phone} onChange={e => set('phone', e.target.value)} />
-              </Field>
-            </div>
-
-            <div className="grid gap-5 sm:grid-cols-2">
-              <Field label="Are you a student?" required>
-                <div className="relative">
-                  <select required className={selectCls} value={form.isStudent} onChange={e => set('isStudent', e.target.value)}>
-                    <option value="" disabled>Select…</option>
-                    <option>Yes — full-time</option>
-                    <option>Yes — part-time</option>
-                    <option>No — working professional</option>
-                    <option>Other</option>
-                  </select>
-                </div>
-              </Field>
-              <Field label="University or employer">
-                <input className={inputCls} placeholder="UW, Amazon, etc." value={form.institution} onChange={e => set('institution', e.target.value)} />
-              </Field>
-            </div>
-          </div>
-
-          {/* Room preferences */}
-          <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-soft space-y-5">
-            <div className="text-xs font-bold uppercase tracking-[0.16em] text-slate-400">Room preferences</div>
-
-            <Field label="Desired property" required>
-              <div className="relative">
-                <select required className={selectCls} value={form.property} onChange={e => set('property', e.target.value)}>
-                  <option value="" disabled>Choose a property…</option>
-                  {PROPERTY_OPTIONS.map(p => (
-                    <option key={p.id} value={p.name}>{p.name}</option>
-                  ))}
-                </select>
-              </div>
-            </Field>
-
-            <div className="grid gap-5 sm:grid-cols-2">
-              <Field label="Inquiry type" required hint="This maps into the Axis inquiry form in Airtable.">
-                <div className="relative">
-                  <select required className={selectCls} value={form.inquiryType} onChange={e => set('inquiryType', e.target.value)}>
-                    {INQUIRY_OPTIONS.map(option => <option key={option} value={option}>{option}</option>)}
-                  </select>
-                </div>
-              </Field>
-              <Field
-                label="Other"
-                hint={form.inquiryType === 'Other' ? 'Describe the inquiry type if you chose Other.' : 'We will save your selected inquiry type here for Airtable compatibility.'}
-              >
+              <Field label="Applicant Email" required>
                 <input
+                  required
+                  type="email"
                   className={inputCls}
-                  placeholder={form.inquiryType === 'Other' ? 'Tell us what kind of inquiry this is' : form.inquiryType}
-                  value={form.inquiryType === 'Other' ? form.inquiryOther : form.inquiryType}
-                  onChange={e => set('inquiryOther', e.target.value)}
-                  readOnly={form.inquiryType !== 'Other'}
-                  required={form.inquiryType === 'Other'}
+                  placeholder="jane@email.com"
+                  value={form.applicantEmail}
+                  onChange={(e) => set('applicantEmail', e.target.value)}
+                />
+              </Field>
+              <Field label="Applicant Phone" required>
+                <input
+                  required
+                  type="tel"
+                  className={inputCls}
+                  placeholder="(206) 555-0100"
+                  value={form.applicantPhone}
+                  onChange={(e) => set('applicantPhone', e.target.value)}
                 />
               </Field>
             </div>
 
-            {selectedProp && (
-              <Field label="Preferred room" hint="We'll try to accommodate your preference, subject to availability.">
-                <div className="relative">
-                  <select className={selectCls} value={form.room} onChange={e => set('room', e.target.value)}>
-                    <option value="">No preference</option>
-                    {selectedProp.rooms.map(r => (
-                      <option key={r} value={r}>{r}</option>
-                    ))}
-                  </select>
-                </div>
-              </Field>
-            )}
-
             <div className="grid gap-5 sm:grid-cols-2">
-              <Field label="Desired move-in date" hint="Leave blank if flexible.">
-                <input type="date" className={inputCls} value={form.moveIn} onChange={e => set('moveIn', e.target.value)} />
+              <Field label="Driving License No." required>
+                <input
+                  required
+                  className={inputCls}
+                  placeholder="D1234567"
+                  value={form.drivingLicense}
+                  onChange={(e) => set('drivingLicense', e.target.value)}
+                />
               </Field>
-              <Field label="Lease term" required>
-                <div className="relative">
-                  <select required className={selectCls} value={form.leaseTerm} onChange={e => set('leaseTerm', e.target.value)}>
-                    {LEASE_TERMS.map(t => <option key={t} value={t}>{t}</option>)}
-                  </select>
-                </div>
-                {form.leaseTerm === 'Other / Custom dates' && (
-                  <input
-                    className={`${inputCls} mt-2`}
-                    placeholder="e.g. May 17 – Aug 7 (note: +$25/mo for custom dates)"
-                    value={form.leaseTermOther}
-                    onChange={e => set('leaseTermOther', e.target.value)}
-                    required
-                  />
-                )}
+              <Field label="SSN No.">
+                <input
+                  className={inputCls}
+                  placeholder="Last 4 or full SSN"
+                  value={form.ssn}
+                  onChange={(e) => set('ssn', e.target.value)}
+                />
               </Field>
             </div>
-          </div>
 
-          {/* About */}
-          <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-soft space-y-5">
-            <div className="text-xs font-bold uppercase tracking-[0.16em] text-slate-400">About you</div>
-            <Field label="Tell us a bit about yourself" hint="Why are you looking, your lifestyle, anything helpful for us to know.">
-              <textarea
-                className={`${inputCls} min-h-[100px] resize-y`}
-                placeholder="I'm a UW grad student looking for a quiet room near campus…"
-                value={form.about}
-                onChange={e => set('about', e.target.value)}
+            <div className="grid gap-5 sm:grid-cols-3">
+              <Field label="Applicant DOB" required>
+                <input
+                  required
+                  type="date"
+                  className={inputCls}
+                  value={form.applicantDob}
+                  onChange={(e) => set('applicantDob', e.target.value)}
+                />
+              </Field>
+              <Field label="Property Name" required>
+                <select
+                  required
+                  className={selectCls}
+                  value={form.propertyName}
+                  onChange={(e) => set('propertyName', e.target.value)}
+                >
+                  <option value="" disabled>Select a property…</option>
+                  {PROPERTY_OPTIONS.map((property) => (
+                    <option key={property.id} value={property.name}>{property.name}</option>
+                  ))}
+                </select>
+              </Field>
+              <Field label="Room Number" required>
+                <select
+                  required
+                  className={selectCls}
+                  value={form.roomNumber}
+                  onChange={(e) => set('roomNumber', e.target.value)}
+                  disabled={!selectedProperty}
+                >
+                  <option value="" disabled>{selectedProperty ? 'Select a room…' : 'Choose a property first'}</option>
+                  {(selectedProperty?.rooms || []).map((room) => (
+                    <option key={room} value={room}>{room}</option>
+                  ))}
+                </select>
+              </Field>
+            </div>
+
+            <Field label="Desired Move-in Date" required>
+              <input
+                required
+                type="date"
+                className={inputCls}
+                value={form.desiredMoveInDate}
+                onChange={(e) => set('desiredMoveInDate', e.target.value)}
               />
             </Field>
           </div>
 
+          <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-soft space-y-5">
+            <h2 className="text-2xl font-black text-slate-900">Housing History</h2>
+            <Field label="Current Address">
+              <input
+                className={inputCls}
+                placeholder="123 Main St, Seattle, WA"
+                value={form.currentAddress}
+                onChange={(e) => set('currentAddress', e.target.value)}
+              />
+            </Field>
+          </div>
+
+          <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-soft space-y-5">
+            <h2 className="text-2xl font-black text-slate-900">Employment and Income</h2>
+            <div className="grid gap-5 sm:grid-cols-2">
+              <Field label="Employer">
+                <input
+                  className={inputCls}
+                  placeholder="Company or school"
+                  value={form.employer}
+                  onChange={(e) => set('employer', e.target.value)}
+                />
+              </Field>
+              <Field label="Job Title">
+                <input
+                  className={inputCls}
+                  placeholder="Student, software engineer, etc."
+                  value={form.jobTitle}
+                  onChange={(e) => set('jobTitle', e.target.value)}
+                />
+              </Field>
+            </div>
+          </div>
+
+          <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-soft space-y-5">
+            <h2 className="text-2xl font-black text-slate-900">References</h2>
+            <div className="grid gap-5 sm:grid-cols-2">
+              <Field label="Reference 1">
+                <input
+                  className={inputCls}
+                  placeholder="Name, relationship, phone/email"
+                  value={form.reference1}
+                  onChange={(e) => set('reference1', e.target.value)}
+                />
+              </Field>
+              <Field label="Reference 2">
+                <input
+                  className={inputCls}
+                  placeholder="Name, relationship, phone/email"
+                  value={form.reference2}
+                  onChange={(e) => set('reference2', e.target.value)}
+                />
+              </Field>
+            </div>
+          </div>
+
+          <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-soft space-y-5">
+            <h2 className="text-2xl font-black text-slate-900">Additional Details</h2>
+            <div className="grid gap-5 sm:grid-cols-3">
+              <Field label="Occupants">
+                <input
+                  className={inputCls}
+                  placeholder="How many people will live in the room"
+                  value={form.occupants}
+                  onChange={(e) => set('occupants', e.target.value)}
+                />
+              </Field>
+              <Field label="Pets">
+                <input
+                  className={inputCls}
+                  placeholder="Type and count, or None"
+                  value={form.pets}
+                  onChange={(e) => set('pets', e.target.value)}
+                />
+              </Field>
+              <Field label="Vehicles">
+                <input
+                  className={inputCls}
+                  placeholder="Make/model, or None"
+                  value={form.vehicles}
+                  onChange={(e) => set('vehicles', e.target.value)}
+                />
+              </Field>
+            </div>
+          </div>
+
+          <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-soft space-y-5">
+            <h2 className="text-2xl font-black text-slate-900">Screening Questions</h2>
+            <div className="grid gap-5 sm:grid-cols-2">
+              <Field label="Eviction History" required>
+                <select
+                  required
+                  className={selectCls}
+                  value={form.evictionHistory}
+                  onChange={(e) => set('evictionHistory', e.target.value)}
+                >
+                  <option value="" disabled>Select…</option>
+                  {HISTORY_OPTIONS.map((option) => (
+                    <option key={option} value={option}>{option}</option>
+                  ))}
+                </select>
+              </Field>
+              <Field label="Criminal History" required>
+                <select
+                  required
+                  className={selectCls}
+                  value={form.criminalHistory}
+                  onChange={(e) => set('criminalHistory', e.target.value)}
+                >
+                  <option value="" disabled>Select…</option>
+                  {HISTORY_OPTIONS.map((option) => (
+                    <option key={option} value={option}>{option}</option>
+                  ))}
+                </select>
+              </Field>
+            </div>
+          </div>
+
+          <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-soft space-y-5">
+            <h2 className="text-2xl font-black text-slate-900">Signature</h2>
+            <div className="grid gap-5 sm:grid-cols-2">
+              <Field label="Signature" hint="Type your name or initials to sign this application.">
+                <input
+                  className={inputCls}
+                  placeholder="name initials. ex: John Doe JD"
+                  value={form.signature}
+                  onChange={(e) => set('signature', e.target.value)}
+                />
+              </Field>
+              <Field label="Date Signed">
+                <input
+                  type="date"
+                  className={inputCls}
+                  value={form.dateSigned}
+                  onChange={(e) => set('dateSigned', e.target.value)}
+                />
+              </Field>
+            </div>
+          </div>
+
           {error && (
-            <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-4 text-sm text-red-700 space-y-3">
-              <p className="font-semibold">Submission failed — Airtable didn't accept the request.</p>
-              <p className="font-mono text-xs break-all text-red-600">{error}</p>
-              <p className="text-red-600 text-xs">As a backup, you can send your application by email instead:</p>
+            <div className="space-y-3 rounded-xl border border-red-200 bg-red-50 px-4 py-4 text-sm text-red-700">
+              <p className="font-semibold">Submission failed — Airtable didn&apos;t accept the application.</p>
+              <p className="break-all font-mono text-xs text-red-600">{error}</p>
+              <p className="text-xs text-red-600">As a backup, you can send the same application data by email instead:</p>
               <a
                 href={buildMailtoFallback(form)}
                 className="inline-block rounded-lg bg-red-700 px-4 py-2 text-xs font-semibold text-white hover:bg-red-800"
@@ -326,9 +477,9 @@ export default function Apply() {
           <button
             type="submit"
             disabled={submitting}
-            className="w-full rounded-full bg-slate-900 py-4 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:opacity-60 disabled:cursor-not-allowed"
+            className="w-full rounded-full bg-slate-900 py-4 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
           >
-            {submitting ? 'Submitting…' : 'Submit application'}
+            {submitting ? 'Submitting…' : 'Submit'}
           </button>
 
           <p className="text-center text-xs text-slate-400">
