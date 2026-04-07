@@ -33,9 +33,16 @@ Group Packages:
 ${pkgDesc || '    N/A'}`
   }).join('\n\n---\n\n')
 
-  return `You are an Axis Housing leasing assistant. Axis is a student-focused shared housing company in Seattle's University District. Be helpful, warm, and concise.
+  return `You are an Axis Housing leasing assistant. Axis is a student-focused shared housing company in Seattle's University District. Be helpful, warm, and direct.
 
-IMPORTANT: The property data below is your live source of truth. Always use it. Never guess pricing or availability.
+CRITICAL RULES:
+1. Answer ONLY what was asked. Do not add extra context, overviews, or unrelated info.
+2. If someone asks "will rooms be furnished?" — answer that question only. Do not list properties.
+3. Keep replies to 1–4 lines unless a list is truly needed.
+4. Never volunteer pricing breakdowns unless asked about price.
+5. When relevant, include a link to the appropriate page (e.g. [Apply](/apply), [Contact us](/contact), or the specific property page).
+
+The property data below is your live source of truth. Always use it. Never guess pricing or availability.
 
 ## Current Properties
 
@@ -136,11 +143,15 @@ function getLocalFallbackReply(question) {
   const isAvailQ = text.includes('avail') || text.includes('when') || isMoveInQ
 
   if (isAvailQ) {
-    return 'Here\'s what\'s currently available:\n\n**4709B 8th Ave NE** — all 9 rooms available now ($775–$800/mo)\n\n**5259 Brooklyn Ave NE** — all rooms available after April 14, 2026 ($800–$865/mo)\n\n**4709A 8th Ave NE** — select rooms from Aug–Sep 2026 ($750–$875/mo)\n\nNeed a specific date? Custom move-in dates are possible with a +$25/month flexible date surcharge. Contact us to confirm: **theaxishousing.com/contact** or **510-309-8345**.'
+    return 'Here\'s what\'s currently available:\n\n**4709B 8th Ave NE** — all 9 rooms now ($775–$800/mo) → [View rooms](/properties/4709b-8th-ave)\n\n**5259 Brooklyn Ave NE** — all rooms after Apr 14, 2026 ($800–$865/mo) → [View rooms](/properties/5259-brooklyn-ave-ne)\n\n**4709A 8th Ave NE** — select rooms Aug–Sep 2026 ($750–$875/mo) → [View rooms](/properties/4709a-8th-ave)\n\nNeed a custom date? +$25/mo surcharge applies. [Contact us](/contact) or call **510-309-8345**.'
+  }
+
+  if (text.includes('furniture') || text.includes('furnished') || text.includes('furnish')) {
+    return 'Yes — all rooms come **fully furnished**: bed, desk, heating, and AC. No extra furnishing fee.'
   }
 
   if (text.includes('room') || text.includes('bedroom') || text.includes('floor')) {
-    return 'All three properties are shared housing near UW:\n- **4709A** — 10 bedrooms, 3.5 baths ($750–$875/mo)\n- **4709B** — 9 bedrooms, 2.5 baths ($775–$800/mo)\n- **5259 Brooklyn** — 9 bedrooms, 3 baths ($800–$865/mo)\n\nAll rooms are furnished (desk, bed, heating, AC). No extra furnishing fee.'
+    return 'All three properties are shared housing near UW:\n- **4709A** — 10 bedrooms, 3.5 baths ($750–$875/mo)\n- **4709B** — 9 bedrooms, 2.5 baths ($775–$800/mo)\n- **5259 Brooklyn** — 9 bedrooms, 3 baths ($800–$865/mo)\n\n[Browse all properties](/) to see room availability.'
   }
 
   if (text.includes('rent') || text.includes('price') || text.includes('pric') || text.includes('cost') || text.includes('how much') || text.includes('fee') || text.includes('pay')) {
@@ -148,11 +159,18 @@ function getLocalFallbackReply(question) {
   }
 
   if (text.includes('apply') || text.includes('application') || text.includes('sign') || text.includes('process')) {
-    return 'Apply directly from the **Apply page** on this site at theaxishousing.com/apply. The application fee is $50. We typically respond within 2 business days.'
+    return 'Ready to apply? Head to our [Apply page](/apply) — takes about 5 minutes.\n\n- $50 application fee (collected at move-in, not upfront)\n- We respond within 2 business days\n- Questions first? [Contact leasing](/contact) or call **510-309-8345**'
   }
 
   if (text.includes('tour') || text.includes('visit') || text.includes('schedule') || text.includes('view') || text.includes('show')) {
-    return 'To schedule a tour, visit the **Contact page** or call/text us at **510-309-8345**. Both in-person and virtual tours are available.'
+    const prop = text.includes('4709a') || text.includes('8th') && !text.includes('4709b') ? '4709a-8th-ave'
+      : text.includes('4709b') ? '4709b-8th-ave'
+      : text.includes('brooklyn') || text.includes('5259') ? '5259-brooklyn-ave-ne'
+      : null
+    if (prop) {
+      return `You can book a tour for that property right here:\n[View property & schedule tour](/properties/${prop})\n\nOr contact us directly:\n[Contact page](/contact) · **510-309-8345**\n\nBoth in-person and virtual tours are available.`
+    }
+    return 'Schedule a tour on our [Contact page](/contact) or call/text **510-309-8345**.\n\nWant to see a specific property first?\n- [4709A 8th Ave](/properties/4709a-8th-ave)\n- [4709B 8th Ave](/properties/4709b-8th-ave)\n- [5259 Brooklyn Ave NE](/properties/5259-brooklyn-ave-ne)\n\nBoth in-person and virtual tours available.'
   }
 
   if (text.includes('includ') || text.includes('ameniti') || text.includes('util') || text.includes('wifi') || text.includes('internet') || text.includes('clean') || text.includes('laundry')) {
@@ -187,8 +205,8 @@ function getLocalFallbackReply(question) {
     return 'Pets **may be allowed** depending on the property and situation. Contact leasing to discuss: **510-309-8345** or theaxishousing.com/contact.'
   }
 
-  if (text.includes('furniture') || text.includes('furnished') || text.includes('bed') || text.includes('desk')) {
-    return 'All rooms are **fully furnished** — every room includes a bed, desk, heating, and AC. No extra furnishing fee.'
+  if (text.includes('bed') || text.includes('desk')) {
+    return 'Yes — all rooms come **fully furnished**: bed, desk, heating, and AC. No extra furnishing fee.'
   }
 
   if (text.includes('total') || text.includes('all in') || text.includes('all-in') || text.includes('monthly cost') || text.includes('how much per month') || text.includes('monthly') || text.includes('breakdown')) {
@@ -256,7 +274,7 @@ function getLocalFallbackReply(question) {
   }
 
   if (text.includes('contact') || text.includes('phone') || text.includes('email') || text.includes('reach') || text.includes('call') || text.includes('text')) {
-    return 'Reach us at:\n- **Phone/text:** 510-309-8345\n- **Online:** theaxishousing.com/contact\n\nWe\'re happy to answer questions, schedule tours, or walk you through the application!'
+    return 'You can reach us a few ways:\n- [Contact page](/contact) — send a message or book a meeting\n- **Phone/text:** 510-309-8345\n- **Email:** info@axis-seattle-housing.com\n\nWe typically respond within 1 business day.'
   }
 
   if (text.includes('hi') || text.includes('hello') || text.includes('hey') || text.includes('good morning') || text.includes('good afternoon')) {
@@ -264,7 +282,7 @@ function getLocalFallbackReply(question) {
   }
 
   // Generic catch-all — give them something useful instead of a non-answer
-  return 'Happy to help! Here\'s a quick overview:\n\n- **Rooms:** $750–$875/mo across 3 properties near UW\n- **Utilities:** $175/mo flat (cleaning, WiFi, water & trash included)\n- **Leases:** 3-month summer, 9-month academic, or 12-month\n- **Apply:** theaxishousing.com/apply\n\nFor anything specific, reach us at **510-309-8345** or theaxishousing.com/contact.'
+  return 'Happy to help! Here\'s a quick overview:\n\n- **Rooms:** $750–$875/mo across 3 properties near UW\n- **Utilities:** $175/mo flat (cleaning, WiFi, water & trash included)\n- **Leases:** 3-month summer, 9-month academic, or 12-month\n\n[Browse properties](/properties) · [Apply now](/apply) · [Contact leasing](/contact)\n\nOr call/text **510-309-8345**'
 }
 
 function SendIcon() {
@@ -292,19 +310,44 @@ function CloseIcon() {
 }
 
 function renderContent(text) {
-  return text.split('\n').map((line, i) => {
-    const parts = line.split(/(\*\*[^*]+\*\*)/g)
-    return (
-      <React.Fragment key={i}>
-        {i > 0 && <br />}
-        {parts.map((part, j) =>
-          part.startsWith('**') && part.endsWith('**')
-            ? <strong key={j}>{part.slice(2, -2)}</strong>
-            : part
-        )}
-      </React.Fragment>
-    )
-  })
+  // Tokenise a line into bold, link, and plain text segments
+  function parseLine(line) {
+    const tokens = []
+    // Match **bold** or [label](url)
+    const re = /(\*\*[^*]+\*\*|\[[^\]]+\]\([^)]+\))/g
+    let last = 0, m
+    while ((m = re.exec(line)) !== null) {
+      if (m.index > last) tokens.push({ type: 'text', value: line.slice(last, m.index) })
+      const raw = m[0]
+      if (raw.startsWith('**')) {
+        tokens.push({ type: 'bold', value: raw.slice(2, -2) })
+      } else {
+        const label = raw.match(/\[([^\]]+)\]/)[1]
+        const href = raw.match(/\(([^)]+)\)/)[1]
+        tokens.push({ type: 'link', label, href })
+      }
+      last = m.index + raw.length
+    }
+    if (last < line.length) tokens.push({ type: 'text', value: line.slice(last) })
+    return tokens
+  }
+
+  return text.split('\n').map((line, i) => (
+    <React.Fragment key={i}>
+      {i > 0 && <br />}
+      {parseLine(line).map((tok, j) => {
+        if (tok.type === 'bold') return <strong key={j}>{tok.value}</strong>
+        if (tok.type === 'link') return (
+          <a key={j} href={tok.href} target={tok.href.startsWith('http') ? '_blank' : '_self'}
+            rel="noopener noreferrer"
+            style={{ color: '#0ea5a4', fontWeight: 600, textDecoration: 'underline' }}>
+            {tok.label}
+          </a>
+        )
+        return tok.value
+      })}
+    </React.Fragment>
+  ))
 }
 
 function SparkleIcon() {
