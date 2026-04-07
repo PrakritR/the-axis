@@ -144,8 +144,95 @@ const SYSTEM_PROMPT = buildSystemPrompt()
 const GEMINI_API_KEY = import.meta.env.VITE_GEMINI_API_KEY
 const GEMINI_MODEL = 'gemini-2.0-flash-lite'
 
-function getLocalFallbackReply() {
-  return "Reach us directly at **510-309-8345** or [contact us here](/contact) — we'll get back to you within a business day."
+function getLocalFallbackReply(question) {
+  const t = (question || '').toLowerCase()
+
+  // Availability
+  if (t.includes('avail') || t.includes('which house') || t.includes('which room') || t.includes('open') || t.includes('vacant'))
+    return '**4709B 8th Ave** — all 9 rooms available now ($775–$800/mo) → [View](/properties/4709b-8th-ave)\n**5259 Brooklyn Ave** — available after Apr 14, 2026 ($800–$865/mo) → [View](/properties/5259-brooklyn-ave-ne)\n**4709A 8th Ave** — select rooms Aug–Sep 2026 ($750–$875/mo) → [View](/properties/4709a-8th-ave)'
+
+  // Pricing
+  if (t.includes('how much') || t.includes('price') || t.includes('cost') || t.includes('rent') || t.includes('fee'))
+    return 'Rooms start at $750/mo. Utilities are a flat $175/mo (covers cleaning, WiFi, water & trash). No furnishing fee — rooms come fully furnished.'
+
+  // Address / location
+  if (t.includes('address') || t.includes('where') || t.includes('location') || t.includes('adress'))
+    return '4709A & 4709B are on **8th Ave NE**, and 5259 is on **Brooklyn Ave NE** — all in Seattle\'s University District.'
+
+  // Furnished
+  if (t.includes('furnished') || t.includes('furniture') || t.includes('furnish'))
+    return 'Yes — every room includes a bed, desk, heating, and AC. No extra furnishing fee.'
+
+  // Parking
+  if (t.includes('parking') || t.includes('park') || t.includes('car'))
+    return 'Street parking is available near all properties. No dedicated off-street parking is included with rent.'
+
+  // Transit / transportation
+  if (t.includes('transport') || t.includes('bus') || t.includes('transit') || t.includes('light rail') || t.includes('train') || t.includes('commute'))
+    return 'All properties are a 2–5 min walk to buses (routes 44, 49, 70, 372) and ~5–10 min walk to the U District Light Rail Station — direct to downtown, Capitol Hill, and SeaTac.'
+
+  // Distance / how far
+  if (t.includes('downtown') || t.includes('far') || t.includes('distance') || t.includes('how close') || t.includes('how long') || t.includes('minute'))
+    return 'Downtown Seattle is ~15–20 min by light rail. UW campus is a 5–10 min walk from all properties.'
+
+  // Students only
+  if (t.includes('student') || t.includes('college') || t.includes('only') || t.includes('who can') || t.includes('eligible') || t.includes('intern') || t.includes('professional'))
+    return 'Not students only — open to anyone 18+. Students, working professionals, and interns all welcome.'
+
+  // Apply
+  if (t.includes('apply') || t.includes('application') || t.includes('how do i') || t.includes('sign up') || t.includes('process'))
+    return 'Apply at [theaxishousing.com/apply](/apply) — $50 fee collected at move-in, not upfront. We respond within 2 business days.'
+
+  // Tour
+  if (t.includes('tour') || t.includes('visit') || t.includes('see') || t.includes('view') || t.includes('show'))
+    return 'Book a tour on our [Contact page](/contact) or call/text **510-309-8345**. Both in-person and virtual tours available.'
+
+  // Contact
+  if (t.includes('contact') || t.includes('phone') || t.includes('email') || t.includes('call') || t.includes('reach') || t.includes('talk'))
+    return 'Call/text **510-309-8345** or [send a message here](/contact). We respond within 1 business day.'
+
+  // Utilities / what's included
+  if (t.includes('util') || t.includes('includ') || t.includes('wifi') || t.includes('internet') || t.includes('electric') || t.includes('water') || t.includes('laundry'))
+    return 'Utilities are $175/mo flat — covers bi-monthly cleaning, WiFi, water & trash. All properties also have in-unit washer and dryer.'
+
+  // Kitchen
+  if (t.includes('kitchen') || t.includes('cook') || t.includes('food') || t.includes('fridge') || t.includes('stove'))
+    return 'Each property has one full shared kitchen on the main floor — stove, oven, microwave, fridge, and dishwasher.'
+
+  // Bathroom
+  if (t.includes('bathroom') || t.includes('bath') || t.includes('shower') || t.includes('private'))
+    return 'Most rooms share a bathroom with 2–3 others on the same floor. Room 10 at 4709A has a private bathroom.'
+
+  // Pets
+  if (t.includes('pet') || t.includes('dog') || t.includes('cat') || t.includes('animal'))
+    return 'Pets may be allowed — contact leasing to discuss: **510-309-8345** or [reach us here](/contact).'
+
+  // Deposit / move-in costs
+  if (t.includes('deposit') || t.includes('move-in') || t.includes('move in') || t.includes('upfront') || t.includes('first month'))
+    return 'Move-in day: first month\'s rent + $500 deposit (or $600 at 5259 Brooklyn). Application fee ($50) is due at move-in, not upfront.'
+
+  // Lease terms
+  if (t.includes('lease') || t.includes('term') || t.includes('summer') || t.includes('academic') || t.includes('month') || t.includes('long') || t.includes('duration'))
+    return 'Three lease options: **3-Month Summer** (Jun 16–Sep 14), **9-Month Academic** (Sep 15–Jun 15), **12-Month** (flexible start). +$25/mo for non-standard start dates.'
+
+  // Group / roommates
+  if (t.includes('group') || t.includes('friend') || t.includes('roommate') || t.includes('together') || t.includes('two people') || t.includes('couple') || t.includes('share'))
+    return 'Yes — friends can rent multiple rooms in the same house. Each person pays their own room\'s rent + $175/mo utilities. 5259 Brooklyn has grouped floor packages.'
+
+  // Gender
+  if (t.includes('male') || t.includes('female') || t.includes('gender') || t.includes('women') || t.includes('men') || t.includes('mixed') || t.includes('coed'))
+    return 'Not gender-specific — all genders welcome. Mixed households are common.'
+
+  // Neighborhood
+  if (t.includes('neighborhood') || t.includes('area') || t.includes('safe') || t.includes('nearby') || t.includes('grocery') || t.includes('shop'))
+    return 'The U District is walkable and active — Trader Joe\'s, Safeway, cafes, and restaurants are all within a few blocks. Well-lit, student-friendly neighborhood.'
+
+  // Hello / greeting
+  if (t.includes('hi') || t.includes('hello') || t.includes('hey') || t.includes('good morning') || t.includes('good afternoon'))
+    return 'Hi! Ask me anything about rooms, pricing, availability, or how to apply — I\'m here to help.'
+
+  // True fallback — only fires if nothing matched
+  return 'For that question, reach us directly at **510-309-8345** or [contact us here](/contact) — we\'ll get back to you within a business day.'
 }
 
 function SendIcon() {
