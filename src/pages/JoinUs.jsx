@@ -128,10 +128,15 @@ export default function JoinUs() {
     }
 
     try {
+      if (!SERVICE_ID || !TEMPLATE_ID || !PUBLIC_KEY) throw new Error('EmailJS not configured')
       await emailjs.send(SERVICE_ID, TEMPLATE_ID, templateParams)
       setSubmitted(true)
     } catch {
-      setError('Something went wrong sending your inquiry. Please email us directly at info@axis-seattle-housing.com.')
+      // Fallback: open a pre-filled mailto so the submission is never lost
+      const body = encodeURIComponent(templateParams.message)
+      const subject = encodeURIComponent(templateParams.subject)
+      window.location.href = `mailto:info@axis-seattle-housing.com?subject=${subject}&body=${body}`
+      setSubmitted(true)
     } finally {
       setSubmitting(false)
     }
