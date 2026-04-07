@@ -6,7 +6,12 @@ const AIRTABLE_BASE_ID = 'appNBX2inqfJMyqYV'
 const AIRTABLE_TABLE = 'Applications'
 const AIRTABLE_TOKEN = import.meta.env.VITE_AIRTABLE_TOKEN
 
-const LEASE_TERMS = ['3-Month Summer (Jun 16 – Sep 14)', '9-Month Academic (Sep 15 – Jun 15)', '12-Month (flexible start)']
+const LEASE_TERMS = [
+  '3-Month Summer (Jun 16 – Sep 14)',
+  '9-Month Academic (Sep 15 – Jun 15)',
+  '12-Month (flexible start)',
+  'Other / Custom dates',
+]
 
 const PROPERTY_OPTIONS = properties.map(p => ({
   id: p.slug,
@@ -60,7 +65,7 @@ export default function Apply() {
   const [form, setForm] = useState({
     name: '', email: '', phone: '',
     property: '', room: '',
-    moveIn: '', leaseTerm: LEASE_TERMS[0],
+    moveIn: '', leaseTerm: LEASE_TERMS[0], leaseTermOther: '',
     isStudent: '', institution: '', about: '',
   })
   const [submitting, setSubmitting] = useState(false)
@@ -89,7 +94,7 @@ export default function Apply() {
       'Property': form.property,
       'Room': form.room || 'Any',
       'Move In Date': form.moveIn || '',
-      'Lease Term': form.leaseTerm,
+      'Lease Term': form.leaseTerm === 'Other / Custom dates' ? `Other: ${form.leaseTermOther}` : form.leaseTerm,
       'Student': form.isStudent,
       'University / Employer': form.institution || '',
       'Notes': form.about || '',
@@ -225,6 +230,15 @@ export default function Apply() {
                     {LEASE_TERMS.map(t => <option key={t} value={t}>{t}</option>)}
                   </select>
                 </div>
+                {form.leaseTerm === 'Other / Custom dates' && (
+                  <input
+                    className={`${inputCls} mt-2`}
+                    placeholder="e.g. May 17 – Aug 7 (note: +$25/mo for custom dates)"
+                    value={form.leaseTermOther}
+                    onChange={e => set('leaseTermOther', e.target.value)}
+                    required
+                  />
+                )}
               </Field>
             </div>
           </div>
