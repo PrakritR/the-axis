@@ -98,6 +98,7 @@ ${propDetails}
 ## Common Questions Answered
 - **Can two people share?** Yes — each person rents their own room. Two friends can rent two rooms in the same house.
 - **Are rooms gender-specific?** No — we welcome all genders. Mixed households are common.
+- **Is this college students only?** No. Axis is open to anyone 18+ — UW students, Shoreline students, working professionals, summer interns, or anyone looking for shared housing near the U District. We're student-focused but not student-exclusive.
 - **Is there a kitchen?** Yes — one full shared kitchen per property on the main floor.
 - **Can I cook?** Yes — full kitchen with stove, oven, microwave, refrigerator, and dishwasher.
 - **Are rooms furnished?** Yes — every room includes a bed, desk, heating, and AC. No extra furnishing fee.
@@ -232,6 +233,10 @@ function getLocalFallbackReply(question) {
 
   if (text.includes('gender') || text.includes('male') || text.includes('female') || text.includes('women') || text.includes('men') || text.includes('mixed') || text.includes('coed') || text.includes('co-ed')) {
     return 'Our properties are **not gender-specific**. We welcome all genders. Mixed households are common — it\'s a respectful shared living environment.'
+  }
+
+  if (text.includes('college only') || text.includes('students only') || text.includes('only for student') || text.includes('have to be a student') || text.includes('non-student') || text.includes('not a student') || text.includes('working') || text.includes('professional') || text.includes('intern') || text.includes('only college') || text.includes('must be') || text.includes('eligib') || text.includes('who can') || text.includes('can anyone') || text.includes('open to')) {
+    return 'No — **not college students only**. Axis is open to anyone looking for quality shared housing near UW:\n- UW & Shoreline students ✓\n- Working professionals ✓\n- Interns (summer or full-year) ✓\n- Anyone 18+ looking for shared housing in Seattle ✓\n\nWe just happen to be located in the University District, which makes us especially convenient for students and those working nearby.'
   }
 
   if (text.includes('transport') || text.includes('bus') || text.includes('train') || text.includes('light rail') || text.includes('transit') || text.includes('commute') || text.includes('link')) {
