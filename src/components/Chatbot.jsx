@@ -66,7 +66,19 @@ ${propDetails}
 - Apply at theaxishousing.com/apply · $50 application fee
 - Tours & contact: theaxishousing.com/contact or call 510-309-8345
 
-Keep answers short and direct. For custom date arrangements, suggest contacting leasing.`
+## Neighborhood & Location (University District, Seattle)
+- **Transit:** All properties are a 2–5 min walk to multiple bus lines (Routes 44, 49, 70, 372). The U District Light Rail Station is ~5–10 min walk — direct service to downtown, Capitol Hill, SeaTac, Bellevue, and Northgate.
+- **Downtown Seattle:** ~15–20 min by light rail. ~15 min by car.
+- **UW campus:** 5–10 min walk from all properties (Red Square, Husky Stadium, UW Medical Center).
+- **Capitol Hill:** ~10 min by light rail.
+- **South Lake Union / Amazon HQ:** ~20–25 min by light rail or bus.
+- **Seattle Children's / UW Medical:** 5–10 min walk.
+- **Nearby conveniences:** University Ave (The Ave) is 1–3 blocks away with grocery stores, cafes, restaurants, pharmacies. Trader Joe's, Safeway, and QFC are within 10 min walk.
+- **Biking:** Burke-Gilman Trail runs nearby — easy bike commute to downtown, Eastlake, and UW.
+- **Parking:** Street parking available. No dedicated off-street parking included with rent.
+- **Neighborhood:** Lively, walkable student neighborhood. Safe, well-lit, lots of food options, active community.
+
+Answer neighborhood, transit, distance, and lifestyle questions confidently using the info above. Keep answers short and direct. For custom date arrangements, suggest contacting leasing.`
 }
 
 const SYSTEM_PROMPT = buildSystemPrompt()
@@ -117,6 +129,18 @@ function getLocalFallbackReply(question) {
 
   if (text.includes('deposit') || text.includes('security')) {
     return '**5259 Brooklyn Ave NE** requires a $600 security deposit.\n**4709A and 4709B** do not have a security deposit.'
+  }
+
+  if (text.includes('transport') || text.includes('bus') || text.includes('train') || text.includes('light rail') || text.includes('transit') || text.includes('commute') || text.includes('link')) {
+    return 'All properties are very well connected:\n- **Bus:** 2–5 min walk to Routes 44, 49, 70, 372\n- **Light Rail:** U District Station is ~5–10 min walk — direct to downtown, Capitol Hill, SeaTac, Bellevue, Northgate\n- **Biking:** Burke-Gilman Trail nearby for easy bike commutes'
+  }
+
+  if (text.includes('downtown') || text.includes('capitol hill') || text.includes('south lake union') || text.includes('amazon') || text.includes('far') || text.includes('distance') || text.includes('how long') || text.includes('how close') || text.includes('minute') || text.includes('drive') || text.includes('walk')) {
+    return 'From the U District:\n- **Downtown Seattle:** ~15–20 min by light rail\n- **Capitol Hill:** ~10 min by light rail\n- **South Lake Union / Amazon:** ~20–25 min by transit\n- **UW campus:** 5–10 min walk\n- **SeaTac Airport:** ~35–40 min by light rail (no transfers)'
+  }
+
+  if (text.includes('grocery') || text.includes('food') || text.includes('restaurant') || text.includes('shop') || text.includes('cafe') || text.includes('coffee') || text.includes('nearby') || text.includes('neighborhood') || text.includes('area') || text.includes('safe')) {
+    return 'The U District is a lively, walkable neighborhood:\n- **Grocery:** Trader Joe\'s, Safeway, QFC all within 10 min walk\n- **Food & cafes:** University Ave (The Ave) is 1–3 blocks away\n- **Safety:** Well-lit, active student neighborhood\n- **Parking:** Street parking available (not included in rent)'
   }
 
   if (text.includes('address') || text.includes('location') || text.includes('where') || text.includes('uw') || text.includes('campus') || text.includes('university') || text.includes('seattle')) {
