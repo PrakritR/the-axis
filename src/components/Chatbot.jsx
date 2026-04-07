@@ -78,7 +78,46 @@ ${propDetails}
 - **Parking:** Street parking available. No dedicated off-street parking included with rent.
 - **Neighborhood:** Lively, walkable student neighborhood. Safe, well-lit, lots of food options, active community.
 
-Answer neighborhood, transit, distance, and lifestyle questions confidently using the info above. Keep answers short and direct. For custom date arrangements, suggest contacting leasing.`
+## Property Layout & House Details
+- Each property is a multi-floor townhouse. Each has **1 shared kitchen** (on the first/main floor).
+- Common spaces: living room, kitchen, shared bathrooms (some rooms have private baths — see room details above).
+- Bathrooms are shared between specific rooms on the same floor (see room details above for which rooms share which bathroom).
+- In-unit washer and dryer in all properties.
+- No pool, gym, or doorman — these are shared townhouses, not apartment buildings.
+- Quiet residential streets, ideal for students and working professionals.
+
+## Costs — Full Breakdown (what people actually pay)
+- **Rent:** Per room (see property details above)
+- **Utilities:** $175/mo flat — covers bi-monthly cleaning, WiFi, water & trash. No separate cleaning or furnishing fees.
+- **Security deposit:** $500 (4709A & 4709B) or $600 (5259 Brooklyn)
+- **Application fee:** $50 (collected at move-in, not upfront)
+- **Move-in total due:** First month's rent + security deposit
+- **Example (5259 Brooklyn, Room 6–9 at $800/mo):** $800 rent + $175 utilities = $975/mo total. Move-in: $800 + $500 deposit = $1,300 due day one.
+- Custom/flexible start dates: add +$25/mo surcharge
+
+## Common Questions Answered
+- **Can two people share?** Yes — each person rents their own room. Two friends can rent two rooms in the same house.
+- **Are rooms gender-specific?** No — we welcome all genders. Mixed households are common.
+- **Is there a kitchen?** Yes — one full shared kitchen per property on the main floor.
+- **Can I cook?** Yes — full kitchen with stove, oven, microwave, refrigerator, and dishwasher.
+- **Are rooms furnished?** Yes — every room includes a bed, desk, heating, and AC. No extra furnishing fee.
+- **Is WiFi included?** Yes — included in the $175/mo utilities flat fee.
+- **Is laundry in the unit?** Yes — washer and dryer in-unit at all properties.
+- **Are pets allowed?** Pets may be allowed — contact leasing to discuss.
+- **Is there parking?** Street parking available. No dedicated off-street parking included.
+- **Can I have guests?** Yes — standard guest policies apply, contact leasing for extended stays.
+- **What's the noise policy?** Quiet hours apply. These are shared homes — respectful living is expected.
+- **Do I need renters insurance?** Recommended but not currently required. Ask leasing for details.
+- **Is there a background check?** Yes — all applicants undergo a background and reference check.
+- **How long does approval take?** Typically 2–3 business days after application submission.
+- **When is rent due?** 1st of each month.
+- **What if I need maintenance?** Submit a maintenance request through the resident portal or contact leasing directly.
+- **Can I see the room before signing?** Yes — in-person and virtual tours available. Book at theaxishousing.com/contact.
+- **Is the deposit refundable?** Yes — returned after move-out minus any damages per standard lease terms.
+- **What happens if I need to leave early?** Contact leasing — early termination terms are in the lease agreement.
+- **Are utilities really all-in at $175?** Yes — cleaning, WiFi, water, and trash are all covered. No surprise bills.
+
+Answer all of the above confidently. Keep answers short and direct. For custom date arrangements or anything not listed, suggest contacting leasing at 510-309-8345 or theaxishousing.com/contact.`
 }
 
 const SYSTEM_PROMPT = buildSystemPrompt()
@@ -128,7 +167,71 @@ function getLocalFallbackReply(question) {
   }
 
   if (text.includes('deposit') || text.includes('security')) {
-    return '**5259 Brooklyn Ave NE** requires a $600 security deposit.\n**4709A and 4709B** do not have a security deposit.'
+    return '**5259 Brooklyn Ave NE** — $600 security deposit.\n**4709A and 4709B** — $500 security deposit.\n\nDeposit is refundable after move-out minus any damages.'
+  }
+
+  if (text.includes('kitchen') || text.includes('cook') || text.includes('stove') || text.includes('fridge') || text.includes('oven') || text.includes('microwave') || text.includes('dishwasher')) {
+    return 'Each property has **one full shared kitchen** on the main floor, with a stove, oven, microwave, refrigerator, and dishwasher. Yes, you can cook!'
+  }
+
+  if (text.includes('bathroom') || text.includes('bath') || text.includes('shower') || text.includes('toilet') || text.includes('private')) {
+    return 'Bathrooms are shared between rooms on the same floor. Most rooms share a bathroom with 2–3 others. **Room 10 at 4709A** has a private bathroom. See specific room details on the property page for exact sharing arrangements.'
+  }
+
+  if (text.includes('laundry') || text.includes('washer') || text.includes('dryer') || text.includes('washing')) {
+    return 'All properties have an **in-unit washer and dryer** — no laundromat needed.'
+  }
+
+  if (text.includes('pet') || text.includes('dog') || text.includes('cat') || text.includes('animal')) {
+    return 'Pets **may be allowed** depending on the property and situation. Contact leasing to discuss: **510-309-8345** or theaxishousing.com/contact.'
+  }
+
+  if (text.includes('furniture') || text.includes('furnished') || text.includes('bed') || text.includes('desk')) {
+    return 'All rooms are **fully furnished** — every room includes a bed, desk, heating, and AC. No extra furnishing fee.'
+  }
+
+  if (text.includes('total') || text.includes('all in') || text.includes('all-in') || text.includes('monthly cost') || text.includes('how much per month') || text.includes('monthly') || text.includes('breakdown')) {
+    return 'Total monthly cost = **room rent + $175/mo utilities**.\n\nUtilities cover cleaning, WiFi, water & trash — no surprise bills.\n\n**Example:** $800/mo room + $175 utilities = **$975/mo total**.\n\nMove-in day: first month\'s rent + security deposit ($500 or $600 at 5259).'
+  }
+
+  if (text.includes('move in cost') || text.includes('first month') || text.includes('due') || text.includes('upfront') || text.includes('move-in cost')) {
+    return '**Move-in day total:** First month\'s rent + security deposit.\n\n- 4709A & 4709B deposit: $500\n- 5259 Brooklyn deposit: $600\n- Application fee ($50) is collected at move-in, not upfront.\n\nExample: $800 room → $800 + $500 = **$1,300 due on move-in day**.'
+  }
+
+  if (text.includes('background') || text.includes('check') || text.includes('credit') || text.includes('screen') || text.includes('qualify') || text.includes('require')) {
+    return 'All applicants go through a **background and reference check**. We welcome students, working professionals, and interns. Apply at theaxishousing.com/apply — $50 fee collected at move-in.'
+  }
+
+  if (text.includes('approval') || text.includes('how long') && text.includes('appli') || text.includes('when will i hear')) {
+    return 'Applications are typically reviewed within **2–3 business days**. We\'ll follow up by email.'
+  }
+
+  if (text.includes('maintenance') || text.includes('repair') || text.includes('broken') || text.includes('fix') || text.includes('issue')) {
+    return 'Submit maintenance requests through the **resident portal** or contact leasing directly at **510-309-8345**. We aim to respond quickly to all issues.'
+  }
+
+  if (text.includes('noise') || text.includes('quiet') || text.includes('party') || text.includes('loud')) {
+    return 'These are shared homes — **respectful quiet hours** apply. The environment is suited to students and working professionals who value a calm, focused living space.'
+  }
+
+  if (text.includes('guest') || text.includes('visitor') || text.includes('friend stay') || text.includes('overnight')) {
+    return 'Guests are welcome for short visits. For extended stays, contact leasing to discuss arrangements: **510-309-8345**.'
+  }
+
+  if (text.includes('insurance') || text.includes('renters')) {
+    return 'Renters insurance is **recommended** but not currently required. It\'s typically inexpensive and covers your personal belongings.'
+  }
+
+  if (text.includes('early') || text.includes('break') || text.includes('terminate') || text.includes('leave early') || text.includes('cancel')) {
+    return 'Early termination terms are outlined in your lease agreement. Contact leasing directly to discuss your situation: **510-309-8345** or theaxishousing.com/contact.'
+  }
+
+  if (text.includes('when is rent due') || text.includes('rent due') || text.includes('due date') || text.includes('pay rent')) {
+    return 'Rent is due on the **1st of each month**.'
+  }
+
+  if (text.includes('gender') || text.includes('male') || text.includes('female') || text.includes('women') || text.includes('men') || text.includes('mixed') || text.includes('coed') || text.includes('co-ed')) {
+    return 'Our properties are **not gender-specific**. We welcome all genders. Mixed households are common — it\'s a respectful shared living environment.'
   }
 
   if (text.includes('transport') || text.includes('bus') || text.includes('train') || text.includes('light rail') || text.includes('transit') || text.includes('commute') || text.includes('link')) {
