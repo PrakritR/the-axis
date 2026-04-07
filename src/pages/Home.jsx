@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import React, { useState, useMemo } from 'react'
 import { Link } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import Hero from '../components/Hero'
@@ -160,6 +160,206 @@ function FaqItem({ q, a }) {
   )
 }
 
+// ── Room Finder ───────────────────────────────────────────────────────────────
+
+function parseFinderPrice(str) {
+  const m = String(str || '').match(/\$([\d,]+)/)
+  return m ? Number(m[1].replace(/,/g, '')) : 0
+}
+
+function buildFinderOptions() {
+  const options = []
+  for (const property of properties) {
+    for (const plan of (property.roomPlans || [])) {
+      const price = parseFinderPrice(plan.priceRange)
+      const available = (plan.rooms || []).filter((r) => {
+        const a = (r.available || '').toLowerCase()
+        return a !== 'unavailable' && a !== 'currently unavailable' && a !== 'booked'
+      })
+      if (available.length === 0) continue
+      options.push({
+        propertySlug: property.slug,
+        propertyName: property.name,
+        planTitle: plan.title,
+        price,
+        priceDisplay: plan.priceRange,
+        bathmateCount: (plan.rooms || []).length,
+        availableCount: available.length,
+      })
+    }
+  }
+  return options
+}
+
+const BUDGET_OPTIONS = [
+  { value: 'any', label: 'Any budget' },
+  { value: '775', label: 'Up to $775' },
+  { value: '800', label: 'Up to $800' },
+  { value: '825', label: 'Up to $825' },
+  { value: '865', label: 'Up to $865' },
+]
+
+const BATHMATE_OPTIONS = [
+  { value: 'any', label: 'Any' },
+  { value: '1', label: 'Private bath' },
+  { value: '2', label: '2 people' },
+  { value: '3', label: '3 people' },
+  { value: '4', label: '4 people' },
+]
+
+const SEASON_OPTIONS = [
+  { value: 'any', label: 'Not sure yet' },
+  { value: 'summer', label: 'Summer (Jun–Sep)' },
+  { value: 'academic', label: 'Fall – UW year' },
+  { value: 'fullyear', label: 'Full year' },
+]
+
+const SEASON_LEASE_LABEL = {
+  summer: '3-Month Summer lease',
+  academic: '9-Month Academic lease',
+  fullyear: '12-Month lease',
+}
+
+function PillSelect({ label, options, value, onChange }) {
+  return (
+    <div>
+      <div className="mb-3 text-[11px] font-bold uppercase tracking-[0.18em] text-slate-500">{label}</div>
+      <div className="flex flex-wrap gap-2">
+        {options.map((opt) => (
+          <button
+            key={opt.value}
+            type="button"
+            onClick={() => onChange(opt.value)}
+            className={`rounded-full px-3.5 py-2 text-xs font-semibold transition ${
+              value === opt.value
+                ? 'bg-slate-900 text-white shadow-sm'
+                : 'border border-slate-200 bg-white text-slate-600 hover:border-slate-400 hover:text-slate-900'
+            }`}
+          >
+            {opt.label}
+          </button>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+function MatchCard({ opt, seasonLabel }) {
+  return (
+    <Link
+      to={`/properties/${opt.propertySlug}#floor-plans`}
+      onClick={scrollToTop}
+      className="group flex flex-col gap-3 rounded-2xl border border-slate-200 bg-white p-5 transition hover:border-axis hover:shadow-[0_4px_18px_rgba(14,165,164,0.12)]"
+    >
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0">
+          <div className="text-[10px] font-bold uppercase tracking-[0.16em] text-slate-400">{opt.propertyName}</div>
+          <div className="mt-0.5 font-semibold text-slate-900 leading-snug">{opt.planTitle}</div>
+        </div>
+        <svg className="mt-0.5 h-4 w-4 shrink-0 text-axis opacity-0 transition group-hover:opacity-100" viewBox="0 0 16 16" fill="none" aria-hidden>
+          <path d="M3 8h10M9 4l4 4-4 4" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+      </div>
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 text-xs text-slate-500">
+        <span className="font-bold text-slate-800">{opt.priceDisplay}</span>
+        <span className="text-slate-300">·</span>
+        <span>
+          <span className="font-medium text-emerald-600">{opt.availableCount}</span> room{opt.availableCount !== 1 ? 's' : ''} available
+        </span>
+        {opt.bathmateCount === 1 && (
+          <>
+            <span className="text-slate-300">·</span>
+            <span className="font-medium text-axis">Private bathroom</span>
+          </>
+        )}
+      </div>
+      {seasonLabel && (
+        <div className="rounded-lg border border-teal-100 bg-teal-50 px-3 py-1.5 text-[11px] font-semibold text-teal-700">
+          {seasonLabel}
+        </div>
+      )}
+    </Link>
+  )
+}
+
+function RoomFinder() {
+  const [budget, setBudget] = useState('any')
+  const [bathmates, setBathmates] = useState('any')
+  const [season, setSeason] = useState('any')
+
+  const allOptions = useMemo(() => buildFinderOptions(), [])
+
+  const results = useMemo(() => {
+    return allOptions
+      .filter((opt) => {
+        if (budget !== 'any' && opt.price > parseInt(budget, 10)) return false
+        if (bathmates !== 'any' && opt.bathmateCount !== parseInt(bathmates, 10)) return false
+        return true
+      })
+      .sort((a, b) => a.price - b.price)
+  }, [allOptions, budget, bathmates])
+
+  const seasonLabel = season !== 'any' ? SEASON_LEASE_LABEL[season] : null
+
+  const hasFilters = budget !== 'any' || bathmates !== 'any' || season !== 'any'
+
+  return (
+    <section className="border-t border-slate-100 bg-white px-4 py-14 sm:px-6 sm:py-20">
+      <div className="mx-auto max-w-6xl">
+        <Reveal className="mb-8 text-center">
+          <Eyebrow>Room Finder</Eyebrow>
+          <h2 className="mt-3 font-serif text-2xl font-black tracking-tight text-slate-900 sm:text-4xl">
+            Find the best fit for you
+          </h2>
+          <p className="mx-auto mt-3 max-w-md text-sm leading-6 text-slate-500">
+            Set your preferences and we'll match you to the right rooms instantly.
+          </p>
+        </Reveal>
+
+        <div className="rounded-3xl border border-slate-200 bg-slate-50 p-6 sm:p-8">
+          <div className="grid gap-6 sm:grid-cols-3">
+            <PillSelect label="Budget" options={BUDGET_OPTIONS} value={budget} onChange={setBudget} />
+            <PillSelect label="Bathroom share" options={BATHMATE_OPTIONS} value={bathmates} onChange={setBathmates} />
+            <PillSelect label="Move-in season" options={SEASON_OPTIONS} value={season} onChange={setSeason} />
+          </div>
+
+          <div className="mt-8 border-t border-slate-200 pt-6">
+            {results.length === 0 ? (
+              <div className="py-10 text-center text-slate-400">
+                <svg className="mx-auto mb-3 h-8 w-8 opacity-40" viewBox="0 0 24 24" fill="none" aria-hidden>
+                  <circle cx="11" cy="11" r="8" stroke="currentColor" strokeWidth="1.5" />
+                  <path d="M21 21l-4.35-4.35" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+                </svg>
+                <p className="text-sm font-medium">No rooms match those filters.</p>
+                <p className="mt-1 text-xs">Try adjusting your budget or bathroom preference.</p>
+              </div>
+            ) : (
+              <motion.div
+                key={`${budget}-${bathmates}-${season}`}
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.3, ease: [0.22, 1, 0.36, 1] }}
+              >
+                <div className="mb-4 flex items-center justify-between gap-3">
+                  <span className="text-sm text-slate-500">
+                    <span className="font-bold text-slate-900">{results.length}</span> match{results.length !== 1 ? 'es' : ''} found
+                    {!hasFilters && <span className="text-slate-400"> — set filters above to narrow results</span>}
+                  </span>
+                </div>
+                <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                  {results.map((opt, i) => (
+                    <MatchCard key={i} opt={opt} seasonLabel={seasonLabel} />
+                  ))}
+                </div>
+              </motion.div>
+            )}
+          </div>
+        </div>
+      </div>
+    </section>
+  )
+}
+
 // ── Page ─────────────────────────────────────────────────────────────────────
 
 export default function Home() {
@@ -177,6 +377,9 @@ export default function Home() {
 
       {/* ── HERO ── */}
       <Hero heroImage={heroImage} />
+
+      {/* ── ROOM FINDER ── */}
+      <RoomFinder />
 
       {/* ── FEATURE CARDS ── */}
       <section className="bg-cream-50 px-4 py-14 sm:px-6 sm:py-20">
