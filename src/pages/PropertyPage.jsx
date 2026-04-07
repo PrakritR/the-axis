@@ -293,17 +293,17 @@ function buildRoomPlanDisplay(property) {
   }
 
   const tierMeta = {
-    '$840/month': {
+    '$865/month': {
       title: '2-Person Bathroom Share',
       summary: 'Rooms 1 and 2 share one bathroom',
       order: 0,
     },
-    '$800/month': {
+    '$825/month': {
       title: '3-Person Bathroom Share',
       summary: 'Rooms 3, 4, and 5 share one bathroom',
       order: 1,
     },
-    '$775/month': {
+    '$800/month': {
       title: '4-Person Bathroom Share',
       summary: 'Rooms 6, 7, 8, and 9 share one bathroom',
       order: 2,
@@ -367,9 +367,7 @@ function FloorPlanCard({plan, onDetail}){
       <div className="flex items-start justify-between gap-3 border-b border-slate-100 px-4 py-4 sm:px-6 sm:py-5">
         <div className="min-w-0 flex-1">
           <div className="text-[11px] font-bold uppercase tracking-[0.14em] text-slate-400 break-words">{plan.title}</div>
-          <div className="mt-1.5 text-lg font-black text-slate-900 break-words">{plan.priceRange}
-            <span className="ml-1.5 text-sm font-medium text-slate-400">/ mo</span>
-          </div>
+          <div className="mt-1.5 text-lg font-black text-slate-900 break-words">{plan.priceRange}</div>
           {plan.summary && <div className="mt-1 text-sm text-slate-500 break-words">{plan.summary}</div>}
           {scarce && (
             <div className="mt-2.5 inline-flex items-center gap-1.5 text-xs font-semibold text-amber-600">
