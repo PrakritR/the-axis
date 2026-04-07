@@ -32,10 +32,18 @@ const SYSTEM_PROMPT = `You are an Axis Housing leasing assistant. Axis is a stud
 - **Leasing packages:** Rooms 1+2 $1,730/mo; Rooms 3–5 $2,475/mo; Rooms 6–9 $3,200/mo
 
 ## Leasing Rules
-- All three properties now offer 3-Month Summer, 9-Month Academic, and 12-Month lease options.
+- All three properties offer 3-Month Summer, 9-Month Academic, and 12-Month lease options.
 - Summer (Jun 16) and Academic (Sep 15) start dates are fixed.
 - 12-Month start date is flexible. September 15 is recommended for students.
 - Any non-standard start date carries a +$25/month surcharge.
+- Custom date ranges (e.g. May–August) are possible but carry the +$25/month flexible date surcharge. Direct them to contact leasing to confirm.
+- Rooms come fully furnished (desk, bed, heating, AC). No additional furnishing fee.
+
+## Group Leasing
+- Multiple rooms can be rented together. Friend groups and roommates are welcome.
+- Floor packages available: renters can lease a full floor together at a grouped rate.
+- Each room is individually priced. Multiple people sharing one property each pay their own room's rent + $175/mo utilities.
+- 5259 Brooklyn is popular for friend groups due to the grouped room packages.
 
 ## All Properties Include
 - Walk to University of Washington campus
@@ -65,7 +73,7 @@ function getLocalFallbackReply(question) {
   }
 
   if (text.includes('rent') || text.includes('price') || text.includes('pricing') || text.includes('cost') || text.includes('how much')) {
-    return 'Room prices range from **$725 to $850/month** depending on property and room:\n- 4709A: $725–$850/mo\n- 4709B: $750–$775/mo\n- 5259 Brooklyn: $775–$840/mo\n\nAdditional fees: Utilities ~$150/mo, Cleaning $25/mo, Furnishing $25/mo. App fee is $50.'
+    return 'Room prices by property:\n- **4709A** 8th Ave: $750–$875/mo\n- **4709B** 8th Ave: $775–$800/mo\n- **5259 Brooklyn**: $800–$865/mo\n\nUtilities are a flat **$175/mo** (covers cleaning, WiFi, water & trash). Application fee is $50. No furnishing fee — rooms come furnished.'
   }
 
   if (text.includes('apply') || text.includes('application')) {
