@@ -1,5 +1,6 @@
 import { useEffect, useState, useRef } from 'react'
 import { Seo } from '../lib/seo'
+import { properties } from '../data/properties'
 
 const CONTACT_PHONE_DISPLAY = '(510) 309-8345'
 const CONTACT_PHONE_RAW = '15103098345'
@@ -259,6 +260,149 @@ function BookingScheduler() {
   )
 }
 
+const AIRTABLE_BASE_ID = import.meta.env.VITE_AIRTABLE_APPLICATIONS_BASE_ID || 'appNBX2inqfJMyqYV'
+const AIRTABLE_INQUIRIES_TABLE = 'Inquiry Management'
+const AIRTABLE_TOKEN = import.meta.env.VITE_AIRTABLE_TOKEN
+
+const inputCls = 'w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 placeholder-slate-400 outline-none transition focus:border-axis focus:bg-white focus:ring-2 focus:ring-axis/20'
+const selectCls = `${inputCls} appearance-none cursor-pointer`
+
+function ContactMessageForm() {
+  const [form, setForm] = useState({ name: '', email: '', phone: '', property: '', topic: '', message: '' })
+  const [submitting, setSubmitting] = useState(false)
+  const [submitted, setSubmitted] = useState(false)
+  const [error, setError] = useState('')
+
+  function set(key, val) { setForm(prev => ({ ...prev, [key]: val })) }
+
+  function buildMailto() {
+    const body = [
+      `Name: ${form.name}`,
+      `Email: ${form.email}`,
+      `Phone: ${form.phone || 'Not provided'}`,
+      `Property interest: ${form.property || 'Not specified'}`,
+      `Topic: ${form.topic || 'Not specified'}`,
+      `Message:\n${form.message}`,
+    ].join('\n')
+    return `mailto:${CONTACT_EMAIL}?subject=${encodeURIComponent(`Contact: ${form.name}`)}&body=${encodeURIComponent(body)}`
+  }
+
+  async function handleSubmit(e) {
+    e.preventDefault()
+    setSubmitting(true)
+    setError('')
+    const fields = {
+      'Name': form.name,
+      'Email': form.email,
+      'Phone': form.phone || '',
+      'Property': form.property || '',
+      'Topic': form.topic || '',
+      'Message': form.message,
+      'Status': 'New',
+    }
+    try {
+      if (!AIRTABLE_TOKEN) throw new Error('VITE_AIRTABLE_TOKEN is not set.')
+      const res = await fetch(`https://api.airtable.com/v0/${AIRTABLE_BASE_ID}/${encodeURIComponent(AIRTABLE_INQUIRIES_TABLE)}`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${AIRTABLE_TOKEN}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ fields }),
+      })
+      if (!res.ok) {
+        const body = await res.text()
+        let msg = `Airtable error ${res.status}`
+        try { msg += ': ' + JSON.parse(body)?.error?.message } catch { msg += ': ' + body }
+        throw new Error(msg)
+      }
+      setSubmitted(true)
+    } catch (err) {
+      console.error('Contact form error:', err)
+      setError(err.message || 'Submission failed.')
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  if (submitted) {
+    return (
+      <div className="flex flex-col items-center gap-4 py-12 text-center">
+        <div className="flex h-14 w-14 items-center justify-center rounded-full bg-teal-50">
+          <svg className="h-7 w-7 text-axis" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+          </svg>
+        </div>
+        <div>
+          <p className="text-lg font-black text-slate-900">Message sent!</p>
+          <p className="mt-1 text-sm text-slate-500">We'll follow up with you at <strong>{form.email}</strong> within 2 business days.</p>
+        </div>
+        <button onClick={() => { setSubmitted(false); setForm({ name: '', email: '', phone: '', property: '', topic: '', message: '' }) }}
+          className="mt-2 text-xs font-semibold text-axis hover:underline">Send another message</button>
+      </div>
+    )
+  }
+
+  return (
+    <form onSubmit={handleSubmit} className="space-y-4">
+      <div className="grid gap-4 sm:grid-cols-2">
+        <div>
+          <label className="mb-1.5 block text-xs font-semibold text-slate-700">Name <span className="text-axis">*</span></label>
+          <input required className={inputCls} placeholder="Jane Smith" value={form.name} onChange={e => set('name', e.target.value)} />
+        </div>
+        <div>
+          <label className="mb-1.5 block text-xs font-semibold text-slate-700">Email <span className="text-axis">*</span></label>
+          <input required type="email" className={inputCls} placeholder="jane@email.com" value={form.email} onChange={e => set('email', e.target.value)} />
+        </div>
+      </div>
+
+      <div className="grid gap-4 sm:grid-cols-2">
+        <div>
+          <label className="mb-1.5 block text-xs font-semibold text-slate-700">Phone</label>
+          <input type="tel" className={inputCls} placeholder="(206) 555-0100" value={form.phone} onChange={e => set('phone', e.target.value)} />
+        </div>
+        <div>
+          <label className="mb-1.5 block text-xs font-semibold text-slate-700">Property of interest</label>
+          <select className={selectCls} value={form.property} onChange={e => set('property', e.target.value)}>
+            <option value="">Any / not sure yet</option>
+            {properties.map(p => <option key={p.slug} value={p.name}>{p.name}</option>)}
+          </select>
+        </div>
+      </div>
+
+      <div>
+        <label className="mb-1.5 block text-xs font-semibold text-slate-700">Topic</label>
+        <select className={selectCls} value={form.topic} onChange={e => set('topic', e.target.value)}>
+          <option value="">General question</option>
+          <option>Room availability</option>
+          <option>Pricing & fees</option>
+          <option>Lease terms</option>
+          <option>Tour request</option>
+          <option>Application follow-up</option>
+          <option>Other</option>
+        </select>
+      </div>
+
+      <div>
+        <label className="mb-1.5 block text-xs font-semibold text-slate-700">Message <span className="text-axis">*</span></label>
+        <textarea required className={`${inputCls} min-h-[110px] resize-y`} placeholder="Ask us anything about rooms, pricing, availability, or move-in dates…" value={form.message} onChange={e => set('message', e.target.value)} />
+      </div>
+
+      {error && (
+        <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 space-y-2">
+          <p className="text-sm font-semibold text-red-700">Submission failed</p>
+          <p className="font-mono text-xs text-red-600 break-all">{error}</p>
+          <a href={buildMailto()} className="inline-block rounded-lg bg-red-700 px-4 py-2 text-xs font-semibold text-white hover:bg-red-800">
+            Send via email instead
+          </a>
+        </div>
+      )}
+
+      <button type="submit" disabled={submitting}
+        className="w-full rounded-full bg-slate-900 py-3.5 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:opacity-60 disabled:cursor-not-allowed">
+        {submitting ? 'Sending…' : 'Send message'}
+      </button>
+    </form>
+  )
+}
+
 export default function Contact() {
   const [activeTab, setActiveTab] = useState('schedule')
 
@@ -365,15 +509,9 @@ export default function Contact() {
                 <div className="mb-6 border-b border-slate-100 pb-6">
                   <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-axis">Send a message</div>
                   <h2 className="mt-2 text-3xl font-black tracking-tight text-slate-900">Tell us what you need</h2>
-                  <p className="mt-3 text-sm leading-7 text-slate-600">Tell us what you need and we'll follow up.</p>
+                  <p className="mt-3 text-sm leading-7 text-slate-600">We'll follow up within 2 business days.</p>
                 </div>
-                <iframe
-                  className="airtable-embed"
-                  src="https://airtable.com/embed/appNBX2inqfJMyqYV/pagjUTobVZF3ZwGl7/form"
-                  width="100%"
-                  height="700"
-                  style={{ background: 'transparent', border: '1px solid #ccc', borderRadius: '16px' }}
-                />
+                <ContactMessageForm />
               </div>
             )}
           </div>
