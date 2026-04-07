@@ -395,17 +395,17 @@ export const properties = [
     tags: ['Shared Housing', 'Shared Living', 'Seattle'],
     floorPlans: [
       {
-        title: 'First Floor',
-        units: ['Room 1'],
+        title: '2-Bedroom Share',
+        units: ['Room 1', 'Room 2'],
         images: [asset('5269 house pics/IMG_8333.jpg')],
       },
       {
-        title: 'Second Floor',
-        units: ['Room 2', 'Room 3', 'Room 4', 'Room 5'],
+        title: '3-Bedroom Share',
+        units: ['Room 3', 'Room 4', 'Room 5'],
         images: assets('5269 house pics/IMG_8335.jpg', '5269 house pics/IMG_8336.jpg'),
       },
       {
-        title: 'Third Floor',
+        title: '4-Bedroom Share',
         units: ['Room 6', 'Room 7', 'Room 8', 'Room 9'],
         images: [asset('5269 house pics/IMG_8347.jpg')],
       },
@@ -447,17 +447,19 @@ export const properties = [
     ],
     roomPlans: [
       {
-        title: 'First Floor',
+        title: '2-Bedroom Share (Rooms 1 & 2)',
         priceRange: '$865/month',
-        roomsAvailable: 1,
-        rooms: [roomVideo('Room 1', '$865/month', 'Available after April 14, 2026', 'https://res.cloudinary.com/dhls60o2m/video/upload/v1775273591/Room_0_ofos7s.mov', 'Shares bathroom with Room 2')],
+        roomsAvailable: 2,
+        rooms: [
+          roomVideo('Room 1', '$865/month', 'Available after April 14, 2026', 'https://res.cloudinary.com/dhls60o2m/video/upload/v1775273591/Room_0_ofos7s.mov', 'Shares bathroom with Room 2'),
+          roomVideo('Room 2', '$865/month', 'Available after April 14, 2026', 'https://res.cloudinary.com/dhls60o2m/video/upload/v1775273592/Room_1_mrqdvq.mov', 'Shares bathroom with Room 1'),
+        ],
       },
       {
-        title: 'Second Floor',
-        priceRange: '$825-$865/month',
-        roomsAvailable: 4,
+        title: '3-Bedroom Share (Rooms 3, 4 & 5)',
+        priceRange: '$825/month',
+        roomsAvailable: 3,
         rooms: [
-          roomVideo('Room 2', '$865/month', 'Available after April 14, 2026', 'https://res.cloudinary.com/dhls60o2m/video/upload/v1775273592/Room_1_mrqdvq.mov', 'Shares bathroom with Room 1'),
           roomVideo(
             'Room 3',
             '$825/month',
@@ -476,7 +478,7 @@ export const properties = [
         ],
       },
       {
-        title: 'Third Floor',
+        title: '4-Bedroom Share (Rooms 6, 7, 8 & 9)',
         priceRange: '$800/month',
         roomsAvailable: 4,
         rooms: [
