@@ -141,13 +141,17 @@ function buildFinderOptions() {
         return a !== 'unavailable' && a !== 'currently unavailable' && a !== 'booked'
       })
       if (available.length === 0) continue
+      const privateBath = (plan.rooms || []).some(r =>
+        (r.details || '').toLowerCase().includes('private')
+      )
       options.push({
         propertySlug: property.slug,
         propertyName: property.name,
+        propertyImage: (property.images || [])[0],
         planTitle: plan.title,
         price,
         priceDisplay: plan.priceRange,
-        bathmateCount: (plan.rooms || []).length,
+        privateBath,
         availableCount: available.length,
       })
     }
@@ -156,23 +160,19 @@ function buildFinderOptions() {
 }
 
 const BUDGET_OPTIONS = [
-  { value: 'any', label: 'Any budget' },
   { value: '775', label: 'Up to $775' },
   { value: '800', label: 'Up to $800' },
   { value: '825', label: 'Up to $825' },
   { value: '865', label: 'Up to $865' },
 ]
 
-const BATHMATE_OPTIONS = [
+const BATH_OPTIONS = [
   { value: 'any', label: 'Any' },
-  { value: '1', label: 'Private bath' },
-  { value: '2', label: '2 people' },
-  { value: '3', label: '3 people' },
-  { value: '4', label: '4 people' },
+  { value: 'private', label: 'Private bath' },
+  { value: 'shared', label: 'Shared bath' },
 ]
 
 const SEASON_OPTIONS = [
-  { value: 'any', label: 'Not sure yet' },
   { value: 'summer', label: 'Summer (Jun–Sep)' },
   { value: 'academic', label: 'Fall – UW year' },
   { value: 'fullyear', label: 'Full year' },
@@ -184,11 +184,24 @@ const SEASON_LEASE_LABEL = {
   fullyear: '12-Month lease',
 }
 
-function PillSelect({ label, options, value, onChange }) {
+function PillSelect({ label, options, value, onChange, placeholder }) {
   return (
     <div>
       <div className="mb-3 text-[11px] font-bold uppercase tracking-[0.18em] text-slate-500">{label}</div>
       <div className="flex flex-wrap gap-2">
+        {placeholder && (
+          <button
+            type="button"
+            onClick={() => onChange('')}
+            className={`rounded-full px-3.5 py-2 text-xs font-semibold transition ${
+              value === ''
+                ? 'bg-slate-900 text-white shadow-sm'
+                : 'border border-slate-200 bg-white text-slate-400 hover:border-slate-400 hover:text-slate-600'
+            }`}
+          >
+            {placeholder}
+          </button>
+        )}
         {options.map((opt) => (
           <button
             key={opt.value}
@@ -213,59 +226,64 @@ function MatchCard({ opt, seasonLabel }) {
     <Link
       to={`/properties/${opt.propertySlug}#floor-plans`}
       onClick={scrollToTop}
-      className="group flex flex-col gap-3 rounded-2xl border border-slate-200 bg-white p-5 transition hover:border-axis hover:shadow-[0_4px_18px_rgba(14,165,164,0.12)]"
+      className="group flex items-center gap-4 rounded-2xl border border-slate-200 bg-white p-4 transition hover:border-axis hover:shadow-[0_4px_18px_rgba(14,165,164,0.12)]"
     >
-      <div className="flex items-start justify-between gap-2">
-        <div className="min-w-0">
-          <div className="text-[10px] font-bold uppercase tracking-[0.16em] text-slate-400">{opt.propertyName}</div>
-          <div className="mt-0.5 font-semibold text-slate-900 leading-snug">{opt.planTitle}</div>
+      {opt.propertyImage && (
+        <img
+          src={opt.propertyImage}
+          alt={opt.propertyName}
+          className="h-16 w-20 shrink-0 rounded-xl object-cover"
+        />
+      )}
+      <div className="min-w-0 flex-1">
+        <div className="text-[10px] font-bold uppercase tracking-[0.16em] text-slate-400">{opt.propertyName}</div>
+        <div className="mt-0.5 font-semibold text-slate-900 leading-snug truncate">{opt.planTitle}</div>
+        <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-slate-500">
+          <span className="font-bold text-slate-800">{opt.priceDisplay}</span>
+          <span className="text-slate-300">·</span>
+          <span className="font-medium text-emerald-600">{opt.availableCount} available</span>
+          {opt.privateBath && (
+            <>
+              <span className="text-slate-300">·</span>
+              <span className="font-medium text-axis">Private bath</span>
+            </>
+          )}
         </div>
-        <svg className="mt-0.5 h-4 w-4 shrink-0 text-axis opacity-0 transition group-hover:opacity-100" viewBox="0 0 16 16" fill="none" aria-hidden>
-          <path d="M3 8h10M9 4l4 4-4 4" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
-        </svg>
-      </div>
-      <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 text-xs text-slate-500">
-        <span className="font-bold text-slate-800">{opt.priceDisplay}</span>
-        <span className="text-slate-300">·</span>
-        <span>
-          <span className="font-medium text-emerald-600">{opt.availableCount}</span> room{opt.availableCount !== 1 ? 's' : ''} available
-        </span>
-        {opt.bathmateCount === 1 && (
-          <>
-            <span className="text-slate-300">·</span>
-            <span className="font-medium text-axis">Private bathroom</span>
-          </>
+        {seasonLabel && (
+          <div className="mt-2 inline-block rounded-md bg-teal-50 px-2 py-0.5 text-[10px] font-semibold text-teal-700">
+            {seasonLabel}
+          </div>
         )}
       </div>
-      {seasonLabel && (
-        <div className="rounded-lg border border-teal-100 bg-teal-50 px-3 py-1.5 text-[11px] font-semibold text-teal-700">
-          {seasonLabel}
-        </div>
-      )}
+      <svg className="h-4 w-4 shrink-0 text-axis opacity-0 transition group-hover:opacity-100" viewBox="0 0 16 16" fill="none" aria-hidden>
+        <path d="M3 8h10M9 4l4 4-4 4" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+      </svg>
     </Link>
   )
 }
 
 function RoomFinder() {
-  const [budget, setBudget] = useState('any')
-  const [bathmates, setBathmates] = useState('any')
-  const [season, setSeason] = useState('any')
+  const [budget, setBudget] = useState('')
+  const [bath, setBath] = useState('any')
+  const [season, setSeason] = useState('')
 
   const allOptions = useMemo(() => buildFinderOptions(), [])
 
+  const hasFilters = budget !== '' || season !== ''
+
   const results = useMemo(() => {
+    if (!hasFilters) return []
     return allOptions
       .filter((opt) => {
-        if (budget !== 'any' && opt.price > parseInt(budget, 10)) return false
-        if (bathmates !== 'any' && opt.bathmateCount !== parseInt(bathmates, 10)) return false
+        if (budget !== '' && opt.price > parseInt(budget, 10)) return false
+        if (bath === 'private' && !opt.privateBath) return false
+        if (bath === 'shared' && opt.privateBath) return false
         return true
       })
       .sort((a, b) => a.price - b.price)
-  }, [allOptions, budget, bathmates])
+  }, [allOptions, budget, bath, season, hasFilters])
 
-  const seasonLabel = season !== 'any' ? SEASON_LEASE_LABEL[season] : null
-
-  const hasFilters = budget !== 'any' || bathmates !== 'any' || season !== 'any'
+  const seasonLabel = season !== '' ? SEASON_LEASE_LABEL[season] : null
 
   return (
     <section className="border-t border-slate-100 bg-white px-4 py-14 sm:px-6 sm:py-20">
@@ -276,48 +294,65 @@ function RoomFinder() {
             Find the best fit for you
           </h2>
           <p className="mx-auto mt-3 max-w-md text-sm leading-6 text-slate-500">
-            Set your preferences and we'll match you to the right rooms instantly.
+            Select your budget or move-in season and we'll show matching rooms instantly.
           </p>
         </Reveal>
 
         <div className="rounded-3xl border border-slate-200 bg-slate-50 p-6 sm:p-8">
           <div className="grid gap-6 sm:grid-cols-3">
-            <PillSelect label="Budget" options={BUDGET_OPTIONS} value={budget} onChange={setBudget} />
-            <PillSelect label="Bathroom share" options={BATHMATE_OPTIONS} value={bathmates} onChange={setBathmates} />
-            <PillSelect label="Move-in season" options={SEASON_OPTIONS} value={season} onChange={setSeason} />
+            <PillSelect label="Max budget" options={BUDGET_OPTIONS} value={budget} onChange={setBudget} placeholder="Any budget" />
+            <PillSelect label="Bathroom" options={BATH_OPTIONS} value={bath} onChange={setBath} />
+            <PillSelect label="Move-in season" options={SEASON_OPTIONS} value={season} onChange={setSeason} placeholder="Not sure yet" />
           </div>
 
-          <div className="mt-8 border-t border-slate-200 pt-6">
-            {results.length === 0 ? (
-              <div className="py-10 text-center text-slate-400">
-                <svg className="mx-auto mb-3 h-8 w-8 opacity-40" viewBox="0 0 24 24" fill="none" aria-hidden>
+          <AnimatePresence mode="wait">
+            {!hasFilters ? (
+              <motion.div
+                key="empty"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                transition={{ duration: 0.2 }}
+                className="mt-8 border-t border-slate-200 pt-8 text-center"
+              >
+                <svg className="mx-auto mb-3 h-8 w-8 text-slate-300" viewBox="0 0 24 24" fill="none" aria-hidden>
                   <circle cx="11" cy="11" r="8" stroke="currentColor" strokeWidth="1.5" />
                   <path d="M21 21l-4.35-4.35" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
                 </svg>
-                <p className="text-sm font-medium">No rooms match those filters.</p>
-                <p className="mt-1 text-xs">Try adjusting your budget or bathroom preference.</p>
-              </div>
+                <p className="text-sm font-medium text-slate-400">Select a budget or season above to see matching rooms</p>
+              </motion.div>
+            ) : results.length === 0 ? (
+              <motion.div
+                key="no-results"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                transition={{ duration: 0.2 }}
+                className="mt-8 border-t border-slate-200 pt-8 text-center"
+              >
+                <p className="text-sm font-medium text-slate-500">No rooms match those filters.</p>
+                <p className="mt-1 text-xs text-slate-400">Try a higher budget or different bathroom preference.</p>
+              </motion.div>
             ) : (
               <motion.div
-                key={`${budget}-${bathmates}-${season}`}
+                key={`${budget}-${bath}-${season}`}
                 initial={{ opacity: 0, y: 8 }}
                 animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0 }}
                 transition={{ duration: 0.3, ease: [0.22, 1, 0.36, 1] }}
+                className="mt-8 border-t border-slate-200 pt-6"
               >
-                <div className="mb-4 flex items-center justify-between gap-3">
-                  <span className="text-sm text-slate-500">
-                    <span className="font-bold text-slate-900">{results.length}</span> match{results.length !== 1 ? 'es' : ''} found
-                    {!hasFilters && <span className="text-slate-400"> — set filters above to narrow results</span>}
-                  </span>
+                <div className="mb-4 text-sm text-slate-500">
+                  <span className="font-bold text-slate-900">{results.length}</span> match{results.length !== 1 ? 'es' : ''} found
                 </div>
-                <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                <div className="grid gap-3 sm:grid-cols-2">
                   {results.map((opt, i) => (
                     <MatchCard key={i} opt={opt} seasonLabel={seasonLabel} />
                   ))}
                 </div>
               </motion.div>
             )}
-          </div>
+          </AnimatePresence>
         </div>
       </div>
     </section>
