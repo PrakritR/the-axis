@@ -2,9 +2,8 @@ import { useState } from 'react'
 import { Seo } from '../lib/seo'
 import { properties } from '../data/properties'
 
-// Use VITE_AIRTABLE_APPLICATIONS_BASE_ID if set, otherwise fall back to the main base
-const AIRTABLE_BASE_ID = import.meta.env.VITE_AIRTABLE_APPLICATIONS_BASE_ID || import.meta.env.VITE_AIRTABLE_BASE_ID || 'appNBX2inqfJMyqYV'
-const AIRTABLE_TABLE = import.meta.env.VITE_AIRTABLE_APPLICATIONS_TABLE || 'Applications'
+const AIRTABLE_BASE_ID = import.meta.env.VITE_AIRTABLE_APPLICATIONS_BASE_ID || 'appNBX2inqfJMyqYV'
+const AIRTABLE_TABLE = 'Inquiries'
 const AIRTABLE_TOKEN = import.meta.env.VITE_AIRTABLE_TOKEN
 
 const LEASE_TERMS = [
@@ -93,18 +92,22 @@ export default function Apply() {
     setSubmitting(true)
     setError('')
 
+    const leaseTerm = form.leaseTerm === 'Other / Custom dates' ? `Other: ${form.leaseTermOther}` : form.leaseTerm
+    const summary = [
+      `Property: ${form.property}`,
+      form.room ? `Room: ${form.room}` : null,
+      form.moveIn ? `Move-in: ${form.moveIn}` : 'Move-in: Flexible',
+      `Lease term: ${leaseTerm}`,
+      `Student: ${form.isStudent}`,
+      form.institution ? `University/Employer: ${form.institution}` : null,
+      form.about ? `About: ${form.about}` : null,
+    ].filter(Boolean).join('\n')
     const fields = {
       'Name': form.name,
       'Email': form.email,
-      'Phone': form.phone || '',
-      'Property': form.property,
-      'Room': form.room || 'Any',
-      'Move In Date': form.moveIn || '',
-      'Lease Term': form.leaseTerm === 'Other / Custom dates' ? `Other: ${form.leaseTermOther}` : form.leaseTerm,
-      'Student': form.isStudent,
-      'University / Employer': form.institution || '',
-      'Notes': form.about || '',
-      'Status': 'New',
+      'Phone Number': form.phone || '',
+      'Inquiry Type': 'Application',
+      'Message Summary': summary,
     }
 
     try {

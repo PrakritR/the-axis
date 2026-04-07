@@ -261,7 +261,7 @@ function BookingScheduler() {
 }
 
 const AIRTABLE_BASE_ID = import.meta.env.VITE_AIRTABLE_APPLICATIONS_BASE_ID || 'appNBX2inqfJMyqYV'
-const AIRTABLE_INQUIRIES_TABLE = 'Inquiry Management'
+const AIRTABLE_INQUIRIES_TABLE = 'Inquiries'
 const AIRTABLE_TOKEN = import.meta.env.VITE_AIRTABLE_TOKEN
 
 const inputCls = 'w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 placeholder-slate-400 outline-none transition focus:border-axis focus:bg-white focus:ring-2 focus:ring-axis/20'
@@ -291,14 +291,17 @@ function ContactMessageForm() {
     e.preventDefault()
     setSubmitting(true)
     setError('')
+    const summary = [
+      form.property ? `Property interest: ${form.property}` : null,
+      form.topic ? `Topic: ${form.topic}` : null,
+      `Message: ${form.message}`,
+    ].filter(Boolean).join('\n')
     const fields = {
       'Name': form.name,
       'Email': form.email,
-      'Phone': form.phone || '',
-      'Property': form.property || '',
-      'Topic': form.topic || '',
-      'Message': form.message,
-      'Status': 'New',
+      'Phone Number': form.phone || '',
+      'Inquiry Type': form.topic || 'Other',
+      'Message Summary': summary,
     }
     try {
       if (!AIRTABLE_TOKEN) throw new Error('VITE_AIRTABLE_TOKEN is not set.')
