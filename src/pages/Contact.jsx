@@ -292,15 +292,15 @@ function ContactMessageForm() {
     setSubmitting(true)
     setError('')
     const summary = [
-      form.property ? `Property interest: ${form.property}` : null,
       form.topic ? `Topic: ${form.topic}` : null,
+      form.property ? `Property interest: ${form.property}` : null,
       `Message: ${form.message}`,
     ].filter(Boolean).join('\n')
     const fields = {
       'Name': form.name,
       'Email': form.email,
       'Phone Number': form.phone || '',
-      'Inquiry Type': form.topic || 'Other',
+      'Inquiry Type': 'Other',
       'Message Summary': summary,
     }
     try {

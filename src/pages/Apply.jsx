@@ -94,6 +94,7 @@ export default function Apply() {
 
     const leaseTerm = form.leaseTerm === 'Other / Custom dates' ? `Other: ${form.leaseTermOther}` : form.leaseTerm
     const summary = [
+      `[RENTAL APPLICATION]`,
       `Property: ${form.property}`,
       form.room ? `Room: ${form.room}` : null,
       form.moveIn ? `Move-in: ${form.moveIn}` : 'Move-in: Flexible',
@@ -106,7 +107,7 @@ export default function Apply() {
       'Name': form.name,
       'Email': form.email,
       'Phone Number': form.phone || '',
-      'Inquiry Type': 'Application',
+      'Inquiry Type': 'Other',
       'Message Summary': summary,
     }
 
