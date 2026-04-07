@@ -380,52 +380,6 @@ export default function Home() {
               </motion.div>
             ))}
           </motion.div>
-
-          {/* ── Quick highlights strip ── */}
-          <Reveal>
-            <div className="mt-10 grid gap-3 sm:grid-cols-3">
-              {[
-                {
-                  icon: (
-                    <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" aria-hidden>
-                      <path d="M3 10.5V18M21 10.5V18M3 13.5H21V8.25A1.5 1.5 0 0 0 19.5 6.75H4.5A1.5 1.5 0 0 0 3 8.25V13.5Z" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
-                    </svg>
-                  ),
-                  label: 'Furnished',
-                  body: 'Bed, desk, chair & closet included — move in as-is.',
-                },
-                {
-                  icon: (
-                    <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" aria-hidden>
-                      <path d="M1.5 8.5a15 15 0 0 1 21 0M5 12a12 12 0 0 1 14 0M8.5 15.5a7 7 0 0 1 7 0M12 19h.01" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
-                    </svg>
-                  ),
-                  label: 'Utilities + WiFi included',
-                  body: 'Water, electricity, gas & WiFi — no surprise bills.',
-                },
-                {
-                  icon: (
-                    <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" aria-hidden>
-                      <path d="M12 2C8.686 2 6 4.686 6 8c0 5.25 6 14 6 14s6-8.75 6-14c0-3.314-2.686-6-6-6z" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
-                      <circle cx="12" cy="8" r="2.25" stroke="currentColor" strokeWidth="1.5"/>
-                    </svg>
-                  ),
-                  label: '5-min walk to UW',
-                  body: '0.3 miles from the University of Washington main campus.',
-                },
-              ].map((item) => (
-                <div key={item.label} className="flex items-start gap-4 rounded-2xl border border-slate-200 bg-slate-50 px-5 py-4">
-                  <div className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-white text-axis shadow-soft">
-                    {item.icon}
-                  </div>
-                  <div>
-                    <div className="text-sm font-semibold text-slate-900">{item.label}</div>
-                    <div className="mt-0.5 text-xs leading-5 text-slate-500">{item.body}</div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </Reveal>
         </div>
       </section>
 
