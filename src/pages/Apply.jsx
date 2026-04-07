@@ -5,6 +5,15 @@ import { properties } from '../data/properties'
 const AIRTABLE_BASE_ID = import.meta.env.VITE_AIRTABLE_APPLICATIONS_BASE_ID || 'appNBX2inqfJMyqYV'
 const AIRTABLE_TABLE = import.meta.env.VITE_AIRTABLE_APPLICATIONS_TABLE || 'Inquiries'
 const AIRTABLE_TOKEN = import.meta.env.VITE_AIRTABLE_TOKEN
+const AIRTABLE_OTHER_INQUIRY_TYPE = 'Other'
+
+const INQUIRY_OPTIONS = [
+  'Rental application',
+  'Schedule a tour',
+  'Pricing and availability',
+  'Question about a property',
+  'Other',
+]
 
 const LEASE_TERMS = [
   '3-Month Summer (Jun 16 – Sep 14)',
@@ -39,7 +48,7 @@ async function submitToAirtable(fields) {
   const res = await fetch(`https://api.airtable.com/v0/${AIRTABLE_BASE_ID}/${encodeURIComponent(AIRTABLE_TABLE)}`, {
     method: 'POST',
     headers: { Authorization: `Bearer ${AIRTABLE_TOKEN}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ fields }),
+    body: JSON.stringify({ fields, typecast: true }),
   })
   if (!res.ok) {
     const body = await res.text()
@@ -66,10 +75,27 @@ function buildMailtoFallback(form) {
   return `mailto:info@axis-seattle-housing.com?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`
 }
 
+function buildApplicationSummary(form) {
+  const leaseTerm = form.leaseTerm === 'Other / Custom dates' ? `Other: ${form.leaseTermOther}` : form.leaseTerm
+
+  return [
+    '[AXIS PROPERTY INQUIRY]',
+    `Inquiry Type: ${form.inquiryType}`,
+    `Property: ${form.property}`,
+    form.room ? `Preferred Room: ${form.room}` : 'Preferred Room: No specific room selected',
+    form.moveIn ? `Desired Move-in Date: ${form.moveIn}` : 'Desired Move-in Date: Flexible',
+    `Lease Term: ${leaseTerm}`,
+    `Student Status: ${form.isStudent}`,
+    form.institution ? `University / Employer: ${form.institution}` : 'University / Employer: Not provided',
+    form.about ? `Message / Applicant Notes: ${form.about}` : 'Message / Applicant Notes: Not provided',
+  ].join('\n')
+}
+
 export default function Apply() {
   const [form, setForm] = useState({
     name: '', email: '', phone: '',
     property: '', room: '',
+    inquiryType: INQUIRY_OPTIONS[0], inquiryOther: '',
     moveIn: '', leaseTerm: LEASE_TERMS[0], leaseTermOther: '',
     isStudent: '', institution: '', about: '',
   })
@@ -92,22 +118,17 @@ export default function Apply() {
     setSubmitting(true)
     setError('')
 
-    const leaseTerm = form.leaseTerm === 'Other / Custom dates' ? `Other: ${form.leaseTermOther}` : form.leaseTerm
-    const summary = [
-      `[RENTAL APPLICATION]`,
-      `Property: ${form.property}`,
-      form.room ? `Room: ${form.room}` : null,
-      form.moveIn ? `Move-in: ${form.moveIn}` : 'Move-in: Flexible',
-      `Lease term: ${leaseTerm}`,
-      `Student: ${form.isStudent}`,
-      form.institution ? `University/Employer: ${form.institution}` : null,
-      form.about ? `About: ${form.about}` : null,
-    ].filter(Boolean).join('\n')
+    const summary = buildApplicationSummary(form)
+    const otherDetail = form.inquiryType === 'Other'
+      ? (form.inquiryOther || 'General Axis property inquiry')
+      : form.inquiryType
     const fields = {
       'Name': form.name,
       'Email': form.email,
-      'Phone Number': form.phone || '',
-      'Inquiry Type': 'Other',
+      'Phone Number': form.phone,
+      'Property': [form.property],
+      'Inquiry Type': AIRTABLE_OTHER_INQUIRY_TYPE,
+      'Other:': otherDetail,
       'Message Summary': summary,
     }
 
@@ -159,7 +180,8 @@ export default function Apply() {
           <div className="text-[11px] font-bold uppercase tracking-[0.2em] text-slate-400">Rental application</div>
           <h1 className="mt-2 text-3xl font-black tracking-tight text-slate-900 sm:text-4xl">Apply for a room</h1>
           <p className="mt-2 text-sm leading-6 text-slate-500">
-            Fill out the form below. We review every application personally and respond within 2 business days.
+            Fill out the form below. We collect the same inquiry details that go into Axis Airtable and review every
+            application personally within 2 business days.
             A <strong className="text-slate-700">$50 application fee</strong> is collected at move-in, not upfront.
           </p>
         </div>
@@ -177,8 +199,8 @@ export default function Apply() {
               <Field label="Email" required>
                 <input required type="email" className={inputCls} placeholder="jane@email.com" value={form.email} onChange={e => set('email', e.target.value)} />
               </Field>
-              <Field label="Phone">
-                <input type="tel" className={inputCls} placeholder="(206) 555-0100" value={form.phone} onChange={e => set('phone', e.target.value)} />
+              <Field label="Phone number" required>
+                <input required type="tel" className={inputCls} placeholder="(206) 555-0100" value={form.phone} onChange={e => set('phone', e.target.value)} />
               </Field>
             </div>
 
@@ -211,10 +233,32 @@ export default function Apply() {
                   {PROPERTY_OPTIONS.map(p => (
                     <option key={p.id} value={p.name}>{p.name}</option>
                   ))}
-                  <option value="No preference">No preference — any available</option>
                 </select>
               </div>
             </Field>
+
+            <div className="grid gap-5 sm:grid-cols-2">
+              <Field label="Inquiry type" required hint="This maps into the Axis inquiry form in Airtable.">
+                <div className="relative">
+                  <select required className={selectCls} value={form.inquiryType} onChange={e => set('inquiryType', e.target.value)}>
+                    {INQUIRY_OPTIONS.map(option => <option key={option} value={option}>{option}</option>)}
+                  </select>
+                </div>
+              </Field>
+              <Field
+                label="Other"
+                hint={form.inquiryType === 'Other' ? 'Describe the inquiry type if you chose Other.' : 'We will save your selected inquiry type here for Airtable compatibility.'}
+              >
+                <input
+                  className={inputCls}
+                  placeholder={form.inquiryType === 'Other' ? 'Tell us what kind of inquiry this is' : form.inquiryType}
+                  value={form.inquiryType === 'Other' ? form.inquiryOther : form.inquiryType}
+                  onChange={e => set('inquiryOther', e.target.value)}
+                  readOnly={form.inquiryType !== 'Other'}
+                  required={form.inquiryType === 'Other'}
+                />
+              </Field>
+            </div>
 
             {selectedProp && (
               <Field label="Preferred room" hint="We'll try to accommodate your preference, subject to availability.">
