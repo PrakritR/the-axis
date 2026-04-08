@@ -123,9 +123,31 @@ function validateDriversLicense(value) {
   return ''
 }
 
+const EMAIL_TYPOS = {
+  'gamil.com': 'gmail.com', 'gnail.com': 'gmail.com', 'gmal.com': 'gmail.com',
+  'gmial.com': 'gmail.com', 'gmaill.com': 'gmail.com', 'gmail.con': 'gmail.com',
+  'gmail.co': 'gmail.com', 'gmali.com': 'gmail.com',
+  'yaho.com': 'yahoo.com', 'yahooo.com': 'yahoo.com', 'yahoo.con': 'yahoo.com',
+  'yhoo.com': 'yahoo.com', 'yaoo.com': 'yahoo.com',
+  'hotmal.com': 'hotmail.com', 'hotmial.com': 'hotmail.com', 'hotmail.con': 'hotmail.com',
+  'hotmil.com': 'hotmail.com', 'homail.com': 'hotmail.com',
+  'outlok.com': 'outlook.com', 'outloo.com': 'outlook.com', 'outlook.con': 'outlook.com',
+  'iclod.com': 'icloud.com', 'icoud.com': 'icloud.com', 'icloud.con': 'icloud.com',
+  'aol.con': 'aol.com', 'msn.con': 'msn.com',
+}
+
 function validateEmail(value) {
   if (!value) return ''
-  if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(value)) return 'Enter a valid email address'
+  const trimmed = value.trim()
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(trimmed)) return 'Enter a valid email address (e.g. name@gmail.com)'
+  const domain = trimmed.split('@')[1]?.toLowerCase()
+  if (EMAIL_TYPOS[domain]) {
+    const local = trimmed.split('@')[0]
+    return `Did you mean ${local}@${EMAIL_TYPOS[domain]}?`
+  }
+  // Reject obviously fake TLDs > 10 chars or single char
+  const tld = domain?.split('.').pop()
+  if (tld && (tld.length < 2 || tld.length > 10)) return 'Enter a valid email address'
   return ''
 }
 
@@ -170,79 +192,50 @@ function validateState(value) {
   return ''
 }
 
-// Run all signer-form validations, returns array of error messages
+// Run all signer-form validations, returns { fieldKey: errorMessage } object
 function validateSignerForm(signer) {
-  const errors = []
-  const add = (msg) => { if (msg) errors.push(msg) }
+  const errors = {}
+  const add = (key, msg) => { if (msg && !errors[key]) errors[key] = msg }
 
-  // Full name
-  const nameErr = validateFullName(signer.fullName)
-  if (nameErr) add(`Full Name: ${nameErr}`)
+  add('fullName', validateFullName(signer.fullName))
+  add('dateOfBirth', validateDOB(signer.dateOfBirth))
+  if (signer.ssn) add('ssn', validateSSN(signer.ssn))
+  if (signer.license) add('license', validateDriversLicense(signer.license))
+  add('phone', validatePhone(signer.phone))
+  if (!signer.hasCosigner) add('hasCosigner', 'Please select Yes or No')
+  if (!signer.reference1Name?.trim()) add('reference1Name', 'At least one reference name is required')
+  if (!signer.reference1Phone?.trim()) {
+    add('reference1Phone', 'At least one reference phone number is required')
+  } else {
+    add('reference1Phone', validatePhone(signer.reference1Phone))
+  }
+  if (signer.currentLandlordPhone) add('currentLandlordPhone', validatePhone(signer.currentLandlordPhone))
+  if (signer.previousLandlordPhone) add('previousLandlordPhone', validatePhone(signer.previousLandlordPhone))
+  if (signer.supervisorPhone) add('supervisorPhone', validatePhone(signer.supervisorPhone))
+  if (signer.reference2Phone) add('reference2Phone', validatePhone(signer.reference2Phone))
+  add('email', validateEmail(signer.email))
+  if (signer.currentZip) add('currentZip', validateZip(signer.currentZip))
+  if (signer.previousZip) add('previousZip', validateZip(signer.previousZip))
+  if (signer.currentState) add('currentState', validateState(signer.currentState))
+  if (signer.previousState) add('previousState', validateState(signer.previousState))
+  if (signer.monthlyIncome) add('monthlyIncome', validateIncome(signer.monthlyIncome))
+  if (signer.annualIncome) add('annualIncome', validateIncome(signer.annualIncome))
 
-  // DOB
-  const dobErr = validateDOB(signer.dateOfBirth)
-  if (dobErr) add(`Date of Birth: ${dobErr}`)
-
-  // SSN (optional but validate if provided)
-  if (signer.ssn) { const e = validateSSN(signer.ssn); if (e) add(`SSN: ${e}`) }
-
-  // License
-  if (signer.license) { const e = validateDriversLicense(signer.license); if (e) add(`Driver's License: ${e}`) }
-
-  // Phone
-  const phoneErr = validatePhone(signer.phone)
-  if (phoneErr) add(`Phone Number: ${phoneErr}`)
-
-  // Co-signer choice required
-  if (!signer.hasCosigner) add('Co-Signer: Please indicate whether you have a co-signer (Yes or No)')
-
-  // At least one reference required
-  if (!signer.reference1Name?.trim()) add('References: At least one reference name is required')
-  if (!signer.reference1Phone?.trim()) add('References: At least one reference phone number is required')
-
-  // Supervisor/landlord phones (optional)
-  if (signer.currentLandlordPhone) { const e = validatePhone(signer.currentLandlordPhone); if (e) add(`Current Landlord Phone: ${e}`) }
-  if (signer.previousLandlordPhone) { const e = validatePhone(signer.previousLandlordPhone); if (e) add(`Previous Landlord Phone: ${e}`) }
-  if (signer.supervisorPhone) { const e = validatePhone(signer.supervisorPhone); if (e) add(`Supervisor Phone: ${e}`) }
-  if (signer.reference1Phone) { const e = validatePhone(signer.reference1Phone); if (e) add(`Reference 1 Phone: ${e}`) }
-  if (signer.reference2Phone) { const e = validatePhone(signer.reference2Phone); if (e) add(`Reference 2 Phone: ${e}`) }
-
-  // Email
-  const emailErr = validateEmail(signer.email)
-  if (emailErr) add(`Email: ${emailErr}`)
-
-  // ZIP codes
-  if (signer.currentZip) { const e = validateZip(signer.currentZip); if (e) add(`Current ZIP: ${e}`) }
-  if (signer.previousZip) { const e = validateZip(signer.previousZip); if (e) add(`Previous ZIP: ${e}`) }
-
-  // State abbreviations
-  if (signer.currentState) { const e = validateState(signer.currentState); if (e) add(`Current State: ${e}`) }
-  if (signer.previousState) { const e = validateState(signer.previousState); if (e) add(`Previous State: ${e}`) }
-
-  // Income
-  if (signer.monthlyIncome) { const e = validateIncome(signer.monthlyIncome); if (e) add(`Monthly Income: ${e}`) }
-  if (signer.annualIncome) { const e = validateIncome(signer.annualIncome); if (e) add(`Annual Income: ${e}`) }
-
-  // Lease dates
   if (signer.leaseStartDate && signer.leaseEndDate) {
     if (new Date(signer.leaseEndDate) <= new Date(signer.leaseStartDate)) {
-      add('Lease End Date must be after Lease Start Date')
+      add('leaseEndDate', 'Lease End Date must be after Lease Start Date')
     }
   }
-
-  // Lease start not in the past
   if (signer.leaseStartDate) {
     const today = new Date(); today.setHours(0, 0, 0, 0)
-    if (new Date(signer.leaseStartDate) < today) add('Lease Start Date cannot be in the past')
+    if (new Date(signer.leaseStartDate) < today) add('leaseStartDate', 'Lease Start Date cannot be in the past')
   }
-
-  // Room availability check
   if (signer.propertyName && signer.roomNumber && signer.leaseStartDate) {
     const prop = PROPERTY_OPTIONS.find((p) => p.name === signer.propertyName)
     const roomData = prop?.rooms.find((r) => r.name === signer.roomNumber)
     if (roomData && !isRoomAvailableOnDate(roomData.available, signer.leaseStartDate)) {
       const label = getRoomAvailabilityLabel(roomData.available)
-      add(`Room ${signer.roomNumber} is not available on your lease start date. Availability: ${label}`)
+      add('leaseStartDate', `Room ${signer.roomNumber} is not available on this date. ${label}`)
     }
   }
 
@@ -250,29 +243,20 @@ function validateSignerForm(signer) {
 }
 
 function validateCosignerForm(cosigner) {
-  const errors = []
-  const add = (msg) => { if (msg) errors.push(msg) }
+  const errors = {}
+  const add = (key, msg) => { if (msg && !errors[key]) errors[key] = msg }
 
-  const nameErr = validateFullName(cosigner.fullName)
-  if (nameErr) add(`Full Name: ${nameErr}`)
-
-  const dobErr = validateDOB(cosigner.dateOfBirth)
-  if (dobErr) add(`Date of Birth: ${dobErr}`)
-
-  if (cosigner.ssn) { const e = validateSSN(cosigner.ssn); if (e) add(`SSN: ${e}`) }
-  if (cosigner.license) { const e = validateDriversLicense(cosigner.license); if (e) add(`Driver's License: ${e}`) }
-
-  const phoneErr = validatePhone(cosigner.phone)
-  if (phoneErr) add(`Phone Number: ${phoneErr}`)
-
-  const emailErr = validateEmail(cosigner.email)
-  if (emailErr) add(`Email: ${emailErr}`)
-
-  if (cosigner.zip) { const e = validateZip(cosigner.zip); if (e) add(`ZIP: ${e}`) }
-  if (cosigner.state) { const e = validateState(cosigner.state); if (e) add(`State: ${e}`) }
-  if (cosigner.supervisorPhone) { const e = validatePhone(cosigner.supervisorPhone); if (e) add(`Supervisor Phone: ${e}`) }
-  if (cosigner.monthlyIncome) { const e = validateIncome(cosigner.monthlyIncome); if (e) add(`Monthly Income: ${e}`) }
-  if (cosigner.annualIncome) { const e = validateIncome(cosigner.annualIncome); if (e) add(`Annual Income: ${e}`) }
+  add('fullName', validateFullName(cosigner.fullName))
+  add('dateOfBirth', validateDOB(cosigner.dateOfBirth))
+  if (cosigner.ssn) add('ssn', validateSSN(cosigner.ssn))
+  if (cosigner.license) add('license', validateDriversLicense(cosigner.license))
+  add('phone', validatePhone(cosigner.phone))
+  add('email', validateEmail(cosigner.email))
+  if (cosigner.zip) add('zip', validateZip(cosigner.zip))
+  if (cosigner.state) add('state', validateState(cosigner.state))
+  if (cosigner.supervisorPhone) add('supervisorPhone', validatePhone(cosigner.supervisorPhone))
+  if (cosigner.monthlyIncome) add('monthlyIncome', validateIncome(cosigner.monthlyIncome))
+  if (cosigner.annualIncome) add('annualIncome', validateIncome(cosigner.annualIncome))
 
   return errors
 }
@@ -514,14 +498,14 @@ function CopyButton({ text }) {
 
 function Field({ label, required, hint, error, children }) {
   return (
-    <div>
+    <div {...(error ? { 'data-field-error': '1' } : {})}>
       <label className="mb-1.5 block text-sm font-semibold text-slate-800">
         {label}
         {required && <span className="ml-1 text-axis">*</span>}
       </label>
       {hint && <p className="mb-1.5 text-xs text-slate-400">{hint}</p>}
       {children}
-      {error && <p className="mt-1.5 text-xs font-medium text-red-600">{error}</p>}
+      {error && <p className="mt-1.5 text-xs font-medium text-red-500">{error}</p>}
     </div>
   )
 }
@@ -751,7 +735,7 @@ export default function Apply() {
   const [submitted, setSubmitted] = useState(false)
   const [submittedRecord, setSubmittedRecord] = useState(null)
   const [error, setError] = useState('')
-  const [fieldErrors, setFieldErrors] = useState([])
+  const [fieldErrors, setFieldErrors] = useState({})
 
   const selectedProperty = useMemo(
     () => PROPERTY_OPTIONS.find((property) => property.name === signer.propertyName),
@@ -777,7 +761,7 @@ export default function Apply() {
     event.preventDefault()
     setSubmitting(true)
     setError('')
-    setFieldErrors([])
+    setFieldErrors({})
 
     // --- Field validation ---
     const valErrors =
@@ -785,10 +769,14 @@ export default function Apply() {
         ? validateSignerForm(signer)
         : validateCosignerForm(cosigner)
 
-    if (valErrors.length > 0) {
+    if (Object.keys(valErrors).length > 0) {
       setFieldErrors(valErrors)
       setSubmitting(false)
-      window.scrollTo({ top: 0, behavior: 'smooth' })
+      // Scroll to first error
+      setTimeout(() => {
+        const el = document.querySelector('[data-field-error]')
+        if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      }, 50)
       return
     }
 
@@ -1036,6 +1024,7 @@ export default function Apply() {
                     </button>
                   ))}
                 </div>
+                {fieldErrors.hasCosigner && <p className="mt-1.5 text-xs font-medium text-red-500" data-field-error="1">{fieldErrors.hasCosigner}</p>}
                 {signer.hasCosigner === 'Yes' && (
                   <div className="rounded-xl border border-teal-200 bg-teal-50 px-4 py-3 text-sm text-teal-800">
                     After you submit, you'll receive an <strong>Application ID</strong>. Share it with your co-signer — they'll need it to link their form to yours.
@@ -1072,10 +1061,10 @@ export default function Apply() {
                 </div>
 
                 <div className="grid gap-5 sm:grid-cols-2">
-                  <Field label="Lease Start Date" required>
+                  <Field label="Lease Start Date" required error={fieldErrors.leaseStartDate}>
                     <input required type="date" min={todayIsoDate()} max={MAX_DATE} className={inputCls} value={signer.leaseStartDate} onChange={(e) => updateSigner('leaseStartDate', clampYear(e.target.value))} />
                   </Field>
-                  <Field label="Lease End Date" required>
+                  <Field label="Lease End Date" required error={fieldErrors.leaseEndDate}>
                     <input required type="date" min={signer.leaseStartDate || todayIsoDate()} max={MAX_DATE} className={inputCls} value={signer.leaseEndDate} onChange={(e) => updateSigner('leaseEndDate', clampYear(e.target.value))} />
                   </Field>
                 </div>
@@ -1083,27 +1072,27 @@ export default function Apply() {
 
               <Section title="Signer Information">
                 <div className="grid gap-5 sm:grid-cols-2">
-                  <Field label="Full Name" required>
+                  <Field label="Full Name" required error={fieldErrors.fullName}>
                     <input required className={inputCls} value={signer.fullName} onChange={(e) => updateSigner('fullName', e.target.value)} />
                   </Field>
-                  <Field label="Date of Birth" required>
+                  <Field label="Date of Birth" required error={fieldErrors.dateOfBirth}>
                     <input required type="date" min={MIN_DOB} max={todayIsoDate()} className={inputCls} value={signer.dateOfBirth} onChange={(e) => updateSigner('dateOfBirth', clampYear(e.target.value))} />
                   </Field>
                 </div>
 
                 <div className="grid gap-5 sm:grid-cols-3">
-                  <Field label="Social Security #" hint="9 digits — ###-##-####">
+                  <Field label="Social Security #" hint="9 digits — ###-##-####" error={fieldErrors.ssn}>
                     <input className={inputCls} placeholder="123-45-6789" value={signer.ssn} onChange={(e) => updateSigner('ssn', formatSSNInput(e.target.value))} />
                   </Field>
-                  <Field label="Driver's License / ID #" required hint="1 letter + 10 digits (e.g. W1234567890)">
+                  <Field label="Driver's License / ID #" required hint="1 letter + 10 digits (e.g. W1234567890)" error={fieldErrors.license}>
                     <input required className={inputCls} placeholder="W1234567890" value={signer.license} onChange={(e) => updateSigner('license', e.target.value)} />
                   </Field>
-                  <Field label="Phone Number" required hint="10 digits">
+                  <Field label="Phone Number" required hint="10 digits" error={fieldErrors.phone}>
                     <input required type="tel" className={inputCls} placeholder="(206) 555-0100" value={signer.phone} onChange={(e) => updateSigner('phone', formatPhoneInput(e.target.value))} />
                   </Field>
                 </div>
 
-                <Field label="Email" required>
+                <Field label="Email" required error={fieldErrors.email}>
                   <input required type="email" className={inputCls} value={signer.email} onChange={(e) => updateSigner('email', e.target.value)} />
                 </Field>
               </Section>
@@ -1127,10 +1116,10 @@ export default function Apply() {
                   <Field label="City" required>
                     <input required className={inputCls} autoComplete="address-level2" placeholder="Seattle" value={signer.currentCity} onChange={(e) => updateSigner('currentCity', e.target.value)} />
                   </Field>
-                  <Field label="State" required>
+                  <Field label="State" required error={fieldErrors.currentState}>
                     <input required className={inputCls} autoComplete="address-level1" placeholder="WA" maxLength={2} value={signer.currentState} onChange={(e) => updateSigner('currentState', e.target.value.toUpperCase())} />
                   </Field>
-                  <Field label="ZIP" required>
+                  <Field label="ZIP" required error={fieldErrors.currentZip}>
                     <input required className={inputCls} autoComplete="postal-code" placeholder="98105" value={signer.currentZip} onChange={(e) => updateSigner('currentZip', e.target.value)} />
                   </Field>
                 </div>
@@ -1139,7 +1128,7 @@ export default function Apply() {
                   <Field label="Landlord / Property Manager Name">
                     <input className={inputCls} value={signer.currentLandlordName} onChange={(e) => updateSigner('currentLandlordName', e.target.value)} />
                   </Field>
-                  <Field label="Landlord Phone #">
+                  <Field label="Landlord Phone #" error={fieldErrors.currentLandlordPhone}>
                     <input type="tel" className={inputCls} placeholder="(206) 555-0100" value={signer.currentLandlordPhone} onChange={(e) => updateSigner('currentLandlordPhone', formatPhoneInput(e.target.value))} />
                   </Field>
                 </div>
@@ -1175,10 +1164,10 @@ export default function Apply() {
                   <Field label="City">
                     <input className={inputCls} autoComplete="address-level2" placeholder="Seattle" value={signer.previousCity} onChange={(e) => updateSigner('previousCity', e.target.value)} />
                   </Field>
-                  <Field label="State">
+                  <Field label="State" error={fieldErrors.previousState}>
                     <input className={inputCls} autoComplete="address-level1" placeholder="WA" maxLength={2} value={signer.previousState} onChange={(e) => updateSigner('previousState', e.target.value.toUpperCase())} />
                   </Field>
-                  <Field label="ZIP">
+                  <Field label="ZIP" error={fieldErrors.previousZip}>
                     <input className={inputCls} autoComplete="postal-code" placeholder="98105" value={signer.previousZip} onChange={(e) => updateSigner('previousZip', e.target.value)} />
                   </Field>
                 </div>
@@ -1187,7 +1176,7 @@ export default function Apply() {
                   <Field label="Landlord / Property Manager Name">
                     <input className={inputCls} value={signer.previousLandlordName} onChange={(e) => updateSigner('previousLandlordName', e.target.value)} />
                   </Field>
-                  <Field label="Landlord Phone #">
+                  <Field label="Landlord Phone #" error={fieldErrors.previousLandlordPhone}>
                     <input type="tel" className={inputCls} placeholder="(206) 555-0100" value={signer.previousLandlordPhone} onChange={(e) => updateSigner('previousLandlordPhone', formatPhoneInput(e.target.value))} />
                   </Field>
                 </div>
@@ -1219,7 +1208,7 @@ export default function Apply() {
                   <Field label="Supervisor Name">
                     <input className={inputCls} value={signer.supervisorName} onChange={(e) => updateSigner('supervisorName', e.target.value)} />
                   </Field>
-                  <Field label="Supervisor Phone #">
+                  <Field label="Supervisor Phone #" error={fieldErrors.supervisorPhone}>
                     <input type="tel" className={inputCls} placeholder="(206) 555-0100" value={signer.supervisorPhone} onChange={(e) => updateSigner('supervisorPhone', formatPhoneInput(e.target.value))} />
                   </Field>
                 </div>
@@ -1228,10 +1217,10 @@ export default function Apply() {
                   <Field label="Job Title">
                     <input className={inputCls} value={signer.jobTitle} onChange={(e) => updateSigner('jobTitle', e.target.value)} />
                   </Field>
-                  <Field label="Monthly Income">
+                  <Field label="Monthly Income" error={fieldErrors.monthlyIncome}>
                     <input className={inputCls} value={signer.monthlyIncome} onChange={(e) => updateSigner('monthlyIncome', e.target.value)} />
                   </Field>
-                  <Field label="Annual Income">
+                  <Field label="Annual Income" error={fieldErrors.annualIncome}>
                     <input className={inputCls} value={signer.annualIncome} onChange={(e) => updateSigner('annualIncome', e.target.value)} />
                   </Field>
                   <Field label="Start Date">
@@ -1247,13 +1236,13 @@ export default function Apply() {
               <Section title="References">
                 <p className="text-sm leading-6 text-slate-500">Provide at least one personal or professional reference (not a family member).</p>
                 <div className="grid gap-5 sm:grid-cols-3">
-                  <Field label="Name" required>
+                  <Field label="Name" required error={fieldErrors.reference1Name}>
                     <input required className={inputCls} placeholder="Jane Smith" value={signer.reference1Name} onChange={(e) => updateSigner('reference1Name', e.target.value)} />
                   </Field>
                   <Field label="Relationship" required>
                     <input required className={inputCls} placeholder="Colleague" value={signer.reference1Relationship} onChange={(e) => updateSigner('reference1Relationship', e.target.value)} />
                   </Field>
-                  <Field label="Phone #" required>
+                  <Field label="Phone #" required error={fieldErrors.reference1Phone}>
                     <input required type="tel" className={inputCls} placeholder="(206) 555-0100" value={signer.reference1Phone} onChange={(e) => updateSigner('reference1Phone', formatPhoneInput(e.target.value))} />
                   </Field>
                 </div>
@@ -1264,7 +1253,7 @@ export default function Apply() {
                   <Field label="Relationship 2">
                     <input className={inputCls} placeholder="Professor" value={signer.reference2Relationship} onChange={(e) => updateSigner('reference2Relationship', e.target.value)} />
                   </Field>
-                  <Field label="Phone # 2">
+                  <Field label="Phone # 2" error={fieldErrors.reference2Phone}>
                     <input type="tel" className={inputCls} placeholder="(206) 555-0101" value={signer.reference2Phone} onChange={(e) => updateSigner('reference2Phone', formatPhoneInput(e.target.value))} />
                   </Field>
                 </div>
@@ -1345,28 +1334,28 @@ export default function Apply() {
 
               <Section title="Co-Signer Information">
                 <div className="grid gap-5 sm:grid-cols-2">
-                  <Field label="Full Name" required>
+                  <Field label="Full Name" required error={fieldErrors.fullName}>
                     <input required className={inputCls} value={cosigner.fullName} onChange={(e) => updateCosigner('fullName', e.target.value)} />
                   </Field>
-                  <Field label="Email" required>
+                  <Field label="Email" required error={fieldErrors.email}>
                     <input required type="email" className={inputCls} value={cosigner.email} onChange={(e) => updateCosigner('email', e.target.value)} />
                   </Field>
                 </div>
 
                 <div className="grid gap-5 sm:grid-cols-3">
-                  <Field label="Phone Number" required hint="10 digits">
+                  <Field label="Phone Number" required hint="10 digits" error={fieldErrors.phone}>
                     <input required type="tel" className={inputCls} placeholder="(206) 555-0100" value={cosigner.phone} onChange={(e) => updateCosigner('phone', e.target.value)} />
                   </Field>
-                  <Field label="Date of Birth" required>
+                  <Field label="Date of Birth" required error={fieldErrors.dateOfBirth}>
                     <input required type="date" min={MIN_DOB} max={todayIsoDate()} className={inputCls} value={cosigner.dateOfBirth} onChange={(e) => updateCosigner('dateOfBirth', clampYear(e.target.value))} />
                   </Field>
-                  <Field label="Driver's License / ID #" required hint="1 letter + 10 digits (e.g. W1234567890)">
+                  <Field label="Driver's License / ID #" required hint="1 letter + 10 digits (e.g. W1234567890)" error={fieldErrors.license}>
                     <input required className={inputCls} placeholder="W1234567890" value={cosigner.license} onChange={(e) => updateCosigner('license', e.target.value)} />
                   </Field>
                 </div>
 
                 <div className="grid gap-5 sm:grid-cols-2">
-                  <Field label="Social Security #" hint="9 digits — ###-##-####">
+                  <Field label="Social Security #" hint="9 digits — ###-##-####" error={fieldErrors.ssn}>
                     <input className={inputCls} placeholder="123-45-6789" value={cosigner.ssn} onChange={(e) => updateCosigner('ssn', e.target.value)} />
                   </Field>
                   <Field label="Current Address" required>
@@ -1389,10 +1378,10 @@ export default function Apply() {
                   <Field label="City" required>
                     <input required className={inputCls} autoComplete="address-level2" placeholder="Seattle" value={cosigner.city} onChange={(e) => updateCosigner('city', e.target.value)} />
                   </Field>
-                  <Field label="State" required>
+                  <Field label="State" required error={fieldErrors.state}>
                     <input required className={inputCls} autoComplete="address-level1" placeholder="WA" maxLength={2} value={cosigner.state} onChange={(e) => updateCosigner('state', e.target.value.toUpperCase())} />
                   </Field>
-                  <Field label="ZIP" required>
+                  <Field label="ZIP" required error={fieldErrors.zip}>
                     <input required className={inputCls} autoComplete="postal-code" placeholder="98105" value={cosigner.zip} onChange={(e) => updateCosigner('zip', e.target.value)} />
                   </Field>
                 </div>
@@ -1412,7 +1401,7 @@ export default function Apply() {
                   <Field label="Supervisor Name">
                     <input className={inputCls} value={cosigner.supervisorName} onChange={(e) => updateCosigner('supervisorName', e.target.value)} />
                   </Field>
-                  <Field label="Supervisor Phone #">
+                  <Field label="Supervisor Phone #" error={fieldErrors.supervisorPhone}>
                     <input type="tel" className={inputCls} value={cosigner.supervisorPhone} onChange={(e) => updateCosigner('supervisorPhone', e.target.value)} />
                   </Field>
                 </div>
@@ -1421,10 +1410,10 @@ export default function Apply() {
                   <Field label="Job Title">
                     <input className={inputCls} value={cosigner.jobTitle} onChange={(e) => updateCosigner('jobTitle', e.target.value)} />
                   </Field>
-                  <Field label="Monthly Income">
+                  <Field label="Monthly Income" error={fieldErrors.monthlyIncome}>
                     <input className={inputCls} value={cosigner.monthlyIncome} onChange={(e) => updateCosigner('monthlyIncome', e.target.value)} />
                   </Field>
-                  <Field label="Annual Income">
+                  <Field label="Annual Income" error={fieldErrors.annualIncome}>
                     <input className={inputCls} value={cosigner.annualIncome} onChange={(e) => updateCosigner('annualIncome', e.target.value)} />
                   </Field>
                   <Field label="Start Date">
@@ -1477,14 +1466,9 @@ export default function Apply() {
             </>
           )}
 
-          {fieldErrors.length > 0 && (
-            <div className="space-y-2 rounded-xl border border-orange-200 bg-orange-50 px-4 py-4 text-sm text-orange-800">
-              <p className="font-semibold">Please fix the following before submitting:</p>
-              <ul className="list-inside list-disc space-y-1 text-xs">
-                {fieldErrors.map((e, i) => (
-                  <li key={i}>{e}</li>
-                ))}
-              </ul>
+          {Object.keys(fieldErrors).length > 0 && (
+            <div className="rounded-xl border border-orange-200 bg-orange-50 px-4 py-3 text-sm text-orange-800">
+              Please fix the highlighted fields above before submitting.
             </div>
           )}
 
