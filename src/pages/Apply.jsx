@@ -342,7 +342,7 @@ function AddressAutocomplete({ value, onChange, onSelect, placeholder, className
         onBlur={() => setTimeout(() => setOpen(false), 180)}
         placeholder={placeholder}
         required={required}
-        autoComplete="off"
+        autoComplete="street-address"
         className={className}
       />
       {open && suggestions.length > 0 && (
@@ -1125,13 +1125,13 @@ export default function Apply() {
                 </Field>
                 <div className="grid grid-cols-3 gap-3">
                   <Field label="City" required>
-                    <input required className={inputCls} placeholder="Seattle" value={signer.currentCity} onChange={(e) => updateSigner('currentCity', e.target.value)} />
+                    <input required className={inputCls} autoComplete="address-level2" placeholder="Seattle" value={signer.currentCity} onChange={(e) => updateSigner('currentCity', e.target.value)} />
                   </Field>
                   <Field label="State" required>
-                    <input required className={inputCls} placeholder="WA" maxLength={2} value={signer.currentState} onChange={(e) => updateSigner('currentState', e.target.value.toUpperCase())} />
+                    <input required className={inputCls} autoComplete="address-level1" placeholder="WA" maxLength={2} value={signer.currentState} onChange={(e) => updateSigner('currentState', e.target.value.toUpperCase())} />
                   </Field>
                   <Field label="ZIP" required>
-                    <input required className={inputCls} placeholder="98105" value={signer.currentZip} onChange={(e) => updateSigner('currentZip', e.target.value)} />
+                    <input required className={inputCls} autoComplete="postal-code" placeholder="98105" value={signer.currentZip} onChange={(e) => updateSigner('currentZip', e.target.value)} />
                   </Field>
                 </div>
 
@@ -1173,13 +1173,13 @@ export default function Apply() {
                 </Field>
                 <div className="grid grid-cols-3 gap-3">
                   <Field label="City">
-                    <input className={inputCls} placeholder="Seattle" value={signer.previousCity} onChange={(e) => updateSigner('previousCity', e.target.value)} />
+                    <input className={inputCls} autoComplete="address-level2" placeholder="Seattle" value={signer.previousCity} onChange={(e) => updateSigner('previousCity', e.target.value)} />
                   </Field>
                   <Field label="State">
-                    <input className={inputCls} placeholder="WA" maxLength={2} value={signer.previousState} onChange={(e) => updateSigner('previousState', e.target.value.toUpperCase())} />
+                    <input className={inputCls} autoComplete="address-level1" placeholder="WA" maxLength={2} value={signer.previousState} onChange={(e) => updateSigner('previousState', e.target.value.toUpperCase())} />
                   </Field>
                   <Field label="ZIP">
-                    <input className={inputCls} placeholder="98105" value={signer.previousZip} onChange={(e) => updateSigner('previousZip', e.target.value)} />
+                    <input className={inputCls} autoComplete="postal-code" placeholder="98105" value={signer.previousZip} onChange={(e) => updateSigner('previousZip', e.target.value)} />
                   </Field>
                 </div>
 
@@ -1370,19 +1370,30 @@ export default function Apply() {
                     <input className={inputCls} placeholder="123-45-6789" value={cosigner.ssn} onChange={(e) => updateCosigner('ssn', e.target.value)} />
                   </Field>
                   <Field label="Current Address" required>
-                    <input required className={inputCls} value={cosigner.currentAddress} onChange={(e) => updateCosigner('currentAddress', e.target.value)} />
+                    <AddressAutocomplete
+                      required
+                      value={cosigner.currentAddress}
+                      onChange={(val) => updateCosigner('currentAddress', val)}
+                      onSelect={({ city, state, zip }) => {
+                        if (city) updateCosigner('city', city)
+                        if (state) updateCosigner('state', state)
+                        if (zip) updateCosigner('zip', zip)
+                      }}
+                      placeholder="123 Main St"
+                      className={inputCls}
+                    />
                   </Field>
                 </div>
 
                 <div className="grid gap-5 sm:grid-cols-3">
                   <Field label="City" required>
-                    <input required className={inputCls} value={cosigner.city} onChange={(e) => updateCosigner('city', e.target.value)} />
+                    <input required className={inputCls} autoComplete="address-level2" placeholder="Seattle" value={cosigner.city} onChange={(e) => updateCosigner('city', e.target.value)} />
                   </Field>
                   <Field label="State" required>
-                    <input required className={inputCls} value={cosigner.state} onChange={(e) => updateCosigner('state', e.target.value)} />
+                    <input required className={inputCls} autoComplete="address-level1" placeholder="WA" maxLength={2} value={cosigner.state} onChange={(e) => updateCosigner('state', e.target.value.toUpperCase())} />
                   </Field>
                   <Field label="ZIP" required>
-                    <input required className={inputCls} value={cosigner.zip} onChange={(e) => updateCosigner('zip', e.target.value)} />
+                    <input required className={inputCls} autoComplete="postal-code" placeholder="98105" value={cosigner.zip} onChange={(e) => updateCosigner('zip', e.target.value)} />
                   </Field>
                 </div>
               </Section>
