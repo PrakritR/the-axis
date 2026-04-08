@@ -860,9 +860,7 @@ const SIGNER_STEPS = [
       if (s.currentMoveInDate && s.currentMoveOutDate && new Date(s.currentMoveOutDate) <= new Date(s.currentMoveInDate)) {
         e.currentMoveOutDate = 'Move-out must be after move-in'
       }
-      if (!s.currentLandlordName?.trim()) e.currentLandlordName = 'Landlord name is required'
-      if (!s.currentLandlordPhone?.trim()) e.currentLandlordPhone = 'Landlord phone is required'
-      else { const v = validatePhone(s.currentLandlordPhone); if (v) e.currentLandlordPhone = v }
+      if (s.currentLandlordPhone) { const v = validatePhone(s.currentLandlordPhone); if (v) e.currentLandlordPhone = v }
       if (!s.currentReasonForLeaving?.trim()) e.currentReasonForLeaving = 'Reason for leaving is required'
       return e
     },
@@ -872,23 +870,19 @@ const SIGNER_STEPS = [
     validate: (s) => {
       const e = {}
       if (s.skipPreviousAddress) return e
-      if (s.previousAddress?.trim()) {
-        const addr = validateStreetAddress(s.previousAddress); if (addr) e.previousAddress = addr
-      }
-      if (s.previousAddress?.trim() && !s.previousCity?.trim()) e.previousCity = 'City is required'
-      if (s.previousAddress?.trim() && !s.previousMoveInDate) e.previousMoveInDate = 'Move-in date is required'
-      if (s.previousAddress?.trim() && !s.previousMoveOutDate) e.previousMoveOutDate = 'Move-out date is required'
+      const addr = validateStreetAddress(s.previousAddress); if (addr) e.previousAddress = addr
+      if (!s.previousCity?.trim()) e.previousCity = 'City is required'
+      if (!s.previousMoveInDate) e.previousMoveInDate = 'Move-in date is required'
+      if (!s.previousMoveOutDate) e.previousMoveOutDate = 'Move-out date is required'
       if (s.previousMoveInDate && s.previousMoveOutDate && new Date(s.previousMoveOutDate) <= new Date(s.previousMoveInDate)) {
         e.previousMoveOutDate = 'Move-out must be after move-in'
       }
-      if (s.previousAddress?.trim() && !s.previousState?.trim()) e.previousState = 'State is required'
+      if (!s.previousState?.trim()) e.previousState = 'State is required'
       else if (s.previousState) { const v = validateState(s.previousState); if (v) e.previousState = v }
-      if (s.previousAddress?.trim() && !s.previousZip?.trim()) e.previousZip = 'ZIP is required'
+      if (!s.previousZip?.trim()) e.previousZip = 'ZIP is required'
       else if (s.previousZip) { const v = validateZip(s.previousZip); if (v) e.previousZip = v }
-      if (s.previousAddress?.trim() && !s.previousLandlordName?.trim()) e.previousLandlordName = 'Landlord name is required'
-      if (s.previousAddress?.trim() && !s.previousLandlordPhone?.trim()) e.previousLandlordPhone = 'Landlord phone is required'
-      else if (s.previousLandlordPhone) { const v = validatePhone(s.previousLandlordPhone); if (v) e.previousLandlordPhone = v }
-      if (s.previousAddress?.trim() && !s.previousReasonForLeaving?.trim()) e.previousReasonForLeaving = 'Reason for leaving is required'
+      if (s.previousLandlordPhone) { const v = validatePhone(s.previousLandlordPhone); if (v) e.previousLandlordPhone = v }
+      if (!s.previousReasonForLeaving?.trim()) e.previousReasonForLeaving = 'Reason for leaving is required'
       return e
     },
   },
@@ -898,6 +892,7 @@ const SIGNER_STEPS = [
       const e = {}
       if (!s.noEmployment) {
         if (!s.employer?.trim()) e.employer = 'Employer name is required'
+        if (!s.employerAddress?.trim()) e.employerAddress = 'Employer address is required'
         if (!s.jobTitle?.trim()) e.jobTitle = 'Job title is required'
         if (!s.monthlyIncome) e.monthlyIncome = 'Monthly income is required'
         else { const v = validateIncome(s.monthlyIncome); if (v) e.monthlyIncome = v }
@@ -987,6 +982,7 @@ const COSIGNER_STEPS = [
       const e = {}
       if (!c.noEmployment) {
         if (!c.employer?.trim()) e.employer = 'Employer name is required'
+        if (!c.employerAddress?.trim()) e.employerAddress = 'Employer address is required'
         if (!c.jobTitle?.trim()) e.jobTitle = 'Job title is required'
         if (!c.monthlyIncome) e.monthlyIncome = 'Monthly income is required'
         else { const v = validateIncome(c.monthlyIncome); if (v) e.monthlyIncome = v }
@@ -1503,11 +1499,11 @@ export default function Apply() {
                 </div>
 
                 <div className="grid gap-5 sm:grid-cols-2">
-                  <Field label="Landlord / Property Manager Name" required error={fieldErrors.currentLandlordName}>
-                    <input required className={inputCls} value={signer.currentLandlordName} onChange={(e) => updateSigner('currentLandlordName', e.target.value)} />
+                  <Field label="Landlord / Property Manager Name" error={fieldErrors.currentLandlordName}>
+                    <input className={inputCls} value={signer.currentLandlordName} onChange={(e) => updateSigner('currentLandlordName', e.target.value)} />
                   </Field>
-                  <Field label="Landlord Phone #" required error={fieldErrors.currentLandlordPhone}>
-                    <input required type="tel" className={inputCls} placeholder="(206) 555-0100" value={signer.currentLandlordPhone} onChange={(e) => updateSigner('currentLandlordPhone', formatPhoneInput(e.target.value))} />
+                  <Field label="Landlord Phone #" error={fieldErrors.currentLandlordPhone}>
+                    <input type="tel" className={inputCls} placeholder="(206) 555-0100" value={signer.currentLandlordPhone} onChange={(e) => updateSigner('currentLandlordPhone', formatPhoneInput(e.target.value))} />
                   </Field>
                 </div>
 
@@ -1532,8 +1528,9 @@ export default function Apply() {
                   I have lived at my current address for 1 year or more — skip this section
                 </label>
                 {!signer.skipPreviousAddress && <>
-                <Field label="Street Address" error={fieldErrors.previousAddress}>
+                <Field label="Street Address" required error={fieldErrors.previousAddress}>
                   <AddressAutocomplete
+                    required
                     value={signer.previousAddress}
                     onChange={(val) => updateSigner('previousAddress', val)}
                     onSelect={({ city, state, zip }) => {
@@ -1546,14 +1543,14 @@ export default function Apply() {
                   />
                 </Field>
                 <div className="grid gap-5 sm:grid-cols-3">
-                  <Field label="City" error={fieldErrors.previousCity}>
-                    <input className={inputCls} autoComplete="address-level2" placeholder="Seattle" value={signer.previousCity} onChange={(e) => updateSigner('previousCity', e.target.value)} />
+                  <Field label="City" required error={fieldErrors.previousCity}>
+                    <input required className={inputCls} autoComplete="address-level2" placeholder="Seattle" value={signer.previousCity} onChange={(e) => updateSigner('previousCity', e.target.value)} />
                   </Field>
-                  <Field label="State" error={fieldErrors.previousState}>
-                    <input className={inputCls} autoComplete="address-level1" placeholder="WA" maxLength={2} value={signer.previousState} onChange={(e) => updateSigner('previousState', e.target.value.toUpperCase())} />
+                  <Field label="State" required error={fieldErrors.previousState}>
+                    <input required className={inputCls} autoComplete="address-level1" placeholder="WA" maxLength={2} value={signer.previousState} onChange={(e) => updateSigner('previousState', e.target.value.toUpperCase())} />
                   </Field>
-                  <Field label="ZIP" error={fieldErrors.previousZip}>
-                    <input className={inputCls} autoComplete="postal-code" placeholder="98105" value={signer.previousZip} onChange={(e) => updateSigner('previousZip', e.target.value)} />
+                  <Field label="ZIP" required error={fieldErrors.previousZip}>
+                    <input required className={inputCls} autoComplete="postal-code" placeholder="98105" value={signer.previousZip} onChange={(e) => updateSigner('previousZip', e.target.value)} />
                   </Field>
                 </div>
 
@@ -1567,14 +1564,14 @@ export default function Apply() {
                 </div>
 
                 <div className="grid gap-5 sm:grid-cols-3">
-                  <Field label="Move-in Date" error={fieldErrors.previousMoveInDate}>
-                    <input type="date" min={MIN_DOB} max={MAX_DATE} className={inputCls} value={signer.previousMoveInDate} onChange={(e) => updateSigner('previousMoveInDate', clampYear(e.target.value))} />
+                  <Field label="Move-in Date" required error={fieldErrors.previousMoveInDate}>
+                    <input required type="date" min={MIN_DOB} max={MAX_DATE} className={inputCls} value={signer.previousMoveInDate} onChange={(e) => updateSigner('previousMoveInDate', clampYear(e.target.value))} />
                   </Field>
-                  <Field label="Move-out Date" error={fieldErrors.previousMoveOutDate}>
-                    <input type="date" min={MIN_DOB} max={MAX_DATE} className={inputCls} value={signer.previousMoveOutDate} onChange={(e) => updateSigner('previousMoveOutDate', clampYear(e.target.value))} />
+                  <Field label="Move-out Date" required error={fieldErrors.previousMoveOutDate}>
+                    <input required type="date" min={MIN_DOB} max={MAX_DATE} className={inputCls} value={signer.previousMoveOutDate} onChange={(e) => updateSigner('previousMoveOutDate', clampYear(e.target.value))} />
                   </Field>
-                  <Field label="Reason for Leaving" error={fieldErrors.previousReasonForLeaving}>
-                    <input className={inputCls} value={signer.previousReasonForLeaving} onChange={(e) => updateSigner('previousReasonForLeaving', e.target.value)} />
+                  <Field label="Reason for Leaving" required error={fieldErrors.previousReasonForLeaving}>
+                    <input required className={inputCls} value={signer.previousReasonForLeaving} onChange={(e) => updateSigner('previousReasonForLeaving', e.target.value)} />
                   </Field>
                 </div>
                 </>}
@@ -1591,8 +1588,8 @@ export default function Apply() {
                   <Field label="Employer Name" required error={fieldErrors.employer}>
                     <input required className={inputCls} value={signer.employer} onChange={(e) => updateSigner('employer', e.target.value)} />
                   </Field>
-                  <Field label="Employer Address">
-                    <input className={inputCls} value={signer.employerAddress} onChange={(e) => updateSigner('employerAddress', e.target.value)} />
+                  <Field label="Employer Address" required error={fieldErrors.employerAddress}>
+                    <input required className={inputCls} value={signer.employerAddress} onChange={(e) => updateSigner('employerAddress', e.target.value)} />
                   </Field>
                 </div>
 
@@ -1792,8 +1789,8 @@ export default function Apply() {
                   <Field label="Employer Name" required error={fieldErrors.employer}>
                     <input required className={inputCls} value={cosigner.employer} onChange={(e) => updateCosigner('employer', e.target.value)} />
                   </Field>
-                  <Field label="Employer Address">
-                    <input className={inputCls} value={cosigner.employerAddress} onChange={(e) => updateCosigner('employerAddress', e.target.value)} />
+                  <Field label="Employer Address" required error={fieldErrors.employerAddress}>
+                    <input required className={inputCls} value={cosigner.employerAddress} onChange={(e) => updateCosigner('employerAddress', e.target.value)} />
                   </Field>
                 </div>
 
