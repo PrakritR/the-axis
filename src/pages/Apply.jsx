@@ -4,7 +4,7 @@ import { properties } from '../data/properties'
 
 const AIRTABLE_BASE_ID = import.meta.env.VITE_AIRTABLE_APPLICATIONS_BASE_ID || 'appNBX2inqfJMyqYV'
 const APPLICATIONS_TABLE = import.meta.env.VITE_AIRTABLE_APPLICATIONS_TABLE || 'Applications'
-const COSIGNERS_TABLE = import.meta.env.VITE_AIRTABLE_COAPPLICANTS_TABLE || 'Co-Applicants'
+const COSIGNERS_TABLE = import.meta.env.VITE_AIRTABLE_COAPPLICANTS_TABLE || 'Co-Signers'
 const AIRTABLE_TOKEN = import.meta.env.VITE_AIRTABLE_TOKEN
 
 const HISTORY_OPTIONS = ['No', 'Yes']
@@ -192,7 +192,7 @@ async function findApplicationRecord({ applicationId, signerName }) {
   if (applicationId && Number.isFinite(numericId)) {
     filterByFormula = `{Application ID} = ${numericId}`
   } else if (signerName) {
-    filterByFormula = `{Applicant Full Name} = '${escapeFormulaString(signerName)}'`
+    filterByFormula = `{Signer Full Name} = '${escapeFormulaString(signerName)}'`
   } else {
     throw new Error('Enter the signer application ID or signer full name so we can link the co-signer correctly.')
   }
@@ -225,7 +225,7 @@ async function findApplicationRecord({ applicationId, signerName }) {
   return data.records[0]
 }
 
-function buildSignerNotes(form) {
+function buildSigner Notes(form) {
   return [
     `Property Address Applying For: ${form.propertyAddress || 'Not provided'}`,
     `Requested Room: ${form.roomNumber || 'Not specified'}`,
@@ -272,31 +272,31 @@ function buildMailtoFallback(type, signer, cosigner) {
         `Lease Term: ${signer.leaseTerm}`,
         `Lease Start Date: ${signer.leaseStartDate || 'Not provided'}`,
         `Lease End Date: ${signer.leaseEndDate || 'Not provided'}`,
-        `Applicant Full Name: ${signer.fullName}`,
-        `Applicant Date of Birth: ${signer.dateOfBirth}`,
-        `Applicant SSN No.: ${signer.ssn || 'Not provided'}`,
-        `Applicant Driving License No.: ${signer.license}`,
-        `Applicant Phone Number: ${signer.phone}`,
-        `Applicant Email: ${signer.email}`,
-        `Applicant Current Address: ${signer.currentAddress}`,
-        `Applicant City: ${signer.currentCity}`,
-        `Applicant State: ${signer.currentState}`,
-        `Applicant ZIP: ${signer.currentZip}`,
-        `Applicant Employer: ${signer.employer || 'Not provided'}`,
-        `Applicant Employer Address: ${signer.employerAddress || 'Not provided'}`,
-        `Applicant Supervisor Name: ${signer.supervisorName || 'Not provided'}`,
-        `Applicant Supervisor Phone: ${signer.supervisorPhone || 'Not provided'}`,
-        `Applicant Job Title: ${signer.jobTitle || 'Not provided'}`,
-        `Applicant Monthly Income: ${signer.monthlyIncome || 'Not provided'}`,
-        `Applicant Annual Income: ${signer.annualIncome || 'Not provided'}`,
-        `Applicant Employment Start Date: ${signer.employmentStartDate || 'Not provided'}`,
-        `Applicant Other Income: ${signer.otherIncome || 'Not provided'}`,
-        `Applicant Bankruptcy History: ${signer.bankruptcyHistory}`,
-        `Applicant Criminal History: ${signer.criminalHistory}`,
-        `Applicant Consent: ${signer.consent ? 'Yes' : 'No'}`,
-        `Applicant Signature: ${signer.signature || 'Not provided'}`,
-        `Applicant Date Signed: ${signer.dateSigned}`,
-        `Applicant Notes: ${buildSignerNotes(signer)}`,
+        `Signer Full Name: ${signer.fullName}`,
+        `Signer Date of Birth: ${signer.dateOfBirth}`,
+        `Signer SSN No.: ${signer.ssn || 'Not provided'}`,
+        `Signer Driving License No.: ${signer.license}`,
+        `Signer Phone Number: ${signer.phone}`,
+        `Signer Email: ${signer.email}`,
+        `Signer Current Address: ${signer.currentAddress}`,
+        `Signer City: ${signer.currentCity}`,
+        `Signer State: ${signer.currentState}`,
+        `Signer ZIP: ${signer.currentZip}`,
+        `Signer Employer: ${signer.employer || 'Not provided'}`,
+        `Signer Employer Address: ${signer.employerAddress || 'Not provided'}`,
+        `Signer Supervisor Name: ${signer.supervisorName || 'Not provided'}`,
+        `Signer Supervisor Phone: ${signer.supervisorPhone || 'Not provided'}`,
+        `Signer Job Title: ${signer.jobTitle || 'Not provided'}`,
+        `Signer Monthly Income: ${signer.monthlyIncome || 'Not provided'}`,
+        `Signer Annual Income: ${signer.annualIncome || 'Not provided'}`,
+        `Signer Employment Start Date: ${signer.employmentStartDate || 'Not provided'}`,
+        `Signer Other Income: ${signer.otherIncome || 'Not provided'}`,
+        `Signer Bankruptcy History: ${signer.bankruptcyHistory}`,
+        `Signer Criminal History: ${signer.criminalHistory}`,
+        `Signer Consent: ${signer.consent ? 'Yes' : 'No'}`,
+        `Signer Signature: ${signer.signature || 'Not provided'}`,
+        `Signer Date Signed: ${signer.dateSigned}`,
+        `Signer Notes: ${buildSigner Notes(signer)}`,
       ]
     : [
         `Submission Type: Co-Signer`,
@@ -378,12 +378,12 @@ export default function Apply() {
 
         const fields = {
           // Identity
-          'Applicant Full Name': signer.fullName,
-          'Applicant Email': signer.email,
-          'Applicant Phone Number': signer.phone,
-          'Applicant Date of Birth': signer.dateOfBirth,
-          'Applicant SSN No.': signer.ssn || '',
-          'Applicant Driving License No.': signer.license,
+          'Signer Full Name': signer.fullName,
+          'Signer Email': signer.email,
+          'Signer Phone Number': signer.phone,
+          'Signer Date of Birth': signer.dateOfBirth,
+          'Signer SSN No.': signer.ssn || '',
+          'Signer Driving License No.': signer.license,
           // Property
           'Property Name': signer.propertyName,
           'Property Address': signer.propertyAddress || '',
@@ -392,10 +392,10 @@ export default function Apply() {
           'Lease Start Date': signer.leaseStartDate || null,
           'Lease End Date': signer.leaseEndDate || null,
           // Current address
-          'Applicant Current Address': signer.currentAddress,
-          'Applicant City': signer.currentCity,
-          'Applicant State': signer.currentState,
-          'Applicant ZIP': signer.currentZip,
+          'Signer Current Address': signer.currentAddress,
+          'Signer City': signer.currentCity,
+          'Signer State': signer.currentState,
+          'Signer ZIP': signer.currentZip,
           'Current Landlord Name': signer.currentLandlordName || '',
           'Current Landlord Phone': signer.currentLandlordPhone || '',
           'Current Move-In Date': signer.currentMoveInDate || null,
@@ -412,15 +412,15 @@ export default function Apply() {
           'Previous Move-Out Date': signer.previousMoveOutDate || null,
           'Previous Reason for Leaving': signer.previousReasonForLeaving || '',
           // Employment
-          'Applicant Employer': signer.employer || '',
-          'Applicant Employer Address': signer.employerAddress || '',
-          'Applicant Supervisor Name': signer.supervisorName || '',
-          'Applicant Supervisor Phone': signer.supervisorPhone || '',
-          'Applicant Job Title': signer.jobTitle || '',
-          'Applicant Monthly Income': toCurrencyNumber(signer.monthlyIncome),
-          'Applicant Annual Income': toCurrencyNumber(signer.annualIncome),
-          'Applicant Employment Start Date': signer.employmentStartDate || null,
-          'Applicant Other Income': signer.otherIncome || '',
+          'Signer Employer': signer.employer || '',
+          'Signer Employer Address': signer.employerAddress || '',
+          'Signer Supervisor Name': signer.supervisorName || '',
+          'Signer Supervisor Phone': signer.supervisorPhone || '',
+          'Signer Job Title': signer.jobTitle || '',
+          'Signer Monthly Income': toCurrencyNumber(signer.monthlyIncome),
+          'Signer Annual Income': toCurrencyNumber(signer.annualIncome),
+          'Signer Employment Start Date': signer.employmentStartDate || null,
+          'Signer Other Income': signer.otherIncome || '',
           // References
           'Reference 1 Name': signer.reference1Name || '',
           'Reference 1 Relationship': signer.reference1Relationship || '',
@@ -434,13 +434,13 @@ export default function Apply() {
           'Vehicles': signer.vehicles || '',
           // Background
           'Eviction History': signer.evictionHistory,
-          'Applicant Bankruptcy History': signer.bankruptcyHistory,
-          'Applicant Criminal History': signer.criminalHistory,
+          'Signer Bankruptcy History': signer.bankruptcyHistory,
+          'Signer Criminal History': signer.criminalHistory,
           'Has Co-Signer': signer.hasCosigner,
           // Signature
-          'Applicant Consent for Credit and Background Check': signer.consent,
-          'Applicant Signature': signer.signature,
-          'Applicant Date Signed': signer.dateSigned,
+          'Signer Consent for Credit and Background Check': signer.consent,
+          'Signer Signature': signer.signature,
+          'Signer Date Signed': signer.dateSigned,
           'Additional Notes': signer.notes || '',
         }
 
@@ -641,7 +641,7 @@ export default function Apply() {
                 </div>
               </Section>
 
-              <Section title="Applicant Information">
+              <Section title="Signer Information">
                 <div className="grid gap-5 sm:grid-cols-2">
                   <Field label="Full Name" required>
                     <input required className={inputCls} value={signer.fullName} onChange={(e) => updateSigner('fullName', e.target.value)} />
@@ -850,7 +850,7 @@ export default function Apply() {
 
               <Section title="Signature">
                 <div className="grid gap-5 sm:grid-cols-2">
-                  <Field label="Applicant Signature" required>
+                  <Field label="Signer Signature" required>
                     <input required className={inputCls} value={signer.signature} onChange={(e) => updateSigner('signature', e.target.value)} />
                   </Field>
                   <Field label="Date Signed" required>
