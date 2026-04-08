@@ -4,9 +4,13 @@ import {
   airtableReady,
   createWorkOrder,
   getAnnouncements,
+  getDocumentsForResident,
   getMessages,
+  getPackagesForResident,
+  getPaymentsForResident,
   getResidentByEmail,
   getWorkOrdersForResident,
+  markPackagePickedUp,
   sendMessage,
   syncResidentFromAuth,
   updateResident,
@@ -483,15 +487,20 @@ function PasswordRecovery({ onDone }) {
   )
 }
 
-function NotAuthorized({ email, onSignOut }) {
+function NotAuthorized({ email, error, onSignOut }) {
   return (
     <div className="flex min-h-screen items-center justify-center bg-[linear-gradient(180deg,#f8fafc_0%,#ffffff_100%)] px-4">
       <div className="w-full max-w-lg rounded-[28px] border border-slate-200 bg-white p-8 text-center shadow-soft">
         <h1 className="text-2xl font-black text-slate-900">Access Not Available</h1>
         <p className="mt-3 text-sm leading-7 text-slate-500">
-          We authenticated <span className="font-semibold text-slate-700">{email}</span>, but the resident profile could not be completed yet.
+          We authenticated <span className="font-semibold text-slate-700">{email}</span>, but the resident profile could not be loaded.
           Try signing in again, or contact Axis if this email should already be active.
         </p>
+        {error ? (
+          <div className="mt-4 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-left font-mono text-xs text-red-700 break-all">
+            {error}
+          </div>
+        ) : null}
         <button
           type="button"
           onClick={onSignOut}
@@ -1026,6 +1035,224 @@ function ProfilePanel({ resident, onUpdated }) {
   )
 }
 
+const paymentStatusStyles = {
+  Paid: 'border-emerald-200 bg-emerald-50 text-emerald-700',
+  Pending: 'border-amber-200 bg-amber-50 text-amber-700',
+  Overdue: 'border-red-200 bg-red-50 text-red-700',
+  Partial: 'border-sky-200 bg-sky-50 text-sky-700',
+}
+
+const packageStatusStyles = {
+  Arrived: 'border-amber-200 bg-amber-50 text-amber-700',
+  'Picked Up': 'border-emerald-200 bg-emerald-50 text-emerald-700',
+  Held: 'border-slate-200 bg-slate-100 text-slate-600',
+}
+
+function PaymentsPanel({ resident }) {
+  const [payments, setPayments] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
+
+  useEffect(() => {
+    getPaymentsForResident(resident)
+      .then(setPayments)
+      .catch((err) => setError(err.message))
+      .finally(() => setLoading(false))
+  }, [resident])
+
+  const outstanding = payments.filter((p) => p.Status !== 'Paid').reduce((sum, p) => sum + (Number(p.Amount) || 0), 0)
+  const nextDue = payments.find((p) => p.Status === 'Pending' || p.Status === 'Overdue')
+
+  return (
+    <SectionCard title="Rent & Payments" description="Your payment history and current balance.">
+      {loading ? <p className="text-sm text-slate-400">Loading payments...</p> : null}
+      {error ? <p className="text-sm text-red-600">{error}</p> : null}
+      {!loading && !error && (
+        <>
+          <div className="grid gap-4 sm:grid-cols-3">
+            <div className="rounded-2xl bg-slate-50 px-4 py-4">
+              <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">Outstanding Balance</div>
+              <div className={classNames('mt-2 text-2xl font-black', outstanding > 0 ? 'text-red-600' : 'text-emerald-600')}>
+                {outstanding > 0 ? `$${outstanding.toLocaleString()}` : '$0'}
+              </div>
+            </div>
+            <div className="rounded-2xl bg-slate-50 px-4 py-4">
+              <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">Next Due</div>
+              <div className="mt-2 text-lg font-black text-slate-900">{nextDue ? nextDue.Month || formatDate(nextDue['Due Date']) : '—'}</div>
+              {nextDue?.['Due Date'] && <div className="mt-0.5 text-xs text-slate-400">{formatDate(nextDue['Due Date'])}</div>}
+            </div>
+            <div className="rounded-2xl bg-slate-50 px-4 py-4">
+              <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">Total Payments</div>
+              <div className="mt-2 text-lg font-black text-slate-900">{payments.length}</div>
+            </div>
+          </div>
+
+          {payments.length === 0 ? (
+            <p className="mt-6 text-sm text-slate-400">No payment records yet. Contact Axis if you have questions about your balance.</p>
+          ) : (
+            <div className="mt-6 space-y-3">
+              {payments.map((p) => (
+                <div key={p.id} className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-200 px-4 py-3">
+                  <div>
+                    <div className="font-semibold text-slate-900">{p.Month || 'Payment'}</div>
+                    {p.Notes && <div className="mt-0.5 text-xs text-slate-400">{p.Notes}</div>}
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <div className="text-sm font-bold text-slate-900">${Number(p.Amount || 0).toLocaleString()}</div>
+                    <span className={classNames('rounded-full border px-2.5 py-1 text-[11px] font-semibold', paymentStatusStyles[p.Status] || paymentStatusStyles.Pending)}>
+                      {p.Status || 'Pending'}
+                    </span>
+                    {p['Paid Date'] && <div className="text-xs text-slate-400">Paid {formatDate(p['Paid Date'])}</div>}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </>
+      )}
+    </SectionCard>
+  )
+}
+
+function DocumentsPanel({ resident }) {
+  const [docs, setDocs] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
+
+  useEffect(() => {
+    getDocumentsForResident(resident)
+      .then(setDocs)
+      .catch((err) => setError(err.message))
+      .finally(() => setLoading(false))
+  }, [resident])
+
+  const docTypeIcon = (type) => {
+    if (type === 'Lease Agreement') return '📋'
+    if (type === 'Move-in Checklist') return '✅'
+    if (type === 'Invoice') return '🧾'
+    if (type === 'House Rules') return '📌'
+    return '📄'
+  }
+
+  return (
+    <SectionCard title="My Documents" description="Lease agreements, checklists, and files shared by the Axis team.">
+      {loading ? <p className="text-sm text-slate-400">Loading documents...</p> : null}
+      {error ? <p className="text-sm text-red-600">{error}</p> : null}
+      {!loading && !error && docs.length === 0 ? (
+        <div className="flex flex-col items-center gap-4 py-12 text-center">
+          <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-slate-100 text-2xl">📁</div>
+          <p className="text-sm text-slate-500">No documents have been shared yet. Your lease and move-in documents will appear here once added by the Axis team.</p>
+        </div>
+      ) : null}
+      {!loading && !error && docs.length > 0 ? (
+        <div className="space-y-3">
+          {docs.map((doc) => {
+            const file = Array.isArray(doc.File) ? doc.File[0] : null
+            return (
+              <div key={doc.id} className="flex items-center gap-4 rounded-2xl border border-slate-200 px-4 py-3">
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-slate-100 text-xl">
+                  {docTypeIcon(doc.Type)}
+                </div>
+                <div className="min-w-0 flex-1">
+                  <div className="font-semibold text-slate-900 truncate">{doc.Name || 'Document'}</div>
+                  <div className="mt-0.5 text-xs text-slate-400">{doc.Type || 'File'} · Added {formatDate(doc['Date Added'])}</div>
+                </div>
+                {file?.url ? (
+                  <a href={file.url} target="_blank" rel="noreferrer"
+                    className="shrink-0 rounded-full border border-slate-300 px-4 py-2 text-xs font-semibold text-slate-700 transition hover:border-slate-500">
+                    View
+                  </a>
+                ) : (
+                  <span className="shrink-0 text-xs text-slate-400">No file</span>
+                )}
+              </div>
+            )
+          })}
+        </div>
+      ) : null}
+    </SectionCard>
+  )
+}
+
+function PackagesPanel({ resident }) {
+  const [packages, setPackages] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
+  const [updating, setUpdating] = useState(null)
+
+  useEffect(() => {
+    getPackagesForResident(resident)
+      .then(setPackages)
+      .catch((err) => setError(err.message))
+      .finally(() => setLoading(false))
+  }, [resident])
+
+  async function handlePickedUp(pkg) {
+    setUpdating(pkg.id)
+    try {
+      const updated = await markPackagePickedUp(pkg.id)
+      setPackages((prev) => prev.map((p) => p.id === pkg.id ? updated : p))
+    } catch (err) {
+      setError(err.message)
+    } finally {
+      setUpdating(null)
+    }
+  }
+
+  const waiting = packages.filter((p) => p.Status === 'Arrived' || p.Status === 'Held')
+
+  return (
+    <SectionCard
+      title="Packages"
+      description="Packages logged by the Axis team when they arrive at your property."
+      action={waiting.length > 0 ? (
+        <span className="inline-flex items-center rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-700">
+          {waiting.length} waiting for pickup
+        </span>
+      ) : null}
+    >
+      {loading ? <p className="text-sm text-slate-400">Loading packages...</p> : null}
+      {error ? <p className="text-sm text-red-600">{error}</p> : null}
+      {!loading && !error && packages.length === 0 ? (
+        <div className="flex flex-col items-center gap-4 py-12 text-center">
+          <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-slate-100 text-2xl">📦</div>
+          <p className="text-sm text-slate-500">No packages logged yet. When a package arrives at your property, it will appear here.</p>
+        </div>
+      ) : null}
+      {!loading && !error && packages.length > 0 ? (
+        <div className="space-y-3">
+          {packages.map((pkg) => (
+            <div key={pkg.id} className="flex flex-wrap items-center gap-4 rounded-2xl border border-slate-200 px-4 py-3">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-slate-100 text-xl">📦</div>
+              <div className="min-w-0 flex-1">
+                <div className="flex flex-wrap items-center gap-2">
+                  <div className="font-semibold text-slate-900">{pkg.Carrier || 'Package'}</div>
+                  <span className={classNames('rounded-full border px-2.5 py-0.5 text-[11px] font-semibold', packageStatusStyles[pkg.Status] || packageStatusStyles.Arrived)}>
+                    {pkg.Status || 'Arrived'}
+                  </span>
+                </div>
+                {pkg.Description && <div className="mt-0.5 text-xs text-slate-500">{pkg.Description}</div>}
+                {pkg['Tracking Number'] && <div className="mt-0.5 font-mono text-xs text-slate-400">{pkg['Tracking Number']}</div>}
+                <div className="mt-0.5 text-xs text-slate-400">Arrived {formatDate(pkg['Arrival Date'])}</div>
+              </div>
+              {pkg.Status === 'Arrived' || pkg.Status === 'Held' ? (
+                <button
+                  type="button"
+                  disabled={updating === pkg.id}
+                  onClick={() => handlePickedUp(pkg)}
+                  className="shrink-0 rounded-full bg-slate-900 px-4 py-2 text-xs font-semibold text-white transition hover:bg-slate-700 disabled:opacity-50"
+                >
+                  {updating === pkg.id ? 'Updating...' : 'Mark picked up'}
+                </button>
+              ) : null}
+            </div>
+          ))}
+        </div>
+      ) : null}
+    </SectionCard>
+  )
+}
+
 function Dashboard({ session, resident, onResidentUpdated, onSignOut }) {
   const [tab, setTab] = useState('requests')
   const [requests, setRequests] = useState([])
@@ -1094,6 +1321,9 @@ function Dashboard({ session, resident, onResidentUpdated, onSignOut }) {
           {[
             ['requests', 'My Requests'],
             ['new', 'New Request'],
+            ['payments', 'Rent & Payments'],
+            ['packages', 'Packages'],
+            ['documents', 'Documents'],
             ['announcements', 'Announcements'],
             ['profile', 'My Profile'],
           ].map(([id, label]) => (
@@ -1119,6 +1349,9 @@ function Dashboard({ session, resident, onResidentUpdated, onSignOut }) {
 
         {!loading && tab === 'requests' ? <RequestsList requests={requests} residentEmail={residentEmail} /> : null}
         {!loading && tab === 'new' ? <RequestComposer resident={resident} onCreated={loadData} /> : null}
+        {!loading && tab === 'payments' ? <PaymentsPanel resident={resident} /> : null}
+        {!loading && tab === 'packages' ? <PackagesPanel resident={resident} /> : null}
+        {!loading && tab === 'documents' ? <DocumentsPanel resident={resident} /> : null}
         {!loading && tab === 'announcements' ? <AnnouncementsPanel items={announcements} /> : null}
         {!loading && tab === 'profile' ? <ProfilePanel resident={resident} onUpdated={onResidentUpdated} /> : null}
       </div>
@@ -1129,6 +1362,7 @@ function Dashboard({ session, resident, onResidentUpdated, onSignOut }) {
 export default function Resident() {
   const [session, setSession] = useState(null)
   const [resident, setResident] = useState(null)
+  const [residentError, setResidentError] = useState('')
   const [loading, setLoading] = useState(true)
   const [authMode, setAuthMode] = useState('default')
   const [authError, setAuthError] = useState('')
@@ -1162,6 +1396,10 @@ export default function Resident() {
         })
         if (!mounted) return
         setResident(matchedResident)
+        setResidentError('')
+      } catch (err) {
+        if (!mounted) return
+        setResidentError(err?.message || 'Unknown error loading resident profile.')
       } finally {
         if (mounted) setLoading(false)
       }
@@ -1219,7 +1457,7 @@ export default function Resident() {
     return <PasswordRecovery onDone={() => setAuthMode('default')} />
   }
   if (!session) return <EmailLogin initialError={authError} />
-  if (!resident) return <NotAuthorized email={session.user.email} onSignOut={handleSignOut} />
+  if (!resident) return <NotAuthorized email={session.user.email} error={residentError} onSignOut={handleSignOut} />
 
   return (
     <Dashboard

@@ -25,12 +25,12 @@ function getCalendlyUrl({ property, room, tourType, name, email, phone }) {
     `Address: ${property?.address}`,
     `Room: ${room || 'Not sure yet'}`,
     `Tour Format: ${format}`,
-    phone ? `Phone: ${phone}` : null,
     `Scheduled via Axis Seattle website`,
   ].filter(Boolean).join('\n')
   let url = `${CALENDLY_URL}?hide_gdpr_banner=1&primary_color=0f172a&a1=${enc(notes)}`
   if (name)  url += `&name=${enc(name)}`
   if (email) url += `&email=${enc(email)}`
+  if (phone) url += `&a2=${enc(phone)}`
   return url
 }
 

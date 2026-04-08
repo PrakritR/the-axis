@@ -7,6 +7,9 @@ const TABLES = {
   messages: 'Messages',
   residents: 'Residents',
   announcements: 'Announcements',
+  payments: 'Payments',
+  documents: 'Documents',
+  packages: 'Packages',
 }
 
 function headers() {
@@ -205,6 +208,47 @@ export async function sendMessage({ workOrderId, senderEmail, message, isAdmin =
     }),
   })
 
+  return mapRecord(data)
+}
+
+// ---------------------------------------------------------------------------
+// Payments
+// ---------------------------------------------------------------------------
+export async function getPaymentsForResident(resident) {
+  const formula = `FIND("${escapeFormulaValue(resident.id)}", ARRAYJOIN({Resident})) > 0`
+  const data = await request(buildUrl(TABLES.payments, {
+    filterByFormula: formula,
+    sort: [{ field: 'Due Date', direction: 'desc' }],
+  }))
+  return (data.records || []).map(mapRecord)
+}
+
+// ---------------------------------------------------------------------------
+// Documents
+// ---------------------------------------------------------------------------
+export async function getDocumentsForResident(resident) {
+  const formula = `AND(FIND("${escapeFormulaValue(resident.id)}", ARRAYJOIN({Resident})) > 0, {Visible to Resident} = 1)`
+  const data = await request(buildUrl(TABLES.documents, { filterByFormula: formula }))
+  return (data.records || []).map(mapRecord)
+}
+
+// ---------------------------------------------------------------------------
+// Packages
+// ---------------------------------------------------------------------------
+export async function getPackagesForResident(resident) {
+  const formula = `FIND("${escapeFormulaValue(resident.id)}", ARRAYJOIN({Resident})) > 0`
+  const data = await request(buildUrl(TABLES.packages, {
+    filterByFormula: formula,
+    sort: [{ field: 'Arrival Date', direction: 'desc' }],
+  }))
+  return (data.records || []).map(mapRecord)
+}
+
+export async function markPackagePickedUp(recordId) {
+  const data = await request(`${tableUrl(TABLES.packages)}/${recordId}`, {
+    method: 'PATCH',
+    body: JSON.stringify({ fields: { Status: 'Picked Up' }, typecast: true }),
+  })
   return mapRecord(data)
 }
 
