@@ -69,6 +69,18 @@ function titleCaseFromEmail(email) {
     .replace(/\b\w/g, (char) => char.toUpperCase()) || 'Resident'
 }
 
+export async function getResidentById(recordId) {
+  const data = await request(`${tableUrl(TABLES.residents)}/${recordId}`)
+  return mapRecord(data)
+}
+
+export async function loginResident(email, password) {
+  const resident = await getResidentByEmail(email)
+  if (!resident) return null
+  if (resident.Password !== password) return null
+  return resident
+}
+
 export async function getResidentByEmail(email) {
   const formula = `{Email} = "${escapeFormulaValue(email)}"`
   const data = await request(buildUrl(TABLES.residents, {

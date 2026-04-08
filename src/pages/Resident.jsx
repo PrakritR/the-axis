@@ -8,14 +8,16 @@ import {
   getMessages,
   getPackagesForResident,
   getPaymentsForResident,
-  getResidentByEmail,
+  getResidentById,
   getWorkOrdersForResident,
+  loginResident,
   markPackagePickedUp,
   sendMessage,
-  syncResidentFromAuth,
   updateResident,
 } from '../lib/airtable'
-import { supabase, supabaseReady, uploadResidentPhoto } from '../lib/supabase'
+import { uploadResidentPhoto } from '../lib/supabase'
+
+const SESSION_KEY = 'axis_resident'
 
 const requestCategories = ['Plumbing', 'Electrical', 'HVAC', 'Appliance', 'Pest', 'Structural', 'Other']
 const urgencyOptions = ['Routine', 'Urgent', 'Emergency']
@@ -113,11 +115,9 @@ function SetupRequired() {
       <div className="w-full max-w-xl rounded-[28px] border border-slate-200 bg-white p-8 text-center shadow-soft">
         <h1 className="text-2xl font-black text-slate-900">Resident Portal Setup Required</h1>
         <p className="mt-3 text-sm leading-7 text-slate-500">
-          The resident portal needs both Supabase and Airtable configured before it can authenticate residents and load requests.
+          The resident portal needs Airtable configured before it can load resident data.
         </p>
         <div className="mt-6 space-y-2 rounded-2xl bg-slate-50 p-4 text-left font-mono text-xs text-slate-700">
-          <div>VITE_SUPABASE_URL</div>
-          <div>VITE_SUPABASE_ANON_KEY</div>
           <div>VITE_AIRTABLE_TOKEN</div>
           <div>VITE_AIRTABLE_BASE_ID</div>
         </div>
@@ -126,390 +126,100 @@ function SetupRequired() {
   )
 }
 
-function EmailLogin({ initialError = '' }) {
-  const defaultHouse = houseOptions[0]?.house || ''
-  const defaultUnit = getUnitsForHouse(defaultHouse)[0] || ''
-  const [mode, setMode] = useState('login')
-  const [email, setEmail] = useState('')
-  const [password, setPassword] = useState('')
-  const [fullName, setFullName] = useState('')
-  const [house, setHouse] = useState(defaultHouse)
-  const [unitNumber, setUnitNumber] = useState(defaultUnit)
-  const [phone, setPhone] = useState('')
-  const [loading, setLoading] = useState(false)
-  const [message, setMessage] = useState('')
-  const [error, setError] = useState(initialError)
-  const availableUnits = useMemo(() => getUnitsForHouse(house), [house])
+const authInputCls = 'w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm outline-none transition focus:border-slate-900 focus:ring-2 focus:ring-slate-900/10'
 
-  useEffect(() => {
-    if (!availableUnits.length) return
-    if (!availableUnits.includes(unitNumber)) {
-      setUnitNumber(availableUnits[0])
-    }
-  }, [availableUnits, unitNumber])
-
-  useEffect(() => {
-    setError(initialError)
-  }, [initialError])
-
-  async function handleSubmit(event) {
-    event.preventDefault()
-    setLoading(true)
-    setMessage('')
-    setError('')
-
-    try {
-      if (mode === 'signup') {
-        const { data, error: signUpError } = await supabase.auth.signUp({
-          email,
-          password,
-        })
-
-        if (signUpError) throw signUpError
-
-        const existingResident = await getResidentByEmail(email)
-        await syncResidentFromAuth({
-          user: {
-            id: data?.user?.id || existingResident?.['Supabase User ID'] || `pending-${email}`,
-            email,
-          },
-          resident: existingResident,
-          profile: {
-            name: fullName,
-            house,
-            unitNumber,
-            phone,
-          },
-        })
-
-        setMessage('Account created. You can now sign in with your email and password.')
-        setMode('login')
-        setPassword('')
-        setFullName('')
-        setHouse(defaultHouse)
-        setUnitNumber(defaultUnit)
-        setPhone('')
-        return
-      }
-
-      if (mode === 'reset') {
-        const { error: resetError } = await supabase.auth.resetPasswordForEmail(email, {
-          redirectTo: `${window.location.origin}/resident`,
-        })
-
-        if (resetError) throw resetError
-
-        setMessage(`Password reset email sent to ${email}.`)
-        return
-      }
-
-      const { error: signInError } = await supabase.auth.signInWithPassword({
-        email,
-        password,
-      })
-
-      if (signInError) throw signInError
-    } catch (err) {
-      setError(err.message || 'Authentication failed.')
-    } finally {
-      setLoading(false)
-    }
-  }
-
+function AuthCard({ children }) {
   return (
-    <div className="flex min-h-screen items-center justify-center bg-[linear-gradient(180deg,#f8fafc_0%,#ffffff_100%)] px-4">
-      <div className="w-full max-w-md rounded-[28px] border border-slate-200 bg-white p-8 shadow-soft">
-        <div className="text-center">
-          <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-slate-900 text-white">
-            <svg className="h-7 w-7" fill="none" stroke="currentColor" strokeWidth={1.8} viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" d="M21.75 8.25v7.5A2.25 2.25 0 0119.5 18H4.5a2.25 2.25 0 01-2.25-2.25v-7.5m19.5 0L12 13.5 2.25 8.25m19.5 0L19.5 6H4.5l-2.25 2.25" />
+    <div className="flex min-h-screen items-center justify-center bg-[linear-gradient(160deg,#f0fdf8_0%,#f8fafc_40%,#ffffff_100%)] px-4 py-12">
+      <div className="w-full max-w-md">
+        <div className="mb-7 flex justify-center">
+          <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-slate-900 shadow-lg">
+            <svg className="h-5 w-5 text-white" fill="none" stroke="currentColor" strokeWidth={1.8} viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 12l8.954-8.955a1.5 1.5 0 012.092 0L21.75 12M4.5 9.75v10.125c0 .621.504 1.125 1.125 1.125H9.75v-4.875c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125V21h4.125c.621 0 1.125-.504 1.125-1.125V9.75" />
             </svg>
           </div>
-          <h1 className="mt-5 text-3xl font-black text-slate-900">Resident Portal</h1>
-          <p className="mt-2 text-sm leading-7 text-slate-500">
-            {mode === 'login'
-              ? 'Sign in with your resident email and password to view requests, updates, announcements, and your profile.'
-              : mode === 'signup'
-                ? 'Create your resident account and we will create or update your Airtable resident profile automatically.'
-                : 'Reset your password and we will email you a recovery link.'}
-          </p>
-          {mode === 'signup' ? (
-            <p className="mt-2 text-xs leading-6 text-slate-400">
-              Your password is stored securely in Supabase Auth. Airtable stores only resident profile data and request history.
-            </p>
-          ) : null}
         </div>
-
-        <div className="mt-8 flex gap-1 rounded-2xl border border-slate-200 bg-slate-50 p-1">
-          {[
-            ['login', 'Sign in'],
-            ['signup', 'Create account'],
-            ['reset', 'Reset password'],
-          ].map(([id, label]) => (
-            <button
-              key={id}
-              type="button"
-              onClick={() => {
-                setMode(id)
-                setMessage('')
-                setError('')
-                setPassword('')
-                if (id !== 'signup') {
-                  setFullName('')
-                  setHouse(defaultHouse)
-                  setUnitNumber(defaultUnit)
-                  setPhone('')
-                }
-              }}
-              className={classNames(
-                'flex-1 rounded-xl px-3 py-2.5 text-sm font-semibold transition',
-                mode === id ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-900'
-              )}
-            >
-              {label}
-            </button>
-          ))}
+        <div className="rounded-[28px] border border-slate-200 bg-white p-8 shadow-soft">
+          {children}
         </div>
-
-        <form onSubmit={handleSubmit} className="mt-8 space-y-4">
-          <div>
-            <label className="mb-2 block text-sm font-semibold text-slate-700">Resident Email</label>
-            <input
-              type="email"
-              required
-              value={email}
-              onChange={(event) => setEmail(event.target.value)}
-              placeholder="you@example.com"
-              className="w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm outline-none transition focus:border-slate-900 focus:ring-2 focus:ring-slate-900/10"
-            />
-          </div>
-
-          {mode === 'signup' ? (
-            <>
-              <div>
-                <label className="mb-2 block text-sm font-semibold text-slate-700">Full Name</label>
-                <input
-                  type="text"
-                  required
-                  value={fullName}
-                  onChange={(event) => setFullName(event.target.value)}
-                  placeholder="Your full name"
-                  className="w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm outline-none transition focus:border-slate-900 focus:ring-2 focus:ring-slate-900/10"
-                />
-              </div>
-
-              <div>
-                <label className="mb-2 block text-sm font-semibold text-slate-700">House</label>
-                <select
-                  required
-                  value={house}
-                  onChange={(event) => setHouse(event.target.value)}
-                  className="w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm outline-none transition focus:border-slate-900 focus:ring-2 focus:ring-slate-900/10"
-                >
-                  {houseOptions.map((option) => <option key={option.house}>{option.house}</option>)}
-                </select>
-              </div>
-
-              <div>
-                <label className="mb-2 block text-sm font-semibold text-slate-700">Unit</label>
-                <select
-                  required
-                  value={unitNumber}
-                  onChange={(event) => setUnitNumber(event.target.value)}
-                  className="w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm outline-none transition focus:border-slate-900 focus:ring-2 focus:ring-slate-900/10"
-                >
-                  {availableUnits.map((option) => <option key={option}>{option}</option>)}
-                </select>
-              </div>
-
-              <div>
-                <label className="mb-2 block text-sm font-semibold text-slate-700">Phone</label>
-                <input
-                  type="tel"
-                  value={phone}
-                  onChange={(event) => setPhone(event.target.value)}
-                  placeholder="(555) 555-5555"
-                  className="w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm outline-none transition focus:border-slate-900 focus:ring-2 focus:ring-slate-900/10"
-                />
-              </div>
-            </>
-          ) : null}
-
-          {mode !== 'reset' ? (
-            <div>
-              <label className="mb-2 block text-sm font-semibold text-slate-700">Password</label>
-              <input
-                type="password"
-                required
-                value={password}
-                onChange={(event) => setPassword(event.target.value)}
-                placeholder={mode === 'signup' ? 'Create a password' : 'Enter your password'}
-                className="w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm outline-none transition focus:border-slate-900 focus:ring-2 focus:ring-slate-900/10"
-              />
-            </div>
-          ) : null}
-
-          {message ? (
-            <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
-              {message}
-            </div>
-          ) : null}
-
-          {error ? (
-            <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-              {error}
-            </div>
-          ) : null}
-
-          <button
-            type="submit"
-            disabled={loading}
-            className="w-full rounded-full bg-slate-900 py-3 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:opacity-50"
-          >
-            {loading
-              ? 'Please wait...'
-              : mode === 'login'
-                ? 'Sign in'
-                : mode === 'signup'
-                  ? 'Create account'
-                  : 'Send reset email'}
-          </button>
-        </form>
       </div>
     </div>
   )
 }
 
-function PasswordRecovery({ onDone }) {
+function AirtableLogin({ onLogin }) {
+  const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
-  const [confirmPassword, setConfirmPassword] = useState('')
+  const [showPassword, setShowPassword] = useState(false)
   const [loading, setLoading] = useState(false)
-  const [message, setMessage] = useState('')
   const [error, setError] = useState('')
 
   async function handleSubmit(event) {
     event.preventDefault()
-    setMessage('')
-    setError('')
-
-    if (password.length < 8) {
-      setError('Use at least 8 characters for the new password.')
-      return
-    }
-
-    if (password !== confirmPassword) {
-      setError('Passwords do not match.')
-      return
-    }
-
     setLoading(true)
+    setError('')
     try {
-      const { error: updateError } = await supabase.auth.updateUser({ password })
-      if (updateError) throw updateError
-
-      setMessage('Password updated successfully. You can now continue into the resident portal.')
+      const resident = await loginResident(email.trim(), password)
+      if (!resident) {
+        setError('Invalid email or password. Contact Axis if you need help accessing your account.')
+        return
+      }
+      onLogin(resident)
     } catch (err) {
-      setError(err.message || 'Could not update password.')
+      setError(err.message || 'Login failed. Please try again.')
     } finally {
       setLoading(false)
     }
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-[linear-gradient(180deg,#f8fafc_0%,#ffffff_100%)] px-4">
-      <div className="w-full max-w-md rounded-[28px] border border-slate-200 bg-white p-8 shadow-soft">
-        <div className="text-center">
-          <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-slate-900 text-white">
-            <svg className="h-7 w-7" fill="none" stroke="currentColor" strokeWidth={1.8} viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" d="M16.5 10.5V6.75a4.5 4.5 0 10-9 0v3.75m-.75 0h10.5A2.25 2.25 0 0119.5 12.75v6A2.25 2.25 0 0117.25 21h-10.5A2.25 2.25 0 014.5 18.75v-6A2.25 2.25 0 016.75 10.5z" />
-            </svg>
-          </div>
-          <h1 className="mt-5 text-3xl font-black text-slate-900">Set a New Password</h1>
-          <p className="mt-2 text-sm leading-7 text-slate-500">
-            Choose a new password for your resident account, then return to the portal.
-          </p>
+    <AuthCard>
+      <h1 className="text-2xl font-black text-slate-900">Welcome back</h1>
+      <p className="mt-1.5 text-sm leading-6 text-slate-500">Sign in to your resident portal.</p>
+
+      <form onSubmit={handleSubmit} className="mt-6 space-y-4">
+        <div>
+          <label className="mb-2 block text-sm font-semibold text-slate-700">Email</label>
+          <input type="email" required value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@example.com" autoComplete="email" className={authInputCls} />
         </div>
 
-        <form onSubmit={handleSubmit} className="mt-8 space-y-4">
-          <div>
-            <label className="mb-2 block text-sm font-semibold text-slate-700">New Password</label>
+        <div>
+          <label className="mb-2 block text-sm font-semibold text-slate-700">Password</label>
+          <div className="relative">
             <input
-              type="password"
+              type={showPassword ? 'text' : 'password'}
               required
               value={password}
-              onChange={(event) => setPassword(event.target.value)}
-              className="w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm outline-none transition focus:border-slate-900 focus:ring-2 focus:ring-slate-900/10"
+              onChange={(e) => setPassword(e.target.value)}
+              placeholder="••••••••"
+              autoComplete="current-password"
+              className={authInputCls + ' pr-11'}
             />
-          </div>
-
-          <div>
-            <label className="mb-2 block text-sm font-semibold text-slate-700">Confirm Password</label>
-            <input
-              type="password"
-              required
-              value={confirmPassword}
-              onChange={(event) => setConfirmPassword(event.target.value)}
-              className="w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm outline-none transition focus:border-slate-900 focus:ring-2 focus:ring-slate-900/10"
-            />
-          </div>
-
-          {message ? (
-            <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
-              {message}
-            </div>
-          ) : null}
-
-          {error ? (
-            <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-              {error}
-            </div>
-          ) : null}
-
-          <div className="flex gap-2">
-            <button
-              type="submit"
-              disabled={loading}
-              className="flex-1 rounded-full bg-slate-900 py-3 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:opacity-50"
-            >
-              {loading ? 'Updating...' : 'Update password'}
-            </button>
             <button
               type="button"
-              onClick={onDone}
-              className="rounded-full border border-slate-300 px-5 py-3 text-sm font-semibold text-slate-700 transition hover:border-slate-500"
+              onClick={() => setShowPassword((v) => !v)}
+              tabIndex={-1}
+              className="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-700 transition"
             >
-              Back
+              {showPassword
+                ? <svg className="h-4.5 w-4.5" fill="none" stroke="currentColor" strokeWidth={1.8} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M3.98 8.223A10.477 10.477 0 001.934 12C3.226 16.338 7.244 19.5 12 19.5c.993 0 1.953-.138 2.863-.395M6.228 6.228A10.45 10.45 0 0112 4.5c4.756 0 8.773 3.162 10.065 7.498a10.523 10.523 0 01-4.293 5.774M6.228 6.228L3 3m3.228 3.228l3.65 3.65m7.894 7.894L21 21m-3.228-3.228l-3.65-3.65m0 0a3 3 0 10-4.243-4.243m4.242 4.242L9.88 9.88"/></svg>
+                : <svg className="h-4.5 w-4.5" fill="none" stroke="currentColor" strokeWidth={1.8} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M2.036 12.322a1.012 1.012 0 010-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178z"/><path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
+              }
             </button>
           </div>
-        </form>
-      </div>
-    </div>
-  )
-}
+        </div>
 
-function NotAuthorized({ email, error, onSignOut }) {
-  return (
-    <div className="flex min-h-screen items-center justify-center bg-[linear-gradient(180deg,#f8fafc_0%,#ffffff_100%)] px-4">
-      <div className="w-full max-w-lg rounded-[28px] border border-slate-200 bg-white p-8 text-center shadow-soft">
-        <h1 className="text-2xl font-black text-slate-900">Access Not Available</h1>
-        <p className="mt-3 text-sm leading-7 text-slate-500">
-          We authenticated <span className="font-semibold text-slate-700">{email}</span>, but the resident profile could not be loaded.
-          Try signing in again, or contact Axis if this email should already be active.
-        </p>
-        {error ? (
-          <div className="mt-4 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-left font-mono text-xs text-red-700 break-all">
-            {error}
-          </div>
-        ) : null}
-        <button
-          type="button"
-          onClick={onSignOut}
-          className="mt-6 rounded-full border border-slate-300 px-5 py-2.5 text-sm font-semibold text-slate-700 transition hover:border-slate-500"
-        >
-          Sign out
+        {error && <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>}
+
+        <button type="submit" disabled={loading} className="w-full rounded-full bg-slate-900 py-3 text-sm font-semibold text-white hover:bg-slate-800 disabled:opacity-50 transition">
+          {loading ? 'Signing in…' : 'Sign in'}
         </button>
-      </div>
-    </div>
+      </form>
+
+      <p className="mt-5 text-center text-xs text-slate-400">
+        Don't have access? Contact Axis to get your account set up.
+      </p>
+    </AuthCard>
   )
 }
 
@@ -1253,13 +963,13 @@ function PackagesPanel({ resident }) {
   )
 }
 
-function Dashboard({ session, resident, onResidentUpdated, onSignOut }) {
+function Dashboard({ resident, onResidentUpdated, onSignOut }) {
   const [tab, setTab] = useState('requests')
   const [requests, setRequests] = useState([])
   const [announcements, setAnnouncements] = useState([])
   const [loading, setLoading] = useState(true)
 
-  const residentEmail = resident.Email || session.user.email
+  const residentEmail = resident.Email
   const hasStatusUpdates = useMemo(
     () => requests.some((item) => item.Status && item.Status !== 'Submitted'),
     [requests]
@@ -1360,92 +1070,38 @@ function Dashboard({ session, resident, onResidentUpdated, onSignOut }) {
 }
 
 export default function Resident() {
-  const [session, setSession] = useState(null)
   const [resident, setResident] = useState(null)
-  const [residentError, setResidentError] = useState('')
   const [loading, setLoading] = useState(true)
-  const [authMode, setAuthMode] = useState('default')
-  const [authError, setAuthError] = useState('')
 
   useEffect(() => {
-    if (!supabaseReady || !airtableReady) {
+    if (!airtableReady) {
       setLoading(false)
-      return undefined
+      return
     }
-
+    const storedId = sessionStorage.getItem(SESSION_KEY)
+    if (!storedId) {
+      setLoading(false)
+      return
+    }
     let mounted = true
-
-    async function hydrate(nextSession) {
-      if (!mounted) return
-
-      if (!nextSession?.user?.email) {
-        setSession(null)
-        setResident(null)
-        setLoading(false)
-        return
-      }
-
-      setLoading(true)
-      setSession(nextSession)
-
-      try {
-        const existingResident = await getResidentByEmail(nextSession.user.email)
-        const matchedResident = await syncResidentFromAuth({
-          user: nextSession.user,
-          resident: existingResident,
-        })
-        if (!mounted) return
-        setResident(matchedResident)
-        setResidentError('')
-      } catch (err) {
-        if (!mounted) return
-        setResidentError(err?.message || 'Unknown error loading resident profile.')
-      } finally {
-        if (mounted) setLoading(false)
-      }
-    }
-
-    supabase.auth.getSession().then(({ data }) => {
-      hydrate(data.session)
-    })
-
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, nextSession) => {
-      hydrate(nextSession)
-    })
-
-    return () => {
-      mounted = false
-      subscription.unsubscribe()
-    }
+    getResidentById(storedId)
+      .then((r) => { if (mounted && r) setResident(r) })
+      .catch(() => { sessionStorage.removeItem(SESSION_KEY) })
+      .finally(() => { if (mounted) setLoading(false) })
+    return () => { mounted = false }
   }, [])
 
-  useEffect(() => {
-    const hash = window.location.hash.startsWith('#') ? window.location.hash.slice(1) : ''
-    if (!hash) return
-
-    const params = new URLSearchParams(hash)
-    const errorDescription = params.get('error_description')
-    const errorCode = params.get('error_code')
-    const type = params.get('type')
-
-    if (type === 'recovery') {
-      setAuthMode('recovery')
-    } else if (errorDescription || errorCode) {
-      const decoded = errorDescription
-        ? decodeURIComponent(errorDescription.replace(/\+/g, ' '))
-        : 'Authentication link is invalid or expired.'
-      setAuthError(decoded)
-      setAuthMode('default')
-    }
-
-    window.history.replaceState(null, '', window.location.pathname + window.location.search)
-  }, [])
-
-  async function handleSignOut() {
-    await supabase.auth.signOut()
+  function handleLogin(r) {
+    sessionStorage.setItem(SESSION_KEY, r.id)
+    setResident(r)
   }
 
-  if (!supabaseReady || !airtableReady) return <SetupRequired />
+  function handleSignOut() {
+    sessionStorage.removeItem(SESSION_KEY)
+    setResident(null)
+  }
+
+  if (!airtableReady) return <SetupRequired />
   if (loading) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-[linear-gradient(180deg,#f8fafc_0%,#ffffff_100%)] text-sm text-slate-400">
@@ -1453,15 +1109,10 @@ export default function Resident() {
       </div>
     )
   }
-  if (!session && authMode === 'recovery') {
-    return <PasswordRecovery onDone={() => setAuthMode('default')} />
-  }
-  if (!session) return <EmailLogin initialError={authError} />
-  if (!resident) return <NotAuthorized email={session.user.email} error={residentError} onSignOut={handleSignOut} />
+  if (!resident) return <AirtableLogin onLogin={handleLogin} />
 
   return (
     <Dashboard
-      session={session}
       resident={resident}
       onResidentUpdated={setResident}
       onSignOut={handleSignOut}
