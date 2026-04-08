@@ -3,15 +3,24 @@ import { Seo } from '../lib/seo'
 import { properties } from '../data/properties'
 
 const AIRTABLE_BASE_ID = import.meta.env.VITE_AIRTABLE_APPLICATIONS_BASE_ID || 'appNBX2inqfJMyqYV'
-const AIRTABLE_TABLE = import.meta.env.VITE_AIRTABLE_APPLICATIONS_TABLE || 'Applications'
+const APPLICATIONS_TABLE = import.meta.env.VITE_AIRTABLE_APPLICATIONS_TABLE || 'Applications'
+const COAPPLICANTS_TABLE = import.meta.env.VITE_AIRTABLE_COAPPLICANTS_TABLE || 'Co-Applicants'
 const AIRTABLE_TOKEN = import.meta.env.VITE_AIRTABLE_TOKEN
 
 const HISTORY_OPTIONS = ['No', 'Yes']
+const COAPPLICANT_ROLE_OPTIONS = ['Co-Signer', 'Co-Applicant']
+const LEASE_TERMS = [
+  '3-Month Summer (Jun 16 – Sep 14)',
+  '9-Month Academic (Sep 15 – Jun 15)',
+  '12-Month (flexible start)',
+  'Other / Custom dates',
+]
 
 const PROPERTY_OPTIONS = properties
   .map((property) => ({
     id: property.slug,
     name: property.name,
+    address: property.address,
     rooms: [...new Set((property.roomPlans || []).flatMap((plan) => plan.rooms || []).map((room) => room.name))]
       .sort((a, b) => a.localeCompare(b, undefined, { numeric: true })),
   }))
@@ -19,6 +28,97 @@ const PROPERTY_OPTIONS = properties
 
 function todayIsoDate() {
   return new Date().toISOString().slice(0, 10)
+}
+
+function toCurrencyNumber(value) {
+  if (!value) return null
+  const numeric = Number(String(value).replace(/[^0-9.-]/g, ''))
+  return Number.isFinite(numeric) ? numeric : null
+}
+
+function defaultApplicant() {
+  return {
+    fullName: '',
+    email: '',
+    phone: '',
+    dateOfBirth: '',
+    ssn: '',
+    license: '',
+    currentAddress: '',
+    currentCity: '',
+    currentState: '',
+    currentZip: '',
+    currentLandlordName: '',
+    currentLandlordPhone: '',
+    currentMoveInDate: '',
+    currentMoveOutDate: '',
+    currentReasonForLeaving: '',
+    previousAddress: '',
+    previousCity: '',
+    previousState: '',
+    previousZip: '',
+    previousLandlordName: '',
+    previousLandlordPhone: '',
+    previousMoveInDate: '',
+    previousMoveOutDate: '',
+    previousReasonForLeaving: '',
+    employer: '',
+    employerAddress: '',
+    supervisorName: '',
+    supervisorPhone: '',
+    jobTitle: '',
+    monthlyIncome: '',
+    annualIncome: '',
+    employmentStartDate: '',
+    otherIncome: '',
+    reference1Name: '',
+    reference1Relationship: '',
+    reference1Phone: '',
+    reference2Name: '',
+    reference2Relationship: '',
+    reference2Phone: '',
+    occupants: '',
+    pets: '',
+    vehicles: '',
+    evictionHistory: '',
+    bankruptcyHistory: '',
+    criminalHistory: '',
+    consent: false,
+    signature: '',
+    dateSigned: todayIsoDate(),
+    notes: '',
+  }
+}
+
+function defaultCoApplicant() {
+  return {
+    role: 'Co-Signer',
+    fullName: '',
+    email: '',
+    phone: '',
+    dateOfBirth: '',
+    ssn: '',
+    license: '',
+    currentAddress: '',
+    city: '',
+    state: '',
+    zip: '',
+    employer: '',
+    employerAddress: '',
+    supervisorName: '',
+    supervisorPhone: '',
+    jobTitle: '',
+    monthlyIncome: '',
+    annualIncome: '',
+    employmentStartDate: '',
+    otherIncome: '',
+    bankruptcyHistory: '',
+    criminalHistory: '',
+    consent: false,
+    signature: '',
+    dateSigned: todayIsoDate(),
+    notes: '',
+  }
 }
 
 function Field({ label, required, children, hint }) {
@@ -37,10 +137,10 @@ function Field({ label, required, children, hint }) {
 const inputCls = 'w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 placeholder-slate-400 outline-none transition focus:border-axis focus:ring-2 focus:ring-axis/20'
 const selectCls = `${inputCls} appearance-none cursor-pointer`
 
-async function submitToAirtable(fields) {
+async function submitToAirtable(tableName, fields) {
   if (!AIRTABLE_TOKEN) throw new Error('VITE_AIRTABLE_TOKEN is not set in environment variables.')
 
-  const response = await fetch(`https://api.airtable.com/v0/${AIRTABLE_BASE_ID}/${encodeURIComponent(AIRTABLE_TABLE)}`, {
+  const response = await fetch(`https://api.airtable.com/v0/${AIRTABLE_BASE_ID}/${encodeURIComponent(tableName)}`, {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${AIRTABLE_TOKEN}`,
@@ -59,74 +159,336 @@ async function submitToAirtable(fields) {
     }
     throw new Error(message)
   }
+
+  return response.json()
 }
 
-function buildMailtoFallback(form) {
-  const body = [
-    `Applicant Name: ${form.applicantName}`,
-    `Applicant Email: ${form.applicantEmail}`,
-    `Applicant Phone: ${form.applicantPhone}`,
-    `Driving License No.: ${form.drivingLicense}`,
-    `SSN No.: ${form.ssn || 'Not provided'}`,
-    `Applicant DOB: ${form.applicantDob}`,
-    `Property Name: ${form.propertyName}`,
-    `Room Number: ${form.roomNumber}`,
-    `Desired Move-in Date: ${form.desiredMoveInDate}`,
-    `Current Address: ${form.currentAddress || 'Not provided'}`,
-    `Employer: ${form.employer || 'Not provided'}`,
-    `Job Title: ${form.jobTitle || 'Not provided'}`,
-    `Reference 1: ${form.reference1 || 'Not provided'}`,
-    `Reference 2: ${form.reference2 || 'Not provided'}`,
-    `Occupants: ${form.occupants || 'Not provided'}`,
-    `Pets: ${form.pets || 'Not provided'}`,
-    `Vehicles: ${form.vehicles || 'Not provided'}`,
-    `Eviction History: ${form.evictionHistory}`,
-    `Criminal History: ${form.criminalHistory}`,
-    `Signature: ${form.signature || 'Not provided'}`,
-    `Date Signed: ${form.dateSigned}`,
-  ].join('\n')
+function buildApplicantNotes(application, applicant, needsCoSigner) {
+  const lines = [
+    `Property Address Applying For: ${application.propertyAddress || 'Not provided'}`,
+    `Requested Property: ${application.propertyName}`,
+    `Requested Room: ${application.roomNumber || 'Not specified'}`,
+    `Desired Move-In Date: ${application.desiredMoveInDate}`,
+    `Lease Term: ${application.leaseTerm === 'Other / Custom dates' ? application.leaseTermOther : application.leaseTerm}`,
+    `Current Landlord Name: ${applicant.currentLandlordName || 'Not provided'}`,
+    `Current Landlord Phone: ${applicant.currentLandlordPhone || 'Not provided'}`,
+    `Current Move-In Date: ${applicant.currentMoveInDate || 'Not provided'}`,
+    `Current Move-Out Date: ${applicant.currentMoveOutDate || 'Not provided'}`,
+    `Current Reason for Leaving: ${applicant.currentReasonForLeaving || 'Not provided'}`,
+    `Previous Address: ${applicant.previousAddress || 'Not provided'}`,
+    `Previous City / State / ZIP: ${[applicant.previousCity, applicant.previousState, applicant.previousZip].filter(Boolean).join(', ') || 'Not provided'}`,
+    `Previous Landlord Name: ${applicant.previousLandlordName || 'Not provided'}`,
+    `Previous Landlord Phone: ${applicant.previousLandlordPhone || 'Not provided'}`,
+    `Previous Move-In Date: ${applicant.previousMoveInDate || 'Not provided'}`,
+    `Previous Move-Out Date: ${applicant.previousMoveOutDate || 'Not provided'}`,
+    `Previous Reason for Leaving: ${applicant.previousReasonForLeaving || 'Not provided'}`,
+    `Reference 1: ${[applicant.reference1Name, applicant.reference1Relationship, applicant.reference1Phone].filter(Boolean).join(' | ') || 'Not provided'}`,
+    `Reference 2: ${[applicant.reference2Name, applicant.reference2Relationship, applicant.reference2Phone].filter(Boolean).join(' | ') || 'Not provided'}`,
+    `Occupants: ${applicant.occupants || 'Not provided'}`,
+    `Pets: ${applicant.pets || 'Not provided'}`,
+    `Vehicles: ${applicant.vehicles || 'Not provided'}`,
+    `Eviction History: ${applicant.evictionHistory || 'Not provided'}`,
+    `Needs Co-Signer: ${needsCoSigner ? 'Yes' : 'No'}`,
+    applicant.notes ? `Additional Notes: ${applicant.notes}` : null,
+  ]
 
-  const subject = `Application — ${form.applicantName} for ${form.propertyName}`
-  return `mailto:info@axis-seattle-housing.com?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`
+  return lines.filter(Boolean).join('\n')
+}
+
+function buildCoApplicantNotes(coApplicant) {
+  return [
+    coApplicant.notes ? `Additional Notes: ${coApplicant.notes}` : null,
+  ].filter(Boolean).join('\n')
+}
+
+function buildMailtoFallback(application, applicant, needsCoSigner, coApplicant) {
+  const lines = [
+    `Property Address Applying For: ${application.propertyAddress || 'Not provided'}`,
+    `Property Name: ${application.propertyName}`,
+    `Room Number: ${application.roomNumber || 'Not specified'}`,
+    `Desired Move-In Date: ${application.desiredMoveInDate}`,
+    `Lease Term: ${application.leaseTerm === 'Other / Custom dates' ? application.leaseTermOther : application.leaseTerm}`,
+    `Applicant Full Name: ${applicant.fullName}`,
+    `Applicant Email: ${applicant.email}`,
+    `Applicant Phone Number: ${applicant.phone}`,
+    `Applicant Date of Birth: ${applicant.dateOfBirth}`,
+    `Applicant SSN No.: ${applicant.ssn || 'Not provided'}`,
+    `Applicant Driving License No.: ${applicant.license}`,
+    `Applicant Current Address: ${applicant.currentAddress}`,
+    `Applicant City: ${applicant.currentCity}`,
+    `Applicant State: ${applicant.currentState}`,
+    `Applicant ZIP: ${applicant.currentZip}`,
+    `Applicant Current Landlord Name: ${applicant.currentLandlordName || 'Not provided'}`,
+    `Applicant Current Landlord Phone: ${applicant.currentLandlordPhone || 'Not provided'}`,
+    `Applicant Current Move-In Date: ${applicant.currentMoveInDate || 'Not provided'}`,
+    `Applicant Current Move-Out Date: ${applicant.currentMoveOutDate || 'Not provided'}`,
+    `Applicant Current Reason for Leaving: ${applicant.currentReasonForLeaving || 'Not provided'}`,
+    `Applicant Previous Address: ${applicant.previousAddress || 'Not provided'}`,
+    `Applicant Previous City: ${applicant.previousCity || 'Not provided'}`,
+    `Applicant Previous State: ${applicant.previousState || 'Not provided'}`,
+    `Applicant Previous ZIP: ${applicant.previousZip || 'Not provided'}`,
+    `Applicant Previous Landlord Name: ${applicant.previousLandlordName || 'Not provided'}`,
+    `Applicant Previous Landlord Phone: ${applicant.previousLandlordPhone || 'Not provided'}`,
+    `Applicant Previous Move-In Date: ${applicant.previousMoveInDate || 'Not provided'}`,
+    `Applicant Previous Move-Out Date: ${applicant.previousMoveOutDate || 'Not provided'}`,
+    `Applicant Previous Reason for Leaving: ${applicant.previousReasonForLeaving || 'Not provided'}`,
+    `Applicant Employer: ${applicant.employer || 'Not provided'}`,
+    `Applicant Employer Address: ${applicant.employerAddress || 'Not provided'}`,
+    `Applicant Supervisor Name: ${applicant.supervisorName || 'Not provided'}`,
+    `Applicant Supervisor Phone: ${applicant.supervisorPhone || 'Not provided'}`,
+    `Applicant Job Title: ${applicant.jobTitle || 'Not provided'}`,
+    `Applicant Monthly Income: ${applicant.monthlyIncome || 'Not provided'}`,
+    `Applicant Annual Income: ${applicant.annualIncome || 'Not provided'}`,
+    `Applicant Employment Start Date: ${applicant.employmentStartDate || 'Not provided'}`,
+    `Applicant Other Income: ${applicant.otherIncome || 'Not provided'}`,
+    `Reference 1: ${[applicant.reference1Name, applicant.reference1Relationship, applicant.reference1Phone].filter(Boolean).join(' | ') || 'Not provided'}`,
+    `Reference 2: ${[applicant.reference2Name, applicant.reference2Relationship, applicant.reference2Phone].filter(Boolean).join(' | ') || 'Not provided'}`,
+    `Occupants: ${applicant.occupants || 'Not provided'}`,
+    `Pets: ${applicant.pets || 'Not provided'}`,
+    `Vehicles: ${applicant.vehicles || 'Not provided'}`,
+    `Eviction History: ${applicant.evictionHistory || 'Not provided'}`,
+    `Applicant Bankruptcy History: ${applicant.bankruptcyHistory}`,
+    `Applicant Criminal History: ${applicant.criminalHistory}`,
+    `Applicant Consent for Credit and Background Check: ${applicant.consent ? 'Yes' : 'No'}`,
+    `Applicant Signature: ${applicant.signature || 'Not provided'}`,
+    `Applicant Date Signed: ${applicant.dateSigned}`,
+    applicant.notes ? `Applicant Notes: ${applicant.notes}` : null,
+    `Needs Co-Signer: ${needsCoSigner ? 'Yes' : 'No'}`,
+  ]
+
+  if (needsCoSigner) {
+    lines.push(
+      '',
+      'Co-Applicant / Co-Signer',
+      `Role: ${coApplicant.role}`,
+      `Full Name: ${coApplicant.fullName}`,
+      `Email: ${coApplicant.email}`,
+      `Phone Number: ${coApplicant.phone}`,
+      `Date of Birth: ${coApplicant.dateOfBirth}`,
+      `SSN No.: ${coApplicant.ssn || 'Not provided'}`,
+      `Driving License No.: ${coApplicant.license || 'Not provided'}`,
+      `Current Address: ${coApplicant.currentAddress || 'Not provided'}`,
+      `City: ${coApplicant.city || 'Not provided'}`,
+      `State: ${coApplicant.state || 'Not provided'}`,
+      `ZIP: ${coApplicant.zip || 'Not provided'}`,
+      `Employer: ${coApplicant.employer || 'Not provided'}`,
+      `Employer Address: ${coApplicant.employerAddress || 'Not provided'}`,
+      `Supervisor Name: ${coApplicant.supervisorName || 'Not provided'}`,
+      `Supervisor Phone: ${coApplicant.supervisorPhone || 'Not provided'}`,
+      `Job Title: ${coApplicant.jobTitle || 'Not provided'}`,
+      `Monthly Income: ${coApplicant.monthlyIncome || 'Not provided'}`,
+      `Annual Income: ${coApplicant.annualIncome || 'Not provided'}`,
+      `Employment Start Date: ${coApplicant.employmentStartDate || 'Not provided'}`,
+      `Other Income: ${coApplicant.otherIncome || 'Not provided'}`,
+      `Bankruptcy History: ${coApplicant.bankruptcyHistory || 'Not provided'}`,
+      `Criminal History: ${coApplicant.criminalHistory || 'Not provided'}`,
+      `Consent for Credit and Background Check: ${coApplicant.consent ? 'Yes' : 'No'}`,
+      `Signature: ${coApplicant.signature || 'Not provided'}`,
+      `Date Signed: ${coApplicant.dateSigned}`,
+      coApplicant.notes ? `Notes: ${coApplicant.notes}` : null,
+    )
+  }
+
+  const subject = `Application — ${applicant.fullName} for ${application.propertyName}`
+  return `mailto:info@axis-seattle-housing.com?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(lines.filter(Boolean).join('\n'))}`
+}
+
+function Section({ title, children }) {
+  return (
+    <div className="space-y-5 rounded-2xl border border-slate-200 bg-white p-6 shadow-soft">
+      <h2 className="text-2xl font-black text-slate-900">{title}</h2>
+      {children}
+    </div>
+  )
+}
+
+function ApplicantFields({ applicant, setApplicant, prefix = 'Applicant', isCoApplicant = false }) {
+  const setField = (key, value) => setApplicant((prev) => ({ ...prev, [key]: value }))
+  const consentLabel = isCoApplicant ? 'Consent for Credit and Background Check' : 'Applicant Consent for Credit and Background Check'
+
+  return (
+    <>
+      <div className="grid gap-5 sm:grid-cols-2">
+        <Field label={`${prefix} Full Name`} required>
+          <input required className={inputCls} value={applicant.fullName} onChange={(e) => setField('fullName', e.target.value)} />
+        </Field>
+        <Field label={`${prefix} Email`} required>
+          <input required type="email" className={inputCls} value={applicant.email} onChange={(e) => setField('email', e.target.value)} />
+        </Field>
+      </div>
+
+      <div className="grid gap-5 sm:grid-cols-3">
+        <Field label={`${prefix} Phone Number`} required>
+          <input required type="tel" className={inputCls} value={applicant.phone} onChange={(e) => setField('phone', e.target.value)} />
+        </Field>
+        <Field label={`${prefix} Date of Birth`} required>
+          <input required type="date" className={inputCls} value={applicant.dateOfBirth} onChange={(e) => setField('dateOfBirth', e.target.value)} />
+        </Field>
+        <Field label={`${prefix} Driving License / ID #`} required>
+          <input required className={inputCls} value={applicant.license} onChange={(e) => setField('license', e.target.value)} />
+        </Field>
+      </div>
+
+      <div className="grid gap-5 sm:grid-cols-2">
+        <Field label={`${prefix} Social Security #`}>
+          <input className={inputCls} value={applicant.ssn} onChange={(e) => setField('ssn', e.target.value)} />
+        </Field>
+        {!isCoApplicant && (
+          <Field label="Eviction History" required>
+            <select required className={selectCls} value={applicant.evictionHistory} onChange={(e) => setField('evictionHistory', e.target.value)}>
+              <option value="" disabled>Select…</option>
+              {HISTORY_OPTIONS.map((option) => <option key={option} value={option}>{option}</option>)}
+            </select>
+          </Field>
+        )}
+      </div>
+
+      <div className="grid gap-5 sm:grid-cols-3">
+        <Field label={`${prefix} Current Address`} required>
+          <input required className={inputCls} value={applicant.currentAddress} onChange={(e) => setField('currentAddress', e.target.value)} />
+        </Field>
+        <Field label={`${prefix} City`} required>
+          <input required className={inputCls} value={applicant.currentCity ?? applicant.city ?? ''} onChange={(e) => setField(applicant.currentCity !== undefined ? 'currentCity' : 'city', e.target.value)} />
+        </Field>
+        <div className="grid gap-5 grid-cols-2">
+          <Field label={`${prefix} State`} required>
+            <input required className={inputCls} value={applicant.currentState ?? applicant.state ?? ''} onChange={(e) => setField(applicant.currentState !== undefined ? 'currentState' : 'state', e.target.value)} />
+          </Field>
+          <Field label={`${prefix} ZIP`} required>
+            <input required className={inputCls} value={applicant.currentZip ?? applicant.zip ?? ''} onChange={(e) => setField(applicant.currentZip !== undefined ? 'currentZip' : 'zip', e.target.value)} />
+          </Field>
+        </div>
+      </div>
+
+      {!isCoApplicant && (
+        <>
+          <div className="grid gap-5 sm:grid-cols-2">
+            <Field label="Current Landlord / Property Manager Name">
+              <input className={inputCls} value={applicant.currentLandlordName} onChange={(e) => setField('currentLandlordName', e.target.value)} />
+            </Field>
+            <Field label="Current Landlord Phone #">
+              <input type="tel" className={inputCls} value={applicant.currentLandlordPhone} onChange={(e) => setField('currentLandlordPhone', e.target.value)} />
+            </Field>
+          </div>
+
+          <div className="grid gap-5 sm:grid-cols-3">
+            <Field label="Current Move-in Date">
+              <input type="date" className={inputCls} value={applicant.currentMoveInDate} onChange={(e) => setField('currentMoveInDate', e.target.value)} />
+            </Field>
+            <Field label="Current Move-out Date">
+              <input type="date" className={inputCls} value={applicant.currentMoveOutDate} onChange={(e) => setField('currentMoveOutDate', e.target.value)} />
+            </Field>
+            <Field label="Reason for Leaving">
+              <input className={inputCls} value={applicant.currentReasonForLeaving} onChange={(e) => setField('currentReasonForLeaving', e.target.value)} />
+            </Field>
+          </div>
+        </>
+      )}
+
+      <div className="grid gap-5 sm:grid-cols-2">
+        <Field label={`${prefix} Employer`}>
+          <input className={inputCls} value={applicant.employer} onChange={(e) => setField('employer', e.target.value)} />
+        </Field>
+        <Field label={`${prefix} Employer Address`}>
+          <input className={inputCls} value={applicant.employerAddress} onChange={(e) => setField('employerAddress', e.target.value)} />
+        </Field>
+      </div>
+
+      <div className="grid gap-5 sm:grid-cols-2">
+        <Field label={`${prefix} Supervisor Name`}>
+          <input className={inputCls} value={applicant.supervisorName} onChange={(e) => setField('supervisorName', e.target.value)} />
+        </Field>
+        <Field label={`${prefix} Supervisor Phone #`}>
+          <input type="tel" className={inputCls} value={applicant.supervisorPhone} onChange={(e) => setField('supervisorPhone', e.target.value)} />
+        </Field>
+      </div>
+
+      <div className="grid gap-5 sm:grid-cols-4">
+        <Field label={`${prefix} Job Title`}>
+          <input className={inputCls} value={applicant.jobTitle} onChange={(e) => setField('jobTitle', e.target.value)} />
+        </Field>
+        <Field label={`${prefix} Monthly Income`}>
+          <input className={inputCls} value={applicant.monthlyIncome} onChange={(e) => setField('monthlyIncome', e.target.value)} />
+        </Field>
+        <Field label={`${prefix} Annual Income`}>
+          <input className={inputCls} value={applicant.annualIncome} onChange={(e) => setField('annualIncome', e.target.value)} />
+        </Field>
+        <Field label={`${prefix} Employment Start Date`}>
+          <input type="date" className={inputCls} value={applicant.employmentStartDate} onChange={(e) => setField('employmentStartDate', e.target.value)} />
+        </Field>
+      </div>
+
+      <div className="grid gap-5 sm:grid-cols-2">
+        <Field label={`${prefix} Other Income`}>
+          <input className={inputCls} value={applicant.otherIncome} onChange={(e) => setField('otherIncome', e.target.value)} />
+        </Field>
+        <Field label={`${prefix} Bankruptcy History`} required>
+          <select required className={selectCls} value={applicant.bankruptcyHistory} onChange={(e) => setField('bankruptcyHistory', e.target.value)}>
+            <option value="" disabled>Select…</option>
+            {HISTORY_OPTIONS.map((option) => <option key={option} value={option}>{option}</option>)}
+          </select>
+        </Field>
+      </div>
+
+      <div className="grid gap-5 sm:grid-cols-2">
+        <Field label={`${prefix} Criminal History`} required>
+          <select required className={selectCls} value={applicant.criminalHistory} onChange={(e) => setField('criminalHistory', e.target.value)}>
+            <option value="" disabled>Select…</option>
+            {HISTORY_OPTIONS.map((option) => <option key={option} value={option}>{option}</option>)}
+          </select>
+        </Field>
+        <Field label={consentLabel} required hint="This must be checked to submit the application.">
+          <label className="flex min-h-[52px] items-center gap-3 rounded-xl border border-slate-200 px-4 py-3 text-sm text-slate-700">
+            <input type="checkbox" checked={applicant.consent} onChange={(e) => setField('consent', e.target.checked)} className="h-4 w-4 rounded border-slate-300 text-axis focus:ring-axis" />
+            I consent to the credit and background check.
+          </label>
+        </Field>
+      </div>
+
+      <div className="grid gap-5 sm:grid-cols-2">
+        <Field label={`${prefix} Signature`} required>
+          <input required className={inputCls} placeholder="Type your full legal name" value={applicant.signature} onChange={(e) => setField('signature', e.target.value)} />
+        </Field>
+        <Field label={`${prefix} Date Signed`} required>
+          <input required type="date" className={inputCls} value={applicant.dateSigned} onChange={(e) => setField('dateSigned', e.target.value)} />
+        </Field>
+      </div>
+
+      <Field label={`${prefix} Supporting Notes`} hint="Use this for anything not captured in the standard Airtable fields.">
+        <textarea className={`${inputCls} min-h-[96px] resize-y`} value={applicant.notes} onChange={(e) => setField('notes', e.target.value)} />
+      </Field>
+    </>
+  )
 }
 
 export default function Apply() {
-  const [form, setForm] = useState({
-    applicantName: '',
-    applicantEmail: '',
-    applicantPhone: '',
-    drivingLicense: '',
-    ssn: '',
-    applicantDob: '',
+  const [application, setApplication] = useState({
     propertyName: '',
+    propertyAddress: '',
     roomNumber: '',
     desiredMoveInDate: '',
-    currentAddress: '',
-    employer: '',
-    jobTitle: '',
-    reference1: '',
-    reference2: '',
-    occupants: '',
-    pets: '',
-    vehicles: '',
-    evictionHistory: '',
-    criminalHistory: '',
-    signature: '',
-    dateSigned: todayIsoDate(),
+    leaseTerm: LEASE_TERMS[0],
+    leaseTermOther: '',
+    needsCoSigner: false,
   })
+  const [applicant, setApplicant] = useState(defaultApplicant())
+  const [coApplicant, setCoApplicant] = useState(defaultCoApplicant())
   const [submitting, setSubmitting] = useState(false)
   const [submitted, setSubmitted] = useState(false)
   const [error, setError] = useState('')
 
   const selectedProperty = useMemo(
-    () => PROPERTY_OPTIONS.find((property) => property.name === form.propertyName),
-    [form.propertyName],
+    () => PROPERTY_OPTIONS.find((property) => property.name === application.propertyName),
+    [application.propertyName],
   )
 
-  function set(key, value) {
-    setForm((prev) => {
+  function setApplicationField(key, value) {
+    setApplication((prev) => {
       const next = { ...prev, [key]: value }
-      if (key === 'propertyName') next.roomNumber = ''
+      if (key === 'propertyName') {
+        next.roomNumber = ''
+        next.propertyAddress = PROPERTY_OPTIONS.find((property) => property.name === value)?.address || ''
+      }
       return next
     })
   }
@@ -136,34 +498,83 @@ export default function Apply() {
     setSubmitting(true)
     setError('')
 
-    const fields = {
-      'Applicant Name': form.applicantName,
-      'Applicant Email': form.applicantEmail,
-      'Applicant Phone': form.applicantPhone,
-      'Driving License No.': form.drivingLicense,
-      'SSN No.': form.ssn || '',
-      'Applicant Date of Birth': form.applicantDob,
-      'Property Name': form.propertyName,
-      'Room Number': form.roomNumber,
-      'Desired Move-in Date': form.desiredMoveInDate,
-      'Current Address': form.currentAddress || '',
-      'Employer': form.employer || '',
-      'Job Title': form.jobTitle || '',
-      'Reference 1': form.reference1 || '',
-      'Reference 2': form.reference2 || '',
-      'Occupants': form.occupants || '',
-      'Pets': form.pets || '',
-      'Vehicles': form.vehicles || '',
-      'Eviction History': form.evictionHistory,
-      'Criminal History': form.criminalHistory,
-      'Signature': form.signature || '',
-      'Date Signed': form.dateSigned,
-      'Application Date': todayIsoDate(),
+    if (!applicant.consent) {
+      setError('The applicant must consent to the credit and background check before submitting.')
+      setSubmitting(false)
+      return
     }
-    if (form.propertyName) fields['Property Applied For'] = [form.propertyName]
+
+    if (application.needsCoSigner && !coApplicant.consent) {
+      setError('The co-signer / co-applicant must consent to the credit and background check before submitting.')
+      setSubmitting(false)
+      return
+    }
+
+    const applicationFields = {
+      'Applicant Full Name': applicant.fullName,
+      'Applicant Email': applicant.email,
+      'Applicant Phone Number': applicant.phone,
+      'Applicant Date of Birth': applicant.dateOfBirth,
+      'Applicant SSN No.': applicant.ssn || '',
+      'Applicant Driving License No.': applicant.license,
+      'Applicant Current Address': applicant.currentAddress,
+      'Applicant City': applicant.currentCity,
+      'Applicant State': applicant.currentState,
+      'Applicant ZIP': applicant.currentZip,
+      'Applicant Employer': applicant.employer || '',
+      'Applicant Employer Address': applicant.employerAddress || '',
+      'Applicant Supervisor Name': applicant.supervisorName || '',
+      'Applicant Supervisor Phone': applicant.supervisorPhone || '',
+      'Applicant Job Title': applicant.jobTitle || '',
+      'Applicant Monthly Income': toCurrencyNumber(applicant.monthlyIncome),
+      'Applicant Annual Income': toCurrencyNumber(applicant.annualIncome),
+      'Applicant Employment Start Date': applicant.employmentStartDate || null,
+      'Applicant Other Income': applicant.otherIncome || '',
+      'Applicant Bankruptcy History': applicant.bankruptcyHistory,
+      'Applicant Criminal History': applicant.criminalHistory,
+      'Applicant Consent for Credit and Background Check': applicant.consent,
+      'Applicant Signature': applicant.signature,
+      'Applicant Date Signed': applicant.dateSigned,
+      'Applicant Notes': buildApplicantNotes(application, applicant, application.needsCoSigner),
+    }
 
     try {
-      await submitToAirtable(fields)
+      const applicationRecord = await submitToAirtable(APPLICATIONS_TABLE, applicationFields)
+
+      if (application.needsCoSigner) {
+        const coApplicantFields = {
+          'Linked Application': [applicationRecord.id],
+          'Role': coApplicant.role,
+          'Full Name': coApplicant.fullName,
+          'Email': coApplicant.email,
+          'Phone Number': coApplicant.phone,
+          'Date of Birth': coApplicant.dateOfBirth,
+          'SSN No.': coApplicant.ssn || '',
+          'Driving License No.': coApplicant.license || '',
+          'Current Address': coApplicant.currentAddress || '',
+          'City': coApplicant.city || '',
+          'State': coApplicant.state || '',
+          'ZIP': coApplicant.zip || '',
+          'Employer': coApplicant.employer || '',
+          'Employer Address': coApplicant.employerAddress || '',
+          'Supervisor Name': coApplicant.supervisorName || '',
+          'Supervisor Phone': coApplicant.supervisorPhone || '',
+          'Job Title': coApplicant.jobTitle || '',
+          'Monthly Income': toCurrencyNumber(coApplicant.monthlyIncome),
+          'Annual Income': toCurrencyNumber(coApplicant.annualIncome),
+          'Employment Start Date': coApplicant.employmentStartDate || null,
+          'Other Income': coApplicant.otherIncome || '',
+          'Bankruptcy History': coApplicant.bankruptcyHistory,
+          'Criminal History': coApplicant.criminalHistory,
+          'Consent for Credit and Background Check': coApplicant.consent,
+          'Signature': coApplicant.signature,
+          'Date Signed': coApplicant.dateSigned,
+          'Notes': buildCoApplicantNotes(coApplicant),
+        }
+
+        await submitToAirtable(COAPPLICANTS_TABLE, coApplicantFields)
+      }
+
       setSubmitted(true)
     } catch (submissionError) {
       console.error('Airtable submission failed:', submissionError)
@@ -185,9 +596,8 @@ export default function Apply() {
           </div>
           <h1 className="text-3xl font-black text-slate-900">Application received</h1>
           <p className="mt-4 text-base leading-7 text-slate-500">
-            Thanks, {form.applicantName.split(' ')[0]}! Your full application was sent to Axis and we&apos;ll review it
-            as soon as possible. Questions? Call or text{' '}
-            <a href="tel:15103098345" className="font-semibold text-axis">(510) 309-8345</a>.
+            Thanks, {applicant.fullName.split(' ')[0]}! Your application was submitted to Axis. If you requested a co-signer
+            or co-applicant, that linked record was sent too.
           </p>
           <a href="/" className="mt-8 inline-block rounded-full bg-slate-900 px-6 py-3 text-sm font-semibold text-white hover:bg-slate-800">
             Back to home
@@ -201,274 +611,185 @@ export default function Apply() {
     <div className="min-h-screen bg-cream-50">
       <Seo
         title="Apply | Axis Seattle Housing"
-        description="Submit a full rental application for Axis Seattle Housing."
+        description="Submit a rental application for Axis Seattle Housing, with optional co-signer support."
         pathname="/apply"
       />
 
-      <div className="mx-auto max-w-4xl px-4 py-12 sm:px-6 sm:py-16">
+      <div className="mx-auto max-w-5xl px-4 py-12 sm:px-6 sm:py-16">
         <div className="mb-8">
           <div className="text-[11px] font-bold uppercase tracking-[0.2em] text-slate-400">Axis applications</div>
-          <h1 className="mt-2 text-3xl font-black tracking-tight text-slate-900 sm:text-4xl">Applications Form</h1>
+          <h1 className="mt-2 text-3xl font-black tracking-tight text-slate-900 sm:text-4xl">Residential Rental Application</h1>
           <p className="mt-2 text-sm leading-6 text-slate-500">
-            This page now mirrors the full Axis Airtable application form so the information submitted here lands in the
-            same application workflow without manual re-entry.
+            This application is now wired to your Airtable `Applications` and `Co-Applicants` tables, including optional
+            co-signer support.
           </p>
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-6">
-          <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-soft space-y-5">
-            <h2 className="text-2xl font-black text-slate-900">Application Summary</h2>
-
-            <Field label="Applicant Name" required>
-              <input
-                required
-                className={inputCls}
-                placeholder="Jane Smith"
-                value={form.applicantName}
-                onChange={(e) => set('applicantName', e.target.value)}
-              />
-            </Field>
-
+          <Section title="Property Information">
             <div className="grid gap-5 sm:grid-cols-2">
-              <Field label="Applicant Email" required>
-                <input
-                  required
-                  type="email"
-                  className={inputCls}
-                  placeholder="jane@email.com"
-                  value={form.applicantEmail}
-                  onChange={(e) => set('applicantEmail', e.target.value)}
-                />
-              </Field>
-              <Field label="Applicant Phone" required>
-                <input
-                  required
-                  type="tel"
-                  className={inputCls}
-                  placeholder="(206) 555-0100"
-                  value={form.applicantPhone}
-                  onChange={(e) => set('applicantPhone', e.target.value)}
-                />
-              </Field>
-            </div>
-
-            <div className="grid gap-5 sm:grid-cols-2">
-              <Field label="Driving License No." required>
-                <input
-                  required
-                  className={inputCls}
-                  placeholder="D1234567"
-                  value={form.drivingLicense}
-                  onChange={(e) => set('drivingLicense', e.target.value)}
-                />
-              </Field>
-              <Field label="SSN No.">
-                <input
-                  className={inputCls}
-                  placeholder="Last 4 or full SSN"
-                  value={form.ssn}
-                  onChange={(e) => set('ssn', e.target.value)}
-                />
-              </Field>
-            </div>
-
-            <div className="grid gap-5 sm:grid-cols-3">
-              <Field label="Applicant DOB" required>
-                <input
-                  required
-                  type="date"
-                  className={inputCls}
-                  value={form.applicantDob}
-                  onChange={(e) => set('applicantDob', e.target.value)}
-                />
-              </Field>
               <Field label="Property Name" required>
-                <select
-                  required
-                  className={selectCls}
-                  value={form.propertyName}
-                  onChange={(e) => set('propertyName', e.target.value)}
-                >
+                <select required className={selectCls} value={application.propertyName} onChange={(e) => setApplicationField('propertyName', e.target.value)}>
                   <option value="" disabled>Select a property…</option>
                   {PROPERTY_OPTIONS.map((property) => (
                     <option key={property.id} value={property.name}>{property.name}</option>
                   ))}
                 </select>
               </Field>
-              <Field label="Room Number" required>
-                <select
-                  required
-                  className={selectCls}
-                  value={form.roomNumber}
-                  onChange={(e) => set('roomNumber', e.target.value)}
-                  disabled={!selectedProperty}
-                >
-                  <option value="" disabled>{selectedProperty ? 'Select a room…' : 'Choose a property first'}</option>
+              <Field label="Property Address Applying For">
+                <input className={inputCls} value={application.propertyAddress} onChange={(e) => setApplicationField('propertyAddress', e.target.value)} />
+              </Field>
+            </div>
+
+            <div className="grid gap-5 sm:grid-cols-3">
+              <Field label="Room Number">
+                <select className={selectCls} value={application.roomNumber} onChange={(e) => setApplicationField('roomNumber', e.target.value)} disabled={!selectedProperty}>
+                  <option value="">{selectedProperty ? 'Select a room…' : 'Choose a property first'}</option>
                   {(selectedProperty?.rooms || []).map((room) => (
                     <option key={room} value={room}>{room}</option>
                   ))}
                 </select>
               </Field>
+              <Field label="Desired Move-In Date" required>
+                <input required type="date" className={inputCls} value={application.desiredMoveInDate} onChange={(e) => setApplicationField('desiredMoveInDate', e.target.value)} />
+              </Field>
+              <Field label="Lease Term" required>
+                <select required className={selectCls} value={application.leaseTerm} onChange={(e) => setApplicationField('leaseTerm', e.target.value)}>
+                  {LEASE_TERMS.map((term) => (
+                    <option key={term} value={term}>{term}</option>
+                  ))}
+                </select>
+              </Field>
             </div>
 
-            <Field label="Desired Move-in Date" required>
-              <input
-                required
-                type="date"
-                className={inputCls}
-                value={form.desiredMoveInDate}
-                onChange={(e) => set('desiredMoveInDate', e.target.value)}
-              />
+            {application.leaseTerm === 'Other / Custom dates' && (
+              <Field label="Custom Lease Term">
+                <input className={inputCls} value={application.leaseTermOther} onChange={(e) => setApplicationField('leaseTermOther', e.target.value)} placeholder="Describe the dates requested" />
+              </Field>
+            )}
+
+            <Field label="Do you need a co-signer?" required>
+              <div className="flex flex-wrap gap-3">
+                <button
+                  type="button"
+                  onClick={() => setApplicationField('needsCoSigner', false)}
+                  className={`rounded-full px-4 py-2 text-sm font-semibold transition ${!application.needsCoSigner ? 'bg-slate-900 text-white' : 'border border-slate-200 bg-white text-slate-700'}`}
+                >
+                  No
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setApplicationField('needsCoSigner', true)}
+                  className={`rounded-full px-4 py-2 text-sm font-semibold transition ${application.needsCoSigner ? 'bg-slate-900 text-white' : 'border border-slate-200 bg-white text-slate-700'}`}
+                >
+                  Yes
+                </button>
+              </div>
             </Field>
-          </div>
+          </Section>
 
-          <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-soft space-y-5">
-            <h2 className="text-2xl font-black text-slate-900">Housing History</h2>
-            <Field label="Current Address">
-              <input
-                className={inputCls}
-                placeholder="123 Main St, Seattle, WA"
-                value={form.currentAddress}
-                onChange={(e) => set('currentAddress', e.target.value)}
-              />
-            </Field>
-          </div>
+          <Section title="Applicant Information">
+            <ApplicantFields applicant={applicant} setApplicant={setApplicant} />
+          </Section>
 
-          <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-soft space-y-5">
-            <h2 className="text-2xl font-black text-slate-900">Employment and Income</h2>
+          <Section title="Previous Address">
             <div className="grid gap-5 sm:grid-cols-2">
-              <Field label="Employer">
-                <input
-                  className={inputCls}
-                  placeholder="Company or school"
-                  value={form.employer}
-                  onChange={(e) => set('employer', e.target.value)}
-                />
+              <Field label="Previous Address">
+                <input className={inputCls} value={applicant.previousAddress} onChange={(e) => setApplicant((prev) => ({ ...prev, previousAddress: e.target.value }))} />
               </Field>
-              <Field label="Job Title">
-                <input
-                  className={inputCls}
-                  placeholder="Student, software engineer, etc."
-                  value={form.jobTitle}
-                  onChange={(e) => set('jobTitle', e.target.value)}
-                />
+              <Field label="Previous City">
+                <input className={inputCls} value={applicant.previousCity} onChange={(e) => setApplicant((prev) => ({ ...prev, previousCity: e.target.value }))} />
               </Field>
             </div>
-          </div>
 
-          <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-soft space-y-5">
-            <h2 className="text-2xl font-black text-slate-900">References</h2>
-            <div className="grid gap-5 sm:grid-cols-2">
-              <Field label="Reference 1">
-                <input
-                  className={inputCls}
-                  placeholder="Name, relationship, phone/email"
-                  value={form.reference1}
-                  onChange={(e) => set('reference1', e.target.value)}
-                />
-              </Field>
-              <Field label="Reference 2">
-                <input
-                  className={inputCls}
-                  placeholder="Name, relationship, phone/email"
-                  value={form.reference2}
-                  onChange={(e) => set('reference2', e.target.value)}
-                />
-              </Field>
-            </div>
-          </div>
-
-          <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-soft space-y-5">
-            <h2 className="text-2xl font-black text-slate-900">Additional Details</h2>
             <div className="grid gap-5 sm:grid-cols-3">
-              <Field label="Occupants">
-                <input
-                  className={inputCls}
-                  placeholder="How many people will live in the room"
-                  value={form.occupants}
-                  onChange={(e) => set('occupants', e.target.value)}
-                />
+              <Field label="Previous State">
+                <input className={inputCls} value={applicant.previousState} onChange={(e) => setApplicant((prev) => ({ ...prev, previousState: e.target.value }))} />
               </Field>
-              <Field label="Pets">
-                <input
-                  className={inputCls}
-                  placeholder="Type and count, or None"
-                  value={form.pets}
-                  onChange={(e) => set('pets', e.target.value)}
-                />
+              <Field label="Previous ZIP">
+                <input className={inputCls} value={applicant.previousZip} onChange={(e) => setApplicant((prev) => ({ ...prev, previousZip: e.target.value }))} />
               </Field>
-              <Field label="Vehicles">
-                <input
-                  className={inputCls}
-                  placeholder="Make/model, or None"
-                  value={form.vehicles}
-                  onChange={(e) => set('vehicles', e.target.value)}
-                />
+              <Field label="Previous Landlord / Property Manager Name">
+                <input className={inputCls} value={applicant.previousLandlordName} onChange={(e) => setApplicant((prev) => ({ ...prev, previousLandlordName: e.target.value }))} />
               </Field>
             </div>
-          </div>
 
-          <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-soft space-y-5">
-            <h2 className="text-2xl font-black text-slate-900">Screening Questions</h2>
-            <div className="grid gap-5 sm:grid-cols-2">
-              <Field label="Eviction History" required>
-                <select
-                  required
-                  className={selectCls}
-                  value={form.evictionHistory}
-                  onChange={(e) => set('evictionHistory', e.target.value)}
-                >
-                  <option value="" disabled>Select…</option>
-                  {HISTORY_OPTIONS.map((option) => (
-                    <option key={option} value={option}>{option}</option>
+            <div className="grid gap-5 sm:grid-cols-3">
+              <Field label="Previous Landlord Phone #">
+                <input type="tel" className={inputCls} value={applicant.previousLandlordPhone} onChange={(e) => setApplicant((prev) => ({ ...prev, previousLandlordPhone: e.target.value }))} />
+              </Field>
+              <Field label="Previous Move-In Date">
+                <input type="date" className={inputCls} value={applicant.previousMoveInDate} onChange={(e) => setApplicant((prev) => ({ ...prev, previousMoveInDate: e.target.value }))} />
+              </Field>
+              <Field label="Previous Move-Out Date">
+                <input type="date" className={inputCls} value={applicant.previousMoveOutDate} onChange={(e) => setApplicant((prev) => ({ ...prev, previousMoveOutDate: e.target.value }))} />
+              </Field>
+            </div>
+
+            <Field label="Previous Reason for Leaving">
+              <input className={inputCls} value={applicant.previousReasonForLeaving} onChange={(e) => setApplicant((prev) => ({ ...prev, previousReasonForLeaving: e.target.value }))} />
+            </Field>
+          </Section>
+
+          <Section title="References">
+            <div className="grid gap-5 sm:grid-cols-3">
+              <Field label="Reference 1 Name">
+                <input className={inputCls} value={applicant.reference1Name} onChange={(e) => setApplicant((prev) => ({ ...prev, reference1Name: e.target.value }))} />
+              </Field>
+              <Field label="Reference 1 Relationship">
+                <input className={inputCls} value={applicant.reference1Relationship} onChange={(e) => setApplicant((prev) => ({ ...prev, reference1Relationship: e.target.value }))} />
+              </Field>
+              <Field label="Reference 1 Phone #">
+                <input type="tel" className={inputCls} value={applicant.reference1Phone} onChange={(e) => setApplicant((prev) => ({ ...prev, reference1Phone: e.target.value }))} />
+              </Field>
+            </div>
+
+            <div className="grid gap-5 sm:grid-cols-3">
+              <Field label="Reference 2 Name">
+                <input className={inputCls} value={applicant.reference2Name} onChange={(e) => setApplicant((prev) => ({ ...prev, reference2Name: e.target.value }))} />
+              </Field>
+              <Field label="Reference 2 Relationship">
+                <input className={inputCls} value={applicant.reference2Relationship} onChange={(e) => setApplicant((prev) => ({ ...prev, reference2Relationship: e.target.value }))} />
+              </Field>
+              <Field label="Reference 2 Phone #">
+                <input type="tel" className={inputCls} value={applicant.reference2Phone} onChange={(e) => setApplicant((prev) => ({ ...prev, reference2Phone: e.target.value }))} />
+              </Field>
+            </div>
+          </Section>
+
+          <Section title="Additional Information">
+            <div className="grid gap-5 sm:grid-cols-3">
+              <Field label="Number of Occupants">
+                <input className={inputCls} value={applicant.occupants} onChange={(e) => setApplicant((prev) => ({ ...prev, occupants: e.target.value }))} />
+              </Field>
+              <Field label="Pets (type / breed / weight)">
+                <input className={inputCls} value={applicant.pets} onChange={(e) => setApplicant((prev) => ({ ...prev, pets: e.target.value }))} />
+              </Field>
+              <Field label="Vehicles (make / model / license plate)">
+                <input className={inputCls} value={applicant.vehicles} onChange={(e) => setApplicant((prev) => ({ ...prev, vehicles: e.target.value }))} />
+              </Field>
+            </div>
+          </Section>
+
+          {application.needsCoSigner && (
+            <Section title="Co-Signer / Co-Applicant">
+              <Field label="Role" required>
+                <select required className={selectCls} value={coApplicant.role} onChange={(e) => setCoApplicant((prev) => ({ ...prev, role: e.target.value }))}>
+                  {COAPPLICANT_ROLE_OPTIONS.map((role) => (
+                    <option key={role} value={role}>{role}</option>
                   ))}
                 </select>
               </Field>
-              <Field label="Criminal History" required>
-                <select
-                  required
-                  className={selectCls}
-                  value={form.criminalHistory}
-                  onChange={(e) => set('criminalHistory', e.target.value)}
-                >
-                  <option value="" disabled>Select…</option>
-                  {HISTORY_OPTIONS.map((option) => (
-                    <option key={option} value={option}>{option}</option>
-                  ))}
-                </select>
-              </Field>
-            </div>
-          </div>
-
-          <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-soft space-y-5">
-            <h2 className="text-2xl font-black text-slate-900">Signature</h2>
-            <div className="grid gap-5 sm:grid-cols-2">
-              <Field label="Signature" hint="Type your name or initials to sign this application.">
-                <input
-                  className={inputCls}
-                  placeholder="name initials. ex: John Doe JD"
-                  value={form.signature}
-                  onChange={(e) => set('signature', e.target.value)}
-                />
-              </Field>
-              <Field label="Date Signed">
-                <input
-                  type="date"
-                  className={inputCls}
-                  value={form.dateSigned}
-                  onChange={(e) => set('dateSigned', e.target.value)}
-                />
-              </Field>
-            </div>
-          </div>
+              <ApplicantFields applicant={coApplicant} setApplicant={setCoApplicant} prefix="Co-Applicant" isCoApplicant />
+            </Section>
+          )}
 
           {error && (
             <div className="space-y-3 rounded-xl border border-red-200 bg-red-50 px-4 py-4 text-sm text-red-700">
               <p className="font-semibold">Submission failed — Airtable didn&apos;t accept the application.</p>
               <p className="break-all font-mono text-xs text-red-600">{error}</p>
-              <p className="text-xs text-red-600">As a backup, you can send the same application data by email instead:</p>
               <a
-                href={buildMailtoFallback(form)}
+                href={buildMailtoFallback(application, applicant, application.needsCoSigner, coApplicant)}
                 className="inline-block rounded-lg bg-red-700 px-4 py-2 text-xs font-semibold text-white hover:bg-red-800"
               >
                 Send via email instead
@@ -481,13 +802,8 @@ export default function Apply() {
             disabled={submitting}
             className="w-full rounded-full bg-slate-900 py-4 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
           >
-            {submitting ? 'Submitting…' : 'Submit'}
+            {submitting ? 'Submitting…' : 'Submit application'}
           </button>
-
-          <p className="text-center text-xs text-slate-400">
-            Questions? Call or text <a href="tel:15103098345" className="text-axis">510-309-8345</a> or{' '}
-            <a href="mailto:info@axis-seattle-housing.com" className="text-axis">email us directly</a>.
-          </p>
         </form>
       </div>
     </div>
