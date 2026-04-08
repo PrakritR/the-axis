@@ -543,6 +543,27 @@ export default function Apply() {
 
           {applicationType === 'signer' && (
             <>
+              <Section title="Co-Signer">
+                <p className="text-sm leading-6 text-slate-500">Will someone be co-signing this application with you?</p>
+                <div className="flex gap-3">
+                  {['Yes', 'No'].map((opt) => (
+                    <button
+                      key={opt}
+                      type="button"
+                      onClick={() => updateSigner('hasCosigner', opt)}
+                      className={`rounded-full px-6 py-2.5 text-sm font-semibold transition ${signer.hasCosigner === opt ? 'bg-slate-900 text-white' : 'border border-slate-200 bg-white text-slate-700 hover:border-slate-400'}`}
+                    >
+                      {opt}
+                    </button>
+                  ))}
+                </div>
+                {signer.hasCosigner === 'Yes' && (
+                  <div className="rounded-xl border border-teal-200 bg-teal-50 px-4 py-3 text-sm text-teal-800">
+                    After you submit, you'll receive an <strong>Application ID</strong>. Share it with your co-signer — they'll need it to link their form to yours.
+                  </div>
+                )}
+              </Section>
+
               <Section title="Property Information">
                 <div className="grid gap-5 sm:grid-cols-2">
                   <Field label="Property Name" required>
@@ -791,27 +812,6 @@ export default function Apply() {
                     I consent to a credit and background check.
                   </label>
                 </Field>
-              </Section>
-
-              <Section title="Co-Signer">
-                <p className="text-sm leading-6 text-slate-500">Will someone be co-signing this application with you?</p>
-                <div className="flex gap-3">
-                  {['Yes', 'No'].map((opt) => (
-                    <button
-                      key={opt}
-                      type="button"
-                      onClick={() => updateSigner('hasCosigner', opt)}
-                      className={`rounded-full px-6 py-2.5 text-sm font-semibold transition ${signer.hasCosigner === opt ? 'bg-slate-900 text-white' : 'border border-slate-200 bg-white text-slate-700 hover:border-slate-400'}`}
-                    >
-                      {opt}
-                    </button>
-                  ))}
-                </div>
-                {signer.hasCosigner === 'Yes' && (
-                  <div className="rounded-xl border border-teal-200 bg-teal-50 px-4 py-3 text-sm text-teal-800">
-                    After you submit, you'll receive an <strong>Application ID</strong>. Share it with your co-signer — they'll need it to link their form to yours.
-                  </div>
-                )}
               </Section>
 
               <Section title="Signature">
