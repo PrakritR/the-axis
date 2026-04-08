@@ -376,17 +376,42 @@ export default function Apply() {
           throw new Error('The signer must consent to the credit and background check before submitting.')
         }
 
+        const leaseTerm = signer.leaseTerm === 'Other / Custom dates' ? signer.leaseTermOther : signer.leaseTerm
         const fields = {
+          // Identity
           'Applicant Full Name': signer.fullName,
           'Applicant Email': signer.email,
           'Applicant Phone Number': signer.phone,
           'Applicant Date of Birth': signer.dateOfBirth,
           'Applicant SSN No.': signer.ssn || '',
           'Applicant Driving License No.': signer.license,
+          // Property
+          'Property Name': signer.propertyName,
+          'Property Address': signer.propertyAddress || '',
+          'Room Number': signer.roomNumber || '',
+          'Desired Move-In Date': signer.desiredMoveInDate || null,
+          'Lease Term': leaseTerm,
+          // Current address
           'Applicant Current Address': signer.currentAddress,
           'Applicant City': signer.currentCity,
           'Applicant State': signer.currentState,
           'Applicant ZIP': signer.currentZip,
+          'Current Landlord Name': signer.currentLandlordName || '',
+          'Current Landlord Phone': signer.currentLandlordPhone || '',
+          'Current Move-In Date': signer.currentMoveInDate || null,
+          'Current Move-Out Date': signer.currentMoveOutDate || null,
+          'Current Reason for Leaving': signer.currentReasonForLeaving || '',
+          // Previous address
+          'Previous Address': signer.previousAddress || '',
+          'Previous City': signer.previousCity || '',
+          'Previous State': signer.previousState || '',
+          'Previous ZIP': signer.previousZip || '',
+          'Previous Landlord Name': signer.previousLandlordName || '',
+          'Previous Landlord Phone': signer.previousLandlordPhone || '',
+          'Previous Move-In Date': signer.previousMoveInDate || null,
+          'Previous Move-Out Date': signer.previousMoveOutDate || null,
+          'Previous Reason for Leaving': signer.previousReasonForLeaving || '',
+          // Employment
           'Applicant Employer': signer.employer || '',
           'Applicant Employer Address': signer.employerAddress || '',
           'Applicant Supervisor Name': signer.supervisorName || '',
@@ -396,13 +421,27 @@ export default function Apply() {
           'Applicant Annual Income': toCurrencyNumber(signer.annualIncome),
           'Applicant Employment Start Date': signer.employmentStartDate || null,
           'Applicant Other Income': signer.otherIncome || '',
+          // References
+          'Reference 1 Name': signer.reference1Name || '',
+          'Reference 1 Relationship': signer.reference1Relationship || '',
+          'Reference 1 Phone': signer.reference1Phone || '',
+          'Reference 2 Name': signer.reference2Name || '',
+          'Reference 2 Relationship': signer.reference2Relationship || '',
+          'Reference 2 Phone': signer.reference2Phone || '',
+          // Additional info
+          'Number of Occupants': signer.occupants || '',
+          'Pets': signer.pets || '',
+          'Vehicles': signer.vehicles || '',
+          // Background
+          'Eviction History': signer.evictionHistory,
           'Applicant Bankruptcy History': signer.bankruptcyHistory,
           'Applicant Criminal History': signer.criminalHistory,
           'Has Co-Signer': signer.hasCosigner,
+          // Signature
           'Applicant Consent for Credit and Background Check': signer.consent,
           'Applicant Signature': signer.signature,
           'Applicant Date Signed': signer.dateSigned,
-          'Applicant Notes': buildSignerNotes(signer),
+          'Additional Notes': signer.notes || '',
         }
 
         const record = await submitToAirtable(APPLICATIONS_TABLE, fields)
