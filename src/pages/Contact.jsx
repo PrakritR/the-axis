@@ -261,11 +261,15 @@ function BookingScheduler() {
 }
 
 const AIRTABLE_BASE_ID = import.meta.env.VITE_AIRTABLE_APPLICATIONS_BASE_ID || 'appNBX2inqfJMyqYV'
-const AIRTABLE_INQUIRIES_TABLE = import.meta.env.VITE_AIRTABLE_APPLICATIONS_TABLE || 'Inquiries'
+const AIRTABLE_INQUIRIES_TABLE = import.meta.env.VITE_AIRTABLE_APPLICATIONS_TABLE || 'Applications'
 const AIRTABLE_TOKEN = import.meta.env.VITE_AIRTABLE_TOKEN
 
 const inputCls = 'w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 placeholder-slate-400 outline-none transition focus:border-axis focus:bg-white focus:ring-2 focus:ring-axis/20'
 const selectCls = `${inputCls} appearance-none cursor-pointer`
+
+function todayIsoDate() {
+  return new Date().toISOString().slice(0, 10)
+}
 
 function ContactMessageForm() {
   const [form, setForm] = useState({ name: '', email: '', phone: '', property: '', topic: '', message: '' })
@@ -297,18 +301,20 @@ function ContactMessageForm() {
       `Message: ${form.message}`,
     ].filter(Boolean).join('\n')
     const fields = {
-      'Name': form.name,
-      'Email': form.email,
-      'Phone Number': form.phone || '',
-      'Inquiry Type': 'Other',
-      'Message Summary': summary,
+      'Applicant Name': form.name,
+      'Applicant Email': form.email,
+      'Applicant Phone': form.phone || '',
+      'Application Date': todayIsoDate(),
+      'Notes': summary,
+      'Property Name': form.property || 'Any / not sure yet',
     }
+    if (form.property) fields['Property Applied For'] = [form.property]
     try {
       if (!AIRTABLE_TOKEN) throw new Error('VITE_AIRTABLE_TOKEN is not set.')
       const res = await fetch(`https://api.airtable.com/v0/${AIRTABLE_BASE_ID}/${encodeURIComponent(AIRTABLE_INQUIRIES_TABLE)}`, {
         method: 'POST',
         headers: { Authorization: `Bearer ${AIRTABLE_TOKEN}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ fields }),
+        body: JSON.stringify({ fields, typecast: true }),
       })
       if (!res.ok) {
         const body = await res.text()
