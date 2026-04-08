@@ -225,13 +225,8 @@ async function findApplicationRecord({ applicationId, signerName }) {
   return data.records[0]
 }
 
-function buildSigner Notes(form) {
+function buildSignerNotes(form) {
   return [
-    `Property Address Applying For: ${form.propertyAddress || 'Not provided'}`,
-    `Requested Room: ${form.roomNumber || 'Not specified'}`,
-    `Lease Term: ${form.leaseTerm}`,
-    `Lease Start Date: ${form.leaseStartDate || 'Not provided'}`,
-    `Lease End Date: ${form.leaseEndDate || 'Not provided'}`,
     `Current Landlord Name: ${form.currentLandlordName || 'Not provided'}`,
     `Current Landlord Phone: ${form.currentLandlordPhone || 'Not provided'}`,
     `Current Move-In Date: ${form.currentMoveInDate || 'Not provided'}`,
@@ -296,7 +291,7 @@ function buildMailtoFallback(type, signer, cosigner) {
         `Signer Consent: ${signer.consent ? 'Yes' : 'No'}`,
         `Signer Signature: ${signer.signature || 'Not provided'}`,
         `Signer Date Signed: ${signer.dateSigned}`,
-        `Signer Notes: ${buildSigner Notes(signer)}`,
+        `Signer Notes: ${buildSignerNotes(signer)}`,
       ]
     : [
         `Submission Type: Co-Signer`,
