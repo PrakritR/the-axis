@@ -73,7 +73,7 @@ const neighborhoodItems = [
 
 const faqs = [
   { q: 'What is included in the monthly rent?', a: 'All utilities (water, electricity, gas), high-speed WiFi, and bi-monthly professional cleaning of common areas are included. No surprise bills.' },
-  { q: 'Are rooms furnished?', a: 'Yes — rooms are furnished for a $25/month furnishing fee and include a bed frame and mattress, desk, chair, and closet. Common areas include a sofa, and the kitchen is furnished as well.' },
+  { q: 'Are rooms furnished?', a: 'Yes — all rooms come fully furnished and include a bed frame and mattress, desk, chair, and closet. Common areas include a sofa, and the kitchen is furnished as well.' },
   { q: 'What lease terms are available?', a: 'Lease structure depends on the house. Some homes follow fixed summer, academic-year, and full-year terms, while others offer more room-by-room flexibility based on current availability.' },
   { q: 'How far are the homes from UW?', a: 'Our properties are located 0.3–0.5 miles from the UW main campus — approximately a 5–10 minute walk.' },
   { q: 'How do I apply?', a: 'Click "Apply Now" and complete the online application. You\'ll need basic personal information, employment details, and references. We typically respond within 2 business days.' },
@@ -595,8 +595,14 @@ export default function Home() {
             {steps.map((s, i) => (
               <motion.div key={s.n} variants={up} className="relative flex flex-col gap-4 rounded-2xl border border-slate-200 bg-white p-6 sm:p-8 shadow-soft">
                 {i < steps.length - 1 && (
-                  <div className="absolute right-0 top-1/2 hidden -translate-y-1/2 translate-x-1/2 sm:block">
-                    <svg className="w-5 h-5 text-slate-300" viewBox="0 0 16 16" fill="none" aria-hidden><path d="M3 8h10M9 4l4 4-4 4" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/></svg>
+                  <div className="absolute right-0 top-1/2 hidden -translate-y-1/2 translate-x-1/2 sm:flex items-center justify-center z-10">
+                    <div className="flex items-center gap-0.5 rounded-full border border-slate-200 bg-white px-2.5 py-1.5 shadow-sm">
+                      <span className="h-1 w-1 rounded-full bg-slate-300" />
+                      <span className="h-px w-3 bg-slate-300" />
+                      <svg className="h-3 w-3 text-slate-400" viewBox="0 0 12 12" fill="none" aria-hidden>
+                        <path d="M2 6h8M7 2l4 4-4 4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                      </svg>
+                    </div>
                   </div>
                 )}
                 <span className={`text-4xl font-black ${s.color}`}>{s.n}</span>

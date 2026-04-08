@@ -951,14 +951,14 @@ export default function Apply() {
                 </div>
 
                 <div className="grid gap-5 sm:grid-cols-3">
-                  <Field label="Social Security #" >
-                    <input className={inputCls} value={signer.ssn} onChange={(e) => updateSigner('ssn', e.target.value)} />
+                  <Field label="Social Security #" hint="9 digits — ###-##-####">
+                    <input className={inputCls} placeholder="123-45-6789" value={signer.ssn} onChange={(e) => updateSigner('ssn', e.target.value)} />
                   </Field>
-                  <Field label="Driver's License / ID #" required>
-                    <input required className={inputCls} value={signer.license} onChange={(e) => updateSigner('license', e.target.value)} />
+                  <Field label="Driver's License / ID #" required hint="1 letter + 10 digits (e.g. W1234567890)">
+                    <input required className={inputCls} placeholder="W1234567890" value={signer.license} onChange={(e) => updateSigner('license', e.target.value)} />
                   </Field>
-                  <Field label="Phone Number" required>
-                    <input required type="tel" className={inputCls} value={signer.phone} onChange={(e) => updateSigner('phone', e.target.value)} />
+                  <Field label="Phone Number" required hint="10 digits">
+                    <input required type="tel" className={inputCls} placeholder="(206) 555-0100" value={signer.phone} onChange={(e) => updateSigner('phone', e.target.value)} />
                   </Field>
                 </div>
 
@@ -1187,20 +1187,20 @@ export default function Apply() {
                 </div>
 
                 <div className="grid gap-5 sm:grid-cols-3">
-                  <Field label="Phone Number" required>
-                    <input required type="tel" className={inputCls} value={cosigner.phone} onChange={(e) => updateCosigner('phone', e.target.value)} />
+                  <Field label="Phone Number" required hint="10 digits">
+                    <input required type="tel" className={inputCls} placeholder="(206) 555-0100" value={cosigner.phone} onChange={(e) => updateCosigner('phone', e.target.value)} />
                   </Field>
                   <Field label="Date of Birth" required>
                     <input required type="date" className={inputCls} value={cosigner.dateOfBirth} onChange={(e) => updateCosigner('dateOfBirth', e.target.value)} />
                   </Field>
-                  <Field label="Driver's License / ID #" required>
-                    <input required className={inputCls} value={cosigner.license} onChange={(e) => updateCosigner('license', e.target.value)} />
+                  <Field label="Driver's License / ID #" required hint="1 letter + 10 digits (e.g. W1234567890)">
+                    <input required className={inputCls} placeholder="W1234567890" value={cosigner.license} onChange={(e) => updateCosigner('license', e.target.value)} />
                   </Field>
                 </div>
 
                 <div className="grid gap-5 sm:grid-cols-2">
-                  <Field label="Social Security #">
-                    <input className={inputCls} value={cosigner.ssn} onChange={(e) => updateCosigner('ssn', e.target.value)} />
+                  <Field label="Social Security #" hint="9 digits — ###-##-####">
+                    <input className={inputCls} placeholder="123-45-6789" value={cosigner.ssn} onChange={(e) => updateCosigner('ssn', e.target.value)} />
                   </Field>
                   <Field label="Current Address" required>
                     <input required className={inputCls} value={cosigner.currentAddress} onChange={(e) => updateCosigner('currentAddress', e.target.value)} />
