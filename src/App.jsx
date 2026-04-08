@@ -76,6 +76,7 @@ function PageFallback() {
 export default function App(){
   const location = useLocation()
   const showMobileDock = ['/', '/apply', '/contact', '/resident'].includes(location.pathname)
+  const showTourPopup = location.pathname !== '/apply'
   return (
     <div className="app-shell min-h-screen min-h-svh flex flex-col">
       <ScrollToTop />
@@ -106,7 +107,7 @@ export default function App(){
       </main>
       <Footer />
       <Chatbot />
-      <TourPopup />
+      {showTourPopup && <TourPopup />}
     </div>
   )
 }

@@ -522,7 +522,9 @@ function Field({ label, required, hint, error, children }) {
         {label}
         {required && <span className="ml-1 text-axis">*</span>}
       </label>
-      {hint && <p className="mb-1.5 min-h-[1.25rem] text-xs leading-5 text-slate-400">{hint}</p>}
+      <p className={`mb-1.5 min-h-[3rem] text-xs leading-5 ${hint ? 'text-slate-400' : 'invisible'}`}>
+        {hint || 'placeholder'}
+      </p>
       <div className={error ? 'rounded-xl ring-2 ring-red-400' : ''}>
         {children}
       </div>
