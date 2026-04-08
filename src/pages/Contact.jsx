@@ -442,9 +442,6 @@ export default function Contact() {
           <h1 className="font-editorial mt-4 text-[2rem] leading-[1.1] text-slate-900 sm:text-[3rem] sm:leading-[0.96] lg:text-[4.3rem]">
             Contact leasing directly.
           </h1>
-          <p className="mt-6 max-w-2xl text-lg leading-8 text-slate-600">
-            Ask about availability, schedule a tour, or get help choosing a property.
-          </p>
         </section>
 
         <div className="mt-10 grid items-stretch gap-8 lg:grid-cols-[0.82fr_1.18fr]">
