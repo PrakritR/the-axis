@@ -450,10 +450,10 @@ export default function Contact() {
           </div>
         </section>
 
-        <div className="mt-10 grid gap-8 lg:grid-cols-[0.82fr_1.18fr]">
+        <div className="mt-10 grid items-stretch gap-8 lg:grid-cols-[0.82fr_1.18fr]">
           {/* Left sidebar */}
-          <div className="space-y-5">
-            <div className="rounded-[24px] border border-slate-200 bg-stone-50 p-6">
+          <div className="flex flex-col rounded-[28px] border border-slate-200 bg-stone-50 overflow-hidden">
+            <div className="flex-1 p-6">
               <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-500">Best uses</div>
               <h2 className="mt-2 text-2xl font-black tracking-tight text-slate-900">What to send here</h2>
               <div className="mt-5 space-y-3">
@@ -466,7 +466,7 @@ export default function Contact() {
               </div>
             </div>
 
-            <div className="rounded-[24px] border border-slate-200 bg-slate-900 p-6 text-white">
+            <div className="bg-slate-900 p-6 text-white">
               <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-teal-200">Quick contact</div>
               <div className="mt-3 text-2xl font-black">Prefer a faster route?</div>
               <p className="mt-3 text-sm leading-7 text-slate-300">Know which room you want? Call or text.</p>
