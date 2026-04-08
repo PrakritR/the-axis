@@ -173,8 +173,6 @@ function isAvailableForRange(available, startDate, endDate) {
   return false
 }
 
-// Kept for reference but no longer used in the finder UI
-
 function buildFinderOptions() {
   const options = []
   for (const property of properties) {

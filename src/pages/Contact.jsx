@@ -1,4 +1,6 @@
-import { useEffect, useState, useRef, useCallback } from 'react'
+import { useEffect, useState, useRef } from 'react'
+import { Seo } from '../lib/seo'
+import { properties } from '../data/properties'
 
 function formatPhone(raw) {
   const digits = raw.replace(/\D/g, '').slice(0, 10)
@@ -6,8 +8,6 @@ function formatPhone(raw) {
   if (digits.length < 7) return `(${digits.slice(0, 3)}) ${digits.slice(3)}`
   return `(${digits.slice(0, 3)}) ${digits.slice(3, 6)}-${digits.slice(6)}`
 }
-import { Seo } from '../lib/seo'
-import { properties } from '../data/properties'
 
 const CONTACT_PHONE_DISPLAY = '(510) 309-8345'
 const CONTACT_PHONE_RAW = '15103098345'
@@ -16,18 +16,6 @@ const CONTACT_EMAIL = 'info@axis-seattle-housing.com'
 // Calendly event URLs — create a second event type in Calendly for "Discussion"
 const CALENDLY_TOUR_URL = 'https://calendly.com/ramachandranprakrit/30min'
 const CALENDLY_MEETING_URL = 'https://calendly.com/ramachandranprakrit/30min' // replace with your "discussion" event URL
-
-const CONTACT_TOPICS = [
-  'Schedule a tour',
-  'Current room availability',
-  'Lease length and pricing',
-  'Which home is the best fit',
-]
-const CONTACT_PROMISES = [
-  ['Direct reply', 'Direct to leasing, not a general inbox.'],
-  ['Fast routing', 'All inquiries routed to the right person.'],
-  ['Clear follow-up', 'Room questions get room-specific answers.'],
-]
 
 const PROPERTIES = [
   { id: '4709a', name: '4709A 8th Ave', address: '4709A 8th Ave NE, Seattle, WA', rooms: ['Room 1','Room 2','Room 3','Room 4','Room 5','Room 6','Room 7','Room 8','Room 9','Room 10'] },
@@ -285,10 +273,6 @@ const CONTACT_INQUIRY_TYPES = [
   'Application follow-up',
   'Other',
 ]
-
-function todayIsoDate() {
-  return new Date().toISOString().slice(0, 10)
-}
 
 function ContactMessageForm() {
   const [form, setForm] = useState({ name: '', email: '', phone: '', property: '', topic: '', message: '' })
