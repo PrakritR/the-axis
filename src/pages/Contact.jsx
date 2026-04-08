@@ -435,45 +435,19 @@ export default function Contact() {
         pathname="/contact"
       />
       <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 sm:py-12">
-        <section className="grid gap-8 border-b border-slate-200 pb-10 lg:grid-cols-[minmax(0,1.15fr)_320px] lg:pb-14">
-          <div className="max-w-4xl">
-            <div className="text-[11px] font-bold uppercase tracking-[0.22em] text-slate-500">Contact Axis Seattle</div>
-            <h1 className="font-editorial mt-4 text-[2rem] leading-[1.1] text-slate-900 sm:text-[3rem] sm:leading-[0.96] lg:text-[4.3rem]">
-              Contact leasing directly.
-            </h1>
-            <p className="mt-6 max-w-2xl text-lg leading-8 text-slate-600">
-              Ask about availability, schedule a tour, or get help choosing a property.
-            </p>
-            <div className="mt-8 flex flex-wrap gap-3">
-              <a href={`tel:${CONTACT_PHONE_RAW}`} className="rounded-full bg-slate-900 px-6 py-3 text-sm font-semibold text-white hover:bg-slate-800">Call now</a>
-              <a href={`sms:${CONTACT_PHONE_RAW}`} className="rounded-full border border-slate-300 px-6 py-3 text-sm font-semibold text-slate-700 hover:border-slate-500">Text now</a>
-              <a href={`mailto:${CONTACT_EMAIL}`} className="rounded-full border border-slate-300 px-6 py-3 text-sm font-semibold text-slate-700 hover:border-slate-500">Email direct</a>
-            </div>
-            <div className="mt-10 grid gap-4 border-t border-slate-200 pt-6 sm:grid-cols-4">
-              {CONTACT_TOPICS.map((topic) => (
-                <div key={topic}>
-                  <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">Common request</div>
-                  <div className="mt-2 text-base font-semibold text-slate-900">{topic}</div>
-                </div>
-              ))}
-            </div>
+        <section className="border-b border-slate-200 pb-10 lg:pb-14">
+          <div className="text-[11px] font-bold uppercase tracking-[0.22em] text-slate-500">Contact Axis Seattle</div>
+          <h1 className="font-editorial mt-4 text-[2rem] leading-[1.1] text-slate-900 sm:text-[3rem] sm:leading-[0.96] lg:text-[4.3rem]">
+            Contact leasing directly.
+          </h1>
+          <p className="mt-6 max-w-2xl text-lg leading-8 text-slate-600">
+            Ask about availability, schedule a tour, or get help choosing a property.
+          </p>
+          <div className="mt-8 flex flex-wrap gap-3">
+            <a href={`tel:${CONTACT_PHONE_RAW}`} className="rounded-full bg-slate-900 px-6 py-3 text-sm font-semibold text-white hover:bg-slate-800">Call now</a>
+            <a href={`sms:${CONTACT_PHONE_RAW}`} className="rounded-full border border-slate-300 px-6 py-3 text-sm font-semibold text-slate-700 hover:border-slate-500">Text now</a>
+            <a href={`mailto:${CONTACT_EMAIL}`} className="rounded-full border border-slate-300 px-6 py-3 text-sm font-semibold text-slate-700 hover:border-slate-500">Email direct</a>
           </div>
-
-          <aside className="flex flex-col justify-between border-t border-slate-200 pt-6 lg:border-l lg:border-t-0 lg:pl-8 lg:pt-1">
-            <div>
-              <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">Reach us directly</div>
-              <a href={`tel:${CONTACT_PHONE_RAW}`} className="mt-3 block text-2xl font-black text-slate-900 hover:text-axis">{CONTACT_PHONE_DISPLAY}</a>
-              <a href={`mailto:${CONTACT_EMAIL}`} className="mt-2 block break-all text-sm leading-7 text-slate-600 hover:text-axis">{CONTACT_EMAIL}</a>
-            </div>
-            <div className="mt-8 space-y-4">
-              {CONTACT_PROMISES.map(([title, text]) => (
-                <div key={title} className="border-t border-slate-200 pt-4">
-                  <div className="text-sm font-semibold text-slate-900">{title}</div>
-                  <div className="mt-1 text-sm leading-6 text-slate-600">{text}</div>
-                </div>
-              ))}
-            </div>
-          </aside>
         </section>
 
         <div className="mt-10 grid gap-8 lg:grid-cols-[0.82fr_1.18fr]">
