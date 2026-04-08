@@ -1,6 +1,72 @@
-import { useState } from 'react'
+import { useState, useRef } from 'react'
 import emailjs from '@emailjs/browser'
 import { Seo } from '../lib/seo'
+
+function formatPhone(raw) {
+  const digits = raw.replace(/\D/g, '').slice(0, 10)
+  if (digits.length < 4) return digits
+  if (digits.length < 7) return `(${digits.slice(0, 3)}) ${digits.slice(3)}`
+  return `(${digits.slice(0, 3)}) ${digits.slice(3, 6)}-${digits.slice(6)}`
+}
+
+function AddressAutocomplete({ value, onChange, onSelect, placeholder, className, required }) {
+  const [suggestions, setSuggestions] = useState([])
+  const [open, setOpen] = useState(false)
+  const debounceRef = useRef(null)
+
+  function handleChange(e) {
+    const val = e.target.value
+    onChange(val)
+    if (debounceRef.current) clearTimeout(debounceRef.current)
+    if (val.length < 5) { setSuggestions([]); return }
+    debounceRef.current = setTimeout(async () => {
+      try {
+        const res = await fetch(
+          `https://nominatim.openstreetmap.org/search?format=json&addressdetails=1&limit=5&countrycodes=us&q=${encodeURIComponent(val)}`,
+          { headers: { 'Accept-Language': 'en-US', 'User-Agent': 'AxisSeattleHousing/1.0' } }
+        )
+        const data = await res.json()
+        setSuggestions(data)
+        setOpen(data.length > 0)
+      } catch { setSuggestions([]) }
+    }, 450)
+  }
+
+  function handleSelect(s) {
+    const addr = s.address || {}
+    const street = [addr.house_number, addr.road].filter(Boolean).join(' ')
+    const city = addr.city || addr.town || addr.village || addr.hamlet || ''
+    const state = addr.state || ''
+    const zip = addr.postcode || ''
+    onChange(street)
+    onSelect?.({ city, state, zip, full: s.display_name })
+    setSuggestions([])
+    setOpen(false)
+  }
+
+  return (
+    <div className="relative">
+      <input type="text" value={value} onChange={handleChange} required={required}
+        onFocus={() => suggestions.length > 0 && setOpen(true)}
+        onBlur={() => setTimeout(() => setOpen(false), 180)}
+        placeholder={placeholder} autoComplete="off" className={className} />
+      {open && suggestions.length > 0 && (
+        <div className="absolute left-0 right-0 top-full z-20 mt-1.5 max-h-64 overflow-y-auto rounded-xl border border-slate-200 bg-white shadow-xl">
+          {suggestions.map((s, i) => (
+            <button key={i} type="button" onMouseDown={() => handleSelect(s)}
+              className="flex w-full items-start gap-2.5 px-4 py-2.5 text-left text-sm hover:bg-slate-50">
+              <svg className="mt-0.5 h-4 w-4 shrink-0 text-axis" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M15 10.5a3 3 0 11-6 0 3 3 0 016 0z" />
+                <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 10.5c0 7.142-7.5 11.25-7.5 11.25S4.5 17.642 4.5 10.5a7.5 7.5 0 1115 0z" />
+              </svg>
+              <span className="text-slate-700 leading-snug">{s.display_name}</span>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
 
 const PUBLIC_KEY  = import.meta.env.VITE_EMAILJS_PUBLIC_KEY
 const SERVICE_ID  = import.meta.env.VITE_EMAILJS_SERVICE_ID
@@ -304,25 +370,28 @@ export default function JoinUs() {
                 </div>
 
                 <div>
-                  <label className="mb-2 block text-sm font-semibold text-slate-700">Phone</label>
+                  <label className="mb-2 block text-sm font-semibold text-slate-700">Phone <span className="text-red-500">*</span></label>
                   <input
+                    required
                     type="tel"
                     value={form.phone}
-                    onChange={(e) => update('phone', e.target.value)}
+                    onChange={(e) => update('phone', formatPhone(e.target.value))}
                     placeholder="(206) 555-0100"
                     className="w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm outline-none transition focus:border-axis focus:ring-2 focus:ring-axis/20"
                   />
                 </div>
 
-                <div>
+                <div className="sm:col-span-2">
                   <label className="mb-2 block text-sm font-semibold text-slate-700">
                     Property street address <span className="text-red-500">*</span>
                   </label>
-                  <input
+                  <AddressAutocomplete
                     required
-                    type="text"
                     value={form.propertyAddress}
-                    onChange={(e) => update('propertyAddress', e.target.value)}
+                    onChange={(val) => update('propertyAddress', val)}
+                    onSelect={({ city, state, zip }) => {
+                      update('city', [city, state, zip].filter(Boolean).join(', '))
+                    }}
                     placeholder="1234 Brooklyn Ave NE"
                     className="w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm outline-none transition focus:border-axis focus:ring-2 focus:ring-axis/20"
                   />

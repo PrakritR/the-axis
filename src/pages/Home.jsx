@@ -149,11 +149,31 @@ function isAvailableOn(available, date) {
   return false
 }
 
-const SEASON_STARTS = {
-  summer: new Date('2026-06-16'),
-  academic: new Date('2026-09-15'),
-  fullyear: new Date('2026-09-15'),
+// Check if a room is available throughout a date range
+function isAvailableForRange(available, startDate, endDate) {
+  if (!startDate) return true
+  const start = new Date(startDate)
+  if (!endDate) return isAvailableOn(available, start)
+  const end = new Date(endDate)
+
+  const a = (available || '').toLowerCase().trim()
+  if (!a || a === 'unavailable' || a === 'currently unavailable' || a === 'booked') return false
+  if (a === 'available now') return true
+
+  // Date ranges: the room's window must fully contain [start, end]
+  for (const m of a.matchAll(/(\w+ \d+,?\s*\d{4})\s*[-–]\s*(\w+ \d+,?\s*\d{4})/g)) {
+    const s = new Date(m[1]), e = new Date(m[2])
+    if (!isNaN(s) && !isNaN(e) && start >= s && end <= e) return true
+  }
+  // "after [date]": open-ended, so the whole range is fine as long as start >= d
+  for (const m of a.matchAll(/after (\w+ \d+,?\s*\d{4})/g)) {
+    const d = new Date(m[1])
+    if (!isNaN(d) && start >= d) return true
+  }
+  return false
 }
+
+// Kept for reference but no longer used in the finder UI
 
 function buildFinderOptions() {
   const options = []
@@ -193,42 +213,8 @@ const BATH_OPTIONS = [
   { value: '4', label: '4-share' },
 ]
 
-const SEASON_OPTIONS = [
-  { value: 'summer', label: 'Summer (Jun–Sep)' },
-  { value: 'academic', label: 'Fall – UW year' },
-  { value: 'fullyear', label: 'Full year' },
-]
-
-const SEASON_LEASE_LABEL = {
-  summer: '3-Month Summer lease',
-  academic: '9-Month Academic lease',
-  fullyear: '12-Month lease',
-}
 
 
-function PillSelect({ label, options, value, onChange }) {
-  return (
-    <div>
-      <div className="mb-3 text-[11px] font-bold uppercase tracking-[0.18em] text-slate-500">{label}</div>
-      <div className="flex flex-wrap gap-2">
-        {options.map((opt) => (
-          <button
-            key={opt.value}
-            type="button"
-            onClick={() => onChange(value === opt.value ? '' : opt.value)}
-            className={`rounded-full px-3.5 py-2 text-xs font-semibold transition ${
-              value === opt.value
-                ? 'bg-slate-900 text-white shadow-sm'
-                : 'border border-slate-200 bg-white text-slate-600 hover:border-slate-400 hover:text-slate-900'
-            }`}
-          >
-            {opt.label}
-          </button>
-        ))}
-      </div>
-    </div>
-  )
-}
 
 function MatchCard({ opt, seasonLabel }) {
   return (
@@ -269,16 +255,18 @@ function MatchCard({ opt, seasonLabel }) {
 function RoomFinder() {
   const [budgetInput, setBudgetInput] = useState('')
   const [bath, setBath] = useState('any')
-  const [season, setSeason] = useState('')
+  const [moveInDate, setMoveInDate] = useState('')
+  const [moveOutDate, setMoveOutDate] = useState('')
 
   const allOptions = useMemo(() => buildFinderOptions(), [])
 
   const budget = parseInt(budgetInput, 10) || 0
-  const hasFilters = budgetInput !== '' || bath !== 'any' || season !== ''
+  const hasFilters = budgetInput !== '' || bath !== 'any' || moveInDate !== ''
+
+  const todayStr = useMemo(() => new Date().toISOString().slice(0, 10), [])
 
   const results = useMemo(() => {
     if (!hasFilters) return []
-    const seasonDate = season ? SEASON_STARTS[season] : null
     return allOptions
       .filter((opt) => {
         if (budget > 0 && opt.price > budget) return false
@@ -286,16 +274,27 @@ function RoomFinder() {
         if (bath === '2' && opt.shareCount !== 2) return false
         if (bath === '3' && opt.shareCount !== 3) return false
         if (bath === '4' && opt.shareCount !== 4) return false
-        if (seasonDate) {
-          const hasRoomAvail = opt.availableRooms.some(r => isAvailableOn(r.available, seasonDate))
+        if (moveInDate) {
+          const hasRoomAvail = opt.availableRooms.some(r =>
+            isAvailableForRange(r.available, moveInDate, moveOutDate || null)
+          )
           if (!hasRoomAvail) return false
         }
         return true
       })
       .sort((a, b) => a.price - b.price)
-  }, [allOptions, budget, bath, season, hasFilters])
+  }, [allOptions, budget, bath, moveInDate, moveOutDate, hasFilters])
 
-  const seasonLabel = season !== '' ? SEASON_LEASE_LABEL[season] : null
+  // Build a human-readable availability label for matched cards
+  function getDateLabel() {
+    if (!moveInDate) return null
+    const inFmt = new Date(moveInDate + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+    if (!moveOutDate) return `Available from ${inFmt}`
+    const outFmt = new Date(moveOutDate + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+    return `${inFmt} – ${outFmt}`
+  }
+
+  const dateLabel = getDateLabel()
 
   return (
     <section className="border-t border-slate-100 bg-white px-4 py-14 sm:px-6 sm:py-20">
@@ -306,12 +305,48 @@ function RoomFinder() {
             Find the best fit for you
           </h2>
           <p className="mx-auto mt-3 max-w-md text-sm leading-6 text-slate-500">
-            Enter your budget or pick a season — we'll match you to available rooms.
+            Enter your dates and budget — we'll show rooms available for your stay.
           </p>
         </Reveal>
 
         <div className="rounded-3xl border border-slate-200 bg-slate-50 p-6 sm:p-8">
-          <div className="grid gap-6 sm:grid-cols-3">
+          <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
+            {/* Move-in date */}
+            <div>
+              <div className="mb-3 text-[11px] font-bold uppercase tracking-[0.18em] text-slate-500">Move-in date</div>
+              <input
+                type="date"
+                min={todayStr}
+                value={moveInDate}
+                onChange={e => {
+                  setMoveInDate(e.target.value)
+                  if (moveOutDate && e.target.value > moveOutDate) setMoveOutDate('')
+                }}
+                className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-medium text-slate-900 outline-none transition focus:border-axis focus:ring-2 focus:ring-axis/20"
+              />
+              {moveInDate && (
+                <button type="button" onClick={() => { setMoveInDate(''); setMoveOutDate('') }}
+                  className="mt-1 text-[11px] font-medium text-slate-400 underline-offset-2 hover:text-slate-600 hover:underline">Clear</button>
+              )}
+            </div>
+
+            {/* Move-out date */}
+            <div>
+              <div className="mb-3 text-[11px] font-bold uppercase tracking-[0.18em] text-slate-500">Move-out date <span className="font-normal text-slate-400 normal-case tracking-normal">(optional)</span></div>
+              <input
+                type="date"
+                min={moveInDate || todayStr}
+                value={moveOutDate}
+                disabled={!moveInDate}
+                onChange={e => setMoveOutDate(e.target.value)}
+                className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-medium text-slate-900 outline-none transition focus:border-axis focus:ring-2 focus:ring-axis/20 disabled:opacity-40 disabled:cursor-not-allowed"
+              />
+              {moveOutDate && (
+                <button type="button" onClick={() => setMoveOutDate('')}
+                  className="mt-1 text-[11px] font-medium text-slate-400 underline-offset-2 hover:text-slate-600 hover:underline">Clear</button>
+              )}
+            </div>
+
             {/* Budget slider */}
             <div>
               <div className="mb-3 flex items-center justify-between">
@@ -338,13 +373,8 @@ function RoomFinder() {
                 </div>
               </div>
               {budgetInput && (
-                <button
-                  type="button"
-                  onClick={() => setBudgetInput('')}
-                  className="mt-1 text-[11px] font-medium text-slate-400 underline-offset-2 hover:text-slate-600 hover:underline"
-                >
-                  Clear
-                </button>
+                <button type="button" onClick={() => setBudgetInput('')}
+                  className="mt-1 text-[11px] font-medium text-slate-400 underline-offset-2 hover:text-slate-600 hover:underline">Clear</button>
               )}
             </div>
 
@@ -366,7 +396,6 @@ function RoomFinder() {
                 </svg>
               </div>
             </div>
-            <PillSelect label="Move-in season" options={SEASON_OPTIONS} value={season} onChange={setSeason} />
           </div>
 
           <AnimatePresence mode="wait">
@@ -377,22 +406,23 @@ function RoomFinder() {
                   <circle cx="11" cy="11" r="8" stroke="currentColor" strokeWidth="1.5" />
                   <path d="M21 21l-4.35-4.35" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
                 </svg>
-                <p className="text-sm font-medium text-slate-400">Enter a budget or pick a season to see matching rooms</p>
+                <p className="text-sm font-medium text-slate-400">Enter a move-in date or budget to see matching rooms</p>
               </motion.div>
             ) : results.length === 0 ? (
               <motion.div key="no-results" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.2 }}
                 className="mt-8 border-t border-slate-200 pt-8 text-center">
                 <p className="text-sm font-medium text-slate-500">No rooms match those filters.</p>
-                <p className="mt-1 text-xs text-slate-400">Try raising your budget or adjusting the bathroom type.</p>
+                <p className="mt-1 text-xs text-slate-400">Try adjusting your dates, raising your budget, or changing the bathroom type.</p>
               </motion.div>
             ) : (
-              <motion.div key={`${budgetInput}-${bath}-${season}`} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}
+              <motion.div key={`${budgetInput}-${bath}-${moveInDate}-${moveOutDate}`} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}
                 transition={{ duration: 0.3, ease: [0.22, 1, 0.36, 1] }} className="mt-8 border-t border-slate-200 pt-6">
                 <div className="mb-4 text-sm text-slate-500">
                   <span className="font-bold text-slate-900">{results.length}</span> match{results.length !== 1 ? 'es' : ''} found
+                  {dateLabel && <span className="ml-2 text-slate-400">· {dateLabel}</span>}
                 </div>
                 <div className="grid gap-3 sm:grid-cols-2">
-                  {results.map((opt, i) => <MatchCard key={i} opt={opt} seasonLabel={seasonLabel} />)}
+                  {results.map((opt, i) => <MatchCard key={i} opt={opt} seasonLabel={dateLabel} />)}
                 </div>
               </motion.div>
             )}

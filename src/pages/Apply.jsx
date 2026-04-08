@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import { Seo } from '../lib/seo'
 import { properties } from '../data/properties'
 
@@ -193,6 +193,13 @@ function validateSignerForm(signer) {
   const phoneErr = validatePhone(signer.phone)
   if (phoneErr) add(`Phone Number: ${phoneErr}`)
 
+  // Co-signer choice required
+  if (!signer.hasCosigner) add('Co-Signer: Please indicate whether you have a co-signer (Yes or No)')
+
+  // At least one reference required
+  if (!signer.reference1Name?.trim()) add('References: At least one reference name is required')
+  if (!signer.reference1Phone?.trim()) add('References: At least one reference phone number is required')
+
   // Supervisor/landlord phones (optional)
   if (signer.currentLandlordPhone) { const e = validatePhone(signer.currentLandlordPhone); if (e) add(`Current Landlord Phone: ${e}`) }
   if (signer.previousLandlordPhone) { const e = validatePhone(signer.previousLandlordPhone); if (e) add(`Previous Landlord Phone: ${e}`) }
@@ -268,6 +275,92 @@ function validateCosignerForm(cosigner) {
   if (cosigner.annualIncome) { const e = validateIncome(cosigner.annualIncome); if (e) add(`Annual Income: ${e}`) }
 
   return errors
+}
+
+// ---------------------------------------------------------------------------
+// Auto-formatting helpers
+// ---------------------------------------------------------------------------
+function formatPhoneInput(raw) {
+  const digits = raw.replace(/\D/g, '').slice(0, 10)
+  if (digits.length < 4) return digits
+  if (digits.length < 7) return `(${digits.slice(0, 3)}) ${digits.slice(3)}`
+  return `(${digits.slice(0, 3)}) ${digits.slice(3, 6)}-${digits.slice(6)}`
+}
+
+function formatSSNInput(raw) {
+  const digits = raw.replace(/\D/g, '').slice(0, 9)
+  if (digits.length < 4) return digits
+  if (digits.length < 6) return `${digits.slice(0, 3)}-${digits.slice(3)}`
+  return `${digits.slice(0, 3)}-${digits.slice(3, 5)}-${digits.slice(5)}`
+}
+
+// ---------------------------------------------------------------------------
+// Address autocomplete component (Nominatim / OpenStreetMap)
+// ---------------------------------------------------------------------------
+function AddressAutocomplete({ value, onChange, onSelect, placeholder, className, required }) {
+  const [suggestions, setSuggestions] = useState([])
+  const [open, setOpen] = useState(false)
+  const debounceRef = useRef(null)
+
+  function handleChange(e) {
+    const val = e.target.value
+    onChange(val)
+    if (debounceRef.current) clearTimeout(debounceRef.current)
+    if (val.length < 5) { setSuggestions([]); return }
+    debounceRef.current = setTimeout(async () => {
+      try {
+        const res = await fetch(
+          `https://nominatim.openstreetmap.org/search?format=json&addressdetails=1&limit=5&countrycodes=us&q=${encodeURIComponent(val)}`,
+          { headers: { 'Accept-Language': 'en-US', 'User-Agent': 'AxisSeattleHousing/1.0' } }
+        )
+        const data = await res.json()
+        setSuggestions(data)
+        setOpen(data.length > 0)
+      } catch { setSuggestions([]) }
+    }, 450)
+  }
+
+  function handleSelect(s) {
+    const addr = s.address || {}
+    const street = [addr.house_number, addr.road].filter(Boolean).join(' ')
+    const city = addr.city || addr.town || addr.village || addr.hamlet || ''
+    const state = addr.state || ''
+    const zip = addr.postcode || ''
+    onChange(street)
+    onSelect?.({ city, state, zip })
+    setSuggestions([])
+    setOpen(false)
+  }
+
+  return (
+    <div className="relative">
+      <input
+        type="text"
+        value={value}
+        onChange={handleChange}
+        onFocus={() => suggestions.length > 0 && setOpen(true)}
+        onBlur={() => setTimeout(() => setOpen(false), 180)}
+        placeholder={placeholder}
+        required={required}
+        autoComplete="off"
+        className={className}
+      />
+      {open && suggestions.length > 0 && (
+        <div className="absolute left-0 right-0 top-full z-20 mt-1.5 max-h-64 overflow-y-auto rounded-xl border border-slate-200 bg-white shadow-xl">
+          {suggestions.map((s, i) => (
+            <button key={i} type="button" onMouseDown={() => handleSelect(s)}
+              className="flex w-full items-start gap-2.5 px-4 py-2.5 text-left text-sm hover:bg-slate-50">
+              <svg className="mt-0.5 h-4 w-4 shrink-0 text-axis" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M15 10.5a3 3 0 11-6 0 3 3 0 016 0z" />
+                <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 10.5c0 7.142-7.5 11.25-7.5 11.25S4.5 17.642 4.5 10.5a7.5 7.5 0 1115 0z" />
+              </svg>
+              <span className="text-slate-700 leading-snug">{s.display_name}</span>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  )
 }
 
 const inputCls = 'w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 placeholder-slate-400 outline-none transition focus:border-axis focus:ring-2 focus:ring-axis/20'
@@ -990,13 +1083,13 @@ export default function Apply() {
 
                 <div className="grid gap-5 sm:grid-cols-3">
                   <Field label="Social Security #" hint="9 digits — ###-##-####">
-                    <input className={inputCls} placeholder="123-45-6789" value={signer.ssn} onChange={(e) => updateSigner('ssn', e.target.value)} />
+                    <input className={inputCls} placeholder="123-45-6789" value={signer.ssn} onChange={(e) => updateSigner('ssn', formatSSNInput(e.target.value))} />
                   </Field>
                   <Field label="Driver's License / ID #" required hint="1 letter + 10 digits (e.g. W1234567890)">
                     <input required className={inputCls} placeholder="W1234567890" value={signer.license} onChange={(e) => updateSigner('license', e.target.value)} />
                   </Field>
                   <Field label="Phone Number" required hint="10 digits">
-                    <input required type="tel" className={inputCls} placeholder="(206) 555-0100" value={signer.phone} onChange={(e) => updateSigner('phone', e.target.value)} />
+                    <input required type="tel" className={inputCls} placeholder="(206) 555-0100" value={signer.phone} onChange={(e) => updateSigner('phone', formatPhoneInput(e.target.value))} />
                   </Field>
                 </div>
 
@@ -1006,16 +1099,29 @@ export default function Apply() {
               </Section>
 
               <Section title="Current Address">
-                <div className="grid gap-5 sm:grid-cols-2">
-                  <Field label="Address" required>
-                    <input required className={inputCls} value={signer.currentAddress} onChange={(e) => updateSigner('currentAddress', e.target.value)} />
+                <Field label="Street Address" required>
+                  <AddressAutocomplete
+                    required
+                    value={signer.currentAddress}
+                    onChange={(val) => updateSigner('currentAddress', val)}
+                    onSelect={({ city, state, zip }) => {
+                      if (city) updateSigner('currentCity', city)
+                      if (state) updateSigner('currentState', state)
+                      if (zip) updateSigner('currentZip', zip)
+                    }}
+                    placeholder="123 Main St"
+                    className={inputCls}
+                  />
+                </Field>
+                <div className="grid grid-cols-3 gap-3">
+                  <Field label="City" required>
+                    <input required className={inputCls} placeholder="Seattle" value={signer.currentCity} onChange={(e) => updateSigner('currentCity', e.target.value)} />
                   </Field>
-                  <Field label="City / State / ZIP" required>
-                    <div className="grid grid-cols-3 gap-3">
-                      <input required className={inputCls} placeholder="City" value={signer.currentCity} onChange={(e) => updateSigner('currentCity', e.target.value)} />
-                      <input required className={inputCls} placeholder="State" value={signer.currentState} onChange={(e) => updateSigner('currentState', e.target.value)} />
-                      <input required className={inputCls} placeholder="ZIP" value={signer.currentZip} onChange={(e) => updateSigner('currentZip', e.target.value)} />
-                    </div>
+                  <Field label="State" required>
+                    <input required className={inputCls} placeholder="WA" maxLength={2} value={signer.currentState} onChange={(e) => updateSigner('currentState', e.target.value.toUpperCase())} />
+                  </Field>
+                  <Field label="ZIP" required>
+                    <input required className={inputCls} placeholder="98105" value={signer.currentZip} onChange={(e) => updateSigner('currentZip', e.target.value)} />
                   </Field>
                 </div>
 
@@ -1024,7 +1130,7 @@ export default function Apply() {
                     <input className={inputCls} value={signer.currentLandlordName} onChange={(e) => updateSigner('currentLandlordName', e.target.value)} />
                   </Field>
                   <Field label="Landlord Phone #">
-                    <input type="tel" className={inputCls} value={signer.currentLandlordPhone} onChange={(e) => updateSigner('currentLandlordPhone', e.target.value)} />
+                    <input type="tel" className={inputCls} placeholder="(206) 555-0100" value={signer.currentLandlordPhone} onChange={(e) => updateSigner('currentLandlordPhone', formatPhoneInput(e.target.value))} />
                   </Field>
                 </div>
 
@@ -1042,16 +1148,28 @@ export default function Apply() {
               </Section>
 
               <Section title="Previous Address">
-                <div className="grid gap-5 sm:grid-cols-2">
-                  <Field label="Address">
-                    <input className={inputCls} value={signer.previousAddress} onChange={(e) => updateSigner('previousAddress', e.target.value)} />
+                <Field label="Street Address">
+                  <AddressAutocomplete
+                    value={signer.previousAddress}
+                    onChange={(val) => updateSigner('previousAddress', val)}
+                    onSelect={({ city, state, zip }) => {
+                      if (city) updateSigner('previousCity', city)
+                      if (state) updateSigner('previousState', state)
+                      if (zip) updateSigner('previousZip', zip)
+                    }}
+                    placeholder="123 Main St"
+                    className={inputCls}
+                  />
+                </Field>
+                <div className="grid grid-cols-3 gap-3">
+                  <Field label="City">
+                    <input className={inputCls} placeholder="Seattle" value={signer.previousCity} onChange={(e) => updateSigner('previousCity', e.target.value)} />
                   </Field>
-                  <Field label="City / State / ZIP">
-                    <div className="grid grid-cols-3 gap-3">
-                      <input className={inputCls} placeholder="City" value={signer.previousCity} onChange={(e) => updateSigner('previousCity', e.target.value)} />
-                      <input className={inputCls} placeholder="State" value={signer.previousState} onChange={(e) => updateSigner('previousState', e.target.value)} />
-                      <input className={inputCls} placeholder="ZIP" value={signer.previousZip} onChange={(e) => updateSigner('previousZip', e.target.value)} />
-                    </div>
+                  <Field label="State">
+                    <input className={inputCls} placeholder="WA" maxLength={2} value={signer.previousState} onChange={(e) => updateSigner('previousState', e.target.value.toUpperCase())} />
+                  </Field>
+                  <Field label="ZIP">
+                    <input className={inputCls} placeholder="98105" value={signer.previousZip} onChange={(e) => updateSigner('previousZip', e.target.value)} />
                   </Field>
                 </div>
 
@@ -1060,7 +1178,7 @@ export default function Apply() {
                     <input className={inputCls} value={signer.previousLandlordName} onChange={(e) => updateSigner('previousLandlordName', e.target.value)} />
                   </Field>
                   <Field label="Landlord Phone #">
-                    <input type="tel" className={inputCls} value={signer.previousLandlordPhone} onChange={(e) => updateSigner('previousLandlordPhone', e.target.value)} />
+                    <input type="tel" className={inputCls} placeholder="(206) 555-0100" value={signer.previousLandlordPhone} onChange={(e) => updateSigner('previousLandlordPhone', formatPhoneInput(e.target.value))} />
                   </Field>
                 </div>
 
@@ -1092,7 +1210,7 @@ export default function Apply() {
                     <input className={inputCls} value={signer.supervisorName} onChange={(e) => updateSigner('supervisorName', e.target.value)} />
                   </Field>
                   <Field label="Supervisor Phone #">
-                    <input type="tel" className={inputCls} value={signer.supervisorPhone} onChange={(e) => updateSigner('supervisorPhone', e.target.value)} />
+                    <input type="tel" className={inputCls} placeholder="(206) 555-0100" value={signer.supervisorPhone} onChange={(e) => updateSigner('supervisorPhone', formatPhoneInput(e.target.value))} />
                   </Field>
                 </div>
 
@@ -1117,26 +1235,27 @@ export default function Apply() {
               </Section>
 
               <Section title="References">
+                <p className="text-sm leading-6 text-slate-500">Provide at least one personal or professional reference (not a family member).</p>
                 <div className="grid gap-5 sm:grid-cols-3">
-                  <Field label="Name 1">
-                    <input className={inputCls} value={signer.reference1Name} onChange={(e) => updateSigner('reference1Name', e.target.value)} />
+                  <Field label="Name" required>
+                    <input required className={inputCls} placeholder="Jane Smith" value={signer.reference1Name} onChange={(e) => updateSigner('reference1Name', e.target.value)} />
                   </Field>
-                  <Field label="Relationship 1">
-                    <input className={inputCls} value={signer.reference1Relationship} onChange={(e) => updateSigner('reference1Relationship', e.target.value)} />
+                  <Field label="Relationship" required>
+                    <input required className={inputCls} placeholder="Colleague" value={signer.reference1Relationship} onChange={(e) => updateSigner('reference1Relationship', e.target.value)} />
                   </Field>
-                  <Field label="Phone # 1">
-                    <input type="tel" className={inputCls} value={signer.reference1Phone} onChange={(e) => updateSigner('reference1Phone', e.target.value)} />
+                  <Field label="Phone #" required>
+                    <input required type="tel" className={inputCls} placeholder="(206) 555-0100" value={signer.reference1Phone} onChange={(e) => updateSigner('reference1Phone', formatPhoneInput(e.target.value))} />
                   </Field>
                 </div>
                 <div className="grid gap-5 sm:grid-cols-3">
-                  <Field label="Name 2">
-                    <input className={inputCls} value={signer.reference2Name} onChange={(e) => updateSigner('reference2Name', e.target.value)} />
+                  <Field label="Name 2 (optional)">
+                    <input className={inputCls} placeholder="John Doe" value={signer.reference2Name} onChange={(e) => updateSigner('reference2Name', e.target.value)} />
                   </Field>
                   <Field label="Relationship 2">
-                    <input className={inputCls} value={signer.reference2Relationship} onChange={(e) => updateSigner('reference2Relationship', e.target.value)} />
+                    <input className={inputCls} placeholder="Professor" value={signer.reference2Relationship} onChange={(e) => updateSigner('reference2Relationship', e.target.value)} />
                   </Field>
                   <Field label="Phone # 2">
-                    <input type="tel" className={inputCls} value={signer.reference2Phone} onChange={(e) => updateSigner('reference2Phone', e.target.value)} />
+                    <input type="tel" className={inputCls} placeholder="(206) 555-0101" value={signer.reference2Phone} onChange={(e) => updateSigner('reference2Phone', formatPhoneInput(e.target.value))} />
                   </Field>
                 </div>
               </Section>

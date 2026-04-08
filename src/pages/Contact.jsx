@@ -1,4 +1,11 @@
-import { useEffect, useState, useRef } from 'react'
+import { useEffect, useState, useRef, useCallback } from 'react'
+
+function formatPhone(raw) {
+  const digits = raw.replace(/\D/g, '').slice(0, 10)
+  if (digits.length < 4) return digits
+  if (digits.length < 7) return `(${digits.slice(0, 3)}) ${digits.slice(3)}`
+  return `(${digits.slice(0, 3)}) ${digits.slice(3, 6)}-${digits.slice(6)}`
+}
 import { Seo } from '../lib/seo'
 import { properties } from '../data/properties'
 
@@ -368,7 +375,7 @@ function ContactMessageForm() {
       <div className="grid gap-4 sm:grid-cols-2">
         <div>
           <label className="mb-1.5 block text-xs font-semibold text-slate-700">Phone Number <span className="text-axis">*</span></label>
-          <input required type="tel" className={inputCls} placeholder="(206) 555-0100" value={form.phone} onChange={e => set('phone', e.target.value)} />
+          <input required type="tel" className={inputCls} placeholder="(206) 555-0100" value={form.phone} onChange={e => set('phone', formatPhone(e.target.value))} />
         </div>
         <div>
           <label className="mb-1.5 block text-xs font-semibold text-slate-700">Property <span className="text-axis">*</span></label>
@@ -413,10 +420,10 @@ function ContactMessageForm() {
 }
 
 export default function Contact() {
-  const [activeTab, setActiveTab] = useState('message')
+  const [activeTab, setActiveTab] = useState('schedule')
 
   const tabs = [
-    { id: 'schedule', label: 'Schedule', icon: 'M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z' },
+    { id: 'schedule', label: 'Schedule a Tour', icon: 'M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z' },
     { id: 'message', label: 'Send a Message', icon: 'M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z' },
   ]
 

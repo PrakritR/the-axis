@@ -2,6 +2,13 @@ import { useState, useEffect, useRef } from 'react'
 import { useLocation } from 'react-router-dom'
 import { createPortal } from 'react-dom'
 
+function formatPhone(raw) {
+  const digits = raw.replace(/\D/g, '').slice(0, 10)
+  if (digits.length < 4) return digits
+  if (digits.length < 7) return `(${digits.slice(0, 3)}) ${digits.slice(3)}`
+  return `(${digits.slice(0, 3)}) ${digits.slice(3, 6)}-${digits.slice(6)}`
+}
+
 const CALENDLY_URL = 'https://calendly.com/ramachandranprakrit/30min'
 
 const PROPERTIES = [
@@ -92,15 +99,15 @@ export default function TourPopup() {
     setName(''); setEmail(''); setPhone(''); setShowCalendly(false)
   }
 
-  // Show floating button after 8s; auto-expand at 40s
+  // Show floating button after 3s; auto-expand at 20s
   useEffect(() => {
     if (onContactPage) return
     if (sessionStorage.getItem('tourPopupDismissed')) return
 
-    const showBtn = setTimeout(() => setEverOpened(true), 8000)
+    const showBtn = setTimeout(() => setEverOpened(true), 3000)
     const autoOpen = setTimeout(() => {
       if (!sessionStorage.getItem('tourPopupDismissed')) setOpen(true)
-    }, 40000)
+    }, 20000)
 
     return () => { clearTimeout(showBtn); clearTimeout(autoOpen) }
   }, [onContactPage])
@@ -274,7 +281,7 @@ export default function TourPopup() {
                 <input
                   type="tel"
                   value={phone}
-                  onChange={e => setPhone(e.target.value)}
+                  onChange={e => setPhone(formatPhone(e.target.value))}
                   placeholder="(206) 555-0100"
                   className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-sm text-slate-900 placeholder-slate-300 outline-none transition focus:border-slate-900 focus:ring-2 focus:ring-slate-900/10"
                 />
