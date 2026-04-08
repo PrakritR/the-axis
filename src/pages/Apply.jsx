@@ -522,7 +522,7 @@ function Field({ label, required, hint, error, children }) {
         {label}
         {required && <span className="ml-1 text-axis">*</span>}
       </label>
-      {hint && <p className="mb-1.5 text-xs text-slate-400">{hint}</p>}
+      {hint && <p className="mb-1.5 min-h-[1.25rem] text-xs leading-5 text-slate-400">{hint}</p>}
       <div className={error ? 'rounded-xl ring-2 ring-red-400' : ''}>
         {children}
       </div>
@@ -586,17 +586,39 @@ async function checkDuplicateApplication(email) {
   }
 }
 
-async function checkRoomConflict(propertyName, roomNumber) {
-  if (!AIRTABLE_TOKEN || !propertyName || !roomNumber) return false
+function rangesOverlap(startA, endA, startB, endB) {
+  const aStart = new Date(startA)
+  const bStart = new Date(startB)
+  if (Number.isNaN(aStart.getTime()) || Number.isNaN(bStart.getTime())) return false
+
+  const aEnd = endA ? new Date(endA) : null
+  const bEnd = endB ? new Date(endB) : null
+  const aEndTime = aEnd && !Number.isNaN(aEnd.getTime()) ? aEnd.getTime() : Number.POSITIVE_INFINITY
+  const bEndTime = bEnd && !Number.isNaN(bEnd.getTime()) ? bEnd.getTime() : Number.POSITIVE_INFINITY
+
+  return aStart.getTime() <= bEndTime && bStart.getTime() <= aEndTime
+}
+
+async function checkRoomConflict(propertyName, roomNumber, leaseStartDate, leaseEndDate) {
+  if (!AIRTABLE_TOKEN || !propertyName || !roomNumber || !leaseStartDate) return false
   const formula = `AND({Property Name} = '${escapeFormulaString(propertyName)}', {Room Number} = '${escapeFormulaString(roomNumber)}')`
   const url = new URL(`https://api.airtable.com/v0/${AIRTABLE_BASE_ID}/${encodeURIComponent(APPLICATIONS_TABLE)}`)
-  url.searchParams.set('maxRecords', '1')
+  url.searchParams.set('maxRecords', '100')
+  url.searchParams.append('fields[]', 'Lease Start Date')
+  url.searchParams.append('fields[]', 'Lease End Date')
   url.searchParams.set('filterByFormula', formula)
   try {
     const res = await fetch(url.toString(), { headers: { Authorization: `Bearer ${AIRTABLE_TOKEN}` } })
     if (!res.ok) return false
     const data = await res.json()
-    return (data.records?.length ?? 0) > 0
+    return (data.records || []).some((record) =>
+      rangesOverlap(
+        leaseStartDate,
+        leaseEndDate,
+        record.fields?.['Lease Start Date'],
+        record.fields?.['Lease End Date'],
+      )
+    )
   } catch {
     return false
   }
@@ -1025,14 +1047,8 @@ export default function Apply() {
         next.propertyAddress = PROPERTY_OPTIONS.find((property) => property.name === value)?.address || ''
         setRoomConflictWarning(false)
       }
-      if (key === 'roomNumber') {
-        const property = key === 'propertyName' ? value : prev.propertyName
-        const room = key === 'roomNumber' ? value : prev.roomNumber
-        if (property && value) {
-          checkRoomConflict(property, value).then(setRoomConflictWarning)
-        } else {
-          setRoomConflictWarning(false)
-        }
+      if (['propertyName', 'roomNumber', 'leaseStartDate', 'leaseEndDate', 'leaseTerm'].includes(key)) {
+        setRoomConflictWarning(false)
       }
       return next
     })
@@ -1045,9 +1061,26 @@ export default function Apply() {
     if (fieldErrors[key]) setFieldErrors((prev) => { const n = {...prev}; delete n[key]; return n })
   }
 
-  function handleNext() {
+  async function handleNext() {
     const current = steps[step]
     const data = applicationType === 'cosigner' ? cosigner : signer
+
+    if (applicationType === 'signer' && step === 1) {
+      const isMonthToMonth = signer.leaseTerm === 'Month-to-Month (+$25/mo)'
+      const hasDatesForConflictCheck = Boolean(signer.leaseStartDate && (isMonthToMonth || signer.leaseEndDate))
+      if (signer.propertyName && signer.roomNumber && hasDatesForConflictCheck) {
+        const hasConflict = await checkRoomConflict(
+          signer.propertyName,
+          signer.roomNumber,
+          signer.leaseStartDate,
+          isMonthToMonth ? '' : signer.leaseEndDate,
+        )
+        setRoomConflictWarning(hasConflict)
+      } else {
+        setRoomConflictWarning(false)
+      }
+    }
+
     const errs = current.validate(data)
     if (Object.keys(errs).length > 0) {
       setFieldErrors(errs)
@@ -1281,7 +1314,7 @@ export default function Apply() {
         pathname="/apply"
       />
 
-      <div className="mx-auto max-w-2xl px-4 py-12 sm:px-6 sm:py-16">
+      <div className="mx-auto max-w-5xl px-4 py-12 sm:px-6 sm:py-16">
         <div className="mb-8">
           <div className="text-[11px] font-bold uppercase tracking-[0.2em] text-slate-400">Axis applications</div>
           <h1 className="mt-2 text-3xl font-black tracking-tight text-slate-900 sm:text-4xl">Residential Rental Application</h1>
@@ -1376,12 +1409,18 @@ export default function Apply() {
                         <option key={term} value={term}>{term}</option>
                       ))}
                     </select>
-                    {signer.leaseTerm === 'Month-to-Month (+$25/mo)' && (
-                      <p className="mt-2 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2">
-                        Month-to-month leases include a <strong>$25/month</strong> premium added to your base rent. No fixed end date required.
-                      </p>
-                    )}
                   </Field>
+                </div>
+
+                <div className="grid gap-5 sm:grid-cols-2">
+                  <Field label="Lease Start Date" required error={fieldErrors.leaseStartDate}>
+                    <input required type="date" min={todayIsoDate()} max={MAX_DATE} className={inputCls} value={signer.leaseStartDate} onChange={(e) => updateSigner('leaseStartDate', clampYear(e.target.value))} />
+                  </Field>
+                  {signer.leaseTerm !== 'Month-to-Month (+$25/mo)' && (
+                    <Field label="Lease End Date" required error={fieldErrors.leaseEndDate}>
+                      <input required type="date" min={signer.leaseStartDate || todayIsoDate()} max={MAX_DATE} className={inputCls} value={signer.leaseEndDate} onChange={(e) => updateSigner('leaseEndDate', clampYear(e.target.value))} />
+                    </Field>
+                  )}
                 </div>
 
                 {roomConflictWarning && (
@@ -1394,17 +1433,6 @@ export default function Apply() {
                     </div>
                   </div>
                 )}
-
-                <div className="grid gap-5 sm:grid-cols-2">
-                  <Field label="Lease Start Date" required error={fieldErrors.leaseStartDate}>
-                    <input required type="date" min={todayIsoDate()} max={MAX_DATE} className={inputCls} value={signer.leaseStartDate} onChange={(e) => updateSigner('leaseStartDate', clampYear(e.target.value))} />
-                  </Field>
-                  {signer.leaseTerm !== 'Month-to-Month (+$25/mo)' && (
-                    <Field label="Lease End Date" required error={fieldErrors.leaseEndDate}>
-                      <input required type="date" min={signer.leaseStartDate || todayIsoDate()} max={MAX_DATE} className={inputCls} value={signer.leaseEndDate} onChange={(e) => updateSigner('leaseEndDate', clampYear(e.target.value))} />
-                    </Field>
-                  )}
-                </div>
               </Section>
           )}
           {applicationType === 'signer' && step === 2 && (
@@ -1452,7 +1480,7 @@ export default function Apply() {
                     className={inputCls}
                   />
                 </Field>
-                <div className="grid grid-cols-3 gap-3">
+                <div className="grid gap-5 sm:grid-cols-3">
                   <Field label="City" required error={fieldErrors.currentCity}>
                     <input required className={inputCls} autoComplete="address-level2" placeholder="Seattle" value={signer.currentCity} onChange={(e) => updateSigner('currentCity', e.target.value)} />
                   </Field>
@@ -1507,7 +1535,7 @@ export default function Apply() {
                     className={inputCls}
                   />
                 </Field>
-                <div className="grid grid-cols-3 gap-3">
+                <div className="grid gap-5 sm:grid-cols-3">
                   <Field label="City" error={fieldErrors.previousCity}>
                     <input className={inputCls} autoComplete="address-level2" placeholder="Seattle" value={signer.previousCity} onChange={(e) => updateSigner('previousCity', e.target.value)} />
                   </Field>
@@ -1678,10 +1706,10 @@ export default function Apply() {
           {applicationType === 'cosigner' && step === 0 && (
               <Section title="Link This Co-Signer To A Signer Application">
                 <div className="grid gap-5 sm:grid-cols-2">
-                  <Field label="Signer Application ID" hint="Recommended. Use the Airtable Application ID if you have it." error={fieldErrors.linkedApplicationId}>
+                  <Field label="Signer Application ID" hint="Recommended if you have their Application ID." error={fieldErrors.linkedApplicationId}>
                     <input className={inputCls} value={cosigner.linkedApplicationId} onChange={(e) => updateCosigner('linkedApplicationId', e.target.value)} />
                   </Field>
-                  <Field label="Signer Full Name" hint="Use this if you don’t have the application ID.">
+                  <Field label="Signer Full Name" hint="Use this when you do not have the Application ID.">
                     <input className={inputCls} value={cosigner.linkedSignerName} onChange={(e) => updateCosigner('linkedSignerName', e.target.value)} />
                   </Field>
                 </div>
