@@ -115,15 +115,11 @@ function validateSSN(value) {
   return ''
 }
 
-// Washington State DL: 1 letter + 11 digits (e.g. W1234567ABC12) is the WA format
-// General US DL: 1-2 alpha prefix + 5-17 alphanumeric — accept any reasonable US format
+// WA Driver's License: 1 letter followed by exactly 10 digits (11 chars total)
 function validateDriversLicense(value) {
   if (!value) return ''
   const clean = value.replace(/[\s-]/g, '').toUpperCase()
-  // Must be 5–20 alphanumeric characters
-  if (!/^[A-Z0-9]{5,20}$/.test(clean)) return "Driver's license must be 5–20 letters/digits (no spaces or special characters)"
-  // Washington State specific: starts with letter, then alphanumeric, total length 12
-  // Accept WA or generic format — just check it has at least one letter and reasonable length
+  if (!/^[A-Z]\d{10}$/.test(clean)) return "Driver's license must be 1 letter followed by 10 digits (e.g. W1234567890)"
   return ''
 }
 
@@ -433,6 +429,21 @@ async function submitToAirtable(tableName, fields) {
   return response.json()
 }
 
+async function checkDuplicateApplication(email) {
+  if (!AIRTABLE_TOKEN || !email) return false
+  const url = new URL(`https://api.airtable.com/v0/${AIRTABLE_BASE_ID}/${encodeURIComponent(APPLICATIONS_TABLE)}`)
+  url.searchParams.set('maxRecords', '1')
+  url.searchParams.set('filterByFormula', `{Signer Email} = '${email.replace(/'/g, "\\'")}'`)
+  try {
+    const res = await fetch(url.toString(), { headers: { Authorization: `Bearer ${AIRTABLE_TOKEN}` } })
+    if (!res.ok) return false
+    const data = await res.json()
+    return (data.records?.length ?? 0) > 0
+  } catch {
+    return false
+  }
+}
+
 async function findApplicationRecord({ applicationId, signerName }) {
   if (!AIRTABLE_TOKEN) throw new Error('VITE_AIRTABLE_TOKEN is not set in environment variables.')
 
@@ -653,6 +664,11 @@ export default function Apply() {
       if (applicationType === 'signer') {
         if (!signer.consent) {
           throw new Error('The signer must consent to the credit and background check before submitting.')
+        }
+
+        const isDuplicate = await checkDuplicateApplication(signer.email)
+        if (isDuplicate) {
+          throw new Error(`An application has already been submitted with the email address "${signer.email}". If you believe this is an error, please contact leasing directly.`)
         }
 
         const fields = {
