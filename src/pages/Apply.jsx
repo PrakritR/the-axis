@@ -835,7 +835,10 @@ const SIGNER_STEPS = [
       if (s.currentMoveInDate && s.currentMoveOutDate && new Date(s.currentMoveOutDate) <= new Date(s.currentMoveInDate)) {
         e.currentMoveOutDate = 'Move-out must be after move-in'
       }
-      if (s.currentLandlordPhone) { const v = validatePhone(s.currentLandlordPhone); if (v) e.currentLandlordPhone = v }
+      if (!s.currentLandlordName?.trim()) e.currentLandlordName = 'Landlord name is required'
+      if (!s.currentLandlordPhone?.trim()) e.currentLandlordPhone = 'Landlord phone is required'
+      else { const v = validatePhone(s.currentLandlordPhone); if (v) e.currentLandlordPhone = v }
+      if (!s.currentReasonForLeaving?.trim()) e.currentReasonForLeaving = 'Reason for leaving is required'
       return e
     },
   },
@@ -853,9 +856,14 @@ const SIGNER_STEPS = [
       if (s.previousMoveInDate && s.previousMoveOutDate && new Date(s.previousMoveOutDate) <= new Date(s.previousMoveInDate)) {
         e.previousMoveOutDate = 'Move-out must be after move-in'
       }
-      if (s.previousState) { const v = validateState(s.previousState); if (v) e.previousState = v }
-      if (s.previousZip) { const v = validateZip(s.previousZip); if (v) e.previousZip = v }
-      if (s.previousLandlordPhone) { const v = validatePhone(s.previousLandlordPhone); if (v) e.previousLandlordPhone = v }
+      if (s.previousAddress?.trim() && !s.previousState?.trim()) e.previousState = 'State is required'
+      else if (s.previousState) { const v = validateState(s.previousState); if (v) e.previousState = v }
+      if (s.previousAddress?.trim() && !s.previousZip?.trim()) e.previousZip = 'ZIP is required'
+      else if (s.previousZip) { const v = validateZip(s.previousZip); if (v) e.previousZip = v }
+      if (s.previousAddress?.trim() && !s.previousLandlordName?.trim()) e.previousLandlordName = 'Landlord name is required'
+      if (s.previousAddress?.trim() && !s.previousLandlordPhone?.trim()) e.previousLandlordPhone = 'Landlord phone is required'
+      else if (s.previousLandlordPhone) { const v = validatePhone(s.previousLandlordPhone); if (v) e.previousLandlordPhone = v }
+      if (s.previousAddress?.trim() && !s.previousReasonForLeaving?.trim()) e.previousReasonForLeaving = 'Reason for leaving is required'
       return e
     },
   },
@@ -864,9 +872,16 @@ const SIGNER_STEPS = [
     validate: (s) => {
       const e = {}
       if (!s.noEmployment) {
-        if (s.supervisorPhone) { const v = validatePhone(s.supervisorPhone); if (v) e.supervisorPhone = v }
-        if (s.monthlyIncome) { const v = validateIncome(s.monthlyIncome); if (v) e.monthlyIncome = v }
-        if (s.annualIncome) { const v = validateIncome(s.annualIncome); if (v) e.annualIncome = v }
+        if (!s.employer?.trim()) e.employer = 'Employer name is required'
+        if (!s.jobTitle?.trim()) e.jobTitle = 'Job title is required'
+        if (!s.monthlyIncome) e.monthlyIncome = 'Monthly income is required'
+        else { const v = validateIncome(s.monthlyIncome); if (v) e.monthlyIncome = v }
+        if (!s.annualIncome) e.annualIncome = 'Annual income is required'
+        else { const v = validateIncome(s.annualIncome); if (v) e.annualIncome = v }
+        if (!s.employmentStartDate) e.employmentStartDate = 'Start date is required'
+        if (!s.supervisorName?.trim()) e.supervisorName = 'Supervisor name is required'
+        if (!s.supervisorPhone?.trim()) e.supervisorPhone = 'Supervisor phone is required'
+        else { const v = validatePhone(s.supervisorPhone); if (v) e.supervisorPhone = v }
       }
       return e
     },
@@ -875,14 +890,22 @@ const SIGNER_STEPS = [
     title: 'References',
     validate: (s) => {
       const e = {}
-      if (!s.reference1Name?.trim()) e.reference1Name = 'At least one reference name is required'
-      if (!s.reference1Phone?.trim()) e.reference1Phone = 'Reference phone is required'
+      if (!s.reference1Name?.trim()) e.reference1Name = 'Name is required'
+      if (!s.reference1Relationship?.trim()) e.reference1Relationship = 'Relationship is required'
+      if (!s.reference1Phone?.trim()) e.reference1Phone = 'Phone is required'
       else { const v = validatePhone(s.reference1Phone); if (v) e.reference1Phone = v }
-      if (s.reference2Phone) { const v = validatePhone(s.reference2Phone); if (v) e.reference2Phone = v }
+      if (!s.reference2Name?.trim()) e.reference2Name = 'Name is required'
+      if (!s.reference2Relationship?.trim()) e.reference2Relationship = 'Relationship is required'
+      if (!s.reference2Phone?.trim()) e.reference2Phone = 'Phone is required'
+      else { const v = validatePhone(s.reference2Phone); if (v) e.reference2Phone = v }
       return e
     },
   },
-  { title: 'Additional Information', validate: () => ({}) },
+  { title: 'Additional Information', validate: (s) => {
+    const e = {}
+    if (!s.occupants) e.occupants = 'Number of occupants is required'
+    return e
+  }},
   {
     title: 'Financial Background & Legal',
     validate: (s) => {
@@ -938,9 +961,16 @@ const COSIGNER_STEPS = [
     validate: (c) => {
       const e = {}
       if (!c.noEmployment) {
-        if (c.supervisorPhone) { const v = validatePhone(c.supervisorPhone); if (v) e.supervisorPhone = v }
-        if (c.monthlyIncome) { const v = validateIncome(c.monthlyIncome); if (v) e.monthlyIncome = v }
-        if (c.annualIncome) { const v = validateIncome(c.annualIncome); if (v) e.annualIncome = v }
+        if (!c.employer?.trim()) e.employer = 'Employer name is required'
+        if (!c.jobTitle?.trim()) e.jobTitle = 'Job title is required'
+        if (!c.monthlyIncome) e.monthlyIncome = 'Monthly income is required'
+        else { const v = validateIncome(c.monthlyIncome); if (v) e.monthlyIncome = v }
+        if (!c.annualIncome) e.annualIncome = 'Annual income is required'
+        else { const v = validateIncome(c.annualIncome); if (v) e.annualIncome = v }
+        if (!c.employmentStartDate) e.employmentStartDate = 'Start date is required'
+        if (!c.supervisorName?.trim()) e.supervisorName = 'Supervisor name is required'
+        if (!c.supervisorPhone?.trim()) e.supervisorPhone = 'Supervisor phone is required'
+        else { const v = validatePhone(c.supervisorPhone); if (v) e.supervisorPhone = v }
       }
       return e
     },
@@ -1369,9 +1399,11 @@ export default function Apply() {
                   <Field label="Lease Start Date" required error={fieldErrors.leaseStartDate}>
                     <input required type="date" min={todayIsoDate()} max={MAX_DATE} className={inputCls} value={signer.leaseStartDate} onChange={(e) => updateSigner('leaseStartDate', clampYear(e.target.value))} />
                   </Field>
-                  <Field label={signer.leaseTerm === 'Month-to-Month (+$25/mo)' ? 'Lease End Date (optional)' : 'Lease End Date'} required={signer.leaseTerm !== 'Month-to-Month (+$25/mo)'} error={fieldErrors.leaseEndDate}>
-                    <input type="date" min={signer.leaseStartDate || todayIsoDate()} max={MAX_DATE} className={inputCls} value={signer.leaseEndDate} onChange={(e) => updateSigner('leaseEndDate', clampYear(e.target.value))} />
-                  </Field>
+                  {signer.leaseTerm !== 'Month-to-Month (+$25/mo)' && (
+                    <Field label="Lease End Date" required error={fieldErrors.leaseEndDate}>
+                      <input required type="date" min={signer.leaseStartDate || todayIsoDate()} max={MAX_DATE} className={inputCls} value={signer.leaseEndDate} onChange={(e) => updateSigner('leaseEndDate', clampYear(e.target.value))} />
+                    </Field>
+                  )}
                 </div>
               </Section>
           )}
@@ -1433,11 +1465,11 @@ export default function Apply() {
                 </div>
 
                 <div className="grid gap-5 sm:grid-cols-2">
-                  <Field label="Landlord / Property Manager Name">
-                    <input className={inputCls} value={signer.currentLandlordName} onChange={(e) => updateSigner('currentLandlordName', e.target.value)} />
+                  <Field label="Landlord / Property Manager Name" required error={fieldErrors.currentLandlordName}>
+                    <input required className={inputCls} value={signer.currentLandlordName} onChange={(e) => updateSigner('currentLandlordName', e.target.value)} />
                   </Field>
-                  <Field label="Landlord Phone #" error={fieldErrors.currentLandlordPhone}>
-                    <input type="tel" className={inputCls} placeholder="(206) 555-0100" value={signer.currentLandlordPhone} onChange={(e) => updateSigner('currentLandlordPhone', formatPhoneInput(e.target.value))} />
+                  <Field label="Landlord Phone #" required error={fieldErrors.currentLandlordPhone}>
+                    <input required type="tel" className={inputCls} placeholder="(206) 555-0100" value={signer.currentLandlordPhone} onChange={(e) => updateSigner('currentLandlordPhone', formatPhoneInput(e.target.value))} />
                   </Field>
                 </div>
 
@@ -1448,8 +1480,8 @@ export default function Apply() {
                   <Field label="Move-out Date" required error={fieldErrors.currentMoveOutDate}>
                     <input required type="date" min={MIN_DOB} max={MAX_DATE} className={inputCls} value={signer.currentMoveOutDate} onChange={(e) => updateSigner('currentMoveOutDate', clampYear(e.target.value))} />
                   </Field>
-                  <Field label="Reason for Leaving">
-                    <input className={inputCls} value={signer.currentReasonForLeaving} onChange={(e) => updateSigner('currentReasonForLeaving', e.target.value)} />
+                  <Field label="Reason for Leaving" required error={fieldErrors.currentReasonForLeaving}>
+                    <input required className={inputCls} value={signer.currentReasonForLeaving} onChange={(e) => updateSigner('currentReasonForLeaving', e.target.value)} />
                   </Field>
                 </div>
               </Section>
@@ -1488,7 +1520,7 @@ export default function Apply() {
                 </div>
 
                 <div className="grid gap-5 sm:grid-cols-2">
-                  <Field label="Landlord / Property Manager Name">
+                  <Field label="Landlord / Property Manager Name" error={fieldErrors.previousLandlordName}>
                     <input className={inputCls} value={signer.previousLandlordName} onChange={(e) => updateSigner('previousLandlordName', e.target.value)} />
                   </Field>
                   <Field label="Landlord Phone #" error={fieldErrors.previousLandlordPhone}>
@@ -1503,7 +1535,7 @@ export default function Apply() {
                   <Field label="Move-out Date" error={fieldErrors.previousMoveOutDate}>
                     <input type="date" min={MIN_DOB} max={MAX_DATE} className={inputCls} value={signer.previousMoveOutDate} onChange={(e) => updateSigner('previousMoveOutDate', clampYear(e.target.value))} />
                   </Field>
-                  <Field label="Reason for Leaving">
+                  <Field label="Reason for Leaving" error={fieldErrors.previousReasonForLeaving}>
                     <input className={inputCls} value={signer.previousReasonForLeaving} onChange={(e) => updateSigner('previousReasonForLeaving', e.target.value)} />
                   </Field>
                 </div>
@@ -1518,8 +1550,8 @@ export default function Apply() {
                 </label>
                 {!signer.noEmployment && <>
                 <div className="grid gap-5 sm:grid-cols-2">
-                  <Field label="Employer Name">
-                    <input className={inputCls} value={signer.employer} onChange={(e) => updateSigner('employer', e.target.value)} />
+                  <Field label="Employer Name" required error={fieldErrors.employer}>
+                    <input required className={inputCls} value={signer.employer} onChange={(e) => updateSigner('employer', e.target.value)} />
                   </Field>
                   <Field label="Employer Address">
                     <input className={inputCls} value={signer.employerAddress} onChange={(e) => updateSigner('employerAddress', e.target.value)} />
@@ -1527,26 +1559,26 @@ export default function Apply() {
                 </div>
 
                 <div className="grid gap-5 sm:grid-cols-2">
-                  <Field label="Supervisor Name">
-                    <input className={inputCls} value={signer.supervisorName} onChange={(e) => updateSigner('supervisorName', e.target.value)} />
+                  <Field label="Supervisor Name" required error={fieldErrors.supervisorName}>
+                    <input required className={inputCls} value={signer.supervisorName} onChange={(e) => updateSigner('supervisorName', e.target.value)} />
                   </Field>
-                  <Field label="Supervisor Phone #" error={fieldErrors.supervisorPhone}>
-                    <input type="tel" className={inputCls} placeholder="(206) 555-0100" value={signer.supervisorPhone} onChange={(e) => updateSigner('supervisorPhone', formatPhoneInput(e.target.value))} />
+                  <Field label="Supervisor Phone #" required error={fieldErrors.supervisorPhone}>
+                    <input required type="tel" className={inputCls} placeholder="(206) 555-0100" value={signer.supervisorPhone} onChange={(e) => updateSigner('supervisorPhone', formatPhoneInput(e.target.value))} />
                   </Field>
                 </div>
 
                 <div className="grid gap-5 sm:grid-cols-4">
-                  <Field label="Job Title">
-                    <input className={inputCls} value={signer.jobTitle} onChange={(e) => updateSigner('jobTitle', e.target.value)} />
+                  <Field label="Job Title" required error={fieldErrors.jobTitle}>
+                    <input required className={inputCls} value={signer.jobTitle} onChange={(e) => updateSigner('jobTitle', e.target.value)} />
                   </Field>
-                  <Field label="Monthly Income ($)" error={fieldErrors.monthlyIncome}>
-                    <input type="number" min="0" step="1" inputMode="numeric" className={inputCls} placeholder="0" value={signer.monthlyIncome} onChange={(e) => updateSigner('monthlyIncome', e.target.value)} />
+                  <Field label="Monthly Income ($)" required error={fieldErrors.monthlyIncome}>
+                    <input required type="number" min="0" step="1" inputMode="numeric" className={inputCls} placeholder="0" value={signer.monthlyIncome} onChange={(e) => updateSigner('monthlyIncome', e.target.value)} />
                   </Field>
-                  <Field label="Annual Income ($)" error={fieldErrors.annualIncome}>
-                    <input type="number" min="0" step="1" inputMode="numeric" className={inputCls} placeholder="0" value={signer.annualIncome} onChange={(e) => updateSigner('annualIncome', e.target.value)} />
+                  <Field label="Annual Income ($)" required error={fieldErrors.annualIncome}>
+                    <input required type="number" min="0" step="1" inputMode="numeric" className={inputCls} placeholder="0" value={signer.annualIncome} onChange={(e) => updateSigner('annualIncome', e.target.value)} />
                   </Field>
-                  <Field label="Employment Start Date">
-                    <input type="date" min={MIN_DOB} max={MAX_DATE} className={inputCls} value={signer.employmentStartDate} onChange={(e) => updateSigner('employmentStartDate', clampYear(e.target.value))} />
+                  <Field label="Employment Start Date" required error={fieldErrors.employmentStartDate}>
+                    <input required type="date" min={MIN_DOB} max={MAX_DATE} className={inputCls} value={signer.employmentStartDate} onChange={(e) => updateSigner('employmentStartDate', clampYear(e.target.value))} />
                   </Field>
                 </div>
                 </>}
@@ -1564,22 +1596,22 @@ export default function Apply() {
                   <Field label="Name" required error={fieldErrors.reference1Name}>
                     <input required className={inputCls} placeholder="Jane Smith" value={signer.reference1Name} onChange={(e) => updateSigner('reference1Name', e.target.value)} />
                   </Field>
-                  <Field label="Relationship">
-                    <input className={inputCls} placeholder="Colleague" value={signer.reference1Relationship} onChange={(e) => updateSigner('reference1Relationship', e.target.value)} />
+                  <Field label="Relationship" required error={fieldErrors.reference1Relationship}>
+                    <input required className={inputCls} placeholder="Colleague" value={signer.reference1Relationship} onChange={(e) => updateSigner('reference1Relationship', e.target.value)} />
                   </Field>
                   <Field label="Phone #" required error={fieldErrors.reference1Phone}>
                     <input required type="tel" className={inputCls} placeholder="(206) 555-0100" value={signer.reference1Phone} onChange={(e) => updateSigner('reference1Phone', formatPhoneInput(e.target.value))} />
                   </Field>
                 </div>
                 <div className="grid gap-5 sm:grid-cols-3">
-                  <Field label="Name 2 (optional)">
-                    <input className={inputCls} placeholder="John Doe" value={signer.reference2Name} onChange={(e) => updateSigner('reference2Name', e.target.value)} />
+                  <Field label="Name 2" required error={fieldErrors.reference2Name}>
+                    <input required className={inputCls} placeholder="John Doe" value={signer.reference2Name} onChange={(e) => updateSigner('reference2Name', e.target.value)} />
                   </Field>
-                  <Field label="Relationship 2">
-                    <input className={inputCls} placeholder="Professor" value={signer.reference2Relationship} onChange={(e) => updateSigner('reference2Relationship', e.target.value)} />
+                  <Field label="Relationship 2" required error={fieldErrors.reference2Relationship}>
+                    <input required className={inputCls} placeholder="Professor" value={signer.reference2Relationship} onChange={(e) => updateSigner('reference2Relationship', e.target.value)} />
                   </Field>
-                  <Field label="Phone # 2" error={fieldErrors.reference2Phone}>
-                    <input type="tel" className={inputCls} placeholder="(206) 555-0101" value={signer.reference2Phone} onChange={(e) => updateSigner('reference2Phone', formatPhoneInput(e.target.value))} />
+                  <Field label="Phone # 2" required error={fieldErrors.reference2Phone}>
+                    <input required type="tel" className={inputCls} placeholder="(206) 555-0101" value={signer.reference2Phone} onChange={(e) => updateSigner('reference2Phone', formatPhoneInput(e.target.value))} />
                   </Field>
                 </div>
               </Section>
@@ -1587,8 +1619,8 @@ export default function Apply() {
           {applicationType === 'signer' && step === 7 && (
               <Section title="Additional Information">
                 <div className="grid gap-5 sm:grid-cols-2">
-                  <Field label="Number of Occupants">
-                    <input type="number" min="1" max="20" inputMode="numeric" className={inputCls} placeholder="1" value={signer.occupants} onChange={(e) => updateSigner('occupants', e.target.value)} />
+                  <Field label="Number of Occupants" required error={fieldErrors.occupants}>
+                    <input required type="number" min="1" max="20" inputMode="numeric" className={inputCls} placeholder="1" value={signer.occupants} onChange={(e) => updateSigner('occupants', e.target.value)} />
                   </Field>
                   <Field label="Pets">
                     <input className={inputCls} value={signer.pets} onChange={(e) => updateSigner('pets', e.target.value)} />
@@ -1719,8 +1751,8 @@ export default function Apply() {
                 </label>
                 {!cosigner.noEmployment && <>
                 <div className="grid gap-5 sm:grid-cols-2">
-                  <Field label="Employer Name">
-                    <input className={inputCls} value={cosigner.employer} onChange={(e) => updateCosigner('employer', e.target.value)} />
+                  <Field label="Employer Name" required error={fieldErrors.employer}>
+                    <input required className={inputCls} value={cosigner.employer} onChange={(e) => updateCosigner('employer', e.target.value)} />
                   </Field>
                   <Field label="Employer Address">
                     <input className={inputCls} value={cosigner.employerAddress} onChange={(e) => updateCosigner('employerAddress', e.target.value)} />
@@ -1728,8 +1760,8 @@ export default function Apply() {
                 </div>
 
                 <div className="grid gap-5 sm:grid-cols-2">
-                  <Field label="Supervisor Name">
-                    <input className={inputCls} value={cosigner.supervisorName} onChange={(e) => updateCosigner('supervisorName', e.target.value)} />
+                  <Field label="Supervisor Name" required error={fieldErrors.supervisorName}>
+                    <input required className={inputCls} value={cosigner.supervisorName} onChange={(e) => updateCosigner('supervisorName', e.target.value)} />
                   </Field>
                   <Field label="Supervisor Phone #" error={fieldErrors.supervisorPhone}>
                     <input type="tel" className={inputCls} placeholder="(206) 555-0100" value={cosigner.supervisorPhone} onChange={(e) => updateCosigner('supervisorPhone', formatPhoneInput(e.target.value))} />
@@ -1737,17 +1769,17 @@ export default function Apply() {
                 </div>
 
                 <div className="grid gap-5 sm:grid-cols-4">
-                  <Field label="Job Title">
-                    <input className={inputCls} value={cosigner.jobTitle} onChange={(e) => updateCosigner('jobTitle', e.target.value)} />
+                  <Field label="Job Title" required error={fieldErrors.jobTitle}>
+                    <input required className={inputCls} value={cosigner.jobTitle} onChange={(e) => updateCosigner('jobTitle', e.target.value)} />
                   </Field>
-                  <Field label="Monthly Income ($)" error={fieldErrors.monthlyIncome}>
-                    <input type="number" min="0" step="1" inputMode="numeric" className={inputCls} placeholder="0" value={cosigner.monthlyIncome} onChange={(e) => updateCosigner('monthlyIncome', e.target.value)} />
+                  <Field label="Monthly Income ($)" required error={fieldErrors.monthlyIncome}>
+                    <input required type="number" min="0" step="1" inputMode="numeric" className={inputCls} placeholder="0" value={cosigner.monthlyIncome} onChange={(e) => updateCosigner('monthlyIncome', e.target.value)} />
                   </Field>
-                  <Field label="Annual Income ($)" error={fieldErrors.annualIncome}>
-                    <input type="number" min="0" step="1" inputMode="numeric" className={inputCls} placeholder="0" value={cosigner.annualIncome} onChange={(e) => updateCosigner('annualIncome', e.target.value)} />
+                  <Field label="Annual Income ($)" required error={fieldErrors.annualIncome}>
+                    <input required type="number" min="0" step="1" inputMode="numeric" className={inputCls} placeholder="0" value={cosigner.annualIncome} onChange={(e) => updateCosigner('annualIncome', e.target.value)} />
                   </Field>
-                  <Field label="Employment Start Date">
-                    <input type="date" min={MIN_DOB} max={MAX_DATE} className={inputCls} value={cosigner.employmentStartDate} onChange={(e) => updateCosigner('employmentStartDate', clampYear(e.target.value))} />
+                  <Field label="Employment Start Date" required error={fieldErrors.employmentStartDate}>
+                    <input required type="date" min={MIN_DOB} max={MAX_DATE} className={inputCls} value={cosigner.employmentStartDate} onChange={(e) => updateCosigner('employmentStartDate', clampYear(e.target.value))} />
                   </Field>
                 </div>
                 </>}
