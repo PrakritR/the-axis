@@ -296,7 +296,7 @@ export const properties = [
     cleaningFee: '$25',
     utilitiesFee: '$175',
     leaseTerms: leaseTerms({
-      summerRent: '$775/month',
+      summerRent: '$800/month',
       academicRent: '$800/month',
       summerNote: 'A short summer lease that runs from June 16 through September 14. Dates are fixed.',
       academicNote: 'The core academic-year option, designed around the UW calendar. Dates are fixed.',
