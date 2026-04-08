@@ -415,31 +415,49 @@ export default function Contact() {
         description="Contact Axis Seattle to ask about room availability, schedule a tour, or learn more about affordable housing options in Seattle."
         pathname="/contact"
       />
-      <div className="mx-auto max-w-3xl px-4 py-16 sm:px-6 sm:py-24">
-        <div className="mb-10">
-          <h1 className="font-editorial text-4xl text-slate-900 sm:text-5xl">Get in touch.</h1>
-          <div className="mt-4 flex flex-wrap items-center gap-x-5 gap-y-1 text-sm text-slate-500">
-            <a href={`tel:${CONTACT_PHONE_RAW}`} className="hover:text-slate-900">{CONTACT_PHONE_DISPLAY}</a>
-            <span className="text-slate-300">·</span>
-            <a href={`mailto:${CONTACT_EMAIL}`} className="hover:text-slate-900">{CONTACT_EMAIL}</a>
-          </div>
-        </div>
+      <div className="mx-auto max-w-6xl px-4 py-14 sm:px-6 sm:py-20">
+        <div className="grid gap-12 lg:grid-cols-[280px_1fr]">
 
-        <div className="rounded-2xl border border-slate-200 bg-white p-6 sm:p-8">
-          <div className="mb-8 flex gap-1 rounded-xl border border-slate-100 bg-slate-50 p-1">
-            {tabs.map(({ id, label, icon }) => (
-              <button key={id} onClick={() => setActiveTab(id)}
-                className={`flex flex-1 items-center justify-center gap-2 rounded-lg px-3 py-2.5 text-sm font-semibold transition-all ${activeTab === id ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>
-                <svg className="h-3.5 w-3.5 shrink-0" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" d={icon} />
-                </svg>
-                {label}
-              </button>
-            ))}
+          {/* Left column — info */}
+          <div className="lg:pt-2">
+            <h1 className="font-editorial text-4xl leading-tight text-slate-900 sm:text-5xl">Get in<br />touch.</h1>
+            <p className="mt-4 text-sm leading-7 text-slate-500">Questions about rooms, pricing, or availability — reach us directly.</p>
+
+            <div className="mt-8 space-y-5 border-t border-slate-100 pt-8">
+              <div>
+                <div className="text-[11px] font-semibold uppercase tracking-widest text-slate-400">Phone</div>
+                <a href={`tel:${CONTACT_PHONE_RAW}`} className="mt-1.5 block text-base font-semibold text-slate-900 hover:text-axis">{CONTACT_PHONE_DISPLAY}</a>
+                <div className="mt-0.5 flex gap-3 text-xs text-slate-400">
+                  <a href={`tel:${CONTACT_PHONE_RAW}`} className="hover:text-slate-600">Call</a>
+                  <span>·</span>
+                  <a href={`sms:${CONTACT_PHONE_RAW}`} className="hover:text-slate-600">Text</a>
+                </div>
+              </div>
+              <div>
+                <div className="text-[11px] font-semibold uppercase tracking-widest text-slate-400">Email</div>
+                <a href={`mailto:${CONTACT_EMAIL}`} className="mt-1.5 block break-all text-sm text-slate-700 hover:text-axis">{CONTACT_EMAIL}</a>
+              </div>
+            </div>
           </div>
 
-          {activeTab === 'schedule' && <BookingScheduler />}
-          {activeTab === 'message' && <ContactMessageForm />}
+          {/* Right column — form */}
+          <div className="rounded-2xl border border-slate-200 bg-slate-50/50 p-6 sm:p-8">
+            <div className="mb-7 flex gap-1 rounded-xl border border-slate-200 bg-white p-1">
+              {tabs.map(({ id, label, icon }) => (
+                <button key={id} onClick={() => setActiveTab(id)}
+                  className={`flex flex-1 items-center justify-center gap-2 rounded-lg px-3 py-2.5 text-sm font-semibold transition-all ${activeTab === id ? 'bg-slate-900 text-white shadow-sm' : 'text-slate-500 hover:text-slate-800'}`}>
+                  <svg className="h-3.5 w-3.5 shrink-0" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" d={icon} />
+                  </svg>
+                  {label}
+                </button>
+              ))}
+            </div>
+
+            {activeTab === 'schedule' && <BookingScheduler />}
+            {activeTab === 'message' && <ContactMessageForm />}
+          </div>
+
         </div>
       </div>
     </div>

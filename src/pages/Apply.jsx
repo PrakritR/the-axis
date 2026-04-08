@@ -15,15 +15,264 @@ const LEASE_TERMS = [
   'Custom',
 ]
 
+// ---------------------------------------------------------------------------
+// Availability parsing
+// Parses "available" strings from properties.js into structured date windows.
+// Supported formats (case-insensitive):
+//   "Available now"
+//   "Available after Month D, YYYY"
+//   "Unavailable"
+//   "Available Month D, YYYY-Month D, YYYY and after Month D, YYYY"
+// ---------------------------------------------------------------------------
+function parseAvailability(availableStr) {
+  const s = String(availableStr || '').trim().toLowerCase()
+  if (!s || s === 'unavailable') return { windows: [], unavailable: true }
+  if (s === 'available now') return { windows: [{ from: new Date(0), to: null }], unavailable: false }
+
+  const windows = []
+
+  // "available after Month D, YYYY" — open-ended from that date
+  const afterRe = /available after ([a-z]+ \d+,\s*\d{4})/gi
+  let m
+  while ((m = afterRe.exec(s)) !== null) {
+    const d = new Date(m[1])
+    if (!Number.isNaN(d.getTime())) windows.push({ from: d, to: null })
+  }
+
+  // "available Month D, YYYY-Month D, YYYY" — fixed window
+  const rangeRe = /available ([a-z]+ \d+,\s*\d{4})-([a-z]+ \d+,\s*\d{4})/gi
+  while ((m = rangeRe.exec(s)) !== null) {
+    const from = new Date(m[1])
+    const to = new Date(m[2])
+    if (!Number.isNaN(from.getTime()) && !Number.isNaN(to.getTime())) windows.push({ from, to })
+  }
+
+  return { windows, unavailable: windows.length === 0 }
+}
+
+// Returns true if the room is available for the given lease start date
+function isRoomAvailableOnDate(availableStr, leaseStartDate) {
+  if (!leaseStartDate) return true // no date chosen yet — don't block
+  const { windows, unavailable } = parseAvailability(availableStr)
+  if (unavailable) return false
+  const start = new Date(leaseStartDate)
+  return windows.some(({ from, to }) => {
+    const afterFrom = start >= from
+    const beforeTo = to === null || start <= to
+    return afterFrom && beforeTo
+  })
+}
+
+function getRoomAvailabilityLabel(availableStr) {
+  const s = String(availableStr || '').trim()
+  if (!s || s.toLowerCase() === 'unavailable') return 'Unavailable'
+  return s
+}
+
+// Build PROPERTY_OPTIONS with full room availability data
 const PROPERTY_OPTIONS = properties
-  .map((property) => ({
-    id: property.slug,
-    name: property.name,
-    address: property.address,
-    rooms: [...new Set((property.roomPlans || []).flatMap((plan) => plan.rooms || []).map((room) => room.name))]
-      .sort((a, b) => a.localeCompare(b, undefined, { numeric: true })),
-  }))
+  .map((property) => {
+    const allRooms = (property.roomPlans || []).flatMap((plan) => plan.rooms || [])
+    const uniqueRooms = []
+    const seen = new Set()
+    for (const room of allRooms) {
+      if (!seen.has(room.name)) {
+        seen.add(room.name)
+        uniqueRooms.push({ name: room.name, available: room.available || 'Available now' })
+      }
+    }
+    uniqueRooms.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }))
+    return {
+      id: property.slug,
+      name: property.name,
+      address: property.address,
+      rooms: uniqueRooms,
+    }
+  })
   .sort((a, b) => a.name.localeCompare(b.name))
+
+// ---------------------------------------------------------------------------
+// Field validators — each returns an error string or '' if valid
+// ---------------------------------------------------------------------------
+function validatePhone(value) {
+  if (!value) return ''
+  const digits = value.replace(/\D/g, '')
+  if (digits.length !== 10 && digits.length !== 11) return 'Phone must be 10 digits (or 11 with country code)'
+  return ''
+}
+
+function validateSSN(value) {
+  if (!value) return ''
+  const digits = value.replace(/\D/g, '')
+  if (digits.length !== 9) return 'SSN must be exactly 9 digits (###-##-####)'
+  // Basic SSN sanity: area 001-899 (not 000, not 666, not 900+), group not 00, serial not 0000
+  const area = parseInt(digits.slice(0, 3), 10)
+  const group = parseInt(digits.slice(3, 5), 10)
+  const serial = parseInt(digits.slice(5, 9), 10)
+  if (area === 0 || area === 666 || area >= 900) return 'SSN area number is invalid'
+  if (group === 0) return 'SSN group number cannot be 00'
+  if (serial === 0) return 'SSN serial number cannot be 0000'
+  return ''
+}
+
+// Washington State DL: 1 letter + 11 digits (e.g. W1234567ABC12) is the WA format
+// General US DL: 1-2 alpha prefix + 5-17 alphanumeric — accept any reasonable US format
+function validateDriversLicense(value) {
+  if (!value) return ''
+  const clean = value.replace(/[\s-]/g, '').toUpperCase()
+  // Must be 5–20 alphanumeric characters
+  if (!/^[A-Z0-9]{5,20}$/.test(clean)) return "Driver's license must be 5–20 letters/digits (no spaces or special characters)"
+  // Washington State specific: starts with letter, then alphanumeric, total length 12
+  // Accept WA or generic format — just check it has at least one letter and reasonable length
+  return ''
+}
+
+function validateEmail(value) {
+  if (!value) return ''
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(value)) return 'Enter a valid email address'
+  return ''
+}
+
+function validateZip(value) {
+  if (!value) return ''
+  if (!/^\d{5}(-\d{4})?$/.test(value.trim())) return 'ZIP must be 5 digits (or 5+4 format)'
+  return ''
+}
+
+function validateDOB(value) {
+  if (!value) return ''
+  const dob = new Date(value)
+  if (Number.isNaN(dob.getTime())) return 'Enter a valid date'
+  const today = new Date()
+  const age = today.getFullYear() - dob.getFullYear() - (today < new Date(today.getFullYear(), dob.getMonth(), dob.getDate()) ? 1 : 0)
+  if (age < 18) return 'Applicant must be at least 18 years old'
+  if (age > 120) return 'Enter a valid date of birth'
+  return ''
+}
+
+function validateFullName(value) {
+  if (!value) return ''
+  const trimmed = value.trim()
+  if (trimmed.length < 2) return 'Enter your full legal name'
+  if (!/^[a-zA-ZÀ-ÿ\s'\-\.]+$/.test(trimmed)) return 'Name may only contain letters, spaces, hyphens, and apostrophes'
+  const parts = trimmed.split(/\s+/)
+  if (parts.length < 2) return 'Enter both first and last name'
+  return ''
+}
+
+function validateIncome(value) {
+  if (!value) return ''
+  const n = Number(String(value).replace(/[^0-9.-]/g, ''))
+  if (!Number.isFinite(n) || n < 0) return 'Enter a valid income amount'
+  return ''
+}
+
+function validateState(value) {
+  if (!value) return ''
+  const abbrevs = ['AL','AK','AZ','AR','CA','CO','CT','DE','FL','GA','HI','ID','IL','IN','IA','KS','KY','LA','ME','MD','MA','MI','MN','MS','MO','MT','NE','NV','NH','NJ','NM','NY','NC','ND','OH','OK','OR','PA','RI','SC','SD','TN','TX','UT','VT','VA','WA','WV','WI','WY','DC']
+  if (!abbrevs.includes(value.trim().toUpperCase())) return 'Enter a valid 2-letter US state abbreviation'
+  return ''
+}
+
+// Run all signer-form validations, returns array of error messages
+function validateSignerForm(signer) {
+  const errors = []
+  const add = (msg) => { if (msg) errors.push(msg) }
+
+  // Full name
+  const nameErr = validateFullName(signer.fullName)
+  if (nameErr) add(`Full Name: ${nameErr}`)
+
+  // DOB
+  const dobErr = validateDOB(signer.dateOfBirth)
+  if (dobErr) add(`Date of Birth: ${dobErr}`)
+
+  // SSN (optional but validate if provided)
+  if (signer.ssn) { const e = validateSSN(signer.ssn); if (e) add(`SSN: ${e}`) }
+
+  // License
+  if (signer.license) { const e = validateDriversLicense(signer.license); if (e) add(`Driver's License: ${e}`) }
+
+  // Phone
+  const phoneErr = validatePhone(signer.phone)
+  if (phoneErr) add(`Phone Number: ${phoneErr}`)
+
+  // Supervisor/landlord phones (optional)
+  if (signer.currentLandlordPhone) { const e = validatePhone(signer.currentLandlordPhone); if (e) add(`Current Landlord Phone: ${e}`) }
+  if (signer.previousLandlordPhone) { const e = validatePhone(signer.previousLandlordPhone); if (e) add(`Previous Landlord Phone: ${e}`) }
+  if (signer.supervisorPhone) { const e = validatePhone(signer.supervisorPhone); if (e) add(`Supervisor Phone: ${e}`) }
+  if (signer.reference1Phone) { const e = validatePhone(signer.reference1Phone); if (e) add(`Reference 1 Phone: ${e}`) }
+  if (signer.reference2Phone) { const e = validatePhone(signer.reference2Phone); if (e) add(`Reference 2 Phone: ${e}`) }
+
+  // Email
+  const emailErr = validateEmail(signer.email)
+  if (emailErr) add(`Email: ${emailErr}`)
+
+  // ZIP codes
+  if (signer.currentZip) { const e = validateZip(signer.currentZip); if (e) add(`Current ZIP: ${e}`) }
+  if (signer.previousZip) { const e = validateZip(signer.previousZip); if (e) add(`Previous ZIP: ${e}`) }
+
+  // State abbreviations
+  if (signer.currentState) { const e = validateState(signer.currentState); if (e) add(`Current State: ${e}`) }
+  if (signer.previousState) { const e = validateState(signer.previousState); if (e) add(`Previous State: ${e}`) }
+
+  // Income
+  if (signer.monthlyIncome) { const e = validateIncome(signer.monthlyIncome); if (e) add(`Monthly Income: ${e}`) }
+  if (signer.annualIncome) { const e = validateIncome(signer.annualIncome); if (e) add(`Annual Income: ${e}`) }
+
+  // Lease dates
+  if (signer.leaseStartDate && signer.leaseEndDate) {
+    if (new Date(signer.leaseEndDate) <= new Date(signer.leaseStartDate)) {
+      add('Lease End Date must be after Lease Start Date')
+    }
+  }
+
+  // Lease start not in the past
+  if (signer.leaseStartDate) {
+    const today = new Date(); today.setHours(0, 0, 0, 0)
+    if (new Date(signer.leaseStartDate) < today) add('Lease Start Date cannot be in the past')
+  }
+
+  // Room availability check
+  if (signer.propertyName && signer.roomNumber && signer.leaseStartDate) {
+    const prop = PROPERTY_OPTIONS.find((p) => p.name === signer.propertyName)
+    const roomData = prop?.rooms.find((r) => r.name === signer.roomNumber)
+    if (roomData && !isRoomAvailableOnDate(roomData.available, signer.leaseStartDate)) {
+      const label = getRoomAvailabilityLabel(roomData.available)
+      add(`Room ${signer.roomNumber} is not available on your lease start date. Availability: ${label}`)
+    }
+  }
+
+  return errors
+}
+
+function validateCosignerForm(cosigner) {
+  const errors = []
+  const add = (msg) => { if (msg) errors.push(msg) }
+
+  const nameErr = validateFullName(cosigner.fullName)
+  if (nameErr) add(`Full Name: ${nameErr}`)
+
+  const dobErr = validateDOB(cosigner.dateOfBirth)
+  if (dobErr) add(`Date of Birth: ${dobErr}`)
+
+  if (cosigner.ssn) { const e = validateSSN(cosigner.ssn); if (e) add(`SSN: ${e}`) }
+  if (cosigner.license) { const e = validateDriversLicense(cosigner.license); if (e) add(`Driver's License: ${e}`) }
+
+  const phoneErr = validatePhone(cosigner.phone)
+  if (phoneErr) add(`Phone Number: ${phoneErr}`)
+
+  const emailErr = validateEmail(cosigner.email)
+  if (emailErr) add(`Email: ${emailErr}`)
+
+  if (cosigner.zip) { const e = validateZip(cosigner.zip); if (e) add(`ZIP: ${e}`) }
+  if (cosigner.state) { const e = validateState(cosigner.state); if (e) add(`State: ${e}`) }
+  if (cosigner.supervisorPhone) { const e = validatePhone(cosigner.supervisorPhone); if (e) add(`Supervisor Phone: ${e}`) }
+  if (cosigner.monthlyIncome) { const e = validateIncome(cosigner.monthlyIncome); if (e) add(`Monthly Income: ${e}`) }
+  if (cosigner.annualIncome) { const e = validateIncome(cosigner.annualIncome); if (e) add(`Annual Income: ${e}`) }
+
+  return errors
+}
 
 const inputCls = 'w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 placeholder-slate-400 outline-none transition focus:border-axis focus:ring-2 focus:ring-axis/20'
 const selectCls = `${inputCls} appearance-none cursor-pointer`
@@ -135,7 +384,7 @@ function defaultCosigner() {
   }
 }
 
-function Field({ label, required, hint, children }) {
+function Field({ label, required, hint, error, children }) {
   return (
     <div>
       <label className="mb-1.5 block text-sm font-semibold text-slate-800">
@@ -144,6 +393,7 @@ function Field({ label, required, hint, children }) {
       </label>
       {hint && <p className="mb-1.5 text-xs text-slate-400">{hint}</p>}
       {children}
+      {error && <p className="mt-1.5 text-xs font-medium text-red-600">{error}</p>}
     </div>
   )
 }
@@ -358,6 +608,7 @@ export default function Apply() {
   const [submitted, setSubmitted] = useState(false)
   const [submittedRecord, setSubmittedRecord] = useState(null)
   const [error, setError] = useState('')
+  const [fieldErrors, setFieldErrors] = useState([])
 
   const selectedProperty = useMemo(
     () => PROPERTY_OPTIONS.find((property) => property.name === signer.propertyName),
@@ -383,6 +634,20 @@ export default function Apply() {
     event.preventDefault()
     setSubmitting(true)
     setError('')
+    setFieldErrors([])
+
+    // --- Field validation ---
+    const valErrors =
+      applicationType === 'signer'
+        ? validateSignerForm(signer)
+        : validateCosignerForm(cosigner)
+
+    if (valErrors.length > 0) {
+      setFieldErrors(valErrors)
+      setSubmitting(false)
+      window.scrollTo({ top: 0, behavior: 'smooth' })
+      return
+    }
 
     try {
       if (applicationType === 'signer') {
@@ -1016,6 +1281,17 @@ export default function Apply() {
                 </Field>
               </Section>
             </>
+          )}
+
+          {fieldErrors.length > 0 && (
+            <div className="space-y-2 rounded-xl border border-orange-200 bg-orange-50 px-4 py-4 text-sm text-orange-800">
+              <p className="font-semibold">Please fix the following before submitting:</p>
+              <ul className="list-inside list-disc space-y-1 text-xs">
+                {fieldErrors.map((e, i) => (
+                  <li key={i}>{e}</li>
+                ))}
+              </ul>
+            </div>
           )}
 
           {error && (
