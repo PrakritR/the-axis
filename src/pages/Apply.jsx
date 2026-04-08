@@ -340,9 +340,7 @@ export default function Apply() {
   const [applicationType, setApplicationType] = useState('')
   const [signer, setSigner] = useState(defaultSigner())
   const [cosigner, setCosigner] = useState(defaultCosigner())
-  const [submitting, setSubmitting] = useState(false)
   const [submitted, setSubmitted] = useState(false)
-  const [submittedRecord, setSubmittedRecord] = useState(null)
   const [error, setError] = useState('')
 
   const selectedProperty = useMemo(
@@ -365,143 +363,31 @@ export default function Apply() {
     setCosigner((prev) => ({ ...prev, [key]: value }))
   }
 
-  async function handleSubmit(event) {
+  function handleSubmit(event) {
     event.preventDefault()
-    setSubmitting(true)
     setError('')
 
-    try {
-      if (applicationType === 'signer') {
-        if (!signer.consent) {
-          throw new Error('The signer must consent to the credit and background check before submitting.')
-        }
-
-        const fields = {
-          // Identity
-          'Applicant Full Name': signer.fullName,
-          'Applicant Email': signer.email,
-          'Applicant Phone Number': signer.phone,
-          'Applicant Date of Birth': signer.dateOfBirth,
-          'Applicant SSN No.': signer.ssn || '',
-          'Applicant Driving License No.': signer.license,
-          // Property
-          'Property Name': signer.propertyName,
-          'Property Address': signer.propertyAddress || '',
-          'Room Number': signer.roomNumber || '',
-          'Lease Term': signer.leaseTerm,
-          'Lease Start Date': signer.leaseStartDate || null,
-          'Lease End Date': signer.leaseEndDate || null,
-          // Current address
-          'Applicant Current Address': signer.currentAddress,
-          'Applicant City': signer.currentCity,
-          'Applicant State': signer.currentState,
-          'Applicant ZIP': signer.currentZip,
-          'Current Landlord Name': signer.currentLandlordName || '',
-          'Current Landlord Phone': signer.currentLandlordPhone || '',
-          'Current Move-In Date': signer.currentMoveInDate || null,
-          'Current Move-Out Date': signer.currentMoveOutDate || null,
-          'Current Reason for Leaving': signer.currentReasonForLeaving || '',
-          // Previous address
-          'Previous Address': signer.previousAddress || '',
-          'Previous City': signer.previousCity || '',
-          'Previous State': signer.previousState || '',
-          'Previous ZIP': signer.previousZip || '',
-          'Previous Landlord Name': signer.previousLandlordName || '',
-          'Previous Landlord Phone': signer.previousLandlordPhone || '',
-          'Previous Move-In Date': signer.previousMoveInDate || null,
-          'Previous Move-Out Date': signer.previousMoveOutDate || null,
-          'Previous Reason for Leaving': signer.previousReasonForLeaving || '',
-          // Employment
-          'Applicant Employer': signer.employer || '',
-          'Applicant Employer Address': signer.employerAddress || '',
-          'Applicant Supervisor Name': signer.supervisorName || '',
-          'Applicant Supervisor Phone': signer.supervisorPhone || '',
-          'Applicant Job Title': signer.jobTitle || '',
-          'Applicant Monthly Income': toCurrencyNumber(signer.monthlyIncome),
-          'Applicant Annual Income': toCurrencyNumber(signer.annualIncome),
-          'Applicant Employment Start Date': signer.employmentStartDate || null,
-          'Applicant Other Income': signer.otherIncome || '',
-          // References
-          'Reference 1 Name': signer.reference1Name || '',
-          'Reference 1 Relationship': signer.reference1Relationship || '',
-          'Reference 1 Phone': signer.reference1Phone || '',
-          'Reference 2 Name': signer.reference2Name || '',
-          'Reference 2 Relationship': signer.reference2Relationship || '',
-          'Reference 2 Phone': signer.reference2Phone || '',
-          // Additional info
-          'Number of Occupants': signer.occupants || '',
-          'Pets': signer.pets || '',
-          'Vehicles': signer.vehicles || '',
-          // Background
-          'Eviction History': signer.evictionHistory,
-          'Applicant Bankruptcy History': signer.bankruptcyHistory,
-          'Applicant Criminal History': signer.criminalHistory,
-          'Has Co-Signer': signer.hasCosigner,
-          // Signature
-          'Applicant Consent for Credit and Background Check': signer.consent,
-          'Applicant Signature': signer.signature,
-          'Applicant Date Signed': signer.dateSigned,
-          'Additional Notes': signer.notes || '',
-        }
-
-        const record = await submitToAirtable(APPLICATIONS_TABLE, fields)
-        setSubmittedRecord(record)
-      } else if (applicationType === 'cosigner') {
-        if (!cosigner.consent) {
-          throw new Error('The co-signer must consent to the credit and background check before submitting.')
-        }
-
-        const linkedApplication = await findApplicationRecord({
-          applicationId: cosigner.linkedApplicationId,
-          signerName: cosigner.linkedSignerName,
-        })
-
-        const fields = {
-          'Linked Application': [linkedApplication.id],
-          'Role': 'Co-Signer',
-          'Full Name': cosigner.fullName,
-          'Email': cosigner.email,
-          'Phone Number': cosigner.phone,
-          'Date of Birth': cosigner.dateOfBirth,
-          'SSN No.': cosigner.ssn || '',
-          'Driving License No.': cosigner.license || '',
-          'Current Address': cosigner.currentAddress || '',
-          'City': cosigner.city || '',
-          'State': cosigner.state || '',
-          'ZIP': cosigner.zip || '',
-          'Employer': cosigner.employer || '',
-          'Employer Address': cosigner.employerAddress || '',
-          'Supervisor Name': cosigner.supervisorName || '',
-          'Supervisor Phone': cosigner.supervisorPhone || '',
-          'Job Title': cosigner.jobTitle || '',
-          'Monthly Income': toCurrencyNumber(cosigner.monthlyIncome),
-          'Annual Income': toCurrencyNumber(cosigner.annualIncome),
-          'Employment Start Date': cosigner.employmentStartDate || null,
-          'Other Income': cosigner.otherIncome || '',
-          'Bankruptcy History': cosigner.bankruptcyHistory,
-          'Criminal History': cosigner.criminalHistory,
-          'Consent for Credit and Background Check': cosigner.consent,
-          'Signature': cosigner.signature,
-          'Date Signed': cosigner.dateSigned,
-          'Notes': buildCosignerNotes(cosigner),
-        }
-
-        await submitToAirtable(COSIGNERS_TABLE, fields)
-      } else {
-        throw new Error('Choose whether this is a signer application or a co-signer form.')
+    if (applicationType === 'signer') {
+      if (!signer.consent) {
+        setError('The signer must consent to the credit and background check before submitting.')
+        return
       }
-
-      setSubmitted(true)
-    } catch (submissionError) {
-      console.error('Airtable submission failed:', submissionError)
-      setError(submissionError.message || 'Submission failed.')
-    } finally {
-      setSubmitting(false)
+    } else if (applicationType === 'cosigner') {
+      if (!cosigner.consent) {
+        setError('The co-signer must consent to the credit and background check before submitting.')
+        return
+      }
+    } else {
+      setError('Choose whether this is a signer application or a co-signer form.')
+      return
     }
+
+    const mailto = buildMailtoFallback(applicationType, signer, cosigner)
+    window.location.href = mailto
+    setSubmitted(true)
   }
 
   if (submitted) {
-    const appId = submittedRecord?.fields?.['Application ID']
     const isSigner = applicationType === 'signer'
     const firstName = isSigner ? signer.fullName.split(' ')[0] : cosigner.fullName.split(' ')[0]
 
@@ -514,27 +400,20 @@ export default function Apply() {
               <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
             </svg>
           </div>
-          <h1 className="text-3xl font-black text-slate-900 text-center">Submission received</h1>
+          <h1 className="text-3xl font-black text-slate-900 text-center">Application ready to send</h1>
           <p className="mt-4 text-base leading-7 text-slate-500 text-center">
-            {isSigner
-              ? `Thanks, ${firstName}! Your signer application was submitted to Axis.`
-              : `Thanks, ${firstName}! Your co-signer form was linked to the signer application.`}
+            {`Thanks, ${firstName}! Your email client should have opened with your application pre-filled. Send it to complete your submission.`}
           </p>
-
-          {isSigner && appId && (
-            <div className="mt-8 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-              <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">Your Application ID</div>
-              <div className="mt-2 flex items-center gap-3">
-                <span className="text-4xl font-black text-slate-900 tracking-tight">#{appId}</span>
-              </div>
-              {signer.hasCosigner === 'Yes' && (
-                <p className="mt-3 text-sm leading-6 text-slate-600">
-                  Share this ID with your co-signer. They'll enter it when filling out the co-signer form at <strong>/apply</strong> to link their submission to yours.
-                </p>
-              )}
-            </div>
-          )}
-
+          <p className="mt-3 text-sm text-slate-400 text-center">
+            If the email didn't open,{' '}
+            <a
+              href={buildMailtoFallback(applicationType, signer, cosigner)}
+              className="underline text-slate-600 hover:text-slate-900"
+            >
+              click here to try again
+            </a>
+            .
+          </p>
           <a href="/" className="mt-8 inline-block w-full rounded-full bg-slate-900 px-6 py-3 text-center text-sm font-semibold text-white hover:bg-slate-800">
             Back to home
           </a>
@@ -1001,24 +880,16 @@ export default function Apply() {
           )}
 
           {error && (
-            <div className="space-y-3 rounded-xl border border-red-200 bg-red-50 px-4 py-4 text-sm text-red-700">
-              <p className="font-semibold">Submission failed — Airtable didn&apos;t accept the application.</p>
-              <p className="break-all font-mono text-xs text-red-600">{error}</p>
-              <a
-                href={buildMailtoFallback(applicationType, signer, cosigner)}
-                className="inline-block rounded-lg bg-red-700 px-4 py-2 text-xs font-semibold text-white hover:bg-red-800"
-              >
-                Send via email instead
-              </a>
+            <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-4 text-sm text-red-700">
+              <p>{error}</p>
             </div>
           )}
 
           <button
             type="submit"
-            disabled={submitting}
-            className="w-full rounded-full bg-slate-900 py-4 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
+            className="w-full rounded-full bg-slate-900 py-4 text-sm font-semibold text-white transition hover:bg-slate-800"
           >
-            {submitting ? 'Submitting…' : applicationType === 'cosigner' ? 'Submit co-signer form' : 'Submit signer application'}
+            {applicationType === 'cosigner' ? 'Submit co-signer form' : 'Submit signer application'}
           </button>
         </form>
       </div>
