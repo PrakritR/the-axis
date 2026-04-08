@@ -900,8 +900,11 @@ const COSIGNER_STEPS = [
       if (c.license) { const v = validateDriversLicense(c.license); if (v) e.license = v }
       if (!c.license) e.license = 'Driver\'s license is required'
       if (!c.currentAddress?.trim()) e.currentAddress = 'Address is required'
-      if (c.state) { const v = validateState(c.state); if (v) e.state = v }
-      if (c.zip) { const v = validateZip(c.zip); if (v) e.zip = v }
+      if (!c.city?.trim()) e.city = 'City is required'
+      if (!c.state?.trim()) e.state = 'State is required'
+      else { const v = validateState(c.state); if (v) e.state = v }
+      if (!c.zip?.trim()) e.zip = 'ZIP is required'
+      else { const v = validateZip(c.zip); if (v) e.zip = v }
       return e
     },
   },
@@ -1366,7 +1369,7 @@ export default function Apply() {
                   />
                 </Field>
                 <div className="grid grid-cols-3 gap-3">
-                  <Field label="City" required>
+                  <Field label="City" required error={fieldErrors.currentCity}>
                     <input required className={inputCls} autoComplete="address-level2" placeholder="Seattle" value={signer.currentCity} onChange={(e) => updateSigner('currentCity', e.target.value)} />
                   </Field>
                   <Field label="State" required error={fieldErrors.currentState}>
@@ -1544,19 +1547,19 @@ export default function Apply() {
           {applicationType === 'signer' && step === 8 && (
               <Section title="Financial Background / Legal">
                 <div className="grid gap-5 sm:grid-cols-3">
-                  <Field label="Eviction History" required>
+                  <Field label="Eviction History" required error={fieldErrors.evictionHistory}>
                     <select required className={selectCls} value={signer.evictionHistory} onChange={(e) => updateSigner('evictionHistory', e.target.value)}>
                       <option value="" disabled>Select…</option>
                       {HISTORY_OPTIONS.map((option) => <option key={option} value={option}>{option}</option>)}
                     </select>
                   </Field>
-                  <Field label="Bankruptcy History" required>
+                  <Field label="Bankruptcy History" required error={fieldErrors.bankruptcyHistory}>
                     <select required className={selectCls} value={signer.bankruptcyHistory} onChange={(e) => updateSigner('bankruptcyHistory', e.target.value)}>
                       <option value="" disabled>Select…</option>
                       {HISTORY_OPTIONS.map((option) => <option key={option} value={option}>{option}</option>)}
                     </select>
                   </Field>
-                  <Field label="Criminal Convictions" required>
+                  <Field label="Criminal Convictions" required error={fieldErrors.criminalHistory}>
                     <select required className={selectCls} value={signer.criminalHistory} onChange={(e) => updateSigner('criminalHistory', e.target.value)}>
                       <option value="" disabled>Select…</option>
                       {HISTORY_OPTIONS.map((option) => <option key={option} value={option}>{option}</option>)}
@@ -1564,7 +1567,7 @@ export default function Apply() {
                   </Field>
                 </div>
 
-                <Field label="Consent for Credit and Background Check" required>
+                <Field label="Consent for Credit and Background Check" required error={fieldErrors.consent}>
                   <label className="flex min-h-[52px] items-center gap-3 rounded-xl border border-slate-200 px-4 py-3 text-sm text-slate-700">
                     <input type="checkbox" checked={signer.consent} onChange={(e) => updateSigner('consent', e.target.checked)} className="h-4 w-4 rounded border-slate-300 text-axis focus:ring-axis" />
                     I consent to a credit and background check.
@@ -1575,10 +1578,10 @@ export default function Apply() {
           {applicationType === 'signer' && step === 9 && (
               <Section title="Signature">
                 <div className="grid gap-5 sm:grid-cols-2">
-                  <Field label="Signer Signature" required>
+                  <Field label="Signer Signature" required error={fieldErrors.signature}>
                     <input required className={inputCls} value={signer.signature} onChange={(e) => updateSigner('signature', e.target.value)} />
                   </Field>
-                  <Field label="Date Signed" required>
+                  <Field label="Date Signed" required error={fieldErrors.dateSigned}>
                     <input required type="date" min="2020-01-01" max={MAX_DATE} className={inputCls} value={signer.dateSigned} onChange={(e) => updateSigner('dateSigned', clampYear(e.target.value))} />
                   </Field>
                 </div>
@@ -1627,7 +1630,7 @@ export default function Apply() {
                   <Field label="Social Security #" hint="9 digits — ###-##-####" error={fieldErrors.ssn}>
                     <input className={inputCls} placeholder="123-45-6789" value={cosigner.ssn} onChange={(e) => updateCosigner('ssn', e.target.value)} />
                   </Field>
-                  <Field label="Current Address" required>
+                  <Field label="Current Address" required error={fieldErrors.currentAddress}>
                     <AddressAutocomplete
                       required
                       value={cosigner.currentAddress}
@@ -1644,7 +1647,7 @@ export default function Apply() {
                 </div>
 
                 <div className="grid gap-5 sm:grid-cols-3">
-                  <Field label="City" required>
+                  <Field label="City" required error={fieldErrors.city}>
                     <input required className={inputCls} autoComplete="address-level2" placeholder="Seattle" value={cosigner.city} onChange={(e) => updateCosigner('city', e.target.value)} />
                   </Field>
                   <Field label="State" required error={fieldErrors.state}>
@@ -1706,13 +1709,13 @@ export default function Apply() {
           {applicationType === 'cosigner' && step === 3 && (
               <Section title="Financial Background / Legal">
                 <div className="grid gap-5 sm:grid-cols-2">
-                  <Field label="Bankruptcy History" required>
+                  <Field label="Bankruptcy History" required error={fieldErrors.bankruptcyHistory}>
                     <select required className={selectCls} value={cosigner.bankruptcyHistory} onChange={(e) => updateCosigner('bankruptcyHistory', e.target.value)}>
                       <option value="" disabled>Select…</option>
                       {HISTORY_OPTIONS.map((option) => <option key={option} value={option}>{option}</option>)}
                     </select>
                   </Field>
-                  <Field label="Criminal Convictions" required>
+                  <Field label="Criminal Convictions" required error={fieldErrors.criminalHistory}>
                     <select required className={selectCls} value={cosigner.criminalHistory} onChange={(e) => updateCosigner('criminalHistory', e.target.value)}>
                       <option value="" disabled>Select…</option>
                       {HISTORY_OPTIONS.map((option) => <option key={option} value={option}>{option}</option>)}
@@ -1720,7 +1723,7 @@ export default function Apply() {
                   </Field>
                 </div>
 
-                <Field label="Consent for Credit and Background Check" required>
+                <Field label="Consent for Credit and Background Check" required error={fieldErrors.consent}>
                   <label className="flex min-h-[52px] items-center gap-3 rounded-xl border border-slate-200 px-4 py-3 text-sm text-slate-700">
                     <input type="checkbox" checked={cosigner.consent} onChange={(e) => updateCosigner('consent', e.target.checked)} className="h-4 w-4 rounded border-slate-300 text-axis focus:ring-axis" />
                     I consent to a credit and background check.
@@ -1731,10 +1734,10 @@ export default function Apply() {
           {applicationType === 'cosigner' && step === 4 && (
               <Section title="Signature">
                 <div className="grid gap-5 sm:grid-cols-2">
-                  <Field label="Co-Signer Signature" required>
+                  <Field label="Co-Signer Signature" required error={fieldErrors.signature}>
                     <input required className={inputCls} value={cosigner.signature} onChange={(e) => updateCosigner('signature', e.target.value)} />
                   </Field>
-                  <Field label="Date Signed" required>
+                  <Field label="Date Signed" required error={fieldErrors.dateSigned}>
                     <input required type="date" min="2020-01-01" max={MAX_DATE} className={inputCls} value={cosigner.dateSigned} onChange={(e) => updateCosigner('dateSigned', clampYear(e.target.value))} />
                   </Field>
                 </div>
