@@ -80,7 +80,7 @@ export async function getResidentByEmail(email) {
 export async function createResident(fields) {
   const data = await request(tableUrl(TABLES.residents), {
     method: 'POST',
-    body: JSON.stringify({ fields }),
+    body: JSON.stringify({ fields, typecast: true }),
   })
 
   return mapRecord(data)
@@ -89,7 +89,7 @@ export async function createResident(fields) {
 export async function updateResident(recordId, fields) {
   const data = await request(`${tableUrl(TABLES.residents)}/${recordId}`, {
     method: 'PATCH',
-    body: JSON.stringify({ fields }),
+    body: JSON.stringify({ fields, typecast: true }),
   })
 
   return mapRecord(data)
@@ -130,7 +130,9 @@ export async function getAnnouncements() {
 export async function getWorkOrdersForResident(resident) {
   const residentId = resident.id
   const supabaseUserId = resident['Supabase User ID'] || ''
-  const formula = `OR(FIND("${escapeFormulaValue(residentId)}", ARRAYJOIN({Resident})) > 0, {Supabase User ID} = "${escapeFormulaValue(supabaseUserId)}")`
+  const formula = supabaseUserId
+    ? `OR(FIND("${escapeFormulaValue(residentId)}", ARRAYJOIN({Resident})) > 0, {Supabase User ID} = "${escapeFormulaValue(supabaseUserId)}")`
+    : `FIND("${escapeFormulaValue(residentId)}", ARRAYJOIN({Resident})) > 0`
   const data = await request(buildUrl(TABLES.workOrders, {
     filterByFormula: formula,
   }))
@@ -172,9 +174,7 @@ export async function createWorkOrder({
 
   const data = await request(tableUrl(TABLES.workOrders), {
     method: 'POST',
-    body: JSON.stringify({
-      fields,
-    }),
+    body: JSON.stringify({ fields, typecast: true }),
   })
 
   return mapRecord(data)
@@ -201,6 +201,7 @@ export async function sendMessage({ workOrderId, senderEmail, message, isAdmin =
         'Sender Email': senderEmail,
         'Is Admin': isAdmin,
       },
+      typecast: true,
     }),
   })
 
