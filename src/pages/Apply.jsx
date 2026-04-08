@@ -380,6 +380,35 @@ function defaultCosigner() {
   }
 }
 
+function CopyButton({ text }) {
+  const [copied, setCopied] = useState(false)
+  function handleCopy() {
+    navigator.clipboard.writeText(text).then(() => {
+      setCopied(true)
+      setTimeout(() => setCopied(false), 2000)
+    })
+  }
+  return (
+    <button
+      type="button"
+      onClick={handleCopy}
+      className="flex shrink-0 items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 transition hover:border-slate-300 hover:bg-slate-50 active:scale-95"
+    >
+      {copied ? (
+        <>
+          <svg className="h-3.5 w-3.5 text-teal-500" fill="none" viewBox="0 0 16 16" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M3 8l3 3 7-7"/></svg>
+          Copied
+        </>
+      ) : (
+        <>
+          <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 16 16" stroke="currentColor" strokeWidth={1.8}><rect x="5" y="5" width="8" height="8" rx="1.5" strokeLinejoin="round"/><path d="M11 5V3.5A1.5 1.5 0 009.5 2h-6A1.5 1.5 0 002 3.5v6A1.5 1.5 0 003.5 11H5" strokeLinejoin="round"/></svg>
+          Copy
+        </>
+      )}
+    </button>
+  )
+}
+
 function Field({ label, required, hint, error, children }) {
   return (
     <div>
@@ -797,46 +826,55 @@ export default function Apply() {
 
   if (submitted) {
     const rawAppId = submittedRecord?.fields?.['Application ID'] ?? submittedRecord?.id
-    // Strip APP- prefix from formula fields; fall back to the Airtable record ID
-    const appId = typeof rawAppId === 'number' ? rawAppId : String(rawAppId || '').replace(/^APP-/, '')
+    const appId = typeof rawAppId === 'number' ? `#${rawAppId}` : String(rawAppId || '').replace(/^APP-/, '')
     const isSigner = applicationType === 'signer'
     const firstName = isSigner ? signer.fullName.split(' ')[0] : cosigner.fullName.split(' ')[0]
 
     return (
       <div className="min-h-screen bg-cream-50">
         <Seo title="Application Submitted | Axis Seattle Housing" pathname="/apply" />
-        <div className="mx-auto max-w-lg px-4 py-24">
-          <div className="mx-auto mb-6 flex h-16 w-16 items-center justify-center rounded-full bg-teal-50">
-            <svg className="h-8 w-8 text-axis" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+        <div className="mx-auto max-w-lg px-4 py-20 sm:py-28">
+          {/* Check icon */}
+          <div className="mx-auto mb-8 flex h-20 w-20 items-center justify-center rounded-full bg-teal-50 ring-8 ring-teal-50/60">
+            <svg className="h-10 w-10 text-axis" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
             </svg>
           </div>
-          <h1 className="text-3xl font-black text-slate-900 text-center">Submission received</h1>
-          <p className="mt-4 text-base leading-7 text-slate-500 text-center">
+
+          <h1 className="text-center text-3xl font-black tracking-tight text-slate-900 sm:text-4xl">Application received</h1>
+          <p className="mt-3 text-center text-base leading-7 text-slate-500">
             {isSigner
-              ? `Thanks, ${firstName}! Your signer application was submitted to Axis.`
-              : `Thanks, ${firstName}! Your co-signer form was linked to the signer application.`}
+              ? `Thanks, ${firstName}! We'll review your application and reach out within 2 business days.`
+              : `Thanks, ${firstName}! Your co-signer form has been linked to the signer's application.`}
           </p>
 
           {isSigner && appId && (
-            <div className="mt-8 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-              <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">Your Application ID</div>
-              <div className="mt-2">
-                <span className="break-all font-mono text-2xl font-bold text-slate-900">
-                  {typeof appId === 'number' ? `#${appId}` : appId}
-                </span>
+            <div className="mt-8 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+              <div className="border-b border-slate-100 bg-slate-50 px-6 py-3">
+                <span className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">Your Application ID</span>
+              </div>
+              <div className="flex items-center justify-between gap-4 px-6 py-5">
+                <span className="font-mono text-3xl font-black tracking-tight text-slate-900">{appId}</span>
+                <CopyButton text={appId} />
               </div>
               {signer.hasCosigner === 'Yes' && (
-                <p className="mt-3 text-sm leading-6 text-slate-600">
-                  Share this ID with your co-signer. They'll enter it when filling out the co-signer form at <strong>/apply</strong> to link their submission to yours.
-                </p>
+                <div className="border-t border-slate-100 bg-teal-50 px-6 py-4">
+                  <p className="text-sm leading-6 text-teal-800">
+                    Share this ID with your co-signer — they'll need it to link their form to yours at <strong>/apply</strong>.
+                  </p>
+                </div>
               )}
             </div>
           )}
 
-          <a href="/" className="mt-8 inline-block w-full rounded-full bg-slate-900 px-6 py-3 text-center text-sm font-semibold text-white hover:bg-slate-800">
-            Back to home
-          </a>
+          <div className="mt-8 flex flex-col gap-3">
+            <a href="/apply" className="inline-block w-full rounded-full border border-slate-200 bg-white px-6 py-3 text-center text-sm font-semibold text-slate-700 hover:border-slate-300 hover:bg-slate-50 transition">
+              Submit another application
+            </a>
+            <a href="/" className="inline-block w-full rounded-full bg-slate-900 px-6 py-3 text-center text-sm font-semibold text-white hover:bg-slate-800 transition">
+              Back to home
+            </a>
+          </div>
         </div>
       </div>
     )
@@ -917,7 +955,7 @@ export default function Apply() {
                     <select className={selectCls} value={signer.roomNumber} onChange={(e) => updateSigner('roomNumber', e.target.value)} disabled={!selectedProperty}>
                       <option value="">{selectedProperty ? 'Select a room…' : 'Choose a property first'}</option>
                       {(selectedProperty?.rooms || []).map((room) => (
-                        <option key={room} value={room}>{room}</option>
+                        <option key={room.name} value={room.name}>{room.name}</option>
                       ))}
                     </select>
                   </Field>
