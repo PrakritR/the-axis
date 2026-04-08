@@ -157,6 +157,16 @@ function validateZip(value) {
   return ''
 }
 
+function validateStreetAddress(value) {
+  if (!value) return 'Street address is required'
+  const v = value.trim()
+  // Must start with a number (house number), followed by a street name
+  if (!/^\d+\s+\S/.test(v)) return 'Enter a valid street address starting with a number (e.g. 123 Main St)'
+  // Must be at least 6 chars and contain letters after the number
+  if (v.length < 6 || !/\d+\s+[a-zA-Z]/.test(v)) return 'Enter a full street address (e.g. 4521 University Way NE)'
+  return ''
+}
+
 function validateDOB(value) {
   if (!value) return ''
   const dob = new Date(value)
@@ -788,12 +798,17 @@ const SIGNER_STEPS = [
     title: 'Current Address',
     validate: (s) => {
       const e = {}
-      if (!s.currentAddress?.trim()) e.currentAddress = 'Address is required'
+      const addr = validateStreetAddress(s.currentAddress); if (addr) e.currentAddress = addr
       if (!s.currentCity?.trim()) e.currentCity = 'City is required'
       if (s.currentState) { const v = validateState(s.currentState); if (v) e.currentState = v }
       if (!s.currentState?.trim()) e.currentState = 'State is required'
       if (s.currentZip) { const v = validateZip(s.currentZip); if (v) e.currentZip = v }
       if (!s.currentZip?.trim()) e.currentZip = 'ZIP is required'
+      if (!s.currentMoveInDate) e.currentMoveInDate = 'Move-in date is required'
+      if (!s.currentMoveOutDate) e.currentMoveOutDate = 'Expected move-out date is required'
+      if (s.currentMoveInDate && s.currentMoveOutDate && new Date(s.currentMoveOutDate) <= new Date(s.currentMoveInDate)) {
+        e.currentMoveOutDate = 'Move-out must be after move-in'
+      }
       if (s.currentLandlordPhone) { const v = validatePhone(s.currentLandlordPhone); if (v) e.currentLandlordPhone = v }
       return e
     },
@@ -802,6 +817,14 @@ const SIGNER_STEPS = [
     title: 'Previous Address',
     validate: (s) => {
       const e = {}
+      if (s.previousAddress?.trim()) {
+        const addr = validateStreetAddress(s.previousAddress); if (addr) e.previousAddress = addr
+      }
+      if (s.previousAddress?.trim() && !s.previousMoveInDate) e.previousMoveInDate = 'Move-in date is required'
+      if (s.previousAddress?.trim() && !s.previousMoveOutDate) e.previousMoveOutDate = 'Move-out date is required'
+      if (s.previousMoveInDate && s.previousMoveOutDate && new Date(s.previousMoveOutDate) <= new Date(s.previousMoveInDate)) {
+        e.previousMoveOutDate = 'Move-out must be after move-in'
+      }
       if (s.previousState) { const v = validateState(s.previousState); if (v) e.previousState = v }
       if (s.previousZip) { const v = validateZip(s.previousZip); if (v) e.previousZip = v }
       if (s.previousLandlordPhone) { const v = validatePhone(s.previousLandlordPhone); if (v) e.previousLandlordPhone = v }
@@ -1314,7 +1337,7 @@ export default function Apply() {
           )}
           {applicationType === 'signer' && step === 3 && (
               <Section title="Current Address">
-                <Field label="Street Address" required>
+                <Field label="Street Address" required error={fieldErrors.currentAddress}>
                   <AddressAutocomplete
                     required
                     value={signer.currentAddress}
@@ -1350,11 +1373,11 @@ export default function Apply() {
                 </div>
 
                 <div className="grid gap-5 sm:grid-cols-3">
-                  <Field label="Move-in Date">
-                    <input type="date" min={MIN_DOB} max={MAX_DATE} className={inputCls} value={signer.currentMoveInDate} onChange={(e) => updateSigner('currentMoveInDate', clampYear(e.target.value))} />
+                  <Field label="Move-in Date" required error={fieldErrors.currentMoveInDate}>
+                    <input required type="date" min={MIN_DOB} max={MAX_DATE} className={inputCls} value={signer.currentMoveInDate} onChange={(e) => updateSigner('currentMoveInDate', clampYear(e.target.value))} />
                   </Field>
-                  <Field label="Move-out Date">
-                    <input type="date" min={MIN_DOB} max={MAX_DATE} className={inputCls} value={signer.currentMoveOutDate} onChange={(e) => updateSigner('currentMoveOutDate', clampYear(e.target.value))} />
+                  <Field label="Move-out Date" required error={fieldErrors.currentMoveOutDate}>
+                    <input required type="date" min={MIN_DOB} max={MAX_DATE} className={inputCls} value={signer.currentMoveOutDate} onChange={(e) => updateSigner('currentMoveOutDate', clampYear(e.target.value))} />
                   </Field>
                   <Field label="Reason for Leaving">
                     <input className={inputCls} value={signer.currentReasonForLeaving} onChange={(e) => updateSigner('currentReasonForLeaving', e.target.value)} />
@@ -1364,7 +1387,7 @@ export default function Apply() {
           )}
           {applicationType === 'signer' && step === 4 && (
               <Section title="Previous Address">
-                <Field label="Street Address">
+                <Field label="Street Address" error={fieldErrors.previousAddress}>
                   <AddressAutocomplete
                     value={signer.previousAddress}
                     onChange={(val) => updateSigner('previousAddress', val)}
@@ -1399,10 +1422,10 @@ export default function Apply() {
                 </div>
 
                 <div className="grid gap-5 sm:grid-cols-3">
-                  <Field label="Move-in Date">
+                  <Field label="Move-in Date" error={fieldErrors.previousMoveInDate}>
                     <input type="date" min={MIN_DOB} max={MAX_DATE} className={inputCls} value={signer.previousMoveInDate} onChange={(e) => updateSigner('previousMoveInDate', clampYear(e.target.value))} />
                   </Field>
-                  <Field label="Move-out Date">
+                  <Field label="Move-out Date" error={fieldErrors.previousMoveOutDate}>
                     <input type="date" min={MIN_DOB} max={MAX_DATE} className={inputCls} value={signer.previousMoveOutDate} onChange={(e) => updateSigner('previousMoveOutDate', clampYear(e.target.value))} />
                   </Field>
                   <Field label="Reason for Leaving">
