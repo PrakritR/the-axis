@@ -829,6 +829,7 @@ const SIGNER_STEPS = [
       if (s.previousAddress?.trim()) {
         const addr = validateStreetAddress(s.previousAddress); if (addr) e.previousAddress = addr
       }
+      if (s.previousAddress?.trim() && !s.previousCity?.trim()) e.previousCity = 'City is required'
       if (s.previousAddress?.trim() && !s.previousMoveInDate) e.previousMoveInDate = 'Move-in date is required'
       if (s.previousAddress?.trim() && !s.previousMoveOutDate) e.previousMoveOutDate = 'Move-out date is required'
       if (s.previousMoveInDate && s.previousMoveOutDate && new Date(s.previousMoveOutDate) <= new Date(s.previousMoveInDate)) {
@@ -857,6 +858,7 @@ const SIGNER_STEPS = [
     validate: (s) => {
       const e = {}
       if (!s.reference1Name?.trim()) e.reference1Name = 'At least one reference name is required'
+      if (!s.reference1Relationship?.trim()) e.reference1Relationship = 'Relationship is required'
       if (!s.reference1Phone?.trim()) e.reference1Phone = 'Reference phone is required'
       else { const v = validatePhone(s.reference1Phone); if (v) e.reference1Phone = v }
       if (s.reference2Phone) { const v = validatePhone(s.reference2Phone); if (v) e.reference2Phone = v }
@@ -887,7 +889,13 @@ const SIGNER_STEPS = [
 ]
 
 const COSIGNER_STEPS = [
-  { title: 'Link to Signer', validate: () => ({}) },
+  { title: 'Link to Signer', validate: (c) => {
+    const e = {}
+    if (!c.linkedApplicationId?.trim() && !c.linkedSignerName?.trim()) {
+      e.linkedApplicationId = 'Please enter the signer's Application ID or their full name'
+    }
+    return e
+  }},
   {
     title: 'Co-Signer Information',
     validate: (c) => {
@@ -1424,7 +1432,7 @@ export default function Apply() {
                   />
                 </Field>
                 <div className="grid grid-cols-3 gap-3">
-                  <Field label="City">
+                  <Field label="City" error={fieldErrors.previousCity}>
                     <input className={inputCls} autoComplete="address-level2" placeholder="Seattle" value={signer.previousCity} onChange={(e) => updateSigner('previousCity', e.target.value)} />
                   </Field>
                   <Field label="State" error={fieldErrors.previousState}>
@@ -1512,7 +1520,7 @@ export default function Apply() {
                   <Field label="Name" required error={fieldErrors.reference1Name}>
                     <input required className={inputCls} placeholder="Jane Smith" value={signer.reference1Name} onChange={(e) => updateSigner('reference1Name', e.target.value)} />
                   </Field>
-                  <Field label="Relationship" required>
+                  <Field label="Relationship" required error={fieldErrors.reference1Relationship}>
                     <input required className={inputCls} placeholder="Colleague" value={signer.reference1Relationship} onChange={(e) => updateSigner('reference1Relationship', e.target.value)} />
                   </Field>
                   <Field label="Phone #" required error={fieldErrors.reference1Phone}>
@@ -1594,7 +1602,7 @@ export default function Apply() {
           {applicationType === 'cosigner' && step === 0 && (
               <Section title="Link This Co-Signer To A Signer Application">
                 <div className="grid gap-5 sm:grid-cols-2">
-                  <Field label="Signer Application ID" hint="Recommended. Use the Airtable Application ID if you have it.">
+                  <Field label="Signer Application ID" hint="Recommended. Use the Airtable Application ID if you have it." error={fieldErrors.linkedApplicationId}>
                     <input className={inputCls} value={cosigner.linkedApplicationId} onChange={(e) => updateCosigner('linkedApplicationId', e.target.value)} />
                   </Field>
                   <Field label="Signer Full Name" hint="Use this if you don’t have the application ID.">
@@ -1616,7 +1624,7 @@ export default function Apply() {
 
                 <div className="grid gap-5 sm:grid-cols-3">
                   <Field label="Phone Number" required hint="10 digits" error={fieldErrors.phone}>
-                    <input required type="tel" className={inputCls} placeholder="(206) 555-0100" value={cosigner.phone} onChange={(e) => updateCosigner('phone', e.target.value)} />
+                    <input required type="tel" className={inputCls} placeholder="(206) 555-0100" value={cosigner.phone} onChange={(e) => updateCosigner('phone', formatPhoneInput(e.target.value))} />
                   </Field>
                   <Field label="Date of Birth" required error={fieldErrors.dateOfBirth}>
                     <input required type="date" min={MIN_DOB} max={todayIsoDate()} className={inputCls} value={cosigner.dateOfBirth} onChange={(e) => updateCosigner('dateOfBirth', clampYear(e.target.value))} />
@@ -1680,7 +1688,7 @@ export default function Apply() {
                     <input className={inputCls} value={cosigner.supervisorName} onChange={(e) => updateCosigner('supervisorName', e.target.value)} />
                   </Field>
                   <Field label="Supervisor Phone #" error={fieldErrors.supervisorPhone}>
-                    <input type="tel" className={inputCls} value={cosigner.supervisorPhone} onChange={(e) => updateCosigner('supervisorPhone', e.target.value)} />
+                    <input type="tel" className={inputCls} placeholder="(206) 555-0100" value={cosigner.supervisorPhone} onChange={(e) => updateCosigner('supervisorPhone', formatPhoneInput(e.target.value))} />
                   </Field>
                 </div>
 
