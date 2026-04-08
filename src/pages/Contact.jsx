@@ -96,6 +96,8 @@ function BookingScheduler() {
     ].join('\n')
 
     return `${base}?hide_gdpr_banner=1&primary_color=0f172a&a1=${enc(notes)}`
+    // Note: phone pre-fill via &a2= requires a "Phone Number" custom question
+    // to be added in Calendly event type settings → Invitee Questions
   }
 
   // Step 0: Choose booking type
@@ -443,11 +445,6 @@ export default function Contact() {
           <p className="mt-6 max-w-2xl text-lg leading-8 text-slate-600">
             Ask about availability, schedule a tour, or get help choosing a property.
           </p>
-          <div className="mt-8 flex flex-wrap gap-3">
-            <a href={`tel:${CONTACT_PHONE_RAW}`} className="rounded-full bg-slate-900 px-6 py-3 text-sm font-semibold text-white hover:bg-slate-800">Call now</a>
-            <a href={`sms:${CONTACT_PHONE_RAW}`} className="rounded-full border border-slate-300 px-6 py-3 text-sm font-semibold text-slate-700 hover:border-slate-500">Text now</a>
-            <a href={`mailto:${CONTACT_EMAIL}`} className="rounded-full border border-slate-300 px-6 py-3 text-sm font-semibold text-slate-700 hover:border-slate-500">Email direct</a>
-          </div>
         </section>
 
         <div className="mt-10 grid items-stretch gap-8 lg:grid-cols-[0.82fr_1.18fr]">
