@@ -224,7 +224,7 @@ export const properties = [
           roomPlaceholder('Room 5', '$775/month', 'Unavailable'),
           roomPlaceholder('Room 6', '$775/month', 'Unavailable'),
           roomPlaceholder('Room 7', '$775/month', 'Unavailable'),
-          roomPlaceholder('Room 8', '$775/month', 'Available March 28, 2026-May 17, 2026 and after August 8, 2026'),
+          roomPlaceholder('Room 8', '$775/month', 'Available after August 8, 2026'),
         ],
       },
     ],
