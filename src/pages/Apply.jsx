@@ -734,8 +734,177 @@ function buildMailtoFallback(type, signer, cosigner) {
   return `mailto:info@axis-seattle-housing.com?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(lines.join('\n'))}`
 }
 
+// ---------------------------------------------------------------------------
+// Step definitions — each has a title and a per-step validator
+// ---------------------------------------------------------------------------
+const SIGNER_STEPS = [
+  {
+    title: 'Co-Signer',
+    validate: (s) => {
+      const e = {}
+      if (!s.hasCosigner) e.hasCosigner = 'Please select Yes or No'
+      return e
+    },
+  },
+  {
+    title: 'Property Information',
+    validate: (s) => {
+      const e = {}
+      if (!s.propertyName) e.propertyName = 'Select a property'
+      if (!s.leaseStartDate) e.leaseStartDate = 'Lease start date is required'
+      if (!s.leaseEndDate) e.leaseEndDate = 'Lease end date is required'
+      if (s.leaseStartDate && s.leaseEndDate && new Date(s.leaseEndDate) <= new Date(s.leaseStartDate)) {
+        e.leaseEndDate = 'Must be after lease start date'
+      }
+      if (s.leaseStartDate) {
+        const today = new Date(); today.setHours(0,0,0,0)
+        if (new Date(s.leaseStartDate) < today) e.leaseStartDate = 'Cannot be in the past'
+      }
+      if (s.propertyName && s.roomNumber && s.leaseStartDate) {
+        const prop = PROPERTY_OPTIONS.find((p) => p.name === s.propertyName)
+        const room = prop?.rooms.find((r) => r.name === s.roomNumber)
+        if (room && !isRoomAvailableOnDate(room.available, s.leaseStartDate)) {
+          e.leaseStartDate = `Room ${s.roomNumber} is not available on this date — ${getRoomAvailabilityLabel(room.available)}`
+        }
+      }
+      return e
+    },
+  },
+  {
+    title: 'Signer Information',
+    validate: (s) => {
+      const e = {}
+      const name = validateFullName(s.fullName); if (name) e.fullName = name
+      const dob = validateDOB(s.dateOfBirth); if (dob) e.dateOfBirth = dob
+      const phone = validatePhone(s.phone); if (phone) e.phone = phone
+      const email = validateEmail(s.email); if (email) e.email = email
+      if (s.ssn) { const v = validateSSN(s.ssn); if (v) e.ssn = v }
+      if (s.license) { const v = validateDriversLicense(s.license); if (v) e.license = v }
+      if (!s.license) e.license = 'Driver\'s license is required'
+      return e
+    },
+  },
+  {
+    title: 'Current Address',
+    validate: (s) => {
+      const e = {}
+      if (!s.currentAddress?.trim()) e.currentAddress = 'Address is required'
+      if (!s.currentCity?.trim()) e.currentCity = 'City is required'
+      if (s.currentState) { const v = validateState(s.currentState); if (v) e.currentState = v }
+      if (!s.currentState?.trim()) e.currentState = 'State is required'
+      if (s.currentZip) { const v = validateZip(s.currentZip); if (v) e.currentZip = v }
+      if (!s.currentZip?.trim()) e.currentZip = 'ZIP is required'
+      if (s.currentLandlordPhone) { const v = validatePhone(s.currentLandlordPhone); if (v) e.currentLandlordPhone = v }
+      return e
+    },
+  },
+  {
+    title: 'Previous Address',
+    validate: (s) => {
+      const e = {}
+      if (s.previousState) { const v = validateState(s.previousState); if (v) e.previousState = v }
+      if (s.previousZip) { const v = validateZip(s.previousZip); if (v) e.previousZip = v }
+      if (s.previousLandlordPhone) { const v = validatePhone(s.previousLandlordPhone); if (v) e.previousLandlordPhone = v }
+      return e
+    },
+  },
+  {
+    title: 'Employment & Income',
+    validate: (s) => {
+      const e = {}
+      if (s.supervisorPhone) { const v = validatePhone(s.supervisorPhone); if (v) e.supervisorPhone = v }
+      if (s.monthlyIncome) { const v = validateIncome(s.monthlyIncome); if (v) e.monthlyIncome = v }
+      if (s.annualIncome) { const v = validateIncome(s.annualIncome); if (v) e.annualIncome = v }
+      return e
+    },
+  },
+  {
+    title: 'References',
+    validate: (s) => {
+      const e = {}
+      if (!s.reference1Name?.trim()) e.reference1Name = 'At least one reference name is required'
+      if (!s.reference1Phone?.trim()) e.reference1Phone = 'Reference phone is required'
+      else { const v = validatePhone(s.reference1Phone); if (v) e.reference1Phone = v }
+      if (s.reference2Phone) { const v = validatePhone(s.reference2Phone); if (v) e.reference2Phone = v }
+      return e
+    },
+  },
+  { title: 'Additional Information', validate: () => ({}) },
+  {
+    title: 'Financial Background & Legal',
+    validate: (s) => {
+      const e = {}
+      if (!s.evictionHistory) e.evictionHistory = 'Required'
+      if (!s.bankruptcyHistory) e.bankruptcyHistory = 'Required'
+      if (!s.criminalHistory) e.criminalHistory = 'Required'
+      if (!s.consent) e.consent = 'You must consent to proceed'
+      return e
+    },
+  },
+  {
+    title: 'Signature',
+    validate: (s) => {
+      const e = {}
+      if (!s.signature?.trim()) e.signature = 'Signature is required'
+      if (!s.dateSigned) e.dateSigned = 'Date signed is required'
+      return e
+    },
+  },
+]
+
+const COSIGNER_STEPS = [
+  { title: 'Link to Signer', validate: () => ({}) },
+  {
+    title: 'Co-Signer Information',
+    validate: (c) => {
+      const e = {}
+      const name = validateFullName(c.fullName); if (name) e.fullName = name
+      const dob = validateDOB(c.dateOfBirth); if (dob) e.dateOfBirth = dob
+      const phone = validatePhone(c.phone); if (phone) e.phone = phone
+      const email = validateEmail(c.email); if (email) e.email = email
+      if (c.ssn) { const v = validateSSN(c.ssn); if (v) e.ssn = v }
+      if (c.license) { const v = validateDriversLicense(c.license); if (v) e.license = v }
+      if (!c.license) e.license = 'Driver\'s license is required'
+      if (!c.currentAddress?.trim()) e.currentAddress = 'Address is required'
+      if (c.state) { const v = validateState(c.state); if (v) e.state = v }
+      if (c.zip) { const v = validateZip(c.zip); if (v) e.zip = v }
+      return e
+    },
+  },
+  {
+    title: 'Employment & Income',
+    validate: (c) => {
+      const e = {}
+      if (c.supervisorPhone) { const v = validatePhone(c.supervisorPhone); if (v) e.supervisorPhone = v }
+      if (c.monthlyIncome) { const v = validateIncome(c.monthlyIncome); if (v) e.monthlyIncome = v }
+      if (c.annualIncome) { const v = validateIncome(c.annualIncome); if (v) e.annualIncome = v }
+      return e
+    },
+  },
+  {
+    title: 'Financial Background & Legal',
+    validate: (c) => {
+      const e = {}
+      if (!c.bankruptcyHistory) e.bankruptcyHistory = 'Required'
+      if (!c.criminalHistory) e.criminalHistory = 'Required'
+      if (!c.consent) e.consent = 'You must consent to proceed'
+      return e
+    },
+  },
+  {
+    title: 'Signature',
+    validate: (c) => {
+      const e = {}
+      if (!c.signature?.trim()) e.signature = 'Signature is required'
+      if (!c.dateSigned) e.dateSigned = 'Date signed is required'
+      return e
+    },
+  },
+]
+
 export default function Apply() {
   const [applicationType, setApplicationType] = useState('')
+  const [step, setStep] = useState(0)
   const [signer, setSigner] = useState(defaultSigner())
   const [cosigner, setCosigner] = useState(defaultCosigner())
   const [submitting, setSubmitting] = useState(false)
@@ -743,6 +912,10 @@ export default function Apply() {
   const [submittedRecord, setSubmittedRecord] = useState(null)
   const [error, setError] = useState('')
   const [fieldErrors, setFieldErrors] = useState({})
+
+  const steps = applicationType === 'cosigner' ? COSIGNER_STEPS : SIGNER_STEPS
+  const totalSteps = steps.length
+  const isLastStep = step === totalSteps - 1
 
   const selectedProperty = useMemo(
     () => PROPERTY_OPTIONS.find((property) => property.name === signer.propertyName),
@@ -758,34 +931,51 @@ export default function Apply() {
       }
       return next
     })
+    // Clear field error on change
+    if (fieldErrors[key]) setFieldErrors((prev) => { const n = {...prev}; delete n[key]; return n })
   }
 
   function updateCosigner(key, value) {
     setCosigner((prev) => ({ ...prev, [key]: value }))
+    if (fieldErrors[key]) setFieldErrors((prev) => { const n = {...prev}; delete n[key]; return n })
   }
 
-  async function handleSubmit(event) {
-    event.preventDefault()
-    setSubmitting(true)
-    setError('')
-    setFieldErrors({})
-
-    // --- Field validation ---
-    const valErrors =
-      applicationType === 'signer'
-        ? validateSignerForm(signer)
-        : validateCosignerForm(cosigner)
-
-    if (Object.keys(valErrors).length > 0) {
-      setFieldErrors(valErrors)
-      setSubmitting(false)
-      // Scroll to first error
+  function handleNext() {
+    const current = steps[step]
+    const data = applicationType === 'cosigner' ? cosigner : signer
+    const errs = current.validate(data)
+    if (Object.keys(errs).length > 0) {
+      setFieldErrors(errs)
       setTimeout(() => {
         const el = document.querySelector('[data-field-error]')
         if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' })
       }, 50)
       return
     }
+    setFieldErrors({})
+    setStep((s) => s + 1)
+    window.scrollTo({ top: 0, behavior: 'smooth' })
+  }
+
+  function handleBack() {
+    setFieldErrors({})
+    setStep((s) => s - 1)
+    window.scrollTo({ top: 0, behavior: 'smooth' })
+  }
+
+  async function handleSubmit(event) {
+    event.preventDefault()
+    // Final step validation before submit
+    const current = steps[step]
+    const data = applicationType === 'cosigner' ? cosigner : signer
+    const errs = current.validate(data)
+    if (Object.keys(errs).length > 0) {
+      setFieldErrors(errs)
+      return
+    }
+    setSubmitting(true)
+    setError('')
+    setFieldErrors({})
 
     try {
       if (applicationType === 'signer') {
@@ -986,37 +1176,53 @@ export default function Apply() {
         pathname="/apply"
       />
 
-      <div className="mx-auto max-w-5xl px-4 py-12 sm:px-6 sm:py-16">
+      <div className="mx-auto max-w-2xl px-4 py-12 sm:px-6 sm:py-16">
         <div className="mb-8">
           <div className="text-[11px] font-bold uppercase tracking-[0.2em] text-slate-400">Axis applications</div>
           <h1 className="mt-2 text-3xl font-black tracking-tight text-slate-900 sm:text-4xl">Residential Rental Application</h1>
-          <p className="mt-2 text-sm leading-6 text-slate-500">
-            Start by choosing whether you are the signer or the co-signer. These are now two separate submission flows.
-          </p>
         </div>
 
-        <form onSubmit={handleSubmit} className="space-y-6">
+        {/* Step 0 — type selection (always shown first, outside steps) */}
+        {!applicationType && (
           <Section title="Who Are You Filing As?">
-            <div className="flex flex-wrap gap-3">
-              <button
-                type="button"
-                onClick={() => setApplicationType('signer')}
-                className={`rounded-full px-5 py-2.5 text-sm font-semibold transition ${applicationType === 'signer' ? 'bg-slate-900 text-white' : 'border border-slate-200 bg-white text-slate-700'}`}
-              >
+            <p className="text-sm leading-6 text-slate-500">Choose your role to begin the application.</p>
+            <div className="mt-2 flex flex-wrap gap-3">
+              <button type="button" onClick={() => { setApplicationType('signer'); setStep(0) }}
+                className="rounded-full border border-slate-200 bg-white px-6 py-3 text-sm font-semibold text-slate-700 hover:border-slate-900 hover:bg-slate-50 transition">
                 Signer
               </button>
-              <button
-                type="button"
-                onClick={() => setApplicationType('cosigner')}
-                className={`rounded-full px-5 py-2.5 text-sm font-semibold transition ${applicationType === 'cosigner' ? 'bg-slate-900 text-white' : 'border border-slate-200 bg-white text-slate-700'}`}
-              >
+              <button type="button" onClick={() => { setApplicationType('cosigner'); setStep(0) }}
+                className="rounded-full border border-slate-200 bg-white px-6 py-3 text-sm font-semibold text-slate-700 hover:border-slate-900 hover:bg-slate-50 transition">
                 Co-Signer
               </button>
             </div>
           </Section>
+        )}
 
-          {applicationType === 'signer' && (
-            <>
+        {applicationType && (
+          <>
+            {/* Progress bar */}
+            <div className="mb-6">
+              <div className="mb-2 flex items-center justify-between">
+                <span className="text-xs font-semibold text-slate-500">
+                  Step {step + 1} of {totalSteps} — {steps[step].title}
+                </span>
+                <button type="button" onClick={() => { setApplicationType(''); setStep(0); setFieldErrors({}) }}
+                  className="text-xs text-slate-400 hover:text-slate-700 transition">
+                  Change type
+                </button>
+              </div>
+              <div className="h-1.5 w-full rounded-full bg-slate-200">
+                <div
+                  className="h-1.5 rounded-full bg-axis transition-all duration-300"
+                  style={{ width: `${((step + 1) / totalSteps) * 100}%` }}
+                />
+              </div>
+            </div>
+
+        <form onSubmit={handleSubmit} className="space-y-6">
+
+          {applicationType === 'signer' && step === 0 && (
               <Section title="Co-Signer">
                 <p className="text-sm leading-6 text-slate-500">Will someone be co-signing this application with you?</p>
                 <div className="flex gap-3">
@@ -1038,7 +1244,8 @@ export default function Apply() {
                   </div>
                 )}
               </Section>
-
+          )}
+          {applicationType === 'signer' && step === 1 && (
               <Section title="Property Information">
                 <Field label="Property Name" required>
                   <select required className={selectCls} value={signer.propertyName} onChange={(e) => updateSigner('propertyName', e.target.value)}>
@@ -1076,7 +1283,8 @@ export default function Apply() {
                   </Field>
                 </div>
               </Section>
-
+          )}
+          {applicationType === 'signer' && step === 2 && (
               <Section title="Signer Information">
                 <div className="grid gap-5 sm:grid-cols-2">
                   <Field label="Full Name" required error={fieldErrors.fullName}>
@@ -1103,7 +1311,8 @@ export default function Apply() {
                   <input required type="email" className={inputCls} value={signer.email} onChange={(e) => updateSigner('email', e.target.value)} />
                 </Field>
               </Section>
-
+          )}
+          {applicationType === 'signer' && step === 3 && (
               <Section title="Current Address">
                 <Field label="Street Address" required>
                   <AddressAutocomplete
@@ -1152,7 +1361,8 @@ export default function Apply() {
                   </Field>
                 </div>
               </Section>
-
+          )}
+          {applicationType === 'signer' && step === 4 && (
               <Section title="Previous Address">
                 <Field label="Street Address">
                   <AddressAutocomplete
@@ -1200,7 +1410,8 @@ export default function Apply() {
                   </Field>
                 </div>
               </Section>
-
+          )}
+          {applicationType === 'signer' && step === 5 && (
               <Section title="Employment & Income">
                 <div className="grid gap-5 sm:grid-cols-2">
                   <Field label="Employer Name">
@@ -1239,7 +1450,8 @@ export default function Apply() {
                   <input className={inputCls} value={signer.otherIncome} onChange={(e) => updateSigner('otherIncome', e.target.value)} />
                 </Field>
               </Section>
-
+          )}
+          {applicationType === 'signer' && step === 6 && (
               <Section title="References">
                 <p className="text-sm leading-6 text-slate-500">Provide at least one personal or professional reference (not a family member).</p>
                 <div className="grid gap-5 sm:grid-cols-3">
@@ -1265,7 +1477,8 @@ export default function Apply() {
                   </Field>
                 </div>
               </Section>
-
+          )}
+          {applicationType === 'signer' && step === 7 && (
               <Section title="Additional Information">
                 <div className="grid gap-5 sm:grid-cols-3">
                   <Field label="Number of Occupants">
@@ -1279,7 +1492,8 @@ export default function Apply() {
                   </Field>
                 </div>
               </Section>
-
+          )}
+          {applicationType === 'signer' && step === 8 && (
               <Section title="Financial Background / Legal">
                 <div className="grid gap-5 sm:grid-cols-3">
                   <Field label="Eviction History" required>
@@ -1309,7 +1523,8 @@ export default function Apply() {
                   </label>
                 </Field>
               </Section>
-
+          )}
+          {applicationType === 'signer' && step === 9 && (
               <Section title="Signature">
                 <div className="grid gap-5 sm:grid-cols-2">
                   <Field label="Signer Signature" required>
@@ -1323,11 +1538,9 @@ export default function Apply() {
                   <textarea className={`${inputCls} min-h-[96px] resize-y`} value={signer.notes} onChange={(e) => updateSigner('notes', e.target.value)} />
                 </Field>
               </Section>
-            </>
           )}
 
-          {applicationType === 'cosigner' && (
-            <>
+          {applicationType === 'cosigner' && step === 0 && (
               <Section title="Link This Co-Signer To A Signer Application">
                 <div className="grid gap-5 sm:grid-cols-2">
                   <Field label="Signer Application ID" hint="Recommended. Use the Airtable Application ID if you have it.">
@@ -1338,7 +1551,8 @@ export default function Apply() {
                   </Field>
                 </div>
               </Section>
-
+          )}
+          {applicationType === 'cosigner' && step === 1 && (
               <Section title="Co-Signer Information">
                 <div className="grid gap-5 sm:grid-cols-2">
                   <Field label="Full Name" required error={fieldErrors.fullName}>
@@ -1393,7 +1607,8 @@ export default function Apply() {
                   </Field>
                 </div>
               </Section>
-
+          )}
+          {applicationType === 'cosigner' && step === 2 && (
               <Section title="Employment & Income">
                 <div className="grid gap-5 sm:grid-cols-2">
                   <Field label="Employer Name">
@@ -1432,7 +1647,8 @@ export default function Apply() {
                   <input className={inputCls} value={cosigner.otherIncome} onChange={(e) => updateCosigner('otherIncome', e.target.value)} />
                 </Field>
               </Section>
-
+          )}
+          {applicationType === 'cosigner' && step === 3 && (
               <Section title="Financial Background / Legal">
                 <div className="grid gap-5 sm:grid-cols-2">
                   <Field label="Bankruptcy History" required>
@@ -1456,7 +1672,8 @@ export default function Apply() {
                   </label>
                 </Field>
               </Section>
-
+          )}
+          {applicationType === 'cosigner' && step === 4 && (
               <Section title="Signature">
                 <div className="grid gap-5 sm:grid-cols-2">
                   <Field label="Co-Signer Signature" required>
@@ -1470,36 +1687,37 @@ export default function Apply() {
                   <textarea className={`${inputCls} min-h-[96px] resize-y`} value={cosigner.notes} onChange={(e) => updateCosigner('notes', e.target.value)} />
                 </Field>
               </Section>
-            </>
-          )}
-
-          {Object.keys(fieldErrors).length > 0 && (
-            <div className="rounded-xl border border-orange-200 bg-orange-50 px-4 py-3 text-sm text-orange-800">
-              Please fix the highlighted fields above before submitting.
-            </div>
           )}
 
           {error && (
             <div className="space-y-3 rounded-xl border border-red-200 bg-red-50 px-4 py-4 text-sm text-red-700">
               <p className="font-semibold">Submission failed — Airtable didn&apos;t accept the application.</p>
               <p className="break-all font-mono text-xs text-red-600">{error}</p>
-              <a
-                href={buildMailtoFallback(applicationType, signer, cosigner)}
-                className="inline-block rounded-lg bg-red-700 px-4 py-2 text-xs font-semibold text-white hover:bg-red-800"
-              >
+              <a href={buildMailtoFallback(applicationType, signer, cosigner)} className="inline-block rounded-lg bg-red-700 px-4 py-2 text-xs font-semibold text-white hover:bg-red-800">
                 Send via email instead
               </a>
             </div>
           )}
 
-          <button
-            type="submit"
-            disabled={submitting}
-            className="w-full rounded-full bg-slate-900 py-4 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
-          >
-            {submitting ? 'Submitting…' : applicationType === 'cosigner' ? 'Submit co-signer form' : 'Submit signer application'}
-          </button>
+          <div className="flex gap-3">
+            {step > 0 && (
+              <button type="button" onClick={handleBack} className="rounded-full border border-slate-200 bg-white px-6 py-3 text-sm font-semibold text-slate-700 hover:border-slate-400 transition">
+                Back
+              </button>
+            )}
+            {!isLastStep ? (
+              <button type="button" onClick={handleNext} className="flex-1 rounded-full bg-slate-900 py-3 text-sm font-semibold text-white hover:bg-slate-800 transition">
+                Continue
+              </button>
+            ) : (
+              <button type="submit" disabled={submitting} className="flex-1 rounded-full bg-axis py-3 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-60 transition">
+                {submitting ? 'Submitting…' : applicationType === 'cosigner' ? 'Submit co-signer form' : 'Submit application'}
+              </button>
+            )}
+          </div>
         </form>
+          </>
+        )}
       </div>
     </div>
   )
