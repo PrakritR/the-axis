@@ -1112,7 +1112,7 @@ export default function PropertyPage(){
                 Choose the lease timeline that fits your year
               </h2>
               <p className="mt-2 text-sm text-slate-500">
-                All lease lengths are available with any start date. Preferred windows are listed on each option — the 9-month Sep 15 – Jun 15 window is the most popular for UW students.
+                All lease lengths are fully flexible — you pick the start and end date that works for you.
               </p>
               <div className="mt-5 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
                 {p.leaseTerms.map((term) => (

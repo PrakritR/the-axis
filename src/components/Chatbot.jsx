@@ -9,7 +9,7 @@ function buildSystemPrompt() {
     ).join('\n')
 
     const leaseDesc = (p.leaseTerms || []).map(t =>
-      `    - ${t.type}: ${t.startingAt}, move-in ${t.moveInLabel || t.moveIn} → move-out ${t.moveOutLabel || t.moveOut}${t.fixedDates ? ' [fixed dates]' : t.flexibleMoveIn ? ' [flexible start — Sep 15 recommended]' : ''}`
+      `    - ${t.type}: ${t.startingAt}, flexible start and end date`
     ).join('\n')
 
     const pkgDesc = (p.leasingPackages || []).map(pkg =>
@@ -60,11 +60,9 @@ The property data below is your live source of truth. Always use it. Never guess
 ${propDetails}
 
 ## Leasing Rules
-- All three properties offer 3-Month Summer, 9-Month Academic, and 12-Month lease options.
-- Summer (Jun 16) and Academic (Sep 15) start dates are fixed.
-- 12-Month start date is flexible — September 15 recommended for students.
-- Any non-standard start date carries a +$25/month surcharge.
-- Custom date ranges (e.g. May–August) are possible with the +$25/month flexible date surcharge. Suggest contacting leasing to confirm.
+- All three properties offer 3-Month, 9-Month, and 12-Month lease options.
+- All start and end dates are fully flexible — residents choose the window that works for them.
+- Custom lengths are also available — contact leasing to discuss.
 - Rooms come fully furnished (desk, bed, heating, AC). No separate furnishing fee.
 
 ## Group Leasing
@@ -213,7 +211,7 @@ function getLocalFallbackReply(question) {
 
   // Lease terms
   if (t.includes('lease') || t.includes('term') || t.includes('summer') || t.includes('academic') || t.includes('month') || t.includes('long') || t.includes('duration'))
-    return 'Three lease options: **3-Month Summer** (Jun 16–Sep 14), **9-Month Academic** (Sep 15–Jun 15), **12-Month** (flexible start). +$25/mo for non-standard start dates.'
+    return 'Three lease options: **3-Month**, **9-Month**, and **12-Month**. All start and end dates are fully flexible — you pick the window that works for you. Custom lengths are also available, contact leasing to discuss.'
 
   // Group / roommates
   if (t.includes('group') || t.includes('friend') || t.includes('roommate') || t.includes('together') || t.includes('two people') || t.includes('couple') || t.includes('share'))

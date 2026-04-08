@@ -9,10 +9,10 @@ const AIRTABLE_TOKEN = import.meta.env.VITE_AIRTABLE_TOKEN
 
 const HISTORY_OPTIONS = ['No', 'Yes']
 const LEASE_TERMS = [
-  '3-Month Summer (Jun 16 – Sep 14)',
-  '9-Month Academic (Sep 15 – Jun 15)',
-  '12-Month (flexible start)',
-  'Other / Custom dates',
+  '3-Month',
+  '9-Month',
+  '12-Month',
+  'Custom',
 ]
 
 const PROPERTY_OPTIONS = properties
@@ -47,9 +47,9 @@ function defaultSigner() {
     propertyName: '',
     propertyAddress: '',
     roomNumber: '',
-    desiredMoveInDate: '',
+    leaseStartDate: '',
+    leaseEndDate: '',
     leaseTerm: LEASE_TERMS[0],
-    leaseTermOther: '',
     fullName: '',
     dateOfBirth: '',
     ssn: '',
@@ -226,13 +226,12 @@ async function findApplicationRecord({ applicationId, signerName }) {
 }
 
 function buildSignerNotes(form) {
-  const leaseTerm = form.leaseTerm === 'Other / Custom dates' ? form.leaseTermOther : form.leaseTerm
-
   return [
     `Property Address Applying For: ${form.propertyAddress || 'Not provided'}`,
     `Requested Room: ${form.roomNumber || 'Not specified'}`,
-    `Desired Move-In Date: ${form.desiredMoveInDate}`,
-    `Lease Term: ${leaseTerm}`,
+    `Lease Term: ${form.leaseTerm}`,
+    `Lease Start Date: ${form.leaseStartDate || 'Not provided'}`,
+    `Lease End Date: ${form.leaseEndDate || 'Not provided'}`,
     `Current Landlord Name: ${form.currentLandlordName || 'Not provided'}`,
     `Current Landlord Phone: ${form.currentLandlordPhone || 'Not provided'}`,
     `Current Move-In Date: ${form.currentMoveInDate || 'Not provided'}`,
@@ -270,8 +269,9 @@ function buildMailtoFallback(type, signer, cosigner) {
         `Property Name: ${signer.propertyName}`,
         `Property Address Applying For: ${signer.propertyAddress || 'Not provided'}`,
         `Room Number: ${signer.roomNumber || 'Not specified'}`,
-        `Desired Move-In Date: ${signer.desiredMoveInDate}`,
-        `Lease Term: ${signer.leaseTerm === 'Other / Custom dates' ? signer.leaseTermOther : signer.leaseTerm}`,
+        `Lease Term: ${signer.leaseTerm}`,
+        `Lease Start Date: ${signer.leaseStartDate || 'Not provided'}`,
+        `Lease End Date: ${signer.leaseEndDate || 'Not provided'}`,
         `Applicant Full Name: ${signer.fullName}`,
         `Applicant Date of Birth: ${signer.dateOfBirth}`,
         `Applicant SSN No.: ${signer.ssn || 'Not provided'}`,
@@ -376,7 +376,6 @@ export default function Apply() {
           throw new Error('The signer must consent to the credit and background check before submitting.')
         }
 
-        const leaseTerm = signer.leaseTerm === 'Other / Custom dates' ? signer.leaseTermOther : signer.leaseTerm
         const fields = {
           // Identity
           'Applicant Full Name': signer.fullName,
@@ -389,8 +388,9 @@ export default function Apply() {
           'Property Name': signer.propertyName,
           'Property Address': signer.propertyAddress || '',
           'Room Number': signer.roomNumber || '',
-          'Desired Move-In Date': signer.desiredMoveInDate || null,
-          'Lease Term': leaseTerm,
+          'Lease Term': signer.leaseTerm,
+          'Lease Start Date': signer.leaseStartDate || null,
+          'Lease End Date': signer.leaseEndDate || null,
           // Current address
           'Applicant Current Address': signer.currentAddress,
           'Applicant City': signer.currentCity,
@@ -618,7 +618,7 @@ export default function Apply() {
                   </Field>
                 </div>
 
-                <div className="grid gap-5 sm:grid-cols-3">
+                <div className="grid gap-5 sm:grid-cols-2">
                   <Field label="Room Number">
                     <select className={selectCls} value={signer.roomNumber} onChange={(e) => updateSigner('roomNumber', e.target.value)} disabled={!selectedProperty}>
                       <option value="">{selectedProperty ? 'Select a room…' : 'Choose a property first'}</option>
@@ -626,9 +626,6 @@ export default function Apply() {
                         <option key={room} value={room}>{room}</option>
                       ))}
                     </select>
-                  </Field>
-                  <Field label="Desired Move-In Date" required>
-                    <input required type="date" className={inputCls} value={signer.desiredMoveInDate} onChange={(e) => updateSigner('desiredMoveInDate', e.target.value)} />
                   </Field>
                   <Field label="Lease Term" required>
                     <select required className={selectCls} value={signer.leaseTerm} onChange={(e) => updateSigner('leaseTerm', e.target.value)}>
@@ -639,11 +636,14 @@ export default function Apply() {
                   </Field>
                 </div>
 
-                {signer.leaseTerm === 'Other / Custom dates' && (
-                  <Field label="Custom Lease Term">
-                    <input className={inputCls} value={signer.leaseTermOther} onChange={(e) => updateSigner('leaseTermOther', e.target.value)} />
+                <div className="grid gap-5 sm:grid-cols-2">
+                  <Field label="Lease Start Date" required>
+                    <input required type="date" className={inputCls} value={signer.leaseStartDate} onChange={(e) => updateSigner('leaseStartDate', e.target.value)} />
                   </Field>
-                )}
+                  <Field label="Lease End Date" required>
+                    <input required type="date" className={inputCls} value={signer.leaseEndDate} onChange={(e) => updateSigner('leaseEndDate', e.target.value)} />
+                  </Field>
+                </div>
               </Section>
 
               <Section title="Applicant Information">
