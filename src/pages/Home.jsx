@@ -268,13 +268,13 @@ function MatchCard({ opt, seasonLabel }) {
 
 function RoomFinder() {
   const [budgetInput, setBudgetInput] = useState('')
-  const [bath, setBath] = useState('')
+  const [bath, setBath] = useState('any')
   const [season, setSeason] = useState('')
 
   const allOptions = useMemo(() => buildFinderOptions(), [])
 
   const budget = parseInt(budgetInput, 10) || 0
-  const hasFilters = budgetInput !== '' || bath !== '' || season !== ''
+  const hasFilters = budgetInput !== '' || bath !== 'any' || season !== ''
 
   const results = useMemo(() => {
     if (!hasFilters) return []
@@ -348,7 +348,24 @@ function RoomFinder() {
               )}
             </div>
 
-            <PillSelect label="Bathroom type" options={BATH_OPTIONS} value={bath} onChange={setBath} />
+            {/* Bathroom type dropdown */}
+            <div>
+              <div className="mb-3 text-[11px] font-bold uppercase tracking-[0.18em] text-slate-500">Bathroom type</div>
+              <div className="relative">
+                <select
+                  value={bath}
+                  onChange={e => setBath(e.target.value)}
+                  className="w-full appearance-none rounded-xl border border-slate-200 bg-white py-2.5 pl-4 pr-9 text-sm font-medium text-slate-900 outline-none transition focus:border-axis focus:ring-2 focus:ring-axis/20"
+                >
+                  {BATH_OPTIONS.map(opt => (
+                    <option key={opt.value} value={opt.value}>{opt.label}</option>
+                  ))}
+                </select>
+                <svg className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" viewBox="0 0 16 16" fill="none">
+                  <path d="M4 6l4 4 4-4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                </svg>
+              </div>
+            </div>
             <PillSelect label="Move-in season" options={SEASON_OPTIONS} value={season} onChange={setSeason} />
           </div>
 
