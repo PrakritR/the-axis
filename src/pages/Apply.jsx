@@ -189,6 +189,25 @@ async function findApplicationRecord({ applicationId, signerName }) {
   let filterByFormula = ''
   const numericId = Number(applicationId)
 
+  // Support rec... record IDs and APP-rec... formula IDs in addition to numeric auto-numbers
+  const rawId = String(applicationId || '')
+  const recordId = rawId.startsWith('APP-') ? rawId.slice(4) : rawId
+  const isRecordId = recordId.startsWith('rec') && recordId.length > 10
+
+  if (isRecordId) {
+    const response = await fetch(
+      `https://api.airtable.com/v0/${AIRTABLE_BASE_ID}/${encodeURIComponent(APPLICATIONS_TABLE)}/${recordId}`,
+      { headers: { Authorization: `Bearer ${AIRTABLE_TOKEN}` } },
+    )
+    if (!response.ok) {
+      const body = await response.text()
+      let message = `Airtable lookup error ${response.status}`
+      try { message += `: ${JSON.parse(body)?.error?.message}` } catch { message += `: ${body}` }
+      throw new Error(message)
+    }
+    return response.json()
+  }
+
   if (applicationId && Number.isFinite(numericId)) {
     filterByFormula = `{Application ID} = ${numericId}`
   } else if (signerName) {
@@ -496,7 +515,9 @@ export default function Apply() {
   }
 
   if (submitted) {
-    const appId = submittedRecord?.fields?.['Application ID']
+    const rawAppId = submittedRecord?.fields?.['Application ID'] ?? submittedRecord?.id
+    // Strip APP- prefix from formula fields; fall back to the Airtable record ID
+    const appId = typeof rawAppId === 'number' ? rawAppId : String(rawAppId || '').replace(/^APP-/, '')
     const isSigner = applicationType === 'signer'
     const firstName = isSigner ? signer.fullName.split(' ')[0] : cosigner.fullName.split(' ')[0]
 
@@ -519,8 +540,10 @@ export default function Apply() {
           {isSigner && appId && (
             <div className="mt-8 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
               <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">Your Application ID</div>
-              <div className="mt-2 flex items-center gap-3">
-                <span className="text-4xl font-black text-slate-900 tracking-tight">#{appId}</span>
+              <div className="mt-2">
+                <span className="break-all font-mono text-2xl font-bold text-slate-900">
+                  {typeof appId === 'number' ? `#${appId}` : appId}
+                </span>
               </div>
               {signer.hasCosigner === 'Yes' && (
                 <p className="mt-3 text-sm leading-6 text-slate-600">
