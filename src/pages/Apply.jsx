@@ -167,13 +167,18 @@ function validateStreetAddress(value) {
   return ''
 }
 
-function validateDOB(value) {
-  if (!value) return ''
+function calculateAge(value) {
+  const dob = new Date(value)
+  const today = new Date()
+  return today.getFullYear() - dob.getFullYear() - (today < new Date(today.getFullYear(), dob.getMonth(), dob.getDate()) ? 1 : 0)
+}
+
+function validateDOB(value, { requireAdult = true } = {}) {
+  if (!value) return 'Date of birth is required'
   const dob = new Date(value)
   if (Number.isNaN(dob.getTime())) return 'Enter a valid date'
-  const today = new Date()
-  const age = today.getFullYear() - dob.getFullYear() - (today < new Date(today.getFullYear(), dob.getMonth(), dob.getDate()) ? 1 : 0)
-  if (age < 18) return 'Applicant must be at least 18 years old'
+  const age = calculateAge(value)
+  if (requireAdult && age < 18) return 'Applicant must be at least 18 years old'
   if (age > 120) return 'Enter a valid date of birth'
   return ''
 }
@@ -788,7 +793,7 @@ const SIGNER_STEPS = [
     validate: (s) => {
       const e = {}
       const name = validateFullName(s.fullName); if (name) e.fullName = name
-      const dob = validateDOB(s.dateOfBirth); if (dob) e.dateOfBirth = dob
+      const dob = validateDOB(s.dateOfBirth, { requireAdult: s.hasCosigner !== 'Yes' }); if (dob) e.dateOfBirth = dob
       const phone = validatePhone(s.phone); if (phone) e.phone = phone
       const email = validateEmail(s.email); if (email) e.email = email
       if (s.ssn) { const v = validateSSN(s.ssn); if (v) e.ssn = v }
