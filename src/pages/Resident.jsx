@@ -114,14 +114,21 @@ function SetupRequired() {
   return (
     <div className="flex min-h-screen items-center justify-center bg-[linear-gradient(180deg,#f8fafc_0%,#ffffff_100%)] px-4">
       <div className="w-full max-w-xl rounded-[28px] border border-slate-200 bg-white p-8 text-center shadow-soft">
-        <h1 className="text-2xl font-black text-slate-900">Resident Portal Setup Required</h1>
-        <p className="mt-3 text-sm leading-7 text-slate-500">
-          The resident portal needs Airtable configured before it can load resident data.
-        </p>
-        <div className="mt-6 space-y-2 rounded-2xl bg-slate-50 p-4 text-left font-mono text-xs text-slate-700">
-          <div>VITE_AIRTABLE_TOKEN</div>
-          <div>VITE_AIRTABLE_BASE_ID</div>
+        <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-amber-50">
+          <svg className="h-6 w-6 text-amber-500" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z" />
+          </svg>
         </div>
+        <h1 className="text-2xl font-black text-slate-900">Airtable Access Required</h1>
+        <p className="mt-3 text-sm leading-7 text-slate-500">
+          The Airtable token doesn't have access to the Resident Portal base. To fix this:
+        </p>
+        <ol className="mt-5 space-y-2 text-left text-sm text-slate-700">
+          <li className="flex gap-2"><span className="font-bold text-axis">1.</span> Go to <strong>airtable.com/create/tokens</strong> and edit your token</li>
+          <li className="flex gap-2"><span className="font-bold text-axis">2.</span> Under <strong>Base access</strong>, add the Resident Portal base (<code className="rounded bg-slate-100 px-1 text-xs">appol57LKtMKaQ75T</code>)</li>
+          <li className="flex gap-2"><span className="font-bold text-axis">3.</span> Ensure scopes include <code className="rounded bg-slate-100 px-1 text-xs">data.records:read</code> and <code className="rounded bg-slate-100 px-1 text-xs">data.records:write</code></li>
+          <li className="flex gap-2"><span className="font-bold text-axis">4.</span> Save the token — no code change needed</li>
+        </ol>
       </div>
     </div>
   )
@@ -176,7 +183,8 @@ function AirtableLogin({ onLogin }) {
   const [mode, setMode] = useState('login') // 'login' | 'signup'
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
-  const [name, setName] = useState('')
+  const [firstName, setFirstName] = useState('')
+  const [lastName, setLastName] = useState('')
   const [house, setHouse] = useState(houseOptions[0]?.house || '')
   const [unitNumber, setUnitNumber] = useState('')
   const [phone, setPhone] = useState('')
@@ -225,7 +233,7 @@ function AirtableLogin({ onLogin }) {
         return
       }
       const resident = await createResident({
-        Name: name.trim(),
+        Name: `${firstName.trim()} ${lastName.trim()}`.trim(),
         Email: email.trim(),
         Password: password,
         House: house,
@@ -271,9 +279,15 @@ function AirtableLogin({ onLogin }) {
         </form>
       ) : (
         <form onSubmit={handleSignup} className="space-y-4">
-          <div>
-            <label className="mb-2 block text-sm font-semibold text-slate-700">Full Name <span className="text-red-400">*</span></label>
-            <input type="text" required value={name} onChange={(e) => setName(e.target.value)} placeholder="Jane Smith" autoComplete="name" className={authInputCls} />
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="mb-2 block text-sm font-semibold text-slate-700">First Name <span className="text-red-400">*</span></label>
+              <input type="text" required value={firstName} onChange={(e) => setFirstName(e.target.value)} placeholder="Jane" autoComplete="given-name" className={authInputCls} />
+            </div>
+            <div>
+              <label className="mb-2 block text-sm font-semibold text-slate-700">Last Name <span className="text-red-400">*</span></label>
+              <input type="text" required value={lastName} onChange={(e) => setLastName(e.target.value)} placeholder="Smith" autoComplete="family-name" className={authInputCls} />
+            </div>
           </div>
           <div>
             <label className="mb-2 block text-sm font-semibold text-slate-700">Email <span className="text-red-400">*</span></label>

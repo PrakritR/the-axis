@@ -43,7 +43,11 @@ async function request(url, options = {}) {
   })
 
   if (!response.ok) {
-    throw new Error(await response.text())
+    const body = await response.text()
+    if (body.includes('INVALID_PERMISSIONS_OR_MODEL_NOT_FOUND')) {
+      throw new Error('Airtable token does not have access to this base. Go to airtable.com/create/tokens, edit your token, and add the Resident Portal base (appol57LKtMKaQ75T) with read/write scopes.')
+    }
+    throw new Error(body)
   }
 
   return response.json()
