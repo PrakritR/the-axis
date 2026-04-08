@@ -604,19 +604,14 @@ export default function Apply() {
               </Section>
 
               <Section title="Property Information">
-                <div className="grid gap-5 sm:grid-cols-2">
-                  <Field label="Property Name" required>
-                    <select required className={selectCls} value={signer.propertyName} onChange={(e) => updateSigner('propertyName', e.target.value)}>
-                      <option value="" disabled>Select a property…</option>
-                      {PROPERTY_OPTIONS.map((property) => (
-                        <option key={property.id} value={property.name}>{property.name}</option>
-                      ))}
-                    </select>
-                  </Field>
-                  <Field label="Property Address Applying For">
-                    <input className={inputCls} value={signer.propertyAddress} onChange={(e) => updateSigner('propertyAddress', e.target.value)} />
-                  </Field>
-                </div>
+                <Field label="Property Name" required>
+                  <select required className={selectCls} value={signer.propertyName} onChange={(e) => updateSigner('propertyName', e.target.value)}>
+                    <option value="" disabled>Select a property…</option>
+                    {PROPERTY_OPTIONS.map((property) => (
+                      <option key={property.id} value={property.name}>{property.name}</option>
+                    ))}
+                  </select>
+                </Field>
 
                 <div className="grid gap-5 sm:grid-cols-2">
                   <Field label="Room Number">
