@@ -415,28 +415,28 @@ export default function Contact() {
       </div>
 
       {/* ── Right form panel ── */}
-      <div className="flex-1 bg-white px-6 py-12 sm:px-10 lg:px-14 lg:py-16">
-        {/* Mobile contact strip */}
-        <div className="mb-10 lg:hidden">
-          <h2 className="font-editorial text-4xl text-slate-900">Get in touch.</h2>
-          <div className="mt-3 flex flex-wrap gap-4 text-sm text-slate-500">
-            <a href={`tel:${CONTACT_PHONE_RAW}`} className="hover:text-slate-900">{CONTACT_PHONE_DISPLAY}</a>
-            <span className="text-slate-200">·</span>
-            <a href={`mailto:${CONTACT_EMAIL}`} className="hover:text-slate-900">{CONTACT_EMAIL}</a>
+      <div className="flex-1 bg-white px-6 py-12 sm:px-10 lg:px-12 lg:py-14">
+        <div className="mx-auto max-w-xl">
+          {/* Mobile contact strip */}
+          <div className="mb-10 lg:hidden">
+            <h2 className="font-editorial text-4xl text-slate-900">Get in touch.</h2>
+            <div className="mt-3 flex flex-wrap gap-4 text-sm text-slate-500">
+              <a href={`tel:${CONTACT_PHONE_RAW}`} className="hover:text-slate-900">{CONTACT_PHONE_DISPLAY}</a>
+              <span className="text-slate-200">·</span>
+              <a href={`mailto:${CONTACT_EMAIL}`} className="hover:text-slate-900">{CONTACT_EMAIL}</a>
+            </div>
           </div>
-        </div>
 
-        {/* Underline tab switcher */}
-        <div className="mb-10 flex gap-7 border-b border-slate-100">
-          {tabs.map(({ id, label }) => (
-            <button key={id} onClick={() => setActiveTab(id)}
-              className={`-mb-px border-b-2 pb-4 text-sm font-semibold transition-all ${activeTab === id ? 'border-slate-900 text-slate-900' : 'border-transparent text-slate-400 hover:text-slate-700'}`}>
-              {label}
-            </button>
-          ))}
-        </div>
+          {/* Underline tab switcher */}
+          <div className="mb-10 flex gap-7 border-b border-slate-100">
+            {tabs.map(({ id, label }) => (
+              <button key={id} onClick={() => setActiveTab(id)}
+                className={`-mb-px border-b-2 pb-4 text-sm font-semibold transition-all ${activeTab === id ? 'border-slate-900 text-slate-900' : 'border-transparent text-slate-400 hover:text-slate-700'}`}>
+                {label}
+              </button>
+            ))}
+          </div>
 
-        <div className="max-w-2xl">
           {activeTab === 'schedule' && <TourRequestForm />}
           {activeTab === 'message' && <ContactMessageForm />}
         </div>

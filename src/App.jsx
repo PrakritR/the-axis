@@ -7,6 +7,7 @@ import Footer from './components/Footer'
 import Home from './pages/Home'
 import scrollToTop from './utils/scrollToTop'
 import Chatbot from './components/Chatbot'
+import TourPopup from './components/TourPopup'
 
 const PropertyPage = lazy(() => import('./pages/PropertyPage'))
 const Contact = lazy(() => import('./pages/Contact'))
@@ -105,6 +106,7 @@ export default function App(){
       </main>
       <Footer />
       <Chatbot />
+      <TourPopup />
     </div>
   )
 }
