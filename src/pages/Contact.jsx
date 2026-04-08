@@ -283,9 +283,7 @@ function todayIsoDate() {
 
 function ContactMessageForm() {
   const [form, setForm] = useState({ name: '', email: '', phone: '', property: '', topic: '', message: '' })
-  const [submitting, setSubmitting] = useState(false)
   const [submitted, setSubmitted] = useState(false)
-  const [error, setError] = useState('')
 
   function set(key, val) { setForm(prev => ({ ...prev, [key]: val })) }
 
@@ -301,38 +299,10 @@ function ContactMessageForm() {
     return `mailto:${CONTACT_EMAIL}?subject=${encodeURIComponent(`Contact: ${form.name}`)}&body=${encodeURIComponent(body)}`
   }
 
-  async function handleSubmit(e) {
+  function handleSubmit(e) {
     e.preventDefault()
-    setSubmitting(true)
-    setError('')
-    const fields = {
-      'Full Name': form.name,
-      'Email': form.email,
-      'Phone Number': form.phone,
-      'Property': form.property,
-      'Inquiry Type': form.topic,
-      'Message Summary': form.message,
-    }
-    try {
-      if (!AIRTABLE_TOKEN) throw new Error('VITE_AIRTABLE_TOKEN is not set.')
-      const res = await fetch(`https://api.airtable.com/v0/${AIRTABLE_BASE_ID}/${encodeURIComponent(AIRTABLE_INQUIRIES_TABLE)}`, {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${AIRTABLE_TOKEN}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ fields, typecast: true }),
-      })
-      if (!res.ok) {
-        const body = await res.text()
-        let msg = `Airtable error ${res.status}`
-        try { msg += ': ' + JSON.parse(body)?.error?.message } catch { msg += ': ' + body }
-        throw new Error(msg)
-      }
-      setSubmitted(true)
-    } catch (err) {
-      console.error('Contact form error:', err)
-      setError(err.message || 'Submission failed.')
-    } finally {
-      setSubmitting(false)
-    }
+    window.location.href = buildMailto()
+    setSubmitted(true)
   }
 
   if (submitted) {
@@ -395,19 +365,9 @@ function ContactMessageForm() {
         <textarea required className={`${inputCls} min-h-[110px] resize-y`} placeholder="Ask us anything about rooms, pricing, availability, or move-in dates…" value={form.message} onChange={e => set('message', e.target.value)} />
       </div>
 
-      {error && (
-        <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 space-y-2">
-          <p className="text-sm font-semibold text-red-700">Submission failed</p>
-          <p className="font-mono text-xs text-red-600 break-all">{error}</p>
-          <a href={buildMailto()} className="inline-block rounded-lg bg-red-700 px-4 py-2 text-xs font-semibold text-white hover:bg-red-800">
-            Send via email instead
-          </a>
-        </div>
-      )}
-
-      <button type="submit" disabled={submitting}
-        className="w-full rounded-full bg-slate-900 py-3.5 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:opacity-60 disabled:cursor-not-allowed">
-        {submitting ? 'Sending…' : 'Send message'}
+      <button type="submit"
+        className="w-full rounded-full bg-slate-900 py-3.5 text-sm font-semibold text-white transition hover:bg-slate-800">
+        Send message
       </button>
     </form>
   )
