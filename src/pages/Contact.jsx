@@ -269,7 +269,7 @@ function BookingScheduler() {
   )
 }
 
-const AIRTABLE_BASE_ID = import.meta.env.VITE_AIRTABLE_APPLICATIONS_BASE_ID || 'appNBX2inqfJMyqYV'
+const AIRTABLE_BASE_ID = import.meta.env.VITE_AIRTABLE_BASE_ID || 'appol57LKtMKaQ75T'
 const AIRTABLE_INQUIRIES_TABLE = 'Inquiries'
 const AIRTABLE_TOKEN = import.meta.env.VITE_AIRTABLE_TOKEN
 
