@@ -4,11 +4,10 @@ import { properties } from '../data/properties'
 
 const AIRTABLE_BASE_ID = import.meta.env.VITE_AIRTABLE_APPLICATIONS_BASE_ID || 'appNBX2inqfJMyqYV'
 const APPLICATIONS_TABLE = import.meta.env.VITE_AIRTABLE_APPLICATIONS_TABLE || 'Applications'
-const COAPPLICANTS_TABLE = import.meta.env.VITE_AIRTABLE_COAPPLICANTS_TABLE || 'Co-Applicants'
+const COSIGNERS_TABLE = import.meta.env.VITE_AIRTABLE_COAPPLICANTS_TABLE || 'Co-Applicants'
 const AIRTABLE_TOKEN = import.meta.env.VITE_AIRTABLE_TOKEN
 
 const HISTORY_OPTIONS = ['No', 'Yes']
-const COAPPLICANT_ROLE_OPTIONS = ['Co-Signer', 'Co-Applicant']
 const LEASE_TERMS = [
   '3-Month Summer (Jun 16 – Sep 14)',
   '9-Month Academic (Sep 15 – Jun 15)',
@@ -26,6 +25,9 @@ const PROPERTY_OPTIONS = properties
   }))
   .sort((a, b) => a.name.localeCompare(b.name))
 
+const inputCls = 'w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 placeholder-slate-400 outline-none transition focus:border-axis focus:ring-2 focus:ring-axis/20'
+const selectCls = `${inputCls} appearance-none cursor-pointer`
+
 function todayIsoDate() {
   return new Date().toISOString().slice(0, 10)
 }
@@ -36,14 +38,24 @@ function toCurrencyNumber(value) {
   return Number.isFinite(numeric) ? numeric : null
 }
 
-function defaultApplicant() {
+function escapeFormulaString(value) {
+  return String(value).replace(/\\/g, '\\\\').replace(/'/g, "\\'")
+}
+
+function defaultSigner() {
   return {
+    propertyName: '',
+    propertyAddress: '',
+    roomNumber: '',
+    desiredMoveInDate: '',
+    leaseTerm: LEASE_TERMS[0],
+    leaseTermOther: '',
     fullName: '',
-    email: '',
-    phone: '',
     dateOfBirth: '',
     ssn: '',
     license: '',
+    phone: '',
+    email: '',
     currentAddress: '',
     currentCity: '',
     currentState: '',
@@ -90,9 +102,10 @@ function defaultApplicant() {
   }
 }
 
-function defaultCoApplicant() {
+function defaultCosigner() {
   return {
-    role: 'Co-Signer',
+    linkedApplicationId: '',
+    linkedSignerName: '',
     fullName: '',
     email: '',
     phone: '',
@@ -121,7 +134,7 @@ function defaultCoApplicant() {
   }
 }
 
-function Field({ label, required, children, hint }) {
+function Field({ label, required, hint, children }) {
   return (
     <div>
       <label className="mb-1.5 block text-sm font-semibold text-slate-800">
@@ -134,8 +147,14 @@ function Field({ label, required, children, hint }) {
   )
 }
 
-const inputCls = 'w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 placeholder-slate-400 outline-none transition focus:border-axis focus:ring-2 focus:ring-axis/20'
-const selectCls = `${inputCls} appearance-none cursor-pointer`
+function Section({ title, children }) {
+  return (
+    <div className="space-y-5 rounded-2xl border border-slate-200 bg-white p-6 shadow-soft">
+      <h2 className="text-2xl font-black text-slate-900">{title}</h2>
+      {children}
+    </div>
+  )
+}
 
 async function submitToAirtable(tableName, fields) {
   if (!AIRTABLE_TOKEN) throw new Error('VITE_AIRTABLE_TOKEN is not set in environment variables.')
@@ -163,327 +182,174 @@ async function submitToAirtable(tableName, fields) {
   return response.json()
 }
 
-function buildApplicantNotes(application, applicant, needsCoSigner) {
-  const lines = [
-    `Property Address Applying For: ${application.propertyAddress || 'Not provided'}`,
-    `Requested Property: ${application.propertyName}`,
-    `Requested Room: ${application.roomNumber || 'Not specified'}`,
-    `Desired Move-In Date: ${application.desiredMoveInDate}`,
-    `Lease Term: ${application.leaseTerm === 'Other / Custom dates' ? application.leaseTermOther : application.leaseTerm}`,
-    `Current Landlord Name: ${applicant.currentLandlordName || 'Not provided'}`,
-    `Current Landlord Phone: ${applicant.currentLandlordPhone || 'Not provided'}`,
-    `Current Move-In Date: ${applicant.currentMoveInDate || 'Not provided'}`,
-    `Current Move-Out Date: ${applicant.currentMoveOutDate || 'Not provided'}`,
-    `Current Reason for Leaving: ${applicant.currentReasonForLeaving || 'Not provided'}`,
-    `Previous Address: ${applicant.previousAddress || 'Not provided'}`,
-    `Previous City / State / ZIP: ${[applicant.previousCity, applicant.previousState, applicant.previousZip].filter(Boolean).join(', ') || 'Not provided'}`,
-    `Previous Landlord Name: ${applicant.previousLandlordName || 'Not provided'}`,
-    `Previous Landlord Phone: ${applicant.previousLandlordPhone || 'Not provided'}`,
-    `Previous Move-In Date: ${applicant.previousMoveInDate || 'Not provided'}`,
-    `Previous Move-Out Date: ${applicant.previousMoveOutDate || 'Not provided'}`,
-    `Previous Reason for Leaving: ${applicant.previousReasonForLeaving || 'Not provided'}`,
-    `Reference 1: ${[applicant.reference1Name, applicant.reference1Relationship, applicant.reference1Phone].filter(Boolean).join(' | ') || 'Not provided'}`,
-    `Reference 2: ${[applicant.reference2Name, applicant.reference2Relationship, applicant.reference2Phone].filter(Boolean).join(' | ') || 'Not provided'}`,
-    `Occupants: ${applicant.occupants || 'Not provided'}`,
-    `Pets: ${applicant.pets || 'Not provided'}`,
-    `Vehicles: ${applicant.vehicles || 'Not provided'}`,
-    `Eviction History: ${applicant.evictionHistory || 'Not provided'}`,
-    `Needs Co-Signer: ${needsCoSigner ? 'Yes' : 'No'}`,
-    applicant.notes ? `Additional Notes: ${applicant.notes}` : null,
-  ]
+async function findApplicationRecord({ applicationId, signerName }) {
+  if (!AIRTABLE_TOKEN) throw new Error('VITE_AIRTABLE_TOKEN is not set in environment variables.')
 
-  return lines.filter(Boolean).join('\n')
+  let filterByFormula = ''
+  const numericId = Number(applicationId)
+
+  if (applicationId && Number.isFinite(numericId)) {
+    filterByFormula = `{Application ID} = ${numericId}`
+  } else if (signerName) {
+    filterByFormula = `{Applicant Full Name} = '${escapeFormulaString(signerName)}'`
+  } else {
+    throw new Error('Enter the signer application ID or signer full name so we can link the co-signer correctly.')
+  }
+
+  const url = new URL(`https://api.airtable.com/v0/${AIRTABLE_BASE_ID}/${encodeURIComponent(APPLICATIONS_TABLE)}`)
+  url.searchParams.set('maxRecords', '1')
+  url.searchParams.set('filterByFormula', filterByFormula)
+
+  const response = await fetch(url.toString(), {
+    headers: {
+      Authorization: `Bearer ${AIRTABLE_TOKEN}`,
+    },
+  })
+
+  if (!response.ok) {
+    const body = await response.text()
+    let message = `Airtable lookup error ${response.status}`
+    try {
+      message += `: ${JSON.parse(body)?.error?.message}`
+    } catch {
+      message += `: ${body}`
+    }
+    throw new Error(message)
+  }
+
+  const data = await response.json()
+  if (!data.records?.length) {
+    throw new Error('We could not find the signer application. Double-check the application ID or signer full name.')
+  }
+  return data.records[0]
 }
 
-function buildCoApplicantNotes(coApplicant) {
+function buildSignerNotes(form) {
+  const leaseTerm = form.leaseTerm === 'Other / Custom dates' ? form.leaseTermOther : form.leaseTerm
+
   return [
-    coApplicant.notes ? `Additional Notes: ${coApplicant.notes}` : null,
+    `Property Address Applying For: ${form.propertyAddress || 'Not provided'}`,
+    `Requested Room: ${form.roomNumber || 'Not specified'}`,
+    `Desired Move-In Date: ${form.desiredMoveInDate}`,
+    `Lease Term: ${leaseTerm}`,
+    `Current Landlord Name: ${form.currentLandlordName || 'Not provided'}`,
+    `Current Landlord Phone: ${form.currentLandlordPhone || 'Not provided'}`,
+    `Current Move-In Date: ${form.currentMoveInDate || 'Not provided'}`,
+    `Current Move-Out Date: ${form.currentMoveOutDate || 'Not provided'}`,
+    `Current Reason for Leaving: ${form.currentReasonForLeaving || 'Not provided'}`,
+    `Previous Address: ${form.previousAddress || 'Not provided'}`,
+    `Previous City / State / ZIP: ${[form.previousCity, form.previousState, form.previousZip].filter(Boolean).join(', ') || 'Not provided'}`,
+    `Previous Landlord Name: ${form.previousLandlordName || 'Not provided'}`,
+    `Previous Landlord Phone: ${form.previousLandlordPhone || 'Not provided'}`,
+    `Previous Move-In Date: ${form.previousMoveInDate || 'Not provided'}`,
+    `Previous Move-Out Date: ${form.previousMoveOutDate || 'Not provided'}`,
+    `Previous Reason for Leaving: ${form.previousReasonForLeaving || 'Not provided'}`,
+    `Reference 1: ${[form.reference1Name, form.reference1Relationship, form.reference1Phone].filter(Boolean).join(' | ') || 'Not provided'}`,
+    `Reference 2: ${[form.reference2Name, form.reference2Relationship, form.reference2Phone].filter(Boolean).join(' | ') || 'Not provided'}`,
+    `Occupants: ${form.occupants || 'Not provided'}`,
+    `Pets: ${form.pets || 'Not provided'}`,
+    `Vehicles: ${form.vehicles || 'Not provided'}`,
+    `Eviction History: ${form.evictionHistory || 'Not provided'}`,
+    form.notes ? `Additional Notes: ${form.notes}` : null,
   ].filter(Boolean).join('\n')
 }
 
-function buildMailtoFallback(application, applicant, needsCoSigner, coApplicant) {
-  const lines = [
-    `Property Address Applying For: ${application.propertyAddress || 'Not provided'}`,
-    `Property Name: ${application.propertyName}`,
-    `Room Number: ${application.roomNumber || 'Not specified'}`,
-    `Desired Move-In Date: ${application.desiredMoveInDate}`,
-    `Lease Term: ${application.leaseTerm === 'Other / Custom dates' ? application.leaseTermOther : application.leaseTerm}`,
-    `Applicant Full Name: ${applicant.fullName}`,
-    `Applicant Email: ${applicant.email}`,
-    `Applicant Phone Number: ${applicant.phone}`,
-    `Applicant Date of Birth: ${applicant.dateOfBirth}`,
-    `Applicant SSN No.: ${applicant.ssn || 'Not provided'}`,
-    `Applicant Driving License No.: ${applicant.license}`,
-    `Applicant Current Address: ${applicant.currentAddress}`,
-    `Applicant City: ${applicant.currentCity}`,
-    `Applicant State: ${applicant.currentState}`,
-    `Applicant ZIP: ${applicant.currentZip}`,
-    `Applicant Current Landlord Name: ${applicant.currentLandlordName || 'Not provided'}`,
-    `Applicant Current Landlord Phone: ${applicant.currentLandlordPhone || 'Not provided'}`,
-    `Applicant Current Move-In Date: ${applicant.currentMoveInDate || 'Not provided'}`,
-    `Applicant Current Move-Out Date: ${applicant.currentMoveOutDate || 'Not provided'}`,
-    `Applicant Current Reason for Leaving: ${applicant.currentReasonForLeaving || 'Not provided'}`,
-    `Applicant Previous Address: ${applicant.previousAddress || 'Not provided'}`,
-    `Applicant Previous City: ${applicant.previousCity || 'Not provided'}`,
-    `Applicant Previous State: ${applicant.previousState || 'Not provided'}`,
-    `Applicant Previous ZIP: ${applicant.previousZip || 'Not provided'}`,
-    `Applicant Previous Landlord Name: ${applicant.previousLandlordName || 'Not provided'}`,
-    `Applicant Previous Landlord Phone: ${applicant.previousLandlordPhone || 'Not provided'}`,
-    `Applicant Previous Move-In Date: ${applicant.previousMoveInDate || 'Not provided'}`,
-    `Applicant Previous Move-Out Date: ${applicant.previousMoveOutDate || 'Not provided'}`,
-    `Applicant Previous Reason for Leaving: ${applicant.previousReasonForLeaving || 'Not provided'}`,
-    `Applicant Employer: ${applicant.employer || 'Not provided'}`,
-    `Applicant Employer Address: ${applicant.employerAddress || 'Not provided'}`,
-    `Applicant Supervisor Name: ${applicant.supervisorName || 'Not provided'}`,
-    `Applicant Supervisor Phone: ${applicant.supervisorPhone || 'Not provided'}`,
-    `Applicant Job Title: ${applicant.jobTitle || 'Not provided'}`,
-    `Applicant Monthly Income: ${applicant.monthlyIncome || 'Not provided'}`,
-    `Applicant Annual Income: ${applicant.annualIncome || 'Not provided'}`,
-    `Applicant Employment Start Date: ${applicant.employmentStartDate || 'Not provided'}`,
-    `Applicant Other Income: ${applicant.otherIncome || 'Not provided'}`,
-    `Reference 1: ${[applicant.reference1Name, applicant.reference1Relationship, applicant.reference1Phone].filter(Boolean).join(' | ') || 'Not provided'}`,
-    `Reference 2: ${[applicant.reference2Name, applicant.reference2Relationship, applicant.reference2Phone].filter(Boolean).join(' | ') || 'Not provided'}`,
-    `Occupants: ${applicant.occupants || 'Not provided'}`,
-    `Pets: ${applicant.pets || 'Not provided'}`,
-    `Vehicles: ${applicant.vehicles || 'Not provided'}`,
-    `Eviction History: ${applicant.evictionHistory || 'Not provided'}`,
-    `Applicant Bankruptcy History: ${applicant.bankruptcyHistory}`,
-    `Applicant Criminal History: ${applicant.criminalHistory}`,
-    `Applicant Consent for Credit and Background Check: ${applicant.consent ? 'Yes' : 'No'}`,
-    `Applicant Signature: ${applicant.signature || 'Not provided'}`,
-    `Applicant Date Signed: ${applicant.dateSigned}`,
-    applicant.notes ? `Applicant Notes: ${applicant.notes}` : null,
-    `Needs Co-Signer: ${needsCoSigner ? 'Yes' : 'No'}`,
-  ]
-
-  if (needsCoSigner) {
-    lines.push(
-      '',
-      'Co-Applicant / Co-Signer',
-      `Role: ${coApplicant.role}`,
-      `Full Name: ${coApplicant.fullName}`,
-      `Email: ${coApplicant.email}`,
-      `Phone Number: ${coApplicant.phone}`,
-      `Date of Birth: ${coApplicant.dateOfBirth}`,
-      `SSN No.: ${coApplicant.ssn || 'Not provided'}`,
-      `Driving License No.: ${coApplicant.license || 'Not provided'}`,
-      `Current Address: ${coApplicant.currentAddress || 'Not provided'}`,
-      `City: ${coApplicant.city || 'Not provided'}`,
-      `State: ${coApplicant.state || 'Not provided'}`,
-      `ZIP: ${coApplicant.zip || 'Not provided'}`,
-      `Employer: ${coApplicant.employer || 'Not provided'}`,
-      `Employer Address: ${coApplicant.employerAddress || 'Not provided'}`,
-      `Supervisor Name: ${coApplicant.supervisorName || 'Not provided'}`,
-      `Supervisor Phone: ${coApplicant.supervisorPhone || 'Not provided'}`,
-      `Job Title: ${coApplicant.jobTitle || 'Not provided'}`,
-      `Monthly Income: ${coApplicant.monthlyIncome || 'Not provided'}`,
-      `Annual Income: ${coApplicant.annualIncome || 'Not provided'}`,
-      `Employment Start Date: ${coApplicant.employmentStartDate || 'Not provided'}`,
-      `Other Income: ${coApplicant.otherIncome || 'Not provided'}`,
-      `Bankruptcy History: ${coApplicant.bankruptcyHistory || 'Not provided'}`,
-      `Criminal History: ${coApplicant.criminalHistory || 'Not provided'}`,
-      `Consent for Credit and Background Check: ${coApplicant.consent ? 'Yes' : 'No'}`,
-      `Signature: ${coApplicant.signature || 'Not provided'}`,
-      `Date Signed: ${coApplicant.dateSigned}`,
-      coApplicant.notes ? `Notes: ${coApplicant.notes}` : null,
-    )
-  }
-
-  const subject = `Application — ${applicant.fullName} for ${application.propertyName}`
-  return `mailto:info@axis-seattle-housing.com?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(lines.filter(Boolean).join('\n'))}`
+function buildCosignerNotes(form) {
+  return [
+    `Linked Signer Application ID: ${form.linkedApplicationId || 'Not provided'}`,
+    `Linked Signer Full Name: ${form.linkedSignerName || 'Not provided'}`,
+    form.notes ? `Additional Notes: ${form.notes}` : null,
+  ].filter(Boolean).join('\n')
 }
 
-function Section({ title, children }) {
-  return (
-    <div className="space-y-5 rounded-2xl border border-slate-200 bg-white p-6 shadow-soft">
-      <h2 className="text-2xl font-black text-slate-900">{title}</h2>
-      {children}
-    </div>
-  )
-}
+function buildMailtoFallback(type, signer, cosigner) {
+  const lines = type === 'signer'
+    ? [
+        `Submission Type: Signer`,
+        `Property Name: ${signer.propertyName}`,
+        `Property Address Applying For: ${signer.propertyAddress || 'Not provided'}`,
+        `Room Number: ${signer.roomNumber || 'Not specified'}`,
+        `Desired Move-In Date: ${signer.desiredMoveInDate}`,
+        `Lease Term: ${signer.leaseTerm === 'Other / Custom dates' ? signer.leaseTermOther : signer.leaseTerm}`,
+        `Applicant Full Name: ${signer.fullName}`,
+        `Applicant Date of Birth: ${signer.dateOfBirth}`,
+        `Applicant SSN No.: ${signer.ssn || 'Not provided'}`,
+        `Applicant Driving License No.: ${signer.license}`,
+        `Applicant Phone Number: ${signer.phone}`,
+        `Applicant Email: ${signer.email}`,
+        `Applicant Current Address: ${signer.currentAddress}`,
+        `Applicant City: ${signer.currentCity}`,
+        `Applicant State: ${signer.currentState}`,
+        `Applicant ZIP: ${signer.currentZip}`,
+        `Applicant Employer: ${signer.employer || 'Not provided'}`,
+        `Applicant Employer Address: ${signer.employerAddress || 'Not provided'}`,
+        `Applicant Supervisor Name: ${signer.supervisorName || 'Not provided'}`,
+        `Applicant Supervisor Phone: ${signer.supervisorPhone || 'Not provided'}`,
+        `Applicant Job Title: ${signer.jobTitle || 'Not provided'}`,
+        `Applicant Monthly Income: ${signer.monthlyIncome || 'Not provided'}`,
+        `Applicant Annual Income: ${signer.annualIncome || 'Not provided'}`,
+        `Applicant Employment Start Date: ${signer.employmentStartDate || 'Not provided'}`,
+        `Applicant Other Income: ${signer.otherIncome || 'Not provided'}`,
+        `Applicant Bankruptcy History: ${signer.bankruptcyHistory}`,
+        `Applicant Criminal History: ${signer.criminalHistory}`,
+        `Applicant Consent: ${signer.consent ? 'Yes' : 'No'}`,
+        `Applicant Signature: ${signer.signature || 'Not provided'}`,
+        `Applicant Date Signed: ${signer.dateSigned}`,
+        `Applicant Notes: ${buildSignerNotes(signer)}`,
+      ]
+    : [
+        `Submission Type: Co-Signer`,
+        `Linked Signer Application ID: ${cosigner.linkedApplicationId || 'Not provided'}`,
+        `Linked Signer Full Name: ${cosigner.linkedSignerName || 'Not provided'}`,
+        `Full Name: ${cosigner.fullName}`,
+        `Email: ${cosigner.email}`,
+        `Phone Number: ${cosigner.phone}`,
+        `Date of Birth: ${cosigner.dateOfBirth}`,
+        `SSN No.: ${cosigner.ssn || 'Not provided'}`,
+        `Driving License No.: ${cosigner.license || 'Not provided'}`,
+        `Current Address: ${cosigner.currentAddress || 'Not provided'}`,
+        `City: ${cosigner.city || 'Not provided'}`,
+        `State: ${cosigner.state || 'Not provided'}`,
+        `ZIP: ${cosigner.zip || 'Not provided'}`,
+        `Employer: ${cosigner.employer || 'Not provided'}`,
+        `Employer Address: ${cosigner.employerAddress || 'Not provided'}`,
+        `Supervisor Name: ${cosigner.supervisorName || 'Not provided'}`,
+        `Supervisor Phone: ${cosigner.supervisorPhone || 'Not provided'}`,
+        `Job Title: ${cosigner.jobTitle || 'Not provided'}`,
+        `Monthly Income: ${cosigner.monthlyIncome || 'Not provided'}`,
+        `Annual Income: ${cosigner.annualIncome || 'Not provided'}`,
+        `Employment Start Date: ${cosigner.employmentStartDate || 'Not provided'}`,
+        `Other Income: ${cosigner.otherIncome || 'Not provided'}`,
+        `Bankruptcy History: ${cosigner.bankruptcyHistory}`,
+        `Criminal History: ${cosigner.criminalHistory}`,
+        `Consent: ${cosigner.consent ? 'Yes' : 'No'}`,
+        `Signature: ${cosigner.signature || 'Not provided'}`,
+        `Date Signed: ${cosigner.dateSigned}`,
+        `Notes: ${buildCosignerNotes(cosigner)}`,
+      ]
 
-function ApplicantFields({ applicant, setApplicant, prefix = 'Applicant', isCoApplicant = false }) {
-  const setField = (key, value) => setApplicant((prev) => ({ ...prev, [key]: value }))
-  const consentLabel = isCoApplicant ? 'Consent for Credit and Background Check' : 'Applicant Consent for Credit and Background Check'
+  const subject = type === 'signer'
+    ? `Application — ${signer.fullName} for ${signer.propertyName}`
+    : `Co-Signer Application — ${cosigner.fullName}`
 
-  return (
-    <>
-      <div className="grid gap-5 sm:grid-cols-2">
-        <Field label={`${prefix} Full Name`} required>
-          <input required className={inputCls} value={applicant.fullName} onChange={(e) => setField('fullName', e.target.value)} />
-        </Field>
-        <Field label={`${prefix} Email`} required>
-          <input required type="email" className={inputCls} value={applicant.email} onChange={(e) => setField('email', e.target.value)} />
-        </Field>
-      </div>
-
-      <div className="grid gap-5 sm:grid-cols-3">
-        <Field label={`${prefix} Phone Number`} required>
-          <input required type="tel" className={inputCls} value={applicant.phone} onChange={(e) => setField('phone', e.target.value)} />
-        </Field>
-        <Field label={`${prefix} Date of Birth`} required>
-          <input required type="date" className={inputCls} value={applicant.dateOfBirth} onChange={(e) => setField('dateOfBirth', e.target.value)} />
-        </Field>
-        <Field label={`${prefix} Driving License / ID #`} required>
-          <input required className={inputCls} value={applicant.license} onChange={(e) => setField('license', e.target.value)} />
-        </Field>
-      </div>
-
-      <div className="grid gap-5 sm:grid-cols-2">
-        <Field label={`${prefix} Social Security #`}>
-          <input className={inputCls} value={applicant.ssn} onChange={(e) => setField('ssn', e.target.value)} />
-        </Field>
-        {!isCoApplicant && (
-          <Field label="Eviction History" required>
-            <select required className={selectCls} value={applicant.evictionHistory} onChange={(e) => setField('evictionHistory', e.target.value)}>
-              <option value="" disabled>Select…</option>
-              {HISTORY_OPTIONS.map((option) => <option key={option} value={option}>{option}</option>)}
-            </select>
-          </Field>
-        )}
-      </div>
-
-      <div className="grid gap-5 sm:grid-cols-3">
-        <Field label={`${prefix} Current Address`} required>
-          <input required className={inputCls} value={applicant.currentAddress} onChange={(e) => setField('currentAddress', e.target.value)} />
-        </Field>
-        <Field label={`${prefix} City`} required>
-          <input required className={inputCls} value={applicant.currentCity ?? applicant.city ?? ''} onChange={(e) => setField(applicant.currentCity !== undefined ? 'currentCity' : 'city', e.target.value)} />
-        </Field>
-        <div className="grid gap-5 grid-cols-2">
-          <Field label={`${prefix} State`} required>
-            <input required className={inputCls} value={applicant.currentState ?? applicant.state ?? ''} onChange={(e) => setField(applicant.currentState !== undefined ? 'currentState' : 'state', e.target.value)} />
-          </Field>
-          <Field label={`${prefix} ZIP`} required>
-            <input required className={inputCls} value={applicant.currentZip ?? applicant.zip ?? ''} onChange={(e) => setField(applicant.currentZip !== undefined ? 'currentZip' : 'zip', e.target.value)} />
-          </Field>
-        </div>
-      </div>
-
-      {!isCoApplicant && (
-        <>
-          <div className="grid gap-5 sm:grid-cols-2">
-            <Field label="Current Landlord / Property Manager Name">
-              <input className={inputCls} value={applicant.currentLandlordName} onChange={(e) => setField('currentLandlordName', e.target.value)} />
-            </Field>
-            <Field label="Current Landlord Phone #">
-              <input type="tel" className={inputCls} value={applicant.currentLandlordPhone} onChange={(e) => setField('currentLandlordPhone', e.target.value)} />
-            </Field>
-          </div>
-
-          <div className="grid gap-5 sm:grid-cols-3">
-            <Field label="Current Move-in Date">
-              <input type="date" className={inputCls} value={applicant.currentMoveInDate} onChange={(e) => setField('currentMoveInDate', e.target.value)} />
-            </Field>
-            <Field label="Current Move-out Date">
-              <input type="date" className={inputCls} value={applicant.currentMoveOutDate} onChange={(e) => setField('currentMoveOutDate', e.target.value)} />
-            </Field>
-            <Field label="Reason for Leaving">
-              <input className={inputCls} value={applicant.currentReasonForLeaving} onChange={(e) => setField('currentReasonForLeaving', e.target.value)} />
-            </Field>
-          </div>
-        </>
-      )}
-
-      <div className="grid gap-5 sm:grid-cols-2">
-        <Field label={`${prefix} Employer`}>
-          <input className={inputCls} value={applicant.employer} onChange={(e) => setField('employer', e.target.value)} />
-        </Field>
-        <Field label={`${prefix} Employer Address`}>
-          <input className={inputCls} value={applicant.employerAddress} onChange={(e) => setField('employerAddress', e.target.value)} />
-        </Field>
-      </div>
-
-      <div className="grid gap-5 sm:grid-cols-2">
-        <Field label={`${prefix} Supervisor Name`}>
-          <input className={inputCls} value={applicant.supervisorName} onChange={(e) => setField('supervisorName', e.target.value)} />
-        </Field>
-        <Field label={`${prefix} Supervisor Phone #`}>
-          <input type="tel" className={inputCls} value={applicant.supervisorPhone} onChange={(e) => setField('supervisorPhone', e.target.value)} />
-        </Field>
-      </div>
-
-      <div className="grid gap-5 sm:grid-cols-4">
-        <Field label={`${prefix} Job Title`}>
-          <input className={inputCls} value={applicant.jobTitle} onChange={(e) => setField('jobTitle', e.target.value)} />
-        </Field>
-        <Field label={`${prefix} Monthly Income`}>
-          <input className={inputCls} value={applicant.monthlyIncome} onChange={(e) => setField('monthlyIncome', e.target.value)} />
-        </Field>
-        <Field label={`${prefix} Annual Income`}>
-          <input className={inputCls} value={applicant.annualIncome} onChange={(e) => setField('annualIncome', e.target.value)} />
-        </Field>
-        <Field label={`${prefix} Employment Start Date`}>
-          <input type="date" className={inputCls} value={applicant.employmentStartDate} onChange={(e) => setField('employmentStartDate', e.target.value)} />
-        </Field>
-      </div>
-
-      <div className="grid gap-5 sm:grid-cols-2">
-        <Field label={`${prefix} Other Income`}>
-          <input className={inputCls} value={applicant.otherIncome} onChange={(e) => setField('otherIncome', e.target.value)} />
-        </Field>
-        <Field label={`${prefix} Bankruptcy History`} required>
-          <select required className={selectCls} value={applicant.bankruptcyHistory} onChange={(e) => setField('bankruptcyHistory', e.target.value)}>
-            <option value="" disabled>Select…</option>
-            {HISTORY_OPTIONS.map((option) => <option key={option} value={option}>{option}</option>)}
-          </select>
-        </Field>
-      </div>
-
-      <div className="grid gap-5 sm:grid-cols-2">
-        <Field label={`${prefix} Criminal History`} required>
-          <select required className={selectCls} value={applicant.criminalHistory} onChange={(e) => setField('criminalHistory', e.target.value)}>
-            <option value="" disabled>Select…</option>
-            {HISTORY_OPTIONS.map((option) => <option key={option} value={option}>{option}</option>)}
-          </select>
-        </Field>
-        <Field label={consentLabel} required hint="This must be checked to submit the application.">
-          <label className="flex min-h-[52px] items-center gap-3 rounded-xl border border-slate-200 px-4 py-3 text-sm text-slate-700">
-            <input type="checkbox" checked={applicant.consent} onChange={(e) => setField('consent', e.target.checked)} className="h-4 w-4 rounded border-slate-300 text-axis focus:ring-axis" />
-            I consent to the credit and background check.
-          </label>
-        </Field>
-      </div>
-
-      <div className="grid gap-5 sm:grid-cols-2">
-        <Field label={`${prefix} Signature`} required>
-          <input required className={inputCls} placeholder="Type your full legal name" value={applicant.signature} onChange={(e) => setField('signature', e.target.value)} />
-        </Field>
-        <Field label={`${prefix} Date Signed`} required>
-          <input required type="date" className={inputCls} value={applicant.dateSigned} onChange={(e) => setField('dateSigned', e.target.value)} />
-        </Field>
-      </div>
-
-      <Field label={`${prefix} Supporting Notes`} hint="Use this for anything not captured in the standard Airtable fields.">
-        <textarea className={`${inputCls} min-h-[96px] resize-y`} value={applicant.notes} onChange={(e) => setField('notes', e.target.value)} />
-      </Field>
-    </>
-  )
+  return `mailto:info@axis-seattle-housing.com?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(lines.join('\n'))}`
 }
 
 export default function Apply() {
-  const [application, setApplication] = useState({
-    propertyName: '',
-    propertyAddress: '',
-    roomNumber: '',
-    desiredMoveInDate: '',
-    leaseTerm: LEASE_TERMS[0],
-    leaseTermOther: '',
-    needsCoSigner: false,
-  })
-  const [applicant, setApplicant] = useState(defaultApplicant())
-  const [coApplicant, setCoApplicant] = useState(defaultCoApplicant())
+  const [applicationType, setApplicationType] = useState('')
+  const [signer, setSigner] = useState(defaultSigner())
+  const [cosigner, setCosigner] = useState(defaultCosigner())
   const [submitting, setSubmitting] = useState(false)
   const [submitted, setSubmitted] = useState(false)
   const [error, setError] = useState('')
 
   const selectedProperty = useMemo(
-    () => PROPERTY_OPTIONS.find((property) => property.name === application.propertyName),
-    [application.propertyName],
+    () => PROPERTY_OPTIONS.find((property) => property.name === signer.propertyName),
+    [signer.propertyName],
   )
 
-  function setApplicationField(key, value) {
-    setApplication((prev) => {
+  function updateSigner(key, value) {
+    setSigner((prev) => {
       const next = { ...prev, [key]: value }
       if (key === 'propertyName') {
         next.roomNumber = ''
@@ -493,86 +359,93 @@ export default function Apply() {
     })
   }
 
+  function updateCosigner(key, value) {
+    setCosigner((prev) => ({ ...prev, [key]: value }))
+  }
+
   async function handleSubmit(event) {
     event.preventDefault()
     setSubmitting(true)
     setError('')
 
-    if (!applicant.consent) {
-      setError('The applicant must consent to the credit and background check before submitting.')
-      setSubmitting(false)
-      return
-    }
-
-    if (application.needsCoSigner && !coApplicant.consent) {
-      setError('The co-signer / co-applicant must consent to the credit and background check before submitting.')
-      setSubmitting(false)
-      return
-    }
-
-    const applicationFields = {
-      'Applicant Full Name': applicant.fullName,
-      'Applicant Email': applicant.email,
-      'Applicant Phone Number': applicant.phone,
-      'Applicant Date of Birth': applicant.dateOfBirth,
-      'Applicant SSN No.': applicant.ssn || '',
-      'Applicant Driving License No.': applicant.license,
-      'Applicant Current Address': applicant.currentAddress,
-      'Applicant City': applicant.currentCity,
-      'Applicant State': applicant.currentState,
-      'Applicant ZIP': applicant.currentZip,
-      'Applicant Employer': applicant.employer || '',
-      'Applicant Employer Address': applicant.employerAddress || '',
-      'Applicant Supervisor Name': applicant.supervisorName || '',
-      'Applicant Supervisor Phone': applicant.supervisorPhone || '',
-      'Applicant Job Title': applicant.jobTitle || '',
-      'Applicant Monthly Income': toCurrencyNumber(applicant.monthlyIncome),
-      'Applicant Annual Income': toCurrencyNumber(applicant.annualIncome),
-      'Applicant Employment Start Date': applicant.employmentStartDate || null,
-      'Applicant Other Income': applicant.otherIncome || '',
-      'Applicant Bankruptcy History': applicant.bankruptcyHistory,
-      'Applicant Criminal History': applicant.criminalHistory,
-      'Applicant Consent for Credit and Background Check': applicant.consent,
-      'Applicant Signature': applicant.signature,
-      'Applicant Date Signed': applicant.dateSigned,
-      'Applicant Notes': buildApplicantNotes(application, applicant, application.needsCoSigner),
-    }
-
     try {
-      const applicationRecord = await submitToAirtable(APPLICATIONS_TABLE, applicationFields)
-
-      if (application.needsCoSigner) {
-        const coApplicantFields = {
-          'Linked Application': [applicationRecord.id],
-          'Role': coApplicant.role,
-          'Full Name': coApplicant.fullName,
-          'Email': coApplicant.email,
-          'Phone Number': coApplicant.phone,
-          'Date of Birth': coApplicant.dateOfBirth,
-          'SSN No.': coApplicant.ssn || '',
-          'Driving License No.': coApplicant.license || '',
-          'Current Address': coApplicant.currentAddress || '',
-          'City': coApplicant.city || '',
-          'State': coApplicant.state || '',
-          'ZIP': coApplicant.zip || '',
-          'Employer': coApplicant.employer || '',
-          'Employer Address': coApplicant.employerAddress || '',
-          'Supervisor Name': coApplicant.supervisorName || '',
-          'Supervisor Phone': coApplicant.supervisorPhone || '',
-          'Job Title': coApplicant.jobTitle || '',
-          'Monthly Income': toCurrencyNumber(coApplicant.monthlyIncome),
-          'Annual Income': toCurrencyNumber(coApplicant.annualIncome),
-          'Employment Start Date': coApplicant.employmentStartDate || null,
-          'Other Income': coApplicant.otherIncome || '',
-          'Bankruptcy History': coApplicant.bankruptcyHistory,
-          'Criminal History': coApplicant.criminalHistory,
-          'Consent for Credit and Background Check': coApplicant.consent,
-          'Signature': coApplicant.signature,
-          'Date Signed': coApplicant.dateSigned,
-          'Notes': buildCoApplicantNotes(coApplicant),
+      if (applicationType === 'signer') {
+        if (!signer.consent) {
+          throw new Error('The signer must consent to the credit and background check before submitting.')
         }
 
-        await submitToAirtable(COAPPLICANTS_TABLE, coApplicantFields)
+        const fields = {
+          'Applicant Full Name': signer.fullName,
+          'Applicant Email': signer.email,
+          'Applicant Phone Number': signer.phone,
+          'Applicant Date of Birth': signer.dateOfBirth,
+          'Applicant SSN No.': signer.ssn || '',
+          'Applicant Driving License No.': signer.license,
+          'Applicant Current Address': signer.currentAddress,
+          'Applicant City': signer.currentCity,
+          'Applicant State': signer.currentState,
+          'Applicant ZIP': signer.currentZip,
+          'Applicant Employer': signer.employer || '',
+          'Applicant Employer Address': signer.employerAddress || '',
+          'Applicant Supervisor Name': signer.supervisorName || '',
+          'Applicant Supervisor Phone': signer.supervisorPhone || '',
+          'Applicant Job Title': signer.jobTitle || '',
+          'Applicant Monthly Income': toCurrencyNumber(signer.monthlyIncome),
+          'Applicant Annual Income': toCurrencyNumber(signer.annualIncome),
+          'Applicant Employment Start Date': signer.employmentStartDate || null,
+          'Applicant Other Income': signer.otherIncome || '',
+          'Applicant Bankruptcy History': signer.bankruptcyHistory,
+          'Applicant Criminal History': signer.criminalHistory,
+          'Applicant Consent for Credit and Background Check': signer.consent,
+          'Applicant Signature': signer.signature,
+          'Applicant Date Signed': signer.dateSigned,
+          'Applicant Notes': buildSignerNotes(signer),
+        }
+
+        await submitToAirtable(APPLICATIONS_TABLE, fields)
+      } else if (applicationType === 'cosigner') {
+        if (!cosigner.consent) {
+          throw new Error('The co-signer must consent to the credit and background check before submitting.')
+        }
+
+        const linkedApplication = await findApplicationRecord({
+          applicationId: cosigner.linkedApplicationId,
+          signerName: cosigner.linkedSignerName,
+        })
+
+        const fields = {
+          'Linked Application': [linkedApplication.id],
+          'Role': 'Co-Signer',
+          'Full Name': cosigner.fullName,
+          'Email': cosigner.email,
+          'Phone Number': cosigner.phone,
+          'Date of Birth': cosigner.dateOfBirth,
+          'SSN No.': cosigner.ssn || '',
+          'Driving License No.': cosigner.license || '',
+          'Current Address': cosigner.currentAddress || '',
+          'City': cosigner.city || '',
+          'State': cosigner.state || '',
+          'ZIP': cosigner.zip || '',
+          'Employer': cosigner.employer || '',
+          'Employer Address': cosigner.employerAddress || '',
+          'Supervisor Name': cosigner.supervisorName || '',
+          'Supervisor Phone': cosigner.supervisorPhone || '',
+          'Job Title': cosigner.jobTitle || '',
+          'Monthly Income': toCurrencyNumber(cosigner.monthlyIncome),
+          'Annual Income': toCurrencyNumber(cosigner.annualIncome),
+          'Employment Start Date': cosigner.employmentStartDate || null,
+          'Other Income': cosigner.otherIncome || '',
+          'Bankruptcy History': cosigner.bankruptcyHistory,
+          'Criminal History': cosigner.criminalHistory,
+          'Consent for Credit and Background Check': cosigner.consent,
+          'Signature': cosigner.signature,
+          'Date Signed': cosigner.dateSigned,
+          'Notes': buildCosignerNotes(cosigner),
+        }
+
+        await submitToAirtable(COSIGNERS_TABLE, fields)
+      } else {
+        throw new Error('Choose whether this is a signer application or a co-signer form.')
       }
 
       setSubmitted(true)
@@ -594,10 +467,11 @@ export default function Apply() {
               <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
             </svg>
           </div>
-          <h1 className="text-3xl font-black text-slate-900">Application received</h1>
+          <h1 className="text-3xl font-black text-slate-900">Submission received</h1>
           <p className="mt-4 text-base leading-7 text-slate-500">
-            Thanks, {applicant.fullName.split(' ')[0]}! Your application was submitted to Axis. If you requested a co-signer
-            or co-applicant, that linked record was sent too.
+            {applicationType === 'signer'
+              ? `Thanks, ${signer.fullName.split(' ')[0]}! Your signer application was submitted to Axis.`
+              : `Thanks, ${cosigner.fullName.split(' ')[0]}! Your co-signer form was linked to the signer application.`}
           </p>
           <a href="/" className="mt-8 inline-block rounded-full bg-slate-900 px-6 py-3 text-sm font-semibold text-white hover:bg-slate-800">
             Back to home
@@ -611,7 +485,7 @@ export default function Apply() {
     <div className="min-h-screen bg-cream-50">
       <Seo
         title="Apply | Axis Seattle Housing"
-        description="Submit a rental application for Axis Seattle Housing, with optional co-signer support."
+        description="Submit a signer or co-signer rental application for Axis Seattle Housing."
         pathname="/apply"
       />
 
@@ -620,168 +494,432 @@ export default function Apply() {
           <div className="text-[11px] font-bold uppercase tracking-[0.2em] text-slate-400">Axis applications</div>
           <h1 className="mt-2 text-3xl font-black tracking-tight text-slate-900 sm:text-4xl">Residential Rental Application</h1>
           <p className="mt-2 text-sm leading-6 text-slate-500">
-            This application is now wired to your Airtable `Applications` and `Co-Applicants` tables, including optional
-            co-signer support.
+            Start by choosing whether you are the signer or the co-signer. These are now two separate submission flows.
           </p>
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-6">
-          <Section title="Property Information">
-            <div className="grid gap-5 sm:grid-cols-2">
-              <Field label="Property Name" required>
-                <select required className={selectCls} value={application.propertyName} onChange={(e) => setApplicationField('propertyName', e.target.value)}>
-                  <option value="" disabled>Select a property…</option>
-                  {PROPERTY_OPTIONS.map((property) => (
-                    <option key={property.id} value={property.name}>{property.name}</option>
-                  ))}
-                </select>
-              </Field>
-              <Field label="Property Address Applying For">
-                <input className={inputCls} value={application.propertyAddress} onChange={(e) => setApplicationField('propertyAddress', e.target.value)} />
-              </Field>
-            </div>
-
-            <div className="grid gap-5 sm:grid-cols-3">
-              <Field label="Room Number">
-                <select className={selectCls} value={application.roomNumber} onChange={(e) => setApplicationField('roomNumber', e.target.value)} disabled={!selectedProperty}>
-                  <option value="">{selectedProperty ? 'Select a room…' : 'Choose a property first'}</option>
-                  {(selectedProperty?.rooms || []).map((room) => (
-                    <option key={room} value={room}>{room}</option>
-                  ))}
-                </select>
-              </Field>
-              <Field label="Desired Move-In Date" required>
-                <input required type="date" className={inputCls} value={application.desiredMoveInDate} onChange={(e) => setApplicationField('desiredMoveInDate', e.target.value)} />
-              </Field>
-              <Field label="Lease Term" required>
-                <select required className={selectCls} value={application.leaseTerm} onChange={(e) => setApplicationField('leaseTerm', e.target.value)}>
-                  {LEASE_TERMS.map((term) => (
-                    <option key={term} value={term}>{term}</option>
-                  ))}
-                </select>
-              </Field>
-            </div>
-
-            {application.leaseTerm === 'Other / Custom dates' && (
-              <Field label="Custom Lease Term">
-                <input className={inputCls} value={application.leaseTermOther} onChange={(e) => setApplicationField('leaseTermOther', e.target.value)} placeholder="Describe the dates requested" />
-              </Field>
-            )}
-
-            <Field label="Do you need a co-signer?" required>
-              <div className="flex flex-wrap gap-3">
-                <button
-                  type="button"
-                  onClick={() => setApplicationField('needsCoSigner', false)}
-                  className={`rounded-full px-4 py-2 text-sm font-semibold transition ${!application.needsCoSigner ? 'bg-slate-900 text-white' : 'border border-slate-200 bg-white text-slate-700'}`}
-                >
-                  No
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setApplicationField('needsCoSigner', true)}
-                  className={`rounded-full px-4 py-2 text-sm font-semibold transition ${application.needsCoSigner ? 'bg-slate-900 text-white' : 'border border-slate-200 bg-white text-slate-700'}`}
-                >
-                  Yes
-                </button>
-              </div>
-            </Field>
-          </Section>
-
-          <Section title="Applicant Information">
-            <ApplicantFields applicant={applicant} setApplicant={setApplicant} />
-          </Section>
-
-          <Section title="Previous Address">
-            <div className="grid gap-5 sm:grid-cols-2">
-              <Field label="Previous Address">
-                <input className={inputCls} value={applicant.previousAddress} onChange={(e) => setApplicant((prev) => ({ ...prev, previousAddress: e.target.value }))} />
-              </Field>
-              <Field label="Previous City">
-                <input className={inputCls} value={applicant.previousCity} onChange={(e) => setApplicant((prev) => ({ ...prev, previousCity: e.target.value }))} />
-              </Field>
-            </div>
-
-            <div className="grid gap-5 sm:grid-cols-3">
-              <Field label="Previous State">
-                <input className={inputCls} value={applicant.previousState} onChange={(e) => setApplicant((prev) => ({ ...prev, previousState: e.target.value }))} />
-              </Field>
-              <Field label="Previous ZIP">
-                <input className={inputCls} value={applicant.previousZip} onChange={(e) => setApplicant((prev) => ({ ...prev, previousZip: e.target.value }))} />
-              </Field>
-              <Field label="Previous Landlord / Property Manager Name">
-                <input className={inputCls} value={applicant.previousLandlordName} onChange={(e) => setApplicant((prev) => ({ ...prev, previousLandlordName: e.target.value }))} />
-              </Field>
-            </div>
-
-            <div className="grid gap-5 sm:grid-cols-3">
-              <Field label="Previous Landlord Phone #">
-                <input type="tel" className={inputCls} value={applicant.previousLandlordPhone} onChange={(e) => setApplicant((prev) => ({ ...prev, previousLandlordPhone: e.target.value }))} />
-              </Field>
-              <Field label="Previous Move-In Date">
-                <input type="date" className={inputCls} value={applicant.previousMoveInDate} onChange={(e) => setApplicant((prev) => ({ ...prev, previousMoveInDate: e.target.value }))} />
-              </Field>
-              <Field label="Previous Move-Out Date">
-                <input type="date" className={inputCls} value={applicant.previousMoveOutDate} onChange={(e) => setApplicant((prev) => ({ ...prev, previousMoveOutDate: e.target.value }))} />
-              </Field>
-            </div>
-
-            <Field label="Previous Reason for Leaving">
-              <input className={inputCls} value={applicant.previousReasonForLeaving} onChange={(e) => setApplicant((prev) => ({ ...prev, previousReasonForLeaving: e.target.value }))} />
-            </Field>
-          </Section>
-
-          <Section title="References">
-            <div className="grid gap-5 sm:grid-cols-3">
-              <Field label="Reference 1 Name">
-                <input className={inputCls} value={applicant.reference1Name} onChange={(e) => setApplicant((prev) => ({ ...prev, reference1Name: e.target.value }))} />
-              </Field>
-              <Field label="Reference 1 Relationship">
-                <input className={inputCls} value={applicant.reference1Relationship} onChange={(e) => setApplicant((prev) => ({ ...prev, reference1Relationship: e.target.value }))} />
-              </Field>
-              <Field label="Reference 1 Phone #">
-                <input type="tel" className={inputCls} value={applicant.reference1Phone} onChange={(e) => setApplicant((prev) => ({ ...prev, reference1Phone: e.target.value }))} />
-              </Field>
-            </div>
-
-            <div className="grid gap-5 sm:grid-cols-3">
-              <Field label="Reference 2 Name">
-                <input className={inputCls} value={applicant.reference2Name} onChange={(e) => setApplicant((prev) => ({ ...prev, reference2Name: e.target.value }))} />
-              </Field>
-              <Field label="Reference 2 Relationship">
-                <input className={inputCls} value={applicant.reference2Relationship} onChange={(e) => setApplicant((prev) => ({ ...prev, reference2Relationship: e.target.value }))} />
-              </Field>
-              <Field label="Reference 2 Phone #">
-                <input type="tel" className={inputCls} value={applicant.reference2Phone} onChange={(e) => setApplicant((prev) => ({ ...prev, reference2Phone: e.target.value }))} />
-              </Field>
+          <Section title="Who Are You Filing As?">
+            <div className="flex flex-wrap gap-3">
+              <button
+                type="button"
+                onClick={() => setApplicationType('signer')}
+                className={`rounded-full px-5 py-2.5 text-sm font-semibold transition ${applicationType === 'signer' ? 'bg-slate-900 text-white' : 'border border-slate-200 bg-white text-slate-700'}`}
+              >
+                Signer
+              </button>
+              <button
+                type="button"
+                onClick={() => setApplicationType('cosigner')}
+                className={`rounded-full px-5 py-2.5 text-sm font-semibold transition ${applicationType === 'cosigner' ? 'bg-slate-900 text-white' : 'border border-slate-200 bg-white text-slate-700'}`}
+              >
+                Co-Signer
+              </button>
             </div>
           </Section>
 
-          <Section title="Additional Information">
-            <div className="grid gap-5 sm:grid-cols-3">
-              <Field label="Number of Occupants">
-                <input className={inputCls} value={applicant.occupants} onChange={(e) => setApplicant((prev) => ({ ...prev, occupants: e.target.value }))} />
-              </Field>
-              <Field label="Pets (type / breed / weight)">
-                <input className={inputCls} value={applicant.pets} onChange={(e) => setApplicant((prev) => ({ ...prev, pets: e.target.value }))} />
-              </Field>
-              <Field label="Vehicles (make / model / license plate)">
-                <input className={inputCls} value={applicant.vehicles} onChange={(e) => setApplicant((prev) => ({ ...prev, vehicles: e.target.value }))} />
-              </Field>
-            </div>
-          </Section>
+          {applicationType === 'signer' && (
+            <>
+              <Section title="Property Information">
+                <div className="grid gap-5 sm:grid-cols-2">
+                  <Field label="Property Name" required>
+                    <select required className={selectCls} value={signer.propertyName} onChange={(e) => updateSigner('propertyName', e.target.value)}>
+                      <option value="" disabled>Select a property…</option>
+                      {PROPERTY_OPTIONS.map((property) => (
+                        <option key={property.id} value={property.name}>{property.name}</option>
+                      ))}
+                    </select>
+                  </Field>
+                  <Field label="Property Address Applying For">
+                    <input className={inputCls} value={signer.propertyAddress} onChange={(e) => updateSigner('propertyAddress', e.target.value)} />
+                  </Field>
+                </div>
 
-          {application.needsCoSigner && (
-            <Section title="Co-Signer / Co-Applicant">
-              <Field label="Role" required>
-                <select required className={selectCls} value={coApplicant.role} onChange={(e) => setCoApplicant((prev) => ({ ...prev, role: e.target.value }))}>
-                  {COAPPLICANT_ROLE_OPTIONS.map((role) => (
-                    <option key={role} value={role}>{role}</option>
-                  ))}
-                </select>
-              </Field>
-              <ApplicantFields applicant={coApplicant} setApplicant={setCoApplicant} prefix="Co-Applicant" isCoApplicant />
-            </Section>
+                <div className="grid gap-5 sm:grid-cols-3">
+                  <Field label="Room Number">
+                    <select className={selectCls} value={signer.roomNumber} onChange={(e) => updateSigner('roomNumber', e.target.value)} disabled={!selectedProperty}>
+                      <option value="">{selectedProperty ? 'Select a room…' : 'Choose a property first'}</option>
+                      {(selectedProperty?.rooms || []).map((room) => (
+                        <option key={room} value={room}>{room}</option>
+                      ))}
+                    </select>
+                  </Field>
+                  <Field label="Desired Move-In Date" required>
+                    <input required type="date" className={inputCls} value={signer.desiredMoveInDate} onChange={(e) => updateSigner('desiredMoveInDate', e.target.value)} />
+                  </Field>
+                  <Field label="Lease Term" required>
+                    <select required className={selectCls} value={signer.leaseTerm} onChange={(e) => updateSigner('leaseTerm', e.target.value)}>
+                      {LEASE_TERMS.map((term) => (
+                        <option key={term} value={term}>{term}</option>
+                      ))}
+                    </select>
+                  </Field>
+                </div>
+
+                {signer.leaseTerm === 'Other / Custom dates' && (
+                  <Field label="Custom Lease Term">
+                    <input className={inputCls} value={signer.leaseTermOther} onChange={(e) => updateSigner('leaseTermOther', e.target.value)} />
+                  </Field>
+                )}
+              </Section>
+
+              <Section title="Applicant Information">
+                <div className="grid gap-5 sm:grid-cols-2">
+                  <Field label="Full Name" required>
+                    <input required className={inputCls} value={signer.fullName} onChange={(e) => updateSigner('fullName', e.target.value)} />
+                  </Field>
+                  <Field label="Date of Birth" required>
+                    <input required type="date" className={inputCls} value={signer.dateOfBirth} onChange={(e) => updateSigner('dateOfBirth', e.target.value)} />
+                  </Field>
+                </div>
+
+                <div className="grid gap-5 sm:grid-cols-3">
+                  <Field label="Social Security #" >
+                    <input className={inputCls} value={signer.ssn} onChange={(e) => updateSigner('ssn', e.target.value)} />
+                  </Field>
+                  <Field label="Driver's License / ID #" required>
+                    <input required className={inputCls} value={signer.license} onChange={(e) => updateSigner('license', e.target.value)} />
+                  </Field>
+                  <Field label="Phone Number" required>
+                    <input required type="tel" className={inputCls} value={signer.phone} onChange={(e) => updateSigner('phone', e.target.value)} />
+                  </Field>
+                </div>
+
+                <Field label="Email" required>
+                  <input required type="email" className={inputCls} value={signer.email} onChange={(e) => updateSigner('email', e.target.value)} />
+                </Field>
+              </Section>
+
+              <Section title="Current Address">
+                <div className="grid gap-5 sm:grid-cols-2">
+                  <Field label="Address" required>
+                    <input required className={inputCls} value={signer.currentAddress} onChange={(e) => updateSigner('currentAddress', e.target.value)} />
+                  </Field>
+                  <Field label="City / State / ZIP" required>
+                    <div className="grid grid-cols-3 gap-3">
+                      <input required className={inputCls} placeholder="City" value={signer.currentCity} onChange={(e) => updateSigner('currentCity', e.target.value)} />
+                      <input required className={inputCls} placeholder="State" value={signer.currentState} onChange={(e) => updateSigner('currentState', e.target.value)} />
+                      <input required className={inputCls} placeholder="ZIP" value={signer.currentZip} onChange={(e) => updateSigner('currentZip', e.target.value)} />
+                    </div>
+                  </Field>
+                </div>
+
+                <div className="grid gap-5 sm:grid-cols-2">
+                  <Field label="Landlord / Property Manager Name">
+                    <input className={inputCls} value={signer.currentLandlordName} onChange={(e) => updateSigner('currentLandlordName', e.target.value)} />
+                  </Field>
+                  <Field label="Landlord Phone #">
+                    <input type="tel" className={inputCls} value={signer.currentLandlordPhone} onChange={(e) => updateSigner('currentLandlordPhone', e.target.value)} />
+                  </Field>
+                </div>
+
+                <div className="grid gap-5 sm:grid-cols-3">
+                  <Field label="Move-in Date">
+                    <input type="date" className={inputCls} value={signer.currentMoveInDate} onChange={(e) => updateSigner('currentMoveInDate', e.target.value)} />
+                  </Field>
+                  <Field label="Move-out Date">
+                    <input type="date" className={inputCls} value={signer.currentMoveOutDate} onChange={(e) => updateSigner('currentMoveOutDate', e.target.value)} />
+                  </Field>
+                  <Field label="Reason for Leaving">
+                    <input className={inputCls} value={signer.currentReasonForLeaving} onChange={(e) => updateSigner('currentReasonForLeaving', e.target.value)} />
+                  </Field>
+                </div>
+              </Section>
+
+              <Section title="Previous Address">
+                <div className="grid gap-5 sm:grid-cols-2">
+                  <Field label="Address">
+                    <input className={inputCls} value={signer.previousAddress} onChange={(e) => updateSigner('previousAddress', e.target.value)} />
+                  </Field>
+                  <Field label="City / State / ZIP">
+                    <div className="grid grid-cols-3 gap-3">
+                      <input className={inputCls} placeholder="City" value={signer.previousCity} onChange={(e) => updateSigner('previousCity', e.target.value)} />
+                      <input className={inputCls} placeholder="State" value={signer.previousState} onChange={(e) => updateSigner('previousState', e.target.value)} />
+                      <input className={inputCls} placeholder="ZIP" value={signer.previousZip} onChange={(e) => updateSigner('previousZip', e.target.value)} />
+                    </div>
+                  </Field>
+                </div>
+
+                <div className="grid gap-5 sm:grid-cols-2">
+                  <Field label="Landlord / Property Manager Name">
+                    <input className={inputCls} value={signer.previousLandlordName} onChange={(e) => updateSigner('previousLandlordName', e.target.value)} />
+                  </Field>
+                  <Field label="Landlord Phone #">
+                    <input type="tel" className={inputCls} value={signer.previousLandlordPhone} onChange={(e) => updateSigner('previousLandlordPhone', e.target.value)} />
+                  </Field>
+                </div>
+
+                <div className="grid gap-5 sm:grid-cols-3">
+                  <Field label="Move-in Date">
+                    <input type="date" className={inputCls} value={signer.previousMoveInDate} onChange={(e) => updateSigner('previousMoveInDate', e.target.value)} />
+                  </Field>
+                  <Field label="Move-out Date">
+                    <input type="date" className={inputCls} value={signer.previousMoveOutDate} onChange={(e) => updateSigner('previousMoveOutDate', e.target.value)} />
+                  </Field>
+                  <Field label="Reason for Leaving">
+                    <input className={inputCls} value={signer.previousReasonForLeaving} onChange={(e) => updateSigner('previousReasonForLeaving', e.target.value)} />
+                  </Field>
+                </div>
+              </Section>
+
+              <Section title="Employment & Income">
+                <div className="grid gap-5 sm:grid-cols-2">
+                  <Field label="Employer Name">
+                    <input className={inputCls} value={signer.employer} onChange={(e) => updateSigner('employer', e.target.value)} />
+                  </Field>
+                  <Field label="Employer Address">
+                    <input className={inputCls} value={signer.employerAddress} onChange={(e) => updateSigner('employerAddress', e.target.value)} />
+                  </Field>
+                </div>
+
+                <div className="grid gap-5 sm:grid-cols-2">
+                  <Field label="Supervisor Name">
+                    <input className={inputCls} value={signer.supervisorName} onChange={(e) => updateSigner('supervisorName', e.target.value)} />
+                  </Field>
+                  <Field label="Supervisor Phone #">
+                    <input type="tel" className={inputCls} value={signer.supervisorPhone} onChange={(e) => updateSigner('supervisorPhone', e.target.value)} />
+                  </Field>
+                </div>
+
+                <div className="grid gap-5 sm:grid-cols-4">
+                  <Field label="Job Title">
+                    <input className={inputCls} value={signer.jobTitle} onChange={(e) => updateSigner('jobTitle', e.target.value)} />
+                  </Field>
+                  <Field label="Monthly Income">
+                    <input className={inputCls} value={signer.monthlyIncome} onChange={(e) => updateSigner('monthlyIncome', e.target.value)} />
+                  </Field>
+                  <Field label="Annual Income">
+                    <input className={inputCls} value={signer.annualIncome} onChange={(e) => updateSigner('annualIncome', e.target.value)} />
+                  </Field>
+                  <Field label="Start Date">
+                    <input type="date" className={inputCls} value={signer.employmentStartDate} onChange={(e) => updateSigner('employmentStartDate', e.target.value)} />
+                  </Field>
+                </div>
+
+                <Field label="Other Income">
+                  <input className={inputCls} value={signer.otherIncome} onChange={(e) => updateSigner('otherIncome', e.target.value)} />
+                </Field>
+              </Section>
+
+              <Section title="References">
+                <div className="grid gap-5 sm:grid-cols-3">
+                  <Field label="Name 1">
+                    <input className={inputCls} value={signer.reference1Name} onChange={(e) => updateSigner('reference1Name', e.target.value)} />
+                  </Field>
+                  <Field label="Relationship 1">
+                    <input className={inputCls} value={signer.reference1Relationship} onChange={(e) => updateSigner('reference1Relationship', e.target.value)} />
+                  </Field>
+                  <Field label="Phone # 1">
+                    <input type="tel" className={inputCls} value={signer.reference1Phone} onChange={(e) => updateSigner('reference1Phone', e.target.value)} />
+                  </Field>
+                </div>
+                <div className="grid gap-5 sm:grid-cols-3">
+                  <Field label="Name 2">
+                    <input className={inputCls} value={signer.reference2Name} onChange={(e) => updateSigner('reference2Name', e.target.value)} />
+                  </Field>
+                  <Field label="Relationship 2">
+                    <input className={inputCls} value={signer.reference2Relationship} onChange={(e) => updateSigner('reference2Relationship', e.target.value)} />
+                  </Field>
+                  <Field label="Phone # 2">
+                    <input type="tel" className={inputCls} value={signer.reference2Phone} onChange={(e) => updateSigner('reference2Phone', e.target.value)} />
+                  </Field>
+                </div>
+              </Section>
+
+              <Section title="Additional Information">
+                <div className="grid gap-5 sm:grid-cols-3">
+                  <Field label="Number of Occupants">
+                    <input className={inputCls} value={signer.occupants} onChange={(e) => updateSigner('occupants', e.target.value)} />
+                  </Field>
+                  <Field label="Pets">
+                    <input className={inputCls} value={signer.pets} onChange={(e) => updateSigner('pets', e.target.value)} />
+                  </Field>
+                  <Field label="Vehicle(s)">
+                    <input className={inputCls} value={signer.vehicles} onChange={(e) => updateSigner('vehicles', e.target.value)} />
+                  </Field>
+                </div>
+              </Section>
+
+              <Section title="Financial Background / Legal">
+                <div className="grid gap-5 sm:grid-cols-3">
+                  <Field label="Eviction History" required>
+                    <select required className={selectCls} value={signer.evictionHistory} onChange={(e) => updateSigner('evictionHistory', e.target.value)}>
+                      <option value="" disabled>Select…</option>
+                      {HISTORY_OPTIONS.map((option) => <option key={option} value={option}>{option}</option>)}
+                    </select>
+                  </Field>
+                  <Field label="Bankruptcy History" required>
+                    <select required className={selectCls} value={signer.bankruptcyHistory} onChange={(e) => updateSigner('bankruptcyHistory', e.target.value)}>
+                      <option value="" disabled>Select…</option>
+                      {HISTORY_OPTIONS.map((option) => <option key={option} value={option}>{option}</option>)}
+                    </select>
+                  </Field>
+                  <Field label="Criminal Convictions" required>
+                    <select required className={selectCls} value={signer.criminalHistory} onChange={(e) => updateSigner('criminalHistory', e.target.value)}>
+                      <option value="" disabled>Select…</option>
+                      {HISTORY_OPTIONS.map((option) => <option key={option} value={option}>{option}</option>)}
+                    </select>
+                  </Field>
+                </div>
+
+                <Field label="Consent for Credit and Background Check" required>
+                  <label className="flex min-h-[52px] items-center gap-3 rounded-xl border border-slate-200 px-4 py-3 text-sm text-slate-700">
+                    <input type="checkbox" checked={signer.consent} onChange={(e) => updateSigner('consent', e.target.checked)} className="h-4 w-4 rounded border-slate-300 text-axis focus:ring-axis" />
+                    I consent to a credit and background check.
+                  </label>
+                </Field>
+              </Section>
+
+              <Section title="Signature">
+                <div className="grid gap-5 sm:grid-cols-2">
+                  <Field label="Applicant Signature" required>
+                    <input required className={inputCls} value={signer.signature} onChange={(e) => updateSigner('signature', e.target.value)} />
+                  </Field>
+                  <Field label="Date Signed" required>
+                    <input required type="date" className={inputCls} value={signer.dateSigned} onChange={(e) => updateSigner('dateSigned', e.target.value)} />
+                  </Field>
+                </div>
+                <Field label="Additional Notes">
+                  <textarea className={`${inputCls} min-h-[96px] resize-y`} value={signer.notes} onChange={(e) => updateSigner('notes', e.target.value)} />
+                </Field>
+              </Section>
+            </>
+          )}
+
+          {applicationType === 'cosigner' && (
+            <>
+              <Section title="Link This Co-Signer To A Signer Application">
+                <div className="grid gap-5 sm:grid-cols-2">
+                  <Field label="Signer Application ID" hint="Recommended. Use the Airtable Application ID if you have it.">
+                    <input className={inputCls} value={cosigner.linkedApplicationId} onChange={(e) => updateCosigner('linkedApplicationId', e.target.value)} />
+                  </Field>
+                  <Field label="Signer Full Name" hint="Use this if you don’t have the application ID.">
+                    <input className={inputCls} value={cosigner.linkedSignerName} onChange={(e) => updateCosigner('linkedSignerName', e.target.value)} />
+                  </Field>
+                </div>
+              </Section>
+
+              <Section title="Co-Signer Information">
+                <div className="grid gap-5 sm:grid-cols-2">
+                  <Field label="Full Name" required>
+                    <input required className={inputCls} value={cosigner.fullName} onChange={(e) => updateCosigner('fullName', e.target.value)} />
+                  </Field>
+                  <Field label="Email" required>
+                    <input required type="email" className={inputCls} value={cosigner.email} onChange={(e) => updateCosigner('email', e.target.value)} />
+                  </Field>
+                </div>
+
+                <div className="grid gap-5 sm:grid-cols-3">
+                  <Field label="Phone Number" required>
+                    <input required type="tel" className={inputCls} value={cosigner.phone} onChange={(e) => updateCosigner('phone', e.target.value)} />
+                  </Field>
+                  <Field label="Date of Birth" required>
+                    <input required type="date" className={inputCls} value={cosigner.dateOfBirth} onChange={(e) => updateCosigner('dateOfBirth', e.target.value)} />
+                  </Field>
+                  <Field label="Driver's License / ID #" required>
+                    <input required className={inputCls} value={cosigner.license} onChange={(e) => updateCosigner('license', e.target.value)} />
+                  </Field>
+                </div>
+
+                <div className="grid gap-5 sm:grid-cols-2">
+                  <Field label="Social Security #">
+                    <input className={inputCls} value={cosigner.ssn} onChange={(e) => updateCosigner('ssn', e.target.value)} />
+                  </Field>
+                  <Field label="Current Address" required>
+                    <input required className={inputCls} value={cosigner.currentAddress} onChange={(e) => updateCosigner('currentAddress', e.target.value)} />
+                  </Field>
+                </div>
+
+                <div className="grid gap-5 sm:grid-cols-3">
+                  <Field label="City" required>
+                    <input required className={inputCls} value={cosigner.city} onChange={(e) => updateCosigner('city', e.target.value)} />
+                  </Field>
+                  <Field label="State" required>
+                    <input required className={inputCls} value={cosigner.state} onChange={(e) => updateCosigner('state', e.target.value)} />
+                  </Field>
+                  <Field label="ZIP" required>
+                    <input required className={inputCls} value={cosigner.zip} onChange={(e) => updateCosigner('zip', e.target.value)} />
+                  </Field>
+                </div>
+              </Section>
+
+              <Section title="Employment & Income">
+                <div className="grid gap-5 sm:grid-cols-2">
+                  <Field label="Employer Name">
+                    <input className={inputCls} value={cosigner.employer} onChange={(e) => updateCosigner('employer', e.target.value)} />
+                  </Field>
+                  <Field label="Employer Address">
+                    <input className={inputCls} value={cosigner.employerAddress} onChange={(e) => updateCosigner('employerAddress', e.target.value)} />
+                  </Field>
+                </div>
+
+                <div className="grid gap-5 sm:grid-cols-2">
+                  <Field label="Supervisor Name">
+                    <input className={inputCls} value={cosigner.supervisorName} onChange={(e) => updateCosigner('supervisorName', e.target.value)} />
+                  </Field>
+                  <Field label="Supervisor Phone #">
+                    <input type="tel" className={inputCls} value={cosigner.supervisorPhone} onChange={(e) => updateCosigner('supervisorPhone', e.target.value)} />
+                  </Field>
+                </div>
+
+                <div className="grid gap-5 sm:grid-cols-4">
+                  <Field label="Job Title">
+                    <input className={inputCls} value={cosigner.jobTitle} onChange={(e) => updateCosigner('jobTitle', e.target.value)} />
+                  </Field>
+                  <Field label="Monthly Income">
+                    <input className={inputCls} value={cosigner.monthlyIncome} onChange={(e) => updateCosigner('monthlyIncome', e.target.value)} />
+                  </Field>
+                  <Field label="Annual Income">
+                    <input className={inputCls} value={cosigner.annualIncome} onChange={(e) => updateCosigner('annualIncome', e.target.value)} />
+                  </Field>
+                  <Field label="Start Date">
+                    <input type="date" className={inputCls} value={cosigner.employmentStartDate} onChange={(e) => updateCosigner('employmentStartDate', e.target.value)} />
+                  </Field>
+                </div>
+
+                <Field label="Other Income">
+                  <input className={inputCls} value={cosigner.otherIncome} onChange={(e) => updateCosigner('otherIncome', e.target.value)} />
+                </Field>
+              </Section>
+
+              <Section title="Financial Background / Legal">
+                <div className="grid gap-5 sm:grid-cols-2">
+                  <Field label="Bankruptcy History" required>
+                    <select required className={selectCls} value={cosigner.bankruptcyHistory} onChange={(e) => updateCosigner('bankruptcyHistory', e.target.value)}>
+                      <option value="" disabled>Select…</option>
+                      {HISTORY_OPTIONS.map((option) => <option key={option} value={option}>{option}</option>)}
+                    </select>
+                  </Field>
+                  <Field label="Criminal Convictions" required>
+                    <select required className={selectCls} value={cosigner.criminalHistory} onChange={(e) => updateCosigner('criminalHistory', e.target.value)}>
+                      <option value="" disabled>Select…</option>
+                      {HISTORY_OPTIONS.map((option) => <option key={option} value={option}>{option}</option>)}
+                    </select>
+                  </Field>
+                </div>
+
+                <Field label="Consent for Credit and Background Check" required>
+                  <label className="flex min-h-[52px] items-center gap-3 rounded-xl border border-slate-200 px-4 py-3 text-sm text-slate-700">
+                    <input type="checkbox" checked={cosigner.consent} onChange={(e) => updateCosigner('consent', e.target.checked)} className="h-4 w-4 rounded border-slate-300 text-axis focus:ring-axis" />
+                    I consent to a credit and background check.
+                  </label>
+                </Field>
+              </Section>
+
+              <Section title="Signature">
+                <div className="grid gap-5 sm:grid-cols-2">
+                  <Field label="Co-Signer Signature" required>
+                    <input required className={inputCls} value={cosigner.signature} onChange={(e) => updateCosigner('signature', e.target.value)} />
+                  </Field>
+                  <Field label="Date Signed" required>
+                    <input required type="date" className={inputCls} value={cosigner.dateSigned} onChange={(e) => updateCosigner('dateSigned', e.target.value)} />
+                  </Field>
+                </div>
+                <Field label="Additional Notes">
+                  <textarea className={`${inputCls} min-h-[96px] resize-y`} value={cosigner.notes} onChange={(e) => updateCosigner('notes', e.target.value)} />
+                </Field>
+              </Section>
+            </>
           )}
 
           {error && (
@@ -789,7 +927,7 @@ export default function Apply() {
               <p className="font-semibold">Submission failed — Airtable didn&apos;t accept the application.</p>
               <p className="break-all font-mono text-xs text-red-600">{error}</p>
               <a
-                href={buildMailtoFallback(application, applicant, application.needsCoSigner, coApplicant)}
+                href={buildMailtoFallback(applicationType, signer, cosigner)}
                 className="inline-block rounded-lg bg-red-700 px-4 py-2 text-xs font-semibold text-white hover:bg-red-800"
               >
                 Send via email instead
@@ -802,7 +940,7 @@ export default function Apply() {
             disabled={submitting}
             className="w-full rounded-full bg-slate-900 py-4 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
           >
-            {submitting ? 'Submitting…' : 'Submit application'}
+            {submitting ? 'Submitting…' : applicationType === 'cosigner' ? 'Submit co-signer form' : 'Submit signer application'}
           </button>
         </form>
       </div>
