@@ -277,6 +277,10 @@ const CONTACT_INQUIRY_TYPES = [
   'Other',
 ]
 
+function todayIsoDate() {
+  return new Date().toISOString().slice(0, 10)
+}
+
 function ContactMessageForm() {
   const [form, setForm] = useState({ name: '', email: '', phone: '', property: '', topic: '', message: '' })
   const [submitting, setSubmitting] = useState(false)
@@ -301,14 +305,19 @@ function ContactMessageForm() {
     e.preventDefault()
     setSubmitting(true)
     setError('')
+    const notes = [
+      `Inquiry Type: ${form.topic}`,
+      `Message Summary: ${form.message}`,
+    ].join('\n')
     const fields = {
-      'Name': form.name,
-      'Email': form.email,
-      'Phone Number': form.phone,
-      'Property': [form.property],
-      'Inquiry Type': form.topic,
-      'Message Summary': form.message,
+      'Applicant Name': form.name,
+      'Applicant Email': form.email,
+      'Applicant Phone': form.phone,
+      'Application Date': todayIsoDate(),
+      'Property Name': form.property,
+      'Notes': notes,
     }
+    if (form.property) fields['Property Applied For'] = [form.property]
     try {
       if (!AIRTABLE_TOKEN) throw new Error('VITE_AIRTABLE_TOKEN is not set.')
       const res = await fetch(`https://api.airtable.com/v0/${AIRTABLE_BASE_ID}/${encodeURIComponent(AIRTABLE_INQUIRIES_TABLE)}`, {
