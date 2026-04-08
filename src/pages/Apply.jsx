@@ -90,6 +90,28 @@ function buildMailtoFallback(form) {
   return `mailto:info@axis-seattle-housing.com?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`
 }
 
+function buildApplicationNotes(form) {
+  return [
+    `Driving License No.: ${form.drivingLicense}`,
+    `SSN No.: ${form.ssn || 'Not provided'}`,
+    `Applicant DOB: ${form.applicantDob}`,
+    `Room Number: ${form.roomNumber}`,
+    `Desired Move-in Date: ${form.desiredMoveInDate}`,
+    `Current Address: ${form.currentAddress || 'Not provided'}`,
+    `Employer: ${form.employer || 'Not provided'}`,
+    `Job Title: ${form.jobTitle || 'Not provided'}`,
+    `Reference 1: ${form.reference1 || 'Not provided'}`,
+    `Reference 2: ${form.reference2 || 'Not provided'}`,
+    `Occupants: ${form.occupants || 'Not provided'}`,
+    `Pets: ${form.pets || 'Not provided'}`,
+    `Vehicles: ${form.vehicles || 'Not provided'}`,
+    `Eviction History: ${form.evictionHistory}`,
+    `Criminal History: ${form.criminalHistory}`,
+    `Signature: ${form.signature || 'Not provided'}`,
+    `Date Signed: ${form.dateSigned}`,
+  ].join('\n')
+}
+
 export default function Apply() {
   const [form, setForm] = useState({
     applicantName: '',
@@ -136,29 +158,16 @@ export default function Apply() {
     setSubmitting(true)
     setError('')
 
+    const notes = buildApplicationNotes(form)
     const fields = {
       'Applicant Name': form.applicantName,
       'Applicant Email': form.applicantEmail,
       'Applicant Phone': form.applicantPhone,
-      'Driving License No.': form.drivingLicense,
-      'SSN No.': form.ssn || '',
-      'Applicant DOB': form.applicantDob,
       'Property Name': form.propertyName,
-      'Room Number': form.roomNumber,
-      'Desired Move-in Date': form.desiredMoveInDate,
-      'Current Address': form.currentAddress || '',
-      'Employer': form.employer || '',
-      'Job Title': form.jobTitle || '',
-      'Reference 1': form.reference1 || '',
-      'Reference 2': form.reference2 || '',
-      'Occupants': form.occupants || '',
-      'Pets': form.pets || '',
-      'Vehicles': form.vehicles || '',
-      'Eviction History': form.evictionHistory,
-      'Criminal History': form.criminalHistory,
-      'Signature': form.signature || '',
-      'Date Signed': form.dateSigned,
+      'Application Date': todayIsoDate(),
+      'Notes': notes,
     }
+    if (form.propertyName) fields['Property Applied For'] = [form.propertyName]
 
     try {
       await submitToAirtable(fields)
