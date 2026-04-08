@@ -892,7 +892,7 @@ const COSIGNER_STEPS = [
   { title: 'Link to Signer', validate: (c) => {
     const e = {}
     if (!c.linkedApplicationId?.trim() && !c.linkedSignerName?.trim()) {
-      e.linkedApplicationId = 'Please enter the signer's Application ID or their full name'
+      e.linkedApplicationId = "Please enter the signer's Application ID or their full name"
     }
     return e
   }},
