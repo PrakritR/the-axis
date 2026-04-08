@@ -205,7 +205,6 @@ const SEASON_LEASE_LABEL = {
   fullyear: '12-Month lease',
 }
 
-const BUDGET_HINTS = [700, 775, 800, 825, 865]
 
 function PillSelect({ label, options, value, onChange }) {
   return (
@@ -275,7 +274,7 @@ function RoomFinder() {
   const allOptions = useMemo(() => buildFinderOptions(), [])
 
   const budget = parseInt(budgetInput, 10) || 0
-  const hasFilters = budgetInput !== '' || season !== ''
+  const hasFilters = budgetInput !== '' || bath !== '' || season !== ''
 
   const results = useMemo(() => {
     if (!hasFilters) return []
@@ -313,37 +312,40 @@ function RoomFinder() {
 
         <div className="rounded-3xl border border-slate-200 bg-slate-50 p-6 sm:p-8">
           <div className="grid gap-6 sm:grid-cols-3">
-            {/* Budget input */}
+            {/* Budget slider */}
             <div>
-              <div className="mb-3 text-[11px] font-bold uppercase tracking-[0.18em] text-slate-500">Max budget / month</div>
-              <div className="relative">
-                <span className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-sm font-semibold text-slate-400">$</span>
+              <div className="mb-3 flex items-center justify-between">
+                <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-500">Max budget / month</div>
+                <div className={`text-sm font-semibold transition-colors ${budgetInput ? 'text-axis' : 'text-slate-400'}`}>
+                  {budgetInput ? `$${budgetInput}` : 'Any'}
+                </div>
+              </div>
+              <div className="relative py-2">
                 <input
-                  type="number"
-                  min="0"
-                  max="2000"
-                  placeholder="e.g. 800"
-                  value={budgetInput}
+                  type="range"
+                  min="600"
+                  max="1100"
+                  step="25"
+                  value={budgetInput || 600}
                   onChange={e => setBudgetInput(e.target.value)}
-                  className="w-full rounded-xl border border-slate-200 bg-white py-2.5 pl-8 pr-4 text-sm text-slate-900 outline-none transition focus:border-axis focus:ring-2 focus:ring-axis/20"
+                  style={{ '--val': budgetInput || 600 }}
+                  className="budget-slider w-full cursor-pointer appearance-none"
                 />
+                <div className="mt-2 flex justify-between text-[10px] font-medium text-slate-400">
+                  <span>$600</span>
+                  <span>$850</span>
+                  <span>$1,100</span>
+                </div>
               </div>
-              <div className="mt-2 flex flex-wrap gap-1.5">
-                {BUDGET_HINTS.map(h => (
-                  <button
-                    key={h}
-                    type="button"
-                    onClick={() => setBudgetInput(budgetInput === String(h) ? '' : String(h))}
-                    className={`rounded-full px-2.5 py-1 text-[11px] font-semibold transition ${
-                      budgetInput === String(h)
-                        ? 'bg-slate-900 text-white'
-                        : 'border border-slate-200 bg-white text-slate-500 hover:border-slate-400'
-                    }`}
-                  >
-                    ${h}
-                  </button>
-                ))}
-              </div>
+              {budgetInput && (
+                <button
+                  type="button"
+                  onClick={() => setBudgetInput('')}
+                  className="mt-1 text-[11px] font-medium text-slate-400 underline-offset-2 hover:text-slate-600 hover:underline"
+                >
+                  Clear
+                </button>
+              )}
             </div>
 
             <PillSelect label="Bathroom type" options={BATH_OPTIONS} value={bath} onChange={setBath} />
