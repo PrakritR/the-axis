@@ -261,7 +261,7 @@ function BookingScheduler() {
 }
 
 const AIRTABLE_BASE_ID = import.meta.env.VITE_AIRTABLE_APPLICATIONS_BASE_ID || 'appNBX2inqfJMyqYV'
-const AIRTABLE_INQUIRIES_TABLE = import.meta.env.VITE_AIRTABLE_APPLICATIONS_TABLE || 'Applications'
+const AIRTABLE_INQUIRIES_TABLE = import.meta.env.VITE_AIRTABLE_APPLICATIONS_TABLE || 'Inquiries'
 const AIRTABLE_TOKEN = import.meta.env.VITE_AIRTABLE_TOKEN
 
 const inputCls = 'w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 placeholder-slate-400 outline-none transition focus:border-axis focus:bg-white focus:ring-2 focus:ring-axis/20'
@@ -305,19 +305,14 @@ function ContactMessageForm() {
     e.preventDefault()
     setSubmitting(true)
     setError('')
-    const notes = [
-      `Inquiry Type: ${form.topic}`,
-      `Message Summary: ${form.message}`,
-    ].join('\n')
     const fields = {
-      'Applicant Name': form.name,
-      'Applicant Email': form.email,
-      'Applicant Phone': form.phone,
-      'Application Date': todayIsoDate(),
-      'Property Name': form.property,
-      'Notes': notes,
+      'Full Name': form.name,
+      'Email': form.email,
+      'Phone Number': form.phone,
+      'Property': form.property,
+      'Inquiry Type': form.topic,
+      'Message Summary': form.message,
     }
-    if (form.property) fields['Property Applied For'] = [form.property]
     try {
       if (!AIRTABLE_TOKEN) throw new Error('VITE_AIRTABLE_TOKEN is not set.')
       const res = await fetch(`https://api.airtable.com/v0/${AIRTABLE_BASE_ID}/${encodeURIComponent(AIRTABLE_INQUIRIES_TABLE)}`, {
@@ -419,7 +414,7 @@ function ContactMessageForm() {
 }
 
 export default function Contact() {
-  const [activeTab, setActiveTab] = useState('schedule')
+  const [activeTab, setActiveTab] = useState('message')
 
   const tabs = [
     { id: 'schedule', label: 'Schedule', icon: 'M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z' },
