@@ -504,8 +504,15 @@ function Field({ label, required, hint, error, children }) {
         {required && <span className="ml-1 text-axis">*</span>}
       </label>
       {hint && <p className="mb-1.5 text-xs text-slate-400">{hint}</p>}
-      {children}
-      {error && <p className="mt-1.5 text-xs font-medium text-red-500">{error}</p>}
+      <div className={error ? 'rounded-xl ring-2 ring-red-400' : ''}>
+        {children}
+      </div>
+      {error && (
+        <p className="mt-1.5 flex items-center gap-1 text-xs font-semibold text-red-600">
+          <svg className="h-3 w-3 shrink-0" fill="currentColor" viewBox="0 0 16 16"><path d="M8 1a7 7 0 100 14A7 7 0 008 1zm-.75 4a.75.75 0 011.5 0v3.5a.75.75 0 01-1.5 0V5zm.75 7a1 1 0 110-2 1 1 0 010 2z"/></svg>
+          {error}
+        </p>
+      )}
     </div>
   )
 }
