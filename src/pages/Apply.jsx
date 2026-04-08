@@ -12,6 +12,7 @@ const LEASE_TERMS = [
   '3-Month',
   '9-Month',
   '12-Month',
+  'Month-to-Month (+$25/mo)',
   'Custom',
 ]
 
@@ -585,6 +586,22 @@ async function checkDuplicateApplication(email) {
   }
 }
 
+async function checkRoomConflict(propertyName, roomNumber) {
+  if (!AIRTABLE_TOKEN || !propertyName || !roomNumber) return false
+  const formula = `AND({Property Name} = '${escapeFormulaString(propertyName)}', {Room Number} = '${escapeFormulaString(roomNumber)}')`
+  const url = new URL(`https://api.airtable.com/v0/${AIRTABLE_BASE_ID}/${encodeURIComponent(APPLICATIONS_TABLE)}`)
+  url.searchParams.set('maxRecords', '1')
+  url.searchParams.set('filterByFormula', formula)
+  try {
+    const res = await fetch(url.toString(), { headers: { Authorization: `Bearer ${AIRTABLE_TOKEN}` } })
+    if (!res.ok) return false
+    const data = await res.json()
+    return (data.records?.length ?? 0) > 0
+  } catch {
+    return false
+  }
+}
+
 async function findApplicationRecord({ applicationId, signerName }) {
   if (!AIRTABLE_TOKEN) throw new Error('VITE_AIRTABLE_TOKEN is not set in environment variables.')
 
@@ -768,9 +785,10 @@ const SIGNER_STEPS = [
     title: 'Property Information',
     validate: (s) => {
       const e = {}
+      const isMonthToMonth = s.leaseTerm === 'Month-to-Month (+$25/mo)'
       if (!s.propertyName) e.propertyName = 'Select a property'
       if (!s.leaseStartDate) e.leaseStartDate = 'Lease start date is required'
-      if (!s.leaseEndDate) e.leaseEndDate = 'Lease end date is required'
+      if (!isMonthToMonth && !s.leaseEndDate) e.leaseEndDate = 'Lease end date is required'
       if (s.leaseStartDate && s.leaseEndDate && new Date(s.leaseEndDate) <= new Date(s.leaseStartDate)) {
         e.leaseEndDate = 'Must be after lease start date'
       }
@@ -858,7 +876,6 @@ const SIGNER_STEPS = [
     validate: (s) => {
       const e = {}
       if (!s.reference1Name?.trim()) e.reference1Name = 'At least one reference name is required'
-      if (!s.reference1Relationship?.trim()) e.reference1Relationship = 'Relationship is required'
       if (!s.reference1Phone?.trim()) e.reference1Phone = 'Reference phone is required'
       else { const v = validatePhone(s.reference1Phone); if (v) e.reference1Phone = v }
       if (s.reference2Phone) { const v = validatePhone(s.reference2Phone); if (v) e.reference2Phone = v }
@@ -959,6 +976,7 @@ export default function Apply() {
   const [submittedRecord, setSubmittedRecord] = useState(null)
   const [error, setError] = useState('')
   const [fieldErrors, setFieldErrors] = useState({})
+  const [roomConflictWarning, setRoomConflictWarning] = useState(false)
 
   const steps = applicationType === 'cosigner' ? COSIGNER_STEPS : SIGNER_STEPS
   const totalSteps = steps.length
@@ -975,6 +993,16 @@ export default function Apply() {
       if (key === 'propertyName') {
         next.roomNumber = ''
         next.propertyAddress = PROPERTY_OPTIONS.find((property) => property.name === value)?.address || ''
+        setRoomConflictWarning(false)
+      }
+      if (key === 'roomNumber') {
+        const property = key === 'propertyName' ? value : prev.propertyName
+        const room = key === 'roomNumber' ? value : prev.roomNumber
+        if (property && value) {
+          checkRoomConflict(property, value).then(setRoomConflictWarning)
+        } else {
+          setRoomConflictWarning(false)
+        }
       }
       return next
     })
@@ -1318,15 +1346,31 @@ export default function Apply() {
                         <option key={term} value={term}>{term}</option>
                       ))}
                     </select>
+                    {signer.leaseTerm === 'Month-to-Month (+$25/mo)' && (
+                      <p className="mt-2 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2">
+                        Month-to-month leases include a <strong>$25/month</strong> premium added to your base rent. No fixed end date required.
+                      </p>
+                    )}
                   </Field>
                 </div>
+
+                {roomConflictWarning && (
+                  <div className="flex gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3">
+                    <svg className="mt-0.5 h-4 w-4 shrink-0 text-amber-500" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z" />
+                    </svg>
+                    <div className="text-sm text-amber-800">
+                      <span className="font-semibold">Heads up:</span> Another applicant has already submitted an application for this room. You can still apply, but your application may compete with theirs. Contact Axis directly if you have questions.
+                    </div>
+                  </div>
+                )}
 
                 <div className="grid gap-5 sm:grid-cols-2">
                   <Field label="Lease Start Date" required error={fieldErrors.leaseStartDate}>
                     <input required type="date" min={todayIsoDate()} max={MAX_DATE} className={inputCls} value={signer.leaseStartDate} onChange={(e) => updateSigner('leaseStartDate', clampYear(e.target.value))} />
                   </Field>
-                  <Field label="Lease End Date" required error={fieldErrors.leaseEndDate}>
-                    <input required type="date" min={signer.leaseStartDate || todayIsoDate()} max={MAX_DATE} className={inputCls} value={signer.leaseEndDate} onChange={(e) => updateSigner('leaseEndDate', clampYear(e.target.value))} />
+                  <Field label={signer.leaseTerm === 'Month-to-Month (+$25/mo)' ? 'Lease End Date (optional)' : 'Lease End Date'} required={signer.leaseTerm !== 'Month-to-Month (+$25/mo)'} error={fieldErrors.leaseEndDate}>
+                    <input type="date" min={signer.leaseStartDate || todayIsoDate()} max={MAX_DATE} className={inputCls} value={signer.leaseEndDate} onChange={(e) => updateSigner('leaseEndDate', clampYear(e.target.value))} />
                   </Field>
                 </div>
               </Section>
@@ -1520,8 +1564,8 @@ export default function Apply() {
                   <Field label="Name" required error={fieldErrors.reference1Name}>
                     <input required className={inputCls} placeholder="Jane Smith" value={signer.reference1Name} onChange={(e) => updateSigner('reference1Name', e.target.value)} />
                   </Field>
-                  <Field label="Relationship" required error={fieldErrors.reference1Relationship}>
-                    <input required className={inputCls} placeholder="Colleague" value={signer.reference1Relationship} onChange={(e) => updateSigner('reference1Relationship', e.target.value)} />
+                  <Field label="Relationship">
+                    <input className={inputCls} placeholder="Colleague" value={signer.reference1Relationship} onChange={(e) => updateSigner('reference1Relationship', e.target.value)} />
                   </Field>
                   <Field label="Phone #" required error={fieldErrors.reference1Phone}>
                     <input required type="tel" className={inputCls} placeholder="(206) 555-0100" value={signer.reference1Phone} onChange={(e) => updateSigner('reference1Phone', formatPhoneInput(e.target.value))} />
