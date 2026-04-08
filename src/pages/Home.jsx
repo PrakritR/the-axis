@@ -252,6 +252,16 @@ function MatchCard({ opt, seasonLabel }) {
   )
 }
 
+const MAX_DATE = '2035-12-31'
+
+// Prevent year from exceeding 4 digits
+function clampYear(dateStr) {
+  if (!dateStr) return dateStr
+  const [y, m, d] = dateStr.split('-')
+  if (!y || y.length <= 4) return dateStr
+  return `${y.slice(0, 4)}-${m}-${d}`
+}
+
 function RoomFinder() {
   const [budgetInput, setBudgetInput] = useState('')
   const [bath, setBath] = useState('any')
@@ -317,10 +327,12 @@ function RoomFinder() {
               <input
                 type="date"
                 min={todayStr}
+                max={MAX_DATE}
                 value={moveInDate}
                 onChange={e => {
-                  setMoveInDate(e.target.value)
-                  if (moveOutDate && e.target.value > moveOutDate) setMoveOutDate('')
+                  const val = clampYear(e.target.value)
+                  setMoveInDate(val)
+                  if (moveOutDate && val > moveOutDate) setMoveOutDate('')
                 }}
                 className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-medium text-slate-900 outline-none transition focus:border-axis focus:ring-2 focus:ring-axis/20"
               />
@@ -336,9 +348,10 @@ function RoomFinder() {
               <input
                 type="date"
                 min={moveInDate || todayStr}
+                max={MAX_DATE}
                 value={moveOutDate}
                 disabled={!moveInDate}
-                onChange={e => setMoveOutDate(e.target.value)}
+                onChange={e => setMoveOutDate(clampYear(e.target.value))}
                 className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-medium text-slate-900 outline-none transition focus:border-axis focus:ring-2 focus:ring-axis/20 disabled:opacity-40 disabled:cursor-not-allowed"
               />
               {moveOutDate && (

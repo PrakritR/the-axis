@@ -366,6 +366,16 @@ function AddressAutocomplete({ value, onChange, onSelect, placeholder, className
 const inputCls = 'w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 placeholder-slate-400 outline-none transition focus:border-axis focus:ring-2 focus:ring-axis/20'
 const selectCls = `${inputCls} appearance-none cursor-pointer`
 
+const MAX_DATE = '2035-12-31'
+const MIN_DOB = '1900-01-01'
+
+function clampYear(dateStr) {
+  if (!dateStr) return dateStr
+  const [y, m, d] = dateStr.split('-')
+  if (!y || y.length <= 4) return dateStr
+  return `${y.slice(0, 4)}-${m}-${d}`
+}
+
 function todayIsoDate() {
   return new Date().toISOString().slice(0, 10)
 }
@@ -1063,10 +1073,10 @@ export default function Apply() {
 
                 <div className="grid gap-5 sm:grid-cols-2">
                   <Field label="Lease Start Date" required>
-                    <input required type="date" className={inputCls} value={signer.leaseStartDate} onChange={(e) => updateSigner('leaseStartDate', e.target.value)} />
+                    <input required type="date" min={todayIsoDate()} max={MAX_DATE} className={inputCls} value={signer.leaseStartDate} onChange={(e) => updateSigner('leaseStartDate', clampYear(e.target.value))} />
                   </Field>
                   <Field label="Lease End Date" required>
-                    <input required type="date" className={inputCls} value={signer.leaseEndDate} onChange={(e) => updateSigner('leaseEndDate', e.target.value)} />
+                    <input required type="date" min={signer.leaseStartDate || todayIsoDate()} max={MAX_DATE} className={inputCls} value={signer.leaseEndDate} onChange={(e) => updateSigner('leaseEndDate', clampYear(e.target.value))} />
                   </Field>
                 </div>
               </Section>
@@ -1077,7 +1087,7 @@ export default function Apply() {
                     <input required className={inputCls} value={signer.fullName} onChange={(e) => updateSigner('fullName', e.target.value)} />
                   </Field>
                   <Field label="Date of Birth" required>
-                    <input required type="date" className={inputCls} value={signer.dateOfBirth} onChange={(e) => updateSigner('dateOfBirth', e.target.value)} />
+                    <input required type="date" min={MIN_DOB} max={todayIsoDate()} className={inputCls} value={signer.dateOfBirth} onChange={(e) => updateSigner('dateOfBirth', clampYear(e.target.value))} />
                   </Field>
                 </div>
 
@@ -1136,10 +1146,10 @@ export default function Apply() {
 
                 <div className="grid gap-5 sm:grid-cols-3">
                   <Field label="Move-in Date">
-                    <input type="date" className={inputCls} value={signer.currentMoveInDate} onChange={(e) => updateSigner('currentMoveInDate', e.target.value)} />
+                    <input type="date" min={MIN_DOB} max={MAX_DATE} className={inputCls} value={signer.currentMoveInDate} onChange={(e) => updateSigner('currentMoveInDate', clampYear(e.target.value))} />
                   </Field>
                   <Field label="Move-out Date">
-                    <input type="date" className={inputCls} value={signer.currentMoveOutDate} onChange={(e) => updateSigner('currentMoveOutDate', e.target.value)} />
+                    <input type="date" min={MIN_DOB} max={MAX_DATE} className={inputCls} value={signer.currentMoveOutDate} onChange={(e) => updateSigner('currentMoveOutDate', clampYear(e.target.value))} />
                   </Field>
                   <Field label="Reason for Leaving">
                     <input className={inputCls} value={signer.currentReasonForLeaving} onChange={(e) => updateSigner('currentReasonForLeaving', e.target.value)} />
@@ -1184,10 +1194,10 @@ export default function Apply() {
 
                 <div className="grid gap-5 sm:grid-cols-3">
                   <Field label="Move-in Date">
-                    <input type="date" className={inputCls} value={signer.previousMoveInDate} onChange={(e) => updateSigner('previousMoveInDate', e.target.value)} />
+                    <input type="date" min={MIN_DOB} max={MAX_DATE} className={inputCls} value={signer.previousMoveInDate} onChange={(e) => updateSigner('previousMoveInDate', clampYear(e.target.value))} />
                   </Field>
                   <Field label="Move-out Date">
-                    <input type="date" className={inputCls} value={signer.previousMoveOutDate} onChange={(e) => updateSigner('previousMoveOutDate', e.target.value)} />
+                    <input type="date" min={MIN_DOB} max={MAX_DATE} className={inputCls} value={signer.previousMoveOutDate} onChange={(e) => updateSigner('previousMoveOutDate', clampYear(e.target.value))} />
                   </Field>
                   <Field label="Reason for Leaving">
                     <input className={inputCls} value={signer.previousReasonForLeaving} onChange={(e) => updateSigner('previousReasonForLeaving', e.target.value)} />
@@ -1225,7 +1235,7 @@ export default function Apply() {
                     <input className={inputCls} value={signer.annualIncome} onChange={(e) => updateSigner('annualIncome', e.target.value)} />
                   </Field>
                   <Field label="Start Date">
-                    <input type="date" className={inputCls} value={signer.employmentStartDate} onChange={(e) => updateSigner('employmentStartDate', e.target.value)} />
+                    <input type="date" min={MIN_DOB} max={MAX_DATE} className={inputCls} value={signer.employmentStartDate} onChange={(e) => updateSigner('employmentStartDate', clampYear(e.target.value))} />
                   </Field>
                 </div>
 
@@ -1310,7 +1320,7 @@ export default function Apply() {
                     <input required className={inputCls} value={signer.signature} onChange={(e) => updateSigner('signature', e.target.value)} />
                   </Field>
                   <Field label="Date Signed" required>
-                    <input required type="date" className={inputCls} value={signer.dateSigned} onChange={(e) => updateSigner('dateSigned', e.target.value)} />
+                    <input required type="date" min="2020-01-01" max={MAX_DATE} className={inputCls} value={signer.dateSigned} onChange={(e) => updateSigner('dateSigned', clampYear(e.target.value))} />
                   </Field>
                 </div>
                 <Field label="Additional Notes">
@@ -1348,7 +1358,7 @@ export default function Apply() {
                     <input required type="tel" className={inputCls} placeholder="(206) 555-0100" value={cosigner.phone} onChange={(e) => updateCosigner('phone', e.target.value)} />
                   </Field>
                   <Field label="Date of Birth" required>
-                    <input required type="date" className={inputCls} value={cosigner.dateOfBirth} onChange={(e) => updateCosigner('dateOfBirth', e.target.value)} />
+                    <input required type="date" min={MIN_DOB} max={todayIsoDate()} className={inputCls} value={cosigner.dateOfBirth} onChange={(e) => updateCosigner('dateOfBirth', clampYear(e.target.value))} />
                   </Field>
                   <Field label="Driver's License / ID #" required hint="1 letter + 10 digits (e.g. W1234567890)">
                     <input required className={inputCls} placeholder="W1234567890" value={cosigner.license} onChange={(e) => updateCosigner('license', e.target.value)} />
@@ -1407,7 +1417,7 @@ export default function Apply() {
                     <input className={inputCls} value={cosigner.annualIncome} onChange={(e) => updateCosigner('annualIncome', e.target.value)} />
                   </Field>
                   <Field label="Start Date">
-                    <input type="date" className={inputCls} value={cosigner.employmentStartDate} onChange={(e) => updateCosigner('employmentStartDate', e.target.value)} />
+                    <input type="date" min={MIN_DOB} max={MAX_DATE} className={inputCls} value={cosigner.employmentStartDate} onChange={(e) => updateCosigner('employmentStartDate', clampYear(e.target.value))} />
                   </Field>
                 </div>
 
@@ -1446,7 +1456,7 @@ export default function Apply() {
                     <input required className={inputCls} value={cosigner.signature} onChange={(e) => updateCosigner('signature', e.target.value)} />
                   </Field>
                   <Field label="Date Signed" required>
-                    <input required type="date" className={inputCls} value={cosigner.dateSigned} onChange={(e) => updateCosigner('dateSigned', e.target.value)} />
+                    <input required type="date" min="2020-01-01" max={MAX_DATE} className={inputCls} value={cosigner.dateSigned} onChange={(e) => updateCosigner('dateSigned', clampYear(e.target.value))} />
                   </Field>
                 </div>
                 <Field label="Additional Notes">
