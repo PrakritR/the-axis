@@ -116,11 +116,10 @@ function validateSSN(value) {
   return ''
 }
 
-// WA Driver's License: 1 letter followed by exactly 10 digits (11 chars total)
 function validateDriversLicense(value) {
   if (!value) return ''
-  const clean = value.replace(/[\s-]/g, '').toUpperCase()
-  if (!/^[A-Z]\d{10}$/.test(clean)) return "Driver's license must be 1 letter followed by 10 digits (e.g. W1234567890)"
+  const clean = value.trim()
+  if (clean.length < 3) return "Enter a valid driver's license or ID number"
   return ''
 }
 
@@ -515,16 +514,18 @@ function CopyButton({ text }) {
   )
 }
 
-function Field({ label, required, hint, error, children }) {
+function Field({ label, required, hint, error, children, reserveHintSpace = false }) {
   return (
     <div {...(error ? { 'data-field-error': '1' } : {})}>
       <label className="mb-1.5 block text-sm font-semibold text-slate-800">
         {label}
         {required && <span className="ml-1 text-axis">*</span>}
       </label>
-      <p className={`mb-1.5 min-h-[3rem] text-xs leading-5 ${hint ? 'text-slate-400' : 'invisible'}`}>
-        {hint || 'placeholder'}
-      </p>
+      {(hint || reserveHintSpace) && (
+        <p className={`mb-1.5 min-h-[1.5rem] text-xs leading-5 ${hint ? 'text-slate-400' : 'invisible'}`}>
+          {hint || 'placeholder'}
+        </p>
+      )}
       <div className={error ? 'rounded-xl ring-2 ring-red-400' : ''}>
         {children}
       </div>
@@ -1031,6 +1032,7 @@ export default function Apply() {
   const [error, setError] = useState('')
   const [fieldErrors, setFieldErrors] = useState({})
   const [roomConflictWarning, setRoomConflictWarning] = useState(false)
+  const [roomConflictAcknowledged, setRoomConflictAcknowledged] = useState(false)
 
   const steps = applicationType === 'cosigner' ? COSIGNER_STEPS : SIGNER_STEPS
   const totalSteps = steps.length
@@ -1048,9 +1050,11 @@ export default function Apply() {
         next.roomNumber = ''
         next.propertyAddress = PROPERTY_OPTIONS.find((property) => property.name === value)?.address || ''
         setRoomConflictWarning(false)
+        setRoomConflictAcknowledged(false)
       }
       if (['propertyName', 'roomNumber', 'leaseStartDate', 'leaseEndDate', 'leaseTerm'].includes(key)) {
         setRoomConflictWarning(false)
+        setRoomConflictAcknowledged(false)
       }
       return next
     })
@@ -1078,8 +1082,13 @@ export default function Apply() {
           isMonthToMonth ? '' : signer.leaseEndDate,
         )
         setRoomConflictWarning(hasConflict)
+        if (hasConflict && !roomConflictAcknowledged) {
+          setRoomConflictAcknowledged(true)
+          return
+        }
       } else {
         setRoomConflictWarning(false)
+        setRoomConflictAcknowledged(false)
       }
     }
 
@@ -1318,8 +1327,7 @@ export default function Apply() {
 
       <div className="mx-auto max-w-5xl px-4 py-12 sm:px-6 sm:py-16">
         <div className="mb-8">
-          <div className="text-[11px] font-bold uppercase tracking-[0.2em] text-slate-400">Axis applications</div>
-          <h1 className="mt-2 text-3xl font-black tracking-tight text-slate-900 sm:text-4xl">Residential Rental Application</h1>
+          <h1 className="text-3xl font-black tracking-tight text-slate-900 sm:text-4xl">Residential Rental Application</h1>
         </div>
 
         {/* Step 0 — type selection (always shown first, outside steps) */}
@@ -1452,8 +1460,8 @@ export default function Apply() {
                   <Field label="Social Security #" hint="9 digits — ###-##-####" error={fieldErrors.ssn}>
                     <input className={inputCls} placeholder="123-45-6789" value={signer.ssn} onChange={(e) => updateSigner('ssn', formatSSNInput(e.target.value))} />
                   </Field>
-                  <Field label="Driver's License / ID #" required hint="1 letter + 10 digits (e.g. W1234567890)" error={fieldErrors.license}>
-                    <input required className={inputCls} placeholder="W1234567890" value={signer.license} onChange={(e) => updateSigner('license', e.target.value)} />
+                  <Field label="Driver's License / ID #" required hint="Enter your driver's license or government-issued ID number." error={fieldErrors.license}>
+                    <input required className={inputCls} placeholder="License or ID number" value={signer.license} onChange={(e) => updateSigner('license', e.target.value)} />
                   </Field>
                   <Field label="Phone Number" required hint="10 digits" error={fieldErrors.phone}>
                     <input required type="tel" className={inputCls} placeholder="(206) 555-0100" value={signer.phone} onChange={(e) => updateSigner('phone', formatPhoneInput(e.target.value))} />
@@ -1732,11 +1740,11 @@ export default function Apply() {
                   <Field label="Phone Number" required hint="10 digits" error={fieldErrors.phone}>
                     <input required type="tel" className={inputCls} placeholder="(206) 555-0100" value={cosigner.phone} onChange={(e) => updateCosigner('phone', formatPhoneInput(e.target.value))} />
                   </Field>
-                  <Field label="Date of Birth" required error={fieldErrors.dateOfBirth}>
+                  <Field label="Date of Birth" required error={fieldErrors.dateOfBirth} reserveHintSpace>
                     <input required type="date" min={MIN_DOB} max={todayIsoDate()} className={inputCls} value={cosigner.dateOfBirth} onChange={(e) => updateCosigner('dateOfBirth', clampYear(e.target.value))} />
                   </Field>
-                  <Field label="Driver's License / ID #" required hint="1 letter + 10 digits (e.g. W1234567890)" error={fieldErrors.license}>
-                    <input required className={inputCls} placeholder="W1234567890" value={cosigner.license} onChange={(e) => updateCosigner('license', e.target.value)} />
+                  <Field label="Driver's License / ID #" required hint="Enter your driver's license or government-issued ID number." error={fieldErrors.license}>
+                    <input required className={inputCls} placeholder="License or ID number" value={cosigner.license} onChange={(e) => updateCosigner('license', e.target.value)} />
                   </Field>
                 </div>
 
@@ -1744,7 +1752,7 @@ export default function Apply() {
                   <Field label="Social Security #" hint="9 digits — ###-##-####" error={fieldErrors.ssn}>
                     <input className={inputCls} placeholder="123-45-6789" value={cosigner.ssn} onChange={(e) => updateCosigner('ssn', e.target.value)} />
                   </Field>
-                  <Field label="Current Address" required error={fieldErrors.currentAddress}>
+                  <Field label="Current Address" required error={fieldErrors.currentAddress} reserveHintSpace>
                     <AddressAutocomplete
                       required
                       value={cosigner.currentAddress}
