@@ -95,6 +95,7 @@ function defaultSigner() {
     evictionHistory: '',
     bankruptcyHistory: '',
     criminalHistory: '',
+    hasCosigner: '',
     consent: false,
     signature: '',
     dateSigned: todayIsoDate(),
@@ -341,6 +342,7 @@ export default function Apply() {
   const [cosigner, setCosigner] = useState(defaultCosigner())
   const [submitting, setSubmitting] = useState(false)
   const [submitted, setSubmitted] = useState(false)
+  const [submittedRecord, setSubmittedRecord] = useState(null)
   const [error, setError] = useState('')
 
   const selectedProperty = useMemo(
@@ -396,13 +398,15 @@ export default function Apply() {
           'Applicant Other Income': signer.otherIncome || '',
           'Applicant Bankruptcy History': signer.bankruptcyHistory,
           'Applicant Criminal History': signer.criminalHistory,
+          'Has Co-Signer': signer.hasCosigner,
           'Applicant Consent for Credit and Background Check': signer.consent,
           'Applicant Signature': signer.signature,
           'Applicant Date Signed': signer.dateSigned,
           'Applicant Notes': buildSignerNotes(signer),
         }
 
-        await submitToAirtable(APPLICATIONS_TABLE, fields)
+        const record = await submitToAirtable(APPLICATIONS_TABLE, fields)
+        setSubmittedRecord(record)
       } else if (applicationType === 'cosigner') {
         if (!cosigner.consent) {
           throw new Error('The co-signer must consent to the credit and background check before submitting.')
@@ -458,22 +462,41 @@ export default function Apply() {
   }
 
   if (submitted) {
+    const appId = submittedRecord?.fields?.['Application ID']
+    const isSigner = applicationType === 'signer'
+    const firstName = isSigner ? signer.fullName.split(' ')[0] : cosigner.fullName.split(' ')[0]
+
     return (
       <div className="min-h-screen bg-cream-50">
         <Seo title="Application Submitted | Axis Seattle Housing" pathname="/apply" />
-        <div className="mx-auto max-w-lg px-4 py-24 text-center">
+        <div className="mx-auto max-w-lg px-4 py-24">
           <div className="mx-auto mb-6 flex h-16 w-16 items-center justify-center rounded-full bg-teal-50">
             <svg className="h-8 w-8 text-axis" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
             </svg>
           </div>
-          <h1 className="text-3xl font-black text-slate-900">Submission received</h1>
-          <p className="mt-4 text-base leading-7 text-slate-500">
-            {applicationType === 'signer'
-              ? `Thanks, ${signer.fullName.split(' ')[0]}! Your signer application was submitted to Axis.`
-              : `Thanks, ${cosigner.fullName.split(' ')[0]}! Your co-signer form was linked to the signer application.`}
+          <h1 className="text-3xl font-black text-slate-900 text-center">Submission received</h1>
+          <p className="mt-4 text-base leading-7 text-slate-500 text-center">
+            {isSigner
+              ? `Thanks, ${firstName}! Your signer application was submitted to Axis.`
+              : `Thanks, ${firstName}! Your co-signer form was linked to the signer application.`}
           </p>
-          <a href="/" className="mt-8 inline-block rounded-full bg-slate-900 px-6 py-3 text-sm font-semibold text-white hover:bg-slate-800">
+
+          {isSigner && appId && (
+            <div className="mt-8 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+              <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">Your Application ID</div>
+              <div className="mt-2 flex items-center gap-3">
+                <span className="text-4xl font-black text-slate-900 tracking-tight">#{appId}</span>
+              </div>
+              {signer.hasCosigner === 'Yes' && (
+                <p className="mt-3 text-sm leading-6 text-slate-600">
+                  Share this ID with your co-signer. They'll enter it when filling out the co-signer form at <strong>/apply</strong> to link their submission to yours.
+                </p>
+              )}
+            </div>
+          )}
+
+          <a href="/" className="mt-8 inline-block w-full rounded-full bg-slate-900 px-6 py-3 text-center text-sm font-semibold text-white hover:bg-slate-800">
             Back to home
           </a>
         </div>
@@ -768,6 +791,27 @@ export default function Apply() {
                     I consent to a credit and background check.
                   </label>
                 </Field>
+              </Section>
+
+              <Section title="Co-Signer">
+                <p className="text-sm leading-6 text-slate-500">Will someone be co-signing this application with you?</p>
+                <div className="flex gap-3">
+                  {['Yes', 'No'].map((opt) => (
+                    <button
+                      key={opt}
+                      type="button"
+                      onClick={() => updateSigner('hasCosigner', opt)}
+                      className={`rounded-full px-6 py-2.5 text-sm font-semibold transition ${signer.hasCosigner === opt ? 'bg-slate-900 text-white' : 'border border-slate-200 bg-white text-slate-700 hover:border-slate-400'}`}
+                    >
+                      {opt}
+                    </button>
+                  ))}
+                </div>
+                {signer.hasCosigner === 'Yes' && (
+                  <div className="rounded-xl border border-teal-200 bg-teal-50 px-4 py-3 text-sm text-teal-800">
+                    After you submit, you'll receive an <strong>Application ID</strong>. Share it with your co-signer — they'll need it to link their form to yours.
+                  </div>
+                )}
               </Section>
 
               <Section title="Signature">
