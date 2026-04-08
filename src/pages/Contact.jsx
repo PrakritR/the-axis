@@ -82,25 +82,30 @@ function TourRequestForm() {
 
   const rooms = form.property ? (ROOM_OPTIONS[form.property] || []) : []
 
+  const [bookingUrl, setBookingUrl] = useState('')
+
   async function handleSubmit(e) {
     e.preventDefault()
     setSubmitting(true)
     setError('')
     try {
-      await postToAirtable({
-        'Full Name': form.name,
-        'Email': form.email,
-        'Phone Number': form.phone,
-        'Property': form.property,
-        'Inquiry Type': 'Schedule a tour',
-        'Message Summary': [
-          `Room: ${form.room || 'Not specified'}`,
-          `Tour Type: ${form.tourType === 'in-person' ? 'In-Person' : 'Virtual'}`,
-          `Preferred Date: ${form.preferredDate || 'Flexible'}`,
-          `Preferred Time: ${form.preferredTime || 'Flexible'}`,
-          form.notes ? `Notes: ${form.notes}` : '',
-        ].filter(Boolean).join('\n'),
+      const res = await fetch('/api/schedule-tour', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: form.name,
+          email: form.email,
+          phone: form.phone,
+          property: form.property,
+          room: form.room,
+          tourType: form.tourType,
+          preferredDate: form.preferredDate,
+          preferredTime: form.preferredTime,
+        }),
       })
+      const json = await res.json()
+      if (!res.ok) throw new Error(json.error || 'Failed to create booking link')
+      setBookingUrl(json.url)
       setSubmitted(true)
     } catch (err) {
       setError(err.message || 'Submission failed.')
@@ -117,15 +122,22 @@ function TourRequestForm() {
             <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
           </svg>
         </div>
-        <p className="text-lg font-semibold text-slate-900">Tour request received</p>
-        <p className="mt-2 text-sm text-slate-500">
-          We'll reach out to <strong>{form.email}</strong> to confirm your tour time.
-        </p>
-        <button
-          onClick={() => { setSubmitted(false); setForm({ name: '', email: '', phone: '', property: '', room: '', tourType: 'in-person', preferredDate: '', preferredTime: '', notes: '' }) }}
-          className="mt-6 text-xs font-semibold text-slate-500 underline-offset-2 hover:underline"
+        <p className="text-lg font-semibold text-slate-900">Almost done!</p>
+        <p className="mt-2 text-sm text-slate-500">Pick a time slot to confirm your tour.</p>
+        <a
+          href={bookingUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="mt-5 inline-flex items-center gap-2 rounded-full bg-slate-900 px-6 py-3 text-sm font-semibold text-white transition hover:bg-slate-700"
         >
-          Request another tour
+          Pick a time →
+        </a>
+        <p className="mt-3 text-xs text-slate-400">You'll get a calendar invite after booking.</p>
+        <button
+          onClick={() => { setSubmitted(false); setBookingUrl(''); setForm({ name: '', email: '', phone: '', property: '', room: '', tourType: 'in-person', preferredDate: '', preferredTime: '', notes: '' }) }}
+          className="mt-4 block w-full text-xs font-semibold text-slate-400 underline-offset-2 hover:underline"
+        >
+          Start over
         </button>
       </div>
     )

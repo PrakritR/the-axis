@@ -2,10 +2,6 @@ import { useState, useEffect } from 'react'
 import { useLocation } from 'react-router-dom'
 import { properties } from '../data/properties'
 
-const AIRTABLE_BASE_ID = import.meta.env.VITE_AIRTABLE_APPLICATIONS_BASE_ID || 'appNBX2inqfJMyqYV'
-const AIRTABLE_INQUIRIES_TABLE = 'Inquiries'
-const AIRTABLE_TOKEN = import.meta.env.VITE_AIRTABLE_TOKEN
-const CALENDLY_URL = 'https://calendly.com/ramachandranprakrit/30min'
 
 const ROOM_MAP = {
   '4709A 8th Ave NE':  Array.from({ length: 10 }, (_, i) => `Room ${i + 1}`),
@@ -115,40 +111,23 @@ export default function TourPopup() {
     if (!data.name || !data.email || !data.phone) return
     setSubmitting(true)
     try {
-      const notes = [
-        `Tour Type: ${data.tourType === 'in-person' ? 'In-Person' : 'Virtual'}`,
-        `Property: ${data.property}`,
-        `Room: ${data.room || 'Not specified'}`,
-        `Preferred Date: ${data.preferredDate || 'Flexible'}`,
-        `Preferred Time: ${data.preferredTime || 'Flexible'}`,
-      ].join('\n')
-
-      // Build pre-filled Calendly link
-      const link = `${CALENDLY_URL}?name=${encodeURIComponent(data.name)}&email=${encodeURIComponent(data.email)}&a1=${encodeURIComponent(notes)}&hide_gdpr_banner=1&primary_color=0f172a`
-      setCalendlyLink(link)
-
-      // Submit to Airtable
-      if (AIRTABLE_TOKEN) {
-        await fetch(
-          `https://api.airtable.com/v0/${AIRTABLE_BASE_ID}/${encodeURIComponent(AIRTABLE_INQUIRIES_TABLE)}`,
-          {
-            method: 'POST',
-            headers: { Authorization: `Bearer ${AIRTABLE_TOKEN}`, 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              fields: {
-                'Full Name': data.name,
-                'Email': data.email,
-                'Phone Number': data.phone,
-                'Property': data.property,
-                'Inquiry Type': 'Schedule a tour',
-                'Message Summary': notes,
-              },
-              typecast: true,
-            }),
-          }
-        )
-      }
-
+      const res = await fetch('/api/schedule-tour', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: data.name,
+          email: data.email,
+          phone: data.phone,
+          property: data.property,
+          room: data.room,
+          tourType: data.tourType,
+          preferredDate: data.preferredDate,
+          preferredTime: data.preferredTime,
+        }),
+      })
+      const json = await res.json()
+      if (!res.ok) throw new Error(json.error || 'Failed to create booking link')
+      setCalendlyLink(json.url)
       setDone(true)
       sessionStorage.setItem('tourPopupDone', '1')
     } catch (err) {
