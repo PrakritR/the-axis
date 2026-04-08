@@ -51,16 +51,18 @@ function parseAvailability(availableStr) {
   return { windows, unavailable: windows.length === 0 }
 }
 
-// Returns true if the room is available for the given lease start date
-function isRoomAvailableOnDate(availableStr, leaseStartDate) {
-  if (!leaseStartDate) return true // no date chosen yet — don't block
+// Returns true if the room is available for the requested lease window.
+function isRoomAvailableForRange(availableStr, leaseStartDate, leaseEndDate) {
+  if (!leaseStartDate) return true
   const { windows, unavailable } = parseAvailability(availableStr)
   if (unavailable) return false
   const start = new Date(leaseStartDate)
+  const end = leaseEndDate ? new Date(leaseEndDate) : null
   return windows.some(({ from, to }) => {
     const afterFrom = start >= from
-    const beforeTo = to === null || start <= to
-    return afterFrom && beforeTo
+    const startWithinWindow = to === null || start <= to
+    const endWithinWindow = end === null || to === null || end <= to
+    return afterFrom && startWithinWindow && endWithinWindow
   })
 }
 
@@ -248,9 +250,9 @@ function validateSignerForm(signer) {
   if (signer.propertyName && signer.roomNumber && signer.leaseStartDate) {
     const prop = PROPERTY_OPTIONS.find((p) => p.name === signer.propertyName)
     const roomData = prop?.rooms.find((r) => r.name === signer.roomNumber)
-    if (roomData && !isRoomAvailableOnDate(roomData.available, signer.leaseStartDate)) {
+    if (roomData && !isRoomAvailableForRange(roomData.available, signer.leaseStartDate, signer.leaseEndDate)) {
       const label = getRoomAvailabilityLabel(roomData.available)
-      add('leaseStartDate', `Room ${signer.roomNumber} is not available on this date. ${label}`)
+      add(signer.leaseEndDate ? 'leaseEndDate' : 'leaseStartDate', `Room ${signer.roomNumber} is not available for these dates. ${label}`)
     }
   }
 
@@ -812,6 +814,7 @@ const SIGNER_STEPS = [
       const e = {}
       const isMonthToMonth = s.leaseTerm === 'Month-to-Month (+$25/mo)'
       if (!s.propertyName) e.propertyName = 'Select a property'
+      if (!s.roomNumber) e.roomNumber = 'Select a room'
       if (!s.leaseStartDate) e.leaseStartDate = 'Lease start date is required'
       if (!isMonthToMonth && !s.leaseEndDate) e.leaseEndDate = 'Lease end date is required'
       if (s.leaseStartDate && s.leaseEndDate && new Date(s.leaseEndDate) <= new Date(s.leaseStartDate)) {
@@ -824,8 +827,8 @@ const SIGNER_STEPS = [
       if (s.propertyName && s.roomNumber && s.leaseStartDate) {
         const prop = PROPERTY_OPTIONS.find((p) => p.name === s.propertyName)
         const room = prop?.rooms.find((r) => r.name === s.roomNumber)
-        if (room && !isRoomAvailableOnDate(room.available, s.leaseStartDate)) {
-          e.leaseStartDate = `Room ${s.roomNumber} is not available on this date — ${getRoomAvailabilityLabel(room.available)}`
+        if (room && !isRoomAvailableForRange(room.available, s.leaseStartDate, isMonthToMonth ? null : s.leaseEndDate)) {
+          e[isMonthToMonth ? 'leaseStartDate' : 'leaseEndDate'] = `Room ${s.roomNumber} is not available for these dates — ${getRoomAvailabilityLabel(room.available)}`
         }
       }
       return e
@@ -1401,8 +1404,8 @@ export default function Apply() {
                 </Field>
 
                 <div className="grid gap-5 sm:grid-cols-2">
-                  <Field label="Room Number">
-                    <select className={selectCls} value={signer.roomNumber} onChange={(e) => updateSigner('roomNumber', e.target.value)} disabled={!selectedProperty}>
+                  <Field label="Room Number" required error={fieldErrors.roomNumber}>
+                    <select required className={selectCls} value={signer.roomNumber} onChange={(e) => updateSigner('roomNumber', e.target.value)} disabled={!selectedProperty}>
                       <option value="">{selectedProperty ? 'Select a room…' : 'Choose a property first'}</option>
                       {(selectedProperty?.rooms || []).map((room) => (
                         <option key={room.name} value={room.name}>{room.name}</option>

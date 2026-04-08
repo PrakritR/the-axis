@@ -195,12 +195,20 @@ function buildFinderOptions() {
         priceDisplay: plan.priceRange,
         privateBath,
         shareCount,
+        requiredRoomCount: rooms.length,
         availableCount: available.length,
         availableRooms: available,
       })
     }
   }
   return options
+}
+
+function getMatchingAvailableRooms(opt, moveInDate, moveOutDate) {
+  if (!moveInDate) return opt.availableRooms
+  return opt.availableRooms.filter((room) =>
+    isAvailableForRange(room.available, moveInDate, moveOutDate || null)
+  )
 }
 
 const BATH_OPTIONS = [
@@ -230,7 +238,7 @@ function MatchCard({ opt, seasonLabel }) {
         <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-slate-500">
           <span className="font-bold text-slate-800">{opt.priceDisplay}</span>
           <span className="text-slate-300">·</span>
-          <span className="font-medium text-emerald-600">{opt.availableCount} available</span>
+          <span className="font-medium text-emerald-600">{opt.matchingAvailableCount ?? opt.availableCount} available</span>
           {opt.privateBath ? (
             <><span className="text-slate-300">·</span><span className="font-medium text-axis">Private bath</span></>
           ) : typeof opt.shareCount === 'number' ? (
@@ -276,6 +284,10 @@ function RoomFinder() {
   const results = useMemo(() => {
     if (!hasFilters) return []
     return allOptions
+      .map((opt) => ({
+        ...opt,
+        matchingAvailableCount: getMatchingAvailableRooms(opt, moveInDate, moveOutDate).length,
+      }))
       .filter((opt) => {
         if (budget > 0 && opt.price > budget) return false
         if (bath === 'private' && !opt.privateBath) return false
@@ -283,10 +295,7 @@ function RoomFinder() {
         if (bath === '3' && opt.shareCount !== 3) return false
         if (bath === '4' && opt.shareCount !== 4) return false
         if (moveInDate) {
-          const hasRoomAvail = opt.availableRooms.some(r =>
-            isAvailableForRange(r.available, moveInDate, moveOutDate || null)
-          )
-          if (!hasRoomAvail) return false
+          if (opt.matchingAvailableCount < opt.requiredRoomCount) return false
         }
         return true
       })

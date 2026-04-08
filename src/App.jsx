@@ -32,10 +32,7 @@ function ScrollToTop() {
   }, [])
 
   useLayoutEffect(() => {
-    if (hash) {
-      return
-    }
-
+    if (hash) return
     scrollToTop()
   }, [pathname, search, hash])
 
@@ -73,10 +70,11 @@ function PageFallback() {
   return <div className="container mx-auto px-6 py-12 text-sm text-slate-500">Loading...</div>
 }
 
-export default function App(){
+export default function App() {
   const location = useLocation()
   const showMobileDock = ['/', '/apply', '/contact', '/resident'].includes(location.pathname)
   const showTourPopup = location.pathname !== '/apply'
+
   return (
     <div className="app-shell min-h-screen min-h-svh flex flex-col">
       <ScrollToTop />
@@ -95,12 +93,12 @@ export default function App(){
           <AnimatePresence mode="wait">
             <Routes location={location} key={location.pathname}>
               <Route path="/" element={<AnimatedPage><Home /></AnimatedPage>} />
-              <Route path="/properties/:slug" element={<AnimatedPage><PropertyPage/></AnimatedPage>} />
+              <Route path="/properties/:slug" element={<AnimatedPage><PropertyPage /></AnimatedPage>} />
+              <Route path="/contact" element={<AnimatedPage><Contact /></AnimatedPage>} />
+              <Route path="/apply" element={<AnimatedPage><Apply /></AnimatedPage>} />
+              <Route path="/resident" element={<AnimatedPage><Resident /></AnimatedPage>} />
+              <Route path="/join-us" element={<AnimatedPage><JoinUs /></AnimatedPage>} />
               <Route path="*" element={<AnimatedPage><div className="container mx-auto px-6 py-12">Page not found</div></AnimatedPage>} />
-              <Route path="/contact" element={<AnimatedPage><Contact/></AnimatedPage>} />
-              <Route path="/apply" element={<AnimatedPage><Apply/></AnimatedPage>} />
-              <Route path="/resident" element={<AnimatedPage><Resident/></AnimatedPage>} />
-              <Route path="/join-us" element={<AnimatedPage><JoinUs/></AnimatedPage>} />
             </Routes>
           </AnimatePresence>
         </Suspense>
