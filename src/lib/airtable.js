@@ -144,10 +144,7 @@ export async function getAnnouncements() {
 
 export async function getWorkOrdersForResident(resident) {
   const residentId = resident.id
-  const supabaseUserId = resident['Supabase User ID'] || ''
-  const formula = supabaseUserId
-    ? `OR(FIND("${escapeFormulaValue(residentId)}", ARRAYJOIN({Resident})) > 0, {Supabase User ID} = "${escapeFormulaValue(supabaseUserId)}")`
-    : `FIND("${escapeFormulaValue(residentId)}", ARRAYJOIN({Resident})) > 0`
+  const formula = `FIND("${escapeFormulaValue(residentId)}", ARRAYJOIN({Resident})) > 0`
   const data = await request(buildUrl(TABLES.workOrders, {
     filterByFormula: formula,
   }))
@@ -157,6 +154,24 @@ export async function getWorkOrdersForResident(resident) {
     .sort((a, b) => new Date(b['Date Submitted'] || b.created_at) - new Date(a['Date Submitted'] || a.created_at))
 }
 
+async function uploadAttachmentToRecord(table, recordId, fieldName, file) {
+  const formData = new FormData()
+  formData.append('file', file, file.name)
+  formData.append('filename', file.name)
+  formData.append('contentType', file.type || 'application/octet-stream')
+
+  const response = await fetch(
+    `https://content.airtable.com/v0/${BASE_ID}/${encodeURIComponent(table)}/${recordId}/${encodeURIComponent(fieldName)}/uploadAttachment`,
+    {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${API_KEY}` },
+      body: formData,
+    }
+  )
+  if (!response.ok) throw new Error(await response.text())
+  return response.json()
+}
+
 export async function createWorkOrder({
   resident,
   title,
@@ -164,10 +179,9 @@ export async function createWorkOrder({
   urgency,
   description,
   preferredEntry,
-  photoAttachment = null,
+  photoFile = null,
 }) {
   const residentId = resident.id
-  const supabaseUserId = resident['Supabase User ID'] || ''
   const airtablePriority = urgency === 'Emergency' ? 'Urgent' : urgency
   const normalizedDescription = urgency === 'Emergency'
     ? `Resident marked this request as Emergency.\n\n${description}`
@@ -180,19 +194,23 @@ export async function createWorkOrder({
     Status: 'Submitted',
     'Preferred Entry Time': preferredEntry,
     Resident: [residentId],
-    'Supabase User ID': supabaseUserId,
-  }
-
-  if (photoAttachment?.url) {
-    fields.Photo = [{ url: photoAttachment.url, filename: photoAttachment.filename || 'issue-photo' }]
   }
 
   const data = await request(tableUrl(TABLES.workOrders), {
     method: 'POST',
     body: JSON.stringify({ fields, typecast: true }),
   })
+  const record = mapRecord(data)
 
-  return mapRecord(data)
+  if (photoFile) {
+    try {
+      await uploadAttachmentToRecord(TABLES.workOrders, record.id, 'Photo', photoFile)
+    } catch (err) {
+      console.warn('Photo upload failed (work order was still created):', err.message)
+    }
+  }
+
+  return record
 }
 
 export async function getMessages(workOrderId) {

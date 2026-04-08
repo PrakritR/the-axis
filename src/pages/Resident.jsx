@@ -17,7 +17,6 @@ import {
   sendMessage,
   updateResident,
 } from '../lib/airtable'
-import { uploadResidentPhoto } from '../lib/supabase'
 
 const SESSION_KEY = 'axis_resident'
 
@@ -332,21 +331,13 @@ function RequestComposer({ resident, onCreated }) {
     setSuccess('')
 
     try {
-      let photoAttachment = null
-
       if (photo) {
         if (!photo.type.startsWith('image/')) {
           throw new Error('Please upload an image file for the issue photo.')
         }
-
         if (photo.size > 10 * 1024 * 1024) {
           throw new Error('Please keep the issue photo under 10 MB.')
         }
-
-        photoAttachment = await uploadResidentPhoto({
-          file: photo,
-          residentId: resident.id,
-        })
       }
 
       const created = await createWorkOrder({
@@ -356,7 +347,7 @@ function RequestComposer({ resident, onCreated }) {
         urgency: form.urgency,
         preferredEntry: form.preferredEntry,
         description: form.description,
-        photoAttachment,
+        photoFile: photo || null,
       })
 
       setForm({
