@@ -267,9 +267,15 @@ const AIRTABLE_TOKEN = import.meta.env.VITE_AIRTABLE_TOKEN
 const inputCls = 'w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 placeholder-slate-400 outline-none transition focus:border-axis focus:bg-white focus:ring-2 focus:ring-axis/20'
 const selectCls = `${inputCls} appearance-none cursor-pointer`
 
-function todayIsoDate() {
-  return new Date().toISOString().slice(0, 10)
-}
+const CONTACT_INQUIRY_TYPES = [
+  'General',
+  'Schedule a tour',
+  'Current room availability',
+  'Lease length and pricing',
+  'Pricing & fees',
+  'Application follow-up',
+  'Other',
+]
 
 function ContactMessageForm() {
   const [form, setForm] = useState({ name: '', email: '', phone: '', property: '', topic: '', message: '' })
@@ -295,20 +301,14 @@ function ContactMessageForm() {
     e.preventDefault()
     setSubmitting(true)
     setError('')
-    const summary = [
-      form.topic ? `Topic: ${form.topic}` : null,
-      form.property ? `Property interest: ${form.property}` : null,
-      `Message: ${form.message}`,
-    ].filter(Boolean).join('\n')
     const fields = {
-      'Applicant Name': form.name,
-      'Applicant Email': form.email,
-      'Applicant Phone': form.phone || '',
-      'Application Date': todayIsoDate(),
-      'Notes': summary,
-      'Property Name': form.property || 'Any / not sure yet',
+      'Name': form.name,
+      'Email': form.email,
+      'Phone Number': form.phone,
+      'Property': [form.property],
+      'Inquiry Type': form.topic,
+      'Message Summary': form.message,
     }
-    if (form.property) fields['Property Applied For'] = [form.property]
     try {
       if (!AIRTABLE_TOKEN) throw new Error('VITE_AIRTABLE_TOKEN is not set.')
       const res = await fetch(`https://api.airtable.com/v0/${AIRTABLE_BASE_ID}/${encodeURIComponent(AIRTABLE_INQUIRIES_TABLE)}`, {
@@ -364,33 +364,30 @@ function ContactMessageForm() {
 
       <div className="grid gap-4 sm:grid-cols-2">
         <div>
-          <label className="mb-1.5 block text-xs font-semibold text-slate-700">Phone</label>
-          <input type="tel" className={inputCls} placeholder="(206) 555-0100" value={form.phone} onChange={e => set('phone', e.target.value)} />
+          <label className="mb-1.5 block text-xs font-semibold text-slate-700">Phone Number <span className="text-axis">*</span></label>
+          <input required type="tel" className={inputCls} placeholder="(206) 555-0100" value={form.phone} onChange={e => set('phone', e.target.value)} />
         </div>
         <div>
-          <label className="mb-1.5 block text-xs font-semibold text-slate-700">Property of interest</label>
-          <select className={selectCls} value={form.property} onChange={e => set('property', e.target.value)}>
-            <option value="">Any / not sure yet</option>
+          <label className="mb-1.5 block text-xs font-semibold text-slate-700">Property <span className="text-axis">*</span></label>
+          <select required className={selectCls} value={form.property} onChange={e => set('property', e.target.value)}>
+            <option value="" disabled>Select a property…</option>
             {properties.map(p => <option key={p.slug} value={p.name}>{p.name}</option>)}
           </select>
         </div>
       </div>
 
       <div>
-        <label className="mb-1.5 block text-xs font-semibold text-slate-700">Topic</label>
-        <select className={selectCls} value={form.topic} onChange={e => set('topic', e.target.value)}>
-          <option value="">General question</option>
-          <option>Room availability</option>
-          <option>Pricing & fees</option>
-          <option>Lease terms</option>
-          <option>Tour request</option>
-          <option>Application follow-up</option>
-          <option>Other</option>
+        <label className="mb-1.5 block text-xs font-semibold text-slate-700">Inquiry Type <span className="text-axis">*</span></label>
+        <select required className={selectCls} value={form.topic} onChange={e => set('topic', e.target.value)}>
+          <option value="" disabled>Select an inquiry type…</option>
+          {CONTACT_INQUIRY_TYPES.map((topic) => (
+            <option key={topic} value={topic}>{topic}</option>
+          ))}
         </select>
       </div>
 
       <div>
-        <label className="mb-1.5 block text-xs font-semibold text-slate-700">Message <span className="text-axis">*</span></label>
+        <label className="mb-1.5 block text-xs font-semibold text-slate-700">Message Summary <span className="text-axis">*</span></label>
         <textarea required className={`${inputCls} min-h-[110px] resize-y`} placeholder="Ask us anything about rooms, pricing, availability, or move-in dates…" value={form.message} onChange={e => set('message', e.target.value)} />
       </div>
 
