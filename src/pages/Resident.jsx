@@ -125,7 +125,7 @@ function SetupRequired() {
         </p>
         <ol className="mt-5 space-y-2 text-left text-sm text-slate-700">
           <li className="flex gap-2"><span className="font-bold text-axis">1.</span> Go to <strong>airtable.com/create/tokens</strong> and edit your token</li>
-          <li className="flex gap-2"><span className="font-bold text-axis">2.</span> Under <strong>Base access</strong>, add the Resident Portal base (<code className="rounded bg-slate-100 px-1 text-xs">appol57LKtMKaQ75T</code>)</li>
+          <li className="flex gap-2"><span className="font-bold text-axis">2.</span> Under <strong>Base access</strong>, add the AXIS Forms base (<code className="rounded bg-slate-100 px-1 text-xs">appNBX2inqfJMyqYV</code>)</li>
           <li className="flex gap-2"><span className="font-bold text-axis">3.</span> Ensure scopes include <code className="rounded bg-slate-100 px-1 text-xs">data.records:read</code> and <code className="rounded bg-slate-100 px-1 text-xs">data.records:write</code></li>
           <li className="flex gap-2"><span className="font-bold text-axis">4.</span> Save the token — no code change needed</li>
         </ol>
@@ -1152,7 +1152,7 @@ function Dashboard({ resident, onResidentUpdated, onSignOut }) {
         ) : null}
 
         {!loading && tab === 'requests' ? <RequestsList requests={requests} residentEmail={residentEmail} /> : null}
-        {!loading && tab === 'new' ? <RequestComposer resident={resident} onCreated={loadData} /> : null}
+        {!loading && tab === 'new' ? <RequestComposer resident={resident} onCreated={async () => { await loadData(); setTab('requests') }} /> : null}
         {!loading && tab === 'payments' ? <PaymentsPanel resident={resident} /> : null}
         {!loading && tab === 'packages' ? <PackagesPanel resident={resident} /> : null}
         {!loading && tab === 'documents' ? <DocumentsPanel resident={resident} /> : null}
