@@ -434,6 +434,8 @@ function defaultSigner() {
     occupants: '',
     pets: '',
     vehicles: '',
+    skipPreviousAddress: false,
+    noEmployment: false,
     evictionHistory: '',
     bankruptcyHistory: '',
     criminalHistory: '',
@@ -468,6 +470,7 @@ function defaultCosigner() {
     annualIncome: '',
     employmentStartDate: '',
     otherIncome: '',
+    noEmployment: false,
     bankruptcyHistory: '',
     criminalHistory: '',
     consent: false,
@@ -817,6 +820,7 @@ const SIGNER_STEPS = [
     title: 'Previous Address',
     validate: (s) => {
       const e = {}
+      if (s.skipPreviousAddress) return e
       if (s.previousAddress?.trim()) {
         const addr = validateStreetAddress(s.previousAddress); if (addr) e.previousAddress = addr
       }
@@ -835,9 +839,11 @@ const SIGNER_STEPS = [
     title: 'Employment & Income',
     validate: (s) => {
       const e = {}
-      if (s.supervisorPhone) { const v = validatePhone(s.supervisorPhone); if (v) e.supervisorPhone = v }
-      if (s.monthlyIncome) { const v = validateIncome(s.monthlyIncome); if (v) e.monthlyIncome = v }
-      if (s.annualIncome) { const v = validateIncome(s.annualIncome); if (v) e.annualIncome = v }
+      if (!s.noEmployment) {
+        if (s.supervisorPhone) { const v = validatePhone(s.supervisorPhone); if (v) e.supervisorPhone = v }
+        if (s.monthlyIncome) { const v = validateIncome(s.monthlyIncome); if (v) e.monthlyIncome = v }
+        if (s.annualIncome) { const v = validateIncome(s.annualIncome); if (v) e.annualIncome = v }
+      }
       return e
     },
   },
@@ -898,9 +904,11 @@ const COSIGNER_STEPS = [
     title: 'Employment & Income',
     validate: (c) => {
       const e = {}
-      if (c.supervisorPhone) { const v = validatePhone(c.supervisorPhone); if (v) e.supervisorPhone = v }
-      if (c.monthlyIncome) { const v = validateIncome(c.monthlyIncome); if (v) e.monthlyIncome = v }
-      if (c.annualIncome) { const v = validateIncome(c.annualIncome); if (v) e.annualIncome = v }
+      if (!c.noEmployment) {
+        if (c.supervisorPhone) { const v = validatePhone(c.supervisorPhone); if (v) e.supervisorPhone = v }
+        if (c.monthlyIncome) { const v = validateIncome(c.monthlyIncome); if (v) e.monthlyIncome = v }
+        if (c.annualIncome) { const v = validateIncome(c.annualIncome); if (v) e.annualIncome = v }
+      }
       return e
     },
   },
@@ -1337,6 +1345,7 @@ export default function Apply() {
           )}
           {applicationType === 'signer' && step === 3 && (
               <Section title="Current Address">
+                <p className="text-sm text-slate-500 -mt-1 mb-2">This is the address where you currently live.</p>
                 <Field label="Street Address" required error={fieldErrors.currentAddress}>
                   <AddressAutocomplete
                     required
@@ -1387,6 +1396,12 @@ export default function Apply() {
           )}
           {applicationType === 'signer' && step === 4 && (
               <Section title="Previous Address">
+                <p className="text-sm text-slate-500 -mt-1 mb-3">Only required if you have lived at your current address for <strong>less than 1 year</strong>. If you have been at your current address for 1 year or more, check the box below to skip this section.</p>
+                <label className="flex items-center gap-2 mb-4 text-sm text-slate-700 cursor-pointer select-none">
+                  <input type="checkbox" className="h-4 w-4 rounded border-slate-300 text-axis focus:ring-axis" checked={signer.skipPreviousAddress} onChange={(e) => updateSigner('skipPreviousAddress', e.target.checked)} />
+                  I have lived at my current address for 1 year or more — skip this section
+                </label>
+                {!signer.skipPreviousAddress && <>
                 <Field label="Street Address" error={fieldErrors.previousAddress}>
                   <AddressAutocomplete
                     value={signer.previousAddress}
@@ -1432,10 +1447,16 @@ export default function Apply() {
                     <input className={inputCls} value={signer.previousReasonForLeaving} onChange={(e) => updateSigner('previousReasonForLeaving', e.target.value)} />
                   </Field>
                 </div>
+                </>}
               </Section>
           )}
           {applicationType === 'signer' && step === 5 && (
               <Section title="Employment & Income">
+                <label className="flex items-center gap-2 mb-4 text-sm text-slate-700 cursor-pointer select-none">
+                  <input type="checkbox" className="h-4 w-4 rounded border-slate-300 text-axis focus:ring-axis" checked={signer.noEmployment} onChange={(e) => updateSigner('noEmployment', e.target.checked)} />
+                  I am not currently employed
+                </label>
+                {!signer.noEmployment && <>
                 <div className="grid gap-5 sm:grid-cols-2">
                   <Field label="Employer Name">
                     <input className={inputCls} value={signer.employer} onChange={(e) => updateSigner('employer', e.target.value)} />
@@ -1458,19 +1479,21 @@ export default function Apply() {
                   <Field label="Job Title">
                     <input className={inputCls} value={signer.jobTitle} onChange={(e) => updateSigner('jobTitle', e.target.value)} />
                   </Field>
-                  <Field label="Monthly Income" error={fieldErrors.monthlyIncome}>
-                    <input className={inputCls} value={signer.monthlyIncome} onChange={(e) => updateSigner('monthlyIncome', e.target.value)} />
+                  <Field label="Monthly Income ($)" error={fieldErrors.monthlyIncome}>
+                    <input type="number" min="0" step="1" inputMode="numeric" className={inputCls} placeholder="0" value={signer.monthlyIncome} onChange={(e) => updateSigner('monthlyIncome', e.target.value)} />
                   </Field>
-                  <Field label="Annual Income" error={fieldErrors.annualIncome}>
-                    <input className={inputCls} value={signer.annualIncome} onChange={(e) => updateSigner('annualIncome', e.target.value)} />
+                  <Field label="Annual Income ($)" error={fieldErrors.annualIncome}>
+                    <input type="number" min="0" step="1" inputMode="numeric" className={inputCls} placeholder="0" value={signer.annualIncome} onChange={(e) => updateSigner('annualIncome', e.target.value)} />
                   </Field>
-                  <Field label="Start Date">
+                  <Field label="Employment Start Date">
                     <input type="date" min={MIN_DOB} max={MAX_DATE} className={inputCls} value={signer.employmentStartDate} onChange={(e) => updateSigner('employmentStartDate', clampYear(e.target.value))} />
                   </Field>
                 </div>
+                </>}
 
-                <Field label="Other Income">
-                  <input className={inputCls} value={signer.otherIncome} onChange={(e) => updateSigner('otherIncome', e.target.value)} />
+                <Field label="Other / Non-Employment Income ($)">
+                  <p className="text-xs text-slate-400 mb-1">e.g. rental income, investments, child support, disability</p>
+                  <input type="number" min="0" step="1" inputMode="numeric" className={inputCls} placeholder="0" value={signer.otherIncome} onChange={(e) => updateSigner('otherIncome', e.target.value)} />
                 </Field>
               </Section>
           )}
@@ -1503,15 +1526,12 @@ export default function Apply() {
           )}
           {applicationType === 'signer' && step === 7 && (
               <Section title="Additional Information">
-                <div className="grid gap-5 sm:grid-cols-3">
+                <div className="grid gap-5 sm:grid-cols-2">
                   <Field label="Number of Occupants">
-                    <input className={inputCls} value={signer.occupants} onChange={(e) => updateSigner('occupants', e.target.value)} />
+                    <input type="number" min="1" max="20" inputMode="numeric" className={inputCls} placeholder="1" value={signer.occupants} onChange={(e) => updateSigner('occupants', e.target.value)} />
                   </Field>
                   <Field label="Pets">
                     <input className={inputCls} value={signer.pets} onChange={(e) => updateSigner('pets', e.target.value)} />
-                  </Field>
-                  <Field label="Vehicle(s)">
-                    <input className={inputCls} value={signer.vehicles} onChange={(e) => updateSigner('vehicles', e.target.value)} />
                   </Field>
                 </div>
               </Section>
@@ -1633,6 +1653,11 @@ export default function Apply() {
           )}
           {applicationType === 'cosigner' && step === 2 && (
               <Section title="Employment & Income">
+                <label className="flex items-center gap-2 mb-4 text-sm text-slate-700 cursor-pointer select-none">
+                  <input type="checkbox" className="h-4 w-4 rounded border-slate-300 text-axis focus:ring-axis" checked={cosigner.noEmployment} onChange={(e) => updateCosigner('noEmployment', e.target.checked)} />
+                  I am not currently employed
+                </label>
+                {!cosigner.noEmployment && <>
                 <div className="grid gap-5 sm:grid-cols-2">
                   <Field label="Employer Name">
                     <input className={inputCls} value={cosigner.employer} onChange={(e) => updateCosigner('employer', e.target.value)} />
@@ -1655,19 +1680,21 @@ export default function Apply() {
                   <Field label="Job Title">
                     <input className={inputCls} value={cosigner.jobTitle} onChange={(e) => updateCosigner('jobTitle', e.target.value)} />
                   </Field>
-                  <Field label="Monthly Income" error={fieldErrors.monthlyIncome}>
-                    <input className={inputCls} value={cosigner.monthlyIncome} onChange={(e) => updateCosigner('monthlyIncome', e.target.value)} />
+                  <Field label="Monthly Income ($)" error={fieldErrors.monthlyIncome}>
+                    <input type="number" min="0" step="1" inputMode="numeric" className={inputCls} placeholder="0" value={cosigner.monthlyIncome} onChange={(e) => updateCosigner('monthlyIncome', e.target.value)} />
                   </Field>
-                  <Field label="Annual Income" error={fieldErrors.annualIncome}>
-                    <input className={inputCls} value={cosigner.annualIncome} onChange={(e) => updateCosigner('annualIncome', e.target.value)} />
+                  <Field label="Annual Income ($)" error={fieldErrors.annualIncome}>
+                    <input type="number" min="0" step="1" inputMode="numeric" className={inputCls} placeholder="0" value={cosigner.annualIncome} onChange={(e) => updateCosigner('annualIncome', e.target.value)} />
                   </Field>
-                  <Field label="Start Date">
+                  <Field label="Employment Start Date">
                     <input type="date" min={MIN_DOB} max={MAX_DATE} className={inputCls} value={cosigner.employmentStartDate} onChange={(e) => updateCosigner('employmentStartDate', clampYear(e.target.value))} />
                   </Field>
                 </div>
+                </>}
 
-                <Field label="Other Income">
-                  <input className={inputCls} value={cosigner.otherIncome} onChange={(e) => updateCosigner('otherIncome', e.target.value)} />
+                <Field label="Other / Non-Employment Income ($)">
+                  <p className="text-xs text-slate-400 mb-1">e.g. rental income, investments, child support, disability</p>
+                  <input type="number" min="0" step="1" inputMode="numeric" className={inputCls} placeholder="0" value={cosigner.otherIncome} onChange={(e) => updateCosigner('otherIncome', e.target.value)} />
                 </Field>
               </Section>
           )}
