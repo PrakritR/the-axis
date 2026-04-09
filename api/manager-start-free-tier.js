@@ -195,6 +195,6 @@ export default async function handler(req, res) {
     })
   } catch (err) {
     console.error('Free tier setup error:', err)
-    return res.status(500).json({ error: 'Could not start the free tier setup.' })
+    return res.status(500).json({ error: err?.message || 'Could not start the free tier setup.' })
   }
 }

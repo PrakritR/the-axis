@@ -282,22 +282,19 @@ export default function JoinUs() {
               <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
                 <div>
                   <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-[#2563eb]">
-                    {selectedPlan === 'free' ? 'Free' : 'Get started'}
+                    Get started
                   </div>
                   <h2 className="mt-2 text-3xl font-black tracking-[-0.04em] text-slate-900 sm:text-4xl">
                     {selectedPlanMeta.name}
                   </h2>
                 </div>
-                <div className="text-lg font-semibold text-slate-500">
-                  {selectedPlanMeta.prices[billingCycle].value}
-                  {selectedPlanMeta.prices[billingCycle].suffix}
-                </div>
+                {selectedPlan !== 'free' && (
+                  <div className="text-lg font-semibold text-slate-500">
+                    {selectedPlanMeta.prices[billingCycle].value}
+                    {selectedPlanMeta.prices[billingCycle].suffix}
+                  </div>
+                )}
               </div>
-              {selectedPlan === 'free' && (
-                <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
-                  House posting only — no rent collection, announcements, or work orders.
-                </div>
-              )}
             </div>
 
             <form onSubmit={handleManagerAccess} className="mt-8 grid gap-4 md:grid-cols-2">
