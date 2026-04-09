@@ -443,7 +443,6 @@ function defaultSigner() {
     reference2Phone: '',
     occupants: '',
     pets: '',
-    vehicles: '',
     skipPreviousAddress: false,
     noEmployment: false,
     evictionHistory: '',
@@ -711,7 +710,6 @@ function buildSignerNotes(form) {
     `Reference 2: ${[form.reference2Name, form.reference2Relationship, form.reference2Phone].filter(Boolean).join(' | ') || 'Not provided'}`,
     `Occupants: ${form.occupants || 'Not provided'}`,
     `Pets: ${form.pets || 'Not provided'}`,
-    `Vehicles: ${form.vehicles || 'Not provided'}`,
     `Eviction History: ${form.evictionHistory || 'Not provided'}`,
     form.notes ? `Additional Notes: ${form.notes}` : null,
   ].filter(Boolean).join('\n')
@@ -1210,7 +1208,6 @@ export default function Apply() {
           // Additional info
           'Number of Occupants': signer.occupants || '',
           'Pets': signer.pets || '',
-          'Vehicles': signer.vehicles || '',
           // Background
           'Eviction History': signer.evictionHistory,
           'Signer Bankruptcy History': signer.bankruptcyHistory,
