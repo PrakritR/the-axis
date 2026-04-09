@@ -152,6 +152,42 @@ function getLeaseTermLabel(resident) {
   return 'Fixed Term'
 }
 
+function getRoomMonthlyRent(propertyName, unitNumber) {
+  if (!propertyName || !unitNumber) return 0
+  const property = properties.find((item) => item.name === propertyName)
+  if (!property) return 0
+
+  for (const plan of property.roomPlans || []) {
+    const room = (plan.rooms || []).find((item) => normalizeUnitLabel(item.name) === normalizeUnitLabel(unitNumber))
+    if (room?.price) {
+      const amount = parseInt(String(room.price).replace(/[^0-9]/g, ''), 10)
+      if (Number.isFinite(amount) && amount > 0) return amount
+    }
+  }
+
+  return 0
+}
+
+function getUtilitiesFee(propertyName) {
+  const property = properties.find((item) => item.name === propertyName)
+  if (!property?.utilitiesFee) return 0
+  const amount = parseInt(String(property.utilitiesFee).replace(/[^0-9]/g, ''), 10)
+  return Number.isFinite(amount) && amount > 0 ? amount : 0
+}
+
+const leaseSigningFields = [
+  'DocuSign Signing URL',
+  'DocuSign URL',
+  'Lease Signing URL',
+  'Lease Sign URL',
+  'Lease Document URL',
+  'Lease URL',
+]
+
+function resolveLeaseSigningUrl(resident) {
+  return firstAvailableLink(resident, leaseSigningFields) || import.meta.env.VITE_DOCUSIGN_SIGNING_URL || ''
+}
+
 const residentPaymentFields = [
   'Resident Payment URL',
   'Payment URL',
@@ -1076,7 +1112,7 @@ function getPaymentKind(payment) {
   return 'rent'
 }
 
-function PaymentsPanel({ resident, onResidentUpdated }) {
+function PaymentsPanel({ resident, onResidentUpdated, highlightCategory }) {
   const [payments, setPayments] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -1099,8 +1135,19 @@ function PaymentsPanel({ resident, onResidentUpdated }) {
   const feesDue = feePayments.reduce((sum, p) => sum + (Number(p.Amount) || 0), 0)
   const paymentUrl = useMemo(() => resolveResidentPaymentUrl(resident, payments), [resident, payments])
   const stripeCustomerId = useMemo(() => getResidentStripeCustomerId(resident, payments), [resident, payments])
+  const fallbackRentAmount = useMemo(
+    () => getRoomMonthlyRent(resident.House, resident['Unit Number']),
+    [resident]
+  )
+  const utilitiesAmount = useMemo(() => getUtilitiesFee(resident.House), [resident])
+  const effectiveNextDue = nextDue || (fallbackRentAmount > 0 ? {
+    Amount: fallbackRentAmount,
+    Month: 'Current rent',
+    Notes: 'Calculated from your current house and room assignment.',
+  } : null)
+  const leaseExtensionAmount = fallbackRentAmount + utilitiesAmount
 
-  async function launchCheckout({ amount, description, category, paymentRecordId }) {
+  async function launchCheckout({ amount, items, description, category, paymentRecordId }) {
     setActionError('')
     setActionLoading(category)
     setEmbeddedCheckout({
@@ -1112,6 +1159,7 @@ function PaymentsPanel({ resident, onResidentUpdated }) {
         propertyName: resident.House,
         unitNumber: resident['Unit Number'],
         amount,
+        items,
         description,
         category,
         paymentRecordId,
@@ -1171,9 +1219,13 @@ function PaymentsPanel({ resident, onResidentUpdated }) {
   return (
     <SectionCard title="Payments" description="Pay rent, clear fees, and review your payment history.">
       {loading ? <p className="text-sm text-slate-400">Loading payments...</p> : null}
-      {error ? <p className="text-sm text-red-600">{error}</p> : null}
-      {!loading && !error && (
+      {!loading && (
         <>
+          {error ? (
+            <div className="mb-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+              Payment history could not be loaded from Airtable right now, but checkout is still available below.
+            </div>
+          ) : null}
           <div className="grid gap-4 lg:grid-cols-[1.2fr_0.8fr]">
             <div className="space-y-4">
               <div className="rounded-[24px] border border-slate-200 bg-slate-50 p-5">
@@ -1181,20 +1233,22 @@ function PaymentsPanel({ resident, onResidentUpdated }) {
                 <div className="mt-3 flex flex-wrap items-end justify-between gap-4">
                   <div>
                     <div className="text-3xl font-black text-slate-900">
-                      {nextDue ? formatMoney(nextDue.Amount) : '$0'}
+                      {effectiveNextDue ? formatMoney(effectiveNextDue.Amount) : '$0'}
                     </div>
                     <div className="mt-1 text-sm text-slate-500">
-                      {nextDue ? `${nextDue.Month || 'Current rent'}${nextDue['Due Date'] ? ` • Due ${formatDate(nextDue['Due Date'])}` : ''}` : 'No rent currently due'}
+                      {effectiveNextDue
+                        ? `${effectiveNextDue.Month || 'Current rent'}${effectiveNextDue['Due Date'] ? ` • Due ${formatDate(effectiveNextDue['Due Date'])}` : ''}`
+                        : 'No rent currently due'}
                     </div>
                   </div>
                   <button
                     type="button"
-                    disabled={!nextDue || actionLoading === 'rent'}
+                    disabled={!effectiveNextDue || actionLoading === 'rent'}
                     onClick={() => launchCheckout({
-                      amount: Number(nextDue?.Amount || 0),
-                      description: nextDue?.Month ? `Rent payment - ${nextDue.Month}` : 'Rent payment',
+                      amount: Number(effectiveNextDue?.Amount || 0),
+                      description: effectiveNextDue?.Month ? `Rent payment - ${effectiveNextDue.Month}` : 'Rent payment',
                       category: 'rent',
-                      paymentRecordId: nextDue?.id,
+                      paymentRecordId: effectiveNextDue?.id,
                     })}
                     className="rounded-full bg-slate-900 px-5 py-3 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
                   >
@@ -1222,8 +1276,8 @@ function PaymentsPanel({ resident, onResidentUpdated }) {
               </div>
               <div className="rounded-2xl bg-slate-50 px-4 py-4">
                 <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">Next Due</div>
-                <div className="mt-2 text-lg font-black text-slate-900">{nextDue ? nextDue.Month || formatDate(nextDue['Due Date']) : '—'}</div>
-                {nextDue?.['Due Date'] && <div className="mt-0.5 text-xs text-slate-400">{formatDate(nextDue['Due Date'])}</div>}
+                <div className="mt-2 text-lg font-black text-slate-900">{effectiveNextDue ? effectiveNextDue.Month || formatDate(effectiveNextDue['Due Date']) : '—'}</div>
+                {effectiveNextDue?.['Due Date'] && <div className="mt-0.5 text-xs text-slate-400">{formatDate(effectiveNextDue['Due Date'])}</div>}
               </div>
               <div className="rounded-2xl bg-slate-50 px-4 py-4">
                 <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">Total Payments</div>
@@ -1271,23 +1325,59 @@ function PaymentsPanel({ resident, onResidentUpdated }) {
               ) : null}
             </div>
 
-            <div className="rounded-[24px] border border-slate-200 bg-slate-50 p-5">
-              <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">Payment Setup</div>
+            <div
+              className={classNames(
+                'rounded-[24px] border bg-slate-50 p-5 transition',
+                highlightCategory === 'extension'
+                  ? 'border-axis/50 ring-2 ring-axis/20'
+                  : 'border-slate-200'
+              )}
+            >
+              <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">Lease Extension / Continue Lease</div>
               <p className="mt-3 text-sm leading-6 text-slate-500">
-                Stripe checkout is wired for secure rent payments. Once your Stripe secret key is added, residents can pay rent here without leaving the portal flow.
+                Start your lease continuation here. We collect the next month of rent and utilities before the updated lease is finalized for signing.
               </p>
-              <div className="mt-4 space-y-2 text-sm text-slate-600">
-                <div>Resident email: {resident.Email || 'Not set'}</div>
-                <div>House / unit: {[resident.House, resident['Unit Number']].filter(Boolean).join(' • ') || 'Not set'}</div>
-                <div>Stripe customer: {stripeCustomerId || 'Will link after Stripe setup'}</div>
-              </div>
-              {actionError ? (
-                <div className="mt-4 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-                  {actionError}
+              <div className="mt-4 space-y-2 rounded-2xl bg-white px-4 py-4 text-sm text-slate-600">
+                <div className="flex items-center justify-between gap-3">
+                  <span>Next month rent</span>
+                  <span className="font-semibold text-slate-900">{formatMoney(fallbackRentAmount)}</span>
                 </div>
-              ) : null}
+                <div className="flex items-center justify-between gap-3">
+                  <span>Utilities</span>
+                  <span className="font-semibold text-slate-900">{formatMoney(utilitiesAmount)}</span>
+                </div>
+                <div className="flex items-center justify-between gap-3 border-t border-slate-100 pt-2">
+                  <span className="font-semibold text-slate-900">Total due</span>
+                  <span className="text-base font-black text-slate-900">{formatMoney(leaseExtensionAmount)}</span>
+                </div>
+              </div>
+              <button
+                type="button"
+                disabled={leaseExtensionAmount <= 0 || actionLoading === 'extension'}
+                onClick={() => launchCheckout({
+                  amount: leaseExtensionAmount,
+                  items: [
+                    { name: 'Next month rent', amount: fallbackRentAmount },
+                    { name: 'Utilities', amount: utilitiesAmount },
+                  ].filter((item) => item.amount > 0),
+                  description: 'Lease extension payment',
+                  category: 'extension',
+                })}
+                className="mt-4 rounded-full bg-slate-900 px-5 py-3 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {actionLoading === 'extension' ? 'Opening checkout...' : 'Pay to extend lease'}
+              </button>
+              <div className="mt-3 text-xs text-slate-400">
+                Resident email: {resident.Email || 'Not set'} • {[resident.House, resident['Unit Number']].filter(Boolean).join(' • ') || 'House / unit not set'}
+              </div>
             </div>
           </div>
+
+          {actionError ? (
+            <div className="mt-4 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+              {actionError}
+            </div>
+          ) : null}
 
           {payments.length === 0 ? (
             <p className="mt-6 text-sm text-slate-400">No payment records yet. Contact Axis if you have questions about your balance.</p>
@@ -1326,6 +1416,7 @@ function PaymentsPanel({ resident, onResidentUpdated }) {
 function LeasingPanel({ resident, onOpenPayments }) {
   const leaseTermLabel = getLeaseTermLabel(resident)
   const isMonthToMonth = leaseTermLabel.toLowerCase().includes('month-to-month')
+  const leaseSigningUrl = resolveLeaseSigningUrl(resident)
 
   return (
     <SectionCard title="Leasing" description="Review your current lease details and continue your lease through the payment flow.">
@@ -1361,6 +1452,27 @@ function LeasingPanel({ resident, onOpenPayments }) {
               </div>
             </div>
           </div>
+
+          <div className="rounded-[24px] border border-slate-200 bg-white p-5">
+            <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">Lease Signing</div>
+            <h3 className="mt-2 text-xl font-black text-slate-900">Review & Sign with DocuSign</h3>
+            <p className="mt-3 text-sm leading-6 text-slate-500">
+              Your lease can be prepared and sent through DocuSign for this resident. Once your updated lease is ready, sign it from the secure document session below.
+            </p>
+            {leaseSigningUrl ? (
+              <button
+                type="button"
+                onClick={() => { window.location.href = leaseSigningUrl }}
+                className="mt-4 rounded-full border border-slate-300 px-5 py-3 text-sm font-semibold text-slate-700 transition hover:border-slate-500"
+              >
+                Open DocuSign lease
+              </button>
+            ) : (
+              <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-500">
+                Add a resident-specific DocuSign signing URL to this resident record to enable in-portal lease signing.
+              </div>
+            )}
+          </div>
         </div>
 
         <div className="space-y-4">
@@ -1368,14 +1480,14 @@ function LeasingPanel({ resident, onOpenPayments }) {
             <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">Lease Actions</div>
             <h3 className="mt-2 text-xl font-black text-slate-900">Extend or Continue Lease</h3>
             <p className="mt-3 text-sm leading-6 text-slate-500">
-              Start lease continuation from the payment flow. If there is a required lease-change charge, it will be handled there before leasing updates are finalized.
+              Start lease continuation from the payment flow. Required continuation charges are collected there first, and then the updated lease can be signed through DocuSign.
             </p>
             <button
               type="button"
-              onClick={onOpenPayments}
+              onClick={() => onOpenPayments('extension')}
               className="mt-4 rounded-full bg-slate-900 px-5 py-3 text-sm font-semibold text-white transition hover:bg-slate-800"
             >
-              Go to Payments
+              Extend lease in Payments
             </button>
           </div>
 
@@ -1393,6 +1505,7 @@ function LeasingPanel({ resident, onOpenPayments }) {
 
 function Dashboard({ resident, onResidentUpdated, onSignOut }) {
   const [tab, setTab] = useState('requests')
+  const [paymentFocus, setPaymentFocus] = useState('')
   const [requests, setRequests] = useState([])
   const [announcements, setAnnouncements] = useState([])
   const [loading, setLoading] = useState(true)
@@ -1502,8 +1615,8 @@ function Dashboard({ resident, onResidentUpdated, onSignOut }) {
 
         {!loading && tab === 'requests' ? <RequestsList requests={requests} residentEmail={residentEmail} /> : null}
         {!loading && tab === 'new' ? <RequestComposer resident={resident} onCreated={async () => { await loadData(); setTab('requests') }} /> : null}
-        {!loading && tab === 'leasing' ? <LeasingPanel resident={resident} onOpenPayments={() => setTab('payments')} /> : null}
-        {!loading && tab === 'payments' ? <PaymentsPanel resident={resident} onResidentUpdated={onResidentUpdated} /> : null}
+        {!loading && tab === 'leasing' ? <LeasingPanel resident={resident} onOpenPayments={(focus = '') => { setPaymentFocus(focus); setTab('payments') }} /> : null}
+        {!loading && tab === 'payments' ? <PaymentsPanel resident={resident} onResidentUpdated={onResidentUpdated} highlightCategory={paymentFocus} /> : null}
         {!loading && tab === 'announcements' ? <AnnouncementsPanel items={announcements} /> : null}
         {!loading && tab === 'profile' ? <ProfilePanel resident={resident} onUpdated={onResidentUpdated} /> : null}
       </div>
