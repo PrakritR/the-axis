@@ -113,7 +113,7 @@ export default async function handler(req, res) {
       mode: 'subscription',
       ...(embedded
         ? { ui_mode: 'embedded_page', return_url: `${baseUrl}/manager?setup=success&session_id={CHECKOUT_SESSION_ID}` }
-        : { success_url: `${baseUrl}/manager?setup=success&session_id={CHECKOUT_SESSION_ID}`, cancel_url: `${baseUrl}/join-us` }
+        : { success_url: `${baseUrl}/manager?setup=success&session_id={CHECKOUT_SESSION_ID}`, cancel_url: `${baseUrl}/owners/pricing` }
       ),
       customer_email: normalizedEmail,
       'line_items[0][price]': priceId,

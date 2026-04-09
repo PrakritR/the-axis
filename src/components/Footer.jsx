@@ -1,11 +1,15 @@
 import React from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useLocation } from 'react-router-dom'
 import scrollToTop from '../utils/scrollToTop'
 import { AxisWordmark } from './logos/AxisLogos'
+import { HOUSING_HOME_URL, HOUSING_SCHEDULE_TOUR_URL } from '../lib/housingSite'
 
 export default function Footer() {
+  const location = useLocation()
+  const isOwners = location.pathname.startsWith('/owners')
+
   return (
-    <footer className="w-full shrink-0 border-t border-white/70 bg-[linear-gradient(180deg,rgba(255,255,255,0.36)_0%,rgba(255,255,255,0.72)_100%)] pb-24 text-sm text-slate-500 backdrop-blur-xl md:pb-0">
+    <footer className={`w-full shrink-0 border-t border-white/70 bg-[linear-gradient(180deg,rgba(255,255,255,0.36)_0%,rgba(255,255,255,0.72)_100%)] text-sm text-slate-500 backdrop-blur-xl md:pb-0 ${isOwners ? 'pb-10' : 'pb-24'}`}>
       <div className="h-px w-full bg-gradient-to-r from-transparent via-[#2563eb]/35 to-transparent" />
 
       <div className="border-b border-slate-200/70">
@@ -15,7 +19,9 @@ export default function Footer() {
               <AxisWordmark tone="dark" className="h-10 w-auto opacity-95" />
             </div>
             <p className="mt-5 max-w-xs leading-6 text-slate-500">
-              Available housing in Seattle with posted pricing and online applications.
+              {isOwners
+                ? 'Software and visibility for Seattle property owners and operators.'
+                : 'Available housing in Seattle with posted pricing and online applications.'}
             </p>
             <div className="mt-6 space-y-2.5 text-sm">
               <a href="tel:15103098345" className="flex items-center gap-2.5 text-slate-500 transition hover:text-[#2563eb]">
@@ -34,21 +40,41 @@ export default function Footer() {
           </div>
 
           <div>
-            <h5 className="text-xs font-bold uppercase tracking-[0.2em] text-slate-700">Explore</h5>
+            <h5 className="text-xs font-bold uppercase tracking-[0.2em] text-slate-700">{isOwners ? 'Partner' : 'Explore'}</h5>
             <div className="mt-5 flex flex-col gap-3.5">
-              <Link to={{ pathname: '/', hash: '#properties' }} className="inline-block transition hover:text-slate-900 hover:translate-x-0.5">Homes & availability</Link>
-              <Link to="/apply" onClick={scrollToTop} className="inline-block transition hover:text-slate-900 hover:translate-x-0.5">Apply online</Link>
-              <Link reloadDocument to="/contact?section=housing&tab=schedule" className="inline-block transition hover:text-slate-900 hover:translate-x-0.5">Schedule a tour</Link>
-              <Link reloadDocument to="/contact?section=software&tab=message" className="inline-block transition hover:text-slate-900 hover:translate-x-0.5">Contact us</Link>
+              {isOwners ? (
+                <>
+                  <Link to="/owners/about" onClick={scrollToTop} className="inline-block transition hover:text-slate-900 hover:translate-x-0.5">About us</Link>
+                  <Link to="/owners/pricing" onClick={scrollToTop} className="inline-block transition hover:text-slate-900 hover:translate-x-0.5">Pricing</Link>
+                  <Link to="/owners/contact" onClick={scrollToTop} className="inline-block transition hover:text-slate-900 hover:translate-x-0.5">Contact</Link>
+                  <Link to="/portal" onClick={scrollToTop} className="inline-block transition hover:text-slate-900 hover:translate-x-0.5">Portal</Link>
+                </>
+              ) : (
+                <>
+                  <a href={HOUSING_HOME_URL} className="inline-block transition hover:text-slate-900 hover:translate-x-0.5">Explore properties</a>
+                  <a href={HOUSING_SCHEDULE_TOUR_URL} className="inline-block transition hover:text-slate-900 hover:translate-x-0.5">Apply / Schedule tour</a>
+                  <Link to="/owners/about" onClick={scrollToTop} className="inline-block transition hover:text-slate-900 hover:translate-x-0.5">Partner With Axis</Link>
+                  <Link to="/portal" onClick={scrollToTop} className="inline-block transition hover:text-slate-900 hover:translate-x-0.5">Portal</Link>
+                </>
+              )}
             </div>
           </div>
 
           <div>
-            <h5 className="text-xs font-bold uppercase tracking-[0.2em] text-slate-700">Housing</h5>
+            <h5 className="text-xs font-bold uppercase tracking-[0.2em] text-slate-700">{isOwners ? 'Homes' : 'Housing'}</h5>
             <div className="mt-5 flex flex-col gap-3.5">
-              <Link to={{ pathname: '/', hash: '#properties' }} className="inline-block transition hover:text-slate-900 hover:translate-x-0.5">Available housing</Link>
-              <Link to="/apply" onClick={scrollToTop} className="inline-block transition hover:text-slate-900 hover:translate-x-0.5">Application process</Link>
-              <Link reloadDocument to="/contact" className="inline-block transition hover:text-slate-900 hover:translate-x-0.5">Lease questions</Link>
+              {isOwners ? (
+                <>
+                  <a href={HOUSING_HOME_URL} className="inline-block transition hover:text-slate-900 hover:translate-x-0.5">Student housing listings</a>
+                  <Link to="/" onClick={scrollToTop} className="inline-block transition hover:text-slate-900 hover:translate-x-0.5">Axis marketing site</Link>
+                </>
+              ) : (
+                <>
+                  <a href={HOUSING_HOME_URL} className="inline-block transition hover:text-slate-900 hover:translate-x-0.5">Available housing</a>
+                  <a href={HOUSING_SCHEDULE_TOUR_URL} className="inline-block transition hover:text-slate-900 hover:translate-x-0.5">Tours & applications</a>
+                  <a href="mailto:info@axis-seattle-housing.com" className="inline-block transition hover:text-slate-900 hover:translate-x-0.5">Lease questions</a>
+                </>
+              )}
             </div>
           </div>
 

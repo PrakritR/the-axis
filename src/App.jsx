@@ -1,8 +1,9 @@
 import React, { Suspense, lazy, useEffect, useLayoutEffect } from 'react'
-import { Routes, Route, useLocation } from 'react-router-dom'
+import { Routes, Route, useLocation, Navigate } from 'react-router-dom'
 import { AnimatePresence, motion } from 'framer-motion'
 import { Toaster } from 'react-hot-toast'
 import Navbar from './components/Navbar'
+import OwnersNav from './components/OwnersNav'
 import Footer from './components/Footer'
 import Home from './pages/Home'
 import scrollToTop from './utils/scrollToTop'
@@ -17,6 +18,8 @@ const JoinUs = lazy(() => import('./pages/JoinUs'))
 const Manager = lazy(() => import('./pages/Manager'))
 const SignLease = lazy(() => import('./pages/SignLease'))
 const AxisTeam = lazy(() => import('./pages/AxisTeam'))
+const PortalSelect = lazy(() => import('./pages/PortalSelect'))
+const OwnersAbout = lazy(() => import('./pages/OwnersAbout'))
 
 function ScrollToTop() {
   const { pathname, hash, search } = useLocation()
@@ -84,8 +87,9 @@ export default function App() {
   const isAxisTeamRoute = location.pathname === '/axis-team'
   const isStandaloneRoute = isManagerRoute || isSignLeaseRoute || isAxisTeamRoute
 
-  const showMobileDock = ['/', '/apply', '/contact', '/resident'].includes(location.pathname)
-  const showTourPopup = !isStandaloneRoute && location.pathname !== '/apply'
+  const isOwnersRoute = location.pathname.startsWith('/owners')
+  const showMainMobileDock = location.pathname === '/' || location.pathname === '/portal'
+  const showTourPopup = !isStandaloneRoute && location.pathname !== '/apply' && !isOwnersRoute
 
   // Manager portal and signing flow render completely standalone — skip the public shell entirely
   if (isStandaloneRoute) {
@@ -125,17 +129,22 @@ export default function App() {
           error: { style: { background: '#fef2f2', color: '#991b1b', border: '1px solid #fecaca' } },
         }}
       />
-      <Navbar />
-      <main className={`flex-1 min-h-0 w-full ${showMobileDock ? 'pb-[calc(5rem+env(safe-area-inset-bottom))] md:pb-0' : ''}`}>
+      {isOwnersRoute ? <OwnersNav /> : <Navbar />}
+      <main className={`flex-1 min-h-0 w-full ${showMainMobileDock ? 'pb-[calc(5rem+env(safe-area-inset-bottom))] md:pb-0' : ''}`}>
         <Suspense fallback={<PageFallback />}>
           <AnimatePresence mode="wait">
             <Routes location={location} key={location.pathname}>
               <Route path="/" element={<AnimatedPage><Home /></AnimatedPage>} />
               <Route path="/properties/:slug" element={<AnimatedPage><PropertyPage /></AnimatedPage>} />
               <Route path="/contact" element={<AnimatedPage><Contact /></AnimatedPage>} />
+              <Route path="/owners/contact" element={<AnimatedPage><Contact /></AnimatedPage>} />
               <Route path="/apply" element={<AnimatedPage><Apply /></AnimatedPage>} />
               <Route path="/resident" element={<AnimatedPage><Resident /></AnimatedPage>} />
-              <Route path="/join-us" element={<AnimatedPage><JoinUs /></AnimatedPage>} />
+              <Route path="/portal" element={<AnimatedPage><PortalSelect /></AnimatedPage>} />
+              <Route path="/owners" element={<Navigate to="/owners/about" replace />} />
+              <Route path="/owners/about" element={<AnimatedPage><OwnersAbout /></AnimatedPage>} />
+              <Route path="/owners/pricing" element={<AnimatedPage><JoinUs /></AnimatedPage>} />
+              <Route path="/join-us" element={<Navigate to="/owners/pricing" replace />} />
               <Route path="*" element={<AnimatedPage><div className="container mx-auto px-6 py-12">Page not found</div></AnimatedPage>} />
             </Routes>
           </AnimatePresence>

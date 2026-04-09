@@ -932,6 +932,11 @@ export default function Contact() {
   const [softwareTab, setSoftwareTab] = useState('meeting')
 
   useEffect(() => {
+    if (location.pathname.startsWith('/owners/contact')) {
+      setSection('software')
+      setSoftwareTab('message')
+      return
+    }
     const params = new URLSearchParams(location.search)
     const sectionParam = params.get('section')
     const tabParam = params.get('tab')
@@ -964,14 +969,14 @@ export default function Contact() {
     setSection(nextSection)
     setHousingTab(nextHousingTab)
     setSoftwareTab(nextSoftwareTab)
-  }, [location.search])
+  }, [location.pathname, location.search])
 
   return (
     <div className="bg-[linear-gradient(180deg,#edf2fb_0%,#eef3fb_48%,#f6f9fe_100%)]">
       <Seo
         title="Contact Axis | Housing Tours and Software Inquiries"
         description="Book a housing tour or ask about the Axis platform."
-        pathname="/contact"
+        pathname={location.pathname.startsWith('/owners/') ? '/owners/contact' : '/contact'}
       />
       <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 sm:py-12">
         <div className="mx-auto max-w-5xl rounded-[32px] border border-white/90 bg-white/88 p-6 shadow-[0_30px_80px_rgba(37,99,235,0.10)] backdrop-blur sm:p-8">

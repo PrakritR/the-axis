@@ -353,7 +353,7 @@ function AirtableLogin({ onLogin }) {
         <div className="rounded-[32px] border border-slate-200 bg-white p-8 shadow-soft sm:p-10">
           <div className="mb-6 text-center">
             <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-[#2563eb]">AXIS PORTAL</div>
-            <h1 className="mt-2 text-4xl font-black tracking-tight text-slate-900">Resident Login</h1>
+            <h1 className="mt-2 text-4xl font-black tracking-tight text-slate-900">Resident portal</h1>
           </div>
 
           <div className="flex gap-1 rounded-[24px] border border-slate-100 bg-slate-50 p-1.5">

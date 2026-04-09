@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { useLocation } from 'react-router-dom'
 import { Seo } from '../lib/seo'
 import { EmbeddedStripeCheckout } from '../components/EmbeddedStripeCheckout'
 
@@ -133,6 +134,7 @@ function PlanCard({ plan, activePlan, billingCycle, onChoosePlan }) {
 }
 
 export default function JoinUs() {
+  const location = useLocation()
   const [selectedPlan, setSelectedPlan] = useState('pro')
   const [billingCycle, setBillingCycle] = useState('monthly')
   const [managerForm, setManagerForm] = useState({
@@ -224,9 +226,9 @@ export default function JoinUs() {
   return (
     <>
       <Seo
-        title="Join Axis | Axis"
+        title="Pricing | Partner With Axis"
         description="Choose a tier and get started with Axis."
-        pathname="/join-us"
+        pathname={location.pathname === '/owners/pricing' ? '/owners/pricing' : '/join-us'}
       />
 
       <EmbeddedStripeCheckout

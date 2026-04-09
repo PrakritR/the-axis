@@ -469,14 +469,14 @@ function ManagerLogin({ onLogin }) {
         <section className="rounded-[32px] border border-slate-200/80 bg-white p-7 shadow-[0_28px_80px_rgba(148,163,184,0.18)] sm:p-8">
           <div className="mb-6 text-center">
             <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-[#2563eb]">AXIS PORTAL</div>
-            <h1 className="mt-2 text-5xl font-black tracking-tight text-slate-900 sm:text-6xl">Login</h1>
+            <h1 className="mt-2 text-5xl font-black tracking-tight text-slate-900 sm:text-6xl">Manager portal</h1>
             <p className="mt-3 text-base leading-7 text-slate-500">
               Sign in or create your manager account.
             </p>
           </div>
 
           <div className="mx-auto flex max-w-3xl gap-1 rounded-[24px] border border-slate-100 bg-slate-50 p-1.5">
-            {[['signin', 'Manager Login'], ['setup', 'Create account']].map(([id, label]) => (
+            {[['signin', 'Sign in'], ['setup', 'Create account']].map(([id, label]) => (
               <button
                 key={id}
                 type="button"
@@ -622,7 +622,7 @@ function ManagerLogin({ onLogin }) {
 
               {!subscriptionReady ? (
                 <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
-                  Start manager access in Join Axis first. Your selected tier, manager ID, and saved contact info will load here from Airtable.
+                  Start on the Partner With Axis pricing page first. Your tier, manager ID, and contact info load here from Airtable.
                 </div>
               ) : null}
 
@@ -664,10 +664,10 @@ function ManagerLogin({ onLogin }) {
                   </div>
                 ) : null}
                 <a
-                  href="/join-us"
+                  href="/owners/pricing"
                   className="mt-4 inline-flex w-full items-center justify-center rounded-full bg-[linear-gradient(180deg,#2c3447_0%,#1a1d27_100%)] px-5 py-4 text-base font-semibold text-white transition hover:brightness-110"
                 >
-                  Start in Join Axis
+                  Partner pricing
                 </a>
               </div>
             </div>
