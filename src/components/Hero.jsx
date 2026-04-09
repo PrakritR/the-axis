@@ -15,9 +15,26 @@ export default function Hero({
   heading = 'AXIS SEATTLE',
   browseLabel = 'View Available Housing',
   scheduleTourLabel = 'Schedule a Tour',
+  heroImage,
 }) {
   return (
-    <section className="relative w-full overflow-hidden bg-transparent" style={{ minHeight: 'clamp(220px, 36dvh, 400px)' }}>
+    <section className="relative w-full overflow-hidden" style={{ minHeight: 'clamp(320px, 52dvh, 560px)', background: '#edf2fb' }}>
+      {/* Background house photo */}
+      {heroImage && (
+        <div className="absolute inset-0">
+          <img
+            src={heroImage}
+            alt=""
+            aria-hidden
+            className="h-full w-full object-cover"
+            style={{ objectPosition: 'center 30%' }}
+          />
+          {/* Gradient overlay so text stays readable */}
+          <div className="absolute inset-0" style={{ background: 'linear-gradient(90deg, rgba(237,242,251,0.97) 0%, rgba(237,242,251,0.88) 38%, rgba(237,242,251,0.55) 65%, rgba(237,242,251,0.72) 100%)' }} />
+          <div className="absolute inset-0" style={{ background: 'radial-gradient(ellipse at 18% 42%, rgba(37,99,235,0.12), transparent 50%)' }} />
+        </div>
+      )}
+
       <div className="relative z-10 flex h-full flex-col justify-center">
         <div className="container mx-auto px-4 pb-[max(2rem,env(safe-area-inset-bottom))] pt-[max(4rem,env(safe-area-inset-top))] sm:px-6 sm:pb-10 sm:pt-16 lg:px-8 lg:pb-12 lg:pt-20">
           <motion.div className="max-w-2xl" variants={container} initial="hidden" animate="show">
@@ -43,7 +60,6 @@ export default function Hero({
           </motion.div>
         </div>
       </div>
-
     </section>
   )
 }

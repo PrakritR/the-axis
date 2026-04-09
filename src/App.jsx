@@ -1,4 +1,4 @@
-import React, { Suspense, lazy, useEffect, useLayoutEffect } from 'react'
+import React, { Suspense, lazy, useEffect, useLayoutEffect, Component } from 'react'
 import { Routes, Route, useLocation, Navigate } from 'react-router-dom'
 import { AnimatePresence, motion } from 'framer-motion'
 import { Toaster } from 'react-hot-toast'
@@ -78,7 +78,37 @@ function PageFallback() {
   return <div className="container mx-auto px-6 py-12 text-sm text-slate-500">Loading...</div>
 }
 
-export default function App() {
+class ErrorBoundary extends Component {
+  constructor(props) {
+    super(props)
+    this.state = { hasError: false, error: null }
+  }
+  static getDerivedStateFromError(error) {
+    return { hasError: true, error }
+  }
+  componentDidCatch(error, info) {
+    console.error('App error:', error, info)
+  }
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="flex min-h-screen flex-col items-center justify-center px-6 text-center">
+          <h1 className="text-xl font-bold text-slate-900">Something went wrong</h1>
+          <p className="mt-2 text-sm text-slate-500">Please refresh the page. If the issue persists, contact us.</p>
+          <button
+            onClick={() => window.location.reload()}
+            className="mt-6 rounded-full bg-[#2563eb] px-6 py-2.5 text-sm font-semibold text-white hover:brightness-105"
+          >
+            Refresh
+          </button>
+        </div>
+      )
+    }
+    return this.props.children
+  }
+}
+
+function AppInner() {
   const location = useLocation()
 
   if (MAINTENANCE_MODE) {
@@ -164,5 +194,13 @@ export default function App() {
       {!isPortalHub ? <Footer /> : null}
       {!isPortalHub ? <Chatbot /> : null}
     </div>
+  )
+}
+
+export default function App() {
+  return (
+    <ErrorBoundary>
+      <AppInner />
+    </ErrorBoundary>
   )
 }
