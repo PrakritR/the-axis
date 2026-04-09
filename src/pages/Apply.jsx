@@ -1863,7 +1863,7 @@ export default function Apply() {
                       <p className="mb-3 rounded-xl bg-red-50 px-4 py-2.5 text-sm text-red-700">{leaseSigningError}</p>
                     )}
                     <button type="button" onClick={handleLeaseSign} disabled={leaseSigningLoading}
-                      className="rounded-full bg-slate-900 px-6 py-3 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:opacity-50">
+                      className="rounded-full bg-[linear-gradient(180deg,#2f76ff_0%,#2450eb_100%)] px-6 py-3 text-sm font-semibold text-white shadow-[0_6px_18px_rgba(37,99,235,0.22)] transition hover:brightness-105 disabled:opacity-50">
                       {leaseSigningLoading ? 'Saving signature…' : 'Sign Lease'}
                     </button>
                   </div>

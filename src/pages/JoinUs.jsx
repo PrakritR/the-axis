@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useCallback } from 'react'
 import { Seo } from '../lib/seo'
 
 const DOWNLOAD_URL = import.meta.env.VITE_AXIS_DOWNLOAD_URL || import.meta.env.VITE_AXIS_DOWNLOAD_MAC_URL || ''
@@ -142,9 +142,19 @@ export default function JoinUs() {
   })
   const [managerLoading, setManagerLoading] = useState(false)
   const [managerError, setManagerError] = useState('')
+  const [managerId, setManagerId] = useState('')
+  const [copiedId, setCopiedId] = useState(false)
   const [downloadNotice, setDownloadNotice] = useState('')
 
   const selectedPlanMeta = PLANS.find((plan) => plan.id === selectedPlan) || PLANS[1]
+
+  function copyManagerId() {
+    if (!managerId) return
+    navigator.clipboard.writeText(managerId).then(() => {
+      setCopiedId(true)
+      setTimeout(() => setCopiedId(false), 2000)
+    })
+  }
 
   function handleDownload() {
     if (DOWNLOAD_URL) {
@@ -188,7 +198,8 @@ export default function JoinUs() {
         if (!res.ok) throw new Error(data.error || 'Could not start free setup.')
 
         sessionStorage.setItem(FREE_TIER_ONBOARDING_KEY, JSON.stringify(data))
-        window.location.href = '/manager?view=create'
+        setManagerId(data.managerId || '')
+        setManagerLoading(false)
         return
       }
 
@@ -221,6 +232,56 @@ export default function JoinUs() {
         pathname="/join-us"
       />
 
+      {managerId ? (
+        <section className="relative overflow-hidden bg-[linear-gradient(180deg,#edf2fb_0%,#e8eef8_48%,#ebf0f9_100%)] py-16 sm:py-24">
+          <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top,rgba(255,255,255,0.96),rgba(255,255,255,0.25)_32%,transparent_58%),radial-gradient(circle_at_bottom,rgba(37,99,235,0.14),transparent_46%)]" aria-hidden />
+          <div className="mx-auto max-w-lg px-6">
+            <div className="mx-auto mb-8 flex h-20 w-20 items-center justify-center rounded-full bg-axis/10 ring-8 ring-axis/10">
+              <svg className="h-10 w-10 text-axis" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+              </svg>
+            </div>
+            <h1 className="text-center text-3xl font-black tracking-tight text-slate-900 sm:text-4xl">You're in.</h1>
+            <p className="mt-3 text-center text-base leading-7 text-slate-500">
+              Your Manager ID is ready. Copy it — you'll need it to create your account.
+            </p>
+
+            <div className="mt-8 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+              <div className="border-b border-slate-100 bg-slate-50 px-6 py-3">
+                <span className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">Manager ID</span>
+              </div>
+              <div className="flex items-center justify-between gap-4 px-6 py-5">
+                <span className="font-mono text-2xl font-black tracking-tight text-slate-900 break-all">{managerId}</span>
+                <button
+                  type="button"
+                  onClick={copyManagerId}
+                  className="flex shrink-0 items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 transition hover:border-slate-300 hover:bg-slate-50 active:scale-95"
+                >
+                  {copiedId ? (
+                    <>
+                      <svg className="h-3.5 w-3.5 text-axis" fill="none" viewBox="0 0 16 16" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M3 8l3 3 7-7"/></svg>
+                      Copied
+                    </>
+                  ) : (
+                    <>
+                      <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 16 16" stroke="currentColor" strokeWidth={2}><rect x="5" y="5" width="8" height="8" rx="1.5"/><path d="M3 11V3h8" strokeLinecap="round"/></svg>
+                      Copy
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
+
+            <a
+              href="/manager?view=create"
+              className="mt-6 inline-flex w-full items-center justify-center rounded-full bg-[linear-gradient(180deg,#2f76ff_0%,#2450eb_100%)] px-7 py-4 text-base font-semibold text-white shadow-[0_16px_40px_rgba(37,99,235,0.28)] transition hover:brightness-105"
+            >
+              Create account →
+            </a>
+            <p className="mt-4 text-center text-sm text-slate-400">Keep your Manager ID safe — you'll use it to sign in.</p>
+          </div>
+        </section>
+      ) : (
       <section className="relative overflow-hidden bg-[linear-gradient(180deg,#edf2fb_0%,#e8eef8_48%,#ebf0f9_100%)] py-8 sm:py-12">
         <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top,rgba(255,255,255,0.96),rgba(255,255,255,0.25)_32%,transparent_58%),radial-gradient(circle_at_bottom,rgba(37,99,235,0.14),transparent_46%)]" aria-hidden />
         <div className="pointer-events-none absolute inset-x-0 top-[16%] h-[420px] bg-[radial-gradient(circle,rgba(37,99,235,0.13),transparent_58%)] blur-3xl" aria-hidden />
@@ -370,6 +431,7 @@ export default function JoinUs() {
           </div>
         </div>
       </section>
+      )}
     </>
   )
 }
