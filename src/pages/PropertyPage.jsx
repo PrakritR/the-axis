@@ -678,7 +678,7 @@ export default function PropertyPage(){
 
               <div className="mt-8 flex flex-wrap gap-3">
                 <Link
-                  to={`/contact?subject=${encodeURIComponent(`Tour request for ${p.name}`)}`}
+                  to="/contact?section=housing&tab=schedule"
                   onClick={() => window.scrollTo({ top: 0, left: 0, behavior: 'auto' })}
                   className="rounded-full bg-axis px-6 py-3 text-sm font-semibold text-white transition hover:opacity-95"
                 >
@@ -942,7 +942,7 @@ export default function PropertyPage(){
                 </div>
                 <div className="mt-5 flex flex-col gap-3 sm:flex-row">
                   <Link to={`/apply?property=${p.slug}&room=${encodeURIComponent(modalPlan.room.name)}`} onClick={scrollToTop} className="flex-1 rounded-full bg-axis py-3 text-center text-sm font-semibold text-white shadow-soft transition hover:opacity-95">Apply for this room</Link>
-                  <Link to={`/contact?subject=${encodeURIComponent(`Question about ${modalPlan.room.name} at ${p.name}`)}`} onClick={() => window.scrollTo({ top: 0, left: 0, behavior: 'auto' })} className="flex-1 rounded-full border border-slate-300 py-3 text-center text-sm font-semibold text-slate-700 transition hover:border-axis hover:text-axis">Ask a question</Link>
+                  <Link to="/contact?section=housing&tab=message" onClick={() => window.scrollTo({ top: 0, left: 0, behavior: 'auto' })} className="flex-1 rounded-full border border-slate-300 py-3 text-center text-sm font-semibold text-slate-700 transition hover:border-axis hover:text-axis">Ask a question</Link>
                 </div>
               </div>
             </Modal>
@@ -1077,7 +1077,7 @@ export default function PropertyPage(){
                     </div>
                     {term.custom && (
                       <Link
-                        to={`/contact?subject=${encodeURIComponent('Custom lease inquiry')}`}
+                        to="/contact?section=housing&tab=message"
                         onClick={() => window.scrollTo({ top: 0, left: 0, behavior: 'auto' })}
                         className="mt-4 block w-full rounded-full border border-slate-300 py-2 text-center text-xs font-semibold text-slate-700 transition hover:border-axis hover:text-axis"
                       >
@@ -1149,7 +1149,7 @@ export default function PropertyPage(){
                   className="w-full rounded-full bg-axis py-3 text-sm font-semibold text-white transition hover:opacity-95"
                 >Check availability</button>
                 <Link
-                  to={`/contact?subject=${encodeURIComponent(`Tour request for ${p.name}`)}`}
+                  to="/contact?section=housing&tab=schedule"
                   onClick={() => window.scrollTo({ top: 0, left: 0, behavior: 'auto' })}
                   className="w-full rounded-full border border-slate-300 py-3 text-center text-sm font-semibold text-slate-700 transition hover:border-slate-500"
                 >Schedule a tour</Link>

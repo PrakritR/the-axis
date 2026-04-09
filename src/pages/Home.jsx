@@ -552,7 +552,7 @@ export default function Home() {
 
               <Link
                 reloadDocument
-                to={`/contact?subject=${encodeURIComponent('Tour request')}`}
+                to="/contact?section=housing&tab=schedule"
                 className="inline-flex w-auto self-start items-center gap-2 rounded-full border border-slate-200 bg-white/84 px-5 py-2.5 text-sm font-semibold text-slate-700 shadow-[0_14px_32px_rgba(37,99,235,0.08)] transition hover:border-[#2563eb] hover:text-[#2563eb]"
               >
                 Schedule a Tour <Arrow />
@@ -609,7 +609,7 @@ export default function Home() {
               <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap">
                 <Link
                   reloadDocument
-                  to={`/contact?subject=${encodeURIComponent('Tour request')}`}
+                  to="/contact?section=housing&tab=schedule"
                   className="inline-flex w-full items-center justify-center gap-2 rounded-full bg-[linear-gradient(180deg,#2f76ff_0%,#2450eb_100%)] px-6 py-3 text-sm font-semibold text-white shadow-[0_18px_40px_rgba(37,99,235,0.18)] transition hover:brightness-105 active:scale-[0.97] sm:w-auto"
                 >
                   Schedule a Tour <Arrow />

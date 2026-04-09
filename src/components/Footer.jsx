@@ -38,8 +38,8 @@ export default function Footer() {
             <div className="mt-5 flex flex-col gap-3.5">
               <Link to={{ pathname: '/', hash: '#properties' }} className="inline-block transition hover:text-slate-900 hover:translate-x-0.5">Homes & availability</Link>
               <Link to="/apply" onClick={scrollToTop} className="inline-block transition hover:text-slate-900 hover:translate-x-0.5">Apply online</Link>
-              <Link reloadDocument to={`/contact?subject=${encodeURIComponent('Schedule a tour')}`} className="inline-block transition hover:text-slate-900 hover:translate-x-0.5">Schedule a tour</Link>
-              <Link reloadDocument to="/contact" className="inline-block transition hover:text-slate-900 hover:translate-x-0.5">Contact us</Link>
+              <Link reloadDocument to="/contact?section=housing&tab=schedule" className="inline-block transition hover:text-slate-900 hover:translate-x-0.5">Schedule a tour</Link>
+              <Link reloadDocument to="/contact?section=software&tab=message" className="inline-block transition hover:text-slate-900 hover:translate-x-0.5">Contact us</Link>
             </div>
           </div>
 

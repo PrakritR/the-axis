@@ -102,7 +102,7 @@ export default function PropertyCard({ p }) {
           </Link>
           <Link
             reloadDocument
-            to={`/contact?subject=${encodeURIComponent('Tour request - ' + p.name)}`}
+            to="/contact?section=housing&tab=schedule"
             className="flex h-11 w-full shrink-0 items-center justify-center gap-2 rounded-full border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-600 transition hover:border-[#2563eb] hover:text-[#2563eb] sm:w-auto sm:px-3"
           >
             <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" aria-hidden>

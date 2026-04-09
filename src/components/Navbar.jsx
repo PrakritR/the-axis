@@ -55,19 +55,20 @@ export default function Navbar() {
   const isHome = location.pathname === '/'
   const showMobileDock = ['/', '/apply', '/contact', '/resident'].includes(location.pathname)
   const promoText = 'Sign up now. No application fee for a limited time.'
+  const contactSection = location.pathname === '/contact' ? new URLSearchParams(location.search).get('section') : null
   const navLinks = [
     { label: 'Houses', to: { pathname: '/', hash: '#properties' }, isActive: isHome },
     { label: 'Apply Housing', to: '/apply', isActive: location.pathname === '/apply' },
-    { label: 'Schedule Tour', to: '/contact?subject=Schedule%20Tour', isActive: location.pathname === '/contact' && new URLSearchParams(location.search).get('subject') !== 'Contact Axis' },
+    { label: 'Schedule Tour', to: '/contact?section=housing&tab=schedule', isActive: contactSection === 'housing' },
     { label: 'Join Axis', to: '/join-us', isActive: location.pathname === '/join-us' },
-    { label: 'Contact', to: '/contact?subject=Contact%20Axis', isActive: location.pathname === '/contact' && new URLSearchParams(location.search).get('subject') === 'Contact Axis' },
+    { label: 'Contact', to: '/contact?section=software&tab=message', isActive: contactSection === 'software' },
   ]
   const mobileDockLinks = [
     { label: 'Houses', to: { pathname: '/', hash: '#properties' }, icon: <HomeIcon />, isActive: isHome },
     { label: 'Apply', to: '/apply', icon: <ApplyIcon />, isActive: location.pathname === '/apply' },
-    { label: 'Tour', to: '/contact?subject=Schedule%20Tour', icon: <TourIcon />, isActive: location.pathname === '/contact' && new URLSearchParams(location.search).get('subject') !== 'Contact Axis' },
+    { label: 'Tour', to: '/contact?section=housing&tab=schedule', icon: <TourIcon />, isActive: contactSection === 'housing' },
     { label: 'Join', to: '/join-us', icon: <ResidentIcon />, isActive: location.pathname === '/join-us' },
-    { label: 'Contact', to: '/contact?subject=Contact%20Axis', icon: <ContactIcon />, isActive: location.pathname === '/contact' && new URLSearchParams(location.search).get('subject') === 'Contact Axis' },
+    { label: 'Contact', to: '/contact?section=software&tab=message', icon: <ContactIcon />, isActive: contactSection === 'software' },
   ]
 
   useEffect(() => {
@@ -179,12 +180,12 @@ export default function Navbar() {
             <nav className="container mx-auto flex flex-col gap-1 px-4 py-3 sm:px-6">
               <Link to={{ pathname: '/', hash: '#properties' }} onClick={closeMobileMenu} className="rounded-xl px-3 py-2.5 text-sm font-medium text-slate-600 transition hover:bg-slate-50 hover:text-slate-900">Houses</Link>
               <Link to="/apply" onClick={() => { closeMobileMenu(); scrollToTop() }} className="rounded-xl px-3 py-2.5 text-sm font-medium text-slate-600 transition hover:bg-slate-50 hover:text-slate-900">Apply Housing</Link>
-              <Link to="/contact?subject=Schedule%20Tour" onClick={() => { closeMobileMenu(); scrollToTop() }} className="rounded-xl px-3 py-2.5 text-sm font-medium text-slate-600 transition hover:bg-slate-50 hover:text-slate-900">Schedule Tour</Link>
+              <Link to="/contact?section=housing&tab=schedule" onClick={() => { closeMobileMenu(); scrollToTop() }} className="rounded-xl px-3 py-2.5 text-sm font-medium text-slate-600 transition hover:bg-slate-50 hover:text-slate-900">Schedule Tour</Link>
               <Link to="/join-us" onClick={() => { closeMobileMenu(); scrollToTop() }} className="rounded-xl px-3 py-2.5 text-sm font-medium text-slate-600 transition hover:bg-slate-50 hover:text-slate-900">Join Axis</Link>
-              <Link to="/contact?subject=Contact%20Axis" onClick={() => { closeMobileMenu(); scrollToTop() }} className="rounded-xl px-3 py-2.5 text-sm font-medium text-slate-600 transition hover:bg-slate-50 hover:text-slate-900">Contact</Link>
+              <Link to="/contact?section=software&tab=message" onClick={() => { closeMobileMenu(); scrollToTop() }} className="rounded-xl px-3 py-2.5 text-sm font-medium text-slate-600 transition hover:bg-slate-50 hover:text-slate-900">Contact</Link>
               <div className="mt-2 border-t border-slate-200 pt-3 pb-1">
                 <Link
-                  to={`/contact?subject=${encodeURIComponent('Schedule Tour')}`}
+                  to="/contact?section=housing&tab=schedule"
                   onClick={() => { closeMobileMenu(); scrollToTop() }}
                   className="block rounded-full bg-[linear-gradient(180deg,#2f76ff_0%,#2450eb_100%)] px-4 py-2.5 text-center text-sm font-semibold text-white shadow-[0_14px_32px_rgba(37,99,235,0.18)] transition hover:brightness-105"
                 >

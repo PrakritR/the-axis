@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { useLocation, useNavigate } from 'react-router-dom'
 import { Seo } from '../lib/seo'
 
 function formatPhone(raw) {
@@ -800,9 +801,45 @@ function TabBar({ tabs, active, onChange }) {
 // ── Page ─────────────────────────────────────────────────────────────────────
 
 export default function Contact() {
+  const location = useLocation()
+  const navigate = useNavigate()
   const [section, setSection] = useState(null)
   const [housingTab, setHousingTab] = useState('schedule')
   const [softwareTab, setSoftwareTab] = useState('demo')
+
+  useEffect(() => {
+    const params = new URLSearchParams(location.search)
+    const sectionParam = params.get('section')
+    const tabParam = params.get('tab')
+    const subject = (params.get('subject') || '').toLowerCase()
+
+    let nextSection = null
+    let nextHousingTab = 'schedule'
+    let nextSoftwareTab = 'demo'
+
+    if (sectionParam === 'housing' || sectionParam === 'software') {
+      nextSection = sectionParam
+    } else if (subject.includes('tour')) {
+      nextSection = 'housing'
+    } else if (subject.includes('question') || subject.includes('lease') || subject.includes('housing')) {
+      nextSection = 'housing'
+      nextHousingTab = 'message'
+    } else if (subject.includes('contact') || subject.includes('axis') || subject.includes('demo') || subject.includes('software') || subject.includes('manage')) {
+      nextSection = 'software'
+    }
+
+    if (nextSection === 'housing' && (tabParam === 'message' || nextHousingTab === 'message')) {
+      nextHousingTab = 'message'
+    }
+
+    if (nextSection === 'software' && tabParam === 'message') {
+      nextSoftwareTab = 'message'
+    }
+
+    setSection(nextSection)
+    setHousingTab(nextHousingTab)
+    setSoftwareTab(nextSoftwareTab)
+  }, [location.search])
 
   return (
     <div className="bg-[linear-gradient(180deg,#edf2fb_0%,#eef3fb_48%,#f6f9fe_100%)]">
@@ -819,7 +856,7 @@ export default function Contact() {
             <div>
               <h2 className="text-3xl font-black tracking-tight text-slate-900">How can we help?</h2>
               <div className="mt-6 grid gap-4 sm:grid-cols-2">
-                <button onClick={() => setSection('housing')}
+                <button onClick={() => navigate('/contact?section=housing&tab=schedule')}
                   className="group flex flex-col gap-5 rounded-2xl border border-slate-200 bg-white p-6 text-left transition-all hover:border-slate-900 hover:shadow-sm">
                   <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-slate-100 transition-colors group-hover:bg-slate-900">
                     <svg className="h-6 w-6 text-slate-600 group-hover:text-white transition-colors" fill="none" stroke="currentColor" strokeWidth={1.8} viewBox="0 0 24 24">
@@ -832,11 +869,11 @@ export default function Contact() {
                     <p className="mt-2 text-sm leading-6 text-slate-500">Tour our Seattle properties, ask about availability, or talk through pricing and lease options.</p>
                   </div>
                   <div className="mt-auto flex items-center gap-1.5 text-xs font-semibold text-axis">
-                    Get in touch <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7"/></svg>
+                    Schedule a tour <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7"/></svg>
                   </div>
                 </button>
 
-                <button onClick={() => setSection('software')}
+                <button onClick={() => navigate('/contact?section=software&tab=message')}
                   className="group flex flex-col gap-5 rounded-2xl border border-slate-200 bg-white p-6 text-left transition-all hover:border-[#2563eb] hover:shadow-sm">
                   <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-blue-50 transition-colors group-hover:bg-[#2563eb]">
                     <svg className="h-6 w-6 text-[#2563eb] group-hover:text-white transition-colors" fill="none" stroke="currentColor" strokeWidth={1.8} viewBox="0 0 24 24">
@@ -845,11 +882,11 @@ export default function Contact() {
                   </div>
                   <div>
                     <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-[#2563eb]">Axis Software</div>
-                    <div className="mt-1 text-lg font-black text-slate-900">Managing properties</div>
+                    <div className="mt-1 text-lg font-black text-slate-900">Manage property</div>
                     <p className="mt-2 text-sm leading-6 text-slate-500">Learn how Axis helps small property owners collect rent, manage work orders, and communicate with tenants.</p>
                   </div>
                   <div className="mt-auto flex items-center gap-1.5 text-xs font-semibold text-[#2563eb]">
-                    Book a demo <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7"/></svg>
+                    Contact us <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7"/></svg>
                   </div>
                 </button>
               </div>
@@ -864,7 +901,7 @@ export default function Contact() {
                   <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">Axis Housing</div>
                   <h2 className="mt-1 text-2xl font-black tracking-tight text-slate-900">Contact us</h2>
                 </div>
-                <button onClick={() => setSection(null)} className="text-xs font-semibold text-slate-400 hover:text-slate-700">← Back</button>
+                <button onClick={() => navigate('/contact')} className="text-xs font-semibold text-slate-400 hover:text-slate-700">← Back</button>
               </div>
               <TabBar
                 tabs={[{ id: 'schedule', label: 'Schedule a Tour' }, { id: 'message', label: 'Contact us' }]}
@@ -883,7 +920,7 @@ export default function Contact() {
                   <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-[#2563eb]">Axis Software</div>
                   <h2 className="mt-1 text-2xl font-black tracking-tight text-slate-900">Contact our team</h2>
                 </div>
-                <button onClick={() => setSection(null)} className="text-xs font-semibold text-slate-400 hover:text-slate-700">← Back</button>
+                <button onClick={() => navigate('/contact')} className="text-xs font-semibold text-slate-400 hover:text-slate-700">← Back</button>
               </div>
               <TabBar
                 tabs={[{ id: 'demo', label: 'Request a Demo' }, { id: 'message', label: 'Send a Message' }]}
