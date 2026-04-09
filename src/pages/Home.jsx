@@ -481,9 +481,9 @@ function PropertyCarousel() {
         type="button"
         onClick={() => scroll(-1)}
         aria-label="Previous"
-        className={`absolute left-2 top-1/2 z-10 -translate-y-1/2 flex h-10 w-10 items-center justify-center rounded-full bg-white shadow-md border border-slate-200 transition hover:border-axis hover:text-axis sm:left-4 ${
+        className={`absolute left-2 top-1/2 z-10 hidden -translate-y-1/2 items-center justify-center rounded-full border border-slate-200 bg-white shadow-md transition hover:border-axis hover:text-axis sm:left-4 xl:hidden ${
           canLeft ? 'opacity-100' : 'pointer-events-none opacity-0'
-        }`}
+        } h-10 w-10`}
       >
         <svg className="h-4 w-4" viewBox="0 0 16 16" fill="none" aria-hidden>
           <path d="M10 4L6 8l4 4" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
@@ -494,19 +494,19 @@ function PropertyCarousel() {
       <div
         ref={trackRef}
         onScroll={updateArrows}
-        className="flex gap-6 overflow-x-auto scroll-smooth px-4 pb-4 sm:px-6 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden"
+        className="mx-auto flex max-w-7xl gap-6 overflow-x-auto scroll-smooth px-4 pb-4 sm:px-6 xl:grid xl:grid-cols-3 xl:overflow-visible xl:px-6 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden"
       >
         {properties.map((p) => (
           <div
             key={p.slug}
             data-card
-            className="w-[min(88vw,480px)] shrink-0"
+            className="w-[min(88vw,480px)] shrink-0 xl:w-auto xl:min-w-0"
           >
             <PropertyCard p={p} />
           </div>
         ))}
         {/* spacer so last card doesn't sit against edge */}
-        <div className="w-px shrink-0" />
+        <div className="w-px shrink-0 xl:hidden" />
       </div>
 
       {/* Right arrow */}
@@ -514,9 +514,9 @@ function PropertyCarousel() {
         type="button"
         onClick={() => scroll(1)}
         aria-label="Next"
-        className={`absolute right-2 top-1/2 z-10 -translate-y-1/2 flex h-10 w-10 items-center justify-center rounded-full bg-white shadow-md border border-slate-200 transition hover:border-axis hover:text-axis sm:right-4 ${
+        className={`absolute right-2 top-1/2 z-10 hidden -translate-y-1/2 items-center justify-center rounded-full border border-slate-200 bg-white shadow-md transition hover:border-axis hover:text-axis sm:right-4 xl:hidden ${
           canRight ? 'opacity-100' : 'pointer-events-none opacity-0'
-        }`}
+        } h-10 w-10`}
       >
         <svg className="h-4 w-4" viewBox="0 0 16 16" fill="none" aria-hidden>
           <path d="M6 4l4 4-4 4" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />

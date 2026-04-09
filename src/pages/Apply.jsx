@@ -216,9 +216,11 @@ function validateSignerForm(signer) {
 
   add('fullName', validateFullName(signer.fullName))
   add('dateOfBirth', validateDOB(signer.dateOfBirth))
-  if (signer.ssn) add('ssn', validateSSN(signer.ssn))
+  if (!signer.ssn?.trim()) add('ssn', 'Social Security number is required')
+  else add('ssn', validateSSN(signer.ssn))
   if (signer.license) add('license', validateDriversLicense(signer.license))
-  add('phone', validatePhone(signer.phone))
+  if (!signer.phone?.trim()) add('phone', 'Phone number is required')
+  else add('phone', validatePhone(signer.phone))
   if (!signer.hasCosigner) add('hasCosigner', 'Please select Yes or No')
   if (!signer.reference1Name?.trim()) add('reference1Name', 'At least one reference name is required')
   if (!signer.reference1Phone?.trim()) {
@@ -230,7 +232,8 @@ function validateSignerForm(signer) {
   if (signer.previousLandlordPhone) add('previousLandlordPhone', validatePhone(signer.previousLandlordPhone))
   if (signer.supervisorPhone) add('supervisorPhone', validatePhone(signer.supervisorPhone))
   if (signer.reference2Phone) add('reference2Phone', validatePhone(signer.reference2Phone))
-  add('email', validateEmail(signer.email))
+  if (!signer.email?.trim()) add('email', 'Email is required')
+  else add('email', validateEmail(signer.email))
   if (signer.currentZip) add('currentZip', validateZip(signer.currentZip))
   if (signer.previousZip) add('previousZip', validateZip(signer.previousZip))
   if (signer.currentState) add('currentState', validateState(signer.currentState))
@@ -1456,10 +1459,10 @@ export default function Apply() {
                 </div>
 
                 <div className="grid gap-5 sm:grid-cols-3">
-                  <Field label="Social Security #" hint="9 digits — ###-##-####" error={fieldErrors.ssn}>
-                    <input className={inputCls} placeholder="123-45-6789" value={signer.ssn} onChange={(e) => updateSigner('ssn', formatSSNInput(e.target.value))} />
+                  <Field label="Social Security #" required hint="9 digits — ###-##-####" error={fieldErrors.ssn}>
+                    <input required className={inputCls} placeholder="123-45-6789" value={signer.ssn} onChange={(e) => updateSigner('ssn', formatSSNInput(e.target.value))} />
                   </Field>
-                  <Field label="Driver's License / ID #" required hint="Enter your driver's license or government-issued ID number." error={fieldErrors.license}>
+                  <Field label="Driver's License / ID #" required hint="Enter your license or ID number." error={fieldErrors.license}>
                     <input required className={inputCls} placeholder="License or ID number" value={signer.license} onChange={(e) => updateSigner('license', e.target.value)} />
                   </Field>
                   <Field label="Phone Number" required hint="10 digits" error={fieldErrors.phone}>
@@ -1743,7 +1746,7 @@ export default function Apply() {
                   <Field label="Date of Birth" required error={fieldErrors.dateOfBirth} reserveHintSpace>
                     <input required type="date" min={MIN_DOB} max={todayIsoDate()} className={inputCls} value={cosigner.dateOfBirth} onChange={(e) => updateCosigner('dateOfBirth', clampYear(e.target.value))} />
                   </Field>
-                  <Field label="Driver's License / ID #" required hint="Enter your driver's license or government-issued ID number." error={fieldErrors.license}>
+                  <Field label="Driver's License / ID #" required hint="Enter your license or ID number." error={fieldErrors.license}>
                     <input required className={inputCls} placeholder="License or ID number" value={cosigner.license} onChange={(e) => updateCosigner('license', e.target.value)} />
                   </Field>
                 </div>

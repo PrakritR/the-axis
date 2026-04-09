@@ -5,15 +5,12 @@ import {
   createResident,
   createWorkOrder,
   getAnnouncements,
-  getDocumentsForResident,
   getMessages,
-  getPackagesForResident,
   getPaymentsForResident,
   getResidentByEmail,
   getResidentById,
   getWorkOrdersForResident,
   loginResident,
-  markPackagePickedUp,
   sendMessage,
   updateResident,
 } from '../lib/airtable'
@@ -93,6 +90,41 @@ function formatDateInput(value) {
 
 function classNames(...values) {
   return values.filter(Boolean).join(' ')
+}
+
+const residentPaymentFields = [
+  'Resident Payment URL',
+  'Payment URL',
+  'Payment Link',
+  'Resident Portal URL',
+  'Portal URL',
+]
+
+const paymentRecordLinkFields = [
+  'Checkout URL',
+  'Payment URL',
+  'Payment Link',
+  'Portal URL',
+]
+
+function firstAvailableLink(record, fields) {
+  if (!record) return ''
+
+  for (const field of fields) {
+    const value = record[field]
+    if (typeof value === 'string' && value.trim()) return value.trim()
+  }
+
+  return ''
+}
+
+function resolveResidentPaymentUrl(resident, payments = []) {
+  return (
+    firstAvailableLink(resident, residentPaymentFields) ||
+    payments.map((payment) => firstAvailableLink(payment, paymentRecordLinkFields)).find(Boolean) ||
+    import.meta.env.VITE_RESIDENT_PAYMENT_URL ||
+    ''
+  )
 }
 
 function SectionCard({ title, description, children, action }) {
@@ -188,6 +220,8 @@ function AirtableLogin({ onLogin }) {
   const [house, setHouse] = useState(houseOptions[0]?.house || '')
   const [unitNumber, setUnitNumber] = useState('')
   const [phone, setPhone] = useState('')
+  const [leaseStartDate, setLeaseStartDate] = useState('')
+  const [leaseEndDate, setLeaseEndDate] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
 
@@ -224,6 +258,7 @@ function AirtableLogin({ onLogin }) {
   async function handleSignup(event) {
     event.preventDefault()
     if (password.length < 6) { setError('Password must be at least 6 characters.'); return }
+    if (leaseStartDate > leaseEndDate) { setError('Move-out date must be after the move-in date.'); return }
     setLoading(true)
     setError('')
     try {
@@ -238,7 +273,9 @@ function AirtableLogin({ onLogin }) {
         Password: password,
         House: house,
         'Unit Number': unitNumber,
-        Phone: phone.trim() || undefined,
+        Phone: phone.trim(),
+        'Lease Start Date': leaseStartDate,
+        'Lease End Date': leaseEndDate,
         Status: 'Active',
       })
       onLogin(resident)
@@ -312,8 +349,18 @@ function AirtableLogin({ onLogin }) {
             </div>
           </div>
           <div>
-            <label className="mb-2 block text-sm font-semibold text-slate-700">Phone <span className="text-slate-400 font-normal">(optional)</span></label>
-            <input type="tel" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="(206) 555-0100" autoComplete="tel" className={authInputCls} />
+            <label className="mb-2 block text-sm font-semibold text-slate-700">Phone <span className="text-red-400">*</span></label>
+            <input type="tel" required value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="(206) 555-0100" autoComplete="tel" className={authInputCls} />
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="mb-2 block text-sm font-semibold text-slate-700">Move In Date <span className="text-red-400">*</span></label>
+              <input type="date" required value={leaseStartDate} onChange={(e) => setLeaseStartDate(e.target.value)} className={authInputCls} />
+            </div>
+            <div>
+              <label className="mb-2 block text-sm font-semibold text-slate-700">Move Out Date <span className="text-red-400">*</span></label>
+              <input type="date" required value={leaseEndDate} onChange={(e) => setLeaseEndDate(e.target.value)} className={authInputCls} />
+            </div>
           </div>
           {error && <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>}
           <button type="submit" disabled={loading} className="w-full rounded-full bg-slate-900 py-3 text-sm font-semibold text-white hover:bg-slate-800 disabled:opacity-50 transition">
@@ -572,11 +619,11 @@ function RequestsList({ requests, residentEmail }) {
 
   if (requests.length === 0) {
     return (
-      <SectionCard title="My Requests" description="Track maintenance and support issues submitted under your resident email.">
+      <SectionCard title="My Work Orders" description="Track maintenance requests and see updates from the Axis team.">
         <div className="flex flex-col items-center gap-4 py-16 text-center">
           <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-slate-100 text-3xl">📋</div>
           <div>
-            <p className="text-lg font-semibold text-slate-900">No requests yet</p>
+            <p className="text-lg font-semibold text-slate-900">No work orders yet</p>
             <p className="mt-1 text-sm text-slate-500">When you submit a work order, it will appear here with status updates and management notes.</p>
           </div>
         </div>
@@ -585,7 +632,7 @@ function RequestsList({ requests, residentEmail }) {
   }
 
   return (
-    <SectionCard title="My Requests" description="Track maintenance and support issues submitted under your resident email.">
+    <SectionCard title="My Work Orders" description="Track maintenance requests and see updates from the Axis team.">
       <div className="space-y-4">
         {requests.map((request) => {
           const status = request.Status || 'Submitted'
@@ -684,6 +731,7 @@ function AnnouncementsPanel({ items }) {
 function ProfilePanel({ resident, onUpdated }) {
   const defaultHouse = resident.House || houseOptions[0]?.house || ''
   const [name, setName] = useState(resident.Name || '')
+  const [email, setEmail] = useState(resident.Email || '')
   const [house, setHouse] = useState(defaultHouse)
   const [phone, setPhone] = useState(resident.Phone || '')
   const [unitNumber, setUnitNumber] = useState(resident['Unit Number'] || getUnitsForHouse(defaultHouse)[0] || '')
@@ -697,6 +745,7 @@ function ProfilePanel({ resident, onUpdated }) {
   useEffect(() => {
     const nextHouse = resident.House || houseOptions[0]?.house || ''
     setName(resident.Name || '')
+    setEmail(resident.Email || '')
     setHouse(nextHouse)
     setPhone(resident.Phone || '')
     setUnitNumber(resident['Unit Number'] || getUnitsForHouse(nextHouse)[0] || '')
@@ -713,12 +762,17 @@ function ProfilePanel({ resident, onUpdated }) {
 
   async function handleSubmit(event) {
     event.preventDefault()
+    if (leaseStartDate > leaseEndDate) {
+      setSaveError('Move-out date must be after the move-in date.')
+      return
+    }
     setSaving(true)
     setMessage('')
     setSaveError('')
     try {
       const updated = await updateResident(resident.id, {
         Name: name,
+        Email: email,
         House: house,
         'Unit Number': unitNumber,
         Phone: phone,
@@ -726,48 +780,17 @@ function ProfilePanel({ resident, onUpdated }) {
         'Lease End Date': leaseEndDate || null,
       })
       onUpdated(updated)
-      setMessage('Profile updated successfully in Airtable.')
+      setMessage('Profile updated successfully.')
     } catch (err) {
-      setSaveError(err.message || 'Could not save profile. Check your Airtable token permissions.')
+      setSaveError(err.message || 'Could not save profile right now. Please try again.')
     } finally {
       setSaving(false)
     }
   }
 
   return (
-    <SectionCard title="My Profile" description="Resident information pulled from Airtable.">
-      <div className="grid gap-4 sm:grid-cols-2">
-        <div className="rounded-2xl bg-slate-50 px-4 py-3">
-          <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">Name</div>
-          <div className="mt-1 text-sm font-semibold text-slate-700">{resident.Name || 'Not set'}</div>
-        </div>
-        <div className="rounded-2xl bg-slate-50 px-4 py-3">
-          <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">Email</div>
-          <div className="mt-1 text-sm font-semibold text-slate-700">{resident.Email}</div>
-        </div>
-        <div className="rounded-2xl bg-slate-50 px-4 py-3">
-          <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">House</div>
-          <div className="mt-1 text-sm font-semibold text-slate-700">{resident.House || 'Not set'}</div>
-        </div>
-        <div className="rounded-2xl bg-slate-50 px-4 py-3">
-          <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">Unit</div>
-          <div className="mt-1 text-sm font-semibold text-slate-700">{resident['Unit Number'] || 'Not set'}</div>
-        </div>
-        <div className="rounded-2xl bg-slate-50 px-4 py-3">
-          <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">Phone</div>
-          <div className="mt-1 text-sm font-semibold text-slate-700">{resident.Phone || 'Not set'}</div>
-        </div>
-        <div className="rounded-2xl bg-slate-50 px-4 py-3">
-          <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">Lease Start</div>
-          <div className="mt-1 text-sm font-semibold text-slate-700">{formatDate(resident['Lease Start Date'])}</div>
-        </div>
-        <div className="rounded-2xl bg-slate-50 px-4 py-3 sm:col-span-2">
-          <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">Lease End</div>
-          <div className="mt-1 text-sm font-semibold text-slate-700">{formatDate(resident['Lease End Date'])}</div>
-        </div>
-      </div>
-
-      <form onSubmit={handleSubmit} className="mt-5 max-w-md space-y-3">
+    <SectionCard title="My Profile" description="Update your resident details here.">
+      <form onSubmit={handleSubmit} className="grid gap-4 sm:grid-cols-2">
         <div>
           <label className="mb-2 block text-sm font-semibold text-slate-700">Full Name</label>
           <input
@@ -776,6 +799,16 @@ function ProfilePanel({ resident, onUpdated }) {
             value={name}
             onChange={(event) => setName(event.target.value)}
             placeholder="Your full name"
+            className="w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm outline-none transition focus:border-slate-900 focus:ring-2 focus:ring-slate-900/10"
+          />
+        </div>
+        <div>
+          <label className="mb-2 block text-sm font-semibold text-slate-700">Email</label>
+          <input
+            type="email"
+            required
+            value={email}
+            onChange={(event) => setEmail(event.target.value)}
             className="w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm outline-none transition focus:border-slate-900 focus:ring-2 focus:ring-slate-900/10"
           />
         </div>
@@ -802,38 +835,45 @@ function ProfilePanel({ resident, onUpdated }) {
         <div>
           <label className="mb-2 block text-sm font-semibold text-slate-700">Phone Number</label>
           <input
+            required
             value={phone}
             onChange={(event) => setPhone(event.target.value)}
             className="w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm outline-none transition focus:border-slate-900 focus:ring-2 focus:ring-slate-900/10"
           />
         </div>
         <div>
-          <label className="mb-2 block text-sm font-semibold text-slate-700">Lease Start Date</label>
+          <label className="mb-2 block text-sm font-semibold text-slate-700">Move In Date</label>
           <input
             type="date"
+            required
             value={leaseStartDate}
             onChange={(event) => setLeaseStartDate(event.target.value)}
             className="w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm outline-none transition focus:border-slate-900 focus:ring-2 focus:ring-slate-900/10"
           />
         </div>
         <div>
-          <label className="mb-2 block text-sm font-semibold text-slate-700">Lease End Date</label>
+          <label className="mb-2 block text-sm font-semibold text-slate-700">Move Out Date</label>
           <input
             type="date"
+            required
             value={leaseEndDate}
             onChange={(event) => setLeaseEndDate(event.target.value)}
             className="w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm outline-none transition focus:border-slate-900 focus:ring-2 focus:ring-slate-900/10"
           />
         </div>
-        {message ? <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">{message}</div> : null}
-        {saveError ? <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{saveError}</div> : null}
-        <button
-          type="submit"
-          disabled={saving}
-          className="rounded-full bg-slate-900 px-6 py-3 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:opacity-50"
-        >
-          {saving ? 'Saving...' : 'Save profile'}
-        </button>
+        <div className="sm:col-span-2">
+          {message ? <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">{message}</div> : null}
+          {saveError ? <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{saveError}</div> : null}
+        </div>
+        <div className="sm:col-span-2">
+          <button
+            type="submit"
+            disabled={saving}
+            className="rounded-full bg-slate-900 px-6 py-3 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:opacity-50"
+          >
+            {saving ? 'Saving...' : 'Save profile'}
+          </button>
+        </div>
       </form>
     </SectionCard>
   )
@@ -844,12 +884,6 @@ const paymentStatusStyles = {
   Pending: 'border-amber-200 bg-amber-50 text-amber-700',
   Overdue: 'border-red-200 bg-red-50 text-red-700',
   Partial: 'border-sky-200 bg-sky-50 text-sky-700',
-}
-
-const packageStatusStyles = {
-  Arrived: 'border-amber-200 bg-amber-50 text-amber-700',
-  'Picked Up': 'border-emerald-200 bg-emerald-50 text-emerald-700',
-  Held: 'border-slate-200 bg-slate-100 text-slate-600',
 }
 
 function PaymentsPanel({ resident }) {
@@ -866,28 +900,58 @@ function PaymentsPanel({ resident }) {
 
   const outstanding = payments.filter((p) => p.Status !== 'Paid').reduce((sum, p) => sum + (Number(p.Amount) || 0), 0)
   const nextDue = payments.find((p) => p.Status === 'Pending' || p.Status === 'Overdue')
+  const paymentUrl = useMemo(() => resolveResidentPaymentUrl(resident, payments), [resident, payments])
 
   return (
-    <SectionCard title="Rent & Payments" description="Your payment history and current balance.">
+    <SectionCard title="Lease & Payments" description="Manage rent, lease continuation, and account balances in one place.">
       {loading ? <p className="text-sm text-slate-400">Loading payments...</p> : null}
       {error ? <p className="text-sm text-red-600">{error}</p> : null}
       {!loading && !error && (
         <>
-          <div className="grid gap-4 sm:grid-cols-3">
-            <div className="rounded-2xl bg-slate-50 px-4 py-4">
-              <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">Outstanding Balance</div>
-              <div className={classNames('mt-2 text-2xl font-black', outstanding > 0 ? 'text-red-600' : 'text-emerald-600')}>
-                {outstanding > 0 ? `$${outstanding.toLocaleString()}` : '$0'}
+          <div className="grid gap-4 lg:grid-cols-[1.2fr_0.8fr]">
+            <div className="rounded-[24px] border border-slate-200 bg-slate-50 p-5">
+              <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">Lease Actions</div>
+              <h3 className="mt-3 text-xl font-black text-slate-900">Pay rent, extend your lease, or continue your stay.</h3>
+              <p className="mt-2 text-sm leading-6 text-slate-500">
+                Use the payment system below whenever you are ready to make a payment or continue your lease.
+              </p>
+              <div className="mt-5 flex flex-wrap gap-3">
+                {paymentUrl ? (
+                  <>
+                    <a href={paymentUrl} className="rounded-full bg-slate-900 px-5 py-3 text-sm font-semibold text-white transition hover:bg-slate-800">
+                      Pay rent
+                    </a>
+                    <a href={paymentUrl} className="rounded-full border border-slate-300 px-5 py-3 text-sm font-semibold text-slate-700 transition hover:border-slate-500">
+                      Extend lease
+                    </a>
+                    <a href={paymentUrl} className="rounded-full border border-slate-300 px-5 py-3 text-sm font-semibold text-slate-700 transition hover:border-slate-500">
+                      Continue lease
+                    </a>
+                  </>
+                ) : (
+                  <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-700">
+                    Payment setup is not available on this account yet. Contact Axis and we’ll help you complete rent or lease continuation.
+                  </div>
+                )}
               </div>
             </div>
-            <div className="rounded-2xl bg-slate-50 px-4 py-4">
-              <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">Next Due</div>
-              <div className="mt-2 text-lg font-black text-slate-900">{nextDue ? nextDue.Month || formatDate(nextDue['Due Date']) : '—'}</div>
-              {nextDue?.['Due Date'] && <div className="mt-0.5 text-xs text-slate-400">{formatDate(nextDue['Due Date'])}</div>}
-            </div>
-            <div className="rounded-2xl bg-slate-50 px-4 py-4">
-              <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">Total Payments</div>
-              <div className="mt-2 text-lg font-black text-slate-900">{payments.length}</div>
+
+            <div className="grid gap-4 sm:grid-cols-3 lg:grid-cols-1">
+              <div className="rounded-2xl bg-slate-50 px-4 py-4">
+                <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">Outstanding Balance</div>
+                <div className={classNames('mt-2 text-2xl font-black', outstanding > 0 ? 'text-red-600' : 'text-emerald-600')}>
+                  {outstanding > 0 ? `$${outstanding.toLocaleString()}` : '$0'}
+                </div>
+              </div>
+              <div className="rounded-2xl bg-slate-50 px-4 py-4">
+                <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">Next Due</div>
+                <div className="mt-2 text-lg font-black text-slate-900">{nextDue ? nextDue.Month || formatDate(nextDue['Due Date']) : '—'}</div>
+                {nextDue?.['Due Date'] && <div className="mt-0.5 text-xs text-slate-400">{formatDate(nextDue['Due Date'])}</div>}
+              </div>
+              <div className="rounded-2xl bg-slate-50 px-4 py-4">
+                <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">Total Payments</div>
+                <div className="mt-2 text-lg font-black text-slate-900">{payments.length}</div>
+              </div>
             </div>
           </div>
 
@@ -914,145 +978,6 @@ function PaymentsPanel({ resident }) {
           )}
         </>
       )}
-    </SectionCard>
-  )
-}
-
-function DocumentsPanel({ resident }) {
-  const [docs, setDocs] = useState([])
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState('')
-
-  useEffect(() => {
-    getDocumentsForResident(resident)
-      .then(setDocs)
-      .catch((err) => setError(err.message))
-      .finally(() => setLoading(false))
-  }, [resident])
-
-  const docTypeIcon = (type) => {
-    if (type === 'Lease Agreement') return '📋'
-    if (type === 'Move-in Checklist') return '✅'
-    if (type === 'Invoice') return '🧾'
-    if (type === 'House Rules') return '📌'
-    return '📄'
-  }
-
-  return (
-    <SectionCard title="My Documents" description="Lease agreements, checklists, and files shared by the Axis team.">
-      {loading ? <p className="text-sm text-slate-400">Loading documents...</p> : null}
-      {error ? <p className="text-sm text-red-600">{error}</p> : null}
-      {!loading && !error && docs.length === 0 ? (
-        <div className="flex flex-col items-center gap-4 py-12 text-center">
-          <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-slate-100 text-2xl">📁</div>
-          <p className="text-sm text-slate-500">No documents have been shared yet. Your lease and move-in documents will appear here once added by the Axis team.</p>
-        </div>
-      ) : null}
-      {!loading && !error && docs.length > 0 ? (
-        <div className="space-y-3">
-          {docs.map((doc) => {
-            const file = Array.isArray(doc.File) ? doc.File[0] : null
-            return (
-              <div key={doc.id} className="flex items-center gap-4 rounded-2xl border border-slate-200 px-4 py-3">
-                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-slate-100 text-xl">
-                  {docTypeIcon(doc.Type)}
-                </div>
-                <div className="min-w-0 flex-1">
-                  <div className="font-semibold text-slate-900 truncate">{doc.Name || 'Document'}</div>
-                  <div className="mt-0.5 text-xs text-slate-400">{doc.Type || 'File'} · Added {formatDate(doc['Date Added'])}</div>
-                </div>
-                {file?.url ? (
-                  <a href={file.url} target="_blank" rel="noreferrer"
-                    className="shrink-0 rounded-full border border-slate-300 px-4 py-2 text-xs font-semibold text-slate-700 transition hover:border-slate-500">
-                    View
-                  </a>
-                ) : (
-                  <span className="shrink-0 text-xs text-slate-400">No file</span>
-                )}
-              </div>
-            )
-          })}
-        </div>
-      ) : null}
-    </SectionCard>
-  )
-}
-
-function PackagesPanel({ resident }) {
-  const [packages, setPackages] = useState([])
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState('')
-  const [updating, setUpdating] = useState(null)
-
-  useEffect(() => {
-    getPackagesForResident(resident)
-      .then(setPackages)
-      .catch((err) => setError(err.message))
-      .finally(() => setLoading(false))
-  }, [resident])
-
-  async function handlePickedUp(pkg) {
-    setUpdating(pkg.id)
-    try {
-      const updated = await markPackagePickedUp(pkg.id)
-      setPackages((prev) => prev.map((p) => p.id === pkg.id ? updated : p))
-    } catch (err) {
-      setError(err.message)
-    } finally {
-      setUpdating(null)
-    }
-  }
-
-  const waiting = packages.filter((p) => p.Status === 'Arrived' || p.Status === 'Held')
-
-  return (
-    <SectionCard
-      title="Packages"
-      description="Packages logged by the Axis team when they arrive at your property."
-      action={waiting.length > 0 ? (
-        <span className="inline-flex items-center rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-700">
-          {waiting.length} waiting for pickup
-        </span>
-      ) : null}
-    >
-      {loading ? <p className="text-sm text-slate-400">Loading packages...</p> : null}
-      {error ? <p className="text-sm text-red-600">{error}</p> : null}
-      {!loading && !error && packages.length === 0 ? (
-        <div className="flex flex-col items-center gap-4 py-12 text-center">
-          <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-slate-100 text-2xl">📦</div>
-          <p className="text-sm text-slate-500">No packages logged yet. When a package arrives at your property, it will appear here.</p>
-        </div>
-      ) : null}
-      {!loading && !error && packages.length > 0 ? (
-        <div className="space-y-3">
-          {packages.map((pkg) => (
-            <div key={pkg.id} className="flex flex-wrap items-center gap-4 rounded-2xl border border-slate-200 px-4 py-3">
-              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-slate-100 text-xl">📦</div>
-              <div className="min-w-0 flex-1">
-                <div className="flex flex-wrap items-center gap-2">
-                  <div className="font-semibold text-slate-900">{pkg.Carrier || 'Package'}</div>
-                  <span className={classNames('rounded-full border px-2.5 py-0.5 text-[11px] font-semibold', packageStatusStyles[pkg.Status] || packageStatusStyles.Arrived)}>
-                    {pkg.Status || 'Arrived'}
-                  </span>
-                </div>
-                {pkg.Description && <div className="mt-0.5 text-xs text-slate-500">{pkg.Description}</div>}
-                {pkg['Tracking Number'] && <div className="mt-0.5 font-mono text-xs text-slate-400">{pkg['Tracking Number']}</div>}
-                <div className="mt-0.5 text-xs text-slate-400">Arrived {formatDate(pkg['Arrival Date'])}</div>
-              </div>
-              {pkg.Status === 'Arrived' || pkg.Status === 'Held' ? (
-                <button
-                  type="button"
-                  disabled={updating === pkg.id}
-                  onClick={() => handlePickedUp(pkg)}
-                  className="shrink-0 rounded-full bg-slate-900 px-4 py-2 text-xs font-semibold text-white transition hover:bg-slate-700 disabled:opacity-50"
-                >
-                  {updating === pkg.id ? 'Updating...' : 'Mark picked up'}
-                </button>
-              ) : null}
-            </div>
-          ))}
-        </div>
-      ) : null}
     </SectionCard>
   )
 }
@@ -1111,7 +1036,7 @@ function Dashboard({ resident, onResidentUpdated, onSignOut }) {
           <div>
             <h1 className="text-4xl font-black tracking-tight text-slate-900">Welcome back, {resident.Name || 'Resident'}</h1>
             <p className="mt-2 max-w-2xl text-sm leading-7 text-slate-500">
-              Submit work orders, review updates from the Axis team, and keep your resident info current in one place.
+              Manage your profile, submit work orders, review announcements, and handle lease-related payments in one place.
             </p>
           </div>
           {hasStatusUpdates ? (
@@ -1123,11 +1048,9 @@ function Dashboard({ resident, onResidentUpdated, onSignOut }) {
 
         <div className="mb-6 flex flex-wrap gap-2 rounded-[24px] border border-slate-200 bg-white p-2 shadow-soft">
           {[
-            ['requests', 'My Requests'],
-            ['new', 'New Request'],
-            ['payments', 'Rent & Payments'],
-            ['packages', 'Packages'],
-            ['documents', 'Documents'],
+            ['requests', 'My Work Orders'],
+            ['new', 'New Work Order'],
+            ['payments', 'Lease & Payments'],
             ['announcements', 'Announcements'],
             ['profile', 'My Profile'],
           ].map(([id, label]) => (
@@ -1154,8 +1077,6 @@ function Dashboard({ resident, onResidentUpdated, onSignOut }) {
         {!loading && tab === 'requests' ? <RequestsList requests={requests} residentEmail={residentEmail} /> : null}
         {!loading && tab === 'new' ? <RequestComposer resident={resident} onCreated={async () => { await loadData(); setTab('requests') }} /> : null}
         {!loading && tab === 'payments' ? <PaymentsPanel resident={resident} /> : null}
-        {!loading && tab === 'packages' ? <PackagesPanel resident={resident} /> : null}
-        {!loading && tab === 'documents' ? <DocumentsPanel resident={resident} /> : null}
         {!loading && tab === 'announcements' ? <AnnouncementsPanel items={announcements} /> : null}
         {!loading && tab === 'profile' ? <ProfilePanel resident={resident} onUpdated={onResidentUpdated} /> : null}
       </div>
