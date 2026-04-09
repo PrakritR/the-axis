@@ -843,9 +843,21 @@ const SIGNER_STEPS = [
       const e = {}
       const name = validateFullName(s.fullName); if (name) e.fullName = name
       const dob = validateDOB(s.dateOfBirth, { requireAdult: s.hasCosigner !== 'Yes' }); if (dob) e.dateOfBirth = dob
-      const phone = validatePhone(s.phone); if (phone) e.phone = phone
-      const email = validateEmail(s.email); if (email) e.email = email
-      if (s.ssn) { const v = validateSSN(s.ssn); if (v) e.ssn = v }
+      if (!s.phone?.trim()) e.phone = 'Phone number is required'
+      else {
+        const phone = validatePhone(s.phone)
+        if (phone) e.phone = phone
+      }
+      if (!s.email?.trim()) e.email = 'Email is required'
+      else {
+        const email = validateEmail(s.email)
+        if (email) e.email = email
+      }
+      if (!s.ssn?.trim()) e.ssn = 'Social Security number is required'
+      else {
+        const v = validateSSN(s.ssn)
+        if (v) e.ssn = v
+      }
       if (s.license) { const v = validateDriversLicense(s.license); if (v) e.license = v }
       if (!s.license) e.license = 'Driver\'s license is required'
       return e
