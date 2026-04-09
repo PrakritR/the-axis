@@ -1565,7 +1565,7 @@ export default function Apply() {
   }
 
   if (submitted) {
-    const fullAppId = submissionSummary?.appId || formatApplicationId(submittedRecord)
+    const fullAppId = formatApplicationId(submissionSummary?.appId || submittedRecord)
     const effectiveType = submissionSummary?.applicationType || applicationType
     const isSigner = effectiveType === 'signer'
     const firstName = submissionSummary?.firstName || (isSigner ? signer.fullName.split(' ')[0] : cosigner.fullName.split(' ')[0])
