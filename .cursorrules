@@ -1,0 +1,53 @@
+# Axis — Cursor Agent Rules
+
+## Project overview
+React + Vite web app for Axis Seattle shared housing. Deployed on Vercel/Netlify. Uses Supabase for data, Stripe for payments, Airtable for some features.
+
+## Stack
+- React 18 (JSX, no TypeScript)
+- Vite (vite.config.mjs)
+- Tailwind CSS v3 (tailwind.config.cjs)
+- React Router v6
+- Framer Motion for animations
+- Supabase (auth + DB)
+- Stripe (checkout, portal)
+- Leaflet / React-Leaflet for maps
+- react-hot-toast for notifications
+
+## Project structure
+- `src/pages/` — page-level components (Home, PropertyPage, Contact, Apply, etc.)
+- `src/components/` — reusable UI components
+- `src/data/properties.js` — all property/room data (source of truth)
+- `src/lib/` — utility modules (seo.js, pricing.js, airtable.js, leaseTemplate.js)
+- `src/utils/` — small helpers (scrollToTop.js)
+- `api/` — Vercel serverless functions
+- `netlify/functions/` — Netlify serverless functions
+- `public/` — static assets
+
+## Conventions
+- No TypeScript — plain JSX throughout
+- Tailwind utility classes only; avoid inline styles except for dynamic values
+- Brand color: `#2563eb` (blue), accent: `#0ea5e9` (axis teal)
+- `text-axis` / `bg-axis` utility classes map to the brand blue
+- Framer Motion variants pattern: define `container`/`item` at module level, not inline
+- `import React` is NOT needed — Vite uses automatic JSX runtime
+- Lazy-load page components with `React.lazy` + `Suspense`
+- All property data lives in `src/data/properties.js` — never hardcode property details elsewhere
+- API routes use plain `fetch`, no axios
+
+## Style guidelines
+- Short, direct copy — no marketing fluff or redundant headings
+- Section eyebrows use `text-[11px] font-bold uppercase tracking-[0.22em] text-slate-500`
+- Buttons: rounded-full, slate-900 bg for primary, border-slate-300 for secondary
+- Cards: `rounded-[18px]` or `rounded-[28px]`, `border border-slate-200`
+
+## Commands
+- Dev: `npm run dev` (port 5173)
+- Build: `npm run build`
+- Preview: `npm run preview`
+
+## Important notes
+- Do not change external API signatures in `api/` without updating the corresponding frontend calls
+- `src/data/properties.js` is the single source of truth for all listing data
+- Mobile sticky CTA is in PropertyPage.jsx — keep it in sync with desktop sidebar pricing
+- Supabase keys are in environment variables — never hardcode
