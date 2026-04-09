@@ -1,6 +1,7 @@
-import { useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Seo } from '../lib/seo'
 import { properties } from '../data/properties'
+import { signLease, getSignedLeases } from '../lib/airtable'
 
 const AIRTABLE_BASE_ID = import.meta.env.VITE_AIRTABLE_APPLICATIONS_BASE_ID || import.meta.env.VITE_AIRTABLE_BASE_ID || 'appNBX2inqfJMyqYV'
 const APPLICATIONS_TABLE = import.meta.env.VITE_AIRTABLE_APPLICATIONS_TABLE || 'Applications'
@@ -71,6 +72,30 @@ function getRoomAvailabilityLabel(availableStr) {
   const s = String(availableStr || '').trim()
   if (!s || s.toLowerCase() === 'unavailable') return 'Unavailable'
   return s
+}
+
+// Look up the monthly rent number for a given property + room name
+function getRoomMonthlyRent(propertyName, roomNumber) {
+  if (!propertyName || !roomNumber) return 0
+  const prop = properties.find((p) => p.name === propertyName)
+  if (!prop) return 0
+  for (const plan of (prop.roomPlans || [])) {
+    const room = (plan.rooms || []).find((r) => r.name === roomNumber)
+    if (room?.price) {
+      const n = parseInt(String(room.price).replace(/[^0-9]/g, ''), 10)
+      if (Number.isFinite(n) && n > 0) return n
+    }
+  }
+  return 0
+}
+
+function getSecurityDeposit(propertyName, monthlyRent) {
+  const prop = properties.find((p) => p.name === propertyName)
+  if (prop?.securityDeposit) {
+    const n = parseInt(String(prop.securityDeposit).replace(/[^0-9]/g, ''), 10)
+    if (Number.isFinite(n) && n > 0) return n
+  }
+  return monthlyRent
 }
 
 // Build PROPERTY_OPTIONS with full room availability data
@@ -693,6 +718,15 @@ async function findApplicationRecord({ applicationId, signerName }) {
   return data.records[0]
 }
 
+function formatApplicationId(recordOrId) {
+  const rawId = typeof recordOrId === 'string'
+    ? recordOrId
+    : recordOrId?.id || ''
+  const normalized = String(rawId || '').trim().replace(/^APP-/, '')
+  if (!normalized) return ''
+  return normalized.startsWith('rec') ? `APP-${normalized}` : normalized
+}
+
 function buildSignerNotes(form) {
   return [
     `Current Landlord Name: ${form.currentLandlordName || 'Not provided'}`,
@@ -1056,6 +1090,20 @@ export default function Apply() {
   const [fieldErrors, setFieldErrors] = useState({})
   const [roomConflictWarning, setRoomConflictWarning] = useState(false)
   const [roomConflictAcknowledged, setRoomConflictAcknowledged] = useState(false)
+  // Lease signing flow
+  const [signedLeases, setSignedLeases] = useState(new Set())
+  const [leaseStep, setLeaseStep] = useState(storedSubmission?.leaseStep || 'account')
+  const [leaseSigned, setLeaseSigned] = useState(storedSubmission?.leaseSigned || false)
+  const [leaseSignatureInput, setLeaseSignatureInput] = useState('')
+  const [leaseSigningLoading, setLeaseSigningLoading] = useState(false)
+  const [leaseSigningError, setLeaseSigningError] = useState('')
+  const [moveInPaymentLoading, setMoveInPaymentLoading] = useState(false)
+  const [moveInPaymentError, setMoveInPaymentError] = useState('')
+  // Application fee / promo
+  const [appFeePaid, setAppFeePaid] = useState(storedSubmission?.appFeePaid || false)
+  const [promoInput, setPromoInput] = useState('')
+  const [promoApplied, setPromoApplied] = useState(storedSubmission?.promoApplied || false)
+  const [promoError, setPromoError] = useState('')
 
   const steps = applicationType === 'cosigner' ? COSIGNER_STEPS : SIGNER_STEPS
   const paymentStatus = typeof window !== 'undefined' ? new URLSearchParams(window.location.search).get('payment') : ''
@@ -1066,6 +1114,34 @@ export default function Apply() {
     () => PROPERTY_OPTIONS.find((property) => property.name === signer.propertyName),
     [signer.propertyName],
   )
+
+  // Fetch currently active signed leases to show dynamic room occupancy
+  useEffect(() => {
+    async function fetchSignedLeases() {
+      try {
+        const leases = await getSignedLeases()
+        const occupied = new Set(leases.map((l) => `${l.propertyName}:${l.roomNumber}`))
+        setSignedLeases(occupied)
+      } catch (e) {
+        console.warn('Could not fetch signed leases:', e.message)
+      }
+    }
+    fetchSignedLeases()
+  }, [])
+
+  // Persist lease/fee state back to sessionStorage so they survive page refresh
+  useEffect(() => {
+    if (!submitted || !submissionSummary) return
+    const updated = { ...submissionSummary, leaseStep, leaseSigned, appFeePaid, promoApplied }
+    window.sessionStorage.setItem(APPLICATION_SUBMISSION_STORAGE_KEY, JSON.stringify(updated))
+  }, [leaseStep, leaseSigned, appFeePaid, promoApplied, submitted, submissionSummary])
+
+  // Detect app fee payment success on return from Stripe
+  useEffect(() => {
+    if (paymentStatus === 'fee_success' && !appFeePaid) {
+      setAppFeePaid(true)
+    }
+  }, [paymentStatus, appFeePaid])
 
   function updateSigner(key, value) {
     setSigner((prev) => {
@@ -1284,8 +1360,14 @@ export default function Apply() {
             propertyName: signer.propertyName,
             roomNumber: signer.roomNumber,
             hasCosigner: signer.hasCosigner,
-            appId: savedRecord?.fields?.['Application ID'] ?? savedRecord?.id ?? '',
+            appId: formatApplicationId(savedRecord),
             submittedRecord: savedRecord || null,
+            roomPrice: getRoomMonthlyRent(signer.propertyName, signer.roomNumber),
+            leaseTerm: signer.leaseTerm,
+            leaseStep: 'account',
+            leaseSigned: false,
+            appFeePaid: false,
+            promoApplied: false,
           }
         : {
             applicationType,
@@ -1293,6 +1375,8 @@ export default function Apply() {
             email: cosigner.email,
             appId: '',
             submittedRecord: null,
+            leaseStep: 'account',
+            leaseSigned: false,
           }
 
       setSubmissionSummary(summary)
@@ -1332,8 +1416,8 @@ export default function Apply() {
           description: 'Application fee',
           category: 'application_fee',
           paymentRecordId: recordId,
-          successPath: '/apply?payment=success',
-          cancelPath: '/apply?payment=cancelled',
+          successPath: '/apply?payment=fee_success',
+          cancelPath: '/apply?payment=fee_cancelled',
         }),
       })
       const data = await response.json()
@@ -1346,12 +1430,97 @@ export default function Apply() {
     }
   }
 
+  async function handleLeaseSign() {
+    const sig = leaseSignatureInput.trim()
+    if (!sig) { setLeaseSigningError('Please type your full legal name to sign.'); return }
+    const firstName = submissionSummary?.firstName || signer.fullName.split(' ')[0]
+    if (sig.split(/\s+/).length < 2) { setLeaseSigningError('Please enter your full legal name (first and last).'); return }
+    const recordId = submissionSummary?.submittedRecord?.id || submittedRecord?.id
+    if (!recordId) { setLeaseSigningError('Application record not found. Please contact leasing.'); return }
+    setLeaseSigningLoading(true)
+    setLeaseSigningError('')
+    try {
+      await signLease(recordId, sig)
+      setLeaseSigned(true)
+      setLeaseStep('payment')
+    } catch (err) {
+      setLeaseSigningError(err.message || 'Failed to record signature. Please try again.')
+    } finally {
+      setLeaseSigningLoading(false)
+    }
+  }
+
+  async function handleMoveInPaymentCheckout() {
+    const applicantName = submissionSummary?.firstName ? `${submissionSummary.firstName}` : signer.fullName
+    const applicantEmail = submissionSummary?.email || signer.email
+    const propertyName = submissionSummary?.propertyName || signer.propertyName
+    const unitNumber = submissionSummary?.roomNumber || signer.roomNumber
+    const recordId = submissionSummary?.submittedRecord?.id || submittedRecord?.id || ''
+    const monthlyRent = submissionSummary?.roomPrice || getRoomMonthlyRent(propertyName, unitNumber)
+    const deposit = getSecurityDeposit(propertyName, monthlyRent)
+    const total = (monthlyRent || 0) + deposit
+
+    if (total <= 0) {
+      setMoveInPaymentError('Could not determine rent amount. Please contact leasing to complete payment.')
+      return
+    }
+
+    setMoveInPaymentLoading(true)
+    setMoveInPaymentError('')
+    try {
+      const response = await fetch('/api/stripe-create-checkout-session', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          residentId: recordId,
+          residentName: applicantName,
+          residentEmail: applicantEmail,
+          propertyName,
+          unitNumber,
+          amount: total,
+          description: `First month's rent ($${monthlyRent}) + security deposit ($${deposit})`,
+          category: 'move_in_payment',
+          paymentRecordId: recordId,
+          successPath: '/apply?payment=success',
+          cancelPath: '/apply?payment=cancelled',
+        }),
+      })
+      const data = await response.json()
+      if (!response.ok) throw new Error(data.error || 'Unable to start payment.')
+      window.location.href = data.url
+    } catch (err) {
+      setMoveInPaymentError(err.message || 'Unable to start payment.')
+    } finally {
+      setMoveInPaymentLoading(false)
+    }
+  }
+
   if (submitted) {
-    const rawAppId = submissionSummary?.appId || submittedRecord?.fields?.['Application ID'] || submittedRecord?.id
-    const appId = typeof rawAppId === 'number' ? `#${rawAppId}` : String(rawAppId || '').replace(/^APP-/, '')
+    const fullAppId = submissionSummary?.appId || formatApplicationId(submittedRecord)
     const effectiveType = submissionSummary?.applicationType || applicationType
     const isSigner = effectiveType === 'signer'
     const firstName = submissionSummary?.firstName || (isSigner ? signer.fullName.split(' ')[0] : cosigner.fullName.split(' ')[0])
+    const propertyName = submissionSummary?.propertyName || signer.propertyName
+    const roomNumber = submissionSummary?.roomNumber || signer.roomNumber
+    const monthlyRent = submissionSummary?.roomPrice || getRoomMonthlyRent(propertyName, roomNumber)
+    const deposit = getSecurityDeposit(propertyName, monthlyRent)
+    const moveInTotal = (monthlyRent || 0) + deposit
+    const moveInDone = paymentStatus === 'success' && leaseStep === 'payment'
+    const leaseTerm = submissionSummary?.leaseTerm || signer.leaseTerm || ''
+    const promoEligible = leaseTerm === '9-Month' || leaseTerm === '12-Month'
+    const feeCleared = appFeePaid || promoApplied
+
+    function handleApplyPromo() {
+      const code = promoInput.trim().toUpperCase()
+      if (!code) { setPromoError('Enter a promo code.'); return }
+      if (code !== 'APPLICATIONWAIVE') { setPromoError('Invalid promo code.'); return }
+      if (!promoEligible) {
+        setPromoError('This promo code is only valid for 9-Month or 12-Month leases.')
+        return
+      }
+      setPromoApplied(true)
+      setPromoError('')
+    }
 
     function clearStoredSubmission() {
       if (typeof window !== 'undefined') {
@@ -1362,44 +1531,48 @@ export default function Apply() {
       setSubmittedRecord(null)
     }
 
+    // Step index: 0=account 1=lease 2=payment
+    const stepIndex = leaseStep === 'account' ? 0 : leaseStep === 'lease' ? 1 : 2
+    const allDone = moveInDone
+
+    function StepDot({ n, done, active }) {
+      return (
+        <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-xs font-bold ring-2 transition-all
+          ${done ? 'bg-teal-500 ring-teal-500 text-white' : active ? 'bg-white ring-axis text-axis' : 'bg-white ring-slate-200 text-slate-400'}`}>
+          {done
+            ? <svg className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7"/></svg>
+            : n}
+        </div>
+      )
+    }
+
     return (
       <div className="min-h-screen bg-cream-50">
         <Seo title="Application Submitted | Axis Seattle Housing" pathname="/apply" />
-        <div className="mx-auto max-w-lg px-4 py-20 sm:py-28">
-          {paymentStatus === 'success' ? (
-            <div className="mb-6 rounded-2xl border border-emerald-200 bg-emerald-50 px-5 py-4 text-sm text-emerald-700">
-              Application fee payment completed successfully.
-            </div>
-          ) : null}
+        <div className="mx-auto max-w-lg px-4 py-16 sm:py-24">
 
-          {paymentStatus === 'cancelled' ? (
-            <div className="mb-6 rounded-2xl border border-amber-200 bg-amber-50 px-5 py-4 text-sm text-amber-700">
-              Application fee payment was cancelled. You can restart it below whenever you are ready.
-            </div>
-          ) : null}
-
-          {/* Check icon */}
+          {/* Header */}
           <div className="mx-auto mb-8 flex h-20 w-20 items-center justify-center rounded-full bg-teal-50 ring-8 ring-teal-50/60">
             <svg className="h-10 w-10 text-axis" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
             </svg>
           </div>
-
           <h1 className="text-center text-3xl font-black tracking-tight text-slate-900 sm:text-4xl">Application received</h1>
           <p className="mt-3 text-center text-base leading-7 text-slate-500">
             {isSigner
-              ? `Thanks, ${firstName}! We'll review your application and reach out within 2 business days.`
+              ? `Thanks, ${firstName}! Complete the steps below to secure your room.`
               : `Thanks, ${firstName}! Your co-signer form has been linked to the signer's application.`}
           </p>
 
-          {isSigner && appId && (
+          {/* App ID */}
+          {isSigner && fullAppId && (
             <div className="mt-8 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
               <div className="border-b border-slate-100 bg-slate-50 px-6 py-3">
                 <span className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">Your Application ID</span>
               </div>
               <div className="flex items-center justify-between gap-4 px-6 py-5">
-                <span className="font-mono text-3xl font-black tracking-tight text-slate-900">{appId}</span>
-                <CopyButton text={appId} />
+                <span className="font-mono text-2xl font-black tracking-tight text-slate-900 break-all">{fullAppId}</span>
+                <CopyButton text={fullAppId} />
               </div>
               {(submissionSummary?.hasCosigner || signer.hasCosigner) === 'Yes' && (
                 <div className="border-t border-slate-100 bg-teal-50 px-6 py-4">
@@ -1411,34 +1584,223 @@ export default function Apply() {
             </div>
           )}
 
-          {isSigner ? (
-            <div className="mt-8 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-              <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">Application Fee</div>
-              <div className="mt-3 flex flex-wrap items-end justify-between gap-4">
-                <div>
-                  <div className="text-3xl font-black text-slate-900">$50</div>
-                  <p className="mt-2 max-w-md text-sm leading-6 text-slate-500">
-                    Complete your application by paying the non-refundable application fee through Stripe.
-                  </p>
+          {/* Application fee */}
+          {isSigner && (
+            <div className={`mt-4 overflow-hidden rounded-2xl border shadow-sm transition-all ${feeCleared ? 'border-teal-200 bg-teal-50' : 'border-slate-200 bg-white'}`}>
+              <div className="px-5 pt-5 pb-4">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">Application Fee</div>
+                    {promoApplied ? (
+                      <div className="mt-1 flex items-center gap-2">
+                        <span className="text-2xl font-black text-teal-600">$0</span>
+                        <span className="rounded-full bg-teal-100 px-2.5 py-0.5 text-xs font-bold text-teal-700">Waived</span>
+                      </div>
+                    ) : (
+                      <span className="mt-1 block text-2xl font-black text-slate-900">{appFeePaid ? <span className="text-teal-600">Paid</span> : '$50'}</span>
+                    )}
+                    <p className="mt-0.5 text-xs text-slate-500">
+                      {feeCleared ? 'Application fee cleared — you may proceed.' : 'Non-refundable application processing fee.'}
+                    </p>
+                  </div>
+                  {feeCleared ? (
+                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-teal-500">
+                      <svg className="h-5 w-5 text-white" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7"/></svg>
+                    </div>
+                  ) : (
+                    <button type="button" onClick={handleApplicationFeeCheckout} disabled={paymentLoading}
+                      className="rounded-full bg-slate-900 px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:opacity-50 shrink-0">
+                      {paymentLoading ? 'Opening…' : 'Pay $50'}
+                    </button>
+                  )}
                 </div>
-                <button
-                  type="button"
-                  onClick={handleApplicationFeeCheckout}
-                  disabled={paymentLoading}
-                  className="rounded-full bg-slate-900 px-6 py-3 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  {paymentLoading ? 'Opening checkout...' : 'Pay $50 application fee'}
-                </button>
+                {paymentError && <p className="mt-3 rounded-xl bg-red-50 px-4 py-2.5 text-sm text-red-700">{paymentError}</p>}
+                {paymentStatus === 'fee_cancelled' && !feeCleared && (
+                  <p className="mt-3 rounded-xl bg-amber-50 px-4 py-2.5 text-sm text-amber-700">Payment was cancelled. Retry below or apply a promo code.</p>
+                )}
               </div>
-              {paymentError ? (
-                <div className="mt-4 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-                  {paymentError}
-                </div>
-              ) : null}
-            </div>
-          ) : null}
 
-          <div className="mt-8 flex flex-col gap-3">
+              {/* Promo code */}
+              {!feeCleared && (
+                <div className="border-t border-slate-100 px-5 pb-5 pt-4">
+                  <p className="mb-2 text-xs font-semibold text-slate-500">Have a promo code?</p>
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      value={promoInput}
+                      onChange={(e) => { setPromoInput(e.target.value); setPromoError('') }}
+                      placeholder="Enter code"
+                      className="min-w-0 flex-1 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm text-slate-900 placeholder-slate-400 outline-none transition focus:border-axis focus:ring-2 focus:ring-axis/20 uppercase"
+                      onKeyDown={(e) => e.key === 'Enter' && handleApplyPromo()}
+                    />
+                    <button type="button" onClick={handleApplyPromo}
+                      className="shrink-0 rounded-xl bg-slate-800 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-slate-700">
+                      Apply
+                    </button>
+                  </div>
+                  {promoError && <p className="mt-2 text-xs text-red-600">{promoError}</p>}
+                  {!promoEligible && (
+                    <p className="mt-1.5 text-xs text-slate-400">Promo codes are only valid for 9-Month and 12-Month leases.</p>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* 3-step move-in flow — only for signers who have cleared the app fee */}
+          {isSigner && !feeCleared && (
+            <div className="mt-5 rounded-2xl border border-slate-200 bg-slate-50 px-5 py-4">
+              <p className="text-sm text-slate-500">
+                Pay the application fee (or apply a promo code) to unlock the move-in steps below.
+              </p>
+            </div>
+          )}
+
+          {isSigner && feeCleared && (
+            <div className="mt-8">
+              <h2 className="mb-5 text-lg font-bold text-slate-900">Move-In Steps</h2>
+
+              {/* Step indicators */}
+              <div className="mb-6 flex items-center gap-0">
+                <StepDot n={1} done={stepIndex > 0} active={stepIndex === 0} />
+                <div className={`h-0.5 flex-1 transition-all ${stepIndex > 0 ? 'bg-teal-400' : 'bg-slate-200'}`} />
+                <StepDot n={2} done={leaseSigned} active={stepIndex === 1} />
+                <div className={`h-0.5 flex-1 transition-all ${leaseSigned ? 'bg-teal-400' : 'bg-slate-200'}`} />
+                <StepDot n={3} done={allDone} active={stepIndex === 2} />
+              </div>
+
+              {/* Step 1: Create Resident Account */}
+              <div className={`overflow-hidden rounded-2xl border transition-all ${stepIndex === 0 ? 'border-axis/40 bg-white shadow-md' : 'border-slate-100 bg-slate-50'}`}>
+                <div className="flex items-center gap-3 px-5 py-4">
+                  <StepDot n={1} done={stepIndex > 0} active={stepIndex === 0} />
+                  <div>
+                    <div className="font-semibold text-slate-900">Create Your Resident Account</div>
+                    <div className="text-xs text-slate-500">Access your lease, submit work orders, and manage your stay</div>
+                  </div>
+                </div>
+                {stepIndex === 0 && (
+                  <div className="border-t border-slate-100 px-5 pb-5 pt-4">
+                    <p className="mb-4 text-sm leading-6 text-slate-600">
+                      Use your Application ID to create a resident portal account. Your name, email, and room details will be pre-loaded.
+                    </p>
+                    <div className="flex flex-col gap-3 sm:flex-row">
+                      <a
+                        href={`/resident?appId=${encodeURIComponent(fullAppId)}`}
+                        className="inline-block rounded-full bg-axis px-6 py-3 text-center text-sm font-semibold text-white transition hover:opacity-90"
+                      >
+                        Create Resident Account
+                      </a>
+                      <button type="button" onClick={() => setLeaseStep('lease')}
+                        className="rounded-full border border-slate-200 bg-white px-6 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-50">
+                        I already have an account →
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Step 2: Sign Lease */}
+              <div className={`mt-3 overflow-hidden rounded-2xl border transition-all ${stepIndex === 1 ? 'border-axis/40 bg-white shadow-md' : stepIndex > 1 || leaseSigned ? 'border-slate-100 bg-slate-50' : 'border-slate-100 bg-slate-50 opacity-60'}`}>
+                <div className="flex items-center gap-3 px-5 py-4">
+                  <StepDot n={2} done={leaseSigned} active={stepIndex === 1} />
+                  <div>
+                    <div className="font-semibold text-slate-900">Sign Your Lease</div>
+                    <div className="text-xs text-slate-500">Digitally sign your lease agreement</div>
+                  </div>
+                </div>
+                {stepIndex === 1 && !leaseSigned && (
+                  <div className="border-t border-slate-100 px-5 pb-5 pt-4">
+                    <p className="mb-1 text-sm font-semibold text-slate-700">Lease Agreement</p>
+                    <div className="mb-4 max-h-40 overflow-y-auto rounded-xl border border-slate-200 bg-slate-50 p-4 text-xs leading-5 text-slate-600">
+                      By signing below, I agree to the lease terms for {roomNumber} at {propertyName}, including all policies regarding rent, maintenance, guest access, and early termination. I confirm that the information provided in my application is accurate and complete. I understand that false information may result in immediate termination of the lease. This digital signature constitutes a legally binding agreement.
+                    </div>
+                    <div className="mb-3">
+                      <label className="mb-1.5 block text-sm font-semibold text-slate-700">
+                        Type your full legal name to sign <span className="text-red-400">*</span>
+                      </label>
+                      <input
+                        type="text"
+                        value={leaseSignatureInput}
+                        onChange={(e) => setLeaseSignatureInput(e.target.value)}
+                        placeholder="First and Last Name"
+                        className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-medium italic text-slate-900 placeholder-slate-400 outline-none transition focus:border-axis focus:ring-2 focus:ring-axis/20"
+                      />
+                    </div>
+                    <p className="mb-4 text-xs text-slate-400">
+                      Signed on {new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}
+                    </p>
+                    {leaseSigningError && (
+                      <p className="mb-3 rounded-xl bg-red-50 px-4 py-2.5 text-sm text-red-700">{leaseSigningError}</p>
+                    )}
+                    <button type="button" onClick={handleLeaseSign} disabled={leaseSigningLoading}
+                      className="rounded-full bg-slate-900 px-6 py-3 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:opacity-50">
+                      {leaseSigningLoading ? 'Saving signature…' : 'Sign Lease'}
+                    </button>
+                  </div>
+                )}
+                {leaseSigned && (
+                  <div className="border-t border-slate-100 px-5 py-4">
+                    <p className="text-sm text-teal-700">Lease signed successfully.</p>
+                  </div>
+                )}
+              </div>
+
+              {/* Step 3: Pay Move-In Costs */}
+              <div className={`mt-3 overflow-hidden rounded-2xl border transition-all ${stepIndex === 2 && !allDone ? 'border-axis/40 bg-white shadow-md' : allDone ? 'border-teal-200 bg-teal-50' : 'border-slate-100 bg-slate-50 opacity-60'}`}>
+                <div className="flex items-center gap-3 px-5 py-4">
+                  <StepDot n={3} done={allDone} active={stepIndex === 2 && !allDone} />
+                  <div>
+                    <div className="font-semibold text-slate-900">Pay Move-In Costs</div>
+                    <div className="text-xs text-slate-500">First month's rent + security deposit via Stripe</div>
+                  </div>
+                </div>
+                {allDone ? (
+                  <div className="border-t border-teal-100 px-5 py-4">
+                    <p className="text-sm font-semibold text-teal-700">Payment complete — your room is secured!</p>
+                  </div>
+                ) : stepIndex === 2 && (
+                  <div className="border-t border-slate-100 px-5 pb-5 pt-4">
+                    {paymentStatus === 'cancelled' && (
+                      <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-700">
+                        Payment was cancelled. You can retry below.
+                      </div>
+                    )}
+                    <div className="mb-4 space-y-2 rounded-xl border border-slate-200 bg-slate-50 p-4">
+                      <div className="flex justify-between text-sm">
+                        <span className="text-slate-600">First month's rent</span>
+                        <span className="font-semibold text-slate-900">{monthlyRent ? `$${monthlyRent.toLocaleString()}` : '—'}</span>
+                      </div>
+                      <div className="flex justify-between text-sm">
+                        <span className="text-slate-600">Security deposit</span>
+                        <span className="font-semibold text-slate-900">{deposit ? `$${deposit.toLocaleString()}` : '—'}</span>
+                      </div>
+                      <div className="flex justify-between border-t border-slate-200 pt-2 text-sm">
+                        <span className="font-bold text-slate-900">Total due today</span>
+                        <span className="font-black text-slate-900">{moveInTotal ? `$${moveInTotal.toLocaleString()}` : '—'}</span>
+                      </div>
+                    </div>
+                    {moveInPaymentError && (
+                      <p className="mb-3 rounded-xl bg-red-50 px-4 py-2.5 text-sm text-red-700">{moveInPaymentError}</p>
+                    )}
+                    <button type="button" onClick={handleMoveInPaymentCheckout} disabled={moveInPaymentLoading}
+                      className="rounded-full bg-axis px-6 py-3 text-sm font-semibold text-white transition hover:opacity-90 disabled:opacity-50">
+                      {moveInPaymentLoading ? 'Opening checkout…' : `Pay $${moveInTotal ? moveInTotal.toLocaleString() : '…'}`}
+                    </button>
+                    {!moveInTotal && (
+                      <p className="mt-3 text-xs text-slate-400">Contact leasing to complete payment if amounts are not shown.</p>
+                    )}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          <div className="mt-10 flex flex-col gap-3">
+            {allDone && (
+              <a href="/resident" className="inline-block w-full rounded-full bg-axis px-6 py-3 text-center text-sm font-semibold text-white hover:opacity-90 transition">
+                Go to Resident Portal
+              </a>
+            )}
             <a href="/apply" onClick={clearStoredSubmission} className="inline-block w-full rounded-full border border-slate-200 bg-white px-6 py-3 text-center text-sm font-semibold text-slate-700 hover:border-slate-300 hover:bg-slate-50 transition">
               Submit another application
             </a>
@@ -1542,9 +1904,14 @@ export default function Apply() {
                   <Field label="Room Number" required error={fieldErrors.roomNumber}>
                     <select required className={selectCls} value={signer.roomNumber} onChange={(e) => updateSigner('roomNumber', e.target.value)} disabled={!selectedProperty}>
                       <option value="">{selectedProperty ? 'Select a room…' : 'Choose a property first'}</option>
-                      {(selectedProperty?.rooms || []).map((room) => (
-                        <option key={room.name} value={room.name}>{room.name}</option>
-                      ))}
+                      {(selectedProperty?.rooms || []).map((room) => {
+                        const isOccupied = signedLeases.has(`${signer.propertyName}:${room.name}`)
+                        return (
+                          <option key={room.name} value={room.name} disabled={isOccupied}>
+                            {room.name}{isOccupied ? ' — Currently leased' : ''}
+                          </option>
+                        )
+                      })}
                     </select>
                   </Field>
                   <Field label="Lease Term" required>
