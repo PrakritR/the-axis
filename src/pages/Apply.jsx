@@ -1584,6 +1584,25 @@ export default function Apply() {
             </div>
           )}
 
+          {isSigner && fullAppId && (
+            <div className="mt-4 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+              <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">Resident Account</div>
+                  <p className="mt-1 text-sm leading-6 text-slate-600">
+                    Create your resident account to save your application details and continue your next steps in one place.
+                  </p>
+                </div>
+                <a
+                  href={`/resident?appId=${encodeURIComponent(fullAppId)}`}
+                  className="inline-flex shrink-0 items-center justify-center rounded-full bg-axis px-5 py-3 text-sm font-semibold text-white transition hover:opacity-90"
+                >
+                  Create resident account
+                </a>
+              </div>
+            </div>
+          )}
+
           {/* Application fee */}
           {isSigner && (
             <div className={`mt-4 overflow-hidden rounded-2xl border shadow-sm transition-all ${feeCleared ? 'border-teal-200 bg-teal-50' : 'border-slate-200 bg-white'}`}>
