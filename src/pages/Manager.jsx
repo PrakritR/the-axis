@@ -36,7 +36,7 @@ const STATUS_CONFIG = {
   'Under Review':    { bg: 'bg-amber-50',  text: 'text-amber-700',  border: 'border-amber-200',  dot: 'bg-amber-400'  },
   'Changes Needed':  { bg: 'bg-red-50',    text: 'text-red-700',    border: 'border-red-200',    dot: 'bg-red-500'    },
   'Approved':        { bg: 'bg-green-50',  text: 'text-green-700',  border: 'border-green-200',  dot: 'bg-green-500'  },
-  'Published':       { bg: 'bg-teal-50',   text: 'text-teal-700',   border: 'border-teal-200',   dot: 'bg-teal-500'   },
+  'Published':       { bg: 'bg-axis/5',    text: 'text-axis',       border: 'border-axis/20',    dot: 'bg-axis'       },
   'Signed':          { bg: 'bg-purple-50', text: 'text-purple-700', border: 'border-purple-200', dot: 'bg-purple-500' },
 }
 
@@ -513,7 +513,7 @@ function ManagerLogin({ onLogin }) {
               <button
                 type="submit"
                 disabled={loginLoading}
-                className="w-full rounded-full bg-slate-900 px-5 py-4 text-base font-semibold text-white transition hover:bg-slate-800 disabled:opacity-50"
+                className="w-full rounded-full bg-[linear-gradient(180deg,#2f76ff_0%,#2450eb_100%)] px-5 py-4 text-base font-semibold text-white shadow-[0_8px_24px_rgba(37,99,235,0.22)] transition hover:brightness-105 disabled:opacity-50"
               >
                 {loginLoading ? 'Signing in…' : 'Sign in'}
               </button>
@@ -637,7 +637,7 @@ function ManagerLogin({ onLogin }) {
                 type="button"
                 onClick={handleCreateAccount}
                 disabled={activationLoading || !activationForm.managerId.trim() || !activationForm.password.trim()}
-                className="w-full rounded-full bg-slate-900 px-5 py-4 text-base font-semibold text-white transition hover:bg-slate-800 disabled:opacity-50"
+                className="w-full rounded-full bg-[linear-gradient(180deg,#2f76ff_0%,#2450eb_100%)] px-5 py-4 text-base font-semibold text-white shadow-[0_8px_24px_rgba(37,99,235,0.22)] transition hover:brightness-105 disabled:opacity-50"
               >
                 {activationLoading ? 'Creating account…' : 'Create account'}
               </button>
@@ -645,7 +645,7 @@ function ManagerLogin({ onLogin }) {
               <div className="rounded-[28px] border border-slate-200 bg-slate-50 p-5">
                 <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-[#2563eb]">Manager access</div>
                 <p className="mt-2 text-sm leading-6 text-slate-500">
-                  Join Axis sets your tier first. Paid plans create the subscription, and the free tier creates a listing-only manager record. Then your manager ID and selected tier are ready for account setup here.
+                  Start on the Join page to pick a plan. Once that's done — subscription confirmed or free tier activated — come back here to finish setting up your manager account.
                 </p>
                 {subscriptionError ? (
                   <div className="mt-4 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
@@ -768,7 +768,7 @@ function HouseManagementPanel({ onPropertiesChange }) {
           <button
             type="submit"
             disabled={saving || !form.name.trim()}
-            className="w-full rounded-2xl bg-slate-900 px-5 py-3.5 text-sm font-semibold text-white transition hover:bg-[#2563eb] disabled:opacity-50"
+            className="w-full rounded-2xl bg-[linear-gradient(180deg,#2f76ff_0%,#2450eb_100%)] px-5 py-3.5 text-sm font-semibold text-white shadow-[0_6px_18px_rgba(37,99,235,0.22)] transition hover:brightness-105 disabled:opacity-50"
           >
             {saving ? 'Adding house…' : 'Add house'}
           </button>
@@ -1613,7 +1613,7 @@ function LeaseEditor({ draftId, manager, onBack }) {
                 onClick={() => setActiveTab(tab.key)}
                 className={`rounded-xl px-4 py-2 text-sm font-semibold transition ${
                   activeTab === tab.key
-                    ? 'bg-slate-900 text-white'
+                    ? 'bg-axis text-white'
                     : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
                 }`}
               >
@@ -1632,7 +1632,7 @@ function LeaseEditor({ draftId, manager, onBack }) {
                     <button
                       onClick={handleSave}
                       disabled={saving || !!actionLoading}
-                      className="rounded-xl bg-slate-900 px-4 py-1.5 text-xs font-semibold text-white transition hover:bg-[#2563eb] disabled:opacity-50"
+                      className="rounded-xl bg-axis px-4 py-1.5 text-xs font-semibold text-white transition hover:brightness-110 disabled:opacity-50"
                     >
                       {saving ? 'Saving…' : 'Save edits'}
                     </button>
@@ -1784,9 +1784,9 @@ function LeaseEditor({ draftId, manager, onBack }) {
             </div>
           )}
           {canPublish && (
-            <div className="rounded-[24px] border border-teal-200 bg-teal-50 p-5">
-              <div className="text-sm font-semibold text-teal-800">Approved — ready to publish</div>
-              <p className="mt-1.5 text-sm text-teal-700">
+            <div className="rounded-[24px] border border-axis/20 bg-axis/5 p-5">
+              <div className="text-sm font-semibold text-axis">Approved — ready to publish</div>
+              <p className="mt-1.5 text-sm text-axis/80">
                 Click <strong>Publish to portal</strong> above to make this lease visible to the resident.
               </p>
             </div>
