@@ -1309,7 +1309,16 @@ function Dashboard({ resident, onResidentUpdated, onSignOut }) {
 
   useEffect(() => {
     loadData()
-  }, [loadData])
+    const interval = setInterval(async () => {
+      try {
+        const next = await getAnnouncements()
+        setAnnouncements(next.filter((item) => announcementMatchesResident(item, resident)))
+      } catch {
+        // silently ignore polling errors
+      }
+    }, 60_000)
+    return () => clearInterval(interval)
+  }, [loadData, resident])
 
   return (
     <div className="min-h-screen bg-[linear-gradient(180deg,#f8fafc_0%,#ffffff_55%,#f8fafc_100%)]">
