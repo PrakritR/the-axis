@@ -13,6 +13,24 @@ function stripeHeaders(secretKey) {
   }
 }
 
+async function findPromotionCode(secretKey, code) {
+  const normalizedCode = String(code || '').trim()
+  if (!normalizedCode) return null
+
+  const stripeRes = await fetch(
+    `${STRIPE_API}/promotion_codes?code=${encodeURIComponent(normalizedCode)}&active=true&limit=1`,
+    { headers: stripeHeaders(secretKey) }
+  )
+
+  if (!stripeRes.ok) {
+    const text = await stripeRes.text()
+    throw new Error(`Stripe promotion code lookup failed: ${text}`)
+  }
+
+  const data = await stripeRes.json()
+  return data.data?.[0] || null
+}
+
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*')
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS')
@@ -32,9 +50,10 @@ export default async function handler(req, res) {
     return res.status(500).json({ error: 'STRIPE_MANAGER_PRICE_ID is not configured on the server yet.' })
   }
 
-  const { email, name } = req.body || {}
+  const { email, name, promoCode } = req.body || {}
   const normalizedEmail = String(email || '').trim().toLowerCase()
   const normalizedName = String(name || '').trim()
+  const normalizedPromoCode = String(promoCode || '').trim().toUpperCase()
 
   if (!normalizedEmail) {
     return res.status(400).json({ error: 'Email is required to start manager setup.' })
@@ -55,6 +74,16 @@ export default async function handler(req, res) {
     'subscription_data[metadata][manager_email]': normalizedEmail,
     'allow_promotion_codes': 'true',
   })
+
+  if (normalizedPromoCode) {
+    const promotionCode = await findPromotionCode(secretKey, normalizedPromoCode)
+    if (!promotionCode) {
+      return res.status(400).json({ error: `Promo code ${normalizedPromoCode} was not found or is inactive.` })
+    }
+    form.set('discounts[0][promotion_code]', promotionCode.id)
+    form.set('metadata[promo_code]', normalizedPromoCode)
+    form.set('subscription_data[metadata][promo_code]', normalizedPromoCode)
+  }
 
   const stripeRes = await fetch(`${STRIPE_API}/checkout/sessions`, {
     method: 'POST',

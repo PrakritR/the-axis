@@ -182,6 +182,7 @@ function ManagerLogin({ onLogin }) {
   const [name, setName] = useState('')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
+  const [promoCode, setPromoCode] = useState('FIRST20')
   const [loading, setLoading] = useState(false)
   const [setupLoading, setSetupLoading] = useState(false)
   const [error, setError] = useState('')
@@ -288,7 +289,7 @@ function ManagerLogin({ onLogin }) {
       const res = await fetch('/api/manager-create-subscription-session', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: email.trim().toLowerCase(), name }),
+        body: JSON.stringify({ email: email.trim().toLowerCase(), name, promoCode }),
       })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || 'Could not start manager setup.')
@@ -301,7 +302,7 @@ function ManagerLogin({ onLogin }) {
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 px-4 py-12">
-      <div className="w-full max-w-lg">
+      <div className="w-full max-w-3xl">
         {/* Brand mark */}
         <div className="mb-10 text-center">
           <div className="inline-flex items-center gap-3">
@@ -316,15 +317,15 @@ function ManagerLogin({ onLogin }) {
         </div>
 
         {/* Login card */}
-        <div className="rounded-[28px] bg-white p-8 shadow-[0_25px_60px_rgba(0,0,0,0.35)]">
-          <div className="flex gap-1 rounded-2xl border border-slate-100 bg-slate-50 p-1">
+        <div className="rounded-[32px] bg-white p-8 shadow-[0_25px_60px_rgba(0,0,0,0.35)] sm:p-10">
+          <div className="flex gap-1 rounded-[24px] border border-slate-100 bg-slate-50 p-1.5">
             {[['login', 'Manager Login'], ['signup', 'Create account']].map(([id, label]) => (
               <button
                 key={id}
                 type="button"
                 onClick={() => switchMode(id)}
                 className={classNames(
-                  'flex-1 rounded-xl px-3 py-2 text-sm font-semibold transition',
+                  'flex-1 rounded-[18px] px-4 py-3 text-base font-semibold transition',
                   mode === id ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-900'
                 )}
               >
@@ -333,8 +334,8 @@ function ManagerLogin({ onLogin }) {
             ))}
           </div>
 
-          <h1 className="mt-6 text-xl font-black text-slate-900">{mode === 'login' ? 'Manager login' : 'Create manager account'}</h1>
-          <p className="mt-1 text-sm text-slate-500">
+          <h1 className="mt-6 text-2xl font-black text-slate-900 sm:text-3xl">{mode === 'login' ? 'Manager login' : 'Create manager account'}</h1>
+          <p className="mt-2 text-base leading-7 text-slate-500">
             {mode === 'login'
               ? 'Sign in with your email and password.'
               : 'Create your manager account here, then activate it with the recurring subscription below.'}
@@ -363,7 +364,7 @@ function ManagerLogin({ onLogin }) {
                   required
                   autoComplete="email"
                   placeholder="you@axis-seattle.com"
-                  className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 placeholder:text-slate-400 transition focus:border-[#0ea5a4] focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#0ea5a4]/20"
+                  className="w-full rounded-[24px] border border-slate-200 bg-slate-50 px-5 py-4 text-base text-slate-900 placeholder:text-slate-400 transition focus:border-[#0ea5a4] focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#0ea5a4]/20"
                 />
               </div>
               <div>
@@ -375,7 +376,7 @@ function ManagerLogin({ onLogin }) {
                   required
                   autoComplete="current-password"
                   placeholder="••••••••"
-                  className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 placeholder:text-slate-400 transition focus:border-[#0ea5a4] focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#0ea5a4]/20"
+                  className="w-full rounded-[24px] border border-slate-200 bg-slate-50 px-5 py-4 text-base text-slate-900 placeholder:text-slate-400 transition focus:border-[#0ea5a4] focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#0ea5a4]/20"
                 />
               </div>
 
@@ -388,7 +389,7 @@ function ManagerLogin({ onLogin }) {
               <button
                 type="submit"
                 disabled={loading}
-                className="w-full rounded-2xl bg-slate-900 px-5 py-3.5 text-sm font-semibold text-white transition hover:bg-[#0ea5a4] disabled:opacity-50"
+                className="w-full rounded-[24px] bg-slate-900 px-5 py-4 text-base font-semibold text-white transition hover:bg-[#0ea5a4] disabled:opacity-50"
               >
                 {loading ? 'Signing in…' : 'Sign in to manager portal'}
               </button>
@@ -402,7 +403,7 @@ function ManagerLogin({ onLogin }) {
                   value={name}
                   onChange={e => setName(e.target.value)}
                   placeholder="Your name"
-                  className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 placeholder:text-slate-400 transition focus:border-[#0ea5a4] focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#0ea5a4]/20"
+                  className="w-full rounded-[24px] border border-slate-200 bg-slate-50 px-5 py-4 text-base text-slate-900 placeholder:text-slate-400 transition focus:border-[#0ea5a4] focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#0ea5a4]/20"
                 />
               </div>
               <div>
@@ -414,7 +415,7 @@ function ManagerLogin({ onLogin }) {
                   required
                   autoComplete="email"
                   placeholder="you@axis-seattle.com"
-                  className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 placeholder:text-slate-400 transition focus:border-[#0ea5a4] focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#0ea5a4]/20"
+                  className="w-full rounded-[24px] border border-slate-200 bg-slate-50 px-5 py-4 text-base text-slate-900 placeholder:text-slate-400 transition focus:border-[#0ea5a4] focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#0ea5a4]/20"
                 />
               </div>
               <div>
@@ -426,7 +427,7 @@ function ManagerLogin({ onLogin }) {
                   required
                   autoComplete="new-password"
                   placeholder="Minimum 6 characters"
-                  className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 placeholder:text-slate-400 transition focus:border-[#0ea5a4] focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#0ea5a4]/20"
+                  className="w-full rounded-[24px] border border-slate-200 bg-slate-50 px-5 py-4 text-base text-slate-900 placeholder:text-slate-400 transition focus:border-[#0ea5a4] focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#0ea5a4]/20"
                 />
               </div>
 
@@ -439,7 +440,7 @@ function ManagerLogin({ onLogin }) {
               <button
                 type="submit"
                 disabled={loading}
-                className="w-full rounded-2xl bg-slate-900 px-5 py-3.5 text-sm font-semibold text-white transition hover:bg-[#0ea5a4] disabled:opacity-50"
+                className="w-full rounded-[24px] bg-slate-900 px-5 py-4 text-base font-semibold text-white transition hover:bg-[#0ea5a4] disabled:opacity-50"
               >
                 {loading ? 'Creating account…' : 'Create manager account'}
               </button>
@@ -450,11 +451,21 @@ function ManagerLogin({ onLogin }) {
                 <p className="mt-2 text-sm leading-6 text-slate-500">
                   Complete the recurring manager subscription below. Once payment is active, you can create the account and sign in with this email and password.
                 </p>
+                <div className="mt-4">
+                  <label className="mb-1.5 block text-sm font-semibold text-slate-700">Promo code</label>
+                  <input
+                    type="text"
+                    value={promoCode}
+                    onChange={e => setPromoCode(e.target.value.toUpperCase())}
+                    placeholder="FIRST20"
+                    className="w-full rounded-[24px] border border-slate-200 bg-white px-5 py-4 text-base font-semibold uppercase tracking-[0.06em] text-slate-900 placeholder:text-slate-400 transition focus:border-[#0ea5a4] focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#0ea5a4]/20"
+                  />
+                </div>
                 <button
                   type="button"
                   onClick={startSubscriptionSetup}
                   disabled={setupLoading || !email.trim()}
-                  className="mt-4 w-full rounded-2xl bg-[#0ea5a4] px-5 py-3.5 text-sm font-semibold text-white transition hover:bg-[#0b8a89] disabled:opacity-50"
+                  className="mt-4 w-full rounded-[24px] bg-[#0ea5a4] px-5 py-4 text-base font-semibold text-white transition hover:bg-[#0b8a89] disabled:opacity-50"
                 >
                   {setupLoading ? 'Starting checkout…' : 'Start recurring subscription'}
                 </button>

@@ -291,20 +291,13 @@ function SetupRequired() {
   )
 }
 
-const authInputCls = 'w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm outline-none transition focus:border-slate-900 focus:ring-2 focus:ring-slate-900/10'
+const authInputCls = 'w-full rounded-[24px] border border-slate-200 px-5 py-4 text-base outline-none transition focus:border-slate-900 focus:ring-2 focus:ring-slate-900/10'
 
 function AuthCard({ children }) {
   return (
     <div className="flex min-h-screen items-start justify-center bg-[linear-gradient(160deg,#f0fdf8_0%,#f8fafc_40%,#ffffff_100%)] px-4 pb-12 pt-8 sm:pt-12 lg:pt-16">
-      <div className="w-full max-w-md">
-        <div className="mb-5 flex justify-center sm:mb-6">
-          <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-slate-900 shadow-lg">
-            <svg className="h-5 w-5 text-white" fill="none" stroke="currentColor" strokeWidth={1.8} viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 12l8.954-8.955a1.5 1.5 0 012.092 0L21.75 12M4.5 9.75v10.125c0 .621.504 1.125 1.125 1.125H9.75v-4.875c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125V21h4.125c.621 0 1.125-.504 1.125-1.125V9.75" />
-            </svg>
-          </div>
-        </div>
-        <div className="rounded-[28px] border border-slate-200 bg-white p-8 shadow-soft">
+      <div className="w-full max-w-3xl">
+        <div className="rounded-[32px] border border-slate-200 bg-white p-8 shadow-soft sm:p-10">
           {children}
         </div>
       </div>
@@ -446,41 +439,41 @@ function AirtableLogin({ onLogin }) {
     <AuthCard>
       <div className="mb-6 text-center">
         <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-[#0b8a89]">Axis Portal</div>
-        <h1 className="mt-2 text-3xl font-black tracking-tight text-slate-900">Login</h1>
-        <p className="mt-2 text-sm leading-6 text-slate-500">
+        <h1 className="mt-2 text-4xl font-black tracking-tight text-slate-900 sm:text-5xl">Login</h1>
+        <p className="mt-3 text-base leading-7 text-slate-500">
           Choose your portal to continue.
         </p>
       </div>
 
       {mode === 'portal' ? (
-        <div className="space-y-4">
+        <div className="space-y-5">
           <button
             type="button"
             onClick={() => switchMode('login')}
-            className="w-full rounded-[24px] border border-slate-200 bg-white px-5 py-5 text-left transition hover:border-slate-900 hover:bg-slate-50"
+            className="w-full rounded-[30px] border border-slate-200 bg-white px-7 py-8 text-left transition hover:border-slate-900 hover:bg-slate-50"
           >
-            <div className="text-base font-bold text-slate-900">Resident Portal</div>
-            <div className="mt-1 text-sm leading-6 text-slate-500">
+            <div className="text-2xl font-black text-slate-900">Resident Portal</div>
+            <div className="mt-3 text-lg leading-8 text-slate-500">
               Access payments, work orders, documents, and your resident dashboard.
             </div>
           </button>
           <button
             type="button"
             onClick={goToManagerLogin}
-            className="w-full rounded-[24px] border border-slate-200 bg-white px-5 py-5 text-left transition hover:border-slate-900 hover:bg-slate-50"
+            className="w-full rounded-[30px] border border-slate-200 bg-white px-7 py-8 text-left transition hover:border-slate-900 hover:bg-slate-50"
           >
-            <div className="text-base font-bold text-slate-900">Manager Portal</div>
-            <div className="mt-1 text-sm leading-6 text-slate-500">
+            <div className="text-2xl font-black text-slate-900">Manager Portal</div>
+            <div className="mt-3 text-lg leading-8 text-slate-500">
               Open the manager portal to review leases and manage resident records.
             </div>
           </button>
         </div>
       ) : mode === 'login' ? (
         <form onSubmit={handleLogin} className="space-y-4">
-          <div className="flex gap-1 rounded-2xl border border-slate-100 bg-slate-50 p-1">
+          <div className="flex gap-1 rounded-[24px] border border-slate-100 bg-slate-50 p-1.5">
             {[['login', 'Resident Login'], ['signup', 'Create account']].map(([id, label]) => (
               <button key={id} type="button" onClick={() => switchMode(id)}
-                className={classNames('flex-1 rounded-xl px-3 py-2 text-sm font-semibold transition',
+                className={classNames('flex-1 rounded-[18px] px-4 py-3 text-base font-semibold transition',
                   mode === id ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-900')}>
                 {label}
               </button>
@@ -495,7 +488,7 @@ function AirtableLogin({ onLogin }) {
             <PasswordInput value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="current-password" />
           </div>
           {error && <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>}
-          <button type="submit" disabled={loading} className="w-full rounded-full bg-slate-900 py-3 text-sm font-semibold text-white hover:bg-slate-800 disabled:opacity-50 transition">
+          <button type="submit" disabled={loading} className="w-full rounded-full bg-slate-900 py-4 text-base font-semibold text-white hover:bg-slate-800 disabled:opacity-50 transition">
             {loading ? 'Signing in…' : 'Sign in'}
           </button>
           <button
@@ -508,10 +501,10 @@ function AirtableLogin({ onLogin }) {
         </form>
       ) : (
         <form onSubmit={handleSignup} className="space-y-4">
-          <div className="flex gap-1 rounded-2xl border border-slate-100 bg-slate-50 p-1">
+          <div className="flex gap-1 rounded-[24px] border border-slate-100 bg-slate-50 p-1.5">
             {[['login', 'Resident Login'], ['signup', 'Create account']].map(([id, label]) => (
               <button key={id} type="button" onClick={() => switchMode(id)}
-                className={classNames('flex-1 rounded-xl px-3 py-2 text-sm font-semibold transition',
+                className={classNames('flex-1 rounded-[18px] px-4 py-3 text-base font-semibold transition',
                   mode === id ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-900')}>
                 {label}
               </button>
@@ -533,7 +526,7 @@ function AirtableLogin({ onLogin }) {
             <PasswordInput value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Min. 6 characters" autoComplete="new-password" />
           </div>
           {error && <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>}
-          <button type="submit" disabled={loading} className="w-full rounded-full bg-slate-900 py-3 text-sm font-semibold text-white hover:bg-slate-800 disabled:opacity-50 transition">
+          <button type="submit" disabled={loading} className="w-full rounded-full bg-slate-900 py-4 text-base font-semibold text-white hover:bg-slate-800 disabled:opacity-50 transition">
             {loading ? 'Verifying application…' : 'Create account'}
           </button>
           <button
