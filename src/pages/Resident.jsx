@@ -25,9 +25,7 @@ const urgencyOptions = ['Routine', 'Urgent', 'Emergency']
 const entryOptions = ['Morning', 'Afternoon', 'Evening']
 
 function normalizeUnitLabel(value) {
-  return String(value || '')
-    .replace(/^Unit\s+/i, 'Room ')
-    .trim()
+  return String(value || '').replace(/^Unit\s+/i, 'Room ').trim()
 }
 
 function extractRoomNumber(value) {
@@ -36,13 +34,9 @@ function extractRoomNumber(value) {
 }
 
 function compareRoomLabels(a, b) {
-  const numberDiff = extractRoomNumber(a) - extractRoomNumber(b)
-  if (numberDiff !== 0) return numberDiff
-
-  return String(a || '').localeCompare(String(b || ''), undefined, {
-    numeric: true,
-    sensitivity: 'base',
-  })
+  const n = extractRoomNumber(a) - extractRoomNumber(b)
+  if (n !== 0) return n
+  return String(a || '').localeCompare(String(b || ''), undefined, { numeric: true, sensitivity: 'base' })
 }
 
 const MATCH_ALL_TOKENS = new Set(['all', 'all properties', 'all residents', 'everyone'])
@@ -50,64 +44,27 @@ const MATCH_ALL_TOKENS = new Set(['all', 'all properties', 'all residents', 'eve
 function buildResidentMatchKeys(resident) {
   const house = String(resident.House || '').trim()
   const room = normalizeUnitLabel(resident['Unit Number'] || '')
-
-  // Short property code: '4709A', '4709B', '5259'
   const propCode = house.match(/4709[AB]|5259/i)?.[0]?.toUpperCase() || ''
-
   const keys = new Set()
   const add = (...vals) => vals.forEach((v) => { if (v) keys.add(v.toLowerCase().trim()) })
-
-  // property variants
   add(house, propCode)
-
-  // room variants: "Room 1", "room 1", "1"
   const roomNum = room.replace(/^Room\s*/i, '')
   add(room, roomNum)
-
-  // combined variants used in Airtable Target: "4709A - Room 1", "4709A - room 1", "4709A Room 1"
   if (propCode && room) {
     add(
-      `${propCode} - ${room}`,
-      `${propCode} - ${roomNum}`,
-      `${propCode} ${room}`,
-      `${propCode} ${roomNum}`,
-      `${house} - ${room}`,
-      `${house} ${room}`,
+      `${propCode} - ${room}`, `${propCode} - ${roomNum}`,
+      `${propCode} ${room}`, `${propCode} ${roomNum}`,
+      `${house} - ${room}`, `${house} ${room}`,
     )
   }
-
   return keys
 }
 
 function announcementMatchesResident(item, resident) {
-  // Target is normalised to lowercase string array by getAnnouncements()
   const tokens = Array.isArray(item.Target) ? item.Target : []
   if (tokens.length === 0 || tokens.some((t) => MATCH_ALL_TOKENS.has(t))) return true
-
   const residentKeys = buildResidentMatchKeys(resident)
   return tokens.some((token) => residentKeys.has(token.toLowerCase().trim()))
-}
-
-const houseOptions = properties.map((property) => {
-  const floorPlanUnits = (property.floorPlans || []).flatMap((plan) => plan.units || [])
-  const roomPlanUnits = (property.roomPlans || [])
-    .flatMap((plan) => plan.rooms || [])
-    .map((room) => normalizeUnitLabel(room.name))
-
-  const units = Array.from(new Set(
-    [...floorPlanUnits, ...roomPlanUnits]
-      .filter(Boolean)
-      .map(normalizeUnitLabel)
-  )).sort(compareRoomLabels)
-
-  return {
-    house: property.name,
-    units,
-  }
-})
-
-function getUnitsForHouse(house) {
-  return houseOptions.find((option) => option.house === house)?.units || []
 }
 
 const statusStyles = {
@@ -126,30 +83,27 @@ const priorityStyles = {
   Critical: 'border-red-200 bg-red-50 text-red-700',
 }
 
+const paymentStatusStyles = {
+  Paid: 'border-emerald-200 bg-emerald-50 text-emerald-700',
+  Pending: 'border-amber-200 bg-amber-50 text-amber-700',
+  Overdue: 'border-red-200 bg-red-50 text-red-700',
+  Partial: 'border-sky-200 bg-sky-50 text-sky-700',
+}
+
 function parseDisplayDate(value) {
   if (!value) return null
   if (value instanceof Date) return Number.isNaN(value.getTime()) ? null : value
   const raw = String(value).trim()
-  const dateOnlyMatch = raw.match(/^(\d{4})-(\d{2})-(\d{2})$/)
-  if (dateOnlyMatch) {
-    const [, year, month, day] = dateOnlyMatch
-    return new Date(Number(year), Number(month) - 1, Number(day))
-  }
+  const m = raw.match(/^(\d{4})-(\d{2})-(\d{2})$/)
+  if (m) return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]))
   const parsed = new Date(raw)
   return Number.isNaN(parsed.getTime()) ? null : parsed
 }
 
 function formatDate(value) {
-  const date = parseDisplayDate(value)
-  if (!date) return 'No date'
-  return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
-}
-
-function formatDateInput(value) {
-  if (!value) return ''
-  const date = parseDisplayDate(value)
-  if (!date) return ''
-  return date.toISOString().slice(0, 10)
+  const d = parseDisplayDate(value)
+  if (!d) return 'No date'
+  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
 }
 
 function classNames(...values) {
@@ -161,96 +115,74 @@ function formatMoney(value) {
 }
 
 function getLeaseTermLabel(resident) {
-  const leaseTerm = String(resident?.['Lease Term'] || '').trim()
-  if (leaseTerm) return leaseTerm
+  const t = String(resident?.['Lease Term'] || '').trim()
+  if (t) return t
   if (resident?.['Lease Start Date'] && !resident?.['Lease End Date']) return 'Month-to-Month'
   return 'Fixed Term'
 }
 
 function getRoomMonthlyRent(propertyName, unitNumber) {
   if (!propertyName || !unitNumber) return 0
-  const property = properties.find((item) => item.name === propertyName)
+  const property = properties.find((p) => p.name === propertyName)
   if (!property) return 0
-
   for (const plan of property.roomPlans || []) {
-    const room = (plan.rooms || []).find((item) => normalizeUnitLabel(item.name) === normalizeUnitLabel(unitNumber))
+    const room = (plan.rooms || []).find((r) => normalizeUnitLabel(r.name) === normalizeUnitLabel(unitNumber))
     if (room?.price) {
       const amount = parseInt(String(room.price).replace(/[^0-9]/g, ''), 10)
       if (Number.isFinite(amount) && amount > 0) return amount
     }
   }
-
   return 0
 }
 
 function getUtilitiesFee(propertyName) {
-  const property = properties.find((item) => item.name === propertyName)
+  const property = properties.find((p) => p.name === propertyName)
   if (!property?.utilitiesFee) return 0
   const amount = parseInt(String(property.utilitiesFee).replace(/[^0-9]/g, ''), 10)
   return Number.isFinite(amount) && amount > 0 ? amount : 0
 }
 
-const leaseSigningFields = [
-  'DocuSign Signing URL',
-  'DocuSign URL',
-  'Lease Signing URL',
-  'Lease Sign URL',
-  'Lease Document URL',
-  'Lease URL',
-]
+const leaseSigningFields = ['DocuSign Signing URL', 'DocuSign URL', 'Lease Signing URL', 'Lease Sign URL', 'Lease Document URL', 'Lease URL']
+const residentPaymentFields = ['Resident Payment URL', 'Payment URL', 'Payment Link', 'Resident Portal URL', 'Portal URL']
+const stripeCustomerFields = ['Stripe Customer ID', 'Stripe Customer', 'Stripe CustomerId']
+const paymentRecordLinkFields = ['Checkout URL', 'Payment URL', 'Payment Link', 'Portal URL']
+
+function firstAvailableLink(record, fields) {
+  if (!record) return ''
+  for (const field of fields) {
+    const value = record[field]
+    if (typeof value === 'string' && value.trim()) return value.trim()
+  }
+  return ''
+}
 
 function resolveLeaseSigningUrl(resident) {
   return firstAvailableLink(resident, leaseSigningFields) || import.meta.env.VITE_DOCUSIGN_SIGNING_URL || ''
 }
 
-const residentPaymentFields = [
-  'Resident Payment URL',
-  'Payment URL',
-  'Payment Link',
-  'Resident Portal URL',
-  'Portal URL',
-]
-
-const stripeCustomerFields = [
-  'Stripe Customer ID',
-  'Stripe Customer',
-  'Stripe CustomerId',
-]
-
-const paymentRecordLinkFields = [
-  'Checkout URL',
-  'Payment URL',
-  'Payment Link',
-  'Portal URL',
-]
-
-function firstAvailableLink(record, fields) {
-  if (!record) return ''
-
-  for (const field of fields) {
-    const value = record[field]
-    if (typeof value === 'string' && value.trim()) return value.trim()
-  }
-
-  return ''
-}
-
 function resolveResidentPaymentUrl(resident, payments = []) {
   return (
     firstAvailableLink(resident, residentPaymentFields) ||
-    payments.map((payment) => firstAvailableLink(payment, paymentRecordLinkFields)).find(Boolean) ||
-    import.meta.env.VITE_RESIDENT_PAYMENT_URL ||
-    ''
+    payments.map((p) => firstAvailableLink(p, paymentRecordLinkFields)).find(Boolean) ||
+    import.meta.env.VITE_RESIDENT_PAYMENT_URL || ''
   )
 }
 
 function getResidentStripeCustomerId(resident, payments = []) {
   return (
     firstAvailableLink(resident, stripeCustomerFields) ||
-    payments.map((payment) => firstAvailableLink(payment, stripeCustomerFields)).find(Boolean) ||
-    ''
+    payments.map((p) => firstAvailableLink(p, stripeCustomerFields)).find(Boolean) || ''
   )
 }
+
+function getPaymentKind(payment) {
+  const raw = [payment.Type, payment.Category, payment.Kind, payment['Line Item Type'], payment.Month, payment.Notes]
+    .filter(Boolean).join(' ').toLowerCase()
+  if (/(fee|fine|damage|late fee|late charge|cleaning|lockout)/.test(raw)) return 'fee'
+  return 'rent'
+}
+
+// ─── Shared UI ────────────────────────────────────────────────────────────────
 
 function SectionCard({ title, description, children, action }) {
   return (
@@ -291,19 +223,9 @@ function SetupRequired() {
   )
 }
 
-const authInputCls = 'w-full rounded-[24px] border border-slate-200 bg-white px-5 py-4 text-base outline-none transition focus:border-[#2563eb] focus:ring-2 focus:ring-[#2563eb]/20'
+// ─── Auth ─────────────────────────────────────────────────────────────────────
 
-function AuthCard({ children }) {
-  return (
-    <div className="flex min-h-screen items-start justify-center bg-[linear-gradient(180deg,#f7fbff_0%,#eef5ff_48%,#f9fcff_100%)] px-4 pb-12 pt-8 sm:pt-12 lg:pt-16">
-      <div className="w-full max-w-4xl">
-        <div className="rounded-[32px] border border-slate-200 bg-white p-8 shadow-soft sm:p-10">
-          {children}
-        </div>
-      </div>
-    </div>
-  )
-}
+const authInputCls = 'w-full rounded-[24px] border border-slate-200 bg-white px-5 py-4 text-base outline-none transition focus:border-[#2563eb] focus:ring-2 focus:ring-[#2563eb]/20'
 
 function PasswordInput({ value, onChange, placeholder, autoComplete }) {
   const [show, setShow] = useState(false)
@@ -321,8 +243,8 @@ function PasswordInput({ value, onChange, placeholder, autoComplete }) {
       <button type="button" onClick={() => setShow((v) => !v)} tabIndex={-1}
         className="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-700 transition">
         {show
-          ? <svg className="h-4.5 w-4.5" fill="none" stroke="currentColor" strokeWidth={1.8} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M3.98 8.223A10.477 10.477 0 001.934 12C3.226 16.338 7.244 19.5 12 19.5c.993 0 1.953-.138 2.863-.395M6.228 6.228A10.45 10.45 0 0112 4.5c4.756 0 8.773 3.162 10.065 7.498a10.523 10.523 0 01-4.293 5.774M6.228 6.228L3 3m3.228 3.228l3.65 3.65m7.894 7.894L21 21m-3.228-3.228l-3.65-3.65m0 0a3 3 0 10-4.243-4.243m4.242 4.242L9.88 9.88"/></svg>
-          : <svg className="h-4.5 w-4.5" fill="none" stroke="currentColor" strokeWidth={1.8} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M2.036 12.322a1.012 1.012 0 010-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178z"/><path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
+          ? <svg className="h-4.5 w-4.5" fill="none" stroke="currentColor" strokeWidth={1.8} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M3.98 8.223A10.477 10.477 0 001.934 12C3.226 16.338 7.244 19.5 12 19.5c.993 0 1.953-.138 2.863-.395M6.228 6.228A10.45 10.45 0 0112 4.5c4.756 0 8.773 3.162 10.065 7.498a10.523 10.523 0 01-4.293 5.774M6.228 6.228L3 3m3.228 3.228l3.65 3.65m7.894 7.894L21 21m-3.228-3.228l-3.65-3.65m0 0a3 3 0 10-4.243-4.243m4.242 4.242L9.88 9.88" /></svg>
+          : <svg className="h-4.5 w-4.5" fill="none" stroke="currentColor" strokeWidth={1.8} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M2.036 12.322a1.012 1.012 0 010-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178z" /><path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
         }
       </button>
     </div>
@@ -330,31 +252,16 @@ function PasswordInput({ value, onChange, placeholder, autoComplete }) {
 }
 
 function AirtableLogin({ onLogin }) {
-  // Pre-fill appId if provided via URL param (e.g. from /apply?appId=APP-recXXX)
   const urlAppId = typeof window !== 'undefined'
     ? (new URLSearchParams(window.location.search).get('appId') || '')
     : ''
-  const [view, setView] = useState(urlAppId ? 'resident' : 'portal')
-  const [residentTab, setResidentTab] = useState(urlAppId ? 'activate' : 'signin')
+  const [tab, setTab] = useState(urlAppId ? 'activate' : 'signin')
   const [signInForm, setSignInForm] = useState({ email: '', password: '' })
   const [activateForm, setActivateForm] = useState({ applicationId: urlAppId, email: '', password: '' })
   const [signInLoading, setSignInLoading] = useState(false)
   const [activationLoading, setActivationLoading] = useState(false)
   const [signInError, setSignInError] = useState('')
   const [activationError, setActivationError] = useState('')
-
-  function switchView(next) {
-    setView(next)
-    setSignInError('')
-    setActivationError('')
-    if (next === 'resident') {
-      setResidentTab(urlAppId ? 'activate' : residentTab)
-    }
-  }
-
-  function goToManagerLogin() {
-    window.location.href = '/manager'
-  }
 
   async function handleLogin(event) {
     event.preventDefault()
@@ -363,13 +270,12 @@ function AirtableLogin({ onLogin }) {
     try {
       const resident = await loginResident(signInForm.email.trim(), signInForm.password)
       if (!resident) {
-        setSignInError('Invalid email or password. Contact Axis if you need help accessing your account.')
+        setSignInError('Invalid email or password. Contact Axis if you need help.')
         return
       }
-      // Block access if lease has ended
       const leaseEnd = resident['Lease End Date']
       if (leaseEnd && new Date(leaseEnd) < new Date(new Date().toDateString())) {
-        setSignInError('Your lease has ended. Access to the resident portal has been deactivated. Please contact Axis to discuss renewal.')
+        setSignInError('Your lease has ended. Contact Axis to discuss renewal.')
         return
       }
       onLogin(resident)
@@ -389,27 +295,20 @@ function AirtableLogin({ onLogin }) {
     setActivationLoading(true)
     setActivationError('')
     try {
-      // 1. Look up the application
       const app = await getApplicationById(activateForm.applicationId.trim())
       if (!app) {
-        setActivationError('Application not found. Check your Application ID (format: APP-recXXXXXXXXXXXXXX) and try again.')
+        setActivationError('Application not found. Check your Application ID (format: APP-recXXXXXXXXXXXXXX).')
         return
       }
-
-      // 2. Verify email matches application
       const appEmail = String(app['Signer Email'] || '').trim().toLowerCase()
       if (appEmail !== activateForm.email.trim().toLowerCase()) {
-        setActivationError('The email address does not match the application. Use the same email you applied with.')
+        setActivationError('Email does not match the application. Use the email you applied with.')
         return
       }
-
-      // 3. Check if a resident record already exists for this email
       const existing = await getResidentByEmail(activateForm.email.trim())
       if (existing) {
-        // Pre-created resident records (from approved applications) have no password yet.
-        // Allow the resident to complete account setup by setting their password.
         if (existing.Password) {
-          setActivationError('An account with this email already exists. Please sign in instead.')
+          setActivationError('An account with this email already exists. Please sign in.')
           return
         }
         const resident = await updateResident(existing.id, {
@@ -420,8 +319,6 @@ function AirtableLogin({ onLogin }) {
         onLogin(resident)
         return
       }
-
-      // 4. No pre-existing record — create one from the application data
       const resident = await createResident({
         Name: app['Signer Full Name'] || '',
         Email: app['Signer Email'] || '',
@@ -443,63 +340,23 @@ function AirtableLogin({ onLogin }) {
   }
 
   return (
-    <AuthCard>
-      {view === 'portal' ? (
-        <>
-          <div className="mb-6 text-center">
-            <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-[#2563eb]">Axis Portal</div>
-            <h1 className="mt-2 text-4xl font-black tracking-tight text-slate-900 sm:text-5xl">Choose your portal</h1>
-            <p className="mt-3 text-base leading-7 text-slate-500">
-              Residents can sign in or activate an account. Managers can go straight to the manager portal.
-            </p>
-          </div>
-
-          <div className="space-y-5">
-            <button
-              type="button"
-              onClick={() => switchView('resident')}
-              className="w-full rounded-[30px] border border-slate-200 bg-white px-7 py-8 text-left transition hover:border-slate-900 hover:bg-slate-50"
-            >
-              <div className="text-2xl font-black text-slate-900">Resident Portal</div>
-              <div className="mt-3 text-lg leading-8 text-slate-500">
-                Access payments, work orders, lease updates, documents, and your resident dashboard.
-              </div>
-            </button>
-            <button
-              type="button"
-              onClick={goToManagerLogin}
-              className="w-full rounded-[30px] border border-slate-200 bg-white px-7 py-8 text-left transition hover:border-slate-900 hover:bg-slate-50"
-            >
-              <div className="text-2xl font-black text-slate-900">Manager Portal</div>
-              <div className="mt-3 text-lg leading-8 text-slate-500">
-                Open the manager portal to subscribe, activate manager access, add houses, and manage leasing.
-              </div>
-            </button>
-          </div>
-        </>
-      ) : (
-        <>
+    <div className="flex min-h-screen items-start justify-center bg-[linear-gradient(180deg,#f7fbff_0%,#eef5ff_48%,#f9fcff_100%)] px-4 pb-12 pt-8 sm:pt-12 lg:pt-16">
+      <div className="w-full max-w-lg">
+        <div className="rounded-[32px] border border-slate-200 bg-white p-8 shadow-soft sm:p-10">
           <div className="mb-6 text-center">
             <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-[#2563eb]">AXIS PORTAL</div>
-            <h1 className="mt-2 text-5xl font-black tracking-tight text-slate-900 sm:text-6xl">Login</h1>
-            <p className="mt-3 text-base leading-7 text-slate-500">
-              Sign in or activate your resident account.
-            </p>
+            <h1 className="mt-2 text-4xl font-black tracking-tight text-slate-900">Resident Login</h1>
           </div>
 
-          <div className="mx-auto flex max-w-3xl gap-1 rounded-[24px] border border-slate-100 bg-slate-50 p-1.5">
-            {[['signin', 'Resident Login'], ['activate', 'Create account']].map(([id, label]) => (
+          <div className="flex gap-1 rounded-[24px] border border-slate-100 bg-slate-50 p-1.5">
+            {[['signin', 'Sign in'], ['activate', 'Activate account']].map(([id, label]) => (
               <button
                 key={id}
                 type="button"
-                onClick={() => {
-                  setResidentTab(id)
-                  setSignInError('')
-                  setActivationError('')
-                }}
+                onClick={() => { setTab(id); setSignInError(''); setActivationError('') }}
                 className={classNames(
                   'flex-1 rounded-[18px] px-4 py-3 text-base font-semibold transition',
-                  residentTab === id ? 'bg-white text-slate-900 shadow-sm ring-2 ring-[#2563eb]' : 'text-slate-500 hover:text-slate-900'
+                  tab === id ? 'bg-white text-slate-900 shadow-sm ring-2 ring-[#2563eb]' : 'text-slate-500 hover:text-slate-900'
                 )}
               >
                 {label}
@@ -507,258 +364,69 @@ function AirtableLogin({ onLogin }) {
             ))}
           </div>
 
-          {residentTab === 'signin' ? (
-            <form onSubmit={handleLogin} className="mx-auto mt-10 max-w-3xl space-y-5">
+          {tab === 'signin' ? (
+            <form onSubmit={handleLogin} className="mt-6 space-y-4">
               <div>
                 <label className="mb-2 block text-sm font-semibold text-slate-700">Email</label>
-                <input
-                  type="email"
-                  required
-                  value={signInForm.email}
-                  onChange={(event) => setSignInForm((current) => ({ ...current, email: event.target.value }))}
-                  placeholder="you@example.com"
-                  autoComplete="email"
-                  className={authInputCls}
-                />
+                <input type="email" required value={signInForm.email}
+                  onChange={(e) => setSignInForm((c) => ({ ...c, email: e.target.value }))}
+                  placeholder="you@example.com" autoComplete="email" className={authInputCls} />
               </div>
               <div>
                 <label className="mb-2 block text-sm font-semibold text-slate-700">Password</label>
-                <PasswordInput
-                  value={signInForm.password}
-                  onChange={(event) => setSignInForm((current) => ({ ...current, password: event.target.value }))}
-                  autoComplete="current-password"
-                />
+                <PasswordInput value={signInForm.password}
+                  onChange={(e) => setSignInForm((c) => ({ ...c, password: e.target.value }))}
+                  autoComplete="current-password" />
               </div>
               {signInError ? <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{signInError}</div> : null}
-              <button type="submit" disabled={signInLoading} className="w-full rounded-full bg-slate-900 py-4 text-base font-semibold text-white transition hover:bg-slate-800 disabled:opacity-50">
+              <button type="submit" disabled={signInLoading}
+                className="w-full rounded-full bg-slate-900 py-4 text-base font-semibold text-white transition hover:bg-slate-800 disabled:opacity-50">
                 {signInLoading ? 'Signing in…' : 'Sign in'}
               </button>
             </form>
           ) : (
-            <form onSubmit={handleSignup} className="mx-auto mt-10 max-w-3xl space-y-5">
+            <form onSubmit={handleSignup} className="mt-6 space-y-4">
               <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
-                Use the approved application email and the Application ID you received after approval. Your Application ID looks like{' '}
+                Use the email and Application ID from your approved application.{' '}
                 <span className="font-mono font-semibold text-slate-800">APP-rec…</span>
               </div>
-
               <div>
                 <label className="mb-2 block text-sm font-semibold text-slate-700">Application ID <span className="text-red-400">*</span></label>
-                <input
-                  required
-                  value={activateForm.applicationId}
-                  onChange={(event) => setActivateForm((current) => ({ ...current, applicationId: event.target.value }))}
-                  placeholder="APP-recXXXXXXXXXXXXXX"
-                  className={authInputCls}
-                />
+                <input required value={activateForm.applicationId}
+                  onChange={(e) => setActivateForm((c) => ({ ...c, applicationId: e.target.value }))}
+                  placeholder="APP-recXXXXXXXXXXXXXX" className={authInputCls} />
               </div>
-
               <div>
                 <label className="mb-2 block text-sm font-semibold text-slate-700">Email <span className="text-red-400">*</span></label>
-                <input
-                  type="email"
-                  required
-                  value={activateForm.email}
-                  onChange={(event) => setActivateForm((current) => ({ ...current, email: event.target.value }))}
-                  placeholder="Same email used on your application"
-                  autoComplete="email"
-                  className={authInputCls}
-                />
+                <input type="email" required value={activateForm.email}
+                  onChange={(e) => setActivateForm((c) => ({ ...c, email: e.target.value }))}
+                  placeholder="Same email as your application" autoComplete="email" className={authInputCls} />
               </div>
-
               <div>
                 <label className="mb-2 block text-sm font-semibold text-slate-700">Create password <span className="text-red-400">*</span></label>
-                <PasswordInput
-                  value={activateForm.password}
-                  onChange={(event) => setActivateForm((current) => ({ ...current, password: event.target.value }))}
-                  placeholder="Minimum 6 characters"
-                  autoComplete="new-password"
-                />
+                <PasswordInput value={activateForm.password}
+                  onChange={(e) => setActivateForm((c) => ({ ...c, password: e.target.value }))}
+                  placeholder="Minimum 6 characters" autoComplete="new-password" />
               </div>
-
               {activationError ? <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{activationError}</div> : null}
-              <button type="submit" disabled={activationLoading} className="w-full rounded-full bg-slate-900 py-4 text-base font-semibold text-white transition hover:bg-slate-800 disabled:opacity-50">
-                {activationLoading ? 'Verifying application…' : 'Create account'}
+              <button type="submit" disabled={activationLoading}
+                className="w-full rounded-full bg-slate-900 py-4 text-base font-semibold text-white transition hover:bg-slate-800 disabled:opacity-50">
+                {activationLoading ? 'Verifying…' : 'Create account'}
               </button>
             </form>
           )}
 
-          <div className="mt-10 text-center">
-            <button
-              type="button"
-              onClick={() => switchView('portal')}
-              className="text-lg font-semibold text-slate-500 transition hover:text-slate-900"
-            >
-              Back to portal options
-            </button>
+          <div className="mt-8 text-center text-sm text-slate-400">
+            Manager?{' '}
+            <a href="/manager" className="font-semibold text-slate-600 hover:text-slate-900">Log in at /manager</a>
           </div>
-        </>
-      )}
-    </AuthCard>
+        </div>
+      </div>
+    </div>
   )
 }
 
-function RequestComposer({ resident, onCreated }) {
-  const [form, setForm] = useState({
-    title: '',
-    category: requestCategories[0],
-    urgency: urgencyOptions[0],
-    preferredEntry: entryOptions[0],
-    description: '',
-  })
-  const [photo, setPhoto] = useState(null)
-  const [submitting, setSubmitting] = useState(false)
-  const [error, setError] = useState('')
-  const [success, setSuccess] = useState('')
-
-  async function handleSubmit(event) {
-    event.preventDefault()
-    setSubmitting(true)
-    setError('')
-    setSuccess('')
-
-    try {
-      if (photo) {
-        if (!photo.type.startsWith('image/')) {
-          throw new Error('Please upload an image file for the issue photo.')
-        }
-        if (photo.size > 10 * 1024 * 1024) {
-          throw new Error('Please keep the issue photo under 10 MB.')
-        }
-      }
-
-      const created = await createWorkOrder({
-        resident,
-        title: form.title,
-        category: form.category,
-        urgency: form.urgency,
-        preferredEntry: form.preferredEntry,
-        description: form.description,
-        photoFile: photo || null,
-      })
-
-      setForm({
-        title: '',
-        category: requestCategories[0],
-        urgency: urgencyOptions[0],
-        preferredEntry: entryOptions[0],
-        description: '',
-      })
-      setPhoto(null)
-      setSuccess('Request submitted successfully.')
-      onCreated(created)
-    } catch (err) {
-      setError(err.message || 'Could not submit request.')
-    } finally {
-      setSubmitting(false)
-    }
-  }
-
-  function updateField(key, value) {
-    setForm((current) => ({ ...current, [key]: value }))
-  }
-
-  return (
-    <SectionCard title="Submit a Work Order" description="Create a new request for the Axis team.">
-      <form onSubmit={handleSubmit} className="grid gap-4 sm:grid-cols-2">
-        <div className="sm:col-span-2">
-          <label className="mb-2 block text-sm font-semibold text-slate-700">Issue Title</label>
-          <input
-            required
-            value={form.title}
-            onChange={(event) => updateField('title', event.target.value)}
-            className="w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm outline-none transition focus:border-slate-900 focus:ring-2 focus:ring-slate-900/10"
-            placeholder="Kitchen sink leaking"
-          />
-        </div>
-
-        <div>
-          <label className="mb-2 block text-sm font-semibold text-slate-700">Category</label>
-          <select
-            value={form.category}
-            onChange={(event) => updateField('category', event.target.value)}
-            className="w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm outline-none transition focus:border-slate-900 focus:ring-2 focus:ring-slate-900/10"
-          >
-            {requestCategories.map((option) => <option key={option}>{option}</option>)}
-          </select>
-        </div>
-
-        <div>
-          <label className="mb-2 block text-sm font-semibold text-slate-700">Urgency</label>
-          <select
-            value={form.urgency}
-            onChange={(event) => updateField('urgency', event.target.value)}
-            className="w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm outline-none transition focus:border-slate-900 focus:ring-2 focus:ring-slate-900/10"
-          >
-            {urgencyOptions.map((option) => <option key={option}>{option}</option>)}
-          </select>
-        </div>
-
-        <div className="sm:col-span-2">
-          <label className="mb-2 block text-sm font-semibold text-slate-700">Description</label>
-          <textarea
-            required
-            rows={5}
-            value={form.description}
-            onChange={(event) => updateField('description', event.target.value)}
-            className="w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm outline-none transition focus:border-slate-900 focus:ring-2 focus:ring-slate-900/10"
-            placeholder="Describe the issue, where it is located, and anything the team should know."
-          />
-        </div>
-
-        <div>
-          <label className="mb-2 block text-sm font-semibold text-slate-700">Preferred Entry Time</label>
-          <select
-            value={form.preferredEntry}
-            onChange={(event) => updateField('preferredEntry', event.target.value)}
-            className="w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm outline-none transition focus:border-slate-900 focus:ring-2 focus:ring-slate-900/10"
-          >
-            {entryOptions.map((option) => <option key={option}>{option}</option>)}
-          </select>
-        </div>
-
-        <div>
-          <label className="mb-2 block text-sm font-semibold text-slate-700">Issue Photo</label>
-          <label className="flex min-h-[120px] cursor-pointer flex-col items-center justify-center rounded-2xl border border-dashed border-slate-300 bg-slate-50 px-4 py-5 text-center transition hover:border-slate-900 hover:bg-slate-100">
-            <span className="text-sm font-semibold text-slate-700">
-              {photo ? photo.name : 'Upload an image of the issue'}
-            </span>
-            <span className="mt-2 text-xs leading-6 text-slate-500">
-              Optional. JPG, PNG, or HEIC up to 10 MB. The photo will be attached to the Airtable work order.
-            </span>
-            <input
-              type="file"
-              accept="image/*"
-              onChange={(event) => setPhoto(event.target.files?.[0] || null)}
-              className="hidden"
-            />
-          </label>
-        </div>
-
-        {success ? (
-          <div className="sm:col-span-2 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
-            {success}
-          </div>
-        ) : null}
-
-        {error ? (
-          <div className="sm:col-span-2 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-            {error}
-          </div>
-        ) : null}
-
-        <div className="sm:col-span-2">
-          <button
-            type="submit"
-            disabled={submitting}
-            className="rounded-full bg-slate-900 px-6 py-3 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:opacity-50"
-          >
-            {submitting ? 'Submitting...' : 'Submit request'}
-          </button>
-        </div>
-      </form>
-    </SectionCard>
-  )
-}
+// ─── Work Orders ──────────────────────────────────────────────────────────────
 
 function RequestThread({ workOrder, residentEmail }) {
   const [messages, setMessages] = useState([])
@@ -770,20 +438,14 @@ function RequestThread({ workOrder, residentEmail }) {
     setMessages(next)
   }, [workOrder.id])
 
-  useEffect(() => {
-    loadMessages()
-  }, [loadMessages])
+  useEffect(() => { loadMessages() }, [loadMessages])
 
   async function handleSend(event) {
     event.preventDefault()
     if (!draft.trim()) return
     setSending(true)
     try {
-      await sendMessage({
-        workOrderId: workOrder.id,
-        senderEmail: residentEmail,
-        message: draft.trim(),
-      })
+      await sendMessage({ workOrderId: workOrder.id, senderEmail: residentEmail, message: draft.trim() })
       setDraft('')
       await loadMessages()
     } finally {
@@ -792,16 +454,15 @@ function RequestThread({ workOrder, residentEmail }) {
   }
 
   return (
-    <div className="mt-5 rounded-[24px] border border-slate-200 bg-slate-50 p-4">
+    <div className="mt-4 rounded-[24px] border border-slate-200 bg-slate-50 p-4">
       <div className="space-y-3">
         {messages.length === 0 ? (
-          <p className="text-sm text-slate-400">No updates yet for this request.</p>
+          <p className="text-sm text-slate-400">No updates yet.</p>
         ) : (
-          messages.map((message) => {
-            const isAdmin = Boolean(message['Is Admin'])
-            const timestamp = message.Timestamp || message.created_at
+          messages.map((msg) => {
+            const isAdmin = Boolean(msg['Is Admin'])
             return (
-              <div key={message.id} className={classNames('flex', isAdmin ? 'justify-start' : 'justify-end')}>
+              <div key={msg.id} className={classNames('flex', isAdmin ? 'justify-start' : 'justify-end')}>
                 <div className={classNames(
                   'max-w-[85%] rounded-2xl px-4 py-3 text-sm leading-6',
                   isAdmin ? 'rounded-tl-sm bg-white text-slate-800' : 'rounded-tr-sm bg-slate-900 text-white'
@@ -809,9 +470,9 @@ function RequestThread({ workOrder, residentEmail }) {
                   <div className={classNames('mb-1 text-[11px] font-bold uppercase tracking-[0.18em]', isAdmin ? 'text-slate-400' : 'text-white/55')}>
                     {isAdmin ? 'Axis Team' : 'You'}
                   </div>
-                  <p>{message.Message}</p>
+                  <p>{msg.Message}</p>
                   <div className={classNames('mt-2 text-[11px]', isAdmin ? 'text-slate-400' : 'text-white/55')}>
-                    {formatDate(timestamp)}
+                    {formatDate(msg.Timestamp || msg.created_at)}
                   </div>
                 </div>
               </div>
@@ -819,19 +480,12 @@ function RequestThread({ workOrder, residentEmail }) {
           })
         )}
       </div>
-
       <form onSubmit={handleSend} className="mt-4 flex gap-2">
-        <input
-          value={draft}
-          onChange={(event) => setDraft(event.target.value)}
+        <input value={draft} onChange={(e) => setDraft(e.target.value)}
           placeholder="Send an update or reply..."
-          className="flex-1 rounded-full border border-slate-200 px-4 py-2.5 text-sm outline-none transition focus:border-slate-900 focus:ring-2 focus:ring-slate-900/10"
-        />
-        <button
-          type="submit"
-          disabled={sending || !draft.trim()}
-          className="rounded-full bg-slate-900 px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:opacity-50"
-        >
+          className="flex-1 rounded-full border border-slate-200 px-4 py-2.5 text-sm outline-none transition focus:border-slate-900 focus:ring-2 focus:ring-slate-900/10" />
+        <button type="submit" disabled={sending || !draft.trim()}
+          className="rounded-full bg-slate-900 px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:opacity-50">
           Send
         </button>
       </form>
@@ -839,108 +493,189 @@ function RequestThread({ workOrder, residentEmail }) {
   )
 }
 
-function RequestsList({ requests, residentEmail }) {
+function WorkOrdersPanel({ resident, requests, onRequestCreated }) {
+  const [showForm, setShowForm] = useState(false)
   const [expandedId, setExpandedId] = useState(null)
+  const [form, setForm] = useState({
+    title: '', category: requestCategories[0], urgency: urgencyOptions[0],
+    preferredEntry: entryOptions[0], description: '',
+  })
+  const [photo, setPhoto] = useState(null)
+  const [submitting, setSubmitting] = useState(false)
+  const [error, setError] = useState('')
+  const [success, setSuccess] = useState('')
 
-  if (requests.length === 0) {
-    return (
-      <SectionCard title="My Work Orders" description="Track maintenance requests and see updates from the Axis team.">
-        <div className="flex flex-col items-center gap-4 py-16 text-center">
-          <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-slate-100 text-3xl">📋</div>
-          <div>
-            <p className="text-lg font-semibold text-slate-900">No work orders yet</p>
-            <p className="mt-1 text-sm text-slate-500">When you submit a work order, it will appear here with status updates and management notes.</p>
-          </div>
-        </div>
-      </SectionCard>
-    )
+  const fieldCls = 'w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm outline-none transition focus:border-slate-900 focus:ring-2 focus:ring-slate-900/10'
+
+  async function handleSubmit(event) {
+    event.preventDefault()
+    setSubmitting(true)
+    setError('')
+    setSuccess('')
+    try {
+      if (photo) {
+        if (!photo.type.startsWith('image/')) throw new Error('Please upload an image file.')
+        if (photo.size > 10 * 1024 * 1024) throw new Error('Keep the photo under 10 MB.')
+      }
+      const created = await createWorkOrder({
+        resident, title: form.title, category: form.category,
+        urgency: form.urgency, preferredEntry: form.preferredEntry,
+        description: form.description, photoFile: photo || null,
+      })
+      setForm({ title: '', category: requestCategories[0], urgency: urgencyOptions[0], preferredEntry: entryOptions[0], description: '' })
+      setPhoto(null)
+      setSuccess('Request submitted.')
+      setShowForm(false)
+      onRequestCreated(created)
+    } catch (err) {
+      setError(err.message || 'Could not submit request.')
+    } finally {
+      setSubmitting(false)
+    }
   }
 
   return (
-    <SectionCard title="My Work Orders" description="Track maintenance requests and see updates from the Axis team.">
-      <div className="space-y-4">
-        {requests.map((request) => {
-          const status = request.Status || 'Submitted'
-          const priority = request.Priority || 'Routine'
-          const notes = request['Management Notes']
-          const photo = Array.isArray(request.Photo) ? request.Photo[0] : null
-          const isExpanded = expandedId === request.id
+    <SectionCard
+      title="Work Orders"
+      description="Submit and track maintenance requests."
+      action={
+        <button type="button"
+          onClick={() => { setShowForm((v) => !v); setError(''); setSuccess('') }}
+          className="rounded-full border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 transition hover:border-slate-500">
+          {showForm ? 'Cancel' : '+ New request'}
+        </button>
+      }
+    >
+      {showForm && (
+        <form onSubmit={handleSubmit} className="mb-8 grid gap-4 border-b border-slate-100 pb-8 sm:grid-cols-2">
+          <div className="sm:col-span-2">
+            <label className="mb-2 block text-sm font-semibold text-slate-700">Issue Title</label>
+            <input required value={form.title}
+              onChange={(e) => setForm((c) => ({ ...c, title: e.target.value }))}
+              className={fieldCls} placeholder="Kitchen sink leaking" />
+          </div>
+          <div>
+            <label className="mb-2 block text-sm font-semibold text-slate-700">Category</label>
+            <select value={form.category} onChange={(e) => setForm((c) => ({ ...c, category: e.target.value }))} className={fieldCls}>
+              {requestCategories.map((o) => <option key={o}>{o}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className="mb-2 block text-sm font-semibold text-slate-700">Urgency</label>
+            <select value={form.urgency} onChange={(e) => setForm((c) => ({ ...c, urgency: e.target.value }))} className={fieldCls}>
+              {urgencyOptions.map((o) => <option key={o}>{o}</option>)}
+            </select>
+          </div>
+          <div className="sm:col-span-2">
+            <label className="mb-2 block text-sm font-semibold text-slate-700">Description</label>
+            <textarea required rows={4} value={form.description}
+              onChange={(e) => setForm((c) => ({ ...c, description: e.target.value }))}
+              className={fieldCls} placeholder="Describe the issue and its location." />
+          </div>
+          <div>
+            <label className="mb-2 block text-sm font-semibold text-slate-700">Preferred Entry</label>
+            <select value={form.preferredEntry} onChange={(e) => setForm((c) => ({ ...c, preferredEntry: e.target.value }))} className={fieldCls}>
+              {entryOptions.map((o) => <option key={o}>{o}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className="mb-2 block text-sm font-semibold text-slate-700">Photo (optional)</label>
+            <label className="flex min-h-[112px] cursor-pointer flex-col items-center justify-center rounded-2xl border border-dashed border-slate-300 bg-slate-50 px-4 py-4 text-center transition hover:border-slate-900">
+              <span className="text-sm font-semibold text-slate-700">{photo ? photo.name : 'Upload photo'}</span>
+              <span className="mt-1 text-xs text-slate-400">JPG, PNG, or HEIC · max 10 MB</span>
+              <input type="file" accept="image/*" onChange={(e) => setPhoto(e.target.files?.[0] || null)} className="hidden" />
+            </label>
+          </div>
+          {success ? <div className="sm:col-span-2 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">{success}</div> : null}
+          {error ? <div className="sm:col-span-2 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div> : null}
+          <div className="sm:col-span-2">
+            <button type="submit" disabled={submitting}
+              className="rounded-full bg-slate-900 px-6 py-3 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:opacity-50">
+              {submitting ? 'Submitting...' : 'Submit request'}
+            </button>
+          </div>
+        </form>
+      )}
 
-          return (
-            <div key={request.id} className="rounded-[24px] border border-slate-200 p-5 transition hover:border-slate-300">
-              <button
-                type="button"
-                onClick={() => setExpandedId((current) => current === request.id ? null : request.id)}
-                className="w-full text-left"
-              >
-                <div className="flex flex-wrap items-start justify-between gap-3">
-                  <div>
-                    <div className="flex flex-wrap items-center gap-2">
-                      <h3 className="text-lg font-bold text-slate-900">{request.Title}</h3>
-                      <span className={classNames('rounded-full border px-2.5 py-1 text-[11px] font-semibold', statusStyles[status] || statusStyles.Submitted)}>
-                        {status}
-                      </span>
-                      <span className={classNames('rounded-full border px-2.5 py-1 text-[11px] font-semibold', priorityStyles[priority] || priorityStyles.Routine)}>
-                        {priority}
-                      </span>
+      {requests.length === 0 && !showForm ? (
+        <div className="flex flex-col items-center gap-4 py-12 text-center">
+          <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-slate-100 text-2xl">📋</div>
+          <div>
+            <p className="text-base font-semibold text-slate-900">No work orders yet</p>
+            <p className="mt-1 text-sm text-slate-500">Submit a request and it'll appear here with status updates.</p>
+          </div>
+        </div>
+      ) : (
+        <div className="space-y-4">
+          {requests.map((request) => {
+            const status = request.Status || 'Submitted'
+            const priority = request.Priority || 'Routine'
+            const notes = request['Management Notes']
+            const photo = Array.isArray(request.Photo) ? request.Photo[0] : null
+            const isExpanded = expandedId === request.id
+
+            return (
+              <div key={request.id} className="rounded-[24px] border border-slate-200 p-5 transition hover:border-slate-300">
+                <button type="button"
+                  onClick={() => setExpandedId((c) => c === request.id ? null : request.id)}
+                  className="w-full text-left">
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <h3 className="text-base font-bold text-slate-900">{request.Title}</h3>
+                        <span className={classNames('rounded-full border px-2.5 py-1 text-[11px] font-semibold', statusStyles[status] || statusStyles.Submitted)}>{status}</span>
+                        <span className={classNames('rounded-full border px-2.5 py-1 text-[11px] font-semibold', priorityStyles[priority] || priorityStyles.Routine)}>{priority}</span>
+                      </div>
+                      <p className="mt-1.5 text-sm leading-6 text-slate-500">{request.Description}</p>
                     </div>
-                    <p className="mt-2 text-sm leading-6 text-slate-500">{request.Description}</p>
+                    <div className="text-right text-xs text-slate-400">
+                      <div>{request.Category}</div>
+                      <div className="mt-1">{formatDate(request['Date Submitted'] || request.created_at)}</div>
+                    </div>
                   </div>
-                  <div className="text-right text-xs text-slate-400">
-                    <div>{request.Category}</div>
-                    <div className="mt-1">{formatDate(request['Date Submitted'] || request.created_at)}</div>
-                  </div>
-                </div>
-              </button>
+                </button>
 
-              <div className="mt-4 grid gap-3 sm:grid-cols-3">
-                <div className="rounded-2xl bg-slate-50 px-4 py-3">
-                  <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">Preferred Entry</div>
-                  <div className="mt-1 text-sm font-semibold text-slate-700">{request['Preferred Entry Time'] || 'Not specified'}</div>
-                </div>
-                <div className="rounded-2xl bg-slate-50 px-4 py-3 sm:col-span-2">
-                  <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">Management Notes</div>
-                  <div className="mt-1 text-sm text-slate-600">{notes || 'No management notes yet.'}</div>
-                </div>
+                {notes ? (
+                  <div className="mt-3 rounded-2xl bg-slate-50 px-4 py-3">
+                    <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">Management Notes</div>
+                    <div className="mt-1 text-sm text-slate-600">{notes}</div>
+                  </div>
+                ) : null}
+
+                {photo?.url ? (
+                  <div className="mt-3">
+                    <a href={photo.url} target="_blank" rel="noreferrer"
+                      className="inline-flex rounded-full border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 transition hover:border-slate-500">
+                      View attached photo
+                    </a>
+                  </div>
+                ) : null}
+
+                {isExpanded ? <RequestThread workOrder={request} residentEmail={resident.Email} /> : null}
               </div>
-
-              {photo?.url ? (
-                <div className="mt-4">
-                  <a
-                    href={photo.url}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="inline-flex rounded-full border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 transition hover:border-slate-500"
-                  >
-                    View attached photo
-                  </a>
-                </div>
-              ) : null}
-
-              {isExpanded ? <RequestThread workOrder={request} residentEmail={residentEmail} /> : null}
-            </div>
-          )
-        })}
-      </div>
+            )
+          })}
+        </div>
+      )}
     </SectionCard>
   )
 }
 
+// ─── Announcements ────────────────────────────────────────────────────────────
+
 function AnnouncementsPanel({ items }) {
   return (
-    <SectionCard title="Announcements" description="Updates from the Axis team for residents.">
+    <SectionCard title="Announcements" description="Updates from the Axis team.">
       {items.length === 0 ? (
-        <p className="text-sm text-slate-500">No announcements are active right now.</p>
+        <p className="text-sm text-slate-500">No announcements right now.</p>
       ) : (
         <div className="space-y-4">
           {items.map((item) => (
             <div key={item.id} className="rounded-[24px] border border-slate-200 p-5">
               <div className="flex flex-wrap items-center gap-2">
-                <h3 className="text-lg font-bold text-slate-900">{item.Title}</h3>
+                <h3 className="text-base font-bold text-slate-900">{item.Title}</h3>
                 {item.Pinned ? (
-                  <span className="rounded-full border border-sky-200 bg-sky-50 px-2.5 py-1 text-[11px] font-semibold text-sky-700">
-                    Pinned
-                  </span>
+                  <span className="rounded-full border border-sky-200 bg-sky-50 px-2.5 py-1 text-[11px] font-semibold text-sky-700">Pinned</span>
                 ) : null}
                 {item.Priority ? (
                   <span className={classNames('rounded-full border px-2.5 py-1 text-[11px] font-semibold', priorityStyles[item.Priority] || priorityStyles.Routine)}>
@@ -948,19 +683,12 @@ function AnnouncementsPanel({ items }) {
                   </span>
                 ) : null}
               </div>
-              {item['Short Summary'] ? <p className="mt-3 text-sm font-medium text-slate-500">{item['Short Summary']}</p> : null}
-              <p className="mt-3 text-sm leading-7 text-slate-600">{item.Message}</p>
-              <div className="mt-3 flex flex-wrap items-center gap-3 text-xs text-slate-400">
-                <span>{formatDate(item['Start Date'] || item['Date Posted'] || item.CreatedAt)}</span>
-                {item.Target ? <span>{item.Target}</span> : null}
-              </div>
+              {item['Short Summary'] ? <p className="mt-2 text-sm font-medium text-slate-500">{item['Short Summary']}</p> : null}
+              <p className="mt-2 text-sm leading-7 text-slate-600">{item.Message}</p>
+              <div className="mt-2 text-xs text-slate-400">{formatDate(item['Start Date'] || item['Date Posted'] || item.CreatedAt)}</div>
               {item['CTA Text'] && item['CTA Link'] ? (
-                <a
-                  href={item['CTA Link']}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="mt-4 inline-flex rounded-full border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 transition hover:border-slate-500"
-                >
+                <a href={item['CTA Link']} target="_blank" rel="noreferrer"
+                  className="mt-3 inline-flex rounded-full border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 transition hover:border-slate-500">
                   {item['CTA Text']}
                 </a>
               ) : null}
@@ -972,96 +700,21 @@ function AnnouncementsPanel({ items }) {
   )
 }
 
-function AnnouncementPreview({ items, onOpenAll }) {
-  const urgentItems = items.filter((item) => String(item.Priority || '').toLowerCase() === 'urgent')
-  const previewItems = items.slice(0, 3)
-
-  return (
-    <div className="mb-6 space-y-4">
-      {urgentItems.length > 0 ? (
-        <div className="rounded-[24px] border border-red-200 bg-red-50 px-5 py-4">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-red-500">Urgent Announcement</div>
-              <div className="mt-1 text-lg font-black text-red-900">{urgentItems[0].Title}</div>
-              <p className="mt-2 text-sm leading-6 text-red-800">{urgentItems[0].Message}</p>
-            </div>
-            <button
-              type="button"
-              onClick={onOpenAll}
-              className="rounded-full bg-red-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-red-700"
-            >
-              View announcement
-            </button>
-          </div>
-        </div>
-      ) : null}
-
-      <div className="rounded-[28px] border border-slate-200 bg-white p-5 shadow-soft">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">Announcements</div>
-            <h2 className="mt-1 text-2xl font-black text-slate-900">Latest updates for your home</h2>
-          </div>
-          <button
-            type="button"
-            onClick={onOpenAll}
-            className="rounded-full border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 transition hover:border-slate-500"
-          >
-            View all
-          </button>
-        </div>
-
-        {previewItems.length === 0 ? (
-          <p className="mt-4 text-sm text-slate-500">No announcements are active right now.</p>
-        ) : (
-          <div className="mt-5 grid gap-4 lg:grid-cols-3">
-            {previewItems.map((item) => (
-              <div key={item.id} className="rounded-[24px] border border-slate-200 bg-slate-50 p-4">
-                <div className="flex flex-wrap items-center gap-2">
-                  <h3 className="text-base font-bold text-slate-900">{item.Title}</h3>
-                  {item.Pinned ? (
-                    <span className="rounded-full border border-sky-200 bg-sky-50 px-2.5 py-1 text-[11px] font-semibold text-sky-700">
-                      Pinned
-                    </span>
-                  ) : null}
-                  {item.Priority ? (
-                    <span className={classNames('rounded-full border px-2.5 py-1 text-[11px] font-semibold', priorityStyles[item.Priority] || priorityStyles.Routine)}>
-                      {item.Priority}
-                    </span>
-                  ) : null}
-                </div>
-                <p className="mt-3 line-clamp-4 text-sm leading-6 text-slate-600">{item.Message}</p>
-                <div className="mt-4 text-xs text-slate-400">{formatDate(item['Start Date'] || item['Date Posted'] || item.CreatedAt)}</div>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-    </div>
-  )
-}
+// ─── Profile ──────────────────────────────────────────────────────────────────
 
 function ProfilePanel({ resident, onUpdated }) {
-  const defaultHouse = resident.House || houseOptions[0]?.house || ''
   const [name, setName] = useState(resident.Name || '')
   const [email, setEmail] = useState(resident.Email || '')
-  const [house, setHouse] = useState(defaultHouse)
   const [phone, setPhone] = useState(resident.Phone || '')
-  const [unitNumber, setUnitNumber] = useState(resident['Unit Number'] || getUnitsForHouse(defaultHouse)[0] || '')
   const [isEditing, setIsEditing] = useState(false)
   const [saving, setSaving] = useState(false)
   const [message, setMessage] = useState('')
   const [saveError, setSaveError] = useState('')
-  const leaseTermLabel = getLeaseTermLabel(resident)
 
   useEffect(() => {
-    const nextHouse = resident.House || houseOptions[0]?.house || ''
     setName(resident.Name || '')
     setEmail(resident.Email || '')
-    setHouse(nextHouse)
     setPhone(resident.Phone || '')
-    setUnitNumber(resident['Unit Number'] || getUnitsForHouse(nextHouse)[0] || '')
     setIsEditing(false)
   }, [resident])
 
@@ -1071,138 +724,87 @@ function ProfilePanel({ resident, onUpdated }) {
     setMessage('')
     setSaveError('')
     try {
-      const updated = await updateResident(resident.id, {
-        Name: name,
-        Email: email,
-        Phone: phone,
-      })
+      const updated = await updateResident(resident.id, { Name: name, Email: email, Phone: phone })
       onUpdated(updated)
-      setMessage('Profile updated successfully.')
+      setMessage('Profile updated.')
       setIsEditing(false)
     } catch (err) {
-      setSaveError(err.message || 'Could not save profile right now. Please try again.')
+      setSaveError(err.message || 'Could not save profile. Please try again.')
     } finally {
       setSaving(false)
     }
   }
 
+  const inputCls = 'w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm outline-none transition focus:border-slate-900 focus:ring-2 focus:ring-slate-900/10'
+  const readCls = 'rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900'
+
   return (
     <SectionCard
       title="My Profile"
-      description="Your resident details are locked by default. Use edit mode for basic contact updates."
-      action={(
-        <button
-          type="button"
+      action={
+        <button type="button"
           onClick={() => {
-            setIsEditing((current) => !current)
+            if (isEditing) { setName(resident.Name || ''); setEmail(resident.Email || ''); setPhone(resident.Phone || '') }
+            setIsEditing((v) => !v)
             setMessage('')
             setSaveError('')
-            if (isEditing) {
-              const nextHouse = resident.House || houseOptions[0]?.house || ''
-              setName(resident.Name || '')
-              setEmail(resident.Email || '')
-              setHouse(nextHouse)
-              setPhone(resident.Phone || '')
-              setUnitNumber(resident['Unit Number'] || getUnitsForHouse(nextHouse)[0] || '')
-            }
           }}
-          className="rounded-full border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 transition hover:border-slate-500"
-        >
-          {isEditing ? 'Cancel edit' : 'Edit profile'}
+          className="rounded-full border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 transition hover:border-slate-500">
+          {isEditing ? 'Cancel' : 'Edit'}
         </button>
-      )}
+      }
     >
+      {/* Locked lease info as plain text */}
+      <div className="mb-6 grid gap-3 sm:grid-cols-2">
+        <div className="rounded-2xl bg-slate-50 px-4 py-3">
+          <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">Property</div>
+          <div className="mt-1 text-sm font-semibold text-slate-900">{resident.House || '—'}</div>
+        </div>
+        <div className="rounded-2xl bg-slate-50 px-4 py-3">
+          <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">Unit</div>
+          <div className="mt-1 text-sm font-semibold text-slate-900">{normalizeUnitLabel(resident['Unit Number'] || '') || '—'}</div>
+        </div>
+        <div className="rounded-2xl bg-slate-50 px-4 py-3">
+          <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">Lease Type</div>
+          <div className="mt-1 text-sm font-semibold text-slate-900">{getLeaseTermLabel(resident)}</div>
+        </div>
+        <div className="rounded-2xl bg-slate-50 px-4 py-3">
+          <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">Lease Dates</div>
+          <div className="mt-1 text-sm font-semibold text-slate-900">
+            {resident['Lease Start Date'] ? formatDate(resident['Lease Start Date']) : '—'}
+            {' → '}
+            {resident['Lease End Date'] ? formatDate(resident['Lease End Date']) : 'Ongoing'}
+          </div>
+        </div>
+      </div>
+
+      {/* Editable contact fields */}
       <form onSubmit={handleSubmit} className="grid gap-4 sm:grid-cols-2">
         <div>
           <label className="mb-2 block text-sm font-semibold text-slate-700">Full Name</label>
-          <input
-            type="text"
-            required
-            value={name}
-            onChange={(event) => setName(event.target.value)}
-            placeholder="Your full name"
-            disabled={!isEditing}
-            className="w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm outline-none transition disabled:bg-slate-50 disabled:text-slate-500 focus:border-slate-900 focus:ring-2 focus:ring-slate-900/10"
-          />
+          {isEditing
+            ? <input type="text" required value={name} onChange={(e) => setName(e.target.value)} className={inputCls} />
+            : <div className={readCls}>{name || '—'}</div>}
         </div>
         <div>
           <label className="mb-2 block text-sm font-semibold text-slate-700">Email</label>
-          <input
-            type="email"
-            required
-            value={email}
-            onChange={(event) => setEmail(event.target.value)}
-            disabled={!isEditing}
-            className="w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm outline-none transition disabled:bg-slate-50 disabled:text-slate-500 focus:border-slate-900 focus:ring-2 focus:ring-slate-900/10"
-          />
+          {isEditing
+            ? <input type="email" required value={email} onChange={(e) => setEmail(e.target.value)} className={inputCls} />
+            : <div className={readCls}>{email || '—'}</div>}
         </div>
         <div>
-          <label className="mb-2 block text-sm font-semibold text-slate-700">House</label>
-          <input
-            value={house}
-            disabled
-            className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-500 outline-none"
-          />
+          <label className="mb-2 block text-sm font-semibold text-slate-700">Phone</label>
+          {isEditing
+            ? <input required value={phone} onChange={(e) => setPhone(e.target.value)} className={inputCls} />
+            : <div className={readCls}>{phone || '—'}</div>}
         </div>
-        <div>
-          <label className="mb-2 block text-sm font-semibold text-slate-700">Unit</label>
-          <input
-            value={unitNumber}
-            disabled
-            className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-500 outline-none"
-          />
-        </div>
-        <div>
-          <label className="mb-2 block text-sm font-semibold text-slate-700">Phone Number</label>
-          <input
-            required
-            value={phone}
-            onChange={(event) => setPhone(event.target.value)}
-            disabled={!isEditing}
-            className="w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm outline-none transition disabled:bg-slate-50 disabled:text-slate-500 focus:border-slate-900 focus:ring-2 focus:ring-slate-900/10"
-          />
-        </div>
-        <div>
-          <label className="mb-2 block text-sm font-semibold text-slate-700">Lease Type</label>
-          <input
-            value={leaseTermLabel}
-            disabled
-            className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-500 outline-none"
-          />
-        </div>
-        <div>
-          <label className="mb-2 block text-sm font-semibold text-slate-700">Move In Date</label>
-          <input
-            type="date"
-            value={formatDateInput(resident['Lease Start Date'])}
-            disabled
-            className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-500 outline-none"
-          />
-        </div>
-        <div>
-          <label className="mb-2 block text-sm font-semibold text-slate-700">Move Out Date</label>
-          <input
-            type="date"
-            value={formatDateInput(resident['Lease End Date'])}
-            disabled
-            className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-500 outline-none"
-          />
-        </div>
-        <div className="sm:col-span-2 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
-          Lease dates and unit details are managed through the resident leasing and payments flow, not from profile editing.
-        </div>
-        <div className="sm:col-span-2">
-          {message ? <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">{message}</div> : null}
-          {saveError ? <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{saveError}</div> : null}
-        </div>
+        {message ? <div className="sm:col-span-2 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">{message}</div> : null}
+        {saveError ? <div className="sm:col-span-2 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{saveError}</div> : null}
         {isEditing ? (
           <div className="sm:col-span-2">
-            <button
-              type="submit"
-              disabled={saving}
-              className="rounded-full bg-slate-900 px-6 py-3 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:opacity-50"
-            >
-              {saving ? 'Saving...' : 'Save profile'}
+            <button type="submit" disabled={saving}
+              className="rounded-full bg-slate-900 px-6 py-3 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:opacity-50">
+              {saving ? 'Saving...' : 'Save'}
             </button>
           </div>
         ) : null}
@@ -1211,26 +813,7 @@ function ProfilePanel({ resident, onUpdated }) {
   )
 }
 
-const paymentStatusStyles = {
-  Paid: 'border-emerald-200 bg-emerald-50 text-emerald-700',
-  Pending: 'border-amber-200 bg-amber-50 text-amber-700',
-  Overdue: 'border-red-200 bg-red-50 text-red-700',
-  Partial: 'border-sky-200 bg-sky-50 text-sky-700',
-}
-
-function getPaymentKind(payment) {
-  const raw = [
-    payment.Type,
-    payment.Category,
-    payment.Kind,
-    payment['Line Item Type'],
-    payment.Month,
-    payment.Notes,
-  ].filter(Boolean).join(' ').toLowerCase()
-
-  if (/(fee|fine|damage|late fee|late charge|cleaning|lockout)/.test(raw)) return 'fee'
-  return 'rent'
-}
+// ─── Payments ─────────────────────────────────────────────────────────────────
 
 function PaymentsPanel({ resident, onResidentUpdated, highlightCategory }) {
   const [payments, setPayments] = useState([])
@@ -1249,20 +832,16 @@ function PaymentsPanel({ resident, onResidentUpdated, highlightCategory }) {
 
   const unpaidPayments = payments.filter((p) => p.Status !== 'Paid')
   const outstanding = unpaidPayments.reduce((sum, p) => sum + (Number(p.Amount) || 0), 0)
-  const rentPayments = unpaidPayments.filter((payment) => getPaymentKind(payment) === 'rent')
-  const feePayments = unpaidPayments.filter((payment) => getPaymentKind(payment) === 'fee')
+  const rentPayments = unpaidPayments.filter((p) => getPaymentKind(p) === 'rent')
+  const feePayments = unpaidPayments.filter((p) => getPaymentKind(p) === 'fee')
   const nextDue = rentPayments[0] || unpaidPayments.find((p) => p.Status === 'Pending' || p.Status === 'Overdue')
   const feesDue = feePayments.reduce((sum, p) => sum + (Number(p.Amount) || 0), 0)
   const paymentUrl = useMemo(() => resolveResidentPaymentUrl(resident, payments), [resident, payments])
   const stripeCustomerId = useMemo(() => getResidentStripeCustomerId(resident, payments), [resident, payments])
-  const fallbackRentAmount = useMemo(
-    () => getRoomMonthlyRent(resident.House, resident['Unit Number']),
-    [resident]
-  )
+  const fallbackRentAmount = useMemo(() => getRoomMonthlyRent(resident.House, resident['Unit Number']), [resident])
   const utilitiesAmount = useMemo(() => getUtilitiesFee(resident.House), [resident])
   const effectiveNextDue = nextDue || (fallbackRentAmount > 0 ? {
-    Amount: fallbackRentAmount,
-    Month: 'Current rent',
+    Amount: fallbackRentAmount, Month: 'Current rent',
     Notes: 'Calculated from your current house and room assignment.',
   } : null)
   const leaseExtensionAmount = fallbackRentAmount + utilitiesAmount
@@ -1273,16 +852,9 @@ function PaymentsPanel({ resident, onResidentUpdated, highlightCategory }) {
     setEmbeddedCheckout({
       title: description,
       request: {
-        residentId: resident.id,
-        residentName: resident.Name,
-        residentEmail: resident.Email,
-        propertyName: resident.House,
-        unitNumber: resident['Unit Number'],
-        amount,
-        items,
-        description,
-        category,
-        paymentRecordId,
+        residentId: resident.id, residentName: resident.Name, residentEmail: resident.Email,
+        propertyName: resident.House, unitNumber: resident['Unit Number'],
+        amount, items, description, category, paymentRecordId,
       },
       category,
     })
@@ -1310,14 +882,10 @@ function PaymentsPanel({ resident, onResidentUpdated, highlightCategory }) {
 
   async function openPortal() {
     if (!stripeCustomerId) {
-      if (paymentUrl) {
-        window.location.href = paymentUrl
-        return
-      }
-      setActionError('A Stripe customer ID is needed before the lease portal can open for this resident.')
+      if (paymentUrl) { window.location.href = paymentUrl; return }
+      setActionError('A Stripe customer ID is needed before the billing portal can open.')
       return
     }
-
     setActionError('')
     setActionLoading('portal')
     try {
@@ -1330,7 +898,7 @@ function PaymentsPanel({ resident, onResidentUpdated, highlightCategory }) {
       if (!response.ok) throw new Error(data.error || 'Unable to open customer portal.')
       window.location.href = data.url
     } catch (err) {
-      setActionError(err.message || 'Unable to open the lease portal.')
+      setActionError(err.message || 'Unable to open the billing portal.')
     } finally {
       setActionLoading('')
     }
@@ -1343,47 +911,39 @@ function PaymentsPanel({ resident, onResidentUpdated, highlightCategory }) {
         <>
           {error ? (
             <div className="mb-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
-              Payment history could not be loaded from Airtable right now, but checkout is still available below.
+              Payment history could not be loaded right now, but checkout is still available below.
             </div>
           ) : null}
+
           <div className="rounded-[24px] border border-slate-200 bg-[linear-gradient(135deg,#ffffff_0%,#f8fafc_100%)] p-6">
             <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
-              <div className="max-w-2xl">
+              <div>
                 <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">Current Due</div>
                 <div className="mt-3 text-4xl font-black tracking-tight text-slate-900">
                   {effectiveNextDue ? formatMoney(effectiveNextDue.Amount) : '$0'}
                 </div>
                 <div className="mt-2 text-sm leading-6 text-slate-500">
                   {effectiveNextDue
-                    ? `${effectiveNextDue.Month || 'Current rent'}${effectiveNextDue['Due Date'] ? ` • Due ${formatDate(effectiveNextDue['Due Date'])}` : ''}`
+                    ? `${effectiveNextDue.Month || 'Current rent'}${effectiveNextDue['Due Date'] ? ` · Due ${formatDate(effectiveNextDue['Due Date'])}` : ''}`
                     : 'No rent currently due'}
                 </div>
-                <div className="mt-3 inline-flex items-center rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600">
-                  Secure Stripe checkout opens directly inside the portal
-                </div>
               </div>
-
               <div className="flex flex-wrap gap-3">
-                <button
-                  type="button"
+                <button type="button"
                   disabled={!effectiveNextDue || actionLoading === 'rent'}
                   onClick={() => launchCheckout({
                     amount: Number(effectiveNextDue?.Amount || 0),
                     description: effectiveNextDue?.Month ? `Rent payment - ${effectiveNextDue.Month}` : 'Rent payment',
-                    category: 'rent',
-                    paymentRecordId: effectiveNextDue?.id,
+                    category: 'rent', paymentRecordId: effectiveNextDue?.id,
                   })}
-                  className="rounded-full bg-slate-900 px-5 py-3 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  {actionLoading === 'rent' ? 'Opening checkout...' : 'Pay rent'}
+                  className="rounded-full bg-slate-900 px-5 py-3 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50">
+                  {actionLoading === 'rent' ? 'Opening...' : 'Pay rent'}
                 </button>
-                <button
-                  type="button"
+                <button type="button"
                   disabled={actionLoading === 'portal'}
                   onClick={openPortal}
-                  className="rounded-full border border-slate-300 bg-white px-5 py-3 text-sm font-semibold text-slate-700 transition hover:border-slate-500 disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  {actionLoading === 'portal' ? 'Opening portal...' : 'Billing portal'}
+                  className="rounded-full border border-slate-300 bg-white px-5 py-3 text-sm font-semibold text-slate-700 transition hover:border-slate-500 disabled:opacity-50">
+                  {actionLoading === 'portal' ? 'Opening...' : 'Billing portal'}
                 </button>
               </div>
             </div>
@@ -1397,7 +957,9 @@ function PaymentsPanel({ resident, onResidentUpdated, highlightCategory }) {
               </div>
               <div className="rounded-2xl border border-slate-200 bg-white px-4 py-4">
                 <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">Next Due</div>
-                <div className="mt-2 text-lg font-black text-slate-900">{effectiveNextDue ? effectiveNextDue.Month || formatDate(effectiveNextDue['Due Date']) : '—'}</div>
+                <div className="mt-2 text-lg font-black text-slate-900">
+                  {effectiveNextDue ? effectiveNextDue.Month || formatDate(effectiveNextDue['Due Date']) : '—'}
+                </div>
                 {effectiveNextDue?.['Due Date'] && <div className="mt-0.5 text-xs text-slate-400">{formatDate(effectiveNextDue['Due Date'])}</div>}
               </div>
               <div className="rounded-2xl border border-slate-200 bg-white px-4 py-4">
@@ -1408,57 +970,47 @@ function PaymentsPanel({ resident, onResidentUpdated, highlightCategory }) {
             </div>
           </div>
 
-          <div className="mt-4 grid gap-4 lg:grid-cols-[1fr_1fr]">
+          <div className="mt-4 grid gap-4 lg:grid-cols-2">
             <div className="rounded-[24px] border border-slate-200 bg-white p-5">
               <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">Other Fees & Fines</div>
               <h3 className="mt-2 text-xl font-black text-slate-900">{formatMoney(feesDue)}</h3>
               <div className="mt-3 flex flex-wrap items-end justify-between gap-4">
-                <div>
-                  <div className="mt-1 text-sm text-slate-500">
-                    {feePayments.length > 0 ? `${feePayments.length} open item${feePayments.length === 1 ? '' : 's'}` : 'No open fees or fines'}
-                  </div>
+                <div className="text-sm text-slate-500">
+                  {feePayments.length > 0 ? `${feePayments.length} open item${feePayments.length === 1 ? '' : 's'}` : 'No open fees or fines'}
                 </div>
-                <button
-                  type="button"
+                <button type="button"
                   disabled={feesDue <= 0 || actionLoading === 'fees'}
                   onClick={() => launchCheckout({
-                    amount: feesDue,
-                    description: 'Resident fees and fines',
-                    category: 'fees',
-                    paymentRecordId: feePayments.map((item) => item.id).join(','),
+                    amount: feesDue, description: 'Resident fees and fines',
+                    category: 'fees', paymentRecordId: feePayments.map((p) => p.id).join(','),
                   })}
-                  className="rounded-full border border-slate-300 px-5 py-3 text-sm font-semibold text-slate-700 transition hover:border-slate-500 disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  {actionLoading === 'fees' ? 'Opening checkout...' : 'Pay fees'}
+                  className="rounded-full border border-slate-300 px-5 py-3 text-sm font-semibold text-slate-700 transition hover:border-slate-500 disabled:opacity-50">
+                  {actionLoading === 'fees' ? 'Opening...' : 'Pay fees'}
                 </button>
               </div>
               {feePayments.length > 0 ? (
                 <div className="mt-4 space-y-2">
-                  {feePayments.slice(0, 4).map((payment) => (
-                    <div key={payment.id} className="flex items-center justify-between gap-3 rounded-2xl bg-slate-50 px-4 py-3">
+                  {feePayments.slice(0, 4).map((p) => (
+                    <div key={p.id} className="flex items-center justify-between gap-3 rounded-2xl bg-slate-50 px-4 py-3">
                       <div>
-                        <div className="text-sm font-semibold text-slate-900">{payment.Month || payment.Type || 'Fee'}</div>
-                        {payment.Notes ? <div className="mt-0.5 text-xs text-slate-400">{payment.Notes}</div> : null}
+                        <div className="text-sm font-semibold text-slate-900">{p.Month || p.Type || 'Fee'}</div>
+                        {p.Notes ? <div className="mt-0.5 text-xs text-slate-400">{p.Notes}</div> : null}
                       </div>
-                      <div className="text-sm font-bold text-slate-900">{formatMoney(payment.Amount)}</div>
+                      <div className="text-sm font-bold text-slate-900">{formatMoney(p.Amount)}</div>
                     </div>
                   ))}
                 </div>
               ) : null}
             </div>
 
-            <div
-              className={classNames(
-                'rounded-[24px] border bg-slate-50 p-5 transition',
-                highlightCategory === 'extension'
-                  ? 'border-axis/50 ring-2 ring-axis/20'
-                  : 'border-slate-200'
-              )}
-            >
-              <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">Lease Extension / Continue Lease</div>
+            <div className={classNames(
+              'rounded-[24px] border bg-slate-50 p-5 transition',
+              highlightCategory === 'extension' ? 'border-axis/50 ring-2 ring-axis/20' : 'border-slate-200'
+            )}>
+              <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">Lease Extension</div>
               <h3 className="mt-2 text-xl font-black text-slate-900">{formatMoney(leaseExtensionAmount)}</h3>
               <p className="mt-3 text-sm leading-6 text-slate-500">
-                Start your lease continuation here. We collect the next month of rent and utilities before the updated lease is finalized for signing.
+                Continue your lease by paying the next month of rent and utilities.
               </p>
               <div className="mt-4 space-y-2 rounded-2xl bg-white px-4 py-4 text-sm text-slate-600">
                 <div className="flex items-center justify-between gap-3">
@@ -1474,32 +1026,28 @@ function PaymentsPanel({ resident, onResidentUpdated, highlightCategory }) {
                   <span className="text-base font-black text-slate-900">{formatMoney(leaseExtensionAmount)}</span>
                 </div>
               </div>
-              <button
-                type="button"
+              <button type="button"
                 disabled={leaseExtensionAmount <= 0 || actionLoading === 'extension'}
                 onClick={() => launchCheckout({
                   amount: leaseExtensionAmount,
                   items: [
                     { name: 'Next month rent', amount: fallbackRentAmount },
                     { name: 'Utilities', amount: utilitiesAmount },
-                  ].filter((item) => item.amount > 0),
+                  ].filter((i) => i.amount > 0),
                   description: 'Lease extension payment',
                   category: 'extension',
                 })}
-                className="mt-4 rounded-full bg-slate-900 px-5 py-3 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                {actionLoading === 'extension' ? 'Opening checkout...' : 'Pay to extend lease'}
+                className="mt-4 rounded-full bg-slate-900 px-5 py-3 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:opacity-50">
+                {actionLoading === 'extension' ? 'Opening...' : 'Pay to extend lease'}
               </button>
               <div className="mt-3 text-xs text-slate-400">
-                Resident email: {resident.Email || 'Not set'} • {[resident.House, resident['Unit Number']].filter(Boolean).join(' • ') || 'House / unit not set'}
+                {resident.Email} · {[resident.House, resident['Unit Number']].filter(Boolean).join(' · ') || 'House / unit not set'}
               </div>
             </div>
           </div>
 
           {actionError ? (
-            <div className="mt-4 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-              {actionError}
-            </div>
+            <div className="mt-4 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{actionError}</div>
           ) : null}
 
           {payments.length === 0 ? (
@@ -1523,6 +1071,7 @@ function PaymentsPanel({ resident, onResidentUpdated, highlightCategory }) {
               ))}
             </div>
           )}
+
           <EmbeddedStripeCheckout
             open={Boolean(embeddedCheckout)}
             title={embeddedCheckout?.title || 'Secure Payment'}
@@ -1536,6 +1085,8 @@ function PaymentsPanel({ resident, onResidentUpdated, highlightCategory }) {
   )
 }
 
+// ─── Leasing ──────────────────────────────────────────────────────────────────
+
 function LeasingPanel({ resident, onOpenPayments }) {
   const leaseTermLabel = getLeaseTermLabel(resident)
   const isMonthToMonth = leaseTermLabel.toLowerCase().includes('month-to-month')
@@ -1543,8 +1094,6 @@ function LeasingPanel({ resident, onOpenPayments }) {
   const moveInLabel = resident['Lease Start Date'] ? formatDate(resident['Lease Start Date']) : '—'
   const moveOutLabel = resident['Lease End Date'] ? formatDate(resident['Lease End Date']) : (isMonthToMonth ? 'No fixed end date' : '—')
 
-  // Fetch the manager-approved lease document for this resident (if one exists).
-  // Only "Published" and "Signed" records are returned — residents never see drafts.
   const [approvedLease, setApprovedLease] = useState(null)
   const [leaseLoading, setLeaseLoading] = useState(true)
   const [showLeaseText, setShowLeaseText] = useState(false)
@@ -1553,38 +1102,30 @@ function LeasingPanel({ resident, onOpenPayments }) {
     let cancelled = false
     setLeaseLoading(true)
     getApprovedLeaseForResident(resident.id)
-      .then(lease => { if (!cancelled) setApprovedLease(lease) })
-      .catch(() => { /* non-fatal — portal still works without lease document */ })
+      .then((lease) => { if (!cancelled) setApprovedLease(lease) })
+      .catch(() => {})
       .finally(() => { if (!cancelled) setLeaseLoading(false) })
     return () => { cancelled = true }
   }, [resident.id])
 
-  // The content to show is the manager-edited version when available,
-  // otherwise fall back to the original AI draft
   const leaseContent = approvedLease?.['Manager Edited Content'] || approvedLease?.['AI Draft Content'] || ''
   const leaseStatus = approvedLease?.['Status']
 
   return (
-    <SectionCard title="Leasing" description="Review your current lease details and continue your lease through the payment flow.">
+    <SectionCard title="Leasing" description="Your current lease details and signing options.">
       <div className="space-y-5">
         <div className="rounded-[24px] border border-slate-200 bg-[linear-gradient(135deg,#ffffff_0%,#f8fafc_100%)] p-6">
           <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
-            <div className="max-w-2xl">
+            <div>
               <div className="flex flex-wrap items-center gap-2">
                 <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">Current Lease</div>
                 {isMonthToMonth ? (
-                  <span className="rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-700">
-                    Month-to-Month
-                  </span>
+                  <span className="rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-700">Month-to-Month</span>
                 ) : null}
               </div>
               <div className="mt-3 text-3xl font-black tracking-tight text-slate-900">{leaseTermLabel}</div>
-              <p className="mt-3 max-w-xl text-sm leading-6 text-slate-500">
-                Your lease details live here, while renewals and any required continuation charges flow through Payments before lease signing.
-              </p>
             </div>
-
-            <div className="grid min-w-[280px] gap-3 sm:grid-cols-2 lg:w-[380px] lg:grid-cols-2">
+            <div className="grid min-w-[240px] gap-3 sm:grid-cols-2">
               <div className="rounded-2xl border border-slate-200 bg-white px-4 py-4">
                 <div className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-400">Move-in</div>
                 <div className="mt-2 text-xl font-black text-slate-900">{moveInLabel}</div>
@@ -1597,7 +1138,6 @@ function LeasingPanel({ resident, onOpenPayments }) {
           </div>
         </div>
 
-        {/* ── Approved lease document (only shown once management publishes it) ── */}
         {!leaseLoading && approvedLease && leaseContent && (
           <div className="rounded-[24px] border border-[#2563eb]/20 bg-[linear-gradient(135deg,#eff6ff_0%,#ffffff_100%)] p-5">
             <div className="flex items-start justify-between gap-4">
@@ -1605,37 +1145,25 @@ function LeasingPanel({ resident, onOpenPayments }) {
                 <div className="flex items-center gap-2">
                   <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-[#2563eb]">Lease Document</div>
                   {leaseStatus === 'Signed' ? (
-                    <span className="rounded-full border border-purple-200 bg-purple-50 px-2.5 py-1 text-[11px] font-semibold text-purple-700">
-                      Signed
-                    </span>
+                    <span className="rounded-full border border-purple-200 bg-purple-50 px-2.5 py-1 text-[11px] font-semibold text-purple-700">Signed</span>
                   ) : (
-                    <span className="rounded-full border border-blue-200 bg-blue-50 px-2.5 py-1 text-[11px] font-semibold text-blue-700">
-                      Ready to review
-                    </span>
+                    <span className="rounded-full border border-blue-200 bg-blue-50 px-2.5 py-1 text-[11px] font-semibold text-blue-700">Ready to review</span>
                   )}
                 </div>
                 <h3 className="mt-2 text-xl font-black text-slate-900">Your Lease Agreement</h3>
-                <p className="mt-2 text-sm leading-6 text-slate-500">
-                  Your lease has been reviewed and approved by Axis management. You can read the full document below.
-                </p>
               </div>
-              <button
-                type="button"
-                onClick={() => setShowLeaseText(v => !v)}
-                className="shrink-0 rounded-full bg-[linear-gradient(180deg,#2f76ff_0%,#2450eb_100%)] px-5 py-2.5 text-sm font-semibold text-white transition hover:brightness-105"
-              >
+              <button type="button" onClick={() => setShowLeaseText((v) => !v)}
+                className="shrink-0 rounded-full bg-[linear-gradient(180deg,#2f76ff_0%,#2450eb_100%)] px-5 py-2.5 text-sm font-semibold text-white transition hover:brightness-105">
                 {showLeaseText ? 'Hide' : 'View lease'}
               </button>
             </div>
-
             {showLeaseText && (
               <div className="mt-5 overflow-hidden rounded-[20px] border border-slate-200 bg-white">
                 <div className="flex items-center justify-between border-b border-slate-100 bg-slate-50 px-5 py-3">
                   <span className="text-xs font-semibold text-slate-500">
                     {approvedLease['Property']}{approvedLease['Unit'] ? ` · ${approvedLease['Unit']}` : ''} · {approvedLease['Resident Name']}
                   </span>
-                  <button
-                    type="button"
+                  <button type="button"
                     onClick={() => {
                       const blob = new Blob([leaseContent], { type: 'text/plain' })
                       const url = URL.createObjectURL(blob)
@@ -1645,8 +1173,7 @@ function LeasingPanel({ resident, onOpenPayments }) {
                       a.click()
                       URL.revokeObjectURL(url)
                     }}
-                    className="text-xs font-semibold text-[#2563eb] hover:underline"
-                  >
+                    className="text-xs font-semibold text-[#2563eb] hover:underline">
                     Download
                   </button>
                 </div>
@@ -1658,58 +1185,25 @@ function LeasingPanel({ resident, onOpenPayments }) {
           </div>
         )}
 
-        {/* Signing + renewal section */}
-        <div className="grid gap-4 lg:grid-cols-[1.05fr_0.95fr]">
-          <div className="rounded-[24px] border border-slate-200 bg-white p-5">
-            <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">Lease Signing</div>
-            <h3 className="mt-2 text-xl font-black text-slate-900">Review & Sign</h3>
-            <p className="mt-3 text-sm leading-6 text-slate-500">
-              Once your updated lease is prepared, you can review and sign it here through DocuSign.
-            </p>
+        <div className="rounded-[24px] border border-slate-200 bg-white p-5">
+          <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">Lease Signing</div>
+          <h3 className="mt-2 text-xl font-black text-slate-900">Review & Sign</h3>
+          <p className="mt-3 text-sm leading-6 text-slate-500">
+            Once your updated lease is prepared, sign it here via DocuSign. To extend or continue your lease, go to Payments first.
+          </p>
+          <div className="mt-4 flex flex-wrap gap-3">
             {leaseSigningUrl ? (
-              <div className="mt-4 flex flex-wrap gap-3">
-                <button
-                  type="button"
-                  onClick={() => { window.location.href = leaseSigningUrl }}
-                  className="rounded-full border border-slate-300 px-5 py-3 text-sm font-semibold text-slate-700 transition hover:border-slate-500"
-                >
-                  Open DocuSign lease
-                </button>
-                <button
-                  type="button"
-                  onClick={() => onOpenPayments('extension')}
-                  className="rounded-full bg-slate-900 px-5 py-3 text-sm font-semibold text-white transition hover:bg-slate-800"
-                >
-                  Extend lease
-                </button>
-              </div>
+              <button type="button" onClick={() => { window.location.href = leaseSigningUrl }}
+                className="rounded-full border border-slate-300 px-5 py-3 text-sm font-semibold text-slate-700 transition hover:border-slate-500">
+                Open DocuSign
+              </button>
             ) : (
-              <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-500">
-                A resident-specific DocuSign signing link will appear here once leasing prepares your updated document.
-              </div>
+              <div className="text-sm text-slate-400">Signing link will appear here once prepared.</div>
             )}
-          </div>
-
-          <div className="rounded-[24px] border border-slate-200 bg-slate-50 p-5">
-            <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">Next Step</div>
-            <h3 className="mt-2 text-xl font-black text-slate-900">Extend or Continue Lease</h3>
-            <p className="mt-3 text-sm leading-6 text-slate-500">
-              Go straight to Payments to handle continuation charges. After payment, leasing can finalize the updated document for signature.
-            </p>
-            <button
-              type="button"
-              onClick={() => onOpenPayments('extension')}
-              className="mt-4 rounded-full bg-slate-900 px-5 py-3 text-sm font-semibold text-white transition hover:bg-slate-800"
-            >
-              Continue in Payments
+            <button type="button" onClick={() => onOpenPayments('extension')}
+              className="rounded-full bg-slate-900 px-5 py-3 text-sm font-semibold text-white transition hover:bg-slate-800">
+              Extend / continue lease
             </button>
-
-            <div className="mt-5 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3">
-              <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-amber-700">Locked in Profile</div>
-              <p className="mt-2 text-sm leading-6 text-amber-800">
-                House, unit, move-in date, move-out date, and lease type stay locked here so leasing records stay aligned with approval and payment.
-              </p>
-            </div>
           </div>
         </div>
       </div>
@@ -1717,25 +1211,17 @@ function LeasingPanel({ resident, onOpenPayments }) {
   )
 }
 
+// ─── Dashboard ────────────────────────────────────────────────────────────────
+
 function Dashboard({ resident, onResidentUpdated, onSignOut }) {
-  const [tab, setTab] = useState('requests')
+  const [tab, setTab] = useState('workorders')
   const [paymentFocus, setPaymentFocus] = useState('')
   const [requests, setRequests] = useState([])
   const [announcements, setAnnouncements] = useState([])
   const [loading, setLoading] = useState(true)
 
-  const residentEmail = resident.Email
-  const hasStatusUpdates = useMemo(
-    () => requests.some((item) => item.Status && item.Status !== 'Submitted'),
-    [requests]
-  )
-  const openRequestCount = useMemo(
-    () => requests.filter((item) => item.Status !== 'Resolved').length,
-    [requests]
-  )
-  const announcementCount = announcements.length
-  const homeLabel = [resident.House, normalizeUnitLabel(resident['Unit Number'] || '')].filter(Boolean).join(' · ') || 'Not assigned yet'
-  const leaseLabel = [getLeaseTermLabel(resident), resident['Lease End Date'] ? `through ${formatDate(resident['Lease End Date'])}` : 'current'].join(' · ')
+  const openRequestCount = useMemo(() => requests.filter((r) => r.Status !== 'Resolved').length, [requests])
+  const homeLabel = [resident.House, normalizeUnitLabel(resident['Unit Number'] || '')].filter(Boolean).join(' · ') || 'Not assigned'
 
   const loadData = useCallback(async () => {
     setLoading(true)
@@ -1744,7 +1230,6 @@ function Dashboard({ resident, onResidentUpdated, onSignOut }) {
         getWorkOrdersForResident(resident).catch(() => []),
         getAnnouncements().catch(() => []),
       ])
-
       setRequests(nextRequests)
       setAnnouncements(nextAnnouncements.filter((item) => announcementMatchesResident(item, resident)))
     } finally {
@@ -1758,129 +1243,60 @@ function Dashboard({ resident, onResidentUpdated, onSignOut }) {
       try {
         const next = await getAnnouncements()
         setAnnouncements(next.filter((item) => announcementMatchesResident(item, resident)))
-      } catch {
-        // silently ignore polling errors
-      }
+      } catch {}
     }, 60_000)
     return () => clearInterval(interval)
   }, [loadData, resident])
+
+  const TABS = [
+    ['workorders', 'Work Orders'],
+    ['leasing', 'Leasing'],
+    ['payments', 'Payments'],
+    ['announcements', 'Announcements'],
+    ['profile', 'Profile'],
+  ]
 
   return (
     <div className="min-h-screen bg-[linear-gradient(180deg,#f8fafc_0%,#ffffff_55%,#f8fafc_100%)]">
       <header className="border-b border-slate-200 bg-white">
         <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-4 px-4 py-5 sm:px-6">
           <div>
-            <div className="text-sm font-semibold text-slate-900">Resident Portal</div>
-            <div className="mt-1 text-sm text-slate-500">{residentEmail}</div>
+            <div className="text-sm font-semibold text-slate-900">{homeLabel}</div>
+            <div className="mt-0.5 text-sm text-slate-400">{resident.Email}</div>
           </div>
-          <button
-            type="button"
-            onClick={onSignOut}
-            className="rounded-full border border-slate-300 px-5 py-2.5 text-sm font-semibold text-slate-700 transition hover:border-slate-500"
-          >
+          <button type="button" onClick={onSignOut}
+            className="rounded-full border border-slate-300 px-5 py-2.5 text-sm font-semibold text-slate-700 transition hover:border-slate-500">
             Sign out
           </button>
         </div>
       </header>
 
       <div className="mx-auto max-w-6xl px-4 py-8 sm:px-6 sm:py-10">
-        <div className="mb-8 flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
-          <div>
-            <h1 className="text-4xl font-black tracking-tight text-slate-900">Welcome back, {resident.Name || 'Resident'}</h1>
-            <p className="mt-2 max-w-2xl text-sm leading-7 text-slate-500">
-              Manage your profile, submit work orders, review announcements, and handle leasing and payments in one place.
-            </p>
+        <div className="mb-8">
+          <h1 className="text-4xl font-black tracking-tight text-slate-900">
+            Welcome back, {resident.Name || 'Resident'}
+          </h1>
+          <div className="mt-3 flex flex-wrap gap-4 text-sm text-slate-500">
+            <span>
+              {getLeaseTermLabel(resident)}
+              {resident['Lease End Date'] ? ` · through ${formatDate(resident['Lease End Date'])}` : ''}
+            </span>
+            {openRequestCount > 0 ? (
+              <span className="font-semibold text-sky-600">{openRequestCount} open work order{openRequestCount === 1 ? '' : 's'}</span>
+            ) : null}
           </div>
-          {hasStatusUpdates ? (
-            <div className="inline-flex items-center rounded-full border border-sky-200 bg-sky-50 px-4 py-2 text-sm font-semibold text-sky-700">
-              You have request updates to review
-            </div>
-          ) : null}
-        </div>
-
-        <div className="mb-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-          <div className="rounded-[24px] border border-slate-200 bg-white p-5 shadow-soft">
-            <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">Home</div>
-            <div className="mt-2 text-lg font-black text-slate-900">{homeLabel}</div>
-            <p className="mt-2 text-sm leading-6 text-slate-500">Your assigned property and room information.</p>
-          </div>
-          <div className="rounded-[24px] border border-slate-200 bg-white p-5 shadow-soft">
-            <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">Lease</div>
-            <div className="mt-2 text-lg font-black text-slate-900">{getLeaseTermLabel(resident)}</div>
-            <p className="mt-2 text-sm leading-6 text-slate-500">{leaseLabel}</p>
-          </div>
-          <button
-            type="button"
-            onClick={() => setTab('requests')}
-            className="rounded-[24px] border border-slate-200 bg-white p-5 text-left shadow-soft transition hover:border-slate-300"
-          >
-            <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">Work Orders</div>
-            <div className="mt-2 text-lg font-black text-slate-900">{openRequestCount}</div>
-            <p className="mt-2 text-sm leading-6 text-slate-500">Open requests that still need attention.</p>
-          </button>
-          <button
-            type="button"
-            onClick={() => setTab('announcements')}
-            className="rounded-[24px] border border-slate-200 bg-white p-5 text-left shadow-soft transition hover:border-slate-300"
-          >
-            <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">Announcements</div>
-            <div className="mt-2 text-lg font-black text-slate-900">{announcementCount}</div>
-            <p className="mt-2 text-sm leading-6 text-slate-500">Updates from the Axis team for your property.</p>
-          </button>
-        </div>
-
-        <div className="mb-6 flex flex-wrap gap-3">
-          <button
-            type="button"
-            onClick={() => { setPaymentFocus('rent'); setTab('payments') }}
-            className="rounded-full border border-slate-300 px-5 py-3 text-sm font-semibold text-slate-700 transition hover:border-slate-500"
-          >
-            Go to payments
-          </button>
-          <button
-            type="button"
-            onClick={() => setTab('new')}
-            className="rounded-full border border-slate-300 px-5 py-3 text-sm font-semibold text-slate-700 transition hover:border-slate-500"
-          >
-            Submit work order
-          </button>
-          <button
-            type="button"
-            onClick={() => setTab('leasing')}
-            className="rounded-full border border-slate-300 px-5 py-3 text-sm font-semibold text-slate-700 transition hover:border-slate-500"
-          >
-            View leasing
-          </button>
-          <button
-            type="button"
-            onClick={() => setTab('profile')}
-            className="rounded-full border border-slate-300 px-5 py-3 text-sm font-semibold text-slate-700 transition hover:border-slate-500"
-          >
-            Update profile
-          </button>
         </div>
 
         <div className="mb-6 flex flex-wrap gap-2 rounded-[24px] border border-slate-200 bg-white p-2 shadow-soft">
-          {[
-            ['requests', 'My Work Orders'],
-            ['new', 'New Work Order'],
-            ['leasing', 'Leasing'],
-            ['payments', 'Payments'],
-            ['announcements', 'Announcements'],
-            ['profile', 'My Profile'],
-          ].map(([id, label]) => (
-            <button
-              key={id}
-              type="button"
-              onClick={() => setTab(id)}
+          {TABS.map(([id, label]) => (
+            <button key={id} type="button" onClick={() => setTab(id)}
               className={classNames(
                 'rounded-[18px] px-4 py-3 text-sm font-semibold transition',
                 tab === id ? 'bg-slate-900 text-white' : 'text-slate-500 hover:bg-slate-50 hover:text-slate-900'
-              )}
-            >
+              )}>
               <span className="inline-flex items-center gap-2">
                 <span>{label}</span>
-                {id === 'announcements' && announcementCount > 0 && tab !== id ? (
+                {id === 'announcements' && announcements.length > 0 && tab !== id ? (
                   <span className="h-2 w-2 rounded-full bg-axis" />
                 ) : null}
               </span>
@@ -1888,38 +1304,42 @@ function Dashboard({ resident, onResidentUpdated, onSignOut }) {
           ))}
         </div>
 
-
         {loading ? (
           <div className="rounded-[28px] border border-slate-200 bg-white px-6 py-16 text-center text-sm text-slate-400 shadow-soft">
-            Loading resident portal...
+            Loading...
           </div>
         ) : null}
 
-        {!loading && tab === 'requests' ? <RequestsList requests={requests} residentEmail={residentEmail} /> : null}
-        {!loading && tab === 'new' ? <RequestComposer resident={resident} onCreated={async () => { await loadData(); setTab('requests') }} /> : null}
-        {!loading && tab === 'leasing' ? <LeasingPanel resident={resident} onOpenPayments={(focus = '') => { setPaymentFocus(focus); setTab('payments') }} /> : null}
-        {!loading && tab === 'payments' ? <PaymentsPanel resident={resident} onResidentUpdated={onResidentUpdated} highlightCategory={paymentFocus} /> : null}
-        {!loading && tab === 'announcements' ? <AnnouncementsPanel items={announcements} /> : null}
-        {!loading && tab === 'profile' ? <ProfilePanel resident={resident} onUpdated={onResidentUpdated} /> : null}
+        {!loading && tab === 'workorders' ? (
+          <WorkOrdersPanel resident={resident} requests={requests} onRequestCreated={loadData} />
+        ) : null}
+        {!loading && tab === 'leasing' ? (
+          <LeasingPanel resident={resident} onOpenPayments={(focus = '') => { setPaymentFocus(focus); setTab('payments') }} />
+        ) : null}
+        {!loading && tab === 'payments' ? (
+          <PaymentsPanel resident={resident} onResidentUpdated={onResidentUpdated} highlightCategory={paymentFocus} />
+        ) : null}
+        {!loading && tab === 'announcements' ? (
+          <AnnouncementsPanel items={announcements} />
+        ) : null}
+        {!loading && tab === 'profile' ? (
+          <ProfilePanel resident={resident} onUpdated={onResidentUpdated} />
+        ) : null}
       </div>
     </div>
   )
 }
+
+// ─── Root ─────────────────────────────────────────────────────────────────────
 
 export default function Resident() {
   const [resident, setResident] = useState(null)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    if (!airtableReady) {
-      setLoading(false)
-      return
-    }
+    if (!airtableReady) { setLoading(false); return }
     const storedId = sessionStorage.getItem(SESSION_KEY)
-    if (!storedId) {
-      setLoading(false)
-      return
-    }
+    if (!storedId) { setLoading(false); return }
     let mounted = true
     getResidentById(storedId)
       .then((r) => { if (mounted && r) setResident(r) })
@@ -1942,7 +1362,7 @@ export default function Resident() {
   if (loading) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-[linear-gradient(180deg,#f8fafc_0%,#ffffff_100%)] text-sm text-slate-400">
-        Loading resident portal...
+        Loading...
       </div>
     )
   }
