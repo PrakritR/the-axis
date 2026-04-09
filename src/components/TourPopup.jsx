@@ -25,7 +25,7 @@ function getCalendlyUrl({ property, room, tourType, name, email, phone }) {
     `Address: ${property?.address}`,
     `Room: ${room || 'Not sure yet'}`,
     `Tour Format: ${format}`,
-    `Scheduled via Axis Seattle website`,
+    `Scheduled via Axis website`,
   ].filter(Boolean).join('\n')
   let url = `${CALENDLY_URL}?hide_gdpr_banner=1&primary_color=0f172a&a1=${enc(notes)}`
   if (name)  url += `&name=${enc(name)}`
@@ -316,7 +316,7 @@ export default function TourPopup() {
 
       {/* Footer */}
       <div className="border-t border-slate-50 px-5 py-2.5 text-center">
-        <span className="text-[10px] text-slate-300">Axis Seattle · axis-seattle-housing.com</span>
+        <span className="text-[10px] text-slate-300">Axis · axis-seattle-housing.com</span>
       </div>
     </div>
 

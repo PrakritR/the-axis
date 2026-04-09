@@ -77,9 +77,9 @@ export default function Footer() {
       </div>
 
       <div className="container mx-auto flex flex-col gap-3 px-6 py-5 sm:flex-row sm:items-center sm:justify-between">
-        <p className="text-xs text-slate-400">© 2026 Axis Seattle. All rights reserved.</p>
+        <p className="text-xs text-slate-400">© 2026 Axis. All rights reserved.</p>
         <div className="flex items-center gap-4 text-xs text-slate-400">
-          <span>Seattle Housing</span>
+          <span>Axis</span>
           <span className="text-slate-300">·</span>
           <span>Seattle, WA</span>
         </div>

@@ -33,7 +33,7 @@ Group Packages:
 ${pkgDesc || '    N/A'}`
   }).join('\n\n---\n\n')
 
-  return `You are a leasing assistant for Axis Housing — a shared housing platform in Seattle. You answer questions from people interested in renting.
+  return `You are a leasing assistant for Axis — a shared housing platform in Seattle. You answer questions from people interested in renting.
 
 RULES (follow these exactly):
 - Answer ONLY the question asked. Nothing more.
@@ -564,7 +564,7 @@ export default function Chatbot() {
               <SendIcon />
             </button>
           </div>
-          <p className="text-center text-[10px] mt-2" style={{ color: '#94a3b8', fontFamily: 'Manrope, sans-serif' }}>Powered by Gemini · Axis Housing</p>
+          <p className="text-center text-[10px] mt-2" style={{ color: '#94a3b8', fontFamily: 'Manrope, sans-serif' }}>Powered by Gemini · Axis</p>
         </div>
       </div>
     </>

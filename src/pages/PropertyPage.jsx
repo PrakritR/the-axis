@@ -682,7 +682,7 @@ export default function PropertyPage(){
   return (
     <div className="page-wrapper py-6 sm:py-8 w-full">
       <Seo
-        title={`${p.name} | Seattle Shared Housing by Axis Seattle`}
+        title={`${p.name} | Seattle Shared Housing by Axis`}
         description={`${p.summary} View pricing, current availability, amenities, and tour details for this Seattle housing listing.`}
         pathname={`/properties/${p.slug}`}
         image={galleryImages[0]}

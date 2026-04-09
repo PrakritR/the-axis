@@ -1,6 +1,6 @@
 import { useEffect } from 'react'
 
-const DEFAULT_TITLE = 'Axis Seattle | Housing in Seattle'
+const DEFAULT_TITLE = 'Axis | Housing in Seattle'
 const DEFAULT_DESCRIPTION =
   'Browse available housing in Seattle with posted pricing, current availability, and online applications.'
 const DEFAULT_SHARE_IMAGE = '/axis-share.png'
@@ -75,14 +75,14 @@ export function Seo({
     upsertMeta('meta[property="og:title"]', { property: 'og:title', content: title })
     upsertMeta('meta[property="og:description"]', { property: 'og:description', content: description })
     upsertMeta('meta[property="og:url"]', { property: 'og:url', content: url })
-    upsertMeta('meta[property="og:site_name"]', { property: 'og:site_name', content: 'Axis Seattle Housing' })
+    upsertMeta('meta[property="og:site_name"]', { property: 'og:site_name', content: 'Axis' })
     upsertMeta('meta[property="og:image"]', { property: 'og:image', content: imageUrl })
-    upsertMeta('meta[property="og:image:alt"]', { property: 'og:image:alt', content: 'Axis Seattle Housing logo and Seattle housing branding' })
+    upsertMeta('meta[property="og:image:alt"]', { property: 'og:image:alt', content: 'Axis logo and housing branding' })
     upsertMeta('meta[name="twitter:card"]', { name: 'twitter:card', content: 'summary_large_image' })
     upsertMeta('meta[name="twitter:title"]', { name: 'twitter:title', content: title })
     upsertMeta('meta[name="twitter:description"]', { name: 'twitter:description', content: description })
     upsertMeta('meta[name="twitter:image"]', { name: 'twitter:image', content: imageUrl })
-    upsertMeta('meta[name="twitter:image:alt"]', { name: 'twitter:image:alt', content: 'Axis Seattle Housing logo and Seattle housing branding' })
+    upsertMeta('meta[name="twitter:image:alt"]', { name: 'twitter:image:alt', content: 'Axis logo and housing branding' })
     upsertLink('link[rel="canonical"]', { rel: 'canonical', href: url })
 
     if (structuredData) {
@@ -129,7 +129,7 @@ export function buildWebsiteSchema() {
     {
       '@context': 'https://schema.org',
       '@type': 'Organization',
-      name: 'Axis Seattle Housing',
+      name: 'Axis',
       url: siteUrl,
       logo: logoUrl,
       image: normalizeUrl(DEFAULT_SHARE_IMAGE),
@@ -137,12 +137,12 @@ export function buildWebsiteSchema() {
     {
       '@context': 'https://schema.org',
       '@type': 'WebSite',
-      name: 'Axis Seattle Housing',
+      name: 'Axis',
       url: siteUrl,
       description: DEFAULT_DESCRIPTION,
       publisher: {
         '@type': 'Organization',
-        name: 'Axis Seattle Housing',
+        name: 'Axis',
         logo: {
           '@type': 'ImageObject',
           url: logoUrl,
@@ -173,7 +173,7 @@ export function buildPropertySchema(property) {
     image: property.images?.[0] || normalizeUrl(DEFAULT_SHARE_IMAGE),
     provider: {
       '@type': 'Organization',
-      name: 'Axis Seattle Housing',
+      name: 'Axis',
       logo: normalizeUrl(DEFAULT_LOGO),
     },
     address: {

@@ -12,7 +12,7 @@ export function AxisWordmark({ className = '', tone = 'light', subtitle = 'Seatt
       viewBox="0 0 164 40"
       fill="none"
       xmlns="http://www.w3.org/2000/svg"
-      aria-label="Axis Seattle"
+      aria-label="Axis"
       className={className}
     >
       <defs>
@@ -46,7 +46,7 @@ export function AxisWordmark({ className = '', tone = 'light', subtitle = 'Seatt
 
 export function AxisLogoCrosshair({ className = '' }) {
   return (
-    <svg width="90" height="36" viewBox="0 0 90 36" fill="none" xmlns="http://www.w3.org/2000/svg" aria-label="Axis Seattle" className={className}>
+    <svg width="90" height="36" viewBox="0 0 90 36" fill="none" xmlns="http://www.w3.org/2000/svg" aria-label="Axis" className={className}>
       <defs>
         <radialGradient id="axis-crosshair-glow" cx="50%" cy="50%" r="50%">
           <stop offset="0%" stopColor="#14b8a6" stopOpacity="0.9" />
@@ -67,7 +67,7 @@ export function AxisLogoCrosshair({ className = '' }) {
 
 export function AxisLogoOrbit({ className = '' }) {
   return (
-    <svg width="186" height="40" viewBox="0 0 220 46" fill="none" xmlns="http://www.w3.org/2000/svg" aria-label="Axis Seattle" className={className}>
+    <svg width="186" height="40" viewBox="0 0 220 46" fill="none" xmlns="http://www.w3.org/2000/svg" aria-label="Axis" className={className}>
       <text x="50" y="29" fill="#1f2a44" fontFamily="ui-sans-serif, system-ui, -apple-system" fontWeight="900" fontSize="34" letterSpacing="2.2">AXIS</text>
       <path d="M30 33 C 57 41, 100 43, 145 40 C 172 38, 192 34, 204 29" stroke="#0f8ea1" strokeWidth="4.6" strokeLinecap="round" />
       <path d="M34 37 C 67 44, 114 45, 159 42 C 183 40, 199 36, 208 32" stroke="#2fb8ad" strokeWidth="3.8" strokeLinecap="round" />
@@ -77,7 +77,7 @@ export function AxisLogoOrbit({ className = '' }) {
 
 export function AxisLogoFrame({ className = '' }) {
   return (
-    <svg width="98" height="36" viewBox="0 0 98 36" fill="none" xmlns="http://www.w3.org/2000/svg" aria-label="Axis Seattle" className={className}>
+    <svg width="98" height="36" viewBox="0 0 98 36" fill="none" xmlns="http://www.w3.org/2000/svg" aria-label="Axis" className={className}>
       <defs>
         <linearGradient id="axis-frame-bg" x1="0" y1="0" x2="36" y2="36" gradientUnits="userSpaceOnUse">
           <stop offset="0%" stopColor="#0f172a" />
@@ -99,7 +99,7 @@ export function AxisLogoFrame({ className = '' }) {
 
 export function AxisLogoFusion({ className = '' }) {
   return (
-    <svg width="106" height="40" viewBox="0 0 106 40" fill="none" xmlns="http://www.w3.org/2000/svg" aria-label="Axis Seattle" className={className}>
+    <svg width="106" height="40" viewBox="0 0 106 40" fill="none" xmlns="http://www.w3.org/2000/svg" aria-label="Axis" className={className}>
       <defs>
         <linearGradient id="axis-fusion-navy" x1="4" y1="4" x2="40" y2="36" gradientUnits="userSpaceOnUse">
           <stop offset="0%" stopColor="#1e3a5f" />

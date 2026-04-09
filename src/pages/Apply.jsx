@@ -1690,7 +1690,7 @@ export default function Apply() {
 
     return (
       <div className="min-h-screen bg-cream-50">
-        <Seo title="Application Submitted | Axis Seattle Housing" pathname="/apply" />
+        <Seo title="Application Submitted | Axis" pathname="/apply" />
         <div className="mx-auto max-w-lg px-4 py-16 sm:py-24">
 
           {/* Header */}
@@ -1900,8 +1900,8 @@ export default function Apply() {
   return (
     <div className="min-h-screen bg-cream-50">
       <Seo
-        title="Apply | Axis Seattle Housing"
-        description="Submit a signer or co-signer rental application for Axis Seattle Housing."
+        title="Apply | Axis"
+        description="Submit a signer or co-signer rental application for Axis."
         pathname="/apply"
       />
 

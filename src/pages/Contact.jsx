@@ -67,7 +67,7 @@ function BookingScheduler() {
     const enc = encodeURIComponent
 
     if (bookingType === 'meeting') {
-      const notes = `Meeting Type: General Discussion with Leasing\nScheduled via Axis Seattle website`
+      const notes = `Meeting Type: General Discussion with Leasing\nScheduled via Axis website`
       return `${base}?hide_gdpr_banner=1&primary_color=0f172a&a1=${enc(notes)}`
     }
 
@@ -78,7 +78,7 @@ function BookingScheduler() {
       `Address: ${selectedProperty?.address}`,
       `Room: ${room}`,
       `Tour Format: ${format}`,
-      `Scheduled via Axis Seattle website`,
+      `Scheduled via Axis website`,
     ].join('\n')
 
     return `${base}?hide_gdpr_banner=1&primary_color=0f172a&a1=${enc(notes)}`
@@ -264,16 +264,16 @@ const selectCls = `${inputCls} appearance-none cursor-pointer`
 
 const CONTACT_INQUIRY_TYPES = [
   'General',
-  'Schedule a tour',
-  'Current housing availability',
-  'Lease length and pricing',
-  'Pricing & fees',
-  'Application follow-up',
+  'Housing',
+  'Software',
+  'Business',
+  'Support',
+  'Partnerships',
   'Other',
 ]
 
 function ContactMessageForm() {
-  const [form, setForm] = useState({ name: '', email: '', phone: '', property: '', topic: '', message: '' })
+  const [form, setForm] = useState({ name: '', email: '', phone: '', topic: '', message: '' })
   const [submitting, setSubmitting] = useState(false)
   const [submitted, setSubmitted] = useState(false)
   const [error, setError] = useState('')
@@ -285,7 +285,6 @@ function ContactMessageForm() {
       `Name: ${form.name}`,
       `Email: ${form.email}`,
       `Phone: ${form.phone || 'Not provided'}`,
-      `Property interest: ${form.property || 'Not specified'}`,
       `Topic: ${form.topic || 'Not specified'}`,
       `Message:\n${form.message}`,
     ].join('\n')
@@ -300,7 +299,6 @@ function ContactMessageForm() {
       'Full Name': form.name,
       'Email': form.email,
       'Phone Number': form.phone,
-      'Property': form.property,
       'Inquiry Type': form.topic,
       'Message Summary': form.message,
     }
@@ -337,7 +335,7 @@ function ContactMessageForm() {
           <p className="text-lg font-black text-slate-900">Message sent!</p>
           <p className="mt-1 text-sm text-slate-500">We'll follow up with you at <strong>{form.email}</strong> within 2 business days.</p>
         </div>
-        <button onClick={() => { setSubmitted(false); setForm({ name: '', email: '', phone: '', property: '', topic: '', message: '' }) }}
+        <button onClick={() => { setSubmitted(false); setForm({ name: '', email: '', phone: '', topic: '', message: '' }) }}
           className="mt-2 text-xs font-semibold text-axis hover:underline">Send another message</button>
       </div>
     )
@@ -356,18 +354,9 @@ function ContactMessageForm() {
         </div>
       </div>
 
-      <div className="grid gap-4 sm:grid-cols-2">
-        <div>
-          <label className="mb-1.5 block text-xs font-semibold text-slate-700">Phone Number <span className="text-axis">*</span></label>
-          <input required type="tel" className={inputCls} placeholder="(206) 555-0100" value={form.phone} onChange={e => set('phone', formatPhone(e.target.value))} />
-        </div>
-        <div>
-          <label className="mb-1.5 block text-xs font-semibold text-slate-700">Property <span className="text-axis">*</span></label>
-          <select required className={selectCls} value={form.property} onChange={e => set('property', e.target.value)}>
-            <option value="" disabled>Select a property…</option>
-            {properties.map(p => <option key={p.slug} value={p.name}>{p.name}</option>)}
-          </select>
-        </div>
+      <div>
+        <label className="mb-1.5 block text-xs font-semibold text-slate-700">Phone Number <span className="text-axis">*</span></label>
+        <input required type="tel" className={inputCls} placeholder="(206) 555-0100" value={form.phone} onChange={e => set('phone', formatPhone(e.target.value))} />
       </div>
 
       <div>
@@ -382,7 +371,7 @@ function ContactMessageForm() {
 
       <div>
         <label className="mb-1.5 block text-xs font-semibold text-slate-700">Message Summary <span className="text-axis">*</span></label>
-        <textarea required className={`${inputCls} min-h-[110px] resize-y`} placeholder="Ask us anything about housing, pricing, availability, or move-in dates…" value={form.message} onChange={e => set('message', e.target.value)} />
+        <textarea required className={`${inputCls} min-h-[110px] resize-y`} placeholder="Tell us what you need help with…" value={form.message} onChange={e => set('message', e.target.value)} />
       </div>
 
       {error && (
@@ -414,18 +403,12 @@ export default function Contact() {
   return (
     <div className="bg-[linear-gradient(180deg,#edf2fb_0%,#eef3fb_48%,#f6f9fe_100%)]">
       <Seo
-        title="Contact Axis Seattle | Tours and Housing Availability"
-        description="Contact Axis Seattle to ask about housing availability, schedule a tour, or get help with pricing and move-in questions."
+        title="Contact Axis | Tours and Housing Availability"
+        description="Contact Axis to ask about housing availability, schedule a tour, or get help with pricing and move-in questions."
         pathname="/contact"
       />
       <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 sm:py-12">
-        <section className="border-b border-slate-200 pb-10 lg:pb-14">
-          <h1 className="font-editorial text-[2rem] font-black leading-[1.05] text-slate-900 sm:text-[3rem] sm:leading-[0.96] lg:text-[4.3rem]">
-            Contact Axis.
-          </h1>
-        </section>
-
-        <div className="mt-10">
+        <div>
           <div className="mx-auto max-w-5xl rounded-[32px] border border-white/90 bg-white/88 p-6 shadow-[0_30px_80px_rgba(37,99,235,0.10)] backdrop-blur sm:p-8">
             {/* 3-tab switcher */}
             <div className="mb-8 flex gap-1 rounded-2xl border border-white/90 bg-white/82 p-1 shadow-[0_10px_30px_rgba(37,99,235,0.06)]">

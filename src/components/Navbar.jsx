@@ -56,13 +56,13 @@ export default function Navbar() {
   const showMobileDock = ['/', '/apply', '/contact', '/resident'].includes(location.pathname)
   const promoText = 'Sign up now. No application fee for a limited time.'
   const navLinks = [
-    { label: 'Homes', to: { pathname: '/', hash: '#properties' }, isActive: isHome },
+    { label: 'Houses', to: { pathname: '/', hash: '#properties' }, isActive: isHome },
     { label: 'Apply Housing', to: '/apply', isActive: location.pathname === '/apply' },
     { label: 'Join Axis', to: '/join-us', isActive: location.pathname === '/join-us' },
     { label: 'Contact', to: '/contact', isActive: location.pathname === '/contact' },
   ]
   const mobileDockLinks = [
-    { label: 'Homes', to: { pathname: '/', hash: '#properties' }, icon: <HomeIcon />, isActive: isHome },
+    { label: 'Houses', to: { pathname: '/', hash: '#properties' }, icon: <HomeIcon />, isActive: isHome },
     { label: 'Apply', to: '/apply', icon: <ApplyIcon />, isActive: location.pathname === '/apply' },
     { label: 'Contact', to: '/contact', icon: <ContactIcon />, isActive: location.pathname === '/contact' },
     { label: 'Tours', to: `/contact?subject=${encodeURIComponent('Tour request')}`, icon: <TourIcon />, isActive: false },
@@ -101,7 +101,7 @@ export default function Navbar() {
       </div>
 
       <div className="container mx-auto flex items-center justify-between px-4 py-2.5 sm:px-6 sm:py-3.5">
-        <Link to="/" className="group flex items-center" onClick={scrollToTop} aria-label="Axis Seattle home">
+        <Link to="/" className="group flex items-center" onClick={scrollToTop} aria-label="Axis home">
           <AxisWordmark
             tone="dark"
             className="h-8 w-auto transition-transform duration-300 group-hover:scale-[1.02] sm:h-9"
@@ -118,7 +118,7 @@ export default function Navbar() {
                 item.isActive ? 'text-slate-900' : 'text-slate-500 hover:text-slate-900'
               }`}
             >
-              {item.label === 'Homes' ? 'Homes & Availability' : item.label}
+              {item.label}
               <span className={`absolute -bottom-2 left-0 h-px bg-[#2563eb] transition-all duration-300 ${item.isActive ? 'w-full opacity-100' : 'w-0 opacity-0'}`} />
             </Link>
           ))}
@@ -176,7 +176,7 @@ export default function Navbar() {
             className="overflow-hidden border-t border-slate-200 bg-white/92 backdrop-blur-xl md:hidden"
           >
             <nav className="container mx-auto flex flex-col gap-1 px-4 py-3 sm:px-6">
-              <Link to={{ pathname: '/', hash: '#properties' }} onClick={closeMobileMenu} className="rounded-xl px-3 py-2.5 text-sm font-medium text-slate-600 transition hover:bg-slate-50 hover:text-slate-900">Homes & Availability</Link>
+              <Link to={{ pathname: '/', hash: '#properties' }} onClick={closeMobileMenu} className="rounded-xl px-3 py-2.5 text-sm font-medium text-slate-600 transition hover:bg-slate-50 hover:text-slate-900">Houses</Link>
               <Link to="/apply" onClick={() => { closeMobileMenu(); scrollToTop() }} className="rounded-xl px-3 py-2.5 text-sm font-medium text-slate-600 transition hover:bg-slate-50 hover:text-slate-900">Apply Housing</Link>
               <Link to="/join-us" onClick={() => { closeMobileMenu(); scrollToTop() }} className="rounded-xl px-3 py-2.5 text-sm font-medium text-slate-600 transition hover:bg-slate-50 hover:text-slate-900">Join Axis</Link>
               <Link to="/contact" onClick={() => { closeMobileMenu(); scrollToTop() }} className="rounded-xl px-3 py-2.5 text-sm font-medium text-slate-600 transition hover:bg-slate-50 hover:text-slate-900">Contact</Link>
