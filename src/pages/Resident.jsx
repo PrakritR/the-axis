@@ -125,15 +125,29 @@ const priorityStyles = {
   Critical: 'border-red-200 bg-red-50 text-red-700',
 }
 
+function parseDisplayDate(value) {
+  if (!value) return null
+  if (value instanceof Date) return Number.isNaN(value.getTime()) ? null : value
+  const raw = String(value).trim()
+  const dateOnlyMatch = raw.match(/^(\d{4})-(\d{2})-(\d{2})$/)
+  if (dateOnlyMatch) {
+    const [, year, month, day] = dateOnlyMatch
+    return new Date(Number(year), Number(month) - 1, Number(day))
+  }
+  const parsed = new Date(raw)
+  return Number.isNaN(parsed.getTime()) ? null : parsed
+}
+
 function formatDate(value) {
-  if (!value) return 'No date'
-  return new Date(value).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+  const date = parseDisplayDate(value)
+  if (!date) return 'No date'
+  return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
 }
 
 function formatDateInput(value) {
   if (!value) return ''
-  const date = new Date(value)
-  if (Number.isNaN(date.getTime())) return ''
+  const date = parseDisplayDate(value)
+  if (!date) return ''
   return date.toISOString().slice(0, 10)
 }
 
