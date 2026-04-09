@@ -42,7 +42,13 @@ function compareRoomLabels(a, b) {
   })
 }
 
+const MATCH_ALL_TOKENS = new Set(['all', 'all properties', 'all residents', 'everyone'])
+
 function announcementMatchesResident(item, resident) {
+  // Target is normalised to a lowercase string array by getAnnouncements()
+  const tokens = Array.isArray(item.Target) ? item.Target : []
+  if (tokens.length === 0 || tokens.some((t) => MATCH_ALL_TOKENS.has(t))) return true
+
   const residentProperty = String(resident.House || '').trim()
   const residentRoom = normalizeUnitLabel(resident['Unit Number'] || '')
   const residentPropertyId = residentProperty.includes('4709A') ? '4709A'
@@ -50,28 +56,17 @@ function announcementMatchesResident(item, resident) {
     : residentProperty.includes('5259') ? '5259'
     : ''
   const residentRoomKey = residentPropertyId && residentRoom ? `${residentPropertyId}-${residentRoom}` : ''
-  const target = String(item.Target || '').trim().toLowerCase()
 
-  if (!target || ['all', 'all properties', 'all residents', 'everyone'].includes(target)) return true
-
-  const tokens = target
-    .split(/[\n,;]+/)
-    .map((part) => part.trim().toLowerCase())
-    .filter(Boolean)
-
-  const propertyMatches = [
+  const validMatches = new Set([
     residentProperty.toLowerCase(),
     residentPropertyId.toLowerCase(),
-  ].filter(Boolean)
-
-  const roomMatches = [
     residentRoom.toLowerCase(),
     `${residentProperty.toLowerCase()} ${residentRoom.toLowerCase()}`.trim(),
     residentRoomKey.toLowerCase(),
     residentRoomKey.toLowerCase().replace(/-/g, ' '),
-  ].filter(Boolean)
+  ].filter(Boolean))
 
-  return tokens.some((token) => propertyMatches.includes(token) || roomMatches.includes(token))
+  return tokens.some((token) => validMatches.has(token))
 }
 
 const houseOptions = properties.map((property) => {
@@ -104,8 +99,12 @@ const statusStyles = {
 
 const priorityStyles = {
   Routine: 'border-slate-200 bg-slate-100 text-slate-600',
+  Low: 'border-slate-200 bg-slate-100 text-slate-600',
+  Normal: 'border-slate-200 bg-slate-100 text-slate-600',
+  High: 'border-amber-200 bg-amber-50 text-amber-700',
   Urgent: 'border-amber-200 bg-amber-50 text-amber-700',
   Emergency: 'border-red-200 bg-red-50 text-red-700',
+  Critical: 'border-red-200 bg-red-50 text-red-700',
 }
 
 function formatDate(value) {
@@ -124,12 +123,22 @@ function classNames(...values) {
   return values.filter(Boolean).join(' ')
 }
 
+function formatMoney(value) {
+  return `$${Number(value || 0).toLocaleString()}`
+}
+
 const residentPaymentFields = [
   'Resident Payment URL',
   'Payment URL',
   'Payment Link',
   'Resident Portal URL',
   'Portal URL',
+]
+
+const stripeCustomerFields = [
+  'Stripe Customer ID',
+  'Stripe Customer',
+  'Stripe CustomerId',
 ]
 
 const paymentRecordLinkFields = [
@@ -155,6 +164,14 @@ function resolveResidentPaymentUrl(resident, payments = []) {
     firstAvailableLink(resident, residentPaymentFields) ||
     payments.map((payment) => firstAvailableLink(payment, paymentRecordLinkFields)).find(Boolean) ||
     import.meta.env.VITE_RESIDENT_PAYMENT_URL ||
+    ''
+  )
+}
+
+function getResidentStripeCustomerId(resident, payments = []) {
+  return (
+    firstAvailableLink(resident, stripeCustomerFields) ||
+    payments.map((payment) => firstAvailableLink(payment, stripeCustomerFields)).find(Boolean) ||
     ''
   )
 }
@@ -1007,10 +1024,26 @@ const paymentStatusStyles = {
   Partial: 'border-sky-200 bg-sky-50 text-sky-700',
 }
 
+function getPaymentKind(payment) {
+  const raw = [
+    payment.Type,
+    payment.Category,
+    payment.Kind,
+    payment['Line Item Type'],
+    payment.Month,
+    payment.Notes,
+  ].filter(Boolean).join(' ').toLowerCase()
+
+  if (/(fee|fine|damage|late fee|late charge|cleaning|lockout)/.test(raw)) return 'fee'
+  return 'rent'
+}
+
 function PaymentsPanel({ resident }) {
   const [payments, setPayments] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+  const [actionError, setActionError] = useState('')
+  const [actionLoading, setActionLoading] = useState('')
 
   useEffect(() => {
     getPaymentsForResident(resident)
@@ -1019,9 +1052,75 @@ function PaymentsPanel({ resident }) {
       .finally(() => setLoading(false))
   }, [resident])
 
-  const outstanding = payments.filter((p) => p.Status !== 'Paid').reduce((sum, p) => sum + (Number(p.Amount) || 0), 0)
-  const nextDue = payments.find((p) => p.Status === 'Pending' || p.Status === 'Overdue')
+  const unpaidPayments = payments.filter((p) => p.Status !== 'Paid')
+  const outstanding = unpaidPayments.reduce((sum, p) => sum + (Number(p.Amount) || 0), 0)
+  const rentPayments = unpaidPayments.filter((payment) => getPaymentKind(payment) === 'rent')
+  const feePayments = unpaidPayments.filter((payment) => getPaymentKind(payment) === 'fee')
+  const nextDue = rentPayments[0] || unpaidPayments.find((p) => p.Status === 'Pending' || p.Status === 'Overdue')
+  const feesDue = feePayments.reduce((sum, p) => sum + (Number(p.Amount) || 0), 0)
   const paymentUrl = useMemo(() => resolveResidentPaymentUrl(resident, payments), [resident, payments])
+  const stripeCustomerId = useMemo(() => getResidentStripeCustomerId(resident, payments), [resident, payments])
+
+  async function launchCheckout({ amount, description, category, paymentRecordId }) {
+    setActionError('')
+    setActionLoading(category)
+    try {
+      const response = await fetch('/api/stripe-create-checkout-session', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          residentId: resident.id,
+          residentName: resident.Name,
+          residentEmail: resident.Email,
+          propertyName: resident.House,
+          unitNumber: resident['Unit Number'],
+          amount,
+          description,
+          category,
+          paymentRecordId,
+        }),
+      })
+      const data = await response.json()
+      if (!response.ok) throw new Error(data.error || 'Unable to create checkout session.')
+      window.location.href = data.url
+    } catch (err) {
+      if (paymentUrl && category === 'rent') {
+        window.location.href = paymentUrl
+        return
+      }
+      setActionError(err.message || 'Unable to start payment.')
+    } finally {
+      setActionLoading('')
+    }
+  }
+
+  async function openPortal() {
+    if (!stripeCustomerId) {
+      if (paymentUrl) {
+        window.location.href = paymentUrl
+        return
+      }
+      setActionError('A Stripe customer ID is needed before the lease portal can open for this resident.')
+      return
+    }
+
+    setActionError('')
+    setActionLoading('portal')
+    try {
+      const response = await fetch('/api/stripe-create-portal-session', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ customerId: stripeCustomerId }),
+      })
+      const data = await response.json()
+      if (!response.ok) throw new Error(data.error || 'Unable to open customer portal.')
+      window.location.href = data.url
+    } catch (err) {
+      setActionError(err.message || 'Unable to open the lease portal.')
+    } finally {
+      setActionLoading('')
+    }
+  }
 
   return (
     <SectionCard title="Lease & Payments" description="Manage rent, lease continuation, and account balances in one place.">
@@ -1030,30 +1129,50 @@ function PaymentsPanel({ resident }) {
       {!loading && !error && (
         <>
           <div className="grid gap-4 lg:grid-cols-[1.2fr_0.8fr]">
-            <div className="rounded-[24px] border border-slate-200 bg-slate-50 p-5">
-              <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">Lease Actions</div>
-              <h3 className="mt-3 text-xl font-black text-slate-900">Pay rent, extend your lease, or continue your stay.</h3>
-              <p className="mt-2 text-sm leading-6 text-slate-500">
-                Use the payment system below whenever you are ready to make a payment or continue your lease.
-              </p>
-              <div className="mt-5 flex flex-wrap gap-3">
-                {paymentUrl ? (
-                  <>
-                    <a href={paymentUrl} className="rounded-full bg-slate-900 px-5 py-3 text-sm font-semibold text-white transition hover:bg-slate-800">
-                      Pay rent
-                    </a>
-                    <a href={paymentUrl} className="rounded-full border border-slate-300 px-5 py-3 text-sm font-semibold text-slate-700 transition hover:border-slate-500">
-                      Extend lease
-                    </a>
-                    <a href={paymentUrl} className="rounded-full border border-slate-300 px-5 py-3 text-sm font-semibold text-slate-700 transition hover:border-slate-500">
-                      Continue lease
-                    </a>
-                  </>
-                ) : (
-                  <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-700">
-                    Payment setup is not available on this account yet. Contact Axis and we’ll help you complete rent or lease continuation.
+            <div className="space-y-4">
+              <div className="rounded-[24px] border border-slate-200 bg-slate-50 p-5">
+                <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">Rent Due</div>
+                <div className="mt-3 flex flex-wrap items-end justify-between gap-4">
+                  <div>
+                    <div className="text-3xl font-black text-slate-900">
+                      {nextDue ? formatMoney(nextDue.Amount) : '$0'}
+                    </div>
+                    <div className="mt-1 text-sm text-slate-500">
+                      {nextDue ? `${nextDue.Month || 'Current rent'}${nextDue['Due Date'] ? ` • Due ${formatDate(nextDue['Due Date'])}` : ''}` : 'No rent currently due'}
+                    </div>
                   </div>
-                )}
+                  <button
+                    type="button"
+                    disabled={!nextDue || actionLoading === 'rent'}
+                    onClick={() => launchCheckout({
+                      amount: Number(nextDue?.Amount || 0),
+                      description: nextDue?.Month ? `Rent payment - ${nextDue.Month}` : 'Rent payment',
+                      category: 'rent',
+                      paymentRecordId: nextDue?.id,
+                    })}
+                    className="rounded-full bg-slate-900 px-5 py-3 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    {actionLoading === 'rent' ? 'Opening checkout...' : 'Pay rent'}
+                  </button>
+                </div>
+              </div>
+
+              <div className="rounded-[24px] border border-slate-200 bg-white p-5">
+                <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">Lease Actions</div>
+                <h3 className="mt-3 text-xl font-black text-slate-900">Extend or continue your lease</h3>
+                <p className="mt-2 text-sm leading-6 text-slate-500">
+                  Open the lease portal to manage future billing details and continue your stay.
+                </p>
+                <div className="mt-5 flex flex-wrap gap-3">
+                  <button
+                    type="button"
+                    onClick={openPortal}
+                    disabled={actionLoading === 'portal'}
+                    className="rounded-full border border-slate-300 px-5 py-3 text-sm font-semibold text-slate-700 transition hover:border-slate-500 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    {actionLoading === 'portal' ? 'Opening portal...' : 'Extend / Continue Lease'}
+                  </button>
+                </div>
               </div>
             </div>
 
@@ -1073,6 +1192,63 @@ function PaymentsPanel({ resident }) {
                 <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">Total Payments</div>
                 <div className="mt-2 text-lg font-black text-slate-900">{payments.length}</div>
               </div>
+            </div>
+          </div>
+
+          <div className="mt-4 grid gap-4 lg:grid-cols-[1fr_1fr]">
+            <div className="rounded-[24px] border border-slate-200 bg-white p-5">
+              <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">Other Fees & Fines</div>
+              <div className="mt-3 flex flex-wrap items-end justify-between gap-4">
+                <div>
+                  <div className="text-2xl font-black text-slate-900">{formatMoney(feesDue)}</div>
+                  <div className="mt-1 text-sm text-slate-500">
+                    {feePayments.length > 0 ? `${feePayments.length} open item${feePayments.length === 1 ? '' : 's'}` : 'No open fees or fines'}
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  disabled={feesDue <= 0 || actionLoading === 'fees'}
+                  onClick={() => launchCheckout({
+                    amount: feesDue,
+                    description: 'Resident fees and fines',
+                    category: 'fees',
+                    paymentRecordId: feePayments.map((item) => item.id).join(','),
+                  })}
+                  className="rounded-full border border-slate-300 px-5 py-3 text-sm font-semibold text-slate-700 transition hover:border-slate-500 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {actionLoading === 'fees' ? 'Opening checkout...' : 'Pay fees'}
+                </button>
+              </div>
+              {feePayments.length > 0 ? (
+                <div className="mt-4 space-y-2">
+                  {feePayments.slice(0, 4).map((payment) => (
+                    <div key={payment.id} className="flex items-center justify-between gap-3 rounded-2xl bg-slate-50 px-4 py-3">
+                      <div>
+                        <div className="text-sm font-semibold text-slate-900">{payment.Month || payment.Type || 'Fee'}</div>
+                        {payment.Notes ? <div className="mt-0.5 text-xs text-slate-400">{payment.Notes}</div> : null}
+                      </div>
+                      <div className="text-sm font-bold text-slate-900">{formatMoney(payment.Amount)}</div>
+                    </div>
+                  ))}
+                </div>
+              ) : null}
+            </div>
+
+            <div className="rounded-[24px] border border-slate-200 bg-slate-50 p-5">
+              <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">Payment Setup</div>
+              <p className="mt-3 text-sm leading-6 text-slate-500">
+                Stripe checkout is wired for secure rent payments. Once your Stripe secret key is added, residents can pay rent here without leaving the portal flow.
+              </p>
+              <div className="mt-4 space-y-2 text-sm text-slate-600">
+                <div>Resident email: {resident.Email || 'Not set'}</div>
+                <div>House / unit: {[resident.House, resident['Unit Number']].filter(Boolean).join(' • ') || 'Not set'}</div>
+                <div>Stripe customer: {stripeCustomerId || 'Will link after Stripe setup'}</div>
+              </div>
+              {actionError ? (
+                <div className="mt-4 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+                  {actionError}
+                </div>
+              ) : null}
             </div>
           </div>
 

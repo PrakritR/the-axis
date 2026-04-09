@@ -1,4 +1,4 @@
-const BASE_ID = import.meta.env.VITE_AIRTABLE_BASE_ID || 'appNBX2inqfJMyqYV'
+const BASE_ID = import.meta.env.VITE_AIRTABLE_APPLICATIONS_BASE_ID || import.meta.env.VITE_AIRTABLE_BASE_ID || 'appNBX2inqfJMyqYV'
 const API_KEY = import.meta.env.VITE_AIRTABLE_TOKEN
 const BASE_URL = `https://api.airtable.com/v0/${BASE_ID}`
 
@@ -141,65 +141,32 @@ export async function syncResidentFromAuth({ user, resident = null, profile = {}
 }
 
 export async function getAnnouncements() {
-  const [announcementsData, settingsData] = await Promise.all([
-    request(buildUrl(TABLES.announcements)),
-    request(buildUrl(TABLES.websiteSettings)).catch(() => ({ records: [] })),
-  ])
-
-  const settings = Object.fromEntries((settingsData.records || []).map((record) => {
-    const mapped = mapRecord(record)
-    return [mapped['Setting Name'], mapped.Value]
+  const data = await request(buildUrl(TABLES.announcements, {
+    filterByFormula: '{Show} = TRUE()',
   }))
 
-  const announcementsEnabled = String(settings.announcements_enabled ?? 'true').toLowerCase() !== 'false'
-  if (!announcementsEnabled) return []
-
-  const showExpired = String(settings.show_expired ?? 'false').toLowerCase() === 'true'
-  const now = new Date()
-
-  const items = (announcementsData.records || []).map((record) => {
-    const announcement = mapRecord(record)
-    const rawTarget = String(
-      announcement.Target ||
-      announcement['Target Scope'] ||
-      ''
-    ).trim()
-
+  const items = (data.records || []).map((record) => {
+    const a = mapRecord(record)
+    // Target can be an array (multi-select) or a string — normalise to array of lowercase tokens
+    const rawTarget = Array.isArray(a.Target) ? a.Target : String(a.Target || a['Target Scope'] || '').split(/[\n,;]+/)
     return {
-      ...announcement,
-      Message: announcement.Message || announcement.Body || '',
-      'Short Summary': announcement['Short Summary'] || '',
-      Target: rawTarget,
-      Show: typeof announcement.Show === 'boolean' ? announcement.Show : Boolean(announcement['Show on Website']),
-      CreatedAt: announcement['Created At'] || announcement.created_at,
+      ...a,
+      Message: a.Message || a.Body || '',
+      'Short Summary': a['Short Summary'] || '',
+      Target: rawTarget.map((t) => String(t).trim().toLowerCase()).filter(Boolean),
+      CreatedAt: a['Created At'] || a.created_at,
     }
-  }).filter((item) => {
-    const status = String(item.Status || '').trim()
-    const showOnWebsite = Boolean(item.Show)
-    if (!showOnWebsite) return false
-    if (status && !['Published', 'Scheduled'].includes(status)) return false
-
-    const startDate = item['Start Date'] ? new Date(item['Start Date']) : null
-    const endDate = item['End Date'] ? new Date(item['End Date']) : null
-
-    if (status === 'Scheduled' && (!startDate || startDate > now)) return false
-    if (status === 'Published' && startDate && startDate > now) return false
-    if (!showExpired && endDate && endDate < now) return false
-
-    return true
   })
 
-  const defaultSort = String(settings.default_sort || 'pinned_first')
-  if (defaultSort === 'pinned_first') {
-    items.sort((a, b) => {
-      const pinnedDiff = Number(Boolean(b.Pinned)) - Number(Boolean(a.Pinned))
-      if (pinnedDiff !== 0) return pinnedDiff
-      return new Date(b['Start Date'] || b['Date Posted'] || b.CreatedAt || b.created_at) - new Date(a['Start Date'] || a['Date Posted'] || a.CreatedAt || a.created_at)
-    })
-  }
+  // Pinned first, then newest first
+  items.sort((a, b) => {
+    const pinnedDiff = Number(Boolean(b.Pinned)) - Number(Boolean(a.Pinned))
+    if (pinnedDiff !== 0) return pinnedDiff
+    return new Date(b['Start Date'] || b['Date Posted'] || b.CreatedAt || b.created_at) -
+           new Date(a['Start Date'] || a['Date Posted'] || a.CreatedAt || a.created_at)
+  })
 
-  const limit = Number(settings.max_items_homepage || 0)
-  return limit > 0 ? items.slice(0, limit) : items
+  return items
 }
 
 export async function getWorkOrdersForResident(resident) {
