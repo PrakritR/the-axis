@@ -8,6 +8,33 @@ function formatPhone(raw) {
   return `(${digits.slice(0, 3)}) ${digits.slice(3, 6)}-${digits.slice(6)}`
 }
 
+function parseTourCalendar(raw) {
+  const result = {}
+  String(raw || '')
+    .split(/[;\n]/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .forEach((line) => {
+      const match = line.match(/^(Mon|Tue|Wed|Thu|Fri|Sat|Sun)\s*[:\-]\s*(.+)$/i)
+      if (!match) return
+      const day = match[1].slice(0, 1).toUpperCase() + match[1].slice(1, 3).toLowerCase()
+      result[day] = match[2].split(',').map((slot) => slot.trim()).filter(Boolean)
+    })
+  return result
+}
+
+function getCalendarSlots(property) {
+  const parsed = parseTourCalendar(property?.availability)
+  return WEEK_DAYS.reduce((acc, day) => {
+    acc[day] = parsed[day]?.length ? parsed[day] : DEFAULT_CALENDAR[day] || []
+    return acc
+  }, {})
+}
+
+function formatCalendarLabel(day, slot) {
+  return `${day} · ${slot}`
+}
+
 const AIRTABLE_BASE_ID = import.meta.env.VITE_AIRTABLE_BASE_ID || 'appNBX2inqfJMyqYV'
 const AIRTABLE_TOKEN   = import.meta.env.VITE_AIRTABLE_TOKEN
 const CONTACT_EMAIL    = 'info@axis-seattle-housing.com'
@@ -20,6 +47,18 @@ const DEFAULT_PROPERTIES = [
   { id: '4709b', name: '4709B 8th Ave', address: '4709B 8th Ave NE, Seattle, WA', rooms: ['Room 1','Room 2','Room 3','Room 4','Room 5','Room 6','Room 7','Room 8','Room 9'] },
   { id: '5259',  name: '5259 Brooklyn Ave NE', address: '5259 Brooklyn Ave NE, Seattle, WA', rooms: ['Room 1','Room 2','Room 3','Room 4','Room 5','Room 6','Room 7','Room 8','Room 9'] },
 ]
+
+const WEEK_DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
+const DEFAULT_TOUR_SLOTS = ['9:00 AM', '10:30 AM', '12:00 PM', '1:30 PM', '3:00 PM', '4:30 PM', '6:00 PM']
+const DEFAULT_CALENDAR = {
+  Mon: ['9:00 AM', '1:30 PM', '4:30 PM'],
+  Tue: ['10:30 AM', '3:00 PM'],
+  Wed: ['9:00 AM', '12:00 PM', '6:00 PM'],
+  Thu: ['10:30 AM', '1:30 PM', '4:30 PM'],
+  Fri: ['9:00 AM', '12:00 PM', '3:00 PM'],
+  Sat: ['10:30 AM', '1:30 PM'],
+  Sun: ['12:00 PM'],
+}
 
 // ── Shared success card ───────────────────────────────────────────────────────
 
@@ -129,7 +168,7 @@ function HousingScheduler() {
         </div>
         <div>
           <div className="font-bold text-slate-900">Tour a Property</div>
-          <p className="mt-1 text-sm leading-6 text-slate-500">Walk through a specific room. In-person or virtual.</p>
+          <p className="mt-1 text-sm leading-6 text-slate-500">Looking for a place to live? Pick a home, then choose a tour time.</p>
         </div>
         <div className="mt-auto flex items-center gap-1.5 text-xs font-semibold text-axis">
           Schedule tour <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7"/></svg>
@@ -144,11 +183,11 @@ function HousingScheduler() {
           </svg>
         </div>
         <div>
-          <div className="font-bold text-slate-900">Discuss with Leasing</div>
-          <p className="mt-1 text-sm leading-6 text-slate-500">Talk through pricing, lease terms, or availability.</p>
+          <div className="font-bold text-slate-900">Contact us</div>
+          <p className="mt-1 text-sm leading-6 text-slate-500">Questions about housing, software, or anything else can start here.</p>
         </div>
         <div className="mt-auto flex items-center gap-1.5 text-xs font-semibold text-axis">
-          Book a meeting <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7"/></svg>
+          Contact us <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7"/></svg>
         </div>
       </button>
     </div>
@@ -160,7 +199,7 @@ function HousingScheduler() {
     <div>
       <div className="mb-6 flex items-center justify-between border-b border-slate-100 pb-5">
         <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-axis">
-          {bookingType === 'tour' ? 'Schedule a Tour' : 'Contact Axis'}
+          {bookingType === 'tour' ? 'Schedule a Tour' : 'Contact Us'}
         </div>
         <button onClick={reset} className="text-xs font-semibold text-slate-400 hover:text-slate-700">← Back</button>
       </div>
@@ -183,7 +222,7 @@ function HousingScheduler() {
         <div className="space-y-3">
           {properties.map((p) => (
             <button key={p.id} onClick={() => { setProperty(p.id); setRoom(''); setStep(2) }}
-              className="group flex w-full items-center justify-between rounded-2xl border border-slate-200 bg-white px-5 py-4 text-left transition-all hover:border-slate-900 hover:shadow-sm">
+              className="group flex w-full items-center justify-between rounded-2xl border border-slate-200 bg-white px-5 py-4 text-left transition-all hover:border-[#2563eb] hover:shadow-sm">
               <div>
                 <div className="font-semibold text-slate-900">{p.name}</div>
                 <div className="mt-0.5 text-xs text-slate-500">{p.address}</div>
@@ -213,14 +252,32 @@ function HousingScheduler() {
             </div>
           </div>
           <div>
-            <div className="mb-3 text-sm font-semibold text-slate-700">Preferred tour time</div>
-            <select value={form.preferredTime} onChange={e => setField('preferredTime', e.target.value)} className={selectCls}>
-              <option value="">Choose a time</option>
-              {(selectedProperty.availability ? selectedProperty.availability.split(',') : ['Morning', 'Afternoon', 'Evening']).map((slot) => {
-                const value = slot.trim()
-                return value ? <option key={value} value={value}>{value}</option> : null
+            <div className="mb-3 text-sm font-semibold text-slate-700">Choose a tour time</div>
+            <div className="grid gap-2">
+              {WEEK_DAYS.map((day) => {
+                const slots = getCalendarSlots(selectedProperty)[day] || []
+                return (
+                  <div key={day} className="rounded-2xl border border-slate-200 bg-white p-3">
+                    <div className="mb-2 text-xs font-bold uppercase tracking-[0.16em] text-slate-400">{day}</div>
+                    <div className="flex flex-wrap gap-2">
+                      {(slots.length ? slots : DEFAULT_TOUR_SLOTS).map((slot) => {
+                        const value = formatCalendarLabel(day, slot)
+                        return (
+                          <button
+                            key={value}
+                            type="button"
+                            onClick={() => setField('preferredTime', value)}
+                            className={`rounded-full border px-3 py-2 text-xs font-semibold transition-all ${form.preferredTime === value ? 'border-[#2563eb] bg-[#2563eb] text-white' : 'border-slate-200 bg-slate-50 text-slate-700 hover:border-[#2563eb] hover:text-[#2563eb]'}`}
+                          >
+                            {slot}
+                          </button>
+                        )
+                      })}
+                    </div>
+                  </div>
+                )
               })}
-            </select>
+            </div>
           </div>
           <div>
             <div className="mb-3 text-sm font-semibold text-slate-700">Tour format</div>
@@ -248,8 +305,8 @@ function HousingScheduler() {
               <div className="flex flex-wrap items-center gap-2">
                 <span className="font-semibold text-slate-900">{selectedProperty.name}</span>
                 <span className="text-slate-300">·</span><span className="text-slate-600">{room}</span>
-                {selectedProperty?.availability ? <span className="text-slate-300">·</span> : null}
-                {selectedProperty?.availability ? <span className="text-slate-600">{selectedProperty.availability}</span> : null}
+                {form.preferredTime ? <span className="text-slate-300">·</span> : null}
+                {form.preferredTime ? <span className="text-slate-600">{form.preferredTime}</span> : null}
                 <span className="text-slate-300">·</span><span className="text-slate-600">{tourType === 'in-person' ? 'In-Person' : 'Virtual'}</span>
               </div>
               <button onClick={() => setStep(2)} className="ml-2 shrink-0 text-xs font-semibold text-slate-400 hover:text-slate-700">Edit</button>
@@ -597,12 +654,12 @@ export default function Contact() {
               <div className="mb-6 flex items-center justify-between border-b border-slate-100 pb-5">
                 <div>
                   <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">Axis Housing</div>
-                  <h2 className="mt-1 text-2xl font-black tracking-tight text-slate-900">Contact leasing</h2>
+                  <h2 className="mt-1 text-2xl font-black tracking-tight text-slate-900">Contact us</h2>
                 </div>
                 <button onClick={() => setSection(null)} className="text-xs font-semibold text-slate-400 hover:text-slate-700">← Back</button>
               </div>
               <TabBar
-                tabs={[{ id: 'schedule', label: 'Schedule a Tour' }, { id: 'message', label: 'Contact Axis' }]}
+                tabs={[{ id: 'schedule', label: 'Schedule a Tour' }, { id: 'message', label: 'Contact us' }]}
                 active={housingTab} onChange={setHousingTab}
               />
               {housingTab === 'schedule' && <HousingScheduler />}

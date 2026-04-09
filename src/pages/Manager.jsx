@@ -66,6 +66,9 @@ function classNames(...values) {
   return values.filter(Boolean).join(' ')
 }
 
+const TOUR_DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
+const TOUR_SLOTS = ['9:00 AM', '10:30 AM', '12:00 PM', '1:30 PM', '3:00 PM', '4:30 PM', '6:00 PM']
+
 async function atRequest(url, options = {}) {
   const res = await fetch(url, { ...options, headers: { ...atHeaders(), ...(options.headers || {}) } })
   if (!res.ok) {
@@ -762,6 +765,30 @@ function HouseManagementPanel({ onPropertiesChange }) {
     return parts.join('\n')
   }
 
+  function updateTourSlot(day, slot) {
+    setTourForm((current) => {
+      const lines = String(current.availability || '')
+        .split(/\n+/)
+        .map((line) => line.trim())
+        .filter(Boolean)
+      const lineIndex = lines.findIndex((line) => line.toLowerCase().startsWith(day.toLowerCase()))
+      const existingSlots = lineIndex >= 0
+        ? lines[lineIndex].split(':').slice(1).join(':').split(',').map((item) => item.trim()).filter(Boolean)
+        : []
+      const nextSlots = existingSlots.includes(slot)
+        ? existingSlots.filter((item) => item !== slot)
+        : [...existingSlots, slot]
+      const nextLines = [...lines]
+      const nextValue = `${day}: ${nextSlots.join(', ')}`
+      if (lineIndex >= 0) {
+        nextLines[lineIndex] = nextValue
+      } else {
+        nextLines.push(nextValue)
+      }
+      return { ...current, availability: nextLines.filter(Boolean).join('\n') }
+    })
+  }
+
   async function handleSaveTourHours(property) {
     setSaving(true)
     try {
@@ -895,15 +922,39 @@ function HouseManagementPanel({ onPropertiesChange }) {
                         className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900"
                       />
                     </div>
-                    <div>
-                      <label className="mb-1 block text-xs font-semibold text-slate-600">Tour hours</label>
-                      <input
-                        type="text"
-                        value={tourForm.availability}
-                        onChange={(e) => setTourForm((current) => ({ ...current, availability: e.target.value }))}
-                        placeholder="Mon 10am-12pm, Wed 2pm-5pm"
-                        className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900"
-                      />
+                    <div className="sm:col-span-2">
+                      <label className="mb-1 block text-xs font-semibold text-slate-600">Tour calendar</label>
+                      <div className="grid gap-2 rounded-2xl border border-slate-200 bg-white p-3">
+                        <div className="grid gap-2 sm:grid-cols-2">
+                          {TOUR_DAYS.map((day) => (
+                            <div key={day} className="rounded-2xl border border-slate-100 bg-slate-50 p-3">
+                              <div className="mb-2 text-[11px] font-bold uppercase tracking-[0.14em] text-slate-400">{day}</div>
+                              <div className="flex flex-wrap gap-2">
+                                {TOUR_SLOTS.map((slot) => {
+                                  const active = String(tourForm.availability || '').includes(`${day}:`) && String(tourForm.availability || '').includes(slot)
+                                  return (
+                                    <button
+                                      key={`${day}-${slot}`}
+                                      type="button"
+                                      onClick={() => updateTourSlot(day, slot)}
+                                      className={`rounded-full border px-2.5 py-1.5 text-[11px] font-semibold transition ${active ? 'border-[#2563eb] bg-[#2563eb] text-white' : 'border-slate-200 bg-white text-slate-700 hover:border-[#2563eb] hover:text-[#2563eb]'}`}
+                                    >
+                                      {slot}
+                                    </button>
+                                  )
+                                })}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                        <textarea
+                          rows={4}
+                          value={tourForm.availability}
+                          onChange={(e) => setTourForm((current) => ({ ...current, availability: e.target.value }))}
+                          placeholder="Mon: 9:00 AM, 1:30 PM\nTue: 10:30 AM, 3:00 PM"
+                          className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900"
+                        />
+                      </div>
                     </div>
                     <div>
                       <label className="mb-1 block text-xs font-semibold text-slate-600">Security deposit</label>
