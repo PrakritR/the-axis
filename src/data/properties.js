@@ -14,9 +14,13 @@ function asset(path) {
   const key = `../../Assets/${path}`
   const url = assetUrlByKey[key]
   if (url === undefined) {
-    throw new Error(
-      `Asset not found: ${path}. Ensure the file exists under Assets/ and uses a covered image extension.`,
-    )
+    // Warn instead of crash — a missing image should never white-screen the app.
+    // Root cause: if Assets/ is excluded from the build environment (e.g. via
+    // .vercelignore), import.meta.glob returns {} and every lookup misses.
+    if (import.meta.env.DEV) {
+      console.warn(`[properties] Asset not found: ${path}`)
+    }
+    return ''
   }
   return url
 }

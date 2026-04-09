@@ -4,9 +4,8 @@ import { AnimatePresence, motion } from 'framer-motion'
 import { Toaster } from 'react-hot-toast'
 import { MAINTENANCE_MODE } from './lib/maintenance'
 import MaintenancePage from './pages/MaintenancePage'
-import Navbar from './components/Navbar'
 import PromoBanner from './components/PromoBanner'
-import OwnersNav from './components/OwnersNav'
+import SiteHeader from './components/SiteHeader'
 import Footer from './components/Footer'
 import Home from './pages/Home'
 import PortalSelect from './pages/PortalSelect'
@@ -115,8 +114,8 @@ function AppInner() {
     return <MaintenancePage />
   }
 
-  // The manager portal renders its own standalone UI — no public Navbar, Footer,
-  // or Chatbot. Check the full pathname so /manager/* and /sign/*
+  // The manager portal renders its own standalone UI — no public shell (SiteHeader, Footer,
+  // or Chatbot). Check the full pathname so /manager/* and /sign/*
   // paths also match.
   const isManagerRoute = location.pathname === '/manager' || location.pathname.startsWith('/manager/')
   const isSignLeaseRoute = location.pathname.startsWith('/sign/')
@@ -160,7 +159,7 @@ function AppInner() {
       <ScrollToTop />
       <div className="sticky top-0 z-50 w-full">
         {showPromoBanner ? <PromoBanner /> : null}
-        {!isPortalHub ? isOwnersRoute ? <OwnersNav /> : <Navbar /> : null}
+        <SiteHeader />
       </div>
       <Toaster
         position="top-center"
