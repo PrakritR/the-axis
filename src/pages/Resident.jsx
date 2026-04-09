@@ -144,6 +144,13 @@ function formatMoney(value) {
   return `$${Number(value || 0).toLocaleString()}`
 }
 
+function getLeaseTermLabel(resident) {
+  const leaseTerm = String(resident?.['Lease Term'] || '').trim()
+  if (leaseTerm) return leaseTerm
+  if (resident?.['Lease Start Date'] && !resident?.['Lease End Date']) return 'Month-to-Month'
+  return 'Fixed Term'
+}
+
 const residentPaymentFields = [
   'Resident Payment URL',
   'Payment URL',
@@ -349,7 +356,11 @@ function AirtableLogin({ onLogin }) {
           setError('An account with this email already exists. Please sign in instead.')
           return
         }
-        const resident = await updateResident(existing.id, { Password: password, Status: 'Active' })
+        const resident = await updateResident(existing.id, {
+          Password: password,
+          Status: 'Active',
+          'Lease Term': existing['Lease Term'] || app['Lease Term'] || '',
+        })
         onLogin(resident)
         return
       }
@@ -362,6 +373,7 @@ function AirtableLogin({ onLogin }) {
         Phone: app['Signer Phone Number'] || '',
         House: app['Property Name'] || '',
         'Unit Number': app['Room Number'] || '',
+        'Lease Term': app['Lease Term'] || '',
         'Lease Start Date': app['Lease Start Date'] || null,
         'Lease End Date': app['Lease End Date'] || null,
         Status: 'Active',
@@ -880,12 +892,11 @@ function ProfilePanel({ resident, onUpdated }) {
   const [house, setHouse] = useState(defaultHouse)
   const [phone, setPhone] = useState(resident.Phone || '')
   const [unitNumber, setUnitNumber] = useState(resident['Unit Number'] || getUnitsForHouse(defaultHouse)[0] || '')
-  const [leaseStartDate, setLeaseStartDate] = useState(formatDateInput(resident['Lease Start Date']))
-  const [leaseEndDate, setLeaseEndDate] = useState(formatDateInput(resident['Lease End Date']))
+  const [isEditing, setIsEditing] = useState(false)
   const [saving, setSaving] = useState(false)
   const [message, setMessage] = useState('')
   const [saveError, setSaveError] = useState('')
-  const availableUnits = useMemo(() => getUnitsForHouse(house), [house])
+  const leaseTermLabel = getLeaseTermLabel(resident)
 
   useEffect(() => {
     const nextHouse = resident.House || houseOptions[0]?.house || ''
@@ -894,23 +905,11 @@ function ProfilePanel({ resident, onUpdated }) {
     setHouse(nextHouse)
     setPhone(resident.Phone || '')
     setUnitNumber(resident['Unit Number'] || getUnitsForHouse(nextHouse)[0] || '')
-    setLeaseStartDate(formatDateInput(resident['Lease Start Date']))
-    setLeaseEndDate(formatDateInput(resident['Lease End Date']))
+    setIsEditing(false)
   }, [resident])
-
-  useEffect(() => {
-    if (!availableUnits.length) return
-    if (!availableUnits.includes(unitNumber)) {
-      setUnitNumber(availableUnits[0])
-    }
-  }, [availableUnits, unitNumber])
 
   async function handleSubmit(event) {
     event.preventDefault()
-    if (leaseStartDate > leaseEndDate) {
-      setSaveError('Move-out date must be after the move-in date.')
-      return
-    }
     setSaving(true)
     setMessage('')
     setSaveError('')
@@ -918,14 +917,11 @@ function ProfilePanel({ resident, onUpdated }) {
       const updated = await updateResident(resident.id, {
         Name: name,
         Email: email,
-        House: house,
-        'Unit Number': unitNumber,
         Phone: phone,
-        'Lease Start Date': leaseStartDate || null,
-        'Lease End Date': leaseEndDate || null,
       })
       onUpdated(updated)
       setMessage('Profile updated successfully.')
+      setIsEditing(false)
     } catch (err) {
       setSaveError(err.message || 'Could not save profile right now. Please try again.')
     } finally {
@@ -934,7 +930,31 @@ function ProfilePanel({ resident, onUpdated }) {
   }
 
   return (
-    <SectionCard title="My Profile" description="Update your resident details here.">
+    <SectionCard
+      title="My Profile"
+      description="Your resident details are locked by default. Use edit mode for basic contact updates."
+      action={(
+        <button
+          type="button"
+          onClick={() => {
+            setIsEditing((current) => !current)
+            setMessage('')
+            setSaveError('')
+            if (isEditing) {
+              const nextHouse = resident.House || houseOptions[0]?.house || ''
+              setName(resident.Name || '')
+              setEmail(resident.Email || '')
+              setHouse(nextHouse)
+              setPhone(resident.Phone || '')
+              setUnitNumber(resident['Unit Number'] || getUnitsForHouse(nextHouse)[0] || '')
+            }
+          }}
+          className="rounded-full border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 transition hover:border-slate-500"
+        >
+          {isEditing ? 'Cancel edit' : 'Edit profile'}
+        </button>
+      )}
+    >
       <form onSubmit={handleSubmit} className="grid gap-4 sm:grid-cols-2">
         <div>
           <label className="mb-2 block text-sm font-semibold text-slate-700">Full Name</label>
@@ -944,7 +964,8 @@ function ProfilePanel({ resident, onUpdated }) {
             value={name}
             onChange={(event) => setName(event.target.value)}
             placeholder="Your full name"
-            className="w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm outline-none transition focus:border-slate-900 focus:ring-2 focus:ring-slate-900/10"
+            disabled={!isEditing}
+            className="w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm outline-none transition disabled:bg-slate-50 disabled:text-slate-500 focus:border-slate-900 focus:ring-2 focus:ring-slate-900/10"
           />
         </div>
         <div>
@@ -954,28 +975,25 @@ function ProfilePanel({ resident, onUpdated }) {
             required
             value={email}
             onChange={(event) => setEmail(event.target.value)}
-            className="w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm outline-none transition focus:border-slate-900 focus:ring-2 focus:ring-slate-900/10"
+            disabled={!isEditing}
+            className="w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm outline-none transition disabled:bg-slate-50 disabled:text-slate-500 focus:border-slate-900 focus:ring-2 focus:ring-slate-900/10"
           />
         </div>
         <div>
           <label className="mb-2 block text-sm font-semibold text-slate-700">House</label>
-          <select
+          <input
             value={house}
-            onChange={(event) => setHouse(event.target.value)}
-            className="w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm outline-none transition focus:border-slate-900 focus:ring-2 focus:ring-slate-900/10"
-          >
-            {houseOptions.map((option) => <option key={option.house}>{option.house}</option>)}
-          </select>
+            disabled
+            className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-500 outline-none"
+          />
         </div>
         <div>
           <label className="mb-2 block text-sm font-semibold text-slate-700">Unit</label>
-          <select
+          <input
             value={unitNumber}
-            onChange={(event) => setUnitNumber(event.target.value)}
-            className="w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm outline-none transition focus:border-slate-900 focus:ring-2 focus:ring-slate-900/10"
-          >
-            {availableUnits.map((option) => <option key={option}>{option}</option>)}
-          </select>
+            disabled
+            className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-500 outline-none"
+          />
         </div>
         <div>
           <label className="mb-2 block text-sm font-semibold text-slate-700">Phone Number</label>
@@ -983,42 +1001,54 @@ function ProfilePanel({ resident, onUpdated }) {
             required
             value={phone}
             onChange={(event) => setPhone(event.target.value)}
-            className="w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm outline-none transition focus:border-slate-900 focus:ring-2 focus:ring-slate-900/10"
+            disabled={!isEditing}
+            className="w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm outline-none transition disabled:bg-slate-50 disabled:text-slate-500 focus:border-slate-900 focus:ring-2 focus:ring-slate-900/10"
+          />
+        </div>
+        <div>
+          <label className="mb-2 block text-sm font-semibold text-slate-700">Lease Type</label>
+          <input
+            value={leaseTermLabel}
+            disabled
+            className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-500 outline-none"
           />
         </div>
         <div>
           <label className="mb-2 block text-sm font-semibold text-slate-700">Move In Date</label>
           <input
             type="date"
-            required
-            value={leaseStartDate}
-            onChange={(event) => setLeaseStartDate(event.target.value)}
-            className="w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm outline-none transition focus:border-slate-900 focus:ring-2 focus:ring-slate-900/10"
+            value={formatDateInput(resident['Lease Start Date'])}
+            disabled
+            className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-500 outline-none"
           />
         </div>
         <div>
           <label className="mb-2 block text-sm font-semibold text-slate-700">Move Out Date</label>
           <input
             type="date"
-            required
-            value={leaseEndDate}
-            onChange={(event) => setLeaseEndDate(event.target.value)}
-            className="w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm outline-none transition focus:border-slate-900 focus:ring-2 focus:ring-slate-900/10"
+            value={formatDateInput(resident['Lease End Date'])}
+            disabled
+            className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-500 outline-none"
           />
+        </div>
+        <div className="sm:col-span-2 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+          Lease dates and unit details are managed through the resident leasing and payments flow, not from profile editing.
         </div>
         <div className="sm:col-span-2">
           {message ? <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">{message}</div> : null}
           {saveError ? <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{saveError}</div> : null}
         </div>
-        <div className="sm:col-span-2">
-          <button
-            type="submit"
-            disabled={saving}
-            className="rounded-full bg-slate-900 px-6 py-3 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:opacity-50"
-          >
-            {saving ? 'Saving...' : 'Save profile'}
-          </button>
-        </div>
+        {isEditing ? (
+          <div className="sm:col-span-2">
+            <button
+              type="submit"
+              disabled={saving}
+              className="rounded-full bg-slate-900 px-6 py-3 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:opacity-50"
+            >
+              {saving ? 'Saving...' : 'Save profile'}
+            </button>
+          </div>
+        ) : null}
       </form>
     </SectionCard>
   )
@@ -1043,80 +1073,6 @@ function getPaymentKind(payment) {
 
   if (/(fee|fine|damage|late fee|late charge|cleaning|lockout)/.test(raw)) return 'fee'
   return 'rent'
-}
-
-function ExtendLeaseForm({ resident, onUpdated }) {
-  const currentEnd = formatDateInput(resident['Lease End Date'])
-  const [open, setOpen] = useState(false)
-  const [newDate, setNewDate] = useState(currentEnd)
-  const [saving, setSaving] = useState(false)
-  const [success, setSuccess] = useState('')
-  const [error, setError] = useState('')
-
-  async function handleSubmit(e) {
-    e.preventDefault()
-    if (!newDate) return
-    if (currentEnd && newDate <= currentEnd) { setError('New move-out date must be after the current move-out date.'); return }
-    setSaving(true)
-    setError('')
-    setSuccess('')
-    try {
-      const updated = await updateResident(resident.id, { 'Lease End Date': newDate })
-      onUpdated(updated)
-      setSuccess(`Move-out date updated to ${formatDate(newDate)}.`)
-      setOpen(false)
-    } catch (err) {
-      setError(err.message || 'Could not update lease date.')
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  return (
-    <div className="mt-5">
-      {!open ? (
-        <button
-          type="button"
-          onClick={() => { setOpen(true); setSuccess(''); setError('') }}
-          className="rounded-full border border-slate-300 px-5 py-2.5 text-sm font-semibold text-slate-700 transition hover:border-slate-900 hover:text-slate-900"
-        >
-          Extend / Update Move-out Date
-        </button>
-      ) : (
-        <form onSubmit={handleSubmit} className="mt-2 space-y-3">
-          <div>
-            <label className="mb-1.5 block text-sm font-semibold text-slate-700">New Move-out Date</label>
-            <input
-              required
-              type="date"
-              min={currentEnd || undefined}
-              value={newDate}
-              onChange={(e) => setNewDate(e.target.value)}
-              className="w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm outline-none transition focus:border-slate-900 focus:ring-2 focus:ring-slate-900/10"
-            />
-          </div>
-          {error && <p className="text-sm text-red-600">{error}</p>}
-          <div className="flex gap-2">
-            <button
-              type="submit"
-              disabled={saving}
-              className="rounded-full bg-slate-900 px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:opacity-50"
-            >
-              {saving ? 'Saving…' : 'Confirm extension'}
-            </button>
-            <button
-              type="button"
-              onClick={() => setOpen(false)}
-              className="rounded-full border border-slate-200 px-5 py-2.5 text-sm font-semibold text-slate-600 transition hover:border-slate-400"
-            >
-              Cancel
-            </button>
-          </div>
-        </form>
-      )}
-      {success && <p className="mt-3 text-sm text-emerald-600">{success}</p>}
-    </div>
-  )
 }
 
 function PaymentsPanel({ resident, onResidentUpdated }) {
@@ -1204,7 +1160,7 @@ function PaymentsPanel({ resident, onResidentUpdated }) {
   }
 
   return (
-    <SectionCard title="Lease & Payments" description="Manage rent, lease continuation, and account balances in one place.">
+    <SectionCard title="Payments" description="Pay rent, clear fees, and review your payment history.">
       {loading ? <p className="text-sm text-slate-400">Loading payments...</p> : null}
       {error ? <p className="text-sm text-red-600">{error}</p> : null}
       {!loading && !error && (
@@ -1239,18 +1195,12 @@ function PaymentsPanel({ resident, onResidentUpdated }) {
               </div>
 
               <div className="rounded-[24px] border border-slate-200 bg-white p-5">
-                <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">Lease Dates</div>
-                <div className="mt-3 flex flex-wrap gap-6 text-sm">
-                  <div>
-                    <div className="text-xs text-slate-400 mb-0.5">Move-in</div>
-                    <div className="font-bold text-slate-900">{resident['Lease Start Date'] ? formatDate(resident['Lease Start Date']) : '—'}</div>
-                  </div>
-                  <div>
-                    <div className="text-xs text-slate-400 mb-0.5">Move-out</div>
-                    <div className="font-bold text-slate-900">{resident['Lease End Date'] ? formatDate(resident['Lease End Date']) : '—'}</div>
-                  </div>
+                <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">Payment Summary</div>
+                <div className="mt-3 space-y-2 text-sm text-slate-600">
+                  <div>Outstanding balance: {outstanding > 0 ? `$${outstanding.toLocaleString()}` : '$0'}</div>
+                  <div>Open fee items: {feePayments.length}</div>
+                  <div>Payment records: {payments.length}</div>
                 </div>
-                <ExtendLeaseForm resident={resident} onUpdated={onResidentUpdated} />
               </div>
             </div>
 
@@ -1357,6 +1307,74 @@ function PaymentsPanel({ resident, onResidentUpdated }) {
   )
 }
 
+function LeasingPanel({ resident, onOpenPayments }) {
+  const leaseTermLabel = getLeaseTermLabel(resident)
+  const isMonthToMonth = leaseTermLabel.toLowerCase().includes('month-to-month')
+
+  return (
+    <SectionCard title="Leasing" description="Review your current lease details and continue your lease through the payment flow.">
+      <div className="grid gap-4 lg:grid-cols-[1.2fr_0.8fr]">
+        <div className="space-y-4">
+          <div className="rounded-[24px] border border-slate-200 bg-white p-5">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">Lease Type</div>
+                <div className="mt-2 text-2xl font-black text-slate-900">{leaseTermLabel}</div>
+              </div>
+              {isMonthToMonth ? (
+                <span className="rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-700">
+                  Month-to-Month
+                </span>
+              ) : null}
+            </div>
+            <p className="mt-3 text-sm leading-6 text-slate-500">
+              Lease dates and term details are locked here. Any extension or lease change should go through the leasing flow and related payment steps.
+            </p>
+          </div>
+
+          <div className="rounded-[24px] border border-slate-200 bg-slate-50 p-5">
+            <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">Lease Dates</div>
+            <div className="mt-4 grid gap-3 sm:grid-cols-2">
+              <div className="rounded-2xl bg-white px-4 py-4">
+                <div className="text-xs text-slate-400">Move-in</div>
+                <div className="mt-1 text-lg font-bold text-slate-900">{resident['Lease Start Date'] ? formatDate(resident['Lease Start Date']) : '—'}</div>
+              </div>
+              <div className="rounded-2xl bg-white px-4 py-4">
+                <div className="text-xs text-slate-400">Move-out</div>
+                <div className="mt-1 text-lg font-bold text-slate-900">{resident['Lease End Date'] ? formatDate(resident['Lease End Date']) : (isMonthToMonth ? 'No fixed end date' : '—')}</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div className="space-y-4">
+          <div className="rounded-[24px] border border-slate-200 bg-white p-5">
+            <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">Lease Actions</div>
+            <h3 className="mt-2 text-xl font-black text-slate-900">Extend or Continue Lease</h3>
+            <p className="mt-3 text-sm leading-6 text-slate-500">
+              Start lease continuation from the payment flow. If there is a required lease-change charge, it will be handled there before leasing updates are finalized.
+            </p>
+            <button
+              type="button"
+              onClick={onOpenPayments}
+              className="mt-4 rounded-full bg-slate-900 px-5 py-3 text-sm font-semibold text-white transition hover:bg-slate-800"
+            >
+              Go to Payments
+            </button>
+          </div>
+
+          <div className="rounded-[24px] border border-amber-200 bg-amber-50 p-5">
+            <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-amber-700">Locked in Profile</div>
+            <p className="mt-2 text-sm leading-6 text-amber-800">
+              House, unit, move-in date, move-out date, and lease type are not editable from profile. That keeps leasing records aligned with your payment and approval flow.
+            </p>
+          </div>
+        </div>
+      </div>
+    </SectionCard>
+  )
+}
+
 function Dashboard({ resident, onResidentUpdated, onSignOut }) {
   const [tab, setTab] = useState('requests')
   const [requests, setRequests] = useState([])
@@ -1421,7 +1439,7 @@ function Dashboard({ resident, onResidentUpdated, onSignOut }) {
           <div>
             <h1 className="text-4xl font-black tracking-tight text-slate-900">Welcome back, {resident.Name || 'Resident'}</h1>
             <p className="mt-2 max-w-2xl text-sm leading-7 text-slate-500">
-              Manage your profile, submit work orders, review announcements, and handle lease-related payments in one place.
+              Manage your profile, submit work orders, review announcements, and handle leasing and payments in one place.
             </p>
           </div>
           {hasStatusUpdates ? (
@@ -1435,7 +1453,8 @@ function Dashboard({ resident, onResidentUpdated, onSignOut }) {
           {[
             ['requests', 'My Work Orders'],
             ['new', 'New Work Order'],
-            ['payments', 'Lease & Payments'],
+            ['leasing', 'Leasing'],
+            ['payments', 'Payments'],
             ['announcements', 'Announcements'],
             ['profile', 'My Profile'],
           ].map(([id, label]) => (
@@ -1467,6 +1486,7 @@ function Dashboard({ resident, onResidentUpdated, onSignOut }) {
 
         {!loading && tab === 'requests' ? <RequestsList requests={requests} residentEmail={residentEmail} /> : null}
         {!loading && tab === 'new' ? <RequestComposer resident={resident} onCreated={async () => { await loadData(); setTab('requests') }} /> : null}
+        {!loading && tab === 'leasing' ? <LeasingPanel resident={resident} onOpenPayments={() => setTab('payments')} /> : null}
         {!loading && tab === 'payments' ? <PaymentsPanel resident={resident} onResidentUpdated={onResidentUpdated} /> : null}
         {!loading && tab === 'announcements' ? <AnnouncementsPanel items={announcements} /> : null}
         {!loading && tab === 'profile' ? <ProfilePanel resident={resident} onUpdated={onResidentUpdated} /> : null}
