@@ -322,6 +322,41 @@ export async function markPackagePickedUp(recordId) {
   return mapRecord(data)
 }
 
+// ---------------------------------------------------------------------------
+// Lease signing
+// ---------------------------------------------------------------------------
+export async function signLease(applicationRecordId, signatureText) {
+  const today = new Date().toISOString().slice(0, 10)
+  const data = await request(`${tableUrl('Applications')}/${applicationRecordId}`, {
+    method: 'PATCH',
+    body: JSON.stringify({
+      fields: {
+        'Lease Signed': true,
+        'Lease Signed Date': today,
+        'Lease Signature': signatureText,
+      },
+      typecast: true,
+    }),
+  })
+  return mapRecord(data)
+}
+
+// Returns currently active signed leases — used to overlay dynamic room unavailability
+export async function getSignedLeases() {
+  const formula = `AND({Lease Signed} = TRUE(), IS_AFTER({Lease End Date}, TODAY()))`
+  const url = new URL(`https://api.airtable.com/v0/${BASE_ID}/Applications`)
+  url.searchParams.set('filterByFormula', formula)
+  url.searchParams.set('fields[]', 'Property Name')
+  url.searchParams.set('fields[]', 'Room Number')
+  url.searchParams.set('fields[]', 'Lease End Date')
+  const data = await request(url.toString())
+  return (data.records || []).map((r) => ({
+    propertyName: r.fields['Property Name'] || '',
+    roomNumber: r.fields['Room Number'] || '',
+    leaseEndDate: r.fields['Lease End Date'] || '',
+  }))
+}
+
 export const airtableReady = Boolean(
   BASE_ID &&
   API_KEY &&
