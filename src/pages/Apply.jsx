@@ -8,6 +8,7 @@ const APPLICATIONS_TABLE = import.meta.env.VITE_AIRTABLE_APPLICATIONS_TABLE || '
 const COSIGNERS_TABLE = import.meta.env.VITE_AIRTABLE_COAPPLICANTS_TABLE || 'Co-Signers'
 const AIRTABLE_TOKEN = import.meta.env.VITE_AIRTABLE_TOKEN
 const APPLICATION_SUBMISSION_STORAGE_KEY = 'axis_application_submission'
+const PRE_SUBMIT_KEY = 'axis_apply_prepay'
 
 const HISTORY_OPTIONS = ['No', 'Yes']
 const LEASE_TERMS = [
@@ -1104,6 +1105,11 @@ export default function Apply() {
   const [promoInput, setPromoInput] = useState('')
   const [promoApplied, setPromoApplied] = useState(storedSubmission?.promoApplied || false)
   const [promoError, setPromoError] = useState('')
+  // Pre-submission payment (fee paid before form is submitted to Airtable)
+  const [feePrePaid, setFeePrePaid] = useState(false)
+  const [prePaymentLoading, setPrePaymentLoading] = useState(false)
+  const [prePaymentError, setPrePaymentError] = useState('')
+  const autoSubmitRef = useRef(false)
 
   const steps = applicationType === 'cosigner' ? COSIGNER_STEPS : SIGNER_STEPS
   const paymentStatus = typeof window !== 'undefined' ? new URLSearchParams(window.location.search).get('payment') : ''
@@ -1136,12 +1142,36 @@ export default function Apply() {
     window.sessionStorage.setItem(APPLICATION_SUBMISSION_STORAGE_KEY, JSON.stringify(updated))
   }, [leaseStep, leaseSigned, appFeePaid, promoApplied, submitted, submissionSummary])
 
-  // Detect app fee payment success on return from Stripe
+  // Detect app fee payment success on return from Stripe (post-submission flow)
   useEffect(() => {
     if (paymentStatus === 'fee_success' && !appFeePaid) {
       setAppFeePaid(true)
     }
   }, [paymentStatus, appFeePaid])
+
+  // Restore form state after returning from Stripe pre-payment redirect
+  useEffect(() => {
+    const status = new URLSearchParams(window.location.search).get('payment')
+    if (status !== 'fee_prepaid') return
+    const pending = typeof window !== 'undefined'
+      ? JSON.parse(window.sessionStorage.getItem(PRE_SUBMIT_KEY) || 'null')
+      : null
+    if (!pending || submitted) return
+    window.sessionStorage.removeItem(PRE_SUBMIT_KEY)
+    window.history.replaceState({}, '', '/apply')
+    setSigner(pending.signer)
+    setApplicationType(pending.applicationType)
+    setStep(pending.step)
+    setFeePrePaid(true)
+    autoSubmitRef.current = true
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Auto-submit once signer state has been restored after Stripe redirect
+  useEffect(() => {
+    if (!autoSubmitRef.current || submitted || submitting) return
+    autoSubmitRef.current = false
+    handleSubmit({ preventDefault: () => {} })
+  }, [signer]) // eslint-disable-line react-hooks/exhaustive-deps
 
   function updateSigner(key, value) {
     setSigner((prev) => {
@@ -1366,7 +1396,7 @@ export default function Apply() {
             leaseTerm: signer.leaseTerm,
             leaseStep: 'account',
             leaseSigned: false,
-            appFeePaid: false,
+            appFeePaid: feePrePaid,
             promoApplied: false,
           }
         : {
@@ -1389,6 +1419,44 @@ export default function Apply() {
       setError(submissionError.message || 'Submission failed.')
     } finally {
       setSubmitting(false)
+    }
+  }
+
+  async function handlePrePaymentCheckout() {
+    // Validate the current (last) step before redirecting to Stripe
+    const current = steps[step]
+    const errs = current.validate(signer)
+    if (Object.keys(errs).length > 0) {
+      setFieldErrors(errs)
+      return
+    }
+    // Save full form state so we can restore it after Stripe redirect
+    window.sessionStorage.setItem(PRE_SUBMIT_KEY, JSON.stringify({ signer, applicationType, step }))
+    setPrePaymentLoading(true)
+    setPrePaymentError('')
+    try {
+      const response = await fetch('/api/stripe-create-checkout-session', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          residentName: signer.fullName,
+          residentEmail: signer.email,
+          propertyName: signer.propertyName,
+          unitNumber: signer.roomNumber,
+          amount: 50,
+          description: 'Application fee',
+          category: 'application_fee',
+          successPath: '/apply?payment=fee_prepaid',
+          cancelPath: '/apply?payment=fee_cancelled',
+        }),
+      })
+      const data = await response.json()
+      if (!response.ok) throw new Error(data.error || 'Unable to start payment.')
+      window.location.href = data.url
+    } catch (err) {
+      window.sessionStorage.removeItem(PRE_SUBMIT_KEY)
+      setPrePaymentError(err.message || 'Unable to start payment. Please try again.')
+      setPrePaymentLoading(false)
     }
   }
 
@@ -2400,6 +2468,9 @@ export default function Apply() {
             </div>
           )}
 
+          {isLastStep && applicationType === 'signer' && prePaymentError && (
+            <div className="mb-3 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{prePaymentError}</div>
+          )}
           <div className="flex gap-3">
             {step > 0 && (
               <button type="button" onClick={handleBack} className="rounded-full border border-slate-200 bg-white px-6 py-3 text-sm font-semibold text-slate-700 hover:border-slate-400 transition">
@@ -2410,9 +2481,13 @@ export default function Apply() {
               <button type="button" onClick={handleNext} className="flex-1 rounded-full bg-slate-900 py-3 text-sm font-semibold text-white hover:bg-slate-800 transition">
                 Continue
               </button>
+            ) : applicationType === 'signer' ? (
+              <button type="button" onClick={handlePrePaymentCheckout} disabled={prePaymentLoading || submitting} className="flex-1 rounded-full bg-axis py-3 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-60 transition">
+                {submitting ? 'Submitting…' : prePaymentLoading ? 'Opening payment…' : 'Pay $50 & Submit'}
+              </button>
             ) : (
               <button type="submit" disabled={submitting} className="flex-1 rounded-full bg-axis py-3 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-60 transition">
-                {submitting ? 'Submitting…' : applicationType === 'cosigner' ? 'Submit co-signer form' : 'Submit application'}
+                {submitting ? 'Submitting…' : 'Submit co-signer form'}
               </button>
             )}
           </div>
