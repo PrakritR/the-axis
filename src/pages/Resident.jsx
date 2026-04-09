@@ -278,11 +278,15 @@ function PasswordInput({ value, onChange, placeholder, autoComplete }) {
 }
 
 function AirtableLogin({ onLogin }) {
-  const [mode, setMode] = useState('login')
+  // Pre-fill appId if provided via URL param (e.g. from /apply?appId=APP-recXXX)
+  const urlAppId = typeof window !== 'undefined'
+    ? (new URLSearchParams(window.location.search).get('appId') || '')
+    : ''
+  const [mode, setMode] = useState(urlAppId ? 'signup' : 'login')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   // signup fields
-  const [applicationId, setApplicationId] = useState('')
+  const [applicationId, setApplicationId] = useState(urlAppId)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
 
@@ -336,14 +340,21 @@ function AirtableLogin({ onLogin }) {
         return
       }
 
-      // 3. Check an account doesn't already exist
+      // 3. Check if a resident record already exists for this email
       const existing = await getResidentByEmail(email.trim())
       if (existing) {
-        setError('An account with this email already exists. Please sign in instead.')
+        // Pre-created resident records (from approved applications) have no password yet.
+        // Allow the resident to complete account setup by setting their password.
+        if (existing.Password) {
+          setError('An account with this email already exists. Please sign in instead.')
+          return
+        }
+        const resident = await updateResident(existing.id, { Password: password, Status: 'Active' })
+        onLogin(resident)
         return
       }
 
-      // 4. Pull all info from the application — resident cannot edit these
+      // 4. No pre-existing record — create one from the application data
       const resident = await createResident({
         Name: app['Signer Full Name'] || '',
         Email: app['Signer Email'] || '',
@@ -353,7 +364,6 @@ function AirtableLogin({ onLogin }) {
         'Unit Number': app['Room Number'] || '',
         'Lease Start Date': app['Lease Start Date'] || null,
         'Lease End Date': app['Lease End Date'] || null,
-        'Application ID': app['Application ID'] || '',
         Status: 'Active',
       })
       onLogin(resident)
