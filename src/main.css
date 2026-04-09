@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Fraunces:opsz,wght@9..144,500;9..144,600&display=swap');
 
 @tailwind base;
 @tailwind components;
@@ -100,6 +100,11 @@ h1, h2, h3, h4, h5, h6 {
 .font-editorial {
   font-family: 'Manrope', 'Avenir Next', 'Segoe UI', sans-serif;
   letter-spacing: -0.055em;
+}
+
+.font-display {
+  font-family: 'Fraunces', 'Iowan Old Style', 'Palatino Linotype', 'Times New Roman', serif;
+  letter-spacing: -0.05em;
 }
 
 /* ── Focus ────────────────────────────────────────────────────────────────── */
