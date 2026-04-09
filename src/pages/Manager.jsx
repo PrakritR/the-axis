@@ -239,7 +239,7 @@ function ManagerLogin({ onLogin }) {
   const initialView = initialSearch.get('view') === 'create' || initialSearch.get('setup') === 'success' ? 'setup' : 'signin'
   const [activeView, setActiveView] = useState(initialView)
   const [signInForm, setSignInForm] = useState({ email: '', password: '' })
-  const [activationForm, setActivationForm] = useState({ managerId: '', name: '', email: '', phone: '', password: '' })
+  const [activationForm, setActivationForm] = useState({ managerId: '', name: '', email: '', phone: '', password: '', planType: '', billingInterval: '' })
   const [subscriptionReady, setSubscriptionReady] = useState(false)
   const [accountExists, setAccountExists] = useState(false)
   const [notice, setNotice] = useState('')
@@ -272,6 +272,8 @@ function ManagerLogin({ onLogin }) {
     const normalizedName = String(data.name || '').trim()
     const normalizedPhone = String(data.phone || '').trim()
     const normalizedManagerId = String(data.managerId || '').trim().toUpperCase()
+    const normalizedPlanType = String(data.planType || '').trim().toLowerCase()
+    const normalizedBillingInterval = String(data.billingInterval || '').trim().toLowerCase()
     const nextAccountExists = Boolean(data.accountExists)
     const nextSubscriptionReady = Boolean(normalizedManagerId)
 
@@ -285,6 +287,8 @@ function ManagerLogin({ onLogin }) {
       name: normalizedName || current.name,
       email: normalizedEmail || current.email,
       phone: normalizedPhone || current.phone,
+      planType: normalizedPlanType || current.planType,
+      billingInterval: normalizedBillingInterval || current.billingInterval,
     }))
 
     persistOnboarding({
@@ -292,6 +296,8 @@ function ManagerLogin({ onLogin }) {
       email: normalizedEmail,
       phone: normalizedPhone,
       managerId: normalizedManagerId,
+      planType: normalizedPlanType,
+      billingInterval: normalizedBillingInterval,
       subscriptionReady: nextSubscriptionReady,
       accountExists: nextAccountExists,
     })
@@ -530,6 +536,8 @@ function ManagerLogin({ onLogin }) {
                       name: '',
                       email: '',
                       phone: '',
+                      planType: '',
+                      billingInterval: '',
                     }))
                   }}
                   placeholder="MGR-XXXXXXXXXXXXXX"
@@ -571,6 +579,21 @@ function ManagerLogin({ onLogin }) {
               </div>
 
               <div>
+                <label className="mb-2 block text-sm font-semibold text-slate-700">Selected tier</label>
+                <input
+                  type="text"
+                  readOnly
+                  value={
+                    activationForm.planType
+                      ? `${activationForm.planType.charAt(0).toUpperCase()}${activationForm.planType.slice(1)}${activationForm.billingInterval && activationForm.billingInterval !== 'free' ? ` · ${activationForm.billingInterval}` : ''}`
+                      : ''
+                  }
+                  placeholder="Loads from your manager record"
+                  className="w-full rounded-[24px] border border-slate-200 bg-slate-50 px-5 py-4 text-base text-slate-900 placeholder:text-slate-400 transition focus:border-[#0ea5a4] focus:outline-none focus:ring-2 focus:ring-[#0ea5a4]/20"
+                />
+              </div>
+
+              <div>
                 <label className="mb-2 block text-sm font-semibold text-slate-700">Create password</label>
                 <ManagerPasswordInput
                   value={activationForm.password}
@@ -588,7 +611,7 @@ function ManagerLogin({ onLogin }) {
 
               {!subscriptionReady ? (
                 <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
-                  Start manager access in Join Axis first. After payment, your manager ID plus your saved name, email, and phone number will load here from Airtable.
+                  Start manager access in Join Axis first. Your selected tier, manager ID, and saved contact info will load here from Airtable.
                 </div>
               ) : null}
 
@@ -622,7 +645,7 @@ function ManagerLogin({ onLogin }) {
               <div className="rounded-[28px] border border-slate-200 bg-slate-50 p-5">
                 <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-[#0ea5a4]">Manager access</div>
                 <p className="mt-2 text-sm leading-6 text-slate-500">
-                  Subscription and manager access start in Join Axis. Once you pay, Axis creates your manager ID and saves your name, email, and phone number to the manager table for account setup here.
+                  Join Axis sets your tier first. Paid plans create the subscription, and the free tier creates a listing-only manager record. Then your manager ID and selected tier are ready for account setup here.
                 </p>
                 {subscriptionError ? (
                   <div className="mt-4 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">

@@ -105,7 +105,7 @@ h1, h2, h3, h4, h5, h6 {
 /* ── Focus ────────────────────────────────────────────────────────────────── */
 
 :focus-visible {
-  outline: 2px solid #0ea5a4;
+  outline: 2px solid #2563eb;
   outline-offset: 3px;
   border-radius: 4px;
 }
@@ -120,8 +120,8 @@ a, button {
 
 /* ── Utility classes ──────────────────────────────────────────────────────── */
 
-.bg-axis { background-color: #0ea5a4; }
-.text-axis { color: #0ea5a4; }
+.bg-axis { background-color: #2563eb; }
+.text-axis { color: #2563eb; }
 .shadow-soft { box-shadow: 0 2px 8px rgba(15,23,42,0.06), 0 8px 24px rgba(15,23,42,0.04); }
 .axis-glass {
   background: rgba(255,255,255,0.72);
@@ -187,9 +187,9 @@ a, button {
 
 .btn-pill { @apply rounded-full px-8 py-3 shadow-sm; }
 .progress-track { @apply h-2 rounded-full bg-gray-200 overflow-hidden; }
-.progress-fill { @apply h-full bg-teal-500 rounded-full transition-all duration-300; }
+.progress-fill { @apply h-full rounded-full transition-all duration-300; background-color: #2563eb; }
 .back-btn { @apply inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-gray-200 bg-white text-sm text-slate-700; }
-.field { @apply w-full rounded-xl border border-slate-200 px-4 py-3 bg-white text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent; }
+.field { @apply w-full rounded-xl border border-slate-200 px-4 py-3 bg-white text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-transparent; }
 .muted-box { @apply bg-slate-50 rounded-xl border border-slate-200 p-4 text-sm text-slate-600; }
 
 /* ── Budget slider ────────────────────────────────────────────────────────── */
@@ -201,8 +201,8 @@ a, button {
   border-radius: 9999px;
   background: linear-gradient(
     to right,
-    #0ea5a4 0%,
-    #0ea5a4 calc((var(--val, 600) - 600) / 500 * 100%),
+    #2563eb 0%,
+    #2563eb calc((var(--val, 600) - 600) / 500 * 100%),
     #e2e8f0 calc((var(--val, 600) - 600) / 500 * 100%),
     #e2e8f0 100%
   );
@@ -216,14 +216,14 @@ a, button {
   height: 20px;
   border-radius: 50%;
   background: #fff;
-  border: 2.5px solid #0ea5a4;
-  box-shadow: 0 1px 4px rgba(14,165,164,0.25), 0 0 0 3px rgba(14,165,164,0.1);
+  border: 2.5px solid #2563eb;
+  box-shadow: 0 1px 4px rgba(37,99,235,0.25), 0 0 0 3px rgba(37,99,235,0.1);
   cursor: pointer;
   transition: box-shadow 150ms, transform 150ms;
 }
 
 .budget-slider::-webkit-slider-thumb:hover {
-  box-shadow: 0 1px 6px rgba(14,165,164,0.35), 0 0 0 5px rgba(14,165,164,0.15);
+  box-shadow: 0 1px 6px rgba(37,99,235,0.35), 0 0 0 5px rgba(37,99,235,0.15);
   transform: scale(1.1);
 }
 
@@ -232,13 +232,13 @@ a, button {
   height: 20px;
   border-radius: 50%;
   background: #fff;
-  border: 2.5px solid #0ea5a4;
-  box-shadow: 0 1px 4px rgba(14,165,164,0.25), 0 0 0 3px rgba(14,165,164,0.1);
+  border: 2.5px solid #2563eb;
+  box-shadow: 0 1px 4px rgba(37,99,235,0.25), 0 0 0 3px rgba(37,99,235,0.1);
   cursor: pointer;
 }
 
 .budget-slider::-moz-range-progress {
-  background-color: #0ea5a4;
+  background-color: #2563eb;
   height: 4px;
   border-radius: 9999px;
 }

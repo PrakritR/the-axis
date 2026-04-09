@@ -6,8 +6,8 @@ module.exports = {
   theme: {
     extend: {
       colors: {
-        axis: '#0ea5a4',
-        'axis-dark': '#0b8a89',
+        axis: '#2563eb',
+        'axis-dark': '#1d4ed8',
         navy: {
           950: '#080e1f',
           900: '#0f1628',

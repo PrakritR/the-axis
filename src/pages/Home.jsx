@@ -316,7 +316,6 @@ function RoomFinder() {
     <section className="border-t border-white/70 bg-transparent px-4 py-14 sm:px-6 sm:py-20">
       <div className="mx-auto max-w-6xl">
         <Reveal className="mb-8 text-center">
-          <Eyebrow>Housing Finder</Eyebrow>
           <h2 className="mt-3 text-2xl font-black tracking-[-0.05em] text-slate-900 sm:text-4xl">
             Find housing that works for you
           </h2>
@@ -551,7 +550,6 @@ export default function Home() {
         <div className="mx-auto max-w-6xl px-4 sm:px-6">
           <Reveal>
             <div className="flex flex-col gap-5">
-              <Eyebrow>Available now</Eyebrow>
               <h2 className="text-2xl font-black tracking-[-0.05em] text-slate-900 sm:text-4xl">Available Housing</h2>
               <p className="text-sm leading-6 text-slate-500 sm:text-base sm:leading-7">
                 Browse available housing in Seattle and open the listings that fit what you want.
@@ -578,7 +576,6 @@ export default function Home() {
         <div className="relative mx-auto max-w-6xl">
           <div className="grid gap-10 sm:gap-12 lg:grid-cols-2 lg:items-center">
             <Reveal>
-              <Eyebrow light>Neighborhood</Eyebrow>
               <h2 className="mt-4 text-2xl font-black tracking-[-0.05em] text-slate-900 sm:text-4xl">
                 Seattle housing, shown simply
               </h2>
@@ -655,37 +652,6 @@ export default function Home() {
               </motion.div>
             ))}
           </motion.div>
-        </div>
-      </section>
-
-      {/* ── FAQ — white section ── */}
-      <section className="border-t border-white/70 bg-transparent px-4 py-14 sm:px-6 sm:py-24">
-        <div className="mx-auto max-w-6xl">
-          <div className="grid gap-12 lg:grid-cols-[1fr_1.8fr] lg:items-start">
-            <Reveal>
-              <div className="lg:sticky lg:top-24">
-                <Eyebrow>FAQ</Eyebrow>
-                <h2 className="mt-4 text-2xl font-black tracking-[-0.05em] text-slate-900 sm:text-3xl">Common questions</h2>
-                <p className="mt-4 text-sm leading-7 text-slate-500">
-                  Not finding your answer? Contact us.
-                </p>
-                <Link
-                  reloadDocument
-                  to="/contact"
-                  onClick={scrollToTop}
-                  className="mt-6 inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white/84 px-5 py-2.5 text-sm font-semibold text-slate-700 shadow-[0_14px_32px_rgba(37,99,235,0.08)] transition hover:border-[#2563eb] hover:text-[#2563eb]"
-                >
-                  Contact us <Arrow />
-                </Link>
-              </div>
-            </Reveal>
-
-            <Reveal delay={0.1}>
-              <div className="divide-y divide-slate-100">
-                {faqs.map((f) => <FaqItem key={f.q} q={f.q} a={f.a} />)}
-              </div>
-            </Reveal>
-          </div>
         </div>
       </section>
 

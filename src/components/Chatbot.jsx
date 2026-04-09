@@ -286,7 +286,7 @@ function renderContent(text) {
         if (tok.type === 'link') return (
           <a key={j} href={tok.href} target={tok.href.startsWith('http') ? '_blank' : '_self'}
             rel="noopener noreferrer"
-            style={{ color: '#0ea5a4', fontWeight: 600, textDecoration: 'underline' }}>
+            style={{ color: '#2563eb', fontWeight: 600, textDecoration: 'underline' }}>
             {tok.label}
           </a>
         )
@@ -427,11 +427,11 @@ export default function Chatbot() {
       <button
         onClick={() => setOpen(v => !v)}
         aria-label={open ? 'Close chat' : 'Open leasing assistant'}
-        className="fixed z-50 w-14 h-14 rounded-full shadow-lg flex items-center justify-center transition-all duration-200 hover:scale-105 active:scale-95 focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-[#0ea5a4] chatbot-fab"
+        className="fixed z-50 w-14 h-14 rounded-full shadow-lg flex items-center justify-center transition-all duration-200 hover:scale-105 active:scale-95 focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-[#2563eb] chatbot-fab"
         style={{
-          background: 'linear-gradient(135deg, #0ea5a4 0%, #0b8a89 100%)',
+          background: 'linear-gradient(135deg, #3b82f6 0%, #2563eb 100%)',
           color: 'white',
-          boxShadow: '0 4px 20px rgba(14,165,164,0.4)',
+          boxShadow: '0 4px 20px rgba(37,99,235,0.35)',
           bottom: 'calc(1.5rem + env(safe-area-inset-bottom))',
           right: 'calc(1.5rem + env(safe-area-inset-right))',
         }}
@@ -441,7 +441,7 @@ export default function Chatbot() {
         </div>
         {!open && (
           <span className="absolute -top-1 -right-1 w-4 h-4 rounded-full flex items-center justify-center text-[9px] font-bold"
-            style={{ background: '#0ea5a4', border: '2px solid white', color: 'white' }}>
+            style={{ background: '#2563eb', border: '2px solid white', color: 'white' }}>
             AI
           </span>
         )}
@@ -465,7 +465,7 @@ export default function Chatbot() {
         }}
       >
         {/* Header */}
-        <div className="flex items-center gap-3 px-4 py-3 flex-shrink-0" style={{ background: 'linear-gradient(135deg, #0ea5a4 0%, #0b8a89 100%)' }}>
+        <div className="flex items-center gap-3 px-4 py-3 flex-shrink-0" style={{ background: 'linear-gradient(135deg, #3b82f6 0%, #2563eb 100%)' }}>
           <div className="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0" style={{ background: 'rgba(255,255,255,0.2)' }}>
             <SparkleIcon />
           </div>
@@ -486,7 +486,7 @@ export default function Chatbot() {
         <div className="flex-1 overflow-y-auto px-4 py-4 space-y-3 min-h-0" style={{ background: '#f8fafc' }}>
           {isEmpty && (
             <div className="flex flex-col items-center justify-center h-full text-center px-2 gap-4">
-              <div className="w-12 h-12 rounded-full flex items-center justify-center" style={{ background: 'linear-gradient(135deg, #0ea5a4 0%, #0b8a89 100%)' }}>
+              <div className="w-12 h-12 rounded-full flex items-center justify-center" style={{ background: 'linear-gradient(135deg, #3b82f6 0%, #2563eb 100%)' }}>
                 <ChatIcon />
               </div>
               <div>
@@ -498,7 +498,7 @@ export default function Chatbot() {
                   <button
                     key={q}
                     onClick={() => { setInput(q); setTimeout(() => inputRef.current?.focus(), 50) }}
-                    className="text-left text-xs px-3 py-2 rounded-xl border transition-colors hover:border-[#0ea5a4] hover:text-[#0ea5a4] hover:bg-teal-50 focus:outline-none"
+                    className="text-left text-xs px-3 py-2 rounded-xl border transition-colors hover:border-[#2563eb] hover:text-[#2563eb] hover:bg-blue-50 focus:outline-none"
                     style={{ borderColor: '#e2e8f0', color: '#475569', background: 'white', fontFamily: 'Manrope, sans-serif' }}
                   >
                     {q}
@@ -515,7 +515,7 @@ export default function Chatbot() {
                 style={{
                   fontFamily: 'Manrope, sans-serif',
                   ...(msg.role === 'user'
-                    ? { background: 'linear-gradient(135deg, #0ea5a4, #0b8a89)', color: 'white', borderBottomRightRadius: '4px' }
+                    ? { background: 'linear-gradient(135deg, #3b82f6, #2563eb)', color: 'white', borderBottomRightRadius: '4px' }
                     : {
                         background: msg.error ? '#fef2f2' : 'white',
                         color: msg.error ? '#991b1b' : '#1e293b',
@@ -542,7 +542,7 @@ export default function Chatbot() {
 
         {/* Input */}
         <div className="flex-shrink-0 px-3 py-3 border-t" style={{ borderColor: '#e2e8f0', background: 'white' }}>
-          <div className="flex items-end gap-2 rounded-xl border px-3 py-2 transition-colors focus-within:border-[#0ea5a4]" style={{ borderColor: '#e2e8f0' }}>
+          <div className="flex items-end gap-2 rounded-xl border px-3 py-2 transition-colors focus-within:border-[#2563eb]" style={{ borderColor: '#e2e8f0' }}>
             <textarea
               ref={inputRef}
               value={input}
@@ -559,7 +559,7 @@ export default function Chatbot() {
               disabled={!input.trim() || streaming}
               aria-label="Send message"
               className="flex-shrink-0 w-7 h-7 rounded-lg flex items-center justify-center transition-all disabled:opacity-40 disabled:cursor-not-allowed hover:scale-105 active:scale-95 focus:outline-none"
-              style={{ background: input.trim() && !streaming ? 'linear-gradient(135deg, #0ea5a4, #0b8a89)' : '#e2e8f0', color: input.trim() && !streaming ? 'white' : '#94a3b8' }}
+              style={{ background: input.trim() && !streaming ? 'linear-gradient(135deg, #3b82f6, #2563eb)' : '#e2e8f0', color: input.trim() && !streaming ? 'white' : '#94a3b8' }}
             >
               <SendIcon />
             </button>

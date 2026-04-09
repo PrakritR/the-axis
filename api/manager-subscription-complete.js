@@ -34,13 +34,45 @@ function extractPhoneFromNotes(notes) {
   return match ? match[1].trim() : ''
 }
 
-function mergeManagerNotes(existingNotes, phone) {
-  const stripped = String(existingNotes || '')
-    .replace(/(?:^|\n)Phone:\s*.+?(?=\n|$)/gi, '')
-    .trim()
+function extractMetadataValue(notes, label) {
+  const escapedLabel = String(label || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  const match = String(notes || '').match(new RegExp(`(?:^|\\n)${escapedLabel}:\\s*(.+?)(?:\\n|$)`, 'i'))
+  return match ? match[1].trim() : ''
+}
+
+function planDetails(planType) {
+  if (planType === 'business') {
+    return {
+      planType: 'business',
+      houseAccess: '10+ houses',
+      platformAccess: 'Rent collection, announcements, and work orders',
+    }
+  }
+
+  return {
+    planType: 'pro',
+    houseAccess: '1-2 houses',
+    platformAccess: 'Rent collection, announcements, and work orders',
+  }
+}
+
+function mergeManagerNotes(existingNotes, metadata) {
+  const labels = ['Phone', 'Plan', 'Billing', 'House Access', 'Platform Access']
+  let stripped = String(existingNotes || '').trim()
+
+  labels.forEach((label) => {
+    const escapedLabel = label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+    stripped = stripped.replace(new RegExp(`(?:^|\\n)${escapedLabel}:\\s*.+?(?=\\n|$)`, 'gi'), '')
+  })
+
+  stripped = stripped.replace(/^\n+|\n+$/g, '').trim()
 
   const parts = []
-  if (phone) parts.push(`Phone: ${phone}`)
+  if (metadata.phone) parts.push(`Phone: ${metadata.phone}`)
+  if (metadata.planType) parts.push(`Plan: ${metadata.planType}`)
+  if (metadata.billingInterval) parts.push(`Billing: ${metadata.billingInterval}`)
+  if (metadata.houseAccess) parts.push(`House Access: ${metadata.houseAccess}`)
+  if (metadata.platformAccess) parts.push(`Platform Access: ${metadata.platformAccess}`)
   if (stripped) parts.push(stripped)
   return parts.join('\n')
 }
@@ -124,6 +156,9 @@ export default async function handler(req, res) {
     ).trim().toLowerCase()
     const name = String(session.metadata?.manager_name || session.customer_details?.name || '').trim()
     const phone = String(session.metadata?.manager_phone || session.customer_details?.phone || '').trim()
+    const billingInterval = String(session.metadata?.billing_interval || 'monthly').trim().toLowerCase() === 'annual' ? 'annual' : 'monthly'
+    const planType = String(session.metadata?.plan_type || 'pro').trim().toLowerCase() === 'business' ? 'business' : 'pro'
+    const details = planDetails(planType)
 
     if (!email) {
       return res.status(400).json({ error: 'Stripe session did not include a manager email.' })
@@ -144,7 +179,13 @@ export default async function handler(req, res) {
         Email: email,
         Role: 'Manager',
         Active: true,
-        Notes: mergeManagerNotes('', phone),
+        Notes: mergeManagerNotes('', {
+          phone,
+          planType: details.planType,
+          billingInterval,
+          houseAccess: details.houseAccess,
+          platformAccess: details.platformAccess,
+        }),
       })
     }
 
@@ -159,7 +200,13 @@ export default async function handler(req, res) {
       nextFields.Label = name
     }
 
-    const nextNotes = mergeManagerNotes(manager.Notes, phone)
+    const nextNotes = mergeManagerNotes(manager.Notes, {
+      phone,
+      planType: details.planType,
+      billingInterval,
+      houseAccess: details.houseAccess,
+      platformAccess: details.platformAccess,
+    })
     if (nextNotes !== String(manager.Notes || '').trim()) {
       nextFields.Notes = nextNotes
     }
@@ -174,6 +221,10 @@ export default async function handler(req, res) {
       phone: extractManagerPhone(manager, phone),
       managerId: derivedManagerId,
       accountExists: Boolean(manager.Password),
+      planType: extractMetadataValue(manager.Notes, 'Plan') || details.planType,
+      billingInterval: extractMetadataValue(manager.Notes, 'Billing') || billingInterval,
+      houseAccess: extractMetadataValue(manager.Notes, 'House Access') || details.houseAccess,
+      platformAccess: extractMetadataValue(manager.Notes, 'Platform Access') || details.platformAccess,
       message: manager.Password
         ? 'Subscription verified. You can sign in now.'
         : `Subscription verified. Your manager ID is ${derivedManagerId}. Use it to create your manager account below.`,

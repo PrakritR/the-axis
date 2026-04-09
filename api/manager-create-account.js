@@ -34,6 +34,12 @@ function extractPhoneFromNotes(notes) {
   return match ? match[1].trim() : ''
 }
 
+function extractMetadataValue(notes, label) {
+  const escapedLabel = String(label || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  const match = String(notes || '').match(new RegExp(`(?:^|\\n)${escapedLabel}:\\s*(.+?)(?:\\n|$)`, 'i'))
+  return match ? match[1].trim() : ''
+}
+
 async function getManagerByManagerId(managerId) {
   const formula = encodeURIComponent(`{Manager ID} = "${escapeFormulaValue(managerId)}"`)
   const url = `https://api.airtable.com/v0/${BASE_ID}/Managers?filterByFormula=${formula}&maxRecords=1`
@@ -126,11 +132,13 @@ export default async function handler(req, res) {
     }
 
     const normalizedEmail = String(manager.Email || '').trim().toLowerCase()
+    const normalizedPlanType = String(extractMetadataValue(manager.Notes, 'Plan') || '').trim().toLowerCase()
     if (!normalizedEmail) {
       return res.status(400).json({ error: 'This manager record is missing an email address. Please contact support.' })
     }
 
-    const subscribed = await hasActiveManagerSubscription(secretKey, normalizedEmail)
+    const requiresSubscription = normalizedPlanType !== 'free'
+    const subscribed = requiresSubscription ? await hasActiveManagerSubscription(secretKey, normalizedEmail) : true
     if (!subscribed) {
       return res.status(403).json({ error: 'Complete the recurring manager subscription before creating your account.' })
     }
@@ -155,6 +163,8 @@ export default async function handler(req, res) {
         email: updated.Email || normalizedEmail,
         phone: String(updated.Phone || '').trim() || extractPhoneFromNotes(updated.Notes),
         role: updated.Role || 'Manager',
+        planType: extractMetadataValue(updated.Notes, 'Plan') || normalizedPlanType || 'pro',
+        billingInterval: extractMetadataValue(updated.Notes, 'Billing') || '',
       },
     })
   } catch (err) {
