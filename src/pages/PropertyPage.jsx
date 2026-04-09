@@ -464,16 +464,16 @@ function FloorPlanCard({plan, onDetail}){
 function VideoPlaceholderCard({ label, text }) {
   return (
     <div className="mt-4 rounded-[18px] overflow-hidden border border-slate-200">
-      <div className="bg-slate-900 px-4 py-2.5 flex items-center gap-2">
-        <svg className="w-4 h-4 text-blue-400" viewBox="0 0 24 24" fill="none" aria-hidden><polygon points="5,3 19,12 5,21" fill="currentColor"/></svg>
-        <span className="text-xs font-bold uppercase tracking-[0.14em] text-slate-300">{label}</span>
+      <div className="bg-axis px-4 py-2.5 flex items-center gap-2">
+        <svg className="w-4 h-4 text-white/90" viewBox="0 0 24 24" fill="none" aria-hidden><polygon points="5,3 19,12 5,21" fill="currentColor"/></svg>
+        <span className="text-xs font-bold uppercase tracking-[0.14em] text-white/85">{label}</span>
       </div>
       <div className="bg-[radial-gradient(circle_at_top_left,rgba(37,99,235,0.18),transparent_32%),linear-gradient(180deg,#0f172a_0%,#020617_100%)] px-5 py-8 text-center">
         <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full border border-white/10 bg-white/10 text-blue-300">
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden><polygon points="5,3 19,12 5,21" fill="currentColor"/></svg>
         </div>
         <div className="mt-4 text-sm font-semibold text-white">Video placeholder</div>
-        <div className="mt-2 text-sm leading-6 text-slate-300">{text || 'Tour video coming soon.'}</div>
+        <div className="mt-2 text-sm leading-6 text-white/80">{text || 'Tour video coming soon.'}</div>
       </div>
     </div>
   )
@@ -502,25 +502,25 @@ function getSharedSpaceDetailMeta(video) {
 
 const PROPERTY_EDITORIAL_CONTENT = {
   '4709a-8th-ave': {
-    title: 'A larger shared house with room to spread out.',
+    title: 'Shared house in Seattle.',
     intro: 'Ten rooms across three floors.',
-    body: '4709A has a straightforward layout: kitchen and living space downstairs, bedrooms across the upper floors, in-unit laundry, and room options at different price points.',
-    audience: 'Good for renters who want a larger shared-house setup with varied room options.',
-    localNotes: ['Walkable Seattle location', 'In-unit laundry and fast Wi-Fi', 'Shared kitchen and living room', 'Room options across three floors'],
+    body: 'Simple layout. Shared spaces. Flexible rooms.',
+    audience: 'For renters who want a larger shared-house setup.',
+    localNotes: ['Walkable location', 'In-unit laundry', 'Shared kitchen', 'Three floors'],
   },
   '4709b-8th-ave': {
-    title: 'Shared housing in Seattle.',
-    intro: 'Nine furnished rooms in a three-floor townhouse.',
-    body: '4709B is set up simply: kitchen and living room downstairs, bedrooms upstairs, and room options that are easy to compare.',
-    audience: 'Made for renters who care more about convenience, location, and a clean shared setup than apartment-building amenities.',
-    localNotes: ['Walkable Seattle location', 'Furnished rooms with simple pricing', 'Shared kitchen and living room', 'In-unit laundry and fast Wi-Fi'],
+    title: 'Shared house in Seattle.',
+    intro: 'Nine furnished rooms.',
+    body: 'Clean layout. Simple pricing. Easy to compare.',
+    audience: 'For renters who want convenience and a shared setup.',
+    localNotes: ['Walkable location', 'Simple pricing', 'Shared kitchen', 'In-unit laundry'],
   },
   '5259-brooklyn-ave-ne': {
-    title: 'Shared living with flexible lease options.',
-    intro: 'A nine-bedroom townhouse with grouped room options.',
-    body: '5259 is the most structured of the three homes, with grouped room packages, shared-bath pricing, and fixed lease options.',
-    audience: 'Useful for renters who want a more structured shared-house setup with grouped options.',
-    localNotes: ['Grouped room packages available', 'Walkable Seattle location', 'In-unit laundry and shared kitchen', 'Summer, 9-month, and full-year lease options'],
+    title: 'Shared house in Seattle.',
+    intro: 'Nine rooms. Simple options.',
+    body: 'A straightforward home with flexible room choices.',
+    audience: 'For renters who want a simple shared-house setup.',
+    localNotes: ['Walkable location', 'Shared kitchen', 'In-unit laundry', 'Flexible rooms'],
   },
 }
 
@@ -628,6 +628,7 @@ export default function PropertyPage(){
     audience: 'A shared-house option in Seattle.',
     localNotes: ['Walkable Seattle location', 'Shared kitchen and living room', 'In-unit laundry', 'Flexible room options'],
   }
+  const featuredStartingPrice = formatStartingRent(getStartingRent(p))
 
   const includedItems = modalPlan
     ? Array.from(new Set([
@@ -662,15 +663,15 @@ export default function PropertyPage(){
   return (
     <div className="page-wrapper py-6 sm:py-8 w-full">
       <Seo
-        title={`${p.name} | Seattle Shared Housing by Axis`}
-        description={`${p.summary} View pricing, current availability, amenities, and tour details for this Seattle housing listing.`}
+        title={`${p.name} | Axis`}
+        description={`${p.summary} View pricing and availability.`}
         pathname={`/properties/${p.slug}`}
         image={galleryImages[0]}
         structuredData={buildPropertySchema(p)}
       />
       <div className="main-container">
         <section id="overview" ref={(node) => { sectionRefs.current.overview = node }} className="mx-auto max-w-[1480px] px-4 pt-6 sm:px-6 lg:px-10 lg:pt-10">
-          <div className="grid gap-10 border-b border-slate-200 pb-10 lg:grid-cols-[minmax(0,1.2fr)_320px] lg:pb-14">
+          <div className="grid gap-10 border-b border-slate-200 pb-10 lg:grid-cols-1 lg:pb-14">
             <div className="max-w-4xl">
               <h1 className="font-editorial mt-4 text-[2rem] leading-[1.1] text-slate-900 sm:text-[3.5rem] sm:leading-[0.96] lg:max-w-4xl lg:text-[5.4rem]">{editorial.title}</h1>
               <p className="mt-5 max-w-2xl text-lg leading-8 text-slate-600">{editorial.intro}</p>
@@ -679,7 +680,7 @@ export default function PropertyPage(){
                 <Link
                   to={`/contact?subject=${encodeURIComponent(`Tour request for ${p.name}`)}`}
                   onClick={() => window.scrollTo({ top: 0, left: 0, behavior: 'auto' })}
-                  className="rounded-full bg-slate-900 px-6 py-3 text-sm font-semibold text-white hover:bg-slate-800"
+                  className="rounded-full bg-axis px-6 py-3 text-sm font-semibold text-white transition hover:opacity-95"
                 >
                   Schedule a tour
                 </Link>
@@ -694,7 +695,7 @@ export default function PropertyPage(){
 
               <div className="mt-10 grid grid-cols-2 gap-4 border-t border-slate-200 pt-6 sm:grid-cols-4">
                 {[
-                  ['Starting price', `${startingRent}/mo`],
+                  ['Starting price', `${featuredStartingPrice}/mo`],
                   ['Bedrooms', `${p.beds}`],
                   ['Bathrooms', `${p.baths}`],
                   ['Location', p.neighborhood],
@@ -706,16 +707,6 @@ export default function PropertyPage(){
                 ))}
               </div>
             </div>
-
-            <aside className="flex flex-col border-t border-slate-200 pt-6 lg:border-l lg:border-t-0 lg:pl-8 lg:pt-1">
-              <div className="space-y-4">
-                {editorial.localNotes.map((item) => (
-                  <div key={item} className="border-t border-slate-200 pt-4 text-sm leading-6 text-slate-600">
-                    {item}
-                  </div>
-                ))}
-              </div>
-            </aside>
           </div>
         </section>
 
@@ -726,20 +717,13 @@ export default function PropertyPage(){
       <div className="mx-auto mt-12 grid min-w-0 max-w-[1480px] gap-10 px-4 sm:px-6 md:grid-cols-12 lg:px-10">
         <div className="min-w-0 md:col-span-9">
 
-          <section className="border-b border-slate-200 pb-10">
-            <div className="space-y-3 text-base leading-8 text-slate-600">
-              <p>{editorial.body}</p>
-            </div>
-          </section>
-
           <div id="section-nav" className="mt-8 border-b border-slate-200 bg-white/95 backdrop-blur-sm md:sticky md:top-16 md:z-20">
             <nav className="flex gap-1 overflow-x-auto py-2 scrollbar-none">
               {[
                 ['overview','Overview'],
                 ['floor-plans','Floor Plans'],
                 ['shared-spaces','Shared Spaces'],
-                ['leasing','Townhouse Leasing'],
-                ['highlights','Highlights'],
+                ['leasing','Lease Options'],
                 ['amenities','Amenities'],
                 ['policies','Policies'],
                 ['map','Map'],
@@ -753,7 +737,7 @@ export default function PropertyPage(){
                   }}
                   className={`shrink-0 rounded-full px-4 py-2 text-sm font-medium transition ${
                     activeTab === id
-                      ? 'bg-slate-900 text-white'
+                      ? 'bg-axis text-white'
                       : 'text-slate-500 hover:text-slate-900'
                   }`}
                 >
@@ -870,27 +854,6 @@ export default function PropertyPage(){
             </section>
           ) : null}
 
-          {/* Property Highlights */}
-          <section id="highlights" ref={(node) => { sectionRefs.current.highlights = node }} className="mt-10 scroll-mt-28 md:scroll-mt-40">
-              <div className="grid gap-8 border-t border-slate-200 pt-10 lg:grid-cols-[280px_minmax(0,1fr)]">
-              <div className="grid gap-x-8 gap-y-4 sm:grid-cols-2">
-                {[
-                  `${p.beds} private bedrooms`,
-                  `${p.baths} bathrooms`,
-                  'Shared kitchen and common living room',
-                  'In-unit washer and dryer',
-                  'Fast Wi-Fi and essential kitchen appliances',
-                  'Walkable Seattle location',
-                  'Three-floor house layout',
-                  'Room-by-room inquiry and availability tracking',
-                ].map((text) => (
-                  <div key={text} className="border-t border-slate-200 pt-4 text-sm leading-6 text-slate-700">
-                    {text}
-                  </div>
-                ))}
-              </div>
-            </div>
-          </section>
           {modalPlan && (
             <Modal onClose={() => setModalPlan(null)}>
               <div className="p-1">
@@ -922,9 +885,9 @@ export default function PropertyPage(){
                 </div>
                 {modalPlan.room.video && (
                   <div className="mt-4 rounded-[18px] overflow-hidden border border-slate-200">
-                    <div className="bg-slate-900 px-4 py-2.5 flex items-center gap-2">
-                      <svg className="w-4 h-4 text-blue-400" viewBox="0 0 24 24" fill="none" aria-hidden><polygon points="5,3 19,12 5,21" fill="currentColor"/></svg>
-                      <span className="text-xs font-bold uppercase tracking-[0.14em] text-slate-300">Room Tour</span>
+                    <div className="bg-axis px-4 py-2.5 flex items-center gap-2">
+                      <svg className="w-4 h-4 text-white/90" viewBox="0 0 24 24" fill="none" aria-hidden><polygon points="5,3 19,12 5,21" fill="currentColor"/></svg>
+                      <span className="text-xs font-bold uppercase tracking-[0.14em] text-white/85">Room Tour</span>
                     </div>
                     <video
                       src={modalPlan.room.video}
@@ -945,9 +908,9 @@ export default function PropertyPage(){
                 )}
                 {modalPlan.room.bathroomVideo && (
                   <div className="mt-4 rounded-[18px] overflow-hidden border border-slate-200">
-                    <div className="bg-slate-900 px-4 py-2.5 flex items-center gap-2">
-                      <svg className="w-4 h-4 text-blue-400" viewBox="0 0 24 24" fill="none" aria-hidden><polygon points="5,3 19,12 5,21" fill="currentColor"/></svg>
-                      <span className="text-xs font-bold uppercase tracking-[0.14em] text-slate-300">{modalPlan.room.bathroomVideoLabel || 'Bathroom Tour'}</span>
+                    <div className="bg-axis px-4 py-2.5 flex items-center gap-2">
+                      <svg className="w-4 h-4 text-white/90" viewBox="0 0 24 24" fill="none" aria-hidden><polygon points="5,3 19,12 5,21" fill="currentColor"/></svg>
+                      <span className="text-xs font-bold uppercase tracking-[0.14em] text-white/85">{modalPlan.room.bathroomVideoLabel || 'Bathroom Tour'}</span>
                     </div>
                     <video
                       src={modalPlan.room.bathroomVideo}
@@ -1004,9 +967,9 @@ export default function PropertyPage(){
                 </div>
                 {activeSharedSpace.src && !activeSharedSpace.placeholder ? (
                   <div className="mt-4 rounded-[18px] overflow-hidden border border-slate-200">
-                    <div className="bg-slate-900 px-4 py-2.5 flex items-center gap-2">
-                      <svg className="w-4 h-4 text-blue-400" viewBox="0 0 24 24" fill="none" aria-hidden><polygon points="5,3 19,12 5,21" fill="currentColor"/></svg>
-                      <span className="text-xs font-bold uppercase tracking-[0.14em] text-slate-300">{getSharedSpaceDetailMeta(activeSharedSpace).title}</span>
+                    <div className="bg-axis px-4 py-2.5 flex items-center gap-2">
+                      <svg className="w-4 h-4 text-white/90" viewBox="0 0 24 24" fill="none" aria-hidden><polygon points="5,3 19,12 5,21" fill="currentColor"/></svg>
+                      <span className="text-xs font-bold uppercase tracking-[0.14em] text-white/85">{getSharedSpaceDetailMeta(activeSharedSpace).title}</span>
                     </div>
                     <video controls playsInline className="w-full max-h-64 bg-black">
                       <source src={activeSharedSpace.src} type="video/quicktime" />
@@ -1069,19 +1032,13 @@ export default function PropertyPage(){
           {p.leaseTerms?.length > 0 && (
             <section className="mt-10 scroll-mt-28 md:scroll-mt-40">
               <div className="text-xs font-bold uppercase tracking-[0.18em] text-axis">Lease Options</div>
-              <h2 className="mt-1 text-2xl font-black tracking-tight text-slate-900">
-                Choose the lease timeline that fits your year
-              </h2>
-              <p className="mt-2 text-sm text-slate-500">
-                All lease lengths are fully flexible — you pick the start and end date that works for you.
-              </p>
               <div className="mt-5 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
                 {p.leaseTerms.map((term) => (
                   <div
                     key={term.type}
                     className={`flex flex-col rounded-2xl border bg-white p-5 shadow-soft ${
                       isLeaseOptionFeatured(term)
-                        ? 'border-slate-900 ring-1 ring-slate-900'
+                        ? 'border-axis ring-1 ring-axis/30'
                         : term.custom
                           ? 'border-dashed border-slate-300'
                           : 'border-slate-200'
@@ -1092,7 +1049,7 @@ export default function PropertyPage(){
                       {term.badge ? (
                         <div className={`rounded-full px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.16em] ${
                           isLeaseOptionFeatured(term)
-                            ? 'bg-slate-900 text-white'
+                            ? 'bg-axis text-white'
                             : term.custom
                               ? 'bg-slate-100 text-slate-500'
                               : 'bg-stone-100 text-slate-600'
@@ -1109,22 +1066,13 @@ export default function PropertyPage(){
                     ) : (
                       <div className="mt-4">
                         <div className="text-[11px] font-bold uppercase tracking-[0.16em] text-slate-400">Pricing</div>
-                        <div className="mt-1 text-sm font-semibold text-slate-500">Contact leasing</div>
+                        <div className="mt-1 text-sm font-semibold text-slate-500">Contact us</div>
                       </div>
                     )}
                     <div className="mt-4 space-y-2.5 flex-1">
                       <div className="flex items-start justify-between gap-2 text-sm">
                         <span className="font-medium text-slate-500">Move-in</span>
                         <span className="font-bold text-right text-sm text-axis">{term.moveInLabel}</span>
-                      </div>
-                      {term.preferredDates && (
-                        <div className="rounded-lg border border-blue-100 bg-blue-50 px-2.5 py-2 text-xs font-medium text-blue-700">
-                          Preferred: {term.preferredDates}
-                        </div>
-                      )}
-                      <div className="border-t border-slate-100 pt-2.5">
-                        <div className="text-xs font-semibold text-slate-500">{term.targetTenant}</div>
-                        <p className="mt-1 text-xs leading-5 text-slate-400">{term.note}</p>
                       </div>
                     </div>
                     {term.custom && (
@@ -1139,7 +1087,6 @@ export default function PropertyPage(){
                   </div>
                 ))}
               </div>
-              <p className="mt-3 text-xs text-slate-400">All lease lengths accept any start date. Month-to-month arrangements typically carry an additional +$25/month charge. Contact leasing for non-standard timelines.</p>
             </section>
           )}
 
@@ -1149,7 +1096,7 @@ export default function PropertyPage(){
             <div className="mt-5 overflow-hidden border-y border-slate-200 bg-white">
               {[
                 ...(p.policies ? [{ emoji:'📋', label:'Lease terms', value: p.policies }] : []),
-                { emoji:'📄', label:'Application', value: `Fee: ${p.applicationFee || 'Contact leasing'}` },
+                { emoji:'📄', label:'Application', value: `Fee: ${p.applicationFee || 'Contact us'}` },
                 { emoji:'💲', label:'Move-in charges', value: `First month rent + ${p.securityDeposit || '$500'} deposit` },
                 { emoji:'🔒', label:'Security deposit', value: p.securityDeposit || '$500' },
                 { emoji:'📶', label:'Utilities', value: 'Flat fee: $175/month — includes cleaning (bi-monthly), WiFi, water & trash' },
@@ -1199,7 +1146,7 @@ export default function PropertyPage(){
                 <button
                   type="button"
                   onClick={() => scrollToId('floor-plans')}
-                  className="w-full rounded-full bg-slate-900 py-3 text-sm font-semibold text-white transition hover:bg-slate-800"
+                  className="w-full rounded-full bg-axis py-3 text-sm font-semibold text-white transition hover:opacity-95"
                 >Check availability</button>
                 <Link
                   to={`/contact?subject=${encodeURIComponent(`Tour request for ${p.name}`)}`}

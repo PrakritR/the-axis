@@ -55,7 +55,7 @@ export function EmbeddedStripeCheckout({ open, title, checkoutRequest, apiEndpoi
         if (!StripeCtor) throw new Error('Stripe.js failed to initialize.')
 
         const stripe = StripeCtor(publishableKey)
-        const endpoint = apiEndpoint || '/api/stripe-create-checkout-session'
+        const endpoint = apiEndpoint || '/api/stripe'
         const response = await fetch(endpoint, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },

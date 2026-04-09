@@ -1529,7 +1529,7 @@ export default function Apply() {
     setPaymentLoading(true)
     setPaymentError('')
     try {
-      const response = await fetch('/api/stripe-create-checkout-session', {
+      const response = await fetch('/api/stripe', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

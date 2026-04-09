@@ -1,9 +1,9 @@
 import React from 'react'
 
-export function AxisWordmark({ className = '', tone = 'light', subtitle = 'Seattle' }) {
+export function AxisWordmark({ className = '', tone = 'light', subtitle = 'Axis' }) {
   const isLight = tone === 'light'
-  const wordColor = isLight ? '#ffffff' : '#0f172a'
-  const subColor = isLight ? 'rgba(255,255,255,0.62)' : '#64748b'
+  const wordColor = isLight ? '#1f2a44' : '#0f172a'
+  const subColor = isLight ? '#64748b' : '#64748b'
 
   return (
     <svg
@@ -17,22 +17,22 @@ export function AxisWordmark({ className = '', tone = 'light', subtitle = 'Seatt
     >
       <defs>
         <linearGradient id="axis-wordmark-bg" x1="4" y1="4" x2="40" y2="36" gradientUnits="userSpaceOnUse">
-          <stop offset="0%" stopColor="#0f172a" />
-          <stop offset="100%" stopColor="#1e293b" />
+          <stop offset="0%" stopColor="#eff6ff" />
+          <stop offset="100%" stopColor="#dbeafe" />
         </linearGradient>
         <linearGradient id="axis-wordmark-accent" x1="11" y1="10" x2="32" y2="31" gradientUnits="userSpaceOnUse">
-          <stop offset="0%" stopColor="#2dd4bf" />
-          <stop offset="100%" stopColor="#14b8a6" />
+          <stop offset="0%" stopColor="#60a5fa" />
+          <stop offset="100%" stopColor="#2563eb" />
         </linearGradient>
       </defs>
 
       <rect x="2" y="2" width="36" height="36" rx="12" fill="url(#axis-wordmark-bg)" />
-      <rect x="2.75" y="2.75" width="34.5" height="34.5" rx="11.25" stroke="rgba(255,255,255,0.12)" strokeWidth="1.5" />
-      <path d="M11.2 27.4 L16.8 11.6 L22.4 27.4" stroke="#ffffff" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
-      <line x1="13.3" y1="22.1" x2="20.3" y2="22.1" stroke="#ffffff" strokeWidth="2.5" strokeLinecap="round" />
-      <line x1="24.6" y1="12" x2="32.2" y2="27.4" stroke="#ffffff" strokeWidth="2.5" strokeLinecap="round" />
+      <rect x="2.75" y="2.75" width="34.5" height="34.5" rx="11.25" stroke="rgba(37,99,235,0.14)" strokeWidth="1.5" />
+      <path d="M11.2 27.4 L16.8 11.6 L22.4 27.4" stroke="#1f2a44" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
+      <line x1="13.3" y1="22.1" x2="20.3" y2="22.1" stroke="#1f2a44" strokeWidth="2.5" strokeLinecap="round" />
+      <line x1="24.6" y1="12" x2="32.2" y2="27.4" stroke="#1f2a44" strokeWidth="2.5" strokeLinecap="round" />
       <line x1="32.2" y1="12" x2="24.6" y2="27.4" stroke="url(#axis-wordmark-accent)" strokeWidth="2.5" strokeLinecap="round" />
-      <circle cx="28.2" cy="19.7" r="1.7" fill="#14b8a6" />
+      <circle cx="28.2" cy="19.7" r="1.7" fill="#2563eb" />
 
       <text x="49" y="18" fill={wordColor} fontFamily="Manrope, ui-sans-serif, system-ui, -apple-system" fontWeight="800" fontSize="15" letterSpacing="3.2">
         AXIS
