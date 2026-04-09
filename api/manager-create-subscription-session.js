@@ -42,19 +42,27 @@ export default async function handler(req, res) {
   }
 
   const secretKey = process.env.STRIPE_SECRET_KEY
-  const priceId = process.env.STRIPE_MANAGER_PRICE_ID
+  const monthlyPriceId = process.env.STRIPE_MANAGER_PRICE_ID
+  const yearlyPriceId = process.env.STRIPE_MANAGER_YEARLY_PRICE_ID
   if (!secretKey) {
     return res.status(500).json({ error: 'STRIPE_SECRET_KEY is not configured on the server yet.' })
   }
-  if (!priceId) {
+  if (!monthlyPriceId) {
     return res.status(500).json({ error: 'STRIPE_MANAGER_PRICE_ID is not configured on the server yet.' })
   }
 
-  const { email, name, phone, promoCode } = req.body || {}
+  const { email, name, phone, promoCode, billingInterval } = req.body || {}
   const normalizedEmail = String(email || '').trim().toLowerCase()
   const normalizedName = String(name || '').trim()
   const normalizedPhone = String(phone || '').trim()
   const normalizedPromoCode = String(promoCode || '').trim().toUpperCase()
+  const normalizedBillingInterval = String(billingInterval || 'monthly').trim().toLowerCase() === 'annually' ? 'annually' : 'monthly'
+
+  if (normalizedBillingInterval === 'annually' && !yearlyPriceId) {
+    return res.status(500).json({ error: 'STRIPE_MANAGER_YEARLY_PRICE_ID is not configured on the server yet.' })
+  }
+
+  const priceId = normalizedBillingInterval === 'annually' ? yearlyPriceId : monthlyPriceId
 
   if (!normalizedName || !normalizedEmail || !normalizedPhone) {
     return res.status(400).json({ error: 'Manager name, email, and phone are required to start manager setup.' })
@@ -69,10 +77,12 @@ export default async function handler(req, res) {
     'line_items[0][price]': priceId,
     'line_items[0][quantity]': '1',
     'metadata[access_type]': 'manager_portal',
+    'metadata[billing_interval]': normalizedBillingInterval,
     'metadata[manager_email]': normalizedEmail,
     'metadata[manager_name]': normalizedName,
     'metadata[manager_phone]': normalizedPhone,
     'subscription_data[metadata][access_type]': 'manager_portal',
+    'subscription_data[metadata][billing_interval]': normalizedBillingInterval,
     'subscription_data[metadata][manager_email]': normalizedEmail,
     'subscription_data[metadata][manager_phone]': normalizedPhone,
     'allow_promotion_codes': 'true',

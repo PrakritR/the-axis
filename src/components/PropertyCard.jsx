@@ -49,32 +49,28 @@ export default function PropertyCard({ p }) {
       style={{ rotateX, rotateY, transformPerspective: 900 }}
       whileHover={{ y: -4 }}
       transition={{ duration: 0.2 }}
-      className="group flex flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-card transition-shadow hover:shadow-[0_12px_40px_rgba(15,23,42,0.14)]"
+      className="group flex flex-col overflow-hidden rounded-[28px] border border-white/90 bg-white/88 shadow-[0_24px_60px_rgba(37,99,235,0.10)] backdrop-blur transition-shadow hover:shadow-[0_30px_70px_rgba(37,99,235,0.15)]"
     >
-      {/* Image */}
       <div className="relative aspect-[5/4] w-full overflow-hidden sm:aspect-[16/10]">
         <Carousel images={p.images.slice(0, 6)} height="100%" altPrefix={p.name} className="h-full">
-          <div className="absolute inset-0 bg-gradient-to-t from-navy-900/70 via-transparent to-transparent pointer-events-none" />
-          {/* Type badge */}
+          <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-slate-900/48 via-transparent to-transparent" />
           <div className="absolute left-3 top-3 pointer-events-none">
-            <span className="rounded-full bg-navy-900/70 px-3 py-1 text-[10px] font-bold uppercase tracking-wider text-white backdrop-blur-sm border border-white/10">
+            <span className="rounded-full border border-white/70 bg-white/80 px-3 py-1 text-[10px] font-bold uppercase tracking-wider text-slate-700 backdrop-blur-sm">
               {p.type}
             </span>
           </div>
-          {/* Rent overlay */}
           <div className="absolute bottom-3 right-3 pointer-events-none text-right sm:right-4">
-            <p className="text-xs text-white/60 drop-shadow">from</p>
-            <p className="text-lg font-black text-white drop-shadow leading-none">{rentRange || '—'}<span className="text-xs font-medium text-white/70">/mo</span></p>
+            <p className="text-xs text-white/70 drop-shadow">from</p>
+            <p className="leading-none text-lg font-black text-white drop-shadow">{rentRange || '—'}<span className="text-xs font-medium text-white/80">/mo</span></p>
           </div>
         </Carousel>
       </div>
 
-      {/* Body */}
       <div className="flex flex-1 flex-col p-4 sm:p-5">
         <div className="flex items-start justify-between gap-3">
           <div>
             <h3 className="text-lg font-bold text-slate-900 leading-snug">{p.name}</h3>
-            <p className="mt-0.5 text-sm text-slate-400">{p.address}</p>
+            <p className="mt-0.5 text-sm text-slate-500">{p.address}</p>
           </div>
         </div>
 
@@ -88,7 +84,7 @@ export default function PropertyCard({ p }) {
         {p.tags?.length > 0 && (
           <div className="mt-4 flex flex-wrap gap-2">
             {p.tags.slice(0, 3).map((tag) => (
-              <span key={tag} className="rounded-full bg-cream-100 border border-cream-200 px-3 py-1 text-xs font-medium text-slate-600">{tag}</span>
+              <span key={tag} className="rounded-full border border-[#2563eb]/10 bg-[#2563eb]/5 px-3 py-1 text-xs font-medium text-slate-600">{tag}</span>
             ))}
           </div>
         )}
@@ -97,7 +93,7 @@ export default function PropertyCard({ p }) {
           <Link
             reloadDocument
             to={`/properties/${p.slug}`}
-            className="group/btn flex w-full flex-1 items-center justify-center gap-2 rounded-full bg-navy-900 px-4 py-3 text-sm font-semibold text-white transition hover:bg-navy-800 active:scale-[0.97]"
+            className="group/btn flex w-full flex-1 items-center justify-center gap-2 rounded-full bg-[linear-gradient(180deg,#2f76ff_0%,#2450eb_100%)] px-4 py-3 text-sm font-semibold text-white shadow-[0_14px_32px_rgba(37,99,235,0.18)] transition hover:brightness-105 active:scale-[0.97]"
           >
             View Listing
             <svg className="h-4 w-4 transition-transform duration-200 group-hover/btn:translate-x-1" viewBox="0 0 16 16" fill="none" aria-hidden>
@@ -107,7 +103,7 @@ export default function PropertyCard({ p }) {
           <Link
             reloadDocument
             to={`/contact?subject=${encodeURIComponent('Tour request - ' + p.name)}`}
-            className="flex h-11 w-full shrink-0 items-center justify-center gap-2 rounded-full border border-slate-200 px-4 text-sm font-semibold text-slate-600 transition hover:border-axis hover:text-axis sm:w-auto sm:px-3"
+            className="flex h-11 w-full shrink-0 items-center justify-center gap-2 rounded-full border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-600 transition hover:border-[#2563eb] hover:text-[#2563eb] sm:w-auto sm:px-3"
           >
             <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" aria-hidden>
               <path d="M8 7H5a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3m-1-4H9m1 4V3m4 4V3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>

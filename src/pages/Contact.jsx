@@ -412,7 +412,7 @@ export default function Contact() {
   ]
 
   return (
-    <div className="bg-[linear-gradient(180deg,#fcfcfa_0%,#ffffff_32%,#f8fafc_100%)]">
+    <div className="bg-[linear-gradient(180deg,#edf2fb_0%,#eef3fb_48%,#f6f9fe_100%)]">
       <Seo
         title="Contact Axis Seattle | Tours and Housing Availability"
         description="Contact Axis Seattle to ask about housing availability, schedule a tour, or get help with pricing and move-in questions."
@@ -420,18 +420,18 @@ export default function Contact() {
       />
       <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 sm:py-12">
         <section className="border-b border-slate-200 pb-10 lg:pb-14">
-          <h1 className="font-editorial text-[2rem] leading-[1.1] text-slate-900 sm:text-[3rem] sm:leading-[0.96] lg:text-[4.3rem]">
-            Contact leasing directly.
+          <h1 className="font-editorial text-[2rem] font-black leading-[1.05] text-slate-900 sm:text-[3rem] sm:leading-[0.96] lg:text-[4.3rem]">
+            Contact Axis.
           </h1>
         </section>
 
         <div className="mt-10">
-          <div className="mx-auto max-w-5xl rounded-[28px] border border-slate-200 bg-white p-6 shadow-soft sm:p-8">
+          <div className="mx-auto max-w-5xl rounded-[32px] border border-white/90 bg-white/88 p-6 shadow-[0_30px_80px_rgba(37,99,235,0.10)] backdrop-blur sm:p-8">
             {/* 3-tab switcher */}
-            <div className="mb-8 flex gap-1 rounded-2xl border border-slate-100 bg-slate-50 p-1">
+            <div className="mb-8 flex gap-1 rounded-2xl border border-white/90 bg-white/82 p-1 shadow-[0_10px_30px_rgba(37,99,235,0.06)]">
               {tabs.map(({ id, label, icon }) => (
                 <button key={id} onClick={() => setActiveTab(id)}
-                  className={`flex flex-1 items-center justify-center gap-1.5 rounded-xl px-2 py-2.5 text-xs font-semibold transition-all sm:text-sm ${activeTab === id ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>
+                  className={`flex flex-1 items-center justify-center gap-1.5 rounded-xl px-2 py-2.5 text-xs font-semibold transition-all sm:text-sm ${activeTab === id ? 'bg-[linear-gradient(180deg,#2f76ff_0%,#2450eb_100%)] text-white shadow-[0_12px_28px_rgba(37,99,235,0.18)]' : 'text-slate-500 hover:text-slate-700'}`}>
                   <svg className="h-3.5 w-3.5 shrink-0" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" d={icon} />
                   </svg>

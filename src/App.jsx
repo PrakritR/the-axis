@@ -111,7 +111,7 @@ export default function App() {
   }
 
   return (
-    <div className="app-shell min-h-screen min-h-svh flex flex-col">
+    <div className="app-shell axis-page min-h-screen min-h-svh flex flex-col">
       <ScrollToTop />
       <Toaster
         position="top-center"

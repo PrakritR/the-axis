@@ -39,7 +39,7 @@ function Arrow() {
 
 function CheckCircle() {
   return (
-    <svg className="mt-0.5 h-5 w-5 shrink-0 text-axis" viewBox="0 0 20 20" fill="none" aria-hidden>
+    <svg className="mt-0.5 h-5 w-5 shrink-0 text-[#2563eb]" viewBox="0 0 20 20" fill="none" aria-hidden>
       <circle cx="10" cy="10" r="8.5" stroke="currentColor" strokeWidth="1.5" />
       <path d="M6.5 10.5l2.5 2.5 4.5-5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
     </svg>
@@ -58,7 +58,7 @@ function ChevronDown({ open }) {
 
 
 const steps = [
-  { n: '01', title: 'Browse housing', body: 'Compare available houses, room layouts, and posted pricing.', color: 'text-axis' },
+  { n: '01', title: 'Browse housing', body: 'Compare available houses, room layouts, and posted pricing.', color: 'text-[#2563eb]' },
   { n: '02', title: 'Apply', body: 'Submit an application for the housing option that fits what you need.', color: 'text-gold' },
   { n: '03', title: 'Move in', body: 'If approved, complete the next steps and move into the selected housing.', color: 'text-emerald-400' },
 ]
@@ -84,8 +84,7 @@ const faqs = [
 
 function Eyebrow({ children, light = false }) {
   return (
-    <span className={`inline-flex items-center gap-2 text-xs font-bold uppercase tracking-[0.2em] ${light ? 'text-teal-300' : 'text-axis'}`}>
-      <span className="h-px w-6 bg-current opacity-50" />
+    <span className={`inline-flex text-[11px] font-bold uppercase tracking-[0.24em] ${light ? 'text-slate-400' : 'text-slate-400'}`}>
       {children}
     </span>
   )
@@ -240,18 +239,18 @@ function MatchCard({ opt, seasonLabel }) {
           <span className="text-slate-300">·</span>
           <span className="font-medium text-emerald-600">{opt.matchingAvailableCount ?? opt.availableCount} available</span>
           {opt.privateBath ? (
-            <><span className="text-slate-300">·</span><span className="font-medium text-axis">Private bath</span></>
+            <><span className="text-slate-300">·</span><span className="font-medium text-[#2563eb]">Private bath</span></>
           ) : typeof opt.shareCount === 'number' ? (
             <><span className="text-slate-300">·</span><span>{opt.shareCount}-person shared bath</span></>
           ) : null}
         </div>
         {seasonLabel && (
-          <div className="mt-2 inline-block rounded-md bg-teal-50 px-2 py-0.5 text-[10px] font-semibold text-teal-700">
+          <div className="mt-2 inline-block rounded-md bg-[#2563eb]/8 px-2 py-0.5 text-[10px] font-semibold text-[#2563eb]">
             {seasonLabel}
           </div>
         )}
       </div>
-      <svg className="h-4 w-4 shrink-0 text-axis opacity-0 transition group-hover:opacity-100" viewBox="0 0 16 16" fill="none" aria-hidden>
+      <svg className="h-4 w-4 shrink-0 text-[#2563eb] opacity-0 transition group-hover:opacity-100" viewBox="0 0 16 16" fill="none" aria-hidden>
         <path d="M3 8h10M9 4l4 4-4 4" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
       </svg>
     </Link>
@@ -314,11 +313,11 @@ function RoomFinder() {
   const dateLabel = getDateLabel()
 
   return (
-    <section className="border-t border-slate-100 bg-white px-4 py-14 sm:px-6 sm:py-20">
+    <section className="border-t border-white/70 bg-transparent px-4 py-14 sm:px-6 sm:py-20">
       <div className="mx-auto max-w-6xl">
         <Reveal className="mb-8 text-center">
           <Eyebrow>Housing Finder</Eyebrow>
-          <h2 className="mt-3 font-serif text-2xl font-black tracking-tight text-slate-900 sm:text-4xl">
+          <h2 className="mt-3 text-2xl font-black tracking-[-0.05em] text-slate-900 sm:text-4xl">
             Find housing that works for you
           </h2>
           <p className="mx-auto mt-3 max-w-md text-sm leading-6 text-slate-500">
@@ -326,7 +325,7 @@ function RoomFinder() {
           </p>
         </Reveal>
 
-        <div className="rounded-3xl border border-slate-200 bg-slate-50 p-6 sm:p-8">
+        <div className="rounded-[32px] border border-white/90 bg-white/84 p-6 shadow-[0_30px_80px_rgba(37,99,235,0.09)] backdrop-blur sm:p-8">
           <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
             {/* Move-in date */}
             <div>
@@ -371,7 +370,7 @@ function RoomFinder() {
             <div>
               <div className="mb-3 flex items-center justify-between">
                 <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-500">Max budget / month</div>
-                <div className={`text-sm font-semibold transition-colors ${budgetInput ? 'text-axis' : 'text-slate-400'}`}>
+                <div className={`text-sm font-semibold transition-colors ${budgetInput ? 'text-[#2563eb]' : 'text-slate-400'}`}>
                   {budgetInput ? `$${budgetInput}` : 'Any'}
                 </div>
               </div>
@@ -481,7 +480,7 @@ function PropertyCarousel() {
         type="button"
         onClick={() => scroll(-1)}
         aria-label="Previous"
-        className={`absolute left-2 top-1/2 z-10 hidden -translate-y-1/2 items-center justify-center rounded-full border border-slate-200 bg-white shadow-md transition hover:border-axis hover:text-axis sm:left-4 xl:hidden ${
+        className={`absolute left-2 top-1/2 z-10 hidden -translate-y-1/2 items-center justify-center rounded-full border border-slate-200 bg-white shadow-md transition hover:border-[#2563eb] hover:text-[#2563eb] sm:left-4 xl:hidden ${
           canLeft ? 'opacity-100' : 'pointer-events-none opacity-0'
         } h-10 w-10`}
       >
@@ -514,7 +513,7 @@ function PropertyCarousel() {
         type="button"
         onClick={() => scroll(1)}
         aria-label="Next"
-        className={`absolute right-2 top-1/2 z-10 hidden -translate-y-1/2 items-center justify-center rounded-full border border-slate-200 bg-white shadow-md transition hover:border-axis hover:text-axis sm:right-4 xl:hidden ${
+        className={`absolute right-2 top-1/2 z-10 hidden -translate-y-1/2 items-center justify-center rounded-full border border-slate-200 bg-white shadow-md transition hover:border-[#2563eb] hover:text-[#2563eb] sm:right-4 xl:hidden ${
           canRight ? 'opacity-100' : 'pointer-events-none opacity-0'
         } h-10 w-10`}
       >
@@ -532,7 +531,7 @@ export default function Home() {
   const heroImage = properties[1]?.images?.[0] || properties[0]?.images?.[0]
 
   return (
-    <div className="bg-cream-50">
+      <div className="bg-transparent">
       <Seo
         title="Axis Seattle | Available Housing in Seattle"
         description="Browse available housing in Seattle with posted pricing, listing details, and online applications."
@@ -548,19 +547,19 @@ export default function Home() {
       <RoomFinder />
 
       {/* ── AVAILABLE HOUSING ── */}
-      <section id="properties" className="scroll-mt-20 border-t border-slate-100 bg-white py-14 sm:py-20">
+      <section id="properties" className="scroll-mt-20 border-t border-white/70 bg-transparent py-14 sm:py-20">
         <div className="mx-auto max-w-6xl px-4 sm:px-6">
           <Reveal>
             <div className="flex flex-col gap-5">
               <Eyebrow>Available now</Eyebrow>
-              <h2 className="font-serif text-2xl font-black tracking-tight text-slate-900 sm:text-4xl">Available Housing</h2>
+              <h2 className="text-2xl font-black tracking-[-0.05em] text-slate-900 sm:text-4xl">Available Housing</h2>
               <p className="text-sm leading-6 text-slate-500 sm:text-base sm:leading-7">
                 Browse available housing in Seattle and open the listings that fit what you want.
               </p>
               <Link
                 reloadDocument
                 to={`/contact?subject=${encodeURIComponent('Tour request')}`}
-                className="inline-flex w-auto self-start items-center gap-2 rounded-full border border-slate-200 bg-white px-5 py-2.5 text-sm font-semibold text-slate-700 shadow-soft transition hover:border-axis hover:text-axis"
+                className="inline-flex w-auto self-start items-center gap-2 rounded-full border border-slate-200 bg-white/84 px-5 py-2.5 text-sm font-semibold text-slate-700 shadow-[0_14px_32px_rgba(37,99,235,0.08)] transition hover:border-[#2563eb] hover:text-[#2563eb]"
               >
                 Schedule a Tour <Arrow />
               </Link>
@@ -572,25 +571,23 @@ export default function Home() {
       </section>
 
       {/* ── NEIGHBORHOOD — dark section ── */}
-      <section className="relative overflow-hidden bg-navy-900 px-4 py-14 text-white sm:px-6 sm:py-24">
-        {/* dot grid */}
-        <div className="absolute inset-0 bg-dot-grid-dark bg-dot-md opacity-50" />
-        {/* teal glow */}
-        <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_80%_50%,rgba(14,165,164,0.12),transparent_60%)]" />
+      <section className="relative overflow-hidden border-t border-white/70 bg-[linear-gradient(180deg,rgba(255,255,255,0.3)_0%,rgba(255,255,255,0.62)_100%)] px-4 py-14 text-slate-900 sm:px-6 sm:py-24">
+        <div className="absolute inset-0 bg-dot-grid bg-dot-md opacity-20" />
+        <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_80%_50%,rgba(37,99,235,0.10),transparent_60%)]" />
 
         <div className="relative mx-auto max-w-6xl">
           <div className="grid gap-10 sm:gap-12 lg:grid-cols-2 lg:items-center">
             <Reveal>
               <Eyebrow light>Neighborhood</Eyebrow>
-              <h2 className="mt-4 font-serif text-2xl font-black tracking-tight text-white sm:text-4xl">
+              <h2 className="mt-4 text-2xl font-black tracking-[-0.05em] text-slate-900 sm:text-4xl">
                 Seattle housing, shown simply
               </h2>
-              <p className="mt-4 max-w-md text-sm leading-6 text-white/60 sm:text-base sm:leading-7">
+              <p className="mt-4 max-w-md text-sm leading-6 text-slate-500 sm:text-base sm:leading-7">
                 The site shows available houses, pricing, and core details so you can decide what works for you.
               </p>
               <ul className="mt-6 space-y-3">
                 {neighborhoodItems.map((t) => (
-                  <li key={t} className="flex items-start gap-3 text-sm text-white/75">
+                  <li key={t} className="flex items-start gap-3 text-sm text-slate-700">
                     <CheckCircle />
                     {t}
                   </li>
@@ -600,7 +597,7 @@ export default function Home() {
                 <Link
                   reloadDocument
                   to={`/contact?subject=${encodeURIComponent('Tour request')}`}
-                  className="inline-flex w-full items-center justify-center gap-2 rounded-full bg-axis px-6 py-3 text-sm font-semibold text-white shadow-[0_0_20px_rgba(14,165,164,0.4)] transition hover:bg-axis-dark active:scale-[0.97] sm:w-auto"
+                  className="inline-flex w-full items-center justify-center gap-2 rounded-full bg-[linear-gradient(180deg,#2f76ff_0%,#2450eb_100%)] px-6 py-3 text-sm font-semibold text-white shadow-[0_18px_40px_rgba(37,99,235,0.18)] transition hover:brightness-105 active:scale-[0.97] sm:w-auto"
                 >
                   Request a Tour <Arrow />
                 </Link>
@@ -614,9 +611,9 @@ export default function Home() {
                   { label: 'Availability', value: 'Posted' },
                   { label: 'Applications', value: 'Online' },
                 ].map((s) => (
-                <div key={s.label} className="flex flex-col justify-between rounded-2xl border border-white/10 bg-white/5 p-6 backdrop-blur-sm">
-                  <span className="text-xs font-semibold uppercase tracking-[0.15em] text-white/40">{s.label}</span>
-                  <span className="mt-4 text-2xl font-black text-white">{s.value}</span>
+                <div key={s.label} className="flex flex-col justify-between rounded-[28px] border border-white/90 bg-white/84 p-6 shadow-[0_24px_60px_rgba(37,99,235,0.08)] backdrop-blur-sm">
+                  <span className="text-xs font-semibold uppercase tracking-[0.15em] text-slate-400">{s.label}</span>
+                  <span className="mt-4 text-2xl font-black text-slate-900">{s.value}</span>
                 </div>
               ))}
             </Reveal>
@@ -624,12 +621,11 @@ export default function Home() {
         </div>
       </section>
 
-      {/* ── HOW IT WORKS — cream section ── */}
-      <section className="border-t border-slate-100 bg-cream-50 px-4 py-14 sm:px-6 sm:py-24">
+      <section className="border-t border-white/70 bg-transparent px-4 py-14 sm:px-6 sm:py-24">
         <div className="mx-auto max-w-6xl">
           <Reveal className="text-center max-w-xl mx-auto mb-12">
             <Eyebrow>Process</Eyebrow>
-            <h2 className="mt-4 font-serif text-2xl font-black tracking-tight text-slate-900 sm:text-4xl">How it works</h2>
+            <h2 className="mt-4 text-2xl font-black tracking-[-0.05em] text-slate-900 sm:text-4xl">How it works</h2>
             <p className="mt-3 text-sm leading-6 text-slate-500 sm:text-base sm:leading-7">A simple path from browsing to move-in.</p>
           </Reveal>
 
@@ -641,7 +637,7 @@ export default function Home() {
             variants={stagger}
           >
             {steps.map((s, i) => (
-              <motion.div key={s.n} variants={up} className="relative flex flex-col gap-4 rounded-2xl border border-slate-200 bg-white p-6 sm:p-8 shadow-soft">
+              <motion.div key={s.n} variants={up} className="relative flex flex-col gap-4 rounded-[28px] border border-white/90 bg-white/88 p-6 shadow-[0_24px_60px_rgba(37,99,235,0.08)] backdrop-blur sm:p-8">
                 {i < steps.length - 1 && (
                   <div className="absolute right-0 top-1/2 hidden -translate-y-1/2 translate-x-1/2 sm:flex items-center justify-center z-10">
                     <div className="flex items-center gap-0.5 rounded-full border border-slate-200 bg-white px-2.5 py-1.5 shadow-sm">
@@ -663,13 +659,13 @@ export default function Home() {
       </section>
 
       {/* ── FAQ — white section ── */}
-      <section className="border-t border-slate-100 bg-white px-4 py-14 sm:px-6 sm:py-24">
+      <section className="border-t border-white/70 bg-transparent px-4 py-14 sm:px-6 sm:py-24">
         <div className="mx-auto max-w-6xl">
           <div className="grid gap-12 lg:grid-cols-[1fr_1.8fr] lg:items-start">
             <Reveal>
               <div className="lg:sticky lg:top-24">
                 <Eyebrow>FAQ</Eyebrow>
-                <h2 className="mt-4 font-serif text-2xl font-black tracking-tight text-slate-900 sm:text-3xl">Common questions</h2>
+                <h2 className="mt-4 text-2xl font-black tracking-[-0.05em] text-slate-900 sm:text-3xl">Common questions</h2>
                 <p className="mt-4 text-sm leading-7 text-slate-500">
                   Not finding your answer? Contact us.
                 </p>
@@ -677,7 +673,7 @@ export default function Home() {
                   reloadDocument
                   to="/contact"
                   onClick={scrollToTop}
-                  className="mt-6 inline-flex items-center gap-2 rounded-full border border-slate-200 px-5 py-2.5 text-sm font-semibold text-slate-700 shadow-soft transition hover:border-axis hover:text-axis"
+                  className="mt-6 inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white/84 px-5 py-2.5 text-sm font-semibold text-slate-700 shadow-[0_14px_32px_rgba(37,99,235,0.08)] transition hover:border-[#2563eb] hover:text-[#2563eb]"
                 >
                   Contact us <Arrow />
                 </Link>
@@ -694,19 +690,18 @@ export default function Home() {
       </section>
 
       {/* ── CTA — dark gradient ── */}
-      <section className="border-t border-slate-100 bg-cream-50 px-4 pb-16 pt-4 sm:px-6 sm:pb-20">
+      <section className="border-t border-white/70 bg-transparent px-4 pb-16 pt-4 sm:px-6 sm:pb-20">
         <Reveal>
-          <div className="relative mx-auto max-w-6xl overflow-hidden rounded-3xl bg-navy-900 px-5 py-10 sm:px-8 sm:py-14 md:px-14">
-            {/* dot grid inside CTA */}
-            <div className="absolute inset-0 bg-dot-grid-dark bg-dot-md opacity-40 rounded-3xl" />
-            <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_30%_50%,rgba(14,165,164,0.2),transparent_60%)]" />
+          <div className="relative mx-auto max-w-6xl overflow-hidden rounded-[32px] border border-white/90 bg-[linear-gradient(180deg,rgba(255,255,255,0.9)_0%,rgba(239,244,252,0.96)_100%)] px-5 py-10 shadow-[0_32px_80px_rgba(37,99,235,0.12)] sm:px-8 sm:py-14 md:px-14">
+            <div className="absolute inset-0 bg-dot-grid bg-dot-md opacity-18 rounded-[32px]" />
+            <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_30%_50%,rgba(37,99,235,0.12),transparent_60%)]" />
             <div className="relative flex flex-col gap-6 md:flex-row md:items-center md:justify-between">
               <div>
-                <Eyebrow light>Ready?</Eyebrow>
-                <h2 className="mt-3 font-serif text-2xl font-black tracking-tight text-white sm:text-3xl md:text-4xl">
+                <Eyebrow>Ready?</Eyebrow>
+                <h2 className="mt-3 text-2xl font-black tracking-[-0.05em] text-slate-900 sm:text-3xl md:text-4xl">
                   Browse housing simply
                 </h2>
-                <p className="mt-2 text-sm text-white/55 leading-6">
+                <p className="mt-2 text-sm leading-6 text-slate-500">
                   Tour, ask questions, or apply online.
                 </p>
               </div>
@@ -714,14 +709,14 @@ export default function Home() {
                 <Link
                   reloadDocument
                   to={`/contact?subject=${encodeURIComponent('Tour request')}`}
-                  className="inline-flex w-full items-center justify-center gap-2 rounded-full bg-axis px-6 py-3 text-sm font-semibold text-white shadow-[0_0_24px_rgba(14,165,164,0.5)] transition hover:bg-axis-dark active:scale-[0.97] sm:w-auto"
+                  className="inline-flex w-full items-center justify-center gap-2 rounded-full bg-[linear-gradient(180deg,#2f76ff_0%,#2450eb_100%)] px-6 py-3 text-sm font-semibold text-white shadow-[0_18px_40px_rgba(37,99,235,0.18)] transition hover:brightness-105 active:scale-[0.97] sm:w-auto"
                 >
                   Schedule a Tour <Arrow />
                 </Link>
                 <Link
                   to="/apply"
                   onClick={scrollToTop}
-                  className="inline-flex w-full items-center justify-center gap-2 rounded-full border border-white/20 bg-white/10 px-6 py-3 text-sm font-semibold text-white transition hover:bg-white/20 active:scale-[0.97] sm:w-auto"
+                  className="inline-flex w-full items-center justify-center gap-2 rounded-full border border-slate-200 bg-white px-6 py-3 text-sm font-semibold text-slate-700 transition hover:border-[#2563eb] hover:text-[#2563eb] active:scale-[0.97] sm:w-auto"
                 >
                   Apply Now <Arrow />
                 </Link>

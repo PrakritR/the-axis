@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Newsreader:opsz,wght@6..72,500;6..72,600;6..72,700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap');
 
 @tailwind base;
 @tailwind components;
@@ -13,6 +13,13 @@ html {
 
 :root {
   --page-gutter: clamp(0.875rem, 2vw, 2rem);
+  --axis-bg: #edf2fb;
+  --axis-bg-soft: #f6f9fe;
+  --axis-card: rgba(255, 255, 255, 0.88);
+  --axis-line: rgba(148, 163, 184, 0.22);
+  --axis-text: #0f172a;
+  --axis-muted: #64748b;
+  --axis-blue: #2563eb;
 }
 
 html, body, #root {
@@ -28,7 +35,10 @@ html, body, #root {
 body {
   margin: 0;
   padding: 0;
-  @apply bg-white text-slate-900 antialiased;
+  background:
+    radial-gradient(circle at top, rgba(255,255,255,0.96), rgba(255,255,255,0.45) 24%, transparent 56%),
+    linear-gradient(180deg, #edf2fb 0%, #eef3fb 46%, #f7f9fd 100%);
+  @apply text-slate-900 antialiased;
   font-family: 'Manrope', 'Avenir Next', 'Segoe UI', sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
@@ -82,13 +92,14 @@ button, a, input, select, textarea {
 
 /* ── Typography ───────────────────────────────────────────────────────────── */
 
-h1, h2, h3, h4 {
+h1, h2, h3, h4, h5, h6 {
   text-wrap: balance;
+  font-family: 'Manrope', 'Avenir Next', 'Segoe UI', sans-serif;
 }
 
 .font-editorial {
-  font-family: 'Newsreader', Georgia, serif;
-  letter-spacing: -0.03em;
+  font-family: 'Manrope', 'Avenir Next', 'Segoe UI', sans-serif;
+  letter-spacing: -0.055em;
 }
 
 /* ── Focus ────────────────────────────────────────────────────────────────── */
@@ -112,6 +123,23 @@ a, button {
 .bg-axis { background-color: #0ea5a4; }
 .text-axis { color: #0ea5a4; }
 .shadow-soft { box-shadow: 0 2px 8px rgba(15,23,42,0.06), 0 8px 24px rgba(15,23,42,0.04); }
+.axis-glass {
+  background: rgba(255,255,255,0.72);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+}
+.axis-panel {
+  background: var(--axis-card);
+  border: 1px solid var(--axis-line);
+  box-shadow: 0 24px 60px rgba(37, 99, 235, 0.08);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+}
+.axis-page {
+  background:
+    radial-gradient(circle at top, rgba(255,255,255,0.96), rgba(255,255,255,0.4) 26%, transparent 56%),
+    linear-gradient(180deg, #edf2fb 0%, #eef3fb 40%, #f6f9fe 100%);
+}
 
 /* ── Gallery / property ───────────────────────────────────────────────────── */
 
