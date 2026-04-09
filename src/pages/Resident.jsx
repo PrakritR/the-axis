@@ -341,7 +341,7 @@ function AirtableLogin({ onLogin }) {
   const urlAppId = typeof window !== 'undefined'
     ? (new URLSearchParams(window.location.search).get('appId') || '')
     : ''
-  const [mode, setMode] = useState(urlAppId ? 'signup' : 'login')
+  const [mode, setMode] = useState(urlAppId ? 'signup' : 'portal')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   // signup fields
@@ -353,6 +353,10 @@ function AirtableLogin({ onLogin }) {
     setMode(next)
     setError('')
     setPassword('')
+  }
+
+  function goToManagerLogin() {
+    window.location.href = '/manager'
   }
 
   async function handleLogin(event) {
@@ -440,18 +444,58 @@ function AirtableLogin({ onLogin }) {
 
   return (
     <AuthCard>
-      <div className="flex gap-1 rounded-2xl border border-slate-100 bg-slate-50 p-1 mb-6">
-        {[['login', 'Sign in'], ['signup', 'Create account']].map(([id, label]) => (
-          <button key={id} type="button" onClick={() => switchMode(id)}
-            className={classNames('flex-1 rounded-xl px-3 py-2 text-sm font-semibold transition',
-              mode === id ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-900')}>
-            {label}
-          </button>
-        ))}
+      <div className="mb-6 text-center">
+        <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-[#0b8a89]">Axis Portal</div>
+        <h1 className="mt-2 text-3xl font-black tracking-tight text-slate-900">Login</h1>
+        <p className="mt-2 text-sm leading-6 text-slate-500">
+          Choose your portal to continue.
+        </p>
       </div>
 
-      {mode === 'login' ? (
+      {mode === 'portal' ? (
+        <div className="space-y-4">
+          <button
+            type="button"
+            onClick={() => switchMode('login')}
+            className="w-full rounded-[24px] border border-slate-200 bg-white px-5 py-5 text-left transition hover:border-slate-900 hover:bg-slate-50"
+          >
+            <div className="text-base font-bold text-slate-900">Resident Login</div>
+            <div className="mt-1 text-sm leading-6 text-slate-500">
+              Access payments, work orders, documents, and your resident dashboard.
+            </div>
+          </button>
+          <button
+            type="button"
+            onClick={goToManagerLogin}
+            className="w-full rounded-[24px] border border-slate-200 bg-white px-5 py-5 text-left transition hover:border-slate-900 hover:bg-slate-50"
+          >
+            <div className="text-base font-bold text-slate-900">Manager Login</div>
+            <div className="mt-1 text-sm leading-6 text-slate-500">
+              Open the manager portal to review leases and manage resident records.
+            </div>
+          </button>
+          <div className="rounded-2xl border border-slate-100 bg-slate-50 px-4 py-3 text-sm text-slate-600">
+            Need to set up a resident account first?{' '}
+            <button
+              type="button"
+              onClick={() => switchMode('signup')}
+              className="font-semibold text-slate-900 underline decoration-slate-300 underline-offset-4"
+            >
+              Create account
+            </button>
+          </div>
+        </div>
+      ) : mode === 'login' ? (
         <form onSubmit={handleLogin} className="space-y-4">
+          <div className="flex gap-1 rounded-2xl border border-slate-100 bg-slate-50 p-1">
+            {[['login', 'Resident Login'], ['signup', 'Create account']].map(([id, label]) => (
+              <button key={id} type="button" onClick={() => switchMode(id)}
+                className={classNames('flex-1 rounded-xl px-3 py-2 text-sm font-semibold transition',
+                  mode === id ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-900')}>
+                {label}
+              </button>
+            ))}
+          </div>
           <div>
             <label className="mb-2 block text-sm font-semibold text-slate-700">Email</label>
             <input type="email" required value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@example.com" autoComplete="email" className={authInputCls} />
@@ -464,9 +508,25 @@ function AirtableLogin({ onLogin }) {
           <button type="submit" disabled={loading} className="w-full rounded-full bg-slate-900 py-3 text-sm font-semibold text-white hover:bg-slate-800 disabled:opacity-50 transition">
             {loading ? 'Signing in…' : 'Sign in'}
           </button>
+          <button
+            type="button"
+            onClick={() => switchMode('portal')}
+            className="w-full text-sm font-semibold text-slate-500 transition hover:text-slate-900"
+          >
+            Back to portal options
+          </button>
         </form>
       ) : (
         <form onSubmit={handleSignup} className="space-y-4">
+          <div className="flex gap-1 rounded-2xl border border-slate-100 bg-slate-50 p-1">
+            {[['login', 'Resident Login'], ['signup', 'Create account']].map(([id, label]) => (
+              <button key={id} type="button" onClick={() => switchMode(id)}
+                className={classNames('flex-1 rounded-xl px-3 py-2 text-sm font-semibold transition',
+                  mode === id ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-900')}>
+                {label}
+              </button>
+            ))}
+          </div>
           <div className="rounded-2xl border border-slate-100 bg-slate-50 px-4 py-3 text-sm text-slate-600">
             You need an Application ID from your approved rental application. It looks like <span className="font-mono font-semibold text-slate-800">APP-rec…</span>
           </div>
@@ -485,6 +545,13 @@ function AirtableLogin({ onLogin }) {
           {error && <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>}
           <button type="submit" disabled={loading} className="w-full rounded-full bg-slate-900 py-3 text-sm font-semibold text-white hover:bg-slate-800 disabled:opacity-50 transition">
             {loading ? 'Verifying application…' : 'Create account'}
+          </button>
+          <button
+            type="button"
+            onClick={() => switchMode('portal')}
+            className="w-full text-sm font-semibold text-slate-500 transition hover:text-slate-900"
+          >
+            Back to portal options
           </button>
         </form>
       )}

@@ -41,7 +41,7 @@ const STATUS_CONFIG = {
 
 const ALL_STATUSES = Object.keys(STATUS_CONFIG)
 
-const AXIS_PROPERTIES = [
+const DEFAULT_AXIS_PROPERTIES = [
   '4709A 8th Ave NE',
   '4709B 8th Ave NE',
   '5259 Brooklyn Ave NE',
@@ -59,6 +59,10 @@ function atHeaders() {
 
 function mapRecord(record) {
   return { id: record.id, ...record.fields, created_at: record.createdTime }
+}
+
+function classNames(...values) {
+  return values.filter(Boolean).join(' ')
 }
 
 async function atRequest(url, options = {}) {
@@ -97,6 +101,19 @@ async function fetchLeaseDraft(recordId) {
 async function patchLeaseDraft(recordId, fields) {
   const data = await atRequest(`${AIRTABLE_BASE_URL}/Lease%20Drafts/${recordId}`, {
     method: 'PATCH',
+    body: JSON.stringify({ fields, typecast: true }),
+  })
+  return mapRecord(data)
+}
+
+async function fetchPropertiesAdmin() {
+  const data = await atRequest(`${AIRTABLE_BASE_URL}/Properties`)
+  return (data.records || []).map(mapRecord)
+}
+
+async function createPropertyAdmin(fields) {
+  const data = await atRequest(`${AIRTABLE_BASE_URL}/Properties`, {
+    method: 'POST',
     body: JSON.stringify({ fields, typecast: true }),
   })
   return mapRecord(data)
@@ -159,10 +176,63 @@ function StatusBadge({ status, size = 'sm' }) {
 
 // ─── ManagerLogin ─────────────────────────────────────────────────────────────
 function ManagerLogin({ onLogin }) {
+  const searchParams = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null
+  const initialMode = searchParams?.get('setup') === 'success' ? 'signup' : 'login'
+  const [mode, setMode] = useState(initialMode)
+  const [managerId, setManagerId] = useState('')
+  const [name, setName] = useState('')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [loading, setLoading] = useState(false)
+  const [setupLoading, setSetupLoading] = useState(false)
   const [error, setError] = useState('')
+  const [notice, setNotice] = useState('')
+
+  useEffect(() => {
+    const sessionId = searchParams?.get('session_id') || ''
+    const setupState = searchParams?.get('setup') || ''
+    if (!sessionId || setupState !== 'success') return
+
+    let cancelled = false
+
+    async function completeSetup() {
+      setMode('signup')
+      setSetupLoading(true)
+      setError('')
+      try {
+        const res = await fetch(`/api/manager-subscription-complete?session_id=${encodeURIComponent(sessionId)}`)
+        const data = await res.json()
+        if (!res.ok) throw new Error(data.error || 'Could not verify the subscription.')
+        if (cancelled) return
+        setManagerId(data.managerId || '')
+        setEmail(data.email || '')
+        setNotice(data.message || 'Subscription verified. Finish creating the manager account.')
+
+        const nextUrl = new URL(window.location.href)
+        nextUrl.searchParams.delete('session_id')
+        window.history.replaceState({}, '', nextUrl.pathname + nextUrl.search)
+      } catch (err) {
+        if (!cancelled) setError(err.message || 'Could not verify the subscription.')
+      } finally {
+        if (!cancelled) setSetupLoading(false)
+      }
+    }
+
+    completeSetup()
+    return () => { cancelled = true }
+  }, [searchParams])
+
+  useEffect(() => {
+    if (searchParams?.get('setup') === 'cancelled') {
+      setNotice('Manager subscription checkout was cancelled. Start the subscription again when you are ready.')
+    }
+  }, [searchParams])
+
+  function switchMode(nextMode) {
+    setMode(nextMode)
+    setError('')
+    setNotice('')
+  }
 
   async function handleSubmit(e) {
     e.preventDefault()
@@ -172,7 +242,7 @@ function ManagerLogin({ onLogin }) {
       const res = await fetch('/api/manager-auth', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: email.trim().toLowerCase(), password }),
+        body: JSON.stringify({ managerId, email: email.trim().toLowerCase(), password }),
       })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || 'Login failed')
@@ -185,9 +255,55 @@ function ManagerLogin({ onLogin }) {
     }
   }
 
+  async function handleCreateAccount(e) {
+    e.preventDefault()
+    setError('')
+    setNotice('')
+    setLoading(true)
+    try {
+      const res = await fetch('/api/manager-create-account', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          managerId,
+          name,
+          email: email.trim().toLowerCase(),
+          password,
+        }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Could not create manager account')
+      sessionStorage.setItem(MANAGER_SESSION_KEY, JSON.stringify(data.manager))
+      onLogin(data.manager)
+    } catch (err) {
+      setError(err.message)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  async function startSubscriptionSetup() {
+    setError('')
+    setNotice('')
+    setSetupLoading(true)
+    try {
+      const res = await fetch('/api/manager-create-subscription-session', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: email.trim().toLowerCase(), name }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Could not start manager setup.')
+      window.location.href = data.url
+    } catch (err) {
+      setError(err.message || 'Could not start manager setup.')
+      setSetupLoading(false)
+    }
+  }
+
   return (
     <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 px-4 py-12">
-      <div className="w-full max-w-md">
+      <div className="w-full max-w-lg">
         {/* Brand mark */}
         <div className="mb-10 text-center">
           <div className="inline-flex items-center gap-3">
@@ -203,57 +319,340 @@ function ManagerLogin({ onLogin }) {
 
         {/* Login card */}
         <div className="rounded-[28px] bg-white p-8 shadow-[0_25px_60px_rgba(0,0,0,0.35)]">
-          <h1 className="text-xl font-black text-slate-900">Sign in</h1>
+          <div className="flex gap-1 rounded-2xl border border-slate-100 bg-slate-50 p-1">
+            {[['login', 'Manager Login'], ['signup', 'Create account']].map(([id, label]) => (
+              <button
+                key={id}
+                type="button"
+                onClick={() => switchMode(id)}
+                className={classNames(
+                  'flex-1 rounded-xl px-3 py-2 text-sm font-semibold transition',
+                  mode === id ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-900'
+                )}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+
+          <h1 className="mt-6 text-xl font-black text-slate-900">{mode === 'login' ? 'Manager login' : 'Create manager account'}</h1>
           <p className="mt-1 text-sm text-slate-500">
-            Access the manager portal to review AI-generated lease drafts.
+            {mode === 'login'
+              ? 'Sign in with your manager ID, email, and password.'
+              : 'Start the recurring manager subscription, get your manager ID, then finish account setup here.'}
           </p>
 
-          <form onSubmit={handleSubmit} className="mt-7 space-y-5">
-            <div>
-              <label className="mb-1.5 block text-sm font-semibold text-slate-700">Email</label>
-              <input
-                type="email"
-                value={email}
-                onChange={e => setEmail(e.target.value)}
-                required
-                autoComplete="email"
-                placeholder="you@axis-seattle.com"
-                className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 placeholder:text-slate-400 transition focus:border-[#0ea5a4] focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#0ea5a4]/20"
-              />
+          {notice ? (
+            <div className="mt-5 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
+              {notice}
             </div>
-            <div>
-              <label className="mb-1.5 block text-sm font-semibold text-slate-700">Password</label>
-              <input
-                type="password"
-                value={password}
-                onChange={e => setPassword(e.target.value)}
-                required
-                autoComplete="current-password"
-                placeholder="••••••••"
-                className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 placeholder:text-slate-400 transition focus:border-[#0ea5a4] focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#0ea5a4]/20"
-              />
-            </div>
+          ) : null}
 
-            {error && (
-              <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-                {error}
+          {setupLoading ? (
+            <div className="mt-5 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
+              Verifying manager setup…
+            </div>
+          ) : null}
+
+          {mode === 'login' ? (
+            <form onSubmit={handleSubmit} className="mt-7 space-y-5">
+              <div>
+                <label className="mb-1.5 block text-sm font-semibold text-slate-700">Manager ID</label>
+                <input
+                  type="text"
+                  value={managerId}
+                  onChange={e => setManagerId(e.target.value.toUpperCase())}
+                  required
+                  placeholder="MGR-XXXXXXXXXXXXXX"
+                  className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 placeholder:text-slate-400 transition focus:border-[#0ea5a4] focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#0ea5a4]/20"
+                />
               </div>
-            )}
+              <div>
+                <label className="mb-1.5 block text-sm font-semibold text-slate-700">Email</label>
+                <input
+                  type="email"
+                  value={email}
+                  onChange={e => setEmail(e.target.value)}
+                  required
+                  autoComplete="email"
+                  placeholder="you@axis-seattle.com"
+                  className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 placeholder:text-slate-400 transition focus:border-[#0ea5a4] focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#0ea5a4]/20"
+                />
+              </div>
+              <div>
+                <label className="mb-1.5 block text-sm font-semibold text-slate-700">Password</label>
+                <input
+                  type="password"
+                  value={password}
+                  onChange={e => setPassword(e.target.value)}
+                  required
+                  autoComplete="current-password"
+                  placeholder="••••••••"
+                  className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 placeholder:text-slate-400 transition focus:border-[#0ea5a4] focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#0ea5a4]/20"
+                />
+              </div>
 
-            <button
-              type="submit"
-              disabled={loading}
-              className="w-full rounded-2xl bg-slate-900 px-5 py-3.5 text-sm font-semibold text-white transition hover:bg-[#0ea5a4] disabled:opacity-50"
-            >
-              {loading ? 'Signing in…' : 'Sign in to manager portal'}
-            </button>
-          </form>
+              {error && (
+                <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+                  {error}
+                </div>
+              )}
+
+              <button
+                type="submit"
+                disabled={loading}
+                className="w-full rounded-2xl bg-slate-900 px-5 py-3.5 text-sm font-semibold text-white transition hover:bg-[#0ea5a4] disabled:opacity-50"
+              >
+                {loading ? 'Signing in…' : 'Sign in to manager portal'}
+              </button>
+            </form>
+          ) : (
+            <div className="mt-7 space-y-5">
+              <div className="rounded-[24px] border border-slate-200 bg-slate-50 p-5">
+                <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-[#0ea5a4]">Step 1</div>
+                <h2 className="mt-2 text-lg font-black text-slate-900">Start manager subscription</h2>
+                <p className="mt-2 text-sm leading-6 text-slate-500">
+                  The recurring subscription unlocks manager access and gives you the manager ID needed for account setup.
+                </p>
+                <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                  <input
+                    type="text"
+                    value={name}
+                    onChange={e => setName(e.target.value)}
+                    placeholder="Full name"
+                    className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 placeholder:text-slate-400 transition focus:border-[#0ea5a4] focus:outline-none focus:ring-2 focus:ring-[#0ea5a4]/20"
+                  />
+                  <input
+                    type="email"
+                    value={email}
+                    onChange={e => setEmail(e.target.value)}
+                    placeholder="you@axis-seattle.com"
+                    className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 placeholder:text-slate-400 transition focus:border-[#0ea5a4] focus:outline-none focus:ring-2 focus:ring-[#0ea5a4]/20"
+                  />
+                </div>
+                <button
+                  type="button"
+                  onClick={startSubscriptionSetup}
+                  disabled={setupLoading || !email.trim()}
+                  className="mt-4 w-full rounded-2xl bg-[#0ea5a4] px-5 py-3.5 text-sm font-semibold text-white transition hover:bg-[#0b8a89] disabled:opacity-50"
+                >
+                  {setupLoading ? 'Starting checkout…' : 'Start manager subscription'}
+                </button>
+              </div>
+
+              <form onSubmit={handleCreateAccount} className="space-y-4">
+                <div className="rounded-[24px] border border-slate-200 bg-white p-5">
+                  <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-[#0ea5a4]">Step 2</div>
+                  <h2 className="mt-2 text-lg font-black text-slate-900">Create your manager account</h2>
+                  <p className="mt-2 text-sm leading-6 text-slate-500">
+                    After checkout, your manager ID appears here. Use it with the same email address to finish setup.
+                  </p>
+
+                  <div className="mt-4 space-y-4">
+                    <div>
+                      <label className="mb-1.5 block text-sm font-semibold text-slate-700">Manager ID</label>
+                      <input
+                        type="text"
+                        value={managerId}
+                        onChange={e => setManagerId(e.target.value.toUpperCase())}
+                        required
+                        placeholder="Provided after subscription checkout"
+                        className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 placeholder:text-slate-400 transition focus:border-[#0ea5a4] focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#0ea5a4]/20"
+                      />
+                    </div>
+                    <div>
+                      <label className="mb-1.5 block text-sm font-semibold text-slate-700">Full name</label>
+                      <input
+                        type="text"
+                        value={name}
+                        onChange={e => setName(e.target.value)}
+                        placeholder="Your name"
+                        className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 placeholder:text-slate-400 transition focus:border-[#0ea5a4] focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#0ea5a4]/20"
+                      />
+                    </div>
+                    <div>
+                      <label className="mb-1.5 block text-sm font-semibold text-slate-700">Email</label>
+                      <input
+                        type="email"
+                        value={email}
+                        onChange={e => setEmail(e.target.value)}
+                        required
+                        autoComplete="email"
+                        placeholder="Same email used for the subscription"
+                        className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 placeholder:text-slate-400 transition focus:border-[#0ea5a4] focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#0ea5a4]/20"
+                      />
+                    </div>
+                    <div>
+                      <label className="mb-1.5 block text-sm font-semibold text-slate-700">Create password</label>
+                      <input
+                        type="password"
+                        value={password}
+                        onChange={e => setPassword(e.target.value)}
+                        required
+                        autoComplete="new-password"
+                        placeholder="Minimum 6 characters"
+                        className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 placeholder:text-slate-400 transition focus:border-[#0ea5a4] focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#0ea5a4]/20"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {error && (
+                  <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+                    {error}
+                  </div>
+                )}
+
+                <button
+                  type="submit"
+                  disabled={loading}
+                  className="w-full rounded-2xl bg-slate-900 px-5 py-3.5 text-sm font-semibold text-white transition hover:bg-[#0ea5a4] disabled:opacity-50"
+                >
+                  {loading ? 'Creating account…' : 'Create manager account'}
+                </button>
+              </form>
+            </div>
+          )}
         </div>
 
         <p className="mt-6 text-center text-xs text-slate-500">
           This portal is for Axis staff only. Residents:{' '}
           <a href="/resident" className="text-[#0ea5a4] hover:underline">resident portal →</a>
         </p>
+      </div>
+    </div>
+  )
+}
+
+function HouseManagementPanel() {
+  const [properties, setProperties] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
+  const [form, setForm] = useState({
+    name: '',
+    address: '',
+    utilitiesFee: '',
+  })
+
+  const loadProperties = useCallback(async () => {
+    setLoading(true)
+    try {
+      setProperties(await fetchPropertiesAdmin())
+    } catch (err) {
+      toast.error('Could not load houses: ' + err.message)
+    } finally {
+      setLoading(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    loadProperties()
+  }, [loadProperties])
+
+  async function handleSubmit(event) {
+    event.preventDefault()
+    setSaving(true)
+    try {
+      const created = await createPropertyAdmin({
+        Name: form.name.trim(),
+        Address: form.address.trim(),
+        ...(form.utilitiesFee ? { 'Utilities Fee': Number(form.utilitiesFee) } : {}),
+      })
+      setProperties((current) => [created, ...current])
+      setForm({ name: '', address: '', utilitiesFee: '' })
+      toast.success('House added')
+    } catch (err) {
+      toast.error('Could not add house: ' + err.message)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <div className="grid gap-6 lg:grid-cols-[0.95fr_1.05fr]">
+      <div className="rounded-[24px] border border-slate-200 bg-white p-6">
+        <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-[#0ea5a4]">House Management</div>
+        <h3 className="mt-2 text-xl font-black text-slate-900">Add a house</h3>
+        <p className="mt-2 text-sm leading-6 text-slate-500">
+          Add internal property records for leasing and resident operations. Public marketing listings still use the website property dataset.
+        </p>
+
+        <form onSubmit={handleSubmit} className="mt-5 space-y-4">
+          <div>
+            <label className="mb-1.5 block text-sm font-semibold text-slate-700">House name</label>
+            <input
+              type="text"
+              required
+              value={form.name}
+              onChange={(event) => setForm((current) => ({ ...current, name: event.target.value }))}
+              placeholder="4709C 8th Ave NE"
+              className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 placeholder:text-slate-400 transition focus:border-[#0ea5a4] focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#0ea5a4]/20"
+            />
+          </div>
+          <div>
+            <label className="mb-1.5 block text-sm font-semibold text-slate-700">Address</label>
+            <input
+              type="text"
+              value={form.address}
+              onChange={(event) => setForm((current) => ({ ...current, address: event.target.value }))}
+              placeholder="Full street address"
+              className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 placeholder:text-slate-400 transition focus:border-[#0ea5a4] focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#0ea5a4]/20"
+            />
+          </div>
+          <div>
+            <label className="mb-1.5 block text-sm font-semibold text-slate-700">Utilities fee</label>
+            <input
+              type="number"
+              min="0"
+              step="1"
+              value={form.utilitiesFee}
+              onChange={(event) => setForm((current) => ({ ...current, utilitiesFee: event.target.value }))}
+              placeholder="150"
+              className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 placeholder:text-slate-400 transition focus:border-[#0ea5a4] focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#0ea5a4]/20"
+            />
+          </div>
+          <button
+            type="submit"
+            disabled={saving || !form.name.trim()}
+            className="w-full rounded-2xl bg-slate-900 px-5 py-3.5 text-sm font-semibold text-white transition hover:bg-[#0ea5a4] disabled:opacity-50"
+          >
+            {saving ? 'Adding house…' : 'Add house'}
+          </button>
+        </form>
+      </div>
+
+      <div className="rounded-[24px] border border-slate-200 bg-white p-6">
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">Current Houses</div>
+            <h3 className="mt-2 text-xl font-black text-slate-900">Operations property list</h3>
+          </div>
+          <button
+            type="button"
+            onClick={loadProperties}
+            className="rounded-2xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-600 transition hover:bg-slate-50"
+          >
+            Refresh
+          </button>
+        </div>
+
+        {loading ? (
+          <div className="mt-5 rounded-2xl border border-slate-100 bg-slate-50 px-4 py-5 text-sm text-slate-500">Loading houses…</div>
+        ) : properties.length === 0 ? (
+          <div className="mt-5 rounded-2xl border border-slate-100 bg-slate-50 px-4 py-5 text-sm text-slate-500">No houses found yet.</div>
+        ) : (
+          <div className="mt-5 space-y-3">
+            {properties.map((property) => (
+              <div key={property.id} className="rounded-2xl border border-slate-100 bg-slate-50 px-4 py-4">
+                <div className="text-sm font-semibold text-slate-900">{property.Name || property.Property || 'Untitled house'}</div>
+                <div className="mt-1 text-sm text-slate-500">{property.Address || 'Address not set'}</div>
+                <div className="mt-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-400">
+                  Utilities fee {property['Utilities Fee'] ? `$${property['Utilities Fee']}` : 'not set'}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   )
@@ -443,6 +842,8 @@ function ManagerDashboard({ manager, onOpenDraft, onSignOut }) {
   const [loading, setLoading] = useState(true)
   const [showGenerateModal, setShowGenerateModal] = useState(false)
   const [filters, setFilters] = useState({ status: '', property: '', resident: '' })
+  const [propertyOptions, setPropertyOptions] = useState(DEFAULT_AXIS_PROPERTIES)
+  const [billingLoading, setBillingLoading] = useState(false)
 
   // Debounce the resident name search so we don't hammer Airtable on every keystroke
   const [residentInput, setResidentInput] = useState('')
@@ -463,6 +864,21 @@ function ManagerDashboard({ manager, onOpenDraft, onSignOut }) {
   }, [filters])
 
   useEffect(() => { loadDrafts() }, [loadDrafts])
+  useEffect(() => {
+    let cancelled = false
+    fetchPropertiesAdmin()
+      .then((records) => {
+        if (cancelled) return
+        const names = records
+          .map((record) => record.Name || record.Property || record.Address || '')
+          .filter(Boolean)
+        setPropertyOptions(Array.from(new Set([...DEFAULT_AXIS_PROPERTIES, ...names])))
+      })
+      .catch(() => {
+        if (!cancelled) setPropertyOptions(DEFAULT_AXIS_PROPERTIES)
+      })
+    return () => { cancelled = true }
+  }, [])
 
   // Per-status counts shown in the stat cards above the table
   const statusCounts = useMemo(() => {
@@ -477,6 +893,23 @@ function ManagerDashboard({ manager, onOpenDraft, onSignOut }) {
   }
 
   const canReview = status => ['Draft Generated', 'Under Review', 'Changes Needed'].includes(status)
+
+  async function handleBillingPortal() {
+    setBillingLoading(true)
+    try {
+      const res = await fetch('/api/manager-billing-portal', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: manager.email }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Could not open billing portal.')
+      window.location.href = data.url
+    } catch (err) {
+      toast.error(err.message || 'Could not open billing portal.')
+      setBillingLoading(false)
+    }
+  }
 
   return (
     <div className="min-h-screen bg-slate-50">
@@ -497,8 +930,15 @@ function ManagerDashboard({ manager, onOpenDraft, onSignOut }) {
           <div className="flex items-center gap-3">
             <div className="hidden text-right sm:block">
               <div className="text-sm font-semibold text-slate-900">{manager.name}</div>
-              <div className="text-xs text-slate-500">{manager.role}</div>
+              <div className="text-xs text-slate-500">{manager.role}{manager.managerId ? ` · ${manager.managerId}` : ''}</div>
             </div>
+            <button
+              onClick={handleBillingPortal}
+              disabled={billingLoading}
+              className="rounded-xl border border-slate-200 px-3 py-2 text-sm font-semibold text-slate-600 transition hover:bg-slate-50 disabled:opacity-50"
+            >
+              {billingLoading ? 'Opening billing…' : 'Billing'}
+            </button>
             <button
               onClick={onSignOut}
               className="rounded-xl border border-slate-200 px-3 py-2 text-sm font-semibold text-slate-600 transition hover:bg-slate-50"
@@ -565,7 +1005,7 @@ function ManagerDashboard({ manager, onOpenDraft, onSignOut }) {
             className="rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition focus:border-[#0ea5a4] focus:outline-none focus:ring-2 focus:ring-[#0ea5a4]/20"
           >
             <option value="">All properties</option>
-            {AXIS_PROPERTIES.map(p => <option key={p} value={p}>{p}</option>)}
+            {propertyOptions.map(p => <option key={p} value={p}>{p}</option>)}
           </select>
 
           {/* Generate new draft */}
@@ -578,6 +1018,10 @@ function ManagerDashboard({ manager, onOpenDraft, onSignOut }) {
             </svg>
             Generate draft
           </button>
+        </div>
+
+        <div className="mb-8">
+          <HouseManagementPanel />
         </div>
 
         {/* Drafts table */}

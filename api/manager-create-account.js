@@ -33,12 +33,20 @@ async function getManagerByEmail(email) {
   const formula = encodeURIComponent(`{Email} = "${escapeFormulaValue(email)}"`)
   const url = `https://api.airtable.com/v0/${BASE_ID}/Managers?filterByFormula=${formula}&maxRecords=1`
   const atRes = await fetch(url, { headers: airtableHeaders() })
-  if (!atRes.ok) {
-    throw new Error('Database error. Please try again.')
-  }
+  if (!atRes.ok) throw new Error('Database error')
   const data = await atRes.json()
   const record = data.records?.[0]
   return record ? mapRecord(record) : null
+}
+
+async function updateManager(recordId, fields) {
+  const atRes = await fetch(`https://api.airtable.com/v0/${BASE_ID}/Managers/${recordId}`, {
+    method: 'PATCH',
+    headers: airtableHeaders(),
+    body: JSON.stringify({ fields, typecast: true }),
+  })
+  if (!atRes.ok) throw new Error(await atRes.text())
+  return mapRecord(await atRes.json())
 }
 
 async function listCustomerSubscriptions(secretKey, customerId) {
@@ -47,9 +55,7 @@ async function listCustomerSubscriptions(secretKey, customerId) {
 
   for (const status of statuses) {
     const url = `${STRIPE_API}/subscriptions?customer=${encodeURIComponent(customerId)}&status=${status}&limit=20`
-    const stripeRes = await fetch(url, {
-      headers: stripeHeaders(secretKey),
-    })
+    const stripeRes = await fetch(url, { headers: stripeHeaders(secretKey) })
     if (!stripeRes.ok) continue
     const data = await stripeRes.json()
     all.push(...(data.data || []))
@@ -90,47 +96,58 @@ export default async function handler(req, res) {
 
   const secretKey = process.env.STRIPE_SECRET_KEY
   if (!AIRTABLE_TOKEN) {
-    return res.status(500).json({ error: 'Server configuration error: Airtable token not set.' })
+    return res.status(500).json({ error: 'Airtable token is not configured on the server yet.' })
   }
   if (!secretKey) {
-    return res.status(500).json({ error: 'Server configuration error: Stripe secret key not set.' })
+    return res.status(500).json({ error: 'STRIPE_SECRET_KEY is not configured on the server yet.' })
   }
 
-  const { managerId, email, password } = req.body || {}
+  const { managerId, name, email, password } = req.body || {}
   const normalizedEmail = String(email || '').trim().toLowerCase()
   const normalizedManagerId = String(managerId || '').trim().toUpperCase()
+  const normalizedName = String(name || '').trim()
 
   if (!normalizedManagerId || !normalizedEmail || !password) {
     return res.status(400).json({ error: 'Manager ID, email, and password are required.' })
   }
 
+  if (String(password).length < 6) {
+    return res.status(400).json({ error: 'Password must be at least 6 characters.' })
+  }
+
   try {
     const manager = await getManagerByEmail(normalizedEmail)
-
-    if (!manager || deriveManagerId(manager.id) !== normalizedManagerId || manager.Password !== password) {
-      return res.status(401).json({ error: 'Invalid manager ID, email, or password.' })
-    }
-
-    if (manager.Active === false || manager.Active === 0) {
-      return res.status(403).json({ error: 'This account is inactive. Please contact your administrator.' })
+    if (!manager || deriveManagerId(manager.id) !== normalizedManagerId) {
+      return res.status(404).json({ error: 'Manager record not found for that manager ID and email.' })
     }
 
     const subscribed = await hasActiveManagerSubscription(secretKey, normalizedEmail)
     if (!subscribed) {
-      return res.status(403).json({ error: 'An active manager subscription is required before you can sign in.' })
+      return res.status(403).json({ error: 'Complete the recurring manager subscription before creating your account.' })
     }
+
+    if (manager.Password) {
+      return res.status(409).json({ error: 'This manager account already exists. Please sign in instead.' })
+    }
+
+    const updated = await updateManager(manager.id, {
+      Name: normalizedName || manager.Name || normalizedEmail.split('@')[0],
+      Password: password,
+      Active: true,
+      Role: manager.Role || 'Manager',
+    })
 
     return res.status(200).json({
       manager: {
-        id: manager.id,
-        managerId: deriveManagerId(manager.id),
-        name: manager.Name || '',
-        email: manager.Email || '',
-        role: manager.Role || 'Manager',
+        id: updated.id,
+        managerId: deriveManagerId(updated.id),
+        name: updated.Name || '',
+        email: updated.Email || normalizedEmail,
+        role: updated.Role || 'Manager',
       },
     })
   } catch (err) {
-    console.error('Manager auth error:', err)
-    return res.status(500).json({ error: 'Authentication failed. Please try again.' })
+    console.error('Manager create account error:', err)
+    return res.status(500).json({ error: 'Could not create the manager account.' })
   }
 }
