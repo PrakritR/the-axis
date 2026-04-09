@@ -16,6 +16,7 @@ const Resident = lazy(() => import('./pages/Resident'))
 const JoinUs = lazy(() => import('./pages/JoinUs'))
 const Manager = lazy(() => import('./pages/Manager'))
 const SignLease = lazy(() => import('./pages/SignLease'))
+const AxisTeam = lazy(() => import('./pages/AxisTeam'))
 
 function ScrollToTop() {
   const { pathname, hash, search } = useLocation()
@@ -80,7 +81,8 @@ export default function App() {
   // paths also match.
   const isManagerRoute = location.pathname === '/manager' || location.pathname.startsWith('/manager/')
   const isSignLeaseRoute = location.pathname.startsWith('/sign/')
-  const isStandaloneRoute = isManagerRoute || isSignLeaseRoute
+  const isAxisTeamRoute = location.pathname === '/axis-team'
+  const isStandaloneRoute = isManagerRoute || isSignLeaseRoute || isAxisTeamRoute
 
   const showMobileDock = ['/', '/apply', '/contact', '/resident'].includes(location.pathname)
   const showTourPopup = !isStandaloneRoute && location.pathname !== '/apply'
@@ -104,6 +106,7 @@ export default function App() {
             <Route path="/manager" element={<Manager />} />
             <Route path="/manager/*" element={<Manager />} />
             <Route path="/sign/:token" element={<SignLease />} />
+            <Route path="/axis-team" element={<AxisTeam />} />
           </Routes>
         </Suspense>
       </>

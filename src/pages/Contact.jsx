@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { Seo } from '../lib/seo'
 
@@ -25,6 +25,13 @@ function parseTourCalendar(raw) {
   return result
 }
 
+function formatYMD(d) {
+  const y = d.getFullYear()
+  const m = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${y}-${m}-${day}`
+}
+
 // Returns array of {date, display, dayName, slots} for the next `daysAhead` days that have slots
 function getUpcomingDates(daySlotMap, daysAhead = 28) {
   const DAY_ABBR = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
@@ -38,7 +45,7 @@ function getUpcomingDates(daySlotMap, daysAhead = 28) {
     const slots = daySlotMap[dayName] || []
     if (slots.length) {
       dates.push({
-        date: d.toISOString().split('T')[0],
+        date: formatYMD(d),
         display: d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }),
         shortDate: d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
         dayAbbr: d.toLocaleDateString('en-US', { weekday: 'short' }),
@@ -90,26 +97,119 @@ function SuccessCard({ title, body, onReset, resetLabel = 'Submit another' }) {
   )
 }
 
-function DateCalendar({ availableDates, selectedDate, onSelectDate }) {
-  if (!availableDates.length) {
-    return <p className="text-sm text-slate-400 italic">No availability found. We'll coordinate a time after you submit.</p>
+function MonthCalendar({ selectableSet, selectedDate, onSelectDate }) {
+  const [cursor, setCursor] = useState(() => {
+    const t = new Date()
+    return new Date(t.getFullYear(), t.getMonth(), 1)
+  })
+  const year = cursor.getFullYear()
+  const month = cursor.getMonth()
+  const firstDow = new Date(year, month, 1).getDay()
+  const daysInMonth = new Date(year, month + 1, 0).getDate()
+  const today = new Date()
+  today.setHours(0, 0, 0, 0)
+  const dow = ['S', 'M', 'T', 'W', 'T', 'F', 'S']
+  const keyFor = (day) => formatYMD(new Date(year, month, day))
+
+  if (!selectableSet?.size) {
+    return <p className="text-sm text-slate-400 italic">No open slots loaded. Submit your request and we will coordinate a time.</p>
   }
+
   return (
-    <div className="grid gap-2 sm:grid-cols-3 lg:grid-cols-4">
-      {availableDates.map(({ date, dayAbbr, shortDate }) => {
-        const isSelected = selectedDate === date
-        return (
+    <div className="overflow-hidden rounded-2xl border border-slate-200/80 bg-gradient-to-b from-white to-slate-50/90 shadow-[0_12px_40px_rgba(15,23,42,0.06)]">
+      <div className="flex items-center justify-between border-b border-slate-100 bg-white/90 px-3 py-3 sm:px-4">
+        <button type="button" aria-label="Previous month" onClick={() => setCursor(new Date(year, month - 1, 1))}
+          className="flex h-9 w-9 items-center justify-center rounded-xl text-slate-500 transition hover:bg-slate-100 hover:text-slate-900">
+          <svg className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5L8.25 12l7.5-7.5"/></svg>
+        </button>
+        <span className="text-sm font-black tracking-tight text-slate-900">{cursor.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}</span>
+        <button type="button" aria-label="Next month" onClick={() => setCursor(new Date(year, month + 1, 1))}
+          className="flex h-9 w-9 items-center justify-center rounded-xl text-slate-500 transition hover:bg-slate-100 hover:text-slate-900">
+          <svg className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5"/></svg>
+        </button>
+      </div>
+      <div className="grid grid-cols-7 gap-0 border-b border-slate-100 px-2 py-2">
+        {dow.map((d, i) => (
+          <div key={`${d}-${i}`} className="py-1.5 text-center text-[10px] font-bold uppercase tracking-wider text-slate-400">{d}</div>
+        ))}
+      </div>
+      <div className="grid grid-cols-7 gap-1 p-2 sm:gap-1.5 sm:p-3">
+        {Array.from({ length: firstDow }, (_, i) => (
+          <div key={`pad-${i}`} />
+        ))}
+        {Array.from({ length: daysInMonth }, (_, i) => {
+          const day = i + 1
+          const key = keyFor(day)
+          const cellDate = new Date(year, month, day)
+          const isPast = cellDate < today
+          const ok = selectableSet.has(key) && !isPast
+          const sel = selectedDate === key
+          return (
+            <button
+              key={key}
+              type="button"
+              disabled={!ok}
+              onClick={() => ok && onSelectDate(key)}
+              className={`mx-auto flex h-9 w-9 items-center justify-center rounded-xl text-sm font-semibold transition-all sm:h-10 sm:w-10 ${
+                sel
+                  ? 'bg-[#2563eb] text-white shadow-[0_6px_16px_rgba(37,99,235,0.35)]'
+                  : ok
+                    ? 'bg-white text-slate-800 ring-1 ring-slate-200 hover:ring-[#2563eb] hover:text-[#2563eb]'
+                    : 'cursor-not-allowed text-slate-300'
+              }`}
+            >
+              {day}
+            </button>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
+function PropertyRoomPicker({ properties, selectedId, onSelectProperty, room, onSelectRoom }) {
+  const p = properties.find((x) => x.id === selectedId)
+  return (
+    <div className="space-y-5">
+      <div className="text-sm font-semibold text-slate-700">Property</div>
+      <div className="space-y-3">
+        {properties.map((prop) => (
           <button
-            key={date}
+            key={prop.id}
             type="button"
-            onClick={() => onSelectDate(date)}
-            className={`flex flex-col items-center rounded-2xl border px-3 py-3 text-center transition-all ${isSelected ? 'border-[#2563eb] bg-[#2563eb] text-white shadow-[0_12px_24px_rgba(37,99,235,0.18)]' : 'border-slate-200 bg-white text-slate-700 hover:border-[#2563eb]'}`}
+            onClick={() => { onSelectProperty(prop.id); onSelectRoom('') }}
+            className={`group flex w-full items-center justify-between rounded-2xl border bg-white px-5 py-4 text-left transition-all ${
+              selectedId === prop.id ? 'border-[#2563eb] shadow-[0_8px_24px_rgba(37,99,235,0.12)]' : 'border-slate-200 hover:border-[#2563eb] hover:shadow-sm'
+            }`}
           >
-            <span className={`text-[10px] font-bold uppercase tracking-wide ${isSelected ? 'text-white/80' : 'text-slate-400'}`}>{dayAbbr}</span>
-            <span className="text-sm font-semibold">{shortDate}</span>
+            <div className="min-w-0">
+              <div className="font-semibold text-slate-900">{prop.name}</div>
+              <div className="mt-0.5 text-xs text-slate-500">{prop.address}</div>
+              <div className="mt-2 text-xs font-medium text-[#2563eb]">{prop.manager ? `Manager: ${prop.manager}` : 'Manager assigned after inquiry'}</div>
+            </div>
+            <span className={`shrink-0 rounded-full border px-3 py-1 text-xs font-semibold transition ${selectedId === prop.id ? 'border-[#2563eb] bg-[#2563eb] text-white' : 'border-slate-200 text-slate-600 group-hover:border-[#2563eb] group-hover:text-[#2563eb]'}`}>
+              {selectedId === prop.id ? 'Selected' : 'Choose'}
+            </span>
           </button>
-        )
-      })}
+        ))}
+      </div>
+      {p ? (
+        <div>
+          <div className="mb-2 text-sm font-semibold text-slate-700">Room <span className="font-normal text-slate-400">(required)</span></div>
+          <div className="flex flex-wrap gap-2">
+            {p.rooms.map((r) => (
+              <button key={r} type="button" onClick={() => onSelectRoom(r === room ? '' : r)}
+                className={`rounded-xl border px-3 py-2 text-sm font-semibold transition-all ${room === r ? 'border-slate-900 bg-slate-900 text-white' : 'border-slate-200 bg-white text-slate-700 hover:border-slate-400'}`}>
+                {r.replace('Room ', '')}
+              </button>
+            ))}
+            <button type="button" onClick={() => onSelectRoom(room === 'Not sure yet' ? '' : 'Not sure yet')}
+              className={`rounded-xl border px-3 py-2 text-sm font-semibold transition-all ${room === 'Not sure yet' ? 'border-slate-900 bg-slate-900 text-white' : 'border-slate-200 bg-white text-slate-700 hover:border-slate-400'}`}>
+              Not sure yet
+            </button>
+          </div>
+        </div>
+      ) : null}
     </div>
   )
 }
@@ -181,6 +281,7 @@ function HousingScheduler() {
       })()
     : DEFAULT_CALENDAR
   const availableDates = getUpcomingDates(daySlotMap)
+  const selectableSet = useMemo(() => new Set(availableDates.map((d) => d.date)), [availableDates])
   const selectedDateEntry = availableDates.find(d => d.date === selectedDate)
   const currentSlots = selectedDateEntry?.slots || []
 
@@ -239,15 +340,11 @@ function HousingScheduler() {
     />
   )
 
-  const tourSteps = [['1','Property'],['2','Date & Room'],['3','Your Details']]
+  const tourSteps = [['1', 'Property & room'], ['2', 'Date & time'], ['3', 'Your details']]
+  const step1Ready = property && room
 
   return (
     <div>
-      <div className="mb-8">
-        <h2 className="text-3xl font-black tracking-tight text-slate-900">Contact manager</h2>
-        <p className="mt-2 text-sm text-slate-500">Choose a property, pick an open time, and we will send your request to that property manager.</p>
-      </div>
-
       <div className="mb-8 flex items-center gap-2">
         {tourSteps.map(([s, label], idx) => (
           <div key={s} className="flex items-center gap-1.5">
@@ -260,75 +357,38 @@ function HousingScheduler() {
         ))}
       </div>
 
-      {/* Step 1: Choose property */}
       {step === 1 && (
-        <div className="space-y-3">
-          {properties.map((p) => (
-            <button key={p.id} onClick={() => { setProperty(p.id); setRoom(''); setSelectedDate(''); setSelectedTime(''); setStep(2) }}
-              className="group flex w-full items-center justify-between rounded-2xl border border-slate-200 bg-white px-5 py-4 text-left transition-all hover:border-[#2563eb] hover:shadow-sm">
-              <div className="min-w-0">
-                <div className="font-semibold text-slate-900">{p.name}</div>
-                <div className="mt-0.5 text-xs text-slate-500">{p.address}</div>
-                <div className="mt-2 text-xs font-medium text-[#2563eb]">{p.manager ? `Manager: ${p.manager}` : 'Manager assigned after inquiry'}</div>
-              </div>
-              <span className="shrink-0 rounded-full border border-slate-200 px-3 py-1 text-xs font-semibold text-slate-600 transition group-hover:border-[#2563eb] group-hover:text-[#2563eb]">Contact manager</span>
+        <div className="space-y-6">
+          <PropertyRoomPicker
+            properties={properties}
+            selectedId={property}
+            onSelectProperty={setProperty}
+            room={room}
+            onSelectRoom={setRoom}
+          />
+          <div className="flex justify-end gap-3 pt-1">
+            <button type="button" disabled={!step1Ready} onClick={() => step1Ready && setStep(2)}
+              className="rounded-full bg-[linear-gradient(180deg,#2f76ff_0%,#2450eb_100%)] px-6 py-2.5 text-sm font-semibold text-white transition hover:opacity-95 disabled:cursor-not-allowed disabled:opacity-40">
+              Continue
             </button>
-          ))}
+          </div>
         </div>
       )}
 
-      {/* Step 2: Pick date, time slot, room, tour format */}
       {step === 2 && selectedProperty && (
         <div className="space-y-7">
           <div className="rounded-2xl border border-blue-100 bg-blue-50 px-4 py-3 text-sm">
             <div className="font-semibold text-slate-900">{selectedProperty.name}</div>
             <div className="mt-1 text-slate-500">{selectedProperty.address}</div>
-            <div className="mt-2 text-xs font-semibold uppercase tracking-[0.14em] text-[#2563eb]">{selectedProperty.manager ? `Contact manager: ${selectedProperty.manager}` : 'Manager contact available after request'}</div>
+            <div className="mt-1 text-xs text-slate-600"><span className="font-semibold text-slate-700">Room:</span> {room}</div>
+            {selectedProperty.manager ? <div className="mt-2 text-xs font-semibold uppercase tracking-[0.14em] text-[#2563eb]">Manager: {selectedProperty.manager}</div> : null}
           </div>
 
-          {/* Date calendar */}
-          <div>
-            <div className="mb-3 text-sm font-semibold text-slate-700">Choose a date</div>
-            <DateCalendar
-              availableDates={availableDates}
-              selectedDate={selectedDate}
-              onSelectDate={(d) => { setSelectedDate(d); setSelectedTime('') }}
-            />
-          </div>
-
-          {/* Time slots (shown after date selected) */}
-          {selectedDate && (
-            <div>
-              <div className="mb-3 text-sm font-semibold text-slate-700">
-                Available times <span className="font-normal text-slate-400">— {selectedDateEntry?.display}</span>
-              </div>
-              <TimeSlots slots={currentSlots} selectedTime={selectedTime} onSelectTime={setSelectedTime} />
-            </div>
-          )}
-
-          {/* Room picker */}
-          <div>
-            <div className="mb-3 text-sm font-semibold text-slate-700">Which room? <span className="font-normal text-slate-400">(optional)</span></div>
-            <div className="flex flex-wrap gap-2">
-              {selectedProperty.rooms.map((r) => (
-                <button key={r} onClick={() => setRoom(r === room ? '' : r)}
-                  className={`rounded-xl border px-3 py-2 text-sm font-semibold transition-all ${room === r ? 'border-slate-900 bg-slate-900 text-white' : 'border-slate-200 bg-white text-slate-700 hover:border-slate-400'}`}>
-                  {r.replace('Room ', '')}
-                </button>
-              ))}
-              <button onClick={() => setRoom(room === 'Not sure yet' ? '' : 'Not sure yet')}
-                className={`rounded-xl border px-3 py-2 text-sm font-semibold transition-all ${room === 'Not sure yet' ? 'border-slate-900 bg-slate-900 text-white' : 'border-slate-200 bg-white text-slate-700 hover:border-slate-400'}`}>
-                Not sure yet
-              </button>
-            </div>
-          </div>
-
-          {/* Tour format */}
           <div>
             <div className="mb-3 text-sm font-semibold text-slate-700">Tour format</div>
             <div className="flex gap-3">
-              {[['in-person','In-Person'],['virtual','Virtual']].map(([val, label]) => (
-                <button key={val} onClick={() => setTourType(val)}
+              {[['in-person', 'In-person'], ['virtual', 'Virtual']].map(([val, label]) => (
+                <button key={val} type="button" onClick={() => setTourType(val)}
                   className={`flex flex-1 items-center justify-center rounded-xl border px-4 py-3 text-sm font-semibold transition-all ${tourType === val ? 'border-[#2563eb] bg-[#2563eb] text-white' : 'border-slate-200 bg-white text-slate-700 hover:border-[#2563eb]'}`}>
                   {label}
                 </button>
@@ -336,48 +396,63 @@ function HousingScheduler() {
             </div>
           </div>
 
+          <div>
+            <div className="mb-3 text-sm font-semibold text-slate-700">Choose a date</div>
+            <MonthCalendar
+              selectableSet={selectableSet}
+              selectedDate={selectedDate}
+              onSelectDate={(d) => { setSelectedDate(d); setSelectedTime('') }}
+            />
+          </div>
+
+          {selectedDate && (
+            <div>
+              <div className="mb-3 text-sm font-semibold text-slate-700">
+                Times <span className="font-normal text-slate-400">— {selectedDateEntry?.display}</span>
+              </div>
+              <TimeSlots slots={currentSlots} selectedTime={selectedTime} onSelectTime={setSelectedTime} />
+            </div>
+          )}
+
           <div className="flex gap-3 pt-1">
-            <button onClick={() => setStep(1)} className="rounded-full border border-slate-200 px-5 py-2.5 text-sm font-semibold text-slate-600 hover:border-slate-400">Back</button>
-            <button onClick={() => setStep(3)}
-              className="rounded-full bg-[linear-gradient(180deg,#2f76ff_0%,#2450eb_100%)] px-6 py-2.5 text-sm font-semibold text-white transition hover:opacity-95">
+            <button type="button" onClick={() => setStep(1)} className="rounded-full border border-slate-200 px-5 py-2.5 text-sm font-semibold text-slate-600 hover:border-slate-400">Back</button>
+            <button type="button" onClick={() => setStep(3)} disabled={!selectedDate || !selectedTime}
+              className="rounded-full bg-[linear-gradient(180deg,#2f76ff_0%,#2450eb_100%)] px-6 py-2.5 text-sm font-semibold text-white transition hover:opacity-95 disabled:cursor-not-allowed disabled:opacity-40">
               Continue
             </button>
           </div>
         </div>
       )}
 
-      {/* Step 3: Contact details */}
       {step === 3 && (
         <div className="space-y-4">
           {selectedProperty && (
             <div className="mb-2 flex items-center justify-between rounded-2xl border border-slate-100 bg-slate-50 px-4 py-2.5 text-sm">
               <div className="flex flex-wrap items-center gap-2">
                 <span className="font-semibold text-slate-900">{selectedProperty.name}</span>
-                {selectedProperty.manager ? <><span className="text-slate-300">·</span><span className="text-[#2563eb]">Manager: {selectedProperty.manager}</span></> : null}
                 {room ? <><span className="text-slate-300">·</span><span className="text-slate-600">{room}</span></> : null}
                 {selectedDate ? <><span className="text-slate-300">·</span><span className="text-slate-600">{selectedDateEntry?.display}</span></> : null}
                 {selectedTime ? <><span className="text-slate-300">·</span><span className="text-slate-600">{selectedTime}</span></> : null}
-                <span className="text-slate-300">·</span><span className="text-slate-600">{tourType === 'in-person' ? 'In-Person' : 'Virtual'}</span>
+                <span className="text-slate-300">·</span><span className="text-slate-600">{tourType === 'in-person' ? 'In-person' : 'Virtual'}</span>
               </div>
-              <button onClick={() => setStep(2)} className="ml-2 shrink-0 text-xs font-semibold text-slate-400 hover:text-slate-700">Edit</button>
+              <button type="button" onClick={() => setStep(2)} className="ml-2 shrink-0 text-xs font-semibold text-slate-400 hover:text-slate-700">Edit</button>
             </div>
           )}
           <ContactFields form={form} setField={setField} />
           <div>
             <label className="mb-1.5 block text-xs font-semibold text-slate-700">
-              Questions or notes?
-              <span className="ml-1 font-normal text-slate-400">(optional)</span>
+              Notes <span className="font-normal text-slate-400">(optional)</span>
             </label>
             <textarea className={`${inputCls} min-h-[90px] resize-y`}
-              placeholder="Anything specific you'd like to know…"
+              placeholder="Anything we should know…"
               value={form.notes} onChange={e => setField('notes', e.target.value)} />
           </div>
           {submitError && <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{submitError}</div>}
           <div className="flex gap-3 pt-2">
-            <button onClick={() => setStep(2)} className="rounded-full border border-slate-200 px-5 py-2.5 text-sm font-semibold text-slate-600 hover:border-slate-400">Back</button>
-            <button onClick={handleSchedule} disabled={!form.name.trim() || !form.email.trim() || submitting}
-              className="flex-1 rounded-full bg-[linear-gradient(180deg,#2f76ff_0%,#2450eb_100%)] py-3 text-sm font-semibold text-white shadow-[0_8px_20px_rgba(37,99,235,0.25)] hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed transition-opacity">
-              {submitting ? 'Sending…' : 'Request Tour'}
+            <button type="button" onClick={() => setStep(2)} className="rounded-full border border-slate-200 px-5 py-2.5 text-sm font-semibold text-slate-600 hover:border-slate-400">Back</button>
+            <button type="button" onClick={handleSchedule} disabled={!form.name.trim() || !form.email.trim() || submitting}
+              className="flex-1 rounded-full bg-[linear-gradient(180deg,#2f76ff_0%,#2450eb_100%)] py-3 text-sm font-semibold text-white shadow-[0_8px_20px_rgba(37,99,235,0.25)] hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40 transition-opacity">
+              {submitting ? 'Sending…' : 'Request tour'}
             </button>
           </div>
         </div>
@@ -389,20 +464,44 @@ function HousingScheduler() {
 // ── Housing message form ──────────────────────────────────────────────────────
 
 function HousingMessageForm() {
+  const [properties, setProperties] = useState(DEFAULT_PROPERTIES)
+  const [property, setProperty] = useState(null)
+  const [room, setRoom] = useState('')
   const [form, setFormState] = useState({ name: '', email: '', phone: '', message: '' })
   const [submitting, setSubmitting] = useState(false)
   const [submitted, setSubmitted] = useState(false)
   const [error, setError] = useState('')
 
+  const selectedProperty = properties.find((p) => p.id === property)
+
   function set(k, v) { setFormState(prev => ({ ...prev, [k]: v })) }
 
+  useEffect(() => {
+    let cancelled = false
+    fetch('/api/tour')
+      .then((r) => r.json())
+      .then((data) => {
+        if (cancelled) return
+        const next = Array.isArray(data?.properties) && data.properties.length ? data.properties : DEFAULT_PROPERTIES
+        setProperties(next.map((p) => ({ ...p, rooms: p.rooms || DEFAULT_PROPERTIES.find((f) => f.id === p.id)?.rooms || [] })))
+      })
+      .catch(() => { if (!cancelled) setProperties(DEFAULT_PROPERTIES) })
+    return () => { cancelled = true }
+  }, [])
+
   async function handleSubmit(e) {
-    e.preventDefault(); setSubmitting(true); setError('')
+    e.preventDefault()
+    if (!property || !room) {
+      setError('Choose a property and room.')
+      return
+    }
+    setSubmitting(true); setError('')
+    const header = `Property: ${selectedProperty?.name || ''}\nRoom: ${room}\n\n`
     try {
       const res = await fetch(`https://api.airtable.com/v0/${AIRTABLE_BASE_ID}/Inquiries`, {
         method: 'POST',
         headers: { Authorization: `Bearer ${AIRTABLE_TOKEN}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ fields: { 'Full Name': form.name, 'Email': form.email, 'Phone Number': form.phone, 'Inquiry Type': 'Housing', 'Message Summary': form.message }, typecast: true }),
+        body: JSON.stringify({ fields: { 'Full Name': form.name, 'Email': form.email, 'Phone Number': form.phone, 'Inquiry Type': 'Housing', 'Message Summary': header + form.message }, typecast: true }),
       })
       if (!res.ok) throw new Error(`Error ${res.status}`)
       setSubmitted(true)
@@ -415,11 +514,22 @@ function HousingMessageForm() {
 
   if (submitted) return (
     <SuccessCard title="Message sent!" body={`We'll follow up at ${form.email} within 2 business days.`}
-      onReset={() => { setSubmitted(false); setFormState({ name: '', email: '', phone: '', message: '' }) }} resetLabel="Send another" />
+      onReset={() => {
+        setSubmitted(false)
+        setProperty(null); setRoom('')
+        setFormState({ name: '', email: '', phone: '', message: '' })
+      }} resetLabel="Send another" />
   )
 
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
+      <PropertyRoomPicker
+        properties={properties}
+        selectedId={property}
+        onSelectProperty={setProperty}
+        room={room}
+        onSelectRoom={setRoom}
+      />
       <div className="grid gap-4 sm:grid-cols-2">
         <div>
           <label className="mb-1.5 block text-xs font-semibold text-slate-700">Name <span className="text-axis">*</span></label>
@@ -452,9 +562,10 @@ function DemoScheduler() {
   const [staff, setStaff] = useState([])
   const [staffLoading, setStaffLoading] = useState(true)
   const [selectedStaff, setSelectedStaff] = useState(null)
+  const [meetingFormat, setMeetingFormat] = useState('in-person')
   const [selectedDate, setSelectedDate] = useState('')
   const [selectedTime, setSelectedTime] = useState('')
-  const [step, setStep] = useState(1) // 1=pick staff, 2=pick date/time, 3=contact form
+  const [step, setStep] = useState(1)
   const [form, setFormState] = useState({ name: '', email: '', phone: '', company: '', notes: '' })
   const [submitting, setSubmitting] = useState(false)
   const [submitted, setSubmitted] = useState(false)
@@ -465,7 +576,6 @@ function DemoScheduler() {
   const staffDaySlotMap = selectedStaff
     ? (() => {
         const parsed = parseTourCalendar(selectedStaff.availability)
-        // If no availability set, use a default M-F schedule
         const DEFAULT_STAFF = {
           Mon: ['9:00 AM', '10:00 AM', '2:00 PM', '3:00 PM'],
           Tue: ['9:00 AM', '11:00 AM', '2:00 PM'],
@@ -479,6 +589,7 @@ function DemoScheduler() {
     : {}
 
   const availableDates = selectedStaff ? getUpcomingDates(staffDaySlotMap, 28) : []
+  const selectableSet = useMemo(() => new Set(availableDates.map((d) => d.date)), [availableDates])
   const selectedDateEntry = availableDates.find(d => d.date === selectedDate)
   const currentSlots = selectedDateEntry?.slots || []
 
@@ -493,13 +604,14 @@ function DemoScheduler() {
   }, [])
 
   function reset() {
-    setSelectedStaff(null); setSelectedDate(''); setSelectedTime(''); setStep(1)
+    setSelectedStaff(null); setMeetingFormat('in-person'); setSelectedDate(''); setSelectedTime(''); setStep(1)
     setFormState({ name: '', email: '', phone: '', company: '', notes: '' })
     setSubmitted(false); setSubmitError('')
   }
 
   async function handleSubmit() {
     setSubmitting(true); setSubmitError('')
+    const fmt = meetingFormat === 'virtual' ? 'Virtual' : 'In-person'
     try {
       const res = await fetch('/api/demo', {
         method: 'POST',
@@ -510,6 +622,35 @@ function DemoScheduler() {
           staffId: selectedStaff?.id || '',
           staffName: selectedStaff?.name || '',
           preferredDate: selectedDate, preferredTime: selectedTime,
+          meetingFormat: fmt,
+          bookingType: 'Software Meeting',
+          notes: form.notes.trim(),
+        }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Submission failed.')
+      setSubmitted(true)
+    } catch (err) {
+      setSubmitError(err.message || 'Could not submit. Please try again.')
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  async function handleSubmitNoStaff() {
+    setSubmitting(true); setSubmitError('')
+    const fmt = meetingFormat === 'virtual' ? 'Virtual' : 'In-person'
+    try {
+      const res = await fetch('/api/demo', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: form.name.trim(), email: form.email.trim(), phone: form.phone.trim(),
+          company: form.company.trim(),
+          staffId: '', staffName: '',
+          preferredDate: '', preferredTime: '',
+          meetingFormat: fmt,
+          bookingType: 'Software Meeting',
           notes: form.notes.trim(),
         }),
       })
@@ -525,17 +666,16 @@ function DemoScheduler() {
 
   if (submitted) return (
     <SuccessCard
-      title="Demo request sent!"
+      title="Meeting request sent!"
       body={`We'll reach out to ${form.email} to confirm within 1 business day.`}
       onReset={reset}
     />
   )
 
-  const demoSteps = [['1','Who you\'ll meet'],['2','Pick a time'],['3','Your details']]
+  const demoSteps = [['1', 'Who you\'ll meet'], ['2', 'Time'], ['3', 'Your details']]
 
   return (
     <div>
-      {/* Step progress */}
       <div className="mb-8 flex items-center gap-2">
         {demoSteps.map(([s, label], idx) => (
           <div key={s} className="flex items-center gap-1.5">
@@ -548,49 +688,58 @@ function DemoScheduler() {
         ))}
       </div>
 
-      {/* Step 1: Pick staff member */}
       {step === 1 && (
         <div>
           {staffLoading ? (
             <div className="flex items-center gap-2 py-8 text-sm text-slate-400">
               <svg className="h-4 w-4 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>
-              Loading availability…
+              Loading…
             </div>
           ) : staff.length === 0 ? (
-            // No staff configured — skip to contact form
             <div className="space-y-4">
-              <p className="text-sm text-slate-500">Tell us about your portfolio and we'll match you with the right person.</p>
+              <p className="text-sm text-slate-500">No calendar staff loaded. Leave your details and we will schedule manually.</p>
+              <div>
+                <div className="mb-3 text-sm font-semibold text-slate-700">Meeting format</div>
+                <div className="flex gap-3">
+                  {[['in-person', 'In-person'], ['virtual', 'Virtual']].map(([val, label]) => (
+                    <button key={val} type="button" onClick={() => setMeetingFormat(val)}
+                      className={`flex flex-1 items-center justify-center rounded-xl border px-4 py-3 text-sm font-semibold transition-all ${meetingFormat === val ? 'border-[#2563eb] bg-[#2563eb] text-white' : 'border-slate-200 bg-white text-slate-700 hover:border-[#2563eb]'}`}>
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              </div>
               <ContactFields form={form} setField={setField} />
               <div>
-                <label className="mb-1.5 block text-xs font-semibold text-slate-700">Company / Portfolio name</label>
+                <label className="mb-1.5 block text-xs font-semibold text-slate-700">Company</label>
                 <input className={inputCls} placeholder="Smith Properties" value={form.company} onChange={e => setField('company', e.target.value)} />
               </div>
               <div>
-                <label className="mb-1.5 block text-xs font-semibold text-slate-700">What are you looking for? <span className="text-axis">*</span></label>
-                <textarea className={`${inputCls} min-h-[100px] resize-y`} placeholder="Tell us about your properties and what you'd like Axis to help with…" value={form.notes} onChange={e => setField('notes', e.target.value)} />
+                <label className="mb-1.5 block text-xs font-semibold text-slate-700">What should we prepare? <span className="text-axis">*</span></label>
+                <textarea className={`${inputCls} min-h-[100px] resize-y`} placeholder="Portfolio size, goals, questions…" value={form.notes} onChange={e => setField('notes', e.target.value)} />
               </div>
               {submitError && <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{submitError}</div>}
-              <button onClick={handleSubmit} disabled={!form.name.trim() || !form.email.trim() || !form.notes.trim() || submitting}
-                className="w-full rounded-full bg-[linear-gradient(180deg,#2f76ff_0%,#2450eb_100%)] py-3.5 text-sm font-semibold text-white shadow-[0_8px_20px_rgba(37,99,235,0.25)] hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed transition-opacity">
-                {submitting ? 'Sending…' : 'Request a demo'}
+              <button type="button" onClick={handleSubmitNoStaff} disabled={!form.name.trim() || !form.email.trim() || !form.notes.trim() || submitting}
+                className="w-full rounded-full bg-[linear-gradient(180deg,#2f76ff_0%,#2450eb_100%)] py-3.5 text-sm font-semibold text-white shadow-[0_8px_20px_rgba(37,99,235,0.25)] hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40 transition-opacity">
+                {submitting ? 'Sending…' : 'Request meeting'}
               </button>
             </div>
           ) : (
             <div>
-              <p className="mb-4 text-sm text-slate-500">Choose who you'd like to meet with for your demo.</p>
+              <p className="mb-4 text-sm text-slate-500">Pick someone from the Axis software team.</p>
               <div className="space-y-3">
                 {staff.map((s) => (
-                  <button key={s.id} onClick={() => { setSelectedStaff(s); setSelectedDate(''); setSelectedTime(''); setStep(2) }}
+                  <button key={s.id} type="button" onClick={() => { setSelectedStaff(s); setSelectedDate(''); setSelectedTime(''); setStep(2) }}
                     className="group flex w-full items-center gap-4 rounded-2xl border border-slate-200 bg-white px-5 py-4 text-left transition-all hover:border-[#2563eb] hover:shadow-sm">
                     <div className="flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-full bg-slate-100">
                       {s.avatarUrl
                         ? <img src={s.avatarUrl} alt={s.name} className="h-full w-full object-cover" />
                         : <span className="text-base font-bold text-slate-500">{s.name.charAt(0)}</span>}
                     </div>
-                    <div className="flex-1 min-w-0">
+                    <div className="min-w-0 flex-1">
                       <div className="font-semibold text-slate-900">{s.name}</div>
                       {s.role ? <div className="text-xs text-slate-500">{s.role}</div> : null}
-                      {s.bio  ? <div className="mt-0.5 truncate text-xs text-slate-400">{s.bio}</div> : null}
+                      {s.bio ? <div className="mt-0.5 truncate text-xs text-slate-400">{s.bio}</div> : null}
                     </div>
                     <svg className="h-4 w-4 shrink-0 text-slate-400 group-hover:text-slate-900" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7"/></svg>
                   </button>
@@ -601,7 +750,6 @@ function DemoScheduler() {
         </div>
       )}
 
-      {/* Step 2: Pick date and time */}
       {step === 2 && selectedStaff && (
         <div className="space-y-7">
           <div className="flex items-center gap-3 rounded-2xl border border-slate-100 bg-slate-50 px-4 py-3">
@@ -610,17 +758,29 @@ function DemoScheduler() {
                 ? <img src={selectedStaff.avatarUrl} alt={selectedStaff.name} className="h-full w-full object-cover" />
                 : <span className="text-sm font-bold text-slate-500">{selectedStaff.name.charAt(0)}</span>}
             </div>
-            <div className="flex-1">
+            <div className="min-w-0 flex-1">
               <div className="text-sm font-semibold text-slate-900">{selectedStaff.name}</div>
               {selectedStaff.role ? <div className="text-xs text-slate-500">{selectedStaff.role}</div> : null}
             </div>
-            <button onClick={() => setStep(1)} className="text-xs font-semibold text-slate-400 hover:text-slate-700">Change</button>
+            <button type="button" onClick={() => setStep(1)} className="shrink-0 text-xs font-semibold text-slate-400 hover:text-slate-700">Change</button>
+          </div>
+
+          <div>
+            <div className="mb-3 text-sm font-semibold text-slate-700">Meeting format</div>
+            <div className="flex gap-3">
+              {[['in-person', 'In-person'], ['virtual', 'Virtual']].map(([val, label]) => (
+                <button key={val} type="button" onClick={() => setMeetingFormat(val)}
+                  className={`flex flex-1 items-center justify-center rounded-xl border px-4 py-3 text-sm font-semibold transition-all ${meetingFormat === val ? 'border-[#2563eb] bg-[#2563eb] text-white' : 'border-slate-200 bg-white text-slate-700 hover:border-[#2563eb]'}`}>
+                  {label}
+                </button>
+              ))}
+            </div>
           </div>
 
           <div>
             <div className="mb-3 text-sm font-semibold text-slate-700">Choose a date</div>
-            <DateCalendar
-              availableDates={availableDates}
+            <MonthCalendar
+              selectableSet={selectableSet}
               selectedDate={selectedDate}
               onSelectDate={(d) => { setSelectedDate(d); setSelectedTime('') }}
             />
@@ -629,50 +789,51 @@ function DemoScheduler() {
           {selectedDate && (
             <div>
               <div className="mb-3 text-sm font-semibold text-slate-700">
-                Available times <span className="font-normal text-slate-400">— {selectedDateEntry?.display}</span>
+                Times <span className="font-normal text-slate-400">— {selectedDateEntry?.display}</span>
               </div>
               <TimeSlots slots={currentSlots} selectedTime={selectedTime} onSelectTime={setSelectedTime} />
             </div>
           )}
 
           <div className="flex gap-3 pt-1">
-            <button onClick={() => setStep(1)} className="rounded-full border border-slate-200 px-5 py-2.5 text-sm font-semibold text-slate-600 hover:border-slate-400">Back</button>
-            <button onClick={() => setStep(3)} disabled={!selectedDate || !selectedTime}
-              className="rounded-full bg-slate-900 px-6 py-2.5 text-sm font-semibold text-white hover:bg-slate-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors">
+            <button type="button" onClick={() => setStep(1)} className="rounded-full border border-slate-200 px-5 py-2.5 text-sm font-semibold text-slate-600 hover:border-slate-400">Back</button>
+            <button type="button" onClick={() => setStep(3)} disabled={!selectedDate || !selectedTime}
+              className="rounded-full bg-slate-900 px-6 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-40">
               Continue
             </button>
           </div>
         </div>
       )}
 
-      {/* Step 3: Contact form */}
       {step === 3 && (
         <div className="space-y-4">
           {selectedStaff && (
             <div className="mb-2 flex items-center justify-between rounded-2xl border border-slate-100 bg-slate-50 px-4 py-2.5 text-sm">
               <div className="flex flex-wrap items-center gap-2">
                 <span className="font-semibold text-slate-900">{selectedStaff.name}</span>
+                <span className="text-slate-300">·</span>
+                <span className="text-slate-600">{meetingFormat === 'virtual' ? 'Virtual' : 'In-person'}</span>
                 {selectedDate ? <><span className="text-slate-300">·</span><span className="text-slate-600">{selectedDateEntry?.display}</span></> : null}
                 {selectedTime ? <><span className="text-slate-300">·</span><span className="text-slate-600">{selectedTime}</span></> : null}
               </div>
-              <button onClick={() => setStep(2)} className="ml-2 shrink-0 text-xs font-semibold text-slate-400 hover:text-slate-700">Edit</button>
+              <button type="button" onClick={() => setStep(2)} className="ml-2 shrink-0 text-xs font-semibold text-slate-400 hover:text-slate-700">Edit</button>
             </div>
           )}
           <ContactFields form={form} setField={setField} />
           <div>
-            <label className="mb-1.5 block text-xs font-semibold text-slate-700">Company / Portfolio name</label>
+            <label className="mb-1.5 block text-xs font-semibold text-slate-700">Company</label>
             <input className={inputCls} placeholder="Smith Properties" value={form.company} onChange={e => setField('company', e.target.value)} />
           </div>
           <div>
-            <label className="mb-1.5 block text-xs font-semibold text-slate-700">Anything you'd like us to know? <span className="font-normal text-slate-400">(optional)</span></label>
-            <textarea className={`${inputCls} min-h-[90px] resize-y`} placeholder="Number of properties, current tooling, goals…" value={form.notes} onChange={e => setField('notes', e.target.value)} />
+            <label className="mb-1.5 block text-xs font-semibold text-slate-700">Notes <span className="font-normal text-slate-400">(optional)</span></label>
+            <textarea className={`${inputCls} min-h-[90px] resize-y`} placeholder="Context for the call…" value={form.notes} onChange={e => setField('notes', e.target.value)} />
           </div>
           {submitError && <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{submitError}</div>}
           <div className="flex gap-3 pt-2">
-            <button onClick={() => setStep(2)} className="rounded-full border border-slate-200 px-5 py-2.5 text-sm font-semibold text-slate-600 hover:border-slate-400">Back</button>
-            <button onClick={handleSubmit} disabled={!form.name.trim() || !form.email.trim() || submitting}
-              className="flex-1 rounded-full bg-[linear-gradient(180deg,#2f76ff_0%,#2450eb_100%)] py-3 text-sm font-semibold text-white shadow-[0_8px_20px_rgba(37,99,235,0.25)] hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed transition-opacity">
-              {submitting ? 'Sending…' : 'Request Demo'}
+            <button type="button" onClick={() => setStep(2)} className="rounded-full border border-slate-200 px-5 py-2.5 text-sm font-semibold text-slate-600 hover:border-slate-400">Back</button>
+            <button type="button" onClick={handleSubmit} disabled={!form.name.trim() || !form.email.trim() || submitting}
+              className="flex-1 rounded-full bg-[linear-gradient(180deg,#2f76ff_0%,#2450eb_100%)] py-3 text-sm font-semibold text-white shadow-[0_8px_20px_rgba(37,99,235,0.25)] hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40 transition-opacity">
+              {submitting ? 'Sending…' : 'Request meeting'}
             </button>
           </div>
         </div>
@@ -768,7 +929,7 @@ export default function Contact() {
   const location = useLocation()
   const [section, setSection] = useState('software')
   const [housingTab, setHousingTab] = useState('schedule')
-  const [softwareTab, setSoftwareTab] = useState('demo')
+  const [softwareTab, setSoftwareTab] = useState('meeting')
 
   useEffect(() => {
     const params = new URLSearchParams(location.search)
@@ -778,7 +939,7 @@ export default function Contact() {
 
     let nextSection = 'software'
     let nextHousingTab = 'schedule'
-    let nextSoftwareTab = 'demo'
+    let nextSoftwareTab = 'meeting'
 
     if (sectionParam === 'housing') {
       nextSection = 'housing'
@@ -796,6 +957,8 @@ export default function Contact() {
 
     if (nextSection === 'software' && tabParam === 'message') {
       nextSoftwareTab = 'message'
+    } else if (nextSection === 'software' && (tabParam === 'demo' || tabParam === 'meeting')) {
+      nextSoftwareTab = 'meeting'
     }
 
     setSection(nextSection)
@@ -807,7 +970,7 @@ export default function Contact() {
     <div className="bg-[linear-gradient(180deg,#edf2fb_0%,#eef3fb_48%,#f6f9fe_100%)]">
       <Seo
         title="Contact Axis | Housing Tours and Software Inquiries"
-        description="Schedule a property tour or reach out about the Axis property management platform."
+        description="Book a housing tour or ask about the Axis platform."
         pathname="/contact"
       />
       <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 sm:py-12">
@@ -817,8 +980,8 @@ export default function Contact() {
           {section === 'housing' && (
             <div>
               <div className="mb-6 border-b border-slate-100 pb-5">
-                <h2 className="text-3xl font-black tracking-tight text-slate-900">Contact manager</h2>
-                <p className="mt-2 text-sm text-slate-500">Schedule a tour or send a question directly to the property manager.</p>
+                <h2 className="text-3xl font-black tracking-tight text-slate-900">Housing</h2>
+                <p className="mt-2 text-sm text-slate-500">Book a visit or send a message about a listing.</p>
               </div>
               <TabBar
                 tabs={[{ id: 'schedule', label: 'Set up tour' }, { id: 'message', label: 'Send message' }]}
@@ -836,10 +999,10 @@ export default function Contact() {
                 <h2 className="text-3xl font-black tracking-tight text-slate-900">Connect with Axis Team</h2>
               </div>
               <TabBar
-                tabs={[{ id: 'demo', label: 'Request a Demo' }, { id: 'message', label: 'Send a Message' }]}
+                tabs={[{ id: 'meeting', label: 'Set up meeting' }, { id: 'message', label: 'Send a message' }]}
                 active={softwareTab} onChange={setSoftwareTab}
               />
-              {softwareTab === 'demo'    && <DemoScheduler />}
+              {softwareTab === 'meeting' && <DemoScheduler />}
               {softwareTab === 'message' && <SoftwareMessageForm />}
             </div>
           )}
