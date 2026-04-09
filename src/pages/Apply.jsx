@@ -1259,6 +1259,10 @@ export default function Apply() {
     try {
       let savedRecord = null
       if (applicationType === 'signer') {
+        if (!feePrePaid) {
+          throw new Error('Application fee must be paid before submitting.')
+        }
+
         if (!signer.consent) {
           throw new Error('The signer must consent to the credit and background check before submitting.')
         }
@@ -1575,21 +1579,6 @@ export default function Apply() {
     const deposit = getSecurityDeposit(propertyName, monthlyRent)
     const moveInTotal = (monthlyRent || 0) + deposit
     const moveInDone = paymentStatus === 'success' && leaseStep === 'payment'
-    const leaseTerm = submissionSummary?.leaseTerm || signer.leaseTerm || ''
-    const promoEligible = leaseTerm === '9-Month' || leaseTerm === '12-Month'
-    const feeCleared = appFeePaid || promoApplied
-
-    function handleApplyPromo() {
-      const code = promoInput.trim().toUpperCase()
-      if (!code) { setPromoError('Enter a promo code.'); return }
-      if (code !== 'APPLICATIONWAIVE') { setPromoError('Invalid promo code.'); return }
-      if (!promoEligible) {
-        setPromoError('This promo code is only valid for 9-Month or 12-Month leases.')
-        return
-      }
-      setPromoApplied(true)
-      setPromoError('')
-    }
 
     function clearStoredSubmission() {
       if (typeof window !== 'undefined') {
@@ -1672,79 +1661,7 @@ export default function Apply() {
             </div>
           )}
 
-          {/* Application fee */}
           {isSigner && (
-            <div className={`mt-4 overflow-hidden rounded-2xl border shadow-sm transition-all ${feeCleared ? 'border-teal-200 bg-teal-50' : 'border-slate-200 bg-white'}`}>
-              <div className="px-5 pt-5 pb-4">
-                <div className="flex items-center justify-between gap-3">
-                  <div>
-                    <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">Application Fee</div>
-                    {promoApplied ? (
-                      <div className="mt-1 flex items-center gap-2">
-                        <span className="text-2xl font-black text-teal-600">$0</span>
-                        <span className="rounded-full bg-teal-100 px-2.5 py-0.5 text-xs font-bold text-teal-700">Waived</span>
-                      </div>
-                    ) : (
-                      <span className="mt-1 block text-2xl font-black text-slate-900">{appFeePaid ? <span className="text-teal-600">Paid</span> : '$50'}</span>
-                    )}
-                    <p className="mt-0.5 text-xs text-slate-500">
-                      {feeCleared ? 'Application fee cleared — you may proceed.' : 'Non-refundable application processing fee.'}
-                    </p>
-                  </div>
-                  {feeCleared ? (
-                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-teal-500">
-                      <svg className="h-5 w-5 text-white" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7"/></svg>
-                    </div>
-                  ) : (
-                    <button type="button" onClick={handleApplicationFeeCheckout} disabled={paymentLoading}
-                      className="rounded-full bg-slate-900 px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:opacity-50 shrink-0">
-                      {paymentLoading ? 'Opening…' : 'Pay $50'}
-                    </button>
-                  )}
-                </div>
-                {paymentError && <p className="mt-3 rounded-xl bg-red-50 px-4 py-2.5 text-sm text-red-700">{paymentError}</p>}
-                {paymentStatus === 'fee_cancelled' && !feeCleared && (
-                  <p className="mt-3 rounded-xl bg-amber-50 px-4 py-2.5 text-sm text-amber-700">Payment was cancelled. Retry below or apply a promo code.</p>
-                )}
-              </div>
-
-              {/* Promo code */}
-              {!feeCleared && (
-                <div className="border-t border-slate-100 px-5 pb-5 pt-4">
-                  <p className="mb-2 text-xs font-semibold text-slate-500">Have a promo code?</p>
-                  <div className="flex gap-2">
-                    <input
-                      type="text"
-                      value={promoInput}
-                      onChange={(e) => { setPromoInput(e.target.value); setPromoError('') }}
-                      placeholder="Enter code"
-                      className="min-w-0 flex-1 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm text-slate-900 placeholder-slate-400 outline-none transition focus:border-axis focus:ring-2 focus:ring-axis/20 uppercase"
-                      onKeyDown={(e) => e.key === 'Enter' && handleApplyPromo()}
-                    />
-                    <button type="button" onClick={handleApplyPromo}
-                      className="shrink-0 rounded-xl bg-slate-800 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-slate-700">
-                      Apply
-                    </button>
-                  </div>
-                  {promoError && <p className="mt-2 text-xs text-red-600">{promoError}</p>}
-                  {!promoEligible && (
-                    <p className="mt-1.5 text-xs text-slate-400">Promo codes are only valid for 9-Month and 12-Month leases.</p>
-                  )}
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* 3-step move-in flow — only for signers who have cleared the app fee */}
-          {isSigner && !feeCleared && (
-            <div className="mt-5 rounded-2xl border border-slate-200 bg-slate-50 px-5 py-4">
-              <p className="text-sm text-slate-500">
-                Pay the application fee (or apply a promo code) to unlock the move-in steps below.
-              </p>
-            </div>
-          )}
-
-          {isSigner && feeCleared && (
             <div className="mt-8">
               <h2 className="mb-5 text-lg font-bold text-slate-900">Move-In Steps</h2>
 
