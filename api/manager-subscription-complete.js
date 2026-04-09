@@ -175,9 +175,9 @@ export default async function handler(req, res) {
     let manager = await getManagerByEmail(email)
     if (!manager) {
       manager = await createManager({
-        Label: name || email.split('@')[0],
+        Name: name || email.split('@')[0],
         Email: email,
-        Role: 'Manager',
+        tier: details.planType,
         Active: true,
         Notes: mergeManagerNotes('', {
           phone,
@@ -196,8 +196,11 @@ export default async function handler(req, res) {
       nextFields['Manager ID'] = derivedManagerId
     }
 
-    if (!manager.Label && name) {
-      nextFields.Label = name
+    if (!manager.Name && name) {
+      nextFields.Name = name
+    }
+    if (manager.tier !== details.planType) {
+      nextFields.tier = details.planType
     }
 
     const nextNotes = mergeManagerNotes(manager.Notes, {
@@ -215,16 +218,9 @@ export default async function handler(req, res) {
       manager = await updateManager(manager.id, nextFields)
     }
 
-    // Attempt to save Plan as a dedicated field — requires a Plan column in Airtable.
-    try {
-      await updateManager(manager.id, { Plan: details.planType })
-    } catch {
-      // Column doesn't exist yet — plan is already captured in Notes
-    }
-
     return res.status(200).json({
       email,
-      name: manager.Label || name || email.split('@')[0],
+      name: manager.Name || name || email.split('@')[0],
       phone: extractManagerPhone(manager, phone),
       managerId: derivedManagerId,
       accountExists: Boolean(manager.Password),

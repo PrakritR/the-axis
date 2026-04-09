@@ -146,32 +146,28 @@ export default async function handler(req, res) {
 
     if (!manager) {
       manager = await createManager({
-        Label: normalizedName,
+        Name: normalizedName,
         Email: normalizedEmail,
-        Role: 'Manager',
+        tier: details.planType,
         Active: true,
         Notes: nextNotes,
       })
     } else {
       const nextFields = {}
 
-      if (!manager.Label && normalizedName) {
-        nextFields.Label = normalizedName
+      if (!manager.Name && normalizedName) {
+        nextFields.Name = normalizedName
       }
       if (nextNotes !== String(manager.Notes || '').trim()) {
         nextFields.Notes = nextNotes
+      }
+      if (manager.tier !== details.planType) {
+        nextFields.tier = details.planType
       }
 
       if (Object.keys(nextFields).length > 0) {
         manager = await updateManager(manager.id, nextFields)
       }
-    }
-
-    // Attempt to save Plan as a dedicated field — requires a Plan column in Airtable.
-    try {
-      await updateManager(manager.id, { Plan: details.planType })
-    } catch {
-      // Column doesn't exist yet — plan is already captured in Notes
     }
 
     const managerId = manager['Manager ID'] || deriveManagerId(manager.id)
@@ -180,7 +176,7 @@ export default async function handler(req, res) {
     }
 
     return res.status(200).json({
-      name: manager.Label || normalizedName,
+      name: manager.Name || normalizedName,
       email: normalizedEmail,
       phone: String(manager.Phone || '').trim() || extractPhoneFromNotes(manager.Notes) || normalizedPhone,
       managerId,

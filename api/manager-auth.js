@@ -138,9 +138,9 @@ export default async function handler(req, res) {
       manager: {
         id: manager.id,
         managerId: derivedManagerId,
-        name: manager.Label || '',
+        name: manager.Name || '',
         email: manager.Email || '',
-        role: manager.Role || 'Manager',
+        planType: manager.tier || '',
       },
     })
   } catch (err) {

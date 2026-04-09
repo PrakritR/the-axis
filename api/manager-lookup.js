@@ -64,11 +64,11 @@ export default async function handler(req, res) {
 
     return res.status(200).json({
       managerId,
-      name: manager.Label || '',
+      name: manager.Name || '',
       email: manager.Email || '',
       phone: String(manager.Phone || '').trim() || extractPhoneFromNotes(manager.Notes),
       accountExists: Boolean(manager.Password),
-      planType: extractMetadataValue(manager.Notes, 'Plan') || '',
+      planType: manager.tier || extractMetadataValue(manager.Notes, 'Plan') || '',
       billingInterval: extractMetadataValue(manager.Notes, 'Billing') || '',
       houseAccess: extractMetadataValue(manager.Notes, 'House Access') || '',
       platformAccess: extractMetadataValue(manager.Notes, 'Platform Access') || '',

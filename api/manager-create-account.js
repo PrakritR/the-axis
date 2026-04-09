@@ -149,21 +149,19 @@ export default async function handler(req, res) {
 
     const updated = await updateManager(manager.id, {
       'Manager ID': normalizedManagerId,
-      Label: normalizedName || manager.Label || normalizedEmail.split('@')[0],
+      Name: normalizedName || manager.Name || normalizedEmail.split('@')[0],
       Password: password,
       Active: true,
-      Role: manager.Role || 'Manager',
     })
 
     return res.status(200).json({
       manager: {
         id: updated.id,
         managerId: normalizedManagerId,
-        name: updated.Label || '',
+        name: updated.Name || '',
         email: updated.Email || normalizedEmail,
         phone: String(updated.Phone || '').trim() || extractPhoneFromNotes(updated.Notes),
-        role: updated.Role || 'Manager',
-        planType: extractMetadataValue(updated.Notes, 'Plan') || normalizedPlanType || 'pro',
+        planType: updated.tier || extractMetadataValue(updated.Notes, 'Plan') || normalizedPlanType || 'free',
         billingInterval: extractMetadataValue(updated.Notes, 'Billing') || '',
       },
     })
