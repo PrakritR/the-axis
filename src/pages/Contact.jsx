@@ -294,7 +294,7 @@ function BookingScheduler() {
                 {bookingType === 'meeting' ? 'What would you like to discuss?' : 'Any questions or notes?'}
                 <span className="ml-1 font-normal text-slate-400">(optional)</span>
               </label>
-              <textarea className={`${inputCls} min-h-[90px] resize-y`} placeholder={bookingType === 'meeting' ? 'Pricing, lease terms, move-in timeline…' : 'Anything specific you'd like to know…'} value={form.notes} onChange={e => setField('notes', e.target.value)} />
+              <textarea className={`${inputCls} min-h-[90px] resize-y`} placeholder={bookingType === 'meeting' ? 'Pricing, lease terms, move-in timeline…' : "Anything specific you'd like to know…"} value={form.notes} onChange={e => setField('notes', e.target.value)} />
             </div>
 
             {submitError && (
