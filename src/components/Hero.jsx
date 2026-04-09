@@ -12,7 +12,7 @@ const item = {
 }
 
 export default function Hero({
-  heading = 'AXIS Seattle',
+  heading = 'AXIS SEATTLE',
   browseLabel = 'View Available Housing',
   tourLabel = 'Schedule a Tour',
   heroImage = new URL('../../Assets/HerobannerImage.svg', import.meta.url).href
