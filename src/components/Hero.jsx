@@ -18,16 +18,14 @@ export default function Hero({
   heroImage = new URL('../../Assets/HerobannerImage.svg', import.meta.url).href
 }) {
   return (
-    <section className="relative w-full overflow-hidden bg-[linear-gradient(180deg,#edf2fb_0%,#eaf0fb_52%,#f4f7fd_100%)]" style={{ minHeight: 'clamp(460px, 78dvh, 860px)' }}>
+    <section className="relative w-full overflow-hidden bg-[linear-gradient(180deg,#edf2fb_0%,#eaf0fb_52%,#f4f7fd_100%)]" style={{ minHeight: 'clamp(220px, 36dvh, 400px)' }}>
       <div className="absolute inset-0">
         <div className="absolute inset-0 bg-[linear-gradient(90deg,rgba(237,242,251,0.96)_0%,rgba(237,242,251,0.88)_34%,rgba(237,242,251,0.55)_62%,rgba(237,242,251,0.78)_100%)]" />
         <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_18%_40%,rgba(37,99,235,0.14),transparent_48%),radial-gradient(circle_at_bottom_right,rgba(255,255,255,0.95),transparent_34%)]" />
       </div>
 
-      <div className="absolute inset-0 bg-dot-grid bg-dot-md opacity-20" />
-
       <div className="relative z-10 flex h-full flex-col justify-center">
-        <div className="container mx-auto px-4 pb-[max(3.5rem,env(safe-area-inset-bottom))] pt-[max(5.5rem,env(safe-area-inset-top))] sm:px-6 sm:pb-20 sm:pt-28 lg:px-8 lg:pb-24 lg:pt-32">
+        <div className="container mx-auto px-4 pb-[max(2rem,env(safe-area-inset-bottom))] pt-[max(4rem,env(safe-area-inset-top))] sm:px-6 sm:pb-10 sm:pt-16 lg:px-8 lg:pb-12 lg:pt-20">
           <motion.div className="max-w-2xl" variants={container} initial="hidden" animate="show">
             <motion.h1 variants={item} className="mt-5 max-w-[11ch] text-[clamp(2.2rem,8vw,5.4rem)] font-black leading-[0.92] tracking-[-0.065em] text-slate-900">
               {heading}
@@ -52,7 +50,6 @@ export default function Hero({
         </div>
       </div>
 
-      <div className="absolute bottom-0 left-0 right-0 h-24 bg-gradient-to-t from-[#edf2fb] to-transparent" />
     </section>
   )
 }
