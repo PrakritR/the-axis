@@ -138,7 +138,7 @@ export default function JoinUs() {
     name: '',
     email: '',
     phone: '',
-    promoCode: DEFAULT_PROMO_CODE,
+    promoCode: '',
   })
   const [managerLoading, setManagerLoading] = useState(false)
   const [managerError, setManagerError] = useState('')
@@ -170,8 +170,10 @@ export default function JoinUs() {
     setManagerError('')
     setManagerLoading(true)
 
+    const isBypassPromo = normalizedPromoCode === DEFAULT_PROMO_CODE
+
     try {
-      if (selectedPlan === 'free') {
+      if (selectedPlan === 'free' || isBypassPromo) {
         const res = await fetch('/api/manager-start-free-tier', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -219,12 +221,12 @@ export default function JoinUs() {
         pathname="/join-us"
       />
 
-      <section className="relative overflow-hidden bg-[linear-gradient(180deg,#edf2fb_0%,#e8eef8_48%,#ebf0f9_100%)] py-16 sm:py-24">
+      <section className="relative overflow-hidden bg-[linear-gradient(180deg,#edf2fb_0%,#e8eef8_48%,#ebf0f9_100%)] py-8 sm:py-12">
         <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top,rgba(255,255,255,0.96),rgba(255,255,255,0.25)_32%,transparent_58%),radial-gradient(circle_at_bottom,rgba(37,99,235,0.14),transparent_46%)]" aria-hidden />
         <div className="pointer-events-none absolute inset-x-0 top-[16%] h-[420px] bg-[radial-gradient(circle,rgba(37,99,235,0.13),transparent_58%)] blur-3xl" aria-hidden />
 
         <div className="container relative mx-auto max-w-7xl px-6">
-          <div className="mx-auto mt-16 max-w-4xl text-center">
+          <div className="mx-auto mt-6 max-w-4xl text-center">
             <h1 className="text-5xl font-black tracking-[-0.06em] text-slate-900 sm:text-6xl lg:text-7xl">
               Start with Axis.
             </h1>
@@ -293,7 +295,7 @@ export default function JoinUs() {
               </div>
               {selectedPlan !== 'free' ? (
                 <div className="rounded-2xl border border-[#2563eb]/10 bg-[#2563eb]/5 px-4 py-3 text-sm text-slate-600">
-                  Promo code <span className="font-semibold text-slate-900">{DEFAULT_PROMO_CODE}</span> is applied by default.
+                  Have a promo code? Enter it below — <span className="font-semibold text-slate-900">{DEFAULT_PROMO_CODE}</span> skips payment entirely.
                 </div>
               ) : (
                 <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
@@ -359,8 +361,8 @@ export default function JoinUs() {
 
               <div className="md:col-span-2 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
                 <p className="text-sm text-slate-500">
-                  {selectedPlan === 'free'
-                    ? 'Your free tier selection carries straight into account setup.'
+                  {selectedPlan === 'free' || managerForm.promoCode.trim().toUpperCase() === DEFAULT_PROMO_CODE
+                    ? 'Promo code bypasses payment — goes straight to account setup.'
                     : billingCycle === 'annual'
                       ? 'Annual pricing includes the 20% discount.'
                       : 'Your plan selection carries straight into checkout.'}
@@ -371,7 +373,7 @@ export default function JoinUs() {
                   className="inline-flex min-w-[220px] items-center justify-center rounded-full bg-[linear-gradient(180deg,#2f76ff_0%,#2450eb_100%)] px-7 py-4 text-base font-semibold text-white shadow-[0_16px_40px_rgba(37,99,235,0.28)] transition hover:brightness-105 disabled:opacity-50"
                 >
                   {managerLoading
-                    ? (selectedPlan === 'free' ? 'Creating setup…' : 'Starting checkout…')
+                    ? 'Creating setup…'
                     : `Continue with ${selectedPlanMeta.name}`}
                 </button>
               </div>
