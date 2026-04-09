@@ -459,7 +459,7 @@ function AirtableLogin({ onLogin }) {
             onClick={() => switchMode('login')}
             className="w-full rounded-[24px] border border-slate-200 bg-white px-5 py-5 text-left transition hover:border-slate-900 hover:bg-slate-50"
           >
-            <div className="text-base font-bold text-slate-900">Resident Login</div>
+            <div className="text-base font-bold text-slate-900">Resident Portal</div>
             <div className="mt-1 text-sm leading-6 text-slate-500">
               Access payments, work orders, documents, and your resident dashboard.
             </div>
@@ -469,21 +469,11 @@ function AirtableLogin({ onLogin }) {
             onClick={goToManagerLogin}
             className="w-full rounded-[24px] border border-slate-200 bg-white px-5 py-5 text-left transition hover:border-slate-900 hover:bg-slate-50"
           >
-            <div className="text-base font-bold text-slate-900">Manager Login</div>
+            <div className="text-base font-bold text-slate-900">Manager Portal</div>
             <div className="mt-1 text-sm leading-6 text-slate-500">
               Open the manager portal to review leases and manage resident records.
             </div>
           </button>
-          <div className="rounded-2xl border border-slate-100 bg-slate-50 px-4 py-3 text-sm text-slate-600">
-            Need to set up a resident account first?{' '}
-            <button
-              type="button"
-              onClick={() => switchMode('signup')}
-              className="font-semibold text-slate-900 underline decoration-slate-300 underline-offset-4"
-            >
-              Create account
-            </button>
-          </div>
         </div>
       ) : mode === 'login' ? (
         <form onSubmit={handleLogin} className="space-y-4">

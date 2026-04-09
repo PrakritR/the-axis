@@ -102,13 +102,12 @@ export default async function handler(req, res) {
     return res.status(500).json({ error: 'STRIPE_SECRET_KEY is not configured on the server yet.' })
   }
 
-  const { managerId, name, email, password } = req.body || {}
+  const { name, email, password } = req.body || {}
   const normalizedEmail = String(email || '').trim().toLowerCase()
-  const normalizedManagerId = String(managerId || '').trim().toUpperCase()
   const normalizedName = String(name || '').trim()
 
-  if (!normalizedManagerId || !normalizedEmail || !password) {
-    return res.status(400).json({ error: 'Manager ID, email, and password are required.' })
+  if (!normalizedEmail || !password) {
+    return res.status(400).json({ error: 'Email and password are required.' })
   }
 
   if (String(password).length < 6) {
@@ -117,8 +116,8 @@ export default async function handler(req, res) {
 
   try {
     const manager = await getManagerByEmail(normalizedEmail)
-    if (!manager || deriveManagerId(manager.id) !== normalizedManagerId) {
-      return res.status(404).json({ error: 'Manager record not found for that manager ID and email.' })
+    if (!manager) {
+      return res.status(404).json({ error: 'No manager subscription record was found for this email yet.' })
     }
 
     const subscribed = await hasActiveManagerSubscription(secretKey, normalizedEmail)
@@ -131,7 +130,8 @@ export default async function handler(req, res) {
     }
 
     const updated = await updateManager(manager.id, {
-      Name: normalizedName || manager.Name || normalizedEmail.split('@')[0],
+      'Manager ID': deriveManagerId(manager.id),
+      Label: normalizedName || manager.Label || normalizedEmail.split('@')[0],
       Password: password,
       Active: true,
       Role: manager.Role || 'Manager',
@@ -141,7 +141,7 @@ export default async function handler(req, res) {
       manager: {
         id: updated.id,
         managerId: deriveManagerId(updated.id),
-        name: updated.Name || '',
+        name: updated.Label || '',
         email: updated.Email || normalizedEmail,
         role: updated.Role || 'Manager',
       },

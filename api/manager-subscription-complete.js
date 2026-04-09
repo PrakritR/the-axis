@@ -51,6 +51,18 @@ async function createManager(fields) {
   return mapRecord(await atRes.json())
 }
 
+async function updateManager(recordId, fields) {
+  const atRes = await fetch(`https://api.airtable.com/v0/${BASE_ID}/Managers/${recordId}`, {
+    method: 'PATCH',
+    headers: airtableHeaders(),
+    body: JSON.stringify({ fields, typecast: true }),
+  })
+  if (!atRes.ok) {
+    throw new Error(await atRes.text())
+  }
+  return mapRecord(await atRes.json())
+}
+
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*')
   res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS')
@@ -107,20 +119,24 @@ export default async function handler(req, res) {
     let manager = await getManagerByEmail(email)
     if (!manager) {
       manager = await createManager({
-        Name: name || email.split('@')[0],
+        Label: name || email.split('@')[0],
         Email: email,
         Role: 'Manager',
         Active: true,
       })
     }
 
+    const derivedManagerId = deriveManagerId(manager.id)
+    if (manager['Manager ID'] !== derivedManagerId) {
+      manager = await updateManager(manager.id, { 'Manager ID': derivedManagerId })
+    }
+
     return res.status(200).json({
-      managerId: deriveManagerId(manager.id),
       email,
       accountExists: Boolean(manager.Password),
       message: manager.Password
-        ? 'Subscription verified. You can sign in with your manager ID.'
-        : 'Subscription verified. Use your manager ID to finish creating the account.',
+        ? 'Subscription verified. You can sign in now.'
+        : 'Subscription verified. Finish creating your manager account below.',
     })
   } catch (err) {
     console.error('Manager subscription completion error:', err)

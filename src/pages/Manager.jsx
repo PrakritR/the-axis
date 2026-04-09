@@ -179,7 +179,6 @@ function ManagerLogin({ onLogin }) {
   const searchParams = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null
   const initialMode = searchParams?.get('setup') === 'success' ? 'signup' : 'login'
   const [mode, setMode] = useState(initialMode)
-  const [managerId, setManagerId] = useState('')
   const [name, setName] = useState('')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -204,9 +203,9 @@ function ManagerLogin({ onLogin }) {
         const data = await res.json()
         if (!res.ok) throw new Error(data.error || 'Could not verify the subscription.')
         if (cancelled) return
-        setManagerId(data.managerId || '')
         setEmail(data.email || '')
-        setNotice(data.message || 'Subscription verified. Finish creating the manager account.')
+        setNotice(data.message || 'Subscription verified.')
+        if (data.accountExists) setMode('login')
 
         const nextUrl = new URL(window.location.href)
         nextUrl.searchParams.delete('session_id')
@@ -242,7 +241,7 @@ function ManagerLogin({ onLogin }) {
       const res = await fetch('/api/manager-auth', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ managerId, email: email.trim().toLowerCase(), password }),
+        body: JSON.stringify({ email: email.trim().toLowerCase(), password }),
       })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || 'Login failed')
@@ -265,7 +264,6 @@ function ManagerLogin({ onLogin }) {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          managerId,
           name,
           email: email.trim().toLowerCase(),
           password,
@@ -338,8 +336,8 @@ function ManagerLogin({ onLogin }) {
           <h1 className="mt-6 text-xl font-black text-slate-900">{mode === 'login' ? 'Manager login' : 'Create manager account'}</h1>
           <p className="mt-1 text-sm text-slate-500">
             {mode === 'login'
-              ? 'Sign in with your manager ID, email, and password.'
-              : 'Start the recurring manager subscription, get your manager ID, then finish account setup here.'}
+              ? 'Sign in with your email and password.'
+              : 'Create your manager account here, then activate it with the recurring subscription below.'}
           </p>
 
           {notice ? (
@@ -356,17 +354,6 @@ function ManagerLogin({ onLogin }) {
 
           {mode === 'login' ? (
             <form onSubmit={handleSubmit} className="mt-7 space-y-5">
-              <div>
-                <label className="mb-1.5 block text-sm font-semibold text-slate-700">Manager ID</label>
-                <input
-                  type="text"
-                  value={managerId}
-                  onChange={e => setManagerId(e.target.value.toUpperCase())}
-                  required
-                  placeholder="MGR-XXXXXXXXXXXXXX"
-                  className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 placeholder:text-slate-400 transition focus:border-[#0ea5a4] focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#0ea5a4]/20"
-                />
-              </div>
               <div>
                 <label className="mb-1.5 block text-sm font-semibold text-slate-700">Email</label>
                 <input
@@ -407,111 +394,72 @@ function ManagerLogin({ onLogin }) {
               </button>
             </form>
           ) : (
-            <div className="mt-7 space-y-5">
-              <div className="rounded-[24px] border border-slate-200 bg-slate-50 p-5">
-                <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-[#0ea5a4]">Step 1</div>
-                <h2 className="mt-2 text-lg font-black text-slate-900">Start manager subscription</h2>
-                <p className="mt-2 text-sm leading-6 text-slate-500">
-                  The recurring subscription unlocks manager access and gives you the manager ID needed for account setup.
-                </p>
-                <div className="mt-4 grid gap-3 sm:grid-cols-2">
-                  <input
-                    type="text"
-                    value={name}
-                    onChange={e => setName(e.target.value)}
-                    placeholder="Full name"
-                    className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 placeholder:text-slate-400 transition focus:border-[#0ea5a4] focus:outline-none focus:ring-2 focus:ring-[#0ea5a4]/20"
-                  />
-                  <input
-                    type="email"
-                    value={email}
-                    onChange={e => setEmail(e.target.value)}
-                    placeholder="you@axis-seattle.com"
-                    className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 placeholder:text-slate-400 transition focus:border-[#0ea5a4] focus:outline-none focus:ring-2 focus:ring-[#0ea5a4]/20"
-                  />
+            <form onSubmit={handleCreateAccount} className="mt-7 space-y-4">
+              <div>
+                <label className="mb-1.5 block text-sm font-semibold text-slate-700">Full name</label>
+                <input
+                  type="text"
+                  value={name}
+                  onChange={e => setName(e.target.value)}
+                  placeholder="Your name"
+                  className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 placeholder:text-slate-400 transition focus:border-[#0ea5a4] focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#0ea5a4]/20"
+                />
+              </div>
+              <div>
+                <label className="mb-1.5 block text-sm font-semibold text-slate-700">Email</label>
+                <input
+                  type="email"
+                  value={email}
+                  onChange={e => setEmail(e.target.value)}
+                  required
+                  autoComplete="email"
+                  placeholder="you@axis-seattle.com"
+                  className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 placeholder:text-slate-400 transition focus:border-[#0ea5a4] focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#0ea5a4]/20"
+                />
+              </div>
+              <div>
+                <label className="mb-1.5 block text-sm font-semibold text-slate-700">Create password</label>
+                <input
+                  type="password"
+                  value={password}
+                  onChange={e => setPassword(e.target.value)}
+                  required
+                  autoComplete="new-password"
+                  placeholder="Minimum 6 characters"
+                  className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 placeholder:text-slate-400 transition focus:border-[#0ea5a4] focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#0ea5a4]/20"
+                />
+              </div>
+
+              {error && (
+                <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+                  {error}
                 </div>
+              )}
+
+              <button
+                type="submit"
+                disabled={loading}
+                className="w-full rounded-2xl bg-slate-900 px-5 py-3.5 text-sm font-semibold text-white transition hover:bg-[#0ea5a4] disabled:opacity-50"
+              >
+                {loading ? 'Creating account…' : 'Create manager account'}
+              </button>
+
+              <div className="rounded-[24px] border border-slate-200 bg-slate-50 p-5">
+                <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-[#0ea5a4]">Subscription</div>
+                <h2 className="mt-2 text-lg font-black text-slate-900">Activate manager access</h2>
+                <p className="mt-2 text-sm leading-6 text-slate-500">
+                  Complete the recurring manager subscription below. Once payment is active, you can create the account and sign in with this email and password.
+                </p>
                 <button
                   type="button"
                   onClick={startSubscriptionSetup}
                   disabled={setupLoading || !email.trim()}
                   className="mt-4 w-full rounded-2xl bg-[#0ea5a4] px-5 py-3.5 text-sm font-semibold text-white transition hover:bg-[#0b8a89] disabled:opacity-50"
                 >
-                  {setupLoading ? 'Starting checkout…' : 'Start manager subscription'}
+                  {setupLoading ? 'Starting checkout…' : 'Start recurring subscription'}
                 </button>
               </div>
-
-              <form onSubmit={handleCreateAccount} className="space-y-4">
-                <div className="rounded-[24px] border border-slate-200 bg-white p-5">
-                  <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-[#0ea5a4]">Step 2</div>
-                  <h2 className="mt-2 text-lg font-black text-slate-900">Create your manager account</h2>
-                  <p className="mt-2 text-sm leading-6 text-slate-500">
-                    After checkout, your manager ID appears here. Use it with the same email address to finish setup.
-                  </p>
-
-                  <div className="mt-4 space-y-4">
-                    <div>
-                      <label className="mb-1.5 block text-sm font-semibold text-slate-700">Manager ID</label>
-                      <input
-                        type="text"
-                        value={managerId}
-                        onChange={e => setManagerId(e.target.value.toUpperCase())}
-                        required
-                        placeholder="Provided after subscription checkout"
-                        className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 placeholder:text-slate-400 transition focus:border-[#0ea5a4] focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#0ea5a4]/20"
-                      />
-                    </div>
-                    <div>
-                      <label className="mb-1.5 block text-sm font-semibold text-slate-700">Full name</label>
-                      <input
-                        type="text"
-                        value={name}
-                        onChange={e => setName(e.target.value)}
-                        placeholder="Your name"
-                        className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 placeholder:text-slate-400 transition focus:border-[#0ea5a4] focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#0ea5a4]/20"
-                      />
-                    </div>
-                    <div>
-                      <label className="mb-1.5 block text-sm font-semibold text-slate-700">Email</label>
-                      <input
-                        type="email"
-                        value={email}
-                        onChange={e => setEmail(e.target.value)}
-                        required
-                        autoComplete="email"
-                        placeholder="Same email used for the subscription"
-                        className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 placeholder:text-slate-400 transition focus:border-[#0ea5a4] focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#0ea5a4]/20"
-                      />
-                    </div>
-                    <div>
-                      <label className="mb-1.5 block text-sm font-semibold text-slate-700">Create password</label>
-                      <input
-                        type="password"
-                        value={password}
-                        onChange={e => setPassword(e.target.value)}
-                        required
-                        autoComplete="new-password"
-                        placeholder="Minimum 6 characters"
-                        className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 placeholder:text-slate-400 transition focus:border-[#0ea5a4] focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#0ea5a4]/20"
-                      />
-                    </div>
-                  </div>
-                </div>
-
-                {error && (
-                  <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-                    {error}
-                  </div>
-                )}
-
-                <button
-                  type="submit"
-                  disabled={loading}
-                  className="w-full rounded-2xl bg-slate-900 px-5 py-3.5 text-sm font-semibold text-white transition hover:bg-[#0ea5a4] disabled:opacity-50"
-                >
-                  {loading ? 'Creating account…' : 'Create manager account'}
-                </button>
-              </form>
-            </div>
+            </form>
           )}
         </div>
 

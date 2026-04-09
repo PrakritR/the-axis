@@ -41,6 +41,16 @@ async function getManagerByEmail(email) {
   return record ? mapRecord(record) : null
 }
 
+async function updateManager(recordId, fields) {
+  const atRes = await fetch(`https://api.airtable.com/v0/${BASE_ID}/Managers/${recordId}`, {
+    method: 'PATCH',
+    headers: airtableHeaders(),
+    body: JSON.stringify({ fields, typecast: true }),
+  })
+  if (!atRes.ok) throw new Error('Database error. Please try again.')
+  return mapRecord(await atRes.json())
+}
+
 async function listCustomerSubscriptions(secretKey, customerId) {
   const statuses = ['active', 'trialing', 'past_due']
   const all = []
@@ -96,19 +106,23 @@ export default async function handler(req, res) {
     return res.status(500).json({ error: 'Server configuration error: Stripe secret key not set.' })
   }
 
-  const { managerId, email, password } = req.body || {}
+  const { email, password } = req.body || {}
   const normalizedEmail = String(email || '').trim().toLowerCase()
-  const normalizedManagerId = String(managerId || '').trim().toUpperCase()
 
-  if (!normalizedManagerId || !normalizedEmail || !password) {
-    return res.status(400).json({ error: 'Manager ID, email, and password are required.' })
+  if (!normalizedEmail || !password) {
+    return res.status(400).json({ error: 'Email and password are required.' })
   }
 
   try {
-    const manager = await getManagerByEmail(normalizedEmail)
+    let manager = await getManagerByEmail(normalizedEmail)
 
-    if (!manager || deriveManagerId(manager.id) !== normalizedManagerId || manager.Password !== password) {
-      return res.status(401).json({ error: 'Invalid manager ID, email, or password.' })
+    if (!manager || manager.Password !== password) {
+      return res.status(401).json({ error: 'Invalid email or password.' })
+    }
+
+    const derivedManagerId = deriveManagerId(manager.id)
+    if (manager['Manager ID'] !== derivedManagerId) {
+      manager = await updateManager(manager.id, { 'Manager ID': derivedManagerId })
     }
 
     if (manager.Active === false || manager.Active === 0) {
@@ -123,8 +137,8 @@ export default async function handler(req, res) {
     return res.status(200).json({
       manager: {
         id: manager.id,
-        managerId: deriveManagerId(manager.id),
-        name: manager.Name || '',
+        managerId: derivedManagerId,
+        name: manager.Label || '',
         email: manager.Email || '',
         role: manager.Role || 'Manager',
       },

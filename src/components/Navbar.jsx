@@ -130,8 +130,7 @@ export default function Navbar() {
             onClick={scrollToTop}
             className="inline-flex shrink-0 items-center rounded-full border border-white/20 px-2.5 py-1.5 text-[11px] font-semibold leading-tight text-white/80 transition hover:border-axis hover:text-axis sm:px-4 sm:py-2 sm:text-sm"
           >
-            <span className="sm:hidden">Resident</span>
-            <span className="hidden sm:inline">Resident Login</span>
+            <span>Login</span>
           </Link>
           <Link
             to="/apply"
@@ -188,7 +187,7 @@ export default function Navbar() {
                   location.pathname === '/resident' ? 'bg-white/10 text-white' : 'text-white/70'
                 }`}
               >
-                Resident login
+                Login
               </Link>
               <div className="mt-2 border-t border-white/10 pt-3 pb-1">
                 <Link
