@@ -1363,20 +1363,14 @@ function Dashboard({ resident, onResidentUpdated, onSignOut }) {
             >
               <span className="inline-flex items-center gap-2">
                 <span>{label}</span>
-                {id === 'announcements' && announcementCount > 0 ? (
-                  <span className={classNames(
-                    'rounded-full px-2 py-0.5 text-[11px] font-bold',
-                    tab === id ? 'bg-white/15 text-white' : 'bg-slate-100 text-slate-700'
-                  )}>
-                    {announcementCount}
-                  </span>
+                {id === 'announcements' && announcementCount > 0 && tab !== id ? (
+                  <span className="h-2 w-2 rounded-full bg-axis" />
                 ) : null}
               </span>
             </button>
           ))}
         </div>
 
-        {!loading && tab !== 'announcements' ? <AnnouncementPreview items={announcements} onOpenAll={() => setTab('announcements')} /> : null}
 
         {loading ? (
           <div className="rounded-[28px] border border-slate-200 bg-white px-6 py-16 text-center text-sm text-slate-400 shadow-soft">
