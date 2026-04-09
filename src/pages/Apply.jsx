@@ -1242,8 +1242,9 @@ export default function Apply() {
     window.scrollTo({ top: 0, behavior: 'smooth' })
   }
 
-  async function handleSubmit(event) {
+  async function handleSubmit(event, options = {}) {
     event.preventDefault()
+    const { promoOverride = false } = options
     // Final step validation before submit
     const current = steps[step]
     const data = applicationType === 'cosigner' ? cosigner : signer
@@ -1259,7 +1260,7 @@ export default function Apply() {
     try {
       let savedRecord = null
       if (applicationType === 'signer') {
-        if (!feePrePaid) {
+        if (!(feePrePaid || promoApplied || promoOverride)) {
           throw new Error('Application fee must be paid before submitting.')
         }
 
@@ -1402,7 +1403,7 @@ export default function Apply() {
             leaseStep: 'account',
             leaseSigned: false,
             appFeePaid: feePrePaid,
-            promoApplied: false,
+            promoApplied: promoApplied || promoOverride,
           }
         : {
             applicationType,
@@ -1463,6 +1464,32 @@ export default function Apply() {
       setPrePaymentError(err.message || 'Unable to start payment. Please try again.')
       setPrePaymentLoading(false)
     }
+  }
+
+  async function handlePromoApplyAndSubmit() {
+    const current = steps[step]
+    const errs = current.validate(signer)
+    if (Object.keys(errs).length > 0) {
+      setFieldErrors(errs)
+      return
+    }
+
+    const code = promoInput.trim().toUpperCase()
+    if (!code) {
+      setPromoError('Enter a promo code.')
+      return
+    }
+
+    const eligibleLease = signer.leaseTerm === '9-Month' || signer.leaseTerm === '12-Month'
+    if (!(code === 'APPLICATIONWAIVE' && eligibleLease)) {
+      setPromoError('Invalid or unavailable promo code.')
+      return
+    }
+
+    setPromoError('')
+    setPromoApplied(true)
+    setPrePaymentError('')
+    await handleSubmit({ preventDefault: () => {} }, { promoOverride: true })
   }
 
   async function handleApplicationFeeCheckout() {
@@ -2388,6 +2415,30 @@ export default function Apply() {
 
           {isLastStep && applicationType === 'signer' && prePaymentError && (
             <div className="mb-3 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{prePaymentError}</div>
+          )}
+          {isLastStep && applicationType === 'signer' && (
+            <div className="mb-4 rounded-2xl border border-slate-200 bg-white p-4">
+              <p className="mb-2 text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">Promo Code</p>
+              <div className="flex flex-col gap-3 sm:flex-row">
+                <input
+                  type="text"
+                  value={promoInput}
+                  onChange={(e) => { setPromoInput(e.target.value); setPromoError('') }}
+                  placeholder="Enter code"
+                  className="min-w-0 flex-1 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 placeholder-slate-400 outline-none transition focus:border-axis focus:ring-2 focus:ring-axis/20 uppercase"
+                  onKeyDown={(e) => e.key === 'Enter' && handlePromoApplyAndSubmit()}
+                />
+                <button
+                  type="button"
+                  onClick={handlePromoApplyAndSubmit}
+                  disabled={submitting || prePaymentLoading}
+                  className="shrink-0 rounded-xl bg-slate-900 px-5 py-3 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:opacity-60"
+                >
+                  Apply & Submit
+                </button>
+              </div>
+              {promoError ? <p className="mt-2 text-xs text-red-600">{promoError}</p> : null}
+            </div>
           )}
           <div className="flex gap-3">
             {step > 0 && (
