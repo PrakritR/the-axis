@@ -1296,8 +1296,8 @@ function Dashboard({ resident, onResidentUpdated, onSignOut }) {
     setLoading(true)
     try {
       const [nextRequests, nextAnnouncements] = await Promise.all([
-        getWorkOrdersForResident(resident),
-        getAnnouncements(),
+        getWorkOrdersForResident(resident).catch(() => []),
+        getAnnouncements().catch(() => []),
       ])
 
       setRequests(nextRequests)

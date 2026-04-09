@@ -1,4 +1,4 @@
-const BASE_ID = import.meta.env.VITE_AIRTABLE_APPLICATIONS_BASE_ID || import.meta.env.VITE_AIRTABLE_BASE_ID || 'appNBX2inqfJMyqYV'
+const BASE_ID = import.meta.env.VITE_AIRTABLE_APPLICATIONS_BASE_ID || 'appNBX2inqfJMyqYV'
 const API_KEY = import.meta.env.VITE_AIRTABLE_TOKEN
 const BASE_URL = `https://api.airtable.com/v0/${BASE_ID}`
 
