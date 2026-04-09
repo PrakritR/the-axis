@@ -52,10 +52,10 @@ function announcementMatchesResident(item, resident) {
   const residentRoomKey = residentPropertyId && residentRoom ? `${residentPropertyId}-${residentRoom}` : ''
   const target = String(item.Target || '').trim().toLowerCase()
 
-  if (!target || ['all', 'all properties', 'everyone'].includes(target)) return true
+  if (!target || ['all', 'all properties', 'all residents', 'everyone'].includes(target)) return true
 
   const tokens = target
-    .split(',')
+    .split(/[\n,;]+/)
     .map((part) => part.trim().toLowerCase())
     .filter(Boolean)
 
@@ -68,6 +68,7 @@ function announcementMatchesResident(item, resident) {
     residentRoom.toLowerCase(),
     `${residentProperty.toLowerCase()} ${residentRoom.toLowerCase()}`.trim(),
     residentRoomKey.toLowerCase(),
+    residentRoomKey.toLowerCase().replace(/-/g, ' '),
   ].filter(Boolean)
 
   return tokens.some((token) => propertyMatches.includes(token) || roomMatches.includes(token))
