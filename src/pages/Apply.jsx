@@ -1281,6 +1281,7 @@ export default function Apply() {
           'Property Address': signer.propertyAddress || '',
           'Room Number': signer.roomNumber || '',
           'Lease Term': signer.leaseTerm,
+          'Month to Month': signer.leaseTerm === 'Month-to-Month (+$25/mo)',
           'Lease Start Date': signer.leaseStartDate || null,
           'Lease End Date': signer.leaseEndDate || null,
           // Current address
