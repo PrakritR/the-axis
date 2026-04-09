@@ -141,22 +141,10 @@ export async function syncResidentFromAuth({ user, resident = null, profile = {}
 }
 
 export async function getAnnouncements() {
-  const [announcementsData, propertiesData, roomsData, settingsData] = await Promise.all([
+  const [announcementsData, settingsData] = await Promise.all([
     request(buildUrl(TABLES.announcements)),
-    request(buildUrl(TABLES.properties)),
-    request(buildUrl(TABLES.rooms)),
     request(buildUrl(TABLES.websiteSettings)).catch(() => ({ records: [] })),
   ])
-
-  const propertyMap = new Map((propertiesData.records || []).map((record) => {
-    const mapped = mapRecord(record)
-    return [mapped.id, mapped]
-  }))
-
-  const roomMap = new Map((roomsData.records || []).map((record) => {
-    const mapped = mapRecord(record)
-    return [mapped.id, mapped]
-  }))
 
   const settings = Object.fromEntries((settingsData.records || []).map((record) => {
     const mapped = mapRecord(record)
@@ -171,36 +159,25 @@ export async function getAnnouncements() {
 
   const items = (announcementsData.records || []).map((record) => {
     const announcement = mapRecord(record)
-    const linkedProperties = (announcement.Properties || [])
-      .map((id) => propertyMap.get(id))
-      .filter(Boolean)
-    const linkedRooms = (announcement.Rooms || [])
-      .map((id) => roomMap.get(id))
-      .filter(Boolean)
+    const rawTarget = String(
+      announcement.Target ||
+      announcement['Target Scope'] ||
+      ''
+    ).trim()
 
     return {
       ...announcement,
-      Message: announcement.Message || '',
+      Message: announcement.Message || announcement.Body || '',
       'Short Summary': announcement['Short Summary'] || '',
-      propertyIds: linkedProperties.map((property) => property.id),
-      propertyNames: linkedProperties.map((property) => property['Property Name'] || property.Name || property['Full Address']).filter(Boolean),
-      roomIds: linkedRooms.map((room) => room.id),
-      roomKeys: linkedRooms.map((room) => room['Room Key']).filter(Boolean),
-      roomLabels: linkedRooms.map((room) => room['Room Label'] || `Room ${room['Room Number']}`).filter(Boolean),
-      roomPropertyIds: linkedRooms.map((room) => Array.isArray(room.Property) ? room.Property[0] : room.Property).filter(Boolean),
-      roomPropertyNames: linkedRooms
-        .map((room) => {
-          const propertyId = Array.isArray(room.Property) ? room.Property[0] : room.Property
-          const property = propertyMap.get(propertyId)
-          return property?.['Property Name'] || property?.Name || property?.['Full Address']
-        })
-        .filter(Boolean),
+      Target: rawTarget,
+      Show: typeof announcement.Show === 'boolean' ? announcement.Show : Boolean(announcement['Show on Website']),
+      CreatedAt: announcement['Created At'] || announcement.created_at,
     }
   }).filter((item) => {
     const status = String(item.Status || '').trim()
-    const showOnWebsite = Boolean(item['Show on Website'])
+    const showOnWebsite = Boolean(item.Show)
     if (!showOnWebsite) return false
-    if (!['Published', 'Scheduled'].includes(status)) return false
+    if (status && !['Published', 'Scheduled'].includes(status)) return false
 
     const startDate = item['Start Date'] ? new Date(item['Start Date']) : null
     const endDate = item['End Date'] ? new Date(item['End Date']) : null
@@ -217,7 +194,7 @@ export async function getAnnouncements() {
     items.sort((a, b) => {
       const pinnedDiff = Number(Boolean(b.Pinned)) - Number(Boolean(a.Pinned))
       if (pinnedDiff !== 0) return pinnedDiff
-      return new Date(b['Start Date'] || b['Date Posted'] || b.created_at) - new Date(a['Start Date'] || a['Date Posted'] || a.created_at)
+      return new Date(b['Start Date'] || b['Date Posted'] || b.CreatedAt || b.created_at) - new Date(a['Start Date'] || a['Date Posted'] || a.CreatedAt || a.created_at)
     })
   }
 

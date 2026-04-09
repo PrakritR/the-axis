@@ -1,131 +1,71 @@
-# Airtable Schema
+# Airtable Announcement Table
 
-Use these tables for the resident announcement system.
+Use this simple `Announcements` table structure.
 
-## Properties
+## Fields
 
-One record per property.
-
-Fields:
-- `Property ID` -> single line text
-- `Property Name` -> single line text
-- `Full Address` -> single line text
-- `Active` -> checkbox
-- `Rooms` -> link to `Rooms`
-
-Suggested records:
-- `4709A` / `4709A 8th Ave`
-- `4709B` / `4709B 8th Ave`
-- `5259` / `5259 Brooklyn Ave NE`
-
-## Rooms
-
-One record per room.
-
-Fields:
-- `Room Key` -> formula or single line text
-- `Property` -> link to `Properties`
-- `Room Number` -> number
-- `Room Label` -> formula or single line text
-- `Active` -> checkbox
-
-Suggested records:
-- `4709A-Room 1` through `4709A-Room 10`
-- `4709B-Room 1` through `4709B-Room 10`
-- `5259-Room 1` through `5259-Room 9`
-
-## Announcements
-
-This is the table the resident portal reads from.
-
-Fields:
-- `Announcement ID` -> autonumber or formula
 - `Title` -> single line text
-- `Slug` -> single line text
 - `Message` -> long text
-- `Short Summary` -> single line text or long text
-- `Announcement Type` -> single select
+- `Target` -> single line text
 - `Priority` -> single select
-- `Target Scope` -> single select
-- `Properties` -> link to `Properties`
-- `Rooms` -> link to `Rooms`
-- `Show on Website` -> checkbox
-- `Status` -> single select
-- `Start Date` -> date/time
-- `End Date` -> date/time
+- `Show` -> checkbox
 - `Pinned` -> checkbox
-- `CTA Text` -> single line text
-- `CTA Link` -> URL
-- `Image URL` -> URL
-- `Created By` -> collaborator or single line text
 - `Created At` -> created time
-- `Updated At` -> last modified time
-- `Notes` -> long text
 
-Select options:
+## Priority options
 
-`Announcement Type`
-- `General`
-- `Maintenance`
-- `Rent`
-- `House Rules`
-- `Move In / Move Out`
-- `Safety`
-- `Utility`
-- `Event`
-- `Emergency`
-
-`Priority`
 - `Low`
 - `Normal`
 - `High`
 - `Urgent`
 
-`Target Scope`
+## Target format
+
+Use simple text values:
+
 - `All Properties`
-- `Selected Properties`
-- `Selected Rooms`
+- `4709A`
+- `4709B`
+- `5259`
+- `4709A-Room 2`
+- `4709B-Room 7`
+- `5259-Room 8`
 
-`Status`
-- `Draft`
-- `Scheduled`
-- `Published`
-- `Archived`
+You can also comma-separate targets:
 
-## Website Settings
+- `4709A, 4709B`
+- `4709A-Room 2, 4709A-Room 3`
+- `5259, 4709B-Room 1`
 
-Optional configuration table.
+## What the site does
 
-Fields:
-- `Setting Name`
-- `Value`
-- `Description`
+- Blank `Target` -> treated as `All Properties`
+- `Show` must be checked for it to appear
+- `Pinned` moves it to the top
+- `Priority` shows the badge color
 
-Suggested rows:
-- `announcements_enabled` -> `true`
-- `default_sort` -> `pinned_first`
-- `max_items_homepage` -> `5`
-- `show_expired` -> `false`
+## Example rows
 
-## Recommended Views
+### Example 1
+- `Title`: Water shutoff on Tuesday
+- `Message`: Water will be off from 10am to 1pm.
+- `Target`: 4709A, 4709B
+- `Priority`: High
+- `Show`: checked
+- `Pinned`: unchecked
 
-### Announcements -> Published - Active
-- `Show on Website` is checked
-- `Status` is `Published`
-- `Start Date` is on or before now
-- `End Date` is empty or on/after now
+### Example 2
+- `Title`: Room inspection this week
+- `Message`: Staff will inspect selected rooms on Thursday.
+- `Target`: 4709A-Room 2, 4709A-Room 3, 5259-Room 8
+- `Priority`: Normal
+- `Show`: checked
+- `Pinned`: unchecked
 
-### Announcements -> Scheduled
-- `Status` is `Scheduled`
-
-### Announcements -> Drafts
-- `Status` is `Draft`
-
-### Announcements -> Archived
-- `Status` is `Archived`
-
-### Announcements -> Pinned
-- `Pinned` is checked
-
-### Announcements -> Urgent
-- `Priority` is `Urgent`
+### Example 3
+- `Title`: New laundry rules
+- `Message`: Please remove items promptly after each cycle.
+- `Target`: All Properties
+- `Priority`: Normal
+- `Show`: checked
+- `Pinned`: checked

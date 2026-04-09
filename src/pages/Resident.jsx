@@ -43,25 +43,34 @@ function compareRoomLabels(a, b) {
 }
 
 function announcementMatchesResident(item, resident) {
-  const scope = String(item['Target Scope'] || 'All Properties')
   const residentProperty = String(resident.House || '').trim()
   const residentRoom = normalizeUnitLabel(resident['Unit Number'] || '')
-  const residentRoomKey = residentProperty && residentRoom ? `${residentProperty}-${residentRoom}` : ''
+  const residentPropertyId = residentProperty.includes('4709A') ? '4709A'
+    : residentProperty.includes('4709B') ? '4709B'
+    : residentProperty.includes('5259') ? '5259'
+    : ''
+  const residentRoomKey = residentPropertyId && residentRoom ? `${residentPropertyId}-${residentRoom}` : ''
+  const target = String(item.Target || '').trim().toLowerCase()
 
-  if (scope === 'All Properties') return true
+  if (!target || ['all', 'all properties', 'everyone'].includes(target)) return true
 
-  if (scope === 'Selected Properties') {
-    return (item.propertyNames || []).some((name) => String(name).trim() === residentProperty)
-  }
+  const tokens = target
+    .split(',')
+    .map((part) => part.trim().toLowerCase())
+    .filter(Boolean)
 
-  if (scope === 'Selected Rooms') {
-    const roomLabelMatch = (item.roomLabels || []).some((label) => normalizeUnitLabel(label) === residentRoom)
-    const roomKeyMatch = (item.roomKeys || []).some((key) => String(key).trim() === residentRoomKey)
-    const scopedPropertyMatch = (item.roomPropertyNames || []).some((name) => String(name).trim() === residentProperty)
-    return (roomLabelMatch || roomKeyMatch) && scopedPropertyMatch
-  }
+  const propertyMatches = [
+    residentProperty.toLowerCase(),
+    residentPropertyId.toLowerCase(),
+  ].filter(Boolean)
 
-  return true
+  const roomMatches = [
+    residentRoom.toLowerCase(),
+    `${residentProperty.toLowerCase()} ${residentRoom.toLowerCase()}`.trim(),
+    residentRoomKey.toLowerCase(),
+  ].filter(Boolean)
+
+  return tokens.some((token) => propertyMatches.includes(token) || roomMatches.includes(token))
 }
 
 const houseOptions = properties.map((property) => {
@@ -748,8 +757,8 @@ function AnnouncementsPanel({ items }) {
               {item['Short Summary'] ? <p className="mt-3 text-sm font-medium text-slate-500">{item['Short Summary']}</p> : null}
               <p className="mt-3 text-sm leading-7 text-slate-600">{item.Message}</p>
               <div className="mt-3 flex flex-wrap items-center gap-3 text-xs text-slate-400">
-                <span>{formatDate(item['Start Date'] || item['Date Posted'])}</span>
-                {item['Announcement Type'] ? <span>{item['Announcement Type']}</span> : null}
+                <span>{formatDate(item['Start Date'] || item['Date Posted'] || item.CreatedAt)}</span>
+                {item.Target ? <span>{item.Target}</span> : null}
               </div>
               {item['CTA Text'] && item['CTA Link'] ? (
                 <a
