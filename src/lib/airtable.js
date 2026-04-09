@@ -7,6 +7,9 @@ const TABLES = {
   messages: 'Messages',
   residents: 'Residents',
   announcements: 'Announcements',
+  properties: 'Properties',
+  rooms: 'Rooms',
+  websiteSettings: 'Website Settings',
   payments: 'Payments',
   documents: 'Documents',
   packages: 'Packages',
@@ -138,12 +141,88 @@ export async function syncResidentFromAuth({ user, resident = null, profile = {}
 }
 
 export async function getAnnouncements() {
-  const formula = 'OR({Active} = 1, {Active} = TRUE(), {Active} = "1")'
-  const data = await request(buildUrl(TABLES.announcements, {
-    filterByFormula: formula,
+  const [announcementsData, propertiesData, roomsData, settingsData] = await Promise.all([
+    request(buildUrl(TABLES.announcements)),
+    request(buildUrl(TABLES.properties)),
+    request(buildUrl(TABLES.rooms)),
+    request(buildUrl(TABLES.websiteSettings)).catch(() => ({ records: [] })),
+  ])
+
+  const propertyMap = new Map((propertiesData.records || []).map((record) => {
+    const mapped = mapRecord(record)
+    return [mapped.id, mapped]
   }))
 
-  return (data.records || []).map(mapRecord)
+  const roomMap = new Map((roomsData.records || []).map((record) => {
+    const mapped = mapRecord(record)
+    return [mapped.id, mapped]
+  }))
+
+  const settings = Object.fromEntries((settingsData.records || []).map((record) => {
+    const mapped = mapRecord(record)
+    return [mapped['Setting Name'], mapped.Value]
+  }))
+
+  const announcementsEnabled = String(settings.announcements_enabled ?? 'true').toLowerCase() !== 'false'
+  if (!announcementsEnabled) return []
+
+  const showExpired = String(settings.show_expired ?? 'false').toLowerCase() === 'true'
+  const now = new Date()
+
+  const items = (announcementsData.records || []).map((record) => {
+    const announcement = mapRecord(record)
+    const linkedProperties = (announcement.Properties || [])
+      .map((id) => propertyMap.get(id))
+      .filter(Boolean)
+    const linkedRooms = (announcement.Rooms || [])
+      .map((id) => roomMap.get(id))
+      .filter(Boolean)
+
+    return {
+      ...announcement,
+      Message: announcement.Message || '',
+      'Short Summary': announcement['Short Summary'] || '',
+      propertyIds: linkedProperties.map((property) => property.id),
+      propertyNames: linkedProperties.map((property) => property['Property Name'] || property.Name || property['Full Address']).filter(Boolean),
+      roomIds: linkedRooms.map((room) => room.id),
+      roomKeys: linkedRooms.map((room) => room['Room Key']).filter(Boolean),
+      roomLabels: linkedRooms.map((room) => room['Room Label'] || `Room ${room['Room Number']}`).filter(Boolean),
+      roomPropertyIds: linkedRooms.map((room) => Array.isArray(room.Property) ? room.Property[0] : room.Property).filter(Boolean),
+      roomPropertyNames: linkedRooms
+        .map((room) => {
+          const propertyId = Array.isArray(room.Property) ? room.Property[0] : room.Property
+          const property = propertyMap.get(propertyId)
+          return property?.['Property Name'] || property?.Name || property?.['Full Address']
+        })
+        .filter(Boolean),
+    }
+  }).filter((item) => {
+    const status = String(item.Status || '').trim()
+    const showOnWebsite = Boolean(item['Show on Website'])
+    if (!showOnWebsite) return false
+    if (!['Published', 'Scheduled'].includes(status)) return false
+
+    const startDate = item['Start Date'] ? new Date(item['Start Date']) : null
+    const endDate = item['End Date'] ? new Date(item['End Date']) : null
+
+    if (status === 'Scheduled' && (!startDate || startDate > now)) return false
+    if (status === 'Published' && startDate && startDate > now) return false
+    if (!showExpired && endDate && endDate < now) return false
+
+    return true
+  })
+
+  const defaultSort = String(settings.default_sort || 'pinned_first')
+  if (defaultSort === 'pinned_first') {
+    items.sort((a, b) => {
+      const pinnedDiff = Number(Boolean(b.Pinned)) - Number(Boolean(a.Pinned))
+      if (pinnedDiff !== 0) return pinnedDiff
+      return new Date(b['Start Date'] || b['Date Posted'] || b.created_at) - new Date(a['Start Date'] || a['Date Posted'] || a.created_at)
+    })
+  }
+
+  const limit = Number(settings.max_items_homepage || 0)
+  return limit > 0 ? items.slice(0, limit) : items
 }
 
 export async function getWorkOrdersForResident(resident) {

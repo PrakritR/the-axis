@@ -42,6 +42,28 @@ function compareRoomLabels(a, b) {
   })
 }
 
+function announcementMatchesResident(item, resident) {
+  const scope = String(item['Target Scope'] || 'All Properties')
+  const residentProperty = String(resident.House || '').trim()
+  const residentRoom = normalizeUnitLabel(resident['Unit Number'] || '')
+  const residentRoomKey = residentProperty && residentRoom ? `${residentProperty}-${residentRoom}` : ''
+
+  if (scope === 'All Properties') return true
+
+  if (scope === 'Selected Properties') {
+    return (item.propertyNames || []).some((name) => String(name).trim() === residentProperty)
+  }
+
+  if (scope === 'Selected Rooms') {
+    const roomLabelMatch = (item.roomLabels || []).some((label) => normalizeUnitLabel(label) === residentRoom)
+    const roomKeyMatch = (item.roomKeys || []).some((key) => String(key).trim() === residentRoomKey)
+    const scopedPropertyMatch = (item.roomPropertyNames || []).some((name) => String(name).trim() === residentProperty)
+    return (roomLabelMatch || roomKeyMatch) && scopedPropertyMatch
+  }
+
+  return true
+}
+
 const houseOptions = properties.map((property) => {
   const floorPlanUnits = (property.floorPlans || []).flatMap((plan) => plan.units || [])
   const roomPlanUnits = (property.roomPlans || [])
@@ -712,14 +734,33 @@ function AnnouncementsPanel({ items }) {
             <div key={item.id} className="rounded-[24px] border border-slate-200 p-5">
               <div className="flex flex-wrap items-center gap-2">
                 <h3 className="text-lg font-bold text-slate-900">{item.Title}</h3>
+                {item.Pinned ? (
+                  <span className="rounded-full border border-sky-200 bg-sky-50 px-2.5 py-1 text-[11px] font-semibold text-sky-700">
+                    Pinned
+                  </span>
+                ) : null}
                 {item.Priority ? (
                   <span className={classNames('rounded-full border px-2.5 py-1 text-[11px] font-semibold', priorityStyles[item.Priority] || priorityStyles.Routine)}>
                     {item.Priority}
                   </span>
                 ) : null}
               </div>
-              <p className="mt-3 text-sm leading-7 text-slate-600">{item.Body}</p>
-              <div className="mt-3 text-xs text-slate-400">{formatDate(item['Date Posted'])}</div>
+              {item['Short Summary'] ? <p className="mt-3 text-sm font-medium text-slate-500">{item['Short Summary']}</p> : null}
+              <p className="mt-3 text-sm leading-7 text-slate-600">{item.Message}</p>
+              <div className="mt-3 flex flex-wrap items-center gap-3 text-xs text-slate-400">
+                <span>{formatDate(item['Start Date'] || item['Date Posted'])}</span>
+                {item['Announcement Type'] ? <span>{item['Announcement Type']}</span> : null}
+              </div>
+              {item['CTA Text'] && item['CTA Link'] ? (
+                <a
+                  href={item['CTA Link']}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="mt-4 inline-flex rounded-full border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 transition hover:border-slate-500"
+                >
+                  {item['CTA Text']}
+                </a>
+              ) : null}
             </div>
           ))}
         </div>
@@ -1003,7 +1044,7 @@ function Dashboard({ resident, onResidentUpdated, onSignOut }) {
       ])
 
       setRequests(nextRequests)
-      setAnnouncements(nextAnnouncements)
+      setAnnouncements(nextAnnouncements.filter((item) => announcementMatchesResident(item, resident)))
     } finally {
       setLoading(false)
     }
