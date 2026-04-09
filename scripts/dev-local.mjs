@@ -1,9 +1,9 @@
 /**
- * Starts local API (port 3001) and Vite dev server together.
- * This is the default `npm run dev` — /api/* is proxied to match production.
- * Use `npm run dev:vite` for frontend-only (no local API).
+ * Vite + local API together (forms, tour, manager APIs work locally).
+ * Default `npm run dev` is Vite only — use `npm run dev:full` when you need /api on localhost.
  */
 import { spawn } from 'child_process'
+import net from 'net'
 import { fileURLToPath } from 'url'
 import path from 'path'
 import { existsSync } from 'fs'
@@ -22,18 +22,55 @@ if (!existsSync(envFile)) {
   console.warn('No .env found — copy .env.example to .env for API keys and integrations.')
 }
 
-console.log('[dev] Local API → http://127.0.0.1:3001  ·  Vite → http://localhost:5173  (/api proxied)\n')
+/** @param {number} startPort */
+function findFreePort(startPort) {
+  const maxAttempts = 50
+  return new Promise((resolve, reject) => {
+    const tryListen = (port, attemptsLeft) => {
+      if (attemptsLeft <= 0) {
+        reject(new Error(`No free TCP port found starting at ${startPort}`))
+        return
+      }
+      const server = net.createServer()
+      server.unref()
+      server.once('error', (err) => {
+        server.close()
+        if (err.code === 'EADDRINUSE') tryListen(port + 1, attemptsLeft - 1)
+        else reject(err)
+      })
+      server.listen(port, '127.0.0.1', () => {
+        const addr = server.address()
+        const p = typeof addr === 'object' && addr ? addr.port : port
+        server.close(() => resolve(p))
+      })
+    }
+    tryListen(startPort, maxAttempts)
+  })
+}
+
+const preferredApiPort = Number(process.env.LOCAL_API_PORT || 3001, 10) || 3001
+
+const apiPort = await findFreePort(preferredApiPort)
+if (apiPort !== preferredApiPort) {
+  console.warn(`[dev] Port ${preferredApiPort} busy — using API port ${apiPort} (proxy updated).\n`)
+}
+
+const childEnv = { ...process.env, LOCAL_API_PORT: String(apiPort) }
+
+console.log(
+  `[dev] Local API → http://127.0.0.1:${apiPort}  ·  Site → http://localhost:5174  (/api proxied)\n`
+)
 
 const api = spawn('node', ['scripts/local-api-server.mjs'], {
   cwd: root,
   stdio: 'inherit',
-  env: { ...process.env },
+  env: childEnv,
 })
 
 const vite = spawn(viteBin, [], {
   cwd: root,
   stdio: 'inherit',
-  env: { ...process.env },
+  env: childEnv,
 })
 
 function shutdown(signal) {

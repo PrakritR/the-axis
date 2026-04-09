@@ -37,7 +37,7 @@ export default function OwnersNav() {
 
   return (
     <header
-      className={`relative z-30 w-full shrink-0 border-b transition-all duration-300 md:sticky md:top-0 ${
+      className={`relative z-30 w-full shrink-0 border-b transition-all duration-300 ${
         scrolled
           ? 'border-slate-200/80 bg-white/82 shadow-[0_10px_36px_rgba(37,99,235,0.08)] md:backdrop-blur-xl'
           : 'border-transparent bg-transparent md:bg-white/42 md:backdrop-blur-xl'
@@ -74,7 +74,6 @@ export default function OwnersNav() {
         </nav>
 
         <div className="flex shrink-0 items-center justify-end gap-2 sm:gap-2.5 md:col-start-3 md:justify-self-end">
-          <PortalNavLink onClick={scrollToTop} isActive={isPortal} />
           <button
             type="button"
             onClick={() => setMobileOpen((o) => !o)}
@@ -92,6 +91,7 @@ export default function OwnersNav() {
               </svg>
             )}
           </button>
+          <PortalNavLink onClick={scrollToTop} isActive={isPortal} />
         </div>
       </div>
 

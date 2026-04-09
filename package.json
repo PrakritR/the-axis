@@ -2,14 +2,14 @@
   "name": "the-axis",
   "version": "0.1.0",
   "private": true,
+  "type": "module",
   "engines": {
     "node": ">=20"
   },
   "scripts": {
-    "dev": "node scripts/dev-local.mjs",
-    "dev:vite": "vite",
+    "dev": "vite",
+    "dev:full": "node scripts/dev-local.mjs",
     "dev:api": "node scripts/local-api-server.mjs",
-    "dev:local": "node scripts/dev-local.mjs",
     "build": "node scripts/generate-seo-files.mjs && vite build",
     "preview": "vite preview",
     "predeploy": "npm run build && cp dist/index.html dist/404.html",

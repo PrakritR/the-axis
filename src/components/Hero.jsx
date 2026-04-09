@@ -1,5 +1,6 @@
 import { Link } from 'react-router-dom'
 import { motion } from 'framer-motion'
+import { HOUSING_CONTACT_SCHEDULE } from '../lib/housingSite'
 
 const container = {
   hidden: {},
@@ -13,7 +14,7 @@ const item = {
 export default function Hero({
   heading = 'AXIS SEATTLE',
   browseLabel = 'View Available Housing',
-  applyLabel = 'Apply',
+  scheduleTourLabel = 'Schedule a Tour',
 }) {
   return (
     <section className="relative w-full overflow-hidden bg-transparent" style={{ minHeight: 'clamp(220px, 36dvh, 400px)' }}>
@@ -33,10 +34,10 @@ export default function Hero({
                 {browseLabel}
               </button>
               <Link
-                to="/apply"
+                to={HOUSING_CONTACT_SCHEDULE}
                 className="w-full rounded-full border border-white/90 bg-white/76 px-6 py-3.5 text-center text-sm font-semibold text-slate-700 backdrop-blur-sm transition hover:border-slate-200 hover:bg-white active:scale-[0.97] sm:w-auto sm:px-7"
               >
-                {applyLabel}
+                {scheduleTourLabel}
               </Link>
             </motion.div>
           </motion.div>

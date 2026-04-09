@@ -5,9 +5,11 @@ import { Toaster } from 'react-hot-toast'
 import { MAINTENANCE_MODE } from './lib/maintenance'
 import MaintenancePage from './pages/MaintenancePage'
 import Navbar from './components/Navbar'
+import PromoBanner from './components/PromoBanner'
 import OwnersNav from './components/OwnersNav'
 import Footer from './components/Footer'
 import Home from './pages/Home'
+import PortalSelect from './pages/PortalSelect'
 import scrollToTop from './utils/scrollToTop'
 import Chatbot from './components/Chatbot'
 
@@ -19,7 +21,6 @@ const JoinUs = lazy(() => import('./pages/JoinUs'))
 const Manager = lazy(() => import('./pages/Manager'))
 const SignLease = lazy(() => import('./pages/SignLease'))
 const AxisTeam = lazy(() => import('./pages/AxisTeam'))
-const PortalSelect = lazy(() => import('./pages/PortalSelect'))
 const OwnersAbout = lazy(() => import('./pages/OwnersAbout'))
 
 function ScrollToTop() {
@@ -94,6 +95,8 @@ export default function App() {
 
   const isOwnersRoute = location.pathname.startsWith('/owners')
   const isPortalHub = location.pathname === '/portal'
+  /** Same strip as the main marketing site on every page except standalone manager / sign / axis-team. */
+  const showPromoBanner = !isStandaloneRoute
   const showMainMobileDock =
     !isOwnersRoute && ['/', '/apply', '/contact'].includes(location.pathname)
   // Manager portal and signing flow render completely standalone — skip the public shell entirely
@@ -125,6 +128,10 @@ export default function App() {
   return (
     <div className="app-shell axis-page min-h-screen min-h-svh flex flex-col">
       <ScrollToTop />
+      <div className="sticky top-0 z-50 w-full">
+        {showPromoBanner ? <PromoBanner /> : null}
+        {!isPortalHub ? isOwnersRoute ? <OwnersNav /> : <Navbar /> : null}
+      </div>
       <Toaster
         position="top-center"
         toastOptions={{
@@ -134,7 +141,6 @@ export default function App() {
           error: { style: { background: '#fef2f2', color: '#991b1b', border: '1px solid #fecaca' } },
         }}
       />
-      {!isPortalHub ? (isOwnersRoute ? <OwnersNav /> : <Navbar />) : null}
       <main className={`flex-1 min-h-0 w-full ${showMainMobileDock ? 'pb-[calc(5rem+env(safe-area-inset-bottom))] md:pb-0' : ''}`}>
         <Suspense fallback={<PageFallback />}>
           <AnimatePresence mode="wait">
@@ -145,7 +151,7 @@ export default function App() {
               <Route path="/owners/contact" element={<AnimatedPage><Contact /></AnimatedPage>} />
               <Route path="/apply" element={<AnimatedPage><Apply /></AnimatedPage>} />
               <Route path="/resident" element={<AnimatedPage><Resident /></AnimatedPage>} />
-              <Route path="/portal" element={<AnimatedPage><PortalSelect /></AnimatedPage>} />
+              <Route path="/portal" element={<AnimatedPage key="portal-hub"><PortalSelect /></AnimatedPage>} />
               <Route path="/owners" element={<Navigate to="/owners/about" replace />} />
               <Route path="/owners/about" element={<AnimatedPage><OwnersAbout /></AnimatedPage>} />
               <Route path="/owners/pricing" element={<AnimatedPage><JoinUs /></AnimatedPage>} />

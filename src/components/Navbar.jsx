@@ -63,15 +63,20 @@ export default function Navbar() {
 
   return (
     <header
-      className="relative z-30 w-full shrink-0 border-b border-slate-200/30 bg-[#edf2fb]/88 backdrop-blur-xl md:sticky md:top-0"
+      className="relative z-30 w-full shrink-0 border-b border-slate-200/30 bg-[#edf2fb]/88 backdrop-blur-xl"
       style={{ paddingTop: 'env(safe-area-inset-top)' }}
     >
-      <div className="container mx-auto flex items-center gap-3 px-4 py-2.5 sm:px-6 sm:py-3.5">
-        <Link to="/" className="group flex shrink-0 items-center" onClick={scrollToTop} aria-label="Axis home">
+      <div className="container mx-auto flex items-center justify-between gap-3 px-4 py-2.5 sm:px-6 sm:py-3.5 md:grid md:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] md:items-center md:gap-4">
+        <Link
+          to="/"
+          className="group flex shrink-0 items-center md:justify-self-start"
+          onClick={scrollToTop}
+          aria-label="Axis home"
+        >
           <AxisWordmark tone="dark" className="h-8 w-auto transition-transform duration-300 group-hover:scale-[1.02] sm:h-9" />
         </Link>
 
-        <nav className="hidden min-w-0 flex-1 items-center justify-center gap-6 lg:gap-10 md:flex">
+        <nav className="hidden items-center justify-center gap-6 lg:gap-10 md:col-start-2 md:flex">
           {centerNav.map((item) => (
             <Link
               key={item.label}
@@ -91,8 +96,7 @@ export default function Navbar() {
           ))}
         </nav>
 
-        <div className="ml-auto flex shrink-0 items-center gap-2 sm:gap-2.5">
-          <PortalNavLink onClick={scrollToTop} isActive={isPortal} />
+        <div className="flex shrink-0 items-center justify-end gap-2 sm:gap-2.5 md:col-start-3 md:justify-self-end">
           <button
             type="button"
             onClick={() => setMobileOpen((o) => !o)}
@@ -113,6 +117,7 @@ export default function Navbar() {
               </svg>
             )}
           </button>
+          <PortalNavLink onClick={scrollToTop} isActive={isPortal} />
         </div>
       </div>
 

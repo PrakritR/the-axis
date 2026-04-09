@@ -2,7 +2,7 @@ import { readFileSync, writeFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 
 // Default to local dev; set SITE_URL or VITE_SITE_URL for production sitemap/robots.
-const siteUrl = (process.env.SITE_URL || process.env.VITE_SITE_URL || process.env.URL || 'http://localhost:5173').replace(/\/+$/, '')
+const siteUrl = (process.env.SITE_URL || process.env.VITE_SITE_URL || process.env.URL || 'http://localhost:5174').replace(/\/+$/, '')
 const propertyFile = readFileSync(resolve('src/data/properties.js'), 'utf8')
 const propertyRoutes = [...propertyFile.matchAll(/slug:\s*'([^']+)'/g)].map((match) => `/properties/${match[1]}`)
 const routes = ['/', '/contact', '/apply', ...propertyRoutes]
