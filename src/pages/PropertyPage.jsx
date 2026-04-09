@@ -728,12 +728,8 @@ export default function PropertyPage(){
               </div>
             </div>
 
-            <aside className="flex flex-col justify-between border-t border-slate-200 pt-6 lg:border-l lg:border-t-0 lg:pl-8 lg:pt-1">
-              <div>
-                <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">Who it suits</div>
-                <p className="mt-3 text-base leading-7 text-slate-700">{editorial.audience}</p>
-              </div>
-              <div className="mt-8 space-y-4">
+            <aside className="flex flex-col border-t border-slate-200 pt-6 lg:border-l lg:border-t-0 lg:pl-8 lg:pt-1">
+              <div className="space-y-4">
                 {editorial.localNotes.map((item) => (
                   <div key={item} className="border-t border-slate-200 pt-4 text-sm leading-6 text-slate-600">
                     {item}
@@ -751,14 +747,9 @@ export default function PropertyPage(){
       <div className="mx-auto mt-12 grid min-w-0 max-w-[1480px] gap-10 px-4 sm:px-6 md:grid-cols-12 lg:px-10">
         <div className="min-w-0 md:col-span-9">
 
-          <section className="grid gap-8 border-b border-slate-200 pb-10 lg:grid-cols-[minmax(0,1fr)_280px]">
-            <div>
-              <div className="text-[11px] font-bold uppercase tracking-[0.22em] text-slate-500">{editorial.sectionTitle}</div>
-              <h2 className="font-editorial mt-3 text-2xl leading-tight text-slate-900 sm:text-4xl">{editorial.sectionTitle}</h2>
-            </div>
-            <div className="space-y-4 text-base leading-8 text-slate-600">
+          <section className="border-b border-slate-200 pb-10">
+            <div className="space-y-3 text-base leading-8 text-slate-600">
               <p>{editorial.body}</p>
-              <p>{editorial.sectionBody}</p>
             </div>
           </section>
 
@@ -909,7 +900,6 @@ export default function PropertyPage(){
             <div className="grid gap-8 border-t border-slate-200 pt-10 lg:grid-cols-[280px_minmax(0,1fr)]">
               <div>
                 <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-500">What&apos;s included</div>
-                <h2 className="font-editorial mt-2 text-3xl leading-tight text-slate-900 sm:text-4xl">The practical basics, done well.</h2>
               </div>
               <div className="grid gap-x-8 gap-y-4 sm:grid-cols-2">
                 {[
@@ -1070,7 +1060,6 @@ export default function PropertyPage(){
             <div className="grid gap-8 border-t border-slate-200 pt-10 lg:grid-cols-[280px_minmax(0,1fr)]">
               <div>
                 <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-500">Features</div>
-                <h2 className="font-editorial mt-2 text-3xl leading-tight text-slate-900 sm:text-4xl">What day-to-day living includes</h2>
               </div>
               <div className="space-y-10">
                 {communityUnique.length > 0 && (
@@ -1185,7 +1174,6 @@ export default function PropertyPage(){
           {/* Policies & Fees */}
           <section id="policies" ref={(node) => { sectionRefs.current.policies = node }} className="mt-10 scroll-mt-28 md:scroll-mt-40">
             <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-500">Lease Basics</div>
-            <h2 className="font-editorial mt-2 text-3xl leading-tight text-slate-900 sm:text-4xl">What to expect before move-in</h2>
             <div className="mt-5 overflow-hidden border-y border-slate-200 bg-white">
               {[
                 ...(p.policies ? [{ emoji:'📋', label:'Lease terms', value: p.policies }] : []),
@@ -1303,7 +1291,7 @@ export default function PropertyPage(){
           <Link
             to={`/apply?property=${p.slug}`}
             onClick={scrollToTop}
-            className="shrink-0 rounded-full bg-axis px-4 py-2.5 text-sm font-semibold text-white shadow-[0_4px_16px_rgba(14,165,164,0.45)] transition active:scale-95"
+            className="shrink-0 rounded-full bg-[linear-gradient(180deg,#2f76ff_0%,#2450eb_100%)] px-4 py-2.5 text-sm font-semibold text-white shadow-[0_4px_16px_rgba(37,99,235,0.35)] transition active:scale-95"
           >
             Apply
           </Link>

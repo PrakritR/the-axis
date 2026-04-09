@@ -564,11 +564,8 @@ export default function Home() {
         <PropertyCarousel />
       </section>
 
-      <section className="border-t border-white/70 bg-transparent px-4 py-14 sm:px-6 sm:py-24">
+      <section className="border-t border-white/70 bg-transparent px-4 py-14 sm:px-6 sm:py-16">
         <div className="mx-auto max-w-6xl">
-          <Reveal className="text-center max-w-xl mx-auto mb-12">
-          </Reveal>
-
           <motion.div
             className="grid gap-6 sm:grid-cols-3"
             initial="hidden"
@@ -605,11 +602,9 @@ export default function Home() {
             <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_30%_50%,rgba(37,99,235,0.12),transparent_60%)]" />
             <div className="relative flex flex-col gap-6 md:flex-row md:items-center md:justify-between">
               <div>
-                <Eyebrow>Ready?</Eyebrow>
-                <h2 className="mt-3 text-2xl font-black tracking-[-0.05em] text-slate-900 sm:text-3xl md:text-4xl">
+                <h2 className="text-2xl font-black tracking-[-0.05em] text-slate-900 sm:text-3xl md:text-4xl">
                   Browse housing simply
                 </h2>
-
               </div>
               <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap">
                 <Link
