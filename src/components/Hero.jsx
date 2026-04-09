@@ -12,9 +12,9 @@ const item = {
 }
 
 export default function Hero({
-  heading = 'Affordable Private Rooms Near UW',
-  subheading = 'Private furnished rooms near UW. Utilities included. Apply online.',
-  browseLabel = 'View Available Rooms',
+  heading = 'Available Housing in Seattle',
+  subheading = 'Browse available houses and rooms in Seattle. Check pricing, availability, and apply if a place fits.',
+  browseLabel = 'View Available Housing',
   tourLabel = 'Schedule a Tour',
   heroImage = new URL('../../Assets/HerobannerImage.svg', import.meta.url).href
 }) {
@@ -38,7 +38,7 @@ export default function Hero({
 
             <motion.div variants={item} className="inline-flex max-w-full items-center gap-2 overflow-hidden rounded-full border border-axis/30 bg-axis/10 px-3 py-1.5 sm:px-3.5">
               <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-axis" />
-              <span className="truncate text-[10px] font-bold uppercase tracking-[0.12em] text-axis sm:text-xs sm:tracking-[0.2em]">University District · Seattle, WA</span>
+              <span className="truncate text-[10px] font-bold uppercase tracking-[0.12em] text-axis sm:text-xs sm:tracking-[0.2em]">Seattle, WA</span>
             </motion.div>
 
             <motion.h1 variants={item} className="mt-5 max-w-[11ch] font-serif text-[clamp(2.2rem,8vw,5.4rem)] font-black leading-[0.95] text-white [text-shadow:0_10px_28px_rgba(2,6,23,0.42)]">
@@ -68,9 +68,9 @@ export default function Hero({
             {/* Key stats */}
             <motion.div variants={item} className="mt-9 grid grid-cols-2 gap-5 border-t border-white/10 pt-6 sm:mt-12 sm:flex sm:flex-wrap sm:items-center sm:gap-x-10 sm:gap-y-4 sm:pt-8">
               {[
-                { label: 'Starting rent', value: '$725 / mo' },
-                { label: 'Walk to UW', value: '0.3 miles' },
-                { label: 'Utilities', value: 'Included' },
+                { label: 'Starting price', value: '$750 / mo' },
+                { label: 'Listed homes', value: '3' },
+                { label: 'Availability', value: 'Posted online' },
               ].map((s) => (
                 <div key={s.label} className={s.label === 'Utilities' ? 'col-span-2 sm:col-span-1' : ''}>
                   <div className="text-lg font-black text-white sm:text-xl">{s.value}</div>

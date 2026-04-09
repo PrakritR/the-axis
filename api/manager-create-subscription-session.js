@@ -50,13 +50,14 @@ export default async function handler(req, res) {
     return res.status(500).json({ error: 'STRIPE_MANAGER_PRICE_ID is not configured on the server yet.' })
   }
 
-  const { email, name, promoCode } = req.body || {}
+  const { email, name, phone, promoCode } = req.body || {}
   const normalizedEmail = String(email || '').trim().toLowerCase()
   const normalizedName = String(name || '').trim()
+  const normalizedPhone = String(phone || '').trim()
   const normalizedPromoCode = String(promoCode || '').trim().toUpperCase()
 
-  if (!normalizedName || !normalizedEmail) {
-    return res.status(400).json({ error: 'Manager name and email are required to start manager setup.' })
+  if (!normalizedName || !normalizedEmail || !normalizedPhone) {
+    return res.status(400).json({ error: 'Manager name, email, and phone are required to start manager setup.' })
   }
 
   const baseUrl = getBaseUrl(req)
@@ -70,8 +71,10 @@ export default async function handler(req, res) {
     'metadata[access_type]': 'manager_portal',
     'metadata[manager_email]': normalizedEmail,
     'metadata[manager_name]': normalizedName,
+    'metadata[manager_phone]': normalizedPhone,
     'subscription_data[metadata][access_type]': 'manager_portal',
     'subscription_data[metadata][manager_email]': normalizedEmail,
+    'subscription_data[metadata][manager_phone]': normalizedPhone,
     'allow_promotion_codes': 'true',
   })
 

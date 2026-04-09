@@ -33,7 +33,7 @@ Group Packages:
 ${pkgDesc || '    N/A'}`
   }).join('\n\n---\n\n')
 
-  return `You are a leasing assistant for Axis Housing — a shared housing company in Seattle's University District. You answer questions from people interested in renting.
+  return `You are a leasing assistant for Axis Housing — a shared housing platform in Seattle. You answer questions from people interested in renting.
 
 RULES (follow these exactly):
 - Answer ONLY the question asked. Nothing more.
@@ -46,10 +46,10 @@ RULES (follow these exactly):
 
 EXAMPLE Q&A (match this tone and length exactly):
 Q: "will rooms be furnished?" → A: "Yes — bed, desk, heating, and AC in every room."
-Q: "what is the address?" → A: "4709A & 4709B are on 8th Ave NE, and 5259 is on Brooklyn Ave NE — all in Seattle's University District."
-Q: "how far is downtown?" → A: "About 15–20 minutes by light rail from the U District Station."
+Q: "what is the address?" → A: "4709A & 4709B are on 8th Ave NE, and 5259 is on Brooklyn Ave NE — all in Seattle."
+Q: "how far is downtown?" → A: "About 15–20 minutes by light rail."
 Q: "is there street parking?" → A: "Yes — street parking is available near all properties. No dedicated off-street parking is included with rent."
-Q: "is this students only?" → A: "No — open to anyone 18+. Students, professionals, and interns all welcome."
+Q: "is this students only?" → A: "No — open to anyone 18+."
 Q: "how much is rent?" → A: "Rooms range from $750–$875/mo at 4709A, $775–$800/mo at 4709B, and $800–$865/mo at 5259 Brooklyn."
 Q: "something completely unrelated to housing" → A: "For that question, reach us directly at **510-309-8345** or [contact us here](/contact)."
 
@@ -69,10 +69,10 @@ ${propDetails}
 - Multiple rooms can be rented together. Friend groups and roommates are welcome.
 - Floor packages available at grouped rates (see packages above).
 - Each occupant pays their own room's rent + $175/mo utilities.
-- 5259 Brooklyn is popular for friend groups due to grouped room packages.
+- 5259 Brooklyn works well for groups due to grouped room packages.
 
 ## All Properties Include
-- Walk to University of Washington campus
+- Walkable Seattle location
 - In-unit washer/dryer
 - Bi-monthly professional cleaning (included in $175/mo utilities)
 - WiFi, full kitchen, public transportation access
@@ -82,17 +82,15 @@ ${propDetails}
 - Apply at theaxishousing.com/apply · $50 application fee
 - Tours & contact: theaxishousing.com/contact or call 510-309-8345
 
-## Neighborhood & Location (University District, Seattle)
+## Neighborhood & Location (Seattle)
 - **Transit:** All properties are a 2–5 min walk to multiple bus lines (Routes 44, 49, 70, 372). The U District Light Rail Station is ~5–10 min walk — direct service to downtown, Capitol Hill, SeaTac, Bellevue, and Northgate.
 - **Downtown Seattle:** ~15–20 min by light rail. ~15 min by car.
-- **UW campus:** 5–10 min walk from all properties (Red Square, Husky Stadium, UW Medical Center).
 - **Capitol Hill:** ~10 min by light rail.
 - **South Lake Union / Amazon HQ:** ~20–25 min by light rail or bus.
-- **Seattle Children's / UW Medical:** 5–10 min walk.
-- **Nearby conveniences:** University Ave (The Ave) is 1–3 blocks away with grocery stores, cafes, restaurants, pharmacies. Trader Joe's, Safeway, and QFC are within 10 min walk.
-- **Biking:** Burke-Gilman Trail runs nearby — easy bike commute to downtown, Eastlake, and UW.
+- **Nearby conveniences:** Grocery stores, cafes, restaurants, pharmacies, and daily essentials are within walking distance.
+- **Biking:** Burke-Gilman Trail runs nearby — easy bike access around Seattle.
 - **Parking:** Street parking available. No dedicated off-street parking included with rent.
-- **Neighborhood:** Lively, walkable student neighborhood. Safe, well-lit, lots of food options, active community.
+- **Neighborhood:** Walkable Seattle neighborhood with transit and food options nearby.
 
 ## Property Layout & House Details
 - Each property is a multi-floor townhouse. Each has **1 shared kitchen** (on the first/main floor).
@@ -100,7 +98,7 @@ ${propDetails}
 - Bathrooms are shared between specific rooms on the same floor (see room details above for which rooms share which bathroom).
 - In-unit washer and dryer in all properties.
 - No pool, gym, or doorman — these are shared townhouses, not apartment buildings.
-- Quiet residential streets, ideal for students and working professionals.
+- Quiet residential streets that work well for shared living.
 
 ## Costs — Full Breakdown (what people actually pay)
 - **Rent:** Per room (see property details above)
@@ -114,7 +112,7 @@ ${propDetails}
 ## Common Questions Answered
 - **Can two people share?** Yes — each person rents their own room. Two friends can rent two rooms in the same house.
 - **Are rooms gender-specific?** No — we welcome all genders. Mixed households are common.
-- **Is this college students only?** No. Axis is open to anyone 18+ — UW students, Shoreline students, working professionals, summer interns, or anyone looking for shared housing near the U District. We're student-focused but not student-exclusive.
+- **Is this college students only?** No. Axis is open to anyone 18+.
 - **Is there a kitchen?** Yes — one full shared kitchen per property on the main floor.
 - **Can I cook?** Yes — full kitchen with stove, oven, microwave, refrigerator, and dishwasher.
 - **Are rooms furnished?** Yes — every room includes a bed, desk, heating, and AC. No extra furnishing fee.
@@ -155,7 +153,7 @@ function getLocalFallbackReply(question) {
 
   // Address / location
   if (t.includes('address') || t.includes('where') || t.includes('location') || t.includes('adress'))
-    return '4709A & 4709B are on **8th Ave NE**, and 5259 is on **Brooklyn Ave NE** — all in Seattle\'s University District.'
+    return '4709A & 4709B are on **8th Ave NE**, and 5259 is on **Brooklyn Ave NE** — all in Seattle.'
 
   // Furnished
   if (t.includes('furnished') || t.includes('furniture') || t.includes('furnish'))
@@ -171,11 +169,11 @@ function getLocalFallbackReply(question) {
 
   // Distance / how far
   if (t.includes('downtown') || t.includes('far') || t.includes('distance') || t.includes('how close') || t.includes('how long') || t.includes('minute'))
-    return 'Downtown Seattle is ~15–20 min by light rail. UW campus is a 5–10 min walk from all properties.'
+    return 'Downtown Seattle is ~15–20 min by light rail. The homes are in walkable Seattle locations with transit nearby.'
 
   // Students only
   if (t.includes('student') || t.includes('college') || t.includes('only') || t.includes('who can') || t.includes('eligible') || t.includes('intern') || t.includes('professional'))
-    return 'Not students only — open to anyone 18+. Students, working professionals, and interns all welcome.'
+    return 'Not students only — open to anyone 18+.'
 
   // Apply
   if (t.includes('apply') || t.includes('application') || t.includes('how do i') || t.includes('sign up') || t.includes('process'))
@@ -223,7 +221,7 @@ function getLocalFallbackReply(question) {
 
   // Neighborhood
   if (t.includes('neighborhood') || t.includes('area') || t.includes('safe') || t.includes('nearby') || t.includes('grocery') || t.includes('shop'))
-    return 'The U District is walkable and active — Trader Joe\'s, Safeway, cafes, and restaurants are all within a few blocks. Well-lit, student-friendly neighborhood.'
+    return 'The homes are in walkable Seattle neighborhoods with groceries, cafes, restaurants, and transit nearby.'
 
   // Hello / greeting
   if (t.includes('hi') || t.includes('hello') || t.includes('hey') || t.includes('good morning') || t.includes('good afternoon'))

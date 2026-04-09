@@ -3,7 +3,7 @@ const assets = (...paths) => paths.map(asset)
 
 const SHARED_TAGS = ['Shared Housing', 'Seattle', 'Shared Living']
 const SHARED_COMMUNITY_AMENITIES = [
-  'Walk to Campus',
+  'Walkable Location',
   'In-Unit Laundry (Washer & Dryer)',
   'Bi-monthly Cleaning (Twice a Month)',
   'WiFi',
@@ -72,11 +72,11 @@ const leaseTerms = ({
   },
   {
     type: '9-Month',
-    badge: 'Best for UW students',
+    badge: 'Most common',
     featured: true,
     startingAt: academicRent,
     moveInLabel: 'Any start date',
-    targetTenant: 'Students & working professionals',
+    targetTenant: 'Longer-stay residents',
     note: academicNote || 'Any 9-month window — choose the dates that fit your schedule.',
     flexibleMoveIn: true,
   },
@@ -104,13 +104,13 @@ export const properties = [
     slug: '4709a-8th-ave',
     name: '4709A 8th Ave',
     address: '4709A 8th Ave NE, Seattle, WA',
-    neighborhood: 'University District',
-    type: 'Affordable housing',
+    neighborhood: 'Seattle',
+    type: 'Shared housing',
     beds: 10,
     baths: 3.5,
     rent: '$750-875/month',
     summary:
-      'Affordable Seattle housing option with shared common areas, a practical three-floor layout, in-unit laundry, and a mix of private and shared bathroom access.',
+      'Seattle shared housing with common areas, a practical three-floor layout, in-unit laundry, and a mix of private and shared bathroom access.',
     images: assets(
       '4709a/1.avif',
       '4709a/2.jpeg',
@@ -161,9 +161,9 @@ export const properties = [
       },
     ],
     highlights: [
-      'Spacious three-story townhouse ideal for larger households. Large shared living areas and a full kitchen on the first floor make the home perfect for communal living and entertaining.',
+      'Three-story townhouse with a larger shared layout, common living areas, and a full kitchen on the first floor.',
       'In-unit washer and dryer to simplify everyday chores.',
-      'Short walking distance to the University of Washington and nearby transit and dining options.',
+      'Walkable Seattle location with transit, groceries, and daily essentials nearby.',
     ],
     communityAmenities: [...SHARED_COMMUNITY_AMENITIES, 'Street Parking'],
     unitAmenities: STANDARD_UNIT_AMENITIES,
@@ -175,8 +175,8 @@ export const properties = [
       summerRent: '$750/month',
       academicRent: '$775/month',
       summerNote: 'A short summer lease that runs from June 16 through September 14. Dates are fixed.',
-      academicNote: 'The core academic-year option, designed around the UW calendar. Dates are fixed.',
-      fullYearNote: 'The one-year option. Start date is flexible — September 15 recommended for students. Non-standard start dates carry a +$25/month surcharge.',
+      academicNote: 'A fixed 9-month lease option for renters who want a longer stay.',
+      fullYearNote: 'The one-year option. Start date is flexible. Non-standard start dates carry a +$25/month surcharge.',
     }),
     leasingPackages: [
       {
@@ -233,13 +233,13 @@ export const properties = [
     slug: '4709b-8th-ave',
     name: '4709B 8th Ave',
     address: '4709B 8th Ave NE, Seattle, WA',
-    neighborhood: 'University District',
-    type: 'Affordable housing',
+    neighborhood: 'Seattle',
+    type: 'Shared housing',
     beds: 9,
     baths: 2.5,
     rent: '$775-$800/month',
     summary:
-      'Affordable Seattle housing option with shared common areas, a practical multi-floor layout, in-unit laundry, and furnished private bedrooms close to the University District.',
+      'Seattle shared housing with common areas, a practical multi-floor layout, in-unit laundry, and furnished bedrooms in a walkable area.',
     images: assets(
       '4709b/06e59718-a50b-4fe8-838d-eb1726ef9770.jpeg',
       '4709b/29fae5e4-f522-4572-919e-694873d904fb.jpeg',
@@ -287,7 +287,7 @@ export const properties = [
     highlights: [
       'Spacious multi-floor townhouse with a practical shared setup and comfortable common spaces.',
       'In-unit washer and dryer to simplify everyday chores.',
-      'Short walking distance to the University of Washington and nearby transit and dining options.',
+      'Walkable Seattle location with transit, groceries, and daily essentials nearby.',
     ],
     communityAmenities: [...SHARED_COMMUNITY_AMENITIES, 'Street Parking'],
     unitAmenities: STANDARD_UNIT_AMENITIES,
@@ -299,8 +299,8 @@ export const properties = [
       summerRent: '$800/month',
       academicRent: '$800/month',
       summerNote: 'A short summer lease that runs from June 16 through September 14. Dates are fixed.',
-      academicNote: 'The core academic-year option, designed around the UW calendar. Dates are fixed.',
-      fullYearNote: 'The one-year option. Start date is flexible — September 15 recommended for students. Non-standard start dates carry a +$25/month surcharge.',
+      academicNote: 'A fixed 9-month lease option for renters who want a longer stay.',
+      fullYearNote: 'The one-year option. Start date is flexible. Non-standard start dates carry a +$25/month surcharge.',
     }),
     leasingPackages: [
       {
@@ -351,13 +351,13 @@ export const properties = [
     slug: '5259-brooklyn-ave-ne',
     name: '5259 Brooklyn Ave NE',
     address: '5259 Brooklyn Ave NE, Seattle, WA',
-    neighborhood: 'University District',
-    type: 'Multi-bedroom townhouse',
+    neighborhood: 'Seattle',
+    type: 'Shared housing',
     beds: 9,
     baths: 3,
     rent: '$800-$865/month',
     summary:
-      'Modern 9-bedroom townhouse in Seattle with a practical multi-floor layout, shared common spaces, in-unit laundry, and convenient access to neighborhood amenities.',
+      'Seattle shared housing with a practical multi-floor layout, grouped room options, in-unit laundry, and everyday essentials nearby.',
     images: assets(
       'genMid.2486418_32_0.jpg',
       '5269 house pics/IMG_8333.jpg',
@@ -417,8 +417,8 @@ export const properties = [
       summerRent: '$800/month',
       academicRent: '$800/month',
       summerNote: 'A summer lease that runs from June 16 through September 14. Dates are fixed.',
-      academicNote: 'The standard academic-year lease and the best fit for most student renters. Dates are fixed.',
-      fullYearNote: 'The one-year option. Start date is flexible — September 15 recommended for students. Non-standard start dates carry a +$25/month surcharge.',
+      academicNote: 'A standard 9-month lease option with fixed dates.',
+      fullYearNote: 'The one-year option. Start date is flexible. Non-standard start dates carry a +$25/month surcharge.',
     }),
     applicationFee: '$50',
     cleaningFee: '$25',

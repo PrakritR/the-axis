@@ -291,12 +291,12 @@ function SetupRequired() {
   )
 }
 
-const authInputCls = 'w-full rounded-[24px] border border-slate-200 px-5 py-4 text-base outline-none transition focus:border-slate-900 focus:ring-2 focus:ring-slate-900/10'
+const authInputCls = 'w-full rounded-[24px] border border-slate-200 bg-white px-5 py-4 text-base outline-none transition focus:border-[#0ea5a4] focus:ring-2 focus:ring-[#0ea5a4]/20'
 
 function AuthCard({ children }) {
   return (
-    <div className="flex min-h-screen items-start justify-center bg-[linear-gradient(160deg,#f0fdf8_0%,#f8fafc_40%,#ffffff_100%)] px-4 pb-12 pt-8 sm:pt-12 lg:pt-16">
-      <div className="w-full max-w-3xl">
+    <div className="flex min-h-screen items-start justify-center bg-[linear-gradient(180deg,#f7fbff_0%,#eef5ff_48%,#f9fcff_100%)] px-4 pb-12 pt-8 sm:pt-12 lg:pt-16">
+      <div className="w-full max-w-4xl">
         <div className="rounded-[32px] border border-slate-200 bg-white p-8 shadow-soft sm:p-10">
           {children}
         </div>
@@ -329,23 +329,13 @@ function PasswordInput({ value, onChange, placeholder, autoComplete }) {
   )
 }
 
-function AccessPane({ eyebrow, title, description, children }) {
-  return (
-    <div className="rounded-[28px] border border-slate-200 bg-slate-50 p-5 sm:p-6">
-      <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-[#0b8a89]">{eyebrow}</div>
-      <h2 className="mt-2 text-2xl font-black tracking-tight text-slate-900">{title}</h2>
-      <p className="mt-2 text-sm leading-7 text-slate-500">{description}</p>
-      <div className="mt-5">{children}</div>
-    </div>
-  )
-}
-
 function AirtableLogin({ onLogin }) {
   // Pre-fill appId if provided via URL param (e.g. from /apply?appId=APP-recXXX)
   const urlAppId = typeof window !== 'undefined'
     ? (new URLSearchParams(window.location.search).get('appId') || '')
     : ''
   const [view, setView] = useState(urlAppId ? 'resident' : 'portal')
+  const [residentTab, setResidentTab] = useState(urlAppId ? 'activate' : 'signin')
   const [signInForm, setSignInForm] = useState({ email: '', password: '' })
   const [activateForm, setActivateForm] = useState({ applicationId: urlAppId, email: '', password: '' })
   const [signInLoading, setSignInLoading] = useState(false)
@@ -357,6 +347,9 @@ function AirtableLogin({ onLogin }) {
     setView(next)
     setSignInError('')
     setActivationError('')
+    if (next === 'resident') {
+      setResidentTab(urlAppId ? 'activate' : residentTab)
+    }
   }
 
   function goToManagerLogin() {
@@ -486,103 +479,117 @@ function AirtableLogin({ onLogin }) {
         </>
       ) : (
         <>
-          <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-[#0b8a89]">Resident Portal</div>
-              <h1 className="mt-2 text-4xl font-black tracking-tight text-slate-900 sm:text-5xl">Resident access</h1>
-              <p className="mt-3 max-w-2xl text-base leading-7 text-slate-500">
-                Sign in if you already have an account. If you were recently approved, activate your account with your Application ID.
-              </p>
-            </div>
+          <div className="mb-6 text-center">
+            <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-[#0b8a89]">AXIS PORTAL</div>
+            <h1 className="mt-2 text-5xl font-black tracking-tight text-slate-900 sm:text-6xl">Login</h1>
+            <p className="mt-3 text-base leading-7 text-slate-500">
+              Sign in or activate your resident account.
+            </p>
+          </div>
+
+          <div className="mx-auto flex max-w-3xl gap-1 rounded-[24px] border border-slate-100 bg-slate-50 p-1.5">
+            {[['signin', 'Resident Login'], ['activate', 'Create account']].map(([id, label]) => (
+              <button
+                key={id}
+                type="button"
+                onClick={() => {
+                  setResidentTab(id)
+                  setSignInError('')
+                  setActivationError('')
+                }}
+                className={classNames(
+                  'flex-1 rounded-[18px] px-4 py-3 text-base font-semibold transition',
+                  residentTab === id ? 'bg-white text-slate-900 shadow-sm ring-2 ring-[#0ea5a4]' : 'text-slate-500 hover:text-slate-900'
+                )}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+
+          {residentTab === 'signin' ? (
+            <form onSubmit={handleLogin} className="mx-auto mt-10 max-w-3xl space-y-5">
+              <div>
+                <label className="mb-2 block text-sm font-semibold text-slate-700">Email</label>
+                <input
+                  type="email"
+                  required
+                  value={signInForm.email}
+                  onChange={(event) => setSignInForm((current) => ({ ...current, email: event.target.value }))}
+                  placeholder="you@example.com"
+                  autoComplete="email"
+                  className={authInputCls}
+                />
+              </div>
+              <div>
+                <label className="mb-2 block text-sm font-semibold text-slate-700">Password</label>
+                <PasswordInput
+                  value={signInForm.password}
+                  onChange={(event) => setSignInForm((current) => ({ ...current, password: event.target.value }))}
+                  autoComplete="current-password"
+                />
+              </div>
+              {signInError ? <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{signInError}</div> : null}
+              <button type="submit" disabled={signInLoading} className="w-full rounded-full bg-slate-900 py-4 text-base font-semibold text-white transition hover:bg-slate-800 disabled:opacity-50">
+                {signInLoading ? 'Signing in…' : 'Sign in'}
+              </button>
+            </form>
+          ) : (
+            <form onSubmit={handleSignup} className="mx-auto mt-10 max-w-3xl space-y-5">
+              <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
+                Use the approved application email and the Application ID you received after approval. Your Application ID looks like{' '}
+                <span className="font-mono font-semibold text-slate-800">APP-rec…</span>
+              </div>
+
+              <div>
+                <label className="mb-2 block text-sm font-semibold text-slate-700">Application ID <span className="text-red-400">*</span></label>
+                <input
+                  required
+                  value={activateForm.applicationId}
+                  onChange={(event) => setActivateForm((current) => ({ ...current, applicationId: event.target.value }))}
+                  placeholder="APP-recXXXXXXXXXXXXXX"
+                  className={authInputCls}
+                />
+              </div>
+
+              <div>
+                <label className="mb-2 block text-sm font-semibold text-slate-700">Email <span className="text-red-400">*</span></label>
+                <input
+                  type="email"
+                  required
+                  value={activateForm.email}
+                  onChange={(event) => setActivateForm((current) => ({ ...current, email: event.target.value }))}
+                  placeholder="Same email used on your application"
+                  autoComplete="email"
+                  className={authInputCls}
+                />
+              </div>
+
+              <div>
+                <label className="mb-2 block text-sm font-semibold text-slate-700">Create password <span className="text-red-400">*</span></label>
+                <PasswordInput
+                  value={activateForm.password}
+                  onChange={(event) => setActivateForm((current) => ({ ...current, password: event.target.value }))}
+                  placeholder="Minimum 6 characters"
+                  autoComplete="new-password"
+                />
+              </div>
+
+              {activationError ? <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{activationError}</div> : null}
+              <button type="submit" disabled={activationLoading} className="w-full rounded-full bg-slate-900 py-4 text-base font-semibold text-white transition hover:bg-slate-800 disabled:opacity-50">
+                {activationLoading ? 'Verifying application…' : 'Create account'}
+              </button>
+            </form>
+          )}
+
+          <div className="mt-10 text-center">
             <button
               type="button"
               onClick={() => switchView('portal')}
-              className="rounded-full border border-slate-300 px-5 py-2.5 text-sm font-semibold text-slate-700 transition hover:border-slate-500"
+              className="text-lg font-semibold text-slate-500 transition hover:text-slate-900"
             >
               Back to portal options
             </button>
-          </div>
-
-          <div className="grid gap-5 lg:grid-cols-2">
-            <AccessPane
-              eyebrow="Existing resident"
-              title="Sign in"
-              description="Use the email and password already connected to your resident account."
-            >
-              <form onSubmit={handleLogin} className="space-y-4">
-                <div>
-                  <label className="mb-2 block text-sm font-semibold text-slate-700">Email</label>
-                  <input
-                    type="email"
-                    required
-                    value={signInForm.email}
-                    onChange={(event) => setSignInForm((current) => ({ ...current, email: event.target.value }))}
-                    placeholder="you@example.com"
-                    autoComplete="email"
-                    className={authInputCls}
-                  />
-                </div>
-                <div>
-                  <label className="mb-2 block text-sm font-semibold text-slate-700">Password</label>
-                  <PasswordInput
-                    value={signInForm.password}
-                    onChange={(event) => setSignInForm((current) => ({ ...current, password: event.target.value }))}
-                    autoComplete="current-password"
-                  />
-                </div>
-                {signInError ? <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{signInError}</div> : null}
-                <button type="submit" disabled={signInLoading} className="w-full rounded-full bg-slate-900 py-4 text-base font-semibold text-white transition hover:bg-slate-800 disabled:opacity-50">
-                  {signInLoading ? 'Signing in…' : 'Sign in'}
-                </button>
-              </form>
-            </AccessPane>
-
-            <AccessPane
-              eyebrow="Need to activate?"
-              title="Activate account"
-              description="Use the approved rental application email and the Application ID you received after approval."
-            >
-              <form onSubmit={handleSignup} className="space-y-4">
-                <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-600">
-                  Your Application ID looks like <span className="font-mono font-semibold text-slate-800">APP-rec…</span>
-                </div>
-                <div>
-                  <label className="mb-2 block text-sm font-semibold text-slate-700">Application ID <span className="text-red-400">*</span></label>
-                  <input
-                    required
-                    value={activateForm.applicationId}
-                    onChange={(event) => setActivateForm((current) => ({ ...current, applicationId: event.target.value }))}
-                    placeholder="APP-recXXXXXXXXXXXXXX"
-                    className={authInputCls}
-                  />
-                </div>
-                <div>
-                  <label className="mb-2 block text-sm font-semibold text-slate-700">Email <span className="text-red-400">*</span></label>
-                  <input
-                    type="email"
-                    required
-                    value={activateForm.email}
-                    onChange={(event) => setActivateForm((current) => ({ ...current, email: event.target.value }))}
-                    placeholder="Same email used on your application"
-                    autoComplete="email"
-                    className={authInputCls}
-                  />
-                </div>
-                <div>
-                  <label className="mb-2 block text-sm font-semibold text-slate-700">Create password <span className="text-red-400">*</span></label>
-                  <PasswordInput
-                    value={activateForm.password}
-                    onChange={(event) => setActivateForm((current) => ({ ...current, password: event.target.value }))}
-                    placeholder="Min. 6 characters"
-                    autoComplete="new-password"
-                  />
-                </div>
-                {activationError ? <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{activationError}</div> : null}
-                <button type="submit" disabled={activationLoading} className="w-full rounded-full bg-slate-900 py-4 text-base font-semibold text-white transition hover:bg-slate-800 disabled:opacity-50">
-                  {activationLoading ? 'Verifying application…' : 'Activate account'}
-                </button>
-              </form>
-            </AccessPane>
           </div>
         </>
       )}

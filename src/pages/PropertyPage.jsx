@@ -502,40 +502,40 @@ function getSharedSpaceDetailMeta(video) {
 
 const PROPERTY_EDITORIAL_CONTENT = {
   '4709a-8th-ave': {
-    eyebrow: 'U-District shared housing',
+    eyebrow: 'Seattle shared housing',
     title: 'A larger shared house with room to spread out.',
-    intro: 'Ten rooms across three floors, shared common spaces, and an easy walk to UW.',
+    intro: 'Ten rooms across three floors, shared common spaces, and a straightforward townhouse layout.',
     body: '4709A has a straightforward layout: kitchen and living space downstairs, bedrooms across the upper floors, in-unit laundry, and room options at different price points.',
-    audience: 'Best for students, interns, and renters who want a more lived-in house environment near UW.',
-    localNotes: ['Walkable U-District location', 'In-unit laundry and fast Wi-Fi', 'Shared kitchen and living room', 'Room options across three floors'],
+    audience: 'Good for renters who want a larger shared-house setup with varied room options.',
+    localNotes: ['Walkable Seattle location', 'In-unit laundry and fast Wi-Fi', 'Shared kitchen and living room', 'Room options across three floors'],
     sectionTitle: 'House layout',
     sectionBody: 'The common spaces stay on the main floor while the bedroom floors feel more separate. That setup gives larger groups more flexibility than a standard apartment layout.',
-    neighborhoodTitle: 'Near campus, transit, and the daily basics',
-    neighborhoodBody: 'From 4709A, it is easy to get to UW, nearby food spots, groceries, and transit. It is the kind of location that makes everyday student living simpler.',
+    neighborhoodTitle: 'Transit and daily basics nearby',
+    neighborhoodBody: '4709A keeps transit, groceries, and everyday essentials close without overcomplicating the setup.',
   },
   '4709b-8th-ave': {
-    eyebrow: 'U-District shared housing',
-    title: 'Shared housing near UW, set up to be simple.',
-    intro: 'Nine furnished rooms in a three-floor townhouse with shared common space, fast Wi-Fi, and an easy walk to UW.',
+    eyebrow: 'Seattle shared housing',
+    title: 'Shared housing in Seattle, set up to be simple.',
+    intro: 'Nine furnished rooms in a three-floor townhouse with shared common space and fast Wi-Fi.',
     body: '4709B is set up simply: kitchen and living room downstairs, bedrooms upstairs, and room options that are easy to compare.',
     audience: 'Made for renters who care more about convenience, location, and a clean shared setup than apartment-building amenities.',
-    localNotes: ['Walkable to UW and the Ave', 'Furnished rooms with simple pricing', 'Shared kitchen and living room', 'In-unit laundry and fast Wi-Fi'],
+    localNotes: ['Walkable Seattle location', 'Furnished rooms with simple pricing', 'Shared kitchen and living room', 'In-unit laundry and fast Wi-Fi'],
     sectionTitle: 'House layout',
-    sectionBody: 'The house is close to campus and easy to share. Bedrooms are spread across the upper floors while the common spaces stay on the main level.',
+    sectionBody: 'The house is easy to share. Bedrooms are spread across the upper floors while the common spaces stay on the main level.',
     neighborhoodTitle: 'A local setup that keeps daily life close',
-    neighborhoodBody: 'This part of the U-District puts campus, food, coffee, groceries, and transit within reach. For renters who want to walk more and commute less, the location does real work.',
+    neighborhoodBody: 'Food, groceries, transit, and daily errands are all within reach from this address.',
   },
   '5259-brooklyn-ave-ne': {
-    eyebrow: 'U-District shared housing',
+    eyebrow: 'Seattle shared housing',
     title: 'Shared living with clearer pricing and flexible lease options.',
-    intro: 'A nine-bedroom townhouse near UW with grouped room options, shared common spaces, and lease structures that work for summer, the academic year, or a full year.',
+    intro: 'A nine-bedroom townhouse with grouped room options, shared common spaces, and multiple lease lengths.',
     body: '5259 is the most structured of the three homes, with grouped room packages, shared-bath pricing, and fixed lease options.',
-    audience: 'Especially useful for students, friend groups, and short-term Seattle interns looking for a flexible shared-house setup.',
-    localNotes: ['Grouped room packages available', 'Walkable location near UW', 'In-unit laundry and shared kitchen', 'Summer, academic-year, and full-year lease options'],
+    audience: 'Useful for renters who want a more structured shared-house setup with grouped options.',
+    localNotes: ['Grouped room packages available', 'Walkable Seattle location', 'In-unit laundry and shared kitchen', 'Summer, 9-month, and full-year lease options'],
     sectionTitle: 'Lease setup',
-    sectionBody: 'The room layout is organized around grouped pricing by bathroom share and multiple lease options. That makes it easier to compare if you are renting with friends or planning around the school year.',
-    neighborhoodTitle: 'Close to campus and well connected',
-    neighborhoodBody: 'Brooklyn Avenue keeps you close to classes, light rail, and everyday stops around the U-District. It is a convenient base if most of your week happens around UW.',
+    sectionBody: 'The room layout is organized around grouped pricing by bathroom share and multiple lease options. That makes it easier to compare if you are renting with others or planning around a fixed move-in window.',
+    neighborhoodTitle: 'Connected to transit and daily essentials',
+    neighborhoodBody: 'Brooklyn Avenue keeps transit, groceries, and everyday stops within reach in a walkable part of Seattle.',
   },
 }
 
@@ -632,17 +632,17 @@ export default function PropertyPage(){
   // Polished description for 4709A, otherwise use property summary
   const description = is4709
     ? [
-        'Spacious 10-bedroom townhouse in Seattle\'s University District. The three-story layout balances private bedrooms with generous shared living areas, making it ideal for larger households.',
+        'Spacious 10-bedroom townhouse in Seattle. The three-story layout balances private bedrooms with generous shared living areas, making it a practical option for larger households.',
         'Common spaces include a full kitchen and a comfortable living area on the first floor. The home features in-unit laundry, three full bathrooms across the home, and a half bathroom on the first floor.'
       ]
     : [p.summary]
   const editorial = PROPERTY_EDITORIAL_CONTENT[p.slug] || {
-    eyebrow: `${p.neighborhood} shared housing`,
+    eyebrow: 'Seattle shared housing',
     title: p.name,
     intro: p.summary,
     body: p.summary,
-    audience: 'A shared-house option near UW.',
-    localNotes: ['Walkable location', 'Shared kitchen and living room', 'In-unit laundry', 'Flexible room options'],
+    audience: 'A shared-house option in Seattle.',
+    localNotes: ['Walkable Seattle location', 'Shared kitchen and living room', 'In-unit laundry', 'Flexible room options'],
     sectionTitle: 'Overview',
     sectionBody: p.summary,
     neighborhoodTitle: 'Seattle location',
@@ -683,7 +683,7 @@ export default function PropertyPage(){
     <div className="page-wrapper py-6 sm:py-8 w-full">
       <Seo
         title={`${p.name} | Seattle Shared Housing by Axis Seattle`}
-        description={`${p.summary} View pricing, room availability, amenities, and tour details for this Seattle housing listing.`}
+        description={`${p.summary} View pricing, current availability, amenities, and tour details for this Seattle housing listing.`}
         pathname={`/properties/${p.slug}`}
         image={galleryImages[0]}
         structuredData={buildPropertySchema(p)}
@@ -918,7 +918,7 @@ export default function PropertyPage(){
                   'Shared kitchen and common living room',
                   'In-unit washer and dryer',
                   'Fast Wi-Fi and essential kitchen appliances',
-                  'Walkable U-District location near UW',
+                  'Walkable Seattle location',
                   'Three-floor house layout',
                   'Room-by-room inquiry and availability tracking',
                 ].map((text) => (

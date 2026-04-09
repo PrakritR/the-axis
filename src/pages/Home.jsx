@@ -58,24 +58,24 @@ function ChevronDown({ open }) {
 
 
 const steps = [
-  { n: '01', title: 'Browse rooms', body: 'Compare locations, floor plans, and pricing across available homes.', color: 'text-axis' },
-  { n: '02', title: 'Apply online', body: 'Submit your application in minutes. No in-person visits required.', color: 'text-gold' },
-  { n: '03', title: 'Move in', body: 'Once approved, sign your lease and move into your furnished room.', color: 'text-emerald-400' },
+  { n: '01', title: 'Browse housing', body: 'Compare available houses, room layouts, and posted pricing.', color: 'text-axis' },
+  { n: '02', title: 'Apply', body: 'Submit an application for the housing option that fits what you need.', color: 'text-gold' },
+  { n: '03', title: 'Move in', body: 'If approved, complete the next steps and move into the selected housing.', color: 'text-emerald-400' },
 ]
 
 const neighborhoodItems = [
-  '5-minute walk to UW main campus',
-  'University District light rail station nearby',
-  'Grocery stores, cafes, and restaurants within walking distance',
-  'Burke-Gilman Trail access for commuting and recreation',
-  'Adjacent to the Ave — U District\'s main commercial corridor',
+  'Seattle locations with posted availability',
+  'Transit, groceries, and daily essentials nearby',
+  'House layouts and pricing shown up front',
+  'Shared housing options collected in one place',
+  'Apply only for the homes that fit what you need',
 ]
 
 const faqs = [
   { q: 'What is included in the monthly rent?', a: 'All utilities (water, electricity, gas), high-speed WiFi, and bi-monthly professional cleaning of common areas are included. No surprise bills.' },
   { q: 'Are rooms furnished?', a: 'Yes — all rooms come fully furnished and include a bed frame and mattress, desk, chair, and closet. Common areas include a sofa, and the kitchen is furnished as well.' },
   { q: 'What lease terms are available?', a: 'Lease structure depends on the house. Some homes follow fixed summer, academic-year, and full-year terms, while others offer more room-by-room flexibility based on current availability.' },
-  { q: 'How far are the homes from UW?', a: 'Our properties are located 0.3–0.5 miles from the UW main campus — approximately a 5–10 minute walk.' },
+  { q: 'Where are the homes located?', a: 'Axis lists housing in Seattle and shows each house location directly on the listing page so you can decide what works for you.' },
   { q: 'How do I apply?', a: 'Click "Apply Now" and complete the online application. You\'ll need basic personal information, employment details, and references. We typically respond within 2 business days.' },
   { q: 'Can I tour before applying?', a: 'Yes. Use the "Schedule a Tour" button to contact us and we\'ll arrange a walkthrough at a convenient time.' },
 ]
@@ -317,12 +317,12 @@ function RoomFinder() {
     <section className="border-t border-slate-100 bg-white px-4 py-14 sm:px-6 sm:py-20">
       <div className="mx-auto max-w-6xl">
         <Reveal className="mb-8 text-center">
-          <Eyebrow>Room Finder</Eyebrow>
+          <Eyebrow>Housing Finder</Eyebrow>
           <h2 className="mt-3 font-serif text-2xl font-black tracking-tight text-slate-900 sm:text-4xl">
-            Find the best fit for you
+            Find housing that works for you
           </h2>
           <p className="mx-auto mt-3 max-w-md text-sm leading-6 text-slate-500">
-            Enter your dates and budget — we'll show rooms available for your stay.
+            Enter your dates and budget and we&apos;ll show matching listings and room options.
           </p>
         </Reveal>
 
@@ -426,12 +426,12 @@ function RoomFinder() {
                   <circle cx="11" cy="11" r="8" stroke="currentColor" strokeWidth="1.5" />
                   <path d="M21 21l-4.35-4.35" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
                 </svg>
-                <p className="text-sm font-medium text-slate-400">Enter a move-in date or budget to see matching rooms</p>
+                <p className="text-sm font-medium text-slate-400">Enter a move-in date or budget to see matching listings</p>
               </motion.div>
             ) : results.length === 0 ? (
               <motion.div key="no-results" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.2 }}
                 className="mt-8 border-t border-slate-200 pt-8 text-center">
-                <p className="text-sm font-medium text-slate-500">No rooms match those filters.</p>
+                <p className="text-sm font-medium text-slate-500">No listings match those filters.</p>
                 <p className="mt-1 text-xs text-slate-400">Try adjusting your dates, raising your budget, or changing the bathroom type.</p>
               </motion.div>
             ) : (
@@ -534,8 +534,8 @@ export default function Home() {
   return (
     <div className="bg-cream-50">
       <Seo
-        title="Axis Seattle | Private Rooms in the U District"
-        description="Furnished private bedrooms in modern shared homes near the University of Washington. Utilities included, flexible leases, fast online applications."
+        title="Axis Seattle | Available Housing in Seattle"
+        description="Browse available housing in Seattle with posted pricing, listing details, and online applications."
         pathname="/"
         image={heroImage}
         structuredData={buildWebsiteSchema()}
@@ -547,15 +547,15 @@ export default function Home() {
       {/* ── ROOM FINDER ── */}
       <RoomFinder />
 
-      {/* ── AVAILABLE ROOMS ── */}
+      {/* ── AVAILABLE HOUSING ── */}
       <section id="properties" className="scroll-mt-20 border-t border-slate-100 bg-white py-14 sm:py-20">
         <div className="mx-auto max-w-6xl px-4 sm:px-6">
           <Reveal>
             <div className="flex flex-col gap-5">
               <Eyebrow>Available now</Eyebrow>
-              <h2 className="font-serif text-2xl font-black tracking-tight text-slate-900 sm:text-4xl">Available Homes</h2>
+              <h2 className="font-serif text-2xl font-black tracking-tight text-slate-900 sm:text-4xl">Available Housing</h2>
               <p className="text-sm leading-6 text-slate-500 sm:text-base sm:leading-7">
-                Browse our shared homes near UW — swipe or use the arrows to explore.
+                Browse available housing in Seattle and open the listings that fit what you want.
               </p>
               <Link
                 reloadDocument
@@ -583,10 +583,10 @@ export default function Home() {
             <Reveal>
               <Eyebrow light>Neighborhood</Eyebrow>
               <h2 className="mt-4 font-serif text-2xl font-black tracking-tight text-white sm:text-4xl">
-                Seattle&apos;s University District
+                Seattle housing, shown simply
               </h2>
               <p className="mt-4 max-w-md text-sm leading-6 text-white/60 sm:text-base sm:leading-7">
-                Steps from campus, transit, and daily essentials — no car needed.
+                The site shows available houses, pricing, and core details so you can decide what works for you.
               </p>
               <ul className="mt-6 space-y-3">
                 {neighborhoodItems.map((t) => (
@@ -608,12 +608,12 @@ export default function Home() {
             </Reveal>
 
             <Reveal delay={0.1} className="grid grid-cols-2 gap-3">
-              {[
-                { label: 'Walk to UW', value: '0.3 mi' },
-                { label: 'Starting rent', value: '$725 /mo' },
-                { label: 'Utilities', value: 'Included' },
-                { label: 'Application', value: 'Online' },
-              ].map((s) => (
+                {[
+                  { label: 'Listed homes', value: '3' },
+                  { label: 'Starting price', value: '$750 /mo' },
+                  { label: 'Availability', value: 'Posted' },
+                  { label: 'Applications', value: 'Online' },
+                ].map((s) => (
                 <div key={s.label} className="flex flex-col justify-between rounded-2xl border border-white/10 bg-white/5 p-6 backdrop-blur-sm">
                   <span className="text-xs font-semibold uppercase tracking-[0.15em] text-white/40">{s.label}</span>
                   <span className="mt-4 text-2xl font-black text-white">{s.value}</span>
@@ -629,8 +629,8 @@ export default function Home() {
         <div className="mx-auto max-w-6xl">
           <Reveal className="text-center max-w-xl mx-auto mb-12">
             <Eyebrow>Process</Eyebrow>
-            <h2 className="mt-4 font-serif text-2xl font-black tracking-tight text-slate-900 sm:text-4xl">How to get your room</h2>
-            <p className="mt-3 text-sm leading-6 text-slate-500 sm:text-base sm:leading-7">Three simple steps from browsing to move-in day.</p>
+            <h2 className="mt-4 font-serif text-2xl font-black tracking-tight text-slate-900 sm:text-4xl">How it works</h2>
+            <p className="mt-3 text-sm leading-6 text-slate-500 sm:text-base sm:leading-7">A simple path from browsing to move-in.</p>
           </Reveal>
 
           <motion.div
@@ -704,7 +704,7 @@ export default function Home() {
               <div>
                 <Eyebrow light>Ready?</Eyebrow>
                 <h2 className="mt-3 font-serif text-2xl font-black tracking-tight text-white sm:text-3xl md:text-4xl">
-                  Find your room today
+                  Browse housing simply
                 </h2>
                 <p className="mt-2 text-sm text-white/55 leading-6">
                   Tour, ask questions, or apply online.

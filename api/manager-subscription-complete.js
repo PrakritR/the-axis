@@ -29,6 +29,26 @@ function deriveManagerId(recordId) {
   return `MGR-${suffix}`
 }
 
+function extractPhoneFromNotes(notes) {
+  const match = String(notes || '').match(/(?:^|\n)Phone:\s*(.+?)(?:\n|$)/i)
+  return match ? match[1].trim() : ''
+}
+
+function mergeManagerNotes(existingNotes, phone) {
+  const stripped = String(existingNotes || '')
+    .replace(/(?:^|\n)Phone:\s*.+?(?=\n|$)/gi, '')
+    .trim()
+
+  const parts = []
+  if (phone) parts.push(`Phone: ${phone}`)
+  if (stripped) parts.push(stripped)
+  return parts.join('\n')
+}
+
+function extractManagerPhone(manager, fallbackPhone = '') {
+  return String(manager?.Phone || '').trim() || extractPhoneFromNotes(manager?.Notes) || String(fallbackPhone || '').trim()
+}
+
 async function getManagerByEmail(email) {
   const formula = encodeURIComponent(`{Email} = "${escapeFormulaValue(email)}"`)
   const url = `https://api.airtable.com/v0/${BASE_ID}/Managers?filterByFormula=${formula}&maxRecords=1`
@@ -103,6 +123,7 @@ export default async function handler(req, res) {
       ''
     ).trim().toLowerCase()
     const name = String(session.metadata?.manager_name || session.customer_details?.name || '').trim()
+    const phone = String(session.metadata?.manager_phone || session.customer_details?.phone || '').trim()
 
     if (!email) {
       return res.status(400).json({ error: 'Stripe session did not include a manager email.' })
@@ -123,17 +144,34 @@ export default async function handler(req, res) {
         Email: email,
         Role: 'Manager',
         Active: true,
+        Notes: mergeManagerNotes('', phone),
       })
     }
 
     const derivedManagerId = deriveManagerId(manager.id)
+    const nextFields = {}
+
     if (manager['Manager ID'] !== derivedManagerId) {
-      manager = await updateManager(manager.id, { 'Manager ID': derivedManagerId })
+      nextFields['Manager ID'] = derivedManagerId
+    }
+
+    if (!manager.Label && name) {
+      nextFields.Label = name
+    }
+
+    const nextNotes = mergeManagerNotes(manager.Notes, phone)
+    if (nextNotes !== String(manager.Notes || '').trim()) {
+      nextFields.Notes = nextNotes
+    }
+
+    if (Object.keys(nextFields).length > 0) {
+      manager = await updateManager(manager.id, nextFields)
     }
 
     return res.status(200).json({
       email,
       name: manager.Label || name || email.split('@')[0],
+      phone: extractManagerPhone(manager, phone),
       managerId: derivedManagerId,
       accountExists: Boolean(manager.Password),
       message: manager.Password

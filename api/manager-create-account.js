@@ -29,6 +29,11 @@ function deriveManagerId(recordId) {
   return `MGR-${suffix}`
 }
 
+function extractPhoneFromNotes(notes) {
+  const match = String(notes || '').match(/(?:^|\n)Phone:\s*(.+?)(?:\n|$)/i)
+  return match ? match[1].trim() : ''
+}
+
 async function getManagerByManagerId(managerId) {
   const formula = encodeURIComponent(`{Manager ID} = "${escapeFormulaValue(managerId)}"`)
   const url = `https://api.airtable.com/v0/${BASE_ID}/Managers?filterByFormula=${formula}&maxRecords=1`
@@ -102,13 +107,12 @@ export default async function handler(req, res) {
     return res.status(500).json({ error: 'STRIPE_SECRET_KEY is not configured on the server yet.' })
   }
 
-  const { managerId, name, email, password } = req.body || {}
+  const { managerId, name, password } = req.body || {}
   const normalizedManagerId = String(managerId || '').trim().toUpperCase()
-  const normalizedEmail = String(email || '').trim().toLowerCase()
   const normalizedName = String(name || '').trim()
 
-  if (!normalizedManagerId || !normalizedEmail || !password) {
-    return res.status(400).json({ error: 'Manager ID, email, and password are required.' })
+  if (!normalizedManagerId || !password) {
+    return res.status(400).json({ error: 'Manager ID and password are required.' })
   }
 
   if (String(password).length < 6) {
@@ -121,8 +125,9 @@ export default async function handler(req, res) {
       return res.status(404).json({ error: 'No manager subscription record was found for that manager ID yet.' })
     }
 
-    if (String(manager.Email || '').trim().toLowerCase() !== normalizedEmail) {
-      return res.status(400).json({ error: 'That email does not match the manager ID from your subscription setup.' })
+    const normalizedEmail = String(manager.Email || '').trim().toLowerCase()
+    if (!normalizedEmail) {
+      return res.status(400).json({ error: 'This manager record is missing an email address. Please contact support.' })
     }
 
     const subscribed = await hasActiveManagerSubscription(secretKey, normalizedEmail)
@@ -148,6 +153,7 @@ export default async function handler(req, res) {
         managerId: normalizedManagerId,
         name: updated.Label || '',
         email: updated.Email || normalizedEmail,
+        phone: String(updated.Phone || '').trim() || extractPhoneFromNotes(updated.Notes),
         role: updated.Role || 'Manager',
       },
     })

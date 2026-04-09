@@ -1,59 +1,66 @@
+import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { Seo } from '../lib/seo'
 
 const PLANS = [
   {
-    name: 'Application',
-    price: 'Free',
+    name: 'Property Review',
+    value: 'Apply',
     suffix: '',
-    description: 'Start with the housing application if you want Axis to review your setup before you move into the manager portal.',
+    description: 'Use this if you want Axis to review a house, a setup, or a new property before you move into manager access.',
     ctaLabel: 'Apply Housing',
     ctaTo: '/apply',
     ctaVariant: 'secondary',
-    eyebrow: 'Starter',
+    eyebrow: 'Start here',
     features: [
       'Simple housing application',
       'Property review with the Axis team',
-      'Good fit for first-time partners',
-      'No subscription needed to apply',
+      'Clear next steps before onboarding',
+      'No subscription required to apply',
     ],
   },
   {
-    name: 'Manager Portal',
-    price: '$10',
+    name: 'Manager Access',
+    value: '$10',
     suffix: '/ month',
-    description: 'Create your manager account, activate the recurring Stripe subscription, receive your manager ID, and run the full Axis workflow.',
-    ctaLabel: 'Create manager account',
-    ctaTo: '/manager?view=create',
+    description: 'This is the manager setup step. Start the recurring Stripe subscription, receive your manager ID after payment, and then create your portal account.',
+    ctaLabel: 'Start manager access',
+    ctaTo: '#manager-access',
     ctaVariant: 'primary',
-    eyebrow: 'Pro',
+    eyebrow: 'Manager access',
     badge: 'Promo code FIRST20',
     features: [
       'Recurring manager subscription',
       'Manager ID generated after payment',
-      'Add houses inside the portal',
-      'Review applications and leasing',
-      'One place for manager operations',
+      'Account created from saved manager details',
+      'Houses, applications, and leasing in one portal',
     ],
     featured: true,
   },
   {
-    name: 'Resident Portal',
-    price: 'Included',
+    name: 'Resident Access',
+    value: 'Login',
     suffix: '',
-    description: 'Residents use the resident portal after approval to sign in, view documents, and handle their housing workflow.',
+    description: 'Residents do not subscribe here. They use the resident portal after approval to sign in, create an account, and manage housing tasks.',
     ctaLabel: 'Resident login',
     ctaTo: '/resident',
     ctaVariant: 'secondary',
-    eyebrow: 'Included',
+    eyebrow: 'Resident access',
     features: [
-      'Resident login access',
-      'Payments and documents',
-      'Work orders and lease actions',
+      'Resident login and account activation',
+      'Payments, work orders, and documents',
       'Connected to approved housing records',
+      'Separate from manager subscription access',
     ],
   },
 ]
+
+function formatPhoneInput(raw) {
+  const digits = String(raw || '').replace(/\D/g, '').slice(0, 10)
+  if (digits.length < 4) return digits
+  if (digits.length < 7) return `(${digits.slice(0, 3)}) ${digits.slice(3)}`
+  return `(${digits.slice(0, 3)}) ${digits.slice(3, 6)}-${digits.slice(6)}`
+}
 
 function CheckIcon() {
   return (
@@ -87,19 +94,28 @@ function PlanCard({ plan }) {
         </div>
 
         <h2 className="mt-5 text-[32px] font-black tracking-tight text-slate-900 sm:text-[40px]">
-          {plan.price}
+          {plan.value}
           {plan.suffix ? <span className="ml-2 text-lg font-semibold text-slate-500 sm:text-xl">{plan.suffix}</span> : null}
         </h2>
         <h3 className="mt-4 text-2xl font-black tracking-tight text-slate-900">{plan.name}</h3>
         <p className="mt-3 text-base leading-8 text-slate-500">{plan.description}</p>
       </div>
 
-      <Link
-        to={plan.ctaTo}
-        className={`mt-8 inline-flex w-full items-center justify-center rounded-2xl px-5 py-4 text-base font-semibold transition ${ctaClasses}`}
-      >
-        {plan.ctaLabel}
-      </Link>
+      {plan.ctaTo.startsWith('#') ? (
+        <a
+          href={plan.ctaTo}
+          className={`mt-8 inline-flex w-full items-center justify-center rounded-2xl px-5 py-4 text-base font-semibold transition ${ctaClasses}`}
+        >
+          {plan.ctaLabel}
+        </a>
+      ) : (
+        <Link
+          to={plan.ctaTo}
+          className={`mt-8 inline-flex w-full items-center justify-center rounded-2xl px-5 py-4 text-base font-semibold transition ${ctaClasses}`}
+        >
+          {plan.ctaLabel}
+        </Link>
+      )}
 
       <div className="mt-8 border-t border-slate-200 pt-7">
         <ul className="space-y-4">
@@ -116,11 +132,56 @@ function PlanCard({ plan }) {
 }
 
 export default function JoinUs() {
+  const [managerForm, setManagerForm] = useState({
+    name: '',
+    email: '',
+    phone: '',
+    promoCode: 'FIRST20',
+  })
+  const [managerLoading, setManagerLoading] = useState(false)
+  const [managerError, setManagerError] = useState('')
+
+  async function handleManagerAccess(event) {
+    event.preventDefault()
+
+    const normalizedName = managerForm.name.trim()
+    const normalizedEmail = managerForm.email.trim().toLowerCase()
+    const normalizedPhone = managerForm.phone.trim()
+    const normalizedPromoCode = managerForm.promoCode.trim().toUpperCase()
+
+    if (!normalizedName || !normalizedEmail || !normalizedPhone) {
+      setManagerError('Name, email, and phone are required to start manager access.')
+      return
+    }
+
+    setManagerError('')
+    setManagerLoading(true)
+
+    try {
+      const res = await fetch('/api/manager-create-subscription-session', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: normalizedName,
+          email: normalizedEmail,
+          phone: normalizedPhone,
+          promoCode: normalizedPromoCode,
+        }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Could not start manager access.')
+      window.location.href = data.url
+    } catch (err) {
+      setManagerError(err.message || 'Could not start manager access.')
+      setManagerLoading(false)
+    }
+  }
+
   return (
     <>
       <Seo
         title="Join Axis | Axis Seattle Housing"
-        description="Join Axis with a simple pricing-style overview for manager access, account creation, recurring subscription setup, and portal access."
+        description="Start manager access with Axis, activate the recurring subscription, receive your manager ID, and create your portal account."
         pathname="/join-us"
       />
 
@@ -131,7 +192,7 @@ export default function JoinUs() {
         <div className="container relative mx-auto max-w-7xl px-6">
           <div className="mx-auto max-w-4xl text-center">
             <div className="inline-flex items-center rounded-full border border-white/80 bg-white/80 px-4 py-2 text-[11px] font-bold uppercase tracking-[0.2em] text-[#0b8b8a] shadow-[0_10px_30px_rgba(255,255,255,0.55)] backdrop-blur">
-              Axis manager access
+              Join Axis
             </div>
 
             <h1 className="mt-8 text-5xl font-black tracking-tight text-slate-900 sm:text-6xl lg:text-7xl">
@@ -139,7 +200,7 @@ export default function JoinUs() {
             </h1>
 
             <p className="mx-auto mt-6 max-w-3xl text-lg leading-8 text-slate-500 sm:text-[22px] sm:leading-9">
-              Keep it simple. Apply if you need a review, or go straight into the manager portal to create your account, activate the recurring subscription, and start adding houses.
+              One clear flow: apply if you want a property review, start manager access when you are ready to subscribe, and keep resident login separate once housing is approved.
             </p>
 
             <div className="mt-10 flex flex-wrap items-center justify-center gap-3">
@@ -156,9 +217,80 @@ export default function JoinUs() {
             ))}
           </div>
 
-          <p className="mx-auto mt-10 max-w-3xl text-center text-sm leading-7 text-slate-500">
-            Manager setup continues inside the manager portal. After subscription payment, Axis creates the manager ID in the backend and Airtable, then you finish account creation with that same email.
-          </p>
+          <div id="manager-access" className="mx-auto mt-12 max-w-4xl rounded-[32px] border border-white/70 bg-white/92 p-7 shadow-[0_24px_60px_rgba(148,163,184,0.16)] backdrop-blur sm:p-8">
+            <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-[#0ea5a4]">Manager access</div>
+            <h2 className="mt-2 text-3xl font-black tracking-tight text-slate-900 sm:text-4xl">Start the recurring subscription</h2>
+            <p className="mt-3 text-base leading-7 text-slate-500">
+              Enter the manager name, email, and phone number you want saved in the manager table. After payment, Axis creates the manager ID and you finish account creation in the manager portal.
+            </p>
+
+            <form onSubmit={handleManagerAccess} className="mt-8 grid gap-4 md:grid-cols-2">
+              <div className="md:col-span-2">
+                <label className="mb-2 block text-sm font-semibold text-slate-700">Full name</label>
+                <input
+                  type="text"
+                  value={managerForm.name}
+                  onChange={(event) => setManagerForm((current) => ({ ...current, name: event.target.value }))}
+                  placeholder="Your name"
+                  className="w-full rounded-[24px] border border-slate-200 bg-white px-5 py-4 text-base text-slate-900 placeholder:text-slate-400 transition focus:border-[#0ea5a4] focus:outline-none focus:ring-2 focus:ring-[#0ea5a4]/20"
+                />
+              </div>
+
+              <div>
+                <label className="mb-2 block text-sm font-semibold text-slate-700">Email</label>
+                <input
+                  type="email"
+                  value={managerForm.email}
+                  onChange={(event) => setManagerForm((current) => ({ ...current, email: event.target.value }))}
+                  placeholder="you@example.com"
+                  autoComplete="email"
+                  className="w-full rounded-[24px] border border-slate-200 bg-white px-5 py-4 text-base text-slate-900 placeholder:text-slate-400 transition focus:border-[#0ea5a4] focus:outline-none focus:ring-2 focus:ring-[#0ea5a4]/20"
+                />
+              </div>
+
+              <div>
+                <label className="mb-2 block text-sm font-semibold text-slate-700">Phone number</label>
+                <input
+                  type="tel"
+                  value={managerForm.phone}
+                  onChange={(event) => setManagerForm((current) => ({ ...current, phone: formatPhoneInput(event.target.value) }))}
+                  placeholder="(206) 555-0100"
+                  autoComplete="tel"
+                  className="w-full rounded-[24px] border border-slate-200 bg-white px-5 py-4 text-base text-slate-900 placeholder:text-slate-400 transition focus:border-[#0ea5a4] focus:outline-none focus:ring-2 focus:ring-[#0ea5a4]/20"
+                />
+              </div>
+
+              <div className="md:col-span-2">
+                <label className="mb-2 block text-sm font-semibold text-slate-700">Promo code</label>
+                <input
+                  type="text"
+                  value={managerForm.promoCode}
+                  onChange={(event) => setManagerForm((current) => ({ ...current, promoCode: event.target.value.toUpperCase() }))}
+                  placeholder="FIRST20"
+                  className="w-full rounded-[24px] border border-slate-200 bg-white px-5 py-4 text-base font-semibold uppercase tracking-[0.06em] text-slate-900 placeholder:text-slate-400 transition focus:border-[#0ea5a4] focus:outline-none focus:ring-2 focus:ring-[#0ea5a4]/20"
+                />
+              </div>
+
+              {managerError ? (
+                <div className="md:col-span-2 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+                  {managerError}
+                </div>
+              ) : null}
+
+              <div className="md:col-span-2 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                <p className="text-sm leading-7 text-slate-500">
+                  After checkout, Axis generates the manager ID and stores your details in Airtable for account creation.
+                </p>
+                <button
+                  type="submit"
+                  disabled={managerLoading}
+                  className="inline-flex items-center justify-center rounded-full bg-[#0ea5a4] px-7 py-4 text-base font-semibold text-white transition hover:bg-[#0b8a89] disabled:opacity-50"
+                >
+                  {managerLoading ? 'Starting checkout…' : 'Start manager access'}
+                </button>
+              </div>
+            </form>
+          </div>
         </div>
       </section>
     </>

@@ -18,7 +18,7 @@ export default function Footer() {
               <AxisWordmark tone="light" className="h-10 w-auto opacity-95" />
             </div>
             <p className="mt-5 max-w-xs leading-6 text-white/45">
-              Furnished rooms near UW. Clear pricing. Easy applications.
+              Available housing in Seattle with posted pricing and online applications.
             </p>
             {/* Contact */}
             <div className="mt-6 space-y-2.5 text-sm">
@@ -48,11 +48,11 @@ export default function Footer() {
             </div>
           </div>
 
-          {/* Renting */}
+          {/* Housing */}
           <div>
-            <h5 className="text-xs font-bold uppercase tracking-[0.2em] text-white/70">Renting</h5>
+            <h5 className="text-xs font-bold uppercase tracking-[0.2em] text-white/70">Housing</h5>
             <div className="mt-5 flex flex-col gap-3.5">
-              <Link to={{ pathname: '/', hash: '#properties' }} className="transition hover:text-white hover:translate-x-0.5 inline-block">Available rooms</Link>
+              <Link to={{ pathname: '/', hash: '#properties' }} className="transition hover:text-white hover:translate-x-0.5 inline-block">Available housing</Link>
               <Link to="/apply" onClick={scrollToTop} className="transition hover:text-white hover:translate-x-0.5 inline-block">Application process</Link>
               <Link reloadDocument to="/contact" className="transition hover:text-white hover:translate-x-0.5 inline-block">Lease questions</Link>
             </div>
@@ -66,7 +66,7 @@ export default function Footer() {
                 5259 Brooklyn Ave NE<br />
                 Seattle, WA 98105
               </p>
-              <p className="text-white/30">University District, near UW</p>
+              <p className="text-white/30">Seattle, WA</p>
               <a
                 href="https://maps.google.com/?q=5259+Brooklyn+Ave+NE+Seattle+WA+98105"
                 target="_blank"
@@ -87,7 +87,7 @@ export default function Footer() {
       <div className="container mx-auto flex flex-col gap-3 px-6 py-5 sm:flex-row sm:items-center sm:justify-between">
         <p className="text-xs text-white/25">© 2026 Axis Seattle. All rights reserved.</p>
         <div className="flex items-center gap-4 text-xs text-white/25">
-          <span>University District Housing</span>
+          <span>Seattle Housing</span>
           <span className="text-white/15">·</span>
           <span>Seattle, WA</span>
         </div>

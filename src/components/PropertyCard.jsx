@@ -66,10 +66,6 @@ export default function PropertyCard({ p }) {
             <p className="text-xs text-white/60 drop-shadow">from</p>
             <p className="text-lg font-black text-white drop-shadow leading-none">{rentRange || '—'}<span className="text-xs font-medium text-white/70">/mo</span></p>
           </div>
-          {/* Neighborhood bottom left */}
-          <div className="absolute bottom-3 left-3 right-28 pointer-events-none sm:left-4 sm:right-32">
-            <p className="truncate text-xs text-white/70 drop-shadow">{p.neighborhood}</p>
-          </div>
         </Carousel>
       </div>
 
@@ -103,7 +99,7 @@ export default function PropertyCard({ p }) {
             to={`/properties/${p.slug}`}
             className="group/btn flex w-full flex-1 items-center justify-center gap-2 rounded-full bg-navy-900 px-4 py-3 text-sm font-semibold text-white transition hover:bg-navy-800 active:scale-[0.97]"
           >
-            View Rooms
+            View Listing
             <svg className="h-4 w-4 transition-transform duration-200 group-hover/btn:translate-x-1" viewBox="0 0 16 16" fill="none" aria-hidden>
               <path d="M3 8h10M9 4l4 4-4 4" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
             </svg>

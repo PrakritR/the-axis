@@ -239,9 +239,7 @@ function ManagerLogin({ onLogin }) {
   const initialView = initialSearch.get('view') === 'create' || initialSearch.get('setup') === 'success' ? 'setup' : 'signin'
   const [activeView, setActiveView] = useState(initialView)
   const [signInForm, setSignInForm] = useState({ email: '', password: '' })
-  const [subscriptionForm, setSubscriptionForm] = useState({ name: '', email: '', promoCode: 'FIRST20' })
-  const [activationForm, setActivationForm] = useState({ managerId: '', name: '', email: '', password: '' })
-  const [showActivation, setShowActivation] = useState(initialView === 'setup')
+  const [activationForm, setActivationForm] = useState({ managerId: '', name: '', email: '', phone: '', password: '' })
   const [subscriptionReady, setSubscriptionReady] = useState(false)
   const [accountExists, setAccountExists] = useState(false)
   const [notice, setNotice] = useState('')
@@ -249,9 +247,9 @@ function ManagerLogin({ onLogin }) {
   const [subscriptionError, setSubscriptionError] = useState('')
   const [activationError, setActivationError] = useState('')
   const [loginLoading, setLoginLoading] = useState(false)
-  const [subscriptionLoading, setSubscriptionLoading] = useState(false)
   const [activationLoading, setActivationLoading] = useState(false)
   const [setupLoading, setSetupLoading] = useState(false)
+  const [profileLoading, setProfileLoading] = useState(false)
 
   function persistOnboarding(nextData) {
     try {
@@ -272,32 +270,28 @@ function ManagerLogin({ onLogin }) {
   function applyOnboardingState(data) {
     const normalizedEmail = String(data.email || '').trim().toLowerCase()
     const normalizedName = String(data.name || '').trim()
+    const normalizedPhone = String(data.phone || '').trim()
     const normalizedManagerId = String(data.managerId || '').trim().toUpperCase()
     const nextAccountExists = Boolean(data.accountExists)
     const nextSubscriptionReady = Boolean(normalizedManagerId)
 
     setSubscriptionReady(nextSubscriptionReady)
     setAccountExists(nextAccountExists)
-    setShowActivation(nextSubscriptionReady && !nextAccountExists)
     setActiveView(nextAccountExists ? 'signin' : 'setup')
     setSignInForm((current) => ({ ...current, email: normalizedEmail || current.email }))
-    setSubscriptionForm((current) => ({
-      ...current,
-      name: normalizedName || current.name,
-      email: normalizedEmail || current.email,
-    }))
     setActivationForm((current) => ({
       ...current,
       managerId: normalizedManagerId || current.managerId,
       name: normalizedName || current.name,
       email: normalizedEmail || current.email,
+      phone: normalizedPhone || current.phone,
     }))
 
     persistOnboarding({
       name: normalizedName,
       email: normalizedEmail,
+      phone: normalizedPhone,
       managerId: normalizedManagerId,
-      promoCode: subscriptionForm.promoCode,
       subscriptionReady: nextSubscriptionReady,
       accountExists: nextAccountExists,
     })
@@ -309,9 +303,6 @@ function ManagerLogin({ onLogin }) {
       if (!saved) return
       const parsed = JSON.parse(saved)
       applyOnboardingState(parsed)
-      if (parsed.promoCode) {
-        setSubscriptionForm((current) => ({ ...current, promoCode: parsed.promoCode }))
-      }
     } catch {
       clearOnboarding()
     }
@@ -325,7 +316,6 @@ function ManagerLogin({ onLogin }) {
 
     if (requestedView === 'create' && setupState !== 'success') {
       setActiveView('setup')
-      setShowActivation(true)
     }
 
     if (requestedView === 'signin' && setupState !== 'success') {
@@ -369,6 +359,43 @@ function ManagerLogin({ onLogin }) {
     return () => { cancelled = true }
   }, [queryString])
 
+  useEffect(() => {
+    if (activeView !== 'setup') return undefined
+
+    const managerId = activationForm.managerId.trim().toUpperCase()
+    if (!managerId) return undefined
+
+    let cancelled = false
+    const timer = setTimeout(async () => {
+      setProfileLoading(true)
+      setActivationError('')
+
+      try {
+        const res = await fetch(`/api/manager-lookup?manager_id=${encodeURIComponent(managerId)}`)
+        const data = await res.json()
+
+        if (!res.ok) {
+          if (res.status === 404) return
+          throw new Error(data.error || 'Could not load the manager record.')
+        }
+        if (cancelled) return
+
+        applyOnboardingState(data)
+      } catch (err) {
+        if (!cancelled) {
+          setActivationError(err.message || 'Could not load the manager record.')
+        }
+      } finally {
+        if (!cancelled) setProfileLoading(false)
+      }
+    }, 250)
+
+    return () => {
+      cancelled = true
+      clearTimeout(timer)
+    }
+  }, [activeView, activationForm.managerId])
+
   async function handleSubmit(event) {
     event.preventDefault()
     setLoginError('')
@@ -404,8 +431,6 @@ function ManagerLogin({ onLogin }) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           managerId: activationForm.managerId.trim().toUpperCase(),
-          name: activationForm.name.trim(),
-          email: activationForm.email.trim().toLowerCase(),
           password: activationForm.password,
         }),
       })
@@ -418,44 +443,6 @@ function ManagerLogin({ onLogin }) {
       setActivationError(err.message || 'Could not create manager account')
     } finally {
       setActivationLoading(false)
-    }
-  }
-
-  async function startSubscriptionSetup() {
-    const normalizedName = subscriptionForm.name.trim()
-    const normalizedEmail = subscriptionForm.email.trim().toLowerCase()
-    const normalizedPromoCode = subscriptionForm.promoCode.trim().toUpperCase()
-
-    if (!normalizedName || !normalizedEmail) {
-      setSubscriptionError('Name and email are required to start manager setup.')
-      return
-    }
-
-    setNotice('')
-    setSubscriptionError('')
-    setSubscriptionLoading(true)
-
-    persistOnboarding({
-      name: normalizedName,
-      email: normalizedEmail,
-      managerId: activationForm.managerId.trim().toUpperCase(),
-      promoCode: normalizedPromoCode,
-      subscriptionReady,
-      accountExists,
-    })
-
-    try {
-      const res = await fetch('/api/manager-create-subscription-session', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: normalizedEmail, name: normalizedName, promoCode: normalizedPromoCode }),
-      })
-      const data = await res.json()
-      if (!res.ok) throw new Error(data.error || 'Could not start manager setup.')
-      window.location.href = data.url
-    } catch (err) {
-      setSubscriptionError(err.message || 'Could not start manager setup.')
-      setSubscriptionLoading(false)
     }
   }
 
@@ -533,43 +520,56 @@ function ManagerLogin({ onLogin }) {
                   type="text"
                   value={activationForm.managerId}
                   onChange={(event) => {
-                    setShowActivation(true)
-                    setActivationForm((current) => ({ ...current, managerId: event.target.value.toUpperCase() }))
+                    setNotice('')
+                    setActivationError('')
+                    setAccountExists(false)
+                    setSubscriptionReady(false)
+                    setActivationForm((current) => ({
+                      ...current,
+                      managerId: event.target.value.toUpperCase(),
+                      name: '',
+                      email: '',
+                      phone: '',
+                    }))
                   }}
                   placeholder="MGR-XXXXXXXXXXXXXX"
                   className="w-full rounded-[24px] border border-slate-200 bg-white px-5 py-4 text-base font-semibold uppercase tracking-[0.04em] text-slate-900 placeholder:text-slate-400 transition focus:border-[#0ea5a4] focus:outline-none focus:ring-2 focus:ring-[#0ea5a4]/20"
                 />
               </div>
+
               <div>
                 <label className="mb-2 block text-sm font-semibold text-slate-700">Full name</label>
                 <input
                   type="text"
+                  readOnly
                   value={activationForm.name}
-                  onChange={(event) => {
-                    const value = event.target.value
-                    setActivationForm((current) => ({ ...current, name: value }))
-                    setSubscriptionForm((current) => ({ ...current, name: value }))
-                  }}
-                  placeholder="Your name"
-                  className="w-full rounded-[24px] border border-slate-200 bg-white px-5 py-4 text-base text-slate-900 placeholder:text-slate-400 transition focus:border-[#0ea5a4] focus:outline-none focus:ring-2 focus:ring-[#0ea5a4]/20"
+                  placeholder="Loads from your manager record"
+                  className="w-full rounded-[24px] border border-slate-200 bg-slate-50 px-5 py-4 text-base text-slate-900 placeholder:text-slate-400 transition focus:border-[#0ea5a4] focus:outline-none focus:ring-2 focus:ring-[#0ea5a4]/20"
                 />
               </div>
+
               <div>
                 <label className="mb-2 block text-sm font-semibold text-slate-700">Email</label>
                 <input
                   type="email"
+                  readOnly
                   value={activationForm.email}
-                  onChange={(event) => {
-                    const value = event.target.value
-                    setActivationForm((current) => ({ ...current, email: value }))
-                    setSubscriptionForm((current) => ({ ...current, email: value }))
-                  }}
-                  required
-                  autoComplete="email"
-                  placeholder="you@example.com"
-                  className="w-full rounded-[24px] border border-slate-200 bg-white px-5 py-4 text-base text-slate-900 placeholder:text-slate-400 transition focus:border-[#0ea5a4] focus:outline-none focus:ring-2 focus:ring-[#0ea5a4]/20"
+                  placeholder="Loads from your manager record"
+                  className="w-full rounded-[24px] border border-slate-200 bg-slate-50 px-5 py-4 text-base text-slate-900 placeholder:text-slate-400 transition focus:border-[#0ea5a4] focus:outline-none focus:ring-2 focus:ring-[#0ea5a4]/20"
                 />
               </div>
+
+              <div>
+                <label className="mb-2 block text-sm font-semibold text-slate-700">Phone number</label>
+                <input
+                  type="text"
+                  readOnly
+                  value={activationForm.phone}
+                  placeholder="Loads from your manager record"
+                  className="w-full rounded-[24px] border border-slate-200 bg-slate-50 px-5 py-4 text-base text-slate-900 placeholder:text-slate-400 transition focus:border-[#0ea5a4] focus:outline-none focus:ring-2 focus:ring-[#0ea5a4]/20"
+                />
+              </div>
+
               <div>
                 <label className="mb-2 block text-sm font-semibold text-slate-700">Create password</label>
                 <ManagerPasswordInput
@@ -586,15 +586,21 @@ function ManagerLogin({ onLogin }) {
                 </div>
               ) : null}
 
-              {!subscriptionReady && !showActivation ? (
+              {!subscriptionReady ? (
                 <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
-                  Complete the recurring subscription below first. After payment, your manager ID will appear here so you can create the account.
+                  Start manager access in Join Axis first. After payment, your manager ID plus your saved name, email, and phone number will load here from Airtable.
                 </div>
               ) : null}
 
               {setupLoading ? (
                 <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
                   Verifying manager setup…
+                </div>
+              ) : null}
+
+              {profileLoading ? (
+                <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
+                  Loading manager details from Airtable…
                 </div>
               ) : null}
 
@@ -607,41 +613,28 @@ function ManagerLogin({ onLogin }) {
               <button
                 type="button"
                 onClick={handleCreateAccount}
-                disabled={activationLoading || !activationForm.managerId.trim() || !activationForm.email.trim() || !activationForm.password.trim()}
+                disabled={activationLoading || !activationForm.managerId.trim() || !activationForm.password.trim()}
                 className="w-full rounded-full bg-slate-900 px-5 py-4 text-base font-semibold text-white transition hover:bg-slate-800 disabled:opacity-50"
               >
                 {activationLoading ? 'Creating account…' : 'Create account'}
               </button>
 
               <div className="rounded-[28px] border border-slate-200 bg-slate-50 p-5">
-                <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-[#0ea5a4]">Subscription</div>
-                <h2 className="mt-2 text-xl font-black text-slate-900">Activate manager access</h2>
+                <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-[#0ea5a4]">Manager access</div>
                 <p className="mt-2 text-sm leading-6 text-slate-500">
-                  Complete the recurring manager subscription below. After payment, your manager ID will appear above so you can create the account.
+                  Subscription and manager access start in Join Axis. Once you pay, Axis creates your manager ID and saves your name, email, and phone number to the manager table for account setup here.
                 </p>
-                <div className="mt-4">
-                  <label className="mb-2 block text-sm font-semibold text-slate-700">Promo code</label>
-                  <input
-                    type="text"
-                    value={subscriptionForm.promoCode}
-                    onChange={(event) => setSubscriptionForm((current) => ({ ...current, promoCode: event.target.value.toUpperCase() }))}
-                    placeholder="FIRST20"
-                    className="w-full rounded-[24px] border border-slate-200 bg-white px-5 py-4 text-base font-semibold uppercase tracking-[0.06em] text-slate-900 placeholder:text-slate-400 transition focus:border-[#0ea5a4] focus:outline-none focus:ring-2 focus:ring-[#0ea5a4]/20"
-                  />
-                </div>
                 {subscriptionError ? (
                   <div className="mt-4 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
                     {subscriptionError}
                   </div>
                 ) : null}
-                <button
-                  type="button"
-                  onClick={startSubscriptionSetup}
-                  disabled={subscriptionLoading || !subscriptionForm.name.trim() || !subscriptionForm.email.trim()}
-                  className="mt-4 w-full rounded-full bg-[#0ea5a4] px-5 py-4 text-base font-semibold text-white transition hover:bg-[#0b8a89] disabled:opacity-50"
+                <a
+                  href="/join-us"
+                  className="mt-4 inline-flex w-full items-center justify-center rounded-full bg-[#0ea5a4] px-5 py-4 text-base font-semibold text-white transition hover:bg-[#0b8a89]"
                 >
-                  {subscriptionLoading ? 'Starting checkout…' : 'Start recurring subscription'}
-                </button>
+                  Start in Join Axis
+                </a>
               </div>
             </div>
           )}

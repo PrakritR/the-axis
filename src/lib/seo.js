@@ -1,8 +1,8 @@
 import { useEffect } from 'react'
 
-const DEFAULT_TITLE = 'Axis Seattle | Housing Near U District'
+const DEFAULT_TITLE = 'Axis Seattle | Housing in Seattle'
 const DEFAULT_DESCRIPTION =
-  "Affordable shared housing and private rooms for rent in Seattle's University District near UW. Modern homes, fast WiFi, and convenient transit access."
+  'Browse available housing in Seattle with posted pricing, current availability, and online applications.'
 const DEFAULT_SHARE_IMAGE = '/axis-share.png'
 const DEFAULT_LOGO = '/favicon.svg'
 

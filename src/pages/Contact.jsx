@@ -267,7 +267,7 @@ const selectCls = `${inputCls} appearance-none cursor-pointer`
 const CONTACT_INQUIRY_TYPES = [
   'General',
   'Schedule a tour',
-  'Current room availability',
+  'Current housing availability',
   'Lease length and pricing',
   'Pricing & fees',
   'Application follow-up',
@@ -384,7 +384,7 @@ function ContactMessageForm() {
 
       <div>
         <label className="mb-1.5 block text-xs font-semibold text-slate-700">Message Summary <span className="text-axis">*</span></label>
-        <textarea required className={`${inputCls} min-h-[110px] resize-y`} placeholder="Ask us anything about rooms, pricing, availability, or move-in dates…" value={form.message} onChange={e => set('message', e.target.value)} />
+        <textarea required className={`${inputCls} min-h-[110px] resize-y`} placeholder="Ask us anything about housing, pricing, availability, or move-in dates…" value={form.message} onChange={e => set('message', e.target.value)} />
       </div>
 
       {error && (
@@ -417,7 +417,7 @@ export default function Contact() {
     <div className="bg-[linear-gradient(180deg,#fcfcfa_0%,#ffffff_32%,#f8fafc_100%)]">
       <Seo
         title="Contact Axis Seattle | Tours and Housing Availability"
-        description="Contact Axis Seattle to ask about room availability, schedule a tour, or learn more about affordable housing options in Seattle."
+        description="Contact Axis Seattle to ask about housing availability, schedule a tour, or get help with pricing and move-in questions."
         pathname="/contact"
       />
       <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 sm:py-12">
@@ -434,7 +434,7 @@ export default function Contact() {
               <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-500">Best uses</div>
               <h2 className="mt-2 text-2xl font-black tracking-tight text-slate-900">What to send here</h2>
               <div className="mt-5 space-y-3">
-                {['Questions about which room is actually available now','Tour requests for a specific property or room','Lease term, pricing, and move-in timing questions','Follow-up after viewing a listing on the site'].map((item) => (
+                {['Questions about what is currently available','Tour requests for a specific listing','Lease term, pricing, and move-in timing questions','Follow-up after viewing a listing on the site'].map((item) => (
                   <div key={item} className="flex items-start gap-3 rounded-2xl border border-slate-200 bg-white px-4 py-3">
                     <span className="mt-1 inline-flex h-2.5 w-2.5 shrink-0 rounded-full bg-axis" />
                     <div className="text-sm leading-6 text-slate-700">{item}</div>
@@ -446,7 +446,7 @@ export default function Contact() {
             <div className="bg-slate-900 p-6 text-white">
               <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-teal-200">Quick contact</div>
               <div className="mt-3 text-2xl font-black">Prefer a faster route?</div>
-              <p className="mt-3 text-sm leading-7 text-slate-300">Know which room you want? Call or text.</p>
+              <p className="mt-3 text-sm leading-7 text-slate-300">Know which listing you want? Call or text.</p>
               <div className="mt-5 flex flex-col gap-3">
                 <a href={`tel:${CONTACT_PHONE_RAW}`} className="rounded-full bg-white px-5 py-3 text-center text-sm font-semibold text-slate-900">Call {CONTACT_PHONE_DISPLAY}</a>
                 <a href={`sms:${CONTACT_PHONE_RAW}`} className="rounded-full border border-white/15 bg-white/10 px-5 py-3 text-center text-sm font-semibold text-white">Text leasing</a>
