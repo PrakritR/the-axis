@@ -58,15 +58,16 @@ export default function Navbar() {
   const navLinks = [
     { label: 'Houses', to: { pathname: '/', hash: '#properties' }, isActive: isHome },
     { label: 'Apply Housing', to: '/apply', isActive: location.pathname === '/apply' },
+    { label: 'Schedule Tour', to: '/contact?subject=Schedule%20Tour', isActive: location.pathname === '/contact' && new URLSearchParams(location.search).get('subject') !== 'Contact Axis' },
     { label: 'Join Axis', to: '/join-us', isActive: location.pathname === '/join-us' },
-    { label: 'Contact', to: '/contact', isActive: location.pathname === '/contact' },
+    { label: 'Contact', to: '/contact?subject=Contact%20Axis', isActive: location.pathname === '/contact' && new URLSearchParams(location.search).get('subject') === 'Contact Axis' },
   ]
   const mobileDockLinks = [
     { label: 'Houses', to: { pathname: '/', hash: '#properties' }, icon: <HomeIcon />, isActive: isHome },
     { label: 'Apply', to: '/apply', icon: <ApplyIcon />, isActive: location.pathname === '/apply' },
-    { label: 'Contact', to: '/contact', icon: <ContactIcon />, isActive: location.pathname === '/contact' },
-    { label: 'Tours', to: `/contact?subject=${encodeURIComponent('Tour request')}`, icon: <TourIcon />, isActive: false },
-    { label: 'Resident', to: '/resident', icon: <ResidentIcon />, isActive: location.pathname === '/resident' },
+    { label: 'Tour', to: '/contact?subject=Schedule%20Tour', icon: <TourIcon />, isActive: location.pathname === '/contact' && new URLSearchParams(location.search).get('subject') !== 'Contact Axis' },
+    { label: 'Join', to: '/join-us', icon: <ResidentIcon />, isActive: location.pathname === '/join-us' },
+    { label: 'Contact', to: '/contact?subject=Contact%20Axis', icon: <ContactIcon />, isActive: location.pathname === '/contact' && new URLSearchParams(location.search).get('subject') === 'Contact Axis' },
   ]
 
   useEffect(() => {
@@ -178,24 +179,16 @@ export default function Navbar() {
             <nav className="container mx-auto flex flex-col gap-1 px-4 py-3 sm:px-6">
               <Link to={{ pathname: '/', hash: '#properties' }} onClick={closeMobileMenu} className="rounded-xl px-3 py-2.5 text-sm font-medium text-slate-600 transition hover:bg-slate-50 hover:text-slate-900">Houses</Link>
               <Link to="/apply" onClick={() => { closeMobileMenu(); scrollToTop() }} className="rounded-xl px-3 py-2.5 text-sm font-medium text-slate-600 transition hover:bg-slate-50 hover:text-slate-900">Apply Housing</Link>
+              <Link to="/contact?subject=Schedule%20Tour" onClick={() => { closeMobileMenu(); scrollToTop() }} className="rounded-xl px-3 py-2.5 text-sm font-medium text-slate-600 transition hover:bg-slate-50 hover:text-slate-900">Schedule Tour</Link>
               <Link to="/join-us" onClick={() => { closeMobileMenu(); scrollToTop() }} className="rounded-xl px-3 py-2.5 text-sm font-medium text-slate-600 transition hover:bg-slate-50 hover:text-slate-900">Join Axis</Link>
-              <Link to="/contact" onClick={() => { closeMobileMenu(); scrollToTop() }} className="rounded-xl px-3 py-2.5 text-sm font-medium text-slate-600 transition hover:bg-slate-50 hover:text-slate-900">Contact</Link>
-              <Link
-                to="/resident"
-                onClick={() => { closeMobileMenu(); scrollToTop() }}
-                className={`rounded-xl px-3 py-2.5 text-sm font-medium transition ${
-                  location.pathname === '/resident' ? 'bg-slate-100 text-slate-900' : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
-                }`}
-              >
-                Login
-              </Link>
+              <Link to="/contact?subject=Contact%20Axis" onClick={() => { closeMobileMenu(); scrollToTop() }} className="rounded-xl px-3 py-2.5 text-sm font-medium text-slate-600 transition hover:bg-slate-50 hover:text-slate-900">Contact</Link>
               <div className="mt-2 border-t border-slate-200 pt-3 pb-1">
                 <Link
-                  to={`/contact?subject=${encodeURIComponent('Tour request')}`}
+                  to={`/contact?subject=${encodeURIComponent('Schedule Tour')}`}
                   onClick={() => { closeMobileMenu(); scrollToTop() }}
                   className="block rounded-full bg-[linear-gradient(180deg,#2f76ff_0%,#2450eb_100%)] px-4 py-2.5 text-center text-sm font-semibold text-white shadow-[0_14px_32px_rgba(37,99,235,0.18)] transition hover:brightness-105"
                 >
-                  Request a tour
+                  Schedule Tour
                 </Link>
               </div>
             </nav>
