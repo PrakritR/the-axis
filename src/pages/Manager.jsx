@@ -236,10 +236,12 @@ function ManagerStep({ number, title, description, children, tone = 'default' })
 function ManagerLogin({ onLogin }) {
   const queryString = typeof window !== 'undefined' ? window.location.search : ''
   const initialSearch = new URLSearchParams(queryString)
+  const initialView = initialSearch.get('view') === 'create' || initialSearch.get('setup') === 'success' ? 'setup' : 'signin'
+  const [activeView, setActiveView] = useState(initialView)
   const [signInForm, setSignInForm] = useState({ email: '', password: '' })
   const [subscriptionForm, setSubscriptionForm] = useState({ name: '', email: '', promoCode: 'FIRST20' })
   const [activationForm, setActivationForm] = useState({ managerId: '', name: '', email: '', password: '' })
-  const [showActivation, setShowActivation] = useState(initialSearch.get('setup') === 'success')
+  const [showActivation, setShowActivation] = useState(initialView === 'setup')
   const [subscriptionReady, setSubscriptionReady] = useState(false)
   const [accountExists, setAccountExists] = useState(false)
   const [notice, setNotice] = useState('')
@@ -277,6 +279,7 @@ function ManagerLogin({ onLogin }) {
     setSubscriptionReady(nextSubscriptionReady)
     setAccountExists(nextAccountExists)
     setShowActivation(nextSubscriptionReady && !nextAccountExists)
+    setActiveView(nextAccountExists ? 'signin' : 'setup')
     setSignInForm((current) => ({ ...current, email: normalizedEmail || current.email }))
     setSubscriptionForm((current) => ({
       ...current,
@@ -318,8 +321,19 @@ function ManagerLogin({ onLogin }) {
     const searchParams = new URLSearchParams(queryString)
     const sessionId = searchParams.get('session_id') || ''
     const setupState = searchParams.get('setup') || ''
+    const requestedView = searchParams.get('view') || ''
+
+    if (requestedView === 'create' && setupState !== 'success') {
+      setActiveView('setup')
+      setShowActivation(true)
+    }
+
+    if (requestedView === 'signin' && setupState !== 'success') {
+      setActiveView('signin')
+    }
 
     if (setupState === 'cancelled') {
+      setActiveView('setup')
       setNotice('Manager subscription checkout was cancelled. You can restart it below whenever you are ready.')
     }
 
@@ -445,53 +459,51 @@ function ManagerLogin({ onLogin }) {
     }
   }
 
-  function scrollToSignIn() {
-    document.getElementById('manager-signin-card')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
-  }
-
-  const subscriptionManagerId = activationForm.managerId.trim().toUpperCase()
-
   return (
-    <div className="flex min-h-screen items-start justify-center bg-gradient-to-br from-slate-950 via-slate-900 to-slate-800 px-4 py-10 sm:px-6 sm:py-14">
-      <div className="w-full max-w-6xl">
-        <div className="mb-10 text-center">
-          <div className="inline-flex items-center gap-3">
-            <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-[#0ea5a4] shadow-[0_0_24px_rgba(14,165,164,0.35)]">
-              <svg className="h-6 w-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-              </svg>
-            </div>
-            <span className="text-2xl font-black tracking-tight text-white sm:text-3xl">Axis Manager Portal</span>
-          </div>
-          <p className="mx-auto mt-3 max-w-2xl text-sm leading-7 text-slate-300 sm:text-base">
-            Existing managers can sign in right away. New managers first start the recurring subscription, receive a manager ID, and then activate their account.
-          </p>
-        </div>
-
-        <div className="grid gap-6 lg:grid-cols-[0.9fr_1.1fr]">
-          <section id="manager-signin-card" className="rounded-[32px] border border-white/10 bg-white p-7 shadow-[0_25px_60px_rgba(0,0,0,0.35)] sm:p-8">
-            <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-[#0ea5a4]">Existing manager</div>
-            <h1 className="mt-3 text-3xl font-black tracking-tight text-slate-900">Sign in</h1>
-            <p className="mt-3 text-sm leading-7 text-slate-500">
-              Use your email and password to open the manager portal, review leases, add houses, and manage resident operations.
+    <div className="flex min-h-screen items-start justify-center bg-[linear-gradient(180deg,#f7fbff_0%,#eef5ff_48%,#f9fcff_100%)] px-4 py-10 sm:px-6 sm:py-14">
+      <div className="w-full max-w-4xl">
+        <section className="rounded-[32px] border border-slate-200/80 bg-white p-7 shadow-[0_28px_80px_rgba(148,163,184,0.18)] sm:p-8">
+          <div className="mb-6 text-center">
+            <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-[#0ea5a4]">AXIS PORTAL</div>
+            <h1 className="mt-2 text-5xl font-black tracking-tight text-slate-900 sm:text-6xl">Login</h1>
+            <p className="mt-3 text-base leading-7 text-slate-500">
+              Sign in or create your manager account.
             </p>
+          </div>
 
-            <form onSubmit={handleSubmit} className="mt-7 space-y-5">
+          <div className="mx-auto flex max-w-3xl gap-1 rounded-[24px] border border-slate-100 bg-slate-50 p-1.5">
+            {[['signin', 'Manager Login'], ['setup', 'Create account']].map(([id, label]) => (
+              <button
+                key={id}
+                type="button"
+                onClick={() => setActiveView(id)}
+                className={classNames(
+                  'flex-1 rounded-[18px] px-4 py-3 text-base font-semibold transition',
+                  activeView === id ? 'bg-white text-slate-900 shadow-sm ring-2 ring-[#0ea5a4]' : 'text-slate-500 hover:text-slate-900'
+                )}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+
+          {activeView === 'signin' ? (
+            <form onSubmit={handleSubmit} className="mx-auto mt-10 max-w-3xl space-y-5">
               <div>
-                <label className="mb-1.5 block text-sm font-semibold text-slate-700">Email</label>
+                <label className="mb-2 block text-sm font-semibold text-slate-700">Email</label>
                 <input
                   type="email"
                   value={signInForm.email}
                   onChange={(event) => setSignInForm((current) => ({ ...current, email: event.target.value }))}
                   required
                   autoComplete="email"
-                  placeholder="you@axis-seattle.com"
-                  className="w-full rounded-[24px] border border-slate-200 bg-slate-50 px-5 py-4 text-base text-slate-900 placeholder:text-slate-400 transition focus:border-[#0ea5a4] focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#0ea5a4]/20"
+                  placeholder="you@example.com"
+                  className="w-full rounded-[24px] border border-slate-200 bg-white px-5 py-4 text-base text-slate-900 placeholder:text-slate-400 transition focus:border-[#0ea5a4] focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#0ea5a4]/20"
                 />
               </div>
 
               <div>
-                <label className="mb-1.5 block text-sm font-semibold text-slate-700">Password</label>
+                <label className="mb-2 block text-sm font-semibold text-slate-700">Password</label>
                 <ManagerPasswordInput
                   value={signInForm.password}
                   onChange={(event) => setSignInForm((current) => ({ ...current, password: event.target.value }))}
@@ -508,224 +520,137 @@ function ManagerLogin({ onLogin }) {
               <button
                 type="submit"
                 disabled={loginLoading}
-                className="w-full rounded-[24px] bg-slate-900 px-5 py-4 text-base font-semibold text-white transition hover:bg-[#0ea5a4] disabled:opacity-50"
+                className="w-full rounded-full bg-slate-900 px-5 py-4 text-base font-semibold text-white transition hover:bg-slate-800 disabled:opacity-50"
               >
-                {loginLoading ? 'Signing in…' : 'Sign in to manager portal'}
+                {loginLoading ? 'Signing in…' : 'Sign in'}
               </button>
             </form>
-
-            <div className="mt-6 rounded-[24px] border border-slate-200 bg-slate-50 p-5">
-              <div className="text-sm font-semibold text-slate-900">Need manager access?</div>
-              <p className="mt-2 text-sm leading-6 text-slate-500">
-                Start the manager subscription on the right. After checkout, we generate your manager ID and bring you back here to activate the account.
-              </p>
-            </div>
-          </section>
-
-          <section className="rounded-[32px] border border-white/10 bg-white p-7 shadow-[0_25px_60px_rgba(0,0,0,0.35)] sm:p-8">
-            <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-[#0ea5a4]">New manager setup</div>
-            <h2 className="mt-3 text-3xl font-black tracking-tight text-slate-900">Become a manager</h2>
-            <p className="mt-3 text-sm leading-7 text-slate-500">
-              Follow the three steps below. The sequence is simple: subscribe, receive your manager ID, then create your password and enter the portal.
-            </p>
-
-            {notice ? (
-              <div className="mt-6 rounded-[24px] border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
-                {notice}
+          ) : (
+            <div className="mx-auto mt-10 max-w-3xl space-y-5">
+              <div>
+                <label className="mb-2 block text-sm font-semibold text-slate-700">Manager ID</label>
+                <input
+                  type="text"
+                  value={activationForm.managerId}
+                  onChange={(event) => {
+                    setShowActivation(true)
+                    setActivationForm((current) => ({ ...current, managerId: event.target.value.toUpperCase() }))
+                  }}
+                  placeholder="MGR-XXXXXXXXXXXXXX"
+                  className="w-full rounded-[24px] border border-slate-200 bg-white px-5 py-4 text-base font-semibold uppercase tracking-[0.04em] text-slate-900 placeholder:text-slate-400 transition focus:border-[#0ea5a4] focus:outline-none focus:ring-2 focus:ring-[#0ea5a4]/20"
+                />
               </div>
-            ) : null}
-
-            {setupLoading ? (
-              <div className="mt-6 rounded-[24px] border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
-                Verifying manager subscription…
+              <div>
+                <label className="mb-2 block text-sm font-semibold text-slate-700">Full name</label>
+                <input
+                  type="text"
+                  value={activationForm.name}
+                  onChange={(event) => {
+                    const value = event.target.value
+                    setActivationForm((current) => ({ ...current, name: value }))
+                    setSubscriptionForm((current) => ({ ...current, name: value }))
+                  }}
+                  placeholder="Your name"
+                  className="w-full rounded-[24px] border border-slate-200 bg-white px-5 py-4 text-base text-slate-900 placeholder:text-slate-400 transition focus:border-[#0ea5a4] focus:outline-none focus:ring-2 focus:ring-[#0ea5a4]/20"
+                />
               </div>
-            ) : null}
+              <div>
+                <label className="mb-2 block text-sm font-semibold text-slate-700">Email</label>
+                <input
+                  type="email"
+                  value={activationForm.email}
+                  onChange={(event) => {
+                    const value = event.target.value
+                    setActivationForm((current) => ({ ...current, email: value }))
+                    setSubscriptionForm((current) => ({ ...current, email: value }))
+                  }}
+                  required
+                  autoComplete="email"
+                  placeholder="you@example.com"
+                  className="w-full rounded-[24px] border border-slate-200 bg-white px-5 py-4 text-base text-slate-900 placeholder:text-slate-400 transition focus:border-[#0ea5a4] focus:outline-none focus:ring-2 focus:ring-[#0ea5a4]/20"
+                />
+              </div>
+              <div>
+                <label className="mb-2 block text-sm font-semibold text-slate-700">Create password</label>
+                <ManagerPasswordInput
+                  value={activationForm.password}
+                  onChange={(event) => setActivationForm((current) => ({ ...current, password: event.target.value }))}
+                  autoComplete="new-password"
+                  placeholder="Minimum 6 characters"
+                />
+              </div>
 
-            <div className="mt-6 space-y-4">
-              <ManagerStep
-                number="1"
-                title="Start the manager subscription"
-                description="Enter the manager name and email you want connected to the recurring subscription."
-              >
-                <div className="grid gap-4 sm:grid-cols-2">
-                  <div className="sm:col-span-2">
-                    <label className="mb-1.5 block text-sm font-semibold text-slate-700">Manager name</label>
-                    <input
-                      type="text"
-                      value={subscriptionForm.name}
-                      onChange={(event) => {
-                        const value = event.target.value
-                        setSubscriptionForm((current) => ({ ...current, name: value }))
-                        setActivationForm((current) => ({ ...current, name: value }))
-                      }}
-                      placeholder="Your name"
-                      className="w-full rounded-[24px] border border-slate-200 bg-white px-5 py-4 text-base text-slate-900 placeholder:text-slate-400 transition focus:border-[#0ea5a4] focus:outline-none focus:ring-2 focus:ring-[#0ea5a4]/20"
-                    />
-                  </div>
-                  <div className="sm:col-span-2">
-                    <label className="mb-1.5 block text-sm font-semibold text-slate-700">Email</label>
-                    <input
-                      type="email"
-                      value={subscriptionForm.email}
-                      onChange={(event) => {
-                        const value = event.target.value
-                        setSubscriptionForm((current) => ({ ...current, email: value }))
-                        setActivationForm((current) => ({ ...current, email: value }))
-                      }}
-                      placeholder="you@axis-seattle.com"
-                      autoComplete="email"
-                      className="w-full rounded-[24px] border border-slate-200 bg-white px-5 py-4 text-base text-slate-900 placeholder:text-slate-400 transition focus:border-[#0ea5a4] focus:outline-none focus:ring-2 focus:ring-[#0ea5a4]/20"
-                    />
-                  </div>
-                  <div className="sm:col-span-2">
-                    <label className="mb-1.5 block text-sm font-semibold text-slate-700">Promo code</label>
-                    <input
-                      type="text"
-                      value={subscriptionForm.promoCode}
-                      onChange={(event) => setSubscriptionForm((current) => ({ ...current, promoCode: event.target.value.toUpperCase() }))}
-                      placeholder="FIRST20"
-                      className="w-full rounded-[24px] border border-slate-200 bg-white px-5 py-4 text-base font-semibold uppercase tracking-[0.06em] text-slate-900 placeholder:text-slate-400 transition focus:border-[#0ea5a4] focus:outline-none focus:ring-2 focus:ring-[#0ea5a4]/20"
-                    />
-                  </div>
+              {notice ? (
+                <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
+                  {notice}
                 </div>
+              ) : null}
 
+              {!subscriptionReady && !showActivation ? (
+                <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
+                  Complete the recurring subscription below first. After payment, your manager ID will appear here so you can create the account.
+                </div>
+              ) : null}
+
+              {setupLoading ? (
+                <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
+                  Verifying manager setup…
+                </div>
+              ) : null}
+
+              {activationError ? (
+                <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+                  {activationError}
+                </div>
+              ) : null}
+
+              <button
+                type="button"
+                onClick={handleCreateAccount}
+                disabled={activationLoading || !activationForm.managerId.trim() || !activationForm.email.trim() || !activationForm.password.trim()}
+                className="w-full rounded-full bg-slate-900 px-5 py-4 text-base font-semibold text-white transition hover:bg-slate-800 disabled:opacity-50"
+              >
+                {activationLoading ? 'Creating account…' : 'Create account'}
+              </button>
+
+              <div className="rounded-[28px] border border-slate-200 bg-slate-50 p-5">
+                <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-[#0ea5a4]">Subscription</div>
+                <h2 className="mt-2 text-xl font-black text-slate-900">Activate manager access</h2>
+                <p className="mt-2 text-sm leading-6 text-slate-500">
+                  Complete the recurring manager subscription below. After payment, your manager ID will appear above so you can create the account.
+                </p>
+                <div className="mt-4">
+                  <label className="mb-2 block text-sm font-semibold text-slate-700">Promo code</label>
+                  <input
+                    type="text"
+                    value={subscriptionForm.promoCode}
+                    onChange={(event) => setSubscriptionForm((current) => ({ ...current, promoCode: event.target.value.toUpperCase() }))}
+                    placeholder="FIRST20"
+                    className="w-full rounded-[24px] border border-slate-200 bg-white px-5 py-4 text-base font-semibold uppercase tracking-[0.06em] text-slate-900 placeholder:text-slate-400 transition focus:border-[#0ea5a4] focus:outline-none focus:ring-2 focus:ring-[#0ea5a4]/20"
+                  />
+                </div>
                 {subscriptionError ? (
                   <div className="mt-4 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
                     {subscriptionError}
                   </div>
                 ) : null}
-
                 <button
                   type="button"
                   onClick={startSubscriptionSetup}
-                  disabled={subscriptionLoading}
-                  className="mt-4 w-full rounded-[24px] bg-[#0ea5a4] px-5 py-4 text-base font-semibold text-white transition hover:bg-[#0b8a89] disabled:opacity-50"
+                  disabled={subscriptionLoading || !subscriptionForm.name.trim() || !subscriptionForm.email.trim()}
+                  className="mt-4 w-full rounded-full bg-[#0ea5a4] px-5 py-4 text-base font-semibold text-white transition hover:bg-[#0b8a89] disabled:opacity-50"
                 >
-                  {subscriptionLoading ? 'Starting checkout…' : 'Continue to recurring subscription'}
+                  {subscriptionLoading ? 'Starting checkout…' : 'Start recurring subscription'}
                 </button>
-              </ManagerStep>
-
-              <ManagerStep
-                number="2"
-                title="Receive your manager ID"
-                description="After Stripe checkout, we generate your manager ID automatically and keep it tied to the manager record in Airtable."
-                tone={subscriptionReady ? 'success' : 'default'}
-              >
-                {subscriptionReady ? (
-                  <div className="rounded-[24px] border border-emerald-200 bg-white px-5 py-4">
-                    <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-emerald-600">Manager ID ready</div>
-                    <div className="mt-2 text-2xl font-black tracking-[0.08em] text-slate-900">{subscriptionManagerId}</div>
-                    <div className="mt-2 text-sm text-slate-500">{activationForm.email || subscriptionForm.email}</div>
-                  </div>
-                ) : (
-                  <div className="rounded-[24px] border border-dashed border-slate-300 bg-white px-5 py-4 text-sm leading-6 text-slate-500">
-                    Once checkout finishes, you will return here with your manager ID prefilled for the activation step.
-                  </div>
-                )}
-              </ManagerStep>
-
-              {accountExists ? (
-                <ManagerStep
-                  number="3"
-                  title="Account already active"
-                  description="This manager subscription already has an account. Sign in with your email and password to continue."
-                  tone="success"
-                >
-                  <button
-                    type="button"
-                    onClick={scrollToSignIn}
-                    className="rounded-[24px] border border-slate-200 bg-white px-5 py-3 text-sm font-semibold text-slate-700 transition hover:border-[#0ea5a4] hover:text-[#0ea5a4]"
-                  >
-                    Go to sign in
-                  </button>
-                </ManagerStep>
-              ) : (
-                <ManagerStep
-                  number="3"
-                  title="Activate your manager account"
-                  description="Use the manager ID from step 2, set your password, and open the portal."
-                >
-                  {!showActivation && !subscriptionReady ? (
-                    <div className="rounded-[24px] border border-dashed border-slate-300 bg-white px-5 py-4 text-sm leading-6 text-slate-500">
-                      Finish the subscription first. If you already paid on another tab, click below and enter the manager ID you received.
-                      <button
-                        type="button"
-                        onClick={() => setShowActivation(true)}
-                        className="mt-4 block rounded-[20px] border border-slate-200 px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:border-[#0ea5a4] hover:text-[#0ea5a4]"
-                      >
-                        I already have a manager ID
-                      </button>
-                    </div>
-                  ) : (
-                    <form onSubmit={handleCreateAccount} className="space-y-4">
-                      <div>
-                        <label className="mb-1.5 block text-sm font-semibold text-slate-700">Manager ID</label>
-                        <input
-                          type="text"
-                          value={activationForm.managerId}
-                          onChange={(event) => setActivationForm((current) => ({ ...current, managerId: event.target.value.toUpperCase() }))}
-                          required
-                          placeholder="MGR-XXXXXXXXXXXXXX"
-                          className="w-full rounded-[24px] border border-slate-200 bg-white px-5 py-4 text-base font-semibold uppercase tracking-[0.04em] text-slate-900 placeholder:text-slate-400 transition focus:border-[#0ea5a4] focus:outline-none focus:ring-2 focus:ring-[#0ea5a4]/20"
-                        />
-                      </div>
-                      <div>
-                        <label className="mb-1.5 block text-sm font-semibold text-slate-700">Manager name</label>
-                        <input
-                          type="text"
-                          value={activationForm.name}
-                          onChange={(event) => setActivationForm((current) => ({ ...current, name: event.target.value }))}
-                          placeholder="Your name"
-                          className="w-full rounded-[24px] border border-slate-200 bg-white px-5 py-4 text-base text-slate-900 placeholder:text-slate-400 transition focus:border-[#0ea5a4] focus:outline-none focus:ring-2 focus:ring-[#0ea5a4]/20"
-                        />
-                      </div>
-                      <div>
-                        <label className="mb-1.5 block text-sm font-semibold text-slate-700">Email</label>
-                        <input
-                          type="email"
-                          value={activationForm.email}
-                          onChange={(event) => setActivationForm((current) => ({ ...current, email: event.target.value }))}
-                          required
-                          autoComplete="email"
-                          placeholder="you@axis-seattle.com"
-                          className="w-full rounded-[24px] border border-slate-200 bg-white px-5 py-4 text-base text-slate-900 placeholder:text-slate-400 transition focus:border-[#0ea5a4] focus:outline-none focus:ring-2 focus:ring-[#0ea5a4]/20"
-                        />
-                      </div>
-                      <div>
-                        <label className="mb-1.5 block text-sm font-semibold text-slate-700">Create password</label>
-                        <ManagerPasswordInput
-                          value={activationForm.password}
-                          onChange={(event) => setActivationForm((current) => ({ ...current, password: event.target.value }))}
-                          autoComplete="new-password"
-                          placeholder="Minimum 6 characters"
-                        />
-                      </div>
-
-                      {activationError ? (
-                        <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-                          {activationError}
-                        </div>
-                      ) : null}
-
-                      <button
-                        type="submit"
-                        disabled={activationLoading}
-                        className="w-full rounded-[24px] bg-slate-900 px-5 py-4 text-base font-semibold text-white transition hover:bg-[#0ea5a4] disabled:opacity-50"
-                      >
-                        {activationLoading ? 'Creating account…' : 'Create manager account'}
-                      </button>
-                    </form>
-                  )}
-                </ManagerStep>
-              )}
+              </div>
             </div>
-          </section>
-        </div>
-
-        <p className="mt-6 text-center text-xs text-slate-400">
-          Residents can sign in through the{' '}
-          <a href="/resident" className="text-[#0ea5a4] hover:underline">resident portal →</a>
-        </p>
+          )}
+          <div className="mt-10 text-center">
+            <a href="/resident" className="text-lg font-semibold text-slate-500 transition hover:text-slate-900">
+              Back to portal options
+            </a>
+          </div>
+        </section>
       </div>
     </div>
   )
