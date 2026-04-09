@@ -502,40 +502,25 @@ function getSharedSpaceDetailMeta(video) {
 
 const PROPERTY_EDITORIAL_CONTENT = {
   '4709a-8th-ave': {
-    eyebrow: 'Seattle shared housing',
     title: 'A larger shared house with room to spread out.',
-    intro: 'Ten rooms across three floors, shared common spaces, and a straightforward townhouse layout.',
+    intro: 'Ten rooms across three floors.',
     body: '4709A has a straightforward layout: kitchen and living space downstairs, bedrooms across the upper floors, in-unit laundry, and room options at different price points.',
     audience: 'Good for renters who want a larger shared-house setup with varied room options.',
     localNotes: ['Walkable Seattle location', 'In-unit laundry and fast Wi-Fi', 'Shared kitchen and living room', 'Room options across three floors'],
-    sectionTitle: 'House layout',
-    sectionBody: 'The common spaces stay on the main floor while the bedroom floors feel more separate. That setup gives larger groups more flexibility than a standard apartment layout.',
-    neighborhoodTitle: 'Transit and daily basics nearby',
-    neighborhoodBody: '4709A keeps transit, groceries, and everyday essentials close without overcomplicating the setup.',
   },
   '4709b-8th-ave': {
-    eyebrow: 'Seattle shared housing',
-    title: 'Shared housing in Seattle, set up to be simple.',
-    intro: 'Nine furnished rooms in a three-floor townhouse with shared common space and fast Wi-Fi.',
+    title: 'Shared housing in Seattle.',
+    intro: 'Nine furnished rooms in a three-floor townhouse.',
     body: '4709B is set up simply: kitchen and living room downstairs, bedrooms upstairs, and room options that are easy to compare.',
     audience: 'Made for renters who care more about convenience, location, and a clean shared setup than apartment-building amenities.',
     localNotes: ['Walkable Seattle location', 'Furnished rooms with simple pricing', 'Shared kitchen and living room', 'In-unit laundry and fast Wi-Fi'],
-    sectionTitle: 'House layout',
-    sectionBody: 'The house is easy to share. Bedrooms are spread across the upper floors while the common spaces stay on the main level.',
-    neighborhoodTitle: 'A local setup that keeps daily life close',
-    neighborhoodBody: 'Food, groceries, transit, and daily errands are all within reach from this address.',
   },
   '5259-brooklyn-ave-ne': {
-    eyebrow: 'Seattle shared housing',
-    title: 'Shared living with clearer pricing and flexible lease options.',
-    intro: 'A nine-bedroom townhouse with grouped room options, shared common spaces, and multiple lease lengths.',
+    title: 'Shared living with flexible lease options.',
+    intro: 'A nine-bedroom townhouse with grouped room options.',
     body: '5259 is the most structured of the three homes, with grouped room packages, shared-bath pricing, and fixed lease options.',
     audience: 'Useful for renters who want a more structured shared-house setup with grouped options.',
     localNotes: ['Grouped room packages available', 'Walkable Seattle location', 'In-unit laundry and shared kitchen', 'Summer, 9-month, and full-year lease options'],
-    sectionTitle: 'Lease setup',
-    sectionBody: 'The room layout is organized around grouped pricing by bathroom share and multiple lease options. That makes it easier to compare if you are renting with others or planning around a fixed move-in window.',
-    neighborhoodTitle: 'Connected to transit and daily essentials',
-    neighborhoodBody: 'Brooklyn Avenue keeps transit, groceries, and everyday stops within reach in a walkable part of Seattle.',
   },
 }
 
@@ -637,16 +622,11 @@ export default function PropertyPage(){
       ]
     : [p.summary]
   const editorial = PROPERTY_EDITORIAL_CONTENT[p.slug] || {
-    eyebrow: 'Seattle shared housing',
     title: p.name,
     intro: p.summary,
     body: p.summary,
     audience: 'A shared-house option in Seattle.',
     localNotes: ['Walkable Seattle location', 'Shared kitchen and living room', 'In-unit laundry', 'Flexible room options'],
-    sectionTitle: 'Overview',
-    sectionBody: p.summary,
-    neighborhoodTitle: 'Seattle location',
-    neighborhoodBody: p.summary,
   }
 
   const includedItems = modalPlan
@@ -692,9 +672,8 @@ export default function PropertyPage(){
         <section id="overview" ref={(node) => { sectionRefs.current.overview = node }} className="mx-auto max-w-[1480px] px-4 pt-6 sm:px-6 lg:px-10 lg:pt-10">
           <div className="grid gap-10 border-b border-slate-200 pb-10 lg:grid-cols-[minmax(0,1.2fr)_320px] lg:pb-14">
             <div className="max-w-4xl">
-              <div className="text-[11px] font-bold uppercase tracking-[0.22em] text-slate-500">{editorial.eyebrow}</div>
               <h1 className="font-editorial mt-4 text-[2rem] leading-[1.1] text-slate-900 sm:text-[3.5rem] sm:leading-[0.96] lg:max-w-4xl lg:text-[5.4rem]">{editorial.title}</h1>
-              <p className="mt-6 max-w-2xl text-lg leading-8 text-slate-600">{editorial.intro}</p>
+              <p className="mt-5 max-w-2xl text-lg leading-8 text-slate-600">{editorial.intro}</p>
 
               <div className="mt-8 flex flex-wrap gap-3">
                 <Link
@@ -789,8 +768,7 @@ export default function PropertyPage(){
             <section id="floor-plans" ref={(node) => { sectionRefs.current['floor-plans'] = node }} className="mt-10 min-w-0 scroll-mt-28 md:scroll-mt-40">
               <div className="flex min-w-0 flex-wrap items-end justify-between gap-x-3 gap-y-2">
                 <div className="min-w-0 flex-1">
-                  <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-500">{roomPlansLabel}</div>
-                  <h2 className="font-editorial mt-2 text-3xl leading-tight text-slate-900 sm:text-4xl">{roomPlansHeading}</h2>
+                  <h2 className="font-editorial text-3xl leading-tight text-slate-900 sm:text-4xl">{roomPlansHeading}</h2>
                 </div>
                 <div className="shrink-0 text-sm text-slate-500">
                   {displayedRoomPlans.reduce((acc, pl) => acc + pl.rooms.length, 0)} rooms listed
@@ -808,8 +786,7 @@ export default function PropertyPage(){
             <section id="shared-spaces" ref={(node) => { sectionRefs.current['shared-spaces'] = node }} className="mt-10 scroll-mt-28 md:scroll-mt-40">
               <div className="flex items-end justify-between gap-3">
                 <div>
-                  <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-500">Shared Spaces</div>
-                  <h2 className="font-editorial mt-2 text-3xl leading-tight text-slate-900 sm:text-4xl">Kitchen and living area</h2>
+                  <h2 className="font-editorial text-3xl leading-tight text-slate-900 sm:text-4xl">Kitchen and living area</h2>
                 </div>
                 <div className="shrink-0 text-sm text-slate-500">
                   {sharedSpaceVideos.length} shared spaces
@@ -852,14 +829,12 @@ export default function PropertyPage(){
 
           {(rentTotals.totalHouseRent || leasingPackages.length > 0) ? (
             <section id="leasing" ref={(node) => { sectionRefs.current.leasing = node }} className="mt-10 scroll-mt-28 md:scroll-mt-40">
-              <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-500">Townhouse Leasing</div>
-              <h2 className="font-editorial mt-2 text-3xl leading-tight text-slate-900 sm:text-4xl">Whole-house and grouped options</h2>
+              <h2 className="font-editorial text-3xl leading-tight text-slate-900 sm:text-4xl">Whole-house and grouped options</h2>
               <div className="mt-5 grid gap-5">
                 <div className="grid gap-5">
                   {rentTotals.totalHouseRent ? (
                     <div className="overflow-hidden rounded-[18px] border border-slate-200 bg-stone-50">
                       <div className="px-6 py-6">
-                        <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-500">Whole home pricing</div>
                         <div className="mt-3 flex flex-wrap items-end justify-between gap-4">
                           <div>
                             <div className="text-3xl font-black leading-none tracking-tight text-slate-900 sm:text-[2.6rem]">{formatCompactMonthlyCurrency(rentTotals.totalHouseRent)}</div>
@@ -897,10 +872,7 @@ export default function PropertyPage(){
 
           {/* Property Highlights */}
           <section id="highlights" ref={(node) => { sectionRefs.current.highlights = node }} className="mt-10 scroll-mt-28 md:scroll-mt-40">
-            <div className="grid gap-8 border-t border-slate-200 pt-10 lg:grid-cols-[280px_minmax(0,1fr)]">
-              <div>
-                <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-500">What&apos;s included</div>
-              </div>
+              <div className="grid gap-8 border-t border-slate-200 pt-10 lg:grid-cols-[280px_minmax(0,1fr)]">
               <div className="grid gap-x-8 gap-y-4 sm:grid-cols-2">
                 {[
                   `${p.beds} private bedrooms`,
@@ -1198,9 +1170,8 @@ export default function PropertyPage(){
           <section id="map" ref={(node) => { sectionRefs.current.map = node }} className="mt-10 mb-14 scroll-mt-28 md:scroll-mt-40">
             <div className="grid gap-8 border-t border-slate-200 pt-10 lg:grid-cols-[320px_minmax(0,1fr)]">
               <div>
-                <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-500">Location</div>
-                <h2 className="font-editorial mt-2 text-3xl leading-tight text-slate-900 sm:text-4xl">{editorial.neighborhoodTitle}</h2>
-                <p className="mt-4 text-base leading-8 text-slate-600">{editorial.neighborhoodBody}</p>
+                <h2 className="font-editorial text-3xl leading-tight text-slate-900 sm:text-4xl">Location</h2>
+                <p className="mt-3 text-base leading-8 text-slate-600">{p.neighborhood}</p>
                 <div className="mt-6 border-t border-slate-200 pt-4 text-sm leading-7 text-slate-600">{p.address}</div>
               </div>
               <div className="overflow-hidden rounded-[18px] border border-slate-200">
