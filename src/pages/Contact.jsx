@@ -767,6 +767,7 @@ function TabBar({ tabs, active, onChange }) {
 export default function Contact() {
   const location = useLocation()
   const [section, setSection] = useState('software')
+  const [housingTab, setHousingTab] = useState('schedule')
   const [softwareTab, setSoftwareTab] = useState('demo')
 
   useEffect(() => {
@@ -776,6 +777,7 @@ export default function Contact() {
     const subject = (params.get('subject') || '').toLowerCase()
 
     let nextSection = 'software'
+    let nextHousingTab = 'schedule'
     let nextSoftwareTab = 'demo'
 
     if (sectionParam === 'housing') {
@@ -788,11 +790,16 @@ export default function Contact() {
       nextSection = 'software'
     }
 
+    if (nextSection === 'housing' && tabParam === 'message') {
+      nextHousingTab = 'message'
+    }
+
     if (nextSection === 'software' && tabParam === 'message') {
       nextSoftwareTab = 'message'
     }
 
     setSection(nextSection)
+    setHousingTab(nextHousingTab)
     setSoftwareTab(nextSoftwareTab)
   }, [location.search])
 
@@ -809,7 +816,16 @@ export default function Contact() {
           {/* Housing section */}
           {section === 'housing' && (
             <div>
-              <HousingScheduler />
+              <div className="mb-6 border-b border-slate-100 pb-5">
+                <h2 className="text-3xl font-black tracking-tight text-slate-900">Contact manager</h2>
+                <p className="mt-2 text-sm text-slate-500">Schedule a tour or send a question directly to the property manager.</p>
+              </div>
+              <TabBar
+                tabs={[{ id: 'schedule', label: 'Set up tour' }, { id: 'message', label: 'Send message' }]}
+                active={housingTab}
+                onChange={setHousingTab}
+              />
+              {housingTab === 'schedule' ? <HousingScheduler /> : <HousingMessageForm />}
             </div>
           )}
 
@@ -817,8 +833,7 @@ export default function Contact() {
           {section === 'software' && (
             <div>
               <div className="mb-6 border-b border-slate-100 pb-5">
-                <h2 className="text-3xl font-black tracking-tight text-slate-900">Axis software</h2>
-                <p className="mt-2 text-sm text-slate-500">Contact the SaaS team about demos, onboarding, or property management software.</p>
+                <h2 className="text-3xl font-black tracking-tight text-slate-900">Connect with Axis Team</h2>
               </div>
               <TabBar
                 tabs={[{ id: 'demo', label: 'Request a Demo' }, { id: 'message', label: 'Send a Message' }]}
