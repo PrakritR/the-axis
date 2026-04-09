@@ -568,56 +568,6 @@ export default function Home() {
         <PropertyCarousel />
       </section>
 
-      {/* ── NEIGHBORHOOD — dark section ── */}
-      <section className="relative overflow-hidden border-t border-white/70 bg-[linear-gradient(180deg,rgba(255,255,255,0.3)_0%,rgba(255,255,255,0.62)_100%)] px-4 py-14 text-slate-900 sm:px-6 sm:py-24">
-        <div className="absolute inset-0 bg-dot-grid bg-dot-md opacity-20" />
-        <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_80%_50%,rgba(37,99,235,0.10),transparent_60%)]" />
-
-        <div className="relative mx-auto max-w-6xl">
-          <div className="grid gap-10 sm:gap-12 lg:grid-cols-2 lg:items-center">
-            <Reveal>
-              <h2 className="mt-4 text-2xl font-black tracking-[-0.05em] text-slate-900 sm:text-4xl">
-                Seattle housing, shown simply
-              </h2>
-              <p className="mt-4 max-w-md text-sm leading-6 text-slate-500 sm:text-base sm:leading-7">
-                The site shows available houses, pricing, and core details so you can decide what works for you.
-              </p>
-              <ul className="mt-6 space-y-3">
-                {neighborhoodItems.map((t) => (
-                  <li key={t} className="flex items-start gap-3 text-sm text-slate-700">
-                    <CheckCircle />
-                    {t}
-                  </li>
-                ))}
-              </ul>
-              <div className="mt-8">
-                <Link
-                  reloadDocument
-                  to={`/contact?subject=${encodeURIComponent('Tour request')}`}
-                  className="inline-flex w-full items-center justify-center gap-2 rounded-full bg-[linear-gradient(180deg,#2f76ff_0%,#2450eb_100%)] px-6 py-3 text-sm font-semibold text-white shadow-[0_18px_40px_rgba(37,99,235,0.18)] transition hover:brightness-105 active:scale-[0.97] sm:w-auto"
-                >
-                  Request a Tour <Arrow />
-                </Link>
-              </div>
-            </Reveal>
-
-            <Reveal delay={0.1} className="grid grid-cols-2 gap-3">
-                {[
-                  { label: 'Listed homes', value: '3' },
-                  { label: 'Starting price', value: '$750 /mo' },
-                  { label: 'Availability', value: 'Posted' },
-                  { label: 'Applications', value: 'Online' },
-                ].map((s) => (
-                <div key={s.label} className="flex flex-col justify-between rounded-[28px] border border-white/90 bg-white/84 p-6 shadow-[0_24px_60px_rgba(37,99,235,0.08)] backdrop-blur-sm">
-                  <span className="text-xs font-semibold uppercase tracking-[0.15em] text-slate-400">{s.label}</span>
-                  <span className="mt-4 text-2xl font-black text-slate-900">{s.value}</span>
-                </div>
-              ))}
-            </Reveal>
-          </div>
-        </div>
-      </section>
-
       <section className="border-t border-white/70 bg-transparent px-4 py-14 sm:px-6 sm:py-24">
         <div className="mx-auto max-w-6xl">
           <Reveal className="text-center max-w-xl mx-auto mb-12">

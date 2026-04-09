@@ -150,7 +150,6 @@ export default async function handler(req, res) {
         Email: normalizedEmail,
         Role: 'Manager',
         Active: true,
-        Plan: details.planType,
         Notes: nextNotes,
       })
     } else {
@@ -162,13 +161,17 @@ export default async function handler(req, res) {
       if (nextNotes !== String(manager.Notes || '').trim()) {
         nextFields.Notes = nextNotes
       }
-      if (manager.Plan !== details.planType) {
-        nextFields.Plan = details.planType
-      }
 
       if (Object.keys(nextFields).length > 0) {
         manager = await updateManager(manager.id, nextFields)
       }
+    }
+
+    // Attempt to save Plan as a dedicated field — requires a Plan column in Airtable.
+    try {
+      await updateManager(manager.id, { Plan: details.planType })
+    } catch {
+      // Column doesn't exist yet — plan is already captured in Notes
     }
 
     const managerId = manager['Manager ID'] || deriveManagerId(manager.id)

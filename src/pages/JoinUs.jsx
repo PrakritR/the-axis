@@ -87,7 +87,7 @@ const FREE_TIER_ONBOARDING_KEY = 'axis_manager_onboarding'
 function PlanCard({ plan, activePlan, billingCycle, onChoosePlan }) {
   const isSelected = activePlan === plan.id
   const ctaClasses = isSelected || plan.ctaVariant === 'primary'
-    ? 'bg-[linear-gradient(180deg,#2f76ff_0%,#2450eb_100%)] text-white shadow-[0_12px_28px_rgba(37,99,235,0.22)] hover:brightness-105'
+    ? 'bg-[linear-gradient(180deg,#2c3447_0%,#1a1d27_100%)] text-white shadow-[0_12px_28px_rgba(0,0,0,0.18)] hover:brightness-110'
     : 'border border-slate-200 bg-white text-slate-900 hover:border-slate-300 hover:bg-slate-50'
   const priceMeta = plan.prices[billingCycle]
 
@@ -293,13 +293,9 @@ export default function JoinUs() {
                   {selectedPlanMeta.prices[billingCycle].suffix}
                 </div>
               </div>
-              {selectedPlan !== 'free' ? (
-                <div className="rounded-2xl border border-[#2563eb]/10 bg-[#2563eb]/5 px-4 py-3 text-sm text-slate-600">
-                  Have a promo code? Enter it below — <span className="font-semibold text-slate-900">{DEFAULT_PROMO_CODE}</span> skips payment entirely.
-                </div>
-              ) : (
+              {selectedPlan === 'free' && (
                 <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
-                  Free tier creates a listing-only manager account with no rent collection, announcements, or work orders.
+                  House posting only — no rent collection, announcements, or work orders.
                 </div>
               )}
             </div>

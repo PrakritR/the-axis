@@ -12,8 +12,8 @@ const item = {
 }
 
 export default function Hero({
-  heading = 'Available Housing in Seattle',
-  subheading = 'Browse available houses and rooms in Seattle. Check pricing, availability, and apply if a place fits.',
+  heading = 'Seattle Housing',
+  subheading = 'Browse available houses and rooms. See pricing, availability, and apply online.',
   browseLabel = 'View Available Housing',
   tourLabel = 'Schedule a Tour',
   heroImage = new URL('../../Assets/HerobannerImage.svg', import.meta.url).href
@@ -59,7 +59,6 @@ export default function Hero({
               {[
                 { label: 'Starting price', value: '$750 / mo' },
                 { label: 'Listed homes', value: '3' },
-                { label: 'Availability', value: 'Posted online' },
               ].map((s) => (
                 <div key={s.label} className={`rounded-[24px] border border-white/80 bg-white/76 px-4 py-4 shadow-[0_12px_32px_rgba(37,99,235,0.08)] ${s.label === 'Utilities' ? 'col-span-2 sm:col-span-1' : ''}`}>
                   <div className="text-lg font-black text-slate-900 sm:text-xl">{s.value}</div>
