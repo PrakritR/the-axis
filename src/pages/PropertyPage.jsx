@@ -650,11 +650,11 @@ export default function PropertyPage(){
 
               <div className="mt-8 flex flex-wrap gap-3">
                 <Link
-                  to="/contact?section=housing&tab=schedule"
-                  onClick={() => window.scrollTo({ top: 0, left: 0, behavior: 'auto' })}
+                  to={`/apply?property=${p.slug}`}
+                  onClick={scrollToTop}
                   className="rounded-full bg-axis px-6 py-3 text-sm font-semibold text-white transition hover:opacity-95"
                 >
-                  Schedule a tour
+                  Apply
                 </Link>
                 <button
                   type="button"
@@ -1075,11 +1075,6 @@ export default function PropertyPage(){
                   onClick={() => scrollToId('floor-plans')}
                   className="w-full rounded-full bg-axis py-3 text-sm font-semibold text-white transition hover:opacity-95"
                 >Check availability</button>
-                <Link
-                  to="/contact?section=housing&tab=schedule"
-                  onClick={() => window.scrollTo({ top: 0, left: 0, behavior: 'auto' })}
-                  className="w-full rounded-full border border-slate-300 py-3 text-center text-sm font-semibold text-slate-700 transition hover:border-slate-500"
-                >Schedule a tour</Link>
                 <Link
                   to={`/apply?property=${p.slug}`}
                   onClick={scrollToTop}

@@ -10,7 +10,6 @@ import Footer from './components/Footer'
 import Home from './pages/Home'
 import scrollToTop from './utils/scrollToTop'
 import Chatbot from './components/Chatbot'
-import TourPopup from './components/TourPopup'
 
 const PropertyPage = lazy(() => import('./pages/PropertyPage'))
 const Contact = lazy(() => import('./pages/Contact'))
@@ -86,7 +85,7 @@ export default function App() {
   }
 
   // The manager portal renders its own standalone UI — no public Navbar, Footer,
-  // Chatbot, or TourPopup. Check the full pathname so /manager/* and /sign/*
+  // or Chatbot. Check the full pathname so /manager/* and /sign/*
   // paths also match.
   const isManagerRoute = location.pathname === '/manager' || location.pathname.startsWith('/manager/')
   const isSignLeaseRoute = location.pathname.startsWith('/sign/')
@@ -97,9 +96,6 @@ export default function App() {
   const isPortalHub = location.pathname === '/portal'
   const showMainMobileDock =
     !isOwnersRoute && ['/', '/apply', '/contact'].includes(location.pathname)
-  const showTourPopup =
-    !isStandaloneRoute && location.pathname !== '/apply' && !isOwnersRoute && !isPortalHub
-
   // Manager portal and signing flow render completely standalone — skip the public shell entirely
   if (isStandaloneRoute) {
     return (
@@ -161,7 +157,6 @@ export default function App() {
       </main>
       {!isPortalHub ? <Footer /> : null}
       {!isPortalHub ? <Chatbot /> : null}
-      {showTourPopup && <TourPopup />}
     </div>
   )
 }

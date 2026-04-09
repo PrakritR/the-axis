@@ -77,7 +77,7 @@ const faqs = [
   { q: 'What lease terms are available?', a: 'Lease structure depends on the house. Some homes follow fixed summer, academic-year, and full-year terms, while others offer more room-by-room flexibility based on current availability.' },
   { q: 'Where are the homes located?', a: 'Axis lists housing in Seattle and shows each house location directly on the listing page so you can decide what works for you.' },
   { q: 'How do I apply?', a: 'Click "Apply Now" and complete the online application. You\'ll need basic personal information, employment details, and references. We typically respond within 2 business days.' },
-  { q: 'Can I tour before applying?', a: 'Yes. Use the "Schedule a Tour" button to contact us and we\'ll arrange a walkthrough at a convenient time.' },
+  { q: 'Can I tour before applying?', a: 'Start with the online application. If you need a walkthrough first, email or call us from the contact page and we\'ll help schedule a time.' },
 ]
 
 // ── Eyebrow label ─────────────────────────────────────────────────────────────
@@ -568,11 +568,11 @@ export default function Home() {
               <h2 className="text-2xl font-black tracking-[-0.05em] text-slate-900 sm:text-4xl">Available Housing</h2>
 
               <Link
-                reloadDocument
-                to="/contact?section=housing&tab=schedule"
+                to="/apply"
+                onClick={scrollToTop}
                 className="inline-flex w-auto self-start items-center gap-2 rounded-full border border-slate-200 bg-white/84 px-5 py-2.5 text-sm font-semibold text-slate-700 shadow-[0_14px_32px_rgba(37,99,235,0.08)] transition hover:border-[#2563eb] hover:text-[#2563eb]"
               >
-                Schedule a Tour <Arrow />
+                Apply <Arrow />
               </Link>
             </div>
           </Reveal>
@@ -625,18 +625,18 @@ export default function Home() {
               </div>
               <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap">
                 <Link
-                  reloadDocument
-                  to="/contact?section=housing&tab=schedule"
+                  to="/apply"
+                  onClick={scrollToTop}
                   className="inline-flex w-full items-center justify-center gap-2 rounded-full bg-[linear-gradient(180deg,#2f76ff_0%,#2450eb_100%)] px-6 py-3 text-sm font-semibold text-white shadow-[0_18px_40px_rgba(37,99,235,0.18)] transition hover:brightness-105 active:scale-[0.97] sm:w-auto"
                 >
-                  Schedule a Tour <Arrow />
+                  Apply <Arrow />
                 </Link>
                 <Link
-                  to="/apply"
+                  to="/contact?section=housing&tab=message"
                   onClick={scrollToTop}
                   className="inline-flex w-full items-center justify-center gap-2 rounded-full border border-slate-200 bg-white px-6 py-3 text-sm font-semibold text-slate-700 transition hover:border-axis hover:text-axis active:scale-[0.97] sm:w-auto"
                 >
-                  Apply Now <Arrow />
+                  Contact us <Arrow />
                 </Link>
               </div>
             </div>

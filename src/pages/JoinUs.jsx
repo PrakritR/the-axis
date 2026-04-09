@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useLocation } from 'react-router-dom'
 import { Seo } from '../lib/seo'
 import { EmbeddedStripeCheckout } from '../components/EmbeddedStripeCheckout'
@@ -86,7 +86,7 @@ function CheckIcon() {
 
 const FREE_TIER_ONBOARDING_KEY = 'axis_manager_onboarding'
 
-function PlanCard({ plan, activePlan, billingCycle, onChoosePlan }) {
+function PlanCard({ plan, activePlan, billingCycle, onChoosePlan, onRevealPartnerSignup }) {
   const isSelected = activePlan === plan.id
   const ctaClasses = isSelected || plan.ctaVariant === 'primary'
     ? 'bg-[linear-gradient(180deg,#2c3447_0%,#1a1d27_100%)] text-white shadow-[0_12px_28px_rgba(0,0,0,0.18)] hover:brightness-110'
@@ -113,13 +113,16 @@ function PlanCard({ plan, activePlan, billingCycle, onChoosePlan }) {
         ) : null}
       </div>
 
-      <a
-        href={plan.ctaTo}
-        onClick={() => onChoosePlan(plan.id)}
+      <button
+        type="button"
+        onClick={() => {
+          onChoosePlan(plan.id)
+          onRevealPartnerSignup?.()
+        }}
         className={`mt-7 inline-flex w-full items-center justify-center rounded-2xl px-5 py-4 text-base font-semibold transition ${ctaClasses}`}
       >
         {isSelected ? 'Selected' : plan.ctaLabel}
-      </a>
+      </button>
 
       <ul className="mt-8 space-y-4 border-t border-slate-200 pt-7">
         {plan.features.map((feature) => (
@@ -149,8 +152,20 @@ export default function JoinUs() {
   const [copiedId, setCopiedId] = useState(false)
   const [embeddedCheckout, setEmbeddedCheckout] = useState(null)
   const [downloadNotice, setDownloadNotice] = useState('')
+  const [partnerSignupOpen, setPartnerSignupOpen] = useState(false)
 
   const selectedPlanMeta = PLANS.find((plan) => plan.id === selectedPlan) || PLANS[1]
+
+  function openPartnerSignup() {
+    setPartnerSignupOpen(true)
+    window.requestAnimationFrame(() => {
+      document.getElementById('manager-access')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    })
+  }
+
+  useEffect(() => {
+    if (location.hash === '#manager-access') setPartnerSignupOpen(true)
+  }, [location.hash])
 
   function copyManagerId() {
     if (!managerId) return
@@ -325,11 +340,41 @@ export default function JoinUs() {
 
           <div className="mt-16 grid gap-6 lg:grid-cols-3">
             {PLANS.map((plan) => (
-              <PlanCard key={plan.id} plan={plan} billingCycle={billingCycle} activePlan={selectedPlan} onChoosePlan={setSelectedPlan} />
+              <PlanCard
+                key={plan.id}
+                plan={plan}
+                billingCycle={billingCycle}
+                activePlan={selectedPlan}
+                onChoosePlan={setSelectedPlan}
+                onRevealPartnerSignup={openPartnerSignup}
+              />
             ))}
           </div>
 
-          <div id="manager-access" className="mx-auto mt-12 max-w-4xl rounded-[32px] border border-white/90 bg-white/92 p-7 shadow-[0_24px_60px_rgba(148,163,184,0.18)] backdrop-blur sm:p-8">
+          <div id="manager-access" className="mx-auto mt-12 max-w-4xl scroll-mt-24">
+            {!partnerSignupOpen ? (
+              <div className="rounded-[28px] border border-slate-200/90 bg-white/90 p-8 text-center shadow-[0_16px_48px_rgba(148,163,184,0.12)] sm:p-10">
+                <p className="text-base leading-7 text-slate-600">
+                  Chosen a plan? Open the partner signup form to enter your details and continue to checkout or free-tier setup.
+                </p>
+                <button
+                  type="button"
+                  onClick={openPartnerSignup}
+                  className="mt-6 inline-flex items-center justify-center rounded-full bg-[linear-gradient(180deg,#2f76ff_0%,#2450eb_100%)] px-8 py-3.5 text-sm font-semibold text-white shadow-[0_14px_36px_rgba(37,99,235,0.22)] transition hover:brightness-105"
+                >
+                  Open partner signup
+                </button>
+                <p className="mt-5 text-sm text-slate-500">
+                  Already have an account?{' '}
+                  <a href="/manager" className="font-semibold text-[#2563eb] underline-offset-2 hover:underline">
+                    Manager login
+                  </a>
+                </p>
+              </div>
+            ) : null}
+
+            {partnerSignupOpen ? (
+          <div className="rounded-[32px] border border-white/90 bg-white/92 p-7 shadow-[0_24px_60px_rgba(148,163,184,0.18)] backdrop-blur sm:p-8">
             <div className="flex flex-col gap-5 border-b border-slate-200 pb-6">
               <div className="flex flex-wrap gap-3">
                 {PLANS.map((plan) => (
@@ -436,6 +481,8 @@ export default function JoinUs() {
                 </button>
               </div>
             </form>
+          </div>
+            ) : null}
           </div>
         </div>
       </section>

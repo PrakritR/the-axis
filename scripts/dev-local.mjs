@@ -1,5 +1,7 @@
 /**
  * Starts local API (port 3001) and Vite dev server together.
+ * This is the default `npm run dev` — /api/* is proxied to match production.
+ * Use `npm run dev:vite` for frontend-only (no local API).
  */
 import { spawn } from 'child_process'
 import { fileURLToPath } from 'url'
@@ -19,6 +21,8 @@ const envFile = path.join(root, '.env')
 if (!existsSync(envFile)) {
   console.warn('No .env found — copy .env.example to .env for API keys and integrations.')
 }
+
+console.log('[dev] Local API → http://127.0.0.1:3001  ·  Vite → http://localhost:5173  (/api proxied)\n')
 
 const api = spawn('node', ['scripts/local-api-server.mjs'], {
   cwd: root,

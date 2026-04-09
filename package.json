@@ -6,7 +6,8 @@
     "node": ">=20"
   },
   "scripts": {
-    "dev": "vite",
+    "dev": "node scripts/dev-local.mjs",
+    "dev:vite": "vite",
     "dev:api": "node scripts/local-api-server.mjs",
     "dev:local": "node scripts/dev-local.mjs",
     "build": "node scripts/generate-seo-files.mjs && vite build",

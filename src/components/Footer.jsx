@@ -2,7 +2,6 @@ import React from 'react'
 import { Link, useLocation } from 'react-router-dom'
 import scrollToTop from '../utils/scrollToTop'
 import { AxisWordmark } from './logos/AxisLogos'
-import { HOUSING_CONTACT_SCHEDULE } from '../lib/housingSite'
 import { PORTAL_BUBBLE_SURFACE } from './PortalBubble'
 
 export default function Footer() {
@@ -56,7 +55,7 @@ export default function Footer() {
                 <>
                   <Link to="/" onClick={scrollToTop} className="inline-block transition hover:text-slate-900 hover:translate-x-0.5">Explore properties</Link>
                   <Link to="/apply" onClick={scrollToTop} className="inline-block transition hover:text-slate-900 hover:translate-x-0.5">Apply housing</Link>
-                  <Link to={HOUSING_CONTACT_SCHEDULE} onClick={scrollToTop} className="inline-block transition hover:text-slate-900 hover:translate-x-0.5">Schedule tour</Link>
+                  <Link to="/contact?section=housing&tab=message" onClick={scrollToTop} className="inline-block transition hover:text-slate-900 hover:translate-x-0.5">Contact</Link>
                   <Link to="/owners/about" onClick={scrollToTop} className="inline-block transition hover:text-slate-900 hover:translate-x-0.5">Join Axis</Link>
                   <Link to="/portal" onClick={scrollToTop} className={`${PORTAL_BUBBLE_SURFACE} self-start`}>
                     Portal
@@ -77,8 +76,8 @@ export default function Footer() {
               ) : (
                 <>
                   <Link to="/" onClick={scrollToTop} className="inline-block transition hover:text-slate-900 hover:translate-x-0.5">Available housing</Link>
-                  <Link to={HOUSING_CONTACT_SCHEDULE} onClick={scrollToTop} className="inline-block transition hover:text-slate-900 hover:translate-x-0.5">Tours</Link>
-                  <Link to="/apply" onClick={scrollToTop} className="inline-block transition hover:text-slate-900 hover:translate-x-0.5">Applications</Link>
+                  <Link to="/apply" onClick={scrollToTop} className="inline-block transition hover:text-slate-900 hover:translate-x-0.5">Apply</Link>
+                  <Link to="/contact?section=housing&tab=message" onClick={scrollToTop} className="inline-block transition hover:text-slate-900 hover:translate-x-0.5">Questions</Link>
                   <a href="mailto:info@axis-seattle-housing.com" className="inline-block transition hover:text-slate-900 hover:translate-x-0.5">Lease questions</a>
                 </>
               )}

@@ -47,7 +47,7 @@ export default function PortalSelect() {
               <span className="text-xs font-bold uppercase tracking-[0.18em] text-[#2563eb]">Housing</span>
               <span className="mt-3 text-xl font-black text-slate-900 sm:text-2xl">Explore Homes</span>
               <span className="mt-2 text-sm leading-relaxed text-slate-500">
-                Browse listings, apply, and schedule tours.
+                Browse listings and apply online.
               </span>
               <span className="mt-8 inline-flex items-center gap-2 text-sm font-bold text-[#2563eb]">
                 Go to homes

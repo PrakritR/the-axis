@@ -41,11 +41,13 @@ export const HOUSING_EXPLORE_PATH = housingExplorePathForRouter()
 /** @deprecated Same as HOUSING_EXPLORE_PATH — kept for older imports */
 export const HOUSING_HOME_URL = HOUSING_EXPLORE_PATH
 
-/** In-app housing contact: tour scheduler + housing messages */
+/** Primary housing CTA — online application */
+export const HOUSING_APPLY_PATH = '/apply'
+
+/** In-app housing contact: tour scheduler + housing messages (secondary; main CTAs use HOUSING_APPLY_PATH) */
 export const HOUSING_CONTACT_SCHEDULE = '/contact?section=housing&tab=schedule'
 
 /**
- * Path only (same-origin). Prefer this or HOUSING_CONTACT_SCHEDULE in the SPA.
- * For a full URL string, use `${getHousingSiteOrigin()}${HOUSING_CONTACT_SCHEDULE}`.
+ * @deprecated Prefer HOUSING_APPLY_PATH for marketing CTAs. Kept for chat copy / legacy links.
  */
 export const HOUSING_SCHEDULE_TOUR_URL = HOUSING_CONTACT_SCHEDULE

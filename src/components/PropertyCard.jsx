@@ -100,14 +100,13 @@ export default function PropertyCard({ p }) {
             </svg>
           </Link>
           <Link
-            reloadDocument
-            to="/contact?section=housing&tab=schedule"
+            to={`/apply?property=${encodeURIComponent(p.slug)}`}
             className="flex h-11 w-full shrink-0 items-center justify-center gap-2 rounded-full border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-600 transition hover:border-[#2563eb] hover:text-[#2563eb] sm:w-auto sm:px-3"
           >
             <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" aria-hidden>
-              <path d="M8 7H5a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3m-1-4H9m1 4V3m4 4V3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+              <path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2M9 5a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v0a2 2 0 0 1-2 2h-2a2 2 0 0 1-2-2v0ZM9 12h6M9 16h4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
             </svg>
-            <span className="sm:hidden">Request Tour</span>
+            Apply
           </Link>
         </div>
       </div>
