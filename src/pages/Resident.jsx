@@ -5,6 +5,7 @@ import {
   createResident,
   createWorkOrder,
   getAnnouncements,
+  getApplicationById,
   getMessages,
   getPaymentsForResident,
   getResidentByEmail,
@@ -44,29 +45,45 @@ function compareRoomLabels(a, b) {
 
 const MATCH_ALL_TOKENS = new Set(['all', 'all properties', 'all residents', 'everyone'])
 
+function buildResidentMatchKeys(resident) {
+  const house = String(resident.House || '').trim()
+  const room = normalizeUnitLabel(resident['Unit Number'] || '')
+
+  // Short property code: '4709A', '4709B', '5259'
+  const propCode = house.match(/4709[AB]|5259/i)?.[0]?.toUpperCase() || ''
+
+  const keys = new Set()
+  const add = (...vals) => vals.forEach((v) => { if (v) keys.add(v.toLowerCase().trim()) })
+
+  // property variants
+  add(house, propCode)
+
+  // room variants: "Room 1", "room 1", "1"
+  const roomNum = room.replace(/^Room\s*/i, '')
+  add(room, roomNum)
+
+  // combined variants used in Airtable Target: "4709A - Room 1", "4709A - room 1", "4709A Room 1"
+  if (propCode && room) {
+    add(
+      `${propCode} - ${room}`,
+      `${propCode} - ${roomNum}`,
+      `${propCode} ${room}`,
+      `${propCode} ${roomNum}`,
+      `${house} - ${room}`,
+      `${house} ${room}`,
+    )
+  }
+
+  return keys
+}
+
 function announcementMatchesResident(item, resident) {
-  // Target is normalised to a lowercase string array by getAnnouncements()
+  // Target is normalised to lowercase string array by getAnnouncements()
   const tokens = Array.isArray(item.Target) ? item.Target : []
   if (tokens.length === 0 || tokens.some((t) => MATCH_ALL_TOKENS.has(t))) return true
 
-  const residentProperty = String(resident.House || '').trim()
-  const residentRoom = normalizeUnitLabel(resident['Unit Number'] || '')
-  const residentPropertyId = residentProperty.includes('4709A') ? '4709A'
-    : residentProperty.includes('4709B') ? '4709B'
-    : residentProperty.includes('5259') ? '5259'
-    : ''
-  const residentRoomKey = residentPropertyId && residentRoom ? `${residentPropertyId}-${residentRoom}` : ''
-
-  const validMatches = new Set([
-    residentProperty.toLowerCase(),
-    residentPropertyId.toLowerCase(),
-    residentRoom.toLowerCase(),
-    `${residentProperty.toLowerCase()} ${residentRoom.toLowerCase()}`.trim(),
-    residentRoomKey.toLowerCase(),
-    residentRoomKey.toLowerCase().replace(/-/g, ' '),
-  ].filter(Boolean))
-
-  return tokens.some((token) => validMatches.has(token))
+  const residentKeys = buildResidentMatchKeys(resident)
+  return tokens.some((token) => residentKeys.has(token.toLowerCase().trim()))
 }
 
 const houseOptions = properties.map((property) => {
@@ -261,24 +278,13 @@ function PasswordInput({ value, onChange, placeholder, autoComplete }) {
 }
 
 function AirtableLogin({ onLogin }) {
-  const [mode, setMode] = useState('login') // 'login' | 'signup'
+  const [mode, setMode] = useState('login')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
-  const [firstName, setFirstName] = useState('')
-  const [lastName, setLastName] = useState('')
-  const [house, setHouse] = useState(houseOptions[0]?.house || '')
-  const [unitNumber, setUnitNumber] = useState('')
-  const [phone, setPhone] = useState('')
-  const [leaseStartDate, setLeaseStartDate] = useState('')
-  const [leaseEndDate, setLeaseEndDate] = useState('')
+  // signup fields
+  const [applicationId, setApplicationId] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
-
-  const availableUnits = useMemo(() => getUnitsForHouse(house), [house])
-
-  useEffect(() => {
-    if (availableUnits.length) setUnitNumber(availableUnits[0])
-  }, [house])
 
   function switchMode(next) {
     setMode(next)
@@ -296,6 +302,12 @@ function AirtableLogin({ onLogin }) {
         setError('Invalid email or password. Contact Axis if you need help accessing your account.')
         return
       }
+      // Block access if lease has ended
+      const leaseEnd = resident['Lease End Date']
+      if (leaseEnd && new Date(leaseEnd) < new Date(new Date().toDateString())) {
+        setError('Your lease has ended. Access to the resident portal has been deactivated. Please contact Axis to discuss renewal.')
+        return
+      }
       onLogin(resident)
     } catch (err) {
       setError(err.message || 'Login failed. Please try again.')
@@ -307,24 +319,41 @@ function AirtableLogin({ onLogin }) {
   async function handleSignup(event) {
     event.preventDefault()
     if (password.length < 6) { setError('Password must be at least 6 characters.'); return }
-    if (leaseStartDate > leaseEndDate) { setError('Move-out date must be after the move-in date.'); return }
     setLoading(true)
     setError('')
     try {
+      // 1. Look up the application
+      const app = await getApplicationById(applicationId.trim())
+      if (!app) {
+        setError('Application not found. Check your Application ID (format: APP-recXXXXXXXXXXXXXX) and try again.')
+        return
+      }
+
+      // 2. Verify email matches application
+      const appEmail = String(app['Signer Email'] || '').trim().toLowerCase()
+      if (appEmail !== email.trim().toLowerCase()) {
+        setError('The email address does not match the application. Use the same email you applied with.')
+        return
+      }
+
+      // 3. Check an account doesn't already exist
       const existing = await getResidentByEmail(email.trim())
       if (existing) {
         setError('An account with this email already exists. Please sign in instead.')
         return
       }
+
+      // 4. Pull all info from the application — resident cannot edit these
       const resident = await createResident({
-        Name: `${firstName.trim()} ${lastName.trim()}`.trim(),
-        Email: email.trim(),
+        Name: app['Signer Full Name'] || '',
+        Email: app['Signer Email'] || '',
         Password: password,
-        House: house,
-        'Unit Number': unitNumber,
-        Phone: phone.trim(),
-        'Lease Start Date': leaseStartDate,
-        'Lease End Date': leaseEndDate,
+        Phone: app['Signer Phone Number'] || '',
+        House: app['Property Name'] || '',
+        'Unit Number': app['Room Number'] || '',
+        'Lease Start Date': app['Lease Start Date'] || null,
+        'Lease End Date': app['Lease End Date'] || null,
+        'Application ID': app['Application ID'] || '',
         Status: 'Active',
       })
       onLogin(resident)
@@ -337,7 +366,6 @@ function AirtableLogin({ onLogin }) {
 
   return (
     <AuthCard>
-      {/* Tab switcher */}
       <div className="flex gap-1 rounded-2xl border border-slate-100 bg-slate-50 p-1 mb-6">
         {[['login', 'Sign in'], ['signup', 'Create account']].map(([id, label]) => (
           <button key={id} type="button" onClick={() => switchMode(id)}
@@ -365,55 +393,24 @@ function AirtableLogin({ onLogin }) {
         </form>
       ) : (
         <form onSubmit={handleSignup} className="space-y-4">
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="mb-2 block text-sm font-semibold text-slate-700">First Name <span className="text-red-400">*</span></label>
-              <input type="text" required value={firstName} onChange={(e) => setFirstName(e.target.value)} placeholder="Jane" autoComplete="given-name" className={authInputCls} />
-            </div>
-            <div>
-              <label className="mb-2 block text-sm font-semibold text-slate-700">Last Name <span className="text-red-400">*</span></label>
-              <input type="text" required value={lastName} onChange={(e) => setLastName(e.target.value)} placeholder="Smith" autoComplete="family-name" className={authInputCls} />
-            </div>
+          <div className="rounded-2xl border border-slate-100 bg-slate-50 px-4 py-3 text-sm text-slate-600">
+            You need an Application ID from your approved rental application. It looks like <span className="font-mono font-semibold text-slate-800">APP-rec…</span>
+          </div>
+          <div>
+            <label className="mb-2 block text-sm font-semibold text-slate-700">Application ID <span className="text-red-400">*</span></label>
+            <input required value={applicationId} onChange={(e) => setApplicationId(e.target.value)} placeholder="APP-recXXXXXXXXXXXXXX" className={authInputCls} />
           </div>
           <div>
             <label className="mb-2 block text-sm font-semibold text-slate-700">Email <span className="text-red-400">*</span></label>
-            <input type="email" required value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@example.com" autoComplete="email" className={authInputCls} />
+            <input type="email" required value={email} onChange={(e) => setEmail(e.target.value)} placeholder="Same email used on your application" autoComplete="email" className={authInputCls} />
           </div>
           <div>
-            <label className="mb-2 block text-sm font-semibold text-slate-700">Password <span className="text-red-400">*</span></label>
+            <label className="mb-2 block text-sm font-semibold text-slate-700">Create Password <span className="text-red-400">*</span></label>
             <PasswordInput value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Min. 6 characters" autoComplete="new-password" />
-          </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="mb-2 block text-sm font-semibold text-slate-700">House <span className="text-red-400">*</span></label>
-              <select required value={house} onChange={(e) => setHouse(e.target.value)} className={authInputCls}>
-                {houseOptions.map((o) => <option key={o.house}>{o.house}</option>)}
-              </select>
-            </div>
-            <div>
-              <label className="mb-2 block text-sm font-semibold text-slate-700">Room <span className="text-red-400">*</span></label>
-              <select required value={unitNumber} onChange={(e) => setUnitNumber(e.target.value)} className={authInputCls}>
-                {availableUnits.map((o) => <option key={o}>{o}</option>)}
-              </select>
-            </div>
-          </div>
-          <div>
-            <label className="mb-2 block text-sm font-semibold text-slate-700">Phone <span className="text-red-400">*</span></label>
-            <input type="tel" required value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="(206) 555-0100" autoComplete="tel" className={authInputCls} />
-          </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="mb-2 block text-sm font-semibold text-slate-700">Move In Date <span className="text-red-400">*</span></label>
-              <input type="date" required value={leaseStartDate} onChange={(e) => setLeaseStartDate(e.target.value)} className={authInputCls} />
-            </div>
-            <div>
-              <label className="mb-2 block text-sm font-semibold text-slate-700">Move Out Date <span className="text-red-400">*</span></label>
-              <input type="date" required value={leaseEndDate} onChange={(e) => setLeaseEndDate(e.target.value)} className={authInputCls} />
-            </div>
           </div>
           {error && <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>}
           <button type="submit" disabled={loading} className="w-full rounded-full bg-slate-900 py-3 text-sm font-semibold text-white hover:bg-slate-800 disabled:opacity-50 transition">
-            {loading ? 'Creating account…' : 'Create account'}
+            {loading ? 'Verifying application…' : 'Create account'}
           </button>
         </form>
       )}

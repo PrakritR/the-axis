@@ -140,6 +140,19 @@ export async function syncResidentFromAuth({ user, resident = null, profile = {}
   return createResident(fields)
 }
 
+export async function getApplicationById(applicationId) {
+  // Accepts APP-recXXX or bare recXXX formats
+  const raw = String(applicationId || '').trim()
+  const recordId = raw.startsWith('APP-') ? raw.slice(4) : raw
+  if (!recordId.startsWith('rec') || recordId.length < 10) return null
+  try {
+    const data = await request(`${tableUrl('Applications')}/${recordId}`)
+    return mapRecord(data)
+  } catch {
+    return null
+  }
+}
+
 export async function getAnnouncements() {
   const data = await request(buildUrl(TABLES.announcements, {
     filterByFormula: '{Show} = TRUE()',
