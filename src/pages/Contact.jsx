@@ -9,8 +9,6 @@ function formatPhone(raw) {
   return `(${digits.slice(0, 3)}) ${digits.slice(3, 6)}-${digits.slice(6)}`
 }
 
-const CONTACT_PHONE_DISPLAY = '(510) 309-8345'
-const CONTACT_PHONE_RAW = '15103098345'
 const CONTACT_EMAIL = 'info@axis-seattle-housing.com'
 
 // Calendly event URLs — create a second event type in Calendly for "Discussion"
@@ -427,35 +425,8 @@ export default function Contact() {
           </h1>
         </section>
 
-        <div className="mt-10 grid items-stretch gap-8 lg:grid-cols-[0.82fr_1.18fr]">
-          {/* Left sidebar */}
-          <div className="flex flex-col rounded-[28px] border border-slate-200 bg-stone-50 overflow-hidden">
-            <div className="flex-1 p-6">
-              <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-500">Best uses</div>
-              <h2 className="mt-2 text-2xl font-black tracking-tight text-slate-900">What to send here</h2>
-              <div className="mt-5 space-y-3">
-                {['Questions about what is currently available','Tour requests for a specific listing','Lease term, pricing, and move-in timing questions','Follow-up after viewing a listing on the site'].map((item) => (
-                  <div key={item} className="flex items-start gap-3 rounded-2xl border border-slate-200 bg-white px-4 py-3">
-                    <span className="mt-1 inline-flex h-2.5 w-2.5 shrink-0 rounded-full bg-axis" />
-                    <div className="text-sm leading-6 text-slate-700">{item}</div>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            <div className="bg-slate-900 p-6 text-white">
-              <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-teal-200">Quick contact</div>
-              <div className="mt-3 text-2xl font-black">Prefer a faster route?</div>
-              <p className="mt-3 text-sm leading-7 text-slate-300">Know which listing you want? Call or text.</p>
-              <div className="mt-5 flex flex-col gap-3">
-                <a href={`tel:${CONTACT_PHONE_RAW}`} className="rounded-full bg-white px-5 py-3 text-center text-sm font-semibold text-slate-900">Call {CONTACT_PHONE_DISPLAY}</a>
-                <a href={`sms:${CONTACT_PHONE_RAW}`} className="rounded-full border border-white/15 bg-white/10 px-5 py-3 text-center text-sm font-semibold text-white">Text leasing</a>
-              </div>
-            </div>
-          </div>
-
-          {/* Right panel */}
-          <div className="rounded-[28px] border border-slate-200 bg-white p-6 shadow-soft sm:p-8">
+        <div className="mt-10">
+          <div className="mx-auto max-w-5xl rounded-[28px] border border-slate-200 bg-white p-6 shadow-soft sm:p-8">
             {/* 3-tab switcher */}
             <div className="mb-8 flex gap-1 rounded-2xl border border-slate-100 bg-slate-50 p-1">
               {tabs.map(({ id, label, icon }) => (
