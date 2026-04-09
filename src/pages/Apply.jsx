@@ -8,6 +8,7 @@ const APPLICATIONS_TABLE = import.meta.env.VITE_AIRTABLE_APPLICATIONS_TABLE || '
 const COSIGNERS_TABLE = import.meta.env.VITE_AIRTABLE_COAPPLICANTS_TABLE || 'Co-Signers'
 const AIRTABLE_TOKEN = import.meta.env.VITE_AIRTABLE_TOKEN
 const APPLICATION_SUBMISSION_STORAGE_KEY = 'axis_application_submission'
+const APPLICATION_DRAFT_STORAGE_KEY = 'axis_application_draft'
 const PRE_SUBMIT_KEY = 'axis_apply_prepay'
 
 const HISTORY_OPTIONS = ['No', 'Yes']
@@ -1077,10 +1078,13 @@ export default function Apply() {
   const storedSubmission = typeof window !== 'undefined'
     ? JSON.parse(window.sessionStorage.getItem(APPLICATION_SUBMISSION_STORAGE_KEY) || 'null')
     : null
-  const [applicationType, setApplicationType] = useState('')
-  const [step, setStep] = useState(0)
-  const [signer, setSigner] = useState(defaultSigner())
-  const [cosigner, setCosigner] = useState(defaultCosigner())
+  const storedDraft = typeof window !== 'undefined' && !storedSubmission
+    ? JSON.parse(window.localStorage.getItem(APPLICATION_DRAFT_STORAGE_KEY) || 'null')
+    : null
+  const [applicationType, setApplicationType] = useState(storedDraft?.applicationType || '')
+  const [step, setStep] = useState(storedDraft?.step || 0)
+  const [signer, setSigner] = useState(storedDraft?.signer || defaultSigner())
+  const [cosigner, setCosigner] = useState(storedDraft?.cosigner || defaultCosigner())
   const [submitting, setSubmitting] = useState(false)
   const [submitted, setSubmitted] = useState(Boolean(storedSubmission))
   const [submittedRecord, setSubmittedRecord] = useState(storedSubmission?.submittedRecord || null)
@@ -1102,7 +1106,7 @@ export default function Apply() {
   const [moveInPaymentError, setMoveInPaymentError] = useState('')
   // Application fee / promo
   const [appFeePaid, setAppFeePaid] = useState(storedSubmission?.appFeePaid || false)
-  const [promoInput, setPromoInput] = useState('')
+  const [promoInput, setPromoInput] = useState(storedDraft?.promoInput || '')
   const [promoApplied, setPromoApplied] = useState(storedSubmission?.promoApplied || false)
   const [promoError, setPromoError] = useState('')
   // Pre-submission payment (fee paid before form is submitted to Airtable)
@@ -1141,6 +1145,18 @@ export default function Apply() {
     const updated = { ...submissionSummary, leaseStep, leaseSigned, appFeePaid, promoApplied }
     window.sessionStorage.setItem(APPLICATION_SUBMISSION_STORAGE_KEY, JSON.stringify(updated))
   }, [leaseStep, leaseSigned, appFeePaid, promoApplied, submitted, submissionSummary])
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || submitted) return
+    const draft = {
+      applicationType,
+      step,
+      signer,
+      cosigner,
+      promoInput,
+    }
+    window.localStorage.setItem(APPLICATION_DRAFT_STORAGE_KEY, JSON.stringify(draft))
+  }, [applicationType, step, signer, cosigner, promoInput, submitted])
 
   // Detect app fee payment success on return from Stripe (post-submission flow)
   useEffect(() => {
@@ -1418,6 +1434,7 @@ export default function Apply() {
       setSubmissionSummary(summary)
       if (typeof window !== 'undefined') {
         window.sessionStorage.setItem(APPLICATION_SUBMISSION_STORAGE_KEY, JSON.stringify(summary))
+        window.localStorage.removeItem(APPLICATION_DRAFT_STORAGE_KEY)
       }
       setSubmitted(true)
     } catch (submissionError) {
@@ -1610,6 +1627,7 @@ export default function Apply() {
     function clearStoredSubmission() {
       if (typeof window !== 'undefined') {
         window.sessionStorage.removeItem(APPLICATION_SUBMISSION_STORAGE_KEY)
+        window.localStorage.removeItem(APPLICATION_DRAFT_STORAGE_KEY)
       }
       setSubmissionSummary(null)
       setSubmitted(false)
