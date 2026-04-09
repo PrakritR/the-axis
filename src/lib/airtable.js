@@ -184,7 +184,19 @@ export async function getAnnouncements() {
 
 export async function getWorkOrdersForResident(resident) {
   const residentId = resident.id
-  const formula = `FIND("${escapeFormulaValue(residentId)}", ARRAYJOIN({Resident})) > 0`
+  const residentEmail = String(resident.Email || '').trim()
+  const formulaParts = [
+    `FIND("${escapeFormulaValue(residentId)}", ARRAYJOIN({Resident})) > 0`,
+  ]
+
+  if (residentEmail) {
+    const emailValue = escapeFormulaValue(residentEmail)
+    formulaParts.push(`LOWER({Resident Email}) = LOWER("${emailValue}")`)
+    formulaParts.push(`LOWER({Email}) = LOWER("${emailValue}")`)
+    formulaParts.push(`LOWER({Sender Email}) = LOWER("${emailValue}")`)
+  }
+
+  const formula = `OR(${formulaParts.join(',')})`
   const data = await request(buildUrl(TABLES.workOrders, {
     filterByFormula: formula,
   }))
