@@ -13,7 +13,6 @@ const item = {
 
 export default function Hero({
   heading = 'Seattle Housing',
-  subheading = 'Browse available houses and rooms. See pricing, availability, and apply online.',
   browseLabel = 'View Available Housing',
   tourLabel = 'Schedule a Tour',
   heroImage = new URL('../../Assets/HerobannerImage.svg', import.meta.url).href

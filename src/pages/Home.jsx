@@ -567,9 +567,6 @@ export default function Home() {
       <section className="border-t border-white/70 bg-transparent px-4 py-14 sm:px-6 sm:py-24">
         <div className="mx-auto max-w-6xl">
           <Reveal className="text-center max-w-xl mx-auto mb-12">
-            <Eyebrow>Process</Eyebrow>
-            <h2 className="mt-4 text-2xl font-black tracking-[-0.05em] text-slate-900 sm:text-4xl">How it works</h2>
-
           </Reveal>
 
           <motion.div
