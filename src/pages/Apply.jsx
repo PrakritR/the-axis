@@ -1726,25 +1726,6 @@ export default function Apply() {
             </div>
           )}
 
-          {isSigner && fullAppId && (
-            <div className="mt-4 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-              <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-                <div>
-                  <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">Resident Account</div>
-                  <p className="mt-1 text-sm leading-6 text-slate-600">
-                    Create your resident account to save your application details and continue your next steps in one place.
-                  </p>
-                </div>
-                <a
-                  href={`/resident?appId=${encodeURIComponent(fullAppId)}`}
-                  className="inline-flex shrink-0 items-center justify-center rounded-full bg-axis px-5 py-3 text-sm font-semibold text-white transition hover:opacity-90"
-                >
-                  Create resident account
-                </a>
-              </div>
-            </div>
-          )}
-
           {isSigner && (
             <div className="mt-8">
               <h2 className="mb-5 text-lg font-bold text-slate-900">Move-In Steps</h2>
@@ -1793,8 +1774,8 @@ export default function Apply() {
                 <div className="flex items-center gap-3 px-5 py-4">
                   <StepDot n={2} done={moveInDone} active={stepIndex === 1 && !moveInDone} />
                   <div>
-                    <div className="font-semibold text-slate-900">Pay Move-In Costs</div>
-                    <div className="text-xs text-slate-500">First month's rent + security deposit + utilities via Stripe</div>
+                    <div className="font-semibold text-slate-900">Pay Move-In Fee & Security Deposit</div>
+                    <div className="text-xs text-slate-500">Complete your required move-in charges through Stripe</div>
                   </div>
                 </div>
                 {moveInDone ? (
@@ -1846,12 +1827,12 @@ export default function Apply() {
                   <StepDot n={3} done={leaseSigned} active={stepIndex === 2 && !leaseSigned} />
                   <div>
                     <div className="font-semibold text-slate-900">Sign Your Lease</div>
-                    <div className="text-xs text-slate-500">Lease signing unlocks after your move-in payment is completed</div>
+                    <div className="text-xs text-slate-500">This unlocks right after your move-in charges are paid</div>
                   </div>
                 </div>
                 {!moveInDone ? (
                   <div className="border-t border-slate-100 px-5 py-4">
-                    <p className="text-sm text-slate-500">Complete the move-in payment first to unlock lease signing.</p>
+                    <p className="text-sm text-slate-500">Pay your move-in fee and security deposit first, then you can sign your lease.</p>
                   </div>
                 ) : leaseSigned ? (
                   <div className="border-t border-teal-100 px-5 py-4">
