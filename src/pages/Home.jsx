@@ -551,18 +551,16 @@ export default function Home() {
       <section id="properties" className="scroll-mt-20 border-t border-slate-100 bg-white py-14 sm:py-20">
         <div className="mx-auto max-w-6xl px-4 sm:px-6">
           <Reveal>
-            <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
-              <div className="max-w-2xl">
-                <Eyebrow>Available now</Eyebrow>
-                <h2 className="mt-3 font-serif text-2xl font-black tracking-tight text-slate-900 sm:text-4xl">Available Homes</h2>
-                <p className="mt-3 text-sm leading-6 text-slate-500 sm:text-base sm:leading-7">
-                  Browse our shared homes near UW — swipe or use the arrows to explore.
-                </p>
-              </div>
+            <div className="flex flex-col gap-5">
+              <Eyebrow>Available now</Eyebrow>
+              <h2 className="font-serif text-2xl font-black tracking-tight text-slate-900 sm:text-4xl">Available Homes</h2>
+              <p className="text-sm leading-6 text-slate-500 sm:text-base sm:leading-7">
+                Browse our shared homes near UW — swipe or use the arrows to explore.
+              </p>
               <Link
                 reloadDocument
                 to={`/contact?subject=${encodeURIComponent('Tour request')}`}
-                className="inline-flex w-full items-center justify-center gap-2 self-start rounded-full border border-slate-200 bg-white px-5 py-3 text-sm font-semibold text-slate-700 shadow-soft transition hover:border-axis hover:text-axis sm:w-auto sm:justify-start sm:py-2.5 sm:self-auto"
+                className="inline-flex w-auto self-start items-center gap-2 rounded-full border border-slate-200 bg-white px-5 py-2.5 text-sm font-semibold text-slate-700 shadow-soft transition hover:border-axis hover:text-axis"
               >
                 Schedule a Tour <Arrow />
               </Link>

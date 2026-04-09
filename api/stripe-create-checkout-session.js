@@ -38,15 +38,29 @@ export default async function handler(req, res) {
     propertyName,
     unitNumber,
     amount,
+    items = [],
     description,
     category = 'rent',
     paymentRecordId,
     successPath = '/resident?payment=success',
     cancelPath = '/resident?payment=cancelled',
+    embedded = false,
   } = req.body || {}
 
   const amountNumber = Number(amount)
-  if (!residentEmail || !description || !Number.isFinite(amountNumber) || amountNumber <= 0) {
+  const normalizedItems = Array.isArray(items)
+    ? items
+        .map((item) => ({
+          name: item?.name || item?.description || description,
+          description: item?.description || '',
+          amount: Number(item?.amount || 0),
+          quantity: Number(item?.quantity || 1),
+        }))
+        .filter((item) => item.name && Number.isFinite(item.amount) && item.amount > 0 && item.quantity > 0)
+    : []
+  const hasItems = normalizedItems.length > 0
+
+  if (!residentEmail || (!description && !hasItems) || (!hasItems && (!Number.isFinite(amountNumber) || amountNumber <= 0))) {
     return res.status(400).json({ error: 'Missing required payment fields.' })
   }
 
@@ -55,21 +69,42 @@ export default async function handler(req, res) {
 
   const form = toFormBody({
     mode: 'payment',
-    success_url: successUrl,
-    cancel_url: cancelUrl,
+    ...(embedded
+      ? {
+          ui_mode: 'embedded_page',
+          return_url: successUrl,
+        }
+      : {
+          success_url: successUrl,
+          cancel_url: cancelUrl,
+        }),
     customer_email: residentEmail,
     customer_creation: 'always',
-    'line_items[0][price_data][currency]': 'usd',
-    'line_items[0][price_data][product_data][name]': description,
-    'line_items[0][price_data][product_data][description]': `${propertyName || ''} ${unitNumber || ''}`.trim(),
-    'line_items[0][price_data][unit_amount]': Math.round(amountNumber * 100),
-    'line_items[0][quantity]': 1,
     'metadata[resident_id]': residentId,
     'metadata[resident_name]': residentName,
     'metadata[property_name]': propertyName,
     'metadata[unit_number]': unitNumber,
     'metadata[payment_category]': category,
     'metadata[payment_record_id]': paymentRecordId,
+  })
+
+  const lineItems = hasItems
+    ? normalizedItems
+    : [{
+        name: description,
+        description: `${propertyName || ''} ${unitNumber || ''}`.trim(),
+        amount: amountNumber,
+        quantity: 1,
+      }]
+
+  lineItems.forEach((item, index) => {
+    form.append(`line_items[${index}][price_data][currency]`, 'usd')
+    form.append(`line_items[${index}][price_data][product_data][name]`, item.name)
+    if (item.description) {
+      form.append(`line_items[${index}][price_data][product_data][description]`, item.description)
+    }
+    form.append(`line_items[${index}][price_data][unit_amount]`, String(Math.round(item.amount * 100)))
+    form.append(`line_items[${index}][quantity]`, String(item.quantity))
   })
 
   const stripeRes = await fetch(`${STRIPE_API}/checkout/sessions`, {
@@ -87,5 +122,9 @@ export default async function handler(req, res) {
   }
 
   const session = JSON.parse(text)
-  return res.status(200).json({ url: session.url, id: session.id })
+  return res.status(200).json({
+    url: session.url,
+    id: session.id,
+    client_secret: session.client_secret,
+  })
 }

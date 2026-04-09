@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react'
 import { properties } from '../data/properties'
+import { EmbeddedStripeCheckout } from '../components/EmbeddedStripeCheckout'
 import {
   airtableReady,
   createResident,
@@ -1081,6 +1082,7 @@ function PaymentsPanel({ resident, onResidentUpdated }) {
   const [error, setError] = useState('')
   const [actionError, setActionError] = useState('')
   const [actionLoading, setActionLoading] = useState('')
+  const [embeddedCheckout, setEmbeddedCheckout] = useState(null)
 
   useEffect(() => {
     getPaymentsForResident(resident)
@@ -1101,33 +1103,40 @@ function PaymentsPanel({ resident, onResidentUpdated }) {
   async function launchCheckout({ amount, description, category, paymentRecordId }) {
     setActionError('')
     setActionLoading(category)
+    setEmbeddedCheckout({
+      title: description,
+      request: {
+        residentId: resident.id,
+        residentName: resident.Name,
+        residentEmail: resident.Email,
+        propertyName: resident.House,
+        unitNumber: resident['Unit Number'],
+        amount,
+        description,
+        category,
+        paymentRecordId,
+      },
+      category,
+    })
+  }
+
+  function handleEmbeddedCheckoutClose() {
+    setActionLoading('')
+    setEmbeddedCheckout(null)
+  }
+
+  async function handleEmbeddedCheckoutComplete() {
+    setActionLoading('')
+    setEmbeddedCheckout(null)
+    setLoading(true)
     try {
-      const response = await fetch('/api/stripe-create-checkout-session', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          residentId: resident.id,
-          residentName: resident.Name,
-          residentEmail: resident.Email,
-          propertyName: resident.House,
-          unitNumber: resident['Unit Number'],
-          amount,
-          description,
-          category,
-          paymentRecordId,
-        }),
-      })
-      const data = await response.json()
-      if (!response.ok) throw new Error(data.error || 'Unable to create checkout session.')
-      window.location.href = data.url
+      const refreshed = await getPaymentsForResident(resident)
+      setPayments(refreshed)
+      onResidentUpdated?.()
     } catch (err) {
-      if (paymentUrl && category === 'rent') {
-        window.location.href = paymentUrl
-        return
-      }
-      setActionError(err.message || 'Unable to start payment.')
+      setActionError(err.message || 'Payment completed, but refreshing the balance failed.')
     } finally {
-      setActionLoading('')
+      setLoading(false)
     }
   }
 
@@ -1301,6 +1310,13 @@ function PaymentsPanel({ resident, onResidentUpdated }) {
               ))}
             </div>
           )}
+          <EmbeddedStripeCheckout
+            open={Boolean(embeddedCheckout)}
+            title={embeddedCheckout?.title || 'Secure Payment'}
+            checkoutRequest={embeddedCheckout?.request}
+            onClose={handleEmbeddedCheckoutClose}
+            onComplete={handleEmbeddedCheckoutComplete}
+          />
         </>
       )}
     </SectionCard>

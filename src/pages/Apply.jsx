@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { Seo } from '../lib/seo'
 import { properties } from '../data/properties'
 import { signLease, getSignedLeases } from '../lib/airtable'
+import { EmbeddedStripeCheckout } from '../components/EmbeddedStripeCheckout'
 
 const AIRTABLE_BASE_ID = import.meta.env.VITE_AIRTABLE_APPLICATIONS_BASE_ID || import.meta.env.VITE_AIRTABLE_BASE_ID || 'appNBX2inqfJMyqYV'
 const APPLICATIONS_TABLE = import.meta.env.VITE_AIRTABLE_APPLICATIONS_TABLE || 'Applications'
@@ -98,6 +99,15 @@ function getSecurityDeposit(propertyName, monthlyRent) {
     if (Number.isFinite(n) && n > 0) return n
   }
   return monthlyRent
+}
+
+function getUtilitiesFee(propertyName) {
+  const prop = properties.find((p) => p.name === propertyName)
+  if (prop?.utilitiesFee) {
+    const n = parseInt(String(prop.utilitiesFee).replace(/[^0-9]/g, ''), 10)
+    if (Number.isFinite(n) && n > 0) return n
+  }
+  return 0
 }
 
 // Build PROPERTY_OPTIONS with full room availability data
@@ -1099,6 +1109,7 @@ export default function Apply() {
   const [signedLeases, setSignedLeases] = useState(new Set())
   const [leaseStep, setLeaseStep] = useState(storedSubmission?.leaseStep || 'account')
   const [leaseSigned, setLeaseSigned] = useState(storedSubmission?.leaseSigned || false)
+  const [moveInPaid, setMoveInPaid] = useState(storedSubmission?.moveInPaid || false)
   const [leaseSignatureInput, setLeaseSignatureInput] = useState('')
   const [leaseSigningLoading, setLeaseSigningLoading] = useState(false)
   const [leaseSigningError, setLeaseSigningError] = useState('')
@@ -1113,6 +1124,7 @@ export default function Apply() {
   const [feePrePaid, setFeePrePaid] = useState(false)
   const [prePaymentLoading, setPrePaymentLoading] = useState(false)
   const [prePaymentError, setPrePaymentError] = useState('')
+  const [embeddedCheckout, setEmbeddedCheckout] = useState(null)
   const autoSubmitRef = useRef(false)
 
   const steps = applicationType === 'cosigner' ? COSIGNER_STEPS : SIGNER_STEPS
@@ -1142,9 +1154,9 @@ export default function Apply() {
   // Persist lease/fee state back to sessionStorage so they survive page refresh
   useEffect(() => {
     if (!submitted || !submissionSummary) return
-    const updated = { ...submissionSummary, leaseStep, leaseSigned, appFeePaid, promoApplied }
+    const updated = { ...submissionSummary, leaseStep, leaseSigned, moveInPaid, appFeePaid, promoApplied }
     window.sessionStorage.setItem(APPLICATION_SUBMISSION_STORAGE_KEY, JSON.stringify(updated))
-  }, [leaseStep, leaseSigned, appFeePaid, promoApplied, submitted, submissionSummary])
+  }, [leaseStep, leaseSigned, moveInPaid, appFeePaid, promoApplied, submitted, submissionSummary])
 
   useEffect(() => {
     if (typeof window === 'undefined' || submitted) return
@@ -1164,6 +1176,13 @@ export default function Apply() {
       setAppFeePaid(true)
     }
   }, [paymentStatus, appFeePaid])
+
+  useEffect(() => {
+    if (paymentStatus === 'success' && !moveInPaid) {
+      setMoveInPaid(true)
+      setLeaseStep('lease')
+    }
+  }, [paymentStatus, moveInPaid])
 
   // Restore form state after returning from Stripe pre-payment redirect
   useEffect(() => {
@@ -1418,6 +1437,7 @@ export default function Apply() {
             leaseTerm: signer.leaseTerm,
             leaseStep: 'account',
             leaseSigned: false,
+            moveInPaid: false,
             appFeePaid: feePrePaid,
             promoApplied: promoApplied || promoOverride,
           }
@@ -1429,6 +1449,7 @@ export default function Apply() {
             submittedRecord: null,
             leaseStep: 'account',
             leaseSigned: false,
+            moveInPaid: false,
           }
 
       setSubmissionSummary(summary)
@@ -1453,34 +1474,23 @@ export default function Apply() {
       setFieldErrors(errs)
       return
     }
-    // Save full form state so we can restore it after Stripe redirect
-    window.sessionStorage.setItem(PRE_SUBMIT_KEY, JSON.stringify({ signer, applicationType, step }))
     setPrePaymentLoading(true)
     setPrePaymentError('')
-    try {
-      const response = await fetch('/api/stripe-create-checkout-session', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          residentName: signer.fullName,
-          residentEmail: signer.email,
-          propertyName: signer.propertyName,
-          unitNumber: signer.roomNumber,
-          amount: 50,
-          description: 'Application fee',
-          category: 'application_fee',
-          successPath: '/apply?payment=fee_prepaid',
-          cancelPath: '/apply?payment=fee_cancelled',
-        }),
-      })
-      const data = await response.json()
-      if (!response.ok) throw new Error(data.error || 'Unable to start payment.')
-      window.location.href = data.url
-    } catch (err) {
-      window.sessionStorage.removeItem(PRE_SUBMIT_KEY)
-      setPrePaymentError(err.message || 'Unable to start payment. Please try again.')
-      setPrePaymentLoading(false)
-    }
+    setEmbeddedCheckout({
+      flow: 'application_fee',
+      title: 'Application Fee',
+      request: {
+        residentName: signer.fullName,
+        residentEmail: signer.email,
+        propertyName: signer.propertyName,
+        unitNumber: signer.roomNumber,
+        amount: 50,
+        description: 'Application fee',
+        category: 'application_fee',
+        successPath: '/apply?payment=fee_prepaid',
+        cancelPath: '/apply?payment=fee_cancelled',
+      },
+    })
   }
 
   async function handlePromoApplyAndSubmit() {
@@ -1558,7 +1568,7 @@ export default function Apply() {
     try {
       await signLease(recordId, sig)
       setLeaseSigned(true)
-      setLeaseStep('payment')
+      setLeaseStep('complete')
     } catch (err) {
       setLeaseSigningError(err.message || 'Failed to record signature. Please try again.')
     } finally {
@@ -1574,40 +1584,69 @@ export default function Apply() {
     const recordId = submissionSummary?.submittedRecord?.id || submittedRecord?.id || ''
     const monthlyRent = submissionSummary?.roomPrice || getRoomMonthlyRent(propertyName, unitNumber)
     const deposit = getSecurityDeposit(propertyName, monthlyRent)
-    const total = (monthlyRent || 0) + deposit
+    const utilities = getUtilitiesFee(propertyName)
+    const items = [
+      { name: "First month's rent", amount: monthlyRent },
+      { name: 'Security deposit', amount: deposit },
+      { name: 'Utilities', amount: utilities },
+    ].filter((item) => Number(item.amount) > 0)
+    const total = items.reduce((sum, item) => sum + Number(item.amount || 0), 0)
 
     if (total <= 0) {
       setMoveInPaymentError('Could not determine rent amount. Please contact leasing to complete payment.')
       return
     }
 
+    setLeaseStep('payment')
+
     setMoveInPaymentLoading(true)
     setMoveInPaymentError('')
-    try {
-      const response = await fetch('/api/stripe-create-checkout-session', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          residentId: recordId,
-          residentName: applicantName,
-          residentEmail: applicantEmail,
-          propertyName,
-          unitNumber,
-          amount: total,
-          description: `First month's rent ($${monthlyRent}) + security deposit ($${deposit})`,
-          category: 'move_in_payment',
-          paymentRecordId: recordId,
-          successPath: '/apply?payment=success',
-          cancelPath: '/apply?payment=cancelled',
-        }),
-      })
-      const data = await response.json()
-      if (!response.ok) throw new Error(data.error || 'Unable to start payment.')
-      window.location.href = data.url
-    } catch (err) {
-      setMoveInPaymentError(err.message || 'Unable to start payment.')
-    } finally {
+    setEmbeddedCheckout({
+      flow: 'move_in_payment',
+      title: 'Move-In Charges',
+      request: {
+        residentId: recordId,
+        residentName: applicantName,
+        residentEmail: applicantEmail,
+        propertyName,
+        unitNumber,
+        items,
+        amount: total,
+        description: `Move-in charges for ${unitNumber} at ${propertyName}`,
+        category: 'move_in_payment',
+        paymentRecordId: recordId,
+        successPath: '/apply?payment=success',
+        cancelPath: '/apply?payment=cancelled',
+      },
+    })
+  }
+
+  function handleEmbeddedCheckoutClose() {
+    if (embeddedCheckout?.flow === 'application_fee') {
+      setPrePaymentLoading(false)
+    }
+    if (embeddedCheckout?.flow === 'move_in_payment') {
       setMoveInPaymentLoading(false)
+    }
+    setEmbeddedCheckout(null)
+  }
+
+  async function handleEmbeddedCheckoutComplete() {
+    const flow = embeddedCheckout?.flow
+    setEmbeddedCheckout(null)
+
+    if (flow === 'application_fee') {
+      setPrePaymentLoading(false)
+      setFeePrePaid(true)
+      setAppFeePaid(true)
+      await handleSubmit({ preventDefault: () => {} })
+      return
+    }
+
+    if (flow === 'move_in_payment') {
+      setMoveInPaymentLoading(false)
+      setMoveInPaid(true)
+      setLeaseStep('lease')
     }
   }
 
@@ -1620,8 +1659,9 @@ export default function Apply() {
     const roomNumber = submissionSummary?.roomNumber || signer.roomNumber
     const monthlyRent = submissionSummary?.roomPrice || getRoomMonthlyRent(propertyName, roomNumber)
     const deposit = getSecurityDeposit(propertyName, monthlyRent)
-    const moveInTotal = (monthlyRent || 0) + deposit
-    const moveInDone = paymentStatus === 'success' && leaseStep === 'payment'
+    const utilities = getUtilitiesFee(propertyName)
+    const moveInTotal = (monthlyRent || 0) + deposit + utilities
+    const moveInDone = moveInPaid
 
     function clearStoredSubmission() {
       if (typeof window !== 'undefined') {
@@ -1633,9 +1673,9 @@ export default function Apply() {
       setSubmittedRecord(null)
     }
 
-    // Step index: 0=account 1=lease 2=payment
-    const stepIndex = leaseStep === 'account' ? 0 : leaseStep === 'lease' ? 1 : 2
-    const allDone = moveInDone
+    // Step index: 0=account 1=payment 2=lease/complete
+    const stepIndex = leaseStep === 'account' ? 0 : leaseStep === 'payment' ? 1 : 2
+    const allDone = moveInDone && leaseSigned
 
     function StepDot({ n, done, active }) {
       return (
@@ -1713,9 +1753,9 @@ export default function Apply() {
               <div className="mb-6 flex items-center gap-0">
                 <StepDot n={1} done={stepIndex > 0} active={stepIndex === 0} />
                 <div className={`h-0.5 flex-1 transition-all ${stepIndex > 0 ? 'bg-teal-400' : 'bg-slate-200'}`} />
-                <StepDot n={2} done={leaseSigned} active={stepIndex === 1} />
-                <div className={`h-0.5 flex-1 transition-all ${leaseSigned ? 'bg-teal-400' : 'bg-slate-200'}`} />
-                <StepDot n={3} done={allDone} active={stepIndex === 2} />
+                <StepDot n={2} done={moveInDone} active={stepIndex === 1} />
+                <div className={`h-0.5 flex-1 transition-all ${moveInDone ? 'bg-teal-400' : 'bg-slate-200'}`} />
+                <StepDot n={3} done={leaseSigned} active={stepIndex === 2 && !leaseSigned} />
               </div>
 
               {/* Step 1: Create Resident Account */}
@@ -1739,7 +1779,7 @@ export default function Apply() {
                       >
                         Create Resident Account
                       </a>
-                      <button type="button" onClick={() => setLeaseStep('lease')}
+                      <button type="button" onClick={() => setLeaseStep('payment')}
                         className="rounded-full border border-slate-200 bg-white px-6 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-50">
                         I already have an account →
                       </button>
@@ -1748,16 +1788,76 @@ export default function Apply() {
                 )}
               </div>
 
-              {/* Step 2: Sign Lease */}
-              <div className={`mt-3 overflow-hidden rounded-2xl border transition-all ${stepIndex === 1 ? 'border-axis/40 bg-white shadow-md' : stepIndex > 1 || leaseSigned ? 'border-slate-100 bg-slate-50' : 'border-slate-100 bg-slate-50 opacity-60'}`}>
+              {/* Step 2: Pay Move-In Costs */}
+              <div className={`mt-3 overflow-hidden rounded-2xl border transition-all ${stepIndex === 1 && !allDone ? 'border-axis/40 bg-white shadow-md' : moveInDone ? 'border-teal-200 bg-teal-50' : 'border-slate-100 bg-slate-50 opacity-60'}`}>
                 <div className="flex items-center gap-3 px-5 py-4">
-                  <StepDot n={2} done={leaseSigned} active={stepIndex === 1} />
+                  <StepDot n={2} done={moveInDone} active={stepIndex === 1 && !moveInDone} />
                   <div>
-                    <div className="font-semibold text-slate-900">Sign Your Lease</div>
-                    <div className="text-xs text-slate-500">Digitally sign your lease agreement</div>
+                    <div className="font-semibold text-slate-900">Pay Move-In Costs</div>
+                    <div className="text-xs text-slate-500">First month's rent + security deposit + utilities via Stripe</div>
                   </div>
                 </div>
-                {stepIndex === 1 && !leaseSigned && (
+                {moveInDone ? (
+                  <div className="border-t border-teal-100 px-5 py-4">
+                    <p className="text-sm font-semibold text-teal-700">Move-in payment complete — lease signing is unlocked.</p>
+                  </div>
+                ) : stepIndex === 1 && (
+                  <div className="border-t border-slate-100 px-5 pb-5 pt-4">
+                    {paymentStatus === 'cancelled' && (
+                      <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-700">
+                        Payment was cancelled. You can retry below.
+                      </div>
+                    )}
+                    <div className="mb-4 space-y-2 rounded-xl border border-slate-200 bg-slate-50 p-4">
+                      <div className="flex justify-between text-sm">
+                        <span className="text-slate-600">First month's rent</span>
+                        <span className="font-semibold text-slate-900">{monthlyRent ? `$${monthlyRent.toLocaleString()}` : '—'}</span>
+                      </div>
+                      <div className="flex justify-between text-sm">
+                        <span className="text-slate-600">Security deposit</span>
+                        <span className="font-semibold text-slate-900">{deposit ? `$${deposit.toLocaleString()}` : '—'}</span>
+                      </div>
+                      <div className="flex justify-between text-sm">
+                        <span className="text-slate-600">Utilities</span>
+                        <span className="font-semibold text-slate-900">{utilities ? `$${utilities.toLocaleString()}` : '—'}</span>
+                      </div>
+                      <div className="flex justify-between border-t border-slate-200 pt-2 text-sm">
+                        <span className="font-bold text-slate-900">Total due today</span>
+                        <span className="font-black text-slate-900">{moveInTotal ? `$${moveInTotal.toLocaleString()}` : '—'}</span>
+                      </div>
+                    </div>
+                    {moveInPaymentError && (
+                      <p className="mb-3 rounded-xl bg-red-50 px-4 py-2.5 text-sm text-red-700">{moveInPaymentError}</p>
+                    )}
+                    <button type="button" onClick={handleMoveInPaymentCheckout} disabled={moveInPaymentLoading}
+                      className="rounded-full bg-axis px-6 py-3 text-sm font-semibold text-white transition hover:opacity-90 disabled:opacity-50">
+                      {moveInPaymentLoading ? 'Opening checkout…' : `Pay $${moveInTotal ? moveInTotal.toLocaleString() : '…'}`}
+                    </button>
+                    {!moveInTotal && (
+                      <p className="mt-3 text-xs text-slate-400">Contact leasing to complete payment if amounts are not shown.</p>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              {/* Step 3: Sign Lease */}
+              <div className={`mt-3 overflow-hidden rounded-2xl border transition-all ${stepIndex === 2 && !leaseSigned ? 'border-axis/40 bg-white shadow-md' : leaseSigned ? 'border-teal-200 bg-teal-50' : 'border-slate-100 bg-slate-50 opacity-60'}`}>
+                <div className="flex items-center gap-3 px-5 py-4">
+                  <StepDot n={3} done={leaseSigned} active={stepIndex === 2 && !leaseSigned} />
+                  <div>
+                    <div className="font-semibold text-slate-900">Sign Your Lease</div>
+                    <div className="text-xs text-slate-500">Lease signing unlocks after your move-in payment is completed</div>
+                  </div>
+                </div>
+                {!moveInDone ? (
+                  <div className="border-t border-slate-100 px-5 py-4">
+                    <p className="text-sm text-slate-500">Complete the move-in payment first to unlock lease signing.</p>
+                  </div>
+                ) : leaseSigned ? (
+                  <div className="border-t border-teal-100 px-5 py-4">
+                    <p className="text-sm font-semibold text-teal-700">Lease signed successfully — your room is secured.</p>
+                  </div>
+                ) : stepIndex === 2 && (
                   <div className="border-t border-slate-100 px-5 pb-5 pt-4">
                     <p className="mb-1 text-sm font-semibold text-slate-700">Lease Agreement</p>
                     <div className="mb-4 max-h-40 overflow-y-auto rounded-xl border border-slate-200 bg-slate-50 p-4 text-xs leading-5 text-slate-600">
@@ -1787,59 +1887,6 @@ export default function Apply() {
                     </button>
                   </div>
                 )}
-                {leaseSigned && (
-                  <div className="border-t border-slate-100 px-5 py-4">
-                    <p className="text-sm text-teal-700">Lease signed successfully.</p>
-                  </div>
-                )}
-              </div>
-
-              {/* Step 3: Pay Move-In Costs */}
-              <div className={`mt-3 overflow-hidden rounded-2xl border transition-all ${stepIndex === 2 && !allDone ? 'border-axis/40 bg-white shadow-md' : allDone ? 'border-teal-200 bg-teal-50' : 'border-slate-100 bg-slate-50 opacity-60'}`}>
-                <div className="flex items-center gap-3 px-5 py-4">
-                  <StepDot n={3} done={allDone} active={stepIndex === 2 && !allDone} />
-                  <div>
-                    <div className="font-semibold text-slate-900">Pay Move-In Costs</div>
-                    <div className="text-xs text-slate-500">First month's rent + security deposit via Stripe</div>
-                  </div>
-                </div>
-                {allDone ? (
-                  <div className="border-t border-teal-100 px-5 py-4">
-                    <p className="text-sm font-semibold text-teal-700">Payment complete — your room is secured!</p>
-                  </div>
-                ) : stepIndex === 2 && (
-                  <div className="border-t border-slate-100 px-5 pb-5 pt-4">
-                    {paymentStatus === 'cancelled' && (
-                      <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-700">
-                        Payment was cancelled. You can retry below.
-                      </div>
-                    )}
-                    <div className="mb-4 space-y-2 rounded-xl border border-slate-200 bg-slate-50 p-4">
-                      <div className="flex justify-between text-sm">
-                        <span className="text-slate-600">First month's rent</span>
-                        <span className="font-semibold text-slate-900">{monthlyRent ? `$${monthlyRent.toLocaleString()}` : '—'}</span>
-                      </div>
-                      <div className="flex justify-between text-sm">
-                        <span className="text-slate-600">Security deposit</span>
-                        <span className="font-semibold text-slate-900">{deposit ? `$${deposit.toLocaleString()}` : '—'}</span>
-                      </div>
-                      <div className="flex justify-between border-t border-slate-200 pt-2 text-sm">
-                        <span className="font-bold text-slate-900">Total due today</span>
-                        <span className="font-black text-slate-900">{moveInTotal ? `$${moveInTotal.toLocaleString()}` : '—'}</span>
-                      </div>
-                    </div>
-                    {moveInPaymentError && (
-                      <p className="mb-3 rounded-xl bg-red-50 px-4 py-2.5 text-sm text-red-700">{moveInPaymentError}</p>
-                    )}
-                    <button type="button" onClick={handleMoveInPaymentCheckout} disabled={moveInPaymentLoading}
-                      className="rounded-full bg-axis px-6 py-3 text-sm font-semibold text-white transition hover:opacity-90 disabled:opacity-50">
-                      {moveInPaymentLoading ? 'Opening checkout…' : `Pay $${moveInTotal ? moveInTotal.toLocaleString() : '…'}`}
-                    </button>
-                    {!moveInTotal && (
-                      <p className="mt-3 text-xs text-slate-400">Contact leasing to complete payment if amounts are not shown.</p>
-                    )}
-                  </div>
-                )}
               </div>
             </div>
           )}
@@ -1857,6 +1904,13 @@ export default function Apply() {
               Back to home
             </a>
           </div>
+          <EmbeddedStripeCheckout
+            open={Boolean(embeddedCheckout)}
+            title={embeddedCheckout?.title || 'Secure Payment'}
+            checkoutRequest={embeddedCheckout?.request}
+            onClose={handleEmbeddedCheckoutClose}
+            onComplete={handleEmbeddedCheckoutComplete}
+          />
         </div>
       </div>
     )
@@ -2443,16 +2497,7 @@ export default function Apply() {
                   onChange={(e) => { setPromoInput(e.target.value); setPromoError('') }}
                   placeholder="Enter code"
                   className="min-w-0 flex-1 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 placeholder-slate-400 outline-none transition focus:border-axis focus:ring-2 focus:ring-axis/20 uppercase"
-                  onKeyDown={(e) => e.key === 'Enter' && handlePromoApplyAndSubmit()}
                 />
-                <button
-                  type="button"
-                  onClick={handlePromoApplyAndSubmit}
-                  disabled={submitting || prePaymentLoading}
-                  className="shrink-0 rounded-xl bg-slate-900 px-5 py-3 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:opacity-60"
-                >
-                  Apply & Submit
-                </button>
               </div>
               {promoError ? <p className="mt-2 text-xs text-red-600">{promoError}</p> : null}
             </div>
@@ -2468,8 +2513,8 @@ export default function Apply() {
                 Continue
               </button>
             ) : applicationType === 'signer' ? (
-              <button type="button" onClick={handlePrePaymentCheckout} disabled={prePaymentLoading || submitting} className="flex-1 rounded-full bg-axis py-3 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-60 transition">
-                {submitting ? 'Submitting…' : prePaymentLoading ? 'Opening payment…' : 'Pay $50 & Submit'}
+              <button type="button" onClick={promoInput.trim() ? handlePromoApplyAndSubmit : handlePrePaymentCheckout} disabled={prePaymentLoading || submitting} className="flex-1 rounded-full bg-axis py-3 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-60 transition">
+                {submitting ? 'Submitting…' : prePaymentLoading ? 'Opening payment…' : promoInput.trim() ? 'Submit Application' : 'Pay $50 & Submit'}
               </button>
             ) : (
               <button type="submit" disabled={submitting} className="flex-1 rounded-full bg-axis py-3 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-60 transition">
@@ -2478,6 +2523,13 @@ export default function Apply() {
             )}
           </div>
         </form>
+        <EmbeddedStripeCheckout
+          open={Boolean(embeddedCheckout)}
+          title={embeddedCheckout?.title || 'Secure Payment'}
+          checkoutRequest={embeddedCheckout?.request}
+          onClose={handleEmbeddedCheckoutClose}
+          onComplete={handleEmbeddedCheckoutComplete}
+        />
           </>
         )}
       </div>
