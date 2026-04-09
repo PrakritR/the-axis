@@ -1035,7 +1035,81 @@ function getPaymentKind(payment) {
   return 'rent'
 }
 
-function PaymentsPanel({ resident }) {
+function ExtendLeaseForm({ resident, onUpdated }) {
+  const currentEnd = formatDateInput(resident['Lease End Date'])
+  const [open, setOpen] = useState(false)
+  const [newDate, setNewDate] = useState(currentEnd)
+  const [saving, setSaving] = useState(false)
+  const [success, setSuccess] = useState('')
+  const [error, setError] = useState('')
+
+  async function handleSubmit(e) {
+    e.preventDefault()
+    if (!newDate) return
+    if (currentEnd && newDate <= currentEnd) { setError('New move-out date must be after the current move-out date.'); return }
+    setSaving(true)
+    setError('')
+    setSuccess('')
+    try {
+      const updated = await updateResident(resident.id, { 'Lease End Date': newDate })
+      onUpdated(updated)
+      setSuccess(`Move-out date updated to ${formatDate(newDate)}.`)
+      setOpen(false)
+    } catch (err) {
+      setError(err.message || 'Could not update lease date.')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <div className="mt-5">
+      {!open ? (
+        <button
+          type="button"
+          onClick={() => { setOpen(true); setSuccess(''); setError('') }}
+          className="rounded-full border border-slate-300 px-5 py-2.5 text-sm font-semibold text-slate-700 transition hover:border-slate-900 hover:text-slate-900"
+        >
+          Extend / Update Move-out Date
+        </button>
+      ) : (
+        <form onSubmit={handleSubmit} className="mt-2 space-y-3">
+          <div>
+            <label className="mb-1.5 block text-sm font-semibold text-slate-700">New Move-out Date</label>
+            <input
+              required
+              type="date"
+              min={currentEnd || undefined}
+              value={newDate}
+              onChange={(e) => setNewDate(e.target.value)}
+              className="w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm outline-none transition focus:border-slate-900 focus:ring-2 focus:ring-slate-900/10"
+            />
+          </div>
+          {error && <p className="text-sm text-red-600">{error}</p>}
+          <div className="flex gap-2">
+            <button
+              type="submit"
+              disabled={saving}
+              className="rounded-full bg-slate-900 px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:opacity-50"
+            >
+              {saving ? 'Saving…' : 'Confirm extension'}
+            </button>
+            <button
+              type="button"
+              onClick={() => setOpen(false)}
+              className="rounded-full border border-slate-200 px-5 py-2.5 text-sm font-semibold text-slate-600 transition hover:border-slate-400"
+            >
+              Cancel
+            </button>
+          </div>
+        </form>
+      )}
+      {success && <p className="mt-3 text-sm text-emerald-600">{success}</p>}
+    </div>
+  )
+}
+
+function PaymentsPanel({ resident, onResidentUpdated }) {
   const [payments, setPayments] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -1155,21 +1229,18 @@ function PaymentsPanel({ resident }) {
               </div>
 
               <div className="rounded-[24px] border border-slate-200 bg-white p-5">
-                <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">Lease Actions</div>
-                <h3 className="mt-3 text-xl font-black text-slate-900">Extend or continue your lease</h3>
-                <p className="mt-2 text-sm leading-6 text-slate-500">
-                  Open the lease portal to manage future billing details and continue your stay.
-                </p>
-                <div className="mt-5 flex flex-wrap gap-3">
-                  <button
-                    type="button"
-                    onClick={openPortal}
-                    disabled={actionLoading === 'portal'}
-                    className="rounded-full border border-slate-300 px-5 py-3 text-sm font-semibold text-slate-700 transition hover:border-slate-500 disabled:cursor-not-allowed disabled:opacity-50"
-                  >
-                    {actionLoading === 'portal' ? 'Opening portal...' : 'Extend / Continue Lease'}
-                  </button>
+                <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">Lease Dates</div>
+                <div className="mt-3 flex flex-wrap gap-6 text-sm">
+                  <div>
+                    <div className="text-xs text-slate-400 mb-0.5">Move-in</div>
+                    <div className="font-bold text-slate-900">{resident['Lease Start Date'] ? formatDate(resident['Lease Start Date']) : '—'}</div>
+                  </div>
+                  <div>
+                    <div className="text-xs text-slate-400 mb-0.5">Move-out</div>
+                    <div className="font-bold text-slate-900">{resident['Lease End Date'] ? formatDate(resident['Lease End Date']) : '—'}</div>
+                  </div>
                 </div>
+                <ExtendLeaseForm resident={resident} onUpdated={onResidentUpdated} />
               </div>
             </div>
 
@@ -1386,7 +1457,7 @@ function Dashboard({ resident, onResidentUpdated, onSignOut }) {
 
         {!loading && tab === 'requests' ? <RequestsList requests={requests} residentEmail={residentEmail} /> : null}
         {!loading && tab === 'new' ? <RequestComposer resident={resident} onCreated={async () => { await loadData(); setTab('requests') }} /> : null}
-        {!loading && tab === 'payments' ? <PaymentsPanel resident={resident} /> : null}
+        {!loading && tab === 'payments' ? <PaymentsPanel resident={resident} onResidentUpdated={onResidentUpdated} /> : null}
         {!loading && tab === 'announcements' ? <AnnouncementsPanel items={announcements} /> : null}
         {!loading && tab === 'profile' ? <ProfilePanel resident={resident} onUpdated={onResidentUpdated} /> : null}
       </div>
