@@ -1,11 +1,6 @@
-// Applications base: Residents, Applications, Co-Signers, Announcements
-const APPS_BASE_ID = import.meta.env.VITE_AIRTABLE_APPLICATIONS_BASE_ID || 'appNBX2inqfJMyqYV'
-// Resident Portal base: Work Orders, Messages, Payments, Documents, Packages
-const PORTAL_BASE_ID = import.meta.env.VITE_AIRTABLE_BASE_ID || 'appol57LKtMKaQ75T'
+const BASE_ID = import.meta.env.VITE_AIRTABLE_APPLICATIONS_BASE_ID || 'appNBX2inqfJMyqYV'
 const API_KEY = import.meta.env.VITE_AIRTABLE_TOKEN
-
-// Which tables live in which base
-const PORTAL_TABLES = new Set(['Work Orders', 'Messages', 'Payments', 'Documents', 'Packages'])
+const BASE_URL = `https://api.airtable.com/v0/${BASE_ID}`
 
 const TABLES = {
   workOrders: 'Work Orders',
@@ -27,12 +22,8 @@ function headers() {
   }
 }
 
-function baseIdForTable(table) {
-  return PORTAL_TABLES.has(table) ? PORTAL_BASE_ID : APPS_BASE_ID
-}
-
 function tableUrl(table) {
-  return `https://api.airtable.com/v0/${baseIdForTable(table)}/${encodeURIComponent(table)}`
+  return `${BASE_URL}/${encodeURIComponent(table)}`
 }
 
 function buildUrl(table, params = {}) {
@@ -42,7 +33,8 @@ function buildUrl(table, params = {}) {
       url.searchParams.set(key, value)
     }
   })
-  return url.toString()}
+  return url.toString()
+}
 
 async function request(url, options = {}) {
   const response = await fetch(url, {
@@ -191,17 +183,24 @@ export async function getAnnouncements() {
 }
 
 export async function getWorkOrdersForResident(resident) {
+  // The Work Orders "Resident" field stores the Application ID (e.g. APP-recXXX)
+  // Try matching by Application ID, resident record ID, and email as fallbacks
+  const applicationId = String(resident['Application ID'] || '').trim()
   const residentId = resident.id
   const residentEmail = String(resident.Email || '').trim()
-  const formulaParts = [
-    `FIND("${escapeFormulaValue(residentId)}", ARRAYJOIN({Resident})) > 0`,
-  ]
+
+  const formulaParts = []
+
+  if (applicationId) {
+    formulaParts.push(`FIND("${escapeFormulaValue(applicationId)}", ARRAYJOIN({Resident})) > 0`)
+    formulaParts.push(`{Resident} = "${escapeFormulaValue(applicationId)}"`)
+  }
+  formulaParts.push(`FIND("${escapeFormulaValue(residentId)}", ARRAYJOIN({Resident})) > 0`)
 
   if (residentEmail) {
     const emailValue = escapeFormulaValue(residentEmail)
     formulaParts.push(`LOWER({Resident Email}) = LOWER("${emailValue}")`)
     formulaParts.push(`LOWER({Email}) = LOWER("${emailValue}")`)
-    formulaParts.push(`LOWER({Sender Email}) = LOWER("${emailValue}")`)
   }
 
   const formula = `OR(${formulaParts.join(',')})`
@@ -221,7 +220,7 @@ async function uploadAttachmentToRecord(table, recordId, fieldName, file) {
   formData.append('contentType', file.type || 'application/octet-stream')
 
   const response = await fetch(
-    `https://content.airtable.com/v0/${baseIdForTable(table)}/${encodeURIComponent(table)}/${recordId}/${encodeURIComponent(fieldName)}/uploadAttachment`,
+    `https://content.airtable.com/v0/${BASE_ID}/${encodeURIComponent(table)}/${recordId}/${encodeURIComponent(fieldName)}/uploadAttachment`,
     {
       method: 'POST',
       headers: { Authorization: `Bearer ${API_KEY}` },
@@ -364,7 +363,7 @@ export async function signLease(applicationRecordId, signatureText) {
 // Returns currently active signed leases — used to overlay dynamic room unavailability
 export async function getSignedLeases() {
   const formula = `AND({Lease Signed} = TRUE(), IS_AFTER({Lease End Date}, TODAY()))`
-  const url = new URL(`https://api.airtable.com/v0/${APPS_BASE_ID}/Applications`)
+  const url = new URL(`${BASE_URL}/Applications`)
   url.searchParams.set('filterByFormula', formula)
   url.searchParams.set('fields[]', 'Property Name')
   url.searchParams.set('fields[]', 'Room Number')
@@ -378,7 +377,7 @@ export async function getSignedLeases() {
 }
 
 export const airtableReady = Boolean(
-  APPS_BASE_ID &&
+  BASE_ID &&
   API_KEY &&
   API_KEY !== 'your_airtable_token'
 )
