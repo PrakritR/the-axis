@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef } from 'react'
+import { useState } from 'react'
 import { Seo } from '../lib/seo'
 import { properties } from '../data/properties'
 
@@ -11,44 +11,11 @@ function formatPhone(raw) {
 
 const CONTACT_EMAIL = 'info@axis-seattle-housing.com'
 
-// Calendly event URLs — create a second event type in Calendly for "Discussion"
-const CALENDLY_TOUR_URL = 'https://calendly.com/ramachandranprakrit/30min'
-const CALENDLY_MEETING_URL = 'https://calendly.com/ramachandranprakrit/30min' // replace with your "discussion" event URL
-
 const PROPERTIES = [
   { id: '4709a', name: '4709A 8th Ave', address: '4709A 8th Ave NE, Seattle, WA', rooms: ['Room 1','Room 2','Room 3','Room 4','Room 5','Room 6','Room 7','Room 8','Room 9','Room 10'] },
   { id: '4709b', name: '4709B 8th Ave', address: '4709B 8th Ave NE, Seattle, WA', rooms: ['Room 1','Room 2','Room 3','Room 4','Room 5','Room 6','Room 7','Room 8','Room 9'] },
   { id: '5259',  name: '5259 Brooklyn Ave NE', address: '5259 Brooklyn Ave NE, Seattle, WA', rooms: ['Room 1','Room 2','Room 3','Room 4','Room 5','Room 6','Room 7','Room 8','Room 9'] },
 ]
-
-function CalendlyEmbed({ url }) {
-  const containerRef = useRef(null)
-
-  useEffect(() => {
-    if (!document.querySelector('script[src*="calendly.com/assets/external/widget.js"]')) {
-      const script = document.createElement('script')
-      script.src = 'https://assets.calendly.com/assets/external/widget.js'
-      script.async = true
-      document.head.appendChild(script)
-    }
-    const init = () => {
-      if (window.Calendly && containerRef.current) {
-        containerRef.current.innerHTML = ''
-        window.Calendly.initInlineWidget({
-          url,
-          parentElement: containerRef.current,
-        })
-      }
-    }
-    const script = document.querySelector('script[src*="calendly.com/assets/external/widget.js"]')
-    if (window.Calendly) { init() }
-    else { script?.addEventListener('load', init); return () => script?.removeEventListener('load', init) }
-  }, [url])
-
-  return (
-    <div ref={containerRef} className="calendly-inline-widget" data-url={url} style={{ minWidth: '320px', height: 'min(700px, max(500px, calc(100dvh - 200px)))' }} />
-  )
-}
 
 function BookingScheduler() {
   const [bookingType, setBookingType] = useState(null) // 'tour' | 'meeting'
@@ -56,35 +23,51 @@ function BookingScheduler() {
   const [property, setProperty] = useState(null)
   const [room, setRoom] = useState('')
   const [tourType, setTourType] = useState('in-person')
+  const [form, setForm] = useState({ name: '', email: '', phone: '', preferredDate: '', preferredTime: '', notes: '' })
+  const [submitting, setSubmitting] = useState(false)
+  const [submitted, setSubmitted] = useState(false)
+  const [submitError, setSubmitError] = useState('')
 
   const selectedProperty = PROPERTIES.find(p => p.id === property)
 
-  function reset() { setBookingType(null); setStep(1); setProperty(null); setRoom(''); setTourType('in-person') }
-
-  // Build Calendly URL with all details formatted into the notes field
-  function getCalendlyUrl() {
-    const base = bookingType === 'meeting' ? CALENDLY_MEETING_URL : CALENDLY_TOUR_URL
-    const enc = encodeURIComponent
-
-    if (bookingType === 'meeting') {
-      const notes = `Meeting Type: General Discussion with Leasing\nScheduled via Axis website`
-      return `${base}?hide_gdpr_banner=1&primary_color=0f172a&a1=${enc(notes)}`
-    }
-
-    const format = tourType === 'in-person' ? 'In-Person' : 'Virtual'
-    // Pack all tour details into a1 as a readable block — shows up in calendar event
-    const notes = [
-      `Property: ${selectedProperty?.name}`,
-      `Address: ${selectedProperty?.address}`,
-      `Room: ${room}`,
-      `Tour Format: ${format}`,
-      `Scheduled via Axis website`,
-    ].join('\n')
-
-    return `${base}?hide_gdpr_banner=1&primary_color=0f172a&a1=${enc(notes)}`
-    // Note: phone pre-fill via &a2= requires a "Phone Number" custom question
-    // to be added in Calendly event type settings → Invitee Questions
+  function setField(k, v) { setForm(prev => ({ ...prev, [k]: v })) }
+  function reset() {
+    setBookingType(null); setStep(1); setProperty(null); setRoom(''); setTourType('in-person')
+    setForm({ name: '', email: '', phone: '', preferredDate: '', preferredTime: '', notes: '' })
+    setSubmitted(false); setSubmitError('')
   }
+
+  async function handleSchedule() {
+    setSubmitting(true)
+    setSubmitError('')
+    try {
+      const res = await fetch('/api/schedule-tour', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: form.name.trim(),
+          email: form.email.trim(),
+          phone: form.phone.trim(),
+          type: bookingType === 'meeting' ? 'Meeting' : 'Tour',
+          property: selectedProperty?.name || '',
+          room: room || '',
+          tourFormat: tourType === 'virtual' ? 'Virtual' : 'In-Person',
+          preferredDate: form.preferredDate,
+          preferredTime: form.preferredTime,
+          notes: form.notes.trim(),
+        }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Submission failed.')
+      setSubmitted(true)
+    } catch (err) {
+      setSubmitError(err.message || 'Could not submit. Please try again.')
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  const todayStr = new Date().toISOString().split('T')[0]
 
   // Step 0: Choose booking type
   if (!bookingType) {
@@ -139,7 +122,31 @@ function BookingScheduler() {
   }
 
   // Tour flow — step indicator
-  const tourSteps = [['1','Property'],['2','Room & Type'],['3','Pick a Time']]
+  const tourSteps = [['1','Property'],['2','Room & Type'],['3','Your Details']]
+
+  // Success state
+  if (submitted) {
+    return (
+      <div className="flex flex-col items-center gap-4 py-12 text-center">
+        <div className="flex h-14 w-14 items-center justify-center rounded-full bg-blue-50">
+          <svg className="h-7 w-7 text-axis" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+          </svg>
+        </div>
+        <div>
+          <p className="text-lg font-black text-slate-900">
+            {bookingType === 'meeting' ? 'Meeting request sent!' : 'Tour request sent!'}
+          </p>
+          <p className="mt-1 text-sm text-slate-500">
+            We'll reach out to <strong>{form.email}</strong> to confirm the details within 1 business day.
+          </p>
+        </div>
+        <button onClick={reset} className="mt-2 text-xs font-semibold text-axis hover:underline">
+          Submit another request
+        </button>
+      </div>
+    )
+  }
 
   return (
     <div>
@@ -150,7 +157,7 @@ function BookingScheduler() {
               {bookingType === 'tour' ? 'Tour a property' : 'Discuss with leasing'}
             </div>
             <h2 className="mt-1.5 text-3xl font-black tracking-tight text-slate-900">
-              {bookingType === 'meeting' ? 'Book a discussion' : step < 3 ? 'Select your room' : 'Pick a time'}
+              {bookingType === 'meeting' ? 'Book a discussion' : step < 3 ? 'Select your room' : 'Your details'}
             </h2>
           </div>
           <button onClick={reset} className="text-xs font-semibold text-slate-400 hover:text-slate-700">← Back</button>
@@ -163,14 +170,14 @@ function BookingScheduler() {
           {tourSteps.map(([s, label], idx) => (
             <div key={s} className="flex items-center gap-1.5">
               <div className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[11px] font-bold transition-colors ${
-                step > idx + 1 ? 'bg-teal-500 text-white' : step === idx + 1 ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-400'
+                step > idx + 1 ? 'bg-[#2563eb] text-white' : step === idx + 1 ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-400'
               }`}>
                 {step > idx + 1
                   ? <svg className="h-3 w-3" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5"/></svg>
                   : s}
               </div>
               <span className={`hidden text-xs font-medium sm:block ${step >= idx + 1 ? 'text-slate-700' : 'text-slate-400'}`}>{label}</span>
-              {idx < 2 && <div className={`h-px w-4 shrink-0 sm:w-6 ${step > idx + 1 ? 'bg-teal-400' : 'bg-slate-200'}`} />}
+              {idx < 2 && <div className={`h-px w-4 shrink-0 sm:w-6 ${step > idx + 1 ? 'bg-[#2563eb]' : 'bg-slate-200'}`} />}
             </div>
           ))}
         </div>
@@ -227,17 +234,17 @@ function BookingScheduler() {
             <button onClick={() => setStep(1)} className="rounded-full border border-slate-200 px-5 py-2.5 text-sm font-semibold text-slate-600 hover:border-slate-400">Back</button>
             <button onClick={() => setStep(3)} disabled={!room}
               className="rounded-full bg-slate-900 px-6 py-2.5 text-sm font-semibold text-white hover:bg-slate-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors">
-              Choose a Time
+              Continue
             </button>
           </div>
         </div>
       )}
 
-      {/* Step 3: Calendly */}
+      {/* Step 3: Contact + scheduling details */}
       {step === 3 && (
         <div>
           {bookingType === 'tour' && selectedProperty && (
-            <div className="mb-4 flex items-center justify-between">
+            <div className="mb-5 flex items-center justify-between">
               <div className="flex flex-wrap items-center gap-2 rounded-2xl border border-slate-100 bg-slate-50 px-4 py-2.5 text-sm">
                 <span className="font-semibold text-slate-900">{selectedProperty.name}</span>
                 <span className="text-slate-300">·</span>
@@ -248,7 +255,65 @@ function BookingScheduler() {
               <button onClick={() => setStep(2)} className="ml-2 shrink-0 text-xs font-semibold text-slate-400 hover:text-slate-700">Edit</button>
             </div>
           )}
-          <CalendlyEmbed url={getCalendlyUrl()} />
+
+          <div className="space-y-4">
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div>
+                <label className="mb-1.5 block text-xs font-semibold text-slate-700">Name <span className="text-axis">*</span></label>
+                <input required className={inputCls} placeholder="Jane Smith" value={form.name} onChange={e => setField('name', e.target.value)} />
+              </div>
+              <div>
+                <label className="mb-1.5 block text-xs font-semibold text-slate-700">Email <span className="text-axis">*</span></label>
+                <input required type="email" className={inputCls} placeholder="jane@email.com" value={form.email} onChange={e => setField('email', e.target.value)} />
+              </div>
+            </div>
+
+            <div>
+              <label className="mb-1.5 block text-xs font-semibold text-slate-700">Phone Number</label>
+              <input type="tel" className={inputCls} placeholder="(206) 555-0100" value={form.phone} onChange={e => setField('phone', formatPhone(e.target.value))} />
+            </div>
+
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div>
+                <label className="mb-1.5 block text-xs font-semibold text-slate-700">Preferred Date</label>
+                <input type="date" min={todayStr} className={inputCls} value={form.preferredDate} onChange={e => setField('preferredDate', e.target.value)} />
+              </div>
+              <div>
+                <label className="mb-1.5 block text-xs font-semibold text-slate-700">Preferred Time</label>
+                <select className={selectCls} value={form.preferredTime} onChange={e => setField('preferredTime', e.target.value)}>
+                  <option value="">No preference</option>
+                  <option value="Morning (9am–12pm)">Morning (9am–12pm)</option>
+                  <option value="Afternoon (12pm–5pm)">Afternoon (12pm–5pm)</option>
+                  <option value="Evening (5pm–8pm)">Evening (5pm–8pm)</option>
+                </select>
+              </div>
+            </div>
+
+            <div>
+              <label className="mb-1.5 block text-xs font-semibold text-slate-700">
+                {bookingType === 'meeting' ? 'What would you like to discuss?' : 'Any questions or notes?'}
+                <span className="ml-1 font-normal text-slate-400">(optional)</span>
+              </label>
+              <textarea className={`${inputCls} min-h-[90px] resize-y`} placeholder={bookingType === 'meeting' ? 'Pricing, lease terms, move-in timeline…' : 'Anything specific you'd like to know…'} value={form.notes} onChange={e => setField('notes', e.target.value)} />
+            </div>
+
+            {submitError && (
+              <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{submitError}</div>
+            )}
+
+            <div className="flex gap-3 pt-2">
+              {bookingType === 'tour' && (
+                <button onClick={() => setStep(2)} className="rounded-full border border-slate-200 px-5 py-2.5 text-sm font-semibold text-slate-600 hover:border-slate-400">Back</button>
+              )}
+              <button
+                onClick={handleSchedule}
+                disabled={!form.name.trim() || !form.email.trim() || submitting}
+                className="flex-1 rounded-full bg-[linear-gradient(180deg,#2f76ff_0%,#2450eb_100%)] py-3 text-sm font-semibold text-white shadow-[0_8px_20px_rgba(37,99,235,0.25)] hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed transition-opacity"
+              >
+                {submitting ? 'Sending…' : bookingType === 'meeting' ? 'Request Meeting' : 'Request Tour'}
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>
@@ -326,7 +391,7 @@ function ContactMessageForm() {
   if (submitted) {
     return (
       <div className="flex flex-col items-center gap-4 py-12 text-center">
-        <div className="flex h-14 w-14 items-center justify-center rounded-full bg-teal-50">
+        <div className="flex h-14 w-14 items-center justify-center rounded-full bg-blue-50">
           <svg className="h-7 w-7 text-axis" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
             <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
           </svg>
