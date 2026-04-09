@@ -183,27 +183,15 @@ export async function getAnnouncements() {
 }
 
 export async function getWorkOrdersForResident(resident) {
-  // The Work Orders "Resident" field stores the Application ID (e.g. APP-recXXX)
-  // Try matching by Application ID, resident record ID, and email as fallbacks
-  const applicationId = String(resident['Application ID'] || '').trim()
-  const residentId = resident.id
-  const residentEmail = String(resident.Email || '').trim()
+  // Work Orders "Resident" is a linked record field storing the Resident record ID.
+  // "Resident Email" is a lookup (array) field — avoid LOWER() on it.
+  const residentId = escapeFormulaValue(resident.id)
+  const residentEmail = escapeFormulaValue(String(resident.Email || '').trim().toLowerCase())
 
-  const formulaParts = []
+  const formula = residentEmail
+    ? `OR(FIND("${residentId}", ARRAYJOIN({Resident})) > 0, FIND("${residentEmail}", LOWER(ARRAYJOIN({Resident Email}))) > 0)`
+    : `FIND("${residentId}", ARRAYJOIN({Resident})) > 0`
 
-  if (applicationId) {
-    formulaParts.push(`FIND("${escapeFormulaValue(applicationId)}", ARRAYJOIN({Resident})) > 0`)
-    formulaParts.push(`{Resident} = "${escapeFormulaValue(applicationId)}"`)
-  }
-  formulaParts.push(`FIND("${escapeFormulaValue(residentId)}", ARRAYJOIN({Resident})) > 0`)
-
-  if (residentEmail) {
-    const emailValue = escapeFormulaValue(residentEmail)
-    formulaParts.push(`LOWER({Resident Email}) = LOWER("${emailValue}")`)
-    formulaParts.push(`LOWER({Email}) = LOWER("${emailValue}")`)
-  }
-
-  const formula = `OR(${formulaParts.join(',')})`
   const data = await request(buildUrl(TABLES.workOrders, {
     filterByFormula: formula,
   }))
