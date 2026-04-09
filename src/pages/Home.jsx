@@ -58,9 +58,9 @@ function ChevronDown({ open }) {
 
 
 const steps = [
-  { n: '01', title: 'Browse housing', body: 'Compare available houses, room layouts, and posted pricing.', color: 'text-[#2563eb]' },
-  { n: '02', title: 'Apply', body: 'Submit an application for the housing option that fits what you need.', color: 'text-gold' },
-  { n: '03', title: 'Move in', body: 'If approved, complete the next steps and move into the selected housing.', color: 'text-emerald-400' },
+  { n: '01', title: 'Browse housing', body: '', color: 'text-[#2563eb]' },
+  { n: '02', title: 'Apply', body: '', color: 'text-gold' },
+  { n: '03', title: 'Move in', body: '', color: 'text-emerald-400' },
 ]
 
 const neighborhoodItems = [
@@ -319,9 +319,7 @@ function RoomFinder() {
           <h2 className="mt-3 text-2xl font-black tracking-[-0.05em] text-slate-900 sm:text-4xl">
             Find housing that works for you
           </h2>
-          <p className="mx-auto mt-3 max-w-md text-sm leading-6 text-slate-500">
-            Enter your dates and budget and we&apos;ll show matching listings and room options.
-          </p>
+
         </Reveal>
 
         <div className="rounded-[32px] border border-white/90 bg-white/84 p-6 shadow-[0_30px_80px_rgba(37,99,235,0.09)] backdrop-blur sm:p-8">
@@ -551,9 +549,7 @@ export default function Home() {
           <Reveal>
             <div className="flex flex-col gap-5">
               <h2 className="text-2xl font-black tracking-[-0.05em] text-slate-900 sm:text-4xl">Available Housing</h2>
-              <p className="text-sm leading-6 text-slate-500 sm:text-base sm:leading-7">
-                Browse available housing in Seattle and open the listings that fit what you want.
-              </p>
+
               <Link
                 reloadDocument
                 to={`/contact?subject=${encodeURIComponent('Tour request')}`}
@@ -573,7 +569,7 @@ export default function Home() {
           <Reveal className="text-center max-w-xl mx-auto mb-12">
             <Eyebrow>Process</Eyebrow>
             <h2 className="mt-4 text-2xl font-black tracking-[-0.05em] text-slate-900 sm:text-4xl">How it works</h2>
-            <p className="mt-3 text-sm leading-6 text-slate-500 sm:text-base sm:leading-7">A simple path from browsing to move-in.</p>
+
           </Reveal>
 
           <motion.div
@@ -598,7 +594,6 @@ export default function Home() {
                 )}
                 <span className={`text-4xl font-black ${s.color}`}>{s.n}</span>
                 <h3 className="text-lg font-bold text-slate-900">{s.title}</h3>
-                <p className="text-sm leading-6 text-slate-500">{s.body}</p>
               </motion.div>
             ))}
           </motion.div>
@@ -617,9 +612,7 @@ export default function Home() {
                 <h2 className="mt-3 text-2xl font-black tracking-[-0.05em] text-slate-900 sm:text-3xl md:text-4xl">
                   Browse housing simply
                 </h2>
-                <p className="mt-2 text-sm leading-6 text-slate-500">
-                  Tour, ask questions, or apply online.
-                </p>
+
               </div>
               <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap">
                 <Link

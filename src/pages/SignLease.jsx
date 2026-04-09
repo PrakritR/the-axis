@@ -260,11 +260,11 @@ export default function SignLease() {
     : ''
 
   return (
-    <div className="min-h-screen bg-[linear-gradient(160deg,#ecfeff_0%,#f8fafc_35%,#ffffff_100%)] px-4 py-8 sm:px-6 lg:px-8">
+    <div className="min-h-screen bg-[linear-gradient(160deg,#edf2fb_0%,#f8fafc_35%,#ffffff_100%)] px-4 py-8 sm:px-6 lg:px-8">
       <div className="mx-auto max-w-5xl">
         <div className="mb-6 flex items-center justify-between gap-4">
           <div>
-            <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-[#0b8a89]">Axis Lease Signing</div>
+            <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-[#2563eb]">Axis Lease Signing</div>
             <h1 className="mt-2 text-3xl font-black tracking-tight text-slate-900">Review and sign your lease</h1>
             <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-500">
               Confirm the lease summary below, add your legal signature, and save a PDF copy for your records.
@@ -327,7 +327,7 @@ export default function SignLease() {
                     onChange={(e) => setSignatureName(e.target.value)}
                     disabled={alreadySigned}
                     placeholder="First and last name"
-                    className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 transition focus:border-[#0ea5a4] focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#0ea5a4]/20 disabled:cursor-not-allowed disabled:opacity-60"
+                    className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 transition focus:border-[#2563eb] focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#2563eb]/20 disabled:cursor-not-allowed disabled:opacity-60"
                   />
                 </div>
 
@@ -358,7 +358,7 @@ export default function SignLease() {
                     <button
                       type="submit"
                       disabled={saving}
-                      className="w-full rounded-2xl bg-slate-900 px-5 py-3.5 text-sm font-semibold text-white transition hover:bg-[#0ea5a4] disabled:opacity-50"
+                      className="w-full rounded-2xl bg-slate-900 px-5 py-3.5 text-sm font-semibold text-white transition hover:brightness-110 disabled:opacity-50"
                     >
                       {saving ? 'Saving signature…' : 'Sign lease'}
                     </button>

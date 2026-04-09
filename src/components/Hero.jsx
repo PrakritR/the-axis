@@ -34,10 +34,6 @@ export default function Hero({
               {heading}
             </motion.h1>
 
-            <motion.p variants={item} className="mt-5 max-w-xl text-sm leading-7 text-slate-500 sm:text-lg sm:leading-8">
-              {subheading}
-            </motion.p>
-
             <motion.div variants={item} className="mt-7 flex flex-col gap-3 sm:mt-8 sm:flex-row sm:flex-wrap">
               <button
                 type="button"
@@ -52,18 +48,6 @@ export default function Hero({
               >
                 {tourLabel}
               </Link>
-            </motion.div>
-
-            <motion.div variants={item} className="mt-9 grid grid-cols-2 gap-4 border-t border-slate-200/70 pt-6 sm:mt-12 sm:flex sm:flex-wrap sm:items-center sm:gap-x-6 sm:gap-y-4 sm:pt-8">
-              {[
-                { label: 'Starting price', value: '$750 / mo' },
-                { label: 'Listed homes', value: '3' },
-              ].map((s) => (
-                <div key={s.label} className={`rounded-[24px] border border-white/80 bg-white/76 px-4 py-4 shadow-[0_12px_32px_rgba(37,99,235,0.08)] ${s.label === 'Utilities' ? 'col-span-2 sm:col-span-1' : ''}`}>
-                  <div className="text-lg font-black text-slate-900 sm:text-xl">{s.value}</div>
-                  <div className="mt-1 text-xs font-medium uppercase tracking-[0.15em] text-slate-400">{s.label}</div>
-                </div>
-              ))}
             </motion.div>
           </motion.div>
         </div>

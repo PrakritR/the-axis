@@ -71,7 +71,7 @@ export default function GalleryLightbox({ images = [], startIndex = 0, open, onC
       <div className="relative mx-auto flex h-full w-full max-w-[1400px] flex-col overflow-hidden rounded-[28px] border border-white/10 bg-[#0c0c0c] shadow-[0_30px_120px_rgba(0,0,0,0.55)]">
         <div className="flex items-center justify-between border-b border-white/10 px-4 py-4 text-white sm:px-6">
           <div>
-            <div className="text-xs font-semibold uppercase tracking-[0.18em] text-teal-300">Image gallery</div>
+            <div className="text-xs font-semibold uppercase tracking-[0.18em] text-blue-300">Image gallery</div>
             <div className="mt-1 text-sm text-white/65">Image {current + 1} of {images.length}</div>
           </div>
           <div className="flex items-center gap-2">

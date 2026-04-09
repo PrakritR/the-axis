@@ -465,11 +465,11 @@ function VideoPlaceholderCard({ label, text }) {
   return (
     <div className="mt-4 rounded-[18px] overflow-hidden border border-slate-200">
       <div className="bg-slate-900 px-4 py-2.5 flex items-center gap-2">
-        <svg className="w-4 h-4 text-teal-400" viewBox="0 0 24 24" fill="none" aria-hidden><polygon points="5,3 19,12 5,21" fill="currentColor"/></svg>
+        <svg className="w-4 h-4 text-blue-400" viewBox="0 0 24 24" fill="none" aria-hidden><polygon points="5,3 19,12 5,21" fill="currentColor"/></svg>
         <span className="text-xs font-bold uppercase tracking-[0.14em] text-slate-300">{label}</span>
       </div>
-      <div className="bg-[radial-gradient(circle_at_top_left,rgba(20,184,166,0.18),transparent_32%),linear-gradient(180deg,#0f172a_0%,#020617_100%)] px-5 py-8 text-center">
-        <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full border border-white/10 bg-white/10 text-teal-300">
+      <div className="bg-[radial-gradient(circle_at_top_left,rgba(37,99,235,0.18),transparent_32%),linear-gradient(180deg,#0f172a_0%,#020617_100%)] px-5 py-8 text-center">
+        <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full border border-white/10 bg-white/10 text-blue-300">
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden><polygon points="5,3 19,12 5,21" fill="currentColor"/></svg>
         </div>
         <div className="mt-4 text-sm font-semibold text-white">Video placeholder</div>
@@ -961,7 +961,7 @@ export default function PropertyPage(){
                 {modalPlan.room.video && (
                   <div className="mt-4 rounded-[18px] overflow-hidden border border-slate-200">
                     <div className="bg-slate-900 px-4 py-2.5 flex items-center gap-2">
-                      <svg className="w-4 h-4 text-teal-400" viewBox="0 0 24 24" fill="none" aria-hidden><polygon points="5,3 19,12 5,21" fill="currentColor"/></svg>
+                      <svg className="w-4 h-4 text-blue-400" viewBox="0 0 24 24" fill="none" aria-hidden><polygon points="5,3 19,12 5,21" fill="currentColor"/></svg>
                       <span className="text-xs font-bold uppercase tracking-[0.14em] text-slate-300">Room Tour</span>
                     </div>
                     <video
@@ -984,7 +984,7 @@ export default function PropertyPage(){
                 {modalPlan.room.bathroomVideo && (
                   <div className="mt-4 rounded-[18px] overflow-hidden border border-slate-200">
                     <div className="bg-slate-900 px-4 py-2.5 flex items-center gap-2">
-                      <svg className="w-4 h-4 text-teal-400" viewBox="0 0 24 24" fill="none" aria-hidden><polygon points="5,3 19,12 5,21" fill="currentColor"/></svg>
+                      <svg className="w-4 h-4 text-blue-400" viewBox="0 0 24 24" fill="none" aria-hidden><polygon points="5,3 19,12 5,21" fill="currentColor"/></svg>
                       <span className="text-xs font-bold uppercase tracking-[0.14em] text-slate-300">{modalPlan.room.bathroomVideoLabel || 'Bathroom Tour'}</span>
                     </div>
                     <video
@@ -1004,12 +1004,12 @@ export default function PropertyPage(){
                     text={modalPlan.room.bathroomVideoPlaceholderText || 'Bathroom tour coming soon.'}
                   />
                 )}
-                <div className="mt-4 rounded-[18px] border border-teal-100 bg-teal-50 px-4 py-3">
-                  <div className="text-xs font-semibold uppercase tracking-[0.14em] text-teal-600">What's included</div>
+                <div className="mt-4 rounded-[18px] border border-blue-100 bg-blue-50 px-4 py-3">
+                  <div className="text-xs font-semibold uppercase tracking-[0.14em] text-blue-600">What's included</div>
                   <div className="mt-2 text-sm text-slate-700">This room includes the following features:</div>
                   <div className="mt-3 flex flex-wrap gap-2">
                     {includedItems.map((item) => (
-                      <span key={item} className="rounded-full border border-teal-200 bg-white px-3 py-1 text-xs font-semibold text-teal-700">
+                      <span key={item} className="rounded-full border border-blue-200 bg-white px-3 py-1 text-xs font-semibold text-blue-700">
                         {item}
                       </span>
                     ))}
@@ -1043,7 +1043,7 @@ export default function PropertyPage(){
                 {activeSharedSpace.src && !activeSharedSpace.placeholder ? (
                   <div className="mt-4 rounded-[18px] overflow-hidden border border-slate-200">
                     <div className="bg-slate-900 px-4 py-2.5 flex items-center gap-2">
-                      <svg className="w-4 h-4 text-teal-400" viewBox="0 0 24 24" fill="none" aria-hidden><polygon points="5,3 19,12 5,21" fill="currentColor"/></svg>
+                      <svg className="w-4 h-4 text-blue-400" viewBox="0 0 24 24" fill="none" aria-hidden><polygon points="5,3 19,12 5,21" fill="currentColor"/></svg>
                       <span className="text-xs font-bold uppercase tracking-[0.14em] text-slate-300">{getSharedSpaceDetailMeta(activeSharedSpace).title}</span>
                     </div>
                     <video controls playsInline className="w-full max-h-64 bg-black">
@@ -1057,8 +1057,8 @@ export default function PropertyPage(){
                     text={activeSharedSpace.placeholderText || `${getSharedSpaceDetailMeta(activeSharedSpace).title} coming soon.`}
                   />
                 )}
-                <div className="mt-4 rounded-[18px] border border-teal-100 bg-teal-50 px-4 py-3">
-                  <div className="text-xs font-semibold uppercase tracking-[0.14em] text-teal-600">What this shows</div>
+                <div className="mt-4 rounded-[18px] border border-blue-100 bg-blue-50 px-4 py-3">
+                  <div className="text-xs font-semibold uppercase tracking-[0.14em] text-blue-600">What this shows</div>
                   <div className="mt-2 text-sm leading-6 text-slate-700">{getSharedSpaceDetailMeta(activeSharedSpace).description}</div>
                 </div>
               </div>
@@ -1157,7 +1157,7 @@ export default function PropertyPage(){
                         <span className="font-bold text-right text-sm text-axis">{term.moveInLabel}</span>
                       </div>
                       {term.preferredDates && (
-                        <div className="rounded-lg border border-teal-100 bg-teal-50 px-2.5 py-2 text-xs font-medium text-teal-700">
+                        <div className="rounded-lg border border-blue-100 bg-blue-50 px-2.5 py-2 text-xs font-medium text-blue-700">
                           Preferred: {term.preferredDates}
                         </div>
                       )}

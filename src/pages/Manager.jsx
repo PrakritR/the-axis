@@ -654,7 +654,7 @@ function ManagerLogin({ onLogin }) {
                 ) : null}
                 <a
                   href="/join-us"
-                  className="mt-4 inline-flex w-full items-center justify-center rounded-full bg-[#2563eb] px-5 py-4 text-base font-semibold text-white transition hover:bg-[#0b8a89]"
+                  className="mt-4 inline-flex w-full items-center justify-center rounded-full bg-[linear-gradient(180deg,#2c3447_0%,#1a1d27_100%)] px-5 py-4 text-base font-semibold text-white transition hover:brightness-110"
                 >
                   Start in Join Axis
                 </a>
@@ -1027,7 +1027,7 @@ function GenerateDraftModal({ manager, propertyOptions, onClose, onGenerated }) 
             <button
               type="submit"
               disabled={loading}
-              className="inline-flex items-center gap-2 rounded-2xl bg-[#2563eb] px-6 py-2.5 text-sm font-semibold text-white transition hover:bg-[#0b8a89] disabled:opacity-50"
+              className="inline-flex items-center gap-2 rounded-2xl bg-[#2563eb] px-6 py-2.5 text-sm font-semibold text-white transition hover:brightness-110 disabled:opacity-50"
             >
               {loading ? (
                 <>
@@ -1235,7 +1235,7 @@ function ManagerDashboard({ manager, onOpenDraft, onSignOut }) {
           {/* Generate new draft */}
           <button
             onClick={() => setShowGenerateModal(true)}
-            className="inline-flex items-center gap-2 rounded-2xl bg-[#2563eb] px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-[#0b8a89]"
+            className="inline-flex items-center gap-2 rounded-2xl bg-[#2563eb] px-5 py-2.5 text-sm font-semibold text-white transition hover:brightness-110"
           >
             <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z" />
@@ -1588,7 +1588,7 @@ function LeaseEditor({ draftId, manager, onBack }) {
               <button
                 onClick={handlePublish}
                 disabled={!!actionLoading}
-                className="rounded-xl bg-[#2563eb] px-4 py-2 text-sm font-semibold text-white transition hover:bg-[#0b8a89] disabled:opacity-50"
+                className="rounded-xl bg-[#2563eb] px-4 py-2 text-sm font-semibold text-white transition hover:brightness-110 disabled:opacity-50"
               >
                 {actionLoading === 'publish' ? 'Publishing…' : 'Publish to portal'}
               </button>
@@ -1818,7 +1818,7 @@ function LeaseEditor({ draftId, manager, onBack }) {
               </button>
             )}
             {canPublish && (
-              <button onClick={handlePublish} disabled={!!actionLoading} className="w-full rounded-2xl bg-[#2563eb] py-3 text-sm font-semibold text-white transition hover:bg-[#0b8a89] disabled:opacity-50">
+              <button onClick={handlePublish} disabled={!!actionLoading} className="w-full rounded-2xl bg-[#2563eb] py-3 text-sm font-semibold text-white transition hover:brightness-110 disabled:opacity-50">
                 {actionLoading === 'publish' ? 'Publishing…' : 'Publish to resident portal'}
               </button>
             )}
