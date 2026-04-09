@@ -74,9 +74,7 @@ function BookingScheduler() {
     return (
       <div>
         <div className="mb-6 border-b border-slate-100 pb-6">
-          <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-axis">Book time with leasing</div>
-          <h2 className="mt-2 text-3xl font-black tracking-tight text-slate-900">What do you need?</h2>
-          <p className="mt-3 text-sm leading-7 text-slate-600">Choose a session type to get started.</p>
+          <h2 className="text-3xl font-black tracking-tight text-slate-900">What do you need?</h2>
         </div>
         <div className="grid gap-4 sm:grid-cols-2">
           <button
