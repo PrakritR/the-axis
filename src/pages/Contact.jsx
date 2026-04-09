@@ -95,7 +95,7 @@ function DateCalendar({ availableDates, selectedDate, onSelectDate }) {
     return <p className="text-sm text-slate-400 italic">No availability found. We'll coordinate a time after you submit.</p>
   }
   return (
-    <div className="flex flex-wrap gap-2">
+    <div className="grid gap-2 sm:grid-cols-3 lg:grid-cols-4">
       {availableDates.map(({ date, dayAbbr, shortDate }) => {
         const isSelected = selectedDate === date
         return (
@@ -103,9 +103,9 @@ function DateCalendar({ availableDates, selectedDate, onSelectDate }) {
             key={date}
             type="button"
             onClick={() => onSelectDate(date)}
-            className={`flex flex-col items-center rounded-xl border px-3 py-2.5 text-center transition-all ${isSelected ? 'border-slate-900 bg-slate-900 text-white' : 'border-slate-200 bg-white text-slate-700 hover:border-slate-400'}`}
+            className={`flex flex-col items-center rounded-2xl border px-3 py-3 text-center transition-all ${isSelected ? 'border-[#2563eb] bg-[#2563eb] text-white shadow-[0_12px_24px_rgba(37,99,235,0.18)]' : 'border-slate-200 bg-white text-slate-700 hover:border-[#2563eb]'}`}
           >
-            <span className={`text-[10px] font-bold uppercase tracking-wide ${isSelected ? 'text-slate-300' : 'text-slate-400'}`}>{dayAbbr}</span>
+            <span className={`text-[10px] font-bold uppercase tracking-wide ${isSelected ? 'text-white/80' : 'text-slate-400'}`}>{dayAbbr}</span>
             <span className="text-sm font-semibold">{shortDate}</span>
           </button>
         )
@@ -243,10 +243,9 @@ function HousingScheduler() {
 
   return (
     <div>
-      <div className="mb-6 border-b border-slate-100 pb-5">
-        <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-axis">Schedule a Tour</div>
-        <h3 className="mt-2 text-2xl font-black tracking-tight text-slate-900">Tour a property</h3>
-        <p className="mt-2 text-sm text-slate-500">Pick a home, choose a time, and send your details.</p>
+      <div className="mb-8">
+        <h2 className="text-3xl font-black tracking-tight text-slate-900">Contact manager</h2>
+        <p className="mt-2 text-sm text-slate-500">Choose a property, pick an open time, and we will send your request to that property manager.</p>
       </div>
 
       <div className="mb-8 flex items-center gap-2">
@@ -267,11 +266,12 @@ function HousingScheduler() {
           {properties.map((p) => (
             <button key={p.id} onClick={() => { setProperty(p.id); setRoom(''); setSelectedDate(''); setSelectedTime(''); setStep(2) }}
               className="group flex w-full items-center justify-between rounded-2xl border border-slate-200 bg-white px-5 py-4 text-left transition-all hover:border-[#2563eb] hover:shadow-sm">
-              <div>
+              <div className="min-w-0">
                 <div className="font-semibold text-slate-900">{p.name}</div>
                 <div className="mt-0.5 text-xs text-slate-500">{p.address}</div>
+                <div className="mt-2 text-xs font-medium text-[#2563eb]">{p.manager ? `Manager: ${p.manager}` : 'Manager assigned after inquiry'}</div>
               </div>
-              <svg className="h-4 w-4 text-slate-400 group-hover:text-slate-900" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7"/></svg>
+              <span className="shrink-0 rounded-full border border-slate-200 px-3 py-1 text-xs font-semibold text-slate-600 transition group-hover:border-[#2563eb] group-hover:text-[#2563eb]">Contact manager</span>
             </button>
           ))}
         </div>
@@ -280,9 +280,10 @@ function HousingScheduler() {
       {/* Step 2: Pick date, time slot, room, tour format */}
       {step === 2 && selectedProperty && (
         <div className="space-y-7">
-          <div className="rounded-2xl border border-slate-100 bg-slate-50 px-4 py-3 text-sm">
-            <span className="font-semibold text-slate-900">{selectedProperty.name}</span>
-            <span className="ml-2 text-slate-500">{selectedProperty.address}</span>
+          <div className="rounded-2xl border border-blue-100 bg-blue-50 px-4 py-3 text-sm">
+            <div className="font-semibold text-slate-900">{selectedProperty.name}</div>
+            <div className="mt-1 text-slate-500">{selectedProperty.address}</div>
+            <div className="mt-2 text-xs font-semibold uppercase tracking-[0.14em] text-[#2563eb]">{selectedProperty.manager ? `Contact manager: ${selectedProperty.manager}` : 'Manager contact available after request'}</div>
           </div>
 
           {/* Date calendar */}
@@ -328,7 +329,7 @@ function HousingScheduler() {
             <div className="flex gap-3">
               {[['in-person','In-Person'],['virtual','Virtual']].map(([val, label]) => (
                 <button key={val} onClick={() => setTourType(val)}
-                  className={`flex flex-1 items-center justify-center rounded-xl border px-4 py-3 text-sm font-semibold transition-all ${tourType === val ? 'border-slate-900 bg-slate-900 text-white' : 'border-slate-200 bg-white text-slate-700 hover:border-slate-400'}`}>
+                  className={`flex flex-1 items-center justify-center rounded-xl border px-4 py-3 text-sm font-semibold transition-all ${tourType === val ? 'border-[#2563eb] bg-[#2563eb] text-white' : 'border-slate-200 bg-white text-slate-700 hover:border-[#2563eb]'}`}>
                   {label}
                 </button>
               ))}
@@ -338,7 +339,7 @@ function HousingScheduler() {
           <div className="flex gap-3 pt-1">
             <button onClick={() => setStep(1)} className="rounded-full border border-slate-200 px-5 py-2.5 text-sm font-semibold text-slate-600 hover:border-slate-400">Back</button>
             <button onClick={() => setStep(3)}
-              className="rounded-full bg-slate-900 px-6 py-2.5 text-sm font-semibold text-white hover:bg-slate-700 transition-colors">
+              className="rounded-full bg-[linear-gradient(180deg,#2f76ff_0%,#2450eb_100%)] px-6 py-2.5 text-sm font-semibold text-white transition hover:opacity-95">
               Continue
             </button>
           </div>
@@ -352,6 +353,7 @@ function HousingScheduler() {
             <div className="mb-2 flex items-center justify-between rounded-2xl border border-slate-100 bg-slate-50 px-4 py-2.5 text-sm">
               <div className="flex flex-wrap items-center gap-2">
                 <span className="font-semibold text-slate-900">{selectedProperty.name}</span>
+                {selectedProperty.manager ? <><span className="text-slate-300">·</span><span className="text-[#2563eb]">Manager: {selectedProperty.manager}</span></> : null}
                 {room ? <><span className="text-slate-300">·</span><span className="text-slate-600">{room}</span></> : null}
                 {selectedDate ? <><span className="text-slate-300">·</span><span className="text-slate-600">{selectedDateEntry?.display}</span></> : null}
                 {selectedTime ? <><span className="text-slate-300">·</span><span className="text-slate-600">{selectedTime}</span></> : null}
@@ -764,9 +766,7 @@ function TabBar({ tabs, active, onChange }) {
 
 export default function Contact() {
   const location = useLocation()
-  const navigate = useNavigate()
-  const [section, setSection] = useState(null)
-  const [housingTab, setHousingTab] = useState('schedule')
+  const [section, setSection] = useState('software')
   const [softwareTab, setSoftwareTab] = useState('demo')
 
   useEffect(() => {
@@ -775,23 +775,17 @@ export default function Contact() {
     const tabParam = params.get('tab')
     const subject = (params.get('subject') || '').toLowerCase()
 
-    let nextSection = null
-    let nextHousingTab = 'schedule'
+    let nextSection = 'software'
     let nextSoftwareTab = 'demo'
 
-    if (sectionParam === 'housing' || sectionParam === 'software') {
+    if (sectionParam === 'housing') {
+      nextSection = 'housing'
+    } else if (sectionParam === 'software') {
       nextSection = sectionParam
     } else if (subject.includes('tour')) {
       nextSection = 'housing'
-    } else if (subject.includes('question') || subject.includes('lease') || subject.includes('housing')) {
-      nextSection = 'housing'
-      nextHousingTab = 'message'
     } else if (subject.includes('contact') || subject.includes('axis') || subject.includes('demo') || subject.includes('software') || subject.includes('manage')) {
       nextSection = 'software'
-    }
-
-    if (nextSection === 'housing' && (tabParam === 'message' || nextHousingTab === 'message')) {
-      nextHousingTab = 'message'
     }
 
     if (nextSection === 'software' && tabParam === 'message') {
@@ -799,7 +793,6 @@ export default function Contact() {
     }
 
     setSection(nextSection)
-    setHousingTab(nextHousingTab)
     setSoftwareTab(nextSoftwareTab)
   }, [location.search])
 
@@ -813,76 +806,19 @@ export default function Contact() {
       <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 sm:py-12">
         <div className="mx-auto max-w-5xl rounded-[32px] border border-white/90 bg-white/88 p-6 shadow-[0_30px_80px_rgba(37,99,235,0.10)] backdrop-blur sm:p-8">
 
-          {/* Section chooser */}
-          {!section && (
-            <div>
-              <h2 className="text-3xl font-black tracking-tight text-slate-900">How can we help?</h2>
-              <div className="mt-6 grid gap-4 sm:grid-cols-2">
-                <button onClick={() => navigate('/contact?section=housing&tab=schedule')}
-                  className="group flex flex-col gap-5 rounded-2xl border border-slate-200 bg-white p-6 text-left transition-all hover:border-slate-900 hover:shadow-sm">
-                  <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-slate-100 transition-colors group-hover:bg-slate-900">
-                    <svg className="h-6 w-6 text-slate-600 group-hover:text-white transition-colors" fill="none" stroke="currentColor" strokeWidth={1.8} viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 12l8.954-8.955c.44-.439 1.152-.439 1.591 0L21.75 12M4.5 9.75v10.125c0 .621.504 1.125 1.125 1.125H9.75v-4.875c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125V21h4.125c.621 0 1.125-.504 1.125-1.125V9.75M8.25 21h8.25" />
-                    </svg>
-                  </div>
-                  <div>
-                    <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">Axis Housing</div>
-                    <div className="mt-1 text-lg font-black text-slate-900">Looking for a place to live</div>
-                    <p className="mt-2 text-sm leading-6 text-slate-500">Tour our Seattle properties, ask about availability, or talk through pricing and lease options.</p>
-                  </div>
-                  <div className="mt-auto flex items-center gap-1.5 text-xs font-semibold text-axis">
-                    Schedule a tour <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7"/></svg>
-                  </div>
-                </button>
-
-                <button onClick={() => navigate('/contact?section=software&tab=message')}
-                  className="group flex flex-col gap-5 rounded-2xl border border-slate-200 bg-white p-6 text-left transition-all hover:border-[#2563eb] hover:shadow-sm">
-                  <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-blue-50 transition-colors group-hover:bg-[#2563eb]">
-                    <svg className="h-6 w-6 text-[#2563eb] group-hover:text-white transition-colors" fill="none" stroke="currentColor" strokeWidth={1.8} viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M9 17.25v1.007a3 3 0 01-.879 2.122L7.5 21h9l-.621-.621A3 3 0 0115 18.257V17.25m6-12V15a2.25 2.25 0 01-2.25 2.25H5.25A2.25 2.25 0 013 15V5.25m18 0A2.25 2.25 0 0018.75 3H5.25A2.25 2.25 0 003 5.25m18 0H3" />
-                    </svg>
-                  </div>
-                  <div>
-                    <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-[#2563eb]">Axis Software</div>
-                    <div className="mt-1 text-lg font-black text-slate-900">Manage property</div>
-                    <p className="mt-2 text-sm leading-6 text-slate-500">Learn how Axis helps small property owners collect rent, manage work orders, and communicate with tenants.</p>
-                  </div>
-                  <div className="mt-auto flex items-center gap-1.5 text-xs font-semibold text-[#2563eb]">
-                    Contact us <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7"/></svg>
-                  </div>
-                </button>
-              </div>
-            </div>
-          )}
-
           {/* Housing section */}
           {section === 'housing' && (
             <div>
-              <div className="mb-6 flex items-center justify-between border-b border-slate-100 pb-5">
-                <div>
-                  <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">Axis Housing</div>
-                  <h2 className="mt-1 text-2xl font-black tracking-tight text-slate-900">Contact us</h2>
-                </div>
-                <button onClick={() => navigate('/contact')} className="text-xs font-semibold text-slate-400 hover:text-slate-700">← Back</button>
-              </div>
-              <TabBar
-                tabs={[{ id: 'schedule', label: 'Schedule a Tour' }, { id: 'message', label: 'Contact us' }]}
-                active={housingTab} onChange={setHousingTab}
-              />
-              {housingTab === 'schedule' && <HousingScheduler />}
-              {housingTab === 'message'  && <HousingMessageForm />}
+              <HousingScheduler />
             </div>
           )}
 
           {/* Software section */}
           {section === 'software' && (
             <div>
-              <div className="mb-6 flex items-center justify-between border-b border-slate-100 pb-5">
-                <div>
-                  <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-[#2563eb]">Axis Software</div>
-                  <h2 className="mt-1 text-2xl font-black tracking-tight text-slate-900">Contact our team</h2>
-                </div>
-                <button onClick={() => navigate('/contact')} className="text-xs font-semibold text-slate-400 hover:text-slate-700">← Back</button>
+              <div className="mb-6 border-b border-slate-100 pb-5">
+                <h2 className="text-3xl font-black tracking-tight text-slate-900">Axis software</h2>
+                <p className="mt-2 text-sm text-slate-500">Contact the SaaS team about demos, onboarding, or property management software.</p>
               </div>
               <TabBar
                 tabs={[{ id: 'demo', label: 'Request a Demo' }, { id: 'message', label: 'Send a Message' }]}
