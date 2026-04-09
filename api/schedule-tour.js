@@ -11,6 +11,8 @@
  *   Property      — text
  *   Room          — text
  *   Tour Format   — single select: "In-Person" | "Virtual"
+ *   Tour Manager  — text
+ *   Tour Availability — text
  *   Preferred Date — date
  *   Preferred Time — single select: "Morning (9am–12pm)" | "Afternoon (12pm–5pm)" | "Evening (5pm–8pm)" | "Flexible"
  *   Notes         — long text
@@ -35,7 +37,7 @@ export default async function handler(req, res) {
     return res.status(500).json({ error: 'AIRTABLE_TOKEN is not configured on the server.' })
   }
 
-  const { name, email, phone, type, property, room, tourFormat, preferredDate, preferredTime, notes } = req.body ?? {}
+  const { name, email, phone, type, property, room, tourFormat, manager, tourAvailability, preferredDate, preferredTime, notes } = req.body ?? {}
 
   if (!name || !email) {
     return res.status(400).json({ error: 'Name and email are required.' })
@@ -52,6 +54,8 @@ export default async function handler(req, res) {
   if (property)       fields['Property'] = String(property).trim()
   if (room)           fields['Room'] = String(room).trim()
   if (tourFormat)     fields['Tour Format'] = tourFormat
+  if (manager)        fields['Tour Manager'] = String(manager).trim()
+  if (tourAvailability) fields['Tour Availability'] = String(tourAvailability).trim()
   if (preferredDate)  fields['Preferred Date'] = preferredDate
   if (preferredTime)  fields['Preferred Time'] = preferredTime
   if (notes)          fields['Notes'] = String(notes).trim()

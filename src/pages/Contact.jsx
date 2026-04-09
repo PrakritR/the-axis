@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Seo } from '../lib/seo'
 
 function formatPhone(raw) {
@@ -15,7 +15,7 @@ const CONTACT_EMAIL    = 'info@axis-seattle-housing.com'
 const inputCls  = 'w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 placeholder-slate-400 outline-none transition focus:border-axis focus:bg-white focus:ring-2 focus:ring-axis/20'
 const selectCls = `${inputCls} appearance-none cursor-pointer`
 
-const PROPERTIES = [
+const DEFAULT_PROPERTIES = [
   { id: '4709a', name: '4709A 8th Ave', address: '4709A 8th Ave NE, Seattle, WA', rooms: ['Room 1','Room 2','Room 3','Room 4','Room 5','Room 6','Room 7','Room 8','Room 9','Room 10'] },
   { id: '4709b', name: '4709B 8th Ave', address: '4709B 8th Ave NE, Seattle, WA', rooms: ['Room 1','Room 2','Room 3','Room 4','Room 5','Room 6','Room 7','Room 8','Room 9'] },
   { id: '5259',  name: '5259 Brooklyn Ave NE', address: '5259 Brooklyn Ave NE, Seattle, WA', rooms: ['Room 1','Room 2','Room 3','Room 4','Room 5','Room 6','Room 7','Room 8','Room 9'] },
@@ -48,12 +48,13 @@ function HousingScheduler() {
   const [property, setProperty] = useState(null)
   const [room, setRoom] = useState('')
   const [tourType, setTourType] = useState('in-person')
+  const [properties, setProperties] = useState(DEFAULT_PROPERTIES)
   const [form, setForm] = useState({ name: '', email: '', phone: '', preferredDate: '', preferredTime: '', notes: '' })
   const [submitting, setSubmitting] = useState(false)
   const [submitted, setSubmitted] = useState(false)
   const [submitError, setSubmitError] = useState('')
 
-  const selectedProperty = PROPERTIES.find(p => p.id === property)
+  const selectedProperty = properties.find(p => p.id === property)
   const todayStr = new Date().toISOString().split('T')[0]
 
   function setField(k, v) { setForm(prev => ({ ...prev, [k]: v })) }
@@ -62,6 +63,24 @@ function HousingScheduler() {
     setForm({ name: '', email: '', phone: '', preferredDate: '', preferredTime: '', notes: '' })
     setSubmitted(false); setSubmitError('')
   }
+
+  useEffect(() => {
+    let cancelled = false
+    fetch('/api/tour-properties')
+      .then((res) => res.json())
+      .then((data) => {
+        if (cancelled) return
+        const next = Array.isArray(data?.properties) && data.properties.length ? data.properties : DEFAULT_PROPERTIES
+        setProperties(next.map((item) => ({
+          ...item,
+          rooms: item.rooms || DEFAULT_PROPERTIES.find((fallback) => fallback.id === item.id)?.rooms || [],
+        })))
+      })
+      .catch(() => {
+        if (!cancelled) setProperties(DEFAULT_PROPERTIES)
+      })
+    return () => { cancelled = true }
+  }, [])
 
   async function handleSchedule() {
     setSubmitting(true); setSubmitError('')
@@ -74,6 +93,8 @@ function HousingScheduler() {
           type: bookingType === 'meeting' ? 'Meeting' : 'Tour',
           property: selectedProperty?.name || '', room: room || '',
           tourFormat: tourType === 'virtual' ? 'Virtual' : 'In-Person',
+          manager: selectedProperty?.manager || '',
+          tourAvailability: selectedProperty?.availability || '',
           preferredDate: form.preferredDate, preferredTime: form.preferredTime,
           notes: form.notes.trim(),
         }),
@@ -133,13 +154,13 @@ function HousingScheduler() {
     </div>
   )
 
-  const tourSteps = [['1','Property'],['2','Room & Type'],['3','Your Details']]
+  const tourSteps = [['1','Property'],['2','Room & Time'],['3','Your Details']]
 
   return (
     <div>
       <div className="mb-6 flex items-center justify-between border-b border-slate-100 pb-5">
         <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-axis">
-          {bookingType === 'tour' ? 'Tour a property' : 'Discuss with leasing'}
+          {bookingType === 'tour' ? 'Schedule a Tour' : 'Contact Axis'}
         </div>
         <button onClick={reset} className="text-xs font-semibold text-slate-400 hover:text-slate-700">← Back</button>
       </div>
@@ -160,12 +181,13 @@ function HousingScheduler() {
 
       {bookingType === 'tour' && step === 1 && (
         <div className="space-y-3">
-          {PROPERTIES.map((p) => (
+          {properties.map((p) => (
             <button key={p.id} onClick={() => { setProperty(p.id); setRoom(''); setStep(2) }}
               className="group flex w-full items-center justify-between rounded-2xl border border-slate-200 bg-white px-5 py-4 text-left transition-all hover:border-slate-900 hover:shadow-sm">
               <div>
                 <div className="font-semibold text-slate-900">{p.name}</div>
                 <div className="mt-0.5 text-xs text-slate-500">{p.address}</div>
+                {p.availability ? <div className="mt-1 text-xs font-medium text-[#2563eb]">{p.availability}</div> : null}
               </div>
               <svg className="h-4 w-4 text-slate-400 group-hover:text-slate-900" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7"/></svg>
             </button>
@@ -176,7 +198,7 @@ function HousingScheduler() {
       {bookingType === 'tour' && step === 2 && selectedProperty && (
         <div className="space-y-6">
           <div>
-            <div className="mb-3 text-sm font-semibold text-slate-700">Which room? <span className="font-normal text-slate-400">({selectedProperty.name})</span></div>
+            <div className="mb-3 text-sm font-semibold text-slate-700">Choose a room and time <span className="font-normal text-slate-400">({selectedProperty.name})</span></div>
             <div className="grid grid-cols-4 gap-2 sm:grid-cols-5">
               {selectedProperty.rooms.map((r) => (
                 <button key={r} onClick={() => setRoom(r)}
@@ -189,6 +211,16 @@ function HousingScheduler() {
                 Not sure yet
               </button>
             </div>
+          </div>
+          <div>
+            <div className="mb-3 text-sm font-semibold text-slate-700">Preferred tour time</div>
+            <select value={form.preferredTime} onChange={e => setField('preferredTime', e.target.value)} className={selectCls}>
+              <option value="">Choose a time</option>
+              {(selectedProperty.availability ? selectedProperty.availability.split(',') : ['Morning', 'Afternoon', 'Evening']).map((slot) => {
+                const value = slot.trim()
+                return value ? <option key={value} value={value}>{value}</option> : null
+              })}
+            </select>
           </div>
           <div>
             <div className="mb-3 text-sm font-semibold text-slate-700">Tour format</div>
@@ -216,6 +248,8 @@ function HousingScheduler() {
               <div className="flex flex-wrap items-center gap-2">
                 <span className="font-semibold text-slate-900">{selectedProperty.name}</span>
                 <span className="text-slate-300">·</span><span className="text-slate-600">{room}</span>
+                {selectedProperty?.availability ? <span className="text-slate-300">·</span> : null}
+                {selectedProperty?.availability ? <span className="text-slate-600">{selectedProperty.availability}</span> : null}
                 <span className="text-slate-300">·</span><span className="text-slate-600">{tourType === 'in-person' ? 'In-Person' : 'Virtual'}</span>
               </div>
               <button onClick={() => setStep(2)} className="ml-2 shrink-0 text-xs font-semibold text-slate-400 hover:text-slate-700">Edit</button>
@@ -568,7 +602,7 @@ export default function Contact() {
                 <button onClick={() => setSection(null)} className="text-xs font-semibold text-slate-400 hover:text-slate-700">← Back</button>
               </div>
               <TabBar
-                tabs={[{ id: 'schedule', label: 'Schedule / Tour' }, { id: 'message', label: 'Send a Message' }]}
+                tabs={[{ id: 'schedule', label: 'Schedule a Tour' }, { id: 'message', label: 'Contact Axis' }]}
                 active={housingTab} onChange={setHousingTab}
               />
               {housingTab === 'schedule' && <HousingScheduler />}

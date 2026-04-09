@@ -120,6 +120,14 @@ async function createPropertyAdmin(fields) {
   return mapRecord(data)
 }
 
+async function updatePropertyAdmin(recordId, fields) {
+  const data = await atRequest(`${AIRTABLE_BASE_URL}/Properties/${recordId}`, {
+    method: 'PATCH',
+    body: JSON.stringify({ fields, typecast: true }),
+  })
+  return mapRecord(data)
+}
+
 async function fetchAuditLog(leaseDraftId) {
   const formula = encodeURIComponent(`{Lease Draft ID} = "${leaseDraftId}"`)
   const url = `${AIRTABLE_BASE_URL}/Audit%20Log?filterByFormula=${formula}&sort[0][field]=Timestamp&sort[0][direction]=asc`
@@ -676,10 +684,16 @@ function HouseManagementPanel({ onPropertiesChange }) {
   const [properties, setProperties] = useState([])
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
+  const [editingPropertyId, setEditingPropertyId] = useState(null)
   const [form, setForm] = useState({
     name: '',
     address: '',
     utilitiesFee: '',
+  })
+  const [tourForm, setTourForm] = useState({
+    manager: '',
+    availability: '',
+    notes: '',
   })
 
   const loadProperties = useCallback(async () => {
@@ -717,6 +731,48 @@ function HouseManagementPanel({ onPropertiesChange }) {
       toast.success('House added')
     } catch (err) {
       toast.error('Could not add house: ' + err.message)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  function extractNoteValue(notes, label) {
+    const escaped = String(label || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+    const match = String(notes || '').match(new RegExp(`(?:^|\\n)${escaped}:\\s*(.+?)(?:\\n|$)`, 'i'))
+    return match ? match[1].trim() : ''
+  }
+
+  function buildTourNotes(existingNotes, metadata) {
+    const labels = ['Tour Manager', 'Tour Availability', 'Tour Notes']
+    let stripped = String(existingNotes || '').trim()
+    labels.forEach((label) => {
+      const escaped = label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+      stripped = stripped.replace(new RegExp(`(?:^|\\n)${escaped}:\\s*.+?(?=\\n|$)`, 'gi'), '')
+    })
+    stripped = stripped.replace(/^\n+|\n+$/g, '').trim()
+
+    const parts = []
+    if (metadata.manager) parts.push(`Tour Manager: ${metadata.manager}`)
+    if (metadata.availability) parts.push(`Tour Availability: ${metadata.availability}`)
+    if (metadata.notes) parts.push(`Tour Notes: ${metadata.notes}`)
+    if (stripped) parts.push(stripped)
+    return parts.join('\n')
+  }
+
+  async function handleSaveTourHours(property) {
+    setSaving(true)
+    try {
+      const notes = buildTourNotes(property.Notes, tourForm)
+      const updated = await updatePropertyAdmin(property.id, { Notes: notes })
+      setProperties((current) => {
+        const next = current.map((item) => (item.id === property.id ? updated : item))
+        onPropertiesChange?.(next)
+        return next
+      })
+      toast.success('Tour hours saved')
+      setEditingPropertyId(null)
+    } catch (err) {
+      toast.error('Could not save tour hours: ' + err.message)
     } finally {
       setSaving(false)
     }
@@ -803,6 +859,78 @@ function HouseManagementPanel({ onPropertiesChange }) {
                 <div className="mt-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-400">
                   Utilities fee {property['Utilities Fee'] ? `$${property['Utilities Fee']}` : 'not set'}
                 </div>
+                <div className="mt-2 text-xs text-slate-500">
+                  {extractNoteValue(property.Notes, 'Tour Manager') || 'No manager assigned'} · {extractNoteValue(property.Notes, 'Tour Availability') || 'No tour hours set'}
+                </div>
+                {editingPropertyId === property.id ? (
+                  <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                    <div>
+                      <label className="mb-1 block text-xs font-semibold text-slate-600">Tour manager</label>
+                      <input
+                        type="text"
+                        value={tourForm.manager}
+                        onChange={(e) => setTourForm((current) => ({ ...current, manager: e.target.value }))}
+                        placeholder="Manager name"
+                        className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900"
+                      />
+                    </div>
+                    <div>
+                      <label className="mb-1 block text-xs font-semibold text-slate-600">Tour hours</label>
+                      <input
+                        type="text"
+                        value={tourForm.availability}
+                        onChange={(e) => setTourForm((current) => ({ ...current, availability: e.target.value }))}
+                        placeholder="Mon 10am-12pm, Wed 2pm-5pm"
+                        className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900"
+                      />
+                    </div>
+                    <div className="sm:col-span-2">
+                      <label className="mb-1 block text-xs font-semibold text-slate-600">Notes</label>
+                      <input
+                        type="text"
+                        value={tourForm.notes}
+                        onChange={(e) => setTourForm((current) => ({ ...current, notes: e.target.value }))}
+                        placeholder="Optional scheduling notes"
+                        className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900"
+                      />
+                    </div>
+                    <div className="sm:col-span-2 flex gap-2">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setEditingPropertyId(null)
+                          setTourForm({ manager: '', availability: '', notes: '' })
+                        }}
+                        className="rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleSaveTourHours(property)}
+                        className="rounded-2xl bg-[#2563eb] px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-50"
+                        disabled={saving}
+                      >
+                        Save tour hours
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setEditingPropertyId(property.id)
+                      setTourForm({
+                        manager: extractNoteValue(property.Notes, 'Tour Manager'),
+                        availability: extractNoteValue(property.Notes, 'Tour Availability'),
+                        notes: extractNoteValue(property.Notes, 'Tour Notes'),
+                      })
+                    }}
+                    className="mt-3 rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-700"
+                  >
+                    Edit tour hours
+                  </button>
+                )}
               </div>
             ))}
           </div>
