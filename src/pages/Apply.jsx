@@ -1497,8 +1497,7 @@ export default function Apply() {
       return
     }
 
-    const eligibleLease = signer.leaseTerm === '9-Month' || signer.leaseTerm === '12-Month'
-    if (!(code === 'APPLICATIONWAIVE' && eligibleLease)) {
+    if (code !== 'FEEWAIVE') {
       setPromoError('Invalid or unavailable promo code.')
       return
     }
