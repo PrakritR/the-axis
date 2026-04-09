@@ -543,7 +543,7 @@ function CopyButton({ text }) {
     >
       {copied ? (
         <>
-          <svg className="h-3.5 w-3.5 text-teal-500" fill="none" viewBox="0 0 16 16" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M3 8l3 3 7-7"/></svg>
+          <svg className="h-3.5 w-3.5 text-axis" fill="none" viewBox="0 0 16 16" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M3 8l3 3 7-7"/></svg>
           Copied
         </>
       ) : (
@@ -1680,7 +1680,7 @@ export default function Apply() {
     function StepDot({ n, done, active }) {
       return (
         <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-xs font-bold ring-2 transition-all
-          ${done ? 'bg-teal-500 ring-teal-500 text-white' : active ? 'bg-white ring-axis text-axis' : 'bg-white ring-slate-200 text-slate-400'}`}>
+          ${done ? 'bg-axis ring-axis text-white' : active ? 'bg-white ring-axis text-axis' : 'bg-white ring-slate-200 text-slate-400'}`}>
           {done
             ? <svg className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7"/></svg>
             : n}
@@ -1694,7 +1694,7 @@ export default function Apply() {
         <div className="mx-auto max-w-lg px-4 py-16 sm:py-24">
 
           {/* Header */}
-          <div className="mx-auto mb-8 flex h-20 w-20 items-center justify-center rounded-full bg-teal-50 ring-8 ring-teal-50/60">
+          <div className="mx-auto mb-8 flex h-20 w-20 items-center justify-center rounded-full bg-axis/10 ring-8 ring-axis/10">
             <svg className="h-10 w-10 text-axis" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
             </svg>
@@ -1717,8 +1717,8 @@ export default function Apply() {
                 <CopyButton text={fullAppId} />
               </div>
               {(submissionSummary?.hasCosigner || signer.hasCosigner) === 'Yes' && (
-                <div className="border-t border-slate-100 bg-teal-50 px-6 py-4">
-                  <p className="text-sm leading-6 text-teal-800">
+                <div className="border-t border-slate-100 bg-axis/5 px-6 py-4">
+                  <p className="text-sm leading-6 text-axis">
                     Share this ID with your co-signer — they'll need it to link their form to yours at <strong>/apply</strong>.
                   </p>
                 </div>
@@ -1733,9 +1733,9 @@ export default function Apply() {
               {/* Step indicators */}
               <div className="mb-6 flex items-center gap-0">
                 <StepDot n={1} done={stepIndex > 0} active={stepIndex === 0} />
-                <div className={`h-0.5 flex-1 transition-all ${stepIndex > 0 ? 'bg-teal-400' : 'bg-slate-200'}`} />
+                <div className={`h-0.5 flex-1 transition-all ${stepIndex > 0 ? 'bg-axis' : 'bg-slate-200'}`} />
                 <StepDot n={2} done={moveInDone} active={stepIndex === 1} />
-                <div className={`h-0.5 flex-1 transition-all ${moveInDone ? 'bg-teal-400' : 'bg-slate-200'}`} />
+                <div className={`h-0.5 flex-1 transition-all ${moveInDone ? 'bg-axis' : 'bg-slate-200'}`} />
                 <StepDot n={3} done={leaseSigned} active={stepIndex === 2 && !leaseSigned} />
               </div>
 
@@ -1770,7 +1770,7 @@ export default function Apply() {
               </div>
 
               {/* Step 2: Pay Move-In Costs */}
-              <div className={`mt-3 overflow-hidden rounded-2xl border transition-all ${stepIndex === 1 && !allDone ? 'border-axis/40 bg-white shadow-md' : moveInDone ? 'border-teal-200 bg-teal-50' : 'border-slate-100 bg-slate-50 opacity-60'}`}>
+              <div className={`mt-3 overflow-hidden rounded-2xl border transition-all ${stepIndex === 1 && !allDone ? 'border-axis/40 bg-white shadow-md' : moveInDone ? 'border-axis/20 bg-axis/5' : 'border-slate-100 bg-slate-50 opacity-60'}`}>
                 <div className="flex items-center gap-3 px-5 py-4">
                   <StepDot n={2} done={moveInDone} active={stepIndex === 1 && !moveInDone} />
                   <div>
@@ -1779,8 +1779,8 @@ export default function Apply() {
                   </div>
                 </div>
                 {moveInDone ? (
-                  <div className="border-t border-teal-100 px-5 py-4">
-                    <p className="text-sm font-semibold text-teal-700">Move-in payment complete — lease signing is unlocked.</p>
+                  <div className="border-t border-axis/10 px-5 py-4">
+                    <p className="text-sm font-semibold text-axis">Move-in payment complete — lease signing is unlocked.</p>
                   </div>
                 ) : stepIndex === 1 && (
                   <div className="border-t border-slate-100 px-5 pb-5 pt-4">
@@ -1822,7 +1822,7 @@ export default function Apply() {
               </div>
 
               {/* Step 3: Sign Lease */}
-              <div className={`mt-3 overflow-hidden rounded-2xl border transition-all ${stepIndex === 2 && !leaseSigned ? 'border-axis/40 bg-white shadow-md' : leaseSigned ? 'border-teal-200 bg-teal-50' : 'border-slate-100 bg-slate-50 opacity-60'}`}>
+              <div className={`mt-3 overflow-hidden rounded-2xl border transition-all ${stepIndex === 2 && !leaseSigned ? 'border-axis/40 bg-white shadow-md' : leaseSigned ? 'border-axis/20 bg-axis/5' : 'border-slate-100 bg-slate-50 opacity-60'}`}>
                 <div className="flex items-center gap-3 px-5 py-4">
                   <StepDot n={3} done={leaseSigned} active={stepIndex === 2 && !leaseSigned} />
                   <div>
@@ -1835,8 +1835,8 @@ export default function Apply() {
                     <p className="text-sm text-slate-500">Pay your move-in fee and security deposit first, then you can sign your lease.</p>
                   </div>
                 ) : leaseSigned ? (
-                  <div className="border-t border-teal-100 px-5 py-4">
-                    <p className="text-sm font-semibold text-teal-700">Lease signed successfully — your room is secured.</p>
+                  <div className="border-t border-axis/10 px-5 py-4">
+                    <p className="text-sm font-semibold text-axis">Lease signed successfully — your room is secured.</p>
                   </div>
                 ) : stepIndex === 2 && (
                   <div className="border-t border-slate-100 px-5 pb-5 pt-4">
@@ -1959,7 +1959,7 @@ export default function Apply() {
                       key={opt}
                       type="button"
                       onClick={() => updateSigner('hasCosigner', opt)}
-                      className={`rounded-full px-6 py-2.5 text-sm font-semibold transition ${signer.hasCosigner === opt ? 'bg-slate-900 text-white' : 'border border-slate-200 bg-white text-slate-700 hover:border-slate-400'}`}
+                      className={`rounded-full px-6 py-2.5 text-sm font-semibold transition ${signer.hasCosigner === opt ? 'bg-axis text-white shadow-[0_4px_12px_rgba(37,99,235,0.20)]' : 'border border-slate-200 bg-white text-slate-700 hover:border-slate-400'}`}
                     >
                       {opt}
                     </button>
@@ -1967,7 +1967,7 @@ export default function Apply() {
                 </div>
                 {fieldErrors.hasCosigner && <p className="mt-1.5 text-xs font-medium text-red-500" data-field-error="1">{fieldErrors.hasCosigner}</p>}
                 {signer.hasCosigner === 'Yes' && (
-                  <div className="rounded-xl border border-teal-200 bg-teal-50 px-4 py-3 text-sm text-teal-800">
+                  <div className="rounded-xl border border-axis/20 bg-axis/5 px-4 py-3 text-sm text-axis">
                     After you submit, you'll receive an <strong>Application ID</strong>. Share it with your co-signer — they'll need it to link their form to yours.
                   </div>
                 )}
@@ -2490,7 +2490,7 @@ export default function Apply() {
               </button>
             )}
             {!isLastStep ? (
-              <button type="button" onClick={handleNext} className="flex-1 rounded-full bg-slate-900 py-3 text-sm font-semibold text-white hover:bg-slate-800 transition">
+              <button type="button" onClick={handleNext} className="flex-1 rounded-full bg-[linear-gradient(180deg,#2f76ff_0%,#2450eb_100%)] py-3 text-sm font-semibold text-white shadow-[0_8px_24px_rgba(37,99,235,0.22)] hover:brightness-105 transition">
                 Continue
               </button>
             ) : applicationType === 'signer' ? (

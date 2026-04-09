@@ -87,7 +87,7 @@ const FREE_TIER_ONBOARDING_KEY = 'axis_manager_onboarding'
 function PlanCard({ plan, activePlan, billingCycle, onChoosePlan }) {
   const isSelected = activePlan === plan.id
   const ctaClasses = isSelected || plan.ctaVariant === 'primary'
-    ? 'bg-[linear-gradient(180deg,#2c3447_0%,#1a1d27_100%)] text-white hover:brightness-110'
+    ? 'bg-[linear-gradient(180deg,#2f76ff_0%,#2450eb_100%)] text-white shadow-[0_12px_28px_rgba(37,99,235,0.22)] hover:brightness-105'
     : 'border border-slate-200 bg-white text-slate-900 hover:border-slate-300 hover:bg-slate-50'
   const priceMeta = plan.prices[billingCycle]
 

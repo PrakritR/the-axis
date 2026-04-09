@@ -150,6 +150,7 @@ export default async function handler(req, res) {
         Email: normalizedEmail,
         Role: 'Manager',
         Active: true,
+        Plan: details.planType,
         Notes: nextNotes,
       })
     } else {
@@ -160,6 +161,9 @@ export default async function handler(req, res) {
       }
       if (nextNotes !== String(manager.Notes || '').trim()) {
         nextFields.Notes = nextNotes
+      }
+      if (manager.Plan !== details.planType) {
+        nextFields.Plan = details.planType
       }
 
       if (Object.keys(nextFields).length > 0) {
