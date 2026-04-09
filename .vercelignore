@@ -1,3 +1,13 @@
 node_modules
 dist
 .env
+.env.*
+Assets
+dist-backup-*
+netlify-drop*
+netlify
+*.zip
+.agents
+.claude
+.git
+.vite

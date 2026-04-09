@@ -295,7 +295,7 @@ function HousingScheduler() {
 
   useEffect(() => {
     let cancelled = false
-    fetch('/api/tour')
+    fetch('/api/forms?action=tour')
       .then(r => r.json())
       .then(data => {
         if (cancelled) return
@@ -309,7 +309,7 @@ function HousingScheduler() {
   async function handleSchedule() {
     setSubmitting(true); setSubmitError('')
     try {
-      const res = await fetch('/api/tour', {
+      const res = await fetch('/api/forms?action=tour', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -478,7 +478,7 @@ function HousingMessageForm() {
 
   useEffect(() => {
     let cancelled = false
-    fetch('/api/tour')
+    fetch('/api/forms?action=tour')
       .then((r) => r.json())
       .then((data) => {
         if (cancelled) return
@@ -594,7 +594,7 @@ function DemoScheduler() {
   const currentSlots = selectedDateEntry?.slots || []
 
   useEffect(() => {
-    fetch('/api/demo')
+    fetch('/api/forms?action=demo')
       .then(r => r.json())
       .then(data => {
         setStaff(Array.isArray(data?.staff) ? data.staff : [])
@@ -613,7 +613,7 @@ function DemoScheduler() {
     setSubmitting(true); setSubmitError('')
     const fmt = meetingFormat === 'virtual' ? 'Virtual' : 'In-person'
     try {
-      const res = await fetch('/api/demo', {
+      const res = await fetch('/api/forms?action=demo', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -641,7 +641,7 @@ function DemoScheduler() {
     setSubmitting(true); setSubmitError('')
     const fmt = meetingFormat === 'virtual' ? 'Virtual' : 'In-person'
     try {
-      const res = await fetch('/api/demo', {
+      const res = await fetch('/api/forms?action=demo', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

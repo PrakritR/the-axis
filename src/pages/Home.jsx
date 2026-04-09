@@ -313,7 +313,7 @@ function RoomFinder() {
   const dateLabel = getDateLabel()
 
   return (
-    <section className="border-t border-white/70 bg-transparent px-4 py-14 sm:px-6 sm:py-20">
+    <section className="border-t border-slate-200/25 bg-transparent px-4 py-14 sm:px-6 sm:py-20">
       <div className="mx-auto max-w-6xl">
         <Reveal className="mb-8 text-center">
           <h2 className="mt-3 text-2xl font-black tracking-[-0.05em] text-slate-900 sm:text-4xl">
@@ -322,7 +322,7 @@ function RoomFinder() {
 
         </Reveal>
 
-        <div className="rounded-[32px] border border-white/90 bg-white/84 p-6 shadow-[0_30px_80px_rgba(37,99,235,0.09)] backdrop-blur sm:p-8">
+        <div className="axis-panel rounded-[32px] p-6 sm:p-8">
           <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
             {/* Move-in date */}
             <div>
@@ -367,7 +367,7 @@ function RoomFinder() {
             <div>
               <div className="mb-3 flex items-center justify-between">
                 <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-500">Max budget / month</div>
-                <div className={`text-sm font-semibold transition-colors ${budgetInput ? 'text-[#2563eb]' : 'text-slate-400'}`}>
+                <div className={`text-sm font-semibold transition-colors ${budgetInput ? 'text-axis' : 'text-slate-400'}`}>
                   {budgetInput ? `$${budgetInput}` : 'Any'}
                 </div>
               </div>
@@ -544,7 +544,7 @@ export default function Home() {
       <RoomFinder />
 
       {/* ── AVAILABLE HOUSING ── */}
-      <section id="properties" className="scroll-mt-20 border-t border-white/70 bg-transparent py-14 sm:py-20">
+      <section id="properties" className="scroll-mt-20 border-t border-slate-200/25 bg-transparent py-14 sm:py-20">
         <div className="mx-auto max-w-6xl px-4 sm:px-6">
           <Reveal>
             <div className="flex flex-col gap-5">
@@ -564,7 +564,7 @@ export default function Home() {
         <PropertyCarousel />
       </section>
 
-      <section className="border-t border-white/70 bg-transparent px-4 py-14 sm:px-6 sm:py-16">
+      <section className="border-t border-slate-200/25 bg-transparent px-4 py-14 sm:px-6 sm:py-16">
         <div className="mx-auto max-w-6xl">
           <motion.div
             className="grid gap-6 sm:grid-cols-3"
@@ -574,7 +574,7 @@ export default function Home() {
             variants={stagger}
           >
             {steps.map((s, i) => (
-              <motion.div key={s.n} variants={up} className="relative flex flex-col gap-4 rounded-[28px] border border-white/90 bg-white/88 p-6 shadow-[0_24px_60px_rgba(37,99,235,0.08)] backdrop-blur sm:p-8">
+              <motion.div key={s.n} variants={up} className="axis-panel relative flex flex-col gap-4 rounded-[28px] p-6 sm:p-8">
                 {i < steps.length - 1 && (
                   <div className="absolute right-0 top-1/2 hidden -translate-y-1/2 translate-x-1/2 sm:flex items-center justify-center z-10">
                     <div className="flex items-center gap-0.5 rounded-full border border-slate-200 bg-white px-2.5 py-1.5 shadow-sm">
@@ -595,9 +595,9 @@ export default function Home() {
       </section>
 
       {/* ── CTA — dark gradient ── */}
-      <section className="border-t border-white/70 bg-transparent px-4 pb-16 pt-4 sm:px-6 sm:pb-20">
+      <section className="border-t border-slate-200/25 bg-transparent px-4 pb-16 pt-4 sm:px-6 sm:pb-20">
         <Reveal>
-          <div className="relative mx-auto max-w-6xl overflow-hidden rounded-[32px] border border-white/90 bg-[linear-gradient(180deg,rgba(255,255,255,0.9)_0%,rgba(239,244,252,0.96)_100%)] px-5 py-10 shadow-[0_32px_80px_rgba(37,99,235,0.12)] sm:px-8 sm:py-14 md:px-14">
+          <div className="axis-panel relative mx-auto max-w-6xl overflow-hidden rounded-[32px] px-5 py-10 sm:px-8 sm:py-14 md:px-14">
             <div className="absolute inset-0 bg-dot-grid bg-dot-md opacity-18 rounded-[32px]" />
             <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_30%_50%,rgba(37,99,235,0.12),transparent_60%)]" />
             <div className="relative flex flex-col gap-6 md:flex-row md:items-center md:justify-between">
@@ -617,7 +617,7 @@ export default function Home() {
                 <Link
                   to="/apply"
                   onClick={scrollToTop}
-                  className="inline-flex w-full items-center justify-center gap-2 rounded-full border border-slate-200 bg-white px-6 py-3 text-sm font-semibold text-slate-700 transition hover:border-[#2563eb] hover:text-[#2563eb] active:scale-[0.97] sm:w-auto"
+                  className="inline-flex w-full items-center justify-center gap-2 rounded-full border border-slate-200 bg-white px-6 py-3 text-sm font-semibold text-slate-700 transition hover:border-axis hover:text-axis active:scale-[0.97] sm:w-auto"
                 >
                   Apply Now <Arrow />
                 </Link>

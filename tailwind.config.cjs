@@ -36,6 +36,8 @@ module.exports = {
       backgroundImage: {
         'dot-grid': 'radial-gradient(circle, rgba(14,165,164,0.15) 1px, transparent 1px)',
         'dot-grid-dark': 'radial-gradient(circle, rgba(255,255,255,0.06) 1px, transparent 1px)',
+        /** Header “Portal” pill — vivid sky → blue so it reads as a bright bubble everywhere. */
+        'axis-portal': 'linear-gradient(180deg, #38bdf8 0%, #3b82f6 42%, #2563eb 100%)',
       },
       backgroundSize: {
         'dot-sm': '20px 20px',

@@ -169,11 +169,6 @@ function formatCompactMonthlyCurrency(value) {
   return `$${value.toLocaleString()}/mo`
 }
 
-function isLeaseOptionFeatured(term) {
-  return Boolean(term?.featured)
-}
-
-
 function buildRentTotals(property) {
   if (!Array.isArray(property.roomPlans) || property.roomPlans.length === 0) {
     return { totalHouseRent: null, floorTotals: [] }
@@ -500,36 +495,11 @@ function getSharedSpaceDetailMeta(video) {
   }
 }
 
-const PROPERTY_EDITORIAL_CONTENT = {
-  '4709a-8th-ave': {
-    title: 'Shared house in Seattle.',
-    intro: 'Ten rooms across three floors.',
-    body: 'Simple layout. Shared spaces. Flexible rooms.',
-    audience: 'For renters who want a larger shared-house setup.',
-    localNotes: ['Walkable location', 'In-unit laundry', 'Shared kitchen', 'Three floors'],
-  },
-  '4709b-8th-ave': {
-    title: 'Shared house in Seattle.',
-    intro: 'Nine furnished rooms.',
-    body: 'Clean layout. Simple pricing. Easy to compare.',
-    audience: 'For renters who want convenience and a shared setup.',
-    localNotes: ['Walkable location', 'Simple pricing', 'Shared kitchen', 'In-unit laundry'],
-  },
-  '5259-brooklyn-ave-ne': {
-    title: 'Shared house in Seattle.',
-    intro: 'Nine rooms. Simple options.',
-    body: 'A straightforward home with flexible room choices.',
-    audience: 'For renters who want a simple shared-house setup.',
-    localNotes: ['Walkable location', 'Shared kitchen', 'In-unit laundry', 'Flexible rooms'],
-  },
-}
-
 export default function PropertyPage(){
   const { slug } = useParams()
   const { hash } = useLocation()
   const p = properties.find(x=>x.slug===slug)
-  if(!p) return <div className="container mx-auto px-6 py-12">Property not found</div>
-  const is4709 = p.slug === '4709a-8th-ave'
+
   const [showAllPhotos, setShowAllPhotos] = useState(false)
   const [modalPlan, setModalPlan] = useState(null)
   const [modalImages, setModalImages] = useState([])
@@ -537,6 +507,11 @@ export default function PropertyPage(){
   const [showScarcityPopup, setShowScarcityPopup] = useState(false)
   const [activeSharedSpace, setActiveSharedSpace] = useState(null)
   const sectionRefs = useRef({})
+
+  const displayedRoomPlansForEffect = p ? buildRoomPlanDisplay(p) : []
+  const scarcePlanForEffect = displayedRoomPlansForEffect.find(
+    (plan) => (plan.roomsAvailable || plan.rooms.length) === 1
+  )
 
   useEffect(() => {
     const sectionId = (hash || '').replace('#', '')
@@ -548,6 +523,17 @@ export default function PropertyPage(){
       setActiveTab(sectionId)
     }
   }, [hash])
+
+  useEffect(() => {
+    setShowScarcityPopup(false)
+    if (!p || !scarcePlanForEffect) return undefined
+
+    const timer = window.setTimeout(() => {
+      setShowScarcityPopup(true)
+    }, 1200)
+
+    return () => window.clearTimeout(timer)
+  }, [p, scarcePlanForEffect?.title, scarcePlanForEffect?.priceRange])
 
   function getScrollContainer(node){
     let parent = node?.parentElement || null
@@ -590,6 +576,11 @@ export default function PropertyPage(){
     return true
   }
 
+  if (!p) {
+    return <div className="container mx-auto px-6 py-12">Property not found</div>
+  }
+
+  const is4709 = p.slug === '4709a-8th-ave'
   const galleryImages = (p.images && p.images.length) ? p.images : []
 
   // allow properties to explicitly declare community vs unit amenities. fall back to old `amenities` slicing
@@ -621,13 +612,6 @@ export default function PropertyPage(){
         'Common spaces include a full kitchen and a comfortable living area on the first floor. The home features in-unit laundry, three full bathrooms across the home, and a half bathroom on the first floor.'
       ]
     : [p.summary]
-  const editorial = PROPERTY_EDITORIAL_CONTENT[p.slug] || {
-    title: p.name,
-    intro: p.summary,
-    body: p.summary,
-    audience: 'A shared-house option in Seattle.',
-    localNotes: ['Walkable Seattle location', 'Shared kitchen and living room', 'In-unit laundry', 'Flexible room options'],
-  }
   const featuredStartingPrice = formatStartingRent(getStartingRent(p))
 
   const includedItems = modalPlan
@@ -640,25 +624,14 @@ export default function PropertyPage(){
       ].map(normalizeFeatureLabel).filter(Boolean)))
     : []
 
-  const displayedRoomPlans = buildRoomPlanDisplay(p)
+  const displayedRoomPlans = displayedRoomPlansForEffect
   const roomPlansHeading = p.slug === '5259-brooklyn-ave-ne' ? 'Pricing & Availability' : 'Floor Plans'
   const roomPlansLabel = p.slug === '5259-brooklyn-ave-ne' ? 'Pricing tiers' : 'Availability'
-  const scarcePlan = displayedRoomPlans.find((plan) => (plan.roomsAvailable || plan.rooms.length) === 1)
+  const scarcePlan = scarcePlanForEffect
   const startingRent = formatStartingRent(getStartingRent(p))
   const rentTotals = buildRentTotals(p)
   const sharedSpaceVideos = getSharedSpaceVideos(p.videos || [])
   const leasingPackages = p.leasingPackages || []
-
-  useEffect(() => {
-    setShowScarcityPopup(false)
-    if (!scarcePlan) return undefined
-
-    const timer = window.setTimeout(() => {
-      setShowScarcityPopup(true)
-    }, 1200)
-
-    return () => window.clearTimeout(timer)
-  }, [p.slug, scarcePlan?.title, scarcePlan?.priceRange])
 
   return (
     <div className="page-wrapper py-6 sm:py-8 w-full">
@@ -673,8 +646,7 @@ export default function PropertyPage(){
         <section id="overview" ref={(node) => { sectionRefs.current.overview = node }} className="mx-auto max-w-[1480px] px-4 pt-6 sm:px-6 lg:px-10 lg:pt-10">
           <div className="grid gap-10 border-b border-slate-200 pb-10 lg:grid-cols-1 lg:pb-14">
             <div className="max-w-4xl">
-              <h1 className="font-editorial mt-4 text-[2rem] leading-[1.1] text-slate-900 sm:text-[3.5rem] sm:leading-[0.96] lg:max-w-4xl lg:text-[5.4rem]">{editorial.title}</h1>
-              <p className="mt-5 max-w-2xl text-lg leading-8 text-slate-600">{editorial.intro}</p>
+              <h1 className="font-editorial mt-4 text-[2rem] leading-[1.1] text-slate-900 sm:text-[3.5rem] sm:leading-[0.96] lg:max-w-4xl lg:text-[5.4rem]">{p.name}</h1>
 
               <div className="mt-8 flex flex-wrap gap-3">
                 <Link
@@ -692,26 +664,19 @@ export default function PropertyPage(){
                   View rooms
                 </button>
               </div>
-
-              <div className="mt-10 grid grid-cols-2 gap-4 border-t border-slate-200 pt-6 sm:grid-cols-4">
-                {[
-                  ['Starting price', `${featuredStartingPrice}/mo`],
-                  ['Bedrooms', `${p.beds}`],
-                  ['Bathrooms', `${p.baths}`],
-                  ['Location', p.neighborhood],
-                ].map(([label, value]) => (
-                  <div key={label} className="min-w-0">
-                    <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">{label}</div>
-                    <div className="mt-2 break-words text-lg font-semibold text-slate-900">{value}</div>
-                  </div>
-                ))}
-              </div>
             </div>
           </div>
         </section>
 
         <div className="property-gallery mx-auto mt-8 max-w-[1480px] px-4 sm:px-6 lg:px-10">
-          <PropertyGallery images={galleryImages} videos={p.videos || []} />
+          <PropertyGallery
+            images={galleryImages}
+            videos={p.videos || []}
+            startingPrice={`${featuredStartingPrice}/mo`}
+            beds={p.beds}
+            baths={p.baths}
+            location={p.neighborhood}
+          />
         </div>
 
       <div className="mx-auto mt-12 grid min-w-0 max-w-[1480px] gap-10 px-4 sm:px-6 md:grid-cols-12 lg:px-10">
@@ -723,9 +688,9 @@ export default function PropertyPage(){
                 ['overview','Overview'],
                 ['floor-plans','Floor Plans'],
                 ['shared-spaces','Shared Spaces'],
-                ['leasing','Lease Options'],
+                ['policies','Lease basics'],
                 ['amenities','Amenities'],
-                ['policies','Policies'],
+                ['leasing','Bundles & leasing'],
                 ['map','Map'],
               ].map(([id, label]) => (
                 <button
@@ -811,48 +776,27 @@ export default function PropertyPage(){
             </section>
           ) : null}
 
-          {(rentTotals.totalHouseRent || leasingPackages.length > 0) ? (
-            <section id="leasing" ref={(node) => { sectionRefs.current.leasing = node }} className="mt-10 scroll-mt-28 md:scroll-mt-40">
-              <h2 className="font-editorial text-3xl leading-tight text-slate-900 sm:text-4xl">Whole-house and grouped options</h2>
-              <div className="mt-5 grid gap-5">
-                <div className="grid gap-5">
-                  {rentTotals.totalHouseRent ? (
-                    <div className="overflow-hidden rounded-[18px] border border-slate-200 bg-stone-50">
-                      <div className="px-6 py-6">
-                        <div className="mt-3 flex flex-wrap items-end justify-between gap-4">
-                          <div>
-                            <div className="text-3xl font-black leading-none tracking-tight text-slate-900 sm:text-[2.6rem]">{formatCompactMonthlyCurrency(rentTotals.totalHouseRent)}</div>
-                            <div className="mt-2 max-w-xl text-sm text-slate-600">Lease the full townhouse together. Utilities are not included in this total.</div>
-                          </div>
-                          <div className="text-sm text-slate-500">
-                            {displayedRoomPlans.reduce((acc, pl) => acc + pl.rooms.length, 0)} rooms across the townhouse
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  ) : null}
-
-                  {leasingPackages.length > 0 ? (
-                    <div className="rounded-[18px] border border-slate-200 bg-white p-5">
-                      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-                        {leasingPackages.map((pkg, index) => (
-                          <div
-                            key={pkg.title}
-                            className="rounded-[16px] border border-slate-200 bg-slate-50 px-4 py-4 text-left"
-                          >
-                            <div className="text-[11px] font-bold uppercase tracking-[0.16em] text-slate-400">{pkg.title}</div>
-                            <div className="mt-2 text-2xl font-black leading-none text-slate-900">{pkg.totalRent.replace('/month', '/mo')}</div>
-                            <div className="mt-2 text-sm leading-6 text-slate-500">{pkg.rooms.join(', ')}</div>
-                            {pkg.details ? <div className="mt-3 text-sm leading-6 text-slate-600">{pkg.details}</div> : null}
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  ) : null}
+          <section id="policies" ref={(node) => { sectionRefs.current.policies = node }} className="mt-10 scroll-mt-28 md:scroll-mt-40">
+            <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-500">Lease Basics</div>
+            <div className="mt-5 overflow-hidden rounded-[24px] border border-slate-200 bg-white shadow-[0_24px_70px_rgba(15,23,42,0.06)]">
+              {[
+                ...(p.policies ? [{ emoji:'📋', label:'Lease terms', value: p.policies }] : []),
+                { emoji:'📄', label:'Application', value: `Fee: ${p.applicationFee || 'Contact us'}` },
+                { emoji:'💲', label:'Move-in charges', value: `First month rent + ${p.securityDeposit || '$500'} deposit` },
+                { emoji:'🔒', label:'Security deposit', value: p.securityDeposit || '$500' },
+                { emoji:'📶', label:'Utilities', value: 'Flat fee: $175/month — includes cleaning (bi-monthly), WiFi, water & trash' },
+                { emoji:'🐾', label:'Pets', value: 'Pets may be allowed' },
+              ].map(({ emoji, label, value }, i, arr) => (
+                <div key={label} className={`flex items-start gap-3 px-5 py-4 sm:gap-4 sm:px-8 sm:py-5 ${i < arr.length - 1 ? 'border-b border-slate-100' : ''}`}>
+                  <div className="flex h-8 w-8 shrink-0 items-center justify-center text-base sm:h-10 sm:w-10 sm:text-lg">{emoji}</div>
+                  <div className="min-w-0 flex-1">
+                    <div className="break-words text-[13px] font-bold text-slate-900 sm:text-sm">{label}</div>
+                    <div className="mt-0.5 break-words text-[13px] leading-5 text-slate-500 sm:text-sm sm:leading-6">{value}</div>
+                  </div>
                 </div>
-              </div>
-            </section>
-          ) : null}
+              ))}
+            </div>
+          </section>
 
           {modalPlan && (
             <Modal onClose={() => setModalPlan(null)}>
@@ -1028,90 +972,73 @@ export default function PropertyPage(){
             </div>
           </section>
 
-          {/* Lease Options */}
-          {p.leaseTerms?.length > 0 && (
-            <section className="mt-10 scroll-mt-28 md:scroll-mt-40">
-              <div className="text-xs font-bold uppercase tracking-[0.18em] text-axis">Lease Options</div>
-              <div className="mt-5 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-                {p.leaseTerms.map((term) => (
-                  <div
-                    key={term.type}
-                    className={`flex flex-col rounded-2xl border bg-white p-5 shadow-soft ${
-                      isLeaseOptionFeatured(term)
-                        ? 'border-axis ring-1 ring-axis/30'
-                        : term.custom
-                          ? 'border-dashed border-slate-300'
-                          : 'border-slate-200'
-                    }`}
-                  >
-                    <div className="flex items-start justify-between gap-3">
-                      <div className={`text-xs font-bold uppercase tracking-[0.18em] ${term.custom ? 'text-slate-400' : 'text-axis'}`}>{term.type}</div>
-                      {term.badge ? (
-                        <div className={`rounded-full px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.16em] ${
-                          isLeaseOptionFeatured(term)
-                            ? 'bg-axis text-white'
-                            : term.custom
-                              ? 'bg-slate-100 text-slate-500'
-                              : 'bg-stone-100 text-slate-600'
-                        }`}>
-                          {term.badge}
-                        </div>
-                      ) : null}
-                    </div>
-                    {term.startingAt ? (
-                      <div className="mt-4">
-                        <div className="text-[11px] font-bold uppercase tracking-[0.16em] text-slate-400">Starting at</div>
-                        <div className="mt-1 text-2xl font-black text-slate-900">{term.startingAt}</div>
+          {(rentTotals.totalHouseRent > 0 || leasingPackages.length > 0 || (p.leaseTerms && p.leaseTerms.length > 0)) ? (
+            <section id="leasing" ref={(node) => { sectionRefs.current.leasing = node }} className="mt-10 scroll-mt-28 md:scroll-mt-40">
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+                <h2 className="font-editorial text-3xl leading-tight text-slate-900 sm:text-4xl">Pricing &amp; leasing</h2>
+                <p className="max-w-md text-sm leading-6 text-slate-500">Whole-house, grouped packages, and how lease lengths work.</p>
+              </div>
+
+              <div className="mt-6 overflow-hidden rounded-[24px] border border-slate-200 bg-white shadow-[0_24px_70px_rgba(15,23,42,0.06)]">
+                {rentTotals.totalHouseRent > 0 ? (
+                  <div className="border-b border-slate-100 bg-[linear-gradient(180deg,#fafaf9_0%,#ffffff_100%)] px-6 py-6 sm:px-8 sm:py-7">
+                    <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">Full house</div>
+                    <div className="mt-3 flex flex-wrap items-end justify-between gap-4">
+                      <div className="text-3xl font-black tracking-tight text-slate-900 sm:text-[2.5rem]">
+                        {formatCompactMonthlyCurrency(rentTotals.totalHouseRent)}
                       </div>
-                    ) : (
-                      <div className="mt-4">
-                        <div className="text-[11px] font-bold uppercase tracking-[0.16em] text-slate-400">Pricing</div>
-                        <div className="mt-1 text-sm font-semibold text-slate-500">Contact us</div>
-                      </div>
-                    )}
-                    <div className="mt-4 space-y-2.5 flex-1">
-                      <div className="flex items-start justify-between gap-2 text-sm">
-                        <span className="font-medium text-slate-500">Move-in</span>
-                        <span className="font-bold text-right text-sm text-axis">{term.moveInLabel}</span>
+                      <div className="text-sm text-slate-500">
+                        {displayedRoomPlans.reduce((acc, pl) => acc + pl.rooms.length, 0)} rooms · one lease for the entire home
                       </div>
                     </div>
-                    {term.custom && (
-                      <Link
-                        to="/contact?section=housing&tab=message"
-                        onClick={() => window.scrollTo({ top: 0, left: 0, behavior: 'auto' })}
-                        className="mt-4 block w-full rounded-full border border-slate-300 py-2 text-center text-xs font-semibold text-slate-700 transition hover:border-axis hover:text-axis"
-                      >
-                        Discuss with leasing
-                      </Link>
-                    )}
                   </div>
-                ))}
+                ) : null}
+
+                {leasingPackages.length > 0 ? (
+                  <div className="border-b border-slate-100 px-6 py-6 sm:px-8">
+                    <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">Grouped packages</div>
+                    <div className="mt-4 grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+                      {leasingPackages.map((pkg) => (
+                        <div
+                          key={pkg.title}
+                          className="rounded-[18px] border border-slate-200 bg-stone-50/90 px-5 py-5"
+                        >
+                          <div className="text-[11px] font-bold uppercase tracking-[0.16em] text-slate-400">{pkg.title}</div>
+                          <div className="mt-2 text-2xl font-black leading-none text-slate-900">
+                            {pkg.totalRent.replace('/month', '/mo')}
+                          </div>
+                          <div className="mt-3 text-sm leading-relaxed text-slate-500">{pkg.rooms.join(' · ')}</div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ) : null}
+
+                {p.leaseTerms?.length > 0 ? (
+                  <div className="px-6 py-6 sm:px-8 sm:py-7">
+                    <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">Lease lengths</div>
+                    <p className="mt-3 max-w-2xl text-sm leading-7 text-slate-600">
+                      <span className="font-semibold text-slate-800">3-, 9-, and 12-month</span>
+                      {' '}leases are available, plus custom or month-to-month when it makes sense. Start and end dates are flexible. Room rates in the list above apply per month; your total depends on which rooms you take and your lease window.
+                    </p>
+                    <Link
+                      to="/contact?section=housing&tab=message"
+                      onClick={() => window.scrollTo({ top: 0, left: 0, behavior: 'auto' })}
+                      className="mt-5 inline-flex rounded-full border border-slate-300 bg-white px-5 py-2.5 text-sm font-semibold text-slate-700 transition hover:border-axis hover:text-axis"
+                    >
+                      Discuss your timeline
+                    </Link>
+                  </div>
+                ) : null}
+
+                {(rentTotals.totalHouseRent > 0 || leasingPackages.length > 0) ? (
+                  <div className="border-t border-slate-100 bg-slate-50/60 px-6 py-3.5 text-xs leading-5 text-slate-500 sm:px-8">
+                    Rent figures above do not include utilities or the house fee — see Lease basics for move-in costs and what&apos;s included.
+                  </div>
+                ) : null}
               </div>
             </section>
-          )}
-
-          {/* Policies & Fees */}
-          <section id="policies" ref={(node) => { sectionRefs.current.policies = node }} className="mt-10 scroll-mt-28 md:scroll-mt-40">
-            <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-500">Lease Basics</div>
-            <div className="mt-5 overflow-hidden border-y border-slate-200 bg-white">
-              {[
-                ...(p.policies ? [{ emoji:'📋', label:'Lease terms', value: p.policies }] : []),
-                { emoji:'📄', label:'Application', value: `Fee: ${p.applicationFee || 'Contact us'}` },
-                { emoji:'💲', label:'Move-in charges', value: `First month rent + ${p.securityDeposit || '$500'} deposit` },
-                { emoji:'🔒', label:'Security deposit', value: p.securityDeposit || '$500' },
-                { emoji:'📶', label:'Utilities', value: 'Flat fee: $175/month — includes cleaning (bi-monthly), WiFi, water & trash' },
-                { emoji:'🐾', label:'Pets', value: 'Pets may be allowed' },
-              ].map(({ emoji, label, value }, i, arr) => (
-                <div key={label} className={`flex items-start gap-3 px-0 py-4 sm:gap-4 sm:py-5 ${i < arr.length - 1 ? 'border-b border-slate-200' : ''}`}>
-                  <div className="flex h-8 w-8 shrink-0 items-center justify-center text-base sm:h-10 sm:w-10 sm:text-lg">{emoji}</div>
-                  <div className="min-w-0 flex-1">
-                    <div className="break-words text-[13px] font-bold text-slate-900 sm:text-sm">{label}</div>
-                    <div className="mt-0.5 break-words text-[13px] leading-5 text-slate-500 sm:text-sm sm:leading-6">{value}</div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </section>
+          ) : null}
 
           {/* Map */}
           <section id="map" ref={(node) => { sectionRefs.current.map = node }} className="mt-10 mb-14 scroll-mt-28 md:scroll-mt-40">

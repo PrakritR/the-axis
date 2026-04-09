@@ -1,4 +1,26 @@
-const asset = (path) => new URL(`../../Assets/${path}`, import.meta.url).href
+// Only bundle image types. A dynamic `new URL(\`../../Assets/${path}\`, import.meta.url)` makes Vite
+// glob the entire Assets tree (including multi‑GB .MOV files), which breaks Vercel deploy limits.
+// Each `import.meta.glob` must use a string literal (Vite does not allow a variable pattern).
+const assetUrlByKey = {
+  ...import.meta.glob('../../Assets/**/*.avif', { eager: true, query: '?url', import: 'default' }),
+  ...import.meta.glob('../../Assets/**/*.jpeg', { eager: true, query: '?url', import: 'default' }),
+  ...import.meta.glob('../../Assets/**/*.jpg', { eager: true, query: '?url', import: 'default' }),
+  ...import.meta.glob('../../Assets/**/*.png', { eager: true, query: '?url', import: 'default' }),
+  ...import.meta.glob('../../Assets/**/*.svg', { eager: true, query: '?url', import: 'default' }),
+  ...import.meta.glob('../../Assets/**/*.webp', { eager: true, query: '?url', import: 'default' }),
+}
+
+function asset(path) {
+  const key = `../../Assets/${path}`
+  const url = assetUrlByKey[key]
+  if (url === undefined) {
+    throw new Error(
+      `Asset not found: ${path}. Ensure the file exists under Assets/ and uses a covered image extension.`,
+    )
+  }
+  return url
+}
+
 const assets = (...paths) => paths.map(asset)
 
 const SHARED_TAGS = ['Shared Housing', 'Seattle', 'Shared Living']
@@ -16,25 +38,7 @@ const SHARED_COMMUNITY_AMENITIES = [
   'Dishwasher',
 ]
 const STANDARD_UNIT_AMENITIES = ['Desk', 'Bed', 'Heating', 'AC']
-const STANDARD_VIDEO_LABELS = [
-  'Kitchen Tour',
-  'Living Area Tour',
-  'First Floor Bathroom Tour',
-  'Second Floor Bathroom Tour',
-  'Third Floor Bathroom Tour',
-]
-
-const placeholderVideo = (label, text = `${label} coming soon.`) => ({
-  label,
-  src: '',
-  placeholder: true,
-  placeholderText: text,
-})
-
-const placeholderVideos = () =>
-  STANDARD_VIDEO_LABELS.map((label) =>
-    placeholderVideo(label, `${label.charAt(0).toUpperCase()}${label.slice(1).toLowerCase()} coming soon.`),
-  )
+// Tour videos omitted for now (re-add property.videos + room clips later).
 
 const roomPlaceholder = (name, price, available, details) => ({
   name,
@@ -43,14 +47,6 @@ const roomPlaceholder = (name, price, available, details) => ({
   ...(details ? { details } : {}),
   videoPlaceholder: true,
   videoPlaceholderText: `${name} tour coming soon.`,
-})
-
-const roomVideo = (name, price, available, videoPath, details) => ({
-  name,
-  price,
-  available,
-  ...(details ? { details } : {}),
-  video: videoPath.startsWith('http') ? videoPath : asset(videoPath),
 })
 
 const leaseTerms = ({
@@ -127,7 +123,7 @@ export const properties = [
       '4709a/IMG_7932.jpg',
       '4709a/IMG_7943.jpg',
     ),
-    videos: placeholderVideos(),
+    videos: [],
     location: { lat: 47.6633083, lng: -122.3196714 },
     tags: SHARED_TAGS,
     floorPlans: [
@@ -258,7 +254,7 @@ export const properties = [
       '4709b/cb326c22-72d9-45a0-bb9e-18ce06dbbcb9.jpeg',
       '4709b/ee63571d-6e4b-4e1f-b0b6-4ffb9d041596.jpeg',
     ),
-    videos: placeholderVideos(),
+    videos: [],
     location: { lat: 47.6633083, lng: -122.3196714 },
     tags: SHARED_TAGS,
     floorPlans: [
@@ -377,19 +373,7 @@ export const properties = [
       '5269 house pics/IMG_6928.jpg',
       '5269 house pics/IMG_6922.jpg',
     ),
-    videos: [
-      { src: 'https://res.cloudinary.com/dhls60o2m/video/upload/v1775273591/Room_0_ofos7s.mov', label: 'Room 1 Tour' },
-      { src: 'https://res.cloudinary.com/dhls60o2m/video/upload/v1775273592/Room_1_mrqdvq.mov', label: 'Room 2 Tour' },
-      { src: asset('5259 house videos/First floor tour.MOV'), label: 'First Floor Tour' },
-      { src: asset('5259 house videos/Living Room and Kitchen.MOV'), label: 'Kitchen Tour' },
-      { src: asset('5259 house videos/Living Room and Kitchen.MOV'), label: 'Living Area Tour' },
-      { src: asset('5259 house videos/Pantry.MOV'), label: 'Pantry' },
-      { src: 'https://res.cloudinary.com/dhls60o2m/video/upload/v1775273586/First_floor_Bathroom_cw5opb.mov', label: 'First Floor Bathroom' },
-      { src: 'https://res.cloudinary.com/dhls60o2m/video/upload/v1775273601/Second_Floor_Bathroom_jun1wq.mov', label: 'Second Floor Bathroom' },
-      { src: 'https://res.cloudinary.com/dhls60o2m/video/upload/v1775273600/Third_Floor_Bathroom_kndc2m.mov', label: 'Third Floor Bathroom' },
-      { src: 'https://res.cloudinary.com/dhls60o2m/video/upload/v1775273602/Washer_lfff9l.mov', label: 'Laundry' },
-      { src: 'https://res.cloudinary.com/dhls60o2m/video/upload/v1775273599/Storage_rnhyyq.mov', label: 'Storage' },
-    ],
+    videos: [],
     location: { lat: 47.6681351, lng: -122.3144917 },
     tags: ['Shared Housing', 'Shared Living', 'Seattle'],
     floorPlans: [
@@ -450,8 +434,8 @@ export const properties = [
         priceRange: '$865/month',
         roomsAvailable: 2,
         rooms: [
-          roomVideo('Room 1', '$865/month', 'Available after April 10, 2026', 'https://res.cloudinary.com/dhls60o2m/video/upload/v1775273591/Room_0_ofos7s.mov', 'Shares bathroom with Room 2'),
-          roomVideo('Room 2', '$865/month', 'Available after April 10, 2026', 'https://res.cloudinary.com/dhls60o2m/video/upload/v1775273592/Room_1_mrqdvq.mov', 'Shares bathroom with Room 1'),
+          roomPlaceholder('Room 1', '$865/month', 'Available after April 10, 2026', 'Shares bathroom with Room 2'),
+          roomPlaceholder('Room 2', '$865/month', 'Available after April 10, 2026', 'Shares bathroom with Room 1'),
         ],
       },
       {
@@ -459,21 +443,9 @@ export const properties = [
         priceRange: '$825/month',
         roomsAvailable: 3,
         rooms: [
-          roomVideo(
-            'Room 3',
-            '$825/month',
-            'Available April 10, 2026-May 15, 2026 and after August 14, 2026',
-            'https://res.cloudinary.com/dhls60o2m/video/upload/v1775273592/Room_2_y4zhpf.mov',
-            'Shares bathroom with Rooms 4 and 5',
-          ),
-          roomVideo(
-            'Room 4',
-            '$825/month',
-            'Available April 10, 2026-May 15, 2026 and after August 14, 2026',
-            'https://res.cloudinary.com/dhls60o2m/video/upload/v1775273594/Room_3_nn3qhs.mov',
-            'Shares bathroom with Rooms 3 and 5',
-          ),
-          roomVideo('Room 5', '$825/month', 'Available after April 10, 2026', 'https://res.cloudinary.com/dhls60o2m/video/upload/v1775273594/Room_4_cyih5v.mov', 'Shares bathroom with Rooms 3 and 4'),
+          roomPlaceholder('Room 3', '$825/month', 'Available April 10, 2026-May 15, 2026 and after August 14, 2026', 'Shares bathroom with Rooms 4 and 5'),
+          roomPlaceholder('Room 4', '$825/month', 'Available April 10, 2026-May 15, 2026 and after August 14, 2026', 'Shares bathroom with Rooms 3 and 5'),
+          roomPlaceholder('Room 5', '$825/month', 'Available after April 10, 2026', 'Shares bathroom with Rooms 3 and 4'),
         ],
       },
       {
@@ -481,10 +453,10 @@ export const properties = [
         priceRange: '$800/month',
         roomsAvailable: 4,
         rooms: [
-          roomVideo('Room 6', '$800/month', 'Available after April 10, 2026', 'https://res.cloudinary.com/dhls60o2m/video/upload/v1775273594/Room_5_vshdju.mov', 'Shares bathroom with Rooms 7, 8, and 9'),
-          roomVideo('Room 7', '$800/month', 'Available after April 10, 2026', 'https://res.cloudinary.com/dhls60o2m/video/upload/v1775273596/Room_6_vdwgz5.mov', 'Shares bathroom with Rooms 6, 8, and 9'),
-          roomVideo('Room 8', '$800/month', 'Available after April 10, 2026', 'https://res.cloudinary.com/dhls60o2m/video/upload/v1775273597/Room_7_snwqgt.mov', 'Shares bathroom with Rooms 6, 7, and 9'),
-          roomVideo('Room 9', '$800/month', 'Available after April 10, 2026', 'https://res.cloudinary.com/dhls60o2m/video/upload/v1775273599/Room_8_vtixnx.mov', 'Shares bathroom with Rooms 6, 7, and 8'),
+          roomPlaceholder('Room 6', '$800/month', 'Available after April 10, 2026', 'Shares bathroom with Rooms 7, 8, and 9'),
+          roomPlaceholder('Room 7', '$800/month', 'Available after April 10, 2026', 'Shares bathroom with Rooms 6, 8, and 9'),
+          roomPlaceholder('Room 8', '$800/month', 'Available after April 10, 2026', 'Shares bathroom with Rooms 6, 7, and 9'),
+          roomPlaceholder('Room 9', '$800/month', 'Available after April 10, 2026', 'Shares bathroom with Rooms 6, 7, and 8'),
         ],
       },
     ],

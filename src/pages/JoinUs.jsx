@@ -188,7 +188,7 @@ export default function JoinUs() {
 
     try {
       if (selectedPlan === 'free' || isBypassPromo) {
-        const res = await fetch('/api/manager-start-free-tier', {
+        const res = await fetch('/api/portal?action=manager-start-free-tier', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -234,7 +234,7 @@ export default function JoinUs() {
       <EmbeddedStripeCheckout
         open={!!embeddedCheckout}
         title={`${selectedPlanMeta.name} — ${selectedPlanMeta.prices[billingCycle].value}${selectedPlanMeta.prices[billingCycle].suffix}`}
-        apiEndpoint="/api/manager-create-subscription-session"
+        apiEndpoint="/api/portal?action=manager-create-subscription-session"
         checkoutRequest={embeddedCheckout}
         onClose={() => { setEmbeddedCheckout(null); setManagerLoading(false) }}
         onComplete={() => { window.location.href = '/manager?setup=success' }}

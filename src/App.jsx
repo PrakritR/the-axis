@@ -2,6 +2,8 @@ import React, { Suspense, lazy, useEffect, useLayoutEffect } from 'react'
 import { Routes, Route, useLocation, Navigate } from 'react-router-dom'
 import { AnimatePresence, motion } from 'framer-motion'
 import { Toaster } from 'react-hot-toast'
+import { MAINTENANCE_MODE } from './lib/maintenance'
+import MaintenancePage from './pages/MaintenancePage'
 import Navbar from './components/Navbar'
 import OwnersNav from './components/OwnersNav'
 import Footer from './components/Footer'
@@ -67,7 +69,7 @@ const pageVariants = {
 function AnimatedPage({ children }) {
   return (
     <motion.div variants={pageVariants} initial="initial" animate="animate" exit="exit" style={{ width: '100%' }}>
-      {children}
+      <Suspense fallback={<PageFallback />}>{children}</Suspense>
     </motion.div>
   )
 }
@@ -79,6 +81,10 @@ function PageFallback() {
 export default function App() {
   const location = useLocation()
 
+  if (MAINTENANCE_MODE) {
+    return <MaintenancePage />
+  }
+
   // The manager portal renders its own standalone UI — no public Navbar, Footer,
   // Chatbot, or TourPopup. Check the full pathname so /manager/* and /sign/*
   // paths also match.
@@ -88,8 +94,11 @@ export default function App() {
   const isStandaloneRoute = isManagerRoute || isSignLeaseRoute || isAxisTeamRoute
 
   const isOwnersRoute = location.pathname.startsWith('/owners')
-  const showMainMobileDock = location.pathname === '/' || location.pathname === '/portal'
-  const showTourPopup = !isStandaloneRoute && location.pathname !== '/apply' && !isOwnersRoute
+  const isPortalHub = location.pathname === '/portal'
+  const showMainMobileDock =
+    !isOwnersRoute && ['/', '/apply', '/contact'].includes(location.pathname)
+  const showTourPopup =
+    !isStandaloneRoute && location.pathname !== '/apply' && !isOwnersRoute && !isPortalHub
 
   // Manager portal and signing flow render completely standalone — skip the public shell entirely
   if (isStandaloneRoute) {
@@ -129,7 +138,7 @@ export default function App() {
           error: { style: { background: '#fef2f2', color: '#991b1b', border: '1px solid #fecaca' } },
         }}
       />
-      {isOwnersRoute ? <OwnersNav /> : <Navbar />}
+      {!isPortalHub ? (isOwnersRoute ? <OwnersNav /> : <Navbar />) : null}
       <main className={`flex-1 min-h-0 w-full ${showMainMobileDock ? 'pb-[calc(5rem+env(safe-area-inset-bottom))] md:pb-0' : ''}`}>
         <Suspense fallback={<PageFallback />}>
           <AnimatePresence mode="wait">
@@ -150,8 +159,8 @@ export default function App() {
           </AnimatePresence>
         </Suspense>
       </main>
-      <Footer />
-      <Chatbot />
+      {!isPortalHub ? <Footer /> : null}
+      {!isPortalHub ? <Chatbot /> : null}
       {showTourPopup && <TourPopup />}
     </div>
   )

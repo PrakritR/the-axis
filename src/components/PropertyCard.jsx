@@ -91,7 +91,6 @@ export default function PropertyCard({ p }) {
 
         <div className="mt-5 flex flex-col gap-3 sm:flex-row sm:items-center">
           <Link
-            reloadDocument
             to={`/properties/${p.slug}`}
             className="group/btn flex w-full flex-1 items-center justify-center gap-2 rounded-full bg-[linear-gradient(180deg,#2f76ff_0%,#2450eb_100%)] px-4 py-3 text-sm font-semibold text-white shadow-[0_14px_32px_rgba(37,99,235,0.18)] transition hover:brightness-105 active:scale-[0.97]"
           >

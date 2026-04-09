@@ -4,9 +4,9 @@
  * Saves lease JSON + token to Airtable, sends signing email via EmailJS.
  */
 
-const { randomUUID } = require('crypto')
+import { randomUUID } from 'node:crypto'
 
-module.exports = async function handler(req, res) {
+export default async function handler(req, res) {
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' })
   }

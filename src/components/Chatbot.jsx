@@ -42,7 +42,7 @@ RULES (follow these exactly):
 - NEVER list pricing, leases, or properties unless the question is specifically about those.
 - No filler phrases like "Happy to help!" or "Great question!" or "Here's a quick overview:".
 - If you don't have enough information to answer confidently, say EXACTLY: "For that question, reach us directly at **510-309-8345** or [contact us here](/contact)." — nothing else.
-- When helpful, include one relevant link: housing apply/schedule (axis-seattle-housing.com), [Partner With Axis](/owners/about), [Portal](/portal), or a property page.
+- When helpful, include one relevant link using a path only (never a full https URL to this site): [Apply](/apply), [Schedule tour](/contact?section=housing&tab=schedule), [Join Axis](/owners/about), [Portal](/portal), or a property page.
 
 EXAMPLE Q&A (match this tone and length exactly):
 Q: "will rooms be furnished?" → A: "Yes — bed, desk, heating, and AC in every room."
@@ -79,8 +79,8 @@ ${propDetails}
 - Furnished rooms: desk, bed, heating, AC
 
 ## Application
-- Apply at theaxishousing.com/apply · $50 application fee
-- Tours & contact: theaxishousing.com/contact or call 510-309-8345
+- Apply at /apply · $50 application fee
+- Tours & contact: /contact or call 510-309-8345
 
 ## Neighborhood & Location (Seattle)
 - **Transit:** All properties are a 2–5 min walk to multiple bus lines (Routes 44, 49, 70, 372). The U District Light Rail Station is ~5–10 min walk — direct service to downtown, Capitol Hill, SeaTac, Bellevue, and Northgate.
@@ -127,12 +127,13 @@ ${propDetails}
 - **How long does approval take?** Typically 2–3 business days after application submission.
 - **When is rent due?** 1st of each month.
 - **What if I need maintenance?** Submit a maintenance request through the resident portal or contact leasing directly.
-- **Can I see the room before signing?** Yes — in-person and virtual tours available. Book at theaxishousing.com/contact.
+- **Can I see the room before signing?** Yes — in-person and virtual tours available. Book at /contact.
 - **Is the deposit refundable?** Yes — returned after move-out minus any damages per standard lease terms.
 - **What happens if I need to leave early?** Contact leasing — early termination terms are in the lease agreement.
 - **Are utilities really all-in at $175?** Yes — cleaning, WiFi, water, and trash are all covered. No surprise bills.
 
-Answer all of the above confidently. Keep answers short and direct. For custom date arrangements or anything not listed, suggest contacting leasing at 510-309-8345 or theaxishousing.com/contact.`
+Answer all of the above confidently. Keep answers short and direct. For custom date arrangements or anything not listed, suggest contacting leasing at 510-309-8345 or /contact.
+- Never link to axis-seattle-housing.com, theaxishousing.com, or netlify deploy URLs — use only site-relative paths like /apply, /contact, /portal.`
 }
 
 const SYSTEM_PROMPT = buildSystemPrompt()
@@ -177,7 +178,7 @@ function getLocalFallbackReply(question) {
 
   // Apply
   if (t.includes('apply') || t.includes('application') || t.includes('how do i') || t.includes('sign up') || t.includes('process'))
-    return 'Apply at [theaxishousing.com/apply](/apply) — $50 fee collected at move-in, not upfront. We respond within 2 business days.'
+    return 'Apply on the [Apply page](/apply) — $50 fee collected at move-in, not upfront. We respond within 2 business days.'
 
   // Tour
   if (t.includes('tour') || t.includes('visit') || t.includes('see') || t.includes('view') || t.includes('show'))
@@ -255,6 +256,29 @@ function CloseIcon() {
   )
 }
 
+/** Keep chat links on the current origin when the model echoes an old deploy URL. */
+const SAME_SITE_HOSTS = new Set([
+  'www.axis-seattle-housing.com',
+  'axis-seattle-housing.com',
+  'theaxishousing.com',
+  'www.theaxishousing.com',
+  'axis-seattle.netlify.app',
+])
+
+function normalizeChatLinkHref(href) {
+  if (!href || !href.startsWith('http')) return href
+  try {
+    const u = new URL(href)
+    if (SAME_SITE_HOSTS.has(u.hostname)) {
+      const path = `${u.pathname}${u.search}${u.hash}`
+      return path || '/'
+    }
+  } catch {
+    /* ignore */
+  }
+  return href
+}
+
 function renderContent(text) {
   // Tokenise a line into bold, link, and plain text segments
   function parseLine(line) {
@@ -283,13 +307,17 @@ function renderContent(text) {
       {i > 0 && <br />}
       {parseLine(line).map((tok, j) => {
         if (tok.type === 'bold') return <strong key={j}>{tok.value}</strong>
-        if (tok.type === 'link') return (
-          <a key={j} href={tok.href} target={tok.href.startsWith('http') ? '_blank' : '_self'}
-            rel="noopener noreferrer"
-            style={{ color: '#2563eb', fontWeight: 600, textDecoration: 'underline' }}>
-            {tok.label}
-          </a>
-        )
+        if (tok.type === 'link') {
+          const href = normalizeChatLinkHref(tok.href)
+          const external = href.startsWith('http')
+          return (
+            <a key={j} href={href} target={external ? '_blank' : '_self'}
+              rel={external ? 'noopener noreferrer' : undefined}
+              style={{ color: '#2563eb', fontWeight: 600, textDecoration: 'underline' }}>
+              {tok.label}
+            </a>
+          )
+        }
         return tok.value
       })}
     </React.Fragment>

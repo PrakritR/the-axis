@@ -11,7 +11,7 @@
 // Every action (open, edit, approve, reject, publish) is written to Audit Log.
 //
 // Components:
-//   ManagerLogin       — email/password login via /api/manager-auth
+//   ManagerLogin       — email/password login via /api/portal?action=manager-auth
 //   GenerateDraftModal — form to create a new AI lease draft
 //   ManagerDashboard   — filterable table of all lease drafts
 //   LeaseEditor        — full-screen editor with sidebar, tabs, action buttons
@@ -19,6 +19,7 @@
 
 import React, { useCallback, useEffect, useMemo, useState } from 'react'
 import toast from 'react-hot-toast'
+import PortalBubble from '../components/PortalBubble'
 
 // ─── Session ──────────────────────────────────────────────────────────────────
 const MANAGER_SESSION_KEY = 'axis_manager'
@@ -198,7 +199,7 @@ function ManagerPasswordInput({ value, onChange, placeholder, autoComplete }) {
         required
         autoComplete={autoComplete || 'current-password'}
         placeholder={placeholder || '••••••••'}
-        className="w-full rounded-[24px] border border-slate-200 bg-slate-50 px-5 py-4 pr-12 text-base text-slate-900 placeholder:text-slate-400 transition focus:border-[#2563eb] focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#2563eb]/20"
+        className="w-full rounded-[24px] border border-slate-200 bg-white px-5 py-4 pr-12 text-base text-slate-900 placeholder:text-slate-400 outline-none transition focus:border-[#2563eb] focus:ring-2 focus:ring-[#2563eb]/20"
       />
       <button
         type="button"
@@ -244,6 +245,9 @@ function ManagerStep({ number, title, description, children, tone = 'default' })
 }
 
 // ─── ManagerLogin ─────────────────────────────────────────────────────────────
+const managerAuthInputCls =
+  'w-full rounded-[24px] border border-slate-200 bg-white px-5 py-4 text-base text-slate-900 placeholder:text-slate-400 outline-none transition focus:border-[#2563eb] focus:ring-2 focus:ring-[#2563eb]/20'
+
 function ManagerLogin({ onLogin }) {
   const queryString = typeof window !== 'undefined' ? window.location.search : ''
   const initialSearch = new URLSearchParams(queryString)
@@ -353,7 +357,7 @@ function ManagerLogin({ onLogin }) {
       setSubscriptionError('')
       setActivationError('')
       try {
-        const res = await fetch(`/api/manager-subscription-complete?session_id=${encodeURIComponent(sessionId)}`)
+        const res = await fetch(`/api/portal?action=manager-subscription-complete&session_id=${encodeURIComponent(sessionId)}`)
         const data = await res.json()
         if (!res.ok) throw new Error(data.error || 'Could not verify the subscription.')
         if (cancelled) return
@@ -388,7 +392,7 @@ function ManagerLogin({ onLogin }) {
       setActivationError('')
 
       try {
-        const res = await fetch(`/api/manager-lookup?manager_id=${encodeURIComponent(managerId)}`)
+        const res = await fetch(`/api/portal?action=manager-lookup&manager_id=${encodeURIComponent(managerId)}`)
         const data = await res.json()
 
         if (!res.ok) {
@@ -418,7 +422,7 @@ function ManagerLogin({ onLogin }) {
     setLoginError('')
     setLoginLoading(true)
     try {
-      const res = await fetch('/api/manager-auth', {
+      const res = await fetch('/api/portal?action=manager-auth', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -443,7 +447,7 @@ function ManagerLogin({ onLogin }) {
     setActivationError('')
     setActivationLoading(true)
     try {
-      const res = await fetch('/api/manager-create-account', {
+      const res = await fetch('/api/portal?action=manager-create-account', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -464,18 +468,15 @@ function ManagerLogin({ onLogin }) {
   }
 
   return (
-    <div className="flex min-h-screen items-start justify-center bg-[linear-gradient(180deg,#f7fbff_0%,#eef5ff_48%,#f9fcff_100%)] px-4 py-10 sm:px-6 sm:py-14">
-      <div className="w-full max-w-4xl">
-        <section className="rounded-[32px] border border-slate-200/80 bg-white p-7 shadow-[0_28px_80px_rgba(148,163,184,0.18)] sm:p-8">
+    <div className="flex min-h-screen items-start justify-center bg-[linear-gradient(180deg,#f7fbff_0%,#eef5ff_48%,#f9fcff_100%)] px-4 pb-12 pt-8 sm:pt-12 lg:pt-16">
+      <div className="w-full max-w-lg">
+        <section className="rounded-[32px] border border-slate-200 bg-white p-8 shadow-soft sm:p-10">
           <div className="mb-6 text-center">
             <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-[#2563eb]">AXIS PORTAL</div>
-            <h1 className="mt-2 text-5xl font-black tracking-tight text-slate-900 sm:text-6xl">Manager portal</h1>
-            <p className="mt-3 text-base leading-7 text-slate-500">
-              Sign in or create your manager account.
-            </p>
+            <h1 className="mt-2 text-4xl font-black tracking-tight text-slate-900">Manager portal</h1>
           </div>
 
-          <div className="mx-auto flex max-w-3xl gap-1 rounded-[24px] border border-slate-100 bg-slate-50 p-1.5">
+          <div className="flex gap-1 rounded-[24px] border border-slate-100 bg-slate-50 p-1.5">
             {[['signin', 'Sign in'], ['setup', 'Create account']].map(([id, label]) => (
               <button
                 key={id}
@@ -492,7 +493,7 @@ function ManagerLogin({ onLogin }) {
           </div>
 
           {activeView === 'signin' ? (
-            <form onSubmit={handleSubmit} className="mx-auto mt-10 max-w-3xl space-y-5">
+            <form onSubmit={handleSubmit} className="mt-6 space-y-4">
               <div>
                 <label className="mb-2 block text-sm font-semibold text-slate-700">Email</label>
                 <input
@@ -502,7 +503,7 @@ function ManagerLogin({ onLogin }) {
                   required
                   autoComplete="email"
                   placeholder="you@example.com"
-                  className="w-full rounded-[24px] border border-slate-200 bg-white px-5 py-4 text-base text-slate-900 placeholder:text-slate-400 transition focus:border-[#2563eb] focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#2563eb]/20"
+                  className={managerAuthInputCls}
                 />
               </div>
 
@@ -530,7 +531,7 @@ function ManagerLogin({ onLogin }) {
               </button>
             </form>
           ) : (
-            <div className="mx-auto mt-10 max-w-3xl space-y-5">
+            <div className="mt-6 space-y-4">
               <div>
                 <label className="mb-2 block text-sm font-semibold text-slate-700">Manager ID</label>
                 <input
@@ -552,7 +553,7 @@ function ManagerLogin({ onLogin }) {
                     }))
                   }}
                   placeholder="MGR-XXXXXXXXXXXXXX"
-                  className="w-full rounded-[24px] border border-slate-200 bg-white px-5 py-4 text-base font-semibold uppercase tracking-[0.04em] text-slate-900 placeholder:text-slate-400 transition focus:border-[#2563eb] focus:outline-none focus:ring-2 focus:ring-[#2563eb]/20"
+                  className={`${managerAuthInputCls} font-semibold uppercase tracking-[0.04em]`}
                 />
               </div>
 
@@ -672,10 +673,11 @@ function ManagerLogin({ onLogin }) {
               </div>
             </div>
           )}
-          <div className="mt-10 text-center">
-            <a href="/resident" className="text-lg font-semibold text-slate-500 transition hover:text-slate-900">
-              Back to portal options
-            </a>
+          <div className="mt-8 flex flex-wrap items-center justify-center gap-2">
+            <span className="text-sm font-medium text-slate-500">Back to</span>
+            <PortalBubble as="a" href="/portal">
+              Portal
+            </PortalBubble>
           </div>
         </section>
       </div>
@@ -1089,7 +1091,7 @@ function ManagerOperationsPanel({ manager, propertyCount, onGenerateDraft, onOpe
 }
 
 // ─── GenerateDraftModal ───────────────────────────────────────────────────────
-// Collects lease data and calls /api/generate-lease-draft
+// Collects lease data and calls /api/portal?action=generate-lease-draft
 function GenerateDraftModal({ manager, propertyOptions, onClose, onGenerated }) {
   const [form, setForm] = useState({
     residentName: '',
@@ -1115,7 +1117,7 @@ function GenerateDraftModal({ manager, propertyOptions, onClose, onGenerated }) 
     setError('')
     setLoading(true)
     try {
-      const res = await fetch('/api/generate-lease-draft', {
+      const res = await fetch('/api/portal?action=generate-lease-draft', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ ...form, generatedBy: manager.name, generatedByRole: manager.role }),
@@ -1334,7 +1336,7 @@ function ManagerDashboard({ manager, onOpenDraft, onSignOut }) {
   async function handleBillingPortal() {
     setBillingLoading(true)
     try {
-      const res = await fetch('/api/manager-billing-portal', {
+      const res = await fetch('/api/portal?action=manager-billing-portal', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email: manager.email }),

@@ -50,7 +50,10 @@ function upsertScript(selector, content) {
 }
 
 function normalizeUrl(pathname = '/') {
-  const origin = (import.meta.env.VITE_SITE_URL || window.location.origin).replace(/\/+$/, '')
+  // In dev, always use the actual tab origin so localhost never advertises the deployed URL.
+  const origin = (
+    import.meta.env.DEV ? window.location.origin : import.meta.env.VITE_SITE_URL || window.location.origin
+  ).replace(/\/+$/, '')
   const path = pathname.startsWith('/') ? pathname : `/${pathname}`
   return path === '/' ? `${origin}/` : `${origin}${path}`
 }

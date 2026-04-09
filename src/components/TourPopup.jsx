@@ -68,7 +68,7 @@ export default function TourPopup() {
     setSubmitting(true)
     setSubmitError('')
     try {
-      const res = await fetch('/api/tour', {
+      const res = await fetch('/api/forms?action=tour', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -306,7 +306,9 @@ export default function TourPopup() {
 
       {/* Footer */}
       <div className="border-t border-slate-50 px-5 py-2.5 text-center">
-        <span className="text-[10px] text-slate-300">Axis · axis-seattle-housing.com</span>
+        <span className="text-[10px] text-slate-300">
+          Axis · {typeof window !== 'undefined' ? window.location.host : 'localhost'}
+        </span>
       </div>
     </div>
   )

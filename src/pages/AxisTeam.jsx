@@ -13,7 +13,7 @@ export default function AxisTeam() {
     setLoading(true)
     setError('')
     try {
-      const res = await fetch('/api/software-team-meetings', {
+      const res = await fetch('/api/forms?action=software-team-meetings', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ password }),

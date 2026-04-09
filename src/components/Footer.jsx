@@ -2,7 +2,8 @@ import React from 'react'
 import { Link, useLocation } from 'react-router-dom'
 import scrollToTop from '../utils/scrollToTop'
 import { AxisWordmark } from './logos/AxisLogos'
-import { HOUSING_HOME_URL, HOUSING_SCHEDULE_TOUR_URL } from '../lib/housingSite'
+import { HOUSING_CONTACT_SCHEDULE } from '../lib/housingSite'
+import { PORTAL_BUBBLE_SURFACE } from './PortalBubble'
 
 export default function Footer() {
   const location = useLocation()
@@ -47,14 +48,19 @@ export default function Footer() {
                   <Link to="/owners/about" onClick={scrollToTop} className="inline-block transition hover:text-slate-900 hover:translate-x-0.5">About us</Link>
                   <Link to="/owners/pricing" onClick={scrollToTop} className="inline-block transition hover:text-slate-900 hover:translate-x-0.5">Pricing</Link>
                   <Link to="/owners/contact" onClick={scrollToTop} className="inline-block transition hover:text-slate-900 hover:translate-x-0.5">Contact</Link>
-                  <Link to="/portal" onClick={scrollToTop} className="inline-block transition hover:text-slate-900 hover:translate-x-0.5">Portal</Link>
+                  <Link to="/portal" onClick={scrollToTop} className={`${PORTAL_BUBBLE_SURFACE} self-start`}>
+                    Portal
+                  </Link>
                 </>
               ) : (
                 <>
-                  <a href={HOUSING_HOME_URL} className="inline-block transition hover:text-slate-900 hover:translate-x-0.5">Explore properties</a>
-                  <a href={HOUSING_SCHEDULE_TOUR_URL} className="inline-block transition hover:text-slate-900 hover:translate-x-0.5">Apply / Schedule tour</a>
-                  <Link to="/owners/about" onClick={scrollToTop} className="inline-block transition hover:text-slate-900 hover:translate-x-0.5">Partner With Axis</Link>
-                  <Link to="/portal" onClick={scrollToTop} className="inline-block transition hover:text-slate-900 hover:translate-x-0.5">Portal</Link>
+                  <Link to="/" onClick={scrollToTop} className="inline-block transition hover:text-slate-900 hover:translate-x-0.5">Explore properties</Link>
+                  <Link to="/apply" onClick={scrollToTop} className="inline-block transition hover:text-slate-900 hover:translate-x-0.5">Apply housing</Link>
+                  <Link to={HOUSING_CONTACT_SCHEDULE} onClick={scrollToTop} className="inline-block transition hover:text-slate-900 hover:translate-x-0.5">Schedule tour</Link>
+                  <Link to="/owners/about" onClick={scrollToTop} className="inline-block transition hover:text-slate-900 hover:translate-x-0.5">Join Axis</Link>
+                  <Link to="/portal" onClick={scrollToTop} className={`${PORTAL_BUBBLE_SURFACE} self-start`}>
+                    Portal
+                  </Link>
                 </>
               )}
             </div>
@@ -65,13 +71,14 @@ export default function Footer() {
             <div className="mt-5 flex flex-col gap-3.5">
               {isOwners ? (
                 <>
-                  <a href={HOUSING_HOME_URL} className="inline-block transition hover:text-slate-900 hover:translate-x-0.5">Student housing listings</a>
+                  <Link to="/" onClick={scrollToTop} className="inline-block transition hover:text-slate-900 hover:translate-x-0.5">Student housing listings</Link>
                   <Link to="/" onClick={scrollToTop} className="inline-block transition hover:text-slate-900 hover:translate-x-0.5">Axis marketing site</Link>
                 </>
               ) : (
                 <>
-                  <a href={HOUSING_HOME_URL} className="inline-block transition hover:text-slate-900 hover:translate-x-0.5">Available housing</a>
-                  <a href={HOUSING_SCHEDULE_TOUR_URL} className="inline-block transition hover:text-slate-900 hover:translate-x-0.5">Tours & applications</a>
+                  <Link to="/" onClick={scrollToTop} className="inline-block transition hover:text-slate-900 hover:translate-x-0.5">Available housing</Link>
+                  <Link to={HOUSING_CONTACT_SCHEDULE} onClick={scrollToTop} className="inline-block transition hover:text-slate-900 hover:translate-x-0.5">Tours</Link>
+                  <Link to="/apply" onClick={scrollToTop} className="inline-block transition hover:text-slate-900 hover:translate-x-0.5">Applications</Link>
                   <a href="mailto:info@axis-seattle-housing.com" className="inline-block transition hover:text-slate-900 hover:translate-x-0.5">Lease questions</a>
                 </>
               )}

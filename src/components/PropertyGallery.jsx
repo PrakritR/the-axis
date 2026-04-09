@@ -17,7 +17,14 @@ function ArrowRight() {
   )
 }
 
-export default function PropertyGallery({ images = [], videos = [] }) {
+export default function PropertyGallery({
+  images = [],
+  videos = [],
+  startingPrice,
+  beds,
+  baths,
+  location,
+}) {
   const [open, setOpen] = useState(false)
   const [index, setIndex] = useState(0)
   const [videoOpen, setVideoOpen] = useState(false)
@@ -87,13 +94,25 @@ export default function PropertyGallery({ images = [], videos = [] }) {
     <div className="w-full">
       <section className="overflow-hidden rounded-[24px] border border-slate-200 bg-[linear-gradient(180deg,#ffffff_0%,#f8f7f4_100%)] shadow-[0_24px_70px_rgba(15,23,42,0.08)] sm:rounded-[30px]">
         <div className="border-b border-slate-200 px-4 py-4 sm:px-6 lg:px-8">
-          <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
-            <div className="max-w-2xl">
+          <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
+            <div className="max-w-2xl lg:max-w-none lg:flex-1">
               <div className="text-[11px] font-bold uppercase tracking-[0.22em] text-slate-500">Images</div>
-              <h2 className="font-editorial mt-2 text-[2rem] leading-tight text-slate-900 sm:text-[2.8rem]">
-                See how the house actually feels.
-              </h2>
-              <p className="mt-3 max-w-xl text-sm leading-6 text-slate-600 sm:text-base sm:leading-7">
+              {startingPrice != null && beds != null && baths != null && location ? (
+                <div className="mt-4 grid grid-cols-2 gap-4 border-t border-slate-200 pt-4 sm:grid-cols-4">
+                  {[
+                    ['Starting price', startingPrice],
+                    ['Bedrooms', String(beds)],
+                    ['Bathrooms', String(baths)],
+                    ['Location', location],
+                  ].map(([label, value]) => (
+                    <div key={label} className="min-w-0">
+                      <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">{label}</div>
+                      <div className="mt-2 break-words text-lg font-semibold text-slate-900">{value}</div>
+                    </div>
+                  ))}
+                </div>
+              ) : null}
+              <p className="mt-4 max-w-xl text-sm leading-6 text-slate-600 sm:mt-5 sm:text-base sm:leading-7">
                 Browse the main photos here, or open the full gallery for a closer look.
               </p>
             </div>
