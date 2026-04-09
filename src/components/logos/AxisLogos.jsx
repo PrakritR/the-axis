@@ -1,6 +1,6 @@
 import React from 'react'
 
-export function AxisWordmark({ className = '', tone = 'light', subtitle = 'Axis' }) {
+export function AxisWordmark({ className = '', tone = 'light', subtitle = 'Seattle' }) {
   const isLight = tone === 'light'
   const wordColor = isLight ? '#1f2a44' : '#0f172a'
   const subColor = isLight ? '#64748b' : '#64748b'
