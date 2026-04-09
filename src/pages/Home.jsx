@@ -312,6 +312,11 @@ function RoomFinder() {
 
   const dateLabel = getDateLabel()
 
+  const finderLabelRow = 'mb-3 flex min-h-[2.5rem] w-full min-w-0 items-end'
+  const finderControlBase =
+    'box-border w-full rounded-xl border border-slate-200 bg-white px-4 text-sm font-medium text-slate-900 outline-none transition focus:border-axis focus:ring-2 focus:ring-axis/20'
+  const finderDateField = `${finderControlBase} h-11`
+
   return (
     <section className="border-t border-slate-200/25 bg-transparent px-4 py-14 sm:px-6 sm:py-20">
       <div className="mx-auto max-w-6xl">
@@ -323,10 +328,12 @@ function RoomFinder() {
         </Reveal>
 
         <div className="axis-panel rounded-[32px] p-6 sm:p-8">
-          <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="grid grid-cols-1 gap-x-6 gap-y-6 sm:grid-cols-2 lg:grid-cols-[repeat(4,minmax(0,1fr))]">
             {/* Move-in date */}
-            <div>
-              <div className="mb-3 text-[11px] font-bold uppercase tracking-[0.18em] text-slate-500">Move-in date</div>
+            <div className="min-w-0">
+              <div className={finderLabelRow}>
+                <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-500">Move-in date</div>
+              </div>
               <input
                 type="date"
                 min={todayStr}
@@ -337,7 +344,7 @@ function RoomFinder() {
                   setMoveInDate(val)
                   if (moveOutDate && val > moveOutDate) setMoveOutDate('')
                 }}
-                className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-medium text-slate-900 outline-none transition focus:border-axis focus:ring-2 focus:ring-axis/20"
+                className={finderDateField}
               />
               {moveInDate && (
                 <button type="button" onClick={() => { setMoveInDate(''); setMoveOutDate('') }}
@@ -345,17 +352,25 @@ function RoomFinder() {
               )}
             </div>
 
-            {/* Move-out date */}
-            <div>
-              <div className="mb-3 text-[11px] font-bold uppercase tracking-[0.18em] text-slate-500">Move-out date <span className="font-normal text-slate-400 normal-case tracking-normal">(optional)</span></div>
+            {/* Move-out date — not HTML-disabled so styling/calendar match move-in; blocked until move-in is set */}
+            <div
+              className={`min-w-0 ${!moveInDate ? 'pointer-events-none' : ''}`}
+              title={!moveInDate ? 'Select a move-in date first' : undefined}
+            >
+              <div className={finderLabelRow}>
+                <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-500">
+                  Move-out date <span className="font-normal text-slate-400 normal-case tracking-normal">(optional)</span>
+                </div>
+              </div>
               <input
                 type="date"
                 min={moveInDate || todayStr}
                 max={MAX_DATE}
                 value={moveOutDate}
-                disabled={!moveInDate}
+                tabIndex={moveInDate ? 0 : -1}
+                aria-disabled={!moveInDate}
                 onChange={e => setMoveOutDate(clampYear(e.target.value))}
-                className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-medium text-slate-900 outline-none transition focus:border-axis focus:ring-2 focus:ring-axis/20 disabled:opacity-40 disabled:cursor-not-allowed"
+                className={`${finderDateField} ${!moveInDate ? 'cursor-not-allowed text-slate-400' : ''}`}
               />
               {moveOutDate && (
                 <button type="button" onClick={() => setMoveOutDate('')}
@@ -364,14 +379,14 @@ function RoomFinder() {
             </div>
 
             {/* Budget slider */}
-            <div>
-              <div className="mb-3 flex items-center justify-between">
+            <div className="min-w-0">
+              <div className="mb-3 flex min-h-[2.5rem] w-full min-w-0 items-center justify-between gap-3">
                 <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-500">Max budget / month</div>
-                <div className={`text-sm font-semibold transition-colors ${budgetInput ? 'text-axis' : 'text-slate-400'}`}>
+                <div className={`shrink-0 text-sm font-semibold tabular-nums leading-none transition-colors ${budgetInput ? 'text-axis' : 'text-slate-400'}`}>
                   {budgetInput ? `$${budgetInput}` : 'Any'}
                 </div>
               </div>
-              <div className="relative py-2">
+              <div className="flex h-11 flex-col justify-center">
                 <input
                   type="range"
                   min="600"
@@ -382,11 +397,11 @@ function RoomFinder() {
                   style={{ '--val': budgetInput || 600 }}
                   className="budget-slider w-full cursor-pointer appearance-none"
                 />
-                <div className="mt-2 flex justify-between text-[10px] font-medium text-slate-400">
-                  <span>$600</span>
-                  <span>$850</span>
-                  <span>$1,100</span>
-                </div>
+              </div>
+              <div className="mt-1 flex justify-between text-[10px] font-medium tabular-nums text-slate-400">
+                <span>$600</span>
+                <span>$850</span>
+                <span>$1,100</span>
               </div>
               {budgetInput && (
                 <button type="button" onClick={() => setBudgetInput('')}
@@ -395,19 +410,21 @@ function RoomFinder() {
             </div>
 
             {/* Bathroom type dropdown */}
-            <div>
-              <div className="mb-3 text-[11px] font-bold uppercase tracking-[0.18em] text-slate-500">Bathroom type</div>
-              <div className="relative">
+            <div className="min-w-0">
+              <div className={finderLabelRow}>
+                <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-500">Bathroom type</div>
+              </div>
+              <div className="relative h-11">
                 <select
                   value={bath}
                   onChange={e => setBath(e.target.value)}
-                  className="w-full appearance-none rounded-xl border border-slate-200 bg-white py-2.5 pl-4 pr-9 text-sm font-medium text-slate-900 outline-none transition focus:border-axis focus:ring-2 focus:ring-axis/20"
+                  className={`${finderControlBase} h-full cursor-pointer appearance-none py-0 pr-9`}
                 >
                   {BATH_OPTIONS.map(opt => (
                     <option key={opt.value} value={opt.value}>{opt.label}</option>
                   ))}
                 </select>
-                <svg className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" viewBox="0 0 16 16" fill="none">
+                <svg className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" viewBox="0 0 16 16" fill="none" aria-hidden>
                   <path d="M4 6l4 4 4-4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
                 </svg>
               </div>
