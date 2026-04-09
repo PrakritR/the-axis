@@ -7,6 +7,7 @@ import {
   createWorkOrder,
   getAnnouncements,
   getApplicationById,
+  getApprovedLeaseForResident,
   getMessages,
   getPaymentsForResident,
   getResidentByEmail,
@@ -1437,6 +1438,27 @@ function LeasingPanel({ resident, onOpenPayments }) {
   const moveInLabel = resident['Lease Start Date'] ? formatDate(resident['Lease Start Date']) : '—'
   const moveOutLabel = resident['Lease End Date'] ? formatDate(resident['Lease End Date']) : (isMonthToMonth ? 'No fixed end date' : '—')
 
+  // Fetch the manager-approved lease document for this resident (if one exists).
+  // Only "Published" and "Signed" records are returned — residents never see drafts.
+  const [approvedLease, setApprovedLease] = useState(null)
+  const [leaseLoading, setLeaseLoading] = useState(true)
+  const [showLeaseText, setShowLeaseText] = useState(false)
+
+  useEffect(() => {
+    let cancelled = false
+    setLeaseLoading(true)
+    getApprovedLeaseForResident(resident.id)
+      .then(lease => { if (!cancelled) setApprovedLease(lease) })
+      .catch(() => { /* non-fatal — portal still works without lease document */ })
+      .finally(() => { if (!cancelled) setLeaseLoading(false) })
+    return () => { cancelled = true }
+  }, [resident.id])
+
+  // The content to show is the manager-edited version when available,
+  // otherwise fall back to the original AI draft
+  const leaseContent = approvedLease?.['Manager Edited Content'] || approvedLease?.['AI Draft Content'] || ''
+  const leaseStatus = approvedLease?.['Status']
+
   return (
     <SectionCard title="Leasing" description="Review your current lease details and continue your lease through the payment flow.">
       <div className="space-y-5">
@@ -1470,6 +1492,68 @@ function LeasingPanel({ resident, onOpenPayments }) {
           </div>
         </div>
 
+        {/* ── Approved lease document (only shown once management publishes it) ── */}
+        {!leaseLoading && approvedLease && leaseContent && (
+          <div className="rounded-[24px] border border-[#0ea5a4]/30 bg-[linear-gradient(135deg,#f0fdfc_0%,#ffffff_100%)] p-5">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <div className="flex items-center gap-2">
+                  <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-[#0b8a89]">Lease Document</div>
+                  {leaseStatus === 'Signed' ? (
+                    <span className="rounded-full border border-purple-200 bg-purple-50 px-2.5 py-1 text-[11px] font-semibold text-purple-700">
+                      Signed
+                    </span>
+                  ) : (
+                    <span className="rounded-full border border-teal-200 bg-teal-50 px-2.5 py-1 text-[11px] font-semibold text-teal-700">
+                      Ready to review
+                    </span>
+                  )}
+                </div>
+                <h3 className="mt-2 text-xl font-black text-slate-900">Your Lease Agreement</h3>
+                <p className="mt-2 text-sm leading-6 text-slate-500">
+                  Your lease has been reviewed and approved by Axis management. You can read the full document below.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowLeaseText(v => !v)}
+                className="shrink-0 rounded-full bg-[#0ea5a4] px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-[#0b8a89]"
+              >
+                {showLeaseText ? 'Hide' : 'View lease'}
+              </button>
+            </div>
+
+            {showLeaseText && (
+              <div className="mt-5 overflow-hidden rounded-[20px] border border-slate-200 bg-white">
+                <div className="flex items-center justify-between border-b border-slate-100 bg-slate-50 px-5 py-3">
+                  <span className="text-xs font-semibold text-slate-500">
+                    {approvedLease['Property']}{approvedLease['Unit'] ? ` · ${approvedLease['Unit']}` : ''} · {approvedLease['Resident Name']}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const blob = new Blob([leaseContent], { type: 'text/plain' })
+                      const url = URL.createObjectURL(blob)
+                      const a = document.createElement('a')
+                      a.href = url
+                      a.download = `lease-${approvedLease['Resident Name']?.replace(/\s+/g, '-').toLowerCase() || 'document'}.txt`
+                      a.click()
+                      URL.revokeObjectURL(url)
+                    }}
+                    className="text-xs font-semibold text-[#0ea5a4] hover:underline"
+                  >
+                    Download
+                  </button>
+                </div>
+                <div className="max-h-[500px] overflow-y-auto p-6">
+                  <pre className="whitespace-pre-wrap font-mono text-sm leading-7 text-slate-800">{leaseContent}</pre>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Signing + renewal section */}
         <div className="grid gap-4 lg:grid-cols-[1.05fr_0.95fr]">
           <div className="rounded-[24px] border border-slate-200 bg-white p-5">
             <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">Lease Signing</div>

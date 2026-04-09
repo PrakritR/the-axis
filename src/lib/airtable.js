@@ -369,3 +369,199 @@ export const airtableReady = Boolean(
   API_KEY &&
   API_KEY !== 'your_airtable_token'
 )
+
+// ---------------------------------------------------------------------------
+// Manager auth
+// ---------------------------------------------------------------------------
+export async function loginManager(email, password) {
+  const formula = `AND({Email} = "${escapeFormulaValue(email)}", {Password} = "${escapeFormulaValue(password)}")`
+  const data = await request(buildUrl('Managers', { filterByFormula: formula, maxRecords: 1 }))
+  const record = data.records?.[0]
+  return record ? mapRecord(record) : null
+}
+
+export async function getManagerByEmail(email) {
+  const formula = `{Email} = "${escapeFormulaValue(email)}"`
+  const data = await request(buildUrl('Managers', { filterByFormula: formula, maxRecords: 1 }))
+  const record = data.records?.[0]
+  return record ? mapRecord(record) : null
+}
+
+export async function updateManager(recordId, fields) {
+  const data = await request(`${tableUrl('Managers')}/${recordId}`, {
+    method: 'PATCH',
+    body: JSON.stringify({ fields, typecast: true }),
+  })
+  return mapRecord(data)
+}
+
+// ---------------------------------------------------------------------------
+// Manager — all work orders (across all properties)
+// ---------------------------------------------------------------------------
+export async function getAllWorkOrders() {
+  const allRecords = []
+  let offset = null
+  do {
+    const params = { sort: [{ field: 'Date Submitted', direction: 'desc' }] }
+    if (offset) params.offset = offset
+    const data = await request(buildUrl(TABLES.workOrders, params))
+    ;(data.records || []).forEach((r) => allRecords.push(mapRecord(r)))
+    offset = data.offset || null
+  } while (offset)
+  return allRecords
+}
+
+export async function updateWorkOrderStatus(recordId, status) {
+  const data = await request(`${tableUrl(TABLES.workOrders)}/${recordId}`, {
+    method: 'PATCH',
+    body: JSON.stringify({ fields: { Status: status }, typecast: true }),
+  })
+  return mapRecord(data)
+}
+
+// ---------------------------------------------------------------------------
+// Manager — all messages (across all work orders)
+// ---------------------------------------------------------------------------
+export async function getAllMessages() {
+  const allRecords = []
+  let offset = null
+  do {
+    const params = { sort: [{ field: 'Timestamp', direction: 'desc' }] }
+    if (offset) params.offset = offset
+    const data = await request(buildUrl(TABLES.messages, params))
+    ;(data.records || []).forEach((r) => allRecords.push(mapRecord(r)))
+    offset = data.offset || null
+  } while (offset)
+  return allRecords
+}
+
+export async function sendManagerMessage({ workOrderId, message }) {
+  const data = await request(tableUrl(TABLES.messages), {
+    method: 'POST',
+    body: JSON.stringify({
+      fields: {
+        Message: message,
+        'Work Order': [workOrderId],
+        'Is Admin': true,
+      },
+      typecast: true,
+    }),
+  })
+  return mapRecord(data)
+}
+
+// ---------------------------------------------------------------------------
+// Manager — all applications
+// ---------------------------------------------------------------------------
+export async function getAllApplications() {
+  const allRecords = []
+  let offset = null
+  do {
+    const params = { sort: [{ field: 'Created', direction: 'desc' }] }
+    if (offset) params.offset = offset
+    const data = await request(buildUrl('Applications', params))
+    ;(data.records || []).forEach((r) => allRecords.push(mapRecord(r)))
+    offset = data.offset || null
+  } while (offset)
+  return allRecords
+}
+
+export async function getFullApplicationById(recordId) {
+  const app = await request(`${tableUrl('Applications')}/${recordId}`)
+  return mapRecord(app)
+}
+
+// ---------------------------------------------------------------------------
+// Manager — lease management
+// ---------------------------------------------------------------------------
+export async function saveLease(recordId, { token, leaseJson, status = 'Pending' }) {
+  const data = await request(`${tableUrl('Applications')}/${recordId}`, {
+    method: 'PATCH',
+    body: JSON.stringify({
+      fields: {
+        'Lease Token': token,
+        'Lease JSON': JSON.stringify(leaseJson),
+        'Lease Status': status,
+      },
+      typecast: true,
+    }),
+  })
+  return mapRecord(data)
+}
+
+export async function getLeaseByToken(token) {
+  const formula = `{Lease Token} = "${escapeFormulaValue(token)}"`
+  const data = await request(buildUrl('Applications', { filterByFormula: formula, maxRecords: 1 }))
+  const record = data.records?.[0]
+  if (!record) return null
+  const mapped = mapRecord(record)
+  try {
+    mapped._leaseData = mapped['Lease JSON'] ? JSON.parse(mapped['Lease JSON']) : null
+  } catch {
+    mapped._leaseData = null
+  }
+  return mapped
+}
+
+export async function updateLeaseRecord(recordId, fields) {
+  const data = await request(`${tableUrl('Applications')}/${recordId}`, {
+    method: 'PATCH',
+    body: JSON.stringify({ fields, typecast: true }),
+  })
+  return mapRecord(data)
+}
+
+// ---------------------------------------------------------------------------
+// Manager — announcements management
+// ---------------------------------------------------------------------------
+export async function getAllAnnouncementsAdmin() {
+  const data = await request(buildUrl(TABLES.announcements, {
+    sort: [{ field: 'Created At', direction: 'desc' }],
+  }))
+  return (data.records || []).map(mapRecord)
+}
+
+export async function createAnnouncement(fields) {
+  const data = await request(tableUrl(TABLES.announcements), {
+    method: 'POST',
+    body: JSON.stringify({ fields, typecast: true }),
+  })
+  return mapRecord(data)
+}
+
+export async function updateAnnouncement(recordId, fields) {
+  const data = await request(`${tableUrl(TABLES.announcements)}/${recordId}`, {
+    method: 'PATCH',
+    body: JSON.stringify({ fields, typecast: true }),
+  })
+  return mapRecord(data)
+}
+
+export async function deleteAnnouncement(recordId) {
+  await request(`${tableUrl(TABLES.announcements)}/${recordId}`, { method: 'DELETE' })
+}
+
+// ---------------------------------------------------------------------------
+// Lease Drafts — resident-facing read
+// ---------------------------------------------------------------------------
+
+// Returns the most recent approved-and-published (or signed) lease draft for a
+// given resident record ID. This is what the resident portal shows in the
+// Leasing tab. Drafts, "Under Review", and "Changes Needed" records are never
+// returned here — residents must not see un-approved content.
+export async function getApprovedLeaseForResident(residentRecordId) {
+  if (!residentRecordId) return null
+  const escaped = escapeFormulaValue(residentRecordId)
+  const formula = `AND(
+    {Resident Record ID} = "${escaped}",
+    OR({Status} = "Published", {Status} = "Signed")
+  )`
+  const url = new URL(tableUrl('Lease Drafts'))
+  url.searchParams.set('filterByFormula', formula)
+  url.searchParams.set('sort[0][field]', 'Published At')
+  url.searchParams.set('sort[0][direction]', 'desc')
+  url.searchParams.set('maxRecords', '1')
+  const data = await request(url.toString())
+  const record = data.records?.[0]
+  return record ? mapRecord(record) : null
+}

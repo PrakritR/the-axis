@@ -14,6 +14,8 @@ const Contact = lazy(() => import('./pages/Contact'))
 const Apply = lazy(() => import('./pages/Apply'))
 const Resident = lazy(() => import('./pages/Resident'))
 const JoinUs = lazy(() => import('./pages/JoinUs'))
+const Manager = lazy(() => import('./pages/Manager'))
+const SignLease = lazy(() => import('./pages/SignLease'))
 
 function ScrollToTop() {
   const { pathname, hash, search } = useLocation()
@@ -72,8 +74,41 @@ function PageFallback() {
 
 export default function App() {
   const location = useLocation()
+
+  // The manager portal renders its own standalone UI — no public Navbar, Footer,
+  // Chatbot, or TourPopup. Check the full pathname so /manager/* and /sign/*
+  // paths also match.
+  const isManagerRoute = location.pathname === '/manager' || location.pathname.startsWith('/manager/')
+  const isSignLeaseRoute = location.pathname.startsWith('/sign/')
+  const isStandaloneRoute = isManagerRoute || isSignLeaseRoute
+
   const showMobileDock = ['/', '/apply', '/contact', '/resident'].includes(location.pathname)
-  const showTourPopup = location.pathname !== '/apply'
+  const showTourPopup = !isStandaloneRoute && location.pathname !== '/apply'
+
+  // Manager portal and signing flow render completely standalone — skip the public shell entirely
+  if (isStandaloneRoute) {
+    return (
+      <>
+        <ScrollToTop />
+        <Toaster
+          position="top-center"
+          toastOptions={{
+            duration: 4500,
+            style: { borderRadius: '14px', fontFamily: 'Inter, sans-serif', fontSize: '14px', fontWeight: 500 },
+            success: { style: { background: '#f0fdf4', color: '#166534', border: '1px solid #bbf7d0' } },
+            error: { style: { background: '#fef2f2', color: '#991b1b', border: '1px solid #fecaca' } },
+          }}
+        />
+        <Suspense fallback={<PageFallback />}>
+          <Routes location={location} key={location.pathname}>
+            <Route path="/manager" element={<Manager />} />
+            <Route path="/manager/*" element={<Manager />} />
+            <Route path="/sign/:token" element={<SignLease />} />
+          </Routes>
+        </Suspense>
+      </>
+    )
+  }
 
   return (
     <div className="app-shell min-h-screen min-h-svh flex flex-col">
