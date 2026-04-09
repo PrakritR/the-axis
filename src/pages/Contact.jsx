@@ -422,8 +422,7 @@ export default function Contact() {
       />
       <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 sm:py-12">
         <section className="border-b border-slate-200 pb-10 lg:pb-14">
-          <div className="text-[11px] font-bold uppercase tracking-[0.22em] text-slate-500">Contact Axis Seattle</div>
-          <h1 className="font-editorial mt-4 text-[2rem] leading-[1.1] text-slate-900 sm:text-[3rem] sm:leading-[0.96] lg:text-[4.3rem]">
+          <h1 className="font-editorial text-[2rem] leading-[1.1] text-slate-900 sm:text-[3rem] sm:leading-[0.96] lg:text-[4.3rem]">
             Contact leasing directly.
           </h1>
         </section>

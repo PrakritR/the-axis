@@ -6,6 +6,7 @@ const AIRTABLE_BASE_ID = import.meta.env.VITE_AIRTABLE_APPLICATIONS_BASE_ID || i
 const APPLICATIONS_TABLE = import.meta.env.VITE_AIRTABLE_APPLICATIONS_TABLE || 'Applications'
 const COSIGNERS_TABLE = import.meta.env.VITE_AIRTABLE_COAPPLICANTS_TABLE || 'Co-Signers'
 const AIRTABLE_TOKEN = import.meta.env.VITE_AIRTABLE_TOKEN
+const APPLICATION_SUBMISSION_STORAGE_KEY = 'axis_application_submission'
 
 const HISTORY_OPTIONS = ['No', 'Yes']
 const LEASE_TERMS = [
@@ -1038,19 +1039,26 @@ const COSIGNER_STEPS = [
 ]
 
 export default function Apply() {
+  const storedSubmission = typeof window !== 'undefined'
+    ? JSON.parse(window.sessionStorage.getItem(APPLICATION_SUBMISSION_STORAGE_KEY) || 'null')
+    : null
   const [applicationType, setApplicationType] = useState('')
   const [step, setStep] = useState(0)
   const [signer, setSigner] = useState(defaultSigner())
   const [cosigner, setCosigner] = useState(defaultCosigner())
   const [submitting, setSubmitting] = useState(false)
-  const [submitted, setSubmitted] = useState(false)
-  const [submittedRecord, setSubmittedRecord] = useState(null)
+  const [submitted, setSubmitted] = useState(Boolean(storedSubmission))
+  const [submittedRecord, setSubmittedRecord] = useState(storedSubmission?.submittedRecord || null)
+  const [submissionSummary, setSubmissionSummary] = useState(storedSubmission)
+  const [paymentLoading, setPaymentLoading] = useState(false)
+  const [paymentError, setPaymentError] = useState('')
   const [error, setError] = useState('')
   const [fieldErrors, setFieldErrors] = useState({})
   const [roomConflictWarning, setRoomConflictWarning] = useState(false)
   const [roomConflictAcknowledged, setRoomConflictAcknowledged] = useState(false)
 
   const steps = applicationType === 'cosigner' ? COSIGNER_STEPS : SIGNER_STEPS
+  const paymentStatus = typeof window !== 'undefined' ? new URLSearchParams(window.location.search).get('payment') : ''
   const totalSteps = steps.length
   const isLastStep = step === totalSteps - 1
 
@@ -1143,6 +1151,7 @@ export default function Apply() {
     setFieldErrors({})
 
     try {
+      let savedRecord = null
       if (applicationType === 'signer') {
         if (!signer.consent) {
           throw new Error('The signer must consent to the credit and background check before submitting.')
@@ -1220,8 +1229,8 @@ export default function Apply() {
           'Additional Notes': signer.notes || '',
         }
 
-        const record = await submitToAirtable(APPLICATIONS_TABLE, fields)
-        setSubmittedRecord(record)
+        savedRecord = await submitToAirtable(APPLICATIONS_TABLE, fields)
+        setSubmittedRecord(savedRecord)
       } else if (applicationType === 'cosigner') {
         if (!cosigner.consent) {
           throw new Error('The co-signer must consent to the credit and background check before submitting.')
@@ -1267,6 +1276,29 @@ export default function Apply() {
         throw new Error('Choose whether this is a signer application or a co-signer form.')
       }
 
+      const summary = applicationType === 'signer'
+        ? {
+            applicationType,
+            firstName: signer.fullName.split(' ')[0],
+            email: signer.email,
+            propertyName: signer.propertyName,
+            roomNumber: signer.roomNumber,
+            hasCosigner: signer.hasCosigner,
+            appId: savedRecord?.fields?.['Application ID'] ?? savedRecord?.id ?? '',
+            submittedRecord: savedRecord || null,
+          }
+        : {
+            applicationType,
+            firstName: cosigner.fullName.split(' ')[0],
+            email: cosigner.email,
+            appId: '',
+            submittedRecord: null,
+          }
+
+      setSubmissionSummary(summary)
+      if (typeof window !== 'undefined') {
+        window.sessionStorage.setItem(APPLICATION_SUBMISSION_STORAGE_KEY, JSON.stringify(summary))
+      }
       setSubmitted(true)
     } catch (submissionError) {
       console.error('Airtable submission failed:', submissionError)
@@ -1276,16 +1308,76 @@ export default function Apply() {
     }
   }
 
+  async function handleApplicationFeeCheckout() {
+    const effectiveType = submissionSummary?.applicationType || applicationType
+    const applicantName = effectiveType === 'signer' ? signer.fullName : cosigner.fullName
+    const applicantEmail = submissionSummary?.email || (effectiveType === 'signer' ? signer.email : cosigner.email)
+    const propertyName = submissionSummary?.propertyName || (effectiveType === 'signer' ? signer.propertyName : '')
+    const unitNumber = submissionSummary?.roomNumber || (effectiveType === 'signer' ? signer.roomNumber : '')
+    const recordId = submissionSummary?.submittedRecord?.id || submittedRecord?.id || ''
+
+    setPaymentLoading(true)
+    setPaymentError('')
+    try {
+      const response = await fetch('/api/stripe-create-checkout-session', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          residentId: recordId,
+          residentName: applicantName,
+          residentEmail: applicantEmail,
+          propertyName,
+          unitNumber,
+          amount: 50,
+          description: 'Application fee',
+          category: 'application_fee',
+          paymentRecordId: recordId,
+          successPath: '/apply?payment=success',
+          cancelPath: '/apply?payment=cancelled',
+        }),
+      })
+      const data = await response.json()
+      if (!response.ok) throw new Error(data.error || 'Unable to start application fee payment.')
+      window.location.href = data.url
+    } catch (err) {
+      setPaymentError(err.message || 'Unable to start application fee payment.')
+    } finally {
+      setPaymentLoading(false)
+    }
+  }
+
   if (submitted) {
-    const rawAppId = submittedRecord?.fields?.['Application ID'] ?? submittedRecord?.id
+    const rawAppId = submissionSummary?.appId || submittedRecord?.fields?.['Application ID'] || submittedRecord?.id
     const appId = typeof rawAppId === 'number' ? `#${rawAppId}` : String(rawAppId || '').replace(/^APP-/, '')
-    const isSigner = applicationType === 'signer'
-    const firstName = isSigner ? signer.fullName.split(' ')[0] : cosigner.fullName.split(' ')[0]
+    const effectiveType = submissionSummary?.applicationType || applicationType
+    const isSigner = effectiveType === 'signer'
+    const firstName = submissionSummary?.firstName || (isSigner ? signer.fullName.split(' ')[0] : cosigner.fullName.split(' ')[0])
+
+    function clearStoredSubmission() {
+      if (typeof window !== 'undefined') {
+        window.sessionStorage.removeItem(APPLICATION_SUBMISSION_STORAGE_KEY)
+      }
+      setSubmissionSummary(null)
+      setSubmitted(false)
+      setSubmittedRecord(null)
+    }
 
     return (
       <div className="min-h-screen bg-cream-50">
         <Seo title="Application Submitted | Axis Seattle Housing" pathname="/apply" />
         <div className="mx-auto max-w-lg px-4 py-20 sm:py-28">
+          {paymentStatus === 'success' ? (
+            <div className="mb-6 rounded-2xl border border-emerald-200 bg-emerald-50 px-5 py-4 text-sm text-emerald-700">
+              Application fee payment completed successfully.
+            </div>
+          ) : null}
+
+          {paymentStatus === 'cancelled' ? (
+            <div className="mb-6 rounded-2xl border border-amber-200 bg-amber-50 px-5 py-4 text-sm text-amber-700">
+              Application fee payment was cancelled. You can restart it below whenever you are ready.
+            </div>
+          ) : null}
+
           {/* Check icon */}
           <div className="mx-auto mb-8 flex h-20 w-20 items-center justify-center rounded-full bg-teal-50 ring-8 ring-teal-50/60">
             <svg className="h-10 w-10 text-axis" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
@@ -1309,7 +1401,7 @@ export default function Apply() {
                 <span className="font-mono text-3xl font-black tracking-tight text-slate-900">{appId}</span>
                 <CopyButton text={appId} />
               </div>
-              {signer.hasCosigner === 'Yes' && (
+              {(submissionSummary?.hasCosigner || signer.hasCosigner) === 'Yes' && (
                 <div className="border-t border-slate-100 bg-teal-50 px-6 py-4">
                   <p className="text-sm leading-6 text-teal-800">
                     Share this ID with your co-signer — they'll need it to link their form to yours at <strong>/apply</strong>.
@@ -1319,8 +1411,35 @@ export default function Apply() {
             </div>
           )}
 
+          {isSigner ? (
+            <div className="mt-8 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+              <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">Application Fee</div>
+              <div className="mt-3 flex flex-wrap items-end justify-between gap-4">
+                <div>
+                  <div className="text-3xl font-black text-slate-900">$50</div>
+                  <p className="mt-2 max-w-md text-sm leading-6 text-slate-500">
+                    Complete your application by paying the non-refundable application fee through Stripe.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleApplicationFeeCheckout}
+                  disabled={paymentLoading}
+                  className="rounded-full bg-slate-900 px-6 py-3 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {paymentLoading ? 'Opening checkout...' : 'Pay $50 application fee'}
+                </button>
+              </div>
+              {paymentError ? (
+                <div className="mt-4 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+                  {paymentError}
+                </div>
+              ) : null}
+            </div>
+          ) : null}
+
           <div className="mt-8 flex flex-col gap-3">
-            <a href="/apply" className="inline-block w-full rounded-full border border-slate-200 bg-white px-6 py-3 text-center text-sm font-semibold text-slate-700 hover:border-slate-300 hover:bg-slate-50 transition">
+            <a href="/apply" onClick={clearStoredSubmission} className="inline-block w-full rounded-full border border-slate-200 bg-white px-6 py-3 text-center text-sm font-semibold text-slate-700 hover:border-slate-300 hover:bg-slate-50 transition">
               Submit another application
             </a>
             <a href="/" className="inline-block w-full rounded-full bg-slate-900 px-6 py-3 text-center text-sm font-semibold text-white hover:bg-slate-800 transition">
