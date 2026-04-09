@@ -1240,62 +1240,64 @@ function PaymentsPanel({ resident, onResidentUpdated, highlightCategory }) {
               Payment history could not be loaded from Airtable right now, but checkout is still available below.
             </div>
           ) : null}
-          <div className="grid gap-4 lg:grid-cols-[1.2fr_0.8fr]">
-            <div className="space-y-4">
-              <div className="rounded-[24px] border border-slate-200 bg-slate-50 p-5">
-                <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">Rent Due</div>
-                <div className="mt-3 flex flex-wrap items-end justify-between gap-4">
-                  <div>
-                    <div className="text-3xl font-black text-slate-900">
-                      {effectiveNextDue ? formatMoney(effectiveNextDue.Amount) : '$0'}
-                    </div>
-                    <div className="mt-1 text-sm text-slate-500">
-                      {effectiveNextDue
-                        ? `${effectiveNextDue.Month || 'Current rent'}${effectiveNextDue['Due Date'] ? ` • Due ${formatDate(effectiveNextDue['Due Date'])}` : ''}`
-                        : 'No rent currently due'}
-                    </div>
-                  </div>
-                  <button
-                    type="button"
-                    disabled={!effectiveNextDue || actionLoading === 'rent'}
-                    onClick={() => launchCheckout({
-                      amount: Number(effectiveNextDue?.Amount || 0),
-                      description: effectiveNextDue?.Month ? `Rent payment - ${effectiveNextDue.Month}` : 'Rent payment',
-                      category: 'rent',
-                      paymentRecordId: effectiveNextDue?.id,
-                    })}
-                    className="rounded-full bg-slate-900 px-5 py-3 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
-                  >
-                    {actionLoading === 'rent' ? 'Opening checkout...' : 'Pay rent'}
-                  </button>
+          <div className="rounded-[24px] border border-slate-200 bg-[linear-gradient(135deg,#ffffff_0%,#f8fafc_100%)] p-6">
+            <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
+              <div className="max-w-2xl">
+                <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">Current Due</div>
+                <div className="mt-3 text-4xl font-black tracking-tight text-slate-900">
+                  {effectiveNextDue ? formatMoney(effectiveNextDue.Amount) : '$0'}
+                </div>
+                <div className="mt-2 text-sm leading-6 text-slate-500">
+                  {effectiveNextDue
+                    ? `${effectiveNextDue.Month || 'Current rent'}${effectiveNextDue['Due Date'] ? ` • Due ${formatDate(effectiveNextDue['Due Date'])}` : ''}`
+                    : 'No rent currently due'}
+                </div>
+                <div className="mt-3 inline-flex items-center rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600">
+                  Secure Stripe checkout opens directly inside the portal
                 </div>
               </div>
 
-              <div className="rounded-[24px] border border-slate-200 bg-white p-5">
-                <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">Payment Summary</div>
-                <div className="mt-3 space-y-2 text-sm text-slate-600">
-                  <div>Outstanding balance: {outstanding > 0 ? `$${outstanding.toLocaleString()}` : '$0'}</div>
-                  <div>Open fee items: {feePayments.length}</div>
-                  <div>Payment records: {payments.length}</div>
-                </div>
+              <div className="flex flex-wrap gap-3">
+                <button
+                  type="button"
+                  disabled={!effectiveNextDue || actionLoading === 'rent'}
+                  onClick={() => launchCheckout({
+                    amount: Number(effectiveNextDue?.Amount || 0),
+                    description: effectiveNextDue?.Month ? `Rent payment - ${effectiveNextDue.Month}` : 'Rent payment',
+                    category: 'rent',
+                    paymentRecordId: effectiveNextDue?.id,
+                  })}
+                  className="rounded-full bg-slate-900 px-5 py-3 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {actionLoading === 'rent' ? 'Opening checkout...' : 'Pay rent'}
+                </button>
+                <button
+                  type="button"
+                  disabled={actionLoading === 'portal'}
+                  onClick={openPortal}
+                  className="rounded-full border border-slate-300 bg-white px-5 py-3 text-sm font-semibold text-slate-700 transition hover:border-slate-500 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {actionLoading === 'portal' ? 'Opening portal...' : 'Billing portal'}
+                </button>
               </div>
             </div>
 
-            <div className="grid gap-4 sm:grid-cols-3 lg:grid-cols-1">
-              <div className="rounded-2xl bg-slate-50 px-4 py-4">
+            <div className="mt-5 grid gap-3 sm:grid-cols-3">
+              <div className="rounded-2xl border border-slate-200 bg-white px-4 py-4">
                 <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">Outstanding Balance</div>
                 <div className={classNames('mt-2 text-2xl font-black', outstanding > 0 ? 'text-red-600' : 'text-emerald-600')}>
                   {outstanding > 0 ? `$${outstanding.toLocaleString()}` : '$0'}
                 </div>
               </div>
-              <div className="rounded-2xl bg-slate-50 px-4 py-4">
+              <div className="rounded-2xl border border-slate-200 bg-white px-4 py-4">
                 <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">Next Due</div>
                 <div className="mt-2 text-lg font-black text-slate-900">{effectiveNextDue ? effectiveNextDue.Month || formatDate(effectiveNextDue['Due Date']) : '—'}</div>
                 {effectiveNextDue?.['Due Date'] && <div className="mt-0.5 text-xs text-slate-400">{formatDate(effectiveNextDue['Due Date'])}</div>}
               </div>
-              <div className="rounded-2xl bg-slate-50 px-4 py-4">
-                <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">Total Payments</div>
+              <div className="rounded-2xl border border-slate-200 bg-white px-4 py-4">
+                <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">Payment Records</div>
                 <div className="mt-2 text-lg font-black text-slate-900">{payments.length}</div>
+                <div className="mt-0.5 text-xs text-slate-400">{feePayments.length} open fee item{feePayments.length === 1 ? '' : 's'}</div>
               </div>
             </div>
           </div>
@@ -1303,9 +1305,9 @@ function PaymentsPanel({ resident, onResidentUpdated, highlightCategory }) {
           <div className="mt-4 grid gap-4 lg:grid-cols-[1fr_1fr]">
             <div className="rounded-[24px] border border-slate-200 bg-white p-5">
               <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">Other Fees & Fines</div>
+              <h3 className="mt-2 text-xl font-black text-slate-900">{formatMoney(feesDue)}</h3>
               <div className="mt-3 flex flex-wrap items-end justify-between gap-4">
                 <div>
-                  <div className="text-2xl font-black text-slate-900">{formatMoney(feesDue)}</div>
                   <div className="mt-1 text-sm text-slate-500">
                     {feePayments.length > 0 ? `${feePayments.length} open item${feePayments.length === 1 ? '' : 's'}` : 'No open fees or fines'}
                   </div>
@@ -1348,6 +1350,7 @@ function PaymentsPanel({ resident, onResidentUpdated, highlightCategory }) {
               )}
             >
               <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">Lease Extension / Continue Lease</div>
+              <h3 className="mt-2 text-xl font-black text-slate-900">{formatMoney(leaseExtensionAmount)}</h3>
               <p className="mt-3 text-sm leading-6 text-slate-500">
                 Start your lease continuation here. We collect the next month of rent and utilities before the updated lease is finalized for signing.
               </p>
