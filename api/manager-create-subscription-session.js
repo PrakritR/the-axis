@@ -112,7 +112,7 @@ export default async function handler(req, res) {
     const form = new URLSearchParams({
       mode: 'subscription',
       ...(embedded
-        ? { ui_mode: 'embedded', return_url: `${baseUrl}/manager?setup=success&session_id={CHECKOUT_SESSION_ID}` }
+        ? { ui_mode: 'embedded_page', return_url: `${baseUrl}/manager?setup=success&session_id={CHECKOUT_SESSION_ID}` }
         : { success_url: `${baseUrl}/manager?setup=success&session_id={CHECKOUT_SESSION_ID}`, cancel_url: `${baseUrl}/join-us` }
       ),
       customer_email: normalizedEmail,

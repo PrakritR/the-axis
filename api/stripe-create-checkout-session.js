@@ -71,7 +71,7 @@ export default async function handler(req, res) {
     mode: 'payment',
     ...(embedded
       ? {
-          ui_mode: 'embedded',
+          ui_mode: 'embedded_page',
           return_url: successUrl,
         }
       : {
