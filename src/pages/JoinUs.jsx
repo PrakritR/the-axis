@@ -282,7 +282,7 @@ export default function JoinUs() {
               <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
                 <div>
                   <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-[#2563eb]">
-                    {selectedPlan === 'free' ? 'Account setup' : 'Checkout'}
+                    {selectedPlan === 'free' ? 'Free' : 'Get started'}
                   </div>
                   <h2 className="mt-2 text-3xl font-black tracking-[-0.04em] text-slate-900 sm:text-4xl">
                     {selectedPlanMeta.name}
@@ -338,12 +338,12 @@ export default function JoinUs() {
 
               {selectedPlan !== 'free' ? (
                 <div className="md:col-span-2">
-                  <label className="mb-2 block text-sm font-semibold text-slate-700">Promo code</label>
+                  <label className="mb-2 block text-sm font-semibold text-slate-700">Code</label>
                   <input
                     type="text"
                     value={managerForm.promoCode}
                     onChange={(event) => setManagerForm((current) => ({ ...current, promoCode: event.target.value.toUpperCase() }))}
-                    placeholder={DEFAULT_PROMO_CODE}
+                    placeholder="Optional"
                     className="w-full rounded-[20px] border border-slate-200 bg-white px-5 py-4 text-base font-semibold uppercase tracking-[0.04em] text-slate-900 placeholder:text-slate-400 transition focus:border-[#2563eb] focus:outline-none focus:ring-2 focus:ring-[#2563eb]/20"
                   />
                 </div>
@@ -357,11 +357,7 @@ export default function JoinUs() {
 
               <div className="md:col-span-2 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
                 <p className="text-sm text-slate-500">
-                  {selectedPlan === 'free' || managerForm.promoCode.trim().toUpperCase() === DEFAULT_PROMO_CODE
-                    ? 'Promo code bypasses payment — goes straight to account setup.'
-                    : billingCycle === 'annual'
-                      ? 'Annual pricing includes the 20% discount.'
-                      : 'Your plan selection carries straight into checkout.'}
+                  {billingCycle === 'annual' && selectedPlan !== 'free' ? '20% off applied.' : ''}
                 </p>
                 <button
                   type="submit"
