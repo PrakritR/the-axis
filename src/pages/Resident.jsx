@@ -244,9 +244,9 @@ const authInputCls = 'w-full rounded-2xl border border-slate-200 px-4 py-3 text-
 
 function AuthCard({ children }) {
   return (
-    <div className="flex min-h-screen items-center justify-center bg-[linear-gradient(160deg,#f0fdf8_0%,#f8fafc_40%,#ffffff_100%)] px-4 py-12">
+    <div className="flex min-h-screen items-start justify-center bg-[linear-gradient(160deg,#f0fdf8_0%,#f8fafc_40%,#ffffff_100%)] px-4 pb-12 pt-8 sm:pt-12 lg:pt-16">
       <div className="w-full max-w-md">
-        <div className="mb-7 flex justify-center">
+        <div className="mb-5 flex justify-center sm:mb-6">
           <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-slate-900 shadow-lg">
             <svg className="h-5 w-5 text-white" fill="none" stroke="currentColor" strokeWidth={1.8} viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 12l8.954-8.955a1.5 1.5 0 012.092 0L21.75 12M4.5 9.75v10.125c0 .621.504 1.125 1.125 1.125H9.75v-4.875c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125V21h4.125c.621 0 1.125-.504 1.125-1.125V9.75" />
