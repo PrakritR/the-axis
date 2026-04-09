@@ -1,6 +1,11 @@
-const BASE_ID = import.meta.env.VITE_AIRTABLE_APPLICATIONS_BASE_ID || 'appNBX2inqfJMyqYV'
+// Applications base: Residents, Applications, Co-Signers, Announcements
+const APPS_BASE_ID = import.meta.env.VITE_AIRTABLE_APPLICATIONS_BASE_ID || 'appNBX2inqfJMyqYV'
+// Resident Portal base: Work Orders, Messages, Payments, Documents, Packages
+const PORTAL_BASE_ID = import.meta.env.VITE_AIRTABLE_BASE_ID || 'appol57LKtMKaQ75T'
 const API_KEY = import.meta.env.VITE_AIRTABLE_TOKEN
-const BASE_URL = `https://api.airtable.com/v0/${BASE_ID}`
+
+// Which tables live in which base
+const PORTAL_TABLES = new Set(['Work Orders', 'Messages', 'Payments', 'Documents', 'Packages'])
 
 const TABLES = {
   workOrders: 'Work Orders',
@@ -22,8 +27,12 @@ function headers() {
   }
 }
 
+function baseIdForTable(table) {
+  return PORTAL_TABLES.has(table) ? PORTAL_BASE_ID : APPS_BASE_ID
+}
+
 function tableUrl(table) {
-  return `${BASE_URL}/${encodeURIComponent(table)}`
+  return `https://api.airtable.com/v0/${baseIdForTable(table)}/${encodeURIComponent(table)}`
 }
 
 function buildUrl(table, params = {}) {
@@ -33,8 +42,7 @@ function buildUrl(table, params = {}) {
       url.searchParams.set(key, value)
     }
   })
-  return url.toString()
-}
+  return url.toString()}
 
 async function request(url, options = {}) {
   const response = await fetch(url, {
@@ -48,7 +56,7 @@ async function request(url, options = {}) {
   if (!response.ok) {
     const body = await response.text()
     if (body.includes('INVALID_PERMISSIONS_OR_MODEL_NOT_FOUND')) {
-      throw new Error(`Airtable token does not have access to base ${BASE_ID}. Go to airtable.com/create/tokens, edit your token, and add your base with data.records:read + data.records:write scopes.`)
+      throw new Error(`Airtable token does not have access to this base. Go to airtable.com/create/tokens, edit your token, and add your bases with data.records:read + data.records:write scopes.`)
     }
     throw new Error(body)
   }
@@ -213,7 +221,7 @@ async function uploadAttachmentToRecord(table, recordId, fieldName, file) {
   formData.append('contentType', file.type || 'application/octet-stream')
 
   const response = await fetch(
-    `https://content.airtable.com/v0/${BASE_ID}/${encodeURIComponent(table)}/${recordId}/${encodeURIComponent(fieldName)}/uploadAttachment`,
+    `https://content.airtable.com/v0/${baseIdForTable(table)}/${encodeURIComponent(table)}/${recordId}/${encodeURIComponent(fieldName)}/uploadAttachment`,
     {
       method: 'POST',
       headers: { Authorization: `Bearer ${API_KEY}` },
@@ -356,7 +364,7 @@ export async function signLease(applicationRecordId, signatureText) {
 // Returns currently active signed leases — used to overlay dynamic room unavailability
 export async function getSignedLeases() {
   const formula = `AND({Lease Signed} = TRUE(), IS_AFTER({Lease End Date}, TODAY()))`
-  const url = new URL(`https://api.airtable.com/v0/${BASE_ID}/Applications`)
+  const url = new URL(`https://api.airtable.com/v0/${APPS_BASE_ID}/Applications`)
   url.searchParams.set('filterByFormula', formula)
   url.searchParams.set('fields[]', 'Property Name')
   url.searchParams.set('fields[]', 'Room Number')
@@ -370,7 +378,7 @@ export async function getSignedLeases() {
 }
 
 export const airtableReady = Boolean(
-  BASE_ID &&
+  APPS_BASE_ID &&
   API_KEY &&
   API_KEY !== 'your_airtable_token'
 )

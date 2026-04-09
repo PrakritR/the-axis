@@ -1431,85 +1431,93 @@ function LeasingPanel({ resident, onOpenPayments }) {
   const leaseTermLabel = getLeaseTermLabel(resident)
   const isMonthToMonth = leaseTermLabel.toLowerCase().includes('month-to-month')
   const leaseSigningUrl = resolveLeaseSigningUrl(resident)
+  const moveInLabel = resident['Lease Start Date'] ? formatDate(resident['Lease Start Date']) : '—'
+  const moveOutLabel = resident['Lease End Date'] ? formatDate(resident['Lease End Date']) : (isMonthToMonth ? 'No fixed end date' : '—')
 
   return (
     <SectionCard title="Leasing" description="Review your current lease details and continue your lease through the payment flow.">
-      <div className="grid gap-4 lg:grid-cols-[1.2fr_0.8fr]">
-        <div className="space-y-4">
-          <div className="rounded-[24px] border border-slate-200 bg-white p-5">
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <div>
-                <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">Lease Type</div>
-                <div className="mt-2 text-2xl font-black text-slate-900">{leaseTermLabel}</div>
+      <div className="space-y-5">
+        <div className="rounded-[24px] border border-slate-200 bg-[linear-gradient(135deg,#ffffff_0%,#f8fafc_100%)] p-6">
+          <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
+            <div className="max-w-2xl">
+              <div className="flex flex-wrap items-center gap-2">
+                <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">Current Lease</div>
+                {isMonthToMonth ? (
+                  <span className="rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-700">
+                    Month-to-Month
+                  </span>
+                ) : null}
               </div>
-              {isMonthToMonth ? (
-                <span className="rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-700">
-                  Month-to-Month
-                </span>
-              ) : null}
+              <div className="mt-3 text-3xl font-black tracking-tight text-slate-900">{leaseTermLabel}</div>
+              <p className="mt-3 max-w-xl text-sm leading-6 text-slate-500">
+                Your lease details live here, while renewals and any required continuation charges flow through Payments before lease signing.
+              </p>
             </div>
-            <p className="mt-3 text-sm leading-6 text-slate-500">
-              Lease dates and term details are locked here. Any extension or lease change should go through the leasing flow and related payment steps.
-            </p>
-          </div>
 
-          <div className="rounded-[24px] border border-slate-200 bg-slate-50 p-5">
-            <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">Lease Dates</div>
-            <div className="mt-4 grid gap-3 sm:grid-cols-2">
-              <div className="rounded-2xl bg-white px-4 py-4">
-                <div className="text-xs text-slate-400">Move-in</div>
-                <div className="mt-1 text-lg font-bold text-slate-900">{resident['Lease Start Date'] ? formatDate(resident['Lease Start Date']) : '—'}</div>
+            <div className="grid min-w-[280px] gap-3 sm:grid-cols-2 lg:w-[380px] lg:grid-cols-2">
+              <div className="rounded-2xl border border-slate-200 bg-white px-4 py-4">
+                <div className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-400">Move-in</div>
+                <div className="mt-2 text-xl font-black text-slate-900">{moveInLabel}</div>
               </div>
-              <div className="rounded-2xl bg-white px-4 py-4">
-                <div className="text-xs text-slate-400">Move-out</div>
-                <div className="mt-1 text-lg font-bold text-slate-900">{resident['Lease End Date'] ? formatDate(resident['Lease End Date']) : (isMonthToMonth ? 'No fixed end date' : '—')}</div>
+              <div className="rounded-2xl border border-slate-200 bg-white px-4 py-4">
+                <div className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-400">Move-out</div>
+                <div className="mt-2 text-xl font-black text-slate-900">{moveOutLabel}</div>
               </div>
             </div>
-          </div>
-
-          <div className="rounded-[24px] border border-slate-200 bg-white p-5">
-            <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">Lease Signing</div>
-            <h3 className="mt-2 text-xl font-black text-slate-900">Review & Sign with DocuSign</h3>
-            <p className="mt-3 text-sm leading-6 text-slate-500">
-              Your lease can be prepared and sent through DocuSign for this resident. Once your updated lease is ready, sign it from the secure document session below.
-            </p>
-            {leaseSigningUrl ? (
-              <button
-                type="button"
-                onClick={() => { window.location.href = leaseSigningUrl }}
-                className="mt-4 rounded-full border border-slate-300 px-5 py-3 text-sm font-semibold text-slate-700 transition hover:border-slate-500"
-              >
-                Open DocuSign lease
-              </button>
-            ) : (
-              <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-500">
-                Add a resident-specific DocuSign signing URL to this resident record to enable in-portal lease signing.
-              </div>
-            )}
           </div>
         </div>
 
-        <div className="space-y-4">
+        <div className="grid gap-4 lg:grid-cols-[1.05fr_0.95fr]">
           <div className="rounded-[24px] border border-slate-200 bg-white p-5">
-            <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">Lease Actions</div>
+            <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">Lease Signing</div>
+            <h3 className="mt-2 text-xl font-black text-slate-900">Review & Sign</h3>
+            <p className="mt-3 text-sm leading-6 text-slate-500">
+              Once your updated lease is prepared, you can review and sign it here through DocuSign.
+            </p>
+            {leaseSigningUrl ? (
+              <div className="mt-4 flex flex-wrap gap-3">
+                <button
+                  type="button"
+                  onClick={() => { window.location.href = leaseSigningUrl }}
+                  className="rounded-full border border-slate-300 px-5 py-3 text-sm font-semibold text-slate-700 transition hover:border-slate-500"
+                >
+                  Open DocuSign lease
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onOpenPayments('extension')}
+                  className="rounded-full bg-slate-900 px-5 py-3 text-sm font-semibold text-white transition hover:bg-slate-800"
+                >
+                  Extend lease
+                </button>
+              </div>
+            ) : (
+              <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-500">
+                A resident-specific DocuSign signing link will appear here once leasing prepares your updated document.
+              </div>
+            )}
+          </div>
+
+          <div className="rounded-[24px] border border-slate-200 bg-slate-50 p-5">
+            <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">Next Step</div>
             <h3 className="mt-2 text-xl font-black text-slate-900">Extend or Continue Lease</h3>
             <p className="mt-3 text-sm leading-6 text-slate-500">
-              Start lease continuation from the payment flow. Required continuation charges are collected there first, and then the updated lease can be signed through DocuSign.
+              Go straight to Payments to handle continuation charges. After payment, leasing can finalize the updated document for signature.
             </p>
             <button
               type="button"
               onClick={() => onOpenPayments('extension')}
               className="mt-4 rounded-full bg-slate-900 px-5 py-3 text-sm font-semibold text-white transition hover:bg-slate-800"
             >
-              Extend lease in Payments
+              Continue in Payments
             </button>
-          </div>
 
-          <div className="rounded-[24px] border border-amber-200 bg-amber-50 p-5">
-            <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-amber-700">Locked in Profile</div>
-            <p className="mt-2 text-sm leading-6 text-amber-800">
-              House, unit, move-in date, move-out date, and lease type are not editable from profile. That keeps leasing records aligned with your payment and approval flow.
-            </p>
+            <div className="mt-5 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3">
+              <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-amber-700">Locked in Profile</div>
+              <p className="mt-2 text-sm leading-6 text-amber-800">
+                House, unit, move-in date, move-out date, and lease type stay locked here so leasing records stay aligned with approval and payment.
+              </p>
+            </div>
           </div>
         </div>
       </div>
