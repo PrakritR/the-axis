@@ -91,7 +91,7 @@ export default async function handler(req, res) {
     return res.status(500).json({ error: 'STRIPE_SECRET_KEY is not configured on the server yet.' })
   }
 
-  const { email, name, phone, promoCode, planType, billingInterval } = req.body || {}
+  const { email, name, phone, promoCode, planType, billingInterval, embedded } = req.body || {}
   const normalizedEmail = String(email || '').trim().toLowerCase()
   const normalizedName = String(name || '').trim()
   const normalizedPhone = String(phone || '').trim()
@@ -111,8 +111,10 @@ export default async function handler(req, res) {
     const baseUrl = getBaseUrl(req)
     const form = new URLSearchParams({
       mode: 'subscription',
-      success_url: `${baseUrl}/manager?setup=success&session_id={CHECKOUT_SESSION_ID}`,
-      cancel_url: `${baseUrl}/join-us`,
+      ...(embedded
+        ? { ui_mode: 'embedded', return_url: `${baseUrl}/manager?setup=success&session_id={CHECKOUT_SESSION_ID}` }
+        : { success_url: `${baseUrl}/manager?setup=success&session_id={CHECKOUT_SESSION_ID}`, cancel_url: `${baseUrl}/join-us` }
+      ),
       customer_email: normalizedEmail,
       'line_items[0][price]': priceId,
       'line_items[0][quantity]': '1',
@@ -152,7 +154,7 @@ export default async function handler(req, res) {
     }
 
     const session = JSON.parse(text)
-    return res.status(200).json({ url: session.url, id: session.id })
+    return res.status(200).json({ url: session.url, id: session.id, client_secret: session.client_secret })
   } catch (err) {
     console.error('Subscription session error:', err)
     return res.status(500).json({ error: err?.message || 'Could not start checkout.' })

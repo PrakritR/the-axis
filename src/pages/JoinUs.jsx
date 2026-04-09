@@ -1,5 +1,6 @@
-import { useState, useCallback } from 'react'
+import { useState } from 'react'
 import { Seo } from '../lib/seo'
+import { EmbeddedStripeCheckout } from '../components/EmbeddedStripeCheckout'
 
 const DOWNLOAD_URL = import.meta.env.VITE_AXIS_DOWNLOAD_URL || import.meta.env.VITE_AXIS_DOWNLOAD_MAC_URL || ''
 const DEFAULT_PROMO_CODE = 'FIRST20'
@@ -144,6 +145,7 @@ export default function JoinUs() {
   const [managerError, setManagerError] = useState('')
   const [managerId, setManagerId] = useState('')
   const [copiedId, setCopiedId] = useState(false)
+  const [embeddedCheckout, setEmbeddedCheckout] = useState(null)
   const [downloadNotice, setDownloadNotice] = useState('')
 
   const selectedPlanMeta = PLANS.find((plan) => plan.id === selectedPlan) || PLANS[1]
@@ -203,21 +205,16 @@ export default function JoinUs() {
         return
       }
 
-      const res = await fetch('/api/manager-create-subscription-session', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          name: normalizedName,
-          email: normalizedEmail,
-          phone: normalizedPhone,
-          promoCode: normalizedPromoCode,
-          planType: selectedPlan,
-          billingInterval: billingCycle,
-        }),
+      setEmbeddedCheckout({
+        name: normalizedName,
+        email: normalizedEmail,
+        phone: normalizedPhone,
+        promoCode: normalizedPromoCode,
+        planType: selectedPlan,
+        billingInterval: billingCycle,
       })
-      const data = await res.json()
-      if (!res.ok) throw new Error(data.error || 'Could not start checkout.')
-      window.location.href = data.url
+      setManagerLoading(false)
+      return
     } catch (err) {
       setManagerError(err.message || 'Could not start checkout.')
       setManagerLoading(false)
@@ -230,6 +227,15 @@ export default function JoinUs() {
         title="Join Axis | Axis"
         description="Choose a tier and get started with Axis."
         pathname="/join-us"
+      />
+
+      <EmbeddedStripeCheckout
+        open={!!embeddedCheckout}
+        title={`${selectedPlanMeta.name} — ${selectedPlanMeta.prices[billingCycle].value}${selectedPlanMeta.prices[billingCycle].suffix}`}
+        apiEndpoint="/api/manager-create-subscription-session"
+        checkoutRequest={embeddedCheckout}
+        onClose={() => { setEmbeddedCheckout(null); setManagerLoading(false) }}
+        onComplete={() => { window.location.href = '/manager?setup=success' }}
       />
 
       {managerId ? (

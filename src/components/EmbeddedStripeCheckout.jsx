@@ -26,7 +26,7 @@ function loadStripeJs() {
   return stripeScriptPromise
 }
 
-export function EmbeddedStripeCheckout({ open, title, checkoutRequest, onClose, onComplete }) {
+export function EmbeddedStripeCheckout({ open, title, checkoutRequest, apiEndpoint, onClose, onComplete }) {
   const containerRef = useRef(null)
   const embeddedRef = useRef(null)
   const [loading, setLoading] = useState(false)
@@ -55,7 +55,8 @@ export function EmbeddedStripeCheckout({ open, title, checkoutRequest, onClose, 
         if (!StripeCtor) throw new Error('Stripe.js failed to initialize.')
 
         const stripe = StripeCtor(publishableKey)
-        const response = await fetch('/api/stripe-create-checkout-session', {
+        const endpoint = apiEndpoint || '/api/stripe-create-checkout-session'
+        const response = await fetch(endpoint, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ ...(checkoutRequest || {}), embedded: true }),
