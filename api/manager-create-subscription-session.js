@@ -55,8 +55,8 @@ export default async function handler(req, res) {
   const normalizedName = String(name || '').trim()
   const normalizedPromoCode = String(promoCode || '').trim().toUpperCase()
 
-  if (!normalizedEmail) {
-    return res.status(400).json({ error: 'Email is required to start manager setup.' })
+  if (!normalizedName || !normalizedEmail) {
+    return res.status(400).json({ error: 'Manager name and email are required to start manager setup.' })
   }
 
   const baseUrl = getBaseUrl(req)

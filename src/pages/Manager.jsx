@@ -22,6 +22,7 @@ import toast from 'react-hot-toast'
 
 // ─── Session ──────────────────────────────────────────────────────────────────
 const MANAGER_SESSION_KEY = 'axis_manager'
+const MANAGER_ONBOARDING_KEY = 'axis_manager_onboarding'
 
 // ─── Airtable config — same base as the rest of the portal ───────────────────
 const AIRTABLE_TOKEN = import.meta.env.VITE_AIRTABLE_TOKEN
@@ -174,45 +175,177 @@ function StatusBadge({ status, size = 'sm' }) {
   )
 }
 
+function ManagerPasswordInput({ value, onChange, placeholder, autoComplete }) {
+  const [show, setShow] = useState(false)
+
+  return (
+    <div className="relative">
+      <input
+        type={show ? 'text' : 'password'}
+        value={value}
+        onChange={onChange}
+        required
+        autoComplete={autoComplete || 'current-password'}
+        placeholder={placeholder || '••••••••'}
+        className="w-full rounded-[24px] border border-slate-200 bg-slate-50 px-5 py-4 pr-12 text-base text-slate-900 placeholder:text-slate-400 transition focus:border-[#0ea5a4] focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#0ea5a4]/20"
+      />
+      <button
+        type="button"
+        onClick={() => setShow((current) => !current)}
+        tabIndex={-1}
+        className="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400 transition hover:text-slate-700"
+      >
+        {show ? (
+          <svg className="h-4.5 w-4.5" fill="none" stroke="currentColor" strokeWidth={1.8} viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M3.98 8.223A10.477 10.477 0 001.934 12C3.226 16.338 7.244 19.5 12 19.5c.993 0 1.953-.138 2.863-.395M6.228 6.228A10.45 10.45 0 0112 4.5c4.756 0 8.773 3.162 10.065 7.498a10.523 10.523 0 01-4.293 5.774M6.228 6.228L3 3m3.228 3.228l3.65 3.65m7.894 7.894L21 21m-3.228-3.228l-3.65-3.65m0 0a3 3 0 10-4.243-4.243m4.242 4.242L9.88 9.88" />
+          </svg>
+        ) : (
+          <svg className="h-4.5 w-4.5" fill="none" stroke="currentColor" strokeWidth={1.8} viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M2.036 12.322a1.012 1.012 0 010-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178z" />
+            <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+          </svg>
+        )}
+      </button>
+    </div>
+  )
+}
+
+function ManagerStep({ number, title, description, children, tone = 'default' }) {
+  const tones = {
+    default: 'border-slate-200 bg-slate-50',
+    success: 'border-emerald-200 bg-emerald-50',
+  }
+
+  return (
+    <div className={`rounded-[28px] border p-5 ${tones[tone] || tones.default}`}>
+      <div className="flex items-start gap-4">
+        <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-sm font-black ${tone === 'success' ? 'bg-emerald-600 text-white' : 'bg-white text-slate-900'}`}>
+          {number}
+        </div>
+        <div className="min-w-0 flex-1">
+          <h3 className="text-lg font-black text-slate-900">{title}</h3>
+          <p className="mt-1 text-sm leading-6 text-slate-500">{description}</p>
+          <div className="mt-4">{children}</div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // ─── ManagerLogin ─────────────────────────────────────────────────────────────
 function ManagerLogin({ onLogin }) {
-  const searchParams = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null
-  const initialMode = searchParams?.get('setup') === 'success' ? 'signup' : 'login'
-  const [mode, setMode] = useState(initialMode)
-  const [name, setName] = useState('')
-  const [email, setEmail] = useState('')
-  const [password, setPassword] = useState('')
-  const [promoCode, setPromoCode] = useState('FIRST20')
-  const [loading, setLoading] = useState(false)
-  const [setupLoading, setSetupLoading] = useState(false)
-  const [error, setError] = useState('')
+  const queryString = typeof window !== 'undefined' ? window.location.search : ''
+  const initialSearch = new URLSearchParams(queryString)
+  const [signInForm, setSignInForm] = useState({ email: '', password: '' })
+  const [subscriptionForm, setSubscriptionForm] = useState({ name: '', email: '', promoCode: 'FIRST20' })
+  const [activationForm, setActivationForm] = useState({ managerId: '', name: '', email: '', password: '' })
+  const [showActivation, setShowActivation] = useState(initialSearch.get('setup') === 'success')
+  const [subscriptionReady, setSubscriptionReady] = useState(false)
+  const [accountExists, setAccountExists] = useState(false)
   const [notice, setNotice] = useState('')
+  const [loginError, setLoginError] = useState('')
+  const [subscriptionError, setSubscriptionError] = useState('')
+  const [activationError, setActivationError] = useState('')
+  const [loginLoading, setLoginLoading] = useState(false)
+  const [subscriptionLoading, setSubscriptionLoading] = useState(false)
+  const [activationLoading, setActivationLoading] = useState(false)
+  const [setupLoading, setSetupLoading] = useState(false)
+
+  function persistOnboarding(nextData) {
+    try {
+      sessionStorage.setItem(MANAGER_ONBOARDING_KEY, JSON.stringify(nextData))
+    } catch {
+      // ignore session storage issues
+    }
+  }
+
+  function clearOnboarding() {
+    try {
+      sessionStorage.removeItem(MANAGER_ONBOARDING_KEY)
+    } catch {
+      // ignore session storage issues
+    }
+  }
+
+  function applyOnboardingState(data) {
+    const normalizedEmail = String(data.email || '').trim().toLowerCase()
+    const normalizedName = String(data.name || '').trim()
+    const normalizedManagerId = String(data.managerId || '').trim().toUpperCase()
+    const nextAccountExists = Boolean(data.accountExists)
+    const nextSubscriptionReady = Boolean(normalizedManagerId)
+
+    setSubscriptionReady(nextSubscriptionReady)
+    setAccountExists(nextAccountExists)
+    setShowActivation(nextSubscriptionReady && !nextAccountExists)
+    setSignInForm((current) => ({ ...current, email: normalizedEmail || current.email }))
+    setSubscriptionForm((current) => ({
+      ...current,
+      name: normalizedName || current.name,
+      email: normalizedEmail || current.email,
+    }))
+    setActivationForm((current) => ({
+      ...current,
+      managerId: normalizedManagerId || current.managerId,
+      name: normalizedName || current.name,
+      email: normalizedEmail || current.email,
+    }))
+
+    persistOnboarding({
+      name: normalizedName,
+      email: normalizedEmail,
+      managerId: normalizedManagerId,
+      promoCode: subscriptionForm.promoCode,
+      subscriptionReady: nextSubscriptionReady,
+      accountExists: nextAccountExists,
+    })
+  }
 
   useEffect(() => {
-    const sessionId = searchParams?.get('session_id') || ''
-    const setupState = searchParams?.get('setup') || ''
+    try {
+      const saved = sessionStorage.getItem(MANAGER_ONBOARDING_KEY)
+      if (!saved) return
+      const parsed = JSON.parse(saved)
+      applyOnboardingState(parsed)
+      if (parsed.promoCode) {
+        setSubscriptionForm((current) => ({ ...current, promoCode: parsed.promoCode }))
+      }
+    } catch {
+      clearOnboarding()
+    }
+  }, [])
+
+  useEffect(() => {
+    const searchParams = new URLSearchParams(queryString)
+    const sessionId = searchParams.get('session_id') || ''
+    const setupState = searchParams.get('setup') || ''
+
+    if (setupState === 'cancelled') {
+      setNotice('Manager subscription checkout was cancelled. You can restart it below whenever you are ready.')
+    }
+
     if (!sessionId || setupState !== 'success') return
 
     let cancelled = false
 
     async function completeSetup() {
-      setMode('signup')
       setSetupLoading(true)
-      setError('')
+      setSubscriptionError('')
+      setActivationError('')
       try {
         const res = await fetch(`/api/manager-subscription-complete?session_id=${encodeURIComponent(sessionId)}`)
         const data = await res.json()
         if (!res.ok) throw new Error(data.error || 'Could not verify the subscription.')
         if (cancelled) return
-        setEmail(data.email || '')
+
+        applyOnboardingState(data)
         setNotice(data.message || 'Subscription verified.')
-        if (data.accountExists) setMode('login')
 
         const nextUrl = new URL(window.location.href)
         nextUrl.searchParams.delete('session_id')
+        nextUrl.searchParams.delete('setup')
         window.history.replaceState({}, '', nextUrl.pathname + nextUrl.search)
       } catch (err) {
-        if (!cancelled) setError(err.message || 'Could not verify the subscription.')
+        if (!cancelled) setSubscriptionError(err.message || 'Could not verify the subscription.')
       } finally {
         if (!cancelled) setSetupLoading(false)
       }
@@ -220,262 +353,377 @@ function ManagerLogin({ onLogin }) {
 
     completeSetup()
     return () => { cancelled = true }
-  }, [searchParams])
+  }, [queryString])
 
-  useEffect(() => {
-    if (searchParams?.get('setup') === 'cancelled') {
-      setNotice('Manager subscription checkout was cancelled. Start the subscription again when you are ready.')
-    }
-  }, [searchParams])
-
-  function switchMode(nextMode) {
-    setMode(nextMode)
-    setError('')
-    setNotice('')
-  }
-
-  async function handleSubmit(e) {
-    e.preventDefault()
-    setError('')
-    setLoading(true)
+  async function handleSubmit(event) {
+    event.preventDefault()
+    setLoginError('')
+    setLoginLoading(true)
     try {
       const res = await fetch('/api/manager-auth', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: email.trim().toLowerCase(), password }),
+        body: JSON.stringify({
+          email: signInForm.email.trim().toLowerCase(),
+          password: signInForm.password,
+        }),
       })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || 'Login failed')
+      clearOnboarding()
       sessionStorage.setItem(MANAGER_SESSION_KEY, JSON.stringify(data.manager))
       onLogin(data.manager)
     } catch (err) {
-      setError(err.message)
+      setLoginError(err.message || 'Login failed')
     } finally {
-      setLoading(false)
+      setLoginLoading(false)
     }
   }
 
-  async function handleCreateAccount(e) {
-    e.preventDefault()
-    setError('')
-    setNotice('')
-    setLoading(true)
+  async function handleCreateAccount(event) {
+    event.preventDefault()
+    setActivationError('')
+    setActivationLoading(true)
     try {
       const res = await fetch('/api/manager-create-account', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          name,
-          email: email.trim().toLowerCase(),
-          password,
+          managerId: activationForm.managerId.trim().toUpperCase(),
+          name: activationForm.name.trim(),
+          email: activationForm.email.trim().toLowerCase(),
+          password: activationForm.password,
         }),
       })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || 'Could not create manager account')
+      clearOnboarding()
       sessionStorage.setItem(MANAGER_SESSION_KEY, JSON.stringify(data.manager))
       onLogin(data.manager)
     } catch (err) {
-      setError(err.message)
+      setActivationError(err.message || 'Could not create manager account')
     } finally {
-      setLoading(false)
+      setActivationLoading(false)
     }
   }
 
   async function startSubscriptionSetup() {
-    setError('')
+    const normalizedName = subscriptionForm.name.trim()
+    const normalizedEmail = subscriptionForm.email.trim().toLowerCase()
+    const normalizedPromoCode = subscriptionForm.promoCode.trim().toUpperCase()
+
+    if (!normalizedName || !normalizedEmail) {
+      setSubscriptionError('Name and email are required to start manager setup.')
+      return
+    }
+
     setNotice('')
-    setSetupLoading(true)
+    setSubscriptionError('')
+    setSubscriptionLoading(true)
+
+    persistOnboarding({
+      name: normalizedName,
+      email: normalizedEmail,
+      managerId: activationForm.managerId.trim().toUpperCase(),
+      promoCode: normalizedPromoCode,
+      subscriptionReady,
+      accountExists,
+    })
+
     try {
       const res = await fetch('/api/manager-create-subscription-session', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: email.trim().toLowerCase(), name, promoCode }),
+        body: JSON.stringify({ email: normalizedEmail, name: normalizedName, promoCode: normalizedPromoCode }),
       })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || 'Could not start manager setup.')
       window.location.href = data.url
     } catch (err) {
-      setError(err.message || 'Could not start manager setup.')
-      setSetupLoading(false)
+      setSubscriptionError(err.message || 'Could not start manager setup.')
+      setSubscriptionLoading(false)
     }
   }
 
+  function scrollToSignIn() {
+    document.getElementById('manager-signin-card')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  }
+
+  const subscriptionManagerId = activationForm.managerId.trim().toUpperCase()
+
   return (
-    <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 px-4 py-12">
-      <div className="w-full max-w-3xl">
-        {/* Brand mark */}
+    <div className="flex min-h-screen items-start justify-center bg-gradient-to-br from-slate-950 via-slate-900 to-slate-800 px-4 py-10 sm:px-6 sm:py-14">
+      <div className="w-full max-w-6xl">
         <div className="mb-10 text-center">
           <div className="inline-flex items-center gap-3">
-            <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-[#0ea5a4]">
+            <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-[#0ea5a4] shadow-[0_0_24px_rgba(14,165,164,0.35)]">
               <svg className="h-6 w-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                 <path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
               </svg>
             </div>
-            <span className="text-2xl font-black tracking-tight text-white">Axis Manager</span>
+            <span className="text-2xl font-black tracking-tight text-white sm:text-3xl">Axis Manager Portal</span>
           </div>
-          <p className="mt-2 text-sm text-slate-400">Lease review &amp; approval portal</p>
+          <p className="mx-auto mt-3 max-w-2xl text-sm leading-7 text-slate-300 sm:text-base">
+            Existing managers can sign in right away. New managers first start the recurring subscription, receive a manager ID, and then activate their account.
+          </p>
         </div>
 
-        {/* Login card */}
-        <div className="rounded-[32px] bg-white p-8 shadow-[0_25px_60px_rgba(0,0,0,0.35)] sm:p-10">
-          <div className="flex gap-1 rounded-[24px] border border-slate-100 bg-slate-50 p-1.5">
-            {[['login', 'Manager Login'], ['signup', 'Create account']].map(([id, label]) => (
-              <button
-                key={id}
-                type="button"
-                onClick={() => switchMode(id)}
-                className={classNames(
-                  'flex-1 rounded-[18px] px-4 py-3 text-base font-semibold transition',
-                  mode === id ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-900'
-                )}
-              >
-                {label}
-              </button>
-            ))}
-          </div>
+        <div className="grid gap-6 lg:grid-cols-[0.9fr_1.1fr]">
+          <section id="manager-signin-card" className="rounded-[32px] border border-white/10 bg-white p-7 shadow-[0_25px_60px_rgba(0,0,0,0.35)] sm:p-8">
+            <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-[#0ea5a4]">Existing manager</div>
+            <h1 className="mt-3 text-3xl font-black tracking-tight text-slate-900">Sign in</h1>
+            <p className="mt-3 text-sm leading-7 text-slate-500">
+              Use your email and password to open the manager portal, review leases, add houses, and manage resident operations.
+            </p>
 
-          <h1 className="mt-6 text-2xl font-black text-slate-900 sm:text-3xl">{mode === 'login' ? 'Manager login' : 'Create manager account'}</h1>
-          <p className="mt-2 text-base leading-7 text-slate-500">
-            {mode === 'login'
-              ? 'Sign in with your email and password.'
-              : 'Create your manager account here, then activate it with the recurring subscription below.'}
-          </p>
-
-          {notice ? (
-            <div className="mt-5 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
-              {notice}
-            </div>
-          ) : null}
-
-          {setupLoading ? (
-            <div className="mt-5 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
-              Verifying manager setup…
-            </div>
-          ) : null}
-
-          {mode === 'login' ? (
             <form onSubmit={handleSubmit} className="mt-7 space-y-5">
               <div>
                 <label className="mb-1.5 block text-sm font-semibold text-slate-700">Email</label>
                 <input
                   type="email"
-                  value={email}
-                  onChange={e => setEmail(e.target.value)}
+                  value={signInForm.email}
+                  onChange={(event) => setSignInForm((current) => ({ ...current, email: event.target.value }))}
                   required
                   autoComplete="email"
                   placeholder="you@axis-seattle.com"
                   className="w-full rounded-[24px] border border-slate-200 bg-slate-50 px-5 py-4 text-base text-slate-900 placeholder:text-slate-400 transition focus:border-[#0ea5a4] focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#0ea5a4]/20"
                 />
               </div>
+
               <div>
                 <label className="mb-1.5 block text-sm font-semibold text-slate-700">Password</label>
-                <input
-                  type="password"
-                  value={password}
-                  onChange={e => setPassword(e.target.value)}
-                  required
+                <ManagerPasswordInput
+                  value={signInForm.password}
+                  onChange={(event) => setSignInForm((current) => ({ ...current, password: event.target.value }))}
                   autoComplete="current-password"
-                  placeholder="••••••••"
-                  className="w-full rounded-[24px] border border-slate-200 bg-slate-50 px-5 py-4 text-base text-slate-900 placeholder:text-slate-400 transition focus:border-[#0ea5a4] focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#0ea5a4]/20"
                 />
               </div>
 
-              {error && (
+              {loginError ? (
                 <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-                  {error}
+                  {loginError}
                 </div>
-              )}
+              ) : null}
 
               <button
                 type="submit"
-                disabled={loading}
+                disabled={loginLoading}
                 className="w-full rounded-[24px] bg-slate-900 px-5 py-4 text-base font-semibold text-white transition hover:bg-[#0ea5a4] disabled:opacity-50"
               >
-                {loading ? 'Signing in…' : 'Sign in to manager portal'}
+                {loginLoading ? 'Signing in…' : 'Sign in to manager portal'}
               </button>
             </form>
-          ) : (
-            <form onSubmit={handleCreateAccount} className="mt-7 space-y-4">
-              <div>
-                <label className="mb-1.5 block text-sm font-semibold text-slate-700">Full name</label>
-                <input
-                  type="text"
-                  value={name}
-                  onChange={e => setName(e.target.value)}
-                  placeholder="Your name"
-                  className="w-full rounded-[24px] border border-slate-200 bg-slate-50 px-5 py-4 text-base text-slate-900 placeholder:text-slate-400 transition focus:border-[#0ea5a4] focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#0ea5a4]/20"
-                />
-              </div>
-              <div>
-                <label className="mb-1.5 block text-sm font-semibold text-slate-700">Email</label>
-                <input
-                  type="email"
-                  value={email}
-                  onChange={e => setEmail(e.target.value)}
-                  required
-                  autoComplete="email"
-                  placeholder="you@axis-seattle.com"
-                  className="w-full rounded-[24px] border border-slate-200 bg-slate-50 px-5 py-4 text-base text-slate-900 placeholder:text-slate-400 transition focus:border-[#0ea5a4] focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#0ea5a4]/20"
-                />
-              </div>
-              <div>
-                <label className="mb-1.5 block text-sm font-semibold text-slate-700">Create password</label>
-                <input
-                  type="password"
-                  value={password}
-                  onChange={e => setPassword(e.target.value)}
-                  required
-                  autoComplete="new-password"
-                  placeholder="Minimum 6 characters"
-                  className="w-full rounded-[24px] border border-slate-200 bg-slate-50 px-5 py-4 text-base text-slate-900 placeholder:text-slate-400 transition focus:border-[#0ea5a4] focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#0ea5a4]/20"
-                />
-              </div>
 
-              {error && (
-                <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-                  {error}
-                </div>
-              )}
+            <div className="mt-6 rounded-[24px] border border-slate-200 bg-slate-50 p-5">
+              <div className="text-sm font-semibold text-slate-900">Need manager access?</div>
+              <p className="mt-2 text-sm leading-6 text-slate-500">
+                Start the manager subscription on the right. After checkout, we generate your manager ID and bring you back here to activate the account.
+              </p>
+            </div>
+          </section>
 
-              <button
-                type="submit"
-                disabled={loading}
-                className="w-full rounded-[24px] bg-slate-900 px-5 py-4 text-base font-semibold text-white transition hover:bg-[#0ea5a4] disabled:opacity-50"
+          <section className="rounded-[32px] border border-white/10 bg-white p-7 shadow-[0_25px_60px_rgba(0,0,0,0.35)] sm:p-8">
+            <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-[#0ea5a4]">New manager setup</div>
+            <h2 className="mt-3 text-3xl font-black tracking-tight text-slate-900">Become a manager</h2>
+            <p className="mt-3 text-sm leading-7 text-slate-500">
+              Follow the three steps below. The sequence is simple: subscribe, receive your manager ID, then create your password and enter the portal.
+            </p>
+
+            {notice ? (
+              <div className="mt-6 rounded-[24px] border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
+                {notice}
+              </div>
+            ) : null}
+
+            {setupLoading ? (
+              <div className="mt-6 rounded-[24px] border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
+                Verifying manager subscription…
+              </div>
+            ) : null}
+
+            <div className="mt-6 space-y-4">
+              <ManagerStep
+                number="1"
+                title="Start the manager subscription"
+                description="Enter the manager name and email you want connected to the recurring subscription."
               >
-                {loading ? 'Creating account…' : 'Create manager account'}
-              </button>
-
-              <div className="rounded-[24px] border border-slate-200 bg-slate-50 p-5">
-                <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-[#0ea5a4]">Subscription</div>
-                <h2 className="mt-2 text-lg font-black text-slate-900">Activate manager access</h2>
-                <p className="mt-2 text-sm leading-6 text-slate-500">
-                  Complete the recurring manager subscription below. Once payment is active, you can create the account and sign in with this email and password.
-                </p>
-                <div className="mt-4">
-                  <label className="mb-1.5 block text-sm font-semibold text-slate-700">Promo code</label>
-                  <input
-                    type="text"
-                    value={promoCode}
-                    onChange={e => setPromoCode(e.target.value.toUpperCase())}
-                    placeholder="FIRST20"
-                    className="w-full rounded-[24px] border border-slate-200 bg-white px-5 py-4 text-base font-semibold uppercase tracking-[0.06em] text-slate-900 placeholder:text-slate-400 transition focus:border-[#0ea5a4] focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#0ea5a4]/20"
-                  />
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <div className="sm:col-span-2">
+                    <label className="mb-1.5 block text-sm font-semibold text-slate-700">Manager name</label>
+                    <input
+                      type="text"
+                      value={subscriptionForm.name}
+                      onChange={(event) => {
+                        const value = event.target.value
+                        setSubscriptionForm((current) => ({ ...current, name: value }))
+                        setActivationForm((current) => ({ ...current, name: value }))
+                      }}
+                      placeholder="Your name"
+                      className="w-full rounded-[24px] border border-slate-200 bg-white px-5 py-4 text-base text-slate-900 placeholder:text-slate-400 transition focus:border-[#0ea5a4] focus:outline-none focus:ring-2 focus:ring-[#0ea5a4]/20"
+                    />
+                  </div>
+                  <div className="sm:col-span-2">
+                    <label className="mb-1.5 block text-sm font-semibold text-slate-700">Email</label>
+                    <input
+                      type="email"
+                      value={subscriptionForm.email}
+                      onChange={(event) => {
+                        const value = event.target.value
+                        setSubscriptionForm((current) => ({ ...current, email: value }))
+                        setActivationForm((current) => ({ ...current, email: value }))
+                      }}
+                      placeholder="you@axis-seattle.com"
+                      autoComplete="email"
+                      className="w-full rounded-[24px] border border-slate-200 bg-white px-5 py-4 text-base text-slate-900 placeholder:text-slate-400 transition focus:border-[#0ea5a4] focus:outline-none focus:ring-2 focus:ring-[#0ea5a4]/20"
+                    />
+                  </div>
+                  <div className="sm:col-span-2">
+                    <label className="mb-1.5 block text-sm font-semibold text-slate-700">Promo code</label>
+                    <input
+                      type="text"
+                      value={subscriptionForm.promoCode}
+                      onChange={(event) => setSubscriptionForm((current) => ({ ...current, promoCode: event.target.value.toUpperCase() }))}
+                      placeholder="FIRST20"
+                      className="w-full rounded-[24px] border border-slate-200 bg-white px-5 py-4 text-base font-semibold uppercase tracking-[0.06em] text-slate-900 placeholder:text-slate-400 transition focus:border-[#0ea5a4] focus:outline-none focus:ring-2 focus:ring-[#0ea5a4]/20"
+                    />
+                  </div>
                 </div>
+
+                {subscriptionError ? (
+                  <div className="mt-4 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+                    {subscriptionError}
+                  </div>
+                ) : null}
+
                 <button
                   type="button"
                   onClick={startSubscriptionSetup}
-                  disabled={setupLoading || !email.trim()}
+                  disabled={subscriptionLoading}
                   className="mt-4 w-full rounded-[24px] bg-[#0ea5a4] px-5 py-4 text-base font-semibold text-white transition hover:bg-[#0b8a89] disabled:opacity-50"
                 >
-                  {setupLoading ? 'Starting checkout…' : 'Start recurring subscription'}
+                  {subscriptionLoading ? 'Starting checkout…' : 'Continue to recurring subscription'}
                 </button>
-              </div>
-            </form>
-          )}
+              </ManagerStep>
+
+              <ManagerStep
+                number="2"
+                title="Receive your manager ID"
+                description="After Stripe checkout, we generate your manager ID automatically and keep it tied to the manager record in Airtable."
+                tone={subscriptionReady ? 'success' : 'default'}
+              >
+                {subscriptionReady ? (
+                  <div className="rounded-[24px] border border-emerald-200 bg-white px-5 py-4">
+                    <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-emerald-600">Manager ID ready</div>
+                    <div className="mt-2 text-2xl font-black tracking-[0.08em] text-slate-900">{subscriptionManagerId}</div>
+                    <div className="mt-2 text-sm text-slate-500">{activationForm.email || subscriptionForm.email}</div>
+                  </div>
+                ) : (
+                  <div className="rounded-[24px] border border-dashed border-slate-300 bg-white px-5 py-4 text-sm leading-6 text-slate-500">
+                    Once checkout finishes, you will return here with your manager ID prefilled for the activation step.
+                  </div>
+                )}
+              </ManagerStep>
+
+              {accountExists ? (
+                <ManagerStep
+                  number="3"
+                  title="Account already active"
+                  description="This manager subscription already has an account. Sign in with your email and password to continue."
+                  tone="success"
+                >
+                  <button
+                    type="button"
+                    onClick={scrollToSignIn}
+                    className="rounded-[24px] border border-slate-200 bg-white px-5 py-3 text-sm font-semibold text-slate-700 transition hover:border-[#0ea5a4] hover:text-[#0ea5a4]"
+                  >
+                    Go to sign in
+                  </button>
+                </ManagerStep>
+              ) : (
+                <ManagerStep
+                  number="3"
+                  title="Activate your manager account"
+                  description="Use the manager ID from step 2, set your password, and open the portal."
+                >
+                  {!showActivation && !subscriptionReady ? (
+                    <div className="rounded-[24px] border border-dashed border-slate-300 bg-white px-5 py-4 text-sm leading-6 text-slate-500">
+                      Finish the subscription first. If you already paid on another tab, click below and enter the manager ID you received.
+                      <button
+                        type="button"
+                        onClick={() => setShowActivation(true)}
+                        className="mt-4 block rounded-[20px] border border-slate-200 px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:border-[#0ea5a4] hover:text-[#0ea5a4]"
+                      >
+                        I already have a manager ID
+                      </button>
+                    </div>
+                  ) : (
+                    <form onSubmit={handleCreateAccount} className="space-y-4">
+                      <div>
+                        <label className="mb-1.5 block text-sm font-semibold text-slate-700">Manager ID</label>
+                        <input
+                          type="text"
+                          value={activationForm.managerId}
+                          onChange={(event) => setActivationForm((current) => ({ ...current, managerId: event.target.value.toUpperCase() }))}
+                          required
+                          placeholder="MGR-XXXXXXXXXXXXXX"
+                          className="w-full rounded-[24px] border border-slate-200 bg-white px-5 py-4 text-base font-semibold uppercase tracking-[0.04em] text-slate-900 placeholder:text-slate-400 transition focus:border-[#0ea5a4] focus:outline-none focus:ring-2 focus:ring-[#0ea5a4]/20"
+                        />
+                      </div>
+                      <div>
+                        <label className="mb-1.5 block text-sm font-semibold text-slate-700">Manager name</label>
+                        <input
+                          type="text"
+                          value={activationForm.name}
+                          onChange={(event) => setActivationForm((current) => ({ ...current, name: event.target.value }))}
+                          placeholder="Your name"
+                          className="w-full rounded-[24px] border border-slate-200 bg-white px-5 py-4 text-base text-slate-900 placeholder:text-slate-400 transition focus:border-[#0ea5a4] focus:outline-none focus:ring-2 focus:ring-[#0ea5a4]/20"
+                        />
+                      </div>
+                      <div>
+                        <label className="mb-1.5 block text-sm font-semibold text-slate-700">Email</label>
+                        <input
+                          type="email"
+                          value={activationForm.email}
+                          onChange={(event) => setActivationForm((current) => ({ ...current, email: event.target.value }))}
+                          required
+                          autoComplete="email"
+                          placeholder="you@axis-seattle.com"
+                          className="w-full rounded-[24px] border border-slate-200 bg-white px-5 py-4 text-base text-slate-900 placeholder:text-slate-400 transition focus:border-[#0ea5a4] focus:outline-none focus:ring-2 focus:ring-[#0ea5a4]/20"
+                        />
+                      </div>
+                      <div>
+                        <label className="mb-1.5 block text-sm font-semibold text-slate-700">Create password</label>
+                        <ManagerPasswordInput
+                          value={activationForm.password}
+                          onChange={(event) => setActivationForm((current) => ({ ...current, password: event.target.value }))}
+                          autoComplete="new-password"
+                          placeholder="Minimum 6 characters"
+                        />
+                      </div>
+
+                      {activationError ? (
+                        <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+                          {activationError}
+                        </div>
+                      ) : null}
+
+                      <button
+                        type="submit"
+                        disabled={activationLoading}
+                        className="w-full rounded-[24px] bg-slate-900 px-5 py-4 text-base font-semibold text-white transition hover:bg-[#0ea5a4] disabled:opacity-50"
+                      >
+                        {activationLoading ? 'Creating account…' : 'Create manager account'}
+                      </button>
+                    </form>
+                  )}
+                </ManagerStep>
+              )}
+            </div>
+          </section>
         </div>
 
-        <p className="mt-6 text-center text-xs text-slate-500">
-          This portal is for Axis staff only. Residents:{' '}
+        <p className="mt-6 text-center text-xs text-slate-400">
+          Residents can sign in through the{' '}
           <a href="/resident" className="text-[#0ea5a4] hover:underline">resident portal →</a>
         </p>
       </div>
@@ -483,7 +731,7 @@ function ManagerLogin({ onLogin }) {
   )
 }
 
-function HouseManagementPanel() {
+function HouseManagementPanel({ onPropertiesChange }) {
   const [properties, setProperties] = useState([])
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
@@ -496,13 +744,15 @@ function HouseManagementPanel() {
   const loadProperties = useCallback(async () => {
     setLoading(true)
     try {
-      setProperties(await fetchPropertiesAdmin())
+      const records = await fetchPropertiesAdmin()
+      setProperties(records)
+      onPropertiesChange?.(records)
     } catch (err) {
       toast.error('Could not load houses: ' + err.message)
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [onPropertiesChange])
 
   useEffect(() => {
     loadProperties()
@@ -517,7 +767,11 @@ function HouseManagementPanel() {
         Address: form.address.trim(),
         ...(form.utilitiesFee ? { 'Utilities Fee': Number(form.utilitiesFee) } : {}),
       })
-      setProperties((current) => [created, ...current])
+      setProperties((current) => {
+        const next = [created, ...current]
+        onPropertiesChange?.(next)
+        return next
+      })
       setForm({ name: '', address: '', utilitiesFee: '' })
       toast.success('House added')
     } catch (err) {
@@ -617,9 +871,72 @@ function HouseManagementPanel() {
   )
 }
 
+function ManagerOperationsPanel({ manager, propertyCount, onGenerateDraft, onOpenBilling }) {
+  const cards = [
+    {
+      title: 'Add houses',
+      body: 'Create internal property records for new homes you want to manage through Axis.',
+      action: 'Go to house setup',
+      onClick: () => {
+        const target = document.getElementById('house-management')
+        target?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+      },
+    },
+    {
+      title: 'Generate leases',
+      body: 'Start a new lease draft for an approved resident and move it into review.',
+      action: 'Generate draft',
+      onClick: onGenerateDraft,
+    },
+    {
+      title: 'Manager subscription',
+      body: 'Open billing to manage the recurring manager subscription connected to this portal.',
+      action: 'Open billing',
+      onClick: onOpenBilling,
+    },
+  ]
+
+  return (
+    <section className="mb-8 rounded-[28px] border border-slate-200 bg-white p-6">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-[#0ea5a4]">Portal tools</div>
+          <h2 className="mt-2 text-2xl font-black text-slate-900">Manager operations</h2>
+          <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-500">
+            Use this portal to add houses, review applications through lease generation, manage leasing, and keep your manager subscription active.
+          </p>
+        </div>
+        <div className="rounded-[22px] border border-slate-200 bg-slate-50 px-4 py-3">
+          <div className="text-[11px] font-bold uppercase tracking-[0.14em] text-slate-400">Manager</div>
+          <div className="mt-1 text-sm font-semibold text-slate-900">{manager.name || manager.email}</div>
+          <div className="mt-1 text-xs text-slate-500">
+            {manager.managerId || 'Manager ID pending'} · {propertyCount} {propertyCount === 1 ? 'house' : 'houses'}
+          </div>
+        </div>
+      </div>
+
+      <div className="mt-6 grid gap-4 lg:grid-cols-3">
+        {cards.map((card) => (
+          <div key={card.title} className="rounded-[24px] border border-slate-200 bg-slate-50 p-5">
+            <h3 className="text-lg font-black text-slate-900">{card.title}</h3>
+            <p className="mt-2 text-sm leading-6 text-slate-500">{card.body}</p>
+            <button
+              type="button"
+              onClick={card.onClick}
+              className="mt-4 rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:border-[#0ea5a4] hover:text-[#0ea5a4]"
+            >
+              {card.action}
+            </button>
+          </div>
+        ))}
+      </div>
+    </section>
+  )
+}
+
 // ─── GenerateDraftModal ───────────────────────────────────────────────────────
 // Collects lease data and calls /api/generate-lease-draft
-function GenerateDraftModal({ manager, onClose, onGenerated }) {
+function GenerateDraftModal({ manager, propertyOptions, onClose, onGenerated }) {
   const [form, setForm] = useState({
     residentName: '',
     residentEmail: '',
@@ -670,8 +987,8 @@ function GenerateDraftModal({ manager, onClose, onGenerated }) {
         {/* Header */}
         <div className="flex items-start justify-between border-b border-slate-200 px-8 py-5">
           <div>
-            <h2 className="text-xl font-black text-slate-900">Generate AI Lease Draft</h2>
-            <p className="mt-0.5 text-sm text-slate-500">Fill in the details — Claude will write the full lease document.</p>
+            <h2 className="text-xl font-black text-slate-900">Generate lease draft</h2>
+            <p className="mt-0.5 text-sm text-slate-500">Choose the resident and property details, then generate the first lease draft for review.</p>
           </div>
           <button onClick={onClose} className="mt-0.5 rounded-xl p-2 text-slate-400 transition hover:bg-slate-100 hover:text-slate-700">
             <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -713,7 +1030,7 @@ function GenerateDraftModal({ manager, onClose, onGenerated }) {
                   <label className={labelCls}>Property *</label>
                   <select value={form.property} onChange={set('property')} required className={inputCls}>
                     <option value="">Select property…</option>
-                    {AXIS_PROPERTIES.map(p => <option key={p} value={p}>{p}</option>)}
+                    {propertyOptions.map((property) => <option key={property} value={property}>{property}</option>)}
                   </select>
                 </div>
                 <div>
@@ -802,6 +1119,7 @@ function ManagerDashboard({ manager, onOpenDraft, onSignOut }) {
   const [showGenerateModal, setShowGenerateModal] = useState(false)
   const [filters, setFilters] = useState({ status: '', property: '', resident: '' })
   const [propertyOptions, setPropertyOptions] = useState(DEFAULT_AXIS_PROPERTIES)
+  const [propertyCount, setPropertyCount] = useState(0)
   const [billingLoading, setBillingLoading] = useState(false)
 
   // Debounce the resident name search so we don't hammer Airtable on every keystroke
@@ -823,21 +1141,27 @@ function ManagerDashboard({ manager, onOpenDraft, onSignOut }) {
   }, [filters])
 
   useEffect(() => { loadDrafts() }, [loadDrafts])
+  const handlePropertiesChange = useCallback((records) => {
+    const nextRecords = Array.isArray(records) ? records : []
+    const names = nextRecords
+      .map((record) => record.Name || record.Property || record.Address || '')
+      .filter(Boolean)
+
+    setPropertyCount(nextRecords.length)
+    setPropertyOptions(Array.from(new Set([...DEFAULT_AXIS_PROPERTIES, ...names])))
+  }, [])
+
   useEffect(() => {
     let cancelled = false
     fetchPropertiesAdmin()
       .then((records) => {
-        if (cancelled) return
-        const names = records
-          .map((record) => record.Name || record.Property || record.Address || '')
-          .filter(Boolean)
-        setPropertyOptions(Array.from(new Set([...DEFAULT_AXIS_PROPERTIES, ...names])))
+        if (!cancelled) handlePropertiesChange(records)
       })
       .catch(() => {
-        if (!cancelled) setPropertyOptions(DEFAULT_AXIS_PROPERTIES)
+        if (!cancelled) handlePropertiesChange([])
       })
     return () => { cancelled = true }
-  }, [])
+  }, [handlePropertiesChange])
 
   // Per-status counts shown in the stat cards above the table
   const statusCounts = useMemo(() => {
@@ -883,7 +1207,7 @@ function ManagerDashboard({ manager, onOpenDraft, onSignOut }) {
             </div>
             <div>
               <span className="text-base font-black text-slate-900">Axis Manager Portal</span>
-              <span className="ml-2 text-sm text-slate-400">Lease Review &amp; Approval</span>
+              <span className="ml-2 text-sm text-slate-400">Operations, houses &amp; leasing</span>
             </div>
           </div>
           <div className="flex items-center gap-3">
@@ -931,7 +1255,7 @@ function ManagerDashboard({ manager, onOpenDraft, onSignOut }) {
 
         {/* Toolbar */}
         <div className="mb-5 flex flex-wrap items-center gap-3">
-          <h2 className="mr-auto text-xl font-black text-slate-900">Lease Queue</h2>
+          <h2 className="mr-auto text-xl font-black text-slate-900">Lease queue</h2>
 
           {/* Resident search */}
           <div className="relative">
@@ -979,8 +1303,15 @@ function ManagerDashboard({ manager, onOpenDraft, onSignOut }) {
           </button>
         </div>
 
-        <div className="mb-8">
-          <HouseManagementPanel />
+        <ManagerOperationsPanel
+          manager={manager}
+          propertyCount={propertyCount}
+          onGenerateDraft={() => setShowGenerateModal(true)}
+          onOpenBilling={handleBillingPortal}
+        />
+
+        <div id="house-management" className="mb-8 scroll-mt-24">
+          <HouseManagementPanel onPropertiesChange={handlePropertiesChange} />
         </div>
 
         {/* Drafts table */}
@@ -1051,13 +1382,14 @@ function ManagerDashboard({ manager, onOpenDraft, onSignOut }) {
 
         {/* Attribution footer */}
         <p className="mt-6 text-center text-xs text-slate-400">
-          Axis Manager Portal · Lease drafts are AI-generated and must be reviewed before publication · {new Date().getFullYear()}
+          Axis Manager Portal · Manage houses, generate leases, and review drafts before publication · {new Date().getFullYear()}
         </p>
       </div>
 
       {showGenerateModal && (
         <GenerateDraftModal
           manager={manager}
+          propertyOptions={propertyOptions}
           onClose={() => setShowGenerateModal(false)}
           onGenerated={handleGenerated}
         />

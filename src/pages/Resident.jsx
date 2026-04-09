@@ -329,23 +329,34 @@ function PasswordInput({ value, onChange, placeholder, autoComplete }) {
   )
 }
 
+function AccessPane({ eyebrow, title, description, children }) {
+  return (
+    <div className="rounded-[28px] border border-slate-200 bg-slate-50 p-5 sm:p-6">
+      <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-[#0b8a89]">{eyebrow}</div>
+      <h2 className="mt-2 text-2xl font-black tracking-tight text-slate-900">{title}</h2>
+      <p className="mt-2 text-sm leading-7 text-slate-500">{description}</p>
+      <div className="mt-5">{children}</div>
+    </div>
+  )
+}
+
 function AirtableLogin({ onLogin }) {
   // Pre-fill appId if provided via URL param (e.g. from /apply?appId=APP-recXXX)
   const urlAppId = typeof window !== 'undefined'
     ? (new URLSearchParams(window.location.search).get('appId') || '')
     : ''
-  const [mode, setMode] = useState(urlAppId ? 'signup' : 'portal')
-  const [email, setEmail] = useState('')
-  const [password, setPassword] = useState('')
-  // signup fields
-  const [applicationId, setApplicationId] = useState(urlAppId)
-  const [loading, setLoading] = useState(false)
-  const [error, setError] = useState('')
+  const [view, setView] = useState(urlAppId ? 'resident' : 'portal')
+  const [signInForm, setSignInForm] = useState({ email: '', password: '' })
+  const [activateForm, setActivateForm] = useState({ applicationId: urlAppId, email: '', password: '' })
+  const [signInLoading, setSignInLoading] = useState(false)
+  const [activationLoading, setActivationLoading] = useState(false)
+  const [signInError, setSignInError] = useState('')
+  const [activationError, setActivationError] = useState('')
 
-  function switchMode(next) {
-    setMode(next)
-    setError('')
-    setPassword('')
+  function switchView(next) {
+    setView(next)
+    setSignInError('')
+    setActivationError('')
   }
 
   function goToManagerLogin() {
@@ -354,59 +365,62 @@ function AirtableLogin({ onLogin }) {
 
   async function handleLogin(event) {
     event.preventDefault()
-    setLoading(true)
-    setError('')
+    setSignInLoading(true)
+    setSignInError('')
     try {
-      const resident = await loginResident(email.trim(), password)
+      const resident = await loginResident(signInForm.email.trim(), signInForm.password)
       if (!resident) {
-        setError('Invalid email or password. Contact Axis if you need help accessing your account.')
+        setSignInError('Invalid email or password. Contact Axis if you need help accessing your account.')
         return
       }
       // Block access if lease has ended
       const leaseEnd = resident['Lease End Date']
       if (leaseEnd && new Date(leaseEnd) < new Date(new Date().toDateString())) {
-        setError('Your lease has ended. Access to the resident portal has been deactivated. Please contact Axis to discuss renewal.')
+        setSignInError('Your lease has ended. Access to the resident portal has been deactivated. Please contact Axis to discuss renewal.')
         return
       }
       onLogin(resident)
     } catch (err) {
-      setError(err.message || 'Login failed. Please try again.')
+      setSignInError(err.message || 'Login failed. Please try again.')
     } finally {
-      setLoading(false)
+      setSignInLoading(false)
     }
   }
 
   async function handleSignup(event) {
     event.preventDefault()
-    if (password.length < 6) { setError('Password must be at least 6 characters.'); return }
-    setLoading(true)
-    setError('')
+    if (activateForm.password.length < 6) {
+      setActivationError('Password must be at least 6 characters.')
+      return
+    }
+    setActivationLoading(true)
+    setActivationError('')
     try {
       // 1. Look up the application
-      const app = await getApplicationById(applicationId.trim())
+      const app = await getApplicationById(activateForm.applicationId.trim())
       if (!app) {
-        setError('Application not found. Check your Application ID (format: APP-recXXXXXXXXXXXXXX) and try again.')
+        setActivationError('Application not found. Check your Application ID (format: APP-recXXXXXXXXXXXXXX) and try again.')
         return
       }
 
       // 2. Verify email matches application
       const appEmail = String(app['Signer Email'] || '').trim().toLowerCase()
-      if (appEmail !== email.trim().toLowerCase()) {
-        setError('The email address does not match the application. Use the same email you applied with.')
+      if (appEmail !== activateForm.email.trim().toLowerCase()) {
+        setActivationError('The email address does not match the application. Use the same email you applied with.')
         return
       }
 
       // 3. Check if a resident record already exists for this email
-      const existing = await getResidentByEmail(email.trim())
+      const existing = await getResidentByEmail(activateForm.email.trim())
       if (existing) {
         // Pre-created resident records (from approved applications) have no password yet.
         // Allow the resident to complete account setup by setting their password.
         if (existing.Password) {
-          setError('An account with this email already exists. Please sign in instead.')
+          setActivationError('An account with this email already exists. Please sign in instead.')
           return
         }
         const resident = await updateResident(existing.id, {
-          Password: password,
+          Password: activateForm.password,
           Status: 'Active',
           'Lease Term': existing['Lease Term'] || app['Lease Term'] || '',
         })
@@ -418,7 +432,7 @@ function AirtableLogin({ onLogin }) {
       const resident = await createResident({
         Name: app['Signer Full Name'] || '',
         Email: app['Signer Email'] || '',
-        Password: password,
+        Password: activateForm.password,
         Phone: app['Signer Phone Number'] || '',
         House: app['Property Name'] || '',
         'Unit Number': app['Room Number'] || '',
@@ -429,114 +443,148 @@ function AirtableLogin({ onLogin }) {
       })
       onLogin(resident)
     } catch (err) {
-      setError(err.message || 'Could not create account. Please try again.')
+      setActivationError(err.message || 'Could not create account. Please try again.')
     } finally {
-      setLoading(false)
+      setActivationLoading(false)
     }
   }
 
   return (
     <AuthCard>
-      <div className="mb-6 text-center">
-        <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-[#0b8a89]">Axis Portal</div>
-        <h1 className="mt-2 text-4xl font-black tracking-tight text-slate-900 sm:text-5xl">Login</h1>
-        <p className="mt-3 text-base leading-7 text-slate-500">
-          Choose your portal to continue.
-        </p>
-      </div>
+      {view === 'portal' ? (
+        <>
+          <div className="mb-6 text-center">
+            <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-[#0b8a89]">Axis Portal</div>
+            <h1 className="mt-2 text-4xl font-black tracking-tight text-slate-900 sm:text-5xl">Choose your portal</h1>
+            <p className="mt-3 text-base leading-7 text-slate-500">
+              Residents can sign in or activate an account. Managers can go straight to the manager portal.
+            </p>
+          </div>
 
-      {mode === 'portal' ? (
-        <div className="space-y-5">
-          <button
-            type="button"
-            onClick={() => switchMode('login')}
-            className="w-full rounded-[30px] border border-slate-200 bg-white px-7 py-8 text-left transition hover:border-slate-900 hover:bg-slate-50"
-          >
-            <div className="text-2xl font-black text-slate-900">Resident Portal</div>
-            <div className="mt-3 text-lg leading-8 text-slate-500">
-              Access payments, work orders, documents, and your resident dashboard.
-            </div>
-          </button>
-          <button
-            type="button"
-            onClick={goToManagerLogin}
-            className="w-full rounded-[30px] border border-slate-200 bg-white px-7 py-8 text-left transition hover:border-slate-900 hover:bg-slate-50"
-          >
-            <div className="text-2xl font-black text-slate-900">Manager Portal</div>
-            <div className="mt-3 text-lg leading-8 text-slate-500">
-              Open the manager portal to review leases and manage resident records.
-            </div>
-          </button>
-        </div>
-      ) : mode === 'login' ? (
-        <form onSubmit={handleLogin} className="space-y-4">
-          <div className="flex gap-1 rounded-[24px] border border-slate-100 bg-slate-50 p-1.5">
-            {[['login', 'Resident Login'], ['signup', 'Create account']].map(([id, label]) => (
-              <button key={id} type="button" onClick={() => switchMode(id)}
-                className={classNames('flex-1 rounded-[18px] px-4 py-3 text-base font-semibold transition',
-                  mode === id ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-900')}>
-                {label}
-              </button>
-            ))}
+          <div className="space-y-5">
+            <button
+              type="button"
+              onClick={() => switchView('resident')}
+              className="w-full rounded-[30px] border border-slate-200 bg-white px-7 py-8 text-left transition hover:border-slate-900 hover:bg-slate-50"
+            >
+              <div className="text-2xl font-black text-slate-900">Resident Portal</div>
+              <div className="mt-3 text-lg leading-8 text-slate-500">
+                Access payments, work orders, lease updates, documents, and your resident dashboard.
+              </div>
+            </button>
+            <button
+              type="button"
+              onClick={goToManagerLogin}
+              className="w-full rounded-[30px] border border-slate-200 bg-white px-7 py-8 text-left transition hover:border-slate-900 hover:bg-slate-50"
+            >
+              <div className="text-2xl font-black text-slate-900">Manager Portal</div>
+              <div className="mt-3 text-lg leading-8 text-slate-500">
+                Open the manager portal to subscribe, activate manager access, add houses, and manage leasing.
+              </div>
+            </button>
           </div>
-          <div>
-            <label className="mb-2 block text-sm font-semibold text-slate-700">Email</label>
-            <input type="email" required value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@example.com" autoComplete="email" className={authInputCls} />
-          </div>
-          <div>
-            <label className="mb-2 block text-sm font-semibold text-slate-700">Password</label>
-            <PasswordInput value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="current-password" />
-          </div>
-          {error && <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>}
-          <button type="submit" disabled={loading} className="w-full rounded-full bg-slate-900 py-4 text-base font-semibold text-white hover:bg-slate-800 disabled:opacity-50 transition">
-            {loading ? 'Signing in…' : 'Sign in'}
-          </button>
-          <button
-            type="button"
-            onClick={() => switchMode('portal')}
-            className="w-full text-sm font-semibold text-slate-500 transition hover:text-slate-900"
-          >
-            Back to portal options
-          </button>
-        </form>
+        </>
       ) : (
-        <form onSubmit={handleSignup} className="space-y-4">
-          <div className="flex gap-1 rounded-[24px] border border-slate-100 bg-slate-50 p-1.5">
-            {[['login', 'Resident Login'], ['signup', 'Create account']].map(([id, label]) => (
-              <button key={id} type="button" onClick={() => switchMode(id)}
-                className={classNames('flex-1 rounded-[18px] px-4 py-3 text-base font-semibold transition',
-                  mode === id ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-900')}>
-                {label}
-              </button>
-            ))}
+        <>
+          <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-[#0b8a89]">Resident Portal</div>
+              <h1 className="mt-2 text-4xl font-black tracking-tight text-slate-900 sm:text-5xl">Resident access</h1>
+              <p className="mt-3 max-w-2xl text-base leading-7 text-slate-500">
+                Sign in if you already have an account. If you were recently approved, activate your account with your Application ID.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => switchView('portal')}
+              className="rounded-full border border-slate-300 px-5 py-2.5 text-sm font-semibold text-slate-700 transition hover:border-slate-500"
+            >
+              Back to portal options
+            </button>
           </div>
-          <div className="rounded-2xl border border-slate-100 bg-slate-50 px-4 py-3 text-sm text-slate-600">
-            You need an Application ID from your approved rental application. It looks like <span className="font-mono font-semibold text-slate-800">APP-rec…</span>
+
+          <div className="grid gap-5 lg:grid-cols-2">
+            <AccessPane
+              eyebrow="Existing resident"
+              title="Sign in"
+              description="Use the email and password already connected to your resident account."
+            >
+              <form onSubmit={handleLogin} className="space-y-4">
+                <div>
+                  <label className="mb-2 block text-sm font-semibold text-slate-700">Email</label>
+                  <input
+                    type="email"
+                    required
+                    value={signInForm.email}
+                    onChange={(event) => setSignInForm((current) => ({ ...current, email: event.target.value }))}
+                    placeholder="you@example.com"
+                    autoComplete="email"
+                    className={authInputCls}
+                  />
+                </div>
+                <div>
+                  <label className="mb-2 block text-sm font-semibold text-slate-700">Password</label>
+                  <PasswordInput
+                    value={signInForm.password}
+                    onChange={(event) => setSignInForm((current) => ({ ...current, password: event.target.value }))}
+                    autoComplete="current-password"
+                  />
+                </div>
+                {signInError ? <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{signInError}</div> : null}
+                <button type="submit" disabled={signInLoading} className="w-full rounded-full bg-slate-900 py-4 text-base font-semibold text-white transition hover:bg-slate-800 disabled:opacity-50">
+                  {signInLoading ? 'Signing in…' : 'Sign in'}
+                </button>
+              </form>
+            </AccessPane>
+
+            <AccessPane
+              eyebrow="Need to activate?"
+              title="Activate account"
+              description="Use the approved rental application email and the Application ID you received after approval."
+            >
+              <form onSubmit={handleSignup} className="space-y-4">
+                <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-600">
+                  Your Application ID looks like <span className="font-mono font-semibold text-slate-800">APP-rec…</span>
+                </div>
+                <div>
+                  <label className="mb-2 block text-sm font-semibold text-slate-700">Application ID <span className="text-red-400">*</span></label>
+                  <input
+                    required
+                    value={activateForm.applicationId}
+                    onChange={(event) => setActivateForm((current) => ({ ...current, applicationId: event.target.value }))}
+                    placeholder="APP-recXXXXXXXXXXXXXX"
+                    className={authInputCls}
+                  />
+                </div>
+                <div>
+                  <label className="mb-2 block text-sm font-semibold text-slate-700">Email <span className="text-red-400">*</span></label>
+                  <input
+                    type="email"
+                    required
+                    value={activateForm.email}
+                    onChange={(event) => setActivateForm((current) => ({ ...current, email: event.target.value }))}
+                    placeholder="Same email used on your application"
+                    autoComplete="email"
+                    className={authInputCls}
+                  />
+                </div>
+                <div>
+                  <label className="mb-2 block text-sm font-semibold text-slate-700">Create password <span className="text-red-400">*</span></label>
+                  <PasswordInput
+                    value={activateForm.password}
+                    onChange={(event) => setActivateForm((current) => ({ ...current, password: event.target.value }))}
+                    placeholder="Min. 6 characters"
+                    autoComplete="new-password"
+                  />
+                </div>
+                {activationError ? <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{activationError}</div> : null}
+                <button type="submit" disabled={activationLoading} className="w-full rounded-full bg-slate-900 py-4 text-base font-semibold text-white transition hover:bg-slate-800 disabled:opacity-50">
+                  {activationLoading ? 'Verifying application…' : 'Activate account'}
+                </button>
+              </form>
+            </AccessPane>
           </div>
-          <div>
-            <label className="mb-2 block text-sm font-semibold text-slate-700">Application ID <span className="text-red-400">*</span></label>
-            <input required value={applicationId} onChange={(e) => setApplicationId(e.target.value)} placeholder="APP-recXXXXXXXXXXXXXX" className={authInputCls} />
-          </div>
-          <div>
-            <label className="mb-2 block text-sm font-semibold text-slate-700">Email <span className="text-red-400">*</span></label>
-            <input type="email" required value={email} onChange={(e) => setEmail(e.target.value)} placeholder="Same email used on your application" autoComplete="email" className={authInputCls} />
-          </div>
-          <div>
-            <label className="mb-2 block text-sm font-semibold text-slate-700">Create Password <span className="text-red-400">*</span></label>
-            <PasswordInput value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Min. 6 characters" autoComplete="new-password" />
-          </div>
-          {error && <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>}
-          <button type="submit" disabled={loading} className="w-full rounded-full bg-slate-900 py-4 text-base font-semibold text-white hover:bg-slate-800 disabled:opacity-50 transition">
-            {loading ? 'Verifying application…' : 'Create account'}
-          </button>
-          <button
-            type="button"
-            onClick={() => switchMode('portal')}
-            className="w-full text-sm font-semibold text-slate-500 transition hover:text-slate-900"
-          >
-            Back to portal options
-          </button>
-        </form>
+        </>
       )}
     </AuthCard>
   )
@@ -1674,7 +1722,13 @@ function Dashboard({ resident, onResidentUpdated, onSignOut }) {
     () => requests.some((item) => item.Status && item.Status !== 'Submitted'),
     [requests]
   )
+  const openRequestCount = useMemo(
+    () => requests.filter((item) => item.Status !== 'Resolved').length,
+    [requests]
+  )
   const announcementCount = announcements.length
+  const homeLabel = [resident.House, normalizeUnitLabel(resident['Unit Number'] || '')].filter(Boolean).join(' · ') || 'Not assigned yet'
+  const leaseLabel = [getLeaseTermLabel(resident), resident['Lease End Date'] ? `through ${formatDate(resident['Lease End Date'])}` : 'current'].join(' · ')
 
   const loadData = useCallback(async () => {
     setLoading(true)
@@ -1735,6 +1789,68 @@ function Dashboard({ resident, onResidentUpdated, onSignOut }) {
               You have request updates to review
             </div>
           ) : null}
+        </div>
+
+        <div className="mb-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+          <div className="rounded-[24px] border border-slate-200 bg-white p-5 shadow-soft">
+            <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">Home</div>
+            <div className="mt-2 text-lg font-black text-slate-900">{homeLabel}</div>
+            <p className="mt-2 text-sm leading-6 text-slate-500">Your assigned property and room information.</p>
+          </div>
+          <div className="rounded-[24px] border border-slate-200 bg-white p-5 shadow-soft">
+            <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">Lease</div>
+            <div className="mt-2 text-lg font-black text-slate-900">{getLeaseTermLabel(resident)}</div>
+            <p className="mt-2 text-sm leading-6 text-slate-500">{leaseLabel}</p>
+          </div>
+          <button
+            type="button"
+            onClick={() => setTab('requests')}
+            className="rounded-[24px] border border-slate-200 bg-white p-5 text-left shadow-soft transition hover:border-slate-300"
+          >
+            <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">Work Orders</div>
+            <div className="mt-2 text-lg font-black text-slate-900">{openRequestCount}</div>
+            <p className="mt-2 text-sm leading-6 text-slate-500">Open requests that still need attention.</p>
+          </button>
+          <button
+            type="button"
+            onClick={() => setTab('announcements')}
+            className="rounded-[24px] border border-slate-200 bg-white p-5 text-left shadow-soft transition hover:border-slate-300"
+          >
+            <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">Announcements</div>
+            <div className="mt-2 text-lg font-black text-slate-900">{announcementCount}</div>
+            <p className="mt-2 text-sm leading-6 text-slate-500">Updates from the Axis team for your property.</p>
+          </button>
+        </div>
+
+        <div className="mb-6 flex flex-wrap gap-3">
+          <button
+            type="button"
+            onClick={() => { setPaymentFocus('rent'); setTab('payments') }}
+            className="rounded-full border border-slate-300 px-5 py-3 text-sm font-semibold text-slate-700 transition hover:border-slate-500"
+          >
+            Go to payments
+          </button>
+          <button
+            type="button"
+            onClick={() => setTab('new')}
+            className="rounded-full border border-slate-300 px-5 py-3 text-sm font-semibold text-slate-700 transition hover:border-slate-500"
+          >
+            Submit work order
+          </button>
+          <button
+            type="button"
+            onClick={() => setTab('leasing')}
+            className="rounded-full border border-slate-300 px-5 py-3 text-sm font-semibold text-slate-700 transition hover:border-slate-500"
+          >
+            View leasing
+          </button>
+          <button
+            type="button"
+            onClick={() => setTab('profile')}
+            className="rounded-full border border-slate-300 px-5 py-3 text-sm font-semibold text-slate-700 transition hover:border-slate-500"
+          >
+            Update profile
+          </button>
         </div>
 
         <div className="mb-6 flex flex-wrap gap-2 rounded-[24px] border border-slate-200 bg-white p-2 shadow-soft">

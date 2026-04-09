@@ -56,10 +56,10 @@ export default function Navbar() {
   const showMobileDock = ['/', '/apply', '/contact', '/resident'].includes(location.pathname)
   const promoText = 'Sign up now. No application fee for a limited time.'
   const navLinks = [
-    { label: 'Homes', to: { pathname: '/', hash: '#properties' }, isActive: isHome },
-    { label: 'Apply', to: '/apply', isActive: location.pathname === '/apply' },
     { label: 'Contact', to: '/contact', isActive: location.pathname === '/contact' },
-    { label: 'List your property', to: '/join-us', isActive: location.pathname === '/join-us' },
+    { label: 'Homes', to: { pathname: '/', hash: '#properties' }, isActive: isHome },
+    { label: 'Apply Housing', to: '/apply', isActive: location.pathname === '/apply' },
+    { label: 'Join Axis', to: '/join-us', isActive: location.pathname === '/join-us' },
   ]
   const mobileDockLinks = [
     { label: 'Homes', to: { pathname: '/', hash: '#properties' }, icon: <HomeIcon />, isActive: isHome },
@@ -176,10 +176,10 @@ export default function Navbar() {
             className="overflow-hidden border-t border-white/10 bg-navy-900 md:hidden"
           >
             <nav className="container mx-auto flex flex-col gap-1 px-4 py-3 sm:px-6">
-              <Link to={{ pathname: '/', hash: '#properties' }} onClick={closeMobileMenu} className="rounded-xl px-3 py-2.5 text-sm font-medium text-white/70 transition hover:bg-white/8 hover:text-white">Homes & Availability</Link>
-              <Link to="/apply" onClick={() => { closeMobileMenu(); scrollToTop() }} className="rounded-xl px-3 py-2.5 text-sm font-medium text-white/70 transition hover:bg-white/8 hover:text-white">Apply</Link>
               <Link to="/contact" onClick={() => { closeMobileMenu(); scrollToTop() }} className="rounded-xl px-3 py-2.5 text-sm font-medium text-white/70 transition hover:bg-white/8 hover:text-white">Contact</Link>
-              <Link to="/join-us" onClick={() => { closeMobileMenu(); scrollToTop() }} className="rounded-xl px-3 py-2.5 text-sm font-medium text-white/70 transition hover:bg-white/8 hover:text-white">List your property</Link>
+              <Link to={{ pathname: '/', hash: '#properties' }} onClick={closeMobileMenu} className="rounded-xl px-3 py-2.5 text-sm font-medium text-white/70 transition hover:bg-white/8 hover:text-white">Homes & Availability</Link>
+              <Link to="/apply" onClick={() => { closeMobileMenu(); scrollToTop() }} className="rounded-xl px-3 py-2.5 text-sm font-medium text-white/70 transition hover:bg-white/8 hover:text-white">Apply Housing</Link>
+              <Link to="/join-us" onClick={() => { closeMobileMenu(); scrollToTop() }} className="rounded-xl px-3 py-2.5 text-sm font-medium text-white/70 transition hover:bg-white/8 hover:text-white">Join Axis</Link>
               <Link
                 to="/resident"
                 onClick={() => { closeMobileMenu(); scrollToTop() }}

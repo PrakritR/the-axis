@@ -93,8 +93,8 @@ const WHY_AXIS = [
         <path strokeLinecap="round" strokeLinejoin="round" d="M12 6v6l4 2m6-2a10 10 0 11-20 0 10 10 0 0120 0z" />
       </svg>
     ),
-    title: 'Hands-off management',
-    body: "We handle leasing, maintenance coordination, and resident support so you don't have to.",
+    title: 'One manager portal',
+    body: 'Keep your manager application, houses, applications, leases, and resident operations in one simpler workflow.',
   },
   {
     icon: (
@@ -102,8 +102,8 @@ const WHY_AXIS = [
         <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 18.75a60.07 60.07 0 0115.797 2.101c.727.198 1.453-.342 1.453-1.096V18.75M3.75 4.5v.75A.75.75 0 013 6h-.75m0 0v-.375c0-.621.504-1.125 1.125-1.125H20.25M2.25 6v9m18-10.5v.75c0 .414.336.75.75.75h.75m-1.5-1.5h.375c.621 0 1.125.504 1.125 1.125v9.75c0 .621-.504 1.125-1.125 1.125h-.375m1.5-1.5H21a.75.75 0 00-.75.75v.75m0 0H3.75m0 0h-.375a1.125 1.125 0 01-1.125-1.125V15m1.5 1.5v-.75A.75.75 0 003 15h-.75" />
       </svg>
     ),
-    title: 'Consistent rent income',
-    body: 'Our occupancy model is designed for stable, predictable cash flow across every room.',
+    title: 'Simple manager onboarding',
+    body: 'Apply to join Axis, create a manager account, and activate the recurring subscription right from the same flow.',
   },
   {
     icon: (
@@ -111,8 +111,8 @@ const WHY_AXIS = [
         <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12c0 1.268-.63 2.39-1.593 3.068a3.745 3.745 0 010 4.657c-.784.814-1.787 1.245-2.8 1.245a3.745 3.745 0 01-3.068-1.593 3.745 3.745 0 01-4.657 0 3.745 3.745 0 01-1.245-2.8c0-1.013.431-2.016 1.245-2.8a3.745 3.745 0 010-4.657 3.745 3.745 0 011.593-3.068A3.745 3.745 0 0112 3c1.268 0 2.39.63 3.068 1.593a3.745 3.745 0 014.657 0c.814.784 1.245 1.787 1.245 2.8z" />
       </svg>
     ),
-    title: 'Screened residents',
-    body: 'We run thorough background and reference checks on every resident before they move in.',
+    title: 'Leasing workflow built in',
+    body: 'Review applications, move approved residents forward, and handle leasing without bouncing between tools.',
   },
   {
     icon: (
@@ -120,8 +120,8 @@ const WHY_AXIS = [
         <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 12l8.954-8.955c.44-.439 1.152-.439 1.591 0L21.75 12M4.5 9.75v10.125c0 .621.504 1.125 1.125 1.125H9.75v-4.875c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125V21h4.125c.621 0 1.125-.504 1.125-1.125V9.75M8.25 21h8.25" />
       </svg>
     ),
-    title: 'Property care',
-    body: "We treat every home we operate as if it's our own — maintained, respected, and kept in top condition.",
+    title: 'Add houses as you grow',
+    body: 'Once approved, managers can add houses to the portal and keep property operations organized as they expand.',
   },
   {
     icon: (
@@ -129,26 +129,16 @@ const WHY_AXIS = [
         <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 3v11.25A2.25 2.25 0 006 16.5h2.25M3.75 3h-1.5m1.5 0h16.5m0 0h1.5m-1.5 0v11.25A2.25 2.25 0 0118 16.5h-2.25m-7.5 0h7.5m-7.5 0l-1 3m8.5-3l1 3m0 0l.5 1.5m-.5-1.5h-9.5m0 0l-.5 1.5M9 11.25v1.5M12 9v3.75m3-6v6" />
       </svg>
     ),
-    title: 'Transparent reporting',
-    body: "Regular occupancy and maintenance updates so you always know what's happening at your property.",
-  },
-  {
-    icon: (
-      <svg className="h-6 w-6" fill="none" stroke="currentColor" strokeWidth={1.8} viewBox="0 0 24 24">
-        <path strokeLinecap="round" strokeLinejoin="round" d="M15 10.5a3 3 0 11-6 0 3 3 0 016 0z" />
-        <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 10.5c0 7.142-7.5 11.25-7.5 11.25S4.5 17.642 4.5 10.5a7.5 7.5 0 1115 0z" />
-      </svg>
-    ),
-    title: 'Local expertise',
-    body: 'We know the Seattle University District market inside and out — pricing, demand, and resident expectations.',
+    title: 'Resident operations',
+    body: 'Track resident details, internal notes, and follow-up work from the same portal you use for leasing.',
   },
 ]
 
 const STEPS = [
-  { number: '01', title: 'Tell us about your property', body: 'Fill out the short form below with your address, property type, and how many rooms you have available.' },
-  { number: '02', title: 'We review and reach out', body: 'Our team reviews every submission within 2–3 business days and schedules a call to discuss fit and terms.' },
-  { number: '03', title: 'Property walkthrough', body: 'We visit the property, assess condition, and share an honest revenue estimate with no obligation.' },
-  { number: '04', title: 'Agreement and onboarding', body: 'Once terms are agreed, we handle setup — photos, listing, and resident placement — typically within 2 weeks.' },
+  { number: '01', title: 'Apply to join Axis', body: 'Tell us about your housing setup and who will operate the property through the manager portal.' },
+  { number: '02', title: 'We review the application', body: 'Our team follows up to confirm fit, answer questions, and approve the manager setup.' },
+  { number: '03', title: 'Create account and subscribe', body: 'Approved managers create their account and activate the recurring manager subscription to unlock portal access.' },
+  { number: '04', title: 'Add houses and lease', body: 'Use the manager portal to add houses, review applications, and manage the leasing workflow.' },
 ]
 
 function classNames(...vals) {
@@ -211,8 +201,8 @@ export default function JoinUs() {
   return (
     <>
       <Seo
-        title="List Your Property | Axis Seattle Housing"
-        description="Partner with Axis to list your Seattle property. We handle leasing, maintenance, and resident management so you earn consistent income hands-free."
+        title="Join Axis | Axis Seattle Housing"
+        description="Apply to join Axis, create a manager account, activate the recurring subscription, and use the manager portal to add houses, review applications, and manage leasing."
         pathname="/join-us"
       />
 
@@ -223,20 +213,26 @@ export default function JoinUs() {
 
         <div className="container relative mx-auto max-w-4xl px-6 text-center">
           <div className="inline-flex items-center gap-2 rounded-full border border-axis/30 bg-axis/10 px-4 py-1.5 text-xs font-semibold uppercase tracking-widest text-axis">
-            For property owners
+            Manager application
           </div>
           <h1 className="mt-6 font-serif text-5xl font-bold leading-tight tracking-tight text-white sm:text-6xl lg:text-7xl">
-            Partner with Axis
+            Join Axis
           </h1>
           <p className="mx-auto mt-6 max-w-2xl text-base leading-8 text-white/60 sm:text-lg">
-            Have a home near the University of Washington? We'll fill it with great residents, handle day-to-day management, and make sure your property is cared for — all while you earn consistent rental income.
+            Apply to join Axis as a manager, create your account, activate the recurring subscription, and use one portal to add houses, review applications, and manage leasing.
           </p>
+          <div className="mx-auto mt-6 max-w-xl rounded-[24px] border border-white/10 bg-white/5 px-6 py-4 text-left backdrop-blur-sm">
+            <p className="text-sm font-semibold uppercase tracking-[0.16em] text-axis">Manager subscription</p>
+            <p className="mt-2 text-sm leading-7 text-white/70">
+              Manager portal access is activated after account setup and recurring subscription checkout. Once approved, you can log in and start adding houses right away.
+            </p>
+          </div>
           <div className="mt-10 flex flex-wrap items-center justify-center gap-4">
             <a
               href="#inquiry-form"
               className="inline-flex items-center gap-2 rounded-full bg-axis px-6 py-3.5 text-sm font-semibold text-white shadow-[0_0_24px_rgba(14,165,164,0.4)] transition hover:bg-axis-dark"
             >
-              Submit your property
+              Apply to join
               <svg className="h-4 w-4" viewBox="0 0 16 16" fill="none" aria-hidden>
                 <path d="M3 8h10M9 4l4 4-4 4" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
               </svg>
@@ -245,7 +241,7 @@ export default function JoinUs() {
               href="mailto:info@axis-seattle-housing.com"
               className="inline-flex items-center gap-2 rounded-full border border-white/20 px-6 py-3.5 text-sm font-semibold text-white/80 transition hover:border-axis hover:text-axis"
             >
-              Email us directly
+              Contact the team
             </a>
           </div>
         </div>
@@ -256,10 +252,10 @@ export default function JoinUs() {
         <div className="container mx-auto max-w-6xl px-6">
           <div className="mb-14 text-center">
             <h2 className="font-serif text-4xl font-bold tracking-tight text-slate-900 sm:text-5xl">
-              Why owners choose Axis
+              What you get
             </h2>
             <p className="mx-auto mt-4 max-w-xl text-base leading-7 text-slate-500">
-              We operate a small portfolio of homes in the U District — which means every property gets real attention, not just a listing on a platform.
+              A simpler manager setup built around one application flow and one operating portal.
             </p>
           </div>
 
@@ -288,7 +284,7 @@ export default function JoinUs() {
               How it works
             </h2>
             <p className="mx-auto mt-4 max-w-lg text-base leading-7 text-slate-500">
-              From first inquiry to first resident — here's what to expect.
+              From manager application to active portal access.
             </p>
           </div>
 
@@ -315,10 +311,10 @@ export default function JoinUs() {
         <div className="container mx-auto max-w-2xl px-6">
           <div className="mb-10 text-center">
             <h2 className="font-serif text-4xl font-bold tracking-tight text-slate-900 sm:text-5xl">
-              Tell us about your property
+              Apply to join Axis
             </h2>
             <p className="mx-auto mt-4 max-w-lg text-base leading-7 text-slate-500">
-              Fill out the form below and we'll be in touch within 2–3 business days to discuss next steps.
+              Share your property details and manager plan. We’ll review it, follow up, and help you move into account setup and subscription activation.
             </p>
           </div>
 
@@ -331,7 +327,7 @@ export default function JoinUs() {
               </div>
               <h3 className="text-xl font-bold text-slate-900">We received your inquiry</h3>
               <p className="mt-3 text-sm leading-7 text-slate-600">
-                Thanks for reaching out. Our team will review your property details and contact you within 2–3 business days at{' '}
+                Thanks for reaching out. Our team will review your property and manager application details and contact you within 2–3 business days at{' '}
                 <span className="font-semibold">{form.email}</span>.
               </p>
             </div>
@@ -343,7 +339,7 @@ export default function JoinUs() {
               <div className="grid gap-5 sm:grid-cols-2">
                 <div className="sm:col-span-2">
                   <label className="mb-2 block text-sm font-semibold text-slate-700">
-                    Your name <span className="text-red-500">*</span>
+                    Manager name <span className="text-red-500">*</span>
                   </label>
                   <input
                     required
@@ -413,7 +409,7 @@ export default function JoinUs() {
 
                 <div>
                   <label className="mb-2 block text-sm font-semibold text-slate-700">
-                    Property type <span className="text-red-500">*</span>
+                    Housing type <span className="text-red-500">*</span>
                   </label>
                   <select
                     required
@@ -470,10 +466,17 @@ export default function JoinUs() {
                     rows={4}
                     value={form.additionalNotes}
                     onChange={(e) => update('additionalNotes', e.target.value)}
-                    placeholder="Parking, basement, recent renovations, preferred timeline, questions about the process..."
+                    placeholder="How many houses you manage, leasing questions, target timeline, or anything else helpful..."
                     className="w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm outline-none transition focus:border-axis focus:ring-2 focus:ring-axis/20"
                   />
                 </div>
+              </div>
+
+              <div className="mt-6 rounded-[22px] border border-axis/20 bg-axis/5 px-5 py-4">
+                <p className="text-sm font-semibold text-slate-900">Subscription note</p>
+                <p className="mt-1 text-sm leading-7 text-slate-600">
+                  Approved managers finish account creation with the recurring manager subscription checkout before using the portal.
+                </p>
               </div>
 
               {error ? (

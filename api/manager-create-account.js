@@ -29,8 +29,8 @@ function deriveManagerId(recordId) {
   return `MGR-${suffix}`
 }
 
-async function getManagerByEmail(email) {
-  const formula = encodeURIComponent(`{Email} = "${escapeFormulaValue(email)}"`)
+async function getManagerByManagerId(managerId) {
+  const formula = encodeURIComponent(`{Manager ID} = "${escapeFormulaValue(managerId)}"`)
   const url = `https://api.airtable.com/v0/${BASE_ID}/Managers?filterByFormula=${formula}&maxRecords=1`
   const atRes = await fetch(url, { headers: airtableHeaders() })
   if (!atRes.ok) throw new Error('Database error')
@@ -102,12 +102,13 @@ export default async function handler(req, res) {
     return res.status(500).json({ error: 'STRIPE_SECRET_KEY is not configured on the server yet.' })
   }
 
-  const { name, email, password } = req.body || {}
+  const { managerId, name, email, password } = req.body || {}
+  const normalizedManagerId = String(managerId || '').trim().toUpperCase()
   const normalizedEmail = String(email || '').trim().toLowerCase()
   const normalizedName = String(name || '').trim()
 
-  if (!normalizedEmail || !password) {
-    return res.status(400).json({ error: 'Email and password are required.' })
+  if (!normalizedManagerId || !normalizedEmail || !password) {
+    return res.status(400).json({ error: 'Manager ID, email, and password are required.' })
   }
 
   if (String(password).length < 6) {
@@ -115,9 +116,13 @@ export default async function handler(req, res) {
   }
 
   try {
-    const manager = await getManagerByEmail(normalizedEmail)
+    const manager = await getManagerByManagerId(normalizedManagerId)
     if (!manager) {
-      return res.status(404).json({ error: 'No manager subscription record was found for this email yet.' })
+      return res.status(404).json({ error: 'No manager subscription record was found for that manager ID yet.' })
+    }
+
+    if (String(manager.Email || '').trim().toLowerCase() !== normalizedEmail) {
+      return res.status(400).json({ error: 'That email does not match the manager ID from your subscription setup.' })
     }
 
     const subscribed = await hasActiveManagerSubscription(secretKey, normalizedEmail)
@@ -130,7 +135,7 @@ export default async function handler(req, res) {
     }
 
     const updated = await updateManager(manager.id, {
-      'Manager ID': deriveManagerId(manager.id),
+      'Manager ID': normalizedManagerId,
       Label: normalizedName || manager.Label || normalizedEmail.split('@')[0],
       Password: password,
       Active: true,
@@ -140,7 +145,7 @@ export default async function handler(req, res) {
     return res.status(200).json({
       manager: {
         id: updated.id,
-        managerId: deriveManagerId(updated.id),
+        managerId: normalizedManagerId,
         name: updated.Label || '',
         email: updated.Email || normalizedEmail,
         role: updated.Role || 'Manager',

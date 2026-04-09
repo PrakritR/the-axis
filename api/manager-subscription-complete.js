@@ -133,10 +133,12 @@ export default async function handler(req, res) {
 
     return res.status(200).json({
       email,
+      name: manager.Label || name || email.split('@')[0],
+      managerId: derivedManagerId,
       accountExists: Boolean(manager.Password),
       message: manager.Password
         ? 'Subscription verified. You can sign in now.'
-        : 'Subscription verified. Finish creating your manager account below.',
+        : `Subscription verified. Your manager ID is ${derivedManagerId}. Use it to create your manager account below.`,
     })
   } catch (err) {
     console.error('Manager subscription completion error:', err)
