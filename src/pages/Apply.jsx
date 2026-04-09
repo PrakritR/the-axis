@@ -841,7 +841,11 @@ const SIGNER_STEPS = [
     title: 'Signer Information',
     validate: (s) => {
       const e = {}
-      const name = validateFullName(s.fullName); if (name) e.fullName = name
+      if (!s.fullName?.trim()) e.fullName = 'Full name is required'
+      else {
+        const name = validateFullName(s.fullName)
+        if (name) e.fullName = name
+      }
       const dob = validateDOB(s.dateOfBirth, { requireAdult: s.hasCosigner !== 'Yes' }); if (dob) e.dateOfBirth = dob
       if (!s.phone?.trim()) e.phone = 'Phone number is required'
       else {
