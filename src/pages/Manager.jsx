@@ -689,11 +689,13 @@ function HouseManagementPanel({ onPropertiesChange }) {
     name: '',
     address: '',
     utilitiesFee: '',
+    securityDeposit: '',
   })
   const [tourForm, setTourForm] = useState({
     manager: '',
     availability: '',
     notes: '',
+    securityDeposit: '',
   })
 
   const loadProperties = useCallback(async () => {
@@ -721,13 +723,14 @@ function HouseManagementPanel({ onPropertiesChange }) {
         Name: form.name.trim(),
         Address: form.address.trim(),
         ...(form.utilitiesFee ? { 'Utilities Fee': Number(form.utilitiesFee) } : {}),
+        ...(form.securityDeposit ? { 'Security Deposit': Number(form.securityDeposit) } : {}),
       })
       setProperties((current) => {
         const next = [created, ...current]
         onPropertiesChange?.(next)
         return next
       })
-      setForm({ name: '', address: '', utilitiesFee: '' })
+      setForm({ name: '', address: '', utilitiesFee: '', securityDeposit: '' })
       toast.success('House added')
     } catch (err) {
       toast.error('Could not add house: ' + err.message)
@@ -763,7 +766,10 @@ function HouseManagementPanel({ onPropertiesChange }) {
     setSaving(true)
     try {
       const notes = buildTourNotes(property.Notes, tourForm)
-      const updated = await updatePropertyAdmin(property.id, { Notes: notes })
+      const updated = await updatePropertyAdmin(property.id, {
+        Notes: notes,
+        ...(tourForm.securityDeposit ? { 'Security Deposit': Number(tourForm.securityDeposit) } : {}),
+      })
       setProperties((current) => {
         const next = current.map((item) => (item.id === property.id ? updated : item))
         onPropertiesChange?.(next)
@@ -821,6 +827,18 @@ function HouseManagementPanel({ onPropertiesChange }) {
               className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 placeholder:text-slate-400 transition focus:border-[#2563eb] focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#2563eb]/20"
             />
           </div>
+          <div>
+            <label className="mb-1.5 block text-sm font-semibold text-slate-700">Security deposit</label>
+            <input
+              type="number"
+              min="0"
+              step="1"
+              value={form.securityDeposit}
+              onChange={(event) => setForm((current) => ({ ...current, securityDeposit: event.target.value }))}
+              placeholder="500"
+              className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 placeholder:text-slate-400 transition focus:border-[#2563eb] focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#2563eb]/20"
+            />
+          </div>
           <button
             type="submit"
             disabled={saving || !form.name.trim()}
@@ -859,6 +877,9 @@ function HouseManagementPanel({ onPropertiesChange }) {
                 <div className="mt-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-400">
                   Utilities fee {property['Utilities Fee'] ? `$${property['Utilities Fee']}` : 'not set'}
                 </div>
+                <div className="mt-1 text-xs font-semibold uppercase tracking-[0.14em] text-slate-400">
+                  Security deposit {property['Security Deposit'] ? `$${property['Security Deposit']}` : 'not set'}
+                </div>
                 <div className="mt-2 text-xs text-slate-500">
                   {extractNoteValue(property.Notes, 'Tour Manager') || 'No manager assigned'} · {extractNoteValue(property.Notes, 'Tour Availability') || 'No tour hours set'}
                 </div>
@@ -881,6 +902,18 @@ function HouseManagementPanel({ onPropertiesChange }) {
                         value={tourForm.availability}
                         onChange={(e) => setTourForm((current) => ({ ...current, availability: e.target.value }))}
                         placeholder="Mon 10am-12pm, Wed 2pm-5pm"
+                        className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900"
+                      />
+                    </div>
+                    <div>
+                      <label className="mb-1 block text-xs font-semibold text-slate-600">Security deposit</label>
+                      <input
+                        type="number"
+                        min="0"
+                        step="1"
+                        value={tourForm.securityDeposit}
+                        onChange={(e) => setTourForm((current) => ({ ...current, securityDeposit: e.target.value }))}
+                        placeholder="500"
                         className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900"
                       />
                     </div>
@@ -924,6 +957,7 @@ function HouseManagementPanel({ onPropertiesChange }) {
                         manager: extractNoteValue(property.Notes, 'Tour Manager'),
                         availability: extractNoteValue(property.Notes, 'Tour Availability'),
                         notes: extractNoteValue(property.Notes, 'Tour Notes'),
+                        securityDeposit: String(property['Security Deposit'] || ''),
                       })
                     }}
                     className="mt-3 rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-700"

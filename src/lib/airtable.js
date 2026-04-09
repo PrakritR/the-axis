@@ -300,6 +300,17 @@ export async function getPaymentsForResident(resident) {
   return (data.records || []).map(mapRecord)
 }
 
+export async function getPropertyByName(propertyName) {
+  if (!propertyName) return null
+  const formula = `{Name} = "${escapeFormulaValue(propertyName)}"`
+  const data = await request(buildUrl(TABLES.properties, {
+    filterByFormula: formula,
+    maxRecords: 1,
+  }))
+  const record = data.records?.[0]
+  return record ? mapRecord(record) : null
+}
+
 // ---------------------------------------------------------------------------
 // Documents
 // ---------------------------------------------------------------------------

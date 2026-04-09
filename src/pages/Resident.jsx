@@ -10,6 +10,7 @@ import {
   getApprovedLeaseForResident,
   getMessages,
   getPaymentsForResident,
+  getPropertyByName,
   getResidentByEmail,
   getResidentById,
   getWorkOrdersForResident,
@@ -139,6 +140,13 @@ function getUtilitiesFee(propertyName) {
   const property = properties.find((p) => p.name === propertyName)
   if (!property?.utilitiesFee) return 0
   const amount = parseInt(String(property.utilitiesFee).replace(/[^0-9]/g, ''), 10)
+  return Number.isFinite(amount) && amount > 0 ? amount : 0
+}
+
+function getStaticSecurityDeposit(propertyName) {
+  const property = properties.find((p) => p.name === propertyName)
+  if (!property?.securityDeposit) return 0
+  const amount = parseInt(String(property.securityDeposit).replace(/[^0-9]/g, ''), 10)
   return Number.isFinite(amount) && amount > 0 ? amount : 0
 }
 
@@ -1093,10 +1101,18 @@ function LeasingPanel({ resident, onOpenPayments }) {
   const leaseSigningUrl = resolveLeaseSigningUrl(resident)
   const moveInLabel = resident['Lease Start Date'] ? formatDate(resident['Lease Start Date']) : '—'
   const moveOutLabel = resident['Lease End Date'] ? formatDate(resident['Lease End Date']) : (isMonthToMonth ? 'No fixed end date' : '—')
+  const leaseDepositPaid = Boolean(resident['Security Deposit Paid'] || resident['Deposit Paid'])
+  const signedLeaseNote = String(resident['Security Deposit Paid Date'] || resident['Deposit Paid Date'] || '').trim()
 
   const [approvedLease, setApprovedLease] = useState(null)
   const [leaseLoading, setLeaseLoading] = useState(true)
   const [showLeaseText, setShowLeaseText] = useState(false)
+  const [houseDeposit, setHouseDeposit] = useState(0)
+  const [depositLoading, setDepositLoading] = useState(true)
+  const [depositError, setDepositError] = useState('')
+  const [depositCheckoutLoading, setDepositCheckoutLoading] = useState(false)
+  const [depositPaidState, setDepositPaidState] = useState(leaseDepositPaid)
+  const [depositCheckout, setDepositCheckout] = useState(null)
 
   useEffect(() => {
     let cancelled = false
@@ -1108,8 +1124,52 @@ function LeasingPanel({ resident, onOpenPayments }) {
     return () => { cancelled = true }
   }, [resident.id])
 
+  useEffect(() => {
+    let cancelled = false
+    async function loadDeposit() {
+      setDepositLoading(true)
+      setDepositError('')
+      try {
+        const property = await getPropertyByName(resident.House)
+        const depositText = property?.['Security Deposit'] || property?.securityDeposit || getStaticSecurityDeposit(resident.House) || resident['Security Deposit']
+        const amount = parseInt(String(depositText || '').replace(/[^0-9]/g, ''), 10)
+        if (!cancelled) setHouseDeposit(Number.isFinite(amount) && amount > 0 ? amount : 0)
+      } catch (err) {
+        if (!cancelled) setDepositError(err.message || 'Could not load the deposit amount.')
+      } finally {
+        if (!cancelled) setDepositLoading(false)
+      }
+    }
+
+    loadDeposit()
+    return () => { cancelled = true }
+  }, [resident.House, resident['Security Deposit']])
+
+  useEffect(() => {
+    setDepositPaidState(leaseDepositPaid)
+  }, [leaseDepositPaid])
+
   const leaseContent = approvedLease?.['Manager Edited Content'] || approvedLease?.['AI Draft Content'] || ''
   const leaseStatus = approvedLease?.['Status']
+  const leasePreview = leaseContent || `Axis Resident Lease\n\nProperty: ${resident.House || '—'}\nUnit: ${resident['Unit Number'] || '—'}\nTerm: ${leaseTermLabel}\nMove-in: ${moveInLabel}\nMove-out: ${moveOutLabel}\nSecurity Deposit: ${houseDeposit ? formatMoney(houseDeposit) : '—'}\n\nThis is a placeholder lease document for now. Your final document will appear here for review and signature.`
+
+  async function handleDepositPaid() {
+    setDepositCheckoutLoading(true)
+    try {
+      const today = new Date().toISOString().slice(0, 10)
+      await updateResident(resident.id, {
+        'Security Deposit Paid': true,
+        'Security Deposit Paid Date': today,
+        'Security Deposit Amount': houseDeposit || resident['Security Deposit Amount'] || null,
+      })
+      setDepositPaidState(true)
+    } catch (err) {
+      setDepositError(err.message || 'Could not record the deposit payment.')
+    } finally {
+      setDepositCheckoutLoading(false)
+      setDepositCheckout(null)
+    }
+  }
 
   return (
     <SectionCard title="Leasing" description="Your current lease details and signing options.">
@@ -1138,74 +1198,126 @@ function LeasingPanel({ resident, onOpenPayments }) {
           </div>
         </div>
 
-        {!leaseLoading && approvedLease && leaseContent && (
-          <div className="rounded-[24px] border border-[#2563eb]/20 bg-[linear-gradient(135deg,#eff6ff_0%,#ffffff_100%)] p-5">
-            <div className="flex items-start justify-between gap-4">
-              <div>
-                <div className="flex items-center gap-2">
-                  <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-[#2563eb]">Lease Document</div>
-                  {leaseStatus === 'Signed' ? (
-                    <span className="rounded-full border border-purple-200 bg-purple-50 px-2.5 py-1 text-[11px] font-semibold text-purple-700">Signed</span>
-                  ) : (
-                    <span className="rounded-full border border-blue-200 bg-blue-50 px-2.5 py-1 text-[11px] font-semibold text-blue-700">Ready to review</span>
-                  )}
-                </div>
-                <h3 className="mt-2 text-xl font-black text-slate-900">Your Lease Agreement</h3>
-              </div>
-              <button type="button" onClick={() => setShowLeaseText((v) => !v)}
-                className="shrink-0 rounded-full bg-[linear-gradient(180deg,#2f76ff_0%,#2450eb_100%)] px-5 py-2.5 text-sm font-semibold text-white transition hover:brightness-105">
-                {showLeaseText ? 'Hide' : 'View lease'}
-              </button>
+        <div className="rounded-[24px] border border-[#2563eb]/20 bg-[linear-gradient(135deg,#eff6ff_0%,#ffffff_100%)] p-5">
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-[#2563eb]">Lease Document</div>
+              <h3 className="mt-2 text-xl font-black text-slate-900">Placeholder lease</h3>
             </div>
-            {showLeaseText && (
-              <div className="mt-5 overflow-hidden rounded-[20px] border border-slate-200 bg-white">
-                <div className="flex items-center justify-between border-b border-slate-100 bg-slate-50 px-5 py-3">
-                  <span className="text-xs font-semibold text-slate-500">
-                    {approvedLease['Property']}{approvedLease['Unit'] ? ` · ${approvedLease['Unit']}` : ''} · {approvedLease['Resident Name']}
-                  </span>
-                  <button type="button"
-                    onClick={() => {
-                      const blob = new Blob([leaseContent], { type: 'text/plain' })
-                      const url = URL.createObjectURL(blob)
-                      const a = document.createElement('a')
-                      a.href = url
-                      a.download = `lease-${approvedLease['Resident Name']?.replace(/\s+/g, '-').toLowerCase() || 'document'}.txt`
-                      a.click()
-                      URL.revokeObjectURL(url)
-                    }}
-                    className="text-xs font-semibold text-[#2563eb] hover:underline">
-                    Download
-                  </button>
-                </div>
-                <div className="max-h-[500px] overflow-y-auto p-6">
-                  <pre className="whitespace-pre-wrap font-mono text-sm leading-7 text-slate-800">{leaseContent}</pre>
-                </div>
-              </div>
-            )}
+            <button
+              type="button"
+              onClick={() => setShowLeaseText((v) => !v)}
+              className="shrink-0 rounded-full bg-[linear-gradient(180deg,#2f76ff_0%,#2450eb_100%)] px-5 py-2.5 text-sm font-semibold text-white transition hover:brightness-105"
+            >
+              {showLeaseText ? 'Hide' : 'View lease'}
+            </button>
           </div>
-        )}
+          {showLeaseText && (
+            <div className="mt-5 overflow-hidden rounded-[20px] border border-slate-200 bg-white">
+              <div className="flex items-center justify-between border-b border-slate-100 bg-slate-50 px-5 py-3">
+                <span className="text-xs font-semibold text-slate-500">
+                  {resident.House}{resident['Unit Number'] ? ` · ${normalizeUnitLabel(resident['Unit Number'])}` : ''} · {resident.Name}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const blob = new Blob([leasePreview], { type: 'text/plain' })
+                    const url = URL.createObjectURL(blob)
+                    const a = document.createElement('a')
+                    a.href = url
+                    a.download = `lease-${String(resident.Name || 'document').replace(/\s+/g, '-').toLowerCase()}.txt`
+                    a.click()
+                    URL.revokeObjectURL(url)
+                  }}
+                  className="text-xs font-semibold text-[#2563eb] hover:underline"
+                >
+                  Download
+                </button>
+              </div>
+              <div className="max-h-[500px] overflow-y-auto p-6">
+                <pre className="whitespace-pre-wrap font-mono text-sm leading-7 text-slate-800">{leasePreview}</pre>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {depositError ? (
+          <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{depositError}</div>
+        ) : null}
+
+        <div className="rounded-[24px] border border-slate-200 bg-white p-5">
+          <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">Security Deposit</div>
+          <h3 className="mt-2 text-xl font-black text-slate-900">
+            {depositLoading ? 'Loading…' : (houseDeposit ? formatMoney(houseDeposit) : 'Not set')}
+          </h3>
+          <p className="mt-3 text-sm leading-6 text-slate-500">
+            Pay the security deposit first. Once it’s marked paid, lease signing unlocks automatically.
+          </p>
+          <div className="mt-4 flex flex-wrap gap-3">
+            <button
+              type="button"
+              onClick={() => {
+                if (!houseDeposit) return
+                setDepositCheckout({
+                  title: 'Security deposit',
+                  request: {
+                    residentId: resident.id,
+                    residentName: resident.Name,
+                    residentEmail: resident.Email,
+                    propertyName: resident.House,
+                    unitNumber: resident['Unit Number'],
+                    amount: houseDeposit,
+                    description: 'Security deposit payment',
+                    category: 'security_deposit',
+                  },
+                })
+              }}
+              disabled={depositLoading || !houseDeposit || depositPaidState || depositCheckoutLoading}
+              className="rounded-full bg-[linear-gradient(180deg,#2f76ff_0%,#2450eb_100%)] px-5 py-3 text-sm font-semibold text-white transition hover:brightness-105 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {depositPaidState ? 'Deposit paid' : 'Pay deposit'}
+            </button>
+            {depositPaidState ? (
+              <div className="rounded-full border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-700">
+                Paid{signedLeaseNote ? ` · ${formatDate(signedLeaseNote)}` : ''}
+              </div>
+            ) : null}
+          </div>
+        </div>
 
         <div className="rounded-[24px] border border-slate-200 bg-white p-5">
           <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">Lease Signing</div>
           <h3 className="mt-2 text-xl font-black text-slate-900">Review & Sign</h3>
           <p className="mt-3 text-sm leading-6 text-slate-500">
-            Once your updated lease is prepared, sign it here via DocuSign. To extend or continue your lease, go to Payments first.
+            {depositPaidState
+              ? 'Your deposit is paid, so lease signing is unlocked.'
+              : 'Pay the security deposit first. Signing stays locked until the deposit is marked paid.'}
           </p>
           <div className="mt-4 flex flex-wrap gap-3">
-            {leaseSigningUrl ? (
+            {depositPaidState && leaseSigningUrl ? (
               <button type="button" onClick={() => { window.location.href = leaseSigningUrl }}
                 className="rounded-full border border-slate-300 px-5 py-3 text-sm font-semibold text-slate-700 transition hover:border-slate-500">
                 Open DocuSign
               </button>
             ) : (
-              <div className="text-sm text-slate-400">Signing link will appear here once prepared.</div>
+              <div className="text-sm text-slate-400">
+                {depositPaidState ? 'Signing link will appear here once prepared.' : 'Deposit required before signing.'}
+              </div>
             )}
             <button type="button" onClick={() => onOpenPayments('extension')}
               className="rounded-full bg-slate-900 px-5 py-3 text-sm font-semibold text-white transition hover:bg-slate-800">
-              Extend / continue lease
+              Payments
             </button>
           </div>
         </div>
+
+        <EmbeddedStripeCheckout
+          open={Boolean(depositCheckout)}
+          title={depositCheckout?.title || 'Security deposit'}
+          checkoutRequest={depositCheckout?.request}
+          onClose={() => setDepositCheckout(null)}
+          onComplete={handleDepositPaid}
+        />
       </div>
     </SectionCard>
   )
