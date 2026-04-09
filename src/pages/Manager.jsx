@@ -187,7 +187,7 @@ function ManagerPasswordInput({ value, onChange, placeholder, autoComplete }) {
         required
         autoComplete={autoComplete || 'current-password'}
         placeholder={placeholder || '••••••••'}
-        className="w-full rounded-[24px] border border-slate-200 bg-slate-50 px-5 py-4 pr-12 text-base text-slate-900 placeholder:text-slate-400 transition focus:border-[#0ea5a4] focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#0ea5a4]/20"
+        className="w-full rounded-[24px] border border-slate-200 bg-slate-50 px-5 py-4 pr-12 text-base text-slate-900 placeholder:text-slate-400 transition focus:border-[#2563eb] focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#2563eb]/20"
       />
       <button
         type="button"
@@ -457,7 +457,7 @@ function ManagerLogin({ onLogin }) {
       <div className="w-full max-w-4xl">
         <section className="rounded-[32px] border border-slate-200/80 bg-white p-7 shadow-[0_28px_80px_rgba(148,163,184,0.18)] sm:p-8">
           <div className="mb-6 text-center">
-            <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-[#0ea5a4]">AXIS PORTAL</div>
+            <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-[#2563eb]">AXIS PORTAL</div>
             <h1 className="mt-2 text-5xl font-black tracking-tight text-slate-900 sm:text-6xl">Login</h1>
             <p className="mt-3 text-base leading-7 text-slate-500">
               Sign in or create your manager account.
@@ -472,7 +472,7 @@ function ManagerLogin({ onLogin }) {
                 onClick={() => setActiveView(id)}
                 className={classNames(
                   'flex-1 rounded-[18px] px-4 py-3 text-base font-semibold transition',
-                  activeView === id ? 'bg-white text-slate-900 shadow-sm ring-2 ring-[#0ea5a4]' : 'text-slate-500 hover:text-slate-900'
+                  activeView === id ? 'bg-white text-slate-900 shadow-sm ring-2 ring-[#2563eb]' : 'text-slate-500 hover:text-slate-900'
                 )}
               >
                 {label}
@@ -491,7 +491,7 @@ function ManagerLogin({ onLogin }) {
                   required
                   autoComplete="email"
                   placeholder="you@example.com"
-                  className="w-full rounded-[24px] border border-slate-200 bg-white px-5 py-4 text-base text-slate-900 placeholder:text-slate-400 transition focus:border-[#0ea5a4] focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#0ea5a4]/20"
+                  className="w-full rounded-[24px] border border-slate-200 bg-white px-5 py-4 text-base text-slate-900 placeholder:text-slate-400 transition focus:border-[#2563eb] focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#2563eb]/20"
                 />
               </div>
 
@@ -541,7 +541,7 @@ function ManagerLogin({ onLogin }) {
                     }))
                   }}
                   placeholder="MGR-XXXXXXXXXXXXXX"
-                  className="w-full rounded-[24px] border border-slate-200 bg-white px-5 py-4 text-base font-semibold uppercase tracking-[0.04em] text-slate-900 placeholder:text-slate-400 transition focus:border-[#0ea5a4] focus:outline-none focus:ring-2 focus:ring-[#0ea5a4]/20"
+                  className="w-full rounded-[24px] border border-slate-200 bg-white px-5 py-4 text-base font-semibold uppercase tracking-[0.04em] text-slate-900 placeholder:text-slate-400 transition focus:border-[#2563eb] focus:outline-none focus:ring-2 focus:ring-[#2563eb]/20"
                 />
               </div>
 
@@ -552,7 +552,7 @@ function ManagerLogin({ onLogin }) {
                   readOnly
                   value={activationForm.name}
                   placeholder="Loads from your manager record"
-                  className="w-full rounded-[24px] border border-slate-200 bg-slate-50 px-5 py-4 text-base text-slate-900 placeholder:text-slate-400 transition focus:border-[#0ea5a4] focus:outline-none focus:ring-2 focus:ring-[#0ea5a4]/20"
+                  className="w-full rounded-[24px] border border-slate-200 bg-slate-50 px-5 py-4 text-base text-slate-900 placeholder:text-slate-400 transition focus:border-[#2563eb] focus:outline-none focus:ring-2 focus:ring-[#2563eb]/20"
                 />
               </div>
 
@@ -563,7 +563,7 @@ function ManagerLogin({ onLogin }) {
                   readOnly
                   value={activationForm.email}
                   placeholder="Loads from your manager record"
-                  className="w-full rounded-[24px] border border-slate-200 bg-slate-50 px-5 py-4 text-base text-slate-900 placeholder:text-slate-400 transition focus:border-[#0ea5a4] focus:outline-none focus:ring-2 focus:ring-[#0ea5a4]/20"
+                  className="w-full rounded-[24px] border border-slate-200 bg-slate-50 px-5 py-4 text-base text-slate-900 placeholder:text-slate-400 transition focus:border-[#2563eb] focus:outline-none focus:ring-2 focus:ring-[#2563eb]/20"
                 />
               </div>
 
@@ -574,7 +574,7 @@ function ManagerLogin({ onLogin }) {
                   readOnly
                   value={activationForm.phone}
                   placeholder="Loads from your manager record"
-                  className="w-full rounded-[24px] border border-slate-200 bg-slate-50 px-5 py-4 text-base text-slate-900 placeholder:text-slate-400 transition focus:border-[#0ea5a4] focus:outline-none focus:ring-2 focus:ring-[#0ea5a4]/20"
+                  className="w-full rounded-[24px] border border-slate-200 bg-slate-50 px-5 py-4 text-base text-slate-900 placeholder:text-slate-400 transition focus:border-[#2563eb] focus:outline-none focus:ring-2 focus:ring-[#2563eb]/20"
                 />
               </div>
 
@@ -589,7 +589,7 @@ function ManagerLogin({ onLogin }) {
                       : ''
                   }
                   placeholder="Loads from your manager record"
-                  className="w-full rounded-[24px] border border-slate-200 bg-slate-50 px-5 py-4 text-base text-slate-900 placeholder:text-slate-400 transition focus:border-[#0ea5a4] focus:outline-none focus:ring-2 focus:ring-[#0ea5a4]/20"
+                  className="w-full rounded-[24px] border border-slate-200 bg-slate-50 px-5 py-4 text-base text-slate-900 placeholder:text-slate-400 transition focus:border-[#2563eb] focus:outline-none focus:ring-2 focus:ring-[#2563eb]/20"
                 />
               </div>
 
@@ -643,7 +643,7 @@ function ManagerLogin({ onLogin }) {
               </button>
 
               <div className="rounded-[28px] border border-slate-200 bg-slate-50 p-5">
-                <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-[#0ea5a4]">Manager access</div>
+                <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-[#2563eb]">Manager access</div>
                 <p className="mt-2 text-sm leading-6 text-slate-500">
                   Join Axis sets your tier first. Paid plans create the subscription, and the free tier creates a listing-only manager record. Then your manager ID and selected tier are ready for account setup here.
                 </p>
@@ -654,7 +654,7 @@ function ManagerLogin({ onLogin }) {
                 ) : null}
                 <a
                   href="/join-us"
-                  className="mt-4 inline-flex w-full items-center justify-center rounded-full bg-[#0ea5a4] px-5 py-4 text-base font-semibold text-white transition hover:bg-[#0b8a89]"
+                  className="mt-4 inline-flex w-full items-center justify-center rounded-full bg-[#2563eb] px-5 py-4 text-base font-semibold text-white transition hover:bg-[#0b8a89]"
                 >
                   Start in Join Axis
                 </a>
@@ -725,7 +725,7 @@ function HouseManagementPanel({ onPropertiesChange }) {
   return (
     <div className="grid gap-6 lg:grid-cols-[0.95fr_1.05fr]">
       <div className="rounded-[24px] border border-slate-200 bg-white p-6">
-        <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-[#0ea5a4]">House Management</div>
+        <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-[#2563eb]">House Management</div>
         <h3 className="mt-2 text-xl font-black text-slate-900">Add a house</h3>
         <p className="mt-2 text-sm leading-6 text-slate-500">
           Add internal property records for leasing and resident operations. Public marketing listings still use the website property dataset.
@@ -740,7 +740,7 @@ function HouseManagementPanel({ onPropertiesChange }) {
               value={form.name}
               onChange={(event) => setForm((current) => ({ ...current, name: event.target.value }))}
               placeholder="4709C 8th Ave NE"
-              className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 placeholder:text-slate-400 transition focus:border-[#0ea5a4] focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#0ea5a4]/20"
+              className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 placeholder:text-slate-400 transition focus:border-[#2563eb] focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#2563eb]/20"
             />
           </div>
           <div>
@@ -750,7 +750,7 @@ function HouseManagementPanel({ onPropertiesChange }) {
               value={form.address}
               onChange={(event) => setForm((current) => ({ ...current, address: event.target.value }))}
               placeholder="Full street address"
-              className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 placeholder:text-slate-400 transition focus:border-[#0ea5a4] focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#0ea5a4]/20"
+              className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 placeholder:text-slate-400 transition focus:border-[#2563eb] focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#2563eb]/20"
             />
           </div>
           <div>
@@ -762,13 +762,13 @@ function HouseManagementPanel({ onPropertiesChange }) {
               value={form.utilitiesFee}
               onChange={(event) => setForm((current) => ({ ...current, utilitiesFee: event.target.value }))}
               placeholder="150"
-              className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 placeholder:text-slate-400 transition focus:border-[#0ea5a4] focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#0ea5a4]/20"
+              className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 placeholder:text-slate-400 transition focus:border-[#2563eb] focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#2563eb]/20"
             />
           </div>
           <button
             type="submit"
             disabled={saving || !form.name.trim()}
-            className="w-full rounded-2xl bg-slate-900 px-5 py-3.5 text-sm font-semibold text-white transition hover:bg-[#0ea5a4] disabled:opacity-50"
+            className="w-full rounded-2xl bg-slate-900 px-5 py-3.5 text-sm font-semibold text-white transition hover:bg-[#2563eb] disabled:opacity-50"
           >
             {saving ? 'Adding house…' : 'Add house'}
           </button>
@@ -841,7 +841,7 @@ function ManagerOperationsPanel({ manager, propertyCount, onGenerateDraft, onOpe
     <section className="mb-8 rounded-[28px] border border-slate-200 bg-white p-6">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
         <div>
-          <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-[#0ea5a4]">Portal tools</div>
+          <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-[#2563eb]">Portal tools</div>
           <h2 className="mt-2 text-2xl font-black text-slate-900">Manager operations</h2>
           <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-500">
             Use this portal to add houses, review applications through lease generation, manage leasing, and keep your manager subscription active.
@@ -864,7 +864,7 @@ function ManagerOperationsPanel({ manager, propertyCount, onGenerateDraft, onOpe
             <button
               type="button"
               onClick={card.onClick}
-              className="mt-4 rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:border-[#0ea5a4] hover:text-[#0ea5a4]"
+              className="mt-4 rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:border-[#2563eb] hover:text-[#2563eb]"
             >
               {card.action}
             </button>
@@ -919,7 +919,7 @@ function GenerateDraftModal({ manager, propertyOptions, onClose, onGenerated }) 
     }
   }
 
-  const inputCls = 'w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm transition focus:border-[#0ea5a4] focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#0ea5a4]/20'
+  const inputCls = 'w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm transition focus:border-[#2563eb] focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#2563eb]/20'
   const labelCls = 'mb-1.5 block text-sm font-semibold text-slate-700'
 
   return (
@@ -1027,7 +1027,7 @@ function GenerateDraftModal({ manager, propertyOptions, onClose, onGenerated }) 
             <button
               type="submit"
               disabled={loading}
-              className="inline-flex items-center gap-2 rounded-2xl bg-[#0ea5a4] px-6 py-2.5 text-sm font-semibold text-white transition hover:bg-[#0b8a89] disabled:opacity-50"
+              className="inline-flex items-center gap-2 rounded-2xl bg-[#2563eb] px-6 py-2.5 text-sm font-semibold text-white transition hover:bg-[#0b8a89] disabled:opacity-50"
             >
               {loading ? (
                 <>
@@ -1141,7 +1141,7 @@ function ManagerDashboard({ manager, onOpenDraft, onSignOut }) {
       <header className="sticky top-0 z-10 border-b border-slate-200 bg-white/95 px-6 py-4 backdrop-blur">
         <div className="mx-auto flex max-w-7xl items-center justify-between gap-4">
           <div className="flex items-center gap-3">
-            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-[#0ea5a4]">
+            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-[#2563eb]">
               <svg className="h-5 w-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                 <path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
               </svg>
@@ -1208,7 +1208,7 @@ function ManagerDashboard({ manager, onOpenDraft, onSignOut }) {
               placeholder="Search resident…"
               value={residentInput}
               onChange={e => setResidentInput(e.target.value)}
-              className="rounded-2xl border border-slate-200 bg-white py-2.5 pl-10 pr-4 text-sm transition focus:border-[#0ea5a4] focus:outline-none focus:ring-2 focus:ring-[#0ea5a4]/20"
+              className="rounded-2xl border border-slate-200 bg-white py-2.5 pl-10 pr-4 text-sm transition focus:border-[#2563eb] focus:outline-none focus:ring-2 focus:ring-[#2563eb]/20"
             />
           </div>
 
@@ -1216,7 +1216,7 @@ function ManagerDashboard({ manager, onOpenDraft, onSignOut }) {
           <select
             value={filters.status}
             onChange={e => setFilters(f => ({ ...f, status: e.target.value }))}
-            className="rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition focus:border-[#0ea5a4] focus:outline-none focus:ring-2 focus:ring-[#0ea5a4]/20"
+            className="rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition focus:border-[#2563eb] focus:outline-none focus:ring-2 focus:ring-[#2563eb]/20"
           >
             <option value="">All statuses</option>
             {ALL_STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
@@ -1226,7 +1226,7 @@ function ManagerDashboard({ manager, onOpenDraft, onSignOut }) {
           <select
             value={filters.property}
             onChange={e => setFilters(f => ({ ...f, property: e.target.value }))}
-            className="rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition focus:border-[#0ea5a4] focus:outline-none focus:ring-2 focus:ring-[#0ea5a4]/20"
+            className="rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition focus:border-[#2563eb] focus:outline-none focus:ring-2 focus:ring-[#2563eb]/20"
           >
             <option value="">All properties</option>
             {propertyOptions.map(p => <option key={p} value={p}>{p}</option>)}
@@ -1235,7 +1235,7 @@ function ManagerDashboard({ manager, onOpenDraft, onSignOut }) {
           {/* Generate new draft */}
           <button
             onClick={() => setShowGenerateModal(true)}
-            className="inline-flex items-center gap-2 rounded-2xl bg-[#0ea5a4] px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-[#0b8a89]"
+            className="inline-flex items-center gap-2 rounded-2xl bg-[#2563eb] px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-[#0b8a89]"
           >
             <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z" />
@@ -1308,7 +1308,7 @@ function ManagerDashboard({ manager, onOpenDraft, onSignOut }) {
                       <td className="px-5 py-4 text-right">
                         <button
                           onClick={() => onOpenDraft(draft.id)}
-                          className="rounded-xl border border-slate-200 px-4 py-1.5 text-sm font-semibold text-slate-700 transition hover:border-[#0ea5a4] hover:text-[#0ea5a4]"
+                          className="rounded-xl border border-slate-200 px-4 py-1.5 text-sm font-semibold text-slate-700 transition hover:border-[#2563eb] hover:text-[#2563eb]"
                         >
                           {canReview(draft['Status']) ? 'Review →' : 'View →'}
                         </button>
@@ -1588,7 +1588,7 @@ function LeaseEditor({ draftId, manager, onBack }) {
               <button
                 onClick={handlePublish}
                 disabled={!!actionLoading}
-                className="rounded-xl bg-[#0ea5a4] px-4 py-2 text-sm font-semibold text-white transition hover:bg-[#0b8a89] disabled:opacity-50"
+                className="rounded-xl bg-[#2563eb] px-4 py-2 text-sm font-semibold text-white transition hover:bg-[#0b8a89] disabled:opacity-50"
               >
                 {actionLoading === 'publish' ? 'Publishing…' : 'Publish to portal'}
               </button>
@@ -1632,7 +1632,7 @@ function LeaseEditor({ draftId, manager, onBack }) {
                     <button
                       onClick={handleSave}
                       disabled={saving || !!actionLoading}
-                      className="rounded-xl bg-slate-900 px-4 py-1.5 text-xs font-semibold text-white transition hover:bg-[#0ea5a4] disabled:opacity-50"
+                      className="rounded-xl bg-slate-900 px-4 py-1.5 text-xs font-semibold text-white transition hover:bg-[#2563eb] disabled:opacity-50"
                     >
                       {saving ? 'Saving…' : 'Save edits'}
                     </button>
@@ -1761,7 +1761,7 @@ function LeaseEditor({ draftId, manager, onBack }) {
               disabled={!canEdit}
               rows={4}
               placeholder="Revision notes, review comments, instructions…"
-              className="w-full resize-none rounded-2xl border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700 placeholder:text-slate-400 transition focus:border-[#0ea5a4] focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#0ea5a4]/20 disabled:opacity-60"
+              className="w-full resize-none rounded-2xl border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700 placeholder:text-slate-400 transition focus:border-[#2563eb] focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#2563eb]/20 disabled:opacity-60"
             />
             {canEdit && (
               <button
@@ -1818,7 +1818,7 @@ function LeaseEditor({ draftId, manager, onBack }) {
               </button>
             )}
             {canPublish && (
-              <button onClick={handlePublish} disabled={!!actionLoading} className="w-full rounded-2xl bg-[#0ea5a4] py-3 text-sm font-semibold text-white transition hover:bg-[#0b8a89] disabled:opacity-50">
+              <button onClick={handlePublish} disabled={!!actionLoading} className="w-full rounded-2xl bg-[#2563eb] py-3 text-sm font-semibold text-white transition hover:bg-[#0b8a89] disabled:opacity-50">
                 {actionLoading === 'publish' ? 'Publishing…' : 'Publish to resident portal'}
               </button>
             )}

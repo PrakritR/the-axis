@@ -291,7 +291,7 @@ function SetupRequired() {
   )
 }
 
-const authInputCls = 'w-full rounded-[24px] border border-slate-200 bg-white px-5 py-4 text-base outline-none transition focus:border-[#0ea5a4] focus:ring-2 focus:ring-[#0ea5a4]/20'
+const authInputCls = 'w-full rounded-[24px] border border-slate-200 bg-white px-5 py-4 text-base outline-none transition focus:border-[#2563eb] focus:ring-2 focus:ring-[#2563eb]/20'
 
 function AuthCard({ children }) {
   return (
@@ -447,7 +447,7 @@ function AirtableLogin({ onLogin }) {
       {view === 'portal' ? (
         <>
           <div className="mb-6 text-center">
-            <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-[#0b8a89]">Axis Portal</div>
+            <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-[#2563eb]">Axis Portal</div>
             <h1 className="mt-2 text-4xl font-black tracking-tight text-slate-900 sm:text-5xl">Choose your portal</h1>
             <p className="mt-3 text-base leading-7 text-slate-500">
               Residents can sign in or activate an account. Managers can go straight to the manager portal.
@@ -480,7 +480,7 @@ function AirtableLogin({ onLogin }) {
       ) : (
         <>
           <div className="mb-6 text-center">
-            <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-[#0b8a89]">AXIS PORTAL</div>
+            <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-[#2563eb]">AXIS PORTAL</div>
             <h1 className="mt-2 text-5xl font-black tracking-tight text-slate-900 sm:text-6xl">Login</h1>
             <p className="mt-3 text-base leading-7 text-slate-500">
               Sign in or activate your resident account.
@@ -499,7 +499,7 @@ function AirtableLogin({ onLogin }) {
                 }}
                 className={classNames(
                   'flex-1 rounded-[18px] px-4 py-3 text-base font-semibold transition',
-                  residentTab === id ? 'bg-white text-slate-900 shadow-sm ring-2 ring-[#0ea5a4]' : 'text-slate-500 hover:text-slate-900'
+                  residentTab === id ? 'bg-white text-slate-900 shadow-sm ring-2 ring-[#2563eb]' : 'text-slate-500 hover:text-slate-900'
                 )}
               >
                 {label}
@@ -1599,17 +1599,17 @@ function LeasingPanel({ resident, onOpenPayments }) {
 
         {/* ── Approved lease document (only shown once management publishes it) ── */}
         {!leaseLoading && approvedLease && leaseContent && (
-          <div className="rounded-[24px] border border-[#0ea5a4]/30 bg-[linear-gradient(135deg,#f0fdfc_0%,#ffffff_100%)] p-5">
+          <div className="rounded-[24px] border border-[#2563eb]/20 bg-[linear-gradient(135deg,#eff6ff_0%,#ffffff_100%)] p-5">
             <div className="flex items-start justify-between gap-4">
               <div>
                 <div className="flex items-center gap-2">
-                  <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-[#0b8a89]">Lease Document</div>
+                  <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-[#2563eb]">Lease Document</div>
                   {leaseStatus === 'Signed' ? (
                     <span className="rounded-full border border-purple-200 bg-purple-50 px-2.5 py-1 text-[11px] font-semibold text-purple-700">
                       Signed
                     </span>
                   ) : (
-                    <span className="rounded-full border border-teal-200 bg-teal-50 px-2.5 py-1 text-[11px] font-semibold text-teal-700">
+                    <span className="rounded-full border border-blue-200 bg-blue-50 px-2.5 py-1 text-[11px] font-semibold text-blue-700">
                       Ready to review
                     </span>
                   )}
@@ -1622,7 +1622,7 @@ function LeasingPanel({ resident, onOpenPayments }) {
               <button
                 type="button"
                 onClick={() => setShowLeaseText(v => !v)}
-                className="shrink-0 rounded-full bg-[#0ea5a4] px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-[#0b8a89]"
+                className="shrink-0 rounded-full bg-[linear-gradient(180deg,#2f76ff_0%,#2450eb_100%)] px-5 py-2.5 text-sm font-semibold text-white transition hover:brightness-105"
               >
                 {showLeaseText ? 'Hide' : 'View lease'}
               </button>
@@ -1645,7 +1645,7 @@ function LeasingPanel({ resident, onOpenPayments }) {
                       a.click()
                       URL.revokeObjectURL(url)
                     }}
-                    className="text-xs font-semibold text-[#0ea5a4] hover:underline"
+                    className="text-xs font-semibold text-[#2563eb] hover:underline"
                   >
                     Download
                   </button>

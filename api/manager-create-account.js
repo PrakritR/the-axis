@@ -1,4 +1,3 @@
-const STRIPE_API = 'https://api.stripe.com/v1'
 const AIRTABLE_TOKEN = process.env.VITE_AIRTABLE_TOKEN
 const BASE_ID = process.env.VITE_AIRTABLE_APPLICATIONS_BASE_ID || 'appNBX2inqfJMyqYV'
 
@@ -9,24 +8,12 @@ function airtableHeaders() {
   }
 }
 
-function stripeHeaders(secretKey) {
-  return {
-    Authorization: `Bearer ${secretKey}`,
-    'Content-Type': 'application/x-www-form-urlencoded',
-  }
-}
-
 function escapeFormulaValue(value) {
   return String(value || '').replace(/"/g, '\\"')
 }
 
 function mapRecord(record) {
   return { id: record.id, ...record.fields, created_at: record.createdTime }
-}
-
-function deriveManagerId(recordId) {
-  const suffix = String(recordId || '').replace(/^rec/i, '').toUpperCase()
-  return `MGR-${suffix}`
 }
 
 function extractPhoneFromNotes(notes) {
@@ -60,41 +47,6 @@ async function updateManager(recordId, fields) {
   return mapRecord(await atRes.json())
 }
 
-async function listCustomerSubscriptions(secretKey, customerId) {
-  const statuses = ['active', 'trialing', 'past_due']
-  const all = []
-
-  for (const status of statuses) {
-    const url = `${STRIPE_API}/subscriptions?customer=${encodeURIComponent(customerId)}&status=${status}&limit=20`
-    const stripeRes = await fetch(url, { headers: stripeHeaders(secretKey) })
-    if (!stripeRes.ok) continue
-    const data = await stripeRes.json()
-    all.push(...(data.data || []))
-  }
-
-  return all
-}
-
-async function hasActiveManagerSubscription(secretKey, email) {
-  const customerRes = await fetch(`${STRIPE_API}/customers?email=${encodeURIComponent(email)}&limit=10`, {
-    headers: stripeHeaders(secretKey),
-  })
-  if (!customerRes.ok) return false
-
-  const customers = (await customerRes.json()).data || []
-
-  for (const customer of customers) {
-    const subscriptions = await listCustomerSubscriptions(secretKey, customer.id)
-    const match = subscriptions.find((subscription) => {
-      const accessType = subscription.metadata?.access_type || ''
-      return ['active', 'trialing'].includes(subscription.status) && accessType === 'manager_portal'
-    })
-    if (match) return true
-  }
-
-  return false
-}
-
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*')
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS')
@@ -105,12 +57,8 @@ export default async function handler(req, res) {
     return res.status(405).json({ error: 'Method not allowed' })
   }
 
-  const secretKey = process.env.STRIPE_SECRET_KEY
   if (!AIRTABLE_TOKEN) {
     return res.status(500).json({ error: 'Airtable token is not configured on the server yet.' })
-  }
-  if (!secretKey) {
-    return res.status(500).json({ error: 'STRIPE_SECRET_KEY is not configured on the server yet.' })
   }
 
   const { managerId, name, password } = req.body || {}
@@ -132,15 +80,9 @@ export default async function handler(req, res) {
     }
 
     const normalizedEmail = String(manager.Email || '').trim().toLowerCase()
-    const normalizedPlanType = String(extractMetadataValue(manager.Notes, 'Plan') || '').trim().toLowerCase()
+    const normalizedPlanType = String(manager.tier || extractMetadataValue(manager.Notes, 'Plan') || 'free').trim().toLowerCase()
     if (!normalizedEmail) {
       return res.status(400).json({ error: 'This manager record is missing an email address. Please contact support.' })
-    }
-
-    const requiresSubscription = normalizedPlanType !== 'free'
-    const subscribed = requiresSubscription ? await hasActiveManagerSubscription(secretKey, normalizedEmail) : true
-    if (!subscribed) {
-      return res.status(403).json({ error: 'Complete the recurring manager subscription before creating your account.' })
     }
 
     if (manager.Password) {

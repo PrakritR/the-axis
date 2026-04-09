@@ -21,7 +21,6 @@ export default function Hero({
   return (
     <section className="relative w-full overflow-hidden bg-[linear-gradient(180deg,#edf2fb_0%,#eaf0fb_52%,#f4f7fd_100%)]" style={{ minHeight: 'clamp(460px, 78dvh, 860px)' }}>
       <div className="absolute inset-0">
-        <img src={heroImage} alt="" role="presentation" className="h-full w-full object-cover opacity-[0.16]" />
         <div className="absolute inset-0 bg-[linear-gradient(90deg,rgba(237,242,251,0.96)_0%,rgba(237,242,251,0.88)_34%,rgba(237,242,251,0.55)_62%,rgba(237,242,251,0.78)_100%)]" />
         <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_18%_40%,rgba(37,99,235,0.14),transparent_48%),radial-gradient(circle_at_bottom_right,rgba(255,255,255,0.95),transparent_34%)]" />
       </div>
