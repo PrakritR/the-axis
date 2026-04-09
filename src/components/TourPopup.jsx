@@ -68,7 +68,7 @@ export default function TourPopup() {
     setSubmitting(true)
     setSubmitError('')
     try {
-      const res = await fetch('/api/schedule-tour', {
+      const res = await fetch('/api/tour', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

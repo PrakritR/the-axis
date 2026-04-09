@@ -66,7 +66,7 @@ function HousingScheduler() {
 
   useEffect(() => {
     let cancelled = false
-    fetch('/api/tour-properties')
+    fetch('/api/tour')
       .then((res) => res.json())
       .then((data) => {
         if (cancelled) return
@@ -85,7 +85,7 @@ function HousingScheduler() {
   async function handleSchedule() {
     setSubmitting(true); setSubmitError('')
     try {
-      const res = await fetch('/api/schedule-tour', {
+      const res = await fetch('/api/tour', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
