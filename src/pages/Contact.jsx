@@ -158,7 +158,6 @@ function ContactFields({ form, setField }) {
 // ── Housing scheduler ─────────────────────────────────────────────────────────
 
 function HousingScheduler() {
-  const [bookingType, setBookingType] = useState(null)
   const [step, setStep] = useState(1)
   const [property, setProperty] = useState(null)
   const [room, setRoom] = useState('')
@@ -187,7 +186,7 @@ function HousingScheduler() {
 
   function setField(k, v) { setFormState(prev => ({ ...prev, [k]: v })) }
   function reset() {
-    setBookingType(null); setStep(1); setProperty(null); setRoom(''); setTourType('in-person')
+    setStep(1); setProperty(null); setRoom(''); setTourType('in-person')
     setSelectedDate(''); setSelectedTime('')
     setFormState({ name: '', email: '', phone: '', notes: '' })
     setSubmitted(false); setSubmitError('')
@@ -214,7 +213,7 @@ function HousingScheduler() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           name: form.name.trim(), email: form.email.trim(), phone: form.phone.trim(),
-          type: bookingType === 'meeting' ? 'Meeting' : 'Tour',
+          type: 'Tour',
           property: selectedProperty?.name || '', room: room || '',
           tourFormat: tourType === 'virtual' ? 'Virtual' : 'In-Person',
           manager: selectedProperty?.manager || '',
@@ -234,75 +233,36 @@ function HousingScheduler() {
 
   if (submitted) return (
     <SuccessCard
-      title={bookingType === 'meeting' ? 'Meeting request sent!' : 'Tour request sent!'}
+      title="Tour request sent!"
       body={`We'll reach out to ${form.email} to confirm within 1 business day.`}
       onReset={reset}
     />
-  )
-
-  if (!bookingType) return (
-    <div className="grid gap-4 sm:grid-cols-2">
-      <button onClick={() => setBookingType('tour')}
-        className="group flex flex-col gap-4 rounded-2xl border border-slate-200 bg-white p-6 text-left transition-all hover:border-slate-900 hover:shadow-sm">
-        <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-slate-100 transition-colors group-hover:bg-slate-900">
-          <svg className="h-5 w-5 text-slate-600 group-hover:text-white transition-colors" fill="none" stroke="currentColor" strokeWidth={1.8} viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 12l8.954-8.955c.44-.439 1.152-.439 1.591 0L21.75 12M4.5 9.75v10.125c0 .621.504 1.125 1.125 1.125H9.75v-4.875c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125V21h4.125c.621 0 1.125-.504 1.125-1.125V9.75M8.25 21h8.25" />
-          </svg>
-        </div>
-        <div>
-          <div className="font-bold text-slate-900">Tour a Property</div>
-          <p className="mt-1 text-sm leading-6 text-slate-500">Pick a home and choose a time that works from the available calendar.</p>
-        </div>
-        <div className="mt-auto flex items-center gap-1.5 text-xs font-semibold text-axis">
-          Schedule tour <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7"/></svg>
-        </div>
-      </button>
-
-      <button onClick={() => { setBookingType('meeting'); setStep(3) }}
-        className="group flex flex-col gap-4 rounded-2xl border border-slate-200 bg-white p-6 text-left transition-all hover:border-slate-900 hover:shadow-sm">
-        <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-slate-100 transition-colors group-hover:bg-slate-900">
-          <svg className="h-5 w-5 text-slate-600 group-hover:text-white transition-colors" fill="none" stroke="currentColor" strokeWidth={1.8} viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" />
-          </svg>
-        </div>
-        <div>
-          <div className="font-bold text-slate-900">Contact us</div>
-          <p className="mt-1 text-sm leading-6 text-slate-500">Questions about housing, availability, pricing, or lease options.</p>
-        </div>
-        <div className="mt-auto flex items-center gap-1.5 text-xs font-semibold text-axis">
-          Get in touch <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7"/></svg>
-        </div>
-      </button>
-    </div>
   )
 
   const tourSteps = [['1','Property'],['2','Date & Room'],['3','Your Details']]
 
   return (
     <div>
-      <div className="mb-6 flex items-center justify-between border-b border-slate-100 pb-5">
-        <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-axis">
-          {bookingType === 'tour' ? 'Schedule a Tour' : 'Contact Us'}
-        </div>
-        <button onClick={reset} className="text-xs font-semibold text-slate-400 hover:text-slate-700">← Back</button>
+      <div className="mb-6 border-b border-slate-100 pb-5">
+        <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-axis">Schedule a Tour</div>
+        <h3 className="mt-2 text-2xl font-black tracking-tight text-slate-900">Tour a property</h3>
+        <p className="mt-2 text-sm text-slate-500">Pick a home, choose a time, and send your details.</p>
       </div>
 
-      {bookingType === 'tour' && (
-        <div className="mb-8 flex items-center gap-2">
-          {tourSteps.map(([s, label], idx) => (
-            <div key={s} className="flex items-center gap-1.5">
-              <div className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[11px] font-bold transition-colors ${step > idx + 1 ? 'bg-[#2563eb] text-white' : step === idx + 1 ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-400'}`}>
-                {step > idx + 1 ? <svg className="h-3 w-3" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5"/></svg> : s}
-              </div>
-              <span className={`hidden text-xs font-medium sm:block ${step >= idx + 1 ? 'text-slate-700' : 'text-slate-400'}`}>{label}</span>
-              {idx < 2 && <div className={`h-px w-4 shrink-0 sm:w-6 ${step > idx + 1 ? 'bg-[#2563eb]' : 'bg-slate-200'}`} />}
+      <div className="mb-8 flex items-center gap-2">
+        {tourSteps.map(([s, label], idx) => (
+          <div key={s} className="flex items-center gap-1.5">
+            <div className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[11px] font-bold transition-colors ${step > idx + 1 ? 'bg-[#2563eb] text-white' : step === idx + 1 ? 'bg-[#2563eb] text-white' : 'bg-slate-100 text-slate-400'}`}>
+              {step > idx + 1 ? <svg className="h-3 w-3" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5"/></svg> : s}
             </div>
-          ))}
-        </div>
-      )}
+            <span className={`hidden text-xs font-medium sm:block ${step >= idx + 1 ? 'text-slate-700' : 'text-slate-400'}`}>{label}</span>
+            {idx < 2 && <div className={`h-px w-4 shrink-0 sm:w-6 ${step > idx + 1 ? 'bg-[#2563eb]' : 'bg-slate-200'}`} />}
+          </div>
+        ))}
+      </div>
 
       {/* Step 1: Choose property */}
-      {bookingType === 'tour' && step === 1 && (
+      {step === 1 && (
         <div className="space-y-3">
           {properties.map((p) => (
             <button key={p.id} onClick={() => { setProperty(p.id); setRoom(''); setSelectedDate(''); setSelectedTime(''); setStep(2) }}
@@ -318,8 +278,12 @@ function HousingScheduler() {
       )}
 
       {/* Step 2: Pick date, time slot, room, tour format */}
-      {bookingType === 'tour' && step === 2 && selectedProperty && (
+      {step === 2 && selectedProperty && (
         <div className="space-y-7">
+          <div className="rounded-2xl border border-slate-100 bg-slate-50 px-4 py-3 text-sm">
+            <span className="font-semibold text-slate-900">{selectedProperty.name}</span>
+            <span className="ml-2 text-slate-500">{selectedProperty.address}</span>
+          </div>
 
           {/* Date calendar */}
           <div>
@@ -384,7 +348,7 @@ function HousingScheduler() {
       {/* Step 3: Contact details */}
       {step === 3 && (
         <div className="space-y-4">
-          {bookingType === 'tour' && selectedProperty && (
+          {selectedProperty && (
             <div className="mb-2 flex items-center justify-between rounded-2xl border border-slate-100 bg-slate-50 px-4 py-2.5 text-sm">
               <div className="flex flex-wrap items-center gap-2">
                 <span className="font-semibold text-slate-900">{selectedProperty.name}</span>
@@ -399,21 +363,19 @@ function HousingScheduler() {
           <ContactFields form={form} setField={setField} />
           <div>
             <label className="mb-1.5 block text-xs font-semibold text-slate-700">
-              {bookingType === 'meeting' ? 'What would you like to discuss?' : 'Questions or notes?'}
+              Questions or notes?
               <span className="ml-1 font-normal text-slate-400">(optional)</span>
             </label>
             <textarea className={`${inputCls} min-h-[90px] resize-y`}
-              placeholder={bookingType === 'meeting' ? 'Pricing, lease terms, move-in timeline…' : "Anything specific you'd like to know…"}
+              placeholder="Anything specific you'd like to know…"
               value={form.notes} onChange={e => setField('notes', e.target.value)} />
           </div>
           {submitError && <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{submitError}</div>}
           <div className="flex gap-3 pt-2">
-            {bookingType === 'tour' && (
-              <button onClick={() => setStep(2)} className="rounded-full border border-slate-200 px-5 py-2.5 text-sm font-semibold text-slate-600 hover:border-slate-400">Back</button>
-            )}
+            <button onClick={() => setStep(2)} className="rounded-full border border-slate-200 px-5 py-2.5 text-sm font-semibold text-slate-600 hover:border-slate-400">Back</button>
             <button onClick={handleSchedule} disabled={!form.name.trim() || !form.email.trim() || submitting}
               className="flex-1 rounded-full bg-[linear-gradient(180deg,#2f76ff_0%,#2450eb_100%)] py-3 text-sm font-semibold text-white shadow-[0_8px_20px_rgba(37,99,235,0.25)] hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed transition-opacity">
-              {submitting ? 'Sending…' : bookingType === 'meeting' ? 'Request Meeting' : 'Request Tour'}
+              {submitting ? 'Sending…' : 'Request Tour'}
             </button>
           </div>
         </div>
