@@ -1,6 +1,6 @@
 /**
  * GET  /api/tour  → returns available properties for tour scheduling
- * POST /api/tour  → saves a tour or meeting booking to Airtable "Scheduling"
+ * POST /api/tour  → saves a tour or meeting booking to Scheduling table
  */
 
 const AIRTABLE_BASE_ID = process.env.AIRTABLE_BASE_ID || 'appNBX2inqfJMyqYV'
@@ -88,7 +88,7 @@ export default async function handler(req, res) {
       })
       if (!r.ok) {
         const body = await r.text()
-        let msg = `Airtable error ${r.status}`
+        let msg = `Data service error ${r.status}`
         try { msg += ': ' + JSON.parse(body)?.error?.message } catch { msg += ': ' + body }
         return res.status(502).json({ error: msg })
       }

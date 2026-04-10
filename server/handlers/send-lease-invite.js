@@ -1,7 +1,7 @@
 /**
  * POST /api/send-lease-invite
  * Body: { recordId, leaseData, tenantEmail, tenantName, origin }
- * Saves lease JSON + token to Airtable, sends signing email via EmailJS.
+ * Saves lease JSON + token to applications store, sends signing email via EmailJS.
  */
 
 import { randomUUID } from 'node:crypto'
@@ -31,7 +31,7 @@ export default async function handler(req, res) {
   const siteOrigin = origin || 'https://thenorthseattlehomes.com'
   const signingUrl = `${siteOrigin}/sign/${token}`
 
-  // 1. Save lease token + JSON to Airtable
+  // 1. Save lease token + JSON to applications store
   const airtableRes = await fetch(
     `https://api.airtable.com/v0/${AIRTABLE_BASE_ID}/Applications/${recordId}`,
     {
@@ -53,7 +53,7 @@ export default async function handler(req, res) {
 
   if (!airtableRes.ok) {
     const err = await airtableRes.text()
-    return res.status(500).json({ error: `Airtable error: ${err}` })
+    return res.status(500).json({ error: `Could not save lease: ${err}` })
   }
 
   // 2. Send email via EmailJS if configured

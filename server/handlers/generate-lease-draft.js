@@ -4,7 +4,7 @@
 // Full workflow:
 //   1. Receives lease data (resident, property, dates, rent, etc.)
 //   2. Calls Claude (claude-opus-4-6) to generate a professional lease document
-//   3. Saves the AI draft to Airtable "Lease Drafts" table with status "Draft Generated"
+//   3. Saves the AI draft to "Lease Drafts" table with status "Draft Generated"
 //   4. Creates an audit log entry in the "Audit Log" table
 //   5. Returns the created draft record to the manager
 //
@@ -32,7 +32,7 @@ async function airtablePost(table, fields) {
   })
   if (!res.ok) {
     const text = await res.text()
-    throw new Error(`Airtable "${table}" error: ${text}`)
+    throw new Error(`Records API "${table}" error: ${text}`)
   }
   return res.json()
 }
@@ -165,7 +165,7 @@ Important requirements:
       throw new Error('AI returned empty content. Please try again.')
     }
 
-    // ── Step 2: Save draft to Airtable ───────────────────────────────────────
+    // ── Step 2: Save draft to records store ───────────────────────────────────
     const now = new Date().toISOString()
 
     const draftRecord = await airtablePost('Lease Drafts', {

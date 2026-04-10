@@ -523,6 +523,8 @@ export default function PropertyPage(){
   const [showScarcityPopup, setShowScarcityPopup] = useState(false)
   const [activeSharedSpace, setActiveSharedSpace] = useState(null)
   const sectionRefs = useRef({})
+  /** Ignore scroll-spy updates while a tab click or hash scroll is animating */
+  const scrollSpyLockUntilRef = useRef(0)
 
   const displayedRoomPlansForEffect = p ? buildRoomPlanDisplay(p) : []
   const scarcePlanForEffect = displayedRoomPlansForEffect.find(
@@ -588,21 +590,47 @@ export default function PropertyPage(){
     return () => window.clearTimeout(timer)
   }, [p, scarcePlanForEffect?.title, scarcePlanForEffect?.priceRange])
 
-  // Scroll window only; offset = full sticky site chrome (promo + header) + in-page section nav.
-  const scrollToId = useCallback((id) => {
-    const el = sectionRefs.current[id] || document.getElementById(id)
-    if (!el) return false
-
+  const getSectionScrollOffset = useCallback(() => {
     const chrome = document.getElementById('site-sticky-chrome')
-    const chromeH = chrome ? chrome.getBoundingClientRect().height : 0
     const nav = document.getElementById('section-nav')
+    const chromeH = chrome ? chrome.getBoundingClientRect().height : 0
     const navH = nav ? nav.getBoundingClientRect().height : 0
     const gap = 12
-    const offset = chromeH + navH + gap
-    const top = Math.max(0, el.getBoundingClientRect().top + window.scrollY - offset)
-    window.scrollTo({ top, behavior: 'smooth' })
-    return true
+    return chromeH + navH + gap
   }, [])
+
+  // Scroll window only; offset = full sticky site chrome (promo + header) + in-page section nav.
+  const scrollToId = useCallback(
+    (id) => {
+      const el = sectionRefs.current[id] || document.getElementById(id)
+      if (!el) return false
+
+      const offset = getSectionScrollOffset()
+      const top = Math.max(0, el.getBoundingClientRect().top + window.scrollY - offset)
+      window.scrollTo({ top, behavior: 'smooth' })
+      return true
+    },
+    [getSectionScrollOffset]
+  )
+
+  /** Pick the section whose top has passed the sticky “activation line” (matches scrollToId offset). */
+  const updateActiveTabFromScrollPosition = useCallback(() => {
+    if (typeof window === 'undefined') return
+    if (Date.now() < scrollSpyLockUntilRef.current) return
+
+    const offset = getSectionScrollOffset()
+    const activationY = window.scrollY + offset
+    let nextId = sectionNavItems[0]?.[0] || 'overview'
+
+    for (const [id] of sectionNavItems) {
+      const el = sectionRefs.current[id] || document.getElementById(id)
+      if (!el) continue
+      const sectionTop = el.getBoundingClientRect().top + window.scrollY
+      if (sectionTop <= activationY + 1) nextId = id
+    }
+
+    setActiveTab((prev) => (prev === nextId ? prev : nextId))
+  }, [getSectionScrollOffset, sectionNavItems])
 
   // Match in-page nav stick position to actual promo + header height (top-28 was often wrong).
   useEffect(() => {
@@ -613,6 +641,7 @@ export default function PropertyPage(){
     function syncStickyTop() {
       const h = Math.ceil(chrome.getBoundingClientRect().height)
       nav.style.top = `${h}px`
+      requestAnimationFrame(() => updateActiveTabFromScrollPosition())
     }
     syncStickyTop()
     const ro = new ResizeObserver(syncStickyTop)
@@ -623,7 +652,7 @@ export default function PropertyPage(){
       window.removeEventListener('resize', syncStickyTop)
       nav.style.removeProperty('top')
     }
-  }, [p])
+  }, [p, updateActiveTabFromScrollPosition])
 
   // Hash links: App skips scrollIntoView on /properties/* so we can apply the same offset as tab clicks.
   useEffect(() => {
@@ -632,15 +661,56 @@ export default function PropertyPage(){
     if (!raw) return undefined
     const targetId = raw === 'highlights' ? 'amenities' : raw === 'map' ? 'location' : raw
     if (!sectionNavIds.has(targetId)) return undefined
+    scrollSpyLockUntilRef.current = Date.now() + 900
     const t = window.setTimeout(() => scrollToId(targetId), 0)
     return () => clearTimeout(t)
   }, [hash, sectionNavIds, p, scrollToId])
+
+  // Scroll-spy: active tab follows the section aligned with the sticky chrome + nav (IntersectionObserver-style
+  // behavior via position checks; recomputed on scroll/resize and when section layout may change).
+  useEffect(() => {
+    if (!p) return undefined
+
+    let ticking = false
+    function onScrollOrResize() {
+      if (ticking) return
+      ticking = true
+      requestAnimationFrame(() => {
+        ticking = false
+        updateActiveTabFromScrollPosition()
+      })
+    }
+
+    window.addEventListener('scroll', onScrollOrResize, { passive: true })
+    window.addEventListener('resize', onScrollOrResize, { passive: true })
+
+    const ids = sectionNavItems.map(([id]) => id)
+    const elements = ids
+      .map((id) => sectionRefs.current[id])
+      .filter(Boolean)
+    let observer
+    if (elements.length > 0 && typeof IntersectionObserver !== 'undefined') {
+      observer = new IntersectionObserver(onScrollOrResize, {
+        root: null,
+        rootMargin: '0px',
+        threshold: [0, 0.05, 0.1, 0.25, 0.5, 0.75, 1],
+      })
+      elements.forEach((el) => observer.observe(el))
+    }
+
+    requestAnimationFrame(() => updateActiveTabFromScrollPosition())
+
+    return () => {
+      window.removeEventListener('scroll', onScrollOrResize)
+      window.removeEventListener('resize', onScrollOrResize)
+      observer?.disconnect()
+    }
+  }, [p, sectionNavItems, updateActiveTabFromScrollPosition])
 
   if (!p) {
     return <div className="container mx-auto px-6 py-12">Property not found</div>
   }
 
-  const is4709 = p.slug === '4709a-8th-ave'
   const galleryImages = (p.images && p.images.length) ? p.images : []
 
   // allow properties to explicitly declare community vs unit amenities. fall back to old `amenities` slicing
@@ -664,14 +734,6 @@ export default function PropertyPage(){
     if(unitUnique.map(x=>normalize(x)).includes(n)) continue
     unitUnique.push(a)
   }
-
-  // Polished description for 4709A, otherwise use property summary
-  const description = is4709
-    ? [
-        'Spacious 10-bedroom townhouse in Seattle. The three-story layout balances private bedrooms with generous shared living areas, making it a practical option for larger households.',
-        'Common spaces include a full kitchen and a comfortable living area on the first floor. The home features in-unit laundry, three full bathrooms across the home, and a half bathroom on the first floor.'
-      ]
-    : [p.summary]
 
   const includedItems = modalPlan
     ? Array.from(new Set([
@@ -708,22 +770,18 @@ export default function PropertyPage(){
           id="section-nav"
           className="sticky z-40 w-full border-b border-slate-200 bg-white/95 shadow-[0_1px_0_0_rgba(15,23,42,0.06)] backdrop-blur-md [top:7rem]"
         >
-          <div className="mx-auto max-w-[1480px] px-4 sm:px-6 lg:px-10">
-            <div className="border-b border-slate-100 py-4 sm:py-5 lg:py-6">
-              <p className="text-[11px] font-bold uppercase tracking-[0.2em] text-slate-400">Listing</p>
-              <h2 className="mt-2 font-editorial text-2xl font-black leading-tight tracking-tight text-slate-900 sm:text-3xl lg:text-4xl">
-                {p.name}
-              </h2>
-            </div>
+          <div className="mx-auto max-w-[1480px] px-4 py-3 sm:px-6 sm:py-4 lg:px-10 lg:py-5">
             <nav
-              className="flex flex-wrap items-center gap-x-3 gap-y-2.5 overflow-x-auto py-3 scrollbar-none sm:gap-x-4 sm:gap-y-3 sm:py-4 md:gap-x-5 lg:gap-x-6 lg:py-5 [&::-webkit-scrollbar]:hidden"
+              className="flex flex-wrap items-center gap-x-3 gap-y-2.5 overflow-x-auto scrollbar-none sm:gap-x-4 sm:gap-y-3 md:gap-x-5 lg:gap-x-6 [&::-webkit-scrollbar]:hidden"
               aria-label="Property sections"
             >
               {sectionNavItems.map(([id, label]) => (
                 <button
                   type="button"
                   key={id}
+                  aria-current={activeTab === id ? 'true' : undefined}
                   onClick={() => {
+                    scrollSpyLockUntilRef.current = Date.now() + 900
                     setActiveTab(id)
                     scrollToId(id)
                   }}
@@ -1087,7 +1145,7 @@ export default function PropertyPage(){
             </section>
           ) : null}
 
-          {/* Location (map only — address & neighborhood are in the listing header / quick facts) */}
+          {/* Location (map only — address & neighborhood are in quick facts) */}
           <section
             id="location"
             ref={(node) => {

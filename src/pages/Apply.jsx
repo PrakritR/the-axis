@@ -590,7 +590,7 @@ function Section({ title, children }) {
   )
 }
 
-async function submitToAirtable(tableName, fields) {
+async function submitApplicationRecord(tableName, fields) {
   if (!AIRTABLE_TOKEN) throw new Error('VITE_AIRTABLE_TOKEN is not set in environment variables.')
 
   const response = await fetch(`https://api.airtable.com/v0/${AIRTABLE_BASE_ID}/${encodeURIComponent(tableName)}`, {
@@ -604,7 +604,7 @@ async function submitToAirtable(tableName, fields) {
 
   if (!response.ok) {
     const body = await response.text()
-    let message = `Airtable error ${response.status}`
+    let message = `Application service error ${response.status}`
     try {
       message += `: ${JSON.parse(body)?.error?.message}`
     } catch {
@@ -687,7 +687,7 @@ async function findApplicationRecord({ applicationId, signerName }) {
     )
     if (!response.ok) {
       const body = await response.text()
-      let message = `Airtable lookup error ${response.status}`
+      let message = `Application lookup error ${response.status}`
       try { message += `: ${JSON.parse(body)?.error?.message}` } catch { message += `: ${body}` }
       throw new Error(message)
     }
@@ -714,7 +714,7 @@ async function findApplicationRecord({ applicationId, signerName }) {
 
   if (!response.ok) {
     const body = await response.text()
-    let message = `Airtable lookup error ${response.status}`
+    let message = `Application lookup error ${response.status}`
     try {
       message += `: ${JSON.parse(body)?.error?.message}`
     } catch {
@@ -1120,7 +1120,7 @@ export default function Apply() {
   const [promoInput, setPromoInput] = useState(storedDraft?.promoInput || '')
   const [promoApplied, setPromoApplied] = useState(storedSubmission?.promoApplied || false)
   const [promoError, setPromoError] = useState('')
-  // Pre-submission payment (fee paid before form is submitted to Airtable)
+  // Pre-submission payment (fee paid before the application record is saved)
   const [feePrePaid, setFeePrePaid] = useState(false)
   const [prePaymentLoading, setPrePaymentLoading] = useState(false)
   const [prePaymentError, setPrePaymentError] = useState('')
@@ -1376,7 +1376,7 @@ export default function Apply() {
           'Additional Notes': signer.notes || '',
         }
 
-        savedRecord = await submitToAirtable(APPLICATIONS_TABLE, fields)
+        savedRecord = await submitApplicationRecord(APPLICATIONS_TABLE, fields)
         setSubmittedRecord(savedRecord)
       } else if (applicationType === 'cosigner') {
         if (!cosigner.consent) {
@@ -1418,7 +1418,7 @@ export default function Apply() {
           'Notes': buildCosignerNotes(cosigner),
         }
 
-        await submitToAirtable(COSIGNERS_TABLE, fields)
+        await submitApplicationRecord(COSIGNERS_TABLE, fields)
       } else {
         throw new Error('Choose whether this is a signer application or a co-signer form.')
       }
@@ -1459,7 +1459,7 @@ export default function Apply() {
       }
       setSubmitted(true)
     } catch (submissionError) {
-      console.error('Airtable submission failed:', submissionError)
+      console.error('Application submission failed:', submissionError)
       setError(submissionError.message || 'Submission failed.')
     } finally {
       setSubmitting(false)
@@ -2456,7 +2456,7 @@ export default function Apply() {
 
           {error && (
             <div className="space-y-3 rounded-xl border border-red-200 bg-red-50 px-4 py-4 text-sm text-red-700">
-              <p className="font-semibold">Submission failed — Airtable didn&apos;t accept the application.</p>
+              <p className="font-semibold">Submission failed — we couldn&apos;t save your application. Please try again or contact support.</p>
               <p className="break-all font-mono text-xs text-red-600">{error}</p>
               <a href={buildMailtoFallback(applicationType, signer, cosigner)} className="inline-block rounded-lg bg-red-700 px-4 py-2 text-xs font-semibold text-white hover:bg-red-800">
                 Send via email instead

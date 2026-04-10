@@ -58,7 +58,7 @@ export default async function handler(req, res) {
   }
 
   if (!AIRTABLE_TOKEN) {
-    return res.status(500).json({ error: 'Airtable token is not configured on the server yet.' })
+    return res.status(500).json({ error: 'Server data connection is not configured yet.' })
   }
 
   const { managerId, name, password } = req.body || {}

@@ -21,6 +21,7 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import toast from 'react-hot-toast'
 import { HOUSING_CONTACT_MESSAGE } from '../lib/housingSite'
+import { readJsonResponse } from '../lib/readJsonResponse'
 import {
   PortalAuthCard,
   PortalAuthPage,
@@ -36,7 +37,7 @@ import {
 export const MANAGER_SESSION_KEY = 'axis_manager'
 const MANAGER_ONBOARDING_KEY = 'axis_manager_onboarding'
 
-// ─── Airtable config — same base as the rest of the portal ───────────────────
+// ─── Records API config — same base as the rest of the portal ────────────────
 const AIRTABLE_TOKEN = import.meta.env.VITE_AIRTABLE_TOKEN
 const BASE_ID = import.meta.env.VITE_AIRTABLE_APPLICATIONS_BASE_ID || 'appNBX2inqfJMyqYV'
 const AIRTABLE_BASE_URL = `https://api.airtable.com/v0/${BASE_ID}`
@@ -65,7 +66,7 @@ const LEASE_TERMS = [
   'Summer (Jun–Sep)', 'Academic Year (Sep–Jun)', 'Full Year', 'Custom',
 ]
 
-// ─── Airtable helpers ─────────────────────────────────────────────────────────
+// ─── Records API helpers ──────────────────────────────────────────────────────
 function atHeaders() {
   return { Authorization: `Bearer ${AIRTABLE_TOKEN}`, 'Content-Type': 'application/json' }
 }
@@ -308,7 +309,7 @@ export function ManagerAuthForm({ onLogin, footer = null, variant = 'default' })
       setActivationError('')
       try {
         const res = await fetch(`/api/portal?action=manager-subscription-complete&session_id=${encodeURIComponent(sessionId)}`)
-        const data = await res.json()
+        const data = await readJsonResponse(res)
         if (!res.ok) throw new Error(data.error || 'Could not verify the subscription.')
         if (cancelled) return
 
@@ -343,7 +344,7 @@ export function ManagerAuthForm({ onLogin, footer = null, variant = 'default' })
 
       try {
         const res = await fetch(`/api/portal?action=manager-lookup&manager_id=${encodeURIComponent(managerId)}`)
-        const data = await res.json()
+        const data = await readJsonResponse(res)
 
         if (!res.ok) {
           if (res.status === 404) return
@@ -380,7 +381,7 @@ export function ManagerAuthForm({ onLogin, footer = null, variant = 'default' })
           password: signInForm.password,
         }),
       })
-      const data = await res.json()
+      const data = await readJsonResponse(res)
       if (!res.ok) throw new Error(data.error || 'Login failed')
       clearOnboarding()
       sessionStorage.setItem(MANAGER_SESSION_KEY, JSON.stringify(data.manager))
@@ -405,7 +406,7 @@ export function ManagerAuthForm({ onLogin, footer = null, variant = 'default' })
           password: activationForm.password,
         }),
       })
-      const data = await res.json()
+      const data = await readJsonResponse(res)
       if (!res.ok) throw new Error(data.error || 'Could not create manager account')
       clearOnboarding()
       sessionStorage.setItem(MANAGER_SESSION_KEY, JSON.stringify(data.manager))
@@ -514,7 +515,11 @@ export function ManagerAuthForm({ onLogin, footer = null, variant = 'default' })
             </div>
           ) : null}
           <PortalNotice>
-            Use the manager ID created during pricing setup. Your account details load automatically once we find the record.
+            Use the Manager ID from{' '}
+            <Link to="/owners/pricing" className="font-semibold text-[#2563eb] underline underline-offset-2 hover:brightness-110">
+              Partner With Axis pricing
+            </Link>
+            . Your account details load automatically once we find the record.
           </PortalNotice>
 
           <PortalField label="Manager ID" required>
@@ -598,7 +603,11 @@ export function ManagerAuthForm({ onLogin, footer = null, variant = 'default' })
 
           {!subscriptionReady ? (
             <PortalNotice>
-              Start on the Partner With Axis pricing page first. Your tier, manager ID, and contact info load here from Airtable.
+              Start on the{' '}
+              <Link to="/owners/pricing" className="font-semibold text-[#2563eb] underline underline-offset-2 hover:brightness-110">
+                Partner With Axis pricing
+              </Link>{' '}
+              page first. Your tier, manager ID, and contact info load from your manager record after you complete setup there.
             </PortalNotice>
           ) : null}
 
@@ -607,7 +616,7 @@ export function ManagerAuthForm({ onLogin, footer = null, variant = 'default' })
           ) : null}
 
           {profileLoading ? (
-            <PortalNotice>Loading manager details from Airtable…</PortalNotice>
+            <PortalNotice>Loading manager details…</PortalNotice>
           ) : null}
 
           {activationError ? (
@@ -1077,7 +1086,7 @@ function GenerateDraftModal({ manager, propertyOptions, onClose, onGenerated }) 
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ ...form, generatedBy: manager.name, generatedByRole: manager.role }),
       })
-      const data = await res.json()
+      const data = await readJsonResponse(res)
       if (!res.ok) throw new Error(data.error || 'Generation failed')
       toast.success('Lease draft generated — ready for review')
       onGenerated(data.draft)
@@ -1233,7 +1242,7 @@ function ManagerDashboard({ manager, onOpenDraft, onSignOut }) {
   const [propertyCount, setPropertyCount] = useState(0)
   const [billingLoading, setBillingLoading] = useState(false)
 
-  // Debounce the resident name search so we don't hammer Airtable on every keystroke
+  // Debounce the resident name search so we don't hammer the records API on every keystroke
   const [residentInput, setResidentInput] = useState('')
   useEffect(() => {
     const t = setTimeout(() => setFilters(f => ({ ...f, resident: residentInput })), 400)
@@ -1296,7 +1305,7 @@ function ManagerDashboard({ manager, onOpenDraft, onSignOut }) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email: manager.email }),
       })
-      const data = await res.json()
+      const data = await readJsonResponse(res)
       if (!res.ok) throw new Error(data.error || 'Could not open billing portal.')
       window.location.href = data.url
     } catch (err) {

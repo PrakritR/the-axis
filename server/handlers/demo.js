@@ -1,6 +1,6 @@
 /**
- * GET  /api/demo  → returns active Software staff from Airtable Staff table
- * POST /api/demo  → saves a demo booking to Airtable Scheduling table
+ * GET  /api/demo  → returns active Software staff from Staff table
+ * POST /api/demo  → saves a demo booking to Scheduling table
  */
 
 const AIRTABLE_BASE_ID = process.env.AIRTABLE_BASE_ID || 'appNBX2inqfJMyqYV'
@@ -78,7 +78,7 @@ export default async function handler(req, res) {
       })
       if (!r.ok) {
         const body = await r.text()
-        let msg = `Airtable error ${r.status}`
+        let msg = `Data service error ${r.status}`
         try { msg += ': ' + JSON.parse(body)?.error?.message } catch { msg += ': ' + body }
         return res.status(502).json({ error: msg })
       }

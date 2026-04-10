@@ -127,7 +127,7 @@ export default async function handler(req, res) {
 
   const secretKey = process.env.STRIPE_SECRET_KEY
   if (!AIRTABLE_TOKEN) {
-    return res.status(500).json({ error: 'Airtable token is not configured on the server yet.' })
+    return res.status(500).json({ error: 'Server data connection is not configured yet.' })
   }
   if (!secretKey) {
     return res.status(500).json({ error: 'STRIPE_SECRET_KEY is not configured on the server yet.' })

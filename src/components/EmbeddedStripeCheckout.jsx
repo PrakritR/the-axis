@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { readJsonResponse } from '../lib/readJsonResponse'
 
 let stripeScriptPromise = null
 
@@ -61,7 +62,7 @@ export function EmbeddedStripeCheckout({ open, title, checkoutRequest, apiEndpoi
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ ...(checkoutRequest || {}), embedded: true }),
         })
-        const data = await response.json()
+        const data = await readJsonResponse(response)
         if (!response.ok) throw new Error(data.error || 'Unable to start checkout.')
         if (!data.client_secret) throw new Error('Stripe did not return an embedded checkout client secret.')
 

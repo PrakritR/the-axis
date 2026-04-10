@@ -48,7 +48,7 @@ async function request(url, options = {}) {
   if (!response.ok) {
     const body = await response.text()
     if (body.includes('INVALID_PERMISSIONS_OR_MODEL_NOT_FOUND')) {
-      throw new Error(`Airtable token does not have access to this base. Go to airtable.com/create/tokens, edit your token, and add your bases with data.records:read + data.records:write scopes.`)
+      throw new Error(`API token does not have access to this database. Edit your personal access token in your provider's developer hub and grant this base data.records:read and data.records:write scopes.`)
     }
     throw new Error(body)
   }

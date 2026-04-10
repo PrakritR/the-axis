@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useLocation } from 'react-router-dom'
 import { Seo } from '../lib/seo'
+import { readJsonResponse } from '../lib/readJsonResponse'
 import { EmbeddedStripeCheckout } from '../components/EmbeddedStripeCheckout'
 
 const DOWNLOAD_URL = import.meta.env.VITE_AXIS_DOWNLOAD_URL || import.meta.env.VITE_AXIS_DOWNLOAD_MAC_URL || ''
@@ -223,9 +224,12 @@ export default function JoinUs() {
             email: normalizedEmail,
             phone: normalizedPhone,
             planType: selectedPlan,
+            ...(isBypassPromo && selectedPlan !== 'free'
+              ? { billingWaived: true, promoCode: normalizedPromoCode }
+              : {}),
           }),
         })
-        const data = await res.json()
+        const data = await readJsonResponse(res)
         if (!res.ok) throw new Error(data.error || 'Could not start free setup.')
 
         sessionStorage.setItem(FREE_TIER_ONBOARDING_KEY, JSON.stringify(data))
@@ -266,7 +270,14 @@ export default function JoinUs() {
         apiEndpoint="/api/portal?action=manager-create-subscription-session"
         checkoutRequest={embeddedCheckout}
         onClose={() => { setEmbeddedCheckout(null); setManagerLoading(false) }}
-        onComplete={() => { window.location.href = '/manager?setup=success' }}
+        onComplete={(session) => {
+          const sid = session?.id
+          if (sid) {
+            window.location.href = `/manager?setup=success&session_id=${encodeURIComponent(sid)}`
+          } else {
+            window.location.href = '/manager?setup=success'
+          }
+        }}
       />
 
       {managerId ? (
@@ -329,7 +340,7 @@ export default function JoinUs() {
               Start with Axis.
             </h1>
             <p className="mx-auto mt-5 max-w-2xl text-lg leading-8 text-slate-500">
-              Pick a tier and continue.
+              Partner With Axis starts here: choose a tier, open partner signup below, and complete checkout or free-tier setup. Your plan, Manager ID, and contact details are created on this page before you create your manager portal account.
             </p>
             <div className="mt-8 flex flex-col items-center justify-center gap-4 sm:flex-row">
               <div className="inline-flex rounded-full border border-white/90 bg-white/88 p-1 shadow-[0_12px_30px_rgba(37,99,235,0.10)] backdrop-blur">

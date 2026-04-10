@@ -82,7 +82,7 @@ function NavMenuDropdown({ label, to, parentActive, children }) {
       >
         {label}
         {hasChildren ? (
-          <ChevronDown className="shrink-0 opacity-55 transition group-hover:opacity-80" aria-hidden />
+          <ChevronDown className="shrink-0 opacity-55 transition-opacity duration-75 group-hover:opacity-80" aria-hidden />
         ) : null}
       </Link>
       <span
@@ -94,7 +94,7 @@ function NavMenuDropdown({ label, to, parentActive, children }) {
         }`}
       />
       {hasChildren ? (
-        <div className="pointer-events-none invisible absolute left-1/2 top-full z-50 w-max min-w-[220px] -translate-x-1/2 pt-2 opacity-0 transition-[opacity,visibility] duration-150 group-hover:pointer-events-auto group-hover:visible group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:visible group-focus-within:opacity-100">
+        <div className="pointer-events-none invisible absolute left-1/2 top-full z-50 w-max min-w-[220px] -translate-x-1/2 pt-1.5 opacity-0 transition-[opacity,visibility] duration-75 ease-out group-hover:pointer-events-auto group-hover:visible group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:visible group-focus-within:opacity-100">
           <div
             className="rounded-xl border border-slate-200/90 bg-white py-1.5 shadow-[0_16px_40px_rgba(15,23,42,0.12)]"
             role="menu"
@@ -175,8 +175,6 @@ export default function SiteHeader() {
   const headerShell =
     'relative z-30 w-full shrink-0 border-b border-slate-200/30 bg-[#edf2fb]/88 backdrop-blur-xl'
 
-  const showExploreExtras = !isPortal
-
   return (
     <header className={headerShell} style={{ paddingTop: 'env(safe-area-inset-top)' }}>
       <div className="container mx-auto flex items-center justify-between gap-3 px-4 py-2.5 sm:px-6 sm:py-3.5 md:grid md:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] md:items-center md:gap-4">
@@ -191,20 +189,16 @@ export default function SiteHeader() {
 
         <nav className="hidden items-center justify-center gap-4 md:col-start-2 md:flex lg:gap-8" aria-label="Primary">
           <NavMenuDropdown label="Rent with Axis" to="/" parentActive={exploreParentActive}>
-            {showExploreExtras ? (
-              <>
-                <DropdownLink
-                  to="/contact?section=housing&tab=schedule"
-                  isActive={isScheduleTour}
-                  onNavigate={closeMobileMenu}
-                >
-                  Schedule tour
-                </DropdownLink>
-                <DropdownLink to="/apply" isActive={isApply} onNavigate={closeMobileMenu}>
-                  Apply
-                </DropdownLink>
-              </>
-            ) : null}
+            <DropdownLink
+              to="/contact?section=housing&tab=schedule"
+              isActive={isScheduleTour}
+              onNavigate={closeMobileMenu}
+            >
+              Schedule tour
+            </DropdownLink>
+            <DropdownLink to="/apply" isActive={isApply} onNavigate={closeMobileMenu}>
+              Apply
+            </DropdownLink>
           </NavMenuDropdown>
           <NavMenuDropdown label="Partner with Axis" to="/owners/about" parentActive={partnerParentActive}>
             <DropdownLink to="/owners/pricing" isActive={isPricing} onNavigate={closeMobileMenu}>
@@ -264,34 +258,30 @@ export default function SiteHeader() {
               >
                 Rent with Axis
               </Link>
-              {showExploreExtras ? (
-                <>
-                  <Link
-                    to="/contact?section=housing&tab=schedule"
-                    onClick={() => {
-                      closeMobileMenu()
-                      scrollToTop()
-                    }}
-                    className={`rounded-xl py-2.5 pl-6 pr-3 text-sm font-medium transition hover:bg-slate-50 ${
-                      isScheduleTour ? 'text-[#2563eb]' : 'text-slate-600'
-                    }`}
-                  >
-                    Schedule tour
-                  </Link>
-                  <Link
-                    to="/apply"
-                    onClick={() => {
-                      closeMobileMenu()
-                      scrollToTop()
-                    }}
-                    className={`rounded-xl py-2.5 pl-6 pr-3 text-sm font-medium transition hover:bg-slate-50 ${
-                      isApply ? 'text-[#2563eb]' : 'text-slate-600'
-                    }`}
-                  >
-                    Apply
-                  </Link>
-                </>
-              ) : null}
+              <Link
+                to="/contact?section=housing&tab=schedule"
+                onClick={() => {
+                  closeMobileMenu()
+                  scrollToTop()
+                }}
+                className={`rounded-xl py-2.5 pl-6 pr-3 text-sm font-medium transition hover:bg-slate-50 ${
+                  isScheduleTour ? 'text-[#2563eb]' : 'text-slate-600'
+                }`}
+              >
+                Schedule tour
+              </Link>
+              <Link
+                to="/apply"
+                onClick={() => {
+                  closeMobileMenu()
+                  scrollToTop()
+                }}
+                className={`rounded-xl py-2.5 pl-6 pr-3 text-sm font-medium transition hover:bg-slate-50 ${
+                  isApply ? 'text-[#2563eb]' : 'text-slate-600'
+                }`}
+              >
+                Apply
+              </Link>
               <Link
                 to="/owners/about"
                 onClick={() => {

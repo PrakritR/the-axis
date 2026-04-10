@@ -41,7 +41,7 @@ function getSecDeposit(propertyName, monthlyRent) {
 }
 
 /**
- * @param {object} app - Application record from Airtable (mapped fields)
+ * @param {object} app - Application record from the applications backend (mapped fields)
  * @param {object} [overrides] - Admin overrides: { rent, deposit, utilityFee, adminFee }
  * @returns {object} Structured lease data object
  */

@@ -88,6 +88,39 @@ async function hasActiveManagerSubscription(secretKey, email) {
   return false
 }
 
+function managerTier(manager) {
+  return String(manager?.tier ?? manager?.Tier ?? '').trim().toLowerCase()
+}
+
+function billingWaivedInNotes(notes) {
+  return /(?:^|\n)Billing:\s*waived\b/i.test(String(notes || ''))
+}
+
+/** Pro/Business without Stripe when promo waived billing (see manager-start-free-tier). */
+function hasPaidPortalAccessWithoutStripe(manager) {
+  return managerTier(manager) === 'free' || billingWaivedInNotes(manager.Notes)
+}
+
+async function assertManagerCanSignIn(manager, secretKey) {
+  if (hasPaidPortalAccessWithoutStripe(manager)) return
+
+  if (!secretKey) {
+    const err = new Error('Server configuration error: Stripe secret key not set (required for paid tiers).')
+    err.code = 'STRIPE_REQUIRED'
+    throw err
+  }
+
+  const email = String(manager.Email || '').trim().toLowerCase()
+  const subscribed = await hasActiveManagerSubscription(secretKey, email)
+  if (!subscribed) {
+    const err = new Error(
+      'An active manager subscription is required before you can sign in. Complete checkout on the pricing page, or use the free tier if you only need house posting.'
+    )
+    err.code = 'SUBSCRIPTION_REQUIRED'
+    throw err
+  }
+}
+
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*')
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS')
@@ -100,10 +133,7 @@ export default async function handler(req, res) {
 
   const secretKey = process.env.STRIPE_SECRET_KEY
   if (!AIRTABLE_TOKEN) {
-    return res.status(500).json({ error: 'Server configuration error: Airtable token not set.' })
-  }
-  if (!secretKey) {
-    return res.status(500).json({ error: 'Server configuration error: Stripe secret key not set.' })
+    return res.status(500).json({ error: 'Server configuration error: data connection not set.' })
   }
 
   const { email, password } = req.body || {}
@@ -129,9 +159,16 @@ export default async function handler(req, res) {
       return res.status(403).json({ error: 'This account is inactive. Please contact your administrator.' })
     }
 
-    const subscribed = await hasActiveManagerSubscription(secretKey, normalizedEmail)
-    if (!subscribed) {
-      return res.status(403).json({ error: 'An active manager subscription is required before you can sign in.' })
+    try {
+      await assertManagerCanSignIn(manager, secretKey)
+    } catch (gateErr) {
+      if (gateErr?.code === 'STRIPE_REQUIRED') {
+        return res.status(500).json({ error: gateErr.message })
+      }
+      if (gateErr?.code === 'SUBSCRIPTION_REQUIRED') {
+        return res.status(403).json({ error: gateErr.message })
+      }
+      throw gateErr
     }
 
     return res.status(200).json({

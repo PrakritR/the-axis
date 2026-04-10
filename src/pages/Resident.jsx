@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { properties } from '../data/properties'
 import { EmbeddedStripeCheckout } from '../components/EmbeddedStripeCheckout'
+import { HousingMessageForm } from '../components/HousingMessageForm'
 import {
   PortalAuthCard,
   PortalAuthPage,
@@ -229,12 +230,12 @@ function SetupRequired() {
             <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z" />
           </svg>
         </div>
-        <h1 className="text-2xl font-black text-slate-900">Airtable Access Required</h1>
+        <h1 className="text-2xl font-black text-slate-900">Portal configuration required</h1>
         <p className="mt-3 text-sm leading-7 text-slate-500">
-          The Airtable token doesn't have access to the Resident Portal base. To fix this:
+          The API token doesn&apos;t have access to the Resident Portal database. To fix this:
         </p>
         <ol className="mt-5 space-y-2 text-left text-sm text-slate-700">
-          <li className="flex gap-2"><span className="font-bold text-axis">1.</span> Go to <strong>airtable.com/create/tokens</strong> and edit your token</li>
+          <li className="flex gap-2"><span className="font-bold text-axis">1.</span> Open your personal access token in your data provider&apos;s developer hub and edit it</li>
           <li className="flex gap-2"><span className="font-bold text-axis">2.</span> Under <strong>Base access</strong>, add the AXIS Forms base (<code className="rounded bg-slate-100 px-1 text-xs">appNBX2inqfJMyqYV</code>)</li>
           <li className="flex gap-2"><span className="font-bold text-axis">3.</span> Ensure scopes include <code className="rounded bg-slate-100 px-1 text-xs">data.records:read</code> and <code className="rounded bg-slate-100 px-1 text-xs">data.records:write</code></li>
           <li className="flex gap-2"><span className="font-bold text-axis">4.</span> Save the token — no code change needed</li>
@@ -433,7 +434,7 @@ export function ResidentAuthForm({ onLogin, footer = null, variant = 'default' }
   )
 }
 
-function AirtableLogin({ onLogin }) {
+function PortalEntryLogin({ onLogin }) {
   const navigate = useNavigate()
   const [portalType, setPortalType] = useState('resident')
   const isResident = portalType === 'resident'
@@ -1355,44 +1356,45 @@ function LeasingPanel({ resident, onOpenPayments }) {
   )
 }
 
-// ─── Contact (links to main site contact hub) ─────────────────────────────────
+// ─── Contact (leasing messages in-app; tour still on /contact) ───────────────
 
-function ContactPanel() {
+function ContactPanel({ resident }) {
+  const prefill = useMemo(
+    () => ({
+      name: resident.Name || '',
+      email: resident.Email || '',
+      phone: resident['Phone Number'] || resident.Phone || '',
+      house: resident.House || '',
+      unitNumber: resident['Unit Number'] || '',
+    }),
+    [resident],
+  )
+
   return (
-    <SectionCard
-      title="Contact"
-      description="Tours, leasing questions, and general messages go through our contact page — same forms as the main site."
-    >
-      <div className="grid gap-4 sm:grid-cols-2">
+    <div className="space-y-8">
+      <SectionCard
+        title="Message leasing"
+        description="Send a message to the leasing team from here — same inbox as the main contact page. Your name, email, and home are filled in when we can match them."
+      >
+        <HousingMessageForm variant="resident" prefill={prefill} formIdPrefix="resident-housing-msg" />
+      </SectionCard>
+
+      <div className="rounded-[24px] border border-slate-200 bg-white px-5 py-4 text-sm leading-6 text-slate-600 shadow-soft sm:px-6">
+        <span className="font-semibold text-slate-800">Tours:</span>{' '}
         <Link
           to={HOUSING_CONTACT_SCHEDULE}
-          className="flex flex-col rounded-[20px] border border-slate-200 bg-slate-50/80 px-5 py-5 transition hover:border-axis hover:bg-white"
+          className="font-semibold text-axis underline decoration-axis/30 underline-offset-2 transition hover:decoration-axis"
         >
-          <span className="text-sm font-bold text-slate-900">Schedule a tour</span>
-          <span className="mt-2 text-sm leading-6 text-slate-500">Book a time to see a property in person or virtually.</span>
+          Schedule a tour
         </Link>
-        <Link
-          to={HOUSING_CONTACT_MESSAGE}
-          className="flex flex-col rounded-[20px] border border-slate-200 bg-slate-50/80 px-5 py-5 transition hover:border-axis hover:bg-white"
-        >
-          <span className="text-sm font-bold text-slate-900">Send a message</span>
-          <span className="mt-2 text-sm leading-6 text-slate-500">Ask leasing a question or get help with housing topics.</span>
-        </Link>
+        {' '}on the contact page (in person or virtual).
       </div>
-      <div className="mt-6 rounded-[18px] border border-slate-100 bg-slate-50/60 px-4 py-3 text-sm leading-6 text-slate-600">
-        <span className="font-semibold text-slate-800">Work orders:</span>{' '}
-        use the <strong>Work Orders</strong> tab to submit maintenance requests and track status. For rent and charges, use{' '}
-        <strong>Payments</strong>.
+
+      <div className="rounded-[18px] border border-slate-100 bg-slate-50/70 px-4 py-3 text-sm leading-6 text-slate-600">
+        <span className="font-semibold text-slate-800">Work orders &amp; rent:</span>{' '}
+        use <strong>Work Orders</strong> and <strong>Payments</strong> in this portal — not this form.
       </div>
-      <div className="mt-5">
-        <Link
-          to="/contact?section=housing"
-          className="text-sm font-semibold text-axis underline decoration-axis/30 underline-offset-2 transition hover:decoration-axis"
-        >
-          Open full contact page
-        </Link>
-      </div>
-    </SectionCard>
+    </div>
   )
 }
 
@@ -1508,7 +1510,7 @@ function Dashboard({ resident, onResidentUpdated, onSignOut }) {
         {!loading && tab === 'announcements' ? (
           <AnnouncementsPanel items={announcements} />
         ) : null}
-        {!loading && tab === 'contact' ? <ContactPanel /> : null}
+        {!loading && tab === 'contact' ? <ContactPanel resident={resident} /> : null}
         {!loading && tab === 'profile' ? (
           <ProfilePanel resident={resident} onUpdated={onResidentUpdated} />
         ) : null}
@@ -1553,7 +1555,7 @@ export default function Resident() {
       </div>
     )
   }
-  if (!resident) return <AirtableLogin onLogin={handleLogin} />
+  if (!resident) return <PortalEntryLogin onLogin={handleLogin} />
 
   return (
     <Dashboard

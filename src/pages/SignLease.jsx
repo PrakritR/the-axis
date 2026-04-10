@@ -315,7 +315,7 @@ export default function SignLease() {
               <p className="mt-3 text-sm leading-6 text-slate-500">
                 {alreadySigned
                   ? `Signed on ${formatDate(signedAt)}. You can still open a print-friendly version and save it as a PDF.`
-                  : 'Type your full legal name, then sign in the box below. This signature is stored with your lease record in Airtable.'}
+                  : 'Type your full legal name, then sign in the box below. This signature is stored with your lease record.'}
               </p>
 
               <form className="mt-5 space-y-4" onSubmit={handleSubmit}>

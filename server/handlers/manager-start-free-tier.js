@@ -1,5 +1,9 @@
 const AIRTABLE_TOKEN = process.env.VITE_AIRTABLE_TOKEN
 const BASE_ID = process.env.VITE_AIRTABLE_APPLICATIONS_BASE_ID || 'appNBX2inqfJMyqYV'
+/** Must match client DEFAULT_PROMO_CODE in JoinUs.jsx (override with MANAGER_BILLING_WAIVE_PROMO). */
+const BILLING_WAIVE_PROMO = String(process.env.MANAGER_BILLING_WAIVE_PROMO || 'FIRST20')
+  .trim()
+  .toUpperCase()
 
 function airtableHeaders() {
   return {
@@ -121,14 +125,17 @@ export default async function handler(req, res) {
   }
 
   if (!AIRTABLE_TOKEN) {
-    return res.status(500).json({ error: 'Airtable token is not configured on the server yet.' })
+    return res.status(500).json({ error: 'Server data connection is not configured yet.' })
   }
 
-  const { name, email, phone, planType } = req.body || {}
+  const { name, email, phone, planType, billingWaived, promoCode } = req.body || {}
   const normalizedName = String(name || '').trim()
   const normalizedEmail = String(email || '').trim().toLowerCase()
   const normalizedPhone = String(phone || '').trim()
   const details = planDetails(String(planType || 'free').trim().toLowerCase())
+  const promoOk = String(promoCode || '').trim().toUpperCase() === BILLING_WAIVE_PROMO
+  const waiveBilling =
+    Boolean(billingWaived) && promoOk && details.planType !== 'free'
 
   if (!normalizedName || !normalizedEmail || !normalizedPhone) {
     return res.status(400).json({ error: 'Name, email, and phone are required.' })
@@ -139,7 +146,7 @@ export default async function handler(req, res) {
     const nextNotes = mergeManagerNotes(manager?.Notes, {
       phone: normalizedPhone,
       planType: details.planType,
-      billingInterval: details.billingInterval,
+      billingInterval: waiveBilling ? 'waived' : details.billingInterval,
       houseAccess: details.houseAccess,
       platformAccess: details.platformAccess,
     })
