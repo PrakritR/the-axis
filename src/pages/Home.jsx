@@ -9,34 +9,6 @@ import scrollToTop from '../utils/scrollToTop'
 
 // ── Animations ───────────────────────────────────────────────────────────────
 
-const stagger = { hidden: {}, show: { transition: { staggerChildren: 0.1 } } }
-const up = {
-  hidden: { opacity: 0, y: 24 },
-  show: { opacity: 1, y: 0, transition: { duration: 0.6, ease: [0.22, 1, 0.36, 1] } },
-}
-
-function Reveal({ children, className = '', delay = 0 }) {
-  return (
-    <motion.div
-      className={className}
-      initial={{ opacity: 0, y: 24 }}
-      whileInView={{ opacity: 1, y: 0 }}
-      viewport={{ once: true, margin: '-64px' }}
-      transition={{ duration: 0.6, delay, ease: [0.22, 1, 0.36, 1] }}
-    >
-      {children}
-    </motion.div>
-  )
-}
-
-function Arrow() {
-  return (
-    <svg className="h-4 w-4" viewBox="0 0 16 16" fill="none" aria-hidden>
-      <path d="M3 8h10M9 4l4 4-4 4" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
-  )
-}
-
 function CheckCircle() {
   return (
     <svg className="mt-0.5 h-5 w-5 shrink-0 text-[#2563eb]" viewBox="0 0 20 20" fill="none" aria-hidden>
@@ -56,12 +28,6 @@ function ChevronDown({ open }) {
 
 // ── Data ─────────────────────────────────────────────────────────────────────
 
-
-const steps = [
-  { n: '01', title: 'Browse housing', body: '', color: 'text-[#2563eb]' },
-  { n: '02', title: 'Apply', body: '', color: 'text-gold' },
-  { n: '03', title: 'Move in', body: '', color: 'text-emerald-400' },
-]
 
 const neighborhoodItems = [
   'Seattle locations with posted availability',
@@ -538,7 +504,7 @@ export default function Home() {
   return (
       <div className="bg-transparent">
       <Seo
-        title="Axis | Available Housing in Seattle"
+        title="Axis | Housing in Seattle"
         description="Browse available housing in Seattle with posted pricing, listing details, and online applications."
         pathname="/"
         structuredData={buildWebsiteSchema()}
@@ -550,80 +516,9 @@ export default function Home() {
       {/* ── ROOM FINDER ── */}
       <RoomFinder />
 
-      {/* ── AVAILABLE HOUSING ── */}
+      {/* ── PROPERTIES ── */}
       <section id="properties" className="scroll-mt-20 border-t border-slate-200/25 bg-transparent py-8 sm:py-10">
-        <div className="mx-auto max-w-6xl px-4 sm:px-6">
-          <Reveal>
-            <div className="flex flex-col gap-5">
-              <h2 className="text-2xl font-black tracking-[-0.05em] text-slate-900 sm:text-4xl">Available Housing</h2>
-            </div>
-          </Reveal>
-        </div>
-
         <PropertyCarousel />
-      </section>
-
-      <section className="border-t border-slate-200/25 bg-transparent px-4 py-8 sm:px-6 sm:py-10">
-        <div className="mx-auto max-w-6xl">
-          <motion.div
-            className="grid gap-6 sm:grid-cols-3"
-            initial="hidden"
-            whileInView="show"
-            viewport={{ once: true, margin: '-48px' }}
-            variants={stagger}
-          >
-            {steps.map((s, i) => (
-              <motion.div key={s.n} variants={up} className="axis-panel relative flex flex-col gap-4 rounded-[28px] p-6 sm:p-8">
-                {i < steps.length - 1 && (
-                  <div className="absolute right-0 top-1/2 hidden -translate-y-1/2 translate-x-1/2 sm:flex items-center justify-center z-10">
-                    <div className="flex items-center gap-0.5 rounded-full border border-slate-200 bg-white px-2.5 py-1.5 shadow-sm">
-                      <span className="h-1 w-1 rounded-full bg-slate-300" />
-                      <span className="h-px w-3 bg-slate-300" />
-                      <svg className="h-3 w-3 text-slate-400" viewBox="0 0 12 12" fill="none" aria-hidden>
-                        <path d="M2 6h8M7 2l4 4-4 4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
-                      </svg>
-                    </div>
-                  </div>
-                )}
-                <span className={`text-4xl font-black ${s.color}`}>{s.n}</span>
-                <h3 className="text-lg font-bold text-slate-900">{s.title}</h3>
-              </motion.div>
-            ))}
-          </motion.div>
-        </div>
-      </section>
-
-      {/* ── CTA — dark gradient ── */}
-      <section className="border-t border-slate-200/25 bg-transparent px-4 py-8 sm:px-6 sm:py-10">
-        <Reveal>
-          <div className="axis-panel relative mx-auto max-w-6xl overflow-hidden rounded-[32px] px-5 py-10 sm:px-8 sm:py-14 md:px-14">
-            <div className="absolute inset-0 bg-dot-grid bg-dot-md opacity-18 rounded-[32px]" />
-            <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_30%_50%,rgba(37,99,235,0.12),transparent_60%)]" />
-            <div className="relative flex flex-col gap-6 md:flex-row md:items-center md:justify-between">
-              <div>
-                <h2 className="text-2xl font-black tracking-[-0.05em] text-slate-900 sm:text-3xl md:text-4xl">
-                  Browse housing simply
-                </h2>
-              </div>
-              <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap">
-                <Link
-                  to="/apply"
-                  onClick={scrollToTop}
-                  className="inline-flex w-full items-center justify-center gap-2 rounded-full bg-[linear-gradient(180deg,#2f76ff_0%,#2450eb_100%)] px-6 py-3 text-sm font-semibold text-white shadow-[0_18px_40px_rgba(37,99,235,0.18)] transition hover:brightness-105 active:scale-[0.97] sm:w-auto"
-                >
-                  Apply <Arrow />
-                </Link>
-                <Link
-                  to="/contact?section=housing&tab=message"
-                  onClick={scrollToTop}
-                  className="inline-flex w-full items-center justify-center gap-2 rounded-full border border-slate-200 bg-white px-6 py-3 text-sm font-semibold text-slate-700 transition hover:border-axis hover:text-axis active:scale-[0.97] sm:w-auto"
-                >
-                  Contact us <Arrow />
-                </Link>
-              </div>
-            </div>
-          </div>
-        </Reveal>
       </section>
     </div>
   )

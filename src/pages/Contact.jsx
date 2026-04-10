@@ -172,50 +172,106 @@ function MonthCalendar({ selectableSet, selectedDate, onSelectDate }) {
   )
 }
 
-function PropertyRoomPicker({ properties, selectedId, onSelectProperty, room, onSelectRoom, roomRequired = true }) {
-  const p = properties.find((x) => x.id === selectedId)
+function PropertyRoomPicker({
+  properties,
+  selectedId,
+  onSelectProperty,
+  room,
+  onSelectRoom,
+  roomRequired = true,
+  idPrefix = 'housing',
+}) {
+  const [propertyQuery, setPropertyQuery] = useState('')
+  const sorted = useMemo(() => [...properties].sort((a, b) => a.name.localeCompare(b.name)), [properties])
+
+  const displayProperties = useMemo(() => {
+    const q = propertyQuery.trim().toLowerCase()
+    const filtered = q
+      ? sorted.filter(
+          (prop) =>
+            prop.name.toLowerCase().includes(q) || (prop.address || '').toLowerCase().includes(q)
+        )
+      : sorted
+    const sel = sorted.find((x) => x.id === selectedId)
+    if (sel && !filtered.some((x) => x.id === selectedId)) {
+      return [sel, ...filtered]
+    }
+    return filtered
+  }, [sorted, propertyQuery, selectedId])
+
+  const p = sorted.find((x) => x.id === selectedId)
+  const propSelectId = `${idPrefix}-property`
+  const roomSelectId = `${idPrefix}-room`
+  const searchId = `${idPrefix}-property-search`
+
   return (
     <div className="space-y-5">
-      <div className="text-sm font-semibold text-slate-700">Property</div>
-      <div className="space-y-3">
-        {properties.map((prop) => (
-          <button
-            key={prop.id}
-            type="button"
-            onClick={() => { onSelectProperty(prop.id); onSelectRoom('') }}
-            className={`group flex w-full items-center justify-between rounded-2xl border bg-white px-5 py-4 text-left transition-all ${
-              selectedId === prop.id ? 'border-[#2563eb] shadow-[0_8px_24px_rgba(37,99,235,0.12)]' : 'border-slate-200 hover:border-[#2563eb] hover:shadow-sm'
-            }`}
-          >
-            <div className="min-w-0">
-              <div className="font-semibold text-slate-900">{prop.name}</div>
-              <div className="mt-0.5 text-xs text-slate-500">{prop.address}</div>
-              <div className="mt-2 text-xs font-medium text-[#2563eb]">{prop.manager ? `Manager: ${prop.manager}` : 'Manager assigned after inquiry'}</div>
-            </div>
-            <span className={`shrink-0 rounded-full border px-3 py-1 text-xs font-semibold transition ${selectedId === prop.id ? 'border-[#2563eb] bg-[#2563eb] text-white' : 'border-slate-200 text-slate-600 group-hover:border-[#2563eb] group-hover:text-[#2563eb]'}`}>
-              {selectedId === prop.id ? 'Selected' : 'Choose'}
-            </span>
-          </button>
-        ))}
+      <div>
+        <label htmlFor={propSelectId} className="mb-2 block text-sm font-semibold text-slate-700">
+          Property{' '}
+          <span className="font-normal text-slate-400">{roomRequired ? '(required)' : '(optional)'}</span>
+        </label>
+        {sorted.length > 3 ? (
+          <>
+            <label htmlFor={searchId} className="sr-only">
+              Search properties by name or address
+            </label>
+            <input
+              id={searchId}
+              type="search"
+              className={`${inputCls} mb-3`}
+              placeholder="Search by name or address…"
+              value={propertyQuery}
+              onChange={(e) => setPropertyQuery(e.target.value)}
+              autoComplete="off"
+            />
+          </>
+        ) : null}
+        <select
+          id={propSelectId}
+          className={selectCls}
+          value={selectedId || ''}
+          onChange={(e) => {
+            const v = e.target.value
+            onSelectProperty(v || null)
+            onSelectRoom('')
+          }}
+        >
+          <option value="">{roomRequired ? 'Select a property…' : 'No specific property'}</option>
+          {displayProperties.map((prop) => (
+            <option key={prop.id} value={prop.id}>
+              {prop.name} — {prop.address}
+            </option>
+          ))}
+        </select>
+        {sorted.length > 3 && displayProperties.length === 0 ? (
+          <p className="mt-2 text-sm text-slate-500">No properties match that search.</p>
+        ) : null}
+        {p ? (
+          <p className="mt-2 text-xs font-medium text-[#2563eb]">
+            {p.manager ? `Manager: ${p.manager}` : 'Manager assigned after inquiry'}
+          </p>
+        ) : null}
       </div>
       {p ? (
         <div>
-          <div className="mb-2 text-sm font-semibold text-slate-700">
-            Room{' '}
-            <span className="font-normal text-slate-400">{roomRequired ? '(required)' : '(optional)'}</span>
-          </div>
-          <div className="flex flex-wrap gap-2">
-            {p.rooms.map((r) => (
-              <button key={r} type="button" onClick={() => onSelectRoom(r === room ? '' : r)}
-                className={`rounded-xl border px-3 py-2 text-sm font-semibold transition-all ${room === r ? 'border-slate-900 bg-slate-900 text-white' : 'border-slate-200 bg-white text-slate-700 hover:border-slate-400'}`}>
-                {r.replace('Room ', '')}
-              </button>
+          <label htmlFor={roomSelectId} className="mb-2 block text-sm font-semibold text-slate-700">
+            Room <span className="font-normal text-slate-400">{roomRequired ? '(required)' : '(optional)'}</span>
+          </label>
+          <select
+            id={roomSelectId}
+            className={selectCls}
+            value={room}
+            onChange={(e) => onSelectRoom(e.target.value)}
+          >
+            <option value="">{roomRequired ? 'Select a room…' : 'No specific room'}</option>
+            {(p.rooms || []).map((r) => (
+              <option key={r} value={r}>
+                {r}
+              </option>
             ))}
-            <button type="button" onClick={() => onSelectRoom(room === 'Not sure yet' ? '' : 'Not sure yet')}
-              className={`rounded-xl border px-3 py-2 text-sm font-semibold transition-all ${room === 'Not sure yet' ? 'border-slate-900 bg-slate-900 text-white' : 'border-slate-200 bg-white text-slate-700 hover:border-slate-400'}`}>
-              Not sure yet
-            </button>
-          </div>
+            <option value="Not sure yet">Not sure yet</option>
+          </select>
         </div>
       ) : null}
     </div>
@@ -368,6 +424,7 @@ function HousingScheduler() {
       {step === 1 && (
         <div className="space-y-6">
           <PropertyRoomPicker
+            idPrefix="tour-schedule"
             properties={properties}
             selectedId={property}
             onSelectProperty={setProperty}
@@ -529,8 +586,10 @@ function HousingMessageForm() {
     if (category === 'other' && otherDetails.trim()) {
       header += `Details: ${otherDetails.trim()}\n\n`
     }
-    if (property && room && selectedProperty) {
-      header += `Property: ${selectedProperty.name}\nRoom: ${room}\n\n`
+    if (selectedProperty) {
+      header += `Property: ${selectedProperty.name}\n`
+      if (room) header += `Room: ${room}\n`
+      header += '\n'
     }
     try {
       const res = await fetch(`https://api.airtable.com/v0/${AIRTABLE_BASE_ID}/Inquiries`, {
@@ -557,53 +616,59 @@ function HousingMessageForm() {
   )
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-4">
-      <div>
-        <label htmlFor="housing-message-category" className="mb-2 block text-sm font-semibold text-slate-700">
-          What do you need help with? <span className="text-axis">*</span>
-        </label>
-        <select
-          id="housing-message-category"
-          required
-          value={category}
-          onChange={(e) => {
-            const next = e.target.value
-            setCategory(next)
-            if (next !== 'other') setOtherDetails('')
-          }}
-          className={selectCls}
-        >
-          <option value="" disabled>
-            Select a topic
-          </option>
-          {HOUSING_MESSAGE_CATEGORIES.map((c) => (
-            <option key={c.id} value={c.id}>
-              {c.label}
+    <form onSubmit={handleSubmit} className="space-y-6">
+      <section className="rounded-2xl border border-slate-200 bg-white p-5 sm:p-6">
+        <h3 className="mb-1 text-lg font-bold tracking-tight text-slate-900">Topic</h3>
+        <p className="mb-4 text-sm text-slate-500">Choose a category so we can route your message to the right team.</p>
+        <div>
+          <label htmlFor="housing-message-category" className="mb-2 block text-sm font-semibold text-slate-700">
+            What do you need help with? <span className="text-axis">*</span>
+          </label>
+          <select
+            id="housing-message-category"
+            required
+            value={category}
+            onChange={(e) => {
+              const next = e.target.value
+              setCategory(next)
+              if (next !== 'other') setOtherDetails('')
+            }}
+            className={selectCls}
+          >
+            <option value="" disabled>
+              Select a topic
             </option>
-          ))}
-        </select>
-        {category === 'other' ? (
-          <div className="mt-3">
-            <label htmlFor="housing-message-other" className="mb-1.5 block text-xs font-semibold text-slate-700">
-              Describe what you need <span className="text-axis">*</span>
-            </label>
-            <textarea
-              id="housing-message-other"
-              required
-              value={otherDetails}
-              onChange={(e) => setOtherDetails(e.target.value)}
-              className={`${inputCls} min-h-[100px] resize-y`}
-              placeholder="Tell us what is going on so we can route your message correctly."
-            />
-          </div>
-        ) : null}
-      </div>
-      <div>
-        <div className="mb-2 text-sm font-semibold text-slate-700">
-          Property &amp; room <span className="font-normal text-slate-400">(optional)</span>
+            {HOUSING_MESSAGE_CATEGORIES.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.label}
+              </option>
+            ))}
+          </select>
+          {category === 'other' ? (
+            <div className="mt-4">
+              <label htmlFor="housing-message-other" className="mb-2 block text-sm font-semibold text-slate-700">
+                Describe what you need <span className="text-axis">*</span>
+              </label>
+              <textarea
+                id="housing-message-other"
+                required
+                value={otherDetails}
+                onChange={(e) => setOtherDetails(e.target.value)}
+                className={`${inputCls} min-h-[100px] resize-y`}
+                placeholder="Tell us what is going on so we can route your message correctly."
+              />
+            </div>
+          ) : null}
         </div>
-        <p className="mb-3 text-xs text-slate-500">Add these if your question is about a specific home or unit.</p>
+      </section>
+
+      <section className="rounded-2xl border border-slate-200 bg-white p-5 sm:p-6">
+        <h3 className="mb-1 text-lg font-bold tracking-tight text-slate-900">Property context</h3>
+        <p className="mb-4 text-sm text-slate-500">
+          Optional. With many homes on file, search and pick from the list instead of scrolling long pages.
+        </p>
         <PropertyRoomPicker
+          idPrefix="housing-msg"
           properties={properties}
           selectedId={property}
           onSelectProperty={setProperty}
@@ -611,37 +676,45 @@ function HousingMessageForm() {
           onSelectRoom={setRoom}
           roomRequired={false}
         />
-      </div>
-      <div className="grid gap-4 sm:grid-cols-2">
-        <div>
-          <label className="mb-1.5 block text-xs font-semibold text-slate-700">Name <span className="text-axis">*</span></label>
-          <input required className={inputCls} placeholder="Jane Smith" value={form.name} onChange={e => set('name', e.target.value)} />
+      </section>
+
+      <section className="rounded-2xl border border-slate-200 bg-white p-5 sm:p-6">
+        <h3 className="mb-1 text-lg font-bold tracking-tight text-slate-900">Your contact &amp; message</h3>
+        <p className="mb-4 text-sm text-slate-500">We will reply to the email you provide.</p>
+        <div className="space-y-4">
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div>
+              <label className="mb-2 block text-sm font-semibold text-slate-700">Name <span className="text-axis">*</span></label>
+              <input required className={inputCls} placeholder="Jane Smith" value={form.name} onChange={e => set('name', e.target.value)} />
+            </div>
+            <div>
+              <label className="mb-2 block text-sm font-semibold text-slate-700">Email <span className="text-axis">*</span></label>
+              <input required type="email" className={inputCls} placeholder="jane@email.com" value={form.email} onChange={e => set('email', e.target.value)} />
+            </div>
+          </div>
+          <div>
+            <label className="mb-2 block text-sm font-semibold text-slate-700">Phone</label>
+            <input type="tel" className={inputCls} placeholder="(206) 555-0100" value={form.phone} onChange={e => set('phone', formatPhone(e.target.value))} />
+          </div>
+          <div>
+            <label className="mb-2 block text-sm font-semibold text-slate-700">
+              {category === 'other' ? (
+                <>Additional details <span className="font-normal text-slate-400">(optional)</span></>
+              ) : (
+                <>Message <span className="text-axis">*</span></>
+              )}
+            </label>
+            <textarea
+              required={category !== 'other'}
+              className={`${inputCls} min-h-[120px] resize-y`}
+              placeholder={category === 'other' ? 'Anything else we should know…' : 'Tell us more so we can help…'}
+              value={form.message}
+              onChange={(e) => set('message', e.target.value)}
+            />
+          </div>
         </div>
-        <div>
-          <label className="mb-1.5 block text-xs font-semibold text-slate-700">Email <span className="text-axis">*</span></label>
-          <input required type="email" className={inputCls} placeholder="jane@email.com" value={form.email} onChange={e => set('email', e.target.value)} />
-        </div>
-      </div>
-      <div>
-        <label className="mb-1.5 block text-xs font-semibold text-slate-700">Phone</label>
-        <input type="tel" className={inputCls} placeholder="(206) 555-0100" value={form.phone} onChange={e => set('phone', formatPhone(e.target.value))} />
-      </div>
-      <div>
-        <label className="mb-1.5 block text-xs font-semibold text-slate-700">
-          {category === 'other' ? (
-            <>Additional details <span className="font-normal text-slate-400">(optional)</span></>
-          ) : (
-            <>Message <span className="text-axis">*</span></>
-          )}
-        </label>
-        <textarea
-          required={category !== 'other'}
-          className={`${inputCls} min-h-[110px] resize-y`}
-          placeholder={category === 'other' ? 'Anything else we should know…' : 'Tell us more so we can help…'}
-          value={form.message}
-          onChange={(e) => set('message', e.target.value)}
-        />
-      </div>
+      </section>
+
       {error && <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>}
       <button type="submit" disabled={submitting} className="w-full rounded-full bg-slate-900 py-3.5 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:opacity-60 disabled:cursor-not-allowed">
         {submitting ? 'Sending…' : 'Send message'}

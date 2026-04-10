@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react'
+import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { useParams, Link, useLocation } from 'react-router-dom'
 import MapView from '../components/Map'
 import PropertyGallery from '../components/PropertyGallery'
@@ -167,6 +167,22 @@ function formatMonthlyCurrency(value) {
 function formatCompactMonthlyCurrency(value) {
   if (!Number.isFinite(value)) return ''
   return `$${value.toLocaleString()}/mo`
+}
+
+/** List → promo ratio from $7,175/mo → $7,000/mo (~2.44% off), applied to every full-house total */
+const FULL_HOUSE_PROMO_RATIO = 7000 / 7175
+
+/**
+ * Returns { list, promo } with promo rounded to nearest $25, or null if no meaningful discount.
+ */
+function computeFullHousePromoPrice(listMonthlyTotal) {
+  const n = Number(listMonthlyTotal)
+  if (!Number.isFinite(n) || n <= 0) return null
+  const rawPromo = n * FULL_HOUSE_PROMO_RATIO
+  let promo = Math.round(rawPromo / 25) * 25
+  if (promo >= n) promo = Math.max(0, Math.floor(n / 25) * 25 - 25)
+  if (promo <= 0 || n - promo < 50) return null
+  return { list: n, promo }
 }
 
 function buildRentTotals(property) {
@@ -513,16 +529,51 @@ export default function PropertyPage(){
     (plan) => (plan.roomsAvailable || plan.rooms.length) === 1
   )
 
+  const sectionNavItems = useMemo(() => {
+    if (!p) {
+      return [['overview', 'Overview']]
+    }
+    const plans = buildRoomPlanDisplay(p)
+    const sharedVideos = getSharedSpaceVideos(p.videos || [])
+    const rentTotalsNav = buildRentTotals(p)
+    const packages = p.leasingPackages || []
+    const hasLeasing =
+      rentTotalsNav.totalHouseRent > 0 ||
+      packages.length > 0 ||
+      (p.leaseTerms && p.leaseTerms.length > 0)
+    return [
+      ['overview', 'Overview'],
+      ...(plans.length > 0 ? [['floor-plans', 'Floor Plans']] : []),
+      ...(sharedVideos.length > 0 ? [['shared-spaces', 'Shared Spaces']] : []),
+      ['policies', 'Lease basics'],
+      ['amenities', 'Amenities'],
+      ...(hasLeasing ? [['leasing', 'Bundles & leasing']] : []),
+      ['map', 'Map'],
+    ]
+  }, [p])
+
+  const sectionNavIds = useMemo(() => new Set(sectionNavItems.map(([id]) => id)), [sectionNavItems])
+
   useEffect(() => {
     const sectionId = (hash || '').replace('#', '')
     if (!sectionId) {
       setActiveTab('overview')
       return
     }
-    if (['overview', 'floor-plans', 'shared-spaces', 'leasing', 'highlights', 'amenities', 'policies', 'map'].includes(sectionId)) {
+    if (sectionNavIds.has(sectionId)) {
       setActiveTab(sectionId)
+    } else if (sectionId === 'highlights') {
+      setActiveTab('amenities')
+    } else {
+      setActiveTab('overview')
     }
-  }, [hash])
+  }, [hash, sectionNavIds])
+
+  useEffect(() => {
+    if (!sectionNavIds.has(activeTab)) {
+      setActiveTab('overview')
+    }
+  }, [sectionNavIds, activeTab])
 
   useEffect(() => {
     setShowScarcityPopup(false)
@@ -556,7 +607,7 @@ export default function PropertyPage(){
     const header = document.querySelector('header')
     const headerH = header ? header.offsetHeight : 0
     const nav = document.getElementById('section-nav')
-    const navH = window.matchMedia('(min-width: 768px)').matches && nav ? nav.offsetHeight : 0
+    const navH = nav ? nav.offsetHeight : 0
     const gap = 12
     const offset = headerH + navH + gap
     const container = getScrollContainer(el)
@@ -629,6 +680,8 @@ export default function PropertyPage(){
   const scarcePlan = scarcePlanForEffect
   const startingRent = formatStartingRent(getStartingRent(p))
   const rentTotals = buildRentTotals(p)
+  const fullHousePromo =
+    rentTotals.totalHouseRent > 0 ? computeFullHousePromoPrice(rentTotals.totalHouseRent) : null
   const sharedSpaceVideos = getSharedSpaceVideos(p.videos || [])
   const leasingPackages = p.leasingPackages || []
 
@@ -643,39 +696,32 @@ export default function PropertyPage(){
       />
       <div className="main-container">
         <div
-          id="overview"
-          ref={(node) => { sectionRefs.current.overview = node }}
-          className="property-gallery mx-auto max-w-[1480px] scroll-mt-28 px-4 pt-6 sm:px-6 sm:pt-8 md:scroll-mt-40 lg:px-10 lg:pt-10"
+          id="section-nav"
+          className="sticky top-28 z-40 w-full border-b border-slate-200 bg-white/95 shadow-[0_1px_0_0_rgba(15,23,42,0.06)] backdrop-blur-md"
         >
-          <h1 className="sr-only">{p.name}</h1>
-          <PropertyGallery images={galleryImages} videos={p.videos || []} />
-        </div>
-
-      <div className="mx-auto mt-12 grid min-w-0 max-w-[1480px] gap-10 px-4 sm:px-6 md:grid-cols-12 lg:px-10">
-        <div className="min-w-0 md:col-span-9">
-
-          <div id="section-nav" className="mt-8 border-b border-slate-200 bg-white/95 backdrop-blur-sm md:sticky md:top-16 md:z-20">
-            <nav className="flex gap-1 overflow-x-auto py-2 scrollbar-none">
-              {[
-                ['overview','Overview'],
-                ['floor-plans','Floor Plans'],
-                ['shared-spaces','Shared Spaces'],
-                ['policies','Lease basics'],
-                ['amenities','Amenities'],
-                ['leasing','Bundles & leasing'],
-                ['map','Map'],
-              ].map(([id, label]) => (
+          <div className="mx-auto max-w-[1480px] px-4 sm:px-6 lg:px-10">
+            <div className="border-b border-slate-100 py-4 sm:py-5 lg:py-6">
+              <p className="text-[11px] font-bold uppercase tracking-[0.2em] text-slate-400">Listing</p>
+              <h2 className="mt-2 font-editorial text-2xl font-black leading-tight tracking-tight text-slate-900 sm:text-3xl lg:text-4xl">
+                {p.name}
+              </h2>
+            </div>
+            <nav
+              className="flex flex-wrap items-center gap-x-3 gap-y-2.5 overflow-x-auto py-3 scrollbar-none sm:gap-x-4 sm:gap-y-3 sm:py-4 md:gap-x-5 lg:gap-x-6 lg:py-5 [&::-webkit-scrollbar]:hidden"
+              aria-label="Property sections"
+            >
+              {sectionNavItems.map(([id, label]) => (
                 <button
                   type="button"
                   key={id}
-                  onClick={(event) => {
+                  onClick={() => {
                     setActiveTab(id)
                     scrollToId(id)
                   }}
-                  className={`shrink-0 rounded-full px-4 py-2 text-sm font-medium transition ${
+                  className={`shrink-0 rounded-full px-4 py-2.5 text-sm font-semibold transition sm:px-5 sm:text-[15px] ${
                     activeTab === id
-                      ? 'bg-axis text-white'
-                      : 'text-slate-500 hover:text-slate-900'
+                      ? 'bg-axis text-white shadow-sm'
+                      : 'text-slate-500 hover:bg-slate-50 hover:text-slate-900'
                   }`}
                 >
                   {label}
@@ -683,19 +729,38 @@ export default function PropertyPage(){
               ))}
             </nav>
           </div>
+        </div>
+
+        <div
+          id="overview"
+          ref={(node) => { sectionRefs.current.overview = node }}
+          className="property-gallery mx-auto max-w-[1480px] scroll-mt-28 px-4 pt-8 sm:px-6 sm:pt-10 md:scroll-mt-40 lg:px-10 lg:pt-12"
+        >
+          <h1 className="sr-only">{p.name}</h1>
+          <div className="mb-6 sm:mb-8 lg:mb-10">
+            <h2 className="font-editorial text-3xl font-black leading-tight tracking-tight text-slate-900 sm:text-4xl">
+              Overview
+            </h2>
+            <p className="mt-2 max-w-2xl text-base leading-relaxed text-slate-600">{p.summary}</p>
+          </div>
+          <PropertyGallery images={galleryImages} videos={p.videos || []} />
+        </div>
+
+      <div className="mx-auto mt-12 grid min-w-0 max-w-[1480px] gap-10 px-4 sm:px-6 md:grid-cols-12 lg:px-10">
+        <div className="min-w-0 md:col-span-9">
 
           {/* Floor Plans */}
           {displayedRoomPlans.length > 0 && (
-            <section id="floor-plans" ref={(node) => { sectionRefs.current['floor-plans'] = node }} className="mt-10 min-w-0 scroll-mt-28 md:scroll-mt-40">
-              <div className="flex min-w-0 flex-wrap items-end justify-between gap-x-3 gap-y-2">
+            <section id="floor-plans" ref={(node) => { sectionRefs.current['floor-plans'] = node }} className="mt-14 min-w-0 scroll-mt-28 md:scroll-mt-40">
+              <div className="flex min-w-0 flex-wrap items-end justify-between gap-x-4 gap-y-3">
                 <div className="min-w-0 flex-1">
-                  <h2 className="font-editorial text-3xl leading-tight text-slate-900 sm:text-4xl">{roomPlansHeading}</h2>
+                  <h2 className="font-editorial text-3xl font-black leading-tight text-slate-900 sm:text-4xl">{roomPlansHeading}</h2>
                 </div>
                 <div className="shrink-0 text-sm text-slate-500">
                   {displayedRoomPlans.reduce((acc, pl) => acc + pl.rooms.length, 0)} rooms listed
                 </div>
               </div>
-              <div className="mt-5 min-w-0 space-y-4">
+              <div className="mt-8 min-w-0 space-y-5">
                 {displayedRoomPlans.map((plan, i) => (
                   <FloorPlanCard key={i} plan={plan} onDetail={(room)=> setModalPlan({plan, room})} />
                 ))}
@@ -704,16 +769,17 @@ export default function PropertyPage(){
           )}
 
           {sharedSpaceVideos.length > 0 ? (
-            <section id="shared-spaces" ref={(node) => { sectionRefs.current['shared-spaces'] = node }} className="mt-10 scroll-mt-28 md:scroll-mt-40">
-              <div className="flex items-end justify-between gap-3">
+            <section id="shared-spaces" ref={(node) => { sectionRefs.current['shared-spaces'] = node }} className="mt-14 scroll-mt-28 md:scroll-mt-40">
+              <div className="flex items-end justify-between gap-4">
                 <div>
-                  <h2 className="font-editorial text-3xl leading-tight text-slate-900 sm:text-4xl">Kitchen and living area</h2>
+                  <h2 className="font-editorial text-3xl font-black leading-tight text-slate-900 sm:text-4xl">Shared spaces</h2>
+                  <p className="mt-2 text-base text-slate-600">Kitchen and living area</p>
                 </div>
                 <div className="shrink-0 text-sm text-slate-500">
                   {sharedSpaceVideos.length} shared spaces
                 </div>
               </div>
-              <div className="mt-5 overflow-hidden rounded-[18px] border border-slate-200 bg-white">
+              <div className="mt-8 overflow-hidden rounded-[18px] border border-slate-200 bg-white">
                 <div className="hidden sm:grid grid-cols-12 gap-3 border-b border-slate-100 bg-slate-50 px-6 py-3 text-xs font-bold uppercase tracking-[0.14em] text-slate-400">
                   <div className="col-span-4">Space</div>
                   <div className="col-span-6">Overview</div>
@@ -748,9 +814,9 @@ export default function PropertyPage(){
             </section>
           ) : null}
 
-          <section id="policies" ref={(node) => { sectionRefs.current.policies = node }} className="mt-10 scroll-mt-28 md:scroll-mt-40">
-            <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-500">Lease Basics</div>
-            <div className="mt-5 overflow-hidden rounded-[24px] border border-slate-200 bg-white shadow-[0_24px_70px_rgba(15,23,42,0.06)]">
+          <section id="policies" ref={(node) => { sectionRefs.current.policies = node }} className="mt-14 scroll-mt-28 md:scroll-mt-40">
+            <h2 className="font-editorial text-3xl font-black leading-tight text-slate-900 sm:text-4xl">Lease basics</h2>
+            <div className="mt-8 overflow-hidden rounded-[24px] border border-slate-200 bg-white shadow-[0_24px_70px_rgba(15,23,42,0.06)]">
               {[
                 ...(p.policies ? [{ emoji:'📋', label:'Lease terms', value: p.policies }] : []),
                 { emoji:'📄', label:'Application', value: `Fee: ${p.applicationFee || 'Contact us'}` },
@@ -759,7 +825,7 @@ export default function PropertyPage(){
                 { emoji:'📶', label:'Utilities', value: 'Flat fee: $175/month — includes cleaning (bi-monthly), WiFi, water & trash' },
                 { emoji:'🐾', label:'Pets', value: 'Pets may be allowed' },
               ].map(({ emoji, label, value }, i, arr) => (
-                <div key={label} className={`flex items-start gap-3 px-5 py-4 sm:gap-4 sm:px-8 sm:py-5 ${i < arr.length - 1 ? 'border-b border-slate-100' : ''}`}>
+                <div key={label} className={`flex items-start gap-4 px-5 py-5 sm:gap-5 sm:px-8 sm:py-6 ${i < arr.length - 1 ? 'border-b border-slate-100' : ''}`}>
                   <div className="flex h-8 w-8 shrink-0 items-center justify-center text-base sm:h-10 sm:w-10 sm:text-lg">{emoji}</div>
                   <div className="min-w-0 flex-1">
                     <div className="break-words text-[13px] font-bold text-slate-900 sm:text-sm">{label}</div>
@@ -907,57 +973,72 @@ export default function PropertyPage(){
           )}
 
           {/* Amenities */}
-          <section id="amenities" ref={(node) => { sectionRefs.current.amenities = node }} className="mt-10 scroll-mt-28 md:scroll-mt-40">
-            <div className="grid gap-8 border-t border-slate-200 pt-10 lg:grid-cols-[280px_minmax(0,1fr)]">
-              <div>
-                <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-500">Features</div>
-              </div>
-              <div className="space-y-10">
-                {communityUnique.length > 0 && (
-                  <div>
-                    <div className="mb-4 text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">Shared spaces and house features</div>
-                    <div className="grid gap-x-8 gap-y-4 sm:grid-cols-2">
-                      {communityUnique.map((a, i) => (
-                        <div key={i} className="flex items-start gap-3 border-t border-slate-200 pt-4">
-                          <div className="mt-0.5 text-axis">{getAmenityIcon(a, 'sm')}</div>
-                          <div className="text-sm leading-6 text-slate-700">{a}</div>
-                        </div>
-                      ))}
-                    </div>
+          <section id="amenities" ref={(node) => { sectionRefs.current.amenities = node }} className="mt-14 scroll-mt-28 border-t border-slate-200 pt-12 sm:pt-14 md:scroll-mt-40">
+            <h2 className="font-editorial text-3xl font-black leading-tight text-slate-900 sm:text-4xl">Amenities</h2>
+            <div className="mt-10 space-y-12 sm:mt-12 sm:space-y-14">
+              {communityUnique.length > 0 && (
+                <div>
+                  <h3 className="text-sm font-bold uppercase tracking-[0.16em] text-slate-500 sm:text-[13px] sm:tracking-[0.18em]">
+                    Shared spaces and house features
+                  </h3>
+                  <div className="mt-6 grid gap-x-10 gap-y-0 sm:grid-cols-2">
+                    {communityUnique.map((a, i) => (
+                      <div key={i} className="flex items-start gap-4 border-t border-slate-200 py-5 sm:py-6">
+                        <div className="mt-0.5 shrink-0 text-axis">{getAmenityIcon(a, 'sm')}</div>
+                        <div className="text-[15px] leading-7 text-slate-700">{a}</div>
+                      </div>
+                    ))}
                   </div>
-                )}
+                </div>
+              )}
 
-                {unitUnique.length > 0 && (
-                  <div>
-                    <div className="mb-4 text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">In each room</div>
-                    <div className="grid gap-x-8 gap-y-4 sm:grid-cols-2">
-                      {unitUnique.map((a, i) => (
-                        <div key={i} className="flex items-start gap-3 border-t border-slate-200 pt-4">
-                          <div className="mt-0.5 text-axis">{getAmenityIcon(a, 'sm')}</div>
-                          <div className="text-sm leading-6 text-slate-700">{a}</div>
-                        </div>
-                      ))}
-                    </div>
+              {unitUnique.length > 0 && (
+                <div>
+                  <h3 className="text-sm font-bold uppercase tracking-[0.16em] text-slate-500 sm:text-[13px] sm:tracking-[0.18em]">
+                    In each room
+                  </h3>
+                  <div className="mt-6 grid gap-x-10 gap-y-0 sm:grid-cols-2">
+                    {unitUnique.map((a, i) => (
+                      <div key={i} className="flex items-start gap-4 border-t border-slate-200 py-5 sm:py-6">
+                        <div className="mt-0.5 shrink-0 text-axis">{getAmenityIcon(a, 'sm')}</div>
+                        <div className="text-[15px] leading-7 text-slate-700">{a}</div>
+                      </div>
+                    ))}
                   </div>
-                )}
-              </div>
+                </div>
+              )}
             </div>
           </section>
 
           {(rentTotals.totalHouseRent > 0 || leasingPackages.length > 0 || (p.leaseTerms && p.leaseTerms.length > 0)) ? (
-            <section id="leasing" ref={(node) => { sectionRefs.current.leasing = node }} className="mt-10 scroll-mt-28 md:scroll-mt-40">
-              <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
-                <h2 className="font-editorial text-3xl leading-tight text-slate-900 sm:text-4xl">Pricing &amp; leasing</h2>
-              </div>
+            <section id="leasing" ref={(node) => { sectionRefs.current.leasing = node }} className="mt-14 scroll-mt-28 md:scroll-mt-40">
+              <h2 className="font-editorial text-3xl font-black leading-tight text-slate-900 sm:text-4xl">Bundles &amp; leasing</h2>
 
-              <div className="mt-6 overflow-hidden rounded-[24px] border border-slate-200 bg-white shadow-[0_24px_70px_rgba(15,23,42,0.06)]">
+              <div className="mt-8 overflow-hidden rounded-[24px] border border-slate-200 bg-white shadow-[0_24px_70px_rgba(15,23,42,0.06)]">
                 {rentTotals.totalHouseRent > 0 ? (
                   <div className="border-b border-slate-100 bg-[linear-gradient(180deg,#fafaf9_0%,#ffffff_100%)] px-6 py-6 sm:px-8 sm:py-7">
                     <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">Full house</div>
                     <div className="mt-3 flex flex-wrap items-end justify-between gap-4">
-                      <div className="text-3xl font-black tracking-tight text-slate-900 sm:text-[2.5rem]">
-                        {formatCompactMonthlyCurrency(rentTotals.totalHouseRent)}
-                      </div>
+                      {fullHousePromo ? (
+                        <div
+                          className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-end sm:gap-x-4 sm:gap-y-1"
+                          aria-label={`Listed at ${formatCompactMonthlyCurrency(fullHousePromo.list)}, promotional full-house rate ${formatCompactMonthlyCurrency(fullHousePromo.promo)}`}
+                        >
+                          <span className="text-2xl font-bold tracking-tight text-slate-400 line-through decoration-2 decoration-slate-400 sm:text-3xl">
+                            {formatCompactMonthlyCurrency(fullHousePromo.list)}
+                          </span>
+                          <span className="text-3xl font-black tracking-tight text-slate-900 sm:text-[2.5rem]">
+                            {formatCompactMonthlyCurrency(fullHousePromo.promo)}
+                          </span>
+                          <span className="text-[11px] font-bold uppercase tracking-[0.14em] text-emerald-700 sm:ml-1 sm:self-center">
+                            Promo rate
+                          </span>
+                        </div>
+                      ) : (
+                        <div className="text-3xl font-black tracking-tight text-slate-900 sm:text-[2.5rem]">
+                          {formatCompactMonthlyCurrency(rentTotals.totalHouseRent)}
+                        </div>
+                      )}
                     </div>
                   </div>
                 ) : null}
@@ -1009,12 +1090,12 @@ export default function PropertyPage(){
           ) : null}
 
           {/* Map */}
-          <section id="map" ref={(node) => { sectionRefs.current.map = node }} className="mt-10 mb-14 scroll-mt-28 md:scroll-mt-40">
-            <div className="grid gap-8 border-t border-slate-200 pt-10 lg:grid-cols-[320px_minmax(0,1fr)]">
+          <section id="map" ref={(node) => { sectionRefs.current.map = node }} className="mt-14 mb-14 scroll-mt-28 border-t border-slate-200 pt-12 sm:pt-14 md:scroll-mt-40">
+            <h2 className="font-editorial text-3xl font-black leading-tight text-slate-900 sm:text-4xl">Map</h2>
+            <div className="mt-8 grid gap-10 lg:grid-cols-[320px_minmax(0,1fr)] lg:gap-12">
               <div>
-                <h2 className="font-editorial text-3xl leading-tight text-slate-900 sm:text-4xl">Location</h2>
-                <p className="mt-3 text-base leading-8 text-slate-600">{p.neighborhood}</p>
-                <div className="mt-6 border-t border-slate-200 pt-4 text-sm leading-7 text-slate-600">{p.address}</div>
+                <p className="text-base leading-8 text-slate-600">{p.neighborhood}</p>
+                <div className="mt-6 border-t border-slate-200 pt-5 text-sm leading-7 text-slate-600">{p.address}</div>
               </div>
               <div className="overflow-hidden rounded-[18px] border border-slate-200">
                 {p.location ? (
@@ -1040,7 +1121,9 @@ export default function PropertyPage(){
               <div className="flex flex-col gap-2.5 border-t border-slate-200 p-5">
                 <button
                   type="button"
-                  onClick={() => scrollToId('floor-plans')}
+                  onClick={() => {
+                    if (!scrollToId('floor-plans')) scrollToId('overview')
+                  }}
                   className="w-full rounded-full bg-axis py-3 text-sm font-semibold text-white transition hover:opacity-95"
                 >Check availability</button>
                 <Link
@@ -1086,7 +1169,9 @@ export default function PropertyPage(){
           </div>
           <button
             type="button"
-            onClick={() => scrollToId('floor-plans')}
+            onClick={() => {
+              if (!scrollToId('floor-plans')) scrollToId('overview')
+            }}
             className="shrink-0 rounded-full border border-slate-300/90 bg-white/60 px-4 py-2.5 text-sm font-semibold text-slate-800 shadow-sm backdrop-blur-sm transition active:scale-95"
           >
             Rooms

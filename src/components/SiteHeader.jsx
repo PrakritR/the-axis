@@ -3,9 +3,7 @@ import { Link, useLocation } from 'react-router-dom'
 import { AnimatePresence, motion } from 'framer-motion'
 import scrollToTop from '../utils/scrollToTop'
 import { AxisWordmark } from './logos/AxisLogos'
-import { HOUSING_EXPLORE_PATH } from '../lib/housingSite'
 import PortalNavLink from './PortalNavLink'
-import PortalBubble from './PortalBubble'
 
 function HomeIcon() {
   return (
@@ -57,19 +55,85 @@ function AxisIcon() {
   )
 }
 
+function ChevronDown({ className }) {
+  return (
+    <svg className={className} width="12" height="12" viewBox="0 0 24 24" fill="none" aria-hidden>
+      <path d="M6 9l6 6 6-6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  )
+}
+
+const underlineClass = 'h-0.5 rounded-full bg-[#2563eb]'
 
 /**
- * Single site header: marketing (renter), owners funnel, and portal hub layouts.
+ * Desktop nav item with hover / focus-within dropdown.
+ */
+function NavMenuDropdown({ label, to, parentActive, children }) {
+  const hasChildren = React.Children.toArray(children).filter(Boolean).length > 0
+  return (
+    <div className="group relative flex flex-col items-center pb-2.5">
+      <Link
+        to={to}
+        onClick={scrollToTop}
+        aria-haspopup={hasChildren ? 'menu' : undefined}
+        className={`inline-flex items-center gap-1 text-[15px] font-semibold tracking-[-0.01em] transition ${
+          parentActive ? 'text-slate-900' : 'text-slate-600 hover:text-slate-900'
+        }`}
+      >
+        {label}
+        {hasChildren ? (
+          <ChevronDown className="shrink-0 opacity-55 transition group-hover:opacity-80" aria-hidden />
+        ) : null}
+      </Link>
+      <span
+        aria-hidden
+        className={`pointer-events-none absolute bottom-0 left-0 right-0 mx-auto max-w-full ${underlineClass} origin-center transition-[transform,opacity] duration-200 ease-out ${
+          parentActive
+            ? 'scale-x-100 opacity-100'
+            : 'scale-x-0 opacity-0 group-hover:scale-x-100 group-hover:opacity-100 group-focus-within:scale-x-100 group-focus-within:opacity-100'
+        }`}
+      />
+      {hasChildren ? (
+        <div className="pointer-events-none invisible absolute left-1/2 top-full z-50 w-max min-w-[220px] -translate-x-1/2 pt-2 opacity-0 transition-[opacity,visibility] duration-150 group-hover:pointer-events-auto group-hover:visible group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:visible group-focus-within:opacity-100">
+          <div
+            className="rounded-xl border border-slate-200/90 bg-white py-1.5 shadow-[0_16px_40px_rgba(15,23,42,0.12)]"
+            role="menu"
+            aria-label={`${label} links`}
+          >
+            {children}
+          </div>
+        </div>
+      ) : null}
+    </div>
+  )
+}
+
+function DropdownLink({ to, isActive, onNavigate, children }) {
+  return (
+    <Link
+      to={to}
+      role="menuitem"
+      onClick={() => {
+        scrollToTop()
+        onNavigate?.()
+      }}
+      className={`block px-4 py-2.5 text-sm font-medium transition hover:bg-slate-50 ${
+        isActive ? 'text-[#2563eb]' : 'text-slate-700'
+      }`}
+    >
+      {children}
+    </Link>
+  )
+}
+
+/**
+ * Site header: same primary nav on every page — Explore Houses & Partner with Axis (dropdowns) + Portal.
  */
 export default function SiteHeader() {
   const location = useLocation()
   const { pathname } = location
 
-  const isOwners = pathname.startsWith('/owners')
-  const variant = isOwners ? 'owners' : 'marketing'
-
   const [mobileOpen, setMobileOpen] = useState(false)
-  const [scrolled, setScrolled] = useState(false)
 
   const isHome = pathname === '/' || pathname.startsWith('/properties/')
   const isApply = pathname === '/apply'
@@ -80,106 +144,76 @@ export default function SiteHeader() {
     contactParams.get('tab') === 'schedule'
   const isPortal = pathname === '/portal'
 
-  const showMobileDock = variant === 'marketing' && ['/', '/apply', '/contact'].includes(pathname)
+  const isPricing = pathname === '/owners/pricing'
+  const isOwnersContact = pathname === '/owners/contact'
+  const isOwnersAbout = pathname === '/owners/about'
 
-  const marketingCenterNavFull = [
-    { label: 'Explore Houses', to: '/', isActive: isHome },
-    { label: 'Schedule tour', to: '/contact?section=housing&tab=schedule', isActive: isScheduleTour },
-    { label: 'Apply', to: '/apply', isActive: isApply },
-    { label: 'Partner with Axis', to: '/owners/about', isActive: pathname === '/owners/about' },
-  ]
+  const exploreParentActive = isHome || isScheduleTour || isApply
+  const partnerParentActive = isOwnersAbout || isPricing || isOwnersContact
 
-  const marketingCenterNav = isPortal
-    ? marketingCenterNavFull.filter(
-        (item) => item.to !== '/apply' && item.to !== '/contact?section=housing&tab=schedule'
-      )
-    : marketingCenterNavFull
+  const showMobileDock =
+    !isPortal &&
+    (pathname === '/' ||
+      pathname === '/apply' ||
+      pathname === '/contact' ||
+      pathname.startsWith('/owners'))
 
   const mobileDockLinks = [
     { label: 'Houses', to: '/', icon: <HomeIcon />, isActive: isHome },
     { label: 'Apply', to: '/apply', icon: <ApplyIcon />, isActive: isApply },
-    { label: 'Partner', to: '/owners/about', icon: <AxisIcon />, isActive: false },
-  ]
-
-  const ownersCenterNav = [
-    { label: 'About us', to: '/owners/about', isActive: pathname === '/owners/about' },
-    { label: 'Pricing', to: '/owners/pricing', isActive: pathname === '/owners/pricing' },
-    { label: 'Contact', to: '/owners/contact', isActive: pathname === '/owners/contact' },
-    { label: 'Explore properties', to: HOUSING_EXPLORE_PATH, isActive: false },
+    { label: 'Partner', to: '/owners/about', icon: <AxisIcon />, isActive: partnerParentActive },
   ]
 
   useEffect(() => {
     setMobileOpen(false)
   }, [pathname, location.search])
 
-  useEffect(() => {
-    if (variant !== 'owners') return undefined
-    function onScroll() {
-      setScrolled(window.scrollY > 12)
-    }
-    window.addEventListener('scroll', onScroll, { passive: true })
-    return () => window.removeEventListener('scroll', onScroll)
-  }, [variant])
-
   function closeMobileMenu() {
     setMobileOpen(false)
   }
 
   const headerShell =
-    variant === 'owners'
-      ? `relative z-30 w-full shrink-0 border-b transition-all duration-300 ${
-          scrolled
-            ? 'border-slate-200/80 bg-white/82 shadow-[0_10px_36px_rgba(37,99,235,0.08)] md:backdrop-blur-xl'
-            : 'border-transparent bg-transparent md:bg-white/42 md:backdrop-blur-xl'
-        }`
-      : 'relative z-30 w-full shrink-0 border-b border-slate-200/30 bg-[#edf2fb]/88 backdrop-blur-xl'
+    'relative z-30 w-full shrink-0 border-b border-slate-200/30 bg-[#edf2fb]/88 backdrop-blur-xl'
 
-  const centerNav = variant === 'owners' ? ownersCenterNav : marketingCenterNav
-  const wordmarkTo = variant === 'owners' ? '/owners/about' : '/'
-  const wordmarkLabel = variant === 'owners' ? 'Axis for property owners' : 'Axis home'
-  const centerGap = variant === 'owners' ? 'gap-6 lg:gap-8' : 'gap-4 lg:gap-8'
-  const underlineClass =
-    variant === 'owners' ? 'h-0.5 rounded-full bg-[#2563eb]' : 'h-0.5 rounded-full bg-[#2563eb]'
+  const showExploreExtras = !isPortal
 
   return (
     <header className={headerShell} style={{ paddingTop: 'env(safe-area-inset-top)' }}>
       <div className="container mx-auto flex items-center justify-between gap-3 px-4 py-2.5 sm:px-6 sm:py-3.5 md:grid md:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] md:items-center md:gap-4">
         <Link
-          to={wordmarkTo}
+          to="/"
           className="group flex shrink-0 items-center md:justify-self-start"
           onClick={scrollToTop}
-          aria-label={wordmarkLabel}
+          aria-label="Axis home"
         >
           <AxisWordmark tone="dark" className="h-10 w-auto transition-transform duration-300 group-hover:scale-[1.02] sm:h-11" />
         </Link>
 
-        <nav className={`hidden items-center justify-center md:col-start-2 md:flex ${centerGap}`}>
-          {centerNav.map((item) => (
-            <Link
-              key={item.label}
-              to={item.to}
-              onClick={scrollToTop}
-              className={`group relative inline-flex shrink-0 flex-col items-center pb-2.5 text-[15px] font-semibold tracking-[-0.01em] transition ${
-                variant === 'owners'
-                  ? item.isActive
-                    ? 'text-slate-900'
-                    : 'text-slate-600 hover:text-slate-900'
-                  : item.isActive
-                    ? 'text-slate-900'
-                    : 'text-slate-600 hover:text-slate-900'
-              }`}
-            >
-              {item.label}
-              <span
-                aria-hidden
-                className={`pointer-events-none absolute bottom-0 left-0 right-0 mx-auto max-w-full ${underlineClass} origin-center transition-[transform,opacity] duration-200 ease-out ${
-                  item.isActive
-                    ? 'scale-x-100 opacity-100'
-                    : 'scale-x-0 opacity-0 group-hover:scale-x-100 group-hover:opacity-100 group-focus-visible:scale-x-100 group-focus-visible:opacity-100'
-                }`}
-              />
-            </Link>
-          ))}
+        <nav className="hidden items-center justify-center gap-4 md:col-start-2 md:flex lg:gap-8" aria-label="Primary">
+          <NavMenuDropdown label="Explore Houses" to="/" parentActive={exploreParentActive}>
+            {showExploreExtras ? (
+              <>
+                <DropdownLink
+                  to="/contact?section=housing&tab=schedule"
+                  isActive={isScheduleTour}
+                  onNavigate={closeMobileMenu}
+                >
+                  Schedule tour
+                </DropdownLink>
+                <DropdownLink to="/apply" isActive={isApply} onNavigate={closeMobileMenu}>
+                  Apply
+                </DropdownLink>
+              </>
+            ) : null}
+          </NavMenuDropdown>
+          <NavMenuDropdown label="Partner with Axis" to="/owners/about" parentActive={partnerParentActive}>
+            <DropdownLink to="/owners/pricing" isActive={isPricing} onNavigate={closeMobileMenu}>
+              Pricing
+            </DropdownLink>
+            <DropdownLink to="/owners/contact" isActive={isOwnersContact} onNavigate={closeMobileMenu}>
+              Contact
+            </DropdownLink>
+          </NavMenuDropdown>
         </nav>
 
         <div className="flex shrink-0 items-center justify-end gap-2 sm:gap-2.5 md:col-start-3 md:justify-self-end">
@@ -210,31 +244,90 @@ export default function SiteHeader() {
       <AnimatePresence>
         {mobileOpen && (
           <motion.div
-            key={`mobile-${variant}`}
+            key="mobile-nav"
             initial={{ opacity: 0, height: 0 }}
             animate={{ opacity: 1, height: 'auto' }}
             exit={{ opacity: 0, height: 0 }}
             transition={{ duration: 0.22, ease: [0.2, 0.9, 0.2, 1] }}
             className="overflow-hidden border-t border-slate-200 bg-white/92 backdrop-blur-xl md:hidden"
           >
-            <nav className={`container mx-auto flex flex-col gap-1 px-4 py-3 ${variant === 'marketing' ? 'sm:px-6' : ''}`}>
-              {centerNav.map((item) => (
-                <Link
-                  key={`mobile-${item.label}`}
-                  to={item.to}
-                  onClick={() => {
-                    closeMobileMenu()
-                    scrollToTop()
-                  }}
-                  className={`rounded-xl px-3 py-2.5 text-sm font-medium transition hover:bg-slate-50 ${
-                    item.isActive
-                      ? 'border-b-2 border-[#2563eb] text-slate-900'
-                      : 'border-b-2 border-transparent text-slate-600 hover:text-slate-900'
-                  }`}
-                >
-                  {item.label}
-                </Link>
-              ))}
+            <nav className="container mx-auto flex flex-col gap-1 px-4 py-3 sm:px-6" aria-label="Mobile primary">
+              <Link
+                to="/"
+                onClick={() => {
+                  closeMobileMenu()
+                  scrollToTop()
+                }}
+                className={`rounded-xl px-3 py-2.5 text-sm font-semibold transition hover:bg-slate-50 ${
+                  isHome ? 'text-slate-900' : 'text-slate-600'
+                }`}
+              >
+                Explore Houses
+              </Link>
+              {showExploreExtras ? (
+                <>
+                  <Link
+                    to="/contact?section=housing&tab=schedule"
+                    onClick={() => {
+                      closeMobileMenu()
+                      scrollToTop()
+                    }}
+                    className={`rounded-xl py-2.5 pl-6 pr-3 text-sm font-medium transition hover:bg-slate-50 ${
+                      isScheduleTour ? 'text-[#2563eb]' : 'text-slate-600'
+                    }`}
+                  >
+                    Schedule tour
+                  </Link>
+                  <Link
+                    to="/apply"
+                    onClick={() => {
+                      closeMobileMenu()
+                      scrollToTop()
+                    }}
+                    className={`rounded-xl py-2.5 pl-6 pr-3 text-sm font-medium transition hover:bg-slate-50 ${
+                      isApply ? 'text-[#2563eb]' : 'text-slate-600'
+                    }`}
+                  >
+                    Apply
+                  </Link>
+                </>
+              ) : null}
+              <Link
+                to="/owners/about"
+                onClick={() => {
+                  closeMobileMenu()
+                  scrollToTop()
+                }}
+                className={`mt-1 rounded-xl px-3 py-2.5 text-sm font-semibold transition hover:bg-slate-50 ${
+                  isOwnersAbout ? 'text-slate-900' : 'text-slate-600'
+                }`}
+              >
+                Partner with Axis
+              </Link>
+              <Link
+                to="/owners/pricing"
+                onClick={() => {
+                  closeMobileMenu()
+                  scrollToTop()
+                }}
+                className={`rounded-xl py-2.5 pl-6 pr-3 text-sm font-medium transition hover:bg-slate-50 ${
+                  isPricing ? 'text-[#2563eb]' : 'text-slate-600'
+                }`}
+              >
+                Pricing
+              </Link>
+              <Link
+                to="/owners/contact"
+                onClick={() => {
+                  closeMobileMenu()
+                  scrollToTop()
+                }}
+                className={`rounded-xl py-2.5 pl-6 pr-3 text-sm font-medium transition hover:bg-slate-50 ${
+                  isOwnersContact ? 'text-[#2563eb]' : 'text-slate-600'
+                }`}
+              >
+                Contact
+              </Link>
             </nav>
           </motion.div>
         )}
