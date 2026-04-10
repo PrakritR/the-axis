@@ -2580,6 +2580,7 @@ function portalManagerSearchFromLocation(search) {
 export default function Manager() {
   const location = useLocation()
   const [manager, setManager] = useState(null)
+  const [authChecked, setAuthChecked] = useState(false)
   const [view, setView] = useState('dashboard') // 'dashboard' | 'editor'
   const [openDraftId, setOpenDraftId] = useState(null)
 
@@ -2590,17 +2591,21 @@ export default function Manager() {
       if (saved) setManager(JSON.parse(saved))
     } catch {
       sessionStorage.removeItem(MANAGER_SESSION_KEY)
+    } finally {
+      setAuthChecked(true)
     }
   }, [])
 
   function handleLogin(managerData) {
     setManager(managerData)
+    setAuthChecked(true)
     setView('dashboard')
   }
 
   function handleSignOut() {
     sessionStorage.removeItem(MANAGER_SESSION_KEY)
     setManager(null)
+    setAuthChecked(true)
     setView('dashboard')
     setOpenDraftId(null)
   }
@@ -2622,6 +2627,14 @@ export default function Manager() {
   function handleBackToDashboard() {
     setView('dashboard')
     setOpenDraftId(null)
+  }
+
+  if (!authChecked) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-[linear-gradient(180deg,#f7fbff_0%,#eef5ff_48%,#f9fcff_100%)] px-6 text-sm font-medium text-slate-400">
+        Loading manager portal...
+      </div>
+    )
   }
 
   if (!manager) {

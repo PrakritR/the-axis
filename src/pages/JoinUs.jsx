@@ -282,44 +282,45 @@ export default function JoinUs() {
 
       {managerId ? (
         <section className="flex min-h-screen items-center justify-center bg-[linear-gradient(180deg,#f7fbff_0%,#eef5ff_48%,#f9fcff_100%)] px-4 py-16 font-sans">
-          <div className="w-full max-w-md">
-            <div className="rounded-[32px] border border-slate-200 bg-white p-8 shadow-soft sm:p-10">
-              {/* Check icon */}
-              <div className="mb-6 flex justify-center">
-                <div className="flex h-14 w-14 items-center justify-center rounded-full bg-emerald-50 ring-8 ring-emerald-50/60">
-                  <svg className="h-7 w-7 text-emerald-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+          <div className="w-full max-w-lg">
+            <div className="rounded-[36px] border border-white/90 bg-white/94 p-8 shadow-[0_30px_80px_rgba(37,99,235,0.12)] backdrop-blur sm:p-10">
+              <div className="mb-7 flex justify-center">
+                <div className="flex h-20 w-20 items-center justify-center rounded-full bg-[radial-gradient(circle,#e9f2ff_0%,#f3f8ff_62%,#f8fbff_100%)] ring-8 ring-[#2563eb]/6">
+                  <svg className="h-8 w-8 text-[#2563eb]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
                     <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
                   </svg>
                 </div>
               </div>
 
-              <h1 className="text-center text-3xl font-black tracking-tight text-slate-900">You're in.</h1>
-              <p className="mt-2 text-center text-sm leading-6 text-slate-500">
-                Save your Manager ID — you'll need it to create your portal account. Keep it somewhere safe.
+              <div className="text-center">
+                <div className="text-[11px] font-bold uppercase tracking-[0.22em] text-[#2563eb]">Partner Setup</div>
+                <h1 className="mt-3 text-center text-4xl font-black tracking-[-0.04em] text-slate-900 sm:text-[3.25rem]">You're in.</h1>
+              </div>
+              <p className="mx-auto mt-4 max-w-md text-center text-base leading-8 text-slate-500 sm:text-lg">
+                Save your Manager ID — you&apos;ll need it to set up your portal account.
               </p>
 
-              {/* Manager ID box */}
-              <div className="mt-7 rounded-2xl border border-slate-200 bg-slate-50 px-5 py-4">
-                <div className="mb-2 text-[10px] font-bold uppercase tracking-[0.2em] text-slate-400">Manager ID</div>
-                <div className="flex items-center justify-between gap-3">
-                  <span className="font-mono text-lg font-black tracking-tight text-slate-900 break-all">{managerId}</span>
+              <div className="mt-8 rounded-[28px] border border-[#2563eb]/10 bg-[linear-gradient(180deg,#f8fbff_0%,#eef4ff_100%)] px-5 py-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.75)] sm:px-6">
+                <div className="mb-3 text-[11px] font-bold uppercase tracking-[0.22em] text-slate-400">Manager ID</div>
+                <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                  <span className="break-all font-mono text-[1.9rem] font-black tracking-[-0.04em] text-slate-900 sm:text-[2.1rem]">{managerId}</span>
                   <button
                     type="button"
                     onClick={copyManagerId}
-                    className={`flex shrink-0 items-center gap-1.5 rounded-xl px-3 py-2 text-xs font-semibold transition active:scale-95 ${
+                    className={`inline-flex shrink-0 items-center justify-center gap-1.5 rounded-full px-4 py-3 text-sm font-semibold transition active:scale-95 ${
                       copiedId
-                        ? 'bg-emerald-50 text-emerald-700'
-                        : 'border border-slate-200 bg-white text-slate-600 hover:bg-slate-50'
+                        ? 'bg-[#2563eb] text-white shadow-[0_10px_24px_rgba(37,99,235,0.24)]'
+                        : 'border border-[#2563eb]/15 bg-white text-slate-600 hover:border-[#2563eb]/30 hover:text-slate-900'
                     }`}
                   >
                     {copiedId ? (
                       <>
-                        <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 16 16" stroke="currentColor" strokeWidth={2.5}><path strokeLinecap="round" strokeLinejoin="round" d="M3 8l3 3 7-7"/></svg>
+                        <svg className="h-4 w-4" fill="none" viewBox="0 0 16 16" stroke="currentColor" strokeWidth={2.5}><path strokeLinecap="round" strokeLinejoin="round" d="M3 8l3 3 7-7"/></svg>
                         Copied
                       </>
                     ) : (
                       <>
-                        <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 16 16" stroke="currentColor" strokeWidth={2}><rect x="5" y="5" width="8" height="8" rx="1.5"/><path d="M3 11V3h8" strokeLinecap="round"/></svg>
+                        <svg className="h-4 w-4" fill="none" viewBox="0 0 16 16" stroke="currentColor" strokeWidth={2}><rect x="5" y="5" width="8" height="8" rx="1.5"/><path d="M3 11V3h8" strokeLinecap="round"/></svg>
                         Copy
                       </>
                     )}
@@ -329,10 +330,11 @@ export default function JoinUs() {
 
               <Link
                 to="/portal?portal=manager&view=create"
-                className="mt-5 inline-flex w-full items-center justify-center rounded-full bg-slate-900 py-4 text-base font-semibold text-white transition hover:bg-slate-800"
+                className="mt-6 inline-flex w-full items-center justify-center rounded-full bg-[linear-gradient(180deg,#18233f_0%,#121b32_100%)] py-4 text-base font-semibold text-white shadow-[0_18px_40px_rgba(15,23,42,0.18)] transition hover:brightness-105"
               >
                 Create account →
               </Link>
+
             </div>
           </div>
         </section>
