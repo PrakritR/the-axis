@@ -67,7 +67,7 @@ export default async function handler(req, res) {
       managerId,
       name: manager.Name || '',
       email: manager.Email || '',
-      phone: String(manager.Phone || '').trim() || extractPhoneFromNotes(manager.Notes),
+      phone: String(manager['Phone Number'] || '').trim(),
       accountExists: Boolean(manager.Password),
       planType: manager.tier || extractMetadataValue(manager.Notes, 'Plan') || '',
       billingInterval: extractMetadataValue(manager.Notes, 'Billing') || '',

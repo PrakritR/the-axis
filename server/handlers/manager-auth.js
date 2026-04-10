@@ -97,9 +97,9 @@ function billingWaivedInNotes(notes) {
   return /(?:^|\n)Billing:\s*waived\b/i.test(String(notes || ''))
 }
 
-/** Pro/Business without Stripe when promo waived billing (see manager-start-free-tier). */
+/** Allow free-tier managers, billing-waived promo managers, or any Active account. */
 function hasPaidPortalAccessWithoutStripe(manager) {
-  return managerTier(manager) === 'free' || billingWaivedInNotes(manager.Notes)
+  return managerTier(manager) === 'free' || billingWaivedInNotes(manager.Notes) || manager.Active === true
 }
 
 async function assertManagerCanSignIn(manager, secretKey) {
