@@ -197,7 +197,7 @@ function StatusBadge({ status, size = 'sm' }) {
   )
 }
 
-function ManagerLogin({ onLogin }) {
+export function ManagerAuthForm({ onLogin, footer = null }) {
   const queryString = typeof window !== 'undefined' ? window.location.search : ''
   const initialSearch = new URLSearchParams(queryString)
   const initialView = initialSearch.get('view') === 'create' || initialSearch.get('setup') === 'success' ? 'setup' : 'signin'
@@ -417,169 +417,179 @@ function ManagerLogin({ onLogin }) {
   }
 
   return (
+    <>
+      <PortalSegmentedControl
+        tabs={[['signin', 'Sign in'], ['setup', 'Create account']]}
+        active={activeView}
+        onChange={setActiveView}
+      />
+
+      {activeView === 'signin' ? (
+        <form onSubmit={handleSubmit} className="mt-6 space-y-4">
+          <PortalField label="Email">
+            <input
+              type="email"
+              value={signInForm.email}
+              onChange={(event) => setSignInForm((current) => ({ ...current, email: event.target.value }))}
+              required
+              autoComplete="email"
+              placeholder="you@example.com"
+              className={portalAuthInputCls}
+            />
+          </PortalField>
+
+          <PortalField label="Password">
+            <PortalPasswordInput
+              value={signInForm.password}
+              onChange={(event) => setSignInForm((current) => ({ ...current, password: event.target.value }))}
+              autoComplete="current-password"
+            />
+          </PortalField>
+
+          {loginError ? (
+            <PortalNotice tone="error">{loginError}</PortalNotice>
+          ) : null}
+
+          <PortalPrimaryButton
+            type="submit"
+            disabled={loginLoading}
+          >
+            {loginLoading ? 'Signing in…' : 'Sign in'}
+          </PortalPrimaryButton>
+        </form>
+      ) : (
+        <form
+          className="mt-6 space-y-4"
+          onSubmit={(event) => {
+            event.preventDefault()
+            void handleCreateAccount()
+          }}
+        >
+          <PortalNotice>
+            Use the manager ID created during pricing setup. Your account details load automatically once we find the record.
+          </PortalNotice>
+
+          <PortalField label="Manager ID" required>
+            <input
+              type="text"
+              value={activationForm.managerId}
+              onChange={(event) => {
+                setNotice('')
+                setActivationError('')
+                setAccountExists(false)
+                setSubscriptionReady(false)
+                setActivationForm((current) => ({
+                  ...current,
+                  managerId: event.target.value.toUpperCase(),
+                  name: '',
+                  email: '',
+                  phone: '',
+                  planType: '',
+                  billingInterval: '',
+                }))
+              }}
+              placeholder="MGR-XXXXXXXXXXXXXX"
+              className={`${portalAuthInputCls} font-semibold uppercase tracking-[0.04em]`}
+            />
+          </PortalField>
+
+          <PortalField label="Full name">
+            <input
+              type="text"
+              readOnly
+              value={activationForm.name}
+              placeholder="Loads from your manager record"
+              className={`${portalAuthInputCls} bg-slate-50`}
+            />
+          </PortalField>
+
+          <PortalField label="Email">
+            <input
+              type="email"
+              readOnly
+              value={activationForm.email}
+              placeholder="Loads from your manager record"
+              className={`${portalAuthInputCls} bg-slate-50`}
+            />
+          </PortalField>
+
+          <PortalField label="Phone number">
+            <input
+              type="text"
+              readOnly
+              value={activationForm.phone}
+              placeholder="Loads from your manager record"
+              className={`${portalAuthInputCls} bg-slate-50`}
+            />
+          </PortalField>
+
+          <PortalField label="Selected tier">
+            <input
+              type="text"
+              readOnly
+              value={
+                activationForm.planType
+                  ? `${activationForm.planType.charAt(0).toUpperCase()}${activationForm.planType.slice(1)}${activationForm.billingInterval && activationForm.billingInterval !== 'free' ? ` · ${activationForm.billingInterval}` : ''}`
+                  : ''
+              }
+              placeholder="Loads from your manager record"
+              className={`${portalAuthInputCls} bg-slate-50`}
+            />
+          </PortalField>
+
+          <PortalField label="Create password" required>
+            <PortalPasswordInput
+              value={activationForm.password}
+              onChange={(event) => setActivationForm((current) => ({ ...current, password: event.target.value }))}
+              autoComplete="new-password"
+              placeholder="Minimum 6 characters"
+            />
+          </PortalField>
+
+          {notice ? <PortalNotice tone="success">{notice}</PortalNotice> : null}
+
+          {!subscriptionReady ? (
+            <PortalNotice>
+              Start on the Partner With Axis pricing page first. Your tier, manager ID, and contact info load here from Airtable.
+            </PortalNotice>
+          ) : null}
+
+          {setupLoading ? (
+            <PortalNotice>Verifying manager setup…</PortalNotice>
+          ) : null}
+
+          {profileLoading ? (
+            <PortalNotice>Loading manager details from Airtable…</PortalNotice>
+          ) : null}
+
+          {activationError ? (
+            <PortalNotice tone="error">{activationError}</PortalNotice>
+          ) : null}
+
+          <PortalPrimaryButton
+            type="submit"
+            disabled={activationLoading || !activationForm.managerId.trim() || !activationForm.password.trim()}
+          >
+            {activationLoading ? 'Creating account…' : 'Create account'}
+          </PortalPrimaryButton>
+
+          {subscriptionError ? <PortalNotice tone="error">{subscriptionError}</PortalNotice> : null}
+        </form>
+      )}
+
+      {footer ? <div className="mt-8 text-center text-sm text-slate-400">{footer}</div> : null}
+    </>
+  )
+}
+
+function ManagerLogin({ onLogin }) {
+  return (
     <PortalAuthPage>
       <PortalAuthCard
         title="Manager portal"
         footer={<PortalFooterLink prefix="Resident?" linkLabel="Sign in at /resident" to="/resident" />}
       >
-          <PortalSegmentedControl
-            tabs={[['signin', 'Sign in'], ['setup', 'Create account']]}
-            active={activeView}
-            onChange={setActiveView}
-          />
-
-          {activeView === 'signin' ? (
-            <form onSubmit={handleSubmit} className="mt-6 space-y-4">
-              <PortalField label="Email">
-                <input
-                  type="email"
-                  value={signInForm.email}
-                  onChange={(event) => setSignInForm((current) => ({ ...current, email: event.target.value }))}
-                  required
-                  autoComplete="email"
-                  placeholder="you@example.com"
-                  className={portalAuthInputCls}
-                />
-              </PortalField>
-
-              <PortalField label="Password">
-                <PortalPasswordInput
-                  value={signInForm.password}
-                  onChange={(event) => setSignInForm((current) => ({ ...current, password: event.target.value }))}
-                  autoComplete="current-password"
-                />
-              </PortalField>
-
-              {loginError ? (
-                <PortalNotice tone="error">{loginError}</PortalNotice>
-              ) : null}
-
-              <PortalPrimaryButton
-                type="submit"
-                disabled={loginLoading}
-              >
-                {loginLoading ? 'Signing in…' : 'Sign in'}
-              </PortalPrimaryButton>
-            </form>
-          ) : (
-            <form
-              className="mt-6 space-y-4"
-              onSubmit={(event) => {
-                event.preventDefault()
-                void handleCreateAccount()
-              }}
-            >
-              <PortalNotice>
-                Use the manager ID created during pricing setup. Your account details load automatically once we find the record.
-              </PortalNotice>
-
-              <PortalField label="Manager ID" required>
-                <input
-                  type="text"
-                  value={activationForm.managerId}
-                  onChange={(event) => {
-                    setNotice('')
-                    setActivationError('')
-                    setAccountExists(false)
-                    setSubscriptionReady(false)
-                    setActivationForm((current) => ({
-                      ...current,
-                      managerId: event.target.value.toUpperCase(),
-                      name: '',
-                      email: '',
-                      phone: '',
-                      planType: '',
-                      billingInterval: '',
-                    }))
-                  }}
-                  placeholder="MGR-XXXXXXXXXXXXXX"
-                  className={`${portalAuthInputCls} font-semibold uppercase tracking-[0.04em]`}
-                />
-              </PortalField>
-
-              <PortalField label="Full name">
-                <input
-                  type="text"
-                  readOnly
-                  value={activationForm.name}
-                  placeholder="Loads from your manager record"
-                  className={`${portalAuthInputCls} bg-slate-50`}
-                />
-              </PortalField>
-
-              <PortalField label="Email">
-                <input
-                  type="email"
-                  readOnly
-                  value={activationForm.email}
-                  placeholder="Loads from your manager record"
-                  className={`${portalAuthInputCls} bg-slate-50`}
-                />
-              </PortalField>
-
-              <PortalField label="Phone number">
-                <input
-                  type="text"
-                  readOnly
-                  value={activationForm.phone}
-                  placeholder="Loads from your manager record"
-                  className={`${portalAuthInputCls} bg-slate-50`}
-                />
-              </PortalField>
-
-              <PortalField label="Selected tier">
-                <input
-                  type="text"
-                  readOnly
-                  value={
-                    activationForm.planType
-                      ? `${activationForm.planType.charAt(0).toUpperCase()}${activationForm.planType.slice(1)}${activationForm.billingInterval && activationForm.billingInterval !== 'free' ? ` · ${activationForm.billingInterval}` : ''}`
-                      : ''
-                  }
-                  placeholder="Loads from your manager record"
-                  className={`${portalAuthInputCls} bg-slate-50`}
-                />
-              </PortalField>
-
-              <PortalField label="Create password" required>
-                <PortalPasswordInput
-                  value={activationForm.password}
-                  onChange={(event) => setActivationForm((current) => ({ ...current, password: event.target.value }))}
-                  autoComplete="new-password"
-                  placeholder="Minimum 6 characters"
-                />
-              </PortalField>
-
-              {notice ? <PortalNotice tone="success">{notice}</PortalNotice> : null}
-
-              {!subscriptionReady ? (
-                <PortalNotice>
-                  Start on the Partner With Axis pricing page first. Your tier, manager ID, and contact info load here from Airtable.
-                </PortalNotice>
-              ) : null}
-
-              {setupLoading ? (
-                <PortalNotice>Verifying manager setup…</PortalNotice>
-              ) : null}
-
-              {profileLoading ? (
-                <PortalNotice>Loading manager details from Airtable…</PortalNotice>
-              ) : null}
-
-              {activationError ? (
-                <PortalNotice tone="error">{activationError}</PortalNotice>
-              ) : null}
-
-              <PortalPrimaryButton
-                type="submit"
-                disabled={activationLoading || !activationForm.managerId.trim() || !activationForm.password.trim()}
-              >
-                {activationLoading ? 'Creating account…' : 'Create account'}
-              </PortalPrimaryButton>
-
-              {subscriptionError ? <PortalNotice tone="error">{subscriptionError}</PortalNotice> : null}
-            </form>
-          )}
+        <ManagerAuthForm onLogin={onLogin} />
       </PortalAuthCard>
     </PortalAuthPage>
   )

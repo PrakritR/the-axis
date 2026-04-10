@@ -244,7 +244,7 @@ function SetupRequired() {
 
 // ─── Auth ─────────────────────────────────────────────────────────────────────
 
-function AirtableLogin({ onLogin }) {
+export function ResidentAuthForm({ onLogin, footer = null }) {
   const urlAppId = typeof window !== 'undefined'
     ? (new URLSearchParams(window.location.search).get('appId') || '')
     : ''
@@ -333,61 +333,71 @@ function AirtableLogin({ onLogin }) {
   }
 
   return (
+    <>
+      <PortalSegmentedControl
+        tabs={[['signin', 'Sign in'], ['activate', 'Activate account']]}
+        active={tab}
+        onChange={(id) => { setTab(id); setSignInError(''); setActivationError('') }}
+      />
+
+      {tab === 'signin' ? (
+        <form onSubmit={handleLogin} className="mt-6 space-y-4">
+          <PortalField label="Email">
+            <input type="email" required value={signInForm.email}
+              onChange={(e) => setSignInForm((c) => ({ ...c, email: e.target.value }))}
+              placeholder="you@example.com" autoComplete="email" className={portalAuthInputCls} />
+          </PortalField>
+          <PortalField label="Password">
+            <PortalPasswordInput value={signInForm.password}
+              onChange={(e) => setSignInForm((c) => ({ ...c, password: e.target.value }))}
+              autoComplete="current-password" />
+          </PortalField>
+          {signInError ? <PortalNotice tone="error">{signInError}</PortalNotice> : null}
+          <PortalPrimaryButton type="submit" disabled={signInLoading}>
+            {signInLoading ? 'Signing in…' : 'Sign in'}
+          </PortalPrimaryButton>
+        </form>
+      ) : (
+        <form onSubmit={handleSignup} className="mt-6 space-y-4">
+          <PortalNotice>
+            Use the email and Application ID from your approved application.{' '}
+            <span className="font-mono font-semibold text-slate-800">APP-rec…</span>
+          </PortalNotice>
+          <PortalField label="Application ID" required>
+            <input required value={activateForm.applicationId}
+              onChange={(e) => setActivateForm((c) => ({ ...c, applicationId: e.target.value }))}
+              placeholder="APP-recXXXXXXXXXXXXXX" className={portalAuthInputCls} />
+          </PortalField>
+          <PortalField label="Email" required>
+            <input type="email" required value={activateForm.email}
+              onChange={(e) => setActivateForm((c) => ({ ...c, email: e.target.value }))}
+              placeholder="Same email as your application" autoComplete="email" className={portalAuthInputCls} />
+          </PortalField>
+          <PortalField label="Create password" required>
+            <PortalPasswordInput value={activateForm.password}
+              onChange={(e) => setActivateForm((c) => ({ ...c, password: e.target.value }))}
+              placeholder="Minimum 6 characters" autoComplete="new-password" />
+          </PortalField>
+          {activationError ? <PortalNotice tone="error">{activationError}</PortalNotice> : null}
+          <PortalPrimaryButton type="submit" disabled={activationLoading}>
+            {activationLoading ? 'Verifying…' : 'Create account'}
+          </PortalPrimaryButton>
+        </form>
+      )}
+
+      {footer ? <div className="mt-8 text-center text-sm text-slate-400">{footer}</div> : null}
+    </>
+  )
+}
+
+function AirtableLogin({ onLogin }) {
+  return (
     <PortalAuthPage>
       <PortalAuthCard
         title="Resident portal"
         footer={<PortalFooterLink prefix="Manager?" linkLabel="Log in at /manager" to="/manager" />}
       >
-          <PortalSegmentedControl
-            tabs={[['signin', 'Sign in'], ['activate', 'Activate account']]}
-            active={tab}
-            onChange={(id) => { setTab(id); setSignInError(''); setActivationError('') }}
-          />
-
-          {tab === 'signin' ? (
-            <form onSubmit={handleLogin} className="mt-6 space-y-4">
-              <PortalField label="Email">
-                <input type="email" required value={signInForm.email}
-                  onChange={(e) => setSignInForm((c) => ({ ...c, email: e.target.value }))}
-                  placeholder="you@example.com" autoComplete="email" className={portalAuthInputCls} />
-              </PortalField>
-              <PortalField label="Password">
-                <PortalPasswordInput value={signInForm.password}
-                  onChange={(e) => setSignInForm((c) => ({ ...c, password: e.target.value }))}
-                  autoComplete="current-password" />
-              </PortalField>
-              {signInError ? <PortalNotice tone="error">{signInError}</PortalNotice> : null}
-              <PortalPrimaryButton type="submit" disabled={signInLoading}>
-                {signInLoading ? 'Signing in…' : 'Sign in'}
-              </PortalPrimaryButton>
-            </form>
-          ) : (
-            <form onSubmit={handleSignup} className="mt-6 space-y-4">
-              <PortalNotice>
-                Use the email and Application ID from your approved application.{' '}
-                <span className="font-mono font-semibold text-slate-800">APP-rec…</span>
-              </PortalNotice>
-              <PortalField label="Application ID" required>
-                <input required value={activateForm.applicationId}
-                  onChange={(e) => setActivateForm((c) => ({ ...c, applicationId: e.target.value }))}
-                  placeholder="APP-recXXXXXXXXXXXXXX" className={portalAuthInputCls} />
-              </PortalField>
-              <PortalField label="Email" required>
-                <input type="email" required value={activateForm.email}
-                  onChange={(e) => setActivateForm((c) => ({ ...c, email: e.target.value }))}
-                  placeholder="Same email as your application" autoComplete="email" className={portalAuthInputCls} />
-              </PortalField>
-              <PortalField label="Create password" required>
-                <PortalPasswordInput value={activateForm.password}
-                  onChange={(e) => setActivateForm((c) => ({ ...c, password: e.target.value }))}
-                  placeholder="Minimum 6 characters" autoComplete="new-password" />
-              </PortalField>
-              {activationError ? <PortalNotice tone="error">{activationError}</PortalNotice> : null}
-              <PortalPrimaryButton type="submit" disabled={activationLoading}>
-                {activationLoading ? 'Verifying…' : 'Create account'}
-              </PortalPrimaryButton>
-            </form>
-          )}
+        <ResidentAuthForm onLogin={onLogin} />
       </PortalAuthCard>
     </PortalAuthPage>
   )

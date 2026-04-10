@@ -1,28 +1,68 @@
-import { Link } from 'react-router-dom'
+import { useState } from 'react'
+import { useNavigate } from 'react-router-dom'
+import {
+  PortalAuthCard,
+  PortalAuthPage,
+  PortalFooterLink,
+  PortalSegmentedControl,
+} from '../components/PortalAuthUI'
 import { Seo } from '../lib/seo'
-import scrollToTop from '../utils/scrollToTop'
+import { ManagerAuthForm } from './Manager'
+import { ResidentAuthForm } from './Resident'
 
-const portalBtn =
-  'flex flex-col rounded-[28px] border border-slate-200/90 bg-white/88 p-8 text-left shadow-[0_20px_50px_rgba(37,99,235,0.08)] backdrop-blur-sm transition hover:border-[#2563eb]/40 hover:shadow-[0_28px_60px_rgba(37,99,235,0.13)] sm:p-10'
+const RESIDENT_SESSION_KEY = 'axis_resident'
+const MANAGER_SESSION_KEY = 'axis_manager'
 
 export default function PortalSelect() {
+  const navigate = useNavigate()
+  const [portalType, setPortalType] = useState('resident')
+
+  const isResident = portalType === 'resident'
+
+  function handleResidentLogin(resident) {
+    sessionStorage.setItem(RESIDENT_SESSION_KEY, resident.id)
+    navigate('/resident')
+  }
+
+  function handleManagerLogin(manager) {
+    sessionStorage.setItem(MANAGER_SESSION_KEY, JSON.stringify(manager))
+    navigate('/manager')
+  }
+
   return (
     <>
       <Seo
         title="Portal | Axis"
-        description="Sign in to the manager or resident portal."
+        description="Sign in to the resident or manager portal."
         pathname="/portal"
       />
-      <main className="flex flex-1 flex-col px-4 py-10 font-sans sm:px-6 sm:py-14" data-axis-page="portal-hub">
-        <div className="mx-auto grid w-full max-w-4xl gap-5 sm:grid-cols-2 sm:gap-6">
-          <Link to="/manager" onClick={scrollToTop} className={portalBtn}>
-            <span className="text-xl font-black text-slate-900 sm:text-2xl">Manager portal</span>
-          </Link>
-          <Link to="/resident" onClick={scrollToTop} className={portalBtn}>
-            <span className="text-xl font-black text-slate-900 sm:text-2xl">Resident portal</span>
-          </Link>
-        </div>
-      </main>
+      <PortalAuthPage>
+        <PortalAuthCard
+          title={isResident ? 'Resident portal' : 'Manager portal'}
+          footer={
+            isResident ? (
+              <PortalFooterLink prefix="Manager?" linkLabel="Sign in at /manager" to="/manager" />
+            ) : (
+              <PortalFooterLink prefix="Resident?" linkLabel="Sign in at /resident" to="/resident" />
+            )
+          }
+        >
+          <PortalSegmentedControl
+            tabs={[
+              ['resident', 'Resident portal'],
+              ['manager', 'Manager portal'],
+            ]}
+            active={portalType}
+            onChange={setPortalType}
+          />
+
+          {isResident ? (
+            <ResidentAuthForm onLogin={handleResidentLogin} />
+          ) : (
+            <ManagerAuthForm onLogin={handleManagerLogin} />
+          )}
+        </PortalAuthCard>
+      </PortalAuthPage>
     </>
   )
 }
