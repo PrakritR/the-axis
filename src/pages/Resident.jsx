@@ -371,8 +371,8 @@ export function ResidentAuthForm({ onLogin, footer = null, variant = 'default' }
           Status: 'Active',
           'Lease Term': existing['Lease Term'] || app['Lease Term'] || '',
         }
-        if (applicationLink && !(Array.isArray(existing.Application) && existing.Application.length)) {
-          patch.Application = applicationLink
+        if (applicationLink && !(Array.isArray(existing.Applications) && existing.Applications.length)) {
+          patch.Applications = applicationLink
         }
         if (app['Application ID'] != null && existing['Application ID'] == null) {
           patch['Application ID'] = app['Application ID']
@@ -392,7 +392,7 @@ export function ResidentAuthForm({ onLogin, footer = null, variant = 'default' }
         'Lease Start Date': app['Lease Start Date'] || null,
         'Lease End Date': app['Lease End Date'] || null,
         Status: 'Active',
-        ...(applicationLink ? { Application: applicationLink } : {}),
+        ...(applicationLink ? { Applications: applicationLink } : {}),
         ...(app['Application ID'] != null ? { 'Application ID': app['Application ID'] } : {}),
       })
       onLogin(resident)

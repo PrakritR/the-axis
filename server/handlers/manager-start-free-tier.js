@@ -1,5 +1,10 @@
-const AIRTABLE_TOKEN = process.env.VITE_AIRTABLE_TOKEN
-const BASE_ID = process.env.VITE_AIRTABLE_APPLICATIONS_BASE_ID || 'appNBX2inqfJMyqYV'
+/** Vercel/serverless often does not expose VITE_* to Node; support server-only names too. */
+const AIRTABLE_TOKEN = process.env.AIRTABLE_TOKEN || process.env.VITE_AIRTABLE_TOKEN
+const BASE_ID =
+  process.env.VITE_AIRTABLE_APPLICATIONS_BASE_ID ||
+  process.env.AIRTABLE_APPLICATIONS_BASE_ID ||
+  process.env.AIRTABLE_BASE_ID ||
+  'appNBX2inqfJMyqYV'
 /** Must match client DEFAULT_PROMO_CODE in JoinUs.jsx (override with MANAGER_BILLING_WAIVE_PROMO). */
 const BILLING_WAIVE_PROMO = String(process.env.MANAGER_BILLING_WAIVE_PROMO || 'FIRST20')
   .trim()
@@ -57,6 +62,16 @@ function mergeManagerNotes(existingNotes, metadata) {
   return parts.join('\n')
 }
 
+async function readAirtableError(response) {
+  const raw = await response.text()
+  try {
+    const j = JSON.parse(raw)
+    return j?.error?.message || j?.error?.type || raw
+  } catch {
+    return raw || response.statusText
+  }
+}
+
 function planDetails(planType) {
   if (planType === 'business') {
     return {
@@ -88,7 +103,23 @@ async function getManagerByEmail(email) {
   const formula = encodeURIComponent(`{Email} = "${escapeFormulaValue(email)}"`)
   const url = `https://api.airtable.com/v0/${BASE_ID}/Managers?filterByFormula=${formula}&maxRecords=1`
   const atRes = await fetch(url, { headers: airtableHeaders() })
-  if (!atRes.ok) throw new Error('Database error')
+  if (!atRes.ok) {
+    const detail = await readAirtableError(atRes)
+    console.error('[manager-start-free-tier] Managers GET failed', { status: atRes.status, baseId: BASE_ID, detail })
+    if (atRes.status === 401 || atRes.status === 403) {
+      throw new Error(
+        'Airtable rejected the API token (401/403). Use a personal access token with data.records:read and data.records:write on this base, and set AIRTABLE_TOKEN or VITE_AIRTABLE_TOKEN on the server.',
+      )
+    }
+    if (atRes.status === 404) {
+      throw new Error(
+        `Airtable base or table not found (404). Check VITE_AIRTABLE_APPLICATIONS_BASE_ID / AIRTABLE_APPLICATIONS_BASE_ID and that a table named exactly "Managers" exists.`,
+      )
+    }
+    throw new Error(
+      `Could not read Managers from Airtable (HTTP ${atRes.status}). ${String(detail).slice(0, 280)}`,
+    )
+  }
   const data = await atRes.json()
   const record = data.records?.[0]
   return record ? mapRecord(record) : null
@@ -125,7 +156,10 @@ export default async function handler(req, res) {
   }
 
   if (!AIRTABLE_TOKEN) {
-    return res.status(500).json({ error: 'Server data connection is not configured yet.' })
+    return res.status(500).json({
+      error:
+        'Server data connection is not configured. Set AIRTABLE_TOKEN or VITE_AIRTABLE_TOKEN on the server (e.g. Vercel → Environment Variables).',
+    })
   }
 
   const { name, email, phone, planType, billingWaived, promoCode } = req.body || {}
