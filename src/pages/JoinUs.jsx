@@ -281,51 +281,59 @@ export default function JoinUs() {
       />
 
       {managerId ? (
-        <section className="relative overflow-hidden bg-[linear-gradient(180deg,#edf2fb_0%,#e8eef8_48%,#ebf0f9_100%)] py-16 sm:py-24">
-          <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top,rgba(255,255,255,0.96),rgba(255,255,255,0.25)_32%,transparent_58%),radial-gradient(circle_at_bottom,rgba(37,99,235,0.14),transparent_46%)]" aria-hidden />
-          <div className="mx-auto max-w-lg px-6">
-            <div className="mx-auto mb-8 flex h-20 w-20 items-center justify-center rounded-full bg-axis/10 ring-8 ring-axis/10">
-              <svg className="h-10 w-10 text-axis" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-              </svg>
-            </div>
-            <h1 className="text-center text-3xl font-black tracking-tight text-slate-900 sm:text-4xl">You're in.</h1>
-            <p className="mt-3 text-center text-base leading-7 text-slate-500">
-              Copy your Manager ID, then continue to create your portal password. You'll use this same ID whenever you sign in.
-            </p>
-
-            <div className="mt-8 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
-              <div className="border-b border-slate-100 bg-slate-50 px-6 py-3">
-                <span className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">Manager ID</span>
+        <section className="flex min-h-screen items-center justify-center bg-[linear-gradient(180deg,#f7fbff_0%,#eef5ff_48%,#f9fcff_100%)] px-4 py-16 font-sans">
+          <div className="w-full max-w-md">
+            <div className="rounded-[32px] border border-slate-200 bg-white p-8 shadow-soft sm:p-10">
+              {/* Check icon */}
+              <div className="mb-6 flex justify-center">
+                <div className="flex h-14 w-14 items-center justify-center rounded-full bg-emerald-50 ring-8 ring-emerald-50/60">
+                  <svg className="h-7 w-7 text-emerald-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                  </svg>
+                </div>
               </div>
-              <div className="flex items-center justify-between gap-4 px-6 py-5">
-                <span className="font-mono text-2xl font-black tracking-tight text-slate-900 break-all">{managerId}</span>
-                <button
-                  type="button"
-                  onClick={copyManagerId}
-                  className="flex shrink-0 items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 transition hover:border-slate-300 hover:bg-slate-50 active:scale-95"
-                >
-                  {copiedId ? (
-                    <>
-                      <svg className="h-3.5 w-3.5 text-axis" fill="none" viewBox="0 0 16 16" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M3 8l3 3 7-7"/></svg>
-                      Copied
-                    </>
-                  ) : (
-                    <>
-                      <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 16 16" stroke="currentColor" strokeWidth={2}><rect x="5" y="5" width="8" height="8" rx="1.5"/><path d="M3 11V3h8" strokeLinecap="round"/></svg>
-                      Copy
-                    </>
-                  )}
-                </button>
-              </div>
-            </div>
 
-            <Link
-              to="/portal?portal=manager&view=create"
-              className="mt-6 inline-flex w-full items-center justify-center rounded-full bg-[linear-gradient(180deg,#2f76ff_0%,#2450eb_100%)] px-7 py-4 text-base font-semibold text-white shadow-[0_16px_40px_rgba(37,99,235,0.28)] transition hover:brightness-105"
-            >
-              Create account →
-            </Link>
+              <h1 className="text-center text-3xl font-black tracking-tight text-slate-900">You're in.</h1>
+              <p className="mt-2 text-center text-sm leading-6 text-slate-500">
+                Save your Manager ID — you'll need it to create your portal account. Keep it somewhere safe.
+              </p>
+
+              {/* Manager ID box */}
+              <div className="mt-7 rounded-2xl border border-slate-200 bg-slate-50 px-5 py-4">
+                <div className="mb-2 text-[10px] font-bold uppercase tracking-[0.2em] text-slate-400">Manager ID</div>
+                <div className="flex items-center justify-between gap-3">
+                  <span className="font-mono text-lg font-black tracking-tight text-slate-900 break-all">{managerId}</span>
+                  <button
+                    type="button"
+                    onClick={copyManagerId}
+                    className={`flex shrink-0 items-center gap-1.5 rounded-xl px-3 py-2 text-xs font-semibold transition active:scale-95 ${
+                      copiedId
+                        ? 'bg-emerald-50 text-emerald-700'
+                        : 'border border-slate-200 bg-white text-slate-600 hover:bg-slate-50'
+                    }`}
+                  >
+                    {copiedId ? (
+                      <>
+                        <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 16 16" stroke="currentColor" strokeWidth={2.5}><path strokeLinecap="round" strokeLinejoin="round" d="M3 8l3 3 7-7"/></svg>
+                        Copied
+                      </>
+                    ) : (
+                      <>
+                        <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 16 16" stroke="currentColor" strokeWidth={2}><rect x="5" y="5" width="8" height="8" rx="1.5"/><path d="M3 11V3h8" strokeLinecap="round"/></svg>
+                        Copy
+                      </>
+                    )}
+                  </button>
+                </div>
+              </div>
+
+              <Link
+                to="/portal?portal=manager&view=create"
+                className="mt-5 inline-flex w-full items-center justify-center rounded-full bg-slate-900 py-4 text-base font-semibold text-white transition hover:bg-slate-800"
+              >
+                Create account →
+              </Link>
+            </div>
           </div>
         </section>
       ) : (
