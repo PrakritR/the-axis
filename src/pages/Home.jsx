@@ -320,13 +320,6 @@ function RoomFinder() {
   return (
     <section className="border-t border-slate-200/25 bg-transparent px-4 py-14 sm:px-6 sm:py-20">
       <div className="mx-auto max-w-6xl">
-        <Reveal className="mb-8 text-center">
-          <h2 className="mt-3 text-2xl font-black tracking-[-0.05em] text-slate-900 sm:text-4xl">
-            Find housing that works for you
-          </h2>
-
-        </Reveal>
-
         <div className="axis-panel rounded-[32px] p-6 sm:p-8">
           <div className="grid grid-cols-1 gap-x-6 gap-y-6 sm:grid-cols-2 lg:grid-cols-[repeat(4,minmax(0,1fr))]">
             {/* Move-in date */}
@@ -552,7 +545,7 @@ export default function Home() {
       />
 
       {/* ── HERO ── */}
-      <Hero />
+      <Hero heading="Find housing that works for you" />
 
       {/* ── ROOM FINDER ── */}
       <RoomFinder />
@@ -563,14 +556,6 @@ export default function Home() {
           <Reveal>
             <div className="flex flex-col gap-5">
               <h2 className="text-2xl font-black tracking-[-0.05em] text-slate-900 sm:text-4xl">Available Housing</h2>
-
-              <Link
-                to="/apply"
-                onClick={scrollToTop}
-                className="inline-flex w-auto self-start items-center gap-2 rounded-full border border-slate-200 bg-white/84 px-5 py-2.5 text-sm font-semibold text-slate-700 shadow-[0_14px_32px_rgba(37,99,235,0.08)] transition hover:border-[#2563eb] hover:text-[#2563eb]"
-              >
-                Apply <Arrow />
-              </Link>
             </div>
           </Reveal>
         </div>
@@ -609,7 +594,7 @@ export default function Home() {
       </section>
 
       {/* ── CTA — dark gradient ── */}
-      <section className="border-t border-slate-200/25 bg-transparent px-4 pb-16 pt-4 sm:px-6 sm:pb-20">
+      <section className="border-t border-slate-200/25 bg-transparent px-4 py-14 sm:px-6 sm:py-20">
         <Reveal>
           <div className="axis-panel relative mx-auto max-w-6xl overflow-hidden rounded-[32px] px-5 py-10 sm:px-8 sm:py-14 md:px-14">
             <div className="absolute inset-0 bg-dot-grid bg-dot-md opacity-18 rounded-[32px]" />
