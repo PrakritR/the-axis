@@ -1,0 +1,285 @@
+Create table `Applications`
+`Application ID` -> autonumber
+`Signer Full Name` -> single line text
+`Signer Email` -> email
+`Signer Phone Number` -> phone number
+`Signer Date of Birth` -> date
+`Signer SSN No.` -> single line text
+`Signer Driving License No.` -> single line text
+`Property Name` -> single line text
+`Property Address` -> long text
+`Room Number` -> single line text
+`Lease Term` -> single line text
+`Month to Month` -> checkbox
+`Lease Start Date` -> date
+`Lease End Date` -> date
+`Signer Current Address` -> long text
+`Signer City` -> single line text
+`Signer State` -> single line text
+`Signer ZIP` -> single line text
+`Current Landlord Name` -> single line text
+`Current Landlord Phone` -> phone number
+`Current Move-In Date` -> date
+`Current Move-Out Date` -> date
+`Current Reason for Leaving` -> long text
+`Previous Address` -> long text
+`Previous City` -> single line text
+`Previous State` -> single line text
+`Previous ZIP` -> single line text
+`Previous Landlord Name` -> single line text
+`Previous Landlord Phone` -> phone number
+`Previous Move-In Date` -> date
+`Previous Move-Out Date` -> date
+`Previous Reason for Leaving` -> long text
+`Signer Employer` -> single line text
+`Signer Employer Address` -> long text
+`Signer Supervisor Name` -> single line text
+`Signer Supervisor Phone` -> phone number
+`Signer Job Title` -> single line text
+`Signer Monthly Income` -> currency
+`Signer Annual Income` -> currency
+`Signer Employment Start Date` -> date
+`Signer Other Income` -> long text
+`Reference 1 Name` -> single line text
+`Reference 1 Relationship` -> single line text
+`Reference 1 Phone` -> phone number
+`Reference 2 Name` -> single line text
+`Reference 2 Relationship` -> single line text
+`Reference 2 Phone` -> phone number
+`Number of Occupants` -> number
+`Pets` -> long text
+`Eviction History` -> single line text
+`Signer Bankruptcy History` -> single line text
+`Signer Criminal History` -> single line text
+`Has Co-Signer` -> checkbox
+`Signer Consent for Credit and Background Check` -> checkbox
+`Signer Signature` -> long text
+`Signer Date Signed` -> date
+`Additional Notes` -> long text
+`Approved` -> checkbox
+`Approved At` -> date and time
+`Lease Token` -> single line text
+`Lease JSON` -> long text
+`Lease Status` -> single select
+`Lease Signed` -> checkbox
+`Lease Signed Date` -> date
+`Lease Signature` -> single line text
+
+Create table `Co-Signers`
+`Linked Application` -> link to `Applications`
+`Role` -> single line text
+`Full Name` -> single line text
+`Email` -> email
+`Phone Number` -> phone number
+`Date of Birth` -> date
+`SSN No.` -> single line text
+`Driving License No.` -> single line text
+`Current Address` -> long text
+`City` -> single line text
+`State` -> single line text
+`ZIP` -> single line text
+`Employer` -> single line text
+`Employer Address` -> long text
+`Supervisor Name` -> single line text
+`Supervisor Phone` -> phone number
+`Job Title` -> single line text
+`Monthly Income` -> currency
+`Annual Income` -> currency
+`Employment Start Date` -> date
+`Other Income` -> long text
+`Bankruptcy History` -> single line text
+`Criminal History` -> single line text
+`Consent for Credit and Background Check` -> checkbox
+`Signature` -> long text
+`Date Signed` -> date
+`Notes` -> long text
+
+Create table `Resident Profile`
+`Name` -> single line text
+`Email` -> email
+`Password` -> single line text
+`Phone` -> phone number
+`Status` -> single line text
+`House` -> single line text
+`Unit Number` -> single line text
+`Lease Term` -> single line text
+`Lease Start Date` -> date
+`Lease End Date` -> date
+`Supabase User ID` -> single line text
+`Application ID` -> number
+`Applications` -> link to `Applications`
+`Stripe Customer ID` -> single line text
+
+Create table `Manager Profile`
+`Name` -> single line text
+`Email` -> email
+`Password` -> single line text
+`Phone Number` -> phone number
+`Manager ID` -> single line text
+`Role` -> single line text
+`Plan Type` -> single line text
+`Billing Interval` -> single line text
+`Active` -> checkbox
+`Tour Availability` -> long text
+`Stripe Customer ID` -> single line text
+`Stripe Subscription ID` -> single line text
+`Promo Code` -> single line text
+
+Create table `Properties`
+`Name` -> single line text
+`Address` -> long text
+`Property` -> single line text
+`Approved` -> checkbox
+`Utilities Fee` -> currency
+`Security Deposit` -> currency
+`Notes` -> long text
+`Manager Email` -> email
+`Application Fee` -> currency
+
+Create table `Rooms`
+`Property` -> link to `Properties`
+`Room Number` -> single line text
+`Monthly Rent` -> currency
+`Furnished` -> checkbox
+`Furnishing Detail` -> long text
+`Floor` -> single line text
+`Bathroom Type` -> single line text
+`Square Feet` -> number
+`Bed Size` -> single line text
+`Desk Included` -> checkbox
+`AC` -> checkbox
+`Closet / Storage` -> long text
+`Windows / Natural Light` -> long text
+`Room Notes` -> long text
+`Availability` -> long text
+`Kitchen Included` -> single line text
+`Laundry Access` -> long text
+`Parking Access` -> long text
+
+Create table `Lease Drafts`
+`Resident Name` -> single line text
+`Resident Email` -> email
+`Resident Record ID` -> single line text
+`Property` -> single line text
+`Unit` -> single line text
+`Lease Start Date` -> date
+`Lease End Date` -> date
+`Rent Amount` -> currency
+`Deposit Amount` -> currency
+`Utilities Fee` -> currency
+`Lease Term` -> single line text
+`AI Draft Content` -> long text
+`Manager Edited Content` -> long text
+`Manager Notes` -> long text
+`Status` -> single select
+`Updated At` -> date and time
+`Application Record ID` -> single line text
+`Approved By` -> single line text
+`Approved At` -> date and time
+`Published At` -> date and time
+`SignForge Envelope ID` -> single line text
+`SignForge Sent At` -> date and time
+
+Create table `Audit Log`
+`Lease Draft ID` -> single line text
+`Action Type` -> single line text
+`Performed By` -> single line text
+`Performed By Role` -> single line text
+`Timestamp` -> date and time
+`Notes` -> long text
+
+Create table `Work Orders`
+`Title` -> single line text
+`Description` -> long text
+`Category` -> single line text
+`Priority` -> single select
+`Status` -> single select
+`Preferred Entry Time` -> single line text
+`Resident` -> link to `Resident Profile`
+`Resident Email` -> lookup from `Resident Profile`
+`Application ID` -> number
+`Application` -> link to `Applications`
+`Property` -> single line text
+`Management Notes` -> long text
+`Update` -> long text
+`Latest Update` -> long text
+`Last Update` -> date
+`Resolution Summary` -> long text
+`Resolved` -> checkbox
+`Date Submitted` -> created time
+`Photo` -> attachment
+
+Create table `Messages`
+`Work Order` -> link to `Work Orders`
+`Message` -> long text
+`Sender Email` -> email
+`Is Admin` -> checkbox
+`Timestamp` -> created time
+`Thread Key` -> single line text
+`Channel` -> single line text
+
+Create table `Inbox Thread State`
+`Thread Key` -> single line text
+`Participant Email` -> email
+`Last Read At` -> date and time
+`Trashed` -> checkbox
+
+Create table `Payments`
+`Resident` -> link to `Resident Profile`
+`Amount` -> currency
+`Status` -> single select
+`Type` -> single line text
+`Category` -> single line text
+`Kind` -> single line text
+`Line Item Type` -> single line text
+`Month` -> single line text
+`Due Date` -> date
+`Paid Date` -> date
+`Notes` -> long text
+`Property Name` -> single line text
+`Room Number` -> single line text
+
+Create table `Announcements`
+`Title` -> single line text
+`Message` -> long text
+`Body` -> long text
+`Short Summary` -> long text
+`Target` -> multiple select
+`Show` -> checkbox
+`Pinned` -> checkbox
+`Start Date` -> date
+`Date Posted` -> date
+`Created At` -> created time
+
+Create table `Documents`
+`Resident` -> link to `Resident Profile`
+`Visible to Resident` -> checkbox
+`Name` -> single line text
+`Category` -> single line text
+`File` -> attachment
+`Notes` -> long text
+
+Create table `Packages`
+`Resident` -> link to `Resident Profile`
+`Status` -> single select
+`Carrier` -> single line text
+`Tracking Number` -> single line text
+`Arrival Date` -> date
+`Picked Up Date` -> date
+`Notes` -> long text
+
+Create table `Scheduling`
+`Type` -> single line text
+`Name` -> single line text
+`Email` -> email
+`Phone` -> phone number
+`Property` -> single line text
+`Property ID` -> single line text
+`Property Address` -> long text
+`Preferred Date` -> date
+`Preferred Time` -> single line text
+`Meeting Format` -> single line text
+`Where to Meet` -> single line text
+`Message` -> long text
+`Manager Email` -> email
+`Manager Approval` -> single line text

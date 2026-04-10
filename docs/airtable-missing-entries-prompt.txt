@@ -1,0 +1,32 @@
+Create missing fields in table `Applications`
+`Resident` -> link to `Resident Profile`
+`Rent Amount` -> currency
+`Security Deposit` -> currency
+`Utilities Fee` -> currency
+`Created` -> created time
+
+Create missing fields in table `Resident Profile`
+`Application` -> link to `Applications`
+`Application Approval` -> checkbox
+`Security Deposit` -> currency
+`Security Deposit Amount` -> currency
+`Security Deposit Paid` -> checkbox
+`Deposit Paid` -> checkbox
+`Security Deposit Paid Date` -> date
+`Deposit Paid Date` -> date
+
+Create missing fields in table `Manager Profile`
+`Tour Availability` -> long text
+
+Create missing fields in table `Properties`
+`Approval Status` -> single select
+`Status` -> single select
+`Site Manager Email` -> email
+`Manager ID` -> single line text
+`Tour Availability` -> long text
+
+Create missing fields in table `Announcements`
+`Priority` -> single select
+`CTA Text` -> single line text
+`CTA Link` -> url
+`Target Scope` -> long text
