@@ -12,6 +12,7 @@ import {
   sendMessage,
   siteManagerThreadKey,
 } from '../lib/airtable'
+import { errorFromAirtableApiBody } from '../lib/airtablePermissionError'
 
 const AIRTABLE_BASE_ID = import.meta.env.VITE_AIRTABLE_BASE_ID || 'appNBX2inqfJMyqYV'
 const AIRTABLE_TOKEN = import.meta.env.VITE_AIRTABLE_TOKEN
@@ -343,7 +344,8 @@ export function HousingMessageForm({ variant = 'marketing', prefill = null, form
         }
       }
 
-      const res = await fetch(`https://api.airtable.com/v0/${AIRTABLE_BASE_ID}/Inquiries`, {
+      const inquiryUrl = `https://api.airtable.com/v0/${AIRTABLE_BASE_ID}/Inquiries`
+      const res = await fetch(inquiryUrl, {
         method: 'POST',
         headers: { Authorization: `Bearer ${AIRTABLE_TOKEN}`, 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -357,6 +359,9 @@ export function HousingMessageForm({ variant = 'marketing', prefill = null, form
           typecast: true,
         }),
       })
+      const inquiryBody = await res.text()
+      const permErr = errorFromAirtableApiBody(res.url || inquiryUrl, inquiryBody)
+      if (permErr) throw permErr
       if (!res.ok) throw new Error(`Error ${res.status}`)
       setSubmitted(true)
     } catch (err) {

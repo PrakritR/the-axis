@@ -19,10 +19,18 @@ import {
   denyAdminRequest,
   listPendingAdminRequests,
   submitAdminAccessRequest,
-  tryApprovedStaffLogin,
 } from '../lib/adminPortalLocalAuth'
+import { authenticateAdminPortal } from '../lib/adminPortalSignIn'
+import {
+  markDeveloperPortalActive,
+  clearDeveloperPortalFlags,
+  seedDeveloperManagerSession,
+  stashDeveloperManagerHandoffForNewTab,
+  markDeveloperOpenedManagementDemo,
+} from '../lib/developerPortal'
+import { AXIS_ADMIN_SESSION_KEY } from './adminSessionConstants'
 
-export const AXIS_ADMIN_SESSION_KEY = 'axis_admin_session'
+export { AXIS_ADMIN_SESSION_KEY } from './adminSessionConstants'
 
 const NAV_BASE = [
   { id: 'dashboard', label: 'Dashboard' },
@@ -71,30 +79,19 @@ function AdminLoginView({ onAuthenticated }) {
     setErr('')
     setBusy(true)
     try {
-      try {
-        const r = await fetch('/api/admin-portal-auth', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ action: 'owner-login', email, password }),
-        })
-        const data = await r.json().catch(() => ({}))
-        if (r.ok && data.ok && data.user?.role === 'owner') {
-          onAuthenticated(data.user)
+      const result = await authenticateAdminPortal(email, password)
+      if (result.ok) {
+        onAuthenticated(result.user)
+        if (result.user.role === 'developer') {
+          toast.success('Developer console unlocked')
+        } else if (result.user.role === 'owner') {
           toast.success('Signed in as site owner')
-          return
+        } else {
+          toast.success('Signed in')
         }
-      } catch {
-        /* try staff below */
-      }
-
-      const staff = await tryApprovedStaffLogin(email, password)
-      if (staff) {
-        onAuthenticated(staff)
-        toast.success('Signed in')
         return
       }
-
-      setErr('Invalid email or password. Site owner sign-in requires SITE_OWNER_EMAIL and SITE_OWNER_PASSWORD on the server. Staff accounts must be approved first (same browser storage until Airtable backs this).')
+      setErr(result.error || 'Sign-in failed.')
     } finally {
       setBusy(false)
     }
@@ -121,7 +118,7 @@ function AdminLoginView({ onAuthenticated }) {
         <div className="text-[11px] font-bold uppercase tracking-[0.2em] text-sky-400">Axis Admin</div>
         <h1 className="mt-2 text-2xl font-black text-white">Internal portal</h1>
         <p className="mt-2 text-sm text-slate-400">
-          Sign in at this URL only. Site owner uses server-configured credentials; other admins are approved by the owner.
+          Sign in at this URL only. Site owner uses server-configured credentials; other admins are approved by the owner or developer.
         </p>
 
         <div className="mt-6 flex gap-1 rounded-2xl border border-slate-600 bg-slate-900/50 p-1">
@@ -154,14 +151,15 @@ function AdminLoginView({ onAuthenticated }) {
         {mode === 'signin' ? (
           <form onSubmit={handleSignIn} className="mt-6 space-y-4">
             <label className="block text-sm font-semibold text-slate-300">
-              Email
+              Work email or developer username
               <input
-                type="email"
+                type="text"
                 required
                 autoComplete="username"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 className={loginInputCls}
+                placeholder="you@company.com or prakrit"
               />
             </label>
             <label className="block text-sm font-semibold text-slate-300">
@@ -255,22 +253,32 @@ export default function AdminPortal() {
 
   const user = session
 
+  useEffect(() => {
+    if (session?.role === 'developer') markDeveloperPortalActive()
+  }, [session])
+
   function persistSession(u) {
     setSession(u)
     sessionStorage.setItem(AXIS_ADMIN_SESSION_KEY, JSON.stringify(u))
+    if (u?.role === 'developer') {
+      markDeveloperPortalActive()
+    }
   }
 
   function handleSignOut() {
     sessionStorage.removeItem(AXIS_ADMIN_SESSION_KEY)
+    clearDeveloperPortalFlags()
     setSession(null)
   }
 
   useEffect(() => {
-    if (session && session.role !== 'owner' && tab === 'access') setTab('dashboard')
+    if (session && session.role !== 'owner' && session.role !== 'developer' && tab === 'access') {
+      setTab('dashboard')
+    }
   }, [session, tab])
 
   const navItems = useMemo(() => {
-    if (!session || session.role === 'owner') return NAV_BASE
+    if (!session || session.role === 'owner' || session.role === 'developer') return NAV_BASE
     return NAV_BASE.filter((n) => n.id !== 'access')
   }, [session])
 
@@ -297,19 +305,82 @@ export default function AdminPortal() {
   return (
     <PortalShell
       brandTitle="Axis internal"
-      brandSubtitle="Admin portal"
+      brandSubtitle={user.role === 'developer' ? 'Developer console' : 'Admin portal'}
       navItems={navItems}
       activeId={tab}
       onNavigate={setTab}
       userLabel={user.name}
       userMeta={
-        user.role === 'owner' ? 'Site owner' : user.role === 'admin' ? 'Staff admin' : user.role || 'Admin'
+        user.role === 'owner'
+          ? 'Site owner'
+          : user.role === 'developer'
+            ? 'Developer · Sentinel'
+            : user.role === 'admin'
+              ? 'Staff admin'
+              : user.role || 'Admin'
       }
       onSignOut={handleSignOut}
     >
       {tab === 'dashboard' && (
         <div className="space-y-8">
-          <h1 className="text-2xl font-black text-slate-900">Admin dashboard</h1>
+          <h1 className="text-2xl font-black text-slate-900">
+            {user.role === 'developer' ? 'Developer dashboard' : 'Admin dashboard'}
+          </h1>
+          {user.role === 'developer' ? (
+            <div className="rounded-[24px] border border-violet-300/60 bg-[linear-gradient(135deg,#f5f3ff_0%,#ffffff_100%)] p-5 shadow-sm">
+              <h2 className="text-sm font-black text-violet-950">Sentinel access</h2>
+              <p className="mt-1 text-xs text-violet-900/80">
+                Full internal scope: approve staff admins, open the real manager portal with every property in scope (same tab or new tab), and use demo Management.
+              </p>
+              <div className="mt-4 flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    seedDeveloperManagerSession()
+                    window.location.assign('/manager')
+                  }}
+                  className="rounded-xl bg-violet-600 px-4 py-2 text-xs font-semibold text-white shadow-sm transition-opacity hover:opacity-90"
+                >
+                  Manager portal (full scope)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    stashDeveloperManagerHandoffForNewTab()
+                    window.open('/manager', '_blank', 'noopener,noreferrer')
+                    toast.success('Opening manager in new tab…')
+                  }}
+                  className="rounded-xl border border-violet-300 bg-white px-4 py-2 text-xs font-semibold text-violet-900 transition hover:bg-violet-50"
+                >
+                  Manager (new tab)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    try {
+                      markDeveloperOpenedManagementDemo()
+                      localStorage.setItem(AXIS_OWNER_SIMULATE_MANAGEMENT_KEY, JSON.stringify(MOCK_MANAGEMENT_USER))
+                      window.open('/management', '_blank', 'noopener,noreferrer')
+                      toast.success('Opening Management portal…')
+                    } catch {
+                      toast.error('Could not open portal')
+                    }
+                  }}
+                  className="rounded-xl border border-violet-200 bg-white px-4 py-2 text-xs font-semibold text-slate-800 transition hover:bg-slate-50"
+                >
+                  Management (demo)
+                </button>
+                <a
+                  href="/portal"
+                  target="_blank"
+                  rel="noreferrer"
+                  className="inline-flex items-center rounded-xl border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-50"
+                >
+                  Resident hub
+                </a>
+              </div>
+            </div>
+          ) : null}
           {user.role === 'owner' ? (
             <div className="rounded-[24px] border border-[#2563eb]/25 bg-[linear-gradient(135deg,#eff6ff_0%,#ffffff_100%)] p-5 shadow-sm">
               <h2 className="text-sm font-black text-slate-900">Jump to other portals</h2>
@@ -564,11 +635,11 @@ export default function AdminPortal() {
         </div>
       )}
 
-      {tab === 'access' && user.role === 'owner' ? (
+      {tab === 'access' && (user.role === 'owner' || user.role === 'developer') ? (
         <div className="space-y-6">
           <h1 className="text-2xl font-black text-slate-900">Admin access</h1>
           <p className="max-w-2xl text-sm text-slate-600">
-            Approve or deny requests from the <strong>Request access</strong> tab on the sign-in screen. Data lives in this browser&apos;s local storage until you connect Airtable or another backend.
+            Approve or deny requests from the <strong>Request access</strong> tab on the sign-in screen. Site owner, Sentinel developer, and anyone with this tab can approve. Data lives in this browser&apos;s local storage until you connect Airtable or another backend.
           </p>
           <DataTable
             empty="No pending admin access requests."

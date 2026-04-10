@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { useParams, Link, useLocation } from 'react-router-dom'
 import MapView from '../components/Map'
 import PropertyGallery from '../components/PropertyGallery'
@@ -523,6 +523,9 @@ export default function PropertyPage(){
   const [showScarcityPopup, setShowScarcityPopup] = useState(false)
   const [activeSharedSpace, setActiveSharedSpace] = useState(null)
   const sectionRefs = useRef({})
+  const sectionNavRef = useRef(null)
+  /** Reserve layout space — section nav is `fixed` (page-wrapper overflow breaks `sticky`). */
+  const [sectionNavHeight, setSectionNavHeight] = useState(56)
   /** Ignore scroll-spy updates while a tab click or hash scroll is animating */
   const scrollSpyLockUntilRef = useRef(0)
 
@@ -634,11 +637,11 @@ export default function PropertyPage(){
     setActiveTab((prev) => (prev === nextId ? prev : nextId))
   }, [getSectionScrollOffset, sectionScrollOrder])
 
-  // Match in-page nav stick position to actual promo + header height.
+  // Fixed nav sits below promo + header; keep `top` in sync with measured chrome height.
   useEffect(() => {
     if (!p) return undefined
     const chrome = document.getElementById('site-sticky-chrome')
-    const nav = document.getElementById('section-nav')
+    const nav = sectionNavRef.current || document.getElementById('section-nav')
     if (!chrome || !nav) return undefined
     function syncStickyTop() {
       const h = Math.ceil(chrome.getBoundingClientRect().height)
@@ -655,6 +658,19 @@ export default function PropertyPage(){
       nav.style.removeProperty('top')
     }
   }, [p, updateActiveTabFromScrollPosition])
+
+  useLayoutEffect(() => {
+    if (!p) return undefined
+    const nav = sectionNavRef.current
+    if (!nav) return undefined
+    const measure = () => {
+      setSectionNavHeight(Math.ceil(nav.getBoundingClientRect().height))
+    }
+    measure()
+    const ro = new ResizeObserver(measure)
+    ro.observe(nav)
+    return () => ro.disconnect()
+  }, [p, sectionNavTabs])
 
   // Hash links: App skips scrollIntoView on /properties/* so we can apply the same offset as tab clicks.
   useEffect(() => {
@@ -779,8 +795,9 @@ export default function PropertyPage(){
       />
       <div className="main-container">
         <div
+          ref={sectionNavRef}
           id="section-nav"
-          className="sticky z-[45] w-full border-b border-slate-200 bg-white/95 shadow-[0_1px_0_0_rgba(15,23,42,0.06)] backdrop-blur-md supports-[backdrop-filter]:bg-white/90"
+          className="fixed left-0 right-0 z-[45] w-full border-b border-slate-200 bg-white/95 shadow-[0_1px_0_0_rgba(15,23,42,0.06)] backdrop-blur-md supports-[backdrop-filter]:bg-white/90"
         >
           <div className="mx-auto max-w-[1480px] px-4 py-3 sm:px-6 sm:py-3.5 lg:px-10">
             <nav
@@ -809,6 +826,9 @@ export default function PropertyPage(){
             </nav>
           </div>
         </div>
+
+        {/* Flow spacer — fixed nav is out of document flow */}
+        <div aria-hidden="true" className="w-full shrink-0" style={{ height: sectionNavHeight }} />
 
         <div
           id="overview"

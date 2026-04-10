@@ -15,6 +15,7 @@ import {
   threadsForManagement,
 } from './mock'
 import { AXIS_OWNER_SIMULATE_MANAGEMENT_KEY } from '../lib/adminPortalLocalAuth'
+import { AXIS_DEV_MANAGEMENT_BANNER } from '../lib/developerPortal'
 
 export const AXIS_MANAGEMENT_SESSION_KEY = 'axis_management_session'
 
@@ -56,8 +57,17 @@ export default function ManagementPortal() {
   const [tab, setTab] = useState('dashboard')
   const [extraProperties, setExtraProperties] = useState([])
   const [selectedPropertyId, setSelectedPropertyId] = useState(null)
+  const [devMgmtBanner, setDevMgmtBanner] = useState(false)
 
   const user = session || MOCK_MANAGEMENT_USER
+
+  useEffect(() => {
+    try {
+      setDevMgmtBanner(localStorage.getItem(AXIS_DEV_MANAGEMENT_BANNER) === '1')
+    } catch {
+      setDevMgmtBanner(false)
+    }
+  }, [])
 
   const myProperties = useMemo(
     () => propertiesForOwner(user.id, extraProperties),
@@ -130,7 +140,7 @@ export default function ManagementPortal() {
   return (
     <PortalShell
       brandTitle="Axis internal"
-      brandSubtitle="Management portal"
+      brandSubtitle={devMgmtBanner ? 'Management · Sentinel preview' : 'Management portal'}
       navItems={NAV}
       activeId={tab}
       onNavigate={setTab}
@@ -138,6 +148,27 @@ export default function ManagementPortal() {
       userMeta={user.email}
       onSignOut={handleSignOut}
     >
+      {devMgmtBanner ? (
+        <div className="mb-6 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-violet-200 bg-violet-50 px-4 py-3 text-sm text-violet-950">
+          <p>
+            <span className="font-bold">Opened from the Developer console</span> — mock partner UI with a violet accent. This is not production data.
+          </p>
+          <button
+            type="button"
+            className="shrink-0 rounded-xl border border-violet-300 bg-white px-3 py-1.5 text-xs font-semibold text-violet-900 hover:bg-violet-100"
+            onClick={() => {
+              try {
+                localStorage.removeItem(AXIS_DEV_MANAGEMENT_BANNER)
+              } catch {
+                /* ignore */
+              }
+              setDevMgmtBanner(false)
+            }}
+          >
+            Dismiss
+          </button>
+        </div>
+      ) : null}
       {tab === 'dashboard' && (
         <div className="space-y-8">
           <div>

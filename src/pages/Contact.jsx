@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { Seo } from '../lib/seo'
+import { errorFromAirtableApiBody } from '../lib/airtablePermissionError'
 import { isHousingMessageCategoryId } from '../lib/housingSite'
 import {
   DEFAULT_PROPERTIES,
@@ -759,11 +760,15 @@ function SoftwareMessageForm() {
   async function handleSubmit(e) {
     e.preventDefault(); setSubmitting(true); setError('')
     try {
-      const res = await fetch(`https://api.airtable.com/v0/${AIRTABLE_BASE_ID}/Inquiries`, {
+      const inquiryUrl = `https://api.airtable.com/v0/${AIRTABLE_BASE_ID}/Inquiries`
+      const res = await fetch(inquiryUrl, {
         method: 'POST',
         headers: { Authorization: `Bearer ${AIRTABLE_TOKEN}`, 'Content-Type': 'application/json' },
         body: JSON.stringify({ fields: { 'Full Name': form.name, 'Email': form.email, 'Inquiry Type': form.topic || 'Software', 'Message Summary': form.message }, typecast: true }),
       })
+      const body = await res.text()
+      const permErr = errorFromAirtableApiBody(res.url || inquiryUrl, body)
+      if (permErr) throw permErr
       if (!res.ok) throw new Error(`Error ${res.status}`)
       setSubmitted(true)
     } catch (err) {

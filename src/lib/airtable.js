@@ -1,8 +1,19 @@
+import {
+  airtablePermissionDeniedMessage,
+  responseBodyIndicatesAirtablePermissionDenied,
+} from './airtablePermissionError.js'
+
 const BASE_ID = import.meta.env.VITE_AIRTABLE_BASE_ID || 'appol57LKtMKaQ75T'
 const APPS_BASE_ID = import.meta.env.VITE_AIRTABLE_APPLICATIONS_BASE_ID || 'appNBX2inqfJMyqYV'
+/** If Payments lives in a different base than the main portal base, set this (same token must have access). */
+const PAYMENTS_BASE_ID = String(import.meta.env.VITE_AIRTABLE_PAYMENTS_BASE_ID || BASE_ID).trim()
 const API_KEY = import.meta.env.VITE_AIRTABLE_TOKEN
 const BASE_URL = `https://api.airtable.com/v0/${BASE_ID}`
 const APPS_BASE_URL = `https://api.airtable.com/v0/${APPS_BASE_ID}`
+const PAYMENTS_BASE_URL = `https://api.airtable.com/v0/${PAYMENTS_BASE_ID}`
+
+/** Exposed for in-app setup hints (Manager payments panel). */
+export const AIRTABLE_PAYMENTS_BASE_ID = PAYMENTS_BASE_ID
 
 /** Portal inbox (Messages table): add these fields in Airtable + optional form URL — see .env.example */
 export const PORTAL_INBOX_CHANNEL_INTERNAL = 'internal_mgmt_admin'
@@ -41,8 +52,11 @@ function tableUrl(table) {
   return `${BASE_URL}/${encodeURIComponent(table)}`
 }
 
-function buildUrl(table, params = {}) {
-  const url = new URL(tableUrl(table))
+function paymentsTableUrl() {
+  return `${PAYMENTS_BASE_URL}/${encodeURIComponent(TABLES.payments)}`
+}
+
+function applySearchParams(url, params = {}) {
   Object.entries(params).forEach(([key, value]) => {
     if (value === undefined || value === null || value === '') return
     if (key === 'sort' && Array.isArray(value)) {
@@ -56,6 +70,17 @@ function buildUrl(table, params = {}) {
     }
     url.searchParams.set(key, String(value))
   })
+}
+
+function buildUrl(table, params = {}) {
+  const url = new URL(tableUrl(table))
+  applySearchParams(url, params)
+  return url.toString()
+}
+
+function buildPaymentsUrl(params = {}) {
+  const url = new URL(paymentsTableUrl())
+  applySearchParams(url, params)
   return url.toString()
 }
 
@@ -70,8 +95,8 @@ async function request(url, options = {}) {
 
   if (!response.ok) {
     const body = await response.text()
-    if (body.includes('INVALID_PERMISSIONS_OR_MODEL_NOT_FOUND')) {
-      throw new Error(`API token does not have access to this database. Edit your personal access token in your provider's developer hub and grant this base data.records:read and data.records:write scopes.`)
+    if (responseBodyIndicatesAirtablePermissionDenied(body)) {
+      throw new Error(airtablePermissionDeniedMessage(url))
     }
     throw new Error(body)
   }
@@ -176,6 +201,71 @@ export async function getApplicationById(applicationId) {
   }
 }
 
+/** Embedded in Announcements.Target to attribute pending rows; stripped for resident matching. */
+export const ANNOUNCEMENT_SUBMITTER_TOKEN_PREFIX = '__axis_submitter__:'
+
+function splitAnnouncementTargetSegments(raw) {
+  if (raw == null || raw === '') return []
+  if (Array.isArray(raw)) {
+    return raw.flatMap((x) => splitAnnouncementTargetSegments(x))
+  }
+  return String(raw)
+    .split(/[\n,;|]+/)
+    .map((t) => String(t).trim())
+    .filter(Boolean)
+}
+
+/** Human-readable audience string (hides internal submitter token). */
+export function announcementAudienceDisplayText(record) {
+  const pre = ANNOUNCEMENT_SUBMITTER_TOKEN_PREFIX.toLowerCase()
+  const parts = splitAnnouncementTargetSegments(record?.Target ?? record?.['Target Scope'] ?? '')
+  const vis = parts.filter((s) => !String(s).trim().toLowerCase().startsWith(pre))
+  return vis.length ? vis.join(', ') : 'All Properties'
+}
+
+/** Tokens used for resident targeting (excludes internal submitter marker). */
+export function announcementResidentTargetTokens(recordOrTarget) {
+  const raw =
+    typeof recordOrTarget === 'string' || Array.isArray(recordOrTarget)
+      ? recordOrTarget
+      : recordOrTarget?.Target ?? recordOrTarget?.['Target Scope'] ?? ''
+  const pre = ANNOUNCEMENT_SUBMITTER_TOKEN_PREFIX.toLowerCase()
+  return splitAnnouncementTargetSegments(raw)
+    .map((t) => String(t).trim().toLowerCase())
+    .filter((t) => t && !t.startsWith(pre))
+}
+
+export function parseAnnouncementSubmitterEmail(record) {
+  const raw = record?.Target ?? record?.['Target Scope'] ?? ''
+  const pre = ANNOUNCEMENT_SUBMITTER_TOKEN_PREFIX
+  for (const seg of splitAnnouncementTargetSegments(raw)) {
+    const s = String(seg).trim()
+    if (s.toLowerCase().startsWith(pre.toLowerCase())) {
+      return s.slice(pre.length).trim().toLowerCase()
+    }
+  }
+  return ''
+}
+
+export function buildAnnouncementTargetField({ audienceText, submitterEmail, embedSubmitter }) {
+  const base = String(audienceText || '').trim() || 'All Properties'
+  if (!embedSubmitter) return base
+  const em = String(submitterEmail || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9@._+-]+/g, '_')
+  if (!em.includes('@')) return base
+  const tok = `${ANNOUNCEMENT_SUBMITTER_TOKEN_PREFIX}${em}`
+  if (base.toLowerCase().includes(tok.toLowerCase())) return base
+  return `${base}, ${tok}`
+}
+
+export function isAnnouncementPending(record) {
+  if (!record) return false
+  const s = record.Show
+  return s !== true && s !== 1 && s !== '1'
+}
+
 export async function getAnnouncements() {
   const data = await request(buildUrl(TABLES.announcements, {
     filterByFormula: '{Show} = TRUE()',
@@ -185,11 +275,15 @@ export async function getAnnouncements() {
     const a = mapRecord(record)
     // Target can be an array (multi-select) or a string — normalise to array of lowercase tokens
     const rawTarget = Array.isArray(a.Target) ? a.Target : String(a.Target || a['Target Scope'] || '').split(/[\n,;]+/)
+    const pre = ANNOUNCEMENT_SUBMITTER_TOKEN_PREFIX.toLowerCase()
+    const targetTokens = rawTarget
+      .map((t) => String(t).trim().toLowerCase())
+      .filter((t) => t && !t.startsWith(pre))
     return {
       ...a,
       Message: a.Message || a.Body || '',
       'Short Summary': a['Short Summary'] || '',
-      Target: rawTarget.map((t) => String(t).trim().toLowerCase()).filter(Boolean),
+      Target: targetTokens,
       CreatedAt: a['Created At'] || a.created_at,
     }
   })
@@ -238,7 +332,13 @@ async function uploadAttachmentToRecord(table, recordId, fieldName, file) {
       body: formData,
     }
   )
-  if (!response.ok) throw new Error(await response.text())
+  if (!response.ok) {
+    const body = await response.text()
+    if (responseBodyIndicatesAirtablePermissionDenied(body)) {
+      throw new Error(airtablePermissionDeniedMessage(response.url))
+    }
+    throw new Error(body)
+  }
   return response.json()
 }
 
@@ -457,10 +557,12 @@ export async function sendMessage({ workOrderId, senderEmail, message, isAdmin =
 // ---------------------------------------------------------------------------
 export async function getPaymentsForResident(resident) {
   const formula = `FIND("${escapeFormulaValue(resident.id)}", ARRAYJOIN({Resident})) > 0`
-  const data = await request(buildUrl(TABLES.payments, {
-    filterByFormula: formula,
-    sort: [{ field: 'Due Date', direction: 'desc' }],
-  }))
+  const data = await request(
+    buildPaymentsUrl({
+      filterByFormula: formula,
+      sort: [{ field: 'Due Date', direction: 'desc' }],
+    }),
+  )
   return (data.records || []).map(mapRecord)
 }
 
@@ -471,7 +573,7 @@ export async function getAllPaymentsRecords() {
   do {
     const params = {}
     if (offset) params.offset = offset
-    const data = await request(buildUrl(TABLES.payments, params))
+    const data = await request(buildPaymentsUrl(params))
     ;(data.records || []).forEach((r) => allRecords.push(mapRecord(r)))
     offset = data.offset || null
   } while (offset)
@@ -485,7 +587,7 @@ export async function updatePaymentRecord(recordId, fields) {
   }
   const cleaned = Object.fromEntries(Object.entries(fields).filter(([, v]) => v !== undefined))
   if (Object.keys(cleaned).length === 0) throw new Error('No fields to update.')
-  const data = await request(`${tableUrl(TABLES.payments)}/${id}`, {
+  const data = await request(`${paymentsTableUrl()}/${id}`, {
     method: 'PATCH',
     body: JSON.stringify({ fields: cleaned, typecast: true }),
   })
@@ -501,6 +603,176 @@ export async function getPropertyByName(propertyName) {
   }))
   const record = data.records?.[0]
   return record ? mapRecord(record) : null
+}
+
+// ---------------------------------------------------------------------------
+// Rooms (linked to Properties — manager “add housing” wizard)
+// ---------------------------------------------------------------------------
+
+/** Airtable table name for room inventory (default: "Rooms"). */
+export function getAirtableRoomsTableName() {
+  const t = String(import.meta.env.VITE_AIRTABLE_ROOMS_TABLE || TABLES.rooms).trim()
+  return t || TABLES.rooms
+}
+
+function roomLinkFieldName() {
+  return String(import.meta.env.VITE_AIRTABLE_ROOM_LINK_FIELD || 'Property').trim() || 'Property'
+}
+
+function roomFieldMap() {
+  return {
+    link: roomLinkFieldName(),
+    roomNumber: String(import.meta.env.VITE_AIRTABLE_ROOM_NUMBER_FIELD || 'Room Number'),
+    monthlyRent: String(import.meta.env.VITE_AIRTABLE_ROOM_RENT_FIELD || 'Monthly Rent'),
+    furnished: String(import.meta.env.VITE_AIRTABLE_ROOM_FURNISHED_FIELD || 'Furnished'),
+    furnishingDetail: String(
+      import.meta.env.VITE_AIRTABLE_ROOM_FURNISHING_DETAIL_FIELD || 'Furnishing Detail',
+    ),
+    floor: String(import.meta.env.VITE_AIRTABLE_ROOM_FLOOR_FIELD || 'Floor'),
+    bathroomType: String(import.meta.env.VITE_AIRTABLE_ROOM_BATHROOM_FIELD || 'Bathroom Type'),
+    squareFeet: String(import.meta.env.VITE_AIRTABLE_ROOM_SQFT_FIELD || 'Square Feet'),
+    bedSize: String(import.meta.env.VITE_AIRTABLE_ROOM_BED_FIELD || 'Bed Size'),
+    deskIncluded: String(import.meta.env.VITE_AIRTABLE_ROOM_DESK_FIELD || 'Desk Included'),
+    acIncluded: String(import.meta.env.VITE_AIRTABLE_ROOM_AC_FIELD || 'AC'),
+    storageNotes: String(import.meta.env.VITE_AIRTABLE_ROOM_STORAGE_FIELD || 'Closet / Storage'),
+    windowsLight: String(import.meta.env.VITE_AIRTABLE_ROOM_WINDOWS_FIELD || 'Windows / Natural Light'),
+    roomNotes: String(import.meta.env.VITE_AIRTABLE_ROOM_NOTES_FIELD || 'Room Notes'),
+    availability: String(import.meta.env.VITE_AIRTABLE_ROOM_AVAILABILITY_FIELD || 'Availability'),
+    kitchenIncluded: String(
+      import.meta.env.VITE_AIRTABLE_ROOM_KITCHEN_INCLUDED_FIELD || 'Kitchen Included',
+    ),
+    laundryAccess: String(import.meta.env.VITE_AIRTABLE_ROOM_LAUNDRY_FIELD || 'Laundry Access'),
+    parkingAccess: String(import.meta.env.VITE_AIRTABLE_ROOM_PARKING_FIELD || 'Parking Access'),
+  }
+}
+
+const ROOM_LAUNDRY_LABELS = {
+  building_default: 'Uses building laundry default',
+  in_unit: 'In-unit laundry in this room',
+  shared_on_site: 'Shared on-site laundry (not in room)',
+  none: 'No laundry for this room',
+}
+
+const ROOM_PARKING_LABELS = {
+  building_default: 'Uses building parking default',
+  designated: 'Designated / assigned spot with this room',
+  street: 'Street parking only',
+  none: 'No parking',
+  other: 'Other (see notes)',
+}
+
+function formatRoomLaundryForAirtable(room) {
+  const parts = []
+  const a = String(room?.laundryAccess || '').trim()
+  if (a) parts.push(ROOM_LAUNDRY_LABELS[a] || a)
+  const share = String(room?.laundrySharesWith || '').trim()
+  if (share) parts.push(`Shares with: ${share}`)
+  return parts.join(' · ')
+}
+
+function formatRoomParkingForAirtable(room) {
+  const parts = []
+  const a = String(room?.parkingAccess || '').trim()
+  if (a) parts.push(ROOM_PARKING_LABELS[a] || a)
+  const detail = String(room?.parkingDetail || '').trim()
+  if (detail) parts.push(detail)
+  return parts.join(' · ')
+}
+
+/**
+ * Build Airtable field object for a Rooms row. Omits empty optional values.
+ * @param {string} propertyRecordId — Properties record id (rec…)
+ * @param {object} room — shape from Add Housing wizard
+ */
+export function buildRoomFieldsForAirtable(propertyRecordId, room) {
+  const id = String(propertyRecordId || '').trim()
+  if (!/^rec[a-zA-Z0-9]{14,}$/.test(id)) {
+    throw new Error('Invalid property record id for room link.')
+  }
+  const fm = roomFieldMap()
+  const fields = { [fm.link]: [id] }
+
+  const rn = String(room.roomNumber || '').trim()
+  if (rn) fields[fm.roomNumber] = rn
+
+  if (room.monthlyRent !== '' && room.monthlyRent != null) {
+    const n = Number(room.monthlyRent)
+    if (!Number.isNaN(n)) fields[fm.monthlyRent] = n
+  }
+
+  const lev = String(room.furnishingLevel || 'none')
+  fields[fm.furnished] = lev === 'full' || lev === 'partial'
+
+  const fd = String(room.furnishingDetail || '').trim()
+  if (fd) fields[fm.furnishingDetail] = fd
+
+  const fl = String(room.floor || '').trim()
+  if (fl) fields[fm.floor] = fl
+
+  const bath = String(room.bathroomType || '').trim()
+  if (bath) fields[fm.bathroomType] = bath
+
+  if (room.squareFeet !== '' && room.squareFeet != null) {
+    const sq = Number(room.squareFeet)
+    if (!Number.isNaN(sq)) fields[fm.squareFeet] = sq
+  }
+
+  const bed = String(room.bedSize || '').trim()
+  if (bed) fields[fm.bedSize] = bed
+
+  if (room.deskIncluded === true || room.deskIncluded === false) {
+    fields[fm.deskIncluded] = room.deskIncluded
+  }
+  if (room.acIncluded === true || room.acIncluded === false) {
+    fields[fm.acIncluded] = room.acIncluded
+  }
+
+  const st = String(room.storageNotes || '').trim()
+  if (st) fields[fm.storageNotes] = st
+
+  const win = String(room.windowsLight || '').trim()
+  if (win) fields[fm.windowsLight] = win
+
+  const notes = String(room.roomNotes || '').trim()
+  if (notes) fields[fm.roomNotes] = notes
+
+  const av = String(room.availability || '').trim()
+  if (av) fields[fm.availability] = av
+
+  const kit = String(room.kitchenIncluded || '').trim()
+  if (kit) fields[fm.kitchenIncluded] = kit
+
+  const laundryLine = formatRoomLaundryForAirtable(room)
+  if (laundryLine) fields[fm.laundryAccess] = laundryLine
+
+  const parkingLine = formatRoomParkingForAirtable(room)
+  if (parkingLine) fields[fm.parkingAccess] = parkingLine
+
+  return fields
+}
+
+export async function createRoomForProperty(propertyRecordId, room) {
+  const fields = buildRoomFieldsForAirtable(propertyRecordId, room)
+  const table = getAirtableRoomsTableName()
+  const data = await request(tableUrl(table), {
+    method: 'POST',
+    body: JSON.stringify({ fields, typecast: true }),
+  })
+  return mapRecord(data)
+}
+
+/** All room rows linked to a property (for dashboards / verification). */
+export async function fetchRoomsForProperty(propertyRecordId) {
+  const pid = String(propertyRecordId || '').trim()
+  if (!pid) return []
+  const lf = roomLinkFieldName()
+  const formula = `FIND("${escapeFormulaValue(pid)}", ARRAYJOIN({${lf}})) > 0`
+  const data = await request(
+    buildUrl(getAirtableRoomsTableName(), {
+      filterByFormula: formula,
+    }),
+  )
+  return (data.records || []).map(mapRecord)
 }
 
 // ---------------------------------------------------------------------------
@@ -779,6 +1051,67 @@ export async function createAnnouncement(fields) {
     body: JSON.stringify({ fields, typecast: true }),
   })
   return mapRecord(data)
+}
+
+/**
+ * Create an Announcements row and optionally mirror a short summary into a portal inbox thread.
+ * Managers/partners: Show=false (pending admin); embeds submitter in Target.
+ * Admins: can publish immediately (Show=true).
+ */
+export async function submitAnnouncementFromInbox({
+  title,
+  message,
+  shortSummary,
+  audienceTargetText,
+  pinned = false,
+  priority = 'Normal',
+  publish = false,
+  submitterEmail,
+  notifyInbox,
+}) {
+  const t = String(title || '').trim()
+  const m = String(message || '').trim()
+  if (!t || !m) throw new Error('Title and message are required.')
+
+  const target = buildAnnouncementTargetField({
+    audienceText: audienceTargetText,
+    submitterEmail,
+    embedSubmitter: !publish,
+  })
+
+  const fields = {
+    Title: t,
+    Message: m,
+    Target: target,
+    Priority: { name: priority },
+    Show: Boolean(publish),
+    Pinned: Boolean(pinned),
+  }
+  const sum = String(shortSummary || '').trim()
+  if (sum) fields['Short Summary'] = sum
+
+  const rec = await createAnnouncement(fields)
+
+  if (notifyInbox?.threadKey && notifyInbox?.senderEmail) {
+    const preview = m.length > 450 ? `${m.slice(0, 450)}…` : m
+    const head = publish
+      ? `Announcement published to residents: "${t}"`
+      : `Announcement submitted for review: "${t}"`
+    const scrubbedTarget = target.replace(
+      new RegExp(`${ANNOUNCEMENT_SUBMITTER_TOKEN_PREFIX.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}[^,\\s]+`, 'i'),
+      '(pending)',
+    )
+    const body = `${head}\nTarget: ${scrubbedTarget.trim()}\n\n${preview}`
+    await sendMessage({
+      senderEmail: notifyInbox.senderEmail,
+      message: body,
+      isAdmin: Boolean(notifyInbox.isAdmin),
+      threadKey: notifyInbox.threadKey,
+      channel: PORTAL_INBOX_CHANNEL_INTERNAL,
+    })
+  }
+
+  return rec
 }
 
 export async function updateAnnouncement(recordId, fields) {

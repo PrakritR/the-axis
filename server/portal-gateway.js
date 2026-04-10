@@ -14,6 +14,7 @@ import managerUpdateProfile from './handlers/manager-update-profile.js'
 import sendLeaseInvite from './handlers/send-lease-invite.js'
 import signforgeSendLease from './handlers/signforge-send-lease.js'
 import signforgeEnvelopeStatus from './handlers/signforge-envelope-status.js'
+import workOrderAiSuggest from './handlers/work-order-ai-suggest.js'
 
 const handlers = {
   'manager-auth': managerAuth,
@@ -28,6 +29,7 @@ const handlers = {
   'send-lease-invite': sendLeaseInvite,
   'signforge-send-lease': signforgeSendLease,
   'signforge-envelope-status': signforgeEnvelopeStatus,
+  'work-order-ai-suggest': workOrderAiSuggest,
 }
 
 export default async function portalGateway(req, res) {

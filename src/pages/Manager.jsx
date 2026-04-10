@@ -22,7 +22,10 @@ import { Link, Navigate, useLocation } from 'react-router-dom'
 import toast from 'react-hot-toast'
 import { HOUSING_CONTACT_MESSAGE } from '../lib/housingSite'
 import { readJsonResponse } from '../lib/readJsonResponse'
-import PortalInternalInbox from '../components/PortalInternalInbox'
+import AddHousingWizard from '../components/AddHousingWizard'
+import { AXIS_DEVELOPER_MANAGER_HANDOFF } from '../lib/developerPortal'
+import GmailStyleInboxLayout, { InboxThreadRow } from '../components/GmailStyleInboxLayout'
+import PortalInboxAnnouncementSection from '../components/PortalInboxAnnouncementSection'
 import {
   getWorkOrderById,
   updateWorkOrder,
@@ -33,7 +36,17 @@ import {
   isInternalPortalThreadMessage,
   getAllPaymentsRecords,
   updatePaymentRecord,
+  AIRTABLE_PAYMENTS_BASE_ID,
+  portalInboxAirtableConfigured,
+  getMessagesByThreadKey,
+  siteManagerThreadKey,
+  PORTAL_INBOX_CHANNEL_INTERNAL,
 } from '../lib/airtable'
+import {
+  consolidateManagerDashboardWarnings,
+  errorFromAirtableApiBody,
+  isAirtablePermissionErrorMessage,
+} from '../lib/airtablePermissionError'
 import {
   PortalAuthCard,
   PortalAuthPage,
@@ -146,6 +159,15 @@ function computeManagerScope(propertyRecords, manager) {
   const list = Array.isArray(propertyRecords) ? propertyRecords : []
   const approvedNames = new Set()
   const pendingAssigned = []
+  if (manager?.__axisDeveloper === true) {
+    for (const p of list) {
+      if (isPropertyRecordApproved(p)) {
+        const n = propertyRecordName(p)
+        if (n) approvedNames.add(n)
+      }
+    }
+    return { approvedNames, pendingAssigned: [] }
+  }
   for (const p of list) {
     if (!propertyAssignedToManager(p, manager)) continue
     if (isPropertyRecordApproved(p)) {
@@ -200,11 +222,72 @@ function isPaymentOverdueRecord(p) {
   return due < today
 }
 
+function paymentMonthKeyFromRecord(p) {
+  const raw = p['Due Date'] || p.created_at
+  const d = raw ? new Date(raw) : null
+  if (!d || Number.isNaN(d.getTime())) return null
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+}
+
+function ymFromDate(d) {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+}
+
+function currentYm() {
+  return ymFromDate(new Date())
+}
+
+function formatYmLong(ym) {
+  const [y, m] = String(ym || '').split('-').map(Number)
+  if (!y || !m) return String(ym || '')
+  const d = new Date(y, m - 1, 1)
+  return d.toLocaleDateString(undefined, { month: 'long', year: 'numeric' })
+}
+
+function paymentRoomSortKey(p) {
+  const r = String(p['Room Number'] ?? p.Room ?? p.Unit ?? p['Unit / Room'] ?? '').trim()
+  const n = Number.parseInt(r, 10)
+  if (Number.isFinite(n) && String(n) === r) return n
+  return r.toLowerCase()
+}
+
+function formatPaymentRoomTitle(p) {
+  const r = String(p['Room Number'] ?? p.Room ?? p.Unit ?? p['Unit / Room'] ?? '').trim()
+  if (!r) return 'Room'
+  if (/^room\s/i.test(r)) return r
+  if (/^\d+$/.test(r)) return `Room ${r}`
+  return r
+}
+
+function comparePaymentByRoom(a, b) {
+  const ka = paymentRoomSortKey(a)
+  const kb = paymentRoomSortKey(b)
+  if (typeof ka === 'number' && typeof kb === 'number') return ka - kb
+  return String(ka).localeCompare(String(kb), undefined, { numeric: true })
+}
+
+function rentStatusPresentation(p) {
+  const st = String(p.Status || '').trim().toLowerCase()
+  if (st === 'paid') return { phrase: 'Rent paid', tone: 'emerald' }
+  if (isPaymentOverdueRecord(p)) return { phrase: 'Rent overdue', tone: 'red' }
+  return { phrase: 'Rent pending', tone: 'amber' }
+}
+
+function workOrderPropertyLabel(w) {
+  return String(w.Property || w['Property Name'] || w['House'] || '').trim()
+}
+
 function workOrderInScope(w, approvedNamesLowerSet) {
   if (!approvedNamesLowerSet?.size) return false
-  const prop = String(w.Property || w['Property Name'] || '').trim().toLowerCase()
+  const prop = workOrderPropertyLabel(w).toLowerCase()
   if (!prop) return false
   return [...approvedNamesLowerSet].some((ns) => prop === ns || prop.includes(ns))
+}
+
+function workOrderIsResolvedRecord(w) {
+  if (w.Resolved === true || w.Resolved === 1 || w.Resolved === '1') return true
+  const st = String(w.Status || '').trim().toLowerCase()
+  return st === 'resolved' || st === 'closed' || st === 'completed'
 }
 
 function updateTourAvailabilityLines(currentAvailability, day, slot) {
@@ -230,9 +313,8 @@ async function atRequest(url, options = {}) {
   const res = await fetch(url, { ...options, headers: { ...atHeaders(), ...(options.headers || {}) } })
   if (!res.ok) {
     const body = await res.text()
-    if (body.includes('INVALID_PERMISSIONS_OR_MODEL_NOT_FOUND')) {
-      throw new Error('Airtable access is misconfigured for this dashboard. The current token does not have permission to read this base.')
-    }
+    const permErr = errorFromAirtableApiBody(res.url || url, body)
+    if (permErr) throw permErr
     try {
       const parsed = JSON.parse(body)
       if (parsed?.error?.message) {
@@ -824,12 +906,6 @@ function HouseManagementPanel({ manager, onPropertiesChange }) {
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [editingPropertyId, setEditingPropertyId] = useState(null)
-  const [form, setForm] = useState({
-    name: '',
-    address: '',
-    utilitiesFee: '',
-    securityDeposit: '',
-  })
   const [tourForm, setTourForm] = useState({
     manager: '',
     availability: '',
@@ -853,30 +929,6 @@ function HouseManagementPanel({ manager, onPropertiesChange }) {
   useEffect(() => {
     loadProperties()
   }, [loadProperties])
-
-  async function handleSubmit(event) {
-    event.preventDefault()
-    setSaving(true)
-    try {
-      const created = await createPropertyAdmin({
-        Name: form.name.trim(),
-        Address: form.address.trim(),
-        ...(form.utilitiesFee ? { 'Utilities Fee': Number(form.utilitiesFee) } : {}),
-        ...(form.securityDeposit ? { 'Security Deposit': Number(form.securityDeposit) } : {}),
-      })
-      setProperties((current) => {
-        const next = [created, ...current]
-        onPropertiesChange?.(next)
-        return next
-      })
-      setForm({ name: '', address: '', utilitiesFee: '', securityDeposit: '' })
-      toast.success('House added')
-    } catch (err) {
-      toast.error('Could not add house: ' + err.message)
-    } finally {
-      setSaving(false)
-    }
-  }
 
   function extractNoteValue(notes, label) {
     const escaped = String(label || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
@@ -945,63 +997,23 @@ function HouseManagementPanel({ manager, onPropertiesChange }) {
         <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-[#2563eb]">House Management</div>
         <h3 className="mt-2 text-xl font-black text-slate-900">Add a house</h3>
         <p className="mt-2 text-sm leading-6 text-slate-500">
-          Add internal property records for leasing and resident operations. Public marketing listings still use the website property dataset.
+          Add internal property records for leasing and resident operations. Enter building details, then go room by room (furnished status,
+          rent, bath type, and more). Rows are written to Airtable <strong>Properties</strong> and <strong>Rooms</strong>. Public marketing
+          listings still use the website property dataset.
         </p>
 
-        <form onSubmit={handleSubmit} className="mt-5 space-y-4">
-          <div>
-            <label className="mb-1.5 block text-sm font-semibold text-slate-700">House name</label>
-            <input
-              type="text"
-              required
-              value={form.name}
-              onChange={(event) => setForm((current) => ({ ...current, name: event.target.value }))}
-              placeholder="4709C 8th Ave NE"
-              className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 placeholder:text-slate-400 transition focus:border-[#2563eb] focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#2563eb]/20"
-            />
-          </div>
-          <div>
-            <label className="mb-1.5 block text-sm font-semibold text-slate-700">Address</label>
-            <input
-              type="text"
-              value={form.address}
-              onChange={(event) => setForm((current) => ({ ...current, address: event.target.value }))}
-              placeholder="Full street address"
-              className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 placeholder:text-slate-400 transition focus:border-[#2563eb] focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#2563eb]/20"
-            />
-          </div>
-          <div>
-            <label className="mb-1.5 block text-sm font-semibold text-slate-700">Utilities fee</label>
-            <input
-              type="number"
-              min="0"
-              step="1"
-              value={form.utilitiesFee}
-              onChange={(event) => setForm((current) => ({ ...current, utilitiesFee: event.target.value }))}
-              placeholder="150"
-              className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 placeholder:text-slate-400 transition focus:border-[#2563eb] focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#2563eb]/20"
-            />
-          </div>
-          <div>
-            <label className="mb-1.5 block text-sm font-semibold text-slate-700">Security deposit</label>
-            <input
-              type="number"
-              min="0"
-              step="1"
-              value={form.securityDeposit}
-              onChange={(event) => setForm((current) => ({ ...current, securityDeposit: event.target.value }))}
-              placeholder="500"
-              className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 placeholder:text-slate-400 transition focus:border-[#2563eb] focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#2563eb]/20"
-            />
-          </div>
-          <button
-            type="submit"
-            disabled={saving || !form.name.trim()}
-            className="w-full rounded-2xl bg-[linear-gradient(180deg,#2f76ff_0%,#2450eb_100%)] px-5 py-3.5 text-sm font-semibold text-white shadow-[0_6px_18px_rgba(37,99,235,0.22)] transition hover:brightness-105 disabled:opacity-50"
-          >
-            {saving ? 'Adding house…' : 'Add house'}
-          </button>
-        </form>
+        <div className="mt-5">
+          <AddHousingWizard
+            createProperty={createPropertyAdmin}
+            onSuccess={(created) => {
+              setProperties((current) => {
+                const next = [created, ...current]
+                onPropertiesChange?.(next)
+                return next
+              })
+            }}
+          />
+        </div>
       </div>
 
       <div className="rounded-[24px] border border-slate-200 bg-white p-6">
@@ -1023,7 +1035,7 @@ function HouseManagementPanel({ manager, onPropertiesChange }) {
           <div className="mt-5 rounded-2xl border border-slate-100 bg-slate-50 px-4 py-5 text-sm text-slate-500">Loading houses…</div>
         ) : approvedAssigned.length === 0 && pendingAssigned.length === 0 ? (
           <div className="mt-5 rounded-2xl border border-slate-100 bg-slate-50 px-4 py-5 text-sm text-slate-500">
-            No approved houses assigned to your account yet. After Axis approves a property and links it to your manager email or ID, it will appear here.
+            No houses on your account yet. Add a property below—it will show here once it&apos;s linked.
           </div>
         ) : (
           <div className="mt-5 space-y-3">
@@ -1173,10 +1185,12 @@ function ManagerProfilePanel({ manager, onManagerUpdate, approvedPropertyCount =
   const [tourSaving, setTourSaving] = useState(false)
   const [tourLoading, setTourLoading] = useState(true)
 
-  const approvedForProfile = useMemo(
-    () => properties.filter((p) => propertyAssignedToManager(p, manager) && isPropertyRecordApproved(p)),
-    [properties, manager],
-  )
+  const approvedForProfile = useMemo(() => {
+    if (manager.__axisDeveloper) {
+      return properties.filter((p) => isPropertyRecordApproved(p))
+    }
+    return properties.filter((p) => propertyAssignedToManager(p, manager) && isPropertyRecordApproved(p))
+  }, [properties, manager])
 
   useEffect(() => {
     fetchPropertiesAdmin()
@@ -1186,7 +1200,7 @@ function ManagerProfilePanel({ manager, onManagerUpdate, approvedPropertyCount =
   }, [])
 
   useEffect(() => {
-    if (!manager?.id) {
+    if (!manager?.id || manager.__axisDeveloper) {
       setTourLoading(false)
       return
     }
@@ -1212,7 +1226,7 @@ function ManagerProfilePanel({ manager, onManagerUpdate, approvedPropertyCount =
   }
 
   async function handleSaveTourAvailability() {
-    if (!manager?.id) return
+    if (!manager?.id || manager.__axisDeveloper) return
     setTourSaving(true)
     try {
       await patchManagerRecord(manager.id, { 'Tour Availability': tourAvail.trim() })
@@ -1226,6 +1240,10 @@ function ManagerProfilePanel({ manager, onManagerUpdate, approvedPropertyCount =
 
   async function handleSaveProfile(event) {
     event.preventDefault()
+    if (manager.__axisDeveloper) {
+      toast.info('Profile save is disabled in developer preview mode.')
+      return
+    }
     setSaving(true)
     setSaveError('')
     try {
@@ -1368,7 +1386,7 @@ function ManagerProfilePanel({ manager, onManagerUpdate, approvedPropertyCount =
           {[
             { label: 'Role', value: manager.role || 'Manager' },
             { label: 'Manager ID', value: manager.managerId || '—' },
-            { label: 'Approved houses', value: propsLoading ? '…' : `${approvedPropertyCount} assigned` },
+            { label: 'Houses', value: propsLoading ? '…' : `${approvedPropertyCount} assigned` },
           ].map(({ label, value }) => (
             <div key={label} className="rounded-2xl border border-slate-100 bg-slate-50 px-4 py-4">
               <div className="text-[11px] font-bold uppercase tracking-[0.14em] text-slate-400">{label}</div>
@@ -1381,16 +1399,16 @@ function ManagerProfilePanel({ manager, onManagerUpdate, approvedPropertyCount =
       {/* Managed property addresses */}
       <section className="rounded-[28px] border border-slate-200 bg-white p-6">
         <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-[#2563eb]">Properties</div>
-        <h2 className="mt-2 text-xl font-black text-slate-900">Approved houses on your account</h2>
+        <h2 className="mt-2 text-xl font-black text-slate-900">Properties on your account</h2>
         <p className="mt-2 text-sm leading-6 text-slate-500">
-          Only properties that are approved and linked to you. Add or edit houses under <strong>Properties</strong> in the dashboard.
+          Add or edit houses under <strong>Properties</strong> in the dashboard.
         </p>
 
         {propsLoading ? (
           <div className="mt-5 text-sm text-slate-500">Loading properties…</div>
         ) : approvedForProfile.length === 0 ? (
           <div className="mt-5 rounded-2xl border border-slate-100 bg-slate-50 p-6 text-center text-sm text-slate-500">
-            No approved houses assigned yet. Submit a property for approval or ask Axis to link your manager email on the property record.
+            No properties yet. Add a house under Properties or contact Axis to link your manager email.
           </div>
         ) : (
           <div className="mt-5 grid gap-3 sm:grid-cols-2">
@@ -1528,7 +1546,7 @@ function GenerateDraftModal({ manager, propertyOptions, onClose, onGenerated }) 
                     className={inputCls}
                   >
                     <option value="">
-                      {propertyOptions.length ? 'Select property…' : 'No approved houses assigned yet'}
+                      {propertyOptions.length ? 'Select property…' : 'Add a property under Properties first'}
                     </option>
                     {propertyOptions.map((property) => (
                       <option key={property} value={property}>{property}</option>
@@ -1673,6 +1691,26 @@ function buildCalendarEvents(drafts, workOrders, applications) {
   return events
 }
 
+const MANAGER_CALENDAR_BLOCKS_KEY = 'axis_manager_calendar_blocks_v1'
+
+function calendarDateKey(y, monthIndex, day) {
+  return `${y}-${String(monthIndex + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`
+}
+
+function loadManagerCalendarBlocks() {
+  try {
+    const raw = localStorage.getItem(MANAGER_CALENDAR_BLOCKS_KEY)
+    const arr = raw ? JSON.parse(raw) : []
+    return Array.isArray(arr) ? arr : []
+  } catch {
+    return []
+  }
+}
+
+function saveManagerCalendarBlocks(blocks) {
+  localStorage.setItem(MANAGER_CALENDAR_BLOCKS_KEY, JSON.stringify(blocks))
+}
+
 const LEASE_STATUSES_NEEDING_ACTION = new Set(['Draft Generated', 'Under Review', 'Changes Needed', 'Approved'])
 
 function ManagerDashboardHomePanel({
@@ -1685,6 +1723,10 @@ function ManagerDashboardHomePanel({
   onGenerateDraft,
   onOpenBilling,
 }) {
+  const displayDataWarnings = useMemo(
+    () => consolidateManagerDashboardWarnings(dataWarnings || []),
+    [dataWarnings],
+  )
   const s = stats || {}
   const pendingApps = statsLoading ? null : s.pendingApps ?? 0
   const leasePending = statsLoading ? null : s.leasePending ?? 0
@@ -1731,18 +1773,18 @@ function ManagerDashboardHomePanel({
         <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-[#2563eb]">Home</div>
         <h2 className="mt-2 text-2xl font-black text-slate-900">Dashboard</h2>
         <p className="mt-2 max-w-2xl text-sm text-slate-500">
-          Tasks for your approved houses only ({approvedHouseCount || 0} in your portfolio). Use the tabs above for full lists.
+          Tasks for your portfolio ({approvedHouseCount || 0} {approvedHouseCount === 1 ? 'house' : 'houses'}). Use the tabs above for full lists.
         </p>
       </div>
 
-      {dataWarnings?.length ? (
+      {displayDataWarnings?.length ? (
         <div
           role="status"
           className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950"
         >
           <div className="font-semibold text-amber-900">Some dashboard data could not load</div>
           <ul className="mt-2 list-inside list-disc space-y-1 text-amber-900/90">
-            {dataWarnings.map((w, i) => (
+            {displayDataWarnings.map((w, i) => (
               <li key={i}>{w}</li>
             ))}
           </ul>
@@ -1756,7 +1798,7 @@ function ManagerDashboardHomePanel({
           <p className="mt-6 text-sm text-slate-500">Loading…</p>
         ) : (approvedHouseCount ?? 0) === 0 ? (
           <p className="mt-6 text-sm text-slate-600">
-            You don&apos;t have any <strong>approved</strong> houses assigned yet. Add a house under Properties; once Axis approves and links it to your account, applications, leases, and rent will show here.
+            You don&apos;t have any houses in your portfolio yet. Add a house under Properties—applications, leases, and rent will show here once properties are linked to your account.
           </p>
         ) : visibleTasks.length === 0 ? (
           <p className="mt-6 text-sm text-emerald-800 bg-emerald-50 border border-emerald-100 rounded-2xl px-4 py-3">
@@ -1818,10 +1860,23 @@ function ManagerCalendarPanel() {
   const [loading, setLoading] = useState(true)
   const [events, setEvents] = useState([])
   const [calendarIssues, setCalendarIssues] = useState([])
+  const [manualBlocks, setManualBlocks] = useState(() => loadManagerCalendarBlocks())
+  const [selectedDay, setSelectedDay] = useState(null)
+  const [addSlot, setAddSlot] = useState('')
+  const [addTitle, setAddTitle] = useState('')
 
   const y = cursor.getFullYear()
   const m = cursor.getMonth()
   const monthLabel = cursor.toLocaleString('en-US', { month: 'long', year: 'numeric' })
+  const daysInMonth = new Date(y, m + 1, 0).getDate()
+
+  useEffect(() => {
+    setManualBlocks(loadManagerCalendarBlocks())
+  }, [])
+
+  useEffect(() => {
+    if (selectedDay != null && selectedDay > daysInMonth) setSelectedDay(null)
+  }, [y, m, daysInMonth, selectedDay])
 
   useEffect(() => {
     let cancelled = false
@@ -1848,16 +1903,109 @@ function ManagerCalendarPanel() {
     }
   }, [])
 
+  const manualAsEvents = useMemo(
+    () =>
+      manualBlocks.map((b) => ({
+        date: b.date,
+        label: b.title ? `${b.slot} · ${b.title}` : `Blocked · ${b.slot}`,
+        type: 'block',
+        _blockId: b.id,
+      })),
+    [manualBlocks],
+  )
+
+  const displayEvents = useMemo(() => [...events, ...manualAsEvents], [events, manualAsEvents])
+
   const firstDow = new Date(y, m, 1).getDay()
-  const daysInMonth = new Date(y, m + 1, 0).getDate()
   const cells = []
   for (let i = 0; i < firstDow; i++) cells.push(null)
   for (let d = 1; d <= daysInMonth; d++) cells.push(d)
 
   const eventsForDay = (day) => {
     if (!day) return []
-    const key = `${y}-${String(m + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`
-    return events.filter((e) => e.date === key)
+    const key = calendarDateKey(y, m, day)
+    return displayEvents.filter((e) => e.date === key)
+  }
+
+  const blockedSlotsForKey = (key) => {
+    const set = new Set()
+    manualBlocks.filter((b) => b.date === key).forEach((b) => set.add(b.slot))
+    return set
+  }
+
+  const freeSlotCountForDay = (day) => {
+    if (!day) return TOUR_SLOTS.length
+    const key = calendarDateKey(y, m, day)
+    return TOUR_SLOTS.length - blockedSlotsForKey(key).size
+  }
+
+  const selectedKey = selectedDay != null ? calendarDateKey(y, m, selectedDay) : null
+  const selectedBlocked = selectedKey ? blockedSlotsForKey(selectedKey) : new Set()
+  const freeSlotsForSelected = TOUR_SLOTS.filter((s) => !selectedBlocked.has(s))
+
+  function persistBlocks(next) {
+    setManualBlocks(next)
+    saveManagerCalendarBlocks(next)
+  }
+
+  function addTimeBlock() {
+    if (!selectedKey || !addSlot) {
+      toast.error('Pick a day and a time slot.')
+      return
+    }
+    if (selectedBlocked.has(addSlot)) {
+      toast.error('That slot is already blocked.')
+      return
+    }
+    const row = {
+      id: `cal_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+      date: selectedKey,
+      slot: addSlot,
+      title: addTitle.trim() || 'Unavailable',
+    }
+    persistBlocks([...manualBlocks, row])
+    setAddTitle('')
+    toast.success('Time blocked on your calendar')
+  }
+
+  function removeBlock(id) {
+    persistBlocks(manualBlocks.filter((b) => b.id !== id))
+    toast.success('Removed')
+  }
+
+  function blockAllFreeOnSelected() {
+    if (!selectedKey) return
+    const next = [...manualBlocks]
+    let added = 0
+    const stamp = Date.now()
+    for (let i = 0; i < TOUR_SLOTS.length; i += 1) {
+      const slot = TOUR_SLOTS[i]
+      if (selectedBlocked.has(slot)) continue
+      next.push({
+        id: `cal_${stamp}_${i}_${slot.replace(/\s/g, '')}`,
+        date: selectedKey,
+        slot,
+        title: 'Unavailable',
+      })
+      added += 1
+    }
+    if (!added) {
+      toast.error('All slots are already blocked.')
+      return
+    }
+    persistBlocks(next)
+    toast.success(`Blocked ${added} windows`)
+  }
+
+  function clearDayBlocks() {
+    if (!selectedKey) return
+    const next = manualBlocks.filter((b) => b.date !== selectedKey)
+    if (next.length === manualBlocks.length) {
+      toast.error('No manual blocks on this day.')
+      return
+    }
+    persistBlocks(next)
+    toast.success('Cleared manual blocks for this day')
   }
 
   const toneCls = (type) => {
@@ -1865,8 +2013,23 @@ function ManagerCalendarPanel() {
     if (type === 'publish' || type === 'approve') return 'bg-axis/15 text-axis'
     if (type === 'wo') return 'bg-amber-100 text-amber-900'
     if (type === 'app') return 'bg-emerald-100 text-emerald-900'
+    if (type === 'block') return 'bg-violet-100 text-violet-900'
     return 'bg-slate-100 text-slate-700'
   }
+
+  const today = new Date()
+  const isToday = (day) =>
+    day != null && today.getFullYear() === y && today.getMonth() === m && today.getDate() === day
+
+  const selectedDateLabel =
+    selectedDay != null
+      ? new Date(y, m, selectedDay).toLocaleDateString('en-US', {
+          weekday: 'long',
+          month: 'long',
+          day: 'numeric',
+          year: 'numeric',
+        })
+      : ''
 
   return (
     <div className="rounded-[24px] border border-slate-200 bg-white p-6 shadow-sm">
@@ -1874,7 +2037,7 @@ function ManagerCalendarPanel() {
         <div>
           <h2 className="text-xl font-black text-slate-900">Calendar</h2>
           <p className="mt-1 text-sm text-slate-500">
-            Lease milestones, work orders, and applications (from Airtable dates).
+            Airtable milestones plus your tour-style windows. Green counts = open slots (same times as public tour booking).
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -1896,6 +2059,17 @@ function ManagerCalendarPanel() {
         </div>
       </div>
 
+      <div className="mt-3 flex flex-wrap gap-3 text-[11px] text-slate-600">
+        <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 font-semibold text-emerald-800">
+          <span className="h-2 w-2 rounded-full bg-emerald-500" />
+          Free slot
+        </span>
+        <span className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 font-semibold text-slate-700">
+          <span className="h-2 w-2 rounded-full bg-slate-400" />
+          You blocked
+        </span>
+      </div>
+
       {calendarIssues.length ? (
         <div
           role="status"
@@ -1909,43 +2083,194 @@ function ManagerCalendarPanel() {
       {loading ? (
         <div className="mt-8 py-16 text-center text-sm text-slate-500">Loading calendar…</div>
       ) : (
-        <div className="mt-6 overflow-x-auto">
-          <div className="grid grid-cols-7 gap-1 min-w-[640px] text-center text-[11px] font-bold uppercase tracking-wide text-slate-400">
-            {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((d) => (
-              <div key={d} className="py-2">
-                {d}
-              </div>
-            ))}
-          </div>
-          <div className="grid grid-cols-7 gap-1 min-w-[640px]">
-            {cells.map((day, idx) => {
-              if (day == null) {
-                return <div key={`pad-${idx}`} className="min-h-[88px] rounded-xl bg-slate-50/50" />
-              }
-              const dayEvents = eventsForDay(day)
-              return (
-                <div
-                  key={day}
-                  className="flex min-h-[88px] flex-col rounded-xl border border-slate-100 bg-slate-50/80 p-1.5 text-left"
-                >
-                  <div className="text-xs font-bold text-slate-700">{day}</div>
-                  <div className="mt-1 flex max-h-[72px] flex-col gap-0.5 overflow-y-auto">
-                    {dayEvents.slice(0, 4).map((ev, i) => (
+        <div className="mt-6 flex flex-col gap-8 lg:flex-row lg:items-start">
+          <div className="min-w-0 flex-1 overflow-x-auto">
+            <div className="grid min-w-[640px] grid-cols-7 gap-1 text-center text-[11px] font-bold uppercase tracking-wide text-slate-400">
+              {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((d) => (
+                <div key={d} className="py-2">
+                  {d}
+                </div>
+              ))}
+            </div>
+            <div className="grid min-w-[640px] grid-cols-7 gap-1">
+              {cells.map((day, idx) => {
+                if (day == null) {
+                  return <div key={`pad-${idx}`} className="min-h-[96px] rounded-xl bg-slate-50/50" />
+                }
+                const dayEvents = eventsForDay(day)
+                const freeN = freeSlotCountForDay(day)
+                const sel = selectedDay === day
+                return (
+                  <button
+                    key={day}
+                    type="button"
+                    onClick={() => setSelectedDay(day)}
+                    className={classNames(
+                      'flex min-h-[96px] flex-col rounded-xl border p-1.5 text-left transition',
+                      sel
+                        ? 'border-[#2563eb] bg-[#2563eb]/5 ring-2 ring-[#2563eb]/25'
+                        : 'border-slate-100 bg-slate-50/80 hover:border-slate-200 hover:bg-white',
+                      isToday(day) && !sel ? 'ring-1 ring-slate-300' : '',
+                    )}
+                  >
+                    <div className="flex items-start justify-between gap-1">
+                      <span className="text-xs font-bold text-slate-800">{day}</span>
                       <span
-                        key={`${ev.date}-${i}-${ev.label}`}
-                        className={`truncate rounded px-1 py-0.5 text-[10px] font-semibold leading-tight ${toneCls(ev.type)}`}
-                        title={ev.label}
+                        className={classNames(
+                          'shrink-0 rounded-full px-1.5 py-0.5 text-[9px] font-bold',
+                          freeN === 0 ? 'bg-slate-200 text-slate-700' : 'bg-emerald-100 text-emerald-800',
+                        )}
                       >
-                        {ev.label}
+                        {freeN} free
                       </span>
-                    ))}
-                    {dayEvents.length > 4 ? (
-                      <span className="text-[10px] text-slate-400">+{dayEvents.length - 4} more</span>
-                    ) : null}
+                    </div>
+                    <div className="mt-1 flex max-h-[56px] flex-col gap-0.5 overflow-y-auto">
+                      {dayEvents.slice(0, 3).map((ev, i) => (
+                        <span
+                          key={`${ev.date}-${i}-${ev.label}`}
+                          className={`truncate rounded px-1 py-0.5 text-[10px] font-semibold leading-tight ${toneCls(ev.type)}`}
+                          title={ev.label}
+                        >
+                          {ev.label}
+                        </span>
+                      ))}
+                      {dayEvents.length > 3 ? (
+                        <span className="text-[10px] text-slate-400">+{dayEvents.length - 3} more</span>
+                      ) : null}
+                    </div>
+                  </button>
+                )
+              })}
+            </div>
+          </div>
+
+          <div className="w-full shrink-0 rounded-2xl border border-slate-200 bg-slate-50/50 p-5 lg:w-[min(100%,400px)]">
+            {!selectedDay ? (
+              <div className="text-sm text-slate-600">
+                <p className="font-semibold text-slate-900">Day schedule</p>
+                <p className="mt-2 text-slate-500">Select any day on the calendar to see which tour windows are still open and block times you are not available.</p>
+              </div>
+            ) : (
+              <>
+                <div className="flex flex-wrap items-start justify-between gap-2 border-b border-slate-200 pb-3">
+                  <div>
+                    <p className="text-[11px] font-bold uppercase tracking-wide text-[#2563eb]">Selected day</p>
+                    <p className="mt-0.5 text-base font-black text-slate-900">{selectedDateLabel}</p>
+                    <p className="mt-1 text-sm text-slate-600">
+                      <span className="font-semibold text-emerald-700">{freeSlotsForSelected.length}</span> of {TOUR_SLOTS.length}{' '}
+                      standard windows free
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setSelectedDay(null)}
+                    className="rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-xs font-semibold text-slate-600 hover:bg-slate-50"
+                  >
+                    Clear
+                  </button>
+                </div>
+
+                <div className="mt-4 space-y-2">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Time windows</p>
+                  <ul className="max-h-[220px] space-y-1.5 overflow-y-auto pr-1">
+                    {TOUR_SLOTS.map((slot) => {
+                      const blocked = selectedBlocked.has(slot)
+                      const row = manualBlocks.find((b) => b.date === selectedKey && b.slot === slot)
+                      return (
+                        <li
+                          key={slot}
+                          className={classNames(
+                            'flex items-center justify-between gap-2 rounded-xl border px-3 py-2 text-sm',
+                            blocked ? 'border-violet-200 bg-violet-50' : 'border-emerald-200 bg-emerald-50/60',
+                          )}
+                        >
+                          <div className="min-w-0">
+                            <div className="font-bold text-slate-900">{slot}</div>
+                            {blocked && row?.title ? (
+                              <div className="truncate text-xs text-violet-900/80">{row.title}</div>
+                            ) : null}
+                          </div>
+                          <div className="flex shrink-0 items-center gap-2">
+                            {blocked ? (
+                              <>
+                                <span className="text-[10px] font-bold uppercase text-violet-800">Blocked</span>
+                                {row ? (
+                                  <button
+                                    type="button"
+                                    onClick={() => removeBlock(row.id)}
+                                    className="rounded-lg border border-violet-200 bg-white px-2 py-1 text-[11px] font-semibold text-violet-800 hover:bg-violet-100"
+                                  >
+                                    Remove
+                                  </button>
+                                ) : null}
+                              </>
+                            ) : (
+                              <span className="text-[10px] font-bold uppercase text-emerald-800">Free</span>
+                            )}
+                          </div>
+                        </li>
+                      )
+                    })}
+                  </ul>
+                </div>
+
+                <div className="mt-5 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+                  <p className="text-sm font-black text-slate-900">Block a time</p>
+                  <p className="mt-1 text-xs text-slate-500">Matches public tour slots (Contact page).</p>
+                  <div className="mt-3 space-y-3">
+                    <label className="block text-xs font-semibold text-slate-700">
+                      Slot
+                      <select
+                        value={addSlot}
+                        onChange={(e) => setAddSlot(e.target.value)}
+                        className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm font-medium text-slate-900 outline-none focus:border-[#2563eb] focus:ring-2 focus:ring-[#2563eb]/20"
+                      >
+                        <option value="">Choose a free window…</option>
+                        {freeSlotsForSelected.map((slot) => (
+                          <option key={slot} value={slot}>
+                            {slot}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <label className="block text-xs font-semibold text-slate-700">
+                      Label <span className="font-normal text-slate-400">(optional)</span>
+                      <input
+                        value={addTitle}
+                        onChange={(e) => setAddTitle(e.target.value)}
+                        placeholder="e.g. Staff meeting, Showing, PTO"
+                        className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-900 outline-none placeholder:text-slate-400 focus:border-[#2563eb] focus:ring-2 focus:ring-[#2563eb]/20"
+                      />
+                    </label>
+                    <button
+                      type="button"
+                      onClick={addTimeBlock}
+                      disabled={!addSlot}
+                      className="w-full rounded-xl bg-[linear-gradient(180deg,#2f76ff_0%,#2450eb_100%)] py-3 text-sm font-semibold text-white shadow-[0_4px_16px_rgba(37,99,235,0.25)] transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
+                    >
+                      Add to calendar
+                    </button>
                   </div>
                 </div>
-              )
-            })}
+
+                <div className="mt-3 flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={blockAllFreeOnSelected}
+                    className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                  >
+                    Block all open windows
+                  </button>
+                  <button
+                    type="button"
+                    onClick={clearDayBlocks}
+                    className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-xs font-semibold text-red-800 hover:bg-red-100"
+                  >
+                    Clear my blocks this day
+                  </button>
+                </div>
+              </>
+            )}
           </div>
         </div>
       )}
@@ -1953,69 +2278,197 @@ function ManagerCalendarPanel() {
   )
 }
 
-function InboxTabPanel({ manager }) {
-  const [inboxMode, setInboxMode] = useState('work_orders')
+const MANAGER_INBOX_AXIS = 'inbox:axis'
+
+function managerInboxWoThreadId(woId) {
+  return `wo:${woId}`
+}
+
+function managerInboxParseWoThreadId(s) {
+  if (!s || !String(s).startsWith('wo:')) return null
+  return String(s).slice(3)
+}
+
+function InboxTabPanel({ manager, allowedPropertyNames }) {
   const [allMsgs, setAllMsgs] = useState([])
-  const [woTitles, setWoTitles] = useState({})
+  const [scopedWos, setScopedWos] = useState([])
+  const [axisMsgs, setAxisMsgs] = useState([])
   const [loading, setLoading] = useState(true)
-  const [selectedWoId, setSelectedWoId] = useState(null)
+  const [selectedThreadId, setSelectedThreadId] = useState(null)
   const [thread, setThread] = useState([])
+  const [threadLoading, setThreadLoading] = useState(false)
   const [reply, setReply] = useState('')
   const [sending, setSending] = useState(false)
 
+  const inboxScopeLower = useMemo(
+    () => new Set((allowedPropertyNames || []).map((n) => String(n).trim().toLowerCase()).filter(Boolean)),
+    [allowedPropertyNames],
+  )
+
+  const managerEmail = String(manager?.email || '').trim()
+  const axisThreadKey = useMemo(() => {
+    if (!portalInboxAirtableConfigured() || !managerEmail) return ''
+    return siteManagerThreadKey(managerEmail)
+  }, [managerEmail])
+
   const loadAll = useCallback(async () => {
+    const hasScope = inboxScopeLower.size > 0
+    const hasAxis = Boolean(axisThreadKey)
+    if (!hasScope && !hasAxis) {
+      setAllMsgs([])
+      setScopedWos([])
+      setAxisMsgs([])
+      setLoading(false)
+      return
+    }
     setLoading(true)
     try {
-      const [msgs, wos] = await Promise.all([getAllMessages(), getAllWorkOrders()])
-      const map = {}
-      wos.forEach((w) => {
-        map[w.id] = w.Title || w.id
-      })
-      setWoTitles(map)
+      const tasks = [getAllMessages(), getAllWorkOrders()]
+      if (hasAxis) tasks.push(getMessagesByThreadKey(axisThreadKey))
+      const results = await Promise.all(tasks)
+      const msgs = results[0]
+      const wos = results[1]
+      const axis = hasAxis ? results[2] : []
       setAllMsgs(msgs)
+      setAxisMsgs(axis)
+      setScopedWos(hasScope ? wos.filter((w) => workOrderInScope(w, inboxScopeLower)) : [])
     } catch (err) {
-      toast.error('Inbox failed to load: ' + err.message)
+      if (!isAirtablePermissionErrorMessage(err?.message)) {
+        toast.error('Inbox failed to load: ' + formatDataLoadError(err))
+      }
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [inboxScopeLower, axisThreadKey])
 
   useEffect(() => {
     loadAll()
   }, [loadAll])
 
-  const loadThread = useCallback(async (woId) => {
-    if (!woId) {
+  const threadRows = useMemo(() => {
+    const rows = []
+    const msgTime = (m) => new Date(m?.Timestamp || m?.created_at || 0).getTime()
+
+    for (const w of scopedWos) {
+      const woMsgs = allMsgs.filter((m) => {
+        if (isInternalPortalThreadMessage(m)) return false
+        const id = workOrderLinkedId(m['Work Order'])
+        return id === w.id
+      })
+      const last = woMsgs.reduce(
+        (best, m) => (msgTime(m) > msgTime(best) ? m : best),
+        woMsgs[0] || null,
+      )
+      const submitted = new Date(w['Date Submitted'] || w.created_at || 0).getTime()
+      const ts = Math.max(submitted, last ? msgTime(last) : 0)
+      rows.push({
+        id: managerInboxWoThreadId(w.id),
+        title: w.Title || 'Work order',
+        subtitle: workOrderPropertyLabel(w) || undefined,
+        preview: last?.Message || 'No messages yet — open to reply.',
+        time: last ? fmtDateTime(last.Timestamp || last.created_at) : fmtDate(w['Date Submitted'] || w.created_at),
+        ts,
+      })
+    }
+
+    if (axisThreadKey) {
+      const sortedAxis = [...axisMsgs].sort((a, b) => msgTime(a) - msgTime(b))
+      const last = sortedAxis[sortedAxis.length - 1]
+      rows.push({
+        id: MANAGER_INBOX_AXIS,
+        title: 'Axis team',
+        subtitle: 'Internal · not tied to a work order',
+        preview: last?.Message || 'Message Axis admin from here.',
+        time: last ? fmtDateTime(last.Timestamp || last.created_at) : '',
+        ts: last ? msgTime(last) : 0,
+      })
+    }
+
+    rows.sort((a, b) => b.ts - a.ts)
+    return rows
+  }, [scopedWos, allMsgs, axisMsgs, axisThreadKey])
+
+  useEffect(() => {
+    if (!selectedThreadId) {
       setThread([])
       return
     }
-    try {
-      setThread(await getMessages(woId))
-    } catch (err) {
-      toast.error('Could not load thread: ' + err.message)
+    let cancelled = false
+    async function run() {
+      setThreadLoading(true)
+      try {
+        if (selectedThreadId === MANAGER_INBOX_AXIS) {
+          const next = await getMessagesByThreadKey(axisThreadKey)
+          if (!cancelled) {
+            setThread(
+              [...next].sort(
+                (a, b) =>
+                  new Date(a.Timestamp || a.created_at || 0) - new Date(b.Timestamp || b.created_at || 0),
+              ),
+            )
+          }
+          return
+        }
+        const woId = managerInboxParseWoThreadId(selectedThreadId)
+        if (!woId) {
+          if (!cancelled) setThread([])
+          return
+        }
+        const next = await getMessages(woId)
+        if (!cancelled) setThread(next)
+      } catch (err) {
+        if (!cancelled) {
+          setThread([])
+          toast.error(formatDataLoadError(err))
+        }
+      } finally {
+        if (!cancelled) setThreadLoading(false)
+      }
     }
-  }, [])
-
-  useEffect(() => {
-    loadThread(selectedWoId)
-  }, [selectedWoId, loadThread])
+    run()
+    return () => {
+      cancelled = true
+    }
+  }, [selectedThreadId, axisThreadKey])
 
   async function handleSendReply(e) {
     e.preventDefault()
-    if (!selectedWoId || !reply.trim()) return
-    const email = String(manager?.email || 'manager@axis').trim()
+    if (!selectedThreadId || !reply.trim() || !managerEmail) return
     setSending(true)
     try {
-      await sendMessage({
-        workOrderId: selectedWoId,
-        senderEmail: email,
-        message: reply.trim(),
-        isAdmin: true,
-      })
+      if (selectedThreadId === MANAGER_INBOX_AXIS) {
+        await sendMessage({
+          senderEmail: managerEmail,
+          message: reply.trim(),
+          isAdmin: false,
+          threadKey: axisThreadKey,
+          channel: PORTAL_INBOX_CHANNEL_INTERNAL,
+        })
+      } else {
+        const woId = managerInboxParseWoThreadId(selectedThreadId)
+        if (!woId) return
+        await sendMessage({
+          workOrderId: woId,
+          senderEmail: managerEmail,
+          message: reply.trim(),
+          isAdmin: true,
+        })
+      }
       setReply('')
-      await loadThread(selectedWoId)
       await loadAll()
-      toast.success('Message sent')
+      if (selectedThreadId === MANAGER_INBOX_AXIS) {
+        const next = await getMessagesByThreadKey(axisThreadKey)
+        setThread(
+          [...next].sort(
+            (a, b) =>
+              new Date(a.Timestamp || a.created_at || 0) - new Date(b.Timestamp || b.created_at || 0),
+          ),
+        )
+      } else {
+        const woId = managerInboxParseWoThreadId(selectedThreadId)
+        if (woId) setThread(await getMessages(woId))
+      }
+      toast.success('Sent')
     } catch (err) {
       toast.error(err.message || 'Send failed')
     } finally {
@@ -2023,167 +2476,183 @@ function InboxTabPanel({ manager }) {
     }
   }
 
-  const sortedFeed = useMemo(() => {
-    return [...allMsgs]
-      .filter((m) => !isInternalPortalThreadMessage(m))
-      .sort(
-        (a, b) =>
-          new Date(b.Timestamp || b.created_at || 0) - new Date(a.Timestamp || a.created_at || 0),
-      )
-  }, [allMsgs])
-
-  if (inboxMode === 'axis_hq') {
-    return (
-      <div className="space-y-4">
-        <div className="flex flex-wrap gap-2">
-          <button
-            type="button"
-            onClick={() => setInboxMode('work_orders')}
-            className="rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-50"
-          >
-            Residents &amp; work orders
-          </button>
-          <button
-            type="button"
-            className="rounded-full border border-[#2563eb] bg-[#2563eb]/10 px-4 py-2 text-sm font-semibold text-[#2563eb]"
-          >
-            Axis HQ
-          </button>
-        </div>
-        <p className="text-sm text-slate-500">
-          Message Axis internal team (not tied to a maintenance request). Uses the same Airtable <strong>Messages</strong> table with a site-manager thread key.
-        </p>
-        <PortalInternalInbox variant="site_manager" userEmail={manager?.email} userDisplayName={manager?.name} />
-      </div>
-    )
+  if (!inboxScopeLower.size && !axisThreadKey) {
+    return null
   }
 
+  const readingTitle =
+    selectedThreadId === MANAGER_INBOX_AXIS
+      ? 'Axis team'
+      : (() => {
+          const woId = managerInboxParseWoThreadId(selectedThreadId || '')
+          const w = scopedWos.find((x) => x.id === woId)
+          return w?.Title || 'Work order'
+        })()
+
   return (
-    <div className="space-y-4">
-      <div className="flex flex-wrap gap-2">
-        <button
-          type="button"
-          className="rounded-full border border-[#2563eb] bg-[#2563eb]/10 px-4 py-2 text-sm font-semibold text-[#2563eb]"
-        >
-          Residents &amp; work orders
-        </button>
-        <button
-          type="button"
-          onClick={() => setInboxMode('axis_hq')}
-          className="rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-50"
-        >
-          Axis HQ
-        </button>
-      </div>
-      <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)]">
-      <div className="rounded-[24px] border border-slate-200 bg-white p-5 shadow-sm">
-        <div className="flex items-center justify-between gap-2">
-          <h2 className="text-lg font-black text-slate-900">All messages</h2>
-          <button
-            type="button"
-            onClick={loadAll}
-            className="rounded-xl border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-50"
-          >
-            Refresh
-          </button>
+    <div className="mb-6 space-y-3">
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <h2 className="text-xl font-black text-slate-900">Inbox</h2>
+          <p className="mt-1 text-sm text-slate-500">
+            Work-order threads for your houses and your Axis team thread in one place — like email: pick a row, read on the right, reply below.
+          </p>
         </div>
-        <p className="mt-1 text-sm text-slate-500">Newest first. Click to open the work order thread.</p>
-        {loading ? (
-          <div className="mt-6 py-12 text-center text-sm text-slate-500">Loading…</div>
-        ) : sortedFeed.length === 0 ? (
-          <div className="mt-6 py-12 text-center text-sm text-slate-500">No messages yet.</div>
-        ) : (
-          <ul className="mt-4 max-h-[min(70vh,520px)] space-y-2 overflow-y-auto pr-1">
-            {sortedFeed.map((msg) => {
-              const woId = workOrderLinkedId(msg['Work Order'])
-              const isAdmin = msg['Is Admin'] === true || msg['Is Admin'] === 1
-              const dir = isAdmin ? 'Sent (manager)' : 'Received'
-              return (
-                <li key={msg.id}>
-                  <button
-                    type="button"
-                    onClick={() => setSelectedWoId(woId || null)}
-                    className={`w-full rounded-2xl border px-4 py-3 text-left transition ${
-                      selectedWoId === woId
-                        ? 'border-[#2563eb] bg-[#2563eb]/5'
-                        : 'border-slate-100 bg-slate-50 hover:border-slate-200'
-                    }`}
-                  >
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="text-[11px] font-bold uppercase tracking-wide text-slate-400">{dir}</span>
-                      <span className="text-xs text-slate-400">
-                        {fmtDateTime(msg.Timestamp || msg.created_at)}
-                      </span>
-                    </div>
-                    <div className="mt-1 text-xs font-semibold text-slate-600">
-                      {woId ? woTitles[woId] || `Work order ${woId.slice(0, 12)}…` : 'No work order link'}
-                    </div>
-                    <p className="mt-1 line-clamp-2 text-sm text-slate-700">{msg.Message || '—'}</p>
-                  </button>
-                </li>
-              )
-            })}
-          </ul>
-        )}
+        <button
+          type="button"
+          onClick={() => loadAll()}
+          className="rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-50"
+        >
+          Refresh
+        </button>
       </div>
 
-      <div className="rounded-[24px] border border-slate-200 bg-white p-5 shadow-sm">
-        <h2 className="text-lg font-black text-slate-900">Thread &amp; reply</h2>
-        {!selectedWoId ? (
-          <p className="mt-4 text-sm text-slate-500">Select a message on the left to view the full thread and reply as management.</p>
-        ) : (
+      <GmailStyleInboxLayout
+        left={
           <>
-            <div className="mt-2 font-mono text-xs text-slate-400">{selectedWoId}</div>
-            <div className="mt-4 max-h-[min(40vh,320px)] space-y-3 overflow-y-auto rounded-2xl border border-slate-100 bg-slate-50 p-4">
-              {thread.map((m) => {
-                const admin = m['Is Admin'] === true || m['Is Admin'] === 1
-                return (
-                  <div
-                    key={m.id}
-                    className={`rounded-xl border px-3 py-2 text-sm ${
-                      admin ? 'ml-4 border-violet-200 bg-violet-50' : 'mr-4 border-slate-200 bg-white'
-                    }`}
-                  >
-                    <div className="text-[11px] font-semibold text-slate-400">
-                      {admin ? 'Manager' : m['Sender Email'] || 'Resident'} ·{' '}
-                      {fmtDateTime(m.Timestamp || m.created_at)}
-                    </div>
-                    <p className="mt-1 whitespace-pre-wrap text-slate-800">{m.Message}</p>
-                  </div>
-                )
-              })}
+            <div className="flex items-center justify-between gap-2 border-b border-slate-100 bg-white px-4 py-3">
+              <span className="text-sm font-black text-slate-900">Conversations</span>
+              <span className="text-xs text-slate-400">{threadRows.length}</span>
             </div>
-            <form onSubmit={handleSendReply} className="mt-4 space-y-2">
-              <textarea
-                value={reply}
-                onChange={(e) => setReply(e.target.value)}
-                rows={3}
-                placeholder="Reply to resident (logged on this work order)…"
-                className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none focus:border-[#2563eb] focus:ring-2 focus:ring-[#2563eb]/20"
-              />
-              <button
-                type="submit"
-                disabled={sending || !reply.trim()}
-                className="rounded-2xl bg-[#2563eb] px-5 py-2.5 text-sm font-semibold text-white disabled:opacity-50"
-              >
-                {sending ? 'Sending…' : 'Send reply'}
-              </button>
-            </form>
+            <div className="min-h-0 flex-1 overflow-y-auto">
+              {loading ? (
+                <div className="py-12 text-center text-sm text-slate-500">Loading…</div>
+              ) : threadRows.length === 0 ? (
+                <div className="px-4 py-12 text-center text-sm text-slate-500">No conversations yet.</div>
+              ) : (
+                <ul className="divide-y divide-slate-100">
+                  {threadRows.map((row) => (
+                    <li key={row.id}>
+                      <InboxThreadRow
+                        title={row.title}
+                        subtitle={row.subtitle}
+                        preview={row.preview}
+                        time={row.time}
+                        selected={selectedThreadId === row.id}
+                        onClick={() => setSelectedThreadId(row.id)}
+                      />
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
           </>
-        )}
-      </div>
-    </div>
+        }
+        right={
+          <div className="flex h-full min-h-0 flex-1 flex-col overflow-hidden">
+            <div className="shrink-0 border-b border-slate-200 bg-white px-4 py-3 lg:px-5">
+              {selectedThreadId ? (
+                <div>
+                  <h3 className="text-base font-black text-slate-900">{readingTitle}</h3>
+                  <p className="mt-0.5 text-xs text-slate-500">
+                    {selectedThreadId === MANAGER_INBOX_AXIS
+                      ? axisThreadKey
+                      : managerInboxParseWoThreadId(selectedThreadId)}
+                  </p>
+                </div>
+              ) : (
+                <p className="text-sm text-slate-500">Select a conversation</p>
+              )}
+            </div>
+            <div className="min-h-0 flex-1 overflow-y-auto p-4 lg:p-5">
+              {!selectedThreadId ? (
+                <div className="flex h-full min-h-[200px] flex-col items-center justify-center text-center text-sm text-slate-400">
+                  Choose a thread on the left to read messages.
+                </div>
+              ) : threadLoading ? (
+                <div className="py-16 text-center text-sm text-slate-500">Loading thread…</div>
+              ) : thread.length === 0 ? (
+                <div className="py-12 text-center text-sm text-slate-500">No messages in this thread yet.</div>
+              ) : (
+                <div className="space-y-3">
+                  {thread.map((m) => {
+                    const admin = m['Is Admin'] === true || m['Is Admin'] === 1
+                    const isAxis = selectedThreadId === MANAGER_INBOX_AXIS
+                    const you = isAxis ? !admin : admin
+                    return (
+                      <div
+                        key={m.id}
+                        className={classNames(
+                          'max-w-[min(100%,40rem)] rounded-2xl border px-4 py-3 text-sm shadow-sm',
+                          you
+                            ? 'ml-auto border-blue-200 bg-blue-50/90 text-slate-900'
+                            : 'mr-auto border-slate-200 bg-white text-slate-900',
+                        )}
+                      >
+                        <div className="text-[10px] font-bold uppercase tracking-wide text-slate-400">
+                          {isAxis
+                            ? admin
+                              ? 'Axis Admin'
+                              : 'You'
+                            : admin
+                              ? 'You (management)'
+                              : m['Sender Email'] || 'Resident'}{' '}
+                          · {fmtDateTime(m.Timestamp || m.created_at)}
+                        </div>
+                        <p className="mt-1.5 whitespace-pre-wrap leading-relaxed">{m.Message}</p>
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+            </div>
+            {selectedThreadId === MANAGER_INBOX_AXIS && axisThreadKey ? (
+              <PortalInboxAnnouncementSection
+                variant="site_manager"
+                userEmail={managerEmail}
+                notifyThreadKey={axisThreadKey}
+                onInboxRefresh={loadAll}
+                propertySuggestions={allowedPropertyNames || []}
+                listId="manager-inbox-announcement-props"
+              />
+            ) : null}
+            {selectedThreadId ? (
+              <form
+                onSubmit={handleSendReply}
+                className="shrink-0 border-t border-slate-200 bg-white p-4 lg:p-5"
+              >
+                <textarea
+                  value={reply}
+                  onChange={(e) => setReply(e.target.value)}
+                  rows={3}
+                  placeholder={
+                    selectedThreadId === MANAGER_INBOX_AXIS
+                      ? 'Write a message to Axis…'
+                      : 'Reply to the resident…'
+                  }
+                  className="w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm outline-none focus:border-[#2563eb] focus:ring-2 focus:ring-[#2563eb]/20"
+                />
+                <div className="mt-3 flex justify-end">
+                  <button
+                    type="submit"
+                    disabled={sending || !reply.trim()}
+                    className="rounded-2xl bg-[#2563eb] px-6 py-2.5 text-sm font-semibold text-white disabled:opacity-50"
+                  >
+                    {sending ? 'Sending…' : 'Send'}
+                  </button>
+                </div>
+              </form>
+            ) : null}
+          </div>
+        }
+      />
     </div>
   )
 }
 
-function WorkOrdersTabPanel({ manager }) {
+function WorkOrdersTabPanel({ manager, allowedPropertyNames }) {
+  const scopeLower = useMemo(
+    () => new Set((allowedPropertyNames || []).map((n) => String(n).trim().toLowerCase()).filter(Boolean)),
+    [allowedPropertyNames],
+  )
+
   const [list, setList] = useState([])
   const [listLoading, setListLoading] = useState(true)
-  const [filterStatus, setFilterStatus] = useState('')
+  const [listError, setListError] = useState('')
+  const [quickFilter, setQuickFilter] = useState('open')
   const [search, setSearch] = useState('')
-  const [idInput, setIdInput] = useState('')
   const [record, setRecord] = useState(null)
+  const [openingId, setOpeningId] = useState(null)
   const [loading, setLoading] = useState(false)
   const [saving, setSaving] = useState(false)
   const [loadError, setLoadError] = useState('')
@@ -2199,6 +2668,8 @@ function WorkOrdersTabPanel({ manager }) {
   const [messages, setMessages] = useState([])
   const [reply, setReply] = useState('')
   const [msgBusy, setMsgBusy] = useState(false)
+  const [aiBusy, setAiBusy] = useState(false)
+  const [showAdvanced, setShowAdvanced] = useState(false)
 
   const fieldCls =
     'w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none transition focus:border-[#2563eb] focus:ring-2 focus:ring-[#2563eb]/20'
@@ -2221,20 +2692,32 @@ function WorkOrdersTabPanel({ manager }) {
     setManagementNotes(String(r['Management Notes'] ?? ''))
     setUpdateText(String(r.Update ?? ''))
     setResolutionSummary(String(r['Resolution Summary'] ?? ''))
-    setResolved(r.Resolved === true || r.Resolved === 1 || r.Resolved === '1')
+    setResolved(workOrderIsResolvedRecord(r))
     setLastUpdate(workOrderLastUpdateToInput(r['Last Update']))
   }
 
   const loadList = useCallback(async () => {
+    if (!scopeLower.size) {
+      setList([])
+      setListLoading(false)
+      return
+    }
     setListLoading(true)
+    setListError('')
     try {
-      setList(await getAllWorkOrders())
+      const all = await getAllWorkOrders()
+      setList(all.filter((w) => workOrderInScope(w, scopeLower)))
     } catch (err) {
-      toast.error('Work orders list failed: ' + err.message)
+      setList([])
+      const msg = formatDataLoadError(err)
+      setListError(msg)
+      if (!isAirtablePermissionErrorMessage(err?.message)) {
+        toast.error('Work orders failed to load: ' + msg)
+      }
     } finally {
       setListLoading(false)
     }
-  }, [])
+  }, [scopeLower])
 
   useEffect(() => {
     loadList()
@@ -2242,32 +2725,47 @@ function WorkOrdersTabPanel({ manager }) {
 
   const filteredList = useMemo(() => {
     let rows = list
-    if (filterStatus) rows = rows.filter((w) => w.Status === filterStatus)
+    if (quickFilter === 'open') rows = rows.filter((w) => !workOrderIsResolvedRecord(w))
+    if (quickFilter === 'resolved') rows = rows.filter((w) => workOrderIsResolvedRecord(w))
     const q = search.trim().toLowerCase()
     if (q) {
       rows = rows.filter((w) => {
-        const t = `${w.Title || ''} ${w.Description || ''} ${w.id}`.toLowerCase()
+        const prop = workOrderPropertyLabel(w).toLowerCase()
+        const t = `${w.Title || ''} ${w.Description || ''} ${w.id} ${prop}`.toLowerCase()
         return t.includes(q)
       })
     }
-    return rows
-  }, [list, filterStatus, search])
+    return [...rows].sort(
+      (a, b) =>
+        new Date(b['Date Submitted'] || b.created_at || 0) -
+        new Date(a['Date Submitted'] || a.created_at || 0),
+    )
+  }, [list, quickFilter, search])
+
+  const openCount = useMemo(() => list.filter((w) => !workOrderIsResolvedRecord(w)).length, [list])
 
   async function openWorkOrder(id) {
     const rid = normalizeWorkOrderRecordId(id)
     if (!rid) return
+    setOpeningId(rid)
     setLoadError('')
     setLoading(true)
+    setRecord(null)
+    setMessages([])
     try {
       const wo = await getWorkOrderById(rid)
+      if (!workOrderInScope(wo, scopeLower)) {
+        setLoadError('This work order is not linked to a house in your portfolio.')
+        return
+      }
       setRecord(wo)
       applyRecordToForm(wo)
       setMessages(await getMessages(rid))
     } catch (err) {
       setLoadError(err.message || 'Could not load work order.')
-      setRecord(null)
     } finally {
       setLoading(false)
+      setOpeningId(null)
     }
   }
 
@@ -2297,6 +2795,31 @@ function WorkOrdersTabPanel({ manager }) {
     }
   }
 
+  async function handleMarkFixed() {
+    if (!record?.id) return
+    setSaving(true)
+    const today = new Date().toISOString().slice(0, 10)
+    try {
+      const fields = {
+        Resolved: true,
+        Status: 'Resolved',
+        'Last Update': lastUpdate.trim() || today,
+      }
+      if (resolutionSummary.trim()) fields['Resolution Summary'] = resolutionSummary.trim()
+      const next = await updateWorkOrder(record.id, fields)
+      setRecord(next)
+      applyRecordToForm(next)
+      setStatus('Resolved')
+      setResolved(true)
+      await loadList()
+      toast.success('Marked as fixed')
+    } catch (err) {
+      toast.error(err.message || 'Could not update')
+    } finally {
+      setSaving(false)
+    }
+  }
+
   async function handleSendThreadReply(e) {
     e.preventDefault()
     if (!record?.id || !reply.trim()) return
@@ -2311,6 +2834,7 @@ function WorkOrdersTabPanel({ manager }) {
       })
       setReply('')
       setMessages(await getMessages(record.id))
+      await loadList()
       toast.success('Reply sent')
     } catch (err) {
       toast.error(err.message || 'Could not send')
@@ -2319,227 +2843,337 @@ function WorkOrdersTabPanel({ manager }) {
     }
   }
 
+  async function handleAiSuggest() {
+    if (!record?.id) return
+    setAiBusy(true)
+    try {
+      const res = await fetch('/api/portal?action=work-order-ai-suggest', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title: record.Title,
+          description: record.Description,
+          property: workOrderPropertyLabel(record),
+          status,
+          priority,
+          managerName: manager?.name || manager?.email || 'Manager',
+          messages: messages.map((m) => ({
+            text: m.Message,
+            isAdmin: m['Is Admin'] === true || m['Is Admin'] === 1,
+          })),
+        }),
+      })
+      const data = await readJsonResponse(res)
+      if (!res.ok) throw new Error(data.error || 'AI suggestion failed')
+      const suggestion = String(data.suggestion || '').trim()
+      if (!suggestion) throw new Error('Empty suggestion')
+      setReply((prev) => (prev.trim() ? `${prev.trim()}\n\n${suggestion}` : suggestion))
+      toast.success('Draft added — edit before sending')
+    } catch (err) {
+      toast.error(err.message || 'AI failed')
+    } finally {
+      setAiBusy(false)
+    }
+  }
+
+  if (!scopeLower.size) {
+    return null
+  }
+
   return (
-    <div className="grid gap-6 lg:grid-cols-[minmax(0,300px)_minmax(0,1fr)]">
-      <div className="rounded-[24px] border border-slate-200 bg-white p-5 shadow-sm">
-        <h2 className="text-lg font-black text-slate-900">Work orders</h2>
-        <p className="mt-1 text-sm text-slate-500">Select a request or open by record ID.</p>
-        <div className="mt-4 space-y-3">
-          <input
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search title or description…"
-            className={fieldCls}
-          />
-          <select
-            value={filterStatus}
-            onChange={(e) => setFilterStatus(e.target.value)}
-            className={fieldCls}
-          >
-            <option value="">All statuses</option>
-            {[...new Set(list.map((w) => w.Status).filter(Boolean))].map((s) => (
-              <option key={s} value={s}>
-                {s}
-              </option>
-            ))}
-          </select>
-          <button
-            type="button"
-            onClick={loadList}
-            className="w-full rounded-2xl border border-slate-200 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-50"
-          >
-            Refresh list
-          </button>
+    <div className="mb-10 space-y-5">
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <h2 className="text-xl font-black text-slate-900">Work orders</h2>
+          <p className="mt-1 max-w-2xl text-sm text-slate-500">
+            Requests for your houses only. Use the thread to message residents, or mark fixed when the job is done. AI can draft a reply (optional) — always review before sending.
+          </p>
         </div>
-        <div className="mt-4 border-t border-slate-100 pt-4">
-          <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-slate-400">
-            Open by ID
-          </label>
-          <div className="flex gap-2">
-            <input
-              value={idInput}
-              onChange={(e) => setIdInput(e.target.value)}
-              placeholder="rec…"
-              className={fieldCls}
-            />
-            <button
-              type="button"
-              onClick={() => openWorkOrder(idInput)}
-              disabled={loading}
-              className="shrink-0 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-2 text-sm font-semibold disabled:opacity-50"
-            >
-              Load
-            </button>
-          </div>
-        </div>
-        <div className="mt-4 max-h-[min(55vh,480px)] space-y-1 overflow-y-auto pr-1">
-          {listLoading ? (
-            <div className="py-8 text-center text-sm text-slate-500">Loading…</div>
-          ) : (
-            filteredList.map((w) => (
-              <button
-                key={w.id}
-                type="button"
-                onClick={() => openWorkOrder(w.id)}
-                className={`flex w-full flex-col rounded-xl border px-3 py-2.5 text-left text-sm transition ${
-                  record?.id === w.id
-                    ? 'border-[#2563eb] bg-[#2563eb]/5'
-                    : 'border-slate-100 bg-slate-50 hover:border-slate-200'
-                }`}
-              >
-                <span className="font-semibold text-slate-900 line-clamp-2">{w.Title || 'Untitled'}</span>
-                <span className="text-xs text-slate-500">
-                  {w.Status} · {fmtDate(w['Date Submitted'] || w.created_at)}
-                </span>
-              </button>
-            ))
-          )}
-        </div>
+        <button
+          type="button"
+          onClick={() => loadList()}
+          className="rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-50"
+        >
+          Refresh
+        </button>
       </div>
 
-      <div className="min-w-0 rounded-[24px] border border-slate-200 bg-white p-6 shadow-sm">
-        {loadError ? (
-          <div className="mb-4 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{loadError}</div>
-        ) : null}
-        {!record ? (
-          <div className="py-16 text-center text-sm text-slate-500">Choose a work order from the list or paste a record ID.</div>
-        ) : loading ? (
-          <div className="py-16 text-center text-sm text-slate-500">Loading…</div>
+      {listError ? (
+        <div
+          role="alert"
+          className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-4 text-sm text-amber-950"
+        >
+          <div className="font-semibold text-amber-900">Could not load work orders</div>
+          <p className="mt-2 text-amber-900/90">{listError}</p>
+        </div>
+      ) : null}
+
+      <div className="flex flex-wrap items-center gap-2">
+        {[
+          ['open', 'Open', openCount],
+          ['all', 'All', list.length],
+          ['resolved', 'Resolved', list.length - openCount],
+        ].map(([k, lab, count]) => (
+          <button
+            key={k}
+            type="button"
+            onClick={() => setQuickFilter(k)}
+            className={`rounded-full px-4 py-2 text-xs font-semibold transition ${
+              quickFilter === k ? 'bg-[#2563eb] text-white' : 'border border-slate-200 bg-white text-slate-600 hover:bg-slate-50'
+            }`}
+          >
+            {lab}
+            <span className="ml-1.5 tabular-nums opacity-80">({count})</span>
+          </button>
+        ))}
+      </div>
+
+      <input
+        value={search}
+        onChange={(e) => setSearch(e.target.value)}
+        placeholder="Search by title, house, or description…"
+        className={fieldCls}
+      />
+
+      <div className="overflow-hidden rounded-[24px] border border-slate-200 bg-white shadow-sm">
+        {listLoading ? (
+          <div className="px-6 py-14 text-center text-sm text-slate-500">Loading work orders…</div>
+        ) : filteredList.length === 0 ? (
+          <div className="px-6 py-14 text-center text-sm text-slate-500">
+            {list.length === 0 ? 'No work orders for your houses yet.' : 'Nothing matches this filter.'}
+          </div>
         ) : (
-          <>
-            <form onSubmit={handleSave} className="space-y-4">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <div>
-                  <div className="text-[11px] font-bold uppercase tracking-[0.14em] text-slate-400">Record</div>
-                  <div className="font-mono text-xs text-slate-600">{record.id}</div>
-                </div>
-                {record['Date Submitted'] || record.created_at ? (
-                  <div className="text-xs text-slate-400">
-                    Submitted {fmtDate(record['Date Submitted'] || record.created_at)}
-                  </div>
-                ) : null}
-              </div>
-
-              <div>
-                <div className="mb-1 text-xs font-semibold text-slate-500">Title</div>
-                <div className="text-base font-bold text-slate-900">{record.Title || '—'}</div>
-                {record.Description ? (
-                  <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-slate-600">{record.Description}</p>
-                ) : null}
-              </div>
-
-              <div className="grid gap-4 sm:grid-cols-2">
-                <div>
-                  <label className="mb-1.5 block text-xs font-semibold text-slate-600">Status</label>
-                  <select value={status} onChange={(e) => setStatus(e.target.value)} className={fieldCls}>
-                    {statusOptions.map((s) => (
-                      <option key={s} value={s}>
-                        {s}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <div>
-                  <label className="mb-1.5 block text-xs font-semibold text-slate-600">Priority</label>
-                  <select value={priority} onChange={(e) => setPriority(e.target.value)} className={fieldCls}>
-                    {priorityOptions.map((p) => (
-                      <option key={p} value={p}>
-                        {p}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              </div>
-
-              <div>
-                <label className="mb-1.5 block text-xs font-semibold text-slate-600">Management notes</label>
-                <textarea
-                  rows={2}
-                  value={managementNotes}
-                  onChange={(e) => setManagementNotes(e.target.value)}
-                  className={fieldCls}
-                />
-              </div>
-
-              <div>
-                <label className="mb-1.5 block text-xs font-semibold text-slate-600">Update</label>
-                <textarea rows={3} value={updateText} onChange={(e) => setUpdateText(e.target.value)} className={fieldCls} />
-              </div>
-
-              <div>
-                <label className="mb-1.5 block text-xs font-semibold text-slate-600">Resolution summary</label>
-                <textarea
-                  rows={2}
-                  value={resolutionSummary}
-                  onChange={(e) => setResolutionSummary(e.target.value)}
-                  className={fieldCls}
-                />
-              </div>
-
-              <div className="grid gap-4 sm:grid-cols-2">
-                <label className="flex cursor-pointer items-center gap-3 rounded-2xl border border-slate-200 px-4 py-3">
-                  <input
-                    type="checkbox"
-                    checked={resolved}
-                    onChange={(e) => setResolved(e.target.checked)}
-                    className="h-4 w-4 rounded border-slate-300 text-[#2563eb]"
-                  />
-                  <span className="text-sm font-semibold text-slate-800">Resolved</span>
-                </label>
-                <div>
-                  <label className="mb-1.5 block text-xs font-semibold text-slate-600">Last update (date)</label>
-                  <input type="date" value={lastUpdate} onChange={(e) => setLastUpdate(e.target.value)} className={fieldCls} />
-                </div>
-              </div>
-
-              <button
-                type="submit"
-                disabled={saving}
-                className="rounded-2xl bg-[#2563eb] px-6 py-3 text-sm font-semibold text-white disabled:opacity-50"
-              >
-                {saving ? 'Saving…' : 'Save work order'}
-              </button>
-            </form>
-
-            <div className="mt-8 border-t border-slate-100 pt-6">
-              <h3 className="text-sm font-black text-slate-900">Message thread</h3>
-              <p className="mt-1 text-xs text-slate-500">Same thread residents see in the portal.</p>
-              <div className="mt-3 max-h-56 space-y-2 overflow-y-auto rounded-2xl border border-slate-100 bg-slate-50 p-3">
-                {messages.map((m) => {
-                  const admin = m['Is Admin'] === true || m['Is Admin'] === 1
-                  return (
-                    <div
-                      key={m.id}
-                      className={`rounded-lg border px-2.5 py-2 text-sm ${admin ? 'border-violet-200 bg-violet-50' : 'border-slate-200 bg-white'}`}
-                    >
-                      <div className="text-[10px] font-semibold text-slate-400">
-                        {admin ? 'Manager' : m['Sender Email'] || 'Resident'} · {fmtDateTime(m.Timestamp || m.created_at)}
-                      </div>
-                      <p className="mt-0.5 whitespace-pre-wrap text-slate-800">{m.Message}</p>
+          <ul className="max-h-[min(52vh,420px)] divide-y divide-slate-100 overflow-y-auto">
+            {filteredList.map((w) => {
+              const house = workOrderPropertyLabel(w)
+              const done = workOrderIsResolvedRecord(w)
+              return (
+                <li key={w.id}>
+                  <button
+                    type="button"
+                    onClick={() => openWorkOrder(w.id)}
+                    className={classNames(
+                      'flex w-full flex-col gap-1 px-5 py-4 text-left transition',
+                      (record?.id === w.id || openingId === w.id)
+                        ? 'bg-[#2563eb]/6 ring-1 ring-inset ring-[#2563eb]/25'
+                        : 'hover:bg-slate-50/80',
+                    )}
+                  >
+                    <div className="flex flex-wrap items-start justify-between gap-2">
+                      <span className="font-bold text-slate-900">{w.Title || 'Untitled request'}</span>
+                      <span
+                        className={classNames(
+                          'shrink-0 rounded-full px-2.5 py-0.5 text-[11px] font-bold uppercase tracking-wide',
+                          done ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-900',
+                        )}
+                      >
+                        {done ? 'Fixed' : 'Open'}
+                      </span>
                     </div>
-                  )
-                })}
-              </div>
-              <form onSubmit={handleSendThreadReply} className="mt-3 flex flex-col gap-2 sm:flex-row sm:items-end">
-                <textarea
-                  value={reply}
-                  onChange={(e) => setReply(e.target.value)}
-                  rows={2}
-                  placeholder="Reply to resident…"
-                  className="min-w-0 flex-1 rounded-2xl border border-slate-200 px-4 py-2 text-sm"
-                />
-                <button
-                  type="submit"
-                  disabled={msgBusy || !reply.trim()}
-                  className="rounded-2xl bg-slate-900 px-5 py-2.5 text-sm font-semibold text-white disabled:opacity-50"
-                >
-                  {msgBusy ? 'Sending…' : 'Send'}
-                </button>
-              </form>
-            </div>
-          </>
+                    <div className="text-xs font-medium text-slate-500">
+                      {house || 'House not set'} · {fmtDate(w['Date Submitted'] || w.created_at)}
+                      {w.Status ? <span> · {w.Status}</span> : null}
+                    </div>
+                    {w.Description ? (
+                      <p className="line-clamp-2 text-sm text-slate-600">{w.Description}</p>
+                    ) : null}
+                  </button>
+                </li>
+              )
+            })}
+          </ul>
         )}
       </div>
+
+      {loadError ? (
+        <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">{loadError}</div>
+      ) : null}
+
+      {record || openingId ? (
+        <div className="overflow-hidden rounded-[24px] border border-slate-200 bg-white shadow-sm">
+          {loading || !record ? (
+            <div className="px-6 py-16 text-center text-sm text-slate-500">Loading work order…</div>
+          ) : (
+            <div className="space-y-6 p-6 sm:p-8">
+              <div className="flex flex-col gap-4 border-b border-slate-100 pb-6 sm:flex-row sm:items-start sm:justify-between">
+                <div className="min-w-0 flex-1">
+                  <div className="text-[11px] font-bold uppercase tracking-[0.14em] text-slate-400">Selected request</div>
+                  <h3 className="mt-1 text-xl font-black text-slate-900">{record.Title || 'Work order'}</h3>
+                  <p className="mt-1 text-sm text-slate-500">
+                    {workOrderPropertyLabel(record) || 'House not set'} · Submitted{' '}
+                    {fmtDate(record['Date Submitted'] || record.created_at)}
+                  </p>
+                  <p className="mt-1 font-mono text-[11px] text-slate-400">{record.id}</p>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    disabled={saving || workOrderIsResolvedRecord(record)}
+                    onClick={handleMarkFixed}
+                    className="rounded-2xl bg-emerald-600 px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-40"
+                  >
+                    {saving ? 'Saving…' : 'Mark as fixed'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setShowAdvanced((v) => !v)}
+                    className="rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+                  >
+                    {showAdvanced ? 'Hide' : 'Show'} Airtable fields
+                  </button>
+                </div>
+              </div>
+
+              {record.Description ? (
+                <div className="rounded-2xl border border-slate-100 bg-slate-50/80 px-4 py-3">
+                  <div className="text-[11px] font-bold uppercase tracking-wide text-slate-400">Resident description</div>
+                  <p className="mt-2 whitespace-pre-wrap text-sm leading-relaxed text-slate-800">{record.Description}</p>
+                </div>
+              ) : null}
+
+              <div>
+                <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+                  <h4 className="text-sm font-black text-slate-900">Conversation</h4>
+                  <span className="text-xs text-slate-400">Same thread as the resident portal</span>
+                </div>
+                <div className="max-h-[min(45vh,380px)] space-y-3 overflow-y-auto rounded-2xl border border-slate-200 bg-gradient-to-b from-slate-50 to-white p-4">
+                  {messages.length === 0 ? (
+                    <p className="py-6 text-center text-sm text-slate-500">No messages yet — say hello below.</p>
+                  ) : (
+                    messages.map((m) => {
+                      const admin = m['Is Admin'] === true || m['Is Admin'] === 1
+                      return (
+                        <div
+                          key={m.id}
+                          className={classNames(
+                            'max-w-[min(100%,42rem)] rounded-2xl border px-4 py-3 text-sm shadow-sm',
+                            admin
+                              ? 'ml-auto border-violet-200 bg-violet-50/90 text-violet-950'
+                              : 'mr-auto border-slate-200 bg-white text-slate-900',
+                          )}
+                        >
+                          <div className="text-[10px] font-bold uppercase tracking-wide text-slate-400">
+                            {admin ? 'You (management)' : m['Sender Email'] || 'Resident'} ·{' '}
+                            {fmtDateTime(m.Timestamp || m.created_at)}
+                          </div>
+                          <p className="mt-1.5 whitespace-pre-wrap leading-relaxed">{m.Message}</p>
+                        </div>
+                      )
+                    })
+                  )}
+                </div>
+
+                <div className="mt-4 space-y-3">
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      disabled={aiBusy}
+                      onClick={handleAiSuggest}
+                      className="rounded-2xl border border-indigo-200 bg-indigo-50 px-4 py-2 text-xs font-semibold text-indigo-900 hover:bg-indigo-100 disabled:opacity-50"
+                    >
+                      {aiBusy ? 'Drafting…' : 'AI draft reply'}
+                    </button>
+                    <span className="self-center text-xs text-slate-400">Uses Claude on the server · needs ANTHROPIC_API_KEY</span>
+                  </div>
+                  <form onSubmit={handleSendThreadReply} className="flex flex-col gap-3 sm:flex-row sm:items-end">
+                    <textarea
+                      value={reply}
+                      onChange={(e) => setReply(e.target.value)}
+                      rows={4}
+                      placeholder="Write a reply to the resident…"
+                      className="min-w-0 flex-1 rounded-2xl border border-slate-200 px-4 py-3 text-sm outline-none focus:border-[#2563eb] focus:ring-2 focus:ring-[#2563eb]/20"
+                    />
+                    <button
+                      type="submit"
+                      disabled={msgBusy || !reply.trim()}
+                      className="rounded-2xl bg-[linear-gradient(180deg,#2f76ff_0%,#2450eb_100%)] px-6 py-3 text-sm font-semibold text-white shadow-[0_6px_18px_rgba(37,99,235,0.22)] disabled:opacity-50"
+                    >
+                      {msgBusy ? 'Sending…' : 'Send reply'}
+                    </button>
+                  </form>
+                </div>
+              </div>
+
+              {showAdvanced ? (
+                <form onSubmit={handleSave} className="space-y-4 border-t border-slate-100 pt-6">
+                  <h4 className="text-sm font-black text-slate-900">Airtable fields</h4>
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    <div>
+                      <label className="mb-1.5 block text-xs font-semibold text-slate-600">Status</label>
+                      <select value={status} onChange={(e) => setStatus(e.target.value)} className={fieldCls}>
+                        {statusOptions.map((s) => (
+                          <option key={s} value={s}>
+                            {s}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="mb-1.5 block text-xs font-semibold text-slate-600">Priority</label>
+                      <select value={priority} onChange={(e) => setPriority(e.target.value)} className={fieldCls}>
+                        {priorityOptions.map((p) => (
+                          <option key={p} value={p}>
+                            {p}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+                  <div>
+                    <label className="mb-1.5 block text-xs font-semibold text-slate-600">Management notes</label>
+                    <textarea
+                      rows={2}
+                      value={managementNotes}
+                      onChange={(e) => setManagementNotes(e.target.value)}
+                      className={fieldCls}
+                    />
+                  </div>
+                  <div>
+                    <label className="mb-1.5 block text-xs font-semibold text-slate-600">Internal update log</label>
+                    <textarea rows={3} value={updateText} onChange={(e) => setUpdateText(e.target.value)} className={fieldCls} />
+                  </div>
+                  <div>
+                    <label className="mb-1.5 block text-xs font-semibold text-slate-600">Resolution summary</label>
+                    <textarea
+                      rows={2}
+                      value={resolutionSummary}
+                      onChange={(e) => setResolutionSummary(e.target.value)}
+                      className={fieldCls}
+                    />
+                  </div>
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    <label className="flex cursor-pointer items-center gap-3 rounded-2xl border border-slate-200 px-4 py-3">
+                      <input
+                        type="checkbox"
+                        checked={resolved}
+                        onChange={(e) => setResolved(e.target.checked)}
+                        className="h-4 w-4 rounded border-slate-300 text-[#2563eb]"
+                      />
+                      <span className="text-sm font-semibold text-slate-800">Resolved</span>
+                    </label>
+                    <div>
+                      <label className="mb-1.5 block text-xs font-semibold text-slate-600">Last update (date)</label>
+                      <input type="date" value={lastUpdate} onChange={(e) => setLastUpdate(e.target.value)} className={fieldCls} />
+                    </div>
+                  </div>
+                  <button
+                    type="submit"
+                    disabled={saving}
+                    className="rounded-2xl border border-slate-300 bg-white px-6 py-3 text-sm font-semibold text-slate-800 hover:bg-slate-50 disabled:opacity-50"
+                  >
+                    {saving ? 'Saving…' : 'Save to Airtable'}
+                  </button>
+                </form>
+              ) : null}
+            </div>
+          )}
+        </div>
+      ) : (
+        !listLoading &&
+        filteredList.length > 0 && (
+          <p className="text-center text-sm text-slate-400">Select a work order above to view the thread and reply.</p>
+        )
+      )}
     </div>
   )
 }
@@ -2554,9 +3188,12 @@ function ManagerPaymentsPanel({ allowedPropertyNames }) {
   const [loading, setLoading] = useState(true)
   const [filter, setFilter] = useState('all')
   const [busy, setBusy] = useState({})
+  const [paymentsLoadError, setPaymentsLoadError] = useState('')
+  const [selectedYm, setSelectedYm] = useState(() => currentYm())
 
   const load = useCallback(async () => {
     setLoading(true)
+    setPaymentsLoadError('')
     try {
       const all = await getAllPaymentsRecords()
       const scoped = scopeLower.size
@@ -2568,8 +3205,13 @@ function ManagerPaymentsPanel({ allowedPropertyNames }) {
       )
       setRows(scoped)
     } catch (err) {
-      toast.error('Could not load payments: ' + formatDataLoadError(err))
+      const msg = formatDataLoadError(err)
+      setPaymentsLoadError(msg)
       setRows([])
+      const isPerm = isAirtablePermissionErrorMessage(err?.message)
+      if (!isPerm) {
+        toast.error('Could not load payments: ' + msg)
+      }
     } finally {
       setLoading(false)
     }
@@ -2579,12 +3221,65 @@ function ManagerPaymentsPanel({ allowedPropertyNames }) {
     load()
   }, [load])
 
-  const filtered = useMemo(() => {
-    if (filter === 'overdue') return rows.filter((p) => isPaymentOverdueRecord(p))
-    if (filter === 'paid') return rows.filter((p) => String(p.Status || '').trim().toLowerCase() === 'paid')
-    if (filter === 'unpaid') return rows.filter((p) => String(p.Status || '').trim().toLowerCase() !== 'paid')
-    return rows
-  }, [rows, filter])
+  const monthOptions = useMemo(() => {
+    const keys = new Set()
+    const d = new Date()
+    for (let i = 0; i < 24; i += 1) {
+      const t = new Date(d.getFullYear(), d.getMonth() - i, 1)
+      keys.add(ymFromDate(t))
+    }
+    rows.forEach((p) => {
+      const k = paymentMonthKeyFromRecord(p)
+      if (k) keys.add(k)
+    })
+    if (selectedYm) keys.add(selectedYm)
+    return [...keys].sort((a, b) => b.localeCompare(a))
+  }, [rows, selectedYm])
+
+  const rowsForSelectedMonth = useMemo(
+    () => rows.filter((p) => paymentMonthKeyFromRecord(p) === selectedYm),
+    [rows, selectedYm],
+  )
+
+  const monthOverdueCount = useMemo(
+    () => rowsForSelectedMonth.filter((p) => isPaymentOverdueRecord(p)).length,
+    [rowsForSelectedMonth],
+  )
+  const monthPaidCount = useMemo(
+    () => rowsForSelectedMonth.filter((p) => String(p.Status || '').trim().toLowerCase() === 'paid').length,
+    [rowsForSelectedMonth],
+  )
+  const monthPendingCount = useMemo(
+    () =>
+      rowsForSelectedMonth.filter((p) => {
+        if (String(p.Status || '').trim().toLowerCase() === 'paid') return false
+        return !isPaymentOverdueRecord(p)
+      }).length,
+    [rowsForSelectedMonth],
+  )
+
+  const filteredForList = useMemo(() => {
+    let list = rowsForSelectedMonth
+    if (filter === 'overdue') list = list.filter((p) => isPaymentOverdueRecord(p))
+    if (filter === 'paid') list = list.filter((p) => String(p.Status || '').trim().toLowerCase() === 'paid')
+    if (filter === 'unpaid') list = list.filter((p) => String(p.Status || '').trim().toLowerCase() !== 'paid')
+    return list
+  }, [rowsForSelectedMonth, filter])
+
+  const groupedByHouse = useMemo(() => {
+    const map = new Map()
+    for (const p of filteredForList) {
+      const house = paymentPropertyLabel(p) || 'House'
+      if (!map.has(house)) map.set(house, [])
+      map.get(house).push(p)
+    }
+    return [...map.entries()]
+      .sort(([a], [b]) => a.localeCompare(b, undefined, { sensitivity: 'base' }))
+      .map(([house, items]) => ({
+        house,
+        items: [...items].sort(comparePaymentByRoom),
+      }))
+  }, [filteredForList])
 
   async function markPaid(id) {
     setBusy((b) => ({ ...b, [id]: true }))
@@ -2603,19 +3298,30 @@ function ManagerPaymentsPanel({ allowedPropertyNames }) {
     }
   }
 
-  const paidCount = rows.filter((p) => String(p.Status || '').trim().toLowerCase() === 'paid').length
-  const overdueCount = rows.filter((p) => isPaymentOverdueRecord(p)).length
-
   return (
     <div className="mb-10 space-y-5">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <h2 className="text-xl font-black text-slate-900">Rent &amp; payments</h2>
           <p className="mt-1 text-sm text-slate-500">
-            Rent rows from Payments for your approved houses. Mark paid when you&apos;ve recorded the payment in Airtable.
+            By house and room. Totals below are for the month you select. Mark paid when you&apos;ve recorded payment in Airtable.
           </p>
         </div>
-        <div className="flex flex-wrap gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <label className="flex items-center gap-2 text-xs font-semibold text-slate-500">
+            <span className="sr-only">Month</span>
+            <select
+              value={selectedYm}
+              onChange={(e) => setSelectedYm(e.target.value)}
+              className="rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-800 shadow-sm transition focus:border-[#2563eb] focus:outline-none focus:ring-2 focus:ring-[#2563eb]/20"
+            >
+              {monthOptions.map((ym) => (
+                <option key={ym} value={ym}>
+                  {formatYmLong(ym)}
+                </option>
+              ))}
+            </select>
+          </label>
           {[
             ['all', 'All'],
             ['unpaid', 'Unpaid'],
@@ -2641,92 +3347,135 @@ function ManagerPaymentsPanel({ allowedPropertyNames }) {
         </div>
       </div>
 
-      {!scopeLower.size ? (
-        <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 text-sm text-slate-600">
-          No approved houses assigned — payment rows appear after a property is approved and linked to your account.
+      {paymentsLoadError ? (
+        <div
+          role="alert"
+          className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-4 text-sm text-amber-950"
+        >
+          <div className="font-semibold text-amber-900">Payments could not load</div>
+          <p className="mt-2 text-amber-900/90">{paymentsLoadError}</p>
+          <ul className="mt-3 list-disc space-y-1 pl-5 text-amber-900/85">
+            <li>
+              In{' '}
+              <a
+                href="https://airtable.com/create/tokens"
+                target="_blank"
+                rel="noreferrer"
+                className="font-semibold text-[#2563eb] underline underline-offset-2"
+              >
+                Airtable → Developer hub → Personal access tokens
+              </a>
+              , open your token and add the base that contains the <strong>Payments</strong> table.
+            </li>
+            <li>
+              Enable scopes <strong className="font-mono text-xs">data.records:read</strong> and{' '}
+              <strong className="font-mono text-xs">data.records:write</strong> for that base.
+            </li>
+            <li>
+              Payments are read from base <code className="rounded bg-white/80 px-1.5 py-0.5 text-xs">{AIRTABLE_PAYMENTS_BASE_ID}</code>
+              {import.meta.env.VITE_AIRTABLE_PAYMENTS_BASE_ID ? (
+                <span> (via <code className="text-xs">VITE_AIRTABLE_PAYMENTS_BASE_ID</code>)</span>
+              ) : (
+                <span> (same as <code className="text-xs">VITE_AIRTABLE_BASE_ID</code> unless you set <code className="text-xs">VITE_AIRTABLE_PAYMENTS_BASE_ID</code>)</span>
+              )}
+              .
+            </li>
+          </ul>
         </div>
       ) : null}
 
-      <div className="grid gap-3 sm:grid-cols-3">
-        <div className="rounded-2xl border border-slate-200 bg-white p-4">
-          <div className="text-[11px] font-bold uppercase tracking-wide text-slate-400">Tracked rent rows</div>
-          <div className="mt-1 text-2xl font-black text-slate-900">{rows.length}</div>
+      <div className="rounded-2xl border border-slate-200 bg-gradient-to-br from-slate-50 to-blue-50/40 px-4 py-4 sm:px-5">
+        <div className="text-center text-[11px] font-bold uppercase tracking-[0.16em] text-slate-400">
+          {formatYmLong(selectedYm)}
         </div>
-        <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4">
-          <div className="text-[11px] font-bold uppercase tracking-wide text-amber-800">Overdue</div>
-          <div className="mt-1 text-2xl font-black text-amber-950">{overdueCount}</div>
-        </div>
-        <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4">
-          <div className="text-[11px] font-bold uppercase tracking-wide text-emerald-800">Paid (in view)</div>
-          <div className="mt-1 text-2xl font-black text-emerald-950">{paidCount}</div>
+        <div className="mt-3 grid gap-3 sm:grid-cols-3">
+          <div className="rounded-2xl border border-red-200/80 bg-white/90 p-4 shadow-sm">
+            <div className="text-[11px] font-bold uppercase tracking-wide text-red-700/90">Overdue rent</div>
+            <div className="mt-1 text-2xl font-black text-red-950">{monthOverdueCount}</div>
+            <div className="mt-0.5 text-xs text-red-800/70">Past due, not paid</div>
+          </div>
+          <div className="rounded-2xl border border-emerald-200/80 bg-white/90 p-4 shadow-sm">
+            <div className="text-[11px] font-bold uppercase tracking-wide text-emerald-800">Paid rent</div>
+            <div className="mt-1 text-2xl font-black text-emerald-950">{monthPaidCount}</div>
+            <div className="mt-0.5 text-xs text-emerald-900/70">Marked paid this month</div>
+          </div>
+          <div className="rounded-2xl border border-amber-200/80 bg-white/90 p-4 shadow-sm">
+            <div className="text-[11px] font-bold uppercase tracking-wide text-amber-800">Pending rent</div>
+            <div className="mt-1 text-2xl font-black text-amber-950">{monthPendingCount}</div>
+            <div className="mt-0.5 text-xs text-amber-900/70">Not yet due or awaiting payment</div>
+          </div>
         </div>
       </div>
 
       <div className="overflow-hidden rounded-[24px] border border-slate-200 bg-white">
         {loading ? (
           <div className="px-6 py-14 text-center text-sm text-slate-500">Loading payments…</div>
-        ) : filtered.length === 0 ? (
-          <div className="px-6 py-14 text-center text-sm text-slate-500">No payments match this filter.</div>
+        ) : rows.length === 0 ? (
+          <div className="px-6 py-14 text-center text-sm text-slate-500">No rent charges to show.</div>
+        ) : rowsForSelectedMonth.length === 0 ? (
+          <div className="px-6 py-14 text-center text-sm text-slate-500">
+            No rent charges for {formatYmLong(selectedYm)}. Try another month above.
+          </div>
+        ) : filteredForList.length === 0 ? (
+          <div className="px-6 py-14 text-center text-sm text-slate-500">No rows match this filter for {formatYmLong(selectedYm)}.</div>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-slate-200 bg-slate-50 text-left text-[11px] font-bold uppercase tracking-wide text-slate-400">
-                  <th className="px-4 py-3">Property</th>
-                  <th className="px-4 py-3">Resident</th>
-                  <th className="px-4 py-3">Month / label</th>
-                  <th className="px-4 py-3">Due</th>
-                  <th className="px-4 py-3">Amount</th>
-                  <th className="px-4 py-3">Status</th>
-                  <th className="px-4 py-3" />
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {filtered.map((p) => {
-                  const st = String(p.Status || '').trim()
-                  const stLower = st.toLowerCase()
-                  const overdue = isPaymentOverdueRecord(p)
-                  return (
-                    <tr key={p.id} className={overdue && stLower !== 'paid' ? 'bg-red-50/50' : ''}>
-                      <td className="px-4 py-3 font-medium text-slate-900">{paymentPropertyLabel(p) || '—'}</td>
-                      <td className="px-4 py-3 text-slate-600">{p['Resident Name'] || p['Resident'] || '—'}</td>
-                      <td className="px-4 py-3 text-slate-600">{p.Month || p.Type || '—'}</td>
-                      <td className="px-4 py-3 text-slate-600">{fmtDate(p['Due Date'])}</td>
-                      <td className="px-4 py-3 font-semibold text-slate-900">
-                        {p.Amount != null ? `$${Number(p.Amount).toFixed(0)}` : '—'}
-                      </td>
-                      <td className="px-4 py-3">
-                        <span
-                          className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${
-                            stLower === 'paid'
-                              ? 'bg-emerald-100 text-emerald-800'
-                              : overdue
-                                ? 'bg-red-100 text-red-800'
-                                : 'bg-slate-100 text-slate-700'
-                          }`}
-                        >
-                          {st || '—'}
-                        </span>
-                      </td>
-                      <td className="px-4 py-3 text-right">
-                        {stLower !== 'paid' ? (
-                          <button
-                            type="button"
-                            disabled={busy[p.id]}
-                            onClick={() => markPaid(p.id)}
-                            className="rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-xs font-semibold text-emerald-800 hover:bg-emerald-100 disabled:opacity-50"
-                          >
-                            {busy[p.id] ? '…' : 'Mark paid'}
-                          </button>
-                        ) : (
-                          <span className="text-xs text-slate-400">Recorded</span>
-                        )}
-                      </td>
-                    </tr>
-                  )
-                })}
-              </tbody>
-            </table>
+          <div>
+            {groupedByHouse.map(({ house, items }) => (
+              <div key={house} className="border-b border-slate-200 last:border-b-0">
+                <div className="sticky top-0 z-[1] border-b border-slate-100 bg-slate-50 px-4 py-2.5 sm:px-6">
+                  <div className="text-[11px] font-bold uppercase tracking-[0.14em] text-slate-500">House</div>
+                  <div className="text-sm font-black text-slate-900">{house}</div>
+                </div>
+                <ul className="divide-y divide-slate-100">
+                  {items.map((p) => {
+                    const { phrase, tone } = rentStatusPresentation(p)
+                    const stLower = String(p.Status || '').trim().toLowerCase()
+                    const borderL =
+                      tone === 'emerald' ? 'border-l-emerald-500' : tone === 'red' ? 'border-l-red-500' : 'border-l-amber-500'
+                    const rowBg =
+                      tone === 'emerald'
+                        ? 'bg-emerald-50/25'
+                        : tone === 'red'
+                          ? 'bg-red-50/30'
+                          : 'bg-amber-50/20'
+                    const resident = p['Resident Name'] || p['Resident']
+                    return (
+                      <li key={p.id} className={classNames('flex flex-col gap-3 px-4 py-4 sm:flex-row sm:items-center sm:justify-between sm:gap-4 sm:px-6', rowBg)}>
+                        <div className={classNames('min-w-0 flex-1 border-l-4 pl-3 sm:pl-4', borderL)}>
+                          <div className="text-base font-black text-slate-900">{formatPaymentRoomTitle(p)}</div>
+                          {stLower !== 'paid' ? (
+                            <p className="mt-1 text-sm font-semibold leading-snug text-slate-800">{phrase}</p>
+                          ) : null}
+                          <p className="mt-1 text-xs text-slate-500">
+                            {resident ? <span>{resident} · </span> : null}
+                            {p.Amount != null ? <span className="font-semibold text-slate-700">${Number(p.Amount).toFixed(0)}</span> : <span>—</span>}
+                            <span> · Due {fmtDate(p['Due Date'])}</span>
+                            {p.Month ? <span> · {p.Month}</span> : null}
+                          </p>
+                        </div>
+                        <div className="flex shrink-0 flex-col items-stretch gap-2 sm:items-end">
+                          {stLower === 'paid' ? (
+                            <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-center sm:text-right">
+                              <div className="text-xs font-bold uppercase tracking-wide text-emerald-800">System</div>
+                              <div className="text-sm font-semibold text-emerald-900">Rent paid</div>
+                            </div>
+                          ) : (
+                            <button
+                              type="button"
+                              disabled={busy[p.id]}
+                              onClick={() => markPaid(p.id)}
+                              className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-2 text-xs font-semibold text-emerald-800 transition hover:bg-emerald-100 disabled:opacity-50"
+                            >
+                              {busy[p.id] ? 'Updating…' : 'Mark paid'}
+                            </button>
+                          )}
+                        </div>
+                      </li>
+                    )
+                  })}
+                </ul>
+              </div>
+            ))}
           </div>
         )}
       </div>
@@ -2734,11 +3483,72 @@ function ManagerPaymentsPanel({ allowedPropertyNames }) {
   )
 }
 
+const APPLICATION_SORT_OPTIONS = [
+  { id: 'submitted', label: 'Submitted' },
+  { id: 'property', label: 'House' },
+  { id: 'room', label: 'Room' },
+  { id: 'name', label: 'Applicant' },
+  { id: 'status', label: 'Status' },
+]
+
+function applicationStatusSortRank(app) {
+  if (app.Approved !== true && app.Approved !== false) return 0
+  if (app.Approved === true) return 1
+  return 2
+}
+
+function compareApplicationRoomNumbers(a, b) {
+  const sa = String(a ?? '').trim()
+  const sb = String(b ?? '').trim()
+  const na = Number.parseInt(sa, 10)
+  const nb = Number.parseInt(sb, 10)
+  if (Number.isFinite(na) && Number.isFinite(nb) && String(na) === sa && String(nb) === sb) return na - nb
+  return sa.localeCompare(sb, undefined, { numeric: true, sensitivity: 'base' })
+}
+
+function sortApplicationsList(rows, sortKey, sortDir) {
+  const mul = sortDir === 'asc' ? 1 : -1
+  return [...rows].sort((a, b) => {
+    let cmp = 0
+    switch (sortKey) {
+      case 'submitted':
+        cmp = new Date(a.created_at || 0).getTime() - new Date(b.created_at || 0).getTime()
+        break
+      case 'property':
+        cmp = String(a['Property Name'] || '').localeCompare(String(b['Property Name'] || ''), undefined, {
+          sensitivity: 'base',
+        })
+        break
+      case 'room':
+        cmp = compareApplicationRoomNumbers(a['Room Number'], b['Room Number'])
+        break
+      case 'name':
+        cmp = String(a['Signer Full Name'] || '').localeCompare(String(b['Signer Full Name'] || ''), undefined, {
+          sensitivity: 'base',
+        })
+        break
+      case 'status':
+        cmp = applicationStatusSortRank(a) - applicationStatusSortRank(b)
+        break
+      default:
+        cmp = 0
+    }
+    if (cmp !== 0) return cmp * mul
+    return (
+      String(a['Signer Full Name'] || '').localeCompare(String(b['Signer Full Name'] || ''), undefined, {
+        sensitivity: 'base',
+      }) * mul
+    )
+  })
+}
+
 // ─── ApplicationsPanel ────────────────────────────────────────────────────────
 function ApplicationsPanel({ allowedPropertyNames }) {
-  const [applications, setApplications] = useState([])
+  const [scopedRows, setScopedRows] = useState([])
   const [loading, setLoading] = useState(true)
   const [propertyFilter, setPropertyFilter] = useState('')
+  const [sortKey, setSortKey] = useState('submitted')
+  const [sortDir, setSortDir] = useState('desc')
   const [approving, setApproving] = useState({}) // recordId -> 'approving' | 'rejecting'
 
   const [loadError, setLoadError] = useState('')
@@ -2751,25 +3561,43 @@ function ApplicationsPanel({ allowedPropertyNames }) {
     try {
       const rows = await fetchApplications({})
       const scoped = scopeSet.size ? rows.filter((a) => applicationInScope(a, scopeSet)) : []
-      setApplications(
-        propertyFilter
-          ? scoped.filter((a) => String(a['Property Name'] || '').trim() === propertyFilter.trim())
-          : scoped,
-      )
+      setScopedRows(scoped)
     } catch (err) {
       setLoadError(formatDataLoadError(err))
     } finally {
       setLoading(false)
     }
-  }, [propertyFilter, scopeSet])
+  }, [scopeSet])
 
   useEffect(() => { load() }, [load])
+
+  const filteredRows = useMemo(() => {
+    if (!propertyFilter.trim()) return scopedRows
+    return scopedRows.filter((a) => String(a['Property Name'] || '').trim() === propertyFilter.trim())
+  }, [scopedRows, propertyFilter])
+
+  const applications = useMemo(
+    () => sortApplicationsList(filteredRows, sortKey, sortDir),
+    [filteredRows, sortKey, sortDir],
+  )
+
+  const showSortDeck = filteredRows.length >= 5
+
+  function selectSortOption(id) {
+    if (sortKey === id) {
+      setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'))
+      return
+    }
+    setSortKey(id)
+    if (id === 'submitted') setSortDir('desc')
+    else setSortDir('asc')
+  }
 
   async function handleDecision(recordId, approved) {
     setApproving(a => ({ ...a, [recordId]: approved ? 'approving' : 'rejecting' }))
     try {
       const updated = await patchApplication(recordId, { Approved: approved })
-      setApplications(prev => prev.map(a => a.id === recordId ? { ...a, Approved: updated.Approved } : a))
+      setScopedRows(prev => prev.map(a => a.id === recordId ? { ...a, Approved: updated.Approved } : a))
       toast.success(approved ? 'Application approved — resident can now log in.' : 'Application rejected.')
     } catch (err) {
       toast.error('Could not update application: ' + err.message)
@@ -2821,64 +3649,129 @@ function ApplicationsPanel({ allowedPropertyNames }) {
       <div className="overflow-hidden rounded-[24px] border border-slate-200 bg-white">
         {loading ? (
           <div className="px-6 py-16 text-center text-sm text-slate-500">Loading applications…</div>
-        ) : applications.length === 0 ? (
+        ) : loadError ? (
           <div className="px-6 py-16 text-center">
-            {loadError ? (
-              <>
-                <div className="mb-3 text-4xl" aria-hidden>⚠️</div>
-                <div className="text-sm font-semibold text-slate-700">Could not load the list</div>
-                <p className="mt-1 text-sm text-slate-500">Check the message above and try Refresh.</p>
-              </>
-            ) : (
-              <>
-                <div className="mb-3 text-4xl" aria-hidden>📋</div>
-                <div className="text-sm font-semibold text-slate-700">No applications yet</div>
-                <p className="mt-1 text-sm text-slate-500">Applications submitted via the Apply page will appear here.</p>
-              </>
-            )}
+            <div className="mb-3 text-4xl" aria-hidden>⚠️</div>
+            <div className="text-sm font-semibold text-slate-700">Could not load the list</div>
+            <p className="mt-1 text-sm text-slate-500">Check the message above and try Refresh.</p>
+          </div>
+        ) : scopedRows.length === 0 ? (
+          <div className="px-6 py-16 text-center">
+            <div className="mb-3 text-4xl" aria-hidden>📋</div>
+            <div className="text-sm font-semibold text-slate-700">No applications yet</div>
+            <p className="mt-1 text-sm text-slate-500">Applications submitted via the Apply page will appear here.</p>
+          </div>
+        ) : filteredRows.length === 0 ? (
+          <div className="px-6 py-16 text-center">
+            <div className="mb-3 text-4xl" aria-hidden>🏠</div>
+            <div className="text-sm font-semibold text-slate-700">No applications for this property</div>
+            <p className="mt-1 text-sm text-slate-500">Choose &quot;All your properties&quot; or another house to see more.</p>
           </div>
         ) : (
-          <div className="divide-y divide-slate-100">
-            {applications.map(app => {
-              const { label, cls } = statusLabel(app)
-              const busy = approving[app.id]
-              return (
-                <div key={app.id} className="flex flex-col gap-3 px-6 py-5 sm:flex-row sm:items-center sm:gap-5">
-                  <div className="flex-1 min-w-0">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <span className="font-semibold text-slate-900 truncate">{app['Signer Full Name'] || '—'}</span>
-                      <span className={`shrink-0 rounded-full border px-2.5 py-0.5 text-[11px] font-bold ${cls}`}>{label}</span>
-                    </div>
-                    <div className="mt-1 flex flex-wrap gap-x-4 gap-y-0.5 text-sm text-slate-500">
-                      <span>{app['Signer Email'] || '—'}</span>
-                      {app['Property Name'] && <span>{app['Property Name']}</span>}
-                      {app['Room Number'] && <span>Room {app['Room Number']}</span>}
-                      {app['Lease Term'] && <span>{app['Lease Term']}</span>}
-                    </div>
-                    {app['Application ID'] && (
-                      <div className="mt-1 font-mono text-xs text-slate-400">APP-{String(app['Application ID'])}</div>
+          <>
+            <div
+              className={classNames(
+                'border-b border-slate-100 px-4 py-3 sm:px-6',
+                showSortDeck
+                  ? 'bg-gradient-to-r from-slate-50 via-white to-blue-50/50'
+                  : 'bg-slate-50/60',
+              )}
+            >
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
+                  <span
+                    className={classNames(
+                      'shrink-0 font-bold uppercase tracking-[0.14em] text-slate-400',
+                      showSortDeck ? 'text-[11px]' : 'text-[10px]',
                     )}
-                  </div>
-                  <div className="flex shrink-0 gap-2">
-                    <button
-                      onClick={() => handleDecision(app.id, true)}
-                      disabled={!!busy || app.Approved === true}
-                      className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-2 text-sm font-semibold text-emerald-700 transition hover:bg-emerald-100 disabled:opacity-40"
-                    >
-                      {busy === 'approving' ? 'Approving…' : 'Approve'}
-                    </button>
-                    <button
-                      onClick={() => handleDecision(app.id, false)}
-                      disabled={!!busy || app.Approved === false}
-                      className="rounded-xl border border-red-200 bg-red-50 px-4 py-2 text-sm font-semibold text-red-700 transition hover:bg-red-100 disabled:opacity-40"
-                    >
-                      {busy === 'rejecting' ? 'Rejecting…' : 'Reject'}
-                    </button>
+                  >
+                    Sort
+                  </span>
+                  <div
+                    className="flex flex-wrap gap-1.5"
+                    role="toolbar"
+                    aria-label="Sort applications"
+                  >
+                    {APPLICATION_SORT_OPTIONS.map((opt) => {
+                      const active = sortKey === opt.id
+                      return (
+                        <button
+                          key={opt.id}
+                          type="button"
+                          onClick={() => selectSortOption(opt.id)}
+                          className={classNames(
+                            'inline-flex items-center gap-1 rounded-full border font-semibold transition',
+                            showSortDeck ? 'px-3.5 py-2 text-xs' : 'px-2.5 py-1.5 text-[11px]',
+                            active
+                              ? 'border-[#2563eb] bg-[#2563eb] text-white shadow-[0_2px_10px_rgba(37,99,235,0.22)]'
+                              : 'border-slate-200/90 bg-white text-slate-600 hover:border-slate-300 hover:bg-slate-50',
+                          )}
+                          aria-pressed={active}
+                          title={active ? `Click to reverse order (${sortDir === 'asc' ? 'ascending' : 'descending'})` : `Sort by ${opt.label}`}
+                        >
+                          <span>{opt.label}</span>
+                          {active ? (
+                            <span className="tabular-nums opacity-90" aria-hidden>
+                              {sortDir === 'asc' ? '↑' : '↓'}
+                            </span>
+                          ) : null}
+                        </button>
+                      )
+                    })}
                   </div>
                 </div>
-              )
-            })}
-          </div>
+                {showSortDeck ? (
+                  <div className="flex shrink-0 flex-wrap items-center gap-2 text-xs text-slate-500">
+                    <span className="rounded-full bg-white/90 px-3 py-1.5 font-semibold text-slate-700 shadow-sm ring-1 ring-slate-200/80">
+                      {filteredRows.length} application{filteredRows.length !== 1 ? 's' : ''}
+                    </span>
+                    <span className="hidden text-slate-400 sm:inline">Click again to flip ↑↓</span>
+                  </div>
+                ) : null}
+              </div>
+            </div>
+            <div className="divide-y divide-slate-100">
+              {applications.map((app) => {
+                const { label, cls } = statusLabel(app)
+                const busy = approving[app.id]
+                return (
+                  <div key={app.id} className="flex flex-col gap-3 px-6 py-5 sm:flex-row sm:items-center sm:gap-5">
+                    <div className="flex-1 min-w-0">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="font-semibold text-slate-900 truncate">{app['Signer Full Name'] || '—'}</span>
+                        <span className={`shrink-0 rounded-full border px-2.5 py-0.5 text-[11px] font-bold ${cls}`}>{label}</span>
+                      </div>
+                      <div className="mt-1 flex flex-wrap gap-x-4 gap-y-0.5 text-sm text-slate-500">
+                        <span>{app['Signer Email'] || '—'}</span>
+                        {app['Property Name'] && <span>{app['Property Name']}</span>}
+                        {app['Room Number'] && <span>Room {app['Room Number']}</span>}
+                        {app['Lease Term'] && <span>{app['Lease Term']}</span>}
+                      </div>
+                      {app['Application ID'] && (
+                        <div className="mt-1 font-mono text-xs text-slate-400">APP-{String(app['Application ID'])}</div>
+                      )}
+                    </div>
+                    <div className="flex shrink-0 gap-2">
+                      <button
+                        onClick={() => handleDecision(app.id, true)}
+                        disabled={!!busy || app.Approved === true}
+                        className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-2 text-sm font-semibold text-emerald-700 transition hover:bg-emerald-100 disabled:opacity-40"
+                      >
+                        {busy === 'approving' ? 'Approving…' : 'Approve'}
+                      </button>
+                      <button
+                        onClick={() => handleDecision(app.id, false)}
+                        disabled={!!busy || app.Approved === false}
+                        className="rounded-xl border border-red-200 bg-red-50 px-4 py-2 text-sm font-semibold text-red-700 transition hover:bg-red-100 disabled:opacity-40"
+                      >
+                        {busy === 'rejecting' ? 'Rejecting…' : 'Reject'}
+                      </button>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          </>
         )}
       </div>
     </div>
@@ -3050,6 +3943,10 @@ function ManagerDashboard({ manager: managerProp, onOpenDraft, onSignOut, onMana
   const canReview = status => ['Draft Generated', 'Under Review', 'Changes Needed'].includes(status)
 
   async function handleBillingPortal() {
+    if (manager.__axisDeveloper) {
+      toast.error('Billing is not available in developer preview.')
+      return
+    }
     setBillingLoading(true)
     try {
       const res = await fetch('/api/portal?action=manager-billing-portal', {
@@ -3068,6 +3965,11 @@ function ManagerDashboard({ manager: managerProp, onOpenDraft, onSignOut, onMana
 
   return (
     <div className="min-h-screen bg-slate-50">
+      {manager.__axisDeveloper ? (
+        <div className="border-b border-violet-200 bg-violet-50 px-4 py-2.5 text-center text-sm text-violet-950 sm:px-6">
+          <span className="font-bold">Sentinel scope</span> — all approved properties in this base are visible. Profile and billing actions that need a real Manager record are turned off.
+        </div>
+      ) : null}
       {/* Top nav — brand row + pill tab strip */}
       <header className="sticky top-0 z-10 border-b border-slate-200/90 bg-white/90 shadow-sm backdrop-blur-md supports-[backdrop-filter]:bg-white/80">
         <div className="mx-auto max-w-7xl px-4 pb-3 pt-3 sm:px-6 sm:pb-4 sm:pt-4">
@@ -3080,7 +3982,9 @@ function ManagerDashboard({ manager: managerProp, onOpenDraft, onSignOut, onMana
               </div>
               <div className="min-w-0">
                 <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-[#2563eb]">Axis</p>
-                <h1 className="truncate text-lg font-black tracking-tight text-slate-900 sm:text-xl">Manager portal</h1>
+                <h1 className="truncate text-lg font-black tracking-tight text-slate-900 sm:text-xl">
+                  {manager.__axisDeveloper ? 'Manager · Developer' : 'Manager portal'}
+                </h1>
                 <p className="mt-0.5 truncate text-xs text-slate-500 sm:hidden">{manager.name}</p>
               </div>
             </div>
@@ -3151,9 +4055,9 @@ function ManagerDashboard({ manager: managerProp, onOpenDraft, onSignOut, onMana
         ) : dashView === 'payments' ? (
           <ManagerPaymentsPanel allowedPropertyNames={scopedPropertyOptions} />
         ) : dashView === 'workorders' ? (
-          <WorkOrdersTabPanel manager={manager} />
+          <WorkOrdersTabPanel manager={manager} allowedPropertyNames={scopedPropertyOptions} />
         ) : dashView === 'inbox' ? (
-          <InboxTabPanel manager={manager} />
+          <InboxTabPanel manager={manager} allowedPropertyNames={scopedPropertyOptions} />
         ) : dashView === 'calendar' ? (
           <ManagerCalendarPanel />
         ) : dashView === 'dashboard' ? (
@@ -3968,7 +4872,19 @@ export default function Manager() {
   useEffect(() => {
     try {
       const saved = sessionStorage.getItem(MANAGER_SESSION_KEY)
-      if (saved) setManager(JSON.parse(saved))
+      if (saved) {
+        setManager(JSON.parse(saved))
+      } else {
+        const handoffRaw = localStorage.getItem(AXIS_DEVELOPER_MANAGER_HANDOFF)
+        if (handoffRaw) {
+          const parsed = JSON.parse(handoffRaw)
+          if (parsed?.__axisDeveloper) {
+            setManager(parsed)
+            sessionStorage.setItem(MANAGER_SESSION_KEY, handoffRaw)
+            localStorage.removeItem(AXIS_DEVELOPER_MANAGER_HANDOFF)
+          }
+        }
+      }
     } catch {
       sessionStorage.removeItem(MANAGER_SESSION_KEY)
     } finally {

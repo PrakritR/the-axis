@@ -15,9 +15,11 @@ import {
   portalAuthInputCls,
 } from '../components/PortalAuthUI'
 import { ManagerAuthForm, MANAGER_SESSION_KEY } from './Manager'
+import GmailStyleInboxLayout, { InboxThreadRow } from '../components/GmailStyleInboxLayout'
 import { HOUSING_CONTACT_MESSAGE, HOUSING_CONTACT_SCHEDULE } from '../lib/housingSite'
 import {
   airtableReady,
+  announcementResidentTargetTokens,
   createResident,
   createWorkOrder,
   getAnnouncements,
@@ -78,7 +80,7 @@ function buildResidentMatchKeys(resident) {
 }
 
 function announcementMatchesResident(item, resident) {
-  const tokens = Array.isArray(item.Target) ? item.Target : []
+  const tokens = announcementResidentTargetTokens(item)
   if (tokens.length === 0 || tokens.some((t) => MATCH_ALL_TOKENS.has(t))) return true
   const residentKeys = buildResidentMatchKeys(resident)
   return tokens.some((token) => residentKeys.has(token.toLowerCase().trim()))
@@ -556,7 +558,7 @@ function PortalEntryLogin({ onLogin }) {
 
 // ─── Work Orders ──────────────────────────────────────────────────────────────
 
-function RequestThread({ workOrder, residentEmail, onThreadUpdated }) {
+function RequestThread({ workOrder, residentEmail, onThreadUpdated, embedded = false }) {
   const [messages, setMessages] = useState([])
   const [draft, setDraft] = useState('')
   const [sending, setSending] = useState(false)
@@ -588,9 +590,15 @@ function RequestThread({ workOrder, residentEmail, onThreadUpdated }) {
     }
   }
 
+  const wrap = embedded
+    ? 'flex min-h-0 flex-1 flex-col overflow-hidden border-t border-slate-200 bg-slate-50/80'
+    : 'mt-4 rounded-[24px] border border-slate-200 bg-slate-50 p-4'
+  const scroll = embedded ? 'min-h-0 flex-1 space-y-3 overflow-y-auto px-4 py-4' : 'space-y-3'
+  const formWrap = classNames('flex gap-2', embedded ? 'shrink-0 border-t border-slate-200 bg-white px-4 py-3' : 'mt-4')
+
   return (
-    <div className="mt-4 rounded-[24px] border border-slate-200 bg-slate-50 p-4">
-      <div className="space-y-3">
+    <div className={wrap}>
+      <div className={scroll}>
         {messages.length === 0 ? (
           <p className="text-sm text-slate-400">No updates yet.</p>
         ) : (
@@ -615,7 +623,7 @@ function RequestThread({ workOrder, residentEmail, onThreadUpdated }) {
           })
         )}
       </div>
-      <form onSubmit={handleSend} className="mt-4 flex gap-2">
+      <form onSubmit={handleSend} className={formWrap}>
         <input value={draft} onChange={(e) => setDraft(e.target.value)}
           placeholder="Send an update or reply..."
           className="flex-1 rounded-full border border-slate-200 px-4 py-2.5 text-sm outline-none transition focus:border-slate-900 focus:ring-2 focus:ring-slate-900/10" />
@@ -628,9 +636,92 @@ function RequestThread({ workOrder, residentEmail, onThreadUpdated }) {
   )
 }
 
+function WorkOrderReadingPane({ request, residentEmail, onWorkOrderUpdated }) {
+  const status = request.Status || 'Submitted'
+  const priority = request.Priority || 'Routine'
+  const notes = request['Management Notes']
+  const photo = Array.isArray(request.Photo) ? request.Photo[0] : null
+  const resolved = isWorkOrderResolved(request)
+  const appId = request['Application ID']
+  const updateLog = request.Update || request['Latest Update']
+  const resolutionSummary = request['Resolution Summary']
+
+  const hasMeta =
+    (resolutionSummary && resolved) || updateLog || notes || photo?.url
+
+  return (
+    <div className="flex h-full min-h-0 flex-1 flex-col overflow-hidden">
+      <div className="shrink-0 border-b border-slate-200 bg-white px-4 py-3 lg:px-5">
+        <div className="flex flex-wrap items-center gap-2">
+          <h3 className="min-w-0 flex-1 truncate text-base font-black text-slate-900">{request.Title}</h3>
+          <span className={classNames('rounded-full border px-2.5 py-1 text-[11px] font-semibold', statusStyles[status] || statusStyles.Submitted)}>
+            {status}
+          </span>
+          <span className={classNames('rounded-full border px-2.5 py-1 text-[11px] font-semibold', priorityStyles[priority] || priorityStyles.Routine)}>
+            {priority}
+          </span>
+          {resolved ? (
+            <span className="rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-[11px] font-semibold text-emerald-700">
+              Resolved
+            </span>
+          ) : null}
+        </div>
+        <p className="mt-2 text-sm leading-6 text-slate-600">{request.Description}</p>
+        <div className="mt-2 flex flex-wrap gap-x-4 text-xs text-slate-400">
+          <span>{request.Category}</span>
+          <span>{formatDate(request['Date Submitted'] || request.created_at)}</span>
+        </div>
+        {appId != null && String(appId).trim() !== '' ? (
+          <p className="mt-2 text-xs font-medium text-slate-400">Application ID: {String(appId)}</p>
+        ) : null}
+      </div>
+      {hasMeta ? (
+        <div className="max-h-[min(36vh,280px)] shrink-0 overflow-y-auto border-b border-slate-200 bg-white px-4 py-3 lg:px-5">
+          {resolutionSummary && resolved ? (
+            <div className="mb-3 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3">
+              <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-emerald-700">Resolution summary</div>
+              <div className="mt-1 whitespace-pre-wrap text-sm leading-6 text-emerald-900">{resolutionSummary}</div>
+            </div>
+          ) : null}
+          {updateLog ? (
+            <div className="mb-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+              <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">Update log</div>
+              <div className="mt-1 whitespace-pre-wrap text-sm leading-6 text-slate-700">{updateLog}</div>
+            </div>
+          ) : null}
+          {notes ? (
+            <div className="mb-3 rounded-2xl bg-slate-50 px-4 py-3">
+              <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">Management Notes</div>
+              <div className="mt-1 text-sm text-slate-600">{notes}</div>
+            </div>
+          ) : null}
+          {photo?.url ? (
+            <div>
+              <a
+                href={photo.url}
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex rounded-full border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 transition hover:border-slate-500"
+              >
+                View attached photo
+              </a>
+            </div>
+          ) : null}
+        </div>
+      ) : null}
+      <RequestThread
+        workOrder={request}
+        residentEmail={residentEmail}
+        onThreadUpdated={onWorkOrderUpdated}
+        embedded
+      />
+    </div>
+  )
+}
+
 function WorkOrdersPanel({ resident, requests, onRequestCreated, onWorkOrderUpdated }) {
   const [showForm, setShowForm] = useState(false)
-  const [expandedId, setExpandedId] = useState(null)
+  const [selectedId, setSelectedId] = useState(null)
   const [form, setForm] = useState({
     title: '', category: requestCategories[0], urgency: urgencyOptions[0],
     preferredEntry: entryOptions[0], description: '',
@@ -639,6 +730,19 @@ function WorkOrdersPanel({ resident, requests, onRequestCreated, onWorkOrderUpda
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
+
+  useEffect(() => {
+    if (requests.length === 0) {
+      setSelectedId(null)
+      return
+    }
+    setSelectedId((current) => (current && requests.some((r) => r.id === current) ? current : requests[0].id))
+  }, [requests])
+
+  const selectedRequest = useMemo(
+    () => (selectedId ? requests.find((r) => r.id === selectedId) : null),
+    [requests, selectedId]
+  )
 
   const fieldCls = 'w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm outline-none transition focus:border-slate-900 focus:ring-2 focus:ring-slate-900/10'
 
@@ -741,86 +845,47 @@ function WorkOrdersPanel({ resident, requests, onRequestCreated, onWorkOrderUpda
           </div>
         </div>
       ) : (
-        <div className="space-y-4">
-          {requests.map((request) => {
-            const status = request.Status || 'Submitted'
-            const priority = request.Priority || 'Routine'
-            const notes = request['Management Notes']
-            const photo = Array.isArray(request.Photo) ? request.Photo[0] : null
-            const isExpanded = expandedId === request.id
-            const resolved = isWorkOrderResolved(request)
-            const appId = request['Application ID']
-            const updateLog = request.Update || request['Latest Update']
-            const resolutionSummary = request['Resolution Summary']
-
-            return (
-              <div key={request.id} className="rounded-[24px] border border-slate-200 p-5 transition hover:border-slate-300">
-                <button type="button"
-                  onClick={() => setExpandedId((c) => c === request.id ? null : request.id)}
-                  className="w-full text-left">
-                  <div className="flex flex-wrap items-start justify-between gap-3">
-                    <div>
-                      <div className="flex flex-wrap items-center gap-2">
-                        <h3 className="text-base font-bold text-slate-900">{request.Title}</h3>
-                        <span className={classNames('rounded-full border px-2.5 py-1 text-[11px] font-semibold', statusStyles[status] || statusStyles.Submitted)}>{status}</span>
-                        <span className={classNames('rounded-full border px-2.5 py-1 text-[11px] font-semibold', priorityStyles[priority] || priorityStyles.Routine)}>{priority}</span>
-                        {resolved ? (
-                          <span className="rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-[11px] font-semibold text-emerald-700">Resolved</span>
-                        ) : null}
-                      </div>
-                      <p className="mt-1.5 text-sm leading-6 text-slate-500">{request.Description}</p>
-                      {appId != null && String(appId).trim() !== '' ? (
-                        <p className="mt-2 text-xs font-medium text-slate-400">Application ID: {String(appId)}</p>
-                      ) : null}
-                    </div>
-                    <div className="text-right text-xs text-slate-400">
-                      <div>{request.Category}</div>
-                      <div className="mt-1">{formatDate(request['Date Submitted'] || request.created_at)}</div>
-                    </div>
-                  </div>
-                </button>
-
-                {resolutionSummary && resolved ? (
-                  <div className="mt-3 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3">
-                    <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-emerald-700">Resolution summary</div>
-                    <div className="mt-1 whitespace-pre-wrap text-sm leading-6 text-emerald-900">{resolutionSummary}</div>
-                  </div>
-                ) : null}
-
-                {updateLog ? (
-                  <div className="mt-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
-                    <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">Update log</div>
-                    <div className="mt-1 whitespace-pre-wrap text-sm leading-6 text-slate-700">{updateLog}</div>
-                  </div>
-                ) : null}
-
-                {notes ? (
-                  <div className="mt-3 rounded-2xl bg-slate-50 px-4 py-3">
-                    <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">Management Notes</div>
-                    <div className="mt-1 text-sm text-slate-600">{notes}</div>
-                  </div>
-                ) : null}
-
-                {photo?.url ? (
-                  <div className="mt-3">
-                    <a href={photo.url} target="_blank" rel="noreferrer"
-                      className="inline-flex rounded-full border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 transition hover:border-slate-500">
-                      View attached photo
-                    </a>
-                  </div>
-                ) : null}
-
-                {isExpanded ? (
-                  <RequestThread
-                    workOrder={request}
-                    residentEmail={resident.Email}
-                    onThreadUpdated={onWorkOrderUpdated}
-                  />
-                ) : null}
+        <GmailStyleInboxLayout
+          left={
+            <>
+              <div className="shrink-0 border-b border-slate-100 bg-white px-4 py-3">
+                <h3 className="text-sm font-black text-slate-900">Your requests</h3>
+                <p className="mt-0.5 text-xs text-slate-500">Select one to read details and reply</p>
+              </div>
+              <div className="min-h-0 flex-1 overflow-y-auto bg-white">
+                {requests.map((request) => {
+                  const status = request.Status || 'Submitted'
+                  const priority = request.Priority || 'Routine'
+                  const resolved = isWorkOrderResolved(request)
+                  return (
+                    <InboxThreadRow
+                      key={request.id}
+                      title={request.Title || 'Request'}
+                      subtitle={`${status} · ${priority}${resolved ? ' · Resolved' : ''}`}
+                      preview={request.Description || '—'}
+                      time={formatDate(request['Date Submitted'] || request.created_at)}
+                      selected={selectedId === request.id}
+                      onClick={() => setSelectedId(request.id)}
+                    />
+                  )
+                })}
+              </div>
+            </>
+          }
+          right={
+            selectedRequest ? (
+              <WorkOrderReadingPane
+                request={selectedRequest}
+                residentEmail={resident.Email}
+                onWorkOrderUpdated={onWorkOrderUpdated}
+              />
+            ) : (
+              <div className="flex flex-1 items-center justify-center px-4 py-12 text-sm text-slate-500">
+                Select a request
               </div>
             )
-          })}
-        </div>
+          }
+        />
       )}
     </SectionCard>
   )

@@ -4,6 +4,7 @@ import { properties } from '../data/properties'
 import { signLease, getSignedLeases } from '../lib/airtable'
 import { EmbeddedStripeCheckout } from '../components/EmbeddedStripeCheckout'
 import { readJsonResponse } from '../lib/readJsonResponse'
+import { errorFromAirtableApiBody } from '../lib/airtablePermissionError'
 
 const AIRTABLE_BASE_ID = import.meta.env.VITE_AIRTABLE_APPLICATIONS_BASE_ID || import.meta.env.VITE_AIRTABLE_BASE_ID || 'appNBX2inqfJMyqYV'
 const APPLICATIONS_TABLE = import.meta.env.VITE_AIRTABLE_APPLICATIONS_TABLE || 'Applications'
@@ -109,6 +110,44 @@ function getUtilitiesFee(propertyName) {
     if (Number.isFinite(n) && n > 0) return n
   }
   return 0
+}
+
+const DEFAULT_APPLICATION_FEE_USD = 50
+const MAX_APPLICATION_FEE_USD = 9999
+
+/** Parse `applicationFee` from marketing `properties.js`. Returns null → use default USD amount. */
+function parseApplicationFeeFromMarketing(raw) {
+  if (raw == null || raw === '') return null
+  const s = String(raw).toLowerCase().trim()
+  if (/\bcontact\b/.test(s)) return null
+  const digitsOnly = String(raw).replace(/[^0-9]/g, '')
+  if (!digitsOnly) {
+    if (/\b(no fee|free|waive|waived)\b/.test(s)) return 0
+    return null
+  }
+  const n = parseInt(digitsOnly, 10)
+  if (!Number.isFinite(n)) return null
+  return Math.min(MAX_APPLICATION_FEE_USD, Math.max(0, n))
+}
+
+function getApplicationFeeFromMarketing(propertyName) {
+  if (!propertyName) return DEFAULT_APPLICATION_FEE_USD
+  const prop = properties.find((p) => p.name === propertyName)
+  const parsed = parseApplicationFeeFromMarketing(prop?.applicationFee)
+  return parsed === null ? DEFAULT_APPLICATION_FEE_USD : parsed
+}
+
+/**
+ * Final application fee in USD: optional per-property override from Airtable (via tour API),
+ * otherwise marketing copy in `properties.js`.
+ */
+function getApplicationFeeDollars(propertyName, serverOverrides = {}) {
+  if (!propertyName) return DEFAULT_APPLICATION_FEE_USD
+  const key = String(propertyName).trim()
+  if (serverOverrides && typeof serverOverrides[key] === 'number' && Number.isFinite(serverOverrides[key])) {
+    return Math.min(MAX_APPLICATION_FEE_USD, Math.max(0, Math.round(serverOverrides[key])))
+  }
+  return getApplicationFeeFromMarketing(propertyName)
 }
 
 // Build PROPERTY_OPTIONS with full room availability data
@@ -605,6 +644,8 @@ async function submitApplicationRecord(tableName, fields) {
 
   if (!response.ok) {
     const body = await response.text()
+    const pe = errorFromAirtableApiBody(response.url, body)
+    if (pe) throw pe
     let message = `Application service error ${response.status}`
     try {
       message += `: ${JSON.parse(body)?.error?.message}`
@@ -688,6 +729,8 @@ async function findApplicationRecord({ applicationId, signerName }) {
     )
     if (!response.ok) {
       const body = await response.text()
+      const pe = errorFromAirtableApiBody(response.url, body)
+      if (pe) throw pe
       let message = `Application lookup error ${response.status}`
       try { message += `: ${JSON.parse(body)?.error?.message}` } catch { message += `: ${body}` }
       throw new Error(message)
@@ -715,6 +758,8 @@ async function findApplicationRecord({ applicationId, signerName }) {
 
   if (!response.ok) {
     const body = await response.text()
+    const pe = errorFromAirtableApiBody(response.url, body)
+    if (pe) throw pe
     let message = `Application lookup error ${response.status}`
     try {
       message += `: ${JSON.parse(body)?.error?.message}`
@@ -1138,6 +1183,37 @@ export default function Apply() {
     [signer.propertyName],
   )
 
+  /** Property Name → Application Fee (USD) from Airtable Properties, when returned by tour API */
+  const [applicationFeeOverrides, setApplicationFeeOverrides] = useState({})
+
+  useEffect(() => {
+    let cancelled = false
+    fetch('/api/forms?action=tour')
+      .then((r) => r.json())
+      .then((data) => {
+        if (cancelled || !Array.isArray(data?.properties)) return
+        const map = {}
+        for (const p of data.properties) {
+          const name = String(p?.name || '').trim()
+          if (!name) continue
+          const v = p.applicationFee
+          if (typeof v === 'number' && Number.isFinite(v)) {
+            map[name] = Math.min(MAX_APPLICATION_FEE_USD, Math.max(0, Math.round(v)))
+          }
+        }
+        setApplicationFeeOverrides(map)
+      })
+      .catch(() => {})
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  const signerApplicationFeeUsd = useMemo(
+    () => getApplicationFeeDollars(signer.propertyName, applicationFeeOverrides),
+    [signer.propertyName, applicationFeeOverrides],
+  )
+
   // Fetch currently active signed leases to show dynamic room occupancy
   useEffect(() => {
     async function fetchSignedLeases() {
@@ -1296,7 +1372,8 @@ export default function Apply() {
     try {
       let savedRecord = null
       if (applicationType === 'signer') {
-        if (!(feePrePaid || promoApplied || promoOverride)) {
+        const feeDueUsd = getApplicationFeeDollars(signer.propertyName, applicationFeeOverrides)
+        if (feeDueUsd > 0 && !(feePrePaid || promoApplied || promoOverride)) {
           throw new Error('Application fee must be paid before submitting.')
         }
 
@@ -1475,6 +1552,12 @@ export default function Apply() {
       setFieldErrors(errs)
       return
     }
+    const amount = getApplicationFeeDollars(signer.propertyName, applicationFeeOverrides)
+    if (amount <= 0) {
+      setPrePaymentLoading(false)
+      return
+    }
+
     setPrePaymentLoading(true)
     setPrePaymentError('')
     setEmbeddedCheckout({
@@ -1485,8 +1568,8 @@ export default function Apply() {
         residentEmail: signer.email,
         propertyName: signer.propertyName,
         unitNumber: signer.roomNumber,
-        amount: 50,
-        description: 'Application fee',
+        amount,
+        description: `Application fee — ${signer.propertyName || 'Axis housing'}`,
         category: 'application_fee',
         successPath: '/apply?payment=fee_prepaid',
         cancelPath: '/apply?payment=fee_cancelled',
@@ -1526,6 +1609,11 @@ export default function Apply() {
     const propertyName = submissionSummary?.propertyName || (effectiveType === 'signer' ? signer.propertyName : '')
     const unitNumber = submissionSummary?.roomNumber || (effectiveType === 'signer' ? signer.roomNumber : '')
     const recordId = submissionSummary?.submittedRecord?.id || submittedRecord?.id || ''
+    const amount = getApplicationFeeDollars(propertyName, applicationFeeOverrides)
+    if (amount <= 0) {
+      setPaymentError('No application fee is configured for this property.')
+      return
+    }
 
     setPaymentLoading(true)
     setPaymentError('')
@@ -1539,8 +1627,8 @@ export default function Apply() {
           residentEmail: applicantEmail,
           propertyName,
           unitNumber,
-          amount: 50,
-          description: 'Application fee',
+          amount,
+          description: `Application fee — ${propertyName || 'Axis housing'}`,
           category: 'application_fee',
           paymentRecordId: recordId,
           successPath: '/apply?payment=fee_success',
@@ -2468,6 +2556,20 @@ export default function Apply() {
           {isLastStep && applicationType === 'signer' && prePaymentError && (
             <div className="mb-3 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{prePaymentError}</div>
           )}
+          {isLastStep && applicationType === 'signer' && signer.propertyName ? (
+            <div className="mb-3 rounded-xl border border-slate-100 bg-slate-50 px-4 py-3 text-sm text-slate-700">
+              {signerApplicationFeeUsd <= 0 ? (
+                <p>
+                  <strong>No application fee</strong> for this property — you can submit without payment. Promo codes still apply if you have one.
+                </p>
+              ) : (
+                <p>
+                  Application fee: <strong>${signerApplicationFeeUsd.toLocaleString()}</strong>
+                  <span className="text-slate-500"> — set by the property; paid securely through Stripe before your application is sent.</span>
+                </p>
+              )}
+            </div>
+          ) : null}
           {isLastStep && applicationType === 'signer' && (
             <div className="mb-4 rounded-2xl border border-slate-200 bg-white p-4">
               <p className="mb-2 text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">Promo Code</p>
@@ -2494,8 +2596,25 @@ export default function Apply() {
                 Continue
               </button>
             ) : applicationType === 'signer' ? (
-              <button type="button" onClick={promoInput.trim() ? handlePromoApplyAndSubmit : handlePrePaymentCheckout} disabled={prePaymentLoading || submitting} className="flex-1 rounded-full bg-axis py-3 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-60 transition">
-                {submitting ? 'Submitting…' : prePaymentLoading ? 'Opening payment…' : promoInput.trim() ? 'Submit Application' : 'Pay $50 & Submit'}
+              <button
+                type="button"
+                onClick={() => {
+                  if (promoInput.trim()) handlePromoApplyAndSubmit()
+                  else if (signerApplicationFeeUsd <= 0) handleSubmit({ preventDefault: () => {} })
+                  else handlePrePaymentCheckout()
+                }}
+                disabled={prePaymentLoading || submitting}
+                className="flex-1 rounded-full bg-axis py-3 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-60 transition"
+              >
+                {submitting
+                  ? 'Submitting…'
+                  : prePaymentLoading
+                    ? 'Opening payment…'
+                    : promoInput.trim()
+                      ? 'Submit Application'
+                      : signerApplicationFeeUsd <= 0
+                        ? 'Submit Application'
+                        : `Pay $${signerApplicationFeeUsd.toLocaleString()} & Submit`}
               </button>
             ) : (
               <button type="submit" disabled={submitting} className="flex-1 rounded-full bg-axis py-3 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-60 transition">

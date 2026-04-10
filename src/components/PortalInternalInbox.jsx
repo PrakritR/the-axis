@@ -1,5 +1,7 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react'
+import React, { useCallback, useEffect, useId, useMemo, useState } from 'react'
 import toast from 'react-hot-toast'
+import GmailStyleInboxLayout, { InboxThreadRow } from './GmailStyleInboxLayout'
+import PortalInboxAnnouncementSection from './PortalInboxAnnouncementSection'
 import {
   portalInboxAirtableConfigured,
   getMessagesByThreadKey,
@@ -115,6 +117,7 @@ export default function PortalInternalInbox({ variant, userEmail, userDisplayNam
   const [jumpManagerEmail, setJumpManagerEmail] = useState('')
 
   const live = portalInboxAirtableConfigured()
+  const announcementListId = useId().replace(/:/g, '')
 
   const loadAdminFeed = useCallback(async () => {
     const rows = await getAllPortalInternalThreadMessages()
@@ -222,12 +225,12 @@ export default function PortalInternalInbox({ variant, userEmail, userDisplayNam
     )
   }
 
-  return (
-    <div className="grid gap-6 lg:grid-cols-[minmax(0,280px)_minmax(0,1fr)]">
-      {variant === 'admin' ? (
-        <div className="rounded-[24px] border border-slate-200 bg-white p-4 shadow-sm">
+  const leftPane =
+    variant === 'admin' ? (
+      <>
+        <div className="shrink-0 border-b border-slate-100 bg-white px-4 py-3">
           <div className="flex items-center justify-between gap-2">
-            <h2 className="text-sm font-black text-slate-900">Threads</h2>
+            <h2 className="text-sm font-black text-slate-900">Inbox</h2>
             <button
               type="button"
               onClick={() => refresh()}
@@ -281,36 +284,33 @@ export default function PortalInternalInbox({ variant, userEmail, userDisplayNam
               </button>
             </div>
           </div>
-          <ul className="mt-4 max-h-[min(50vh,420px)] space-y-2 overflow-y-auto pr-1">
-            {threadGroups.map(([key, msgs]) => {
-              const last = msgs[msgs.length - 1]
-              return (
-                <li key={key}>
-                  <button
-                    type="button"
-                    onClick={() => setSelectedThreadKey(key)}
-                    className={`w-full rounded-xl border px-3 py-2 text-left text-sm transition ${
-                      selectedThreadKey === key ? 'border-[#2563eb] bg-[#2563eb]/5' : 'border-slate-100 bg-slate-50 hover:border-slate-200'
-                    }`}
-                  >
-                    <div className="font-semibold text-slate-800">{threadTitle(key)}</div>
-                    <div className="line-clamp-2 text-xs text-slate-500">{last?.Message || '—'}</div>
-                    <div className="mt-0.5 text-[10px] text-slate-400">{formatDt(last?.created_at)}</div>
-                  </button>
-                </li>
-              )
-            })}
-          </ul>
+        </div>
+        <div className="min-h-0 flex-1 overflow-y-auto bg-white">
+          {threadGroups.map(([key, msgs]) => {
+            const last = msgs[msgs.length - 1]
+            return (
+              <InboxThreadRow
+                key={key}
+                title={threadTitle(key)}
+                preview={last?.Message || '—'}
+                time={formatDt(last?.created_at)}
+                selected={selectedThreadKey === key}
+                onClick={() => setSelectedThreadKey(key)}
+              />
+            )
+          })}
           {threadGroups.length === 0 && !loading ? (
-            <p className="mt-3 text-xs text-slate-500">No threads yet. Open one by email above or wait for inbound messages.</p>
+            <p className="px-4 py-4 text-xs text-slate-500">No threads yet. Open one by email above or wait for inbound messages.</p>
           ) : null}
         </div>
-      ) : (
-        <div className="rounded-[24px] border border-slate-200 bg-white p-4 shadow-sm">
+      </>
+    ) : (
+      <>
+        <div className="shrink-0 border-b border-slate-100 bg-white px-4 py-3">
           <div className="flex items-center justify-between gap-2">
             <div>
-              <h2 className="text-sm font-black text-slate-900">Your thread with Axis</h2>
-              <p className="mt-1 text-xs text-slate-500">{threadTitle(fixedThreadKey)}</p>
+              <h2 className="text-sm font-black text-slate-900">Inbox</h2>
+              <p className="mt-0.5 text-xs text-slate-500">Messages with Axis</p>
             </div>
             <button
               type="button"
@@ -325,46 +325,88 @@ export default function PortalInternalInbox({ variant, userEmail, userDisplayNam
               href={formPrefillUrl}
               target="_blank"
               rel="noreferrer"
-              className="mt-3 inline-flex text-xs font-semibold text-[#2563eb] hover:underline"
+              className="mt-2 inline-flex text-xs font-semibold text-[#2563eb] hover:underline"
             >
-              Also submit via Airtable form →
+              Submit via Airtable form →
             </a>
           ) : null}
         </div>
-      )}
+        <div className="min-h-0 flex-1 overflow-y-auto bg-white">
+          {(() => {
+            const msgs = threadGroups.find(([k]) => k === fixedThreadKey)?.[1] || []
+            const last = msgs[msgs.length - 1]
+            return (
+              <InboxThreadRow
+                title={threadTitle(fixedThreadKey)}
+                subtitle="Your conversation"
+                preview={last?.Message || 'No messages yet'}
+                time={formatDt(last?.created_at)}
+                selected
+                onClick={() => {}}
+              />
+            )
+          })()}
+        </div>
+      </>
+    )
 
-      <div className="rounded-[24px] border border-slate-200 bg-white p-5 shadow-sm">
-        <h2 className="text-lg font-black text-slate-900">Messages</h2>
-        {variant === 'admin' && !activeThreadKey ? (
-          <p className="mt-4 text-sm text-slate-500">Select a thread or open one by email.</p>
-        ) : loading ? (
-          <p className="mt-8 text-center text-sm text-slate-500">Loading…</p>
-        ) : (
-          <>
-            <div className="mt-4 max-h-[min(52vh,440px)] space-y-3 overflow-y-auto rounded-2xl border border-slate-100 bg-slate-50 p-4">
-              {threadMessages.length === 0 ? (
-                <p className="text-sm text-slate-500">No messages yet. Say hello below{variant === 'admin' ? ' (first message starts the thread).' : '.'}</p>
-              ) : (
-                threadMessages.map((m) => {
-                  const admin = Boolean(m['Is Admin'])
-                  const label = admin ? 'Axis Admin' : m['Sender Email'] || name
-                  return (
-                    <div
-                      key={m.id}
-                      className={`rounded-xl border px-3 py-2 text-sm ${
-                        admin ? 'ml-4 border-violet-200 bg-violet-50' : 'mr-4 border-slate-200 bg-white'
-                      }`}
-                    >
-                      <div className="text-[11px] font-semibold text-slate-400">
-                        {label} · {formatDt(m.Timestamp || m.created_at)}
-                      </div>
-                      <p className="mt-1 whitespace-pre-wrap text-slate-800">{m.Message}</p>
+  const rightPane = (
+    <div className="flex h-full min-h-0 flex-1 flex-col overflow-hidden">
+      <div className="shrink-0 border-b border-slate-200 bg-white px-4 py-3 lg:px-5">
+        <h2 className="truncate text-base font-black text-slate-900">
+          {activeThreadKey ? threadTitle(activeThreadKey) : 'Select a conversation'}
+        </h2>
+        {variant !== 'admin' && activeThreadKey ? (
+          <p className="mt-0.5 truncate text-xs text-slate-500">{activeThreadKey}</p>
+        ) : null}
+      </div>
+      {variant === 'admin' && !activeThreadKey ? (
+        <div className="flex flex-1 items-center justify-center px-4 py-8">
+          <p className="text-center text-sm text-slate-500">Select a thread from the list or open one by email.</p>
+        </div>
+      ) : loading ? (
+        <div className="flex flex-1 items-center justify-center py-12">
+          <p className="text-sm text-slate-500">Loading…</p>
+        </div>
+      ) : (
+        <>
+          <div className="min-h-0 flex-1 space-y-3 overflow-y-auto px-4 py-4 lg:px-5">
+            {threadMessages.length === 0 ? (
+              <p className="text-sm text-slate-500">
+                No messages yet. Say hello below{variant === 'admin' ? ' (first message starts the thread).' : '.'}
+              </p>
+            ) : (
+              threadMessages.map((m) => {
+                const admin = Boolean(m['Is Admin'])
+                const label = admin ? 'Axis Admin' : m['Sender Email'] || name
+                return (
+                  <div
+                    key={m.id}
+                    className={`rounded-xl border px-3 py-2 text-sm ${
+                      admin ? 'ml-2 border-violet-200 bg-violet-50 md:ml-6' : 'mr-2 border-slate-200 bg-white md:mr-6'
+                    }`}
+                  >
+                    <div className="text-[11px] font-semibold text-slate-400">
+                      {label} · {formatDt(m.Timestamp || m.created_at)}
                     </div>
-                  )
-                })
-              )}
-            </div>
-            <form onSubmit={handleSend} className="mt-4 flex flex-col gap-2 sm:flex-row sm:items-end">
+                    <p className="mt-1 whitespace-pre-wrap text-slate-800">{m.Message}</p>
+                  </div>
+                )
+              })
+            )}
+          </div>
+          <PortalInboxAnnouncementSection
+            variant={variant}
+            userEmail={email}
+            notifyThreadKey={activeThreadKey}
+            onInboxRefresh={refresh}
+            listId={`portal-inbox-ann-${announcementListId}`}
+          />
+          <form
+            onSubmit={handleSend}
+            className="shrink-0 border-t border-slate-200 bg-white px-4 py-3 lg:px-5"
+          >
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
               <textarea
                 value={draft}
                 onChange={(e) => setDraft(e.target.value)}
@@ -379,10 +421,12 @@ export default function PortalInternalInbox({ variant, userEmail, userDisplayNam
               >
                 {sending ? 'Sending…' : 'Send'}
               </button>
-            </form>
-          </>
-        )}
-      </div>
+            </div>
+          </form>
+        </>
+      )}
     </div>
   )
+
+  return <GmailStyleInboxLayout left={leftPane} right={rightPane} />
 }

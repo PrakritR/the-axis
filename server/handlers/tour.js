@@ -26,11 +26,18 @@ function mapProperty(record) {
     (typeof fields['Site Manager Email'] === 'string' && fields['Site Manager Email'].trim()) ||
     extractNoteValue(fields.Notes, 'Site Manager Email') ||
     ''
+  const appFeeRaw = fields['Application Fee']
+  let applicationFee
+  if (typeof appFeeRaw === 'number' && Number.isFinite(appFeeRaw)) {
+    applicationFee = Math.max(0, Math.min(9999, Math.round(appFeeRaw)))
+  }
+
   return {
     id: record.id,
     name: fields.Name || fields.Property || 'Untitled house',
     address: fields.Address || '',
     rooms,
+    ...(applicationFee !== undefined ? { applicationFee } : {}),
     manager: extractNoteValue(fields.Notes, 'Tour Manager'),
     /** Used to route public “Message Axis” form to the correct Manager portal thread (must be an email). */
     managerEmail: managerEmailRaw.trim(),
