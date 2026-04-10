@@ -167,6 +167,16 @@ export default function JoinUs() {
     if (location.hash === '#manager-access') setPartnerSignupOpen(true)
   }, [location.hash])
 
+  useEffect(() => {
+    if (location.pathname !== '/owners/pricing') return
+    const param = new URLSearchParams(location.search).get('plan')
+    if (param && PLANS.some((p) => p.id === param)) {
+      setSelectedPlan(param)
+      return
+    }
+    setSelectedPlan('pro')
+  }, [location.pathname, location.search])
+
   function copyManagerId() {
     if (!managerId) return
     navigator.clipboard.writeText(managerId).then(() => {

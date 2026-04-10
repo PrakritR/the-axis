@@ -8,9 +8,14 @@ function cx(...values) {
 export const portalAuthInputCls =
   'w-full rounded-[24px] border border-slate-200 bg-white px-5 py-4 text-base text-slate-900 placeholder:text-slate-400 outline-none transition focus:border-[#2563eb] focus:ring-2 focus:ring-[#2563eb]/20'
 
-export function PortalAuthPage({ children }) {
+export function PortalAuthPage({ children, dense = false }) {
   return (
-    <div className="flex min-h-screen items-start justify-center bg-[linear-gradient(180deg,#f7fbff_0%,#eef5ff_48%,#f9fcff_100%)] px-4 pb-12 pt-8 font-sans sm:pt-12 lg:pt-16">
+    <div
+      className={cx(
+        'flex min-h-screen items-start justify-center bg-[linear-gradient(180deg,#f7fbff_0%,#eef5ff_48%,#f9fcff_100%)] px-4 pb-12 font-sans',
+        dense ? 'pt-4 sm:pt-5 lg:pt-7' : 'pt-8 sm:pt-12 lg:pt-16'
+      )}
+    >
       <div className="w-full max-w-lg">{children}</div>
     </div>
   )
@@ -133,3 +138,4 @@ export function PortalFooterLink({ prefix, linkLabel, to }) {
     </>
   )
 }
+

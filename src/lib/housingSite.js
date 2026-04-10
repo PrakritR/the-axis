@@ -47,6 +47,24 @@ export const HOUSING_APPLY_PATH = '/apply'
 /** In-app housing contact: tour scheduler + housing messages (secondary; main CTAs use HOUSING_APPLY_PATH) */
 export const HOUSING_CONTACT_SCHEDULE = '/contact?section=housing&tab=schedule'
 
+/** Housing “send a message” tab — optional query `&category=<id>` (see {@link HOUSING_MESSAGE_CATEGORIES}) */
+export const HOUSING_CONTACT_MESSAGE = '/contact?section=housing&tab=message'
+
+/** Resident / portal message categories (ids are stable for URL query `category=`) */
+export const HOUSING_MESSAGE_CATEGORIES = [
+  { id: 'forgot-password', label: 'Forgot password or portal access' },
+  { id: 'pay-rent', label: "Can't figure out how to pay rent" },
+  { id: 'maintenance', label: 'Maintenance or repairs' },
+  { id: 'lease', label: 'Lease, renewal, or move-out' },
+  { id: 'general', label: 'Something else' },
+]
+
+const HOUSING_CATEGORY_ID_SET = new Set(HOUSING_MESSAGE_CATEGORIES.map((c) => c.id))
+
+export function isHousingMessageCategoryId(value) {
+  return typeof value === 'string' && HOUSING_CATEGORY_ID_SET.has(value)
+}
+
 /**
  * @deprecated Prefer HOUSING_APPLY_PATH for marketing CTAs. Kept for chat copy / legacy links.
  */

@@ -12,7 +12,8 @@ import {
   PortalSegmentedControl,
   portalAuthInputCls,
 } from '../components/PortalAuthUI'
-import { ManagerAuthForm } from './Manager'
+import { ManagerAuthForm, MANAGER_SESSION_KEY } from './Manager'
+import { HOUSING_CONTACT_MESSAGE } from '../lib/housingSite'
 import {
   airtableReady,
   createResident,
@@ -32,7 +33,6 @@ import {
 } from '../lib/airtable'
 
 const SESSION_KEY = 'axis_resident'
-const MANAGER_SESSION_KEY = 'axis_manager'
 
 const requestCategories = ['Plumbing', 'Electrical', 'HVAC', 'Appliance', 'Pest', 'Structural', 'Other']
 const urgencyOptions = ['Routine', 'Urgent', 'Emergency']
@@ -246,10 +246,6 @@ function SetupRequired() {
 
 // ─── Auth ─────────────────────────────────────────────────────────────────────
 
-const FORGOT_PASSWORD_MAILTO =
-  'mailto:info@axis-seattle-housing.com?subject=' +
-  encodeURIComponent('Resident portal — password help')
-
 export function ResidentAuthForm({ onLogin, footer = null, variant = 'default' }) {
   const urlAppId = typeof window !== 'undefined'
     ? (new URLSearchParams(window.location.search).get('appId') || '')
@@ -345,7 +341,7 @@ export function ResidentAuthForm({ onLogin, footer = null, variant = 'default' }
     <>
       {showSignInActivateTabs ? (
         <PortalSegmentedControl
-          tabs={[['signin', 'Sign in'], ['activate', 'Activate account']]}
+          tabs={[['signin', 'Sign in'], ['activate', 'Create account']]}
           active={tab}
           onChange={(id) => { setTab(id); setSignInError(''); setActivationError('') }}
         />
@@ -370,14 +366,17 @@ export function ResidentAuthForm({ onLogin, footer = null, variant = 'default' }
           {portalEntry ? (
             <div className="flex flex-col gap-3 pt-1 text-center text-sm text-slate-500">
               <div className="flex flex-wrap items-center justify-center gap-x-4 gap-y-2">
-                <a href={FORGOT_PASSWORD_MAILTO} className="font-semibold text-[#2563eb] hover:text-slate-900">
-                  Forgot password
-                </a>
                 <Link
-                  to="/contact?section=housing&tab=message"
+                  to={`${HOUSING_CONTACT_MESSAGE}&category=forgot-password`}
                   className="font-semibold text-[#2563eb] hover:text-slate-900"
                 >
-                  Message leasing
+                  Forgot password
+                </Link>
+                <Link
+                  to={HOUSING_CONTACT_MESSAGE}
+                  className="font-semibold text-[#2563eb] hover:text-slate-900"
+                >
+                  Message Axis
                 </Link>
               </div>
               <button
@@ -385,7 +384,7 @@ export function ResidentAuthForm({ onLogin, footer = null, variant = 'default' }
                 onClick={() => { setTab('activate'); setSignInError(''); setActivationError('') }}
                 className="font-semibold text-slate-600 hover:text-slate-900"
               >
-                Activate account
+                Create account
               </button>
             </div>
           ) : null}
@@ -459,7 +458,7 @@ function AirtableLogin({ onLogin }) {
           {isResident ? (
             <ResidentAuthForm onLogin={onLogin} variant="portal-entry" />
           ) : (
-            <ManagerAuthForm onLogin={handleManagerLogin} />
+            <ManagerAuthForm onLogin={handleManagerLogin} variant="portal-entry" />
           )}
         </div>
       </PortalAuthCard>

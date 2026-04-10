@@ -124,8 +124,8 @@ function AppInner() {
 
   const isOwnersRoute = location.pathname.startsWith('/owners')
   const isPortalHub = location.pathname === '/portal'
-  /** Same strip as the main marketing site on every page except standalone manager / sign / axis-team. */
-  const showPromoBanner = !isStandaloneRoute
+  /** Same strip as the main marketing site on every page except standalone manager / sign / axis-team / portal hub. */
+  const showPromoBanner = !isStandaloneRoute && !isPortalHub
   const showMainMobileDock =
     !isOwnersRoute && ['/', '/apply', '/contact'].includes(location.pathname)
   // Manager portal and signing flow render completely standalone — skip the public shell entirely

@@ -18,7 +18,9 @@
 //   Manager (default)  — root component managing session + view routing
 
 import React, { useCallback, useEffect, useMemo, useState } from 'react'
+import { Link } from 'react-router-dom'
 import toast from 'react-hot-toast'
+import { HOUSING_CONTACT_MESSAGE } from '../lib/housingSite'
 import {
   PortalAuthCard,
   PortalAuthPage,
@@ -31,7 +33,7 @@ import {
 } from '../components/PortalAuthUI'
 
 // ─── Session ──────────────────────────────────────────────────────────────────
-const MANAGER_SESSION_KEY = 'axis_manager'
+export const MANAGER_SESSION_KEY = 'axis_manager'
 const MANAGER_ONBOARDING_KEY = 'axis_manager_onboarding'
 
 // ─── Airtable config — same base as the rest of the portal ───────────────────
@@ -196,7 +198,7 @@ function StatusBadge({ status, size = 'sm' }) {
   )
 }
 
-export function ManagerAuthForm({ onLogin, footer = null }) {
+export function ManagerAuthForm({ onLogin, footer = null, variant = 'default' }) {
   const queryString = typeof window !== 'undefined' ? window.location.search : ''
   const initialSearch = new URLSearchParams(queryString)
   const initialView = initialSearch.get('view') === 'create' || initialSearch.get('setup') === 'success' ? 'setup' : 'signin'
@@ -415,16 +417,20 @@ export function ManagerAuthForm({ onLogin, footer = null }) {
     }
   }
 
+  const portalEntry = variant === 'portal-entry'
+
   return (
     <>
-      <PortalSegmentedControl
-        tabs={[['signin', 'Sign in'], ['setup', 'Create account']]}
-        active={activeView}
-        onChange={setActiveView}
-      />
+      {!portalEntry ? (
+        <PortalSegmentedControl
+          tabs={[['signin', 'Sign in'], ['setup', 'Create account']]}
+          active={activeView}
+          onChange={setActiveView}
+        />
+      ) : null}
 
       {activeView === 'signin' ? (
-        <form onSubmit={handleSubmit} className="mt-6 space-y-4">
+        <form onSubmit={handleSubmit} className={portalEntry ? 'mt-0 space-y-4' : 'mt-6 space-y-4'}>
           <PortalField label="Email">
             <input
               type="email"
@@ -455,15 +461,58 @@ export function ManagerAuthForm({ onLogin, footer = null }) {
           >
             {loginLoading ? 'Signing in…' : 'Sign in'}
           </PortalPrimaryButton>
+          {portalEntry ? (
+            <div className="flex flex-col gap-3 pt-1 text-center text-sm text-slate-500">
+              <div className="flex flex-wrap items-center justify-center gap-x-4 gap-y-2">
+                <Link
+                  to="/contact?section=software&tab=message"
+                  className="font-semibold text-[#2563eb] hover:text-slate-900"
+                >
+                  Forgot password
+                </Link>
+                <Link
+                  to={HOUSING_CONTACT_MESSAGE}
+                  className="font-semibold text-[#2563eb] hover:text-slate-900"
+                >
+                  Message Axis
+                </Link>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setActiveView('setup')
+                  setLoginError('')
+                }}
+                className="font-semibold text-slate-600 hover:text-slate-900"
+              >
+                Create account
+              </button>
+            </div>
+          ) : null}
         </form>
       ) : (
         <form
-          className="mt-6 space-y-4"
+          className={portalEntry ? 'mt-0 space-y-4' : 'mt-6 space-y-4'}
           onSubmit={(event) => {
             event.preventDefault()
             void handleCreateAccount()
           }}
         >
+          {portalEntry ? (
+            <div className="mb-4 text-center">
+              <button
+                type="button"
+                onClick={() => {
+                  setActiveView('signin')
+                  setActivationError('')
+                  setNotice('')
+                }}
+                className="text-sm font-semibold text-[#2563eb] hover:text-slate-900"
+              >
+                ← Back to sign in
+              </button>
+            </div>
+          ) : null}
           <PortalNotice>
             Use the manager ID created during pricing setup. Your account details load automatically once we find the record.
           </PortalNotice>

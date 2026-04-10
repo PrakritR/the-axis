@@ -7,9 +7,6 @@ import { HOUSING_EXPLORE_PATH } from '../lib/housingSite'
 import PortalNavLink from './PortalNavLink'
 import PortalBubble from './PortalBubble'
 
-const hubNavLink =
-  'text-sm font-medium text-slate-500 transition hover:text-slate-900'
-
 function HomeIcon() {
   return (
     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden>
@@ -85,12 +82,18 @@ export default function SiteHeader() {
 
   const showMobileDock = variant === 'marketing' && ['/', '/apply', '/contact'].includes(pathname)
 
-  const marketingCenterNav = [
+  const marketingCenterNavFull = [
     { label: 'Explore Houses', to: '/', isActive: isHome },
     { label: 'Schedule tour', to: '/contact?section=housing&tab=schedule', isActive: isScheduleTour },
     { label: 'Apply', to: '/apply', isActive: isApply },
-    { label: 'Partner with Axis', to: '/owners/about', isActive: false },
+    { label: 'Partner with Axis', to: '/owners/about', isActive: pathname === '/owners/about' },
   ]
+
+  const marketingCenterNav = isPortal
+    ? marketingCenterNavFull.filter(
+        (item) => item.to !== '/apply' && item.to !== '/contact?section=housing&tab=schedule'
+      )
+    : marketingCenterNavFull
 
   const mobileDockLinks = [
     { label: 'Houses', to: '/', icon: <HomeIcon />, isActive: isHome },
@@ -136,7 +139,7 @@ export default function SiteHeader() {
   const wordmarkLabel = variant === 'owners' ? 'Axis for property owners' : 'Axis home'
   const centerGap = variant === 'owners' ? 'gap-6 lg:gap-8' : 'gap-4 lg:gap-8'
   const underlineClass =
-    variant === 'owners' ? 'h-0.5 rounded-full bg-[#2563eb]' : 'h-px bg-[#2563eb]'
+    variant === 'owners' ? 'h-0.5 rounded-full bg-[#2563eb]' : 'h-0.5 rounded-full bg-[#2563eb]'
 
   return (
     <header className={headerShell} style={{ paddingTop: 'env(safe-area-inset-top)' }}>
@@ -156,7 +159,7 @@ export default function SiteHeader() {
               key={item.label}
               to={item.to}
               onClick={scrollToTop}
-              className={`relative shrink-0 text-[15px] font-semibold tracking-[-0.01em] transition ${
+              className={`group relative inline-flex shrink-0 flex-col items-center pb-2.5 text-[15px] font-semibold tracking-[-0.01em] transition ${
                 variant === 'owners'
                   ? item.isActive
                     ? 'text-slate-900'
@@ -168,8 +171,11 @@ export default function SiteHeader() {
             >
               {item.label}
               <span
-                className={`absolute -bottom-2 left-0 ${underlineClass} transition-all duration-300 ${
-                  item.isActive ? 'w-full opacity-100' : 'w-0 opacity-0'
+                aria-hidden
+                className={`pointer-events-none absolute bottom-0 left-0 right-0 mx-auto max-w-full ${underlineClass} origin-center transition-[transform,opacity] duration-200 ease-out ${
+                  item.isActive
+                    ? 'scale-x-100 opacity-100'
+                    : 'scale-x-0 opacity-0 group-hover:scale-x-100 group-hover:opacity-100 group-focus-visible:scale-x-100 group-focus-visible:opacity-100'
                 }`}
               />
             </Link>
@@ -212,81 +218,23 @@ export default function SiteHeader() {
             className="overflow-hidden border-t border-slate-200 bg-white/92 backdrop-blur-xl md:hidden"
           >
             <nav className={`container mx-auto flex flex-col gap-1 px-4 py-3 ${variant === 'marketing' ? 'sm:px-6' : ''}`}>
-              {variant === 'marketing' ? (
-                <>
-                  <Link
-                    to="/"
-                    onClick={() => { closeMobileMenu(); scrollToTop() }}
-                    className="rounded-xl px-3 py-2.5 text-sm font-medium text-slate-600 transition hover:bg-slate-50 hover:text-slate-900"
-                  >
-                    Explore Houses
-                  </Link>
-                  <Link
-                    to="/contact?section=housing&tab=schedule"
-                    onClick={() => { closeMobileMenu(); scrollToTop() }}
-                    className="rounded-xl px-3 py-2.5 text-sm font-medium text-slate-600 transition hover:bg-slate-50 hover:text-slate-900"
-                  >
-                    Schedule tour
-                  </Link>
-                  <Link
-                    to="/apply"
-                    onClick={() => { closeMobileMenu(); scrollToTop() }}
-                    className="rounded-xl px-3 py-2.5 text-sm font-medium text-slate-600 transition hover:bg-slate-50 hover:text-slate-900"
-                  >
-                    Apply
-                  </Link>
-                  <Link
-                    to="/owners/about"
-                    onClick={() => { closeMobileMenu(); scrollToTop() }}
-                    className="rounded-xl px-3 py-2.5 text-sm font-medium text-slate-600 transition hover:bg-slate-50 hover:text-slate-900"
-                  >
-                    Partner with Axis
-                  </Link>
-                </>
-              ) : (
-                <>
-                  <Link
-                    to="/owners/about"
-                    onClick={() => {
-                      closeMobileMenu()
-                      scrollToTop()
-                    }}
-                    className="rounded-xl px-3 py-2.5 text-sm font-medium text-slate-600 hover:bg-slate-50 hover:text-slate-900"
-                  >
-                    About us
-                  </Link>
-                  <Link
-                    to="/owners/pricing"
-                    onClick={() => {
-                      closeMobileMenu()
-                      scrollToTop()
-                    }}
-                    className="rounded-xl px-3 py-2.5 text-sm font-medium text-slate-600 hover:bg-slate-50 hover:text-slate-900"
-                  >
-                    Pricing
-                  </Link>
-                  <Link
-                    to="/owners/contact"
-                    onClick={() => {
-                      closeMobileMenu()
-                      scrollToTop()
-                    }}
-                    className="rounded-xl px-3 py-2.5 text-sm font-medium text-slate-600 hover:bg-slate-50 hover:text-slate-900"
-                  >
-                    Contact
-                  </Link>
-                  <Link
-                    to={HOUSING_EXPLORE_PATH}
-                    onClick={() => {
-                      closeMobileMenu()
-                      scrollToTop()
-                    }}
-                    className="rounded-xl px-3 py-2.5 text-sm font-medium text-slate-600 hover:bg-slate-50 hover:text-slate-900"
-                  >
-                    Explore properties
-                  </Link>
-                </>
-              )}
+              {centerNav.map((item) => (
+                <Link
+                  key={`mobile-${item.label}`}
+                  to={item.to}
+                  onClick={() => {
+                    closeMobileMenu()
+                    scrollToTop()
+                  }}
+                  className={`rounded-xl px-3 py-2.5 text-sm font-medium transition hover:bg-slate-50 ${
+                    item.isActive
+                      ? 'border-b-2 border-[#2563eb] text-slate-900'
+                      : 'border-b-2 border-transparent text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  {item.label}
+                </Link>
+              ))}
             </nav>
           </motion.div>
         )}

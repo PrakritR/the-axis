@@ -6,11 +6,10 @@ import {
   PortalSegmentedControl,
 } from '../components/PortalAuthUI'
 import { Seo } from '../lib/seo'
-import { ManagerAuthForm } from './Manager'
+import { ManagerAuthForm, MANAGER_SESSION_KEY } from './Manager'
 import { ResidentAuthForm } from './Resident'
 
 const RESIDENT_SESSION_KEY = 'axis_resident'
-const MANAGER_SESSION_KEY = 'axis_manager'
 
 export default function PortalSelect() {
   const navigate = useNavigate()
@@ -35,7 +34,7 @@ export default function PortalSelect() {
         description="Sign in to the resident or manager portal."
         pathname="/portal"
       />
-      <PortalAuthPage>
+      <PortalAuthPage dense>
         <PortalAuthCard title={isResident ? 'Resident portal' : 'Manager portal'}>
           <PortalSegmentedControl
             tabs={[
@@ -50,7 +49,7 @@ export default function PortalSelect() {
             {isResident ? (
               <ResidentAuthForm onLogin={handleResidentLogin} variant="portal-entry" />
             ) : (
-              <ManagerAuthForm onLogin={handleManagerLogin} />
+              <ManagerAuthForm onLogin={handleManagerLogin} variant="portal-entry" />
             )}
           </div>
         </PortalAuthCard>

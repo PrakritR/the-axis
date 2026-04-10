@@ -643,15 +643,12 @@ export default function PropertyPage(){
         structuredData={buildPropertySchema(p)}
       />
       <div className="main-container">
-        <section id="overview" ref={(node) => { sectionRefs.current.overview = node }} className="mx-auto max-w-[1480px] px-4 pt-6 sm:px-6 lg:px-10 lg:pt-10">
-          <div className="grid gap-10 border-b border-slate-200 pb-10 lg:grid-cols-1 lg:pb-14">
-            <div className="max-w-4xl">
-              <h1 className="font-editorial mt-4 text-[2rem] leading-[1.1] text-slate-900 sm:text-[3.5rem] sm:leading-[0.96] lg:max-w-4xl lg:text-[5.4rem]">{p.name}</h1>
-            </div>
-          </div>
-        </section>
-
-        <div className="property-gallery mx-auto mt-8 max-w-[1480px] px-4 sm:px-6 lg:px-10">
+        <div
+          id="overview"
+          ref={(node) => { sectionRefs.current.overview = node }}
+          className="property-gallery mx-auto max-w-[1480px] scroll-mt-28 px-4 pt-6 sm:px-6 sm:pt-8 md:scroll-mt-40 lg:px-10 lg:pt-10"
+        >
+          <h1 className="sr-only">{p.name}</h1>
           <PropertyGallery
             images={galleryImages}
             videos={p.videos || []}

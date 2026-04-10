@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { Seo } from '../lib/seo'
+import { HOUSING_MESSAGE_CATEGORIES, isHousingMessageCategoryId } from '../lib/housingSite'
 
 function formatPhone(raw) {
   const digits = raw.replace(/\D/g, '').slice(0, 10)
@@ -167,7 +168,7 @@ function MonthCalendar({ selectableSet, selectedDate, onSelectDate }) {
   )
 }
 
-function PropertyRoomPicker({ properties, selectedId, onSelectProperty, room, onSelectRoom }) {
+function PropertyRoomPicker({ properties, selectedId, onSelectProperty, room, onSelectRoom, roomRequired = true }) {
   const p = properties.find((x) => x.id === selectedId)
   return (
     <div className="space-y-5">
@@ -195,7 +196,10 @@ function PropertyRoomPicker({ properties, selectedId, onSelectProperty, room, on
       </div>
       {p ? (
         <div>
-          <div className="mb-2 text-sm font-semibold text-slate-700">Room <span className="font-normal text-slate-400">(required)</span></div>
+          <div className="mb-2 text-sm font-semibold text-slate-700">
+            Room{' '}
+            <span className="font-normal text-slate-400">{roomRequired ? '(required)' : '(optional)'}</span>
+          </div>
           <div className="flex flex-wrap gap-2">
             {p.rooms.map((r) => (
               <button key={r} type="button" onClick={() => onSelectRoom(r === room ? '' : r)}
@@ -464,9 +468,11 @@ function HousingScheduler() {
 // ── Housing message form ──────────────────────────────────────────────────────
 
 function HousingMessageForm() {
+  const location = useLocation()
   const [properties, setProperties] = useState(DEFAULT_PROPERTIES)
   const [property, setProperty] = useState(null)
   const [room, setRoom] = useState('')
+  const [category, setCategory] = useState('general')
   const [form, setFormState] = useState({ name: '', email: '', phone: '', message: '' })
   const [submitting, setSubmitting] = useState(false)
   const [submitted, setSubmitted] = useState(false)
@@ -475,6 +481,11 @@ function HousingMessageForm() {
   const selectedProperty = properties.find((p) => p.id === property)
 
   function set(k, v) { setFormState(prev => ({ ...prev, [k]: v })) }
+
+  useEffect(() => {
+    const id = new URLSearchParams(location.search).get('category') || ''
+    if (isHousingMessageCategoryId(id)) setCategory(id)
+  }, [location.search])
 
   useEffect(() => {
     let cancelled = false
@@ -491,12 +502,12 @@ function HousingMessageForm() {
 
   async function handleSubmit(e) {
     e.preventDefault()
-    if (!property || !room) {
-      setError('Choose a property and room.')
-      return
-    }
     setSubmitting(true); setError('')
-    const header = `Property: ${selectedProperty?.name || ''}\nRoom: ${room}\n\n`
+    const catLabel = HOUSING_MESSAGE_CATEGORIES.find((c) => c.id === category)?.label || category
+    let header = `Category: ${catLabel}\n\n`
+    if (property && room && selectedProperty) {
+      header += `Property: ${selectedProperty.name}\nRoom: ${room}\n\n`
+    }
     try {
       const res = await fetch(`https://api.airtable.com/v0/${AIRTABLE_BASE_ID}/Inquiries`, {
         method: 'POST',
@@ -516,20 +527,48 @@ function HousingMessageForm() {
     <SuccessCard title="Message sent!" body={`We'll follow up at ${form.email} within 2 business days.`}
       onReset={() => {
         setSubmitted(false)
-        setProperty(null); setRoom('')
+        setProperty(null); setRoom(''); setCategory('general')
         setFormState({ name: '', email: '', phone: '', message: '' })
       }} resetLabel="Send another" />
   )
 
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
-      <PropertyRoomPicker
-        properties={properties}
-        selectedId={property}
-        onSelectProperty={setProperty}
-        room={room}
-        onSelectRoom={setRoom}
-      />
+      <div>
+        <div className="mb-2 text-sm font-semibold text-slate-700">
+          What do you need help with? <span className="text-axis">*</span>
+        </div>
+        <div className="flex flex-col gap-2">
+          {HOUSING_MESSAGE_CATEGORIES.map((c) => (
+            <button
+              key={c.id}
+              type="button"
+              onClick={() => setCategory(c.id)}
+              className={`rounded-2xl border px-4 py-3 text-left text-sm font-semibold transition-all ${
+                category === c.id
+                  ? 'border-[#2563eb] bg-[#2563eb] text-white shadow-[0_8px_20px_rgba(37,99,235,0.2)]'
+                  : 'border-slate-200 bg-white text-slate-700 hover:border-[#2563eb]/60'
+              }`}
+            >
+              {c.label}
+            </button>
+          ))}
+        </div>
+      </div>
+      <div>
+        <div className="mb-2 text-sm font-semibold text-slate-700">
+          Property &amp; room <span className="font-normal text-slate-400">(optional)</span>
+        </div>
+        <p className="mb-3 text-xs text-slate-500">Add these if your question is about a specific home or unit.</p>
+        <PropertyRoomPicker
+          properties={properties}
+          selectedId={property}
+          onSelectProperty={setProperty}
+          room={room}
+          onSelectRoom={setRoom}
+          roomRequired={false}
+        />
+      </div>
       <div className="grid gap-4 sm:grid-cols-2">
         <div>
           <label className="mb-1.5 block text-xs font-semibold text-slate-700">Name <span className="text-axis">*</span></label>
@@ -546,7 +585,7 @@ function HousingMessageForm() {
       </div>
       <div>
         <label className="mb-1.5 block text-xs font-semibold text-slate-700">Message <span className="text-axis">*</span></label>
-        <textarea required className={`${inputCls} min-h-[110px] resize-y`} placeholder="Ask about availability, pricing, lease terms…" value={form.message} onChange={e => set('message', e.target.value)} />
+        <textarea required className={`${inputCls} min-h-[110px] resize-y`} placeholder="Tell us more so we can help…" value={form.message} onChange={e => set('message', e.target.value)} />
       </div>
       {error && <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>}
       <button type="submit" disabled={submitting} className="w-full rounded-full bg-slate-900 py-3.5 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:opacity-60 disabled:cursor-not-allowed">
@@ -557,6 +596,16 @@ function HousingMessageForm() {
 }
 
 // ── Software demo scheduler ───────────────────────────────────────────────────
+
+async function readJsonBody(res) {
+  const text = await res.text()
+  if (!text.trim()) return {}
+  try {
+    return JSON.parse(text)
+  } catch {
+    throw new Error('Invalid response from server.')
+  }
+}
 
 function DemoScheduler() {
   const [staff, setStaff] = useState([])
@@ -593,15 +642,28 @@ function DemoScheduler() {
   const selectedDateEntry = availableDates.find(d => d.date === selectedDate)
   const currentSlots = selectedDateEntry?.slots || []
 
+  const noStaffDates = useMemo(() => getUpcomingDates(DEFAULT_CALENDAR, 28), [])
+  const selectableNoStaffSet = useMemo(() => new Set(noStaffDates.map((d) => d.date)), [noStaffDates])
+  const selectedDateEntryNoStaff = noStaffDates.find((d) => d.date === selectedDate)
+  const currentSlotsNoStaff = selectedDateEntryNoStaff?.slots || []
+
   useEffect(() => {
     fetch('/api/forms?action=demo')
-      .then(r => r.json())
-      .then(data => {
+      .then(async (r) => readJsonBody(r))
+      .then((data) => {
         setStaff(Array.isArray(data?.staff) ? data.staff : [])
         setStaffLoading(false)
       })
-      .catch(() => { setStaff([]); setStaffLoading(false) })
+      .catch(() => {
+        setStaff([])
+        setStaffLoading(false)
+      })
   }, [])
+
+  useEffect(() => {
+    if (staffLoading || staff.length === 0) return
+    if (step === 2 && !selectedStaff) setStep(1)
+  }, [staffLoading, staff.length, step, selectedStaff])
 
   function reset() {
     setSelectedStaff(null); setMeetingFormat('in-person'); setSelectedDate(''); setSelectedTime(''); setStep(1)
@@ -621,40 +683,14 @@ function DemoScheduler() {
           company: form.company.trim(),
           staffId: selectedStaff?.id || '',
           staffName: selectedStaff?.name || '',
-          preferredDate: selectedDate, preferredTime: selectedTime,
+          preferredDate: selectedDate || '',
+          preferredTime: selectedTime || '',
           meetingFormat: fmt,
           bookingType: 'Software Meeting',
           notes: form.notes.trim(),
         }),
       })
-      const data = await res.json()
-      if (!res.ok) throw new Error(data.error || 'Submission failed.')
-      setSubmitted(true)
-    } catch (err) {
-      setSubmitError(err.message || 'Could not submit. Please try again.')
-    } finally {
-      setSubmitting(false)
-    }
-  }
-
-  async function handleSubmitNoStaff() {
-    setSubmitting(true); setSubmitError('')
-    const fmt = meetingFormat === 'virtual' ? 'Virtual' : 'In-person'
-    try {
-      const res = await fetch('/api/forms?action=demo', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          name: form.name.trim(), email: form.email.trim(), phone: form.phone.trim(),
-          company: form.company.trim(),
-          staffId: '', staffName: '',
-          preferredDate: '', preferredTime: '',
-          meetingFormat: fmt,
-          bookingType: 'Software Meeting',
-          notes: form.notes.trim(),
-        }),
-      })
-      const data = await res.json()
+      const data = await readJsonBody(res)
       if (!res.ok) throw new Error(data.error || 'Submission failed.')
       setSubmitted(true)
     } catch (err) {
@@ -697,7 +733,9 @@ function DemoScheduler() {
             </div>
           ) : staff.length === 0 ? (
             <div className="space-y-4">
-              <p className="text-sm text-slate-500">No calendar staff loaded. Leave your details and we will schedule manually.</p>
+              <p className="text-sm text-slate-500">
+                No calendar staff is connected right now. Choose meeting format, then pick a preferred time — we will confirm by email.
+              </p>
               <div>
                 <div className="mb-3 text-sm font-semibold text-slate-700">Meeting format</div>
                 <div className="flex gap-3">
@@ -709,20 +747,15 @@ function DemoScheduler() {
                   ))}
                 </div>
               </div>
-              <ContactFields form={form} setField={setField} />
-              <div>
-                <label className="mb-1.5 block text-xs font-semibold text-slate-700">Company</label>
-                <input className={inputCls} placeholder="Smith Properties" value={form.company} onChange={e => setField('company', e.target.value)} />
+              <div className="flex justify-end pt-2">
+                <button
+                  type="button"
+                  onClick={() => { setSelectedDate(''); setSelectedTime(''); setStep(2) }}
+                  className="rounded-full bg-slate-900 px-6 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-slate-700"
+                >
+                  Continue
+                </button>
               </div>
-              <div>
-                <label className="mb-1.5 block text-xs font-semibold text-slate-700">What should we prepare? <span className="text-axis">*</span></label>
-                <textarea className={`${inputCls} min-h-[100px] resize-y`} placeholder="Portfolio size, goals, questions…" value={form.notes} onChange={e => setField('notes', e.target.value)} />
-              </div>
-              {submitError && <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{submitError}</div>}
-              <button type="button" onClick={handleSubmitNoStaff} disabled={!form.name.trim() || !form.email.trim() || !form.notes.trim() || submitting}
-                className="w-full rounded-full bg-[linear-gradient(180deg,#2f76ff_0%,#2450eb_100%)] py-3.5 text-sm font-semibold text-white shadow-[0_8px_20px_rgba(37,99,235,0.25)] hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40 transition-opacity">
-                {submitting ? 'Sending…' : 'Request meeting'}
-              </button>
             </div>
           ) : (
             <div>
@@ -805,9 +838,55 @@ function DemoScheduler() {
         </div>
       )}
 
+      {step === 2 && !staffLoading && staff.length === 0 && (
+        <div className="space-y-7">
+          <p className="text-sm text-slate-500">
+            Pick a preferred date and time. We will follow up to finalize your meeting.
+          </p>
+          <div>
+            <div className="mb-3 text-sm font-semibold text-slate-700">Meeting format</div>
+            <div className="flex gap-3">
+              {[['in-person', 'In-person'], ['virtual', 'Virtual']].map(([val, label]) => (
+                <button key={val} type="button" onClick={() => setMeetingFormat(val)}
+                  className={`flex flex-1 items-center justify-center rounded-xl border px-4 py-3 text-sm font-semibold transition-all ${meetingFormat === val ? 'border-[#2563eb] bg-[#2563eb] text-white' : 'border-slate-200 bg-white text-slate-700 hover:border-[#2563eb]'}`}>
+                  {label}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div>
+            <div className="mb-3 text-sm font-semibold text-slate-700">Choose a date</div>
+            <MonthCalendar
+              selectableSet={selectableNoStaffSet}
+              selectedDate={selectedDate}
+              onSelectDate={(d) => { setSelectedDate(d); setSelectedTime('') }}
+            />
+          </div>
+          {selectedDate && (
+            <div>
+              <div className="mb-3 text-sm font-semibold text-slate-700">
+                Times <span className="font-normal text-slate-400">— {selectedDateEntryNoStaff?.display}</span>
+              </div>
+              <TimeSlots slots={currentSlotsNoStaff} selectedTime={selectedTime} onSelectTime={setSelectedTime} />
+            </div>
+          )}
+          <div className="flex gap-3 pt-1">
+            <button type="button" onClick={() => setStep(1)} className="rounded-full border border-slate-200 px-5 py-2.5 text-sm font-semibold text-slate-600 hover:border-slate-400">Back</button>
+            <button
+              type="button"
+              onClick={() => setStep(3)}
+              disabled={!selectedDate || !selectedTime}
+              className="rounded-full bg-slate-900 px-6 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              Continue
+            </button>
+          </div>
+        </div>
+      )}
+
       {step === 3 && (
         <div className="space-y-4">
-          {selectedStaff && (
+          {selectedStaff ? (
             <div className="mb-2 flex items-center justify-between rounded-2xl border border-slate-100 bg-slate-50 px-4 py-2.5 text-sm">
               <div className="flex flex-wrap items-center gap-2">
                 <span className="font-semibold text-slate-900">{selectedStaff.name}</span>
@@ -818,7 +897,16 @@ function DemoScheduler() {
               </div>
               <button type="button" onClick={() => setStep(2)} className="ml-2 shrink-0 text-xs font-semibold text-slate-400 hover:text-slate-700">Edit</button>
             </div>
-          )}
+          ) : !staffLoading && staff.length === 0 ? (
+            <div className="mb-2 flex items-center justify-between rounded-2xl border border-slate-100 bg-slate-50 px-4 py-2.5 text-sm">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="text-slate-600">{meetingFormat === 'virtual' ? 'Virtual' : 'In-person'}</span>
+                {selectedDate ? <><span className="text-slate-300">·</span><span className="text-slate-600">{selectedDateEntryNoStaff?.display}</span></> : null}
+                {selectedTime ? <><span className="text-slate-300">·</span><span className="text-slate-600">{selectedTime}</span></> : null}
+              </div>
+              <button type="button" onClick={() => setStep(2)} className="ml-2 shrink-0 text-xs font-semibold text-slate-400 hover:text-slate-700">Edit</button>
+            </div>
+          ) : null}
           <ContactFields form={form} setField={setField} />
           <div>
             <label className="mb-1.5 block text-xs font-semibold text-slate-700">Company</label>
@@ -940,6 +1028,7 @@ export default function Contact() {
     const params = new URLSearchParams(location.search)
     const sectionParam = params.get('section')
     const tabParam = params.get('tab')
+    const categoryParam = params.get('category')
     const subject = (params.get('subject') || '').toLowerCase()
 
     let nextSection = 'software'
@@ -948,6 +1037,9 @@ export default function Contact() {
 
     if (sectionParam === 'housing') {
       nextSection = 'housing'
+    } else if (isHousingMessageCategoryId(categoryParam)) {
+      nextSection = 'housing'
+      nextHousingTab = 'message'
     } else if (sectionParam === 'software') {
       nextSection = sectionParam
     } else if (subject.includes('tour')) {
@@ -985,7 +1077,9 @@ export default function Contact() {
           {section === 'housing' && (
             <div>
               <div className="mb-6 border-b border-slate-100 pb-5">
-                <h2 className="text-3xl font-black tracking-tight text-slate-900">Schedule tour</h2>
+                <h2 className="text-3xl font-black tracking-tight text-slate-900">
+                  {housingTab === 'schedule' ? 'Schedule tour' : 'Message Axis'}
+                </h2>
               </div>
               <TabBar
                 tabs={[{ id: 'schedule', label: 'Set up tour' }, { id: 'message', label: 'Send message' }]}
