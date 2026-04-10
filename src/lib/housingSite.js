@@ -56,13 +56,22 @@ export const HOUSING_MESSAGE_CATEGORIES = [
   { id: 'pay-rent', label: "Can't figure out how to pay rent" },
   { id: 'maintenance', label: 'Maintenance or repairs' },
   { id: 'lease', label: 'Lease, renewal, or move-out' },
-  { id: 'general', label: 'Something else' },
+  { id: 'other', label: 'Other' },
 ]
 
 const HOUSING_CATEGORY_ID_SET = new Set(HOUSING_MESSAGE_CATEGORIES.map((c) => c.id))
 
+/** Legacy `category=general` in URLs maps to `other`. */
+export function normalizeHousingMessageCategoryId(value) {
+  if (typeof value !== 'string' || !value.trim()) return null
+  const v = value.trim()
+  if (v === 'general') return 'other'
+  return HOUSING_CATEGORY_ID_SET.has(v) ? v : null
+}
+
 export function isHousingMessageCategoryId(value) {
-  return typeof value === 'string' && HOUSING_CATEGORY_ID_SET.has(value)
+  if (typeof value !== 'string') return false
+  return value === 'general' || HOUSING_CATEGORY_ID_SET.has(value)
 }
 
 /**

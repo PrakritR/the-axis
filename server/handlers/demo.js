@@ -46,7 +46,7 @@ export default async function handler(req, res) {
     const token = process.env.AIRTABLE_TOKEN
     if (!token) return res.status(500).json({ error: 'AIRTABLE_TOKEN is not configured on the server.' })
 
-    const { name, email, phone, company, staffId, staffName, preferredDate, preferredTime, notes, meetingFormat, bookingType } = req.body ?? {}
+    const { name, email, phone, company, staffId, staffName, preferredDate, preferredTime, notes, meetingFormat, meetingLocation, bookingType } = req.body ?? {}
     if (!name || !email) return res.status(400).json({ error: 'Name and email are required.' })
 
     const typeLabel = bookingType === 'Software Meeting' ? 'Software Meeting' : 'Demo'
@@ -63,8 +63,10 @@ export default async function handler(req, res) {
     if (preferredDate) fields['Preferred Date'] = preferredDate
     if (preferredTime) fields['Preferred Time'] = preferredTime
     const fmt = meetingFormat ? String(meetingFormat).trim() : ''
+    const loc = meetingLocation ? String(meetingLocation).trim() : ''
     const noteParts = []
     if (fmt) noteParts.push(`Format: ${fmt}`)
+    if (loc) noteParts.push(`Location: ${loc}`)
     if (notes) noteParts.push(String(notes).trim())
     if (noteParts.length) fields['Notes'] = noteParts.join('\n\n')
 

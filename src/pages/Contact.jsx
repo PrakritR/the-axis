@@ -1,7 +1,11 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { Seo } from '../lib/seo'
-import { HOUSING_MESSAGE_CATEGORIES, isHousingMessageCategoryId } from '../lib/housingSite'
+import {
+  HOUSING_MESSAGE_CATEGORIES,
+  isHousingMessageCategoryId,
+  normalizeHousingMessageCategoryId,
+} from '../lib/housingSite'
 
 function formatPhone(raw) {
   const digits = raw.replace(/\D/g, '').slice(0, 10)
@@ -472,7 +476,8 @@ function HousingMessageForm() {
   const [properties, setProperties] = useState(DEFAULT_PROPERTIES)
   const [property, setProperty] = useState(null)
   const [room, setRoom] = useState('')
-  const [category, setCategory] = useState('general')
+  const [category, setCategory] = useState('')
+  const [otherDetails, setOtherDetails] = useState('')
   const [form, setFormState] = useState({ name: '', email: '', phone: '', message: '' })
   const [submitting, setSubmitting] = useState(false)
   const [submitted, setSubmitted] = useState(false)
@@ -483,8 +488,9 @@ function HousingMessageForm() {
   function set(k, v) { setFormState(prev => ({ ...prev, [k]: v })) }
 
   useEffect(() => {
-    const id = new URLSearchParams(location.search).get('category') || ''
-    if (isHousingMessageCategoryId(id)) setCategory(id)
+    const raw = new URLSearchParams(location.search).get('category') || ''
+    const id = normalizeHousingMessageCategoryId(raw)
+    if (id) setCategory(id)
   }, [location.search])
 
   useEffect(() => {
@@ -503,8 +509,26 @@ function HousingMessageForm() {
   async function handleSubmit(e) {
     e.preventDefault()
     setSubmitting(true); setError('')
+    if (!category) {
+      setError('Please select what you need help with.')
+      setSubmitting(false)
+      return
+    }
+    if (category === 'other' && !otherDetails.trim()) {
+      setError('Please describe what you need help with.')
+      setSubmitting(false)
+      return
+    }
+    if (category !== 'other' && !form.message.trim()) {
+      setError('Please add a short message.')
+      setSubmitting(false)
+      return
+    }
     const catLabel = HOUSING_MESSAGE_CATEGORIES.find((c) => c.id === category)?.label || category
     let header = `Category: ${catLabel}\n\n`
+    if (category === 'other' && otherDetails.trim()) {
+      header += `Details: ${otherDetails.trim()}\n\n`
+    }
     if (property && room && selectedProperty) {
       header += `Property: ${selectedProperty.name}\nRoom: ${room}\n\n`
     }
@@ -527,7 +551,7 @@ function HousingMessageForm() {
     <SuccessCard title="Message sent!" body={`We'll follow up at ${form.email} within 2 business days.`}
       onReset={() => {
         setSubmitted(false)
-        setProperty(null); setRoom(''); setCategory('general')
+        setProperty(null); setRoom(''); setCategory(''); setOtherDetails('')
         setFormState({ name: '', email: '', phone: '', message: '' })
       }} resetLabel="Send another" />
   )
@@ -535,25 +559,44 @@ function HousingMessageForm() {
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
       <div>
-        <div className="mb-2 text-sm font-semibold text-slate-700">
+        <label htmlFor="housing-message-category" className="mb-2 block text-sm font-semibold text-slate-700">
           What do you need help with? <span className="text-axis">*</span>
-        </div>
-        <div className="flex flex-col gap-2">
+        </label>
+        <select
+          id="housing-message-category"
+          required
+          value={category}
+          onChange={(e) => {
+            const next = e.target.value
+            setCategory(next)
+            if (next !== 'other') setOtherDetails('')
+          }}
+          className={selectCls}
+        >
+          <option value="" disabled>
+            Select a topic
+          </option>
           {HOUSING_MESSAGE_CATEGORIES.map((c) => (
-            <button
-              key={c.id}
-              type="button"
-              onClick={() => setCategory(c.id)}
-              className={`rounded-2xl border px-4 py-3 text-left text-sm font-semibold transition-all ${
-                category === c.id
-                  ? 'border-[#2563eb] bg-[#2563eb] text-white shadow-[0_8px_20px_rgba(37,99,235,0.2)]'
-                  : 'border-slate-200 bg-white text-slate-700 hover:border-[#2563eb]/60'
-              }`}
-            >
+            <option key={c.id} value={c.id}>
               {c.label}
-            </button>
+            </option>
           ))}
-        </div>
+        </select>
+        {category === 'other' ? (
+          <div className="mt-3">
+            <label htmlFor="housing-message-other" className="mb-1.5 block text-xs font-semibold text-slate-700">
+              Describe what you need <span className="text-axis">*</span>
+            </label>
+            <textarea
+              id="housing-message-other"
+              required
+              value={otherDetails}
+              onChange={(e) => setOtherDetails(e.target.value)}
+              className={`${inputCls} min-h-[100px] resize-y`}
+              placeholder="Tell us what is going on so we can route your message correctly."
+            />
+          </div>
+        ) : null}
       </div>
       <div>
         <div className="mb-2 text-sm font-semibold text-slate-700">
@@ -584,8 +627,20 @@ function HousingMessageForm() {
         <input type="tel" className={inputCls} placeholder="(206) 555-0100" value={form.phone} onChange={e => set('phone', formatPhone(e.target.value))} />
       </div>
       <div>
-        <label className="mb-1.5 block text-xs font-semibold text-slate-700">Message <span className="text-axis">*</span></label>
-        <textarea required className={`${inputCls} min-h-[110px] resize-y`} placeholder="Tell us more so we can help…" value={form.message} onChange={e => set('message', e.target.value)} />
+        <label className="mb-1.5 block text-xs font-semibold text-slate-700">
+          {category === 'other' ? (
+            <>Additional details <span className="font-normal text-slate-400">(optional)</span></>
+          ) : (
+            <>Message <span className="text-axis">*</span></>
+          )}
+        </label>
+        <textarea
+          required={category !== 'other'}
+          className={`${inputCls} min-h-[110px] resize-y`}
+          placeholder={category === 'other' ? 'Anything else we should know…' : 'Tell us more so we can help…'}
+          value={form.message}
+          onChange={(e) => set('message', e.target.value)}
+        />
       </div>
       {error && <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>}
       <button type="submit" disabled={submitting} className="w-full rounded-full bg-slate-900 py-3.5 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:opacity-60 disabled:cursor-not-allowed">
@@ -612,6 +667,7 @@ function DemoScheduler() {
   const [staffLoading, setStaffLoading] = useState(true)
   const [selectedStaff, setSelectedStaff] = useState(null)
   const [meetingFormat, setMeetingFormat] = useState('in-person')
+  const [inPersonLocation, setInPersonLocation] = useState('')
   const [selectedDate, setSelectedDate] = useState('')
   const [selectedTime, setSelectedTime] = useState('')
   const [step, setStep] = useState(1)
@@ -666,7 +722,7 @@ function DemoScheduler() {
   }, [staffLoading, staff.length, step, selectedStaff])
 
   function reset() {
-    setSelectedStaff(null); setMeetingFormat('in-person'); setSelectedDate(''); setSelectedTime(''); setStep(1)
+    setSelectedStaff(null); setMeetingFormat('in-person'); setInPersonLocation(''); setSelectedDate(''); setSelectedTime(''); setStep(1)
     setFormState({ name: '', email: '', phone: '', company: '', notes: '' })
     setSubmitted(false); setSubmitError('')
   }
@@ -686,6 +742,7 @@ function DemoScheduler() {
           preferredDate: selectedDate || '',
           preferredTime: selectedTime || '',
           meetingFormat: fmt,
+          meetingLocation: meetingFormat === 'in-person' ? inPersonLocation.trim() : '',
           bookingType: 'Software Meeting',
           notes: form.notes.trim(),
         }),
@@ -708,7 +765,11 @@ function DemoScheduler() {
     />
   )
 
-  const demoSteps = [['1', 'Who you\'ll meet'], ['2', 'Time'], ['3', 'Your details']]
+  const demoSteps = useMemo(() => {
+    const step1 =
+      !staffLoading && staff.length === 0 ? 'How to meet' : "Who you'll meet"
+    return [['1', step1], ['2', 'Time'], ['3', 'Your details']]
+  }, [staffLoading, staff.length])
 
   return (
     <div>
@@ -740,18 +801,25 @@ function DemoScheduler() {
                 <div className="mb-3 text-sm font-semibold text-slate-700">Meeting format</div>
                 <div className="flex gap-3">
                   {[['in-person', 'In-person'], ['virtual', 'Virtual']].map(([val, label]) => (
-                    <button key={val} type="button" onClick={() => setMeetingFormat(val)}
+                    <button key={val} type="button" onClick={() => { setMeetingFormat(val); if (val === 'virtual') setInPersonLocation('') }}
                       className={`flex flex-1 items-center justify-center rounded-xl border px-4 py-3 text-sm font-semibold transition-all ${meetingFormat === val ? 'border-[#2563eb] bg-[#2563eb] text-white' : 'border-slate-200 bg-white text-slate-700 hover:border-[#2563eb]'}`}>
                       {label}
                     </button>
                   ))}
                 </div>
               </div>
+              {meetingFormat === 'in-person' ? (
+                <div>
+                  <label className="mb-1.5 block text-xs font-semibold text-slate-700" htmlFor="demo-in-person-location">Where</label>
+                  <input id="demo-in-person-location" className={inputCls} placeholder="Address or neighborhood" value={inPersonLocation} onChange={(e) => setInPersonLocation(e.target.value)} />
+                </div>
+              ) : null}
               <div className="flex justify-end pt-2">
                 <button
                   type="button"
                   onClick={() => { setSelectedDate(''); setSelectedTime(''); setStep(2) }}
-                  className="rounded-full bg-slate-900 px-6 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-slate-700"
+                  disabled={meetingFormat === 'in-person' && !inPersonLocation.trim()}
+                  className="rounded-full bg-slate-900 px-6 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-40"
                 >
                   Continue
                 </button>
@@ -844,17 +912,6 @@ function DemoScheduler() {
             Pick a preferred date and time. We will follow up to finalize your meeting.
           </p>
           <div>
-            <div className="mb-3 text-sm font-semibold text-slate-700">Meeting format</div>
-            <div className="flex gap-3">
-              {[['in-person', 'In-person'], ['virtual', 'Virtual']].map(([val, label]) => (
-                <button key={val} type="button" onClick={() => setMeetingFormat(val)}
-                  className={`flex flex-1 items-center justify-center rounded-xl border px-4 py-3 text-sm font-semibold transition-all ${meetingFormat === val ? 'border-[#2563eb] bg-[#2563eb] text-white' : 'border-slate-200 bg-white text-slate-700 hover:border-[#2563eb]'}`}>
-                  {label}
-                </button>
-              ))}
-            </div>
-          </div>
-          <div>
             <div className="mb-3 text-sm font-semibold text-slate-700">Choose a date</div>
             <MonthCalendar
               selectableSet={selectableNoStaffSet}
@@ -901,6 +958,7 @@ function DemoScheduler() {
             <div className="mb-2 flex items-center justify-between rounded-2xl border border-slate-100 bg-slate-50 px-4 py-2.5 text-sm">
               <div className="flex flex-wrap items-center gap-2">
                 <span className="text-slate-600">{meetingFormat === 'virtual' ? 'Virtual' : 'In-person'}</span>
+                {meetingFormat === 'in-person' && inPersonLocation.trim() ? <><span className="text-slate-300">·</span><span className="text-slate-600">{inPersonLocation.trim()}</span></> : null}
                 {selectedDate ? <><span className="text-slate-300">·</span><span className="text-slate-600">{selectedDateEntryNoStaff?.display}</span></> : null}
                 {selectedTime ? <><span className="text-slate-300">·</span><span className="text-slate-600">{selectedTime}</span></> : null}
               </div>

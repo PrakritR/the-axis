@@ -63,7 +63,7 @@ export default function Footer() {
             <div className="mt-5 flex flex-col gap-3.5">
               {isOwners ? (
                 <>
-                  <Link to="/" onClick={scrollToTop} className="inline-block transition hover:text-slate-900 hover:translate-x-0.5">Student housing listings</Link>
+                  <Link to="/" onClick={scrollToTop} className="inline-block transition hover:text-slate-900 hover:translate-x-0.5">Rental listings</Link>
                   <Link to="/" onClick={scrollToTop} className="inline-block transition hover:text-slate-900 hover:translate-x-0.5">Axis marketing site</Link>
                 </>
               ) : (

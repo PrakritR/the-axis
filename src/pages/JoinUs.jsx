@@ -22,7 +22,6 @@ const PLANS = [
     description: 'House posting only.',
     ctaLabel: 'Choose Free',
     ctaTo: '#manager-access',
-    ctaVariant: 'secondary',
     features: [
       'House posting only',
       'No rent collection access',
@@ -40,7 +39,6 @@ const PLANS = [
     description: 'For 1-2 houses.',
     ctaLabel: 'Choose Pro',
     ctaTo: '#manager-access',
-    ctaVariant: 'primary',
     featured: true,
     features: [
       '1-2 houses',
@@ -59,7 +57,6 @@ const PLANS = [
     description: 'For 10+ houses.',
     ctaLabel: 'Choose Business',
     ctaTo: '#manager-access',
-    ctaVariant: 'secondary',
     features: [
       '10+ houses',
       'Rent collection access',
@@ -88,7 +85,7 @@ const FREE_TIER_ONBOARDING_KEY = 'axis_manager_onboarding'
 
 function PlanCard({ plan, activePlan, billingCycle, onChoosePlan, onRevealPartnerSignup }) {
   const isSelected = activePlan === plan.id
-  const ctaClasses = isSelected || plan.ctaVariant === 'primary'
+  const ctaClasses = isSelected
     ? 'bg-[linear-gradient(180deg,#2c3447_0%,#1a1d27_100%)] text-white shadow-[0_12px_28px_rgba(0,0,0,0.18)] hover:brightness-110'
     : 'border border-slate-200 bg-white text-slate-900 hover:border-slate-300 hover:bg-slate-50'
   const priceMeta = plan.prices[billingCycle]
@@ -138,7 +135,7 @@ function PlanCard({ plan, activePlan, billingCycle, onChoosePlan, onRevealPartne
 
 export default function JoinUs() {
   const location = useLocation()
-  const [selectedPlan, setSelectedPlan] = useState('pro')
+  const [selectedPlan, setSelectedPlan] = useState(null)
   const [billingCycle, setBillingCycle] = useState('monthly')
   const [managerForm, setManagerForm] = useState({
     name: '',
@@ -154,7 +151,7 @@ export default function JoinUs() {
   const [downloadNotice, setDownloadNotice] = useState('')
   const [partnerSignupOpen, setPartnerSignupOpen] = useState(false)
 
-  const selectedPlanMeta = PLANS.find((plan) => plan.id === selectedPlan) || PLANS[1]
+  const selectedPlanMeta = selectedPlan ? PLANS.find((plan) => plan.id === selectedPlan) : null
 
   function openPartnerSignup() {
     setPartnerSignupOpen(true)
@@ -174,7 +171,7 @@ export default function JoinUs() {
       setSelectedPlan(param)
       return
     }
-    setSelectedPlan('pro')
+    setSelectedPlan(null)
   }, [location.pathname, location.search])
 
   function copyManagerId() {
@@ -200,6 +197,11 @@ export default function JoinUs() {
     const normalizedEmail = managerForm.email.trim().toLowerCase()
     const normalizedPhone = managerForm.phone.trim()
     const normalizedPromoCode = managerForm.promoCode.trim().toUpperCase()
+
+    if (!selectedPlan) {
+      setManagerError('Please select a plan.')
+      return
+    }
 
     if (!normalizedName || !normalizedEmail || !normalizedPhone) {
       setManagerError('Name, email, and phone are required.')
@@ -258,7 +260,9 @@ export default function JoinUs() {
 
       <EmbeddedStripeCheckout
         open={!!embeddedCheckout}
-        title={`${selectedPlanMeta.name} — ${selectedPlanMeta.prices[billingCycle].value}${selectedPlanMeta.prices[billingCycle].suffix}`}
+        title={embeddedCheckout && selectedPlanMeta
+          ? `${selectedPlanMeta.name} — ${selectedPlanMeta.prices[billingCycle].value}${selectedPlanMeta.prices[billingCycle].suffix}`
+          : 'Checkout'}
         apiEndpoint="/api/portal?action=manager-create-subscription-session"
         checkoutRequest={embeddedCheckout}
         onClose={() => { setEmbeddedCheckout(null); setManagerLoading(false) }}
@@ -409,10 +413,10 @@ export default function JoinUs() {
                     Get started
                   </div>
                   <h2 className="mt-2 text-3xl font-black tracking-[-0.04em] text-slate-900 sm:text-4xl">
-                    {selectedPlanMeta.name}
+                    {selectedPlanMeta ? selectedPlanMeta.name : 'Select your plan'}
                   </h2>
                 </div>
-                {selectedPlan !== 'free' && (
+                {selectedPlanMeta && selectedPlan !== 'free' && (
                   <div className="text-lg font-semibold text-slate-500">
                     {selectedPlanMeta.prices[billingCycle].value}
                     {selectedPlanMeta.prices[billingCycle].suffix}
@@ -457,7 +461,7 @@ export default function JoinUs() {
                 />
               </div>
 
-              {selectedPlan !== 'free' ? (
+              {selectedPlan && selectedPlan !== 'free' ? (
                 <div className="md:col-span-2">
                   <label className="mb-2 block text-sm font-semibold text-slate-700">Code</label>
                   <input
@@ -478,16 +482,18 @@ export default function JoinUs() {
 
               <div className="md:col-span-2 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
                 <p className="text-sm text-slate-500">
-                  {billingCycle === 'annual' && selectedPlan !== 'free' ? '20% off applied.' : ''}
+                  {billingCycle === 'annual' && selectedPlan && selectedPlan !== 'free' ? '20% off applied.' : ''}
                 </p>
                 <button
                   type="submit"
-                  disabled={managerLoading}
+                  disabled={managerLoading || !selectedPlan}
                   className="inline-flex min-w-[220px] items-center justify-center rounded-full bg-[linear-gradient(180deg,#2f76ff_0%,#2450eb_100%)] px-7 py-4 text-base font-semibold text-white shadow-[0_16px_40px_rgba(37,99,235,0.28)] transition hover:brightness-105 disabled:opacity-50"
                 >
                   {managerLoading
                     ? 'Creating setup…'
-                    : `Continue with ${selectedPlanMeta.name}`}
+                    : selectedPlanMeta
+                      ? `Continue with ${selectedPlanMeta.name}`
+                      : 'Select a plan'}
                 </button>
               </div>
             </form>

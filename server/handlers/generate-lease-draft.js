@@ -96,7 +96,7 @@ export default async function handler(req, res) {
     // ── Step 1: Generate lease text with Claude ──────────────────────────────
     const client = new Anthropic({ apiKey: anthropicKey })
 
-    const leasePrompt = `You are a professional real estate attorney drafting a residential lease agreement for Axis Seattle Housing, LLC — a student housing company near the University of Washington in Seattle, WA.
+    const leasePrompt = `You are a professional real estate attorney drafting a residential lease agreement for Axis Seattle Housing, LLC — a residential rental housing operator in Seattle, WA.
 
 Generate a complete, professionally formatted residential lease agreement with the following details:
 

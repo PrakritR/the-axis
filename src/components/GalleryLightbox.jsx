@@ -72,7 +72,7 @@ export default function GalleryLightbox({ images = [], startIndex = 0, open, onC
         <div className="flex items-center justify-between border-b border-white/10 px-4 py-4 text-white sm:px-6">
           <div>
             <div className="text-xs font-semibold uppercase tracking-[0.18em] text-blue-300">Image gallery</div>
-            <div className="mt-1 text-sm text-white/65">Image {current + 1} of {images.length}</div>
+            <div className="mt-1 text-sm font-medium text-white/90">Image {current + 1} of {images.length}</div>
           </div>
           <div className="flex items-center gap-2">
             <button type="button" onClick={prev} aria-label="Previous image" className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-white/15 bg-white/5 text-white transition hover:bg-white/10">
@@ -140,8 +140,8 @@ export default function GalleryLightbox({ images = [], startIndex = 0, open, onC
                 }`}
               >
                 <img src={image} alt={`Thumbnail ${imageIndex + 1}`} className="h-full w-full object-cover transition duration-300 group-hover:scale-[1.04]" />
-                <div className="absolute inset-0 bg-gradient-to-t from-black/35 via-transparent to-transparent" />
-                <span className="absolute bottom-2 right-2 rounded-full bg-black/60 px-2 py-0.5 text-[10px] font-bold text-white">
+                <div className="absolute inset-0 bg-gradient-to-t from-black/55 via-transparent to-transparent" />
+                <span className="absolute bottom-2 right-2 rounded-full border border-white/15 bg-black/80 px-2 py-0.5 text-[10px] font-bold text-white shadow-sm">
                   {imageIndex + 1}
                 </span>
               </button>

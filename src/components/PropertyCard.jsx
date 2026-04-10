@@ -53,15 +53,15 @@ export default function PropertyCard({ p }) {
     >
       <div className="relative aspect-[5/4] w-full overflow-hidden sm:aspect-[16/10]">
         <Carousel images={p.images.slice(0, 6)} height="100%" altPrefix={p.name} className="h-full">
-          <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-slate-900/48 via-transparent to-transparent" />
+          <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/75 via-black/20 to-transparent" />
           <div className="absolute left-3 top-3 pointer-events-none">
-            <span className="rounded-full border border-white/70 bg-white/80 px-3 py-1 text-[10px] font-bold uppercase tracking-wider text-slate-700 backdrop-blur-sm">
+            <span className="rounded-full border border-white/80 bg-white/90 px-3 py-1 text-[10px] font-bold uppercase tracking-wider text-slate-800 shadow-sm backdrop-blur-sm">
               {p.type}
             </span>
           </div>
-          <div className="absolute bottom-3 right-3 pointer-events-none text-right sm:right-4">
-            <p className="text-xs text-white/70 drop-shadow">from</p>
-            <p className="leading-none text-lg font-black text-white drop-shadow">{rentRange || '—'}<span className="text-xs font-medium text-white/80">/mo</span></p>
+          <div className="absolute bottom-3 right-3 pointer-events-none text-right sm:right-4 [text-shadow:0_1px_3px_rgba(0,0,0,0.95),0_2px_12px_rgba(0,0,0,0.55)]">
+            <p className="text-xs font-semibold text-white">from</p>
+            <p className="leading-none text-lg font-black text-white">{rentRange || '—'}<span className="text-xs font-semibold text-white/95">/mo</span></p>
           </div>
         </Carousel>
       </div>

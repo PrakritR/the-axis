@@ -612,7 +612,6 @@ export default function PropertyPage(){
         'Common spaces include a full kitchen and a comfortable living area on the first floor. The home features in-unit laundry, three full bathrooms across the home, and a half bathroom on the first floor.'
       ]
     : [p.summary]
-  const featuredStartingPrice = formatStartingRent(getStartingRent(p))
 
   const includedItems = modalPlan
     ? Array.from(new Set([
@@ -649,14 +648,7 @@ export default function PropertyPage(){
           className="property-gallery mx-auto max-w-[1480px] scroll-mt-28 px-4 pt-6 sm:px-6 sm:pt-8 md:scroll-mt-40 lg:px-10 lg:pt-10"
         >
           <h1 className="sr-only">{p.name}</h1>
-          <PropertyGallery
-            images={galleryImages}
-            videos={p.videos || []}
-            startingPrice={`${featuredStartingPrice}/mo`}
-            beds={p.beds}
-            baths={p.baths}
-            location={p.neighborhood}
-          />
+          <PropertyGallery images={galleryImages} videos={p.videos || []} />
         </div>
 
       <div className="mx-auto mt-12 grid min-w-0 max-w-[1480px] gap-10 px-4 sm:px-6 md:grid-cols-12 lg:px-10">
@@ -1074,11 +1066,6 @@ export default function PropertyPage(){
                   </div>
                 ))}
               </div>
-            </div>
-
-            <div className="border-t border-slate-200 pt-4">
-              <div className="text-[11px] font-bold uppercase tracking-[0.16em] text-slate-500">Note</div>
-              <p className="mt-2 text-sm leading-6 text-slate-600">If a room looks like a fit, reach out and we can confirm availability and next steps.</p>
             </div>
           </aside>
         </div>

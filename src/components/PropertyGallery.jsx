@@ -17,14 +17,7 @@ function ArrowRight() {
   )
 }
 
-export default function PropertyGallery({
-  images = [],
-  videos = [],
-  startingPrice,
-  beds,
-  baths,
-  location,
-}) {
+export default function PropertyGallery({ images = [], videos = [] }) {
   const [open, setOpen] = useState(false)
   const [index, setIndex] = useState(0)
   const [videoOpen, setVideoOpen] = useState(false)
@@ -93,56 +86,6 @@ export default function PropertyGallery({
   return (
     <div className="w-full">
       <section className="overflow-hidden rounded-[24px] border border-slate-200 bg-[linear-gradient(180deg,#ffffff_0%,#f8f7f4_100%)] shadow-[0_24px_70px_rgba(15,23,42,0.08)] sm:rounded-[30px]">
-        <div className="border-b border-slate-200 px-4 py-4 sm:px-6 lg:px-8">
-          <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
-            <div className="max-w-2xl lg:max-w-none lg:flex-1">
-              <div className="text-[11px] font-bold uppercase tracking-[0.22em] text-slate-500">Images</div>
-              {startingPrice != null && beds != null && baths != null && location ? (
-                <div className="mt-4 grid grid-cols-2 gap-4 border-t border-slate-200 pt-4 sm:grid-cols-4">
-                  {[
-                    ['Starting price', startingPrice],
-                    ['Bedrooms', String(beds)],
-                    ['Bathrooms', String(baths)],
-                    ['Location', location],
-                  ].map(([label, value]) => (
-                    <div key={label} className="min-w-0">
-                      <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">{label}</div>
-                      <div className="mt-2 break-words text-lg font-semibold text-slate-900">{value}</div>
-                    </div>
-                  ))}
-                </div>
-              ) : null}
-            </div>
-
-            <div className="flex flex-wrap items-center gap-2">
-              <div className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 sm:px-4 sm:py-2 sm:text-sm">
-                {images.length} images
-              </div>
-              {normalizedVideos.length > 0 ? (
-                <div className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 sm:px-4 sm:py-2 sm:text-sm">
-                  {normalizedVideos.length} videos
-                </div>
-              ) : null}
-              <button
-                type="button"
-                onClick={() => setOpen(true)}
-                className="rounded-full bg-axis px-4 py-2 text-sm font-semibold text-white hover:bg-axis-dark"
-              >
-                All images
-              </button>
-              {normalizedVideos.length > 0 ? (
-                <button
-                  type="button"
-                  onClick={() => openVideoAt(0)}
-                  className="rounded-full border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:border-slate-500"
-                >
-                  Videos
-                </button>
-              ) : null}
-            </div>
-          </div>
-        </div>
-
         <div className="px-4 py-4 sm:px-6 lg:px-8">
           <div className="hidden gap-4 lg:grid lg:grid-cols-12">
             <button
@@ -155,13 +98,13 @@ export default function PropertyGallery({
                 alt={`Property image ${leadImage.imageIndex + 1}`}
                 className="h-[620px] w-full object-cover transition duration-500 group-hover:scale-[1.015]"
               />
-              <div className="absolute inset-0 bg-gradient-to-t from-black/50 via-black/5 to-transparent" />
-              <div className="absolute inset-x-0 bottom-0 flex items-end justify-between gap-4 px-6 pb-6 pt-20 text-white">
+              <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/35 to-transparent" />
+              <div className="absolute inset-x-0 bottom-0 flex items-end justify-between gap-4 px-6 pb-6 pt-24 text-white [text-shadow:0_1px_3px_rgba(0,0,0,0.9)]">
                 <div>
-                  <div className="text-[11px] font-bold uppercase tracking-[0.22em] text-white/70">Featured</div>
-                  <div className="mt-2 text-xl font-semibold">Open the full image gallery</div>
+                  <div className="text-[11px] font-bold uppercase tracking-[0.22em] text-white/95">Featured</div>
+                  <div className="mt-2 text-xl font-semibold [text-shadow:0_2px_8px_rgba(0,0,0,0.95),0_1px_2px_rgba(0,0,0,1)]">Open the full image gallery</div>
                 </div>
-                <div className="rounded-full border border-white/20 bg-black/20 px-3 py-1.5 text-sm font-semibold">
+                <div className="rounded-full border border-white/35 bg-black/55 px-3 py-1.5 text-sm font-semibold text-white backdrop-blur-sm [text-shadow:none]">
                   {leadImage.imageIndex + 1} / {images.length}
                 </div>
               </div>
@@ -181,11 +124,11 @@ export default function PropertyGallery({
                   alt={`Property image ${item.imageIndex + 1}`}
                   className="h-full w-full object-cover transition duration-500 group-hover:scale-[1.02]"
                 />
-                <div className="absolute inset-0 bg-gradient-to-t from-black/35 via-transparent to-transparent" />
-                <div className="absolute inset-x-0 bottom-0 flex items-end justify-between px-5 pb-5 pt-16 text-white">
+                <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/20 to-transparent" />
+                <div className="absolute inset-x-0 bottom-0 flex items-end justify-between px-5 pb-5 pt-20 text-white [text-shadow:0_1px_3px_rgba(0,0,0,0.9)]">
                   <div>
-                    <div className="text-[11px] font-bold uppercase tracking-[0.2em] text-white/70">Image {item.imageIndex + 1}</div>
-                    <div className="mt-2 text-base font-semibold">
+                    <div className="text-[11px] font-bold uppercase tracking-[0.2em] text-white/95">Image {item.imageIndex + 1}</div>
+                    <div className="mt-2 text-base font-semibold [text-shadow:0_2px_6px_rgba(0,0,0,0.95)]">
                       {supportingIndex === 0 ? 'Next key view' : 'More detail'}
                     </div>
                   </div>
@@ -228,8 +171,8 @@ export default function PropertyGallery({
                   }`}
                 >
                   <img src={item.image} alt={`Thumbnail ${item.imageIndex + 1}`} className="h-full w-full object-cover transition duration-300 group-hover:scale-[1.04]" />
-                  <div className="absolute inset-0 bg-gradient-to-t from-black/35 via-transparent to-transparent" />
-                  <span className="absolute bottom-2 right-2 rounded-full bg-black/65 px-2 py-0.5 text-[10px] font-bold text-white">
+                  <div className="absolute inset-0 bg-gradient-to-t from-black/55 via-transparent to-transparent" />
+                  <span className="absolute bottom-2 right-2 rounded-full border border-white/20 bg-black/80 px-2 py-0.5 text-[10px] font-bold text-white shadow-sm">
                     {item.imageIndex + 1}
                   </span>
                 </button>
@@ -250,10 +193,10 @@ export default function PropertyGallery({
                   className="h-full w-full object-cover transition duration-500 group-hover:scale-[1.015]"
                 />
               </div>
-              <div className="absolute inset-0 bg-gradient-to-t from-black/45 via-transparent to-transparent" />
-              <div className="absolute inset-x-0 bottom-0 px-4 pb-4 pt-16 text-left text-white">
-                <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-white/70">Featured</div>
-                <div className="mt-1 text-base font-semibold">Tap for the full image gallery</div>
+              <div className="absolute inset-0 bg-gradient-to-t from-black/75 via-black/25 to-transparent" />
+              <div className="absolute inset-x-0 bottom-0 px-4 pb-4 pt-20 text-left text-white [text-shadow:0_1px_3px_rgba(0,0,0,0.9)]">
+                <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-white/95">Featured</div>
+                <div className="mt-1 text-base font-semibold [text-shadow:0_2px_8px_rgba(0,0,0,0.95)]">Tap for the full image gallery</div>
               </div>
             </button>
 
@@ -287,7 +230,7 @@ export default function PropertyGallery({
                   }`}
                 >
                   <img src={item.image} alt={`Thumbnail ${item.imageIndex + 1}`} className="h-full w-full object-cover" />
-                  <span className="absolute bottom-1.5 right-1.5 rounded-full bg-black/65 px-2 py-0.5 text-[10px] font-bold text-white">
+                  <span className="absolute bottom-1.5 right-1.5 rounded-full border border-white/20 bg-black/80 px-2 py-0.5 text-[10px] font-bold text-white shadow-sm">
                     {item.imageIndex + 1}
                   </span>
                 </button>

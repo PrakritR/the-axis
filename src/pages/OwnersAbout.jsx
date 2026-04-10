@@ -10,7 +10,7 @@ export default function OwnersAbout() {
         <div className="container relative mx-auto max-w-3xl px-6">
           <h1 className="text-4xl font-black tracking-tight text-slate-900 sm:text-5xl">Partner With Axis</h1>
           <p className="mt-6 text-lg leading-8 text-slate-600">
-            Axis helps owners and operators list homes, run applications, generate leases, and keep residents on track — with clear pricing and tools built for Seattle student housing.
+            Axis helps owners and operators list homes, run applications, generate leases, and keep residents on track — with clear pricing and tools built for Seattle-area rental housing.
           </p>
           <p className="mt-4 text-lg leading-8 text-slate-600">
             Whether you manage one house or a larger portfolio, we combine housing visibility with software for rent collection, announcements, and maintenance — so you spend less time on paperwork.
