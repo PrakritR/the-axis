@@ -13,7 +13,7 @@ import {
   portalAuthInputCls,
 } from '../components/PortalAuthUI'
 import { ManagerAuthForm, MANAGER_SESSION_KEY } from './Manager'
-import { HOUSING_CONTACT_MESSAGE } from '../lib/housingSite'
+import { HOUSING_CONTACT_MESSAGE, HOUSING_CONTACT_SCHEDULE } from '../lib/housingSite'
 import {
   airtableReady,
   createResident,
@@ -367,7 +367,7 @@ export function ResidentAuthForm({ onLogin, footer = null, variant = 'default' }
             <div className="flex flex-col gap-3 pt-1 text-center text-sm text-slate-500">
               <div className="flex flex-wrap items-center justify-center gap-x-4 gap-y-2">
                 <Link
-                  to={`${HOUSING_CONTACT_MESSAGE}&category=forgot-password`}
+                  to={HOUSING_CONTACT_MESSAGE}
                   className="font-semibold text-[#2563eb] hover:text-slate-900"
                 >
                   Forgot password
@@ -1355,6 +1355,47 @@ function LeasingPanel({ resident, onOpenPayments }) {
   )
 }
 
+// ─── Contact (links to main site contact hub) ─────────────────────────────────
+
+function ContactPanel() {
+  return (
+    <SectionCard
+      title="Contact"
+      description="Tours, leasing questions, and general messages go through our contact page — same forms as the main site."
+    >
+      <div className="grid gap-4 sm:grid-cols-2">
+        <Link
+          to={HOUSING_CONTACT_SCHEDULE}
+          className="flex flex-col rounded-[20px] border border-slate-200 bg-slate-50/80 px-5 py-5 transition hover:border-axis hover:bg-white"
+        >
+          <span className="text-sm font-bold text-slate-900">Schedule a tour</span>
+          <span className="mt-2 text-sm leading-6 text-slate-500">Book a time to see a property in person or virtually.</span>
+        </Link>
+        <Link
+          to={HOUSING_CONTACT_MESSAGE}
+          className="flex flex-col rounded-[20px] border border-slate-200 bg-slate-50/80 px-5 py-5 transition hover:border-axis hover:bg-white"
+        >
+          <span className="text-sm font-bold text-slate-900">Send a message</span>
+          <span className="mt-2 text-sm leading-6 text-slate-500">Ask leasing a question or get help with housing topics.</span>
+        </Link>
+      </div>
+      <div className="mt-6 rounded-[18px] border border-slate-100 bg-slate-50/60 px-4 py-3 text-sm leading-6 text-slate-600">
+        <span className="font-semibold text-slate-800">Work orders:</span>{' '}
+        use the <strong>Work Orders</strong> tab to submit maintenance requests and track status. For rent and charges, use{' '}
+        <strong>Payments</strong>.
+      </div>
+      <div className="mt-5">
+        <Link
+          to="/contact?section=housing"
+          className="text-sm font-semibold text-axis underline decoration-axis/30 underline-offset-2 transition hover:decoration-axis"
+        >
+          Open full contact page
+        </Link>
+      </div>
+    </SectionCard>
+  )
+}
+
 // ─── Dashboard ────────────────────────────────────────────────────────────────
 
 function Dashboard({ resident, onResidentUpdated, onSignOut }) {
@@ -1397,6 +1438,7 @@ function Dashboard({ resident, onResidentUpdated, onSignOut }) {
     ['leasing', 'Leasing'],
     ['payments', 'Payments'],
     ['announcements', 'Announcements'],
+    ['contact', 'Contact'],
     ['profile', 'Profile'],
   ]
 
@@ -1466,6 +1508,7 @@ function Dashboard({ resident, onResidentUpdated, onSignOut }) {
         {!loading && tab === 'announcements' ? (
           <AnnouncementsPanel items={announcements} />
         ) : null}
+        {!loading && tab === 'contact' ? <ContactPanel /> : null}
         {!loading && tab === 'profile' ? (
           <ProfilePanel resident={resident} onUpdated={onResidentUpdated} />
         ) : null}

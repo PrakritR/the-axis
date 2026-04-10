@@ -50,28 +50,47 @@ export const HOUSING_CONTACT_SCHEDULE = '/contact?section=housing&tab=schedule'
 /** Housing “send a message” tab — optional query `&category=<id>` (see {@link HOUSING_MESSAGE_CATEGORIES}) */
 export const HOUSING_CONTACT_MESSAGE = '/contact?section=housing&tab=message'
 
-/** Resident / portal message categories (ids are stable for URL query `category=`) */
+/**
+ * Housing “send a message” topics — leasing / location focused.
+ * Rent, payments, maintenance, and portal access belong in the resident portal.
+ * @type {readonly { id: string, label: string }[]}
+ */
 export const HOUSING_MESSAGE_CATEGORIES = [
-  { id: 'forgot-password', label: 'Forgot password or portal access' },
-  { id: 'pay-rent', label: "Can't figure out how to pay rent" },
-  { id: 'maintenance', label: 'Maintenance or repairs' },
-  { id: 'lease', label: 'Lease, renewal, or move-out' },
+  { id: 'lease', label: 'Leasing & application questions' },
+  { id: 'neighborhood', label: 'Location, commute & neighborhood' },
+  { id: 'availability', label: 'Move-in dates & availability' },
   { id: 'other', label: 'Other' },
 ]
 
 const HOUSING_CATEGORY_ID_SET = new Set(HOUSING_MESSAGE_CATEGORIES.map((c) => c.id))
 
-/** Legacy `category=general` in URLs maps to `other`. */
+/** Old query values that should still open the housing message tab (normalized to `other` in the form). */
+const LEGACY_HOUSING_MESSAGE_IDS = new Set(['forgot-password', 'pay-rent', 'maintenance'])
+
+const LEGACY_TO_CURRENT = {
+  'forgot-password': 'other',
+  'pay-rent': 'other',
+  maintenance: 'other',
+  general: 'other',
+}
+
+/** Legacy `category=general` in URLs maps to `other`. Removed categories map to `other`. */
 export function normalizeHousingMessageCategoryId(value) {
   if (typeof value !== 'string' || !value.trim()) return null
   const v = value.trim()
-  if (v === 'general') return 'other'
+  if (Object.prototype.hasOwnProperty.call(LEGACY_TO_CURRENT, v)) {
+    return LEGACY_TO_CURRENT[v]
+  }
   return HOUSING_CATEGORY_ID_SET.has(v) ? v : null
 }
 
 export function isHousingMessageCategoryId(value) {
   if (typeof value !== 'string') return false
-  return value === 'general' || HOUSING_CATEGORY_ID_SET.has(value)
+  return (
+    value === 'general' ||
+    LEGACY_HOUSING_MESSAGE_IDS.has(value) ||
+    HOUSING_CATEGORY_ID_SET.has(value)
+  )
 }
 
 /**

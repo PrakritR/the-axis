@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { useLocation, useNavigate } from 'react-router-dom'
+import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { Seo } from '../lib/seo'
 import {
   HOUSING_MESSAGE_CATEGORIES,
@@ -619,7 +619,13 @@ function HousingMessageForm() {
     <form onSubmit={handleSubmit} className="space-y-6">
       <section className="rounded-2xl border border-slate-200 bg-white p-5 sm:p-6">
         <h3 className="mb-1 text-lg font-bold tracking-tight text-slate-900">Topic</h3>
-        <p className="mb-4 text-sm text-slate-500">Choose a category so we can route your message to the right team.</p>
+        <p className="mb-4 text-sm text-slate-500">
+          For rent, payments, maintenance, or portal login issues, use the{' '}
+          <Link to="/resident" className="font-semibold text-axis underline decoration-axis/30 underline-offset-2 hover:decoration-axis">
+            resident portal
+          </Link>
+          . These topics are for leasing questions, the area around our homes, and availability.
+        </p>
         <div>
           <label htmlFor="housing-message-category" className="mb-2 block text-sm font-semibold text-slate-700">
             What do you need help with? <span className="text-axis">*</span>
