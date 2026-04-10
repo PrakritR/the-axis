@@ -8,6 +8,8 @@ const TABLES = {
   workOrders: 'Work Orders',
   messages: 'Messages',
   residents: 'Resident Profile',
+  /** Airtable table name (was "Managers" in older bases). */
+  managers: 'Manager Profile',
   announcements: 'Announcements',
   properties: 'Properties',
   rooms: 'Rooms',
@@ -407,20 +409,20 @@ export const airtableReady = Boolean(
 // ---------------------------------------------------------------------------
 export async function loginManager(email, password) {
   const formula = `AND({Email} = "${escapeFormulaValue(email)}", {Password} = "${escapeFormulaValue(password)}")`
-  const data = await request(buildUrl('Managers', { filterByFormula: formula, maxRecords: 1 }))
+  const data = await request(buildUrl(TABLES.managers, { filterByFormula: formula, maxRecords: 1 }))
   const record = data.records?.[0]
   return record ? mapRecord(record) : null
 }
 
 export async function getManagerByEmail(email) {
   const formula = `{Email} = "${escapeFormulaValue(email)}"`
-  const data = await request(buildUrl('Managers', { filterByFormula: formula, maxRecords: 1 }))
+  const data = await request(buildUrl(TABLES.managers, { filterByFormula: formula, maxRecords: 1 }))
   const record = data.records?.[0]
   return record ? mapRecord(record) : null
 }
 
 export async function updateManager(recordId, fields) {
-  const data = await request(`${tableUrl('Managers')}/${recordId}`, {
+  const data = await request(`${tableUrl(TABLES.managers)}/${recordId}`, {
     method: 'PATCH',
     body: JSON.stringify({ fields, typecast: true }),
   })

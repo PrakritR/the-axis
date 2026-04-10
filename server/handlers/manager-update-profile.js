@@ -17,17 +17,6 @@ function mapRecord(record) {
   return { id: record.id, ...record.fields, created_at: record.createdTime }
 }
 
-function extractPhoneFromNotes(notes) {
-  const match = String(notes || '').match(/(?:^|\n)Phone:\s*(.+?)(?:\n|$)/i)
-  return match ? match[1].trim() : ''
-}
-
-function extractMetadataValue(notes, label) {
-  const escapedLabel = String(label || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-  const match = String(notes || '').match(new RegExp(`(?:^|\\n)${escapedLabel}:\\s*(.+?)(?:\\n|$)`, 'i'))
-  return match ? match[1].trim() : ''
-}
-
 async function getManagerByManagerId(managerId) {
   const formula = encodeURIComponent(`{Manager ID} = "${escapeFormulaValue(managerId)}"`)
   const url = `https://api.airtable.com/v0/${BASE_ID}/${MANAGER_TABLE_ENC}?filterByFormula=${formula}&maxRecords=1`
@@ -38,13 +27,23 @@ async function getManagerByManagerId(managerId) {
   return record ? mapRecord(record) : null
 }
 
+async function updateManager(recordId, fields) {
+  const atRes = await fetch(`https://api.airtable.com/v0/${BASE_ID}/${MANAGER_TABLE_ENC}/${recordId}`, {
+    method: 'PATCH',
+    headers: airtableHeaders(),
+    body: JSON.stringify({ fields, typecast: true }),
+  })
+  if (!atRes.ok) throw new Error(await atRes.text())
+  return mapRecord(await atRes.json())
+}
+
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*')
-  res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS')
+  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS')
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type')
   if (req.method === 'OPTIONS') return res.status(200).end()
 
-  if (req.method !== 'GET') {
+  if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' })
   }
 
@@ -52,30 +51,38 @@ export default async function handler(req, res) {
     return res.status(500).json({ error: 'Server data connection is not configured yet.' })
   }
 
-  const managerId = String(req.query?.manager_id || '').trim().toUpperCase()
-  if (!managerId) {
-    return res.status(400).json({ error: 'manager_id is required.' })
+  const { managerId, name, phone } = req.body || {}
+  const normalizedManagerId = String(managerId || '').trim().toUpperCase()
+
+  if (!normalizedManagerId) {
+    return res.status(400).json({ error: 'managerId is required.' })
+  }
+
+  const normalizedName = String(name || '').trim()
+  const normalizedPhone = String(phone || '').trim()
+
+  if (!normalizedName && !normalizedPhone) {
+    return res.status(400).json({ error: 'At least one field (name or phone) is required.' })
   }
 
   try {
-    const manager = await getManagerByManagerId(managerId)
+    const manager = await getManagerByManagerId(normalizedManagerId)
     if (!manager) {
-      return res.status(404).json({ error: 'No manager record was found for that manager ID yet.' })
+      return res.status(404).json({ error: 'Manager record not found.' })
     }
 
+    const updates = {}
+    if (normalizedName) updates.Name = normalizedName
+    if (normalizedPhone) updates.Phone = normalizedPhone
+
+    await updateManager(manager.id, updates)
+
     return res.status(200).json({
-      managerId,
-      name: manager.Name || '',
-      email: manager.Email || '',
-      phone: String(manager.Phone || '').trim() || extractPhoneFromNotes(manager.Notes),
-      accountExists: Boolean(manager.Password),
-      planType: manager.tier || extractMetadataValue(manager.Notes, 'Plan') || '',
-      billingInterval: extractMetadataValue(manager.Notes, 'Billing') || '',
-      houseAccess: extractMetadataValue(manager.Notes, 'House Access') || '',
-      platformAccess: extractMetadataValue(manager.Notes, 'Platform Access') || '',
+      name: normalizedName || manager.Name || '',
+      phone: normalizedPhone || '',
     })
   } catch (err) {
-    console.error('Manager lookup error:', err)
-    return res.status(500).json({ error: 'Could not load the manager record.' })
+    console.error('Manager update profile error:', err)
+    return res.status(500).json({ error: 'Could not update the manager profile.' })
   }
 }

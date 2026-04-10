@@ -1,6 +1,7 @@
 const STRIPE_API = 'https://api.stripe.com/v1'
 const AIRTABLE_TOKEN = process.env.VITE_AIRTABLE_TOKEN
 const BASE_ID = process.env.VITE_AIRTABLE_APPLICATIONS_BASE_ID || 'appNBX2inqfJMyqYV'
+const MANAGER_TABLE_ENC = encodeURIComponent('Manager Profile')
 
 function airtableHeaders() {
   return {
@@ -31,7 +32,7 @@ function deriveManagerId(recordId) {
 
 async function getManagerByEmail(email) {
   const formula = encodeURIComponent(`{Email} = "${escapeFormulaValue(email)}"`)
-  const url = `https://api.airtable.com/v0/${BASE_ID}/Managers?filterByFormula=${formula}&maxRecords=1`
+  const url = `https://api.airtable.com/v0/${BASE_ID}/${MANAGER_TABLE_ENC}?filterByFormula=${formula}&maxRecords=1`
   const atRes = await fetch(url, { headers: airtableHeaders() })
   if (!atRes.ok) {
     throw new Error('Database error. Please try again.')
@@ -42,7 +43,7 @@ async function getManagerByEmail(email) {
 }
 
 async function updateManager(recordId, fields) {
-  const atRes = await fetch(`https://api.airtable.com/v0/${BASE_ID}/Managers/${recordId}`, {
+  const atRes = await fetch(`https://api.airtable.com/v0/${BASE_ID}/${MANAGER_TABLE_ENC}/${recordId}`, {
     method: 'PATCH',
     headers: airtableHeaders(),
     body: JSON.stringify({ fields, typecast: true }),

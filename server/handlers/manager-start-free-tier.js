@@ -5,6 +5,7 @@ const BASE_ID =
   process.env.AIRTABLE_APPLICATIONS_BASE_ID ||
   process.env.AIRTABLE_BASE_ID ||
   'appNBX2inqfJMyqYV'
+const MANAGER_TABLE_ENC = encodeURIComponent('Manager Profile')
 /** Must match client DEFAULT_PROMO_CODE in JoinUs.jsx (override with MANAGER_BILLING_WAIVE_PROMO). */
 const BILLING_WAIVE_PROMO = String(process.env.MANAGER_BILLING_WAIVE_PROMO || 'FIRST20')
   .trim()
@@ -101,11 +102,11 @@ function planDetails(planType) {
 
 async function getManagerByEmail(email) {
   const formula = encodeURIComponent(`{Email} = "${escapeFormulaValue(email)}"`)
-  const url = `https://api.airtable.com/v0/${BASE_ID}/Managers?filterByFormula=${formula}&maxRecords=1`
+  const url = `https://api.airtable.com/v0/${BASE_ID}/${MANAGER_TABLE_ENC}?filterByFormula=${formula}&maxRecords=1`
   const atRes = await fetch(url, { headers: airtableHeaders() })
   if (!atRes.ok) {
     const detail = await readAirtableError(atRes)
-    console.error('[manager-start-free-tier] Managers GET failed', { status: atRes.status, baseId: BASE_ID, detail })
+    console.error('[manager-start-free-tier] Manager Profile GET failed', { status: atRes.status, baseId: BASE_ID, detail })
     if (atRes.status === 401 || atRes.status === 403) {
       throw new Error(
         'Airtable rejected the API token (401/403). Use a personal access token with data.records:read and data.records:write on this base, and set AIRTABLE_TOKEN or VITE_AIRTABLE_TOKEN on the server.',
@@ -113,11 +114,11 @@ async function getManagerByEmail(email) {
     }
     if (atRes.status === 404) {
       throw new Error(
-        `Airtable base or table not found (404). Check VITE_AIRTABLE_APPLICATIONS_BASE_ID / AIRTABLE_APPLICATIONS_BASE_ID and that a table named exactly "Managers" exists.`,
+        `Airtable base or table not found (404). Check VITE_AIRTABLE_APPLICATIONS_BASE_ID / AIRTABLE_APPLICATIONS_BASE_ID and that a table named exactly "Manager Profile" exists.`,
       )
     }
     throw new Error(
-      `Could not read Managers from Airtable (HTTP ${atRes.status}). ${String(detail).slice(0, 280)}`,
+      `Could not read Manager Profile from Airtable (HTTP ${atRes.status}). ${String(detail).slice(0, 280)}`,
     )
   }
   const data = await atRes.json()

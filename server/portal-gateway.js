@@ -10,6 +10,7 @@ import managerCreateSubscriptionSession from './handlers/manager-create-subscrip
 import managerLookup from './handlers/manager-lookup.js'
 import managerStartFreeTier from './handlers/manager-start-free-tier.js'
 import managerSubscriptionComplete from './handlers/manager-subscription-complete.js'
+import managerUpdateProfile from './handlers/manager-update-profile.js'
 import sendLeaseInvite from './handlers/send-lease-invite.js'
 
 const handlers = {
@@ -20,6 +21,7 @@ const handlers = {
   'manager-start-free-tier': managerStartFreeTier,
   'manager-create-subscription-session': managerCreateSubscriptionSession,
   'manager-billing-portal': managerBillingPortal,
+  'manager-update-profile': managerUpdateProfile,
   'generate-lease-draft': generateLeaseDraft,
   'send-lease-invite': sendLeaseInvite,
 }

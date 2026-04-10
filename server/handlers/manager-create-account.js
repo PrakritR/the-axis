@@ -1,5 +1,6 @@
 const AIRTABLE_TOKEN = process.env.VITE_AIRTABLE_TOKEN
 const BASE_ID = process.env.VITE_AIRTABLE_APPLICATIONS_BASE_ID || 'appNBX2inqfJMyqYV'
+const MANAGER_TABLE_ENC = encodeURIComponent('Manager Profile')
 
 function airtableHeaders() {
   return {
@@ -29,7 +30,7 @@ function extractMetadataValue(notes, label) {
 
 async function getManagerByManagerId(managerId) {
   const formula = encodeURIComponent(`{Manager ID} = "${escapeFormulaValue(managerId)}"`)
-  const url = `https://api.airtable.com/v0/${BASE_ID}/Managers?filterByFormula=${formula}&maxRecords=1`
+  const url = `https://api.airtable.com/v0/${BASE_ID}/${MANAGER_TABLE_ENC}?filterByFormula=${formula}&maxRecords=1`
   const atRes = await fetch(url, { headers: airtableHeaders() })
   if (!atRes.ok) throw new Error('Database error')
   const data = await atRes.json()
@@ -38,7 +39,7 @@ async function getManagerByManagerId(managerId) {
 }
 
 async function updateManager(recordId, fields) {
-  const atRes = await fetch(`https://api.airtable.com/v0/${BASE_ID}/Managers/${recordId}`, {
+  const atRes = await fetch(`https://api.airtable.com/v0/${BASE_ID}/${MANAGER_TABLE_ENC}/${recordId}`, {
     method: 'PATCH',
     headers: airtableHeaders(),
     body: JSON.stringify({ fields, typecast: true }),
