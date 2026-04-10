@@ -23,7 +23,6 @@ import {
   PortalAuthCard,
   PortalAuthPage,
   PortalField,
-  PortalFooterLink,
   PortalNotice,
   PortalPasswordInput,
   PortalPrimaryButton,
@@ -585,10 +584,7 @@ export function ManagerAuthForm({ onLogin, footer = null }) {
 function ManagerLogin({ onLogin }) {
   return (
     <PortalAuthPage>
-      <PortalAuthCard
-        title="Manager portal"
-        footer={<PortalFooterLink prefix="Resident?" linkLabel="Sign in at /resident" to="/resident" />}
-      >
+      <PortalAuthCard title="Manager portal">
         <ManagerAuthForm onLogin={onLogin} />
       </PortalAuthCard>
     </PortalAuthPage>

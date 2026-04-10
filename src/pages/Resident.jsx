@@ -1,17 +1,18 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react'
+import { Link, useNavigate } from 'react-router-dom'
 import { properties } from '../data/properties'
 import { EmbeddedStripeCheckout } from '../components/EmbeddedStripeCheckout'
 import {
   PortalAuthCard,
   PortalAuthPage,
   PortalField,
-  PortalFooterLink,
   PortalNotice,
   PortalPasswordInput,
   PortalPrimaryButton,
   PortalSegmentedControl,
   portalAuthInputCls,
 } from '../components/PortalAuthUI'
+import { ManagerAuthForm } from './Manager'
 import {
   airtableReady,
   createResident,
@@ -31,6 +32,7 @@ import {
 } from '../lib/airtable'
 
 const SESSION_KEY = 'axis_resident'
+const MANAGER_SESSION_KEY = 'axis_manager'
 
 const requestCategories = ['Plumbing', 'Electrical', 'HVAC', 'Appliance', 'Pest', 'Structural', 'Other']
 const urgencyOptions = ['Routine', 'Urgent', 'Emergency']
@@ -244,7 +246,11 @@ function SetupRequired() {
 
 // ─── Auth ─────────────────────────────────────────────────────────────────────
 
-export function ResidentAuthForm({ onLogin, footer = null }) {
+const FORGOT_PASSWORD_MAILTO =
+  'mailto:info@axis-seattle-housing.com?subject=' +
+  encodeURIComponent('Resident portal — password help')
+
+export function ResidentAuthForm({ onLogin, footer = null, variant = 'default' }) {
   const urlAppId = typeof window !== 'undefined'
     ? (new URLSearchParams(window.location.search).get('appId') || '')
     : ''
@@ -332,16 +338,21 @@ export function ResidentAuthForm({ onLogin, footer = null }) {
     }
   }
 
+  const portalEntry = variant === 'portal-entry'
+  const showSignInActivateTabs = !portalEntry
+
   return (
     <>
-      <PortalSegmentedControl
-        tabs={[['signin', 'Sign in'], ['activate', 'Activate account']]}
-        active={tab}
-        onChange={(id) => { setTab(id); setSignInError(''); setActivationError('') }}
-      />
+      {showSignInActivateTabs ? (
+        <PortalSegmentedControl
+          tabs={[['signin', 'Sign in'], ['activate', 'Activate account']]}
+          active={tab}
+          onChange={(id) => { setTab(id); setSignInError(''); setActivationError('') }}
+        />
+      ) : null}
 
       {tab === 'signin' ? (
-        <form onSubmit={handleLogin} className="mt-6 space-y-4">
+        <form onSubmit={handleLogin} className={showSignInActivateTabs ? 'mt-6 space-y-4' : 'mt-0 space-y-4'}>
           <PortalField label="Email">
             <input type="email" required value={signInForm.email}
               onChange={(e) => setSignInForm((c) => ({ ...c, email: e.target.value }))}
@@ -356,9 +367,42 @@ export function ResidentAuthForm({ onLogin, footer = null }) {
           <PortalPrimaryButton type="submit" disabled={signInLoading}>
             {signInLoading ? 'Signing in…' : 'Sign in'}
           </PortalPrimaryButton>
+          {portalEntry ? (
+            <div className="flex flex-col gap-3 pt-1 text-center text-sm text-slate-500">
+              <div className="flex flex-wrap items-center justify-center gap-x-4 gap-y-2">
+                <a href={FORGOT_PASSWORD_MAILTO} className="font-semibold text-[#2563eb] hover:text-slate-900">
+                  Forgot password
+                </a>
+                <Link
+                  to="/contact?section=housing&tab=message"
+                  className="font-semibold text-[#2563eb] hover:text-slate-900"
+                >
+                  Message leasing
+                </Link>
+              </div>
+              <button
+                type="button"
+                onClick={() => { setTab('activate'); setSignInError(''); setActivationError('') }}
+                className="font-semibold text-slate-600 hover:text-slate-900"
+              >
+                Activate account
+              </button>
+            </div>
+          ) : null}
         </form>
       ) : (
-        <form onSubmit={handleSignup} className="mt-6 space-y-4">
+        <form onSubmit={handleSignup} className={showSignInActivateTabs ? 'mt-6 space-y-4' : 'mt-0 space-y-4'}>
+          {portalEntry ? (
+            <div className="mb-4 text-center">
+              <button
+                type="button"
+                onClick={() => { setTab('signin'); setSignInError(''); setActivationError('') }}
+                className="text-sm font-semibold text-[#2563eb] hover:text-slate-900"
+              >
+                ← Back to sign in
+              </button>
+            </div>
+          ) : null}
           <PortalNotice>
             Use the email and Application ID from your approved application.{' '}
             <span className="font-mono font-semibold text-slate-800">APP-rec…</span>
@@ -391,13 +435,33 @@ export function ResidentAuthForm({ onLogin, footer = null }) {
 }
 
 function AirtableLogin({ onLogin }) {
+  const navigate = useNavigate()
+  const [portalType, setPortalType] = useState('resident')
+  const isResident = portalType === 'resident'
+
+  function handleManagerLogin(manager) {
+    sessionStorage.setItem(MANAGER_SESSION_KEY, JSON.stringify(manager))
+    navigate('/manager')
+  }
+
   return (
     <PortalAuthPage>
-      <PortalAuthCard
-        title="Resident portal"
-        footer={<PortalFooterLink prefix="Manager?" linkLabel="Log in at /manager" to="/manager" />}
-      >
-        <ResidentAuthForm onLogin={onLogin} />
+      <PortalAuthCard title={isResident ? 'Resident portal' : 'Manager portal'}>
+        <PortalSegmentedControl
+          tabs={[
+            ['resident', 'Resident portal'],
+            ['manager', 'Manager portal'],
+          ]}
+          active={portalType}
+          onChange={setPortalType}
+        />
+        <div className="mt-6">
+          {isResident ? (
+            <ResidentAuthForm onLogin={onLogin} variant="portal-entry" />
+          ) : (
+            <ManagerAuthForm onLogin={handleManagerLogin} />
+          )}
+        </div>
       </PortalAuthCard>
     </PortalAuthPage>
   )

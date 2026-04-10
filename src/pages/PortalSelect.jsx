@@ -3,7 +3,6 @@ import { useNavigate } from 'react-router-dom'
 import {
   PortalAuthCard,
   PortalAuthPage,
-  PortalFooterLink,
   PortalSegmentedControl,
 } from '../components/PortalAuthUI'
 import { Seo } from '../lib/seo'
@@ -37,16 +36,7 @@ export default function PortalSelect() {
         pathname="/portal"
       />
       <PortalAuthPage>
-        <PortalAuthCard
-          title={isResident ? 'Resident portal' : 'Manager portal'}
-          footer={
-            isResident ? (
-              <PortalFooterLink prefix="Manager?" linkLabel="Sign in at /manager" to="/manager" />
-            ) : (
-              <PortalFooterLink prefix="Resident?" linkLabel="Sign in at /resident" to="/resident" />
-            )
-          }
-        >
+        <PortalAuthCard title={isResident ? 'Resident portal' : 'Manager portal'}>
           <PortalSegmentedControl
             tabs={[
               ['resident', 'Resident portal'],
@@ -56,11 +46,13 @@ export default function PortalSelect() {
             onChange={setPortalType}
           />
 
-          {isResident ? (
-            <ResidentAuthForm onLogin={handleResidentLogin} />
-          ) : (
-            <ManagerAuthForm onLogin={handleManagerLogin} />
-          )}
+          <div className="mt-6">
+            {isResident ? (
+              <ResidentAuthForm onLogin={handleResidentLogin} variant="portal-entry" />
+            ) : (
+              <ManagerAuthForm onLogin={handleManagerLogin} />
+            )}
+          </div>
         </PortalAuthCard>
       </PortalAuthPage>
     </>
