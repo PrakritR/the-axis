@@ -177,6 +177,12 @@ function classNames(...values) {
   return values.filter(Boolean).join(' ')
 }
 
+function isApprovalGranted(value) {
+  if (value === true || value === 1) return true
+  const normalized = String(value || '').trim().toLowerCase()
+  return ['true', '1', 'yes', 'approved'].includes(normalized)
+}
+
 function formatMoney(value) {
   return `$${Number(value || 0).toLocaleString()}`
 }
@@ -321,7 +327,10 @@ export function ResidentAuthForm({ onLogin, footer = null, variant = 'default' }
         setSignInError('Invalid email or password. Contact Axis if you need help.')
         return
       }
-      if (resident.Approved !== true) {
+      const approved =
+        isApprovalGranted(resident['Application Approval']) ||
+        isApprovalGranted(resident.Approved)
+      if (!approved) {
         setSignInError('Your application is still under review. You\'ll be able to log in once a manager approves it. Contact Axis if you have questions.')
         return
       }
