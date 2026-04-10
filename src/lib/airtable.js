@@ -1,6 +1,8 @@
-const BASE_ID = import.meta.env.VITE_AIRTABLE_APPLICATIONS_BASE_ID || 'appNBX2inqfJMyqYV'
+const BASE_ID = import.meta.env.VITE_AIRTABLE_BASE_ID || 'appol57LKtMKaQ75T'
+const APPS_BASE_ID = import.meta.env.VITE_AIRTABLE_APPLICATIONS_BASE_ID || 'appNBX2inqfJMyqYV'
 const API_KEY = import.meta.env.VITE_AIRTABLE_TOKEN
 const BASE_URL = `https://api.airtable.com/v0/${BASE_ID}`
+const APPS_BASE_URL = `https://api.airtable.com/v0/${APPS_BASE_ID}`
 
 const TABLES = {
   workOrders: 'Work Orders',
@@ -146,7 +148,7 @@ export async function getApplicationById(applicationId) {
   const recordId = raw.startsWith('APP-') ? raw.slice(4) : raw
   if (!recordId.startsWith('rec') || recordId.length < 10) return null
   try {
-    const data = await request(`${tableUrl('Applications')}/${recordId}`)
+    const data = await request(`${APPS_BASE_URL}/Applications/${recordId}`)
     return mapRecord(data)
   } catch {
     return null
@@ -364,7 +366,7 @@ export async function markPackagePickedUp(recordId) {
 // ---------------------------------------------------------------------------
 export async function signLease(applicationRecordId, signatureText) {
   const today = new Date().toISOString().slice(0, 10)
-  const data = await request(`${tableUrl('Applications')}/${applicationRecordId}`, {
+  const data = await request(`${APPS_BASE_URL}/Applications/${applicationRecordId}`, {
     method: 'PATCH',
     body: JSON.stringify({
       fields: {
@@ -381,7 +383,7 @@ export async function signLease(applicationRecordId, signatureText) {
 // Returns currently active signed leases — used to overlay dynamic room unavailability
 export async function getSignedLeases() {
   const formula = `AND({Lease Signed} = TRUE(), IS_AFTER({Lease End Date}, TODAY()))`
-  const url = new URL(`${BASE_URL}/Applications`)
+  const url = new URL(`${APPS_BASE_URL}/Applications`)
   url.searchParams.set('filterByFormula', formula)
   url.searchParams.set('fields[]', 'Property Name')
   url.searchParams.set('fields[]', 'Room Number')
@@ -526,9 +528,11 @@ export async function getAllApplications() {
   const allRecords = []
   let offset = null
   do {
-    const params = { sort: [{ field: 'Created', direction: 'desc' }] }
-    if (offset) params.offset = offset
-    const data = await request(buildUrl('Applications', params))
+    const url = new URL(`${APPS_BASE_URL}/Applications`)
+    url.searchParams.set('sort[0][field]', 'Created')
+    url.searchParams.set('sort[0][direction]', 'desc')
+    if (offset) url.searchParams.set('offset', offset)
+    const data = await request(url.toString())
     ;(data.records || []).forEach((r) => allRecords.push(mapRecord(r)))
     offset = data.offset || null
   } while (offset)
@@ -536,7 +540,7 @@ export async function getAllApplications() {
 }
 
 export async function getFullApplicationById(recordId) {
-  const app = await request(`${tableUrl('Applications')}/${recordId}`)
+  const app = await request(`${APPS_BASE_URL}/Applications/${recordId}`)
   return mapRecord(app)
 }
 
@@ -544,7 +548,7 @@ export async function getFullApplicationById(recordId) {
 // Manager — lease management
 // ---------------------------------------------------------------------------
 export async function saveLease(recordId, { token, leaseJson, status = 'Pending' }) {
-  const data = await request(`${tableUrl('Applications')}/${recordId}`, {
+  const data = await request(`${APPS_BASE_URL}/Applications/${recordId}`, {
     method: 'PATCH',
     body: JSON.stringify({
       fields: {
@@ -560,7 +564,10 @@ export async function saveLease(recordId, { token, leaseJson, status = 'Pending'
 
 export async function getLeaseByToken(token) {
   const formula = `{Lease Token} = "${escapeFormulaValue(token)}"`
-  const data = await request(buildUrl('Applications', { filterByFormula: formula, maxRecords: 1 }))
+  const url = new URL(`${APPS_BASE_URL}/Applications`)
+  url.searchParams.set('filterByFormula', formula)
+  url.searchParams.set('maxRecords', '1')
+  const data = await request(url.toString())
   const record = data.records?.[0]
   if (!record) return null
   const mapped = mapRecord(record)
@@ -573,7 +580,7 @@ export async function getLeaseByToken(token) {
 }
 
 export async function updateLeaseRecord(recordId, fields) {
-  const data = await request(`${tableUrl('Applications')}/${recordId}`, {
+  const data = await request(`${APPS_BASE_URL}/Applications/${recordId}`, {
     method: 'PATCH',
     body: JSON.stringify({ fields, typecast: true }),
   })
@@ -625,7 +632,7 @@ export async function getApprovedLeaseForResident(residentRecordId) {
     {Resident Record ID} = "${escaped}",
     OR({Status} = "Published", {Status} = "Signed")
   )`
-  const url = new URL(tableUrl('Lease Drafts'))
+  const url = new URL(`${APPS_BASE_URL}/Lease%20Drafts`)
   url.searchParams.set('filterByFormula', formula)
   url.searchParams.set('sort[0][field]', 'Published At')
   url.searchParams.set('sort[0][direction]', 'desc')
