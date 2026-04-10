@@ -1,10 +1,9 @@
 /** Vercel/serverless often does not expose VITE_* to Node; support server-only names too. */
 const AIRTABLE_TOKEN = process.env.AIRTABLE_TOKEN || process.env.VITE_AIRTABLE_TOKEN
 const BASE_ID =
-  process.env.VITE_AIRTABLE_APPLICATIONS_BASE_ID ||
-  process.env.AIRTABLE_APPLICATIONS_BASE_ID ||
+  process.env.VITE_AIRTABLE_BASE_ID ||
   process.env.AIRTABLE_BASE_ID ||
-  'appNBX2inqfJMyqYV'
+  'appol57LKtMKaQ75T'
 const MANAGER_TABLE_ENC = encodeURIComponent('Manager Profile')
 /** Must match client DEFAULT_PROMO_CODE in JoinUs.jsx (override with MANAGER_BILLING_WAIVE_PROMO). */
 const BILLING_WAIVE_PROMO = String(process.env.MANAGER_BILLING_WAIVE_PROMO || 'FIRST20')
@@ -127,7 +126,7 @@ async function getManagerByEmail(email) {
 }
 
 async function createManager(fields) {
-  const atRes = await fetch(`https://api.airtable.com/v0/${BASE_ID}/Managers`, {
+  const atRes = await fetch(`https://api.airtable.com/v0/${BASE_ID}/${MANAGER_TABLE_ENC}`, {
     method: 'POST',
     headers: airtableHeaders(),
     body: JSON.stringify({ fields, typecast: true }),
@@ -137,7 +136,7 @@ async function createManager(fields) {
 }
 
 async function updateManager(recordId, fields) {
-  const atRes = await fetch(`https://api.airtable.com/v0/${BASE_ID}/Managers/${recordId}`, {
+  const atRes = await fetch(`https://api.airtable.com/v0/${BASE_ID}/${MANAGER_TABLE_ENC}/${recordId}`, {
     method: 'PATCH',
     headers: airtableHeaders(),
     body: JSON.stringify({ fields, typecast: true }),
