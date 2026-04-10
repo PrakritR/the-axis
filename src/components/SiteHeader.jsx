@@ -83,6 +83,7 @@ export default function SiteHeader() {
 
   const marketingCenterNav = [
     { label: 'Explore houses', to: '/', isActive: isHome },
+    { label: 'Apply', to: '/apply', isActive: isApply },
     { label: 'Partner with Axis', to: '/owners/about', isActive: false },
   ]
 
@@ -251,20 +252,21 @@ export default function SiteHeader() {
                 <>
                   <Link
                     to="/"
-                    onClick={() => {
-                      closeMobileMenu()
-                      scrollToTop()
-                    }}
+                    onClick={() => { closeMobileMenu(); scrollToTop() }}
                     className="rounded-xl px-3 py-2.5 text-sm font-medium text-slate-600 transition hover:bg-slate-50 hover:text-slate-900"
                   >
                     Explore houses
                   </Link>
                   <Link
+                    to="/apply"
+                    onClick={() => { closeMobileMenu(); scrollToTop() }}
+                    className="rounded-xl px-3 py-2.5 text-sm font-medium text-slate-600 transition hover:bg-slate-50 hover:text-slate-900"
+                  >
+                    Apply
+                  </Link>
+                  <Link
                     to="/owners/about"
-                    onClick={() => {
-                      closeMobileMenu()
-                      scrollToTop()
-                    }}
+                    onClick={() => { closeMobileMenu(); scrollToTop() }}
                     className="rounded-xl px-3 py-2.5 text-sm font-medium text-slate-600 transition hover:bg-slate-50 hover:text-slate-900"
                   >
                     Partner with Axis

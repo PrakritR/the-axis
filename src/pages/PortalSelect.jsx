@@ -13,7 +13,7 @@ export default function PortalSelect() {
         description="Sign in to the manager or resident portal."
         pathname="/portal"
       />
-      <main className="flex flex-1 flex-col px-4 py-14 sm:px-6 sm:py-20" data-axis-page="portal-hub">
+      <main className="flex flex-1 flex-col px-4 py-14 font-sans sm:px-6 sm:py-20" data-axis-page="portal-hub">
         <div className="mx-auto max-w-3xl text-center">
           <h1 className="text-2xl font-black tracking-tight text-slate-900 sm:text-3xl">Choose your portal</h1>
         </div>
