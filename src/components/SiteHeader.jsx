@@ -124,6 +124,11 @@ export default function SiteHeader() {
   }
 
   if (variant === 'portal') {
+    const portalNavItems = [
+      { label: 'Explore Houses', to: HOUSING_EXPLORE_PATH, isActive: isHome },
+      { label: 'Partner with Axis', to: '/owners/about', isActive: isOwners },
+    ]
+
     return (
       <header
         className="relative z-30 w-full shrink-0 border-b border-slate-200/80 bg-white/90 backdrop-blur-xl"
@@ -148,12 +153,21 @@ export default function SiteHeader() {
               className="flex flex-wrap items-center justify-center gap-x-6 gap-y-2 sm:col-start-2 sm:row-start-1 sm:justify-center sm:gap-8"
               aria-label="Browse housing and partners"
             >
-              <Link to={HOUSING_EXPLORE_PATH} onClick={scrollToTop} className={hubNavLink}>
-                Explore Houses
-              </Link>
-              <Link to="/owners/about" onClick={scrollToTop} className={hubNavLink}>
-                Partner with Axis
-              </Link>
+              {portalNavItems.map((item) => (
+                <Link
+                  key={item.label}
+                  to={item.to}
+                  onClick={scrollToTop}
+                  className={`relative ${hubNavLink} ${item.isActive ? 'text-slate-900' : ''}`}
+                >
+                  {item.label}
+                  <span
+                    className={`absolute -bottom-2 left-0 h-px bg-[#2563eb] transition-all duration-300 ${
+                      item.isActive ? 'w-full opacity-100' : 'w-0 opacity-0'
+                    }`}
+                  />
+                </Link>
+              ))}
             </nav>
             <div className="hidden sm:col-start-3 sm:row-start-1 sm:block sm:justify-self-end">
               <PortalBubble aria-current="page">Portal</PortalBubble>

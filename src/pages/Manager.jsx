@@ -19,6 +19,17 @@
 
 import React, { useCallback, useEffect, useMemo, useState } from 'react'
 import toast from 'react-hot-toast'
+import {
+  PortalAuthCard,
+  PortalAuthPage,
+  PortalField,
+  PortalFooterLink,
+  PortalNotice,
+  PortalPasswordInput,
+  PortalPrimaryButton,
+  PortalSegmentedControl,
+  portalAuthInputCls,
+} from '../components/PortalAuthUI'
 
 // ─── Session ──────────────────────────────────────────────────────────────────
 const MANAGER_SESSION_KEY = 'axis_manager'
@@ -185,67 +196,6 @@ function StatusBadge({ status, size = 'sm' }) {
     </span>
   )
 }
-
-function ManagerPasswordInput({ value, onChange, placeholder, autoComplete }) {
-  const [show, setShow] = useState(false)
-
-  return (
-    <div className="relative">
-      <input
-        type={show ? 'text' : 'password'}
-        value={value}
-        onChange={onChange}
-        required
-        autoComplete={autoComplete || 'current-password'}
-        placeholder={placeholder || '••••••••'}
-        className="w-full rounded-[24px] border border-slate-200 bg-white px-5 py-4 pr-12 text-base text-slate-900 placeholder:text-slate-400 outline-none transition focus:border-[#2563eb] focus:ring-2 focus:ring-[#2563eb]/20"
-      />
-      <button
-        type="button"
-        onClick={() => setShow((current) => !current)}
-        tabIndex={-1}
-        className="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400 transition hover:text-slate-700"
-      >
-        {show ? (
-          <svg className="h-4.5 w-4.5" fill="none" stroke="currentColor" strokeWidth={1.8} viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" d="M3.98 8.223A10.477 10.477 0 001.934 12C3.226 16.338 7.244 19.5 12 19.5c.993 0 1.953-.138 2.863-.395M6.228 6.228A10.45 10.45 0 0112 4.5c4.756 0 8.773 3.162 10.065 7.498a10.523 10.523 0 01-4.293 5.774M6.228 6.228L3 3m3.228 3.228l3.65 3.65m7.894 7.894L21 21m-3.228-3.228l-3.65-3.65m0 0a3 3 0 10-4.243-4.243m4.242 4.242L9.88 9.88" />
-          </svg>
-        ) : (
-          <svg className="h-4.5 w-4.5" fill="none" stroke="currentColor" strokeWidth={1.8} viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" d="M2.036 12.322a1.012 1.012 0 010-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178z" />
-            <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-          </svg>
-        )}
-      </button>
-    </div>
-  )
-}
-
-function ManagerStep({ number, title, description, children, tone = 'default' }) {
-  const tones = {
-    default: 'border-slate-200 bg-slate-50',
-    success: 'border-emerald-200 bg-emerald-50',
-  }
-
-  return (
-    <div className={`rounded-[28px] border p-5 ${tones[tone] || tones.default}`}>
-      <div className="flex items-start gap-4">
-        <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-sm font-black ${tone === 'success' ? 'bg-emerald-600 text-white' : 'bg-white text-slate-900'}`}>
-          {number}
-        </div>
-        <div className="min-w-0 flex-1">
-          <h3 className="text-lg font-black text-slate-900">{title}</h3>
-          <p className="mt-1 text-sm leading-6 text-slate-500">{description}</p>
-          <div className="mt-4">{children}</div>
-        </div>
-      </div>
-    </div>
-  )
-}
-
-// ─── ManagerLogin ─────────────────────────────────────────────────────────────
-const managerAuthInputCls =
-  'w-full rounded-[24px] border border-slate-200 bg-white px-5 py-4 text-base text-slate-900 placeholder:text-slate-400 outline-none transition focus:border-[#2563eb] focus:ring-2 focus:ring-[#2563eb]/20'
 
 function ManagerLogin({ onLogin }) {
   const queryString = typeof window !== 'undefined' ? window.location.search : ''
@@ -467,34 +417,20 @@ function ManagerLogin({ onLogin }) {
   }
 
   return (
-    <div className="flex min-h-screen items-start justify-center bg-[linear-gradient(180deg,#f7fbff_0%,#eef5ff_48%,#f9fcff_100%)] px-4 pb-12 pt-8 sm:pt-12 lg:pt-16">
-      <div className="w-full max-w-lg">
-        <section className="rounded-[32px] border border-slate-200 bg-white p-8 shadow-soft sm:p-10">
-          <div className="mb-6 text-center">
-            <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-[#2563eb]">AXIS PORTAL</div>
-            <h1 className="mt-2 text-4xl font-black tracking-tight text-slate-900">Manager portal</h1>
-          </div>
-
-          <div className="flex gap-1 rounded-[24px] border border-slate-100 bg-slate-50 p-1.5">
-            {[['signin', 'Sign in'], ['setup', 'Create account']].map(([id, label]) => (
-              <button
-                key={id}
-                type="button"
-                onClick={() => setActiveView(id)}
-                className={classNames(
-                  'flex-1 rounded-[18px] px-4 py-3 text-base font-semibold transition',
-                  activeView === id ? 'bg-white text-slate-900 shadow-sm ring-2 ring-[#2563eb]' : 'text-slate-500 hover:text-slate-900'
-                )}
-              >
-                {label}
-              </button>
-            ))}
-          </div>
+    <PortalAuthPage>
+      <PortalAuthCard
+        title="Manager portal"
+        footer={<PortalFooterLink prefix="Resident?" linkLabel="Sign in at /resident" to="/resident" />}
+      >
+          <PortalSegmentedControl
+            tabs={[['signin', 'Sign in'], ['setup', 'Create account']]}
+            active={activeView}
+            onChange={setActiveView}
+          />
 
           {activeView === 'signin' ? (
             <form onSubmit={handleSubmit} className="mt-6 space-y-4">
-              <div>
-                <label className="mb-2 block text-sm font-semibold text-slate-700">Email</label>
+              <PortalField label="Email">
                 <input
                   type="email"
                   value={signInForm.email}
@@ -502,37 +438,42 @@ function ManagerLogin({ onLogin }) {
                   required
                   autoComplete="email"
                   placeholder="you@example.com"
-                  className={managerAuthInputCls}
+                  className={portalAuthInputCls}
                 />
-              </div>
+              </PortalField>
 
-              <div>
-                <label className="mb-2 block text-sm font-semibold text-slate-700">Password</label>
-                <ManagerPasswordInput
+              <PortalField label="Password">
+                <PortalPasswordInput
                   value={signInForm.password}
                   onChange={(event) => setSignInForm((current) => ({ ...current, password: event.target.value }))}
                   autoComplete="current-password"
                 />
-              </div>
+              </PortalField>
 
               {loginError ? (
-                <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-                  {loginError}
-                </div>
+                <PortalNotice tone="error">{loginError}</PortalNotice>
               ) : null}
 
-              <button
+              <PortalPrimaryButton
                 type="submit"
                 disabled={loginLoading}
-                className="w-full rounded-full bg-slate-900 py-4 text-base font-semibold text-white transition hover:bg-slate-800 disabled:opacity-50"
               >
                 {loginLoading ? 'Signing in…' : 'Sign in'}
-              </button>
+              </PortalPrimaryButton>
             </form>
           ) : (
-            <div className="mt-6 space-y-4">
-              <div>
-                <label className="mb-2 block text-sm font-semibold text-slate-700">Manager ID</label>
+            <form
+              className="mt-6 space-y-4"
+              onSubmit={(event) => {
+                event.preventDefault()
+                void handleCreateAccount()
+              }}
+            >
+              <PortalNotice>
+                Use the manager ID created during pricing setup. Your account details load automatically once we find the record.
+              </PortalNotice>
+
+              <PortalField label="Manager ID" required>
                 <input
                   type="text"
                   value={activationForm.managerId}
@@ -552,45 +493,41 @@ function ManagerLogin({ onLogin }) {
                     }))
                   }}
                   placeholder="MGR-XXXXXXXXXXXXXX"
-                  className={`${managerAuthInputCls} font-semibold uppercase tracking-[0.04em]`}
+                  className={`${portalAuthInputCls} font-semibold uppercase tracking-[0.04em]`}
                 />
-              </div>
+              </PortalField>
 
-              <div>
-                <label className="mb-2 block text-sm font-semibold text-slate-700">Full name</label>
+              <PortalField label="Full name">
                 <input
                   type="text"
                   readOnly
                   value={activationForm.name}
                   placeholder="Loads from your manager record"
-                  className="w-full rounded-[24px] border border-slate-200 bg-slate-50 px-5 py-4 text-base text-slate-900 placeholder:text-slate-400 transition focus:border-[#2563eb] focus:outline-none focus:ring-2 focus:ring-[#2563eb]/20"
+                  className={`${portalAuthInputCls} bg-slate-50`}
                 />
-              </div>
+              </PortalField>
 
-              <div>
-                <label className="mb-2 block text-sm font-semibold text-slate-700">Email</label>
+              <PortalField label="Email">
                 <input
                   type="email"
                   readOnly
                   value={activationForm.email}
                   placeholder="Loads from your manager record"
-                  className="w-full rounded-[24px] border border-slate-200 bg-slate-50 px-5 py-4 text-base text-slate-900 placeholder:text-slate-400 transition focus:border-[#2563eb] focus:outline-none focus:ring-2 focus:ring-[#2563eb]/20"
+                  className={`${portalAuthInputCls} bg-slate-50`}
                 />
-              </div>
+              </PortalField>
 
-              <div>
-                <label className="mb-2 block text-sm font-semibold text-slate-700">Phone number</label>
+              <PortalField label="Phone number">
                 <input
                   type="text"
                   readOnly
                   value={activationForm.phone}
                   placeholder="Loads from your manager record"
-                  className="w-full rounded-[24px] border border-slate-200 bg-slate-50 px-5 py-4 text-base text-slate-900 placeholder:text-slate-400 transition focus:border-[#2563eb] focus:outline-none focus:ring-2 focus:ring-[#2563eb]/20"
+                  className={`${portalAuthInputCls} bg-slate-50`}
                 />
-              </div>
+              </PortalField>
 
-              <div>
-                <label className="mb-2 block text-sm font-semibold text-slate-700">Selected tier</label>
+              <PortalField label="Selected tier">
                 <input
                   type="text"
                   readOnly
@@ -600,85 +537,51 @@ function ManagerLogin({ onLogin }) {
                       : ''
                   }
                   placeholder="Loads from your manager record"
-                  className="w-full rounded-[24px] border border-slate-200 bg-slate-50 px-5 py-4 text-base text-slate-900 placeholder:text-slate-400 transition focus:border-[#2563eb] focus:outline-none focus:ring-2 focus:ring-[#2563eb]/20"
+                  className={`${portalAuthInputCls} bg-slate-50`}
                 />
-              </div>
+              </PortalField>
 
-              <div>
-                <label className="mb-2 block text-sm font-semibold text-slate-700">Create password</label>
-                <ManagerPasswordInput
+              <PortalField label="Create password" required>
+                <PortalPasswordInput
                   value={activationForm.password}
                   onChange={(event) => setActivationForm((current) => ({ ...current, password: event.target.value }))}
                   autoComplete="new-password"
                   placeholder="Minimum 6 characters"
                 />
-              </div>
+              </PortalField>
 
-              {notice ? (
-                <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
-                  {notice}
-                </div>
-              ) : null}
+              {notice ? <PortalNotice tone="success">{notice}</PortalNotice> : null}
 
               {!subscriptionReady ? (
-                <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
+                <PortalNotice>
                   Start on the Partner With Axis pricing page first. Your tier, manager ID, and contact info load here from Airtable.
-                </div>
+                </PortalNotice>
               ) : null}
 
               {setupLoading ? (
-                <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
-                  Verifying manager setup…
-                </div>
+                <PortalNotice>Verifying manager setup…</PortalNotice>
               ) : null}
 
               {profileLoading ? (
-                <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
-                  Loading manager details from Airtable…
-                </div>
+                <PortalNotice>Loading manager details from Airtable…</PortalNotice>
               ) : null}
 
               {activationError ? (
-                <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-                  {activationError}
-                </div>
+                <PortalNotice tone="error">{activationError}</PortalNotice>
               ) : null}
 
-              <button
-                type="button"
-                onClick={handleCreateAccount}
+              <PortalPrimaryButton
+                type="submit"
                 disabled={activationLoading || !activationForm.managerId.trim() || !activationForm.password.trim()}
-                className="w-full rounded-full bg-slate-900 py-4 text-base font-semibold text-white transition hover:bg-slate-800 disabled:opacity-50"
               >
                 {activationLoading ? 'Creating account…' : 'Create account'}
-              </button>
+              </PortalPrimaryButton>
 
-              <div className="rounded-[28px] border border-slate-200 bg-slate-50 p-5">
-                <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-[#2563eb]">Manager access</div>
-                <p className="mt-2 text-sm leading-6 text-slate-500">
-                  Start on the Join page to pick a plan. Once that's done — subscription confirmed or free tier activated — come back here to finish setting up your manager account.
-                </p>
-                {subscriptionError ? (
-                  <div className="mt-4 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-                    {subscriptionError}
-                  </div>
-                ) : null}
-                <a
-                  href="/owners/pricing"
-                  className="mt-4 inline-flex w-full items-center justify-center rounded-full bg-[linear-gradient(180deg,#2c3447_0%,#1a1d27_100%)] px-5 py-4 text-base font-semibold text-white transition hover:brightness-110"
-                >
-                  Partner pricing
-                </a>
-              </div>
-            </div>
+              {subscriptionError ? <PortalNotice tone="error">{subscriptionError}</PortalNotice> : null}
+            </form>
           )}
-          <div className="mt-8 text-center text-sm text-slate-400">
-            Resident?{' '}
-            <a href="/resident" className="font-semibold text-slate-600 hover:text-slate-900">Sign in at /resident</a>
-          </div>
-        </section>
-      </div>
-    </div>
+      </PortalAuthCard>
+    </PortalAuthPage>
   )
 }
 

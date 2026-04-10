@@ -2,6 +2,17 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react'
 import { properties } from '../data/properties'
 import { EmbeddedStripeCheckout } from '../components/EmbeddedStripeCheckout'
 import {
+  PortalAuthCard,
+  PortalAuthPage,
+  PortalField,
+  PortalFooterLink,
+  PortalNotice,
+  PortalPasswordInput,
+  PortalPrimaryButton,
+  PortalSegmentedControl,
+  portalAuthInputCls,
+} from '../components/PortalAuthUI'
+import {
   airtableReady,
   createResident,
   createWorkOrder,
@@ -233,32 +244,6 @@ function SetupRequired() {
 
 // ─── Auth ─────────────────────────────────────────────────────────────────────
 
-const authInputCls = 'w-full rounded-[24px] border border-slate-200 bg-white px-5 py-4 text-base outline-none transition focus:border-[#2563eb] focus:ring-2 focus:ring-[#2563eb]/20'
-
-function PasswordInput({ value, onChange, placeholder, autoComplete }) {
-  const [show, setShow] = useState(false)
-  return (
-    <div className="relative">
-      <input
-        type={show ? 'text' : 'password'}
-        required
-        value={value}
-        onChange={onChange}
-        placeholder={placeholder || '••••••••'}
-        autoComplete={autoComplete || 'current-password'}
-        className={authInputCls + ' pr-11'}
-      />
-      <button type="button" onClick={() => setShow((v) => !v)} tabIndex={-1}
-        className="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-700 transition">
-        {show
-          ? <svg className="h-4.5 w-4.5" fill="none" stroke="currentColor" strokeWidth={1.8} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M3.98 8.223A10.477 10.477 0 001.934 12C3.226 16.338 7.244 19.5 12 19.5c.993 0 1.953-.138 2.863-.395M6.228 6.228A10.45 10.45 0 0112 4.5c4.756 0 8.773 3.162 10.065 7.498a10.523 10.523 0 01-4.293 5.774M6.228 6.228L3 3m3.228 3.228l3.65 3.65m7.894 7.894L21 21m-3.228-3.228l-3.65-3.65m0 0a3 3 0 10-4.243-4.243m4.242 4.242L9.88 9.88" /></svg>
-          : <svg className="h-4.5 w-4.5" fill="none" stroke="currentColor" strokeWidth={1.8} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M2.036 12.322a1.012 1.012 0 010-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178z" /><path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
-        }
-      </button>
-    </div>
-  )
-}
-
 function AirtableLogin({ onLogin }) {
   const urlAppId = typeof window !== 'undefined'
     ? (new URLSearchParams(window.location.search).get('appId') || '')
@@ -348,89 +333,63 @@ function AirtableLogin({ onLogin }) {
   }
 
   return (
-    <div className="flex min-h-screen items-start justify-center bg-[linear-gradient(180deg,#f7fbff_0%,#eef5ff_48%,#f9fcff_100%)] px-4 pb-12 pt-8 sm:pt-12 lg:pt-16">
-      <div className="w-full max-w-lg">
-        <div className="rounded-[32px] border border-slate-200 bg-white p-8 shadow-soft sm:p-10">
-          <div className="mb-6 text-center">
-            <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-[#2563eb]">AXIS PORTAL</div>
-            <h1 className="mt-2 text-4xl font-black tracking-tight text-slate-900">Resident portal</h1>
-          </div>
-
-          <div className="flex gap-1 rounded-[24px] border border-slate-100 bg-slate-50 p-1.5">
-            {[['signin', 'Sign in'], ['activate', 'Activate account']].map(([id, label]) => (
-              <button
-                key={id}
-                type="button"
-                onClick={() => { setTab(id); setSignInError(''); setActivationError('') }}
-                className={classNames(
-                  'flex-1 rounded-[18px] px-4 py-3 text-base font-semibold transition',
-                  tab === id ? 'bg-white text-slate-900 shadow-sm ring-2 ring-[#2563eb]' : 'text-slate-500 hover:text-slate-900'
-                )}
-              >
-                {label}
-              </button>
-            ))}
-          </div>
+    <PortalAuthPage>
+      <PortalAuthCard
+        title="Resident portal"
+        footer={<PortalFooterLink prefix="Manager?" linkLabel="Log in at /manager" to="/manager" />}
+      >
+          <PortalSegmentedControl
+            tabs={[['signin', 'Sign in'], ['activate', 'Activate account']]}
+            active={tab}
+            onChange={(id) => { setTab(id); setSignInError(''); setActivationError('') }}
+          />
 
           {tab === 'signin' ? (
             <form onSubmit={handleLogin} className="mt-6 space-y-4">
-              <div>
-                <label className="mb-2 block text-sm font-semibold text-slate-700">Email</label>
+              <PortalField label="Email">
                 <input type="email" required value={signInForm.email}
                   onChange={(e) => setSignInForm((c) => ({ ...c, email: e.target.value }))}
-                  placeholder="you@example.com" autoComplete="email" className={authInputCls} />
-              </div>
-              <div>
-                <label className="mb-2 block text-sm font-semibold text-slate-700">Password</label>
-                <PasswordInput value={signInForm.password}
+                  placeholder="you@example.com" autoComplete="email" className={portalAuthInputCls} />
+              </PortalField>
+              <PortalField label="Password">
+                <PortalPasswordInput value={signInForm.password}
                   onChange={(e) => setSignInForm((c) => ({ ...c, password: e.target.value }))}
                   autoComplete="current-password" />
-              </div>
-              {signInError ? <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{signInError}</div> : null}
-              <button type="submit" disabled={signInLoading}
-                className="w-full rounded-full bg-slate-900 py-4 text-base font-semibold text-white transition hover:bg-slate-800 disabled:opacity-50">
+              </PortalField>
+              {signInError ? <PortalNotice tone="error">{signInError}</PortalNotice> : null}
+              <PortalPrimaryButton type="submit" disabled={signInLoading}>
                 {signInLoading ? 'Signing in…' : 'Sign in'}
-              </button>
+              </PortalPrimaryButton>
             </form>
           ) : (
             <form onSubmit={handleSignup} className="mt-6 space-y-4">
-              <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
+              <PortalNotice>
                 Use the email and Application ID from your approved application.{' '}
                 <span className="font-mono font-semibold text-slate-800">APP-rec…</span>
-              </div>
-              <div>
-                <label className="mb-2 block text-sm font-semibold text-slate-700">Application ID <span className="text-red-400">*</span></label>
+              </PortalNotice>
+              <PortalField label="Application ID" required>
                 <input required value={activateForm.applicationId}
                   onChange={(e) => setActivateForm((c) => ({ ...c, applicationId: e.target.value }))}
-                  placeholder="APP-recXXXXXXXXXXXXXX" className={authInputCls} />
-              </div>
-              <div>
-                <label className="mb-2 block text-sm font-semibold text-slate-700">Email <span className="text-red-400">*</span></label>
+                  placeholder="APP-recXXXXXXXXXXXXXX" className={portalAuthInputCls} />
+              </PortalField>
+              <PortalField label="Email" required>
                 <input type="email" required value={activateForm.email}
                   onChange={(e) => setActivateForm((c) => ({ ...c, email: e.target.value }))}
-                  placeholder="Same email as your application" autoComplete="email" className={authInputCls} />
-              </div>
-              <div>
-                <label className="mb-2 block text-sm font-semibold text-slate-700">Create password <span className="text-red-400">*</span></label>
-                <PasswordInput value={activateForm.password}
+                  placeholder="Same email as your application" autoComplete="email" className={portalAuthInputCls} />
+              </PortalField>
+              <PortalField label="Create password" required>
+                <PortalPasswordInput value={activateForm.password}
                   onChange={(e) => setActivateForm((c) => ({ ...c, password: e.target.value }))}
                   placeholder="Minimum 6 characters" autoComplete="new-password" />
-              </div>
-              {activationError ? <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{activationError}</div> : null}
-              <button type="submit" disabled={activationLoading}
-                className="w-full rounded-full bg-slate-900 py-4 text-base font-semibold text-white transition hover:bg-slate-800 disabled:opacity-50">
+              </PortalField>
+              {activationError ? <PortalNotice tone="error">{activationError}</PortalNotice> : null}
+              <PortalPrimaryButton type="submit" disabled={activationLoading}>
                 {activationLoading ? 'Verifying…' : 'Create account'}
-              </button>
+              </PortalPrimaryButton>
             </form>
           )}
-
-          <div className="mt-8 text-center text-sm text-slate-400">
-            Manager?{' '}
-            <a href="/manager" className="font-semibold text-slate-600 hover:text-slate-900">Log in at /manager</a>
-          </div>
-        </div>
-      </div>
-    </div>
+      </PortalAuthCard>
+    </PortalAuthPage>
   )
 }
 

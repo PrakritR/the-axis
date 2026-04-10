@@ -13,16 +13,10 @@ export default function PortalSelect() {
         description="Sign in to the manager or resident portal."
         pathname="/portal"
       />
-      <main className="flex flex-1 flex-col px-4 py-14 font-sans sm:px-6 sm:py-20" data-axis-page="portal-hub">
-        <div className="mx-auto max-w-3xl text-center">
-          <h1 className="text-2xl font-black tracking-tight text-slate-900 sm:text-3xl">Choose your portal</h1>
-        </div>
-        <div className="mx-auto mt-10 grid w-full max-w-4xl gap-5 sm:grid-cols-2 sm:gap-6">
+      <main className="flex flex-1 flex-col px-4 py-10 font-sans sm:px-6 sm:py-14" data-axis-page="portal-hub">
+        <div className="mx-auto grid w-full max-w-4xl gap-5 sm:grid-cols-2 sm:gap-6">
           <Link to="/manager" onClick={scrollToTop} className={portalBtn}>
             <span className="text-xl font-black text-slate-900 sm:text-2xl">Manager portal</span>
-            <span className="mt-2 text-sm leading-relaxed text-slate-500">
-              Houses, applications, lease drafts, and subscription billing.
-            </span>
             <span className="mt-8 inline-flex items-center gap-2 text-sm font-bold text-[#2563eb]">
               Open manager portal
               <span aria-hidden>→</span>
@@ -30,9 +24,6 @@ export default function PortalSelect() {
           </Link>
           <Link to="/resident" onClick={scrollToTop} className={portalBtn}>
             <span className="text-xl font-black text-slate-900 sm:text-2xl">Resident portal</span>
-            <span className="mt-2 text-sm leading-relaxed text-slate-500">
-              View your lease, documents, and resident billing.
-            </span>
             <span className="mt-8 inline-flex items-center gap-2 text-sm font-bold text-[#2563eb]">
               Open resident portal
               <span aria-hidden>→</span>

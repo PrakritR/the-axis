@@ -985,8 +985,7 @@ export default function Contact() {
           {section === 'housing' && (
             <div>
               <div className="mb-6 border-b border-slate-100 pb-5">
-                <h2 className="text-3xl font-black tracking-tight text-slate-900">Housing</h2>
-                <p className="mt-2 text-sm text-slate-500">Book a visit or send a message about a listing.</p>
+                <h2 className="text-3xl font-black tracking-tight text-slate-900">Schedule tour</h2>
               </div>
               <TabBar
                 tabs={[{ id: 'schedule', label: 'Set up tour' }, { id: 'message', label: 'Send message' }]}
