@@ -1654,7 +1654,6 @@ export default function Apply() {
     const fullAppId = formatApplicationId(submissionSummary?.appId || submittedRecord)
     const effectiveType = submissionSummary?.applicationType || applicationType
     const isSigner = effectiveType === 'signer'
-    const firstName = submissionSummary?.firstName || (isSigner ? signer.fullName.split(' ')[0] : cosigner.fullName.split(' ')[0])
     const propertyName = submissionSummary?.propertyName || signer.propertyName
     const roomNumber = submissionSummary?.roomNumber || signer.roomNumber
     const monthlyRent = submissionSummary?.roomPrice || getRoomMonthlyRent(propertyName, roomNumber)
@@ -1702,8 +1701,8 @@ export default function Apply() {
           <h1 className="text-center text-3xl font-black tracking-tight text-slate-900 sm:text-4xl">Application received</h1>
           <p className="mt-3 text-center text-base leading-7 text-slate-500">
             {isSigner
-              ? `Thanks, ${firstName}! Complete the steps below to secure your room.`
-              : `Thanks, ${firstName}! Your co-signer form has been linked to the signer's application.`}
+              ? 'Thanks! Complete the steps below to secure your room.'
+              : "Thanks! Your co-signer form has been linked to the signer's application."}
           </p>
 
           {/* App ID */}

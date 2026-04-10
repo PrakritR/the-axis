@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react'
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useParams, Link, useLocation } from 'react-router-dom'
 import MapView from '../components/Map'
 import PropertyGallery from '../components/PropertyGallery'
@@ -548,7 +548,7 @@ export default function PropertyPage(){
       ['policies', 'Lease basics'],
       ['amenities', 'Amenities'],
       ...(hasLeasing ? [['leasing', 'Bundles & leasing']] : []),
-      ['map', 'Map'],
+      ['location', 'Location'],
     ]
   }, [p])
 
@@ -564,6 +564,8 @@ export default function PropertyPage(){
       setActiveTab(sectionId)
     } else if (sectionId === 'highlights') {
       setActiveTab('amenities')
+    } else if (sectionId === 'map') {
+      setActiveTab('location')
     } else {
       setActiveTab('overview')
     }
@@ -586,46 +588,53 @@ export default function PropertyPage(){
     return () => window.clearTimeout(timer)
   }, [p, scarcePlanForEffect?.title, scarcePlanForEffect?.priceRange])
 
-  function getScrollContainer(node){
-    let parent = node?.parentElement || null
-    while(parent){
-      const style = window.getComputedStyle(parent)
-      const hasScrollableOverflow = /(auto|scroll|overlay)/.test(style.overflowY)
-      if (hasScrollableOverflow && parent.scrollHeight > parent.clientHeight) {
-        return parent
-      }
-      parent = parent.parentElement
-    }
-    return document.scrollingElement || document.documentElement
-  }
-
-  // helper to scroll to an id while accounting for sticky chrome
-  function scrollToId(id){
+  // Scroll window only; offset = full sticky site chrome (promo + header) + in-page section nav.
+  const scrollToId = useCallback((id) => {
     const el = sectionRefs.current[id] || document.getElementById(id)
-    if(!el) return false
+    if (!el) return false
 
-    const header = document.querySelector('header')
-    const headerH = header ? header.offsetHeight : 0
+    const chrome = document.getElementById('site-sticky-chrome')
+    const chromeH = chrome ? chrome.getBoundingClientRect().height : 0
     const nav = document.getElementById('section-nav')
-    const navH = nav ? nav.offsetHeight : 0
+    const navH = nav ? nav.getBoundingClientRect().height : 0
     const gap = 12
-    const offset = headerH + navH + gap
-    const container = getScrollContainer(el)
-
-    if (container === document.documentElement || container === document.body || container === document.scrollingElement) {
-      const top = Math.max(0, el.getBoundingClientRect().top + window.scrollY - offset)
-      window.scrollTo({ top, behavior: 'smooth' })
-      document.documentElement.scrollTop = top
-      document.body.scrollTop = top
-      return true
-    }
-
-    const containerRect = container.getBoundingClientRect()
-    const targetTop = el.getBoundingClientRect().top - containerRect.top + container.scrollTop - offset
-    container.scrollTo({ top: Math.max(0, targetTop), behavior: 'smooth' })
-
+    const offset = chromeH + navH + gap
+    const top = Math.max(0, el.getBoundingClientRect().top + window.scrollY - offset)
+    window.scrollTo({ top, behavior: 'smooth' })
     return true
-  }
+  }, [])
+
+  // Match in-page nav stick position to actual promo + header height (top-28 was often wrong).
+  useEffect(() => {
+    if (!p) return undefined
+    const chrome = document.getElementById('site-sticky-chrome')
+    const nav = document.getElementById('section-nav')
+    if (!chrome || !nav) return undefined
+    function syncStickyTop() {
+      const h = Math.ceil(chrome.getBoundingClientRect().height)
+      nav.style.top = `${h}px`
+    }
+    syncStickyTop()
+    const ro = new ResizeObserver(syncStickyTop)
+    ro.observe(chrome)
+    window.addEventListener('resize', syncStickyTop)
+    return () => {
+      ro.disconnect()
+      window.removeEventListener('resize', syncStickyTop)
+      nav.style.removeProperty('top')
+    }
+  }, [p])
+
+  // Hash links: App skips scrollIntoView on /properties/* so we can apply the same offset as tab clicks.
+  useEffect(() => {
+    if (!p) return undefined
+    const raw = (hash || '').replace('#', '')
+    if (!raw) return undefined
+    const targetId = raw === 'highlights' ? 'amenities' : raw === 'map' ? 'location' : raw
+    if (!sectionNavIds.has(targetId)) return undefined
+    const t = window.setTimeout(() => scrollToId(targetId), 0)
+    return () => clearTimeout(t)
+  }, [hash, sectionNavIds, p, scrollToId])
 
   if (!p) {
     return <div className="container mx-auto px-6 py-12">Property not found</div>
@@ -697,7 +706,7 @@ export default function PropertyPage(){
       <div className="main-container">
         <div
           id="section-nav"
-          className="sticky top-28 z-40 w-full border-b border-slate-200 bg-white/95 shadow-[0_1px_0_0_rgba(15,23,42,0.06)] backdrop-blur-md"
+          className="sticky z-40 w-full border-b border-slate-200 bg-white/95 shadow-[0_1px_0_0_rgba(15,23,42,0.06)] backdrop-blur-md [top:7rem]"
         >
           <div className="mx-auto max-w-[1480px] px-4 sm:px-6 lg:px-10">
             <div className="border-b border-slate-100 py-4 sm:py-5 lg:py-6">
@@ -1067,45 +1076,36 @@ export default function PropertyPage(){
                   <div className="px-6 py-6 sm:px-8 sm:py-7">
                     <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">Lease lengths</div>
                     <p className="mt-3 max-w-2xl text-sm leading-7 text-slate-600">
-                      <span className="font-semibold text-slate-800">3-, 9-, and 12-month</span>
-                      {' '}leases are available, plus custom or month-to-month when it makes sense. Start and end dates are flexible. Room rates in the list above apply per month; your total depends on which rooms you take and your lease window.
+                      <span className="font-semibold text-slate-800">Four lease options</span>
+                      {' '}are available: 3-month, 9-month, and 12-month, plus month-to-month with an extra{' '}
+                      <span className="font-semibold text-slate-800">$25/month</span>
+                      {' '}charge. Start and end dates are flexible — you choose the window that works for you.
                     </p>
-                    <Link
-                      to="/contact?section=housing&tab=message"
-                      onClick={() => window.scrollTo({ top: 0, left: 0, behavior: 'auto' })}
-                      className="mt-5 inline-flex rounded-full border border-slate-300 bg-white px-5 py-2.5 text-sm font-semibold text-slate-700 transition hover:border-axis hover:text-axis"
-                    >
-                      Discuss your timeline
-                    </Link>
-                  </div>
-                ) : null}
-
-                {(rentTotals.totalHouseRent > 0 || leasingPackages.length > 0) ? (
-                  <div className="border-t border-slate-100 bg-slate-50/60 px-6 py-3.5 text-xs leading-5 text-slate-500 sm:px-8">
-                    Rent figures above do not include utilities or the house fee — see Lease basics for move-in costs and what&apos;s included.
                   </div>
                 ) : null}
               </div>
             </section>
           ) : null}
 
-          {/* Map */}
-          <section id="map" ref={(node) => { sectionRefs.current.map = node }} className="mt-14 mb-14 scroll-mt-28 border-t border-slate-200 pt-12 sm:pt-14 md:scroll-mt-40">
-            <h2 className="font-editorial text-3xl font-black leading-tight text-slate-900 sm:text-4xl">Map</h2>
-            <div className="mt-8 grid gap-10 lg:grid-cols-[320px_minmax(0,1fr)] lg:gap-12">
-              <div>
-                <p className="text-base leading-8 text-slate-600">{p.neighborhood}</p>
-                <div className="mt-6 border-t border-slate-200 pt-5 text-sm leading-7 text-slate-600">{p.address}</div>
-              </div>
-              <div className="overflow-hidden rounded-[18px] border border-slate-200">
-                {p.location ? (
-                  <div className="h-[260px] sm:h-[420px]">
-                    <MapView lat={p.location.lat} lng={p.location.lng} zoom={15} />
-                  </div>
-                ) : (
-                  <div className="flex h-[420px] items-center justify-center bg-slate-50 text-sm text-slate-400">Map unavailable for {p.address}</div>
-                )}
-              </div>
+          {/* Location (map only — address & neighborhood are in the listing header / quick facts) */}
+          <section
+            id="location"
+            ref={(node) => {
+              sectionRefs.current.location = node
+            }}
+            className="mt-14 mb-14 scroll-mt-28 border-t border-slate-200 pt-12 sm:pt-14 md:scroll-mt-40"
+          >
+            <h2 className="font-editorial text-3xl font-black leading-tight text-slate-900 sm:text-4xl">Location</h2>
+            <div className="mt-8 overflow-hidden rounded-[18px] border border-slate-200">
+              {p.location ? (
+                <div className="h-[280px] sm:h-[440px] md:h-[480px]">
+                  <MapView lat={p.location.lat} lng={p.location.lng} zoom={15} />
+                </div>
+              ) : (
+                <div className="flex h-[320px] items-center justify-center bg-slate-50 text-sm text-slate-400">
+                  Location map unavailable for {p.address}
+                </div>
+              )}
             </div>
           </section>
         </div>

@@ -60,9 +60,8 @@ The property data below is your live source of truth. Always use it. Never guess
 ${propDetails}
 
 ## Leasing Rules
-- All three properties offer 3-Month, 9-Month, and 12-Month lease options.
-- All start and end dates are fully flexible — residents choose the window that works for them.
-- Custom lengths are also available — contact leasing to discuss.
+- All properties offer four lease options: 3-month, 9-month, 12-month, and month-to-month (+$25/mo).
+- Start and end dates are flexible — residents choose the window that works for them.
 - Rooms come fully furnished (desk, bed, heating, AC). No separate furnishing fee.
 
 ## Group Leasing
@@ -210,7 +209,7 @@ function getLocalFallbackReply(question) {
 
   // Lease terms
   if (t.includes('lease') || t.includes('term') || t.includes('summer') || t.includes('academic') || t.includes('month') || t.includes('long') || t.includes('duration'))
-    return 'Three lease options: **3-Month**, **9-Month**, and **12-Month**. All start and end dates are fully flexible — you pick the window that works for you. Custom lengths are also available, contact leasing to discuss.'
+    return 'Four lease options: **3-month**, **9-month**, **12-month**, and **month-to-month** (+$25/mo). Start and end dates are flexible — you pick the window that works for you.'
 
   // Group / roommates
   if (t.includes('group') || t.includes('friend') || t.includes('roommate') || t.includes('together') || t.includes('two people') || t.includes('couple') || t.includes('share'))

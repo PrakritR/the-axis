@@ -127,7 +127,7 @@ function DropdownLink({ to, isActive, onNavigate, children }) {
 }
 
 /**
- * Site header: same primary nav on every page — Explore Houses & Partner with Axis (dropdowns) + Portal.
+ * Site header: same primary nav on every page — Rent with Axis & Partner with Axis (dropdowns) + Portal.
  */
 export default function SiteHeader() {
   const location = useLocation()
@@ -159,9 +159,9 @@ export default function SiteHeader() {
       pathname.startsWith('/owners'))
 
   const mobileDockLinks = [
-    { label: 'Houses', to: '/', icon: <HomeIcon />, isActive: isHome },
+    { label: 'Rent', to: '/', icon: <HomeIcon />, isActive: isHome, ariaLabel: 'Rent with Axis' },
     { label: 'Apply', to: '/apply', icon: <ApplyIcon />, isActive: isApply },
-    { label: 'Partner', to: '/owners/about', icon: <AxisIcon />, isActive: partnerParentActive },
+    { label: 'Partner', to: '/owners/about', icon: <AxisIcon />, isActive: partnerParentActive, ariaLabel: 'Partner with Axis' },
   ]
 
   useEffect(() => {
@@ -190,7 +190,7 @@ export default function SiteHeader() {
         </Link>
 
         <nav className="hidden items-center justify-center gap-4 md:col-start-2 md:flex lg:gap-8" aria-label="Primary">
-          <NavMenuDropdown label="Explore Houses" to="/" parentActive={exploreParentActive}>
+          <NavMenuDropdown label="Rent with Axis" to="/" parentActive={exploreParentActive}>
             {showExploreExtras ? (
               <>
                 <DropdownLink
@@ -262,7 +262,7 @@ export default function SiteHeader() {
                   isHome ? 'text-slate-900' : 'text-slate-600'
                 }`}
               >
-                Explore Houses
+                Rent with Axis
               </Link>
               {showExploreExtras ? (
                 <>

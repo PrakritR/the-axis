@@ -40,7 +40,7 @@ const neighborhoodItems = [
 const faqs = [
   { q: 'What is included in the monthly rent?', a: 'All utilities (water, electricity, gas), high-speed WiFi, and bi-monthly professional cleaning of common areas are included. No surprise bills.' },
   { q: 'Are rooms furnished?', a: 'Yes — all rooms come fully furnished and include a bed frame and mattress, desk, chair, and closet. Common areas include a sofa, and the kitchen is furnished as well.' },
-  { q: 'What lease terms are available?', a: 'Lease structure depends on the house. Some homes follow fixed summer, academic-year, and full-year terms, while others offer more room-by-room flexibility based on current availability.' },
+  { q: 'What lease terms are available?', a: 'Four options: 3-month, 9-month, 12-month, and month-to-month with an extra $25/month. Start and end dates are flexible so you can choose the window that works for you.' },
   { q: 'Where are the homes located?', a: 'Axis lists housing in Seattle and shows each house location directly on the listing page so you can decide what works for you.' },
   { q: 'How do I apply?', a: 'Click "Apply Now" and complete the online application. You\'ll need basic personal information, employment details, and references. We typically respond within 2 business days.' },
   { q: 'Can I tour before applying?', a: 'Start with the online application. If you need a walkthrough first, email or call us from the contact page and we\'ll help schedule a time.' },

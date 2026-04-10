@@ -45,6 +45,8 @@ function ScrollToTop() {
 
   useEffect(() => {
     if (!hash) return undefined
+    // Property listing pages measure sticky promo + header + in-page nav; PropertyPage scrolls with offset.
+    if (pathname.startsWith('/properties/')) return undefined
 
     const target = document.getElementById(decodeURIComponent(hash.slice(1)))
     if (!target) return undefined
@@ -157,7 +159,7 @@ function AppInner() {
   return (
     <div className="app-shell axis-page min-h-screen min-h-svh flex flex-col">
       <ScrollToTop />
-      <div className="sticky top-0 z-50 w-full">
+      <div id="site-sticky-chrome" className="sticky top-0 z-50 w-full">
         {showPromoBanner ? <PromoBanner /> : null}
         <SiteHeader />
       </div>
