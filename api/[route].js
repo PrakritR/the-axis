@@ -17,6 +17,7 @@ import managerLookup from '../server/handlers/manager-lookup.js'
 import managerStartFreeTier from '../server/handlers/manager-start-free-tier.js'
 import managerSubscriptionComplete from '../server/handlers/manager-subscription-complete.js'
 import sendLeaseInvite from '../server/handlers/send-lease-invite.js'
+import signforgeWebhook from '../server/handlers/signforge-webhook.js'
 import softwareTeamMeetings from '../server/handlers/software-team-meetings.js'
 import stripe from '../server/handlers/stripe.js'
 import tour from '../server/handlers/tour.js'
@@ -37,6 +38,7 @@ const routes = {
   'manager-start-free-tier': managerStartFreeTier,
   'manager-subscription-complete': managerSubscriptionComplete,
   'send-lease-invite': sendLeaseInvite,
+  'signforge-webhook': signforgeWebhook,
 }
 
 function segment(param) {

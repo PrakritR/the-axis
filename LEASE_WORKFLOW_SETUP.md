@@ -16,6 +16,13 @@ VITE_EMAILJS_SERVICE_ID=...
 VITE_EMAILJS_PUBLIC_KEY=...
 VITE_EMAILJS_TEMPLATE_ID=...
 VITE_EMAILJS_LEASE_TEMPLATE=...
+
+# SignForge + Puppeteer (optional e-sign for Lease Drafts)
+SIGNFORGE_API_KEY=sf_live_...   # or sf_test_... from https://signforge.io/dashboard/developers
+SIGNFORGE_WEBHOOK_TOKEN=...     # random secret; use same value in webhook URL query (see below)
+
+# Local PDF rendering without Vercel: path to Chrome/Chromium (optional if `puppeteer` devDependency is installed)
+# PUPPETEER_EXECUTABLE_PATH=/Applications/Google Chrome.app/Contents/MacOS/Google Chrome
 ```
 
 Notes:
@@ -64,6 +71,8 @@ Recommended fields:
 - `Approved At`
 - `Published At`
 - `Updated At`
+- `SignForge Envelope ID` (optional, single line text — set when using SignForge)
+- `SignForge Sent At` (optional, date)
 
 Status values used in the UI:
 
@@ -137,6 +146,25 @@ This repo also includes an older signing-link flow that stores lease data on the
 
 The signing page provides a print-friendly browser flow so residents can save a PDF copy after signing.
 
+### SignForge + Puppeteer (Lease Drafts)
+
+This stack adds a third path: **PDF via [Puppeteer](https://pptr.dev/api/puppeteer.puppeteernode)** on the server, then **[SignForge quick-sign](https://signforge.io/developers)** so the resident gets an email with a signing link.
+
+1. Manager publishes the draft (`Status = Published`) as usual.
+2. Manager clicks **Send for e-sign (SignForge)** in the lease editor.
+3. `POST /api/portal?action=signforge-send-lease` loads the draft from Airtable, renders **Manager Edited Content** (or AI draft) to PDF, and calls SignForge `POST /api/v1/quick-sign` with `pdf_base64`.
+4. Airtable is updated with `SignForge Envelope ID` and `SignForge Sent At` (add these fields to **Lease Drafts** if missing).
+
+**Webhook (auto-mark Signed):** In [SignForge → Webhooks](https://signforge.io/dashboard), register:
+
+`https://<your-production-domain>/api/signforge-webhook?token=<SIGNFORGE_WEBHOOK_TOKEN>`
+
+Subscribe to `envelope.completed`. The handler sets the matching lease draft to `Status = Signed` (matched by `SignForge Envelope ID`). Vercel delivers a parsed JSON body, so HMAC verification from SignForge’s docs is not used here; protect the endpoint with the `token` query secret instead.
+
+**Refresh status:** **Refresh SignForge status** calls `POST /api/portal?action=signforge-envelope-status` and reloads the draft from Airtable (e.g. after the webhook runs).
+
+**Deploy notes:** Production uses `puppeteer-core` + `@sparticuz/chromium` (see `server/lib/lease-puppeteer-pdf.js`). `vercel.json` sets `maxDuration` / `memory` for `api/[route].js` to allow PDF generation. Locally, install the `puppeteer` devDependency or set `PUPPETEER_EXECUTABLE_PATH`.
+
 ## Implementation Notes
 
 - `src/pages/Manager.jsx` is the internal lease queue/editor UI.
@@ -145,6 +173,7 @@ The signing page provides a print-friendly browser flow so residents can save a 
 - `api/generate-lease-draft.js` uses Anthropic to create the initial lease text.
 - `api/manager-auth.js` validates manager credentials against Airtable.
 - `api/send-lease-invite.js` supports emailed signing links for the older application-based lease flow.
+- `server/handlers/signforge-send-lease.js`, `signforge-envelope-status.js`, `signforge-webhook.js` integrate SignForge + Puppeteer PDFs.
 
 ## Current Limitation
 

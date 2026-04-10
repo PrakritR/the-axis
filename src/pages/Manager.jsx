@@ -22,7 +22,14 @@ import { Link, Navigate, useLocation } from 'react-router-dom'
 import toast from 'react-hot-toast'
 import { HOUSING_CONTACT_MESSAGE } from '../lib/housingSite'
 import { readJsonResponse } from '../lib/readJsonResponse'
-import { getWorkOrderById, updateWorkOrder } from '../lib/airtable'
+import {
+  getWorkOrderById,
+  updateWorkOrder,
+  getAllWorkOrders,
+  getAllMessages,
+  getMessages,
+  sendMessage,
+} from '../lib/airtable'
 import {
   PortalAuthCard,
   PortalAuthPage,
@@ -38,10 +45,12 @@ import {
 export const MANAGER_SESSION_KEY = 'axis_manager'
 const MANAGER_ONBOARDING_KEY = 'axis_manager_onboarding'
 
-// ─── Records API config — same base as the rest of the portal ────────────────
+// ─── Records API config — split by Airtable base to match the rest of the app ─
 const AIRTABLE_TOKEN = import.meta.env.VITE_AIRTABLE_TOKEN
-const BASE_ID = import.meta.env.VITE_AIRTABLE_APPLICATIONS_BASE_ID || 'appNBX2inqfJMyqYV'
-const AIRTABLE_BASE_URL = `https://api.airtable.com/v0/${BASE_ID}`
+const CORE_BASE_ID = import.meta.env.VITE_AIRTABLE_BASE_ID || 'appol57LKtMKaQ75T'
+const APPS_BASE_ID = import.meta.env.VITE_AIRTABLE_APPLICATIONS_BASE_ID || 'appNBX2inqfJMyqYV'
+const CORE_AIRTABLE_BASE_URL = `https://api.airtable.com/v0/${CORE_BASE_ID}`
+const APPS_AIRTABLE_BASE_URL = `https://api.airtable.com/v0/${APPS_BASE_ID}`
 
 // ─── Lease status configuration ───────────────────────────────────────────────
 // Each status has a color set used by StatusBadge and the stats row
@@ -87,6 +96,17 @@ async function atRequest(url, options = {}) {
   const res = await fetch(url, { ...options, headers: { ...atHeaders(), ...(options.headers || {}) } })
   if (!res.ok) {
     const body = await res.text()
+    if (body.includes('INVALID_PERMISSIONS_OR_MODEL_NOT_FOUND')) {
+      throw new Error('Airtable access is misconfigured for this dashboard. The current token does not have permission to read this base.')
+    }
+    try {
+      const parsed = JSON.parse(body)
+      if (parsed?.error?.message) {
+        throw new Error(parsed.error.message)
+      }
+    } catch {
+      // fall back to the raw response body below when it is not JSON
+    }
     throw new Error(body)
   }
   return res.json()
@@ -95,7 +115,7 @@ async function atRequest(url, options = {}) {
 // ─── Data layer ───────────────────────────────────────────────────────────────
 
 async function fetchLeaseDrafts({ status, property, resident } = {}) {
-  const url = new URL(`${AIRTABLE_BASE_URL}/Lease%20Drafts`)
+  const url = new URL(`${CORE_AIRTABLE_BASE_URL}/Lease%20Drafts`)
   const parts = []
   if (status)   parts.push(`{Status} = "${status}"`)
   if (property) parts.push(`FIND("${property.replace(/"/g, '\\"')}", {Property}) > 0`)
@@ -113,7 +133,7 @@ async function fetchLeaseDrafts({ status, property, resident } = {}) {
 
 // ─── Applications data layer ──────────────────────────────────────────────────
 async function fetchApplications({ property } = {}) {
-  const url = new URL(`${AIRTABLE_BASE_URL}/Applications`)
+  const url = new URL(`${APPS_AIRTABLE_BASE_URL}/Applications`)
   if (property) {
     url.searchParams.set('filterByFormula', `FIND("${property.replace(/"/g, '\\"')}", {Property Name}) > 0`)
   }
@@ -124,7 +144,7 @@ async function fetchApplications({ property } = {}) {
 }
 
 async function patchApplication(recordId, fields) {
-  const data = await atRequest(`${AIRTABLE_BASE_URL}/Applications/${recordId}`, {
+  const data = await atRequest(`${APPS_AIRTABLE_BASE_URL}/Applications/${recordId}`, {
     method: 'PATCH',
     body: JSON.stringify({ fields, typecast: true }),
   })
@@ -132,12 +152,12 @@ async function patchApplication(recordId, fields) {
 }
 
 async function fetchLeaseDraft(recordId) {
-  const data = await atRequest(`${AIRTABLE_BASE_URL}/Lease%20Drafts/${recordId}`)
+  const data = await atRequest(`${CORE_AIRTABLE_BASE_URL}/Lease%20Drafts/${recordId}`)
   return mapRecord(data)
 }
 
 async function patchLeaseDraft(recordId, fields) {
-  const data = await atRequest(`${AIRTABLE_BASE_URL}/Lease%20Drafts/${recordId}`, {
+  const data = await atRequest(`${CORE_AIRTABLE_BASE_URL}/Lease%20Drafts/${recordId}`, {
     method: 'PATCH',
     body: JSON.stringify({ fields, typecast: true }),
   })
@@ -145,12 +165,12 @@ async function patchLeaseDraft(recordId, fields) {
 }
 
 async function fetchPropertiesAdmin() {
-  const data = await atRequest(`${AIRTABLE_BASE_URL}/Properties`)
+  const data = await atRequest(`${CORE_AIRTABLE_BASE_URL}/Properties`)
   return (data.records || []).map(mapRecord)
 }
 
 async function createPropertyAdmin(fields) {
-  const data = await atRequest(`${AIRTABLE_BASE_URL}/Properties`, {
+  const data = await atRequest(`${CORE_AIRTABLE_BASE_URL}/Properties`, {
     method: 'POST',
     body: JSON.stringify({ fields, typecast: true }),
   })
@@ -158,7 +178,7 @@ async function createPropertyAdmin(fields) {
 }
 
 async function updatePropertyAdmin(recordId, fields) {
-  const data = await atRequest(`${AIRTABLE_BASE_URL}/Properties/${recordId}`, {
+  const data = await atRequest(`${CORE_AIRTABLE_BASE_URL}/Properties/${recordId}`, {
     method: 'PATCH',
     body: JSON.stringify({ fields, typecast: true }),
   })
@@ -167,7 +187,7 @@ async function updatePropertyAdmin(recordId, fields) {
 
 async function fetchAuditLog(leaseDraftId) {
   const formula = encodeURIComponent(`{Lease Draft ID} = "${leaseDraftId}"`)
-  const url = `${AIRTABLE_BASE_URL}/Audit%20Log?filterByFormula=${formula}&sort[0][field]=Timestamp&sort[0][direction]=asc`
+  const url = `${CORE_AIRTABLE_BASE_URL}/Audit%20Log?filterByFormula=${formula}&sort[0][field]=Timestamp&sort[0][direction]=asc`
   const data = await atRequest(url)
   return (data.records || []).map(mapRecord)
 }
@@ -175,7 +195,7 @@ async function fetchAuditLog(leaseDraftId) {
 // Log an action to the Audit Log table — failures are non-fatal
 async function logAudit({ leaseDraftId, actionType, performedBy, performedByRole, notes = '' }) {
   try {
-    await atRequest(`${AIRTABLE_BASE_URL}/Audit%20Log`, {
+    await atRequest(`${CORE_AIRTABLE_BASE_URL}/Audit%20Log`, {
       method: 'POST',
       body: JSON.stringify({
         fields: {
@@ -1091,7 +1111,7 @@ function ManagerProfilePanel({ manager, onManagerUpdate }) {
       {/* Plan & subscription summary */}
       <section className="rounded-[28px] border border-slate-200 bg-white p-6">
         <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">Subscription</div>
-        <h2 className="mt-2 text-xl font-black text-slate-900">Plan overview</h2>
+        <h2 className="mt-2 text-xl font-black text-slate-900">Plan</h2>
         <div className="mt-4 grid gap-3 sm:grid-cols-3">
           {[
             { label: 'Role', value: manager.role || 'Manager' },
@@ -1154,13 +1174,17 @@ function ManagerProfilePanel({ manager, onManagerUpdate }) {
   )
 }
 
-function ManagerOperationsPanel({ manager, propertyCount, onGenerateDraft, onOpenBilling }) {
+function ManagerOperationsPanel({ manager, propertyCount, onGenerateDraft, onOpenBilling, onGoToProperties }) {
   const cards = [
     {
       title: 'Add houses',
       body: 'Create internal property records for new homes you want to manage through Axis.',
       action: 'Go to house setup',
       onClick: () => {
+        if (onGoToProperties) {
+          onGoToProperties()
+          return
+        }
         const target = document.getElementById('house-management')
         target?.scrollIntoView({ behavior: 'smooth', block: 'start' })
       },
@@ -1414,7 +1438,415 @@ function workOrderLastUpdateToInput(value) {
   return Number.isNaN(d.getTime()) ? '' : d.toISOString().slice(0, 10)
 }
 
-function WorkOrdersManagerPanel() {
+function workOrderLinkedId(woField) {
+  if (Array.isArray(woField) && woField.length) return String(woField[0]).trim()
+  if (typeof woField === 'string' && woField.startsWith('rec')) return woField.trim()
+  return ''
+}
+
+function parseCalendarDay(val) {
+  if (!val) return null
+  const m = String(val).match(/^(\d{4}-\d{2}-\d{2})/)
+  return m ? m[1] : null
+}
+
+function buildCalendarEvents(drafts, workOrders, applications) {
+  const events = []
+  for (const d of drafts || []) {
+    const name = d['Resident Name'] || 'Resident'
+    const s = parseCalendarDay(d['Lease Start Date'])
+    if (s) events.push({ date: s, label: `Lease start · ${name}`, type: 'lease' })
+    const e = parseCalendarDay(d['Lease End Date'])
+    if (e) events.push({ date: e, label: `Lease end · ${name}`, type: 'lease' })
+    const pub = parseCalendarDay(d['Published At'])
+    if (pub) events.push({ date: pub, label: `Published · ${name}`, type: 'publish' })
+    const ap = parseCalendarDay(d['Approved At'])
+    if (ap && ap !== pub) events.push({ date: ap, label: `Approved · ${name}`, type: 'approve' })
+  }
+  for (const w of workOrders || []) {
+    const title = (w.Title || 'Request').slice(0, 48)
+    const sub = parseCalendarDay(w['Date Submitted'] || w.created_at)
+    if (sub) events.push({ date: sub, label: `Work order · ${title}`, type: 'wo' })
+    const lu = parseCalendarDay(w['Last Update'])
+    if (lu && lu !== sub) events.push({ date: lu, label: `WO update · ${title}`, type: 'wo' })
+  }
+  for (const a of applications || []) {
+    const nm = a['Signer Full Name'] || 'Applicant'
+    const c = parseCalendarDay(a.Created || a.created_at)
+    if (c) events.push({ date: c, label: `Application · ${nm}`, type: 'app' })
+  }
+  return events
+}
+
+function ManagerOverviewPanel({
+  manager,
+  propertyCount,
+  stats,
+  statsLoading,
+  onNavigate,
+  onGenerateDraft,
+  onOpenBilling,
+}) {
+  const s = stats || {}
+  const cards = [
+    { key: 'applications', label: 'Applications pending', value: statsLoading ? '…' : s.pendingApps ?? 0, tab: 'applications', hint: 'Review & approve' },
+    { key: 'leases', label: 'Lease drafts', value: statsLoading ? '…' : s.draftCount ?? 0, tab: 'leases', hint: 'Queue & SignForge' },
+    { key: 'signed', label: 'Signed leases', value: statsLoading ? '…' : s.signedLeases ?? 0, tab: 'leases', hint: 'In lease queue' },
+    { key: 'wo', label: 'Open work orders', value: statsLoading ? '…' : s.openWo ?? 0, tab: 'workorders', hint: 'Reply & resolve' },
+  ]
+  return (
+    <div className="space-y-8">
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        {cards.map((c) => (
+          <button
+            key={c.key}
+            type="button"
+            onClick={() => onNavigate(c.tab)}
+            className="rounded-[24px] border border-slate-200 bg-white p-5 text-left transition hover:border-[#2563eb]/40 hover:shadow-sm"
+          >
+            <div className="text-[11px] font-bold uppercase tracking-[0.14em] text-slate-400">{c.label}</div>
+            <div className="mt-2 text-3xl font-black text-slate-900">{c.value}</div>
+            <div className="mt-1 text-xs text-slate-500">{c.hint} →</div>
+          </button>
+        ))}
+      </div>
+      <ManagerOperationsPanel
+        manager={manager}
+        propertyCount={propertyCount}
+        onGenerateDraft={onGenerateDraft}
+        onOpenBilling={onOpenBilling}
+        onGoToProperties={() => onNavigate('properties')}
+      />
+      <div className="rounded-[24px] border border-slate-200 bg-white p-6">
+        <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-[#2563eb]">Shortcuts</div>
+        <h3 className="mt-2 text-lg font-black text-slate-900">Jump to a section</h3>
+        <div className="mt-4 flex flex-wrap gap-2">
+          {[
+            ['properties', 'Properties & houses'],
+            ['inbox', 'Message inbox'],
+            ['calendar', 'Calendar'],
+            ['profile', 'Your profile'],
+          ].map(([tab, lab]) => (
+            <button
+              key={tab}
+              type="button"
+              onClick={() => onNavigate(tab)}
+              className="rounded-full border border-slate-200 bg-slate-50 px-4 py-2 text-sm font-semibold text-slate-700 transition hover:border-[#2563eb] hover:text-[#2563eb]"
+            >
+              {lab}
+            </button>
+          ))}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function ManagerCalendarPanel() {
+  const [cursor, setCursor] = useState(() => new Date())
+  const [loading, setLoading] = useState(true)
+  const [events, setEvents] = useState([])
+
+  const y = cursor.getFullYear()
+  const m = cursor.getMonth()
+  const monthLabel = cursor.toLocaleString('en-US', { month: 'long', year: 'numeric' })
+
+  useEffect(() => {
+    let cancelled = false
+    setLoading(true)
+    Promise.all([fetchLeaseDrafts({}), getAllWorkOrders(), fetchApplications({})])
+      .then(([d, w, a]) => {
+        if (!cancelled) setEvents(buildCalendarEvents(d, w, a))
+      })
+      .catch((err) => {
+        if (!cancelled) toast.error('Calendar data failed: ' + err.message)
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  const firstDow = new Date(y, m, 1).getDay()
+  const daysInMonth = new Date(y, m + 1, 0).getDate()
+  const cells = []
+  for (let i = 0; i < firstDow; i++) cells.push(null)
+  for (let d = 1; d <= daysInMonth; d++) cells.push(d)
+
+  const eventsForDay = (day) => {
+    if (!day) return []
+    const key = `${y}-${String(m + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`
+    return events.filter((e) => e.date === key)
+  }
+
+  const toneCls = (type) => {
+    if (type === 'lease') return 'bg-blue-100 text-blue-800'
+    if (type === 'publish' || type === 'approve') return 'bg-axis/15 text-axis'
+    if (type === 'wo') return 'bg-amber-100 text-amber-900'
+    if (type === 'app') return 'bg-emerald-100 text-emerald-900'
+    return 'bg-slate-100 text-slate-700'
+  }
+
+  return (
+    <div className="rounded-[24px] border border-slate-200 bg-white p-6 shadow-sm">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h2 className="text-xl font-black text-slate-900">Calendar</h2>
+          <p className="mt-1 text-sm text-slate-500">
+            Lease milestones, work orders, and applications (from Airtable dates).
+          </p>
+        </div>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setCursor(new Date(y, m - 1, 1))}
+            className="rounded-xl border border-slate-200 px-3 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-50"
+          >
+            ←
+          </button>
+          <span className="min-w-[10rem] text-center text-sm font-bold text-slate-800">{monthLabel}</span>
+          <button
+            type="button"
+            onClick={() => setCursor(new Date(y, m + 1, 1))}
+            className="rounded-xl border border-slate-200 px-3 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-50"
+          >
+            →
+          </button>
+        </div>
+      </div>
+
+      {loading ? (
+        <div className="mt-8 py-16 text-center text-sm text-slate-500">Loading calendar…</div>
+      ) : (
+        <div className="mt-6 overflow-x-auto">
+          <div className="grid grid-cols-7 gap-1 min-w-[640px] text-center text-[11px] font-bold uppercase tracking-wide text-slate-400">
+            {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((d) => (
+              <div key={d} className="py-2">
+                {d}
+              </div>
+            ))}
+          </div>
+          <div className="grid grid-cols-7 gap-1 min-w-[640px]">
+            {cells.map((day, idx) => {
+              if (day == null) {
+                return <div key={`pad-${idx}`} className="min-h-[88px] rounded-xl bg-slate-50/50" />
+              }
+              const dayEvents = eventsForDay(day)
+              return (
+                <div
+                  key={day}
+                  className="flex min-h-[88px] flex-col rounded-xl border border-slate-100 bg-slate-50/80 p-1.5 text-left"
+                >
+                  <div className="text-xs font-bold text-slate-700">{day}</div>
+                  <div className="mt-1 flex max-h-[72px] flex-col gap-0.5 overflow-y-auto">
+                    {dayEvents.slice(0, 4).map((ev, i) => (
+                      <span
+                        key={`${ev.date}-${i}-${ev.label}`}
+                        className={`truncate rounded px-1 py-0.5 text-[10px] font-semibold leading-tight ${toneCls(ev.type)}`}
+                        title={ev.label}
+                      >
+                        {ev.label}
+                      </span>
+                    ))}
+                    {dayEvents.length > 4 ? (
+                      <span className="text-[10px] text-slate-400">+{dayEvents.length - 4} more</span>
+                    ) : null}
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+function InboxTabPanel({ manager }) {
+  const [allMsgs, setAllMsgs] = useState([])
+  const [woTitles, setWoTitles] = useState({})
+  const [loading, setLoading] = useState(true)
+  const [selectedWoId, setSelectedWoId] = useState(null)
+  const [thread, setThread] = useState([])
+  const [reply, setReply] = useState('')
+  const [sending, setSending] = useState(false)
+
+  const loadAll = useCallback(async () => {
+    setLoading(true)
+    try {
+      const [msgs, wos] = await Promise.all([getAllMessages(), getAllWorkOrders()])
+      const map = {}
+      wos.forEach((w) => {
+        map[w.id] = w.Title || w.id
+      })
+      setWoTitles(map)
+      setAllMsgs(msgs)
+    } catch (err) {
+      toast.error('Inbox failed to load: ' + err.message)
+    } finally {
+      setLoading(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    loadAll()
+  }, [loadAll])
+
+  const loadThread = useCallback(async (woId) => {
+    if (!woId) {
+      setThread([])
+      return
+    }
+    try {
+      setThread(await getMessages(woId))
+    } catch (err) {
+      toast.error('Could not load thread: ' + err.message)
+    }
+  }, [])
+
+  useEffect(() => {
+    loadThread(selectedWoId)
+  }, [selectedWoId, loadThread])
+
+  async function handleSendReply(e) {
+    e.preventDefault()
+    if (!selectedWoId || !reply.trim()) return
+    const email = String(manager?.email || 'manager@axis').trim()
+    setSending(true)
+    try {
+      await sendMessage({
+        workOrderId: selectedWoId,
+        senderEmail: email,
+        message: reply.trim(),
+        isAdmin: true,
+      })
+      setReply('')
+      await loadThread(selectedWoId)
+      await loadAll()
+      toast.success('Message sent')
+    } catch (err) {
+      toast.error(err.message || 'Send failed')
+    } finally {
+      setSending(false)
+    }
+  }
+
+  const sortedFeed = useMemo(() => {
+    return [...allMsgs].sort(
+      (a, b) =>
+        new Date(b.Timestamp || b.created_at || 0) - new Date(a.Timestamp || a.created_at || 0),
+    )
+  }, [allMsgs])
+
+  return (
+    <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)]">
+      <div className="rounded-[24px] border border-slate-200 bg-white p-5 shadow-sm">
+        <div className="flex items-center justify-between gap-2">
+          <h2 className="text-lg font-black text-slate-900">All messages</h2>
+          <button
+            type="button"
+            onClick={loadAll}
+            className="rounded-xl border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-50"
+          >
+            Refresh
+          </button>
+        </div>
+        <p className="mt-1 text-sm text-slate-500">Newest first. Click to open the work order thread.</p>
+        {loading ? (
+          <div className="mt-6 py-12 text-center text-sm text-slate-500">Loading…</div>
+        ) : sortedFeed.length === 0 ? (
+          <div className="mt-6 py-12 text-center text-sm text-slate-500">No messages yet.</div>
+        ) : (
+          <ul className="mt-4 max-h-[min(70vh,520px)] space-y-2 overflow-y-auto pr-1">
+            {sortedFeed.map((msg) => {
+              const woId = workOrderLinkedId(msg['Work Order'])
+              const isAdmin = msg['Is Admin'] === true || msg['Is Admin'] === 1
+              const dir = isAdmin ? 'Sent (manager)' : 'Received'
+              return (
+                <li key={msg.id}>
+                  <button
+                    type="button"
+                    onClick={() => setSelectedWoId(woId || null)}
+                    className={`w-full rounded-2xl border px-4 py-3 text-left transition ${
+                      selectedWoId === woId
+                        ? 'border-[#2563eb] bg-[#2563eb]/5'
+                        : 'border-slate-100 bg-slate-50 hover:border-slate-200'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-[11px] font-bold uppercase tracking-wide text-slate-400">{dir}</span>
+                      <span className="text-xs text-slate-400">
+                        {fmtDateTime(msg.Timestamp || msg.created_at)}
+                      </span>
+                    </div>
+                    <div className="mt-1 text-xs font-semibold text-slate-600">
+                      {woId ? woTitles[woId] || `Work order ${woId.slice(0, 12)}…` : 'No work order link'}
+                    </div>
+                    <p className="mt-1 line-clamp-2 text-sm text-slate-700">{msg.Message || '—'}</p>
+                  </button>
+                </li>
+              )
+            })}
+          </ul>
+        )}
+      </div>
+
+      <div className="rounded-[24px] border border-slate-200 bg-white p-5 shadow-sm">
+        <h2 className="text-lg font-black text-slate-900">Thread &amp; reply</h2>
+        {!selectedWoId ? (
+          <p className="mt-4 text-sm text-slate-500">Select a message on the left to view the full thread and reply as management.</p>
+        ) : (
+          <>
+            <div className="mt-2 font-mono text-xs text-slate-400">{selectedWoId}</div>
+            <div className="mt-4 max-h-[min(40vh,320px)] space-y-3 overflow-y-auto rounded-2xl border border-slate-100 bg-slate-50 p-4">
+              {thread.map((m) => {
+                const admin = m['Is Admin'] === true || m['Is Admin'] === 1
+                return (
+                  <div
+                    key={m.id}
+                    className={`rounded-xl border px-3 py-2 text-sm ${
+                      admin ? 'ml-4 border-violet-200 bg-violet-50' : 'mr-4 border-slate-200 bg-white'
+                    }`}
+                  >
+                    <div className="text-[11px] font-semibold text-slate-400">
+                      {admin ? 'Manager' : m['Sender Email'] || 'Resident'} ·{' '}
+                      {fmtDateTime(m.Timestamp || m.created_at)}
+                    </div>
+                    <p className="mt-1 whitespace-pre-wrap text-slate-800">{m.Message}</p>
+                  </div>
+                )
+              })}
+            </div>
+            <form onSubmit={handleSendReply} className="mt-4 space-y-2">
+              <textarea
+                value={reply}
+                onChange={(e) => setReply(e.target.value)}
+                rows={3}
+                placeholder="Reply to resident (logged on this work order)…"
+                className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none focus:border-[#2563eb] focus:ring-2 focus:ring-[#2563eb]/20"
+              />
+              <button
+                type="submit"
+                disabled={sending || !reply.trim()}
+                className="rounded-2xl bg-[#2563eb] px-5 py-2.5 text-sm font-semibold text-white disabled:opacity-50"
+              >
+                {sending ? 'Sending…' : 'Send reply'}
+              </button>
+            </form>
+          </>
+        )}
+      </div>
+    </div>
+  )
+}
+
+function WorkOrdersTabPanel({ manager }) {
+  const [list, setList] = useState([])
+  const [listLoading, setListLoading] = useState(true)
+  const [filterStatus, setFilterStatus] = useState('')
+  const [search, setSearch] = useState('')
   const [idInput, setIdInput] = useState('')
   const [record, setRecord] = useState(null)
   const [loading, setLoading] = useState(false)
@@ -1428,6 +1860,10 @@ function WorkOrdersManagerPanel() {
   const [resolutionSummary, setResolutionSummary] = useState('')
   const [resolved, setResolved] = useState(false)
   const [lastUpdate, setLastUpdate] = useState('')
+
+  const [messages, setMessages] = useState([])
+  const [reply, setReply] = useState('')
+  const [msgBusy, setMsgBusy] = useState(false)
 
   const fieldCls =
     'w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none transition focus:border-[#2563eb] focus:ring-2 focus:ring-[#2563eb]/20'
@@ -1454,21 +1890,47 @@ function WorkOrdersManagerPanel() {
     setLastUpdate(workOrderLastUpdateToInput(r['Last Update']))
   }
 
-  async function handleLoad() {
-    const id = normalizeWorkOrderRecordId(idInput)
-    setLoadError('')
-    setRecord(null)
-    if (!id) {
-      setLoadError('Paste a work order record ID (rec…).')
-      return
+  const loadList = useCallback(async () => {
+    setListLoading(true)
+    try {
+      setList(await getAllWorkOrders())
+    } catch (err) {
+      toast.error('Work orders list failed: ' + err.message)
+    } finally {
+      setListLoading(false)
     }
+  }, [])
+
+  useEffect(() => {
+    loadList()
+  }, [loadList])
+
+  const filteredList = useMemo(() => {
+    let rows = list
+    if (filterStatus) rows = rows.filter((w) => w.Status === filterStatus)
+    const q = search.trim().toLowerCase()
+    if (q) {
+      rows = rows.filter((w) => {
+        const t = `${w.Title || ''} ${w.Description || ''} ${w.id}`.toLowerCase()
+        return t.includes(q)
+      })
+    }
+    return rows
+  }, [list, filterStatus, search])
+
+  async function openWorkOrder(id) {
+    const rid = normalizeWorkOrderRecordId(id)
+    if (!rid) return
+    setLoadError('')
     setLoading(true)
     try {
-      const wo = await getWorkOrderById(id)
+      const wo = await getWorkOrderById(rid)
       setRecord(wo)
       applyRecordToForm(wo)
+      setMessages(await getMessages(rid))
     } catch (err) {
       setLoadError(err.message || 'Could not load work order.')
+      setRecord(null)
     } finally {
       setLoading(false)
     }
@@ -1491,6 +1953,7 @@ function WorkOrdersManagerPanel() {
       const next = await updateWorkOrder(record.id, fields)
       setRecord(next)
       applyRecordToForm(next)
+      await loadList()
       toast.success('Work order saved')
     } catch (err) {
       toast.error(err.message || 'Could not save work order')
@@ -1499,146 +1962,249 @@ function WorkOrdersManagerPanel() {
     }
   }
 
-  return (
-    <div id="work-orders" className="mb-8 scroll-mt-24 rounded-[24px] border border-slate-200 bg-white p-6 shadow-sm">
-      <h2 className="text-lg font-black text-slate-900">Work orders</h2>
-      <p className="mt-1 text-sm text-slate-500">
-        Open a request by Airtable record ID (from the Work Orders table, starts with <code className="rounded bg-slate-100 px-1">rec</code>
-        …), edit fields, then save.
-      </p>
+  async function handleSendThreadReply(e) {
+    e.preventDefault()
+    if (!record?.id || !reply.trim()) return
+    const email = String(manager?.email || 'manager@axis').trim()
+    setMsgBusy(true)
+    try {
+      await sendMessage({
+        workOrderId: record.id,
+        senderEmail: email,
+        message: reply.trim(),
+        isAdmin: true,
+      })
+      setReply('')
+      setMessages(await getMessages(record.id))
+      toast.success('Reply sent')
+    } catch (err) {
+      toast.error(err.message || 'Could not send')
+    } finally {
+      setMsgBusy(false)
+    }
+  }
 
-      <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-end">
-        <div className="min-w-0 flex-1">
-          <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-slate-400">Work order record ID</label>
+  return (
+    <div className="grid gap-6 lg:grid-cols-[minmax(0,300px)_minmax(0,1fr)]">
+      <div className="rounded-[24px] border border-slate-200 bg-white p-5 shadow-sm">
+        <h2 className="text-lg font-black text-slate-900">Work orders</h2>
+        <p className="mt-1 text-sm text-slate-500">Select a request or open by record ID.</p>
+        <div className="mt-4 space-y-3">
           <input
-            value={idInput}
-            onChange={(e) => setIdInput(e.target.value)}
-            placeholder="recXXXXXXXXXXXXXX"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search title or description…"
             className={fieldCls}
           />
+          <select
+            value={filterStatus}
+            onChange={(e) => setFilterStatus(e.target.value)}
+            className={fieldCls}
+          >
+            <option value="">All statuses</option>
+            {[...new Set(list.map((w) => w.Status).filter(Boolean))].map((s) => (
+              <option key={s} value={s}>
+                {s}
+              </option>
+            ))}
+          </select>
+          <button
+            type="button"
+            onClick={loadList}
+            className="w-full rounded-2xl border border-slate-200 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-50"
+          >
+            Refresh list
+          </button>
         </div>
-        <button
-          type="button"
-          onClick={handleLoad}
-          disabled={loading}
-          className="shrink-0 rounded-2xl border border-slate-200 bg-slate-50 px-5 py-3 text-sm font-semibold text-slate-800 transition hover:bg-slate-100 disabled:opacity-50"
-        >
-          {loading ? 'Loading…' : 'Load'}
-        </button>
+        <div className="mt-4 border-t border-slate-100 pt-4">
+          <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-slate-400">
+            Open by ID
+          </label>
+          <div className="flex gap-2">
+            <input
+              value={idInput}
+              onChange={(e) => setIdInput(e.target.value)}
+              placeholder="rec…"
+              className={fieldCls}
+            />
+            <button
+              type="button"
+              onClick={() => openWorkOrder(idInput)}
+              disabled={loading}
+              className="shrink-0 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-2 text-sm font-semibold disabled:opacity-50"
+            >
+              Load
+            </button>
+          </div>
+        </div>
+        <div className="mt-4 max-h-[min(55vh,480px)] space-y-1 overflow-y-auto pr-1">
+          {listLoading ? (
+            <div className="py-8 text-center text-sm text-slate-500">Loading…</div>
+          ) : (
+            filteredList.map((w) => (
+              <button
+                key={w.id}
+                type="button"
+                onClick={() => openWorkOrder(w.id)}
+                className={`flex w-full flex-col rounded-xl border px-3 py-2.5 text-left text-sm transition ${
+                  record?.id === w.id
+                    ? 'border-[#2563eb] bg-[#2563eb]/5'
+                    : 'border-slate-100 bg-slate-50 hover:border-slate-200'
+                }`}
+              >
+                <span className="font-semibold text-slate-900 line-clamp-2">{w.Title || 'Untitled'}</span>
+                <span className="text-xs text-slate-500">
+                  {w.Status} · {fmtDate(w['Date Submitted'] || w.created_at)}
+                </span>
+              </button>
+            ))
+          )}
+        </div>
       </div>
 
-      {loadError ? (
-        <div className="mt-3 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{loadError}</div>
-      ) : null}
-
-      {record ? (
-        <form onSubmit={handleSave} className="mt-6 space-y-4 border-t border-slate-100 pt-6">
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <div>
-              <div className="text-[11px] font-bold uppercase tracking-[0.14em] text-slate-400">Record</div>
-              <div className="font-mono text-xs text-slate-600">{record.id}</div>
-            </div>
-            {record['Date Submitted'] || record.created_at ? (
-              <div className="text-xs text-slate-400">
-                Submitted {fmtDate(record['Date Submitted'] || record.created_at)}
+      <div className="min-w-0 rounded-[24px] border border-slate-200 bg-white p-6 shadow-sm">
+        {loadError ? (
+          <div className="mb-4 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{loadError}</div>
+        ) : null}
+        {!record ? (
+          <div className="py-16 text-center text-sm text-slate-500">Choose a work order from the list or paste a record ID.</div>
+        ) : loading ? (
+          <div className="py-16 text-center text-sm text-slate-500">Loading…</div>
+        ) : (
+          <>
+            <form onSubmit={handleSave} className="space-y-4">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div>
+                  <div className="text-[11px] font-bold uppercase tracking-[0.14em] text-slate-400">Record</div>
+                  <div className="font-mono text-xs text-slate-600">{record.id}</div>
+                </div>
+                {record['Date Submitted'] || record.created_at ? (
+                  <div className="text-xs text-slate-400">
+                    Submitted {fmtDate(record['Date Submitted'] || record.created_at)}
+                  </div>
+                ) : null}
               </div>
-            ) : null}
-          </div>
 
-          <div>
-            <div className="mb-1 text-xs font-semibold text-slate-500">Title</div>
-            <div className="text-base font-bold text-slate-900">{record.Title || '—'}</div>
-            {record.Description ? (
-              <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-slate-600">{record.Description}</p>
-            ) : null}
-          </div>
+              <div>
+                <div className="mb-1 text-xs font-semibold text-slate-500">Title</div>
+                <div className="text-base font-bold text-slate-900">{record.Title || '—'}</div>
+                {record.Description ? (
+                  <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-slate-600">{record.Description}</p>
+                ) : null}
+              </div>
 
-          <div className="grid gap-4 sm:grid-cols-2">
-            <div>
-              <label className="mb-1.5 block text-xs font-semibold text-slate-600">Status</label>
-              <select value={status} onChange={(e) => setStatus(e.target.value)} className={fieldCls}>
-                {statusOptions.map((s) => (
-                  <option key={s} value={s}>
-                    {s}
-                  </option>
-                ))}
-              </select>
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div>
+                  <label className="mb-1.5 block text-xs font-semibold text-slate-600">Status</label>
+                  <select value={status} onChange={(e) => setStatus(e.target.value)} className={fieldCls}>
+                    {statusOptions.map((s) => (
+                      <option key={s} value={s}>
+                        {s}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="mb-1.5 block text-xs font-semibold text-slate-600">Priority</label>
+                  <select value={priority} onChange={(e) => setPriority(e.target.value)} className={fieldCls}>
+                    {priorityOptions.map((p) => (
+                      <option key={p} value={p}>
+                        {p}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              <div>
+                <label className="mb-1.5 block text-xs font-semibold text-slate-600">Management notes</label>
+                <textarea
+                  rows={2}
+                  value={managementNotes}
+                  onChange={(e) => setManagementNotes(e.target.value)}
+                  className={fieldCls}
+                />
+              </div>
+
+              <div>
+                <label className="mb-1.5 block text-xs font-semibold text-slate-600">Update</label>
+                <textarea rows={3} value={updateText} onChange={(e) => setUpdateText(e.target.value)} className={fieldCls} />
+              </div>
+
+              <div>
+                <label className="mb-1.5 block text-xs font-semibold text-slate-600">Resolution summary</label>
+                <textarea
+                  rows={2}
+                  value={resolutionSummary}
+                  onChange={(e) => setResolutionSummary(e.target.value)}
+                  className={fieldCls}
+                />
+              </div>
+
+              <div className="grid gap-4 sm:grid-cols-2">
+                <label className="flex cursor-pointer items-center gap-3 rounded-2xl border border-slate-200 px-4 py-3">
+                  <input
+                    type="checkbox"
+                    checked={resolved}
+                    onChange={(e) => setResolved(e.target.checked)}
+                    className="h-4 w-4 rounded border-slate-300 text-[#2563eb]"
+                  />
+                  <span className="text-sm font-semibold text-slate-800">Resolved</span>
+                </label>
+                <div>
+                  <label className="mb-1.5 block text-xs font-semibold text-slate-600">Last update (date)</label>
+                  <input type="date" value={lastUpdate} onChange={(e) => setLastUpdate(e.target.value)} className={fieldCls} />
+                </div>
+              </div>
+
+              <button
+                type="submit"
+                disabled={saving}
+                className="rounded-2xl bg-[#2563eb] px-6 py-3 text-sm font-semibold text-white disabled:opacity-50"
+              >
+                {saving ? 'Saving…' : 'Save work order'}
+              </button>
+            </form>
+
+            <div className="mt-8 border-t border-slate-100 pt-6">
+              <h3 className="text-sm font-black text-slate-900">Message thread</h3>
+              <p className="mt-1 text-xs text-slate-500">Same thread residents see in the portal.</p>
+              <div className="mt-3 max-h-56 space-y-2 overflow-y-auto rounded-2xl border border-slate-100 bg-slate-50 p-3">
+                {messages.map((m) => {
+                  const admin = m['Is Admin'] === true || m['Is Admin'] === 1
+                  return (
+                    <div
+                      key={m.id}
+                      className={`rounded-lg border px-2.5 py-2 text-sm ${admin ? 'border-violet-200 bg-violet-50' : 'border-slate-200 bg-white'}`}
+                    >
+                      <div className="text-[10px] font-semibold text-slate-400">
+                        {admin ? 'Manager' : m['Sender Email'] || 'Resident'} · {fmtDateTime(m.Timestamp || m.created_at)}
+                      </div>
+                      <p className="mt-0.5 whitespace-pre-wrap text-slate-800">{m.Message}</p>
+                    </div>
+                  )
+                })}
+              </div>
+              <form onSubmit={handleSendThreadReply} className="mt-3 flex flex-col gap-2 sm:flex-row sm:items-end">
+                <textarea
+                  value={reply}
+                  onChange={(e) => setReply(e.target.value)}
+                  rows={2}
+                  placeholder="Reply to resident…"
+                  className="min-w-0 flex-1 rounded-2xl border border-slate-200 px-4 py-2 text-sm"
+                />
+                <button
+                  type="submit"
+                  disabled={msgBusy || !reply.trim()}
+                  className="rounded-2xl bg-slate-900 px-5 py-2.5 text-sm font-semibold text-white disabled:opacity-50"
+                >
+                  {msgBusy ? 'Sending…' : 'Send'}
+                </button>
+              </form>
             </div>
-            <div>
-              <label className="mb-1.5 block text-xs font-semibold text-slate-600">Priority</label>
-              <select value={priority} onChange={(e) => setPriority(e.target.value)} className={fieldCls}>
-                {priorityOptions.map((p) => (
-                  <option key={p} value={p}>
-                    {p}
-                  </option>
-                ))}
-              </select>
-            </div>
-          </div>
-
-          <div>
-            <label className="mb-1.5 block text-xs font-semibold text-slate-600">Management notes</label>
-            <textarea
-              rows={3}
-              value={managementNotes}
-              onChange={(e) => setManagementNotes(e.target.value)}
-              className={fieldCls}
-              placeholder="Internal / resident-visible notes from management"
-            />
-          </div>
-
-          <div>
-            <label className="mb-1.5 block text-xs font-semibold text-slate-600">Update</label>
-            <textarea
-              rows={4}
-              value={updateText}
-              onChange={(e) => setUpdateText(e.target.value)}
-              className={fieldCls}
-              placeholder="Status update shown on the work order thread"
-            />
-          </div>
-
-          <div>
-            <label className="mb-1.5 block text-xs font-semibold text-slate-600">Resolution summary</label>
-            <textarea
-              rows={3}
-              value={resolutionSummary}
-              onChange={(e) => setResolutionSummary(e.target.value)}
-              className={fieldCls}
-              placeholder="Summary when the request is resolved"
-            />
-          </div>
-
-          <div className="grid gap-4 sm:grid-cols-2">
-            <label className="flex cursor-pointer items-center gap-3 rounded-2xl border border-slate-200 px-4 py-3">
-              <input
-                type="checkbox"
-                checked={resolved}
-                onChange={(e) => setResolved(e.target.checked)}
-                className="h-4 w-4 rounded border-slate-300 text-[#2563eb] focus:ring-[#2563eb]"
-              />
-              <span className="text-sm font-semibold text-slate-800">Resolved</span>
-            </label>
-            <div>
-              <label className="mb-1.5 block text-xs font-semibold text-slate-600">Last update (date)</label>
-              <input
-                type="date"
-                value={lastUpdate}
-                onChange={(e) => setLastUpdate(e.target.value)}
-                className={fieldCls}
-              />
-            </div>
-          </div>
-
-          <button
-            type="submit"
-            disabled={saving}
-            className="rounded-2xl bg-[#2563eb] px-6 py-3 text-sm font-semibold text-white transition hover:brightness-110 disabled:opacity-50"
-          >
-            {saving ? 'Saving…' : 'Save work order'}
-          </button>
-        </form>
-      ) : null}
+          </>
+        )}
+      </div>
     </div>
   )
 }
@@ -1760,9 +2326,20 @@ function ApplicationsPanel({ propertyOptions }) {
 }
 
 // ─── ManagerDashboard ─────────────────────────────────────────────────────────
+const MANAGER_DASH_TABS = [
+  ['overview', 'Overview'],
+  ['leases', 'Leases'],
+  ['applications', 'Applications'],
+  ['properties', 'Properties'],
+  ['workorders', 'Work orders'],
+  ['inbox', 'Inbox'],
+  ['calendar', 'Calendar'],
+  ['profile', 'Profile'],
+]
+
 function ManagerDashboard({ manager: managerProp, onOpenDraft, onSignOut, onManagerUpdate }) {
   const [manager, setManager] = useState(managerProp)
-  const [dashView, setDashView] = useState('dashboard') // 'dashboard' | 'applications' | 'profile'
+  const [dashView, setDashView] = useState('overview')
   const [drafts, setDrafts] = useState([])
   const [loading, setLoading] = useState(true)
   const [showGenerateModal, setShowGenerateModal] = useState(false)
@@ -1770,6 +2347,8 @@ function ManagerDashboard({ manager: managerProp, onOpenDraft, onSignOut, onMana
   const [propertyOptions, setPropertyOptions] = useState(DEFAULT_AXIS_PROPERTIES)
   const [propertyCount, setPropertyCount] = useState(0)
   const [billingLoading, setBillingLoading] = useState(false)
+  const [overviewStats, setOverviewStats] = useState(null)
+  const [overviewStatsLoading, setOverviewStatsLoading] = useState(false)
 
   function handleManagerUpdate(updated) {
     setManager(updated)
@@ -1794,7 +2373,39 @@ function ManagerDashboard({ manager: managerProp, onOpenDraft, onSignOut, onMana
     }
   }, [filters])
 
-  useEffect(() => { loadDrafts() }, [loadDrafts])
+  useEffect(() => {
+    if (dashView !== 'leases') return
+    loadDrafts()
+  }, [loadDrafts, dashView])
+
+  useEffect(() => {
+    if (dashView !== 'overview') return
+    let cancelled = false
+    setOverviewStatsLoading(true)
+    Promise.all([fetchApplications({}), fetchLeaseDrafts({}), getAllWorkOrders()])
+      .then(([apps, dr, wo]) => {
+        if (cancelled) return
+        const pendingApps = apps.filter((a) => a.Approved !== true && a.Approved !== false).length
+        const openWo = wo.filter((w) => w.Resolved !== true && w.Resolved !== 1 && w.Status !== 'Resolved').length
+        setOverviewStats({
+          pendingApps,
+          draftCount: dr.length,
+          signedLeases: dr.filter((d) => d.Status === 'Signed').length,
+          publishedLeases: dr.filter((d) => d.Status === 'Published').length,
+          openWo,
+        })
+      })
+      .catch(() => {
+        if (!cancelled) setOverviewStats(null)
+      })
+      .finally(() => {
+        if (!cancelled) setOverviewStatsLoading(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [dashView])
+
   const handlePropertiesChange = useCallback((records) => {
     const nextRecords = Array.isArray(records) ? records : []
     const names = nextRecords
@@ -1861,7 +2472,7 @@ function ManagerDashboard({ manager: managerProp, onOpenDraft, onSignOut, onMana
             </div>
             <div>
               <span className="text-base font-black text-slate-900">Axis Manager Portal</span>
-              <span className="ml-2 text-sm text-slate-400">Operations, houses &amp; leasing</span>
+              <span className="ml-2 hidden text-sm text-slate-400 sm:inline">Leases · Properties · Work orders · Inbox · Calendar</span>
             </div>
           </div>
           <div className="flex items-center gap-3">
@@ -1885,13 +2496,18 @@ function ManagerDashboard({ manager: managerProp, onOpenDraft, onSignOut, onMana
           </div>
         </div>
 
-        {/* View tabs — Dashboard / Applications / Profile */}
-        <div className="flex gap-1 border-b border-slate-200 px-6">
-          {[['dashboard', 'Dashboard'], ['applications', 'Applications'], ['profile', 'Profile']].map(([key, label]) => (
+        {/* Primary navigation */}
+        <div className="-mx-1 flex gap-0 overflow-x-auto border-b border-slate-200 px-4 scrollbar-none sm:px-6">
+          {MANAGER_DASH_TABS.map(([key, label]) => (
             <button
               key={key}
+              type="button"
               onClick={() => setDashView(key)}
-              className={`-mb-px border-b-2 px-4 py-3 text-sm font-semibold transition ${dashView === key ? 'border-[#2563eb] text-[#2563eb]' : 'border-transparent text-slate-500 hover:text-slate-900'}`}
+              className={`-mb-px shrink-0 border-b-2 px-3 py-3 text-sm font-semibold transition sm:px-4 ${
+                dashView === key
+                  ? 'border-[#2563eb] text-[#2563eb]'
+                  : 'border-transparent text-slate-500 hover:text-slate-900'
+              }`}
             >
               {label}
             </button>
@@ -1900,11 +2516,30 @@ function ManagerDashboard({ manager: managerProp, onOpenDraft, onSignOut, onMana
       </header>
 
       <div className="mx-auto max-w-7xl px-6 py-8">
-        {/* ── Profile view ── */}
         {dashView === 'profile' ? (
           <ManagerProfilePanel manager={manager} onManagerUpdate={handleManagerUpdate} />
         ) : dashView === 'applications' ? (
           <ApplicationsPanel propertyOptions={propertyOptions} />
+        ) : dashView === 'properties' ? (
+          <div id="house-management" className="scroll-mt-24">
+            <HouseManagementPanel onPropertiesChange={handlePropertiesChange} />
+          </div>
+        ) : dashView === 'workorders' ? (
+          <WorkOrdersTabPanel manager={manager} />
+        ) : dashView === 'inbox' ? (
+          <InboxTabPanel manager={manager} />
+        ) : dashView === 'calendar' ? (
+          <ManagerCalendarPanel />
+        ) : dashView === 'overview' ? (
+          <ManagerOverviewPanel
+            manager={manager}
+            propertyCount={propertyCount}
+            stats={overviewStats}
+            statsLoading={overviewStatsLoading}
+            onNavigate={setDashView}
+            onGenerateDraft={() => setShowGenerateModal(true)}
+            onOpenBilling={handleBillingPortal}
+          />
         ) : (
         <>
         {/* Status stat cards — clicking one filters the table */}
@@ -1929,7 +2564,7 @@ function ManagerDashboard({ manager: managerProp, onOpenDraft, onSignOut, onMana
 
         {/* Toolbar */}
         <div className="mb-5 flex flex-wrap items-center gap-3">
-          <h2 className="mr-auto text-xl font-black text-slate-900">Lease queue</h2>
+          <h2 className="mr-auto text-xl font-black text-slate-900">Leases &amp; signing</h2>
 
           {/* Resident search */}
           <div className="relative">
@@ -1983,12 +2618,6 @@ function ManagerDashboard({ manager: managerProp, onOpenDraft, onSignOut, onMana
           onGenerateDraft={() => setShowGenerateModal(true)}
           onOpenBilling={handleBillingPortal}
         />
-
-        <WorkOrdersManagerPanel />
-
-        <div id="house-management" className="mb-8 scroll-mt-24">
-          <HouseManagementPanel onPropertiesChange={handlePropertiesChange} />
-        </div>
 
         {/* Drafts table */}
         <div className="overflow-hidden rounded-[24px] border border-slate-200 bg-white">
@@ -2058,7 +2687,7 @@ function ManagerDashboard({ manager: managerProp, onOpenDraft, onSignOut, onMana
 
         {/* Attribution footer */}
         <p className="mt-6 text-center text-xs text-slate-400">
-          Axis Manager Portal · Manage houses, generate leases, and review drafts before publication · {new Date().getFullYear()}
+          Axis Manager Portal · Leases, applications, properties, work orders, and inbox · {new Date().getFullYear()}
         </p>
       </>
       )}
@@ -2096,7 +2725,7 @@ function LeaseEditor({ draftId, manager, onBack }) {
   const [managerNotes, setManagerNotes] = useState('')
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
-  const [actionLoading, setActionLoading] = useState('') // 'reject' | 'approve' | 'publish'
+  const [actionLoading, setActionLoading] = useState('') // 'reject' | 'approve' | 'publish' | 'signforge' | 'signforge-status'
   const [activeTab, setActiveTab] = useState('editor')
 
   const refreshAudit = useCallback(async () => {
@@ -2249,12 +2878,70 @@ function LeaseEditor({ draftId, manager, onBack }) {
     }
   }
 
+  async function handleSignforgeSend() {
+    setActionLoading('signforge')
+    try {
+      const res = await fetch('/api/portal?action=signforge-send-lease', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          leaseDraftId: draftId,
+          performedBy: manager.name,
+          performedByRole: manager.role,
+        }),
+      })
+      const data = await readJsonResponse(res)
+      if (!res.ok) throw new Error(data.error || 'SignForge send failed')
+      if (data.draft) setDraft(data.draft)
+      await refreshAudit()
+      toast.success('Lease sent via SignForge — the resident receives a signing link by email.')
+    } catch (err) {
+      toast.error(err.message || 'SignForge send failed')
+    } finally {
+      setActionLoading('')
+    }
+  }
+
+  async function handleSignforgeRefreshStatus() {
+    const envId = draft?.['SignForge Envelope ID']
+    if (!envId) return
+    setActionLoading('signforge-status')
+    try {
+      const res = await fetch('/api/portal?action=signforge-envelope-status', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ envelopeId: String(envId).trim() }),
+      })
+      const data = await readJsonResponse(res)
+      if (!res.ok) throw new Error(data.error || 'Could not load SignForge status')
+      const env = data.envelope?.data ?? data.envelope ?? data
+      const st = env?.status ?? env?.state ?? 'unknown'
+      toast.success(`SignForge status: ${st}`)
+      const refreshed = await fetchLeaseDraft(draftId)
+      setDraft(refreshed)
+      setEditorContent(refreshed['Manager Edited Content'] || refreshed['AI Draft Content'] || '')
+      await refreshAudit()
+    } catch (err) {
+      toast.error(err.message || 'SignForge status check failed')
+    } finally {
+      setActionLoading('')
+    }
+  }
+
   // Derive which actions are available for the current status
   const status = draft?.['Status']
   const canEdit    = draft && !['Published', 'Signed'].includes(status)
   const canApprove = draft && ['Under Review', 'Changes Needed'].includes(status)
   const canPublish = draft && status === 'Approved'
   const canReject  = draft && ['Under Review', 'Draft Generated', 'Changes Needed'].includes(status)
+  const signforgeEnvelopeId = draft?.['SignForge Envelope ID']
+  const canSignforgeSend =
+    draft &&
+    status === 'Published' &&
+    !signforgeEnvelopeId &&
+    String(draft['Resident Email'] || '').trim()
+  const canSignforgeRefresh =
+    draft && signforgeEnvelopeId && status !== 'Signed'
 
   if (loading) {
     return (
@@ -2328,6 +3015,26 @@ function LeaseEditor({ draftId, manager, onBack }) {
                 className="rounded-xl bg-[#2563eb] px-4 py-2 text-sm font-semibold text-white transition hover:brightness-110 disabled:opacity-50"
               >
                 {actionLoading === 'publish' ? 'Publishing…' : 'Publish to portal'}
+              </button>
+            )}
+            {canSignforgeSend && (
+              <button
+                type="button"
+                onClick={handleSignforgeSend}
+                disabled={!!actionLoading}
+                className="rounded-xl border border-violet-200 bg-violet-50 px-4 py-2 text-sm font-semibold text-violet-800 transition hover:bg-violet-100 disabled:opacity-50"
+              >
+                {actionLoading === 'signforge' ? 'Sending…' : 'Send for e-sign (SignForge)'}
+              </button>
+            )}
+            {canSignforgeRefresh && (
+              <button
+                type="button"
+                onClick={handleSignforgeRefreshStatus}
+                disabled={!!actionLoading}
+                className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:opacity-50"
+              >
+                {actionLoading === 'signforge-status' ? 'Checking…' : 'Refresh SignForge status'}
               </button>
             )}
           </div>
@@ -2473,6 +3180,12 @@ function LeaseEditor({ draftId, manager, onBack }) {
               {draft?.['Utilities Fee'] ? (
                 <DetailRow label="Utilities" value={`$${draft['Utilities Fee']}/mo`} />
               ) : null}
+              {signforgeEnvelopeId ? (
+                <DetailRow label="SignForge envelope" value={String(signforgeEnvelopeId)} />
+              ) : null}
+              {draft?.['SignForge Sent At'] ? (
+                <DetailRow label="SignForge sent" value={fmtDate(draft['SignForge Sent At'])} />
+              ) : null}
             </div>
           </div>
 
@@ -2528,6 +3241,22 @@ function LeaseEditor({ draftId, manager, onBack }) {
               </p>
             </div>
           )}
+          {status === 'Published' && (
+            <div className="rounded-[24px] border border-violet-200 bg-violet-50/80 p-5">
+              <div className="text-sm font-semibold text-violet-900">E-sign (Puppeteer + SignForge)</div>
+              <p className="mt-1.5 text-sm text-violet-800/90">
+                The server renders this lease to PDF with{' '}
+                <a className="underline font-medium" href="https://pptr.dev/api/puppeteer.puppeteernode" target="_blank" rel="noreferrer">
+                  Puppeteer
+                </a>{' '}
+                and sends it through{' '}
+                <a className="underline font-medium" href="https://signforge.io/dashboard" target="_blank" rel="noreferrer">
+                  SignForge
+                </a>{' '}
+                (<code className="rounded bg-violet-100 px-1 text-[11px]">SIGNFORGE_API_KEY</code>). Use <strong>Send for e-sign</strong> in the header.
+              </p>
+            </div>
+          )}
           {['Published', 'Signed'].includes(status) && (
             <div className="rounded-[24px] border border-slate-200 bg-slate-50 p-5">
               <div className="text-sm font-semibold text-slate-700">Read-only</div>
@@ -2557,6 +3286,26 @@ function LeaseEditor({ draftId, manager, onBack }) {
             {canPublish && (
               <button onClick={handlePublish} disabled={!!actionLoading} className="w-full rounded-2xl bg-[#2563eb] py-3 text-sm font-semibold text-white transition hover:brightness-110 disabled:opacity-50">
                 {actionLoading === 'publish' ? 'Publishing…' : 'Publish to resident portal'}
+              </button>
+            )}
+            {canSignforgeSend && (
+              <button
+                type="button"
+                onClick={handleSignforgeSend}
+                disabled={!!actionLoading}
+                className="w-full rounded-2xl border border-violet-200 bg-violet-50 py-3 text-sm font-semibold text-violet-800 transition hover:bg-violet-100 disabled:opacity-50"
+              >
+                {actionLoading === 'signforge' ? 'Sending…' : 'Send for e-sign (SignForge)'}
+              </button>
+            )}
+            {canSignforgeRefresh && (
+              <button
+                type="button"
+                onClick={handleSignforgeRefreshStatus}
+                disabled={!!actionLoading}
+                className="w-full rounded-2xl border border-slate-200 bg-white py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:opacity-50"
+              >
+                {actionLoading === 'signforge-status' ? 'Checking…' : 'Refresh SignForge status'}
               </button>
             )}
           </div>

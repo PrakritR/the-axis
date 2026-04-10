@@ -531,10 +531,9 @@ export default function PropertyPage(){
     (plan) => (plan.roomsAvailable || plan.rooms.length) === 1
   )
 
-  const sectionNavItems = useMemo(() => {
-    if (!p) {
-      return [['overview', 'Overview']]
-    }
+  /** In-nav buttons only (no “Photos/Overview” tab — gallery is the default landing). */
+  const sectionNavTabs = useMemo(() => {
+    if (!p) return []
     const plans = buildRoomPlanDisplay(p)
     const sharedVideos = getSharedSpaceVideos(p.videos || [])
     const rentTotalsNav = buildRentTotals(p)
@@ -544,7 +543,6 @@ export default function PropertyPage(){
       packages.length > 0 ||
       (p.leaseTerms && p.leaseTerms.length > 0)
     return [
-      ['overview', 'Overview'],
       ...(plans.length > 0 ? [['floor-plans', 'Floor Plans']] : []),
       ...(sharedVideos.length > 0 ? [['shared-spaces', 'Shared Spaces']] : []),
       ['policies', 'Lease basics'],
@@ -554,7 +552,10 @@ export default function PropertyPage(){
     ]
   }, [p])
 
-  const sectionNavIds = useMemo(() => new Set(sectionNavItems.map(([id]) => id)), [sectionNavItems])
+  /** Scroll-spy order: gallery first (`overview`), then each section below. */
+  const sectionScrollOrder = useMemo(() => ['overview', ...sectionNavTabs.map(([id]) => id)], [sectionNavTabs])
+
+  const sectionNavIds = useMemo(() => new Set(sectionScrollOrder), [sectionScrollOrder])
 
   // Sync tab from URL hash only when there is a hash (empty hash: leave active tab to scroll-spy / user scroll).
   useEffect(() => {
@@ -621,9 +622,9 @@ export default function PropertyPage(){
     if (Date.now() < scrollSpyLockUntilRef.current) return
 
     const line = getSectionScrollOffset()
-    let nextId = sectionNavItems[0]?.[0] || 'overview'
+    let nextId = 'overview'
 
-    for (const [id] of sectionNavItems) {
+    for (const id of sectionScrollOrder) {
       const el = sectionRefs.current[id] || document.getElementById(id)
       if (!el) continue
       const top = el.getBoundingClientRect().top
@@ -631,7 +632,7 @@ export default function PropertyPage(){
     }
 
     setActiveTab((prev) => (prev === nextId ? prev : nextId))
-  }, [getSectionScrollOffset, sectionNavItems])
+  }, [getSectionScrollOffset, sectionScrollOrder])
 
   // Match in-page nav stick position to actual promo + header height.
   useEffect(() => {
@@ -691,7 +692,7 @@ export default function PropertyPage(){
     window.addEventListener('resize', onScrollOrResize, { passive: true })
     window.visualViewport?.addEventListener?.('resize', onScrollOrResize, { passive: true })
 
-    const ids = sectionNavItems.map(([id]) => id)
+    const ids = sectionScrollOrder
     const elements = ids
       .map((id) => sectionRefs.current[id])
       .filter(Boolean)
@@ -716,7 +717,7 @@ export default function PropertyPage(){
       window.visualViewport?.removeEventListener?.('resize', onScrollOrResize)
       observer?.disconnect()
     }
-  }, [p, sectionNavItems, updateActiveTabFromScrollPosition])
+  }, [p, sectionScrollOrder, updateActiveTabFromScrollPosition])
 
   if (!p) {
     return <div className="container mx-auto px-6 py-12">Property not found</div>
@@ -778,24 +779,15 @@ export default function PropertyPage(){
       />
       <div className="main-container">
         <div
-          id="overview"
-          ref={(node) => { sectionRefs.current.overview = node }}
-          className="property-gallery mx-auto max-w-[1480px] scroll-mt-28 px-4 pt-3 sm:px-6 sm:pt-4 md:scroll-mt-40 lg:px-10 lg:pt-5"
-        >
-          <h1 className="sr-only">{p.name}</h1>
-          <PropertyGallery images={galleryImages} videos={p.videos || []} />
-        </div>
-
-        <div
           id="section-nav"
-          className="sticky top-0 z-40 mt-8 w-full border-y border-slate-200 bg-white/95 shadow-[0_1px_0_0_rgba(15,23,42,0.06)] backdrop-blur-md sm:mt-10"
+          className="sticky z-[45] w-full border-b border-slate-200 bg-white/95 shadow-[0_1px_0_0_rgba(15,23,42,0.06)] backdrop-blur-md supports-[backdrop-filter]:bg-white/90"
         >
-          <div className="mx-auto max-w-[1480px] px-4 py-3 sm:px-6 sm:py-4 lg:px-10">
+          <div className="mx-auto max-w-[1480px] px-4 py-3 sm:px-6 sm:py-3.5 lg:px-10">
             <nav
               className="flex flex-wrap items-center gap-x-3 gap-y-2.5 overflow-x-auto scrollbar-none sm:gap-x-4 sm:gap-y-3 md:gap-x-5 lg:gap-x-6 [&::-webkit-scrollbar]:hidden"
               aria-label="Property sections"
             >
-              {sectionNavItems.map(([id, label]) => (
+              {sectionNavTabs.map(([id, label]) => (
                 <button
                   type="button"
                   key={id}
@@ -816,6 +808,15 @@ export default function PropertyPage(){
               ))}
             </nav>
           </div>
+        </div>
+
+        <div
+          id="overview"
+          ref={(node) => { sectionRefs.current.overview = node }}
+          className="property-gallery mx-auto max-w-[1480px] scroll-mt-28 px-4 pt-4 sm:px-6 sm:pt-5 md:scroll-mt-40 lg:px-10 lg:pt-6"
+        >
+          <h1 className="sr-only">{p.name}</h1>
+          <PropertyGallery images={galleryImages} videos={p.videos || []} />
         </div>
 
       <div className="mx-auto mt-8 grid min-w-0 max-w-[1480px] gap-10 px-4 sm:mt-10 sm:px-6 md:grid-cols-12 lg:px-10">
@@ -854,7 +855,7 @@ export default function PropertyPage(){
               <div className="mt-8 overflow-hidden rounded-[18px] border border-slate-200 bg-white">
                 <div className="hidden sm:grid grid-cols-12 gap-3 border-b border-slate-100 bg-slate-50 px-6 py-3 text-xs font-bold uppercase tracking-[0.14em] text-slate-400">
                   <div className="col-span-4">Space</div>
-                  <div className="col-span-6">Overview</div>
+                  <div className="col-span-6" />
                   <div className="col-span-2 text-right"></div>
                 </div>
                 <div className="divide-y divide-slate-100 px-4 sm:px-6">

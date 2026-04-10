@@ -12,6 +12,8 @@ import managerStartFreeTier from './handlers/manager-start-free-tier.js'
 import managerSubscriptionComplete from './handlers/manager-subscription-complete.js'
 import managerUpdateProfile from './handlers/manager-update-profile.js'
 import sendLeaseInvite from './handlers/send-lease-invite.js'
+import signforgeSendLease from './handlers/signforge-send-lease.js'
+import signforgeEnvelopeStatus from './handlers/signforge-envelope-status.js'
 
 const handlers = {
   'manager-auth': managerAuth,
@@ -24,6 +26,8 @@ const handlers = {
   'manager-update-profile': managerUpdateProfile,
   'generate-lease-draft': generateLeaseDraft,
   'send-lease-invite': sendLeaseInvite,
+  'signforge-send-lease': signforgeSendLease,
+  'signforge-envelope-status': signforgeEnvelopeStatus,
 }
 
 export default async function portalGateway(req, res) {

@@ -98,15 +98,8 @@ export default function PropertyGallery({ images = [], videos = [] }) {
                 alt={`Property image ${leadImage.imageIndex + 1}`}
                 className="h-[620px] w-full object-cover transition duration-500 group-hover:scale-[1.015]"
               />
-              <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/35 to-transparent" />
-              <div className="absolute inset-x-0 bottom-0 flex items-end justify-between gap-4 px-6 pb-6 pt-24 text-white [text-shadow:0_1px_3px_rgba(0,0,0,0.9)]">
-                <div>
-                  <div className="text-[11px] font-bold uppercase tracking-[0.22em] text-white/95">Featured</div>
-                  <div className="mt-2 text-xl font-semibold [text-shadow:0_2px_8px_rgba(0,0,0,0.95),0_1px_2px_rgba(0,0,0,1)]">Open the full image gallery</div>
-                </div>
-                <div className="rounded-full border border-white/35 bg-black/55 px-3 py-1.5 text-sm font-semibold text-white backdrop-blur-sm [text-shadow:none]">
-                  {leadImage.imageIndex + 1} / {images.length}
-                </div>
+              <div className="pointer-events-none absolute right-4 top-4 rounded-full border border-white/25 bg-black/45 px-3 py-1 text-xs font-semibold text-white backdrop-blur-sm">
+                {leadImage.imageIndex + 1} / {images.length}
               </div>
             </button>
 
@@ -124,15 +117,6 @@ export default function PropertyGallery({ images = [], videos = [] }) {
                   alt={`Property image ${item.imageIndex + 1}`}
                   className="h-full w-full object-cover transition duration-500 group-hover:scale-[1.02]"
                 />
-                <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/20 to-transparent" />
-                <div className="absolute inset-x-0 bottom-0 flex items-end justify-between px-5 pb-5 pt-20 text-white [text-shadow:0_1px_3px_rgba(0,0,0,0.9)]">
-                  <div>
-                    <div className="text-[11px] font-bold uppercase tracking-[0.2em] text-white/95">Image {item.imageIndex + 1}</div>
-                    <div className="mt-2 text-base font-semibold [text-shadow:0_2px_6px_rgba(0,0,0,0.95)]">
-                      {supportingIndex === 0 ? 'Next key view' : 'More detail'}
-                    </div>
-                  </div>
-                </div>
               </button>
             ))}
           </div>
@@ -171,10 +155,6 @@ export default function PropertyGallery({ images = [], videos = [] }) {
                   }`}
                 >
                   <img src={item.image} alt={`Thumbnail ${item.imageIndex + 1}`} className="h-full w-full object-cover transition duration-300 group-hover:scale-[1.04]" />
-                  <div className="absolute inset-0 bg-gradient-to-t from-black/55 via-transparent to-transparent" />
-                  <span className="absolute bottom-2 right-2 rounded-full border border-white/20 bg-black/80 px-2 py-0.5 text-[10px] font-bold text-white shadow-sm">
-                    {item.imageIndex + 1}
-                  </span>
                 </button>
               ))}
             </div>
@@ -193,10 +173,8 @@ export default function PropertyGallery({ images = [], videos = [] }) {
                   className="h-full w-full object-cover transition duration-500 group-hover:scale-[1.015]"
                 />
               </div>
-              <div className="absolute inset-0 bg-gradient-to-t from-black/75 via-black/25 to-transparent" />
-              <div className="absolute inset-x-0 bottom-0 px-4 pb-4 pt-20 text-left text-white [text-shadow:0_1px_3px_rgba(0,0,0,0.9)]">
-                <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-white/95">Featured</div>
-                <div className="mt-1 text-base font-semibold [text-shadow:0_2px_8px_rgba(0,0,0,0.95)]">Tap for the full image gallery</div>
+              <div className="pointer-events-none absolute right-3 top-3 rounded-full border border-white/25 bg-black/45 px-2.5 py-1 text-[11px] font-semibold text-white backdrop-blur-sm">
+                {leadImage.imageIndex + 1} / {images.length}
               </div>
             </button>
 
@@ -230,9 +208,6 @@ export default function PropertyGallery({ images = [], videos = [] }) {
                   }`}
                 >
                   <img src={item.image} alt={`Thumbnail ${item.imageIndex + 1}`} className="h-full w-full object-cover" />
-                  <span className="absolute bottom-1.5 right-1.5 rounded-full border border-white/20 bg-black/80 px-2 py-0.5 text-[10px] font-bold text-white shadow-sm">
-                    {item.imageIndex + 1}
-                  </span>
                 </button>
               ))}
             </div>
