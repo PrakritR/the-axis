@@ -783,11 +783,6 @@ export default function PropertyPage(){
           className="property-gallery mx-auto max-w-[1480px] scroll-mt-28 px-4 pt-3 sm:px-6 sm:pt-4 md:scroll-mt-40 lg:px-10 lg:pt-5"
         >
           <h1 className="sr-only">{p.name}</h1>
-          <div className="mb-6 sm:mb-8 lg:mb-10">
-            <h2 className="font-editorial text-3xl font-black leading-tight tracking-tight text-slate-900 sm:text-4xl">
-              Overview
-            </h2>
-          </div>
           <PropertyGallery images={galleryImages} videos={p.videos || []} />
         </div>
 
