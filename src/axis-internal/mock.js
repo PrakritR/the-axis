@@ -18,13 +18,6 @@ export const MOCK_MANAGEMENT_USER = {
   ],
 }
 
-export const MOCK_ADMIN_USER = {
-  id: 'admin_demo_1',
-  name: 'Axis Admin',
-  email: 'admin@axisstudentliving.com',
-  role: 'super_admin',
-}
-
 /** Management-submitted properties */
 export const MOCK_PROPERTIES = [
   {

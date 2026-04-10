@@ -78,7 +78,7 @@ export default function PortalSelect() {
             </Link>
             <Link
               to="/admin"
-              className="rounded-xl border border-slate-300 bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-slate-800"
+              className="rounded-xl bg-[linear-gradient(180deg,#2f76ff_0%,#2450eb_100%)] px-4 py-2.5 text-sm font-semibold text-white shadow-[0_8px_20px_rgba(37,99,235,0.2)] transition-opacity hover:opacity-90"
             >
               Axis Admin
             </Link>

@@ -19,7 +19,7 @@ export default function PortalShell({
       {/* Sidebar — desktop */}
       <aside className="hidden w-56 shrink-0 flex-col border-r border-slate-200 bg-white lg:flex">
         <div className="border-b border-slate-100 px-5 py-5">
-          <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-[#2563eb]">{brandTitle}</div>
+          <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-[#2f76ff]">{brandTitle}</div>
           <div className="mt-1 text-sm font-black text-slate-900">{brandSubtitle}</div>
         </div>
         <nav className="flex-1 space-y-0.5 p-3">
@@ -30,7 +30,7 @@ export default function PortalShell({
               onClick={() => onNavigate(item.id)}
               className={`flex w-full items-center rounded-xl px-3 py-2.5 text-left text-sm font-semibold transition ${
                 activeId === item.id
-                  ? 'bg-[#2563eb] text-white shadow-sm'
+                  ? 'bg-[linear-gradient(180deg,#2f76ff_0%,#2450eb_100%)] text-white shadow-[0_4px_16px_rgba(37,99,235,0.35)]'
                   : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
               }`}
             >
@@ -56,7 +56,7 @@ export default function PortalShell({
         <header className="sticky top-0 z-20 border-b border-slate-200 bg-white/95 backdrop-blur lg:hidden">
           <div className="flex items-center justify-between px-4 py-3">
             <div>
-              <div className="text-[10px] font-bold uppercase tracking-wider text-[#2563eb]">{brandTitle}</div>
+              <div className="text-[10px] font-bold uppercase tracking-wider text-[#2f76ff]">{brandTitle}</div>
               <div className="text-sm font-black">{brandSubtitle}</div>
             </div>
             <button
@@ -73,8 +73,10 @@ export default function PortalShell({
                 key={item.id}
                 type="button"
                 onClick={() => onNavigate(item.id)}
-                className={`shrink-0 rounded-full px-3 py-1.5 text-xs font-semibold ${
-                  activeId === item.id ? 'bg-[#2563eb] text-white' : 'bg-slate-100 text-slate-600'
+                className={`shrink-0 rounded-full px-3 py-1.5 text-xs font-semibold transition ${
+                  activeId === item.id
+                    ? 'bg-[linear-gradient(180deg,#2f76ff_0%,#2450eb_100%)] text-white shadow-[0_2px_10px_rgba(37,99,235,0.35)]'
+                    : 'bg-slate-100 text-slate-600'
                 }`}
               >
                 {item.label}

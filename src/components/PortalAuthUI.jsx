@@ -84,7 +84,7 @@ export function PortalPrimaryButton({ children, className = '', ...props }) {
     <button
       {...props}
       className={cx(
-        'w-full rounded-full bg-slate-900 py-4 text-base font-semibold text-white transition hover:bg-slate-800 disabled:opacity-50',
+        'w-full rounded-full bg-[linear-gradient(180deg,#2f76ff_0%,#2450eb_100%)] py-4 text-base font-semibold text-white shadow-[0_8px_20px_rgba(37,99,235,0.25)] transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50',
         className
       )}
     >

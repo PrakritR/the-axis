@@ -1611,7 +1611,9 @@ function Dashboard({ resident, onResidentUpdated, onSignOut }) {
             <button key={id} type="button" onClick={() => setTab(id)}
               className={classNames(
                 'rounded-[18px] px-4 py-3 text-sm font-semibold transition',
-                tab === id ? 'bg-slate-900 text-white' : 'text-slate-500 hover:bg-slate-50 hover:text-slate-900'
+                tab === id
+                  ? 'bg-[linear-gradient(180deg,#2f76ff_0%,#2450eb_100%)] text-white shadow-[0_4px_16px_rgba(37,99,235,0.3)]'
+                  : 'text-slate-500 hover:bg-slate-50 hover:text-slate-900'
               )}>
               <span className="inline-flex items-center gap-2">
                 <span>{label}</span>

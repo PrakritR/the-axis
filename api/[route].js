@@ -7,6 +7,7 @@
  */
 import formsGateway from '../server/forms-gateway.js'
 import portalGateway from '../server/portal-gateway.js'
+import adminPortalAuth from '../server/handlers/admin-portal-auth.js'
 import demo from '../server/handlers/demo.js'
 import generateLeaseDraft from '../server/handlers/generate-lease-draft.js'
 import managerAuth from '../server/handlers/manager-auth.js'
@@ -23,6 +24,7 @@ import stripe from '../server/handlers/stripe.js'
 import tour from '../server/handlers/tour.js'
 
 const routes = {
+  'admin-portal-auth': adminPortalAuth,
   forms: formsGateway,
   portal: portalGateway,
   stripe,

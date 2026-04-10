@@ -4,6 +4,14 @@ import {
   HOUSING_MESSAGE_CATEGORIES,
   normalizeHousingMessageCategoryId,
 } from '../lib/housingSite'
+import {
+  HOUSING_PUBLIC_ADMIN_GENERAL_THREAD,
+  housingPublicAdminPropertyThread,
+  PORTAL_INBOX_CHANNEL_INTERNAL,
+  portalInboxAirtableConfigured,
+  sendMessage,
+  siteManagerThreadKey,
+} from '../lib/airtable'
 
 const AIRTABLE_BASE_ID = import.meta.env.VITE_AIRTABLE_BASE_ID || 'appNBX2inqfJMyqYV'
 const AIRTABLE_TOKEN = import.meta.env.VITE_AIRTABLE_TOKEN
@@ -13,10 +21,34 @@ export const inputCls =
 export const selectCls = `${inputCls} appearance-none cursor-pointer`
 
 export const DEFAULT_PROPERTIES = [
-  { id: '4709a', name: '4709A 8th Ave', address: '4709A 8th Ave NE, Seattle, WA', rooms: ['Room 1', 'Room 2', 'Room 3', 'Room 4', 'Room 5', 'Room 6', 'Room 7', 'Room 8', 'Room 9', 'Room 10'] },
-  { id: '4709b', name: '4709B 8th Ave', address: '4709B 8th Ave NE, Seattle, WA', rooms: ['Room 1', 'Room 2', 'Room 3', 'Room 4', 'Room 5', 'Room 6', 'Room 7', 'Room 8', 'Room 9'] },
-  { id: '5259', name: '5259 Brooklyn Ave NE', address: '5259 Brooklyn Ave NE, Seattle, WA', rooms: ['Room 1', 'Room 2', 'Room 3', 'Room 4', 'Room 5', 'Room 6', 'Room 7', 'Room 8', 'Room 9'] },
+  { id: '4709a', name: '4709A 8th Ave', address: '4709A 8th Ave NE, Seattle, WA', managerEmail: '', rooms: ['Room 1', 'Room 2', 'Room 3', 'Room 4', 'Room 5', 'Room 6', 'Room 7', 'Room 8', 'Room 9', 'Room 10'] },
+  { id: '4709b', name: '4709B 8th Ave', address: '4709B 8th Ave NE, Seattle, WA', managerEmail: '', rooms: ['Room 1', 'Room 2', 'Room 3', 'Room 4', 'Room 5', 'Room 6', 'Room 7', 'Room 8', 'Room 9'] },
+  { id: '5259', name: '5259 Brooklyn Ave NE', address: '5259 Brooklyn Ave NE, Seattle, WA', managerEmail: '', rooms: ['Room 1', 'Room 2', 'Room 3', 'Room 4', 'Room 5', 'Room 6', 'Room 7', 'Room 8', 'Room 9'] },
 ]
+
+function looksLikeEmail(s) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(s || '').trim())
+}
+
+/** Routes public housing messages: admin inbox vs site-manager thread (Manager portal “Axis HQ”). */
+function housingMessageThreadKey(selectedProperty) {
+  if (!selectedProperty) {
+    return { threadKey: HOUSING_PUBLIC_ADMIN_GENERAL_THREAD, routeLine: 'Portal route: Admin · general inquiry (no property selected)' }
+  }
+  const mgrEmail = [selectedProperty.managerEmail, selectedProperty.manager].find((x) => looksLikeEmail(x))
+  if (mgrEmail) {
+    const e = String(mgrEmail).trim().toLowerCase()
+    return {
+      threadKey: siteManagerThreadKey(e),
+      routeLine: `Portal route: Site manager inbox (${e})`,
+    }
+  }
+  return {
+    threadKey: housingPublicAdminPropertyThread(selectedProperty.id),
+    routeLine:
+      'Portal route: Admin · property inquiry (add a “Site Manager Email” field or Notes line “Site Manager Email: …” on this property to route to the manager portal)',
+  }
+}
 
 export function formatPhone(raw) {
   const digits = raw.replace(/\D/g, '').slice(0, 10)
@@ -227,6 +259,7 @@ export function HousingMessageForm({ variant = 'marketing', prefill = null, form
         setProperties(
           next.map((p) => ({
             ...p,
+            managerEmail: p.managerEmail != null ? String(p.managerEmail) : '',
             rooms: p.rooms || DEFAULT_PROPERTIES.find((f) => f.id === p.id)?.rooms || [],
           }))
         )
@@ -280,7 +313,9 @@ export function HousingMessageForm({ variant = 'marketing', prefill = null, form
       return
     }
     const catLabel = HOUSING_MESSAGE_CATEGORIES.find((c) => c.id === category)?.label || category
-    let header = `Category: ${catLabel}\n\n`
+    const { threadKey, routeLine } = housingMessageThreadKey(selectedProperty)
+    const contactBlock = `From: ${form.name.trim() || '—'}\nEmail: ${form.email}\nPhone: ${form.phone || '—'}\n\n`
+    let header = `${routeLine}\n\nCategory: ${catLabel}\n\n`
     if (variant === 'resident') {
       header += 'Source: Resident portal\n\n'
     }
@@ -292,7 +327,22 @@ export function HousingMessageForm({ variant = 'marketing', prefill = null, form
       if (room) header += `Room: ${room}\n`
       header += '\n'
     }
+    const messageSummary = contactBlock + header + form.message
     try {
+      if (portalInboxAirtableConfigured()) {
+        try {
+          await sendMessage({
+            senderEmail: form.email,
+            message: messageSummary,
+            isAdmin: false,
+            threadKey,
+            channel: PORTAL_INBOX_CHANNEL_INTERNAL,
+          })
+        } catch (portalErr) {
+          console.warn('[HousingMessageForm] Messages table write failed (inquiry may still be saved):', portalErr)
+        }
+      }
+
       const res = await fetch(`https://api.airtable.com/v0/${AIRTABLE_BASE_ID}/Inquiries`, {
         method: 'POST',
         headers: { Authorization: `Bearer ${AIRTABLE_TOKEN}`, 'Content-Type': 'application/json' },
@@ -302,7 +352,7 @@ export function HousingMessageForm({ variant = 'marketing', prefill = null, form
             Email: form.email,
             'Phone Number': form.phone,
             'Inquiry Type': 'Housing',
-            'Message Summary': header + form.message,
+            'Message Summary': messageSummary,
           },
           typecast: true,
         }),
@@ -496,7 +546,7 @@ export function HousingMessageForm({ variant = 'marketing', prefill = null, form
       <button
         type="submit"
         disabled={submitting}
-        className="w-full rounded-full bg-slate-900 py-3.5 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
+        className="w-full rounded-full bg-[linear-gradient(180deg,#2f76ff_0%,#2450eb_100%)] py-3.5 text-sm font-semibold text-white shadow-[0_8px_20px_rgba(37,99,235,0.25)] transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
       >
         {submitting ? 'Sending…' : 'Send message'}
       </button>

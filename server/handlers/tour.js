@@ -22,12 +22,18 @@ function extractNoteValue(notes, label) {
 function mapProperty(record) {
   const fields = record.fields || {}
   const rooms = FALLBACK_PROPERTIES.find((p) => p.name === fields.Name || p.name === fields.Property)?.rooms || []
+  const managerEmailRaw =
+    (typeof fields['Site Manager Email'] === 'string' && fields['Site Manager Email'].trim()) ||
+    extractNoteValue(fields.Notes, 'Site Manager Email') ||
+    ''
   return {
     id: record.id,
     name: fields.Name || fields.Property || 'Untitled house',
     address: fields.Address || '',
     rooms,
     manager: extractNoteValue(fields.Notes, 'Tour Manager'),
+    /** Used to route public “Message Axis” form to the correct Manager portal thread (must be an email). */
+    managerEmail: managerEmailRaw.trim(),
     availability: extractNoteValue(fields.Notes, 'Tour Availability'),
     notes: extractNoteValue(fields.Notes, 'Tour Notes'),
   }
@@ -41,7 +47,9 @@ export default async function handler(req, res) {
 
   // ── GET: return properties ────────────────────────────────────────────────
   if (req.method === 'GET') {
-    const fallback = { properties: FALLBACK_PROPERTIES.map((p) => ({ ...p, manager: '', availability: '', notes: '' })) }
+    const fallback = {
+      properties: FALLBACK_PROPERTIES.map((p) => ({ ...p, manager: '', managerEmail: '', availability: '', notes: '' })),
+    }
     if (!AIRTABLE_TOKEN) return res.status(200).json(fallback)
     try {
       const r = await fetch(`https://api.airtable.com/v0/${AIRTABLE_BASE_ID}/Properties?sort%5B0%5D%5Bfield%5D=Name`, {

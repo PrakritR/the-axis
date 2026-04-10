@@ -186,7 +186,9 @@ export default async function handler(req, res) {
         managerId: derivedManagerId,
         name: manager.Name || '',
         email: manager.Email || '',
+        phone: String(manager['Phone Number'] || '').trim(),
         planType: manager.tier || '',
+        role: 'Manager',
       },
     })
   } catch (err) {

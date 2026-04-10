@@ -4,6 +4,17 @@ const API_KEY = import.meta.env.VITE_AIRTABLE_TOKEN
 const BASE_URL = `https://api.airtable.com/v0/${BASE_ID}`
 const APPS_BASE_URL = `https://api.airtable.com/v0/${APPS_BASE_ID}`
 
+/** Portal inbox (Messages table): add these fields in Airtable + optional form URL — see .env.example */
+export const PORTAL_INBOX_CHANNEL_INTERNAL = 'internal_mgmt_admin'
+const MESSAGE_THREAD_KEY_FIELD =
+  import.meta.env.VITE_AIRTABLE_MESSAGE_THREAD_KEY_FIELD !== undefined
+    ? import.meta.env.VITE_AIRTABLE_MESSAGE_THREAD_KEY_FIELD
+    : 'Thread Key'
+const MESSAGE_CHANNEL_FIELD =
+  import.meta.env.VITE_AIRTABLE_MESSAGE_CHANNEL_FIELD !== undefined
+    ? import.meta.env.VITE_AIRTABLE_MESSAGE_CHANNEL_FIELD
+    : 'Channel'
+
 const TABLES = {
   workOrders: 'Work Orders',
   messages: 'Messages',
@@ -33,9 +44,17 @@ function tableUrl(table) {
 function buildUrl(table, params = {}) {
   const url = new URL(tableUrl(table))
   Object.entries(params).forEach(([key, value]) => {
-    if (value !== undefined && value !== null && value !== '') {
-      url.searchParams.set(key, value)
+    if (value === undefined || value === null || value === '') return
+    if (key === 'sort' && Array.isArray(value)) {
+      value.forEach((spec, i) => {
+        if (spec && spec.field) {
+          url.searchParams.set(`sort[${i}][field]`, String(spec.field))
+          url.searchParams.set(`sort[${i}][direction]`, spec.direction === 'asc' ? 'asc' : 'desc')
+        }
+      })
+      return
     }
+    url.searchParams.set(key, String(value))
   })
   return url.toString()
 }
@@ -283,6 +302,112 @@ export async function createWorkOrder({
   return record
 }
 
+function messageFieldNameConfigured(name) {
+  return typeof name === 'string' && name.trim().length > 0
+}
+
+/** Stable thread id for Management ↔ Admin (per partner email). */
+export function managementAdminThreadKey(managementEmail) {
+  const e = String(managementEmail || 'unknown')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9@._+-]+/g, '_')
+  return `internal:mgmt-admin:${e}`
+}
+
+/** Stable thread id for on-site managers ↔ Admin (per manager email). */
+export function siteManagerThreadKey(managerEmail) {
+  const e = String(managerEmail || 'unknown')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9@._+-]+/g, '_')
+  return `internal:site-manager:${e}`
+}
+
+/** Public Contact / housing message with no specific property — visible in Admin portal inbox only. */
+export const HOUSING_PUBLIC_ADMIN_GENERAL_THREAD = 'internal:admin-public:general'
+
+/**
+ * Property selected on the public form but Properties has no site-manager email — Admin triages.
+ * @param {string} propertyRecordId — Airtable Properties record id (or stable id from tour API)
+ */
+export function housingPublicAdminPropertyThread(propertyRecordId) {
+  const id = String(propertyRecordId || 'unknown').replace(/[^a-zA-Z0-9]/g, '')
+  return `internal:admin-public:property:${id || 'unknown'}`
+}
+
+/** Build an Airtable Form URL with prefill_* params (field names must match the form). */
+export function buildAirtableFormPrefillUrl(baseUrl, prefill = {}) {
+  if (!baseUrl || typeof baseUrl !== 'string') return ''
+  try {
+    const u = new URL(baseUrl.trim())
+    Object.entries(prefill).forEach(([k, v]) => {
+      if (v == null || v === '') return
+      u.searchParams.set(`prefill_${k}`, String(v))
+    })
+    return u.toString()
+  } catch {
+    return ''
+  }
+}
+
+async function listMessagesByFormulaPaginated(formula) {
+  const allRecords = []
+  let offset = null
+  do {
+    const params = { filterByFormula: formula }
+    if (offset) params.offset = offset
+    const data = await request(buildUrl(TABLES.messages, params))
+    ;(data.records || []).forEach((r) => allRecords.push(mapRecord(r)))
+    offset = data.offset || null
+  } while (offset)
+  return allRecords.sort(
+    (a, b) =>
+      new Date(a.Timestamp || a.created_at || 0) - new Date(b.Timestamp || b.created_at || 0),
+  )
+}
+
+export async function getMessagesByThreadKey(threadKey) {
+  if (!messageFieldNameConfigured(MESSAGE_THREAD_KEY_FIELD)) {
+    throw new Error('Configure VITE_AIRTABLE_MESSAGE_THREAD_KEY_FIELD and add that field on the Messages table.')
+  }
+  const tk = String(threadKey || '').trim()
+  if (!tk) return []
+  const f = `{${MESSAGE_THREAD_KEY_FIELD}}`
+  const formula = `${f} = "${escapeFormulaValue(tk)}"`
+  return listMessagesByFormulaPaginated(formula)
+}
+
+/** All internal portal threads (management & site managers) for the Admin inbox. */
+export async function getAllPortalInternalThreadMessages() {
+  if (!messageFieldNameConfigured(MESSAGE_THREAD_KEY_FIELD)) {
+    throw new Error('Add a "Thread Key" text field to Messages (or set VITE_AIRTABLE_MESSAGE_THREAD_KEY_FIELD).')
+  }
+  const f = `{${MESSAGE_THREAD_KEY_FIELD}}`
+  const formula = `OR(FIND("internal:mgmt-admin", ${f} & "") > 0, FIND("internal:site-manager", ${f} & "") > 0, FIND("internal:admin-public", ${f} & "") > 0)`
+  return listMessagesByFormulaPaginated(formula)
+}
+
+export function portalInboxAirtableConfigured() {
+  return airtableReady && messageFieldNameConfigured(MESSAGE_THREAD_KEY_FIELD)
+}
+
+/** True when this Messages row belongs to Management/Admin or Site Manager threads (not work-order chat). */
+export function isInternalPortalThreadMessage(record) {
+  if (!record || !messageFieldNameConfigured(MESSAGE_THREAD_KEY_FIELD)) return false
+  const tk = String(record[MESSAGE_THREAD_KEY_FIELD] || '')
+  return (
+    tk.includes('internal:mgmt-admin') ||
+    tk.includes('internal:site-manager') ||
+    tk.includes('internal:admin-public')
+  )
+}
+
+export function portalInboxThreadKeyFromRecord(record) {
+  if (!messageFieldNameConfigured(MESSAGE_THREAD_KEY_FIELD)) return ''
+  return String(record[MESSAGE_THREAD_KEY_FIELD] || '').trim()
+}
+
 export async function getMessages(workOrderId) {
   const formula = `FIND("${escapeFormulaValue(workOrderId)}", ARRAYJOIN({Work Order})) > 0`
   const data = await request(buildUrl(TABLES.messages, {
@@ -294,16 +419,32 @@ export async function getMessages(workOrderId) {
     .sort((a, b) => new Date(a.Timestamp || a.created_at) - new Date(b.Timestamp || b.created_at))
 }
 
-export async function sendMessage({ workOrderId, senderEmail, message, isAdmin = false }) {
+export async function sendMessage({ workOrderId, senderEmail, message, isAdmin = false, threadKey, channel }) {
+  const wo = workOrderId ? String(workOrderId).trim() : ''
+  const tk = threadKey ? String(threadKey).trim() : ''
+  if (!wo && !(tk && messageFieldNameConfigured(MESSAGE_THREAD_KEY_FIELD))) {
+    throw new Error('Link a work order or set portal Thread Key fields on Messages for internal threads.')
+  }
+
+  const fields = {
+    Message: message,
+    'Sender Email': senderEmail,
+    'Is Admin': isAdmin,
+  }
+  if (wo) {
+    fields['Work Order'] = [wo]
+  }
+  if (tk && messageFieldNameConfigured(MESSAGE_THREAD_KEY_FIELD)) {
+    fields[MESSAGE_THREAD_KEY_FIELD] = tk
+  }
+  if (channel && messageFieldNameConfigured(MESSAGE_CHANNEL_FIELD)) {
+    fields[MESSAGE_CHANNEL_FIELD] = channel
+  }
+
   const data = await request(tableUrl(TABLES.messages), {
     method: 'POST',
     body: JSON.stringify({
-      fields: {
-        Message: message,
-        'Work Order': [workOrderId],
-        'Sender Email': senderEmail,
-        'Is Admin': isAdmin,
-      },
+      fields,
       typecast: true,
     }),
   })
@@ -321,6 +462,34 @@ export async function getPaymentsForResident(resident) {
     sort: [{ field: 'Due Date', direction: 'desc' }],
   }))
   return (data.records || []).map(mapRecord)
+}
+
+/** All payment rows (paginated) — manager portal rent overview. */
+export async function getAllPaymentsRecords() {
+  const allRecords = []
+  let offset = null
+  do {
+    const params = {}
+    if (offset) params.offset = offset
+    const data = await request(buildUrl(TABLES.payments, params))
+    ;(data.records || []).forEach((r) => allRecords.push(mapRecord(r)))
+    offset = data.offset || null
+  } while (offset)
+  return allRecords
+}
+
+export async function updatePaymentRecord(recordId, fields) {
+  const id = String(recordId || '').trim()
+  if (!/^rec[a-zA-Z0-9]{14,}$/.test(id)) {
+    throw new Error('Invalid payment record ID.')
+  }
+  const cleaned = Object.fromEntries(Object.entries(fields).filter(([, v]) => v !== undefined))
+  if (Object.keys(cleaned).length === 0) throw new Error('No fields to update.')
+  const data = await request(`${tableUrl(TABLES.payments)}/${id}`, {
+    method: 'PATCH',
+    body: JSON.stringify({ fields: cleaned, typecast: true }),
+  })
+  return mapRecord(data)
 }
 
 export async function getPropertyByName(propertyName) {
@@ -531,14 +700,16 @@ export async function getAllApplications() {
   let offset = null
   do {
     const url = new URL(`${APPS_BASE_URL}/Applications`)
-    url.searchParams.set('sort[0][field]', 'Created')
-    url.searchParams.set('sort[0][direction]', 'desc')
     if (offset) url.searchParams.set('offset', offset)
     const data = await request(url.toString())
     ;(data.records || []).forEach((r) => allRecords.push(mapRecord(r)))
     offset = data.offset || null
   } while (offset)
-  return allRecords
+  return allRecords.sort((a, b) => {
+    const ta = new Date(a.created_at || 0).getTime()
+    const tb = new Date(b.created_at || 0).getTime()
+    return tb - ta
+  })
 }
 
 export async function getFullApplicationById(recordId) {
@@ -593,10 +764,13 @@ export async function updateLeaseRecord(recordId, fields) {
 // Manager — announcements management
 // ---------------------------------------------------------------------------
 export async function getAllAnnouncementsAdmin() {
-  const data = await request(buildUrl(TABLES.announcements, {
-    sort: [{ field: 'Created At', direction: 'desc' }],
-  }))
-  return (data.records || []).map(mapRecord)
+  const data = await request(buildUrl(TABLES.announcements, {}))
+  const rows = (data.records || []).map(mapRecord)
+  return rows.sort((a, b) => {
+    const ta = new Date(a.created_at || a['Created At'] || 0).getTime()
+    const tb = new Date(b.created_at || b['Created At'] || 0).getTime()
+    return tb - ta
+  })
 }
 
 export async function createAnnouncement(fields) {

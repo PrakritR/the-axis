@@ -1,8 +1,9 @@
-import React, { useMemo, useState } from 'react'
+import React, { useEffect, useMemo, useState } from 'react'
 import toast from 'react-hot-toast'
+import PortalInternalInbox from '../components/PortalInternalInbox'
 import PortalShell, { StatCard, StatusPill, DataTable } from './PortalShell'
 import {
-  MOCK_ADMIN_USER,
+  MOCK_MANAGEMENT_USER,
   MOCK_PROPERTIES,
   MOCK_APPLICATIONS,
   MOCK_LEASES,
@@ -12,10 +13,18 @@ import {
   LEAD_STATUS_LABEL,
   LEASE_PIPELINE_LABEL,
 } from './mock'
+import {
+  AXIS_OWNER_SIMULATE_MANAGEMENT_KEY,
+  approveAdminRequest,
+  denyAdminRequest,
+  listPendingAdminRequests,
+  submitAdminAccessRequest,
+  tryApprovedStaffLogin,
+} from '../lib/adminPortalLocalAuth'
 
 export const AXIS_ADMIN_SESSION_KEY = 'axis_admin_session'
 
-const NAV = [
+const NAV_BASE = [
   { id: 'dashboard', label: 'Dashboard' },
   { id: 'approvals', label: 'Property approvals' },
   { id: 'properties', label: 'All properties' },
@@ -24,8 +33,12 @@ const NAV = [
   { id: 'applications', label: 'Applications' },
   { id: 'leases', label: 'Lease approval' },
   { id: 'messages', label: 'Messages' },
+  { id: 'access', label: 'Admin access' },
   { id: 'settings', label: 'Settings' },
 ]
+
+const loginInputCls =
+  'mt-1 w-full rounded-xl border border-slate-600 bg-slate-900/40 px-3 py-2.5 text-sm text-white placeholder:text-slate-500 outline-none focus:border-sky-400 focus:ring-1 focus:ring-sky-500/40'
 
 function propertyTone(st) {
   if (st === 'live') return 'green'
@@ -42,6 +55,188 @@ function leadTone(st) {
   return 'blue'
 }
 
+function AdminLoginView({ onAuthenticated }) {
+  const [mode, setMode] = useState('signin')
+  const [email, setEmail] = useState('')
+  const [password, setPassword] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [err, setErr] = useState('')
+  const [reqName, setReqName] = useState('')
+  const [reqEmail, setReqEmail] = useState('')
+  const [reqPassword, setReqPassword] = useState('')
+  const [reqDone, setReqDone] = useState(false)
+
+  async function handleSignIn(e) {
+    e.preventDefault()
+    setErr('')
+    setBusy(true)
+    try {
+      try {
+        const r = await fetch('/api/admin-portal-auth', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'owner-login', email, password }),
+        })
+        const data = await r.json().catch(() => ({}))
+        if (r.ok && data.ok && data.user?.role === 'owner') {
+          onAuthenticated(data.user)
+          toast.success('Signed in as site owner')
+          return
+        }
+      } catch {
+        /* try staff below */
+      }
+
+      const staff = await tryApprovedStaffLogin(email, password)
+      if (staff) {
+        onAuthenticated(staff)
+        toast.success('Signed in')
+        return
+      }
+
+      setErr('Invalid email or password. Site owner sign-in requires SITE_OWNER_EMAIL and SITE_OWNER_PASSWORD on the server. Staff accounts must be approved first (same browser storage until Airtable backs this).')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function handleRequestAccess(e) {
+    e.preventDefault()
+    setErr('')
+    setBusy(true)
+    try {
+      await submitAdminAccessRequest({ name: reqName, email: reqEmail, password: reqPassword })
+      setReqDone(true)
+      toast.success('Request submitted for owner review')
+    } catch (ex) {
+      setErr(ex?.message || 'Could not submit request')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <div className="flex min-h-screen flex-col items-center justify-center bg-slate-900 px-6 py-12">
+      <div className="w-full max-w-md rounded-[28px] border border-slate-700 bg-slate-800 p-8 shadow-xl">
+        <div className="text-[11px] font-bold uppercase tracking-[0.2em] text-sky-400">Axis Admin</div>
+        <h1 className="mt-2 text-2xl font-black text-white">Internal portal</h1>
+        <p className="mt-2 text-sm text-slate-400">
+          Sign in at this URL only. Site owner uses server-configured credentials; other admins are approved by the owner.
+        </p>
+
+        <div className="mt-6 flex gap-1 rounded-2xl border border-slate-600 bg-slate-900/50 p-1">
+          <button
+            type="button"
+            onClick={() => {
+              setMode('signin')
+              setErr('')
+            }}
+            className={`flex-1 rounded-xl py-2.5 text-sm font-semibold transition ${
+              mode === 'signin' ? 'bg-sky-500 text-white' : 'text-slate-400 hover:text-white'
+            }`}
+          >
+            Sign in
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setMode('request')
+              setErr('')
+            }}
+            className={`flex-1 rounded-xl py-2.5 text-sm font-semibold transition ${
+              mode === 'request' ? 'bg-sky-500 text-white' : 'text-slate-400 hover:text-white'
+            }`}
+          >
+            Request access
+          </button>
+        </div>
+
+        {mode === 'signin' ? (
+          <form onSubmit={handleSignIn} className="mt-6 space-y-4">
+            <label className="block text-sm font-semibold text-slate-300">
+              Email
+              <input
+                type="email"
+                required
+                autoComplete="username"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                className={loginInputCls}
+              />
+            </label>
+            <label className="block text-sm font-semibold text-slate-300">
+              Password
+              <input
+                type="password"
+                required
+                autoComplete="current-password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                className={loginInputCls}
+              />
+            </label>
+            {err ? <p className="text-sm text-red-300">{err}</p> : null}
+            <button
+              type="submit"
+              disabled={busy}
+              className="w-full rounded-2xl bg-[linear-gradient(180deg,#2f76ff_0%,#2450eb_100%)] py-3 text-sm font-semibold text-white shadow-[0_8px_20px_rgba(37,99,235,0.25)] transition-opacity hover:opacity-90 disabled:opacity-50"
+            >
+              {busy ? 'Signing in…' : 'Sign in'}
+            </button>
+          </form>
+        ) : reqDone ? (
+          <div className="mt-6 rounded-2xl border border-emerald-700/50 bg-emerald-950/40 px-4 py-4 text-sm text-emerald-100">
+            Your request is pending. The site owner can approve or deny it under <strong>Admin access</strong> after signing in.
+          </div>
+        ) : (
+          <form onSubmit={handleRequestAccess} className="mt-6 space-y-4">
+            <label className="block text-sm font-semibold text-slate-300">
+              Full name
+              <input
+                required
+                value={reqName}
+                onChange={(e) => setReqName(e.target.value)}
+                className={loginInputCls}
+              />
+            </label>
+            <label className="block text-sm font-semibold text-slate-300">
+              Work email
+              <input
+                type="email"
+                required
+                value={reqEmail}
+                onChange={(e) => setReqEmail(e.target.value)}
+                className={loginInputCls}
+              />
+            </label>
+            <label className="block text-sm font-semibold text-slate-300">
+              Choose password
+              <input
+                type="password"
+                required
+                minLength={8}
+                autoComplete="new-password"
+                value={reqPassword}
+                onChange={(e) => setReqPassword(e.target.value)}
+                className={loginInputCls}
+              />
+            </label>
+            <p className="text-xs text-slate-500">You will use this email and password at the same /admin sign-in after approval.</p>
+            {err ? <p className="text-sm text-red-300">{err}</p> : null}
+            <button
+              type="submit"
+              disabled={busy}
+              className="w-full rounded-2xl bg-[linear-gradient(180deg,#2f76ff_0%,#2450eb_100%)] py-3 text-sm font-semibold text-white shadow-[0_8px_20px_rgba(37,99,235,0.25)] transition-opacity hover:opacity-90 disabled:opacity-50"
+            >
+              {busy ? 'Submitting…' : 'Submit request'}
+            </button>
+          </form>
+        )}
+      </div>
+    </div>
+  )
+}
+
 export default function AdminPortal() {
   const [session, setSession] = useState(() => {
     try {
@@ -56,8 +251,9 @@ export default function AdminPortal() {
   const [leads, setLeads] = useState(() => [...MOCK_LEADS])
   const [accounts, setAccounts] = useState(() => [...MOCK_MANAGEMENT_ACCOUNTS])
   const [selectedApprovalId, setSelectedApprovalId] = useState(null)
+  const [accessTick, setAccessTick] = useState(0)
 
-  const user = session || MOCK_ADMIN_USER
+  const user = session
 
   function persistSession(u) {
     setSession(u)
@@ -69,6 +265,20 @@ export default function AdminPortal() {
     setSession(null)
   }
 
+  useEffect(() => {
+    if (session && session.role !== 'owner' && tab === 'access') setTab('dashboard')
+  }, [session, tab])
+
+  const navItems = useMemo(() => {
+    if (!session || session.role === 'owner') return NAV_BASE
+    return NAV_BASE.filter((n) => n.id !== 'access')
+  }, [session])
+
+  const pendingAdminRows = useMemo(() => {
+    if (tab !== 'access') return []
+    return listPendingAdminRequests().map((p) => ({ key: p.id, data: p }))
+  }, [tab, accessTick])
+
   const pendingApprovals = useMemo(() => properties.filter((p) => p.status === 'pending' || p.status === 'changes_requested'), [properties])
   const liveCount = useMemo(() => properties.filter((p) => p.status === 'live').length, [properties])
   const newLeads = useMemo(() => leads.filter((l) => l.status === 'new').length, [leads])
@@ -79,22 +289,7 @@ export default function AdminPortal() {
   const ownerLabel = (ownerId) => accounts.find((a) => a.id === ownerId)?.businessName || accounts.find((a) => a.id === ownerId)?.name || ownerId
 
   if (!session) {
-    return (
-      <div className="flex min-h-screen flex-col items-center justify-center bg-slate-900 px-6">
-        <div className="w-full max-w-md rounded-[28px] border border-slate-700 bg-slate-800 p-8 shadow-xl">
-          <div className="text-[11px] font-bold uppercase tracking-[0.2em] text-sky-400">Axis Admin</div>
-          <h1 className="mt-2 text-2xl font-black text-white">Internal portal</h1>
-          <p className="mt-2 text-sm text-slate-400">Full platform access. Demo sign-in only.</p>
-          <button
-            type="button"
-            onClick={() => persistSession(MOCK_ADMIN_USER)}
-            className="mt-6 w-full rounded-2xl bg-sky-500 py-3 text-sm font-semibold text-white hover:bg-sky-400"
-          >
-            Continue as demo admin
-          </button>
-        </div>
-      </div>
-    )
+    return <AdminLoginView onAuthenticated={persistSession} />
   }
 
   const approval = properties.find((p) => p.id === selectedApprovalId)
@@ -103,16 +298,59 @@ export default function AdminPortal() {
     <PortalShell
       brandTitle="Axis internal"
       brandSubtitle="Admin portal"
-      navItems={NAV}
+      navItems={navItems}
       activeId={tab}
       onNavigate={setTab}
       userLabel={user.name}
-      userMeta={user.role || 'Admin'}
+      userMeta={
+        user.role === 'owner' ? 'Site owner' : user.role === 'admin' ? 'Staff admin' : user.role || 'Admin'
+      }
       onSignOut={handleSignOut}
     >
       {tab === 'dashboard' && (
         <div className="space-y-8">
           <h1 className="text-2xl font-black text-slate-900">Admin dashboard</h1>
+          {user.role === 'owner' ? (
+            <div className="rounded-[24px] border border-[#2563eb]/25 bg-[linear-gradient(135deg,#eff6ff_0%,#ffffff_100%)] p-5 shadow-sm">
+              <h2 className="text-sm font-black text-slate-900">Jump to other portals</h2>
+              <p className="mt-1 text-xs text-slate-600">
+                Management opens with the mock partner account in a new tab. Resident and manager links go to their normal entry points (real sign-in).
+              </p>
+              <div className="mt-4 flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    try {
+                      localStorage.setItem(AXIS_OWNER_SIMULATE_MANAGEMENT_KEY, JSON.stringify(MOCK_MANAGEMENT_USER))
+                      window.open('/management', '_blank', 'noopener,noreferrer')
+                      toast.success('Opening Management portal…')
+                    } catch {
+                      toast.error('Could not open portal')
+                    }
+                  }}
+                  className="rounded-xl bg-[linear-gradient(180deg,#2f76ff_0%,#2450eb_100%)] px-4 py-2 text-xs font-semibold text-white shadow-sm transition-opacity hover:opacity-90"
+                >
+                  Management (demo)
+                </button>
+                <a
+                  href="/portal"
+                  target="_blank"
+                  rel="noreferrer"
+                  className="inline-flex items-center rounded-xl border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-50"
+                >
+                  Resident hub
+                </a>
+                <a
+                  href="/manager"
+                  target="_blank"
+                  rel="noreferrer"
+                  className="inline-flex items-center rounded-xl border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-50"
+                >
+                  Manager portal
+                </a>
+              </div>
+            </div>
+          ) : null}
           <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
             <StatCard label="Property approvals queue" value={pendingApprovals.length} onClick={() => setTab('approvals')} />
             <StatCard label="New management leads" value={newLeads} onClick={() => setTab('leads')} />
@@ -316,16 +554,75 @@ export default function AdminPortal() {
 
       {tab === 'messages' && (
         <div className="space-y-4">
-          <h1 className="text-2xl font-black">Messages</h1>
-          <p className="text-sm text-slate-500">Central hub for admin ↔ management and admin ↔ leads (mock). Reuse `Messages` / threaded model when connecting Airtable.</p>
-          <div className="rounded-[24px] border border-slate-200 bg-white p-6 text-sm text-slate-600">
-            <ul className="space-y-3">
-              <li className="flex justify-between border-b border-slate-100 pb-2"><span className="font-semibold">Jordan Lee</span><StatusPill tone="amber">Unread</StatusPill></li>
-              <li className="flex justify-between border-b border-slate-100 pb-2"><span className="font-semibold">Priya Shah (lead)</span><StatusPill tone="slate">Open</StatusPill></li>
-            </ul>
+          <div>
+            <h1 className="text-2xl font-black text-slate-900">Messages</h1>
+            <p className="mt-1 text-sm text-slate-500">
+              Inbox for partners and site managers. Threads use the <strong>Messages</strong> table (Thread Key + Channel); optional Airtable Form for submissions.
+            </p>
           </div>
+          <PortalInternalInbox variant="admin" userEmail={user.email} userDisplayName={user.name} />
         </div>
       )}
+
+      {tab === 'access' && user.role === 'owner' ? (
+        <div className="space-y-6">
+          <h1 className="text-2xl font-black text-slate-900">Admin access</h1>
+          <p className="max-w-2xl text-sm text-slate-600">
+            Approve or deny requests from the <strong>Request access</strong> tab on the sign-in screen. Data lives in this browser&apos;s local storage until you connect Airtable or another backend.
+          </p>
+          <DataTable
+            empty="No pending admin access requests."
+            columns={[
+              {
+                key: 'n',
+                label: 'Name',
+                render: (d) => <span className="font-semibold">{d.name}</span>,
+              },
+              { key: 'e', label: 'Email', render: (d) => d.email },
+              {
+                key: 't',
+                label: 'Requested',
+                render: (d) => new Date(d.requestedAt).toLocaleString(),
+              },
+              {
+                key: 'a',
+                label: '',
+                render: (d) => (
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      className="rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-500"
+                      onClick={async () => {
+                        try {
+                          await approveAdminRequest(d.id)
+                          setAccessTick((x) => x + 1)
+                          toast.success('Approved — they can sign in at /admin')
+                        } catch (ex) {
+                          toast.error(ex?.message || 'Approve failed')
+                        }
+                      }}
+                    >
+                      Approve
+                    </button>
+                    <button
+                      type="button"
+                      className="rounded-lg border border-red-200 bg-red-50 px-3 py-1.5 text-xs font-semibold text-red-800 hover:bg-red-100"
+                      onClick={() => {
+                        denyAdminRequest(d.id)
+                        setAccessTick((x) => x + 1)
+                        toast.success('Request denied')
+                      }}
+                    >
+                      Deny
+                    </button>
+                  </div>
+                ),
+              },
+            ]}
+            rows={pendingAdminRows}
+          />
+        </div>
+      ) : null}
 
       {tab === 'settings' && (
         <div className="max-w-2xl space-y-6">

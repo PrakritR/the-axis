@@ -1,12 +1,12 @@
-import React, { useMemo, useState } from 'react'
+import React, { useEffect, useMemo, useState } from 'react'
 import toast from 'react-hot-toast'
+import PortalInternalInbox from '../components/PortalInternalInbox'
 import PortalShell, { StatCard, StatusPill, DataTable } from './PortalShell'
 import {
   MOCK_MANAGEMENT_USER,
   MOCK_PROPERTIES,
   MOCK_APPLICATIONS,
   MOCK_LEASES,
-  MOCK_THREAD_MESSAGES,
   PROPERTY_STATUS_LABEL,
   LEASE_PIPELINE_LABEL,
   applicationsForOwner,
@@ -14,6 +14,7 @@ import {
   propertiesForOwner,
   threadsForManagement,
 } from './mock'
+import { AXIS_OWNER_SIMULATE_MANAGEMENT_KEY } from '../lib/adminPortalLocalAuth'
 
 export const AXIS_MANAGEMENT_SESSION_KEY = 'axis_management_session'
 
@@ -54,8 +55,6 @@ export default function ManagementPortal() {
   })
   const [tab, setTab] = useState('dashboard')
   const [extraProperties, setExtraProperties] = useState([])
-  const [draftMessage, setDraftMessage] = useState('')
-  const [activeThreadId, setActiveThreadId] = useState('th_1')
   const [selectedPropertyId, setSelectedPropertyId] = useState(null)
 
   const user = session || MOCK_MANAGEMENT_USER
@@ -77,6 +76,26 @@ export default function ManagementPortal() {
     sessionStorage.removeItem(AXIS_MANAGEMENT_SESSION_KEY)
     setSession(null)
   }
+
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(AXIS_OWNER_SIMULATE_MANAGEMENT_KEY)
+      if (!raw) return
+      const existing = sessionStorage.getItem(AXIS_MANAGEMENT_SESSION_KEY)
+      if (existing) {
+        localStorage.removeItem(AXIS_OWNER_SIMULATE_MANAGEMENT_KEY)
+        return
+      }
+      const u = JSON.parse(raw)
+      if (u && typeof u === 'object' && u.id) {
+        localStorage.removeItem(AXIS_OWNER_SIMULATE_MANAGEMENT_KEY)
+        persistSession(u)
+        toast.success('Simulated management session applied')
+      }
+    } catch {
+      localStorage.removeItem(AXIS_OWNER_SIMULATE_MANAGEMENT_KEY)
+    }
+  }, [])
 
   if (!session) {
     return (
@@ -262,54 +281,14 @@ export default function ManagementPortal() {
       )}
 
       {tab === 'messages' && (
-        <div className="grid gap-6 lg:grid-cols-[280px_1fr]">
-          <div className="rounded-[24px] border border-slate-200 bg-white p-4 shadow-sm">
-            <h2 className="text-sm font-black text-slate-900">Inbox</h2>
-            <ul className="mt-3 space-y-2">
-              {myThreads.map((t) => (
-                <li key={t.id}>
-                  <button
-                    type="button"
-                    onClick={() => setActiveThreadId(t.id)}
-                    className={`w-full rounded-xl border px-3 py-2 text-left text-sm ${activeThreadId === t.id ? 'border-[#2563eb] bg-[#2563eb]/5' : 'border-slate-100 bg-slate-50'}`}
-                  >
-                    <div className="font-semibold text-slate-800">{t.subject}</div>
-                    <div className="line-clamp-2 text-xs text-slate-500">{t.preview}</div>
-                  </button>
-                </li>
-              ))}
-            </ul>
+        <div className="space-y-4">
+          <div>
+            <h1 className="text-2xl font-black text-slate-900">Messages</h1>
+            <p className="mt-1 text-sm text-slate-500">
+              Chat with Axis Admin. Same records as the site manager portal — stored in Airtable <strong>Messages</strong> with a thread key.
+            </p>
           </div>
-          <div className="rounded-[24px] border border-slate-200 bg-white p-6 shadow-sm">
-            <h2 className="text-lg font-black">Thread</h2>
-            <div className="mt-4 max-h-[360px] space-y-3 overflow-y-auto">
-              {(MOCK_THREAD_MESSAGES[activeThreadId] || []).map((m) => (
-                <div key={m.id} className={`rounded-xl border px-3 py-2 text-sm ${m.from === 'admin' ? 'ml-6 border-violet-200 bg-violet-50' : 'mr-6 border-slate-200'}`}>
-                  <div className="text-[11px] font-semibold text-slate-400">{m.from === 'admin' ? 'Axis Admin' : 'You'} · {new Date(m.at).toLocaleString()}</div>
-                  <p className="mt-1 text-slate-800">{m.body}</p>
-                </div>
-              ))}
-            </div>
-            <form
-              className="mt-4 flex flex-col gap-2 sm:flex-row"
-              onSubmit={(e) => {
-                e.preventDefault()
-                if (!draftMessage.trim()) return
-                toast.success('Message queued (demo — not persisted)')
-                setDraftMessage('')
-              }}
-            >
-              <input
-                value={draftMessage}
-                onChange={(e) => setDraftMessage(e.target.value)}
-                placeholder="Message Axis Admin…"
-                className="flex-1 rounded-2xl border border-slate-200 px-4 py-2.5 text-sm"
-              />
-              <button type="submit" className="rounded-2xl bg-[#2563eb] px-5 py-2.5 text-sm font-semibold text-white">
-                Send
-              </button>
-            </form>
-          </div>
+          <PortalInternalInbox variant="management" userEmail={user.email} userDisplayName={user.name} />
         </div>
       )}
 

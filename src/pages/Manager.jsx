@@ -22,6 +22,7 @@ import { Link, Navigate, useLocation } from 'react-router-dom'
 import toast from 'react-hot-toast'
 import { HOUSING_CONTACT_MESSAGE } from '../lib/housingSite'
 import { readJsonResponse } from '../lib/readJsonResponse'
+import PortalInternalInbox from '../components/PortalInternalInbox'
 import {
   getWorkOrderById,
   updateWorkOrder,
@@ -29,6 +30,9 @@ import {
   getAllMessages,
   getMessages,
   sendMessage,
+  isInternalPortalThreadMessage,
+  getAllPaymentsRecords,
+  updatePaymentRecord,
 } from '../lib/airtable'
 import {
   PortalAuthCard,
@@ -65,12 +69,6 @@ const STATUS_CONFIG = {
 
 const ALL_STATUSES = Object.keys(STATUS_CONFIG)
 
-const DEFAULT_AXIS_PROPERTIES = [
-  '4709A 8th Ave NE',
-  '4709B 8th Ave NE',
-  '5259 Brooklyn Ave NE',
-]
-
 const LEASE_TERMS = [
   '3-Month', '9-Month', '12-Month', 'Month-to-Month',
   'Summer (Jun–Sep)', 'Academic Year (Sep–Jun)', 'Full Year', 'Custom',
@@ -85,12 +83,148 @@ function mapRecord(record) {
   return { id: record.id, ...record.fields, created_at: record.createdTime }
 }
 
+/** Short message for inline banners (avoids huge JSON in the UI). */
+function formatDataLoadError(err) {
+  if (err == null) return 'Unavailable'
+  const raw = err?.message != null ? String(err.message) : String(err)
+  try {
+    const j = JSON.parse(raw)
+    const inner = j?.error?.message || j?.message
+    if (typeof inner === 'string' && inner.trim()) return inner.trim()
+  } catch {
+    /* not JSON */
+  }
+  return raw.length > 220 ? `${raw.slice(0, 217)}…` : raw
+}
+
 function classNames(...values) {
   return values.filter(Boolean).join(' ')
 }
 
 const TOUR_DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
 const TOUR_SLOTS = ['9:00 AM', '10:30 AM', '12:00 PM', '1:30 PM', '3:00 PM', '4:30 PM', '6:00 PM']
+
+function propertyRecordName(p) {
+  return String(p?.Name || p?.Property || '').trim()
+}
+
+/** House visible in manager portal lists once Axis marks it approved / live. */
+function isPropertyRecordApproved(p) {
+  if (p.Approved === true || p.Approved === 1) return true
+  const a = String(p['Approval Status'] || '').trim().toLowerCase()
+  if (a === 'approved') return true
+  const s = String(p.Status || '').trim().toLowerCase()
+  return s === 'approved' || s === 'live' || s === 'active'
+}
+
+function managerLinkArray(val) {
+  if (Array.isArray(val)) return val.map(String)
+  if (typeof val === 'string' && val.startsWith('rec')) return [val]
+  return []
+}
+
+/** Property must be assigned to this manager (email, linked Manager record, or Manager ID). */
+function propertyAssignedToManager(p, manager) {
+  const email = String(manager?.email || '').trim().toLowerCase()
+  const mid = String(manager?.managerId || '').trim()
+  const recId = String(manager?.id || '').trim()
+  const emails = [
+    String(p['Manager Email'] || '').trim().toLowerCase(),
+    String(p['Site Manager Email'] || '').trim().toLowerCase(),
+  ].filter(Boolean)
+  if (email && emails.length && emails.includes(email)) return true
+  for (const k of ['Manager', 'Site Manager', 'Property Manager']) {
+    const links = managerLinkArray(p[k])
+    if (recId && links.includes(recId)) return true
+  }
+  const pid = String(p['Manager ID'] || '').trim()
+  if (mid && pid && pid === mid) return true
+  return false
+}
+
+function computeManagerScope(propertyRecords, manager) {
+  const list = Array.isArray(propertyRecords) ? propertyRecords : []
+  const approvedNames = new Set()
+  const pendingAssigned = []
+  for (const p of list) {
+    if (!propertyAssignedToManager(p, manager)) continue
+    if (isPropertyRecordApproved(p)) {
+      const n = propertyRecordName(p)
+      if (n) approvedNames.add(n)
+    } else {
+      pendingAssigned.push(p)
+    }
+  }
+  return { approvedNames, pendingAssigned }
+}
+
+function applicationInScope(app, approvedNamesLowerSet) {
+  const pn = String(app['Property Name'] || '').trim().toLowerCase()
+  if (!pn || !approvedNamesLowerSet?.size) return false
+  return approvedNamesLowerSet.has(pn)
+}
+
+function leaseDraftInScope(draft, approvedNames) {
+  const p = String(draft?.Property || '').trim().toLowerCase()
+  if (!p || !approvedNames?.size) return false
+  for (const n of approvedNames) {
+    const ns = String(n).trim().toLowerCase()
+    if (p === ns || p.startsWith(`${ns} `)) return true
+  }
+  return false
+}
+
+function paymentPropertyLabel(p) {
+  return String(p['Property Name'] || p.Property || p['House'] || '').trim()
+}
+
+function paymentInScope(p, approvedNamesLowerSet) {
+  const label = paymentPropertyLabel(p).trim().toLowerCase()
+  if (!label || !approvedNamesLowerSet?.size) return false
+  return approvedNamesLowerSet.has(label) || [...approvedNamesLowerSet].some((ns) => label.includes(ns))
+}
+
+function isRentPaymentRecord(p) {
+  const raw = [p.Type, p.Category, p.Kind, p['Line Item Type'], p.Month, p.Notes].filter(Boolean).join(' ').toLowerCase()
+  if (/(fee|fine|damage|late fee|late charge|cleaning|lockout)/.test(raw)) return false
+  return true
+}
+
+function isPaymentOverdueRecord(p) {
+  if (String(p.Status || '').trim().toLowerCase() === 'paid') return false
+  if (String(p.Status || '').trim().toLowerCase() === 'overdue') return true
+  const due = p['Due Date'] ? new Date(p['Due Date']) : null
+  if (!due || Number.isNaN(due.getTime())) return false
+  const today = new Date()
+  today.setHours(0, 0, 0, 0)
+  return due < today
+}
+
+function workOrderInScope(w, approvedNamesLowerSet) {
+  if (!approvedNamesLowerSet?.size) return false
+  const prop = String(w.Property || w['Property Name'] || '').trim().toLowerCase()
+  if (!prop) return false
+  return [...approvedNamesLowerSet].some((ns) => prop === ns || prop.includes(ns))
+}
+
+function updateTourAvailabilityLines(currentAvailability, day, slot) {
+  const lines = String(currentAvailability || '')
+    .split(/\n+/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+  const lineIndex = lines.findIndex((line) => line.toLowerCase().startsWith(day.toLowerCase()))
+  const existingSlots = lineIndex >= 0
+    ? lines[lineIndex].split(':').slice(1).join(':').split(',').map((item) => item.trim()).filter(Boolean)
+    : []
+  const nextSlots = existingSlots.includes(slot)
+    ? existingSlots.filter((item) => item !== slot)
+    : [...existingSlots, slot]
+  const nextLines = [...lines]
+  const nextValue = `${day}: ${nextSlots.join(', ')}`
+  if (lineIndex >= 0) nextLines[lineIndex] = nextValue
+  else nextLines.push(nextValue)
+  return nextLines.filter(Boolean).join('\n')
+}
 
 async function atRequest(url, options = {}) {
   const res = await fetch(url, { ...options, headers: { ...atHeaders(), ...(options.headers || {}) } })
@@ -137,10 +271,13 @@ async function fetchApplications({ property } = {}) {
   if (property) {
     url.searchParams.set('filterByFormula', `FIND("${property.replace(/"/g, '\\"')}", {Property Name}) > 0`)
   }
-  url.searchParams.set('sort[0][field]', 'Created')
-  url.searchParams.set('sort[0][direction]', 'desc')
   const data = await atRequest(url.toString())
-  return (data.records || []).map(mapRecord)
+  const rows = (data.records || []).map(mapRecord)
+  return rows.sort((a, b) => {
+    const ta = new Date(a.created_at || 0).getTime()
+    const tb = new Date(b.created_at || 0).getTime()
+    return tb - ta
+  })
 }
 
 async function patchApplication(recordId, fields) {
@@ -179,6 +316,21 @@ async function createPropertyAdmin(fields) {
 
 async function updatePropertyAdmin(recordId, fields) {
   const data = await atRequest(`${CORE_AIRTABLE_BASE_URL}/Properties/${recordId}`, {
+    method: 'PATCH',
+    body: JSON.stringify({ fields, typecast: true }),
+  })
+  return mapRecord(data)
+}
+
+async function fetchManagerRecordById(recordId) {
+  const id = String(recordId || '').trim()
+  if (!id) throw new Error('Missing manager record id.')
+  const data = await atRequest(`${CORE_AIRTABLE_BASE_URL}/Manager%20Profile/${id}`)
+  return mapRecord(data)
+}
+
+async function patchManagerRecord(recordId, fields) {
+  const data = await atRequest(`${CORE_AIRTABLE_BASE_URL}/Manager%20Profile/${recordId}`, {
     method: 'PATCH',
     body: JSON.stringify({ fields, typecast: true }),
   })
@@ -667,7 +819,7 @@ export function ManagerAuthForm({ onLogin, footer = null, variant = 'default' })
   )
 }
 
-function HouseManagementPanel({ onPropertiesChange }) {
+function HouseManagementPanel({ manager, onPropertiesChange }) {
   const [properties, setProperties] = useState([])
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
@@ -750,28 +902,20 @@ function HouseManagementPanel({ onPropertiesChange }) {
   }
 
   function updateTourSlot(day, slot) {
-    setTourForm((current) => {
-      const lines = String(current.availability || '')
-        .split(/\n+/)
-        .map((line) => line.trim())
-        .filter(Boolean)
-      const lineIndex = lines.findIndex((line) => line.toLowerCase().startsWith(day.toLowerCase()))
-      const existingSlots = lineIndex >= 0
-        ? lines[lineIndex].split(':').slice(1).join(':').split(',').map((item) => item.trim()).filter(Boolean)
-        : []
-      const nextSlots = existingSlots.includes(slot)
-        ? existingSlots.filter((item) => item !== slot)
-        : [...existingSlots, slot]
-      const nextLines = [...lines]
-      const nextValue = `${day}: ${nextSlots.join(', ')}`
-      if (lineIndex >= 0) {
-        nextLines[lineIndex] = nextValue
-      } else {
-        nextLines.push(nextValue)
-      }
-      return { ...current, availability: nextLines.filter(Boolean).join('\n') }
-    })
+    setTourForm((current) => ({
+      ...current,
+      availability: updateTourAvailabilityLines(current.availability, day, slot),
+    }))
   }
+
+  const approvedAssigned = useMemo(
+    () => properties.filter((p) => propertyAssignedToManager(p, manager) && isPropertyRecordApproved(p)),
+    [properties, manager],
+  )
+  const pendingAssigned = useMemo(
+    () => properties.filter((p) => propertyAssignedToManager(p, manager) && !isPropertyRecordApproved(p)),
+    [properties, manager],
+  )
 
   async function handleSaveTourHours(property) {
     setSaving(true)
@@ -877,11 +1021,19 @@ function HouseManagementPanel({ onPropertiesChange }) {
 
         {loading ? (
           <div className="mt-5 rounded-2xl border border-slate-100 bg-slate-50 px-4 py-5 text-sm text-slate-500">Loading houses…</div>
-        ) : properties.length === 0 ? (
-          <div className="mt-5 rounded-2xl border border-slate-100 bg-slate-50 px-4 py-5 text-sm text-slate-500">No houses found yet.</div>
+        ) : approvedAssigned.length === 0 && pendingAssigned.length === 0 ? (
+          <div className="mt-5 rounded-2xl border border-slate-100 bg-slate-50 px-4 py-5 text-sm text-slate-500">
+            No approved houses assigned to your account yet. After Axis approves a property and links it to your manager email or ID, it will appear here.
+          </div>
         ) : (
           <div className="mt-5 space-y-3">
-            {properties.map((property) => (
+            {pendingAssigned.length ? (
+              <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950">
+                <span className="font-semibold">{pendingAssigned.length} house{pendingAssigned.length === 1 ? '' : 's'} awaiting approval</span>
+                <span className="text-amber-900/90"> — not shown below until approved.</span>
+              </div>
+            ) : null}
+            {approvedAssigned.map((property) => (
               <div key={property.id} className="rounded-2xl border border-slate-100 bg-slate-50 px-4 py-4">
                 <div className="text-sm font-semibold text-slate-900">{property.Name || property.Property || 'Untitled house'}</div>
                 <div className="mt-1 text-sm text-slate-500">{property.Address || 'Address not set'}</div>
@@ -967,7 +1119,7 @@ function HouseManagementPanel({ onPropertiesChange }) {
                         type="button"
                         onClick={() => {
                           setEditingPropertyId(null)
-                          setTourForm({ manager: '', availability: '', notes: '' })
+                          setTourForm({ manager: '', availability: '', notes: '', securityDeposit: '' })
                         }}
                         className="rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700"
                       >
@@ -1011,12 +1163,20 @@ function HouseManagementPanel({ onPropertiesChange }) {
 
 // ─── ManagerProfilePanel ──────────────────────────────────────────────────────
 // Profile view: editable personal info + managed property addresses list
-function ManagerProfilePanel({ manager, onManagerUpdate }) {
+function ManagerProfilePanel({ manager, onManagerUpdate, approvedPropertyCount = 0 }) {
   const [form, setForm] = useState({ name: manager.name || '', phone: manager.phone || '' })
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState('')
   const [properties, setProperties] = useState([])
   const [propsLoading, setPropsLoading] = useState(true)
+  const [tourAvail, setTourAvail] = useState('')
+  const [tourSaving, setTourSaving] = useState(false)
+  const [tourLoading, setTourLoading] = useState(true)
+
+  const approvedForProfile = useMemo(
+    () => properties.filter((p) => propertyAssignedToManager(p, manager) && isPropertyRecordApproved(p)),
+    [properties, manager],
+  )
 
   useEffect(() => {
     fetchPropertiesAdmin()
@@ -1024,6 +1184,45 @@ function ManagerProfilePanel({ manager, onManagerUpdate }) {
       .catch(() => setProperties([]))
       .finally(() => setPropsLoading(false))
   }, [])
+
+  useEffect(() => {
+    if (!manager?.id) {
+      setTourLoading(false)
+      return
+    }
+    let cancelled = false
+    setTourLoading(true)
+    fetchManagerRecordById(manager.id)
+      .then((rec) => {
+        if (!cancelled) setTourAvail(String(rec['Tour Availability'] || ''))
+      })
+      .catch(() => {
+        if (!cancelled) setTourAvail('')
+      })
+      .finally(() => {
+        if (!cancelled) setTourLoading(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [manager?.id])
+
+  function updateManagerTourSlot(day, slot) {
+    setTourAvail((current) => updateTourAvailabilityLines(current, day, slot))
+  }
+
+  async function handleSaveTourAvailability() {
+    if (!manager?.id) return
+    setTourSaving(true)
+    try {
+      await patchManagerRecord(manager.id, { 'Tour Availability': tourAvail.trim() })
+      toast.success('Tour availability saved')
+    } catch (err) {
+      toast.error(err.message || 'Could not save availability')
+    } finally {
+      setTourSaving(false)
+    }
+  }
 
   async function handleSaveProfile(event) {
     event.preventDefault()
@@ -1108,6 +1307,59 @@ function ManagerProfilePanel({ manager, onManagerUpdate }) {
         </form>
       </section>
 
+      {/* Personal tour availability (applies when you give tours) */}
+      <section className="rounded-[28px] border border-slate-200 bg-white p-6">
+        <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-[#2563eb]">Tours</div>
+        <h2 className="mt-2 text-xl font-black text-slate-900">When you&apos;re free for tours</h2>
+        <p className="mt-2 max-w-xl text-sm text-slate-500">
+          Set your usual windows so applicants and staff see accurate times. Stored on your manager profile (field <code className="rounded bg-slate-100 px-1 text-xs">Tour Availability</code> in Airtable).
+        </p>
+        {tourLoading ? (
+          <p className="mt-4 text-sm text-slate-500">Loading…</p>
+        ) : (
+          <>
+            <div className="mt-5 grid gap-2 rounded-2xl border border-slate-200 bg-slate-50 p-3 sm:grid-cols-2 lg:grid-cols-3">
+              {TOUR_DAYS.map((day) => (
+                <div key={day} className="rounded-2xl border border-slate-100 bg-white p-3">
+                  <div className="mb-2 text-[11px] font-bold uppercase tracking-[0.14em] text-slate-400">{day}</div>
+                  <div className="flex flex-wrap gap-2">
+                    {TOUR_SLOTS.map((slot) => {
+                      const active =
+                        String(tourAvail || '').includes(`${day}:`) && String(tourAvail || '').includes(slot)
+                      return (
+                        <button
+                          key={`${day}-${slot}`}
+                          type="button"
+                          onClick={() => updateManagerTourSlot(day, slot)}
+                          className={`rounded-full border px-2.5 py-1.5 text-[11px] font-semibold transition ${active ? 'border-[#2563eb] bg-[#2563eb] text-white' : 'border-slate-200 bg-slate-50 text-slate-700 hover:border-[#2563eb]'}`}
+                        >
+                          {slot}
+                        </button>
+                      )
+                    })}
+                  </div>
+                </div>
+              ))}
+            </div>
+            <textarea
+              rows={4}
+              value={tourAvail}
+              onChange={(e) => setTourAvail(e.target.value)}
+              placeholder="Mon: 9:00 AM, 1:30 PM&#10;Tue: 10:30 AM …"
+              className={`mt-4 w-full ${inputCls}`}
+            />
+            <button
+              type="button"
+              onClick={handleSaveTourAvailability}
+              disabled={tourSaving}
+              className="mt-3 rounded-2xl bg-[#2563eb] px-5 py-2.5 text-sm font-semibold text-white disabled:opacity-50"
+            >
+              {tourSaving ? 'Saving…' : 'Save tour availability'}
+            </button>
+          </>
+        )}
+      </section>
+
       {/* Plan & subscription summary */}
       <section className="rounded-[28px] border border-slate-200 bg-white p-6">
         <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">Subscription</div>
@@ -1116,7 +1368,7 @@ function ManagerProfilePanel({ manager, onManagerUpdate }) {
           {[
             { label: 'Role', value: manager.role || 'Manager' },
             { label: 'Manager ID', value: manager.managerId || '—' },
-            { label: 'Properties', value: propsLoading ? '…' : `${properties.length} ${properties.length === 1 ? 'house' : 'houses'}` },
+            { label: 'Approved houses', value: propsLoading ? '…' : `${approvedPropertyCount} assigned` },
           ].map(({ label, value }) => (
             <div key={label} className="rounded-2xl border border-slate-100 bg-slate-50 px-4 py-4">
               <div className="text-[11px] font-bold uppercase tracking-[0.14em] text-slate-400">{label}</div>
@@ -1129,20 +1381,20 @@ function ManagerProfilePanel({ manager, onManagerUpdate }) {
       {/* Managed property addresses */}
       <section className="rounded-[28px] border border-slate-200 bg-white p-6">
         <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-[#2563eb]">Properties</div>
-        <h2 className="mt-2 text-xl font-black text-slate-900">Managed addresses</h2>
+        <h2 className="mt-2 text-xl font-black text-slate-900">Approved houses on your account</h2>
         <p className="mt-2 text-sm leading-6 text-slate-500">
-          All properties registered in the Axis operations system. To add or edit properties, go to House&nbsp;Management in the dashboard.
+          Only properties that are approved and linked to you. Add or edit houses under <strong>Properties</strong> in the dashboard.
         </p>
 
         {propsLoading ? (
           <div className="mt-5 text-sm text-slate-500">Loading properties…</div>
-        ) : properties.length === 0 ? (
+        ) : approvedForProfile.length === 0 ? (
           <div className="mt-5 rounded-2xl border border-slate-100 bg-slate-50 p-6 text-center text-sm text-slate-500">
-            No properties added yet. Use House Management in the dashboard to add your first property.
+            No approved houses assigned yet. Submit a property for approval or ask Axis to link your manager email on the property record.
           </div>
         ) : (
           <div className="mt-5 grid gap-3 sm:grid-cols-2">
-            {properties.map((p) => (
+            {approvedForProfile.map((p) => (
               <div key={p.id} className="flex gap-4 rounded-2xl border border-slate-200 bg-slate-50 px-5 py-4">
                 <div className="mt-0.5 flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl bg-[#2563eb]/10">
                   <svg className="h-5 w-5 text-[#2563eb]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -1171,73 +1423,6 @@ function ManagerProfilePanel({ manager, onManagerUpdate }) {
         )}
       </section>
     </div>
-  )
-}
-
-function ManagerOperationsPanel({ manager, propertyCount, onGenerateDraft, onOpenBilling, onGoToProperties }) {
-  const cards = [
-    {
-      title: 'Add houses',
-      body: 'Create internal property records for new homes you want to manage through Axis.',
-      action: 'Go to house setup',
-      onClick: () => {
-        if (onGoToProperties) {
-          onGoToProperties()
-          return
-        }
-        const target = document.getElementById('house-management')
-        target?.scrollIntoView({ behavior: 'smooth', block: 'start' })
-      },
-    },
-    {
-      title: 'Generate leases',
-      body: 'Start a new lease draft for an approved resident and move it into review.',
-      action: 'Generate draft',
-      onClick: onGenerateDraft,
-    },
-    {
-      title: 'Manager subscription',
-      body: 'Open billing to manage the recurring manager subscription connected to this portal.',
-      action: 'Open billing',
-      onClick: onOpenBilling,
-    },
-  ]
-
-  return (
-    <section className="mb-8 rounded-[28px] border border-slate-200 bg-white p-6">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-        <div>
-          <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-[#2563eb]">Portal tools</div>
-          <h2 className="mt-2 text-2xl font-black text-slate-900">Manager operations</h2>
-          <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-500">
-            Use this portal to add houses, review applications through lease generation, manage leasing, and keep your manager subscription active.
-          </p>
-        </div>
-        <div className="rounded-[22px] border border-slate-200 bg-slate-50 px-4 py-3">
-          <div className="text-[11px] font-bold uppercase tracking-[0.14em] text-slate-400">Manager</div>
-          <div className="mt-1 text-sm font-semibold text-slate-900">{manager.name || manager.email}</div>
-          <div className="mt-1 text-xs text-slate-500">
-            {manager.managerId || 'Manager ID pending'} · {propertyCount} {propertyCount === 1 ? 'house' : 'houses'}
-          </div>
-        </div>
-      </div>
-
-      <div className="mt-6 grid gap-4 lg:grid-cols-3">
-        {cards.map((card) => (
-          <div key={card.title} className="rounded-[24px] border border-slate-200 bg-slate-50 p-5">
-            <h3 className="text-lg font-black text-slate-900">{card.title}</h3>
-            <p className="mt-2 text-sm leading-6 text-slate-500">{card.body}</p>
-            <button
-              type="button"
-              onClick={card.onClick}
-              className="mt-4 rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:border-[#2563eb] hover:text-[#2563eb]"
-            >
-              {card.action}
-            </button>
-          </div>
-        ))}
-      </div>
-    </section>
   )
 }
 
@@ -1335,9 +1520,19 @@ function GenerateDraftModal({ manager, propertyOptions, onClose, onGenerated }) 
               <div className="grid gap-4 sm:grid-cols-2">
                 <div>
                   <label className={labelCls}>Property *</label>
-                  <select value={form.property} onChange={set('property')} required className={inputCls}>
-                    <option value="">Select property…</option>
-                    {propertyOptions.map((property) => <option key={property} value={property}>{property}</option>)}
+                  <select
+                    value={form.property}
+                    onChange={set('property')}
+                    required={propertyOptions.length > 0}
+                    disabled={propertyOptions.length === 0}
+                    className={inputCls}
+                  >
+                    <option value="">
+                      {propertyOptions.length ? 'Select property…' : 'No approved houses assigned yet'}
+                    </option>
+                    {propertyOptions.map((property) => (
+                      <option key={property} value={property}>{property}</option>
+                    ))}
                   </select>
                 </div>
                 <div>
@@ -1478,65 +1673,141 @@ function buildCalendarEvents(drafts, workOrders, applications) {
   return events
 }
 
-function ManagerOverviewPanel({
+const LEASE_STATUSES_NEEDING_ACTION = new Set(['Draft Generated', 'Under Review', 'Changes Needed', 'Approved'])
+
+function ManagerDashboardHomePanel({
   manager,
-  propertyCount,
+  approvedHouseCount,
   stats,
   statsLoading,
+  dataWarnings,
   onNavigate,
   onGenerateDraft,
   onOpenBilling,
 }) {
   const s = stats || {}
-  const cards = [
-    { key: 'applications', label: 'Applications pending', value: statsLoading ? '…' : s.pendingApps ?? 0, tab: 'applications', hint: 'Review & approve' },
-    { key: 'leases', label: 'Lease drafts', value: statsLoading ? '…' : s.draftCount ?? 0, tab: 'leases', hint: 'Queue & SignForge' },
-    { key: 'signed', label: 'Signed leases', value: statsLoading ? '…' : s.signedLeases ?? 0, tab: 'leases', hint: 'In lease queue' },
-    { key: 'wo', label: 'Open work orders', value: statsLoading ? '…' : s.openWo ?? 0, tab: 'workorders', hint: 'Reply & resolve' },
+  const pendingApps = statsLoading ? null : s.pendingApps ?? 0
+  const leasePending = statsLoading ? null : s.leasePending ?? 0
+  const rentOverdue = statsLoading ? null : s.rentOverdue ?? 0
+  const openWo = statsLoading ? null : s.openWo ?? 0
+
+  const tasks = [
+    {
+      key: 'apps',
+      label: 'Applications pending review',
+      count: pendingApps,
+      tab: 'applications',
+      show: (pendingApps ?? 0) > 0,
+    },
+    {
+      key: 'leases',
+      label: 'Leases needing your action',
+      sub: 'Draft, review, changes, or approved — not yet with the resident',
+      count: leasePending,
+      tab: 'leases',
+      show: (leasePending ?? 0) > 0,
+    },
+    {
+      key: 'rent',
+      label: 'Rent overdue',
+      count: rentOverdue,
+      tab: 'payments',
+      show: (rentOverdue ?? 0) > 0,
+    },
+    {
+      key: 'wo',
+      label: 'Open work orders',
+      count: openWo,
+      tab: 'workorders',
+      show: (openWo ?? 0) > 0,
+    },
   ]
+
+  const visibleTasks = tasks.filter((t) => t.show)
+
   return (
     <div className="space-y-8">
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        {cards.map((c) => (
-          <button
-            key={c.key}
-            type="button"
-            onClick={() => onNavigate(c.tab)}
-            className="rounded-[24px] border border-slate-200 bg-white p-5 text-left transition hover:border-[#2563eb]/40 hover:shadow-sm"
-          >
-            <div className="text-[11px] font-bold uppercase tracking-[0.14em] text-slate-400">{c.label}</div>
-            <div className="mt-2 text-3xl font-black text-slate-900">{c.value}</div>
-            <div className="mt-1 text-xs text-slate-500">{c.hint} →</div>
-          </button>
-        ))}
+      <div>
+        <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-[#2563eb]">Home</div>
+        <h2 className="mt-2 text-2xl font-black text-slate-900">Dashboard</h2>
+        <p className="mt-2 max-w-2xl text-sm text-slate-500">
+          Tasks for your approved houses only ({approvedHouseCount || 0} in your portfolio). Use the tabs above for full lists.
+        </p>
       </div>
-      <ManagerOperationsPanel
-        manager={manager}
-        propertyCount={propertyCount}
-        onGenerateDraft={onGenerateDraft}
-        onOpenBilling={onOpenBilling}
-        onGoToProperties={() => onNavigate('properties')}
-      />
-      <div className="rounded-[24px] border border-slate-200 bg-white p-6">
-        <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-[#2563eb]">Shortcuts</div>
-        <h3 className="mt-2 text-lg font-black text-slate-900">Jump to a section</h3>
-        <div className="mt-4 flex flex-wrap gap-2">
-          {[
-            ['properties', 'Properties & houses'],
-            ['inbox', 'Message inbox'],
-            ['calendar', 'Calendar'],
-            ['profile', 'Your profile'],
-          ].map(([tab, lab]) => (
-            <button
-              key={tab}
-              type="button"
-              onClick={() => onNavigate(tab)}
-              className="rounded-full border border-slate-200 bg-slate-50 px-4 py-2 text-sm font-semibold text-slate-700 transition hover:border-[#2563eb] hover:text-[#2563eb]"
-            >
-              {lab}
-            </button>
-          ))}
+
+      {dataWarnings?.length ? (
+        <div
+          role="status"
+          className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950"
+        >
+          <div className="font-semibold text-amber-900">Some dashboard data could not load</div>
+          <ul className="mt-2 list-inside list-disc space-y-1 text-amber-900/90">
+            {dataWarnings.map((w, i) => (
+              <li key={i}>{w}</li>
+            ))}
+          </ul>
         </div>
+      ) : null}
+
+      <div className="rounded-[24px] border border-slate-200 bg-white p-6 shadow-sm">
+        <h3 className="text-lg font-black text-slate-900">Priority tasks</h3>
+        <p className="mt-1 text-sm text-slate-500">Anything listed here needs attention soon.</p>
+        {statsLoading ? (
+          <p className="mt-6 text-sm text-slate-500">Loading…</p>
+        ) : (approvedHouseCount ?? 0) === 0 ? (
+          <p className="mt-6 text-sm text-slate-600">
+            You don&apos;t have any <strong>approved</strong> houses assigned yet. Add a house under Properties; once Axis approves and links it to your account, applications, leases, and rent will show here.
+          </p>
+        ) : visibleTasks.length === 0 ? (
+          <p className="mt-6 text-sm text-emerald-800 bg-emerald-50 border border-emerald-100 rounded-2xl px-4 py-3">
+            Nothing urgent right now — you&apos;re caught up on applications, lease queue, overdue rent, and work orders for your houses.
+          </p>
+        ) : (
+          <ul className="mt-5 divide-y divide-slate-100">
+            {visibleTasks.map((t) => (
+              <li key={t.key}>
+                <button
+                  type="button"
+                  onClick={() => onNavigate(t.tab)}
+                  className="flex w-full items-center justify-between gap-4 py-4 text-left transition hover:bg-slate-50/80"
+                >
+                  <div>
+                    <div className="font-semibold text-slate-900">{t.label}</div>
+                    {t.sub ? <div className="mt-0.5 text-xs text-slate-500">{t.sub}</div> : null}
+                  </div>
+                  <div className="flex shrink-0 items-center gap-2">
+                    <span className="rounded-full bg-[#2563eb]/10 px-3 py-1 text-sm font-black text-[#2563eb]">{t.count}</span>
+                    <span className="text-sm font-semibold text-[#2563eb]">Open →</span>
+                  </div>
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+
+      <div className="flex flex-wrap gap-3">
+        <button
+          type="button"
+          onClick={onGenerateDraft}
+          className="rounded-2xl bg-[#2563eb] px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:brightness-110"
+        >
+          Generate lease draft
+        </button>
+        <button
+          type="button"
+          onClick={onOpenBilling}
+          className="rounded-2xl border border-slate-200 bg-white px-5 py-2.5 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50"
+        >
+          Manager billing
+        </button>
+        <button
+          type="button"
+          onClick={() => onNavigate('properties')}
+          className="rounded-2xl border border-slate-200 bg-white px-5 py-2.5 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50"
+        >
+          Properties
+        </button>
       </div>
     </div>
   )
@@ -1546,6 +1817,7 @@ function ManagerCalendarPanel() {
   const [cursor, setCursor] = useState(() => new Date())
   const [loading, setLoading] = useState(true)
   const [events, setEvents] = useState([])
+  const [calendarIssues, setCalendarIssues] = useState([])
 
   const y = cursor.getFullYear()
   const m = cursor.getMonth()
@@ -1554,12 +1826,19 @@ function ManagerCalendarPanel() {
   useEffect(() => {
     let cancelled = false
     setLoading(true)
-    Promise.all([fetchLeaseDrafts({}), getAllWorkOrders(), fetchApplications({})])
-      .then(([d, w, a]) => {
-        if (!cancelled) setEvents(buildCalendarEvents(d, w, a))
-      })
-      .catch((err) => {
-        if (!cancelled) toast.error('Calendar data failed: ' + err.message)
+    setCalendarIssues([])
+    Promise.allSettled([fetchLeaseDrafts({}), getAllWorkOrders(), fetchApplications({})])
+      .then((results) => {
+        if (cancelled) return
+        const issues = []
+        const d = results[0].status === 'fulfilled' ? results[0].value : null
+        const w = results[1].status === 'fulfilled' ? results[1].value : null
+        const a = results[2].status === 'fulfilled' ? results[2].value : null
+        if (results[0].status === 'rejected') issues.push(`Leases: ${formatDataLoadError(results[0].reason)}`)
+        if (results[1].status === 'rejected') issues.push(`Work orders: ${formatDataLoadError(results[1].reason)}`)
+        if (results[2].status === 'rejected') issues.push(`Applications: ${formatDataLoadError(results[2].reason)}`)
+        setCalendarIssues(issues)
+        setEvents(buildCalendarEvents(d || [], w || [], a || []))
       })
       .finally(() => {
         if (!cancelled) setLoading(false)
@@ -1617,6 +1896,16 @@ function ManagerCalendarPanel() {
         </div>
       </div>
 
+      {calendarIssues.length ? (
+        <div
+          role="status"
+          className="mt-4 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2.5 text-sm text-amber-950"
+        >
+          <span className="font-semibold text-amber-900">Partial calendar: </span>
+          <span className="text-amber-900/90">{calendarIssues.join(' · ')}</span>
+        </div>
+      ) : null}
+
       {loading ? (
         <div className="mt-8 py-16 text-center text-sm text-slate-500">Loading calendar…</div>
       ) : (
@@ -1665,6 +1954,7 @@ function ManagerCalendarPanel() {
 }
 
 function InboxTabPanel({ manager }) {
+  const [inboxMode, setInboxMode] = useState('work_orders')
   const [allMsgs, setAllMsgs] = useState([])
   const [woTitles, setWoTitles] = useState({})
   const [loading, setLoading] = useState(true)
@@ -1734,14 +2024,58 @@ function InboxTabPanel({ manager }) {
   }
 
   const sortedFeed = useMemo(() => {
-    return [...allMsgs].sort(
-      (a, b) =>
-        new Date(b.Timestamp || b.created_at || 0) - new Date(a.Timestamp || a.created_at || 0),
-    )
+    return [...allMsgs]
+      .filter((m) => !isInternalPortalThreadMessage(m))
+      .sort(
+        (a, b) =>
+          new Date(b.Timestamp || b.created_at || 0) - new Date(a.Timestamp || a.created_at || 0),
+      )
   }, [allMsgs])
 
+  if (inboxMode === 'axis_hq') {
+    return (
+      <div className="space-y-4">
+        <div className="flex flex-wrap gap-2">
+          <button
+            type="button"
+            onClick={() => setInboxMode('work_orders')}
+            className="rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-50"
+          >
+            Residents &amp; work orders
+          </button>
+          <button
+            type="button"
+            className="rounded-full border border-[#2563eb] bg-[#2563eb]/10 px-4 py-2 text-sm font-semibold text-[#2563eb]"
+          >
+            Axis HQ
+          </button>
+        </div>
+        <p className="text-sm text-slate-500">
+          Message Axis internal team (not tied to a maintenance request). Uses the same Airtable <strong>Messages</strong> table with a site-manager thread key.
+        </p>
+        <PortalInternalInbox variant="site_manager" userEmail={manager?.email} userDisplayName={manager?.name} />
+      </div>
+    )
+  }
+
   return (
-    <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)]">
+    <div className="space-y-4">
+      <div className="flex flex-wrap gap-2">
+        <button
+          type="button"
+          className="rounded-full border border-[#2563eb] bg-[#2563eb]/10 px-4 py-2 text-sm font-semibold text-[#2563eb]"
+        >
+          Residents &amp; work orders
+        </button>
+        <button
+          type="button"
+          onClick={() => setInboxMode('axis_hq')}
+          className="rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-50"
+        >
+          Axis HQ
+        </button>
+      </div>
+      <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)]">
       <div className="rounded-[24px] border border-slate-200 bg-white p-5 shadow-sm">
         <div className="flex items-center justify-between gap-2">
           <h2 className="text-lg font-black text-slate-900">All messages</h2>
@@ -1838,6 +2172,7 @@ function InboxTabPanel({ manager }) {
           </>
         )}
       </div>
+    </div>
     </div>
   )
 }
@@ -2209,23 +2544,224 @@ function WorkOrdersTabPanel({ manager }) {
   )
 }
 
+// ─── ManagerPaymentsPanel ─────────────────────────────────────────────────────
+function ManagerPaymentsPanel({ allowedPropertyNames }) {
+  const scopeLower = useMemo(
+    () => new Set((allowedPropertyNames || []).map((n) => String(n).trim().toLowerCase()).filter(Boolean)),
+    [allowedPropertyNames],
+  )
+  const [rows, setRows] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [filter, setFilter] = useState('all')
+  const [busy, setBusy] = useState({})
+
+  const load = useCallback(async () => {
+    setLoading(true)
+    try {
+      const all = await getAllPaymentsRecords()
+      const scoped = scopeLower.size
+        ? all.filter((p) => paymentInScope(p, scopeLower) && isRentPaymentRecord(p))
+        : []
+      scoped.sort(
+        (a, b) =>
+          new Date(b['Due Date'] || b.created_at || 0) - new Date(a['Due Date'] || a.created_at || 0),
+      )
+      setRows(scoped)
+    } catch (err) {
+      toast.error('Could not load payments: ' + formatDataLoadError(err))
+      setRows([])
+    } finally {
+      setLoading(false)
+    }
+  }, [scopeLower])
+
+  useEffect(() => {
+    load()
+  }, [load])
+
+  const filtered = useMemo(() => {
+    if (filter === 'overdue') return rows.filter((p) => isPaymentOverdueRecord(p))
+    if (filter === 'paid') return rows.filter((p) => String(p.Status || '').trim().toLowerCase() === 'paid')
+    if (filter === 'unpaid') return rows.filter((p) => String(p.Status || '').trim().toLowerCase() !== 'paid')
+    return rows
+  }, [rows, filter])
+
+  async function markPaid(id) {
+    setBusy((b) => ({ ...b, [id]: true }))
+    try {
+      await updatePaymentRecord(id, { Status: 'Paid' })
+      await load()
+      toast.success('Marked as paid')
+    } catch (err) {
+      toast.error(err.message || 'Update failed')
+    } finally {
+      setBusy((b) => {
+        const n = { ...b }
+        delete n[id]
+        return n
+      })
+    }
+  }
+
+  const paidCount = rows.filter((p) => String(p.Status || '').trim().toLowerCase() === 'paid').length
+  const overdueCount = rows.filter((p) => isPaymentOverdueRecord(p)).length
+
+  return (
+    <div className="mb-10 space-y-5">
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <h2 className="text-xl font-black text-slate-900">Rent &amp; payments</h2>
+          <p className="mt-1 text-sm text-slate-500">
+            Rent rows from Payments for your approved houses. Mark paid when you&apos;ve recorded the payment in Airtable.
+          </p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          {[
+            ['all', 'All'],
+            ['unpaid', 'Unpaid'],
+            ['overdue', 'Overdue'],
+            ['paid', 'Paid'],
+          ].map(([k, lab]) => (
+            <button
+              key={k}
+              type="button"
+              onClick={() => setFilter(k)}
+              className={`rounded-full px-4 py-2 text-xs font-semibold transition ${filter === k ? 'bg-[#2563eb] text-white' : 'border border-slate-200 bg-white text-slate-600 hover:bg-slate-50'}`}
+            >
+              {lab}
+            </button>
+          ))}
+          <button
+            type="button"
+            onClick={() => load()}
+            className="rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-50"
+          >
+            Refresh
+          </button>
+        </div>
+      </div>
+
+      {!scopeLower.size ? (
+        <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 text-sm text-slate-600">
+          No approved houses assigned — payment rows appear after a property is approved and linked to your account.
+        </div>
+      ) : null}
+
+      <div className="grid gap-3 sm:grid-cols-3">
+        <div className="rounded-2xl border border-slate-200 bg-white p-4">
+          <div className="text-[11px] font-bold uppercase tracking-wide text-slate-400">Tracked rent rows</div>
+          <div className="mt-1 text-2xl font-black text-slate-900">{rows.length}</div>
+        </div>
+        <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4">
+          <div className="text-[11px] font-bold uppercase tracking-wide text-amber-800">Overdue</div>
+          <div className="mt-1 text-2xl font-black text-amber-950">{overdueCount}</div>
+        </div>
+        <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4">
+          <div className="text-[11px] font-bold uppercase tracking-wide text-emerald-800">Paid (in view)</div>
+          <div className="mt-1 text-2xl font-black text-emerald-950">{paidCount}</div>
+        </div>
+      </div>
+
+      <div className="overflow-hidden rounded-[24px] border border-slate-200 bg-white">
+        {loading ? (
+          <div className="px-6 py-14 text-center text-sm text-slate-500">Loading payments…</div>
+        ) : filtered.length === 0 ? (
+          <div className="px-6 py-14 text-center text-sm text-slate-500">No payments match this filter.</div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-slate-200 bg-slate-50 text-left text-[11px] font-bold uppercase tracking-wide text-slate-400">
+                  <th className="px-4 py-3">Property</th>
+                  <th className="px-4 py-3">Resident</th>
+                  <th className="px-4 py-3">Month / label</th>
+                  <th className="px-4 py-3">Due</th>
+                  <th className="px-4 py-3">Amount</th>
+                  <th className="px-4 py-3">Status</th>
+                  <th className="px-4 py-3" />
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {filtered.map((p) => {
+                  const st = String(p.Status || '').trim()
+                  const stLower = st.toLowerCase()
+                  const overdue = isPaymentOverdueRecord(p)
+                  return (
+                    <tr key={p.id} className={overdue && stLower !== 'paid' ? 'bg-red-50/50' : ''}>
+                      <td className="px-4 py-3 font-medium text-slate-900">{paymentPropertyLabel(p) || '—'}</td>
+                      <td className="px-4 py-3 text-slate-600">{p['Resident Name'] || p['Resident'] || '—'}</td>
+                      <td className="px-4 py-3 text-slate-600">{p.Month || p.Type || '—'}</td>
+                      <td className="px-4 py-3 text-slate-600">{fmtDate(p['Due Date'])}</td>
+                      <td className="px-4 py-3 font-semibold text-slate-900">
+                        {p.Amount != null ? `$${Number(p.Amount).toFixed(0)}` : '—'}
+                      </td>
+                      <td className="px-4 py-3">
+                        <span
+                          className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${
+                            stLower === 'paid'
+                              ? 'bg-emerald-100 text-emerald-800'
+                              : overdue
+                                ? 'bg-red-100 text-red-800'
+                                : 'bg-slate-100 text-slate-700'
+                          }`}
+                        >
+                          {st || '—'}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3 text-right">
+                        {stLower !== 'paid' ? (
+                          <button
+                            type="button"
+                            disabled={busy[p.id]}
+                            onClick={() => markPaid(p.id)}
+                            className="rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-xs font-semibold text-emerald-800 hover:bg-emerald-100 disabled:opacity-50"
+                          >
+                            {busy[p.id] ? '…' : 'Mark paid'}
+                          </button>
+                        ) : (
+                          <span className="text-xs text-slate-400">Recorded</span>
+                        )}
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
 // ─── ApplicationsPanel ────────────────────────────────────────────────────────
-function ApplicationsPanel({ propertyOptions }) {
+function ApplicationsPanel({ allowedPropertyNames }) {
   const [applications, setApplications] = useState([])
   const [loading, setLoading] = useState(true)
   const [propertyFilter, setPropertyFilter] = useState('')
   const [approving, setApproving] = useState({}) // recordId -> 'approving' | 'rejecting'
 
+  const [loadError, setLoadError] = useState('')
+
+  const scopeSet = useMemo(() => new Set((allowedPropertyNames || []).map((n) => String(n).trim().toLowerCase()).filter(Boolean)), [allowedPropertyNames])
+
   const load = useCallback(async () => {
     setLoading(true)
+    setLoadError('')
     try {
-      setApplications(await fetchApplications({ property: propertyFilter }))
+      const rows = await fetchApplications({})
+      const scoped = scopeSet.size ? rows.filter((a) => applicationInScope(a, scopeSet)) : []
+      setApplications(
+        propertyFilter
+          ? scoped.filter((a) => String(a['Property Name'] || '').trim() === propertyFilter.trim())
+          : scoped,
+      )
     } catch (err) {
-      toast.error('Failed to load applications: ' + err.message)
+      setLoadError(formatDataLoadError(err))
     } finally {
       setLoading(false)
     }
-  }, [propertyFilter])
+  }, [propertyFilter, scopeSet])
 
   useEffect(() => { load() }, [load])
 
@@ -2248,6 +2784,8 @@ function ApplicationsPanel({ propertyOptions }) {
     return { label: 'Pending review', cls: 'border-amber-200 bg-amber-50 text-amber-700' }
   }
 
+  const filterOptions = allowedPropertyNames || []
+
   return (
     <div className="mb-10">
       <div className="mb-5 flex flex-wrap items-center gap-3">
@@ -2257,8 +2795,10 @@ function ApplicationsPanel({ propertyOptions }) {
           onChange={e => setPropertyFilter(e.target.value)}
           className="rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition focus:border-[#2563eb] focus:outline-none focus:ring-2 focus:ring-[#2563eb]/20"
         >
-          <option value="">All properties</option>
-          {propertyOptions.map(p => <option key={p} value={p}>{p}</option>)}
+          <option value="">All your properties</option>
+          {filterOptions.map((p) => (
+            <option key={p} value={p}>{p}</option>
+          ))}
         </select>
         <button
           onClick={load}
@@ -2268,14 +2808,34 @@ function ApplicationsPanel({ propertyOptions }) {
         </button>
       </div>
 
+      {loadError ? (
+        <div
+          role="alert"
+          className="mb-4 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-950"
+        >
+          <div className="font-semibold text-red-900">Could not load applications</div>
+          <p className="mt-1 text-red-900/90">{loadError}</p>
+        </div>
+      ) : null}
+
       <div className="overflow-hidden rounded-[24px] border border-slate-200 bg-white">
         {loading ? (
           <div className="px-6 py-16 text-center text-sm text-slate-500">Loading applications…</div>
         ) : applications.length === 0 ? (
           <div className="px-6 py-16 text-center">
-            <div className="mb-3 text-4xl">📋</div>
-            <div className="text-sm font-semibold text-slate-700">No applications yet</div>
-            <p className="mt-1 text-sm text-slate-500">Applications submitted via the Apply page will appear here.</p>
+            {loadError ? (
+              <>
+                <div className="mb-3 text-4xl" aria-hidden>⚠️</div>
+                <div className="text-sm font-semibold text-slate-700">Could not load the list</div>
+                <p className="mt-1 text-sm text-slate-500">Check the message above and try Refresh.</p>
+              </>
+            ) : (
+              <>
+                <div className="mb-3 text-4xl" aria-hidden>📋</div>
+                <div className="text-sm font-semibold text-slate-700">No applications yet</div>
+                <p className="mt-1 text-sm text-slate-500">Applications submitted via the Apply page will appear here.</p>
+              </>
+            )}
           </div>
         ) : (
           <div className="divide-y divide-slate-100">
@@ -2327,10 +2887,11 @@ function ApplicationsPanel({ propertyOptions }) {
 
 // ─── ManagerDashboard ─────────────────────────────────────────────────────────
 const MANAGER_DASH_TABS = [
-  ['overview', 'Overview'],
+  ['dashboard', 'Dashboard'],
   ['leases', 'Leases'],
   ['applications', 'Applications'],
   ['properties', 'Properties'],
+  ['payments', 'Payments'],
   ['workorders', 'Work orders'],
   ['inbox', 'Inbox'],
   ['calendar', 'Calendar'],
@@ -2339,16 +2900,27 @@ const MANAGER_DASH_TABS = [
 
 function ManagerDashboard({ manager: managerProp, onOpenDraft, onSignOut, onManagerUpdate }) {
   const [manager, setManager] = useState(managerProp)
-  const [dashView, setDashView] = useState('overview')
+  const [dashView, setDashView] = useState('dashboard')
   const [drafts, setDrafts] = useState([])
   const [loading, setLoading] = useState(true)
   const [showGenerateModal, setShowGenerateModal] = useState(false)
   const [filters, setFilters] = useState({ status: '', property: '', resident: '' })
-  const [propertyOptions, setPropertyOptions] = useState(DEFAULT_AXIS_PROPERTIES)
-  const [propertyCount, setPropertyCount] = useState(0)
+  const [propertyRecords, setPropertyRecords] = useState([])
   const [billingLoading, setBillingLoading] = useState(false)
   const [overviewStats, setOverviewStats] = useState(null)
   const [overviewStatsLoading, setOverviewStatsLoading] = useState(false)
+  const [overviewDataWarnings, setOverviewDataWarnings] = useState([])
+  const [leasesLoadError, setLeasesLoadError] = useState('')
+
+  const managerScope = useMemo(() => computeManagerScope(propertyRecords, manager), [propertyRecords, manager])
+  const scopedPropertyOptions = useMemo(
+    () => Array.from(managerScope.approvedNames).sort(),
+    [managerScope.approvedNames],
+  )
+  const approvedNamesLower = useMemo(
+    () => new Set([...managerScope.approvedNames].map((n) => String(n).trim().toLowerCase()).filter(Boolean)),
+    [managerScope.approvedNames],
+  )
 
   function handleManagerUpdate(updated) {
     setManager(updated)
@@ -2364,14 +2936,19 @@ function ManagerDashboard({ manager: managerProp, onOpenDraft, onSignOut, onMana
 
   const loadDrafts = useCallback(async () => {
     setLoading(true)
+    setLeasesLoadError('')
     try {
-      setDrafts(await fetchLeaseDrafts(filters))
+      const rows = await fetchLeaseDrafts(filters)
+      const names = managerScope.approvedNames
+      const scoped =
+        names.size > 0 ? rows.filter((d) => leaseDraftInScope(d, names)) : []
+      setDrafts(scoped)
     } catch (err) {
-      toast.error('Failed to load lease drafts: ' + err.message)
+      setLeasesLoadError(formatDataLoadError(err))
     } finally {
       setLoading(false)
     }
-  }, [filters])
+  }, [filters, managerScope.approvedNames])
 
   useEffect(() => {
     if (dashView !== 'leases') return
@@ -2379,24 +2956,59 @@ function ManagerDashboard({ manager: managerProp, onOpenDraft, onSignOut, onMana
   }, [loadDrafts, dashView])
 
   useEffect(() => {
-    if (dashView !== 'overview') return
+    if (dashView !== 'dashboard') return
     let cancelled = false
     setOverviewStatsLoading(true)
-    Promise.all([fetchApplications({}), fetchLeaseDrafts({}), getAllWorkOrders()])
-      .then(([apps, dr, wo]) => {
+    setOverviewDataWarnings([])
+    const names = managerScope.approvedNames
+
+    Promise.allSettled([
+      fetchApplications({}),
+      fetchLeaseDrafts({}),
+      getAllWorkOrders(),
+      getAllPaymentsRecords(),
+    ])
+      .then((results) => {
         if (cancelled) return
+        const warnings = []
+        const appsRaw = results[0].status === 'fulfilled' ? results[0].value : null
+        const drRaw = results[1].status === 'fulfilled' ? results[1].value : null
+        const woRaw = results[2].status === 'fulfilled' ? results[2].value : null
+        const payRaw = results[3].status === 'fulfilled' ? results[3].value : null
+        if (results[0].status === 'rejected') warnings.push(`Applications: ${formatDataLoadError(results[0].reason)}`)
+        if (results[1].status === 'rejected') warnings.push(`Lease drafts: ${formatDataLoadError(results[1].reason)}`)
+        if (results[2].status === 'rejected') warnings.push(`Work orders: ${formatDataLoadError(results[2].reason)}`)
+        if (results[3].status === 'rejected') warnings.push(`Payments: ${formatDataLoadError(results[3].reason)}`)
+        setOverviewDataWarnings(warnings)
+
+        if (!appsRaw && !drRaw && !woRaw && !payRaw) {
+          setOverviewStats(null)
+          return
+        }
+
+        const apps = approvedNamesLower.size
+          ? (appsRaw || []).filter((a) => applicationInScope(a, approvedNamesLower))
+          : []
+        const dr = names.size ? (drRaw || []).filter((d) => leaseDraftInScope(d, names)) : []
+        const wo = approvedNamesLower.size
+          ? (woRaw || []).filter((w) => workOrderInScope(w, approvedNamesLower))
+          : []
+        const rentRows =
+          approvedNamesLower.size && payRaw
+            ? payRaw.filter((p) => paymentInScope(p, approvedNamesLower) && isRentPaymentRecord(p))
+            : []
+
         const pendingApps = apps.filter((a) => a.Approved !== true && a.Approved !== false).length
+        const leasePending = dr.filter((d) => LEASE_STATUSES_NEEDING_ACTION.has(String(d.Status || '').trim())).length
+        const rentOverdue = rentRows.filter((p) => isPaymentOverdueRecord(p)).length
         const openWo = wo.filter((w) => w.Resolved !== true && w.Resolved !== 1 && w.Status !== 'Resolved').length
+
         setOverviewStats({
           pendingApps,
-          draftCount: dr.length,
-          signedLeases: dr.filter((d) => d.Status === 'Signed').length,
-          publishedLeases: dr.filter((d) => d.Status === 'Published').length,
+          leasePending,
+          rentOverdue,
           openWo,
         })
-      })
-      .catch(() => {
-        if (!cancelled) setOverviewStats(null)
       })
       .finally(() => {
         if (!cancelled) setOverviewStatsLoading(false)
@@ -2404,16 +3016,11 @@ function ManagerDashboard({ manager: managerProp, onOpenDraft, onSignOut, onMana
     return () => {
       cancelled = true
     }
-  }, [dashView])
+  }, [dashView, managerScope.approvedNames, approvedNamesLower])
 
   const handlePropertiesChange = useCallback((records) => {
     const nextRecords = Array.isArray(records) ? records : []
-    const names = nextRecords
-      .map((record) => record.Name || record.Property || record.Address || '')
-      .filter(Boolean)
-
-    setPropertyCount(nextRecords.length)
-    setPropertyOptions(Array.from(new Set([...DEFAULT_AXIS_PROPERTIES, ...names])))
+    setPropertyRecords(nextRecords)
   }, [])
 
   useEffect(() => {
@@ -2461,87 +3068,116 @@ function ManagerDashboard({ manager: managerProp, onOpenDraft, onSignOut, onMana
 
   return (
     <div className="min-h-screen bg-slate-50">
-      {/* Top nav */}
-      <header className="sticky top-0 z-10 border-b border-slate-200 bg-white/95 px-6 py-4 backdrop-blur">
-        <div className="mx-auto flex max-w-7xl items-center justify-between gap-4">
-          <div className="flex items-center gap-3">
-            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-[#2563eb]">
-              <svg className="h-5 w-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-              </svg>
+      {/* Top nav — brand row + pill tab strip */}
+      <header className="sticky top-0 z-10 border-b border-slate-200/90 bg-white/90 shadow-sm backdrop-blur-md supports-[backdrop-filter]:bg-white/80">
+        <div className="mx-auto max-w-7xl px-4 pb-3 pt-3 sm:px-6 sm:pb-4 sm:pt-4">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
+            <div className="flex min-w-0 items-center gap-3">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-[#2563eb] shadow-md shadow-blue-500/20">
+                <svg className="h-5 w-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                </svg>
+              </div>
+              <div className="min-w-0">
+                <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-[#2563eb]">Axis</p>
+                <h1 className="truncate text-lg font-black tracking-tight text-slate-900 sm:text-xl">Manager portal</h1>
+                <p className="mt-0.5 truncate text-xs text-slate-500 sm:hidden">{manager.name}</p>
+              </div>
             </div>
-            <div>
-              <span className="text-base font-black text-slate-900">Axis Manager Portal</span>
-              <span className="ml-2 hidden text-sm text-slate-400 sm:inline">Leases · Properties · Work orders · Inbox · Calendar</span>
+            <div className="flex flex-wrap items-center gap-2 sm:justify-end">
+              <div className="hidden max-w-[min(100%,18rem)] rounded-2xl border border-slate-200/90 bg-slate-50/90 px-3 py-2 text-left sm:block">
+                <div className="truncate text-sm font-semibold text-slate-900">{manager.name}</div>
+                <div className="truncate font-mono text-[11px] text-slate-500">
+                  {manager.role}
+                  {manager.managerId ? ` · ${manager.managerId}` : ''}
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={handleBillingPortal}
+                disabled={billingLoading}
+                className="rounded-xl border border-slate-200 bg-white px-3.5 py-2 text-sm font-semibold text-slate-700 shadow-sm transition hover:border-slate-300 hover:bg-slate-50 disabled:opacity-50"
+              >
+                {billingLoading ? 'Opening…' : 'Billing'}
+              </button>
+              <button
+                type="button"
+                onClick={onSignOut}
+                className="rounded-xl bg-slate-900 px-3.5 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-slate-800"
+              >
+                Sign out
+              </button>
             </div>
           </div>
-          <div className="flex items-center gap-3">
-            <div className="hidden text-right sm:block">
-              <div className="text-sm font-semibold text-slate-900">{manager.name}</div>
-              <div className="text-xs text-slate-500">{manager.role}{manager.managerId ? ` · ${manager.managerId}` : ''}</div>
-            </div>
-            <button
-              onClick={handleBillingPortal}
-              disabled={billingLoading}
-              className="rounded-xl border border-slate-200 px-3 py-2 text-sm font-semibold text-slate-600 transition hover:bg-slate-50 disabled:opacity-50"
-            >
-              {billingLoading ? 'Opening billing…' : 'Billing'}
-            </button>
-            <button
-              onClick={onSignOut}
-              className="rounded-xl border border-slate-200 px-3 py-2 text-sm font-semibold text-slate-600 transition hover:bg-slate-50"
-            >
-              Sign out
-            </button>
-          </div>
-        </div>
 
-        {/* Primary navigation */}
-        <div className="-mx-1 flex gap-0 overflow-x-auto border-b border-slate-200 px-4 scrollbar-none sm:px-6">
-          {MANAGER_DASH_TABS.map(([key, label]) => (
-            <button
-              key={key}
-              type="button"
-              onClick={() => setDashView(key)}
-              className={`-mb-px shrink-0 border-b-2 px-3 py-3 text-sm font-semibold transition sm:px-4 ${
-                dashView === key
-                  ? 'border-[#2563eb] text-[#2563eb]'
-                  : 'border-transparent text-slate-500 hover:text-slate-900'
-              }`}
-            >
-              {label}
-            </button>
-          ))}
+          <nav
+            className="mt-3 flex gap-1 overflow-x-auto rounded-2xl border border-slate-200/80 bg-slate-100/80 p-1 scrollbar-none [-ms-overflow-style:none] [scrollbar-width:none] sm:mt-4 [&::-webkit-scrollbar]:hidden"
+            aria-label="Portal sections"
+          >
+            {MANAGER_DASH_TABS.map(([key, label]) => {
+              const active = dashView === key
+              return (
+                <button
+                  key={key}
+                  type="button"
+                  onClick={() => setDashView(key)}
+                  className={`shrink-0 rounded-xl px-3 py-2 text-sm font-semibold transition sm:px-4 ${
+                    active
+                      ? 'bg-[linear-gradient(180deg,#2f76ff_0%,#2450eb_100%)] text-white shadow-[0_4px_16px_rgba(37,99,235,0.3)]'
+                      : 'text-slate-600 hover:bg-white/60 hover:text-slate-900'
+                  }`}
+                >
+                  {label}
+                </button>
+              )
+            })}
+          </nav>
         </div>
       </header>
 
       <div className="mx-auto max-w-7xl px-6 py-8">
         {dashView === 'profile' ? (
-          <ManagerProfilePanel manager={manager} onManagerUpdate={handleManagerUpdate} />
+          <ManagerProfilePanel
+            manager={manager}
+            onManagerUpdate={handleManagerUpdate}
+            approvedPropertyCount={managerScope.approvedNames.size}
+          />
         ) : dashView === 'applications' ? (
-          <ApplicationsPanel propertyOptions={propertyOptions} />
+          <ApplicationsPanel allowedPropertyNames={scopedPropertyOptions} />
         ) : dashView === 'properties' ? (
           <div id="house-management" className="scroll-mt-24">
-            <HouseManagementPanel onPropertiesChange={handlePropertiesChange} />
+            <HouseManagementPanel manager={manager} onPropertiesChange={handlePropertiesChange} />
           </div>
+        ) : dashView === 'payments' ? (
+          <ManagerPaymentsPanel allowedPropertyNames={scopedPropertyOptions} />
         ) : dashView === 'workorders' ? (
           <WorkOrdersTabPanel manager={manager} />
         ) : dashView === 'inbox' ? (
           <InboxTabPanel manager={manager} />
         ) : dashView === 'calendar' ? (
           <ManagerCalendarPanel />
-        ) : dashView === 'overview' ? (
-          <ManagerOverviewPanel
+        ) : dashView === 'dashboard' ? (
+          <ManagerDashboardHomePanel
             manager={manager}
-            propertyCount={propertyCount}
+            approvedHouseCount={managerScope.approvedNames.size}
             stats={overviewStats}
             statsLoading={overviewStatsLoading}
+            dataWarnings={overviewDataWarnings}
             onNavigate={setDashView}
             onGenerateDraft={() => setShowGenerateModal(true)}
             onOpenBilling={handleBillingPortal}
           />
         ) : (
         <>
+        {leasesLoadError ? (
+          <div
+            role="alert"
+            className="mb-6 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-950"
+          >
+            <div className="font-semibold text-red-900">Could not load lease drafts</div>
+            <p className="mt-1 text-red-900/90">{leasesLoadError}</p>
+          </div>
+        ) : null}
         {/* Status stat cards — clicking one filters the table */}
         <div className="mb-8 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
           {ALL_STATUSES.map(status => {
@@ -2596,8 +3232,10 @@ function ManagerDashboard({ manager: managerProp, onOpenDraft, onSignOut, onMana
             onChange={e => setFilters(f => ({ ...f, property: e.target.value }))}
             className="rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition focus:border-[#2563eb] focus:outline-none focus:ring-2 focus:ring-[#2563eb]/20"
           >
-            <option value="">All properties</option>
-            {propertyOptions.map(p => <option key={p} value={p}>{p}</option>)}
+            <option value="">All your properties</option>
+            {scopedPropertyOptions.map((p) => (
+              <option key={p} value={p}>{p}</option>
+            ))}
           </select>
 
           {/* Generate new draft */}
@@ -2611,13 +3249,6 @@ function ManagerDashboard({ manager: managerProp, onOpenDraft, onSignOut, onMana
             Generate draft
           </button>
         </div>
-
-        <ManagerOperationsPanel
-          manager={manager}
-          propertyCount={propertyCount}
-          onGenerateDraft={() => setShowGenerateModal(true)}
-          onOpenBilling={handleBillingPortal}
-        />
 
         {/* Drafts table */}
         <div className="overflow-hidden rounded-[24px] border border-slate-200 bg-white">
@@ -2687,7 +3318,7 @@ function ManagerDashboard({ manager: managerProp, onOpenDraft, onSignOut, onMana
 
         {/* Attribution footer */}
         <p className="mt-6 text-center text-xs text-slate-400">
-          Axis Manager Portal · Leases, applications, properties, work orders, and inbox · {new Date().getFullYear()}
+          Axis Manager Portal · Leases, applications, properties, payments, work orders, inbox · {new Date().getFullYear()}
         </p>
       </>
       )}
@@ -2696,7 +3327,7 @@ function ManagerDashboard({ manager: managerProp, onOpenDraft, onSignOut, onMana
       {showGenerateModal && (
         <GenerateDraftModal
           manager={manager}
-          propertyOptions={propertyOptions}
+          propertyOptions={scopedPropertyOptions}
           onClose={() => setShowGenerateModal(false)}
           onGenerated={handleGenerated}
         />
