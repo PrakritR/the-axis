@@ -7,7 +7,7 @@ const APPS_BASE_URL = `https://api.airtable.com/v0/${APPS_BASE_ID}`
 const TABLES = {
   workOrders: 'Work Orders',
   messages: 'Messages',
-  residents: 'Residents',
+  residents: 'Resident Profile',
   announcements: 'Announcements',
   properties: 'Properties',
   rooms: 'Rooms',
