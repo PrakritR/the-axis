@@ -3,7 +3,7 @@ import { Link, useLocation } from 'react-router-dom'
 import { AnimatePresence, motion } from 'framer-motion'
 import scrollToTop from '../utils/scrollToTop'
 import { AxisWordmark } from './logos/AxisLogos'
-import { HOUSING_EXPLORE_PATH, HOUSING_CONTACT_SCHEDULE } from '../lib/housingSite'
+import { HOUSING_EXPLORE_PATH } from '../lib/housingSite'
 import PortalNavLink from './PortalNavLink'
 import PortalBubble from './PortalBubble'
 
@@ -60,14 +60,6 @@ function AxisIcon() {
   )
 }
 
-function TourIcon() {
-  return (
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden>
-      <rect x="3" y="5" width="18" height="16" rx="2" stroke="currentColor" strokeWidth="1.8" />
-      <path d="M8 3v4M16 3v4M3 11h18" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
-    </svg>
-  )
-}
 
 /**
  * Single site header: marketing (renter), owners funnel, and portal hub layouts.
@@ -86,32 +78,18 @@ export default function SiteHeader() {
   const isHome = pathname === '/' || pathname.startsWith('/properties/')
   const isApply = pathname === '/apply'
   const isPortal = pathname === '/portal'
-  const scheduleParams = new URLSearchParams(location.search)
-  const isScheduleTour =
-    pathname === '/contact' &&
-    scheduleParams.get('section') === 'housing' &&
-    scheduleParams.get('tab') === 'schedule'
 
   const showMobileDock = variant === 'marketing' && ['/', '/apply', '/contact'].includes(pathname)
 
   const marketingCenterNav = [
-    { label: 'Houses', to: '/', isActive: isHome },
-    { label: 'Apply Housing', to: '/apply', isActive: isApply },
-    { label: 'Schedule tour', to: HOUSING_CONTACT_SCHEDULE, isActive: isScheduleTour },
-    { label: 'Join Axis', to: '/owners/about', isActive: false },
+    { label: 'Explore houses', to: '/', isActive: isHome },
+    { label: 'Partner with Axis', to: '/owners/about', isActive: false },
   ]
 
   const mobileDockLinks = [
     { label: 'Houses', to: '/', icon: <HomeIcon />, isActive: isHome },
     { label: 'Apply', to: '/apply', icon: <ApplyIcon />, isActive: isApply },
-    {
-      label: 'Tour',
-      to: HOUSING_CONTACT_SCHEDULE,
-      icon: <TourIcon />,
-      isActive: isScheduleTour,
-      ariaLabel: 'Schedule tour',
-    },
-    { label: 'Join Axis', to: '/owners/about', icon: <AxisIcon />, isActive: false },
+    { label: 'Partner', to: '/owners/about', icon: <AxisIcon />, isActive: false },
   ]
 
   const ownersCenterNav = [
@@ -168,9 +146,6 @@ export default function SiteHeader() {
               </Link>
               <Link to="/owners/about" onClick={scrollToTop} className={hubNavLink}>
                 Partner with Axis
-              </Link>
-              <Link to={HOUSING_CONTACT_SCHEDULE} onClick={scrollToTop} className={hubNavLink}>
-                Schedule tour
               </Link>
             </nav>
             <div className="hidden sm:col-start-3 sm:row-start-1 sm:block sm:justify-self-end">
@@ -282,27 +257,7 @@ export default function SiteHeader() {
                     }}
                     className="rounded-xl px-3 py-2.5 text-sm font-medium text-slate-600 transition hover:bg-slate-50 hover:text-slate-900"
                   >
-                    Houses
-                  </Link>
-                  <Link
-                    to="/apply"
-                    onClick={() => {
-                      closeMobileMenu()
-                      scrollToTop()
-                    }}
-                    className="rounded-xl px-3 py-2.5 text-sm font-medium text-slate-600 transition hover:bg-slate-50 hover:text-slate-900"
-                  >
-                    Apply Housing
-                  </Link>
-                  <Link
-                    to={HOUSING_CONTACT_SCHEDULE}
-                    onClick={() => {
-                      closeMobileMenu()
-                      scrollToTop()
-                    }}
-                    className="rounded-xl px-3 py-2.5 text-sm font-medium text-slate-600 transition hover:bg-slate-50 hover:text-slate-900"
-                  >
-                    Schedule tour
+                    Explore houses
                   </Link>
                   <Link
                     to="/owners/about"
@@ -312,7 +267,7 @@ export default function SiteHeader() {
                     }}
                     className="rounded-xl px-3 py-2.5 text-sm font-medium text-slate-600 transition hover:bg-slate-50 hover:text-slate-900"
                   >
-                    Join Axis
+                    Partner with Axis
                   </Link>
                 </>
               ) : (
@@ -368,7 +323,7 @@ export default function SiteHeader() {
         <div className="pointer-events-none fixed inset-x-3 bottom-[calc(0.75rem+env(safe-area-inset-bottom))] z-40 md:hidden">
           <nav
             aria-label="Mobile primary navigation"
-            className="pointer-events-auto grid grid-cols-4 gap-0.5 rounded-[22px] border border-white/90 bg-white/86 p-1.5 shadow-[0_20px_50px_rgba(37,99,235,0.12),0_0_0_1px_rgba(255,255,255,0.6)] backdrop-blur-2xl backdrop-saturate-150 sm:gap-1 sm:p-2"
+            className="pointer-events-auto grid grid-cols-3 gap-0.5 rounded-[22px] border border-white/90 bg-white/86 p-1.5 shadow-[0_20px_50px_rgba(37,99,235,0.12),0_0_0_1px_rgba(255,255,255,0.6)] backdrop-blur-2xl backdrop-saturate-150 sm:gap-1 sm:p-2"
           >
             {mobileDockLinks.map((item) => (
               <Link

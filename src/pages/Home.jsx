@@ -542,20 +542,17 @@ function PropertyCarousel() {
 // ── Page ─────────────────────────────────────────────────────────────────────
 
 export default function Home() {
-  const heroImage = properties[1]?.images?.[0] || properties[0]?.images?.[0]
-
   return (
       <div className="bg-transparent">
       <Seo
         title="Axis | Available Housing in Seattle"
         description="Browse available housing in Seattle with posted pricing, listing details, and online applications."
         pathname="/"
-        image={heroImage}
         structuredData={buildWebsiteSchema()}
       />
 
       {/* ── HERO ── */}
-      <Hero heroImage={heroImage} />
+      <Hero />
 
       {/* ── ROOM FINDER ── */}
       <RoomFinder />

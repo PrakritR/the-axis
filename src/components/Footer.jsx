@@ -2,7 +2,6 @@ import React from 'react'
 import { Link, useLocation } from 'react-router-dom'
 import scrollToTop from '../utils/scrollToTop'
 import { AxisWordmark } from './logos/AxisLogos'
-import { PORTAL_BUBBLE_SURFACE } from './PortalBubble'
 
 export default function Footer() {
   const location = useLocation()
@@ -47,19 +46,13 @@ export default function Footer() {
                   <Link to="/owners/about" onClick={scrollToTop} className="inline-block transition hover:text-slate-900 hover:translate-x-0.5">About us</Link>
                   <Link to="/owners/pricing" onClick={scrollToTop} className="inline-block transition hover:text-slate-900 hover:translate-x-0.5">Pricing</Link>
                   <Link to="/owners/contact" onClick={scrollToTop} className="inline-block transition hover:text-slate-900 hover:translate-x-0.5">Contact</Link>
-                  <Link to="/portal" onClick={scrollToTop} className={`${PORTAL_BUBBLE_SURFACE} self-start`}>
-                    Portal
-                  </Link>
                 </>
               ) : (
                 <>
                   <Link to="/" onClick={scrollToTop} className="inline-block transition hover:text-slate-900 hover:translate-x-0.5">Explore properties</Link>
                   <Link to="/apply" onClick={scrollToTop} className="inline-block transition hover:text-slate-900 hover:translate-x-0.5">Apply housing</Link>
                   <Link to="/contact?section=housing&tab=message" onClick={scrollToTop} className="inline-block transition hover:text-slate-900 hover:translate-x-0.5">Contact</Link>
-                  <Link to="/owners/about" onClick={scrollToTop} className="inline-block transition hover:text-slate-900 hover:translate-x-0.5">Join Axis</Link>
-                  <Link to="/portal" onClick={scrollToTop} className={`${PORTAL_BUBBLE_SURFACE} self-start`}>
-                    Portal
-                  </Link>
+                  <Link to="/owners/about" onClick={scrollToTop} className="inline-block transition hover:text-slate-900 hover:translate-x-0.5">Partner with Axis</Link>
                 </>
               )}
             </div>
