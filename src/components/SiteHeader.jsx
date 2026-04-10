@@ -68,9 +68,8 @@ export default function SiteHeader() {
   const location = useLocation()
   const { pathname } = location
 
-  const isPortalHub = pathname === '/portal'
   const isOwners = pathname.startsWith('/owners')
-  const variant = isPortalHub ? 'portal' : isOwners ? 'owners' : 'marketing'
+  const variant = isOwners ? 'owners' : 'marketing'
 
   const [mobileOpen, setMobileOpen] = useState(false)
   const [scrolled, setScrolled] = useState(false)
@@ -121,61 +120,6 @@ export default function SiteHeader() {
 
   function closeMobileMenu() {
     setMobileOpen(false)
-  }
-
-  if (variant === 'portal') {
-    const portalNavItems = [
-      { label: 'Explore Houses', to: HOUSING_EXPLORE_PATH, isActive: isHome },
-      { label: 'Partner with Axis', to: '/owners/about', isActive: isOwners },
-    ]
-
-    return (
-      <header
-        className="relative z-30 w-full shrink-0 border-b border-slate-200/80 bg-white/90 backdrop-blur-xl"
-        style={{ paddingTop: 'env(safe-area-inset-top)' }}
-      >
-        <div className="container mx-auto px-4 py-3.5 sm:px-6 sm:py-4">
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] sm:items-center sm:gap-6">
-            <div className="flex items-center justify-between gap-4 sm:contents">
-              <Link
-                to="/"
-                onClick={scrollToTop}
-                className="shrink-0 sm:col-start-1 sm:row-start-1 sm:justify-self-start"
-                aria-label="Axis home"
-              >
-                <AxisWordmark tone="dark" className="h-10 w-auto sm:h-11" />
-              </Link>
-              <div className="sm:hidden">
-                <PortalBubble aria-current="page">Portal</PortalBubble>
-              </div>
-            </div>
-            <nav
-              className="flex flex-wrap items-center justify-center gap-x-6 gap-y-2 sm:col-start-2 sm:row-start-1 sm:justify-center sm:gap-8"
-              aria-label="Browse housing and partners"
-            >
-              {portalNavItems.map((item) => (
-                <Link
-                  key={item.label}
-                  to={item.to}
-                  onClick={scrollToTop}
-                  className={`relative ${hubNavLink} ${item.isActive ? 'text-slate-900' : ''}`}
-                >
-                  {item.label}
-                  <span
-                    className={`absolute -bottom-2 left-0 h-px bg-[#2563eb] transition-all duration-300 ${
-                      item.isActive ? 'w-full opacity-100' : 'w-0 opacity-0'
-                    }`}
-                  />
-                </Link>
-              ))}
-            </nav>
-            <div className="hidden sm:col-start-3 sm:row-start-1 sm:block sm:justify-self-end">
-              <PortalBubble aria-current="page">Portal</PortalBubble>
-            </div>
-          </div>
-        </div>
-      </header>
-    )
   }
 
   const headerShell =
@@ -276,6 +220,13 @@ export default function SiteHeader() {
                     className="rounded-xl px-3 py-2.5 text-sm font-medium text-slate-600 transition hover:bg-slate-50 hover:text-slate-900"
                   >
                     Explore Houses
+                  </Link>
+                  <Link
+                    to="/contact?section=housing&tab=schedule"
+                    onClick={() => { closeMobileMenu(); scrollToTop() }}
+                    className="rounded-xl px-3 py-2.5 text-sm font-medium text-slate-600 transition hover:bg-slate-50 hover:text-slate-900"
+                  >
+                    Schedule tour
                   </Link>
                   <Link
                     to="/apply"

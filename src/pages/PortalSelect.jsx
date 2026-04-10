@@ -17,17 +17,9 @@ export default function PortalSelect() {
         <div className="mx-auto grid w-full max-w-4xl gap-5 sm:grid-cols-2 sm:gap-6">
           <Link to="/manager" onClick={scrollToTop} className={portalBtn}>
             <span className="text-xl font-black text-slate-900 sm:text-2xl">Manager portal</span>
-            <span className="mt-8 inline-flex items-center gap-2 text-sm font-bold text-[#2563eb]">
-              Open manager portal
-              <span aria-hidden>→</span>
-            </span>
           </Link>
           <Link to="/resident" onClick={scrollToTop} className={portalBtn}>
             <span className="text-xl font-black text-slate-900 sm:text-2xl">Resident portal</span>
-            <span className="mt-8 inline-flex items-center gap-2 text-sm font-bold text-[#2563eb]">
-              Open resident portal
-              <span aria-hidden>→</span>
-            </span>
           </Link>
         </div>
       </main>
