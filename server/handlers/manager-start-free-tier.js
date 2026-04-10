@@ -191,16 +191,12 @@ export default async function handler(req, res) {
         Email: normalizedEmail,
         tier: details.planType,
         Active: true,
-        Notes: nextNotes,
       })
     } else {
       const nextFields = {}
 
       if (!manager.Name && normalizedName) {
         nextFields.Name = normalizedName
-      }
-      if (nextNotes !== String(manager.Notes || '').trim()) {
-        nextFields.Notes = nextNotes
       }
       if (manager.tier !== details.planType) {
         nextFields.tier = details.planType

@@ -1,6 +1,7 @@
 const STRIPE_API = 'https://api.stripe.com/v1'
 const AIRTABLE_TOKEN = process.env.VITE_AIRTABLE_TOKEN
 const BASE_ID = process.env.VITE_AIRTABLE_APPLICATIONS_BASE_ID || 'appNBX2inqfJMyqYV'
+const MANAGER_TABLE_ENC = encodeURIComponent('Manager Profile')
 
 function airtableHeaders() {
   return {
@@ -83,7 +84,7 @@ function extractManagerPhone(manager, fallbackPhone = '') {
 
 async function getManagerByEmail(email) {
   const formula = encodeURIComponent(`{Email} = "${escapeFormulaValue(email)}"`)
-  const url = `https://api.airtable.com/v0/${BASE_ID}/Managers?filterByFormula=${formula}&maxRecords=1`
+  const url = `https://api.airtable.com/v0/${BASE_ID}/${MANAGER_TABLE_ENC}?filterByFormula=${formula}&maxRecords=1`
   const atRes = await fetch(url, { headers: airtableHeaders() })
   if (!atRes.ok) throw new Error('Database error')
   const data = await atRes.json()
@@ -92,7 +93,7 @@ async function getManagerByEmail(email) {
 }
 
 async function createManager(fields) {
-  const atRes = await fetch(`https://api.airtable.com/v0/${BASE_ID}/Managers`, {
+  const atRes = await fetch(`https://api.airtable.com/v0/${BASE_ID}/${MANAGER_TABLE_ENC}`, {
     method: 'POST',
     headers: airtableHeaders(),
     body: JSON.stringify({ fields, typecast: true }),
@@ -104,7 +105,7 @@ async function createManager(fields) {
 }
 
 async function updateManager(recordId, fields) {
-  const atRes = await fetch(`https://api.airtable.com/v0/${BASE_ID}/Managers/${recordId}`, {
+  const atRes = await fetch(`https://api.airtable.com/v0/${BASE_ID}/${MANAGER_TABLE_ENC}/${recordId}`, {
     method: 'PATCH',
     headers: airtableHeaders(),
     body: JSON.stringify({ fields, typecast: true }),
@@ -179,13 +180,6 @@ export default async function handler(req, res) {
         Email: email,
         tier: details.planType,
         Active: true,
-        Notes: mergeManagerNotes('', {
-          phone,
-          planType: details.planType,
-          billingInterval,
-          houseAccess: details.houseAccess,
-          platformAccess: details.platformAccess,
-        }),
       })
     }
 
@@ -201,17 +195,6 @@ export default async function handler(req, res) {
     }
     if (manager.tier !== details.planType) {
       nextFields.tier = details.planType
-    }
-
-    const nextNotes = mergeManagerNotes(manager.Notes, {
-      phone,
-      planType: details.planType,
-      billingInterval,
-      houseAccess: details.houseAccess,
-      platformAccess: details.platformAccess,
-    })
-    if (nextNotes !== String(manager.Notes || '').trim()) {
-      nextFields.Notes = nextNotes
     }
 
     if (Object.keys(nextFields).length > 0) {
