@@ -103,7 +103,7 @@ export default async function handler(req, res) {
         managerId: normalizedManagerId,
         name: updated.Name || '',
         email: updated.Email || normalizedEmail,
-        phone: String(updated.Phone || '').trim() || extractPhoneFromNotes(updated.Notes),
+        phone: String(updated['Phone Number'] || '').trim(),
         planType: updated.tier || extractMetadataValue(updated.Notes, 'Plan') || normalizedPlanType || 'free',
         billingInterval: extractMetadataValue(updated.Notes, 'Billing') || '',
       },

@@ -189,6 +189,7 @@ export default async function handler(req, res) {
       manager = await createManager({
         Name: normalizedName,
         Email: normalizedEmail,
+        'Phone Number': normalizedPhone,
         tier: details.planType,
         Active: true,
       })
@@ -197,6 +198,9 @@ export default async function handler(req, res) {
 
       if (!manager.Name && normalizedName) {
         nextFields.Name = normalizedName
+      }
+      if (normalizedPhone && manager['Phone Number'] !== normalizedPhone) {
+        nextFields['Phone Number'] = normalizedPhone
       }
       if (manager.tier !== details.planType) {
         nextFields.tier = details.planType
@@ -215,7 +219,7 @@ export default async function handler(req, res) {
     return res.status(200).json({
       name: manager.Name || normalizedName,
       email: normalizedEmail,
-      phone: String(manager.Phone || '').trim() || extractPhoneFromNotes(manager.Notes) || normalizedPhone,
+      phone: String(manager['Phone Number'] || '').trim() || normalizedPhone,
       managerId,
       accountExists: Boolean(manager.Password),
       planType: details.planType,

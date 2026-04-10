@@ -79,7 +79,7 @@ function mergeManagerNotes(existingNotes, metadata) {
 }
 
 function extractManagerPhone(manager, fallbackPhone = '') {
-  return String(manager?.Phone || '').trim() || extractPhoneFromNotes(manager?.Notes) || String(fallbackPhone || '').trim()
+  return String(manager?.['Phone Number'] || '').trim() || String(fallbackPhone || '').trim()
 }
 
 async function getManagerByEmail(email) {
@@ -175,12 +175,16 @@ export default async function handler(req, res) {
 
     let manager = await getManagerByEmail(email)
     if (!manager) {
-      manager = await createManager({
+      const createFields = {
         Name: name || email.split('@')[0],
         Email: email,
         tier: details.planType,
         Active: true,
-      })
+      }
+      if (phone) createFields['Phone Number'] = String(phone).trim()
+      manager = await createManager(createFields)
+    } else if (phone && !manager['Phone Number']) {
+      manager = await updateManager(manager.id, { 'Phone Number': String(phone).trim() })
     }
 
     const derivedManagerId = deriveManagerId(manager.id)
