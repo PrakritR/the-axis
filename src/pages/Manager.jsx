@@ -111,6 +111,26 @@ async function fetchLeaseDrafts({ status, property, resident } = {}) {
   return (data.records || []).map(mapRecord)
 }
 
+// ─── Applications data layer ──────────────────────────────────────────────────
+async function fetchApplications({ property } = {}) {
+  const url = new URL(`${AIRTABLE_BASE_URL}/Applications`)
+  if (property) {
+    url.searchParams.set('filterByFormula', `FIND("${property.replace(/"/g, '\\"')}", {Property Name}) > 0`)
+  }
+  url.searchParams.set('sort[0][field]', 'Created')
+  url.searchParams.set('sort[0][direction]', 'desc')
+  const data = await atRequest(url.toString())
+  return (data.records || []).map(mapRecord)
+}
+
+async function patchApplication(recordId, fields) {
+  const data = await atRequest(`${AIRTABLE_BASE_URL}/Applications/${recordId}`, {
+    method: 'PATCH',
+    body: JSON.stringify({ fields, typecast: true }),
+  })
+  return mapRecord(data)
+}
+
 async function fetchLeaseDraft(recordId) {
   const data = await atRequest(`${AIRTABLE_BASE_URL}/Lease%20Drafts/${recordId}`)
   return mapRecord(data)
@@ -972,6 +992,171 @@ function HouseManagementPanel({ onPropertiesChange }) {
   )
 }
 
+// ─── ManagerProfilePanel ──────────────────────────────────────────────────────
+// Profile view: editable personal info + managed property addresses list
+function ManagerProfilePanel({ manager, onManagerUpdate }) {
+  const [form, setForm] = useState({ name: manager.name || '', phone: manager.phone || '' })
+  const [saving, setSaving] = useState(false)
+  const [saveError, setSaveError] = useState('')
+  const [properties, setProperties] = useState([])
+  const [propsLoading, setPropsLoading] = useState(true)
+
+  useEffect(() => {
+    fetchPropertiesAdmin()
+      .then(setProperties)
+      .catch(() => setProperties([]))
+      .finally(() => setPropsLoading(false))
+  }, [])
+
+  async function handleSaveProfile(event) {
+    event.preventDefault()
+    setSaving(true)
+    setSaveError('')
+    try {
+      const res = await fetch('/api/portal?action=manager-update-profile', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          managerId: manager.managerId,
+          name: form.name.trim(),
+          phone: form.phone.trim(),
+        }),
+      })
+      const data = await readJsonResponse(res)
+      if (!res.ok) throw new Error(data.error || 'Could not save profile.')
+      toast.success('Profile saved')
+      onManagerUpdate({ ...manager, name: form.name.trim(), phone: form.phone.trim() })
+    } catch (err) {
+      setSaveError(err.message || 'Could not save profile.')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const inputCls = 'w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm transition focus:border-[#2563eb] focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#2563eb]/20'
+  const readonlyCls = `${inputCls} cursor-default bg-slate-100 text-slate-500`
+
+  return (
+    <div className="mx-auto max-w-4xl space-y-6">
+      {/* Personal info */}
+      <section className="rounded-[28px] border border-slate-200 bg-white p-6">
+        <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-[#2563eb]">Account</div>
+        <h2 className="mt-2 text-2xl font-black text-slate-900">Manager profile</h2>
+        <p className="mt-2 max-w-xl text-sm leading-6 text-slate-500">
+          Update your display name and phone number. Email and Manager ID are tied to your subscription — contact Axis to change these.
+        </p>
+        <form onSubmit={handleSaveProfile} className="mt-6 grid gap-5 sm:grid-cols-2">
+          <div>
+            <label className="mb-1.5 block text-sm font-semibold text-slate-700">Full name</label>
+            <input
+              type="text"
+              value={form.name}
+              onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
+              placeholder="Your name"
+              className={inputCls}
+            />
+          </div>
+          <div>
+            <label className="mb-1.5 block text-sm font-semibold text-slate-700">Email</label>
+            <div className={readonlyCls}>{manager.email || '—'}</div>
+          </div>
+          <div>
+            <label className="mb-1.5 block text-sm font-semibold text-slate-700">Phone</label>
+            <input
+              type="tel"
+              value={form.phone}
+              onChange={(e) => setForm((f) => ({ ...f, phone: e.target.value }))}
+              placeholder="+1 (206) 555-0100"
+              className={inputCls}
+            />
+          </div>
+          <div>
+            <label className="mb-1.5 block text-sm font-semibold text-slate-700">Manager ID</label>
+            <div className={`${readonlyCls} font-mono`}>{manager.managerId || '—'}</div>
+          </div>
+          {saveError ? (
+            <div className="sm:col-span-2">
+              <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{saveError}</div>
+            </div>
+          ) : null}
+          <div className="sm:col-span-2">
+            <button
+              type="submit"
+              disabled={saving || (!form.name.trim() && !form.phone.trim())}
+              className="rounded-2xl bg-[#2563eb] px-6 py-3 text-sm font-semibold text-white transition hover:brightness-110 disabled:opacity-50"
+            >
+              {saving ? 'Saving…' : 'Save profile'}
+            </button>
+          </div>
+        </form>
+      </section>
+
+      {/* Plan & subscription summary */}
+      <section className="rounded-[28px] border border-slate-200 bg-white p-6">
+        <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">Subscription</div>
+        <h2 className="mt-2 text-xl font-black text-slate-900">Plan overview</h2>
+        <div className="mt-4 grid gap-3 sm:grid-cols-3">
+          {[
+            { label: 'Role', value: manager.role || 'Manager' },
+            { label: 'Manager ID', value: manager.managerId || '—' },
+            { label: 'Properties', value: propsLoading ? '…' : `${properties.length} ${properties.length === 1 ? 'house' : 'houses'}` },
+          ].map(({ label, value }) => (
+            <div key={label} className="rounded-2xl border border-slate-100 bg-slate-50 px-4 py-4">
+              <div className="text-[11px] font-bold uppercase tracking-[0.14em] text-slate-400">{label}</div>
+              <div className="mt-1 truncate text-base font-semibold text-slate-900">{value}</div>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      {/* Managed property addresses */}
+      <section className="rounded-[28px] border border-slate-200 bg-white p-6">
+        <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-[#2563eb]">Properties</div>
+        <h2 className="mt-2 text-xl font-black text-slate-900">Managed addresses</h2>
+        <p className="mt-2 text-sm leading-6 text-slate-500">
+          All properties registered in the Axis operations system. To add or edit properties, go to House&nbsp;Management in the dashboard.
+        </p>
+
+        {propsLoading ? (
+          <div className="mt-5 text-sm text-slate-500">Loading properties…</div>
+        ) : properties.length === 0 ? (
+          <div className="mt-5 rounded-2xl border border-slate-100 bg-slate-50 p-6 text-center text-sm text-slate-500">
+            No properties added yet. Use House Management in the dashboard to add your first property.
+          </div>
+        ) : (
+          <div className="mt-5 grid gap-3 sm:grid-cols-2">
+            {properties.map((p) => (
+              <div key={p.id} className="flex gap-4 rounded-2xl border border-slate-200 bg-slate-50 px-5 py-4">
+                <div className="mt-0.5 flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl bg-[#2563eb]/10">
+                  <svg className="h-5 w-5 text-[#2563eb]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
+                  </svg>
+                </div>
+                <div className="min-w-0 flex-1">
+                  <div className="text-sm font-black text-slate-900">{p.Name || p.Property || 'Untitled property'}</div>
+                  <div className="mt-0.5 text-sm text-slate-600">{p.Address || <span className="italic text-slate-400">No address set</span>}</div>
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    {p['Utilities Fee'] ? (
+                      <span className="rounded-full bg-blue-100 px-2.5 py-1 text-[11px] font-semibold text-blue-700">
+                        Utilities ${p['Utilities Fee']}/mo
+                      </span>
+                    ) : null}
+                    {p['Security Deposit'] ? (
+                      <span className="rounded-full bg-slate-200 px-2.5 py-1 text-[11px] font-semibold text-slate-600">
+                        Deposit ${p['Security Deposit']}
+                      </span>
+                    ) : null}
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </section>
+    </div>
+  )
+}
+
 function ManagerOperationsPanel({ manager, propertyCount, onGenerateDraft, onOpenBilling }) {
   const cards = [
     {
@@ -1461,8 +1646,126 @@ function WorkOrdersManagerPanel() {
   )
 }
 
+// ─── ApplicationsPanel ────────────────────────────────────────────────────────
+function ApplicationsPanel({ propertyOptions }) {
+  const [applications, setApplications] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [propertyFilter, setPropertyFilter] = useState('')
+  const [approving, setApproving] = useState({}) // recordId -> 'approving' | 'rejecting'
+
+  const load = useCallback(async () => {
+    setLoading(true)
+    try {
+      setApplications(await fetchApplications({ property: propertyFilter }))
+    } catch (err) {
+      toast.error('Failed to load applications: ' + err.message)
+    } finally {
+      setLoading(false)
+    }
+  }, [propertyFilter])
+
+  useEffect(() => { load() }, [load])
+
+  async function handleDecision(recordId, approved) {
+    setApproving(a => ({ ...a, [recordId]: approved ? 'approving' : 'rejecting' }))
+    try {
+      const updated = await patchApplication(recordId, { Approved: approved })
+      setApplications(prev => prev.map(a => a.id === recordId ? { ...a, Approved: updated.Approved } : a))
+      toast.success(approved ? 'Application approved — resident can now log in.' : 'Application rejected.')
+    } catch (err) {
+      toast.error('Could not update application: ' + err.message)
+    } finally {
+      setApproving(a => { const n = { ...a }; delete n[recordId]; return n })
+    }
+  }
+
+  const statusLabel = (app) => {
+    if (app.Approved === true) return { label: 'Approved', cls: 'border-emerald-200 bg-emerald-50 text-emerald-700' }
+    if (app.Approved === false) return { label: 'Rejected', cls: 'border-red-200 bg-red-50 text-red-700' }
+    return { label: 'Pending review', cls: 'border-amber-200 bg-amber-50 text-amber-700' }
+  }
+
+  return (
+    <div className="mb-10">
+      <div className="mb-5 flex flex-wrap items-center gap-3">
+        <h2 className="mr-auto text-xl font-black text-slate-900">Applications</h2>
+        <select
+          value={propertyFilter}
+          onChange={e => setPropertyFilter(e.target.value)}
+          className="rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition focus:border-[#2563eb] focus:outline-none focus:ring-2 focus:ring-[#2563eb]/20"
+        >
+          <option value="">All properties</option>
+          {propertyOptions.map(p => <option key={p} value={p}>{p}</option>)}
+        </select>
+        <button
+          onClick={load}
+          className="rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-600 transition hover:bg-slate-50"
+        >
+          Refresh
+        </button>
+      </div>
+
+      <div className="overflow-hidden rounded-[24px] border border-slate-200 bg-white">
+        {loading ? (
+          <div className="px-6 py-16 text-center text-sm text-slate-500">Loading applications…</div>
+        ) : applications.length === 0 ? (
+          <div className="px-6 py-16 text-center">
+            <div className="mb-3 text-4xl">📋</div>
+            <div className="text-sm font-semibold text-slate-700">No applications yet</div>
+            <p className="mt-1 text-sm text-slate-500">Applications submitted via the Apply page will appear here.</p>
+          </div>
+        ) : (
+          <div className="divide-y divide-slate-100">
+            {applications.map(app => {
+              const { label, cls } = statusLabel(app)
+              const busy = approving[app.id]
+              return (
+                <div key={app.id} className="flex flex-col gap-3 px-6 py-5 sm:flex-row sm:items-center sm:gap-5">
+                  <div className="flex-1 min-w-0">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="font-semibold text-slate-900 truncate">{app['Signer Full Name'] || '—'}</span>
+                      <span className={`shrink-0 rounded-full border px-2.5 py-0.5 text-[11px] font-bold ${cls}`}>{label}</span>
+                    </div>
+                    <div className="mt-1 flex flex-wrap gap-x-4 gap-y-0.5 text-sm text-slate-500">
+                      <span>{app['Signer Email'] || '—'}</span>
+                      {app['Property Name'] && <span>{app['Property Name']}</span>}
+                      {app['Room Number'] && <span>Room {app['Room Number']}</span>}
+                      {app['Lease Term'] && <span>{app['Lease Term']}</span>}
+                    </div>
+                    {app['Application ID'] && (
+                      <div className="mt-1 font-mono text-xs text-slate-400">APP-{String(app['Application ID'])}</div>
+                    )}
+                  </div>
+                  <div className="flex shrink-0 gap-2">
+                    <button
+                      onClick={() => handleDecision(app.id, true)}
+                      disabled={!!busy || app.Approved === true}
+                      className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-2 text-sm font-semibold text-emerald-700 transition hover:bg-emerald-100 disabled:opacity-40"
+                    >
+                      {busy === 'approving' ? 'Approving…' : 'Approve'}
+                    </button>
+                    <button
+                      onClick={() => handleDecision(app.id, false)}
+                      disabled={!!busy || app.Approved === false}
+                      className="rounded-xl border border-red-200 bg-red-50 px-4 py-2 text-sm font-semibold text-red-700 transition hover:bg-red-100 disabled:opacity-40"
+                    >
+                      {busy === 'rejecting' ? 'Rejecting…' : 'Reject'}
+                    </button>
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
 // ─── ManagerDashboard ─────────────────────────────────────────────────────────
-function ManagerDashboard({ manager, onOpenDraft, onSignOut }) {
+function ManagerDashboard({ manager: managerProp, onOpenDraft, onSignOut, onManagerUpdate }) {
+  const [manager, setManager] = useState(managerProp)
+  const [dashView, setDashView] = useState('dashboard') // 'dashboard' | 'applications' | 'profile'
   const [drafts, setDrafts] = useState([])
   const [loading, setLoading] = useState(true)
   const [showGenerateModal, setShowGenerateModal] = useState(false)
@@ -1470,6 +1773,11 @@ function ManagerDashboard({ manager, onOpenDraft, onSignOut }) {
   const [propertyOptions, setPropertyOptions] = useState(DEFAULT_AXIS_PROPERTIES)
   const [propertyCount, setPropertyCount] = useState(0)
   const [billingLoading, setBillingLoading] = useState(false)
+
+  function handleManagerUpdate(updated) {
+    setManager(updated)
+    onManagerUpdate?.(updated)
+  }
 
   // Debounce the resident name search so we don't hammer the records API on every keystroke
   const [residentInput, setResidentInput] = useState('')
@@ -1579,9 +1887,29 @@ function ManagerDashboard({ manager, onOpenDraft, onSignOut }) {
             </button>
           </div>
         </div>
+
+        {/* View tabs — Dashboard / Applications / Profile */}
+        <div className="flex gap-1 border-b border-slate-200 px-6">
+          {[['dashboard', 'Dashboard'], ['applications', 'Applications'], ['profile', 'Profile']].map(([key, label]) => (
+            <button
+              key={key}
+              onClick={() => setDashView(key)}
+              className={`-mb-px border-b-2 px-4 py-3 text-sm font-semibold transition ${dashView === key ? 'border-[#2563eb] text-[#2563eb]' : 'border-transparent text-slate-500 hover:text-slate-900'}`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
       </header>
 
       <div className="mx-auto max-w-7xl px-6 py-8">
+        {/* ── Profile view ── */}
+        {dashView === 'profile' ? (
+          <ManagerProfilePanel manager={manager} onManagerUpdate={handleManagerUpdate} />
+        ) : dashView === 'applications' ? (
+          <ApplicationsPanel propertyOptions={propertyOptions} />
+        ) : (
+        <>
         {/* Status stat cards — clicking one filters the table */}
         <div className="mb-8 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
           {ALL_STATUSES.map(status => {
@@ -1735,6 +2063,8 @@ function ManagerDashboard({ manager, onOpenDraft, onSignOut }) {
         <p className="mt-6 text-center text-xs text-slate-400">
           Axis Manager Portal · Manage houses, generate leases, and review drafts before publication · {new Date().getFullYear()}
         </p>
+      </>
+      )}
       </div>
 
       {showGenerateModal && (
@@ -2278,6 +2608,15 @@ export default function Manager() {
     setOpenDraftId(null)
   }
 
+  function handleManagerUpdate(updated) {
+    setManager(updated)
+    try {
+      sessionStorage.setItem(MANAGER_SESSION_KEY, JSON.stringify(updated))
+    } catch {
+      // ignore
+    }
+  }
+
   function handleOpenDraft(draftId) {
     setOpenDraftId(draftId)
     setView('editor')
@@ -2307,6 +2646,7 @@ export default function Manager() {
       manager={manager}
       onOpenDraft={handleOpenDraft}
       onSignOut={handleSignOut}
+      onManagerUpdate={handleManagerUpdate}
     />
   )
 }

@@ -321,6 +321,10 @@ export function ResidentAuthForm({ onLogin, footer = null, variant = 'default' }
         setSignInError('Invalid email or password. Contact Axis if you need help.')
         return
       }
+      if (resident.Approved !== true) {
+        setSignInError('Your application is still under review. You\'ll be able to log in once a manager approves it. Contact Axis if you have questions.')
+        return
+      }
       const leaseEnd = resident['Lease End Date']
       if (leaseEnd && new Date(leaseEnd) < new Date(new Date().toDateString())) {
         setSignInError('Your lease has ended. Contact Axis to discuss renewal.')
@@ -348,6 +352,10 @@ export function ResidentAuthForm({ onLogin, footer = null, variant = 'default' }
         setActivationError('Application not found. Check your Application ID (format: APP-recXXXXXXXXXXXXXX).')
         return
       }
+      if (app.Approved !== true) {
+        setActivationError('Your application hasn\'t been approved yet. A manager needs to review and approve it before you can create your account. Check back soon or contact Axis.')
+        return
+      }
       const appEmail = String(app['Signer Email'] || '').trim().toLowerCase()
       if (appEmail !== activateForm.email.trim().toLowerCase()) {
         setActivationError('Email does not match the application. Use the email you applied with.')
@@ -369,6 +377,7 @@ export function ResidentAuthForm({ onLogin, footer = null, variant = 'default' }
         const patch = {
           Password: activateForm.password,
           Status: 'Active',
+          Approved: true,
           'Lease Term': existing['Lease Term'] || app['Lease Term'] || '',
         }
         if (applicationLink && !(Array.isArray(existing.Applications) && existing.Applications.length)) {
@@ -392,6 +401,7 @@ export function ResidentAuthForm({ onLogin, footer = null, variant = 'default' }
         'Lease Start Date': app['Lease Start Date'] || null,
         'Lease End Date': app['Lease End Date'] || null,
         Status: 'Active',
+        Approved: true,
         ...(applicationLink ? { Applications: applicationLink } : {}),
         ...(app['Application ID'] != null ? { 'Application ID': app['Application ID'] } : {}),
       })

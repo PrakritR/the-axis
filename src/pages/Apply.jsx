@@ -1702,7 +1702,7 @@ export default function Apply() {
           <h1 className="text-center text-3xl font-black tracking-tight text-slate-900 sm:text-4xl">Application received</h1>
           <p className="mt-3 text-center text-base leading-7 text-slate-500">
             {isSigner
-              ? 'Thanks! Complete the steps below to secure your room.'
+              ? 'Thanks for applying! A manager will review your application and approve it — usually within 1–2 business days. You\'ll only be able to create your resident portal account and access your lease after your application is approved.'
               : "Thanks! Your co-signer form has been linked to the signer's application."}
           </p>
 
@@ -1751,7 +1751,7 @@ export default function Apply() {
                 {stepIndex === 0 && (
                   <div className="border-t border-slate-100 px-5 pb-5 pt-4">
                     <p className="mb-4 text-sm leading-6 text-slate-600">
-                      Use your Application ID to create a resident portal account. Your name, email, and room details will be pre-loaded.
+                      Once a manager approves your application, use your Application ID to create your resident portal account. Your name, email, and room details will be pre-loaded automatically.
                     </p>
                     <div className="flex flex-col gap-3 sm:flex-row">
                       <a
