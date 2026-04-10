@@ -66,35 +66,64 @@ function ChevronDown({ className }) {
 const underlineClass = 'h-0.5 rounded-full bg-[#2563eb]'
 
 /**
- * Desktop nav item with hover / focus-within dropdown.
+ * Desktop nav item with dropdown. Only one menu in the header may be open at a time
+ * (avoids overlapping panels when moving between "Rent" and "Partner").
  */
-function NavMenuDropdown({ label, to, parentActive, children }) {
+function NavMenuDropdown({ label, to, parentActive, menuId, openMenuId, setOpenMenuId, children }) {
   const hasChildren = React.Children.toArray(children).filter(Boolean).length > 0
+  const isOpen = Boolean(hasChildren && menuId && openMenuId === menuId)
+
+  function closeIfLeaving(e) {
+    const next = e.relatedTarget
+    if (next instanceof Node && e.currentTarget.contains(next)) return
+    setOpenMenuId?.(null)
+  }
+
   return (
-    <div className="group relative flex flex-col items-center pb-2.5">
+    <div
+      className="group relative flex flex-col items-center pb-2.5"
+      onMouseEnter={() => {
+        if (hasChildren && menuId) setOpenMenuId(menuId)
+      }}
+      onMouseLeave={closeIfLeaving}
+      onFocus={() => {
+        if (hasChildren && menuId) setOpenMenuId(menuId)
+      }}
+      onBlur={closeIfLeaving}
+    >
       <Link
         to={to}
         onClick={scrollToTop}
         aria-haspopup={hasChildren ? 'menu' : undefined}
+        aria-expanded={hasChildren ? isOpen : undefined}
         className={`inline-flex items-center gap-1 text-[15px] font-semibold tracking-[-0.01em] transition ${
           parentActive ? 'text-slate-900' : 'text-slate-600 hover:text-slate-900'
         }`}
       >
         {label}
         {hasChildren ? (
-          <ChevronDown className="shrink-0 opacity-55 transition-opacity duration-75 group-hover:opacity-80" aria-hidden />
+          <ChevronDown
+            className={`shrink-0 transition-opacity duration-75 ${isOpen ? 'opacity-80' : 'opacity-55 group-hover:opacity-80'}`}
+            aria-hidden
+          />
         ) : null}
       </Link>
       <span
         aria-hidden
         className={`pointer-events-none absolute bottom-0 left-0 right-0 mx-auto max-w-full ${underlineClass} origin-center transition-[transform,opacity] duration-200 ease-out ${
-          parentActive
+          parentActive || isOpen
             ? 'scale-x-100 opacity-100'
             : 'scale-x-0 opacity-0 group-hover:scale-x-100 group-hover:opacity-100 group-focus-within:scale-x-100 group-focus-within:opacity-100'
         }`}
       />
       {hasChildren ? (
-        <div className="pointer-events-none invisible absolute left-1/2 top-full z-50 w-max min-w-[220px] -translate-x-1/2 pt-1.5 opacity-0 transition-[opacity,visibility] duration-75 ease-out group-hover:pointer-events-auto group-hover:visible group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:visible group-focus-within:opacity-100">
+        <div
+          className={`absolute left-1/2 top-full z-50 w-max min-w-[220px] -translate-x-1/2 pt-1.5 transition-[opacity,visibility] duration-75 ease-out ${
+            isOpen
+              ? 'visible opacity-100'
+              : 'pointer-events-none invisible opacity-0'
+          }`}
+        >
           <div
             className="rounded-xl border border-slate-200/90 bg-white py-1.5 shadow-[0_16px_40px_rgba(15,23,42,0.12)]"
             role="menu"
@@ -134,6 +163,8 @@ export default function SiteHeader() {
   const { pathname } = location
 
   const [mobileOpen, setMobileOpen] = useState(false)
+  /** At most one desktop mega-menu open so panels never stack over each other */
+  const [openDesktopMenu, setOpenDesktopMenu] = useState(null)
 
   const isHome = pathname === '/' || pathname.startsWith('/properties/')
   const isApply = pathname === '/apply'
@@ -166,7 +197,17 @@ export default function SiteHeader() {
 
   useEffect(() => {
     setMobileOpen(false)
+    setOpenDesktopMenu(null)
   }, [pathname, location.search])
+
+  useEffect(() => {
+    if (openDesktopMenu === null) return undefined
+    function onKeyDown(e) {
+      if (e.key === 'Escape') setOpenDesktopMenu(null)
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [openDesktopMenu])
 
   function closeMobileMenu() {
     setMobileOpen(false)
@@ -188,23 +229,61 @@ export default function SiteHeader() {
         </Link>
 
         <nav className="hidden items-center justify-center gap-4 md:col-start-2 md:flex lg:gap-8" aria-label="Primary">
-          <NavMenuDropdown label="Rent with Axis" to="/" parentActive={exploreParentActive}>
+          <NavMenuDropdown
+            label="Rent with Axis"
+            to="/"
+            parentActive={exploreParentActive}
+            menuId="rent"
+            openMenuId={openDesktopMenu}
+            setOpenMenuId={setOpenDesktopMenu}
+          >
             <DropdownLink
               to="/contact?section=housing&tab=schedule"
               isActive={isScheduleTour}
-              onNavigate={closeMobileMenu}
+              onNavigate={() => {
+                closeMobileMenu()
+                setOpenDesktopMenu(null)
+              }}
             >
               Schedule tour
             </DropdownLink>
-            <DropdownLink to="/apply" isActive={isApply} onNavigate={closeMobileMenu}>
+            <DropdownLink
+              to="/apply"
+              isActive={isApply}
+              onNavigate={() => {
+                closeMobileMenu()
+                setOpenDesktopMenu(null)
+              }}
+            >
               Apply
             </DropdownLink>
           </NavMenuDropdown>
-          <NavMenuDropdown label="Partner with Axis" to="/owners/about" parentActive={partnerParentActive}>
-            <DropdownLink to="/owners/pricing" isActive={isPricing} onNavigate={closeMobileMenu}>
+          <NavMenuDropdown
+            label="Partner with Axis"
+            to="/owners/about"
+            parentActive={partnerParentActive}
+            menuId="partner"
+            openMenuId={openDesktopMenu}
+            setOpenMenuId={setOpenDesktopMenu}
+          >
+            <DropdownLink
+              to="/owners/pricing"
+              isActive={isPricing}
+              onNavigate={() => {
+                closeMobileMenu()
+                setOpenDesktopMenu(null)
+              }}
+            >
               Pricing
             </DropdownLink>
-            <DropdownLink to="/owners/contact" isActive={isOwnersContact} onNavigate={closeMobileMenu}>
+            <DropdownLink
+              to="/owners/contact"
+              isActive={isOwnersContact}
+              onNavigate={() => {
+                closeMobileMenu()
+                setOpenDesktopMenu(null)
+              }}
+            >
               Contact
             </DropdownLink>
           </NavMenuDropdown>

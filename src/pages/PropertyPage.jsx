@@ -556,12 +556,10 @@ export default function PropertyPage(){
 
   const sectionNavIds = useMemo(() => new Set(sectionNavItems.map(([id]) => id)), [sectionNavItems])
 
+  // Sync tab from URL hash only when there is a hash (empty hash: leave active tab to scroll-spy / user scroll).
   useEffect(() => {
     const sectionId = (hash || '').replace('#', '')
-    if (!sectionId) {
-      setActiveTab('overview')
-      return
-    }
+    if (!sectionId) return
     if (sectionNavIds.has(sectionId)) {
       setActiveTab(sectionId)
     } else if (sectionId === 'highlights') {
@@ -613,20 +611,23 @@ export default function PropertyPage(){
     [getSectionScrollOffset]
   )
 
-  /** Pick the section whose top has passed the sticky “activation line” (matches scrollToId offset). */
+  /**
+   * Pick the last section whose top edge has reached the sticky “activation line” (viewport px from top).
+   * Uses getBoundingClientRect() only (no + scrollY) so it stays correct when ancestors use transforms
+   * (e.g. Framer Motion on AnimatedPage).
+   */
   const updateActiveTabFromScrollPosition = useCallback(() => {
     if (typeof window === 'undefined') return
     if (Date.now() < scrollSpyLockUntilRef.current) return
 
-    const offset = getSectionScrollOffset()
-    const activationY = window.scrollY + offset
+    const line = getSectionScrollOffset()
     let nextId = sectionNavItems[0]?.[0] || 'overview'
 
     for (const [id] of sectionNavItems) {
       const el = sectionRefs.current[id] || document.getElementById(id)
       if (!el) continue
-      const sectionTop = el.getBoundingClientRect().top + window.scrollY
-      if (sectionTop <= activationY + 1) nextId = id
+      const top = el.getBoundingClientRect().top
+      if (top <= line + 1) nextId = id
     }
 
     setActiveTab((prev) => (prev === nextId ? prev : nextId))
@@ -681,8 +682,14 @@ export default function PropertyPage(){
       })
     }
 
+    // Window + scrollingElement: some environments attach scroll to documentElement/body instead of window.
+    const scrollEl = document.scrollingElement || document.documentElement
     window.addEventListener('scroll', onScrollOrResize, { passive: true })
+    if (scrollEl && scrollEl !== window) {
+      scrollEl.addEventListener('scroll', onScrollOrResize, { passive: true })
+    }
     window.addEventListener('resize', onScrollOrResize, { passive: true })
+    window.visualViewport?.addEventListener?.('resize', onScrollOrResize, { passive: true })
 
     const ids = sectionNavItems.map(([id]) => id)
     const elements = ids
@@ -702,7 +709,11 @@ export default function PropertyPage(){
 
     return () => {
       window.removeEventListener('scroll', onScrollOrResize)
+      if (scrollEl && scrollEl !== window) {
+        scrollEl.removeEventListener('scroll', onScrollOrResize)
+      }
       window.removeEventListener('resize', onScrollOrResize)
+      window.visualViewport?.removeEventListener?.('resize', onScrollOrResize)
       observer?.disconnect()
     }
   }, [p, sectionNavItems, updateActiveTabFromScrollPosition])

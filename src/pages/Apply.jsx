@@ -3,6 +3,7 @@ import { Seo } from '../lib/seo'
 import { properties } from '../data/properties'
 import { signLease, getSignedLeases } from '../lib/airtable'
 import { EmbeddedStripeCheckout } from '../components/EmbeddedStripeCheckout'
+import { readJsonResponse } from '../lib/readJsonResponse'
 
 const AIRTABLE_BASE_ID = import.meta.env.VITE_AIRTABLE_APPLICATIONS_BASE_ID || import.meta.env.VITE_AIRTABLE_BASE_ID || 'appNBX2inqfJMyqYV'
 const APPLICATIONS_TABLE = import.meta.env.VITE_AIRTABLE_APPLICATIONS_TABLE || 'Applications'
@@ -1546,7 +1547,7 @@ export default function Apply() {
           cancelPath: '/apply?payment=fee_cancelled',
         }),
       })
-      const data = await response.json()
+      const data = await readJsonResponse(response)
       if (!response.ok) throw new Error(data.error || 'Unable to start application fee payment.')
       window.location.href = data.url
     } catch (err) {

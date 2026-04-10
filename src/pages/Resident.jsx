@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { properties } from '../data/properties'
 import { EmbeddedStripeCheckout } from '../components/EmbeddedStripeCheckout'
+import { readJsonResponse } from '../lib/readJsonResponse'
 import { HousingMessageForm } from '../components/HousingMessageForm'
 import {
   PortalAuthCard,
@@ -27,6 +28,7 @@ import {
   getPropertyByName,
   getResidentByEmail,
   getResidentById,
+  appendWorkOrderUpdateFromResident,
   getWorkOrdersForResident,
   loginResident,
   sendMessage,
@@ -86,6 +88,56 @@ const statusStyles = {
   Submitted: 'border-slate-200 bg-slate-100 text-slate-700',
   'In Progress': 'border-sky-200 bg-sky-50 text-sky-700',
   Resolved: 'border-emerald-200 bg-emerald-50 text-emerald-700',
+}
+
+const WORK_ORDER_RESOLVED_VISIBLE_MS = 7 * 86400000
+
+function parseWorkOrderDate(value) {
+  if (value == null || value === '') return null
+  if (value instanceof Date && !Number.isNaN(value.getTime())) return value
+  const str = String(value).trim()
+  const m = str.match(/^(\d{4})-(\d{2})-(\d{2})/)
+  if (m) {
+    const y = Number(m[1])
+    const mo = Number(m[2]) - 1
+    const d = Number(m[3])
+    return new Date(y, mo, d)
+  }
+  const parsed = new Date(str)
+  return Number.isNaN(parsed.getTime()) ? null : parsed
+}
+
+function isWorkOrderResolved(record) {
+  if (!record) return false
+  const resolvedCheckbox = record.Resolved === true || record.Resolved === 1 || record.Resolved === '1'
+  const status = String(record.Status || '').trim().toLowerCase()
+  return resolvedCheckbox || status === 'resolved'
+}
+
+/** Prefer explicit "Last Update" / "Date Resolved" for the 7-day rule (not submission date). */
+function getWorkOrderLastUpdateDate(record) {
+  if (!record) return null
+  const keys = ['Last Update', 'Last Updated', 'Date Resolved']
+  for (const k of keys) {
+    const d = parseWorkOrderDate(record[k])
+    if (d) return d
+  }
+  return null
+}
+
+/**
+ * Resolved work orders stay visible for 7 days after Last Update (when set).
+ * If resolved but no last-update date yet, keep visible so residents still see resolution + summary.
+ */
+function isWorkOrderHiddenFromResidentList(record) {
+  if (!isWorkOrderResolved(record)) return false
+  const last = getWorkOrderLastUpdateDate(record)
+  if (!last) return false
+  return Date.now() - last.getTime() > WORK_ORDER_RESOLVED_VISIBLE_MS
+}
+
+function isWorkOrderOpen(record) {
+  return !isWorkOrderResolved(record)
 }
 
 const priorityStyles = {
@@ -301,17 +353,31 @@ export function ResidentAuthForm({ onLogin, footer = null, variant = 'default' }
         setActivationError('Email does not match the application. Use the email you applied with.')
         return
       }
+      const rawAppInput = activateForm.applicationId.trim()
+      const applicationRecordId = rawAppInput.startsWith('APP-') ? rawAppInput.slice(4) : rawAppInput
+      const applicationLink =
+        applicationRecordId.startsWith('rec') && applicationRecordId.length > 10
+          ? [applicationRecordId]
+          : null
+
       const existing = await getResidentByEmail(activateForm.email.trim())
       if (existing) {
         if (existing.Password) {
           setActivationError('An account with this email already exists. Please sign in.')
           return
         }
-        const resident = await updateResident(existing.id, {
+        const patch = {
           Password: activateForm.password,
           Status: 'Active',
           'Lease Term': existing['Lease Term'] || app['Lease Term'] || '',
-        })
+        }
+        if (applicationLink && !(Array.isArray(existing.Application) && existing.Application.length)) {
+          patch.Application = applicationLink
+        }
+        if (app['Application ID'] != null && existing['Application ID'] == null) {
+          patch['Application ID'] = app['Application ID']
+        }
+        const resident = await updateResident(existing.id, patch)
         onLogin(resident)
         return
       }
@@ -326,6 +392,8 @@ export function ResidentAuthForm({ onLogin, footer = null, variant = 'default' }
         'Lease Start Date': app['Lease Start Date'] || null,
         'Lease End Date': app['Lease End Date'] || null,
         Status: 'Active',
+        ...(applicationLink ? { Application: applicationLink } : {}),
+        ...(app['Application ID'] != null ? { 'Application ID': app['Application ID'] } : {}),
       })
       onLogin(resident)
     } catch (err) {
@@ -469,7 +537,7 @@ function PortalEntryLogin({ onLogin }) {
 
 // ─── Work Orders ──────────────────────────────────────────────────────────────
 
-function RequestThread({ workOrder, residentEmail }) {
+function RequestThread({ workOrder, residentEmail, onThreadUpdated }) {
   const [messages, setMessages] = useState([])
   const [draft, setDraft] = useState('')
   const [sending, setSending] = useState(false)
@@ -484,11 +552,18 @@ function RequestThread({ workOrder, residentEmail }) {
   async function handleSend(event) {
     event.preventDefault()
     if (!draft.trim()) return
+    const text = draft.trim()
     setSending(true)
     try {
-      await sendMessage({ workOrderId: workOrder.id, senderEmail: residentEmail, message: draft.trim() })
+      await sendMessage({ workOrderId: workOrder.id, senderEmail: residentEmail, message: text })
       setDraft('')
+      try {
+        await appendWorkOrderUpdateFromResident(workOrder.id, residentEmail, text)
+      } catch (syncErr) {
+        console.warn('[work order] Update field sync skipped:', syncErr?.message || syncErr)
+      }
       await loadMessages()
+      onThreadUpdated?.()
     } finally {
       setSending(false)
     }
@@ -534,7 +609,7 @@ function RequestThread({ workOrder, residentEmail }) {
   )
 }
 
-function WorkOrdersPanel({ resident, requests, onRequestCreated }) {
+function WorkOrdersPanel({ resident, requests, onRequestCreated, onWorkOrderUpdated }) {
   const [showForm, setShowForm] = useState(false)
   const [expandedId, setExpandedId] = useState(null)
   const [form, setForm] = useState({
@@ -578,7 +653,7 @@ function WorkOrdersPanel({ resident, requests, onRequestCreated }) {
   return (
     <SectionCard
       title="Work Orders"
-      description="Submit and track maintenance requests."
+      description="Submit and track requests. Resolved items stay here for 7 days after the last update date in Airtable."
       action={
         <button type="button"
           onClick={() => { setShowForm((v) => !v); setError(''); setSuccess('') }}
@@ -654,6 +729,10 @@ function WorkOrdersPanel({ resident, requests, onRequestCreated }) {
             const notes = request['Management Notes']
             const photo = Array.isArray(request.Photo) ? request.Photo[0] : null
             const isExpanded = expandedId === request.id
+            const resolved = isWorkOrderResolved(request)
+            const appId = request['Application ID']
+            const updateLog = request.Update || request['Latest Update']
+            const resolutionSummary = request['Resolution Summary']
 
             return (
               <div key={request.id} className="rounded-[24px] border border-slate-200 p-5 transition hover:border-slate-300">
@@ -666,8 +745,14 @@ function WorkOrdersPanel({ resident, requests, onRequestCreated }) {
                         <h3 className="text-base font-bold text-slate-900">{request.Title}</h3>
                         <span className={classNames('rounded-full border px-2.5 py-1 text-[11px] font-semibold', statusStyles[status] || statusStyles.Submitted)}>{status}</span>
                         <span className={classNames('rounded-full border px-2.5 py-1 text-[11px] font-semibold', priorityStyles[priority] || priorityStyles.Routine)}>{priority}</span>
+                        {resolved ? (
+                          <span className="rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-[11px] font-semibold text-emerald-700">Resolved</span>
+                        ) : null}
                       </div>
                       <p className="mt-1.5 text-sm leading-6 text-slate-500">{request.Description}</p>
+                      {appId != null && String(appId).trim() !== '' ? (
+                        <p className="mt-2 text-xs font-medium text-slate-400">Application ID: {String(appId)}</p>
+                      ) : null}
                     </div>
                     <div className="text-right text-xs text-slate-400">
                       <div>{request.Category}</div>
@@ -675,6 +760,20 @@ function WorkOrdersPanel({ resident, requests, onRequestCreated }) {
                     </div>
                   </div>
                 </button>
+
+                {resolutionSummary && resolved ? (
+                  <div className="mt-3 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3">
+                    <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-emerald-700">Resolution summary</div>
+                    <div className="mt-1 whitespace-pre-wrap text-sm leading-6 text-emerald-900">{resolutionSummary}</div>
+                  </div>
+                ) : null}
+
+                {updateLog ? (
+                  <div className="mt-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+                    <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">Update log</div>
+                    <div className="mt-1 whitespace-pre-wrap text-sm leading-6 text-slate-700">{updateLog}</div>
+                  </div>
+                ) : null}
 
                 {notes ? (
                   <div className="mt-3 rounded-2xl bg-slate-50 px-4 py-3">
@@ -692,7 +791,13 @@ function WorkOrdersPanel({ resident, requests, onRequestCreated }) {
                   </div>
                 ) : null}
 
-                {isExpanded ? <RequestThread workOrder={request} residentEmail={resident.Email} /> : null}
+                {isExpanded ? (
+                  <RequestThread
+                    workOrder={request}
+                    residentEmail={resident.Email}
+                    onThreadUpdated={onWorkOrderUpdated}
+                  />
+                ) : null}
               </div>
             )
           })}
@@ -935,7 +1040,7 @@ function PaymentsPanel({ resident, onResidentUpdated, highlightCategory }) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ action: 'portal', customerId: stripeCustomerId }),
       })
-      const data = await response.json()
+      const data = await readJsonResponse(response)
       if (!response.ok) throw new Error(data.error || 'Unable to open customer portal.')
       window.location.href = data.url
     } catch (err) {
@@ -1407,7 +1512,14 @@ function Dashboard({ resident, onResidentUpdated, onSignOut }) {
   const [announcements, setAnnouncements] = useState([])
   const [loading, setLoading] = useState(true)
 
-  const openRequestCount = useMemo(() => requests.filter((r) => r.Status !== 'Resolved').length, [requests])
+  const visibleWorkOrders = useMemo(
+    () => requests.filter((r) => !isWorkOrderHiddenFromResidentList(r)),
+    [requests],
+  )
+  const openRequestCount = useMemo(
+    () => requests.filter((r) => isWorkOrderOpen(r)).length,
+    [requests],
+  )
   const homeLabel = [resident.House, normalizeUnitLabel(resident['Unit Number'] || '')].filter(Boolean).join(' · ') || 'Not assigned'
 
   const loadData = useCallback(async () => {
@@ -1499,7 +1611,12 @@ function Dashboard({ resident, onResidentUpdated, onSignOut }) {
         ) : null}
 
         {!loading && tab === 'workorders' ? (
-          <WorkOrdersPanel resident={resident} requests={requests} onRequestCreated={loadData} />
+          <WorkOrdersPanel
+            resident={resident}
+            requests={visibleWorkOrders}
+            onRequestCreated={loadData}
+            onWorkOrderUpdated={loadData}
+          />
         ) : null}
         {!loading && tab === 'leasing' ? (
           <LeasingPanel resident={resident} onOpenPayments={(focus = '') => { setPaymentFocus(focus); setTab('payments') }} />

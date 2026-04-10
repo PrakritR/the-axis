@@ -53,16 +53,44 @@ function routeKeyFromReq(req) {
   return m ? decodeURIComponent(m[1]).trim() : ''
 }
 
+/** Vercel sometimes delivers JSON POST bodies as a string; normalize so handlers always see an object when possible. */
+function ensureParsedJsonBody(req) {
+  const body = req.body
+  if (body == null || typeof body !== 'string') return
+  const trimmed = body.trim()
+  if (!trimmed) {
+    req.body = undefined
+    return
+  }
+  const ct = String(req.headers?.['content-type'] || '')
+  if (!ct.includes('application/json')) return
+  try {
+    req.body = JSON.parse(trimmed)
+  } catch {
+    /* leave string; route can validate */
+  }
+}
+
 export default async function handler(req, res) {
-  const key = routeKeyFromReq(req)
-  if (!key) {
-    res.setHeader('Access-Control-Allow-Origin', '*')
-    return res.status(404).json({ error: 'Not found' })
+  res.setHeader('Access-Control-Allow-Origin', '*')
+  try {
+    ensureParsedJsonBody(req)
+    const key = routeKeyFromReq(req)
+    if (!key) {
+      return res.status(404).json({ error: 'Not found' })
+    }
+    const fn = routes[key]
+    if (!fn) {
+      return res.status(404).json({ error: 'Not found' })
+    }
+    return await fn(req, res)
+  } catch (err) {
+    console.error('[api]', req.method, req.url, err)
+    if (typeof res.headersSent === 'boolean' && res.headersSent) return
+    try {
+      return res.status(500).json({ error: err?.message || 'Internal server error' })
+    } catch {
+      /* response already committed */
+    }
   }
-  const fn = routes[key]
-  if (!fn) {
-    res.setHeader('Access-Control-Allow-Origin', '*')
-    return res.status(404).json({ error: 'Not found' })
-  }
-  return fn(req, res)
 }

@@ -93,9 +93,23 @@ async function handleCheckout(req, res, secretKey) {
   })
 
   const text = await stripeRes.text()
-  if (!stripeRes.ok) return res.status(502).json({ error: `Stripe checkout error ${stripeRes.status}: ${text}` })
+  if (!stripeRes.ok) {
+    let detail = text
+    try {
+      const errObj = text ? JSON.parse(text) : null
+      if (errObj?.error?.message) detail = errObj.error.message
+    } catch {
+      /* use raw text */
+    }
+    return res.status(502).json({ error: `Stripe checkout error ${stripeRes.status}: ${detail || 'Unknown error'}` })
+  }
 
-  const session = JSON.parse(text)
+  let session
+  try {
+    session = JSON.parse(text)
+  } catch {
+    return res.status(502).json({ error: 'Stripe returned an invalid checkout response.' })
+  }
   return res.status(200).json({ url: session.url, id: session.id, client_secret: session.client_secret })
 }
 
@@ -115,9 +129,23 @@ async function handlePortal(req, res, secretKey) {
   })
 
   const text = await stripeRes.text()
-  if (!stripeRes.ok) return res.status(502).json({ error: `Stripe portal error ${stripeRes.status}: ${text}` })
+  if (!stripeRes.ok) {
+    let detail = text
+    try {
+      const errObj = text ? JSON.parse(text) : null
+      if (errObj?.error?.message) detail = errObj.error.message
+    } catch {
+      /* use raw text */
+    }
+    return res.status(502).json({ error: `Stripe portal error ${stripeRes.status}: ${detail || 'Unknown error'}` })
+  }
 
-  const session = JSON.parse(text)
+  let session
+  try {
+    session = JSON.parse(text)
+  } catch {
+    return res.status(502).json({ error: 'Stripe returned an invalid portal response.' })
+  }
   return res.status(200).json({ url: session.url })
 }
 
@@ -128,10 +156,16 @@ export default async function handler(req, res) {
   if (req.method === 'OPTIONS') return res.status(200).end()
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' })
 
-  const secretKey = process.env.STRIPE_SECRET_KEY
-  if (!secretKey) return res.status(500).json({ error: 'STRIPE_SECRET_KEY is not configured on the server yet.' })
+  try {
+    const secretKey = process.env.STRIPE_SECRET_KEY
+    if (!secretKey) return res.status(500).json({ error: 'STRIPE_SECRET_KEY is not configured on the server yet.' })
 
-  const { action } = req.body || {}
-  if (action === 'portal') return handlePortal(req, res, secretKey)
-  return handleCheckout(req, res, secretKey)
+    const { action } = req.body || {}
+    if (action === 'portal') return await handlePortal(req, res, secretKey)
+    return await handleCheckout(req, res, secretKey)
+  } catch (err) {
+    console.error('[stripe]', err)
+    if (typeof res.headersSent === 'boolean' && res.headersSent) return
+    return res.status(500).json({ error: err?.message || 'Payment request failed.' })
+  }
 }

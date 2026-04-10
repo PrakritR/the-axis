@@ -11,17 +11,18 @@
 // Every action (open, edit, approve, reject, publish) is written to Audit Log.
 //
 // Components:
-//   ManagerLogin       — email/password login via /api/portal?action=manager-auth
+//   Unauthenticated /manager → redirects to /portal?portal=manager (shared portal hub)
 //   GenerateDraftModal — form to create a new AI lease draft
 //   ManagerDashboard   — filterable table of all lease drafts
 //   LeaseEditor        — full-screen editor with sidebar, tabs, action buttons
 //   Manager (default)  — root component managing session + view routing
 
 import React, { useCallback, useEffect, useMemo, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, Navigate, useLocation } from 'react-router-dom'
 import toast from 'react-hot-toast'
 import { HOUSING_CONTACT_MESSAGE } from '../lib/housingSite'
 import { readJsonResponse } from '../lib/readJsonResponse'
+import { getWorkOrderById, updateWorkOrder } from '../lib/airtable'
 import {
   PortalAuthCard,
   PortalAuthPage,
@@ -601,16 +602,6 @@ export function ManagerAuthForm({ onLogin, footer = null, variant = 'default' })
 
           {notice ? <PortalNotice tone="success">{notice}</PortalNotice> : null}
 
-          {!subscriptionReady ? (
-            <PortalNotice>
-              Start on the{' '}
-              <Link to="/owners/pricing" className="font-semibold text-[#2563eb] underline underline-offset-2 hover:brightness-110">
-                Partner With Axis pricing
-              </Link>{' '}
-              page first. Your tier, manager ID, and contact info load from your manager record after you complete setup there.
-            </PortalNotice>
-          ) : null}
-
           {setupLoading ? (
             <PortalNotice>Verifying manager setup…</PortalNotice>
           ) : null}
@@ -636,16 +627,6 @@ export function ManagerAuthForm({ onLogin, footer = null, variant = 'default' })
 
       {footer ? <div className="mt-8 text-center text-sm text-slate-400">{footer}</div> : null}
     </>
-  )
-}
-
-function ManagerLogin({ onLogin }) {
-  return (
-    <PortalAuthPage>
-      <PortalAuthCard title="Manager portal">
-        <ManagerAuthForm onLogin={onLogin} />
-      </PortalAuthCard>
-    </PortalAuthPage>
   )
 }
 
@@ -1232,6 +1213,254 @@ function GenerateDraftModal({ manager, propertyOptions, onClose, onGenerated }) 
   )
 }
 
+// ─── Work orders (manager) ───────────────────────────────────────────────────
+const WORK_ORDER_STATUSES = ['Submitted', 'In Progress', 'Resolved']
+const WORK_ORDER_PRIORITIES = ['Routine', 'Low', 'Normal', 'High', 'Urgent', 'Emergency', 'Critical']
+
+function normalizeWorkOrderRecordId(raw) {
+  const s = String(raw || '').trim()
+  const m = s.match(/rec[a-zA-Z0-9]{14,}/)
+  return m ? m[0] : s.trim()
+}
+
+function workOrderLastUpdateToInput(value) {
+  if (value == null || value === '') return ''
+  const str = String(value)
+  const isoDay = str.match(/^(\d{4}-\d{2}-\d{2})/)
+  if (isoDay) return isoDay[1]
+  const d = new Date(str)
+  return Number.isNaN(d.getTime()) ? '' : d.toISOString().slice(0, 10)
+}
+
+function WorkOrdersManagerPanel() {
+  const [idInput, setIdInput] = useState('')
+  const [record, setRecord] = useState(null)
+  const [loading, setLoading] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const [loadError, setLoadError] = useState('')
+
+  const [status, setStatus] = useState('Submitted')
+  const [priority, setPriority] = useState('Routine')
+  const [managementNotes, setManagementNotes] = useState('')
+  const [updateText, setUpdateText] = useState('')
+  const [resolutionSummary, setResolutionSummary] = useState('')
+  const [resolved, setResolved] = useState(false)
+  const [lastUpdate, setLastUpdate] = useState('')
+
+  const fieldCls =
+    'w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none transition focus:border-[#2563eb] focus:ring-2 focus:ring-[#2563eb]/20'
+
+  const statusOptions = useMemo(() => {
+    const s = record?.Status
+    if (s && !WORK_ORDER_STATUSES.includes(s)) return [s, ...WORK_ORDER_STATUSES]
+    return WORK_ORDER_STATUSES
+  }, [record?.Status])
+
+  const priorityOptions = useMemo(() => {
+    const p = record?.Priority
+    if (p && !WORK_ORDER_PRIORITIES.includes(p)) return [p, ...WORK_ORDER_PRIORITIES]
+    return WORK_ORDER_PRIORITIES
+  }, [record?.Priority])
+
+  function applyRecordToForm(r) {
+    setStatus(r.Status || 'Submitted')
+    setPriority(r.Priority || 'Routine')
+    setManagementNotes(String(r['Management Notes'] ?? ''))
+    setUpdateText(String(r.Update ?? ''))
+    setResolutionSummary(String(r['Resolution Summary'] ?? ''))
+    setResolved(r.Resolved === true || r.Resolved === 1 || r.Resolved === '1')
+    setLastUpdate(workOrderLastUpdateToInput(r['Last Update']))
+  }
+
+  async function handleLoad() {
+    const id = normalizeWorkOrderRecordId(idInput)
+    setLoadError('')
+    setRecord(null)
+    if (!id) {
+      setLoadError('Paste a work order record ID (rec…).')
+      return
+    }
+    setLoading(true)
+    try {
+      const wo = await getWorkOrderById(id)
+      setRecord(wo)
+      applyRecordToForm(wo)
+    } catch (err) {
+      setLoadError(err.message || 'Could not load work order.')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  async function handleSave(event) {
+    event.preventDefault()
+    if (!record?.id) return
+    setSaving(true)
+    try {
+      const fields = {
+        Status: status,
+        Priority: priority,
+        'Management Notes': managementNotes || '',
+        Update: updateText || '',
+        'Resolution Summary': resolutionSummary || '',
+        Resolved: resolved,
+      }
+      if (lastUpdate.trim()) fields['Last Update'] = lastUpdate.trim()
+      const next = await updateWorkOrder(record.id, fields)
+      setRecord(next)
+      applyRecordToForm(next)
+      toast.success('Work order saved')
+    } catch (err) {
+      toast.error(err.message || 'Could not save work order')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <div id="work-orders" className="mb-8 scroll-mt-24 rounded-[24px] border border-slate-200 bg-white p-6 shadow-sm">
+      <h2 className="text-lg font-black text-slate-900">Work orders</h2>
+      <p className="mt-1 text-sm text-slate-500">
+        Open a request by Airtable record ID (from the Work Orders table, starts with <code className="rounded bg-slate-100 px-1">rec</code>
+        …), edit fields, then save.
+      </p>
+
+      <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-end">
+        <div className="min-w-0 flex-1">
+          <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-slate-400">Work order record ID</label>
+          <input
+            value={idInput}
+            onChange={(e) => setIdInput(e.target.value)}
+            placeholder="recXXXXXXXXXXXXXX"
+            className={fieldCls}
+          />
+        </div>
+        <button
+          type="button"
+          onClick={handleLoad}
+          disabled={loading}
+          className="shrink-0 rounded-2xl border border-slate-200 bg-slate-50 px-5 py-3 text-sm font-semibold text-slate-800 transition hover:bg-slate-100 disabled:opacity-50"
+        >
+          {loading ? 'Loading…' : 'Load'}
+        </button>
+      </div>
+
+      {loadError ? (
+        <div className="mt-3 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{loadError}</div>
+      ) : null}
+
+      {record ? (
+        <form onSubmit={handleSave} className="mt-6 space-y-4 border-t border-slate-100 pt-6">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <div className="text-[11px] font-bold uppercase tracking-[0.14em] text-slate-400">Record</div>
+              <div className="font-mono text-xs text-slate-600">{record.id}</div>
+            </div>
+            {record['Date Submitted'] || record.created_at ? (
+              <div className="text-xs text-slate-400">
+                Submitted {fmtDate(record['Date Submitted'] || record.created_at)}
+              </div>
+            ) : null}
+          </div>
+
+          <div>
+            <div className="mb-1 text-xs font-semibold text-slate-500">Title</div>
+            <div className="text-base font-bold text-slate-900">{record.Title || '—'}</div>
+            {record.Description ? (
+              <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-slate-600">{record.Description}</p>
+            ) : null}
+          </div>
+
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div>
+              <label className="mb-1.5 block text-xs font-semibold text-slate-600">Status</label>
+              <select value={status} onChange={(e) => setStatus(e.target.value)} className={fieldCls}>
+                {statusOptions.map((s) => (
+                  <option key={s} value={s}>
+                    {s}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="mb-1.5 block text-xs font-semibold text-slate-600">Priority</label>
+              <select value={priority} onChange={(e) => setPriority(e.target.value)} className={fieldCls}>
+                {priorityOptions.map((p) => (
+                  <option key={p} value={p}>
+                    {p}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          <div>
+            <label className="mb-1.5 block text-xs font-semibold text-slate-600">Management notes</label>
+            <textarea
+              rows={3}
+              value={managementNotes}
+              onChange={(e) => setManagementNotes(e.target.value)}
+              className={fieldCls}
+              placeholder="Internal / resident-visible notes from management"
+            />
+          </div>
+
+          <div>
+            <label className="mb-1.5 block text-xs font-semibold text-slate-600">Update</label>
+            <textarea
+              rows={4}
+              value={updateText}
+              onChange={(e) => setUpdateText(e.target.value)}
+              className={fieldCls}
+              placeholder="Status update shown on the work order thread"
+            />
+          </div>
+
+          <div>
+            <label className="mb-1.5 block text-xs font-semibold text-slate-600">Resolution summary</label>
+            <textarea
+              rows={3}
+              value={resolutionSummary}
+              onChange={(e) => setResolutionSummary(e.target.value)}
+              className={fieldCls}
+              placeholder="Summary when the request is resolved"
+            />
+          </div>
+
+          <div className="grid gap-4 sm:grid-cols-2">
+            <label className="flex cursor-pointer items-center gap-3 rounded-2xl border border-slate-200 px-4 py-3">
+              <input
+                type="checkbox"
+                checked={resolved}
+                onChange={(e) => setResolved(e.target.checked)}
+                className="h-4 w-4 rounded border-slate-300 text-[#2563eb] focus:ring-[#2563eb]"
+              />
+              <span className="text-sm font-semibold text-slate-800">Resolved</span>
+            </label>
+            <div>
+              <label className="mb-1.5 block text-xs font-semibold text-slate-600">Last update (date)</label>
+              <input
+                type="date"
+                value={lastUpdate}
+                onChange={(e) => setLastUpdate(e.target.value)}
+                className={fieldCls}
+              />
+            </div>
+          </div>
+
+          <button
+            type="submit"
+            disabled={saving}
+            className="rounded-2xl bg-[#2563eb] px-6 py-3 text-sm font-semibold text-white transition hover:brightness-110 disabled:opacity-50"
+          >
+            {saving ? 'Saving…' : 'Save work order'}
+          </button>
+        </form>
+      ) : null}
+    </div>
+  )
+}
+
 // ─── ManagerDashboard ─────────────────────────────────────────────────────────
 function ManagerDashboard({ manager, onOpenDraft, onSignOut }) {
   const [drafts, setDrafts] = useState([])
@@ -1429,6 +1658,8 @@ function ManagerDashboard({ manager, onOpenDraft, onSignOut }) {
           onGenerateDraft={() => setShowGenerateModal(true)}
           onOpenBilling={handleBillingPortal}
         />
+
+        <WorkOrdersManagerPanel />
 
         <div id="house-management" className="mb-8 scroll-mt-24">
           <HouseManagementPanel onPropertiesChange={handlePropertiesChange} />
@@ -2011,7 +2242,16 @@ function LeaseEditor({ draftId, manager, onBack }) {
 // ─── Manager (default export) ─────────────────────────────────────────────────
 // Root component. Manages session, view state, and top-level routing between
 // the login screen, dashboard, and editor.
+/** Merge current query with portal=manager for post-checkout / deep links. */
+function portalManagerSearchFromLocation(search) {
+  const raw = String(search || '').replace(/^\?/, '')
+  const p = new URLSearchParams(raw)
+  p.set('portal', 'manager')
+  return p.toString()
+}
+
 export default function Manager() {
+  const location = useLocation()
   const [manager, setManager] = useState(null)
   const [view, setView] = useState('dashboard') // 'dashboard' | 'editor'
   const [openDraftId, setOpenDraftId] = useState(null)
@@ -2049,7 +2289,7 @@ export default function Manager() {
   }
 
   if (!manager) {
-    return <ManagerLogin onLogin={handleLogin} />
+    return <Navigate to={`/portal?${portalManagerSearchFromLocation(location.search)}`} replace />
   }
 
   if (view === 'editor' && openDraftId) {

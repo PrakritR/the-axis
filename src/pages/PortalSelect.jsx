@@ -1,5 +1,5 @@
-import { useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useEffect, useState } from 'react'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import {
   PortalAuthCard,
   PortalAuthPage,
@@ -11,9 +11,19 @@ import { ResidentAuthForm } from './Resident'
 
 const RESIDENT_SESSION_KEY = 'axis_resident'
 
+function isManagerPortalQuery(searchParams) {
+  const p = String(searchParams.get('portal') || searchParams.get('type') || '').toLowerCase()
+  return p === 'manager'
+}
+
 export default function PortalSelect() {
   const navigate = useNavigate()
-  const [portalType, setPortalType] = useState('resident')
+  const [searchParams] = useSearchParams()
+  const [portalType, setPortalType] = useState(() => (isManagerPortalQuery(searchParams) ? 'manager' : 'resident'))
+
+  useEffect(() => {
+    if (isManagerPortalQuery(searchParams)) setPortalType('manager')
+  }, [searchParams])
 
   const isResident = portalType === 'resident'
 

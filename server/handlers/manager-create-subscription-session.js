@@ -109,11 +109,12 @@ export default async function handler(req, res) {
     const priceId = await findOrCreatePrice(secretKey, config)
 
     const baseUrl = getBaseUrl(req)
+    const portalSuccess = `${baseUrl}/portal?portal=manager&setup=success&session_id={CHECKOUT_SESSION_ID}`
     const form = new URLSearchParams({
       mode: 'subscription',
       ...(embedded
-        ? { ui_mode: 'embedded_page', return_url: `${baseUrl}/manager?setup=success&session_id={CHECKOUT_SESSION_ID}` }
-        : { success_url: `${baseUrl}/manager?setup=success&session_id={CHECKOUT_SESSION_ID}`, cancel_url: `${baseUrl}/owners/pricing` }
+        ? { ui_mode: 'embedded_page', return_url: portalSuccess }
+        : { success_url: portalSuccess, cancel_url: `${baseUrl}/owners/pricing` }
       ),
       customer_email: normalizedEmail,
       'line_items[0][price]': priceId,
@@ -150,10 +151,22 @@ export default async function handler(req, res) {
 
     const text = await stripeRes.text()
     if (!stripeRes.ok) {
-      return res.status(502).json({ error: `Stripe checkout error: ${JSON.parse(text)?.error?.message || text}` })
+      let detail = text
+      try {
+        const errObj = text ? JSON.parse(text) : null
+        if (errObj?.error?.message) detail = errObj.error.message
+      } catch {
+        /* use raw text */
+      }
+      return res.status(502).json({ error: `Stripe checkout error: ${detail || 'Unknown error'}` })
     }
 
-    const session = JSON.parse(text)
+    let session
+    try {
+      session = JSON.parse(text)
+    } catch {
+      return res.status(502).json({ error: 'Stripe returned an invalid checkout response.' })
+    }
     return res.status(200).json({ url: session.url, id: session.id, client_secret: session.client_secret })
   } catch (err) {
     console.error('Subscription session error:', err)

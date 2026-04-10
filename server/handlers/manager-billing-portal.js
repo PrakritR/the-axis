@@ -49,7 +49,7 @@ export default async function handler(req, res) {
 
   const body = new URLSearchParams({
     customer: customer.id,
-    return_url: `${getBaseUrl(req)}/manager`,
+    return_url: `${getBaseUrl(req)}/portal?portal=manager`,
   })
 
   const portalRes = await fetch(`${STRIPE_API}/billing_portal/sessions`, {

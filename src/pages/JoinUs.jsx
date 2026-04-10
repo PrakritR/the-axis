@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { useLocation } from 'react-router-dom'
+import { Link, useLocation } from 'react-router-dom'
 import { Seo } from '../lib/seo'
 import { readJsonResponse } from '../lib/readJsonResponse'
 import { EmbeddedStripeCheckout } from '../components/EmbeddedStripeCheckout'
@@ -273,9 +273,9 @@ export default function JoinUs() {
         onComplete={(session) => {
           const sid = session?.id
           if (sid) {
-            window.location.href = `/manager?setup=success&session_id=${encodeURIComponent(sid)}`
+            window.location.href = `/portal?portal=manager&setup=success&session_id=${encodeURIComponent(sid)}`
           } else {
-            window.location.href = '/manager?setup=success'
+            window.location.href = '/portal?portal=manager&setup=success'
           }
         }}
       />
@@ -291,7 +291,7 @@ export default function JoinUs() {
             </div>
             <h1 className="text-center text-3xl font-black tracking-tight text-slate-900 sm:text-4xl">You're in.</h1>
             <p className="mt-3 text-center text-base leading-7 text-slate-500">
-              Your Manager ID is ready. Copy it — you'll need it to create your account.
+              Copy your Manager ID, then continue to create your portal password. You'll use this same ID whenever you sign in.
             </p>
 
             <div className="mt-8 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
@@ -320,13 +320,12 @@ export default function JoinUs() {
               </div>
             </div>
 
-            <a
-              href="/manager?view=create"
+            <Link
+              to="/portal?portal=manager&view=create"
               className="mt-6 inline-flex w-full items-center justify-center rounded-full bg-[linear-gradient(180deg,#2f76ff_0%,#2450eb_100%)] px-7 py-4 text-base font-semibold text-white shadow-[0_16px_40px_rgba(37,99,235,0.28)] transition hover:brightness-105"
             >
               Create account →
-            </a>
-            <p className="mt-4 text-center text-sm text-slate-400">Keep your Manager ID safe — you'll use it to sign in.</p>
+            </Link>
           </div>
         </section>
       ) : (
@@ -391,9 +390,9 @@ export default function JoinUs() {
                 </button>
                 <p className="mt-5 text-sm text-slate-500">
                   Already have an account?{' '}
-                  <a href="/manager" className="font-semibold text-[#2563eb] underline-offset-2 hover:underline">
+                  <Link to="/portal?portal=manager" className="font-semibold text-[#2563eb] underline-offset-2 hover:underline">
                     Manager login
-                  </a>
+                  </Link>
                 </p>
               </div>
             ) : null}

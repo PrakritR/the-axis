@@ -219,6 +219,24 @@ async function uploadAttachmentToRecord(table, recordId, fieldName, file) {
   return response.json()
 }
 
+function workOrderApplicationFieldsFromResident(resident) {
+  const out = {}
+  if (!resident) return out
+  const aid = resident['Application ID']
+  if (aid != null && String(aid).trim() !== '') {
+    const n = Number(aid)
+    if (Number.isFinite(n) && String(aid).trim() === String(n)) out['Application ID'] = n
+    else out['Application ID'] = String(aid).trim()
+  }
+  const app = resident.Application
+  if (Array.isArray(app) && app.length && String(app[0]).trim().startsWith('rec')) {
+    out.Application = [String(app[0]).trim()]
+  } else if (typeof app === 'string' && app.trim().startsWith('rec')) {
+    out.Application = [app.trim()]
+  }
+  return out
+}
+
 export async function createWorkOrder({
   resident,
   title,
@@ -241,6 +259,7 @@ export async function createWorkOrder({
     Status: 'Submitted',
     'Preferred Entry Time': preferredEntry,
     Resident: [residentId],
+    ...workOrderApplicationFieldsFromResident(resident),
   }
 
   const data = await request(tableUrl(TABLES.workOrders), {
@@ -422,12 +441,51 @@ export async function getAllWorkOrders() {
   return allRecords
 }
 
-export async function updateWorkOrderStatus(recordId, status) {
-  const data = await request(`${tableUrl(TABLES.workOrders)}/${recordId}`, {
+export async function getWorkOrderById(recordId) {
+  const id = String(recordId || '').trim()
+  if (!/^rec[a-zA-Z0-9]{14,}$/.test(id)) {
+    throw new Error('Enter a valid Airtable record ID (e.g. recXXXXXXXXXXXXXX).')
+  }
+  const data = await request(`${tableUrl(TABLES.workOrders)}/${id}`)
+  return mapRecord(data)
+}
+
+/** PATCH any Work Orders fields. Omits undefined entries. */
+export async function updateWorkOrder(recordId, fields) {
+  const id = String(recordId || '').trim()
+  if (!/^rec[a-zA-Z0-9]{14,}$/.test(id)) {
+    throw new Error('Invalid work order record ID.')
+  }
+  const cleaned = Object.fromEntries(
+    Object.entries(fields).filter(([, v]) => v !== undefined),
+  )
+  if (Object.keys(cleaned).length === 0) {
+    throw new Error('No fields to update.')
+  }
+  const data = await request(`${tableUrl(TABLES.workOrders)}/${id}`, {
     method: 'PATCH',
-    body: JSON.stringify({ fields: { Status: status }, typecast: true }),
+    body: JSON.stringify({ fields: cleaned, typecast: true }),
   })
   return mapRecord(data)
+}
+
+/** Append to Work Orders "Update" and set "Last Update" (date) when a resident sends a message. */
+export async function appendWorkOrderUpdateFromResident(workOrderId, residentEmail, message) {
+  const lineEmail = String(residentEmail || 'Resident').trim() || 'Resident'
+  const current = await getWorkOrderById(workOrderId)
+  const prev = String(current.Update || '').trim()
+  const stamp = new Date().toLocaleString('en-US', { dateStyle: 'medium', timeStyle: 'short' })
+  const line = `[${stamp}] ${lineEmail}: ${message}`
+  const next = prev ? `${prev}\n\n${line}` : line
+  const today = new Date().toISOString().slice(0, 10)
+  return updateWorkOrder(workOrderId, {
+    Update: next,
+    'Last Update': today,
+  })
+}
+
+export async function updateWorkOrderStatus(recordId, status) {
+  return updateWorkOrder(recordId, { Status: status })
 }
 
 // ---------------------------------------------------------------------------
