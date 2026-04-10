@@ -51,7 +51,7 @@ export default async function handler(req, res) {
     return res.status(500).json({ error: 'Server data connection is not configured yet.' })
   }
 
-  const { managerId, name, phone } = req.body || {}
+  const { managerId, name } = req.body || {}
   const normalizedManagerId = String(managerId || '').trim().toUpperCase()
 
   if (!normalizedManagerId) {
@@ -59,10 +59,9 @@ export default async function handler(req, res) {
   }
 
   const normalizedName = String(name || '').trim()
-  const normalizedPhone = String(phone || '').trim()
 
-  if (!normalizedName && !normalizedPhone) {
-    return res.status(400).json({ error: 'At least one field (name or phone) is required.' })
+  if (!normalizedName) {
+    return res.status(400).json({ error: 'Name is required.' })
   }
 
   try {
@@ -73,13 +72,11 @@ export default async function handler(req, res) {
 
     const updates = {}
     if (normalizedName) updates.Name = normalizedName
-    if (normalizedPhone) updates.Phone = normalizedPhone
 
     await updateManager(manager.id, updates)
 
     return res.status(200).json({
       name: normalizedName || manager.Name || '',
-      phone: normalizedPhone || '',
     })
   } catch (err) {
     console.error('Manager update profile error:', err)
