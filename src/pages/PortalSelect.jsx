@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { useNavigate, useSearchParams } from 'react-router-dom'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import {
   PortalAuthCard,
   PortalAuthPage,
@@ -63,6 +63,27 @@ export default function PortalSelect() {
             )}
           </div>
         </PortalAuthCard>
+
+        <div className="mx-auto mt-8 max-w-md rounded-[24px] border border-slate-200 bg-white/80 px-5 py-4 text-center shadow-sm">
+          <div className="text-[11px] font-bold uppercase tracking-[0.16em] text-slate-400">Internal (demo)</div>
+          <p className="mt-2 text-sm text-slate-600">
+            New partner portal and Axis admin console — mock data until Airtable is wired.
+          </p>
+          <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:justify-center">
+            <Link
+              to="/management"
+              className="rounded-xl border border-[#2563eb]/30 bg-[#2563eb]/5 px-4 py-2.5 text-sm font-semibold text-[#2563eb] transition hover:bg-[#2563eb]/10"
+            >
+              Axis Management
+            </Link>
+            <Link
+              to="/admin"
+              className="rounded-xl border border-slate-300 bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-slate-800"
+            >
+              Axis Admin
+            </Link>
+          </div>
+        </div>
       </PortalAuthPage>
     </>
   )
