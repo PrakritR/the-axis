@@ -77,12 +77,14 @@ export default function SiteHeader() {
 
   const isHome = pathname === '/' || pathname.startsWith('/properties/')
   const isApply = pathname === '/apply'
+  const isScheduleTour = pathname === '/contact' && new URLSearchParams(location.search).get('tab') === 'schedule'
   const isPortal = pathname === '/portal'
 
   const showMobileDock = variant === 'marketing' && ['/', '/apply', '/contact'].includes(pathname)
 
   const marketingCenterNav = [
     { label: 'Explore houses', to: '/', isActive: isHome },
+    { label: 'Schedule tour', to: '/contact?tab=schedule', isActive: isScheduleTour },
     { label: 'Apply', to: '/apply', isActive: isApply },
     { label: 'Partner with Axis', to: '/owners/about', isActive: false },
   ]
@@ -132,7 +134,7 @@ export default function SiteHeader() {
                 className="shrink-0 sm:col-start-1 sm:row-start-1 sm:justify-self-start"
                 aria-label="Axis home"
               >
-                <AxisWordmark tone="dark" className="h-8 w-auto sm:h-9" />
+                <AxisWordmark tone="dark" className="h-10 w-auto sm:h-11" />
               </Link>
               <div className="sm:hidden">
                 <PortalBubble aria-current="page">Portal</PortalBubble>
@@ -183,7 +185,7 @@ export default function SiteHeader() {
           onClick={scrollToTop}
           aria-label={wordmarkLabel}
         >
-          <AxisWordmark tone="dark" className="h-8 w-auto transition-transform duration-300 group-hover:scale-[1.02] sm:h-9" />
+          <AxisWordmark tone="dark" className="h-10 w-auto transition-transform duration-300 group-hover:scale-[1.02] sm:h-11" />
         </Link>
 
         <nav className={`hidden items-center justify-center md:col-start-2 md:flex ${centerGap}`}>

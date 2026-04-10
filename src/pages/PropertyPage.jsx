@@ -647,23 +647,6 @@ export default function PropertyPage(){
           <div className="grid gap-10 border-b border-slate-200 pb-10 lg:grid-cols-1 lg:pb-14">
             <div className="max-w-4xl">
               <h1 className="font-editorial mt-4 text-[2rem] leading-[1.1] text-slate-900 sm:text-[3.5rem] sm:leading-[0.96] lg:max-w-4xl lg:text-[5.4rem]">{p.name}</h1>
-
-              <div className="mt-8 flex flex-wrap gap-3">
-                <Link
-                  to={`/apply?property=${p.slug}`}
-                  onClick={scrollToTop}
-                  className="rounded-full bg-axis px-6 py-3 text-sm font-semibold text-white transition hover:opacity-95"
-                >
-                  Apply
-                </Link>
-                <button
-                  type="button"
-                  onClick={() => scrollToId('floor-plans')}
-                  className="rounded-full border border-slate-300 px-6 py-3 text-sm font-semibold text-slate-700 hover:border-slate-500"
-                >
-                  View rooms
-                </button>
-              </div>
             </div>
           </div>
         </section>
@@ -976,7 +959,6 @@ export default function PropertyPage(){
             <section id="leasing" ref={(node) => { sectionRefs.current.leasing = node }} className="mt-10 scroll-mt-28 md:scroll-mt-40">
               <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
                 <h2 className="font-editorial text-3xl leading-tight text-slate-900 sm:text-4xl">Pricing &amp; leasing</h2>
-                <p className="max-w-md text-sm leading-6 text-slate-500">Whole-house, grouped packages, and how lease lengths work.</p>
               </div>
 
               <div className="mt-6 overflow-hidden rounded-[24px] border border-slate-200 bg-white shadow-[0_24px_70px_rgba(15,23,42,0.06)]">
@@ -986,9 +968,6 @@ export default function PropertyPage(){
                     <div className="mt-3 flex flex-wrap items-end justify-between gap-4">
                       <div className="text-3xl font-black tracking-tight text-slate-900 sm:text-[2.5rem]">
                         {formatCompactMonthlyCurrency(rentTotals.totalHouseRent)}
-                      </div>
-                      <div className="text-sm text-slate-500">
-                        {displayedRoomPlans.reduce((acc, pl) => acc + pl.rooms.length, 0)} rooms · one lease for the entire home
                       </div>
                     </div>
                   </div>

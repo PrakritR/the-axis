@@ -12,7 +12,7 @@ const item = {
 export default function Hero({ heading = 'AXIS SEATTLE' }) {
   return (
     <section className="relative w-full bg-transparent">
-      <div className="container mx-auto px-4 pb-10 pt-12 sm:px-6 sm:pb-12 sm:pt-16 lg:px-8 lg:pb-14 lg:pt-20">
+      <div className="container mx-auto px-4 pb-3 pt-6 sm:px-6 sm:pb-4 sm:pt-8 lg:px-8 lg:pb-5 lg:pt-10">
         <motion.div className="flex justify-center" variants={container} initial="hidden" animate="show">
           <motion.h1 variants={item} className="font-display mx-auto text-center text-[clamp(2rem,4.8vw,4rem)] font-semibold leading-[0.96] tracking-[-0.04em] text-slate-900 sm:whitespace-nowrap">
             {heading}

@@ -112,9 +112,6 @@ export default function PropertyGallery({
                   ))}
                 </div>
               ) : null}
-              <p className="mt-4 max-w-xl text-sm leading-6 text-slate-600 sm:mt-5 sm:text-base sm:leading-7">
-                Browse the main photos here, or open the full gallery for a closer look.
-              </p>
             </div>
 
             <div className="flex flex-wrap items-center gap-2">
@@ -129,7 +126,7 @@ export default function PropertyGallery({
               <button
                 type="button"
                 onClick={() => setOpen(true)}
-                className="rounded-full bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800"
+                className="rounded-full bg-axis px-4 py-2 text-sm font-semibold text-white hover:bg-axis-dark"
               >
                 All images
               </button>
@@ -267,7 +264,7 @@ export default function PropertyGallery({
               <button type="button" onClick={next} className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-slate-300 bg-white text-slate-700">
                 <ArrowRight />
               </button>
-              <button type="button" onClick={() => setOpen(true)} className="order-3 w-full rounded-full bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white sm:order-none sm:flex-1">
+              <button type="button" onClick={() => setOpen(true)} className="order-3 w-full rounded-full bg-axis px-4 py-2.5 text-sm font-semibold text-white hover:bg-axis-dark sm:order-none sm:flex-1">
                 All images
               </button>
               {normalizedVideos.length > 0 ? (

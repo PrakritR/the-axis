@@ -318,7 +318,7 @@ function RoomFinder() {
   const finderDateField = `${finderControlBase} h-11`
 
   return (
-    <section className="border-t border-slate-200/25 bg-transparent px-4 py-14 sm:px-6 sm:py-20">
+    <section className="border-t border-slate-200/25 bg-transparent px-4 py-8 sm:px-6 sm:py-10">
       <div className="mx-auto max-w-6xl">
         <div className="axis-panel rounded-[32px] p-6 sm:p-8">
           <div className="grid grid-cols-1 gap-x-6 gap-y-6 sm:grid-cols-2 lg:grid-cols-[repeat(4,minmax(0,1fr))]">
@@ -551,7 +551,7 @@ export default function Home() {
       <RoomFinder />
 
       {/* ── AVAILABLE HOUSING ── */}
-      <section id="properties" className="scroll-mt-20 border-t border-slate-200/25 bg-transparent py-14 sm:py-20">
+      <section id="properties" className="scroll-mt-20 border-t border-slate-200/25 bg-transparent py-8 sm:py-10">
         <div className="mx-auto max-w-6xl px-4 sm:px-6">
           <Reveal>
             <div className="flex flex-col gap-5">
@@ -563,7 +563,7 @@ export default function Home() {
         <PropertyCarousel />
       </section>
 
-      <section className="border-t border-slate-200/25 bg-transparent px-4 py-14 sm:px-6 sm:py-16">
+      <section className="border-t border-slate-200/25 bg-transparent px-4 py-8 sm:px-6 sm:py-10">
         <div className="mx-auto max-w-6xl">
           <motion.div
             className="grid gap-6 sm:grid-cols-3"
@@ -594,7 +594,7 @@ export default function Home() {
       </section>
 
       {/* ── CTA — dark gradient ── */}
-      <section className="border-t border-slate-200/25 bg-transparent px-4 py-14 sm:px-6 sm:py-20">
+      <section className="border-t border-slate-200/25 bg-transparent px-4 py-8 sm:px-6 sm:py-10">
         <Reveal>
           <div className="axis-panel relative mx-auto max-w-6xl overflow-hidden rounded-[32px] px-5 py-10 sm:px-8 sm:py-14 md:px-14">
             <div className="absolute inset-0 bg-dot-grid bg-dot-md opacity-18 rounded-[32px]" />
