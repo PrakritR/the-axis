@@ -1,6 +1,11 @@
 const STRIPE_API = 'https://api.stripe.com/v1'
-const AIRTABLE_TOKEN = process.env.VITE_AIRTABLE_TOKEN
-const BASE_ID = process.env.VITE_AIRTABLE_BASE_ID || process.env.AIRTABLE_BASE_ID || 'appol57LKtMKaQ75T'
+const AIRTABLE_TOKEN = process.env.AIRTABLE_TOKEN || process.env.VITE_AIRTABLE_TOKEN
+const BASE_ID =
+  process.env.AIRTABLE_BASE_ID ||
+  process.env.VITE_AIRTABLE_BASE_ID ||
+  process.env.AIRTABLE_APPLICATIONS_BASE_ID ||
+  process.env.VITE_AIRTABLE_APPLICATIONS_BASE_ID ||
+  'appol57LKtMKaQ75T'
 const MANAGER_TABLE_ENC = encodeURIComponent('Manager Profile')
 
 function airtableHeaders() {
@@ -97,9 +102,16 @@ function billingWaivedInNotes(notes) {
   return /(?:^|\n)Billing:\s*waived\b/i.test(String(notes || ''))
 }
 
+function isManagerMarkedActive(manager) {
+  const value = manager?.Active
+  if (value === true || value === 1) return true
+  const normalized = String(value || '').trim().toLowerCase()
+  return ['true', '1', 'yes', 'active'].includes(normalized)
+}
+
 /** Allow free-tier managers, billing-waived promo managers, or any Active account. */
 function hasPaidPortalAccessWithoutStripe(manager) {
-  return managerTier(manager) === 'free' || billingWaivedInNotes(manager.Notes) || manager.Active === true
+  return managerTier(manager) === 'free' || billingWaivedInNotes(manager.Notes) || isManagerMarkedActive(manager)
 }
 
 async function assertManagerCanSignIn(manager, secretKey) {

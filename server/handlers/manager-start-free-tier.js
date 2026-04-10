@@ -191,6 +191,7 @@ export default async function handler(req, res) {
         Email: normalizedEmail,
         'Phone Number': normalizedPhone,
         tier: details.planType,
+        Notes: nextNotes,
         Active: true,
       })
     } else {
@@ -204,6 +205,9 @@ export default async function handler(req, res) {
       }
       if (manager.tier !== details.planType) {
         nextFields.tier = details.planType
+      }
+      if (String(manager.Notes || '').trim() !== nextNotes) {
+        nextFields.Notes = nextNotes
       }
 
       if (Object.keys(nextFields).length > 0) {
@@ -223,9 +227,9 @@ export default async function handler(req, res) {
       managerId,
       accountExists: Boolean(manager.Password),
       planType: details.planType,
-      billingInterval: details.billingInterval,
-      houseAccess: extractMetadataValue(manager.Notes, 'House Access') || details.houseAccess,
-      platformAccess: extractMetadataValue(manager.Notes, 'Platform Access') || details.platformAccess,
+      billingInterval: extractMetadataValue(nextNotes, 'Billing') || details.billingInterval,
+      houseAccess: extractMetadataValue(nextNotes, 'House Access') || details.houseAccess,
+      platformAccess: extractMetadataValue(nextNotes, 'Platform Access') || details.platformAccess,
       message: manager.Password
         ? 'Free tier verified. You can sign in now.'
         : `Free tier ready. Your manager ID is ${managerId}. Create your account below.`,

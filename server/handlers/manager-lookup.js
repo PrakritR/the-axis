@@ -1,5 +1,10 @@
-const AIRTABLE_TOKEN = process.env.VITE_AIRTABLE_TOKEN
-const BASE_ID = process.env.VITE_AIRTABLE_BASE_ID || process.env.AIRTABLE_BASE_ID || 'appol57LKtMKaQ75T'
+const AIRTABLE_TOKEN = process.env.AIRTABLE_TOKEN || process.env.VITE_AIRTABLE_TOKEN
+const BASE_ID =
+  process.env.AIRTABLE_BASE_ID ||
+  process.env.VITE_AIRTABLE_BASE_ID ||
+  process.env.AIRTABLE_APPLICATIONS_BASE_ID ||
+  process.env.VITE_AIRTABLE_APPLICATIONS_BASE_ID ||
+  'appol57LKtMKaQ75T'
 const MANAGER_TABLE_ENC = encodeURIComponent('Manager Profile')
 
 function airtableHeaders() {

@@ -1,6 +1,11 @@
 const STRIPE_API = 'https://api.stripe.com/v1'
-const AIRTABLE_TOKEN = process.env.VITE_AIRTABLE_TOKEN
-const BASE_ID = process.env.VITE_AIRTABLE_APPLICATIONS_BASE_ID || 'appNBX2inqfJMyqYV'
+const AIRTABLE_TOKEN = process.env.AIRTABLE_TOKEN || process.env.VITE_AIRTABLE_TOKEN
+const BASE_ID =
+  process.env.AIRTABLE_BASE_ID ||
+  process.env.VITE_AIRTABLE_BASE_ID ||
+  process.env.AIRTABLE_APPLICATIONS_BASE_ID ||
+  process.env.VITE_AIRTABLE_APPLICATIONS_BASE_ID ||
+  'appol57LKtMKaQ75T'
 const MANAGER_TABLE_ENC = encodeURIComponent('Manager Profile')
 
 function airtableHeaders() {
@@ -174,17 +179,34 @@ export default async function handler(req, res) {
     }
 
     let manager = await getManagerByEmail(email)
+    const nextNotes = mergeManagerNotes(manager?.Notes, {
+      phone,
+      planType: details.planType,
+      billingInterval,
+      houseAccess: details.houseAccess,
+      platformAccess: details.platformAccess,
+    })
     if (!manager) {
       const createFields = {
         Name: name || email.split('@')[0],
         Email: email,
         tier: details.planType,
+        Notes: nextNotes,
         Active: true,
       }
       if (phone) createFields['Phone Number'] = String(phone).trim()
       manager = await createManager(createFields)
-    } else if (phone && !manager['Phone Number']) {
-      manager = await updateManager(manager.id, { 'Phone Number': String(phone).trim() })
+    } else {
+      const nextFields = {}
+      if (phone && !manager['Phone Number']) {
+        nextFields['Phone Number'] = String(phone).trim()
+      }
+      if (String(manager.Notes || '').trim() !== nextNotes) {
+        nextFields.Notes = nextNotes
+      }
+      if (Object.keys(nextFields).length > 0) {
+        manager = await updateManager(manager.id, nextFields)
+      }
     }
 
     const derivedManagerId = deriveManagerId(manager.id)
@@ -200,6 +222,9 @@ export default async function handler(req, res) {
     if (manager.tier !== details.planType) {
       nextFields.tier = details.planType
     }
+    if (String(manager.Notes || '').trim() !== nextNotes) {
+      nextFields.Notes = nextNotes
+    }
 
     if (Object.keys(nextFields).length > 0) {
       manager = await updateManager(manager.id, nextFields)
@@ -211,10 +236,10 @@ export default async function handler(req, res) {
       phone: extractManagerPhone(manager, phone),
       managerId: derivedManagerId,
       accountExists: Boolean(manager.Password),
-      planType: extractMetadataValue(manager.Notes, 'Plan') || details.planType,
-      billingInterval: extractMetadataValue(manager.Notes, 'Billing') || billingInterval,
-      houseAccess: extractMetadataValue(manager.Notes, 'House Access') || details.houseAccess,
-      platformAccess: extractMetadataValue(manager.Notes, 'Platform Access') || details.platformAccess,
+      planType: extractMetadataValue(nextNotes, 'Plan') || details.planType,
+      billingInterval: extractMetadataValue(nextNotes, 'Billing') || billingInterval,
+      houseAccess: extractMetadataValue(nextNotes, 'House Access') || details.houseAccess,
+      platformAccess: extractMetadataValue(nextNotes, 'Platform Access') || details.platformAccess,
       message: manager.Password
         ? 'Subscription verified. You can sign in now.'
         : `Subscription verified. Your manager ID is ${derivedManagerId}. Use it to create your manager account below.`,
