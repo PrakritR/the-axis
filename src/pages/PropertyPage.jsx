@@ -633,7 +633,7 @@ export default function PropertyPage(){
     setActiveTab((prev) => (prev === nextId ? prev : nextId))
   }, [getSectionScrollOffset, sectionNavItems])
 
-  // Match in-page nav stick position to actual promo + header height (top-28 was often wrong).
+  // Match in-page nav stick position to actual promo + header height.
   useEffect(() => {
     if (!p) return undefined
     const chrome = document.getElementById('site-sticky-chrome')
@@ -778,10 +778,24 @@ export default function PropertyPage(){
       />
       <div className="main-container">
         <div
-          id="section-nav"
-          className="sticky z-40 w-full border-b border-slate-200 bg-white/95 shadow-[0_1px_0_0_rgba(15,23,42,0.06)] backdrop-blur-md [top:7rem]"
+          id="overview"
+          ref={(node) => { sectionRefs.current.overview = node }}
+          className="property-gallery mx-auto max-w-[1480px] scroll-mt-28 px-4 pt-3 sm:px-6 sm:pt-4 md:scroll-mt-40 lg:px-10 lg:pt-5"
         >
-          <div className="mx-auto max-w-[1480px] px-4 py-3 sm:px-6 sm:py-4 lg:px-10 lg:py-5">
+          <h1 className="sr-only">{p.name}</h1>
+          <div className="mb-6 sm:mb-8 lg:mb-10">
+            <h2 className="font-editorial text-3xl font-black leading-tight tracking-tight text-slate-900 sm:text-4xl">
+              Overview
+            </h2>
+          </div>
+          <PropertyGallery images={galleryImages} videos={p.videos || []} />
+        </div>
+
+        <div
+          id="section-nav"
+          className="sticky top-0 z-40 mt-8 w-full border-y border-slate-200 bg-white/95 shadow-[0_1px_0_0_rgba(15,23,42,0.06)] backdrop-blur-md sm:mt-10"
+        >
+          <div className="mx-auto max-w-[1480px] px-4 py-3 sm:px-6 sm:py-4 lg:px-10">
             <nav
               className="flex flex-wrap items-center gap-x-3 gap-y-2.5 overflow-x-auto scrollbar-none sm:gap-x-4 sm:gap-y-3 md:gap-x-5 lg:gap-x-6 [&::-webkit-scrollbar]:hidden"
               aria-label="Property sections"
@@ -809,22 +823,7 @@ export default function PropertyPage(){
           </div>
         </div>
 
-        <div
-          id="overview"
-          ref={(node) => { sectionRefs.current.overview = node }}
-          className="property-gallery mx-auto max-w-[1480px] scroll-mt-28 px-4 pt-8 sm:px-6 sm:pt-10 md:scroll-mt-40 lg:px-10 lg:pt-12"
-        >
-          <h1 className="sr-only">{p.name}</h1>
-          <div className="mb-6 sm:mb-8 lg:mb-10">
-            <h2 className="font-editorial text-3xl font-black leading-tight tracking-tight text-slate-900 sm:text-4xl">
-              Overview
-            </h2>
-            <p className="mt-2 max-w-2xl text-base leading-relaxed text-slate-600">{p.summary}</p>
-          </div>
-          <PropertyGallery images={galleryImages} videos={p.videos || []} />
-        </div>
-
-      <div className="mx-auto mt-12 grid min-w-0 max-w-[1480px] gap-10 px-4 sm:px-6 md:grid-cols-12 lg:px-10">
+      <div className="mx-auto mt-8 grid min-w-0 max-w-[1480px] gap-10 px-4 sm:mt-10 sm:px-6 md:grid-cols-12 lg:px-10">
         <div className="min-w-0 md:col-span-9">
 
           {/* Floor Plans */}
