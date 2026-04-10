@@ -98,10 +98,6 @@ function managerTier(manager) {
   return String(manager?.tier ?? manager?.Tier ?? '').trim().toLowerCase()
 }
 
-function billingWaivedInNotes(notes) {
-  return /(?:^|\n)Billing:\s*waived\b/i.test(String(notes || ''))
-}
-
 function isManagerMarkedActive(manager) {
   const value = manager?.Active
   if (value === true || value === 1) return true
@@ -109,9 +105,9 @@ function isManagerMarkedActive(manager) {
   return ['true', '1', 'yes', 'active'].includes(normalized)
 }
 
-/** Allow free-tier managers, billing-waived promo managers, or any Active account. */
+/** Allow free-tier managers or any manager record that has been activated. */
 function hasPaidPortalAccessWithoutStripe(manager) {
-  return managerTier(manager) === 'free' || billingWaivedInNotes(manager.Notes) || isManagerMarkedActive(manager)
+  return managerTier(manager) === 'free' || isManagerMarkedActive(manager)
 }
 
 async function assertManagerCanSignIn(manager, secretKey) {

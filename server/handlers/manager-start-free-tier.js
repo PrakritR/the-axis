@@ -30,38 +30,6 @@ function deriveManagerId(recordId) {
   return `MGR-${suffix}`
 }
 
-function extractPhoneFromNotes(notes) {
-  const match = String(notes || '').match(/(?:^|\n)Phone:\s*(.+?)(?:\n|$)/i)
-  return match ? match[1].trim() : ''
-}
-
-function extractMetadataValue(notes, label) {
-  const escapedLabel = String(label || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-  const match = String(notes || '').match(new RegExp(`(?:^|\\n)${escapedLabel}:\\s*(.+?)(?:\\n|$)`, 'i'))
-  return match ? match[1].trim() : ''
-}
-
-function mergeManagerNotes(existingNotes, metadata) {
-  const labels = ['Phone', 'Plan', 'Billing', 'House Access', 'Platform Access']
-  let stripped = String(existingNotes || '').trim()
-
-  labels.forEach((label) => {
-    const escapedLabel = label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-    stripped = stripped.replace(new RegExp(`(?:^|\\n)${escapedLabel}:\\s*.+?(?=\\n|$)`, 'gi'), '')
-  })
-
-  stripped = stripped.replace(/^\n+|\n+$/g, '').trim()
-
-  const parts = []
-  if (metadata.phone) parts.push(`Phone: ${metadata.phone}`)
-  if (metadata.planType) parts.push(`Plan: ${metadata.planType}`)
-  if (metadata.billingInterval) parts.push(`Billing: ${metadata.billingInterval}`)
-  if (metadata.houseAccess) parts.push(`House Access: ${metadata.houseAccess}`)
-  if (metadata.platformAccess) parts.push(`Platform Access: ${metadata.platformAccess}`)
-  if (stripped) parts.push(stripped)
-  return parts.join('\n')
-}
-
 async function readAirtableError(response) {
   const raw = await response.text()
   try {
@@ -177,13 +145,6 @@ export default async function handler(req, res) {
 
   try {
     let manager = await getManagerByEmail(normalizedEmail)
-    const nextNotes = mergeManagerNotes(manager?.Notes, {
-      phone: normalizedPhone,
-      planType: details.planType,
-      billingInterval: waiveBilling ? 'waived' : details.billingInterval,
-      houseAccess: details.houseAccess,
-      platformAccess: details.platformAccess,
-    })
 
     if (!manager) {
       manager = await createManager({
@@ -191,7 +152,6 @@ export default async function handler(req, res) {
         Email: normalizedEmail,
         'Phone Number': normalizedPhone,
         tier: details.planType,
-        Notes: nextNotes,
         Active: true,
       })
     } else {
@@ -205,9 +165,6 @@ export default async function handler(req, res) {
       }
       if (manager.tier !== details.planType) {
         nextFields.tier = details.planType
-      }
-      if (String(manager.Notes || '').trim() !== nextNotes) {
-        nextFields.Notes = nextNotes
       }
 
       if (Object.keys(nextFields).length > 0) {
@@ -227,9 +184,9 @@ export default async function handler(req, res) {
       managerId,
       accountExists: Boolean(manager.Password),
       planType: details.planType,
-      billingInterval: extractMetadataValue(nextNotes, 'Billing') || details.billingInterval,
-      houseAccess: extractMetadataValue(nextNotes, 'House Access') || details.houseAccess,
-      platformAccess: extractMetadataValue(nextNotes, 'Platform Access') || details.platformAccess,
+      billingInterval: waiveBilling ? 'waived' : details.billingInterval,
+      houseAccess: details.houseAccess,
+      platformAccess: details.platformAccess,
       message: manager.Password
         ? 'Free tier verified. You can sign in now.'
         : `Free tier ready. Your manager ID is ${managerId}. Create your account below.`,

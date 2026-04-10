@@ -35,17 +35,6 @@ function deriveManagerId(recordId) {
   return `MGR-${suffix}`
 }
 
-function extractPhoneFromNotes(notes) {
-  const match = String(notes || '').match(/(?:^|\n)Phone:\s*(.+?)(?:\n|$)/i)
-  return match ? match[1].trim() : ''
-}
-
-function extractMetadataValue(notes, label) {
-  const escapedLabel = String(label || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-  const match = String(notes || '').match(new RegExp(`(?:^|\\n)${escapedLabel}:\\s*(.+?)(?:\\n|$)`, 'i'))
-  return match ? match[1].trim() : ''
-}
-
 function planDetails(planType) {
   if (planType === 'business') {
     return {
@@ -60,27 +49,6 @@ function planDetails(planType) {
     houseAccess: '1-2 houses',
     platformAccess: 'Rent collection, announcements, and work orders',
   }
-}
-
-function mergeManagerNotes(existingNotes, metadata) {
-  const labels = ['Phone', 'Plan', 'Billing', 'House Access', 'Platform Access']
-  let stripped = String(existingNotes || '').trim()
-
-  labels.forEach((label) => {
-    const escapedLabel = label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-    stripped = stripped.replace(new RegExp(`(?:^|\\n)${escapedLabel}:\\s*.+?(?=\\n|$)`, 'gi'), '')
-  })
-
-  stripped = stripped.replace(/^\n+|\n+$/g, '').trim()
-
-  const parts = []
-  if (metadata.phone) parts.push(`Phone: ${metadata.phone}`)
-  if (metadata.planType) parts.push(`Plan: ${metadata.planType}`)
-  if (metadata.billingInterval) parts.push(`Billing: ${metadata.billingInterval}`)
-  if (metadata.houseAccess) parts.push(`House Access: ${metadata.houseAccess}`)
-  if (metadata.platformAccess) parts.push(`Platform Access: ${metadata.platformAccess}`)
-  if (stripped) parts.push(stripped)
-  return parts.join('\n')
 }
 
 function extractManagerPhone(manager, fallbackPhone = '') {
@@ -179,19 +147,11 @@ export default async function handler(req, res) {
     }
 
     let manager = await getManagerByEmail(email)
-    const nextNotes = mergeManagerNotes(manager?.Notes, {
-      phone,
-      planType: details.planType,
-      billingInterval,
-      houseAccess: details.houseAccess,
-      platformAccess: details.platformAccess,
-    })
     if (!manager) {
       const createFields = {
         Name: name || email.split('@')[0],
         Email: email,
         tier: details.planType,
-        Notes: nextNotes,
         Active: true,
       }
       if (phone) createFields['Phone Number'] = String(phone).trim()
@@ -200,9 +160,6 @@ export default async function handler(req, res) {
       const nextFields = {}
       if (phone && !manager['Phone Number']) {
         nextFields['Phone Number'] = String(phone).trim()
-      }
-      if (String(manager.Notes || '').trim() !== nextNotes) {
-        nextFields.Notes = nextNotes
       }
       if (Object.keys(nextFields).length > 0) {
         manager = await updateManager(manager.id, nextFields)
@@ -222,9 +179,6 @@ export default async function handler(req, res) {
     if (manager.tier !== details.planType) {
       nextFields.tier = details.planType
     }
-    if (String(manager.Notes || '').trim() !== nextNotes) {
-      nextFields.Notes = nextNotes
-    }
 
     if (Object.keys(nextFields).length > 0) {
       manager = await updateManager(manager.id, nextFields)
@@ -236,10 +190,10 @@ export default async function handler(req, res) {
       phone: extractManagerPhone(manager, phone),
       managerId: derivedManagerId,
       accountExists: Boolean(manager.Password),
-      planType: extractMetadataValue(nextNotes, 'Plan') || details.planType,
-      billingInterval: extractMetadataValue(nextNotes, 'Billing') || billingInterval,
-      houseAccess: extractMetadataValue(nextNotes, 'House Access') || details.houseAccess,
-      platformAccess: extractMetadataValue(nextNotes, 'Platform Access') || details.platformAccess,
+      planType: details.planType,
+      billingInterval,
+      houseAccess: details.houseAccess,
+      platformAccess: details.platformAccess,
       message: manager.Password
         ? 'Subscription verified. You can sign in now.'
         : `Subscription verified. Your manager ID is ${derivedManagerId}. Use it to create your manager account below.`,

@@ -22,17 +22,6 @@ function mapRecord(record) {
   return { id: record.id, ...record.fields, created_at: record.createdTime }
 }
 
-function extractPhoneFromNotes(notes) {
-  const match = String(notes || '').match(/(?:^|\n)Phone:\s*(.+?)(?:\n|$)/i)
-  return match ? match[1].trim() : ''
-}
-
-function extractMetadataValue(notes, label) {
-  const escapedLabel = String(label || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-  const match = String(notes || '').match(new RegExp(`(?:^|\\n)${escapedLabel}:\\s*(.+?)(?:\\n|$)`, 'i'))
-  return match ? match[1].trim() : ''
-}
-
 async function getManagerByManagerId(managerId) {
   const formula = encodeURIComponent(`{Manager ID} = "${escapeFormulaValue(managerId)}"`)
   const url = `https://api.airtable.com/v0/${BASE_ID}/${MANAGER_TABLE_ENC}?filterByFormula=${formula}&maxRecords=1`
@@ -86,7 +75,7 @@ export default async function handler(req, res) {
     }
 
     const normalizedEmail = String(manager.Email || '').trim().toLowerCase()
-    const normalizedPlanType = String(manager.tier || extractMetadataValue(manager.Notes, 'Plan') || 'free').trim().toLowerCase()
+    const normalizedPlanType = String(manager.tier || 'free').trim().toLowerCase()
     if (!normalizedEmail) {
       return res.status(400).json({ error: 'This manager record is missing an email address. Please contact support.' })
     }
@@ -109,8 +98,8 @@ export default async function handler(req, res) {
         name: updated.Name || '',
         email: updated.Email || normalizedEmail,
         phone: String(updated['Phone Number'] || '').trim(),
-        planType: updated.tier || extractMetadataValue(updated.Notes, 'Plan') || normalizedPlanType || 'free',
-        billingInterval: extractMetadataValue(updated.Notes, 'Billing') || '',
+        planType: updated.tier || normalizedPlanType || 'free',
+        billingInterval: '',
       },
     })
   } catch (err) {

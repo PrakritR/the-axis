@@ -22,17 +22,6 @@ function mapRecord(record) {
   return { id: record.id, ...record.fields, created_at: record.createdTime }
 }
 
-function extractPhoneFromNotes(notes) {
-  const match = String(notes || '').match(/(?:^|\n)Phone:\s*(.+?)(?:\n|$)/i)
-  return match ? match[1].trim() : ''
-}
-
-function extractMetadataValue(notes, label) {
-  const escapedLabel = String(label || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-  const match = String(notes || '').match(new RegExp(`(?:^|\\n)${escapedLabel}:\\s*(.+?)(?:\\n|$)`, 'i'))
-  return match ? match[1].trim() : ''
-}
-
 async function getManagerByManagerId(managerId) {
   const formula = encodeURIComponent(`{Manager ID} = "${escapeFormulaValue(managerId)}"`)
   const url = `https://api.airtable.com/v0/${BASE_ID}/${MANAGER_TABLE_ENC}?filterByFormula=${formula}&maxRecords=1`
@@ -74,10 +63,10 @@ export default async function handler(req, res) {
       email: manager.Email || '',
       phone: String(manager['Phone Number'] || '').trim(),
       accountExists: Boolean(manager.Password),
-      planType: manager.tier || extractMetadataValue(manager.Notes, 'Plan') || '',
-      billingInterval: extractMetadataValue(manager.Notes, 'Billing') || '',
-      houseAccess: extractMetadataValue(manager.Notes, 'House Access') || '',
-      platformAccess: extractMetadataValue(manager.Notes, 'Platform Access') || '',
+      planType: manager.tier || '',
+      billingInterval: '',
+      houseAccess: '',
+      platformAccess: '',
     })
   } catch (err) {
     console.error('Manager lookup error:', err)
