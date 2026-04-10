@@ -515,10 +515,7 @@ export function ManagerAuthForm({ onLogin, footer = null, variant = 'default' })
       ) : (
         <form
           className={portalEntry ? 'mt-0 space-y-4' : 'mt-6 space-y-4'}
-          onSubmit={(event) => {
-            event.preventDefault()
-            void handleCreateAccount()
-          }}
+          onSubmit={handleCreateAccount}
         >
           {portalEntry ? (
             <div className="mb-4 text-center">
