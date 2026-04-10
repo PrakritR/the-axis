@@ -10,7 +10,7 @@ export const portalAuthInputCls =
 
 export function PortalAuthPage({ children }) {
   return (
-    <div className="flex min-h-screen items-start justify-center bg-[linear-gradient(180deg,#f7fbff_0%,#eef5ff_48%,#f9fcff_100%)] px-4 pb-12 pt-8 sm:pt-12 lg:pt-16">
+    <div className="flex min-h-screen items-start justify-center bg-[linear-gradient(180deg,#f7fbff_0%,#eef5ff_48%,#f9fcff_100%)] px-4 pb-12 pt-8 font-sans sm:pt-12 lg:pt-16">
       <div className="w-full max-w-lg">{children}</div>
     </div>
   )
