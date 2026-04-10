@@ -1,14 +1,12 @@
 /**
  * GET/POST /api/forms?action=<name>
- * actions: tour | demo | software-team-meetings
+ * actions: tour | software-team-meetings
  */
-import demo from './handlers/demo.js'
 import softwareTeamMeetings from './handlers/software-team-meetings.js'
 import tour from './handlers/tour.js'
 
 const handlers = {
   tour,
-  demo,
   'software-team-meetings': softwareTeamMeetings,
 }
 

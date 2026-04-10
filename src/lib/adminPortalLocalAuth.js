@@ -1,6 +1,3 @@
-/** localStorage: owner “Open as…” seeds Management portal demo session in a new tab. */
-export const AXIS_OWNER_SIMULATE_MANAGEMENT_KEY = 'axis_owner_seed_management_session'
-
 /**
  * Pending / approved staff admin accounts for /admin (browser-local until Airtable backs this).
  * Owner approves requests in the Admin portal; approved users sign in at the same /admin URL.

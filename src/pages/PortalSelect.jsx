@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Link, useNavigate, useSearchParams } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import {
   PortalAuthCard,
   PortalAuthPage,
@@ -53,11 +53,7 @@ function AdminPortalAuthForm({ onSuccess }) {
   return (
     <form onSubmit={handleSubmit} className="mt-0 space-y-4">
       <p className="text-sm text-slate-600">
-        Internal Axis console for site owners, approved staff, and Sentinel developers. Same credentials as{' '}
-        <Link to="/admin" className="font-semibold text-[#2563eb] hover:underline">
-          /admin
-        </Link>
-        .
+        Internal Axis console for site owners, approved staff, and Sentinel developers.
       </p>
       <PortalField label="Work email or developer username">
         <input
@@ -147,25 +143,6 @@ export default function PortalSelect() {
             )}
           </div>
         </PortalAuthCard>
-
-        <div className="mx-auto mt-8 max-w-md rounded-[24px] border border-slate-200 bg-white/80 px-5 py-4 text-center shadow-sm">
-          <div className="text-[11px] font-bold uppercase tracking-[0.16em] text-slate-400">Internal (demo)</div>
-          <p className="mt-2 text-sm text-slate-600">
-            Partner Management portal uses mock data until fully wired. Admin sign-in above uses the same server and local approval flow as{' '}
-            <Link to="/admin" className="font-semibold text-[#2563eb] hover:underline">
-              /admin
-            </Link>
-            .
-          </p>
-          <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:justify-center">
-            <Link
-              to="/management"
-              className="rounded-xl border border-[#2563eb]/30 bg-[#2563eb]/5 px-4 py-2.5 text-sm font-semibold text-[#2563eb] transition hover:bg-[#2563eb]/10"
-            >
-              Axis Management
-            </Link>
-          </div>
-        </div>
       </PortalAuthPage>
     </>
   )

@@ -14,7 +14,8 @@
 import Anthropic from '@anthropic-ai/sdk'
 
 const AIRTABLE_TOKEN = process.env.VITE_AIRTABLE_TOKEN
-const BASE_ID = process.env.VITE_AIRTABLE_APPLICATIONS_BASE_ID || 'appNBX2inqfJMyqYV'
+const BASE_ID =
+  process.env.VITE_AIRTABLE_BASE_ID || process.env.AIRTABLE_BASE_ID || 'appol57LKtMKaQ75T'
 const AIRTABLE_BASE_URL = `https://api.airtable.com/v0/${BASE_ID}`
 
 function airtableHeaders() {
@@ -37,6 +38,17 @@ async function airtablePost(table, fields) {
   return res.json()
 }
 
+async function airtableGet(url) {
+  const res = await fetch(url, {
+    headers: airtableHeaders(),
+  })
+  if (!res.ok) {
+    const text = await res.text()
+    throw new Error(`Records API read error: ${text}`)
+  }
+  return res.json()
+}
+
 // Audit log insertion — non-fatal: log errors to console but don't fail the request
 async function logAuditEvent({ leaseDraftId, actionType, performedBy, performedByRole, notes = '' }) {
   try {
@@ -53,50 +65,49 @@ async function logAuditEvent({ leaseDraftId, actionType, performedBy, performedB
   }
 }
 
-export default async function handler(req, res) {
-  res.setHeader('Access-Control-Allow-Origin', '*')
-  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS')
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type')
-  if (req.method === 'OPTIONS') return res.status(200).end()
+function normalizeApplicationRecordId(raw) {
+  const value = String(raw || '').trim()
+  if (!value) return ''
+  return value.startsWith('APP-') ? value.slice(4) : value
+}
 
-  if (req.method !== 'POST') {
-    return res.status(405).json({ error: 'Method not allowed' })
-  }
+function escapeFormulaValue(value) {
+  return String(value || '').replace(/"/g, '\\"')
+}
 
-  const anthropicKey = process.env.ANTHROPIC_API_KEY
-  if (!anthropicKey) {
-    return res.status(500).json({ error: 'AI API key is not configured on this server. Add ANTHROPIC_API_KEY to Vercel environment variables.' })
-  }
+async function findExistingDraftByApplicationRecordId(applicationRecordId) {
+  const recordId = normalizeApplicationRecordId(applicationRecordId)
+  if (!recordId) return null
+  const formula = encodeURIComponent(`{Application Record ID} = "${escapeFormulaValue(recordId)}"`)
+  const url = `${AIRTABLE_BASE_URL}/Lease%20Drafts?filterByFormula=${formula}&sort[0][field]=Updated%20At&sort[0][direction]=desc&maxRecords=1`
+  const data = await airtableGet(url)
+  const rec = data.records?.[0]
+  return rec ? { id: rec.id, ...rec.fields } : null
+}
 
-  const {
-    residentName,
-    residentEmail,
-    residentRecordId,
-    property,
-    unit,
-    leaseStartDate,
-    leaseEndDate,
-    rentAmount,
-    depositAmount,
-    utilitiesFee,
-    leaseTerm,
-    applicationRecordId,
-    generatedBy,
-    generatedByRole,
-  } = req.body || {}
+async function findPropertyByName(propertyName) {
+  const name = String(propertyName || '').trim()
+  if (!name) return null
+  const formula = encodeURIComponent(`{Name} = "${escapeFormulaValue(name)}"`)
+  const url = `${AIRTABLE_BASE_URL}/Properties?filterByFormula=${formula}&maxRecords=1`
+  const data = await airtableGet(url)
+  const rec = data.records?.[0]
+  return rec ? { id: rec.id, ...rec.fields } : null
+}
 
-  // Validate minimum required fields
-  if (!residentName || !property || !leaseStartDate) {
-    return res.status(400).json({
-      error: 'Missing required fields: residentName, property, and leaseStartDate are required.',
-    })
-  }
-
-  try {
-    // ── Step 1: Generate lease text with Claude ──────────────────────────────
-    const client = new Anthropic({ apiKey: anthropicKey })
-
-    const leasePrompt = `You are a professional real estate attorney drafting a residential lease agreement for Axis Seattle Housing, LLC — a residential rental housing operator in Seattle, WA.
+function buildLeasePrompt({
+  residentName,
+  residentEmail,
+  property,
+  unit,
+  leaseStartDate,
+  leaseEndDate,
+  rentAmount,
+  depositAmount,
+  utilitiesFee,
+  leaseTerm,
+}) {
+  return `You are a professional real estate attorney drafting a residential lease agreement for Axis Seattle Housing, LLC — a residential rental housing operator in Seattle, WA.
 
 Generate a complete, professionally formatted residential lease agreement with the following details:
 
@@ -152,56 +163,172 @@ Important requirements:
   Landlord/Manager Printed Name: [MANAGER PRINT NAME]
   Date: [DATE SIGNED]
 - Begin the document with the title "RESIDENTIAL LEASE AGREEMENT" centered at the top`
+}
 
-    const aiResponse = await client.messages.create({
-      model: 'claude-opus-4-6',
-      max_tokens: 4096,
-      messages: [{ role: 'user', content: leasePrompt }],
+export async function createLeaseDraft({
+  residentName,
+  residentEmail,
+  residentRecordId,
+  property,
+  unit,
+  leaseStartDate,
+  leaseEndDate,
+  rentAmount,
+  depositAmount,
+  utilitiesFee,
+  leaseTerm,
+  applicationRecordId,
+  generatedBy,
+  generatedByRole,
+}) {
+  const anthropicKey = process.env.ANTHROPIC_API_KEY
+  if (!anthropicKey) {
+    throw new Error('AI API key is not configured on this server. Add ANTHROPIC_API_KEY to Vercel environment variables.')
+  }
+
+  if (!residentName || !property || !leaseStartDate) {
+    throw new Error('Missing required fields: residentName, property, and leaseStartDate are required.')
+  }
+
+  const existingDraft = await findExistingDraftByApplicationRecordId(applicationRecordId)
+  if (existingDraft) {
+    return { draft: existingDraft, created: false }
+  }
+
+  const client = new Anthropic({ apiKey: anthropicKey })
+  const leasePrompt = buildLeasePrompt({
+    residentName,
+    residentEmail,
+    property,
+    unit,
+    leaseStartDate,
+    leaseEndDate,
+    rentAmount,
+    depositAmount,
+    utilitiesFee,
+    leaseTerm,
+  })
+
+  const aiResponse = await client.messages.create({
+    model: 'claude-opus-4-6',
+    max_tokens: 4096,
+    messages: [{ role: 'user', content: leasePrompt }],
+  })
+
+  const aiDraftContent = aiResponse.content[0]?.text || ''
+  if (!aiDraftContent) {
+    throw new Error('AI returned empty content. Please try again.')
+  }
+
+  const now = new Date().toISOString()
+  const draftRecord = await airtablePost('Lease Drafts', {
+    'Resident Name': residentName,
+    'Resident Email': residentEmail || '',
+    'Resident Record ID': residentRecordId || '',
+    Property: property,
+    Unit: unit || '',
+    'Lease Start Date': leaseStartDate,
+    'Lease End Date': leaseEndDate || '',
+    'Rent Amount': rentAmount ? Number(rentAmount) : 0,
+    'Deposit Amount': depositAmount ? Number(depositAmount) : 0,
+    'Utilities Fee': utilitiesFee ? Number(utilitiesFee) : 0,
+    'Lease Term': leaseTerm || '',
+    'AI Draft Content': aiDraftContent,
+    'Manager Edited Content': '',
+    Status: 'Draft Generated',
+    'Updated At': now,
+    'Application Record ID': normalizeApplicationRecordId(applicationRecordId) || '',
+    'Manager Notes': '',
+  })
+
+  await logAuditEvent({
+    leaseDraftId: draftRecord.id,
+    actionType: 'Draft Generated',
+    performedBy: generatedBy || 'System',
+    performedByRole: generatedByRole || 'Manager',
+    notes: `AI lease draft generated for ${residentName} at ${property}${unit ? `, ${unit}` : ''}. Model: claude-opus-4-6.`,
+  })
+
+  return {
+    draft: {
+      id: draftRecord.id,
+      ...draftRecord.fields,
+    },
+    created: true,
+  }
+}
+
+export async function createLeaseDraftFromApplication({
+  application,
+  generatedBy,
+  generatedByRole,
+}) {
+  const propertyName = String(application?.['Property Name'] || '').trim()
+  const propertyRecord = await findPropertyByName(propertyName)
+  return createLeaseDraft({
+    residentName: String(application?.['Signer Full Name'] || '').trim(),
+    residentEmail: String(application?.['Signer Email'] || '').trim(),
+    residentRecordId: String(application?.Resident?.[0] || '').trim(),
+    property: propertyName,
+    unit: String(application?.['Room Number'] || '').trim(),
+    leaseStartDate: application?.['Lease Start Date'] || '',
+    leaseEndDate: application?.['Lease End Date'] || '',
+    rentAmount: application?.['Rent Amount'] || application?.Rent || 0,
+    depositAmount: propertyRecord?.['Security Deposit'] || application?.['Security Deposit'] || 0,
+    utilitiesFee: propertyRecord?.['Utilities Fee'] || application?.['Utilities Fee'] || 0,
+    leaseTerm: String(application?.['Lease Term'] || '').trim(),
+    applicationRecordId: application?.id || application?.['Application Record ID'] || application?.['Application ID'] || '',
+    generatedBy,
+    generatedByRole,
+  })
+}
+
+export default async function handler(req, res) {
+  res.setHeader('Access-Control-Allow-Origin', '*')
+  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS')
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type')
+  if (req.method === 'OPTIONS') return res.status(200).end()
+
+  if (req.method !== 'POST') {
+    return res.status(405).json({ error: 'Method not allowed' })
+  }
+
+  const {
+    residentName,
+    residentEmail,
+    residentRecordId,
+    property,
+    unit,
+    leaseStartDate,
+    leaseEndDate,
+    rentAmount,
+    depositAmount,
+    utilitiesFee,
+    leaseTerm,
+    applicationRecordId,
+    generatedBy,
+    generatedByRole,
+  } = req.body || {}
+
+  try {
+    const { draft } = await createLeaseDraft({
+      residentName,
+      residentEmail,
+      residentRecordId,
+      property,
+      unit,
+      leaseStartDate,
+      leaseEndDate,
+      rentAmount,
+      depositAmount,
+      utilitiesFee,
+      leaseTerm,
+      applicationRecordId,
+      generatedBy,
+      generatedByRole,
     })
-
-    const aiDraftContent = aiResponse.content[0]?.text || ''
-
-    if (!aiDraftContent) {
-      throw new Error('AI returned empty content. Please try again.')
-    }
-
-    // ── Step 2: Save draft to records store ───────────────────────────────────
-    const now = new Date().toISOString()
-
-    const draftRecord = await airtablePost('Lease Drafts', {
-      'Resident Name': residentName,
-      'Resident Email': residentEmail || '',
-      'Resident Record ID': residentRecordId || '',
-      'Property': property,
-      'Unit': unit || '',
-      'Lease Start Date': leaseStartDate,
-      'Lease End Date': leaseEndDate || '',
-      'Rent Amount': rentAmount ? Number(rentAmount) : 0,
-      'Deposit Amount': depositAmount ? Number(depositAmount) : 0,
-      'Utilities Fee': utilitiesFee ? Number(utilitiesFee) : 0,
-      'Lease Term': leaseTerm || '',
-      'AI Draft Content': aiDraftContent,
-      'Manager Edited Content': '',
-      'Status': 'Draft Generated',
-      'Updated At': now,
-      'Application Record ID': applicationRecordId || '',
-      'Manager Notes': '',
-    })
-
-    // ── Step 3: Audit log ────────────────────────────────────────────────────
-    await logAuditEvent({
-      leaseDraftId: draftRecord.id,
-      actionType: 'Draft Generated',
-      performedBy: generatedBy || 'System',
-      performedByRole: generatedByRole || 'Manager',
-      notes: `AI lease draft generated for ${residentName} at ${property}${unit ? `, ${unit}` : ''}. Model: claude-opus-4-6.`,
-    })
-
     return res.status(200).json({
-      draft: {
-        id: draftRecord.id,
-        ...draftRecord.fields,
-      },
+      draft,
     })
   } catch (err) {
     console.error('[generate-lease-draft] Error:', err)

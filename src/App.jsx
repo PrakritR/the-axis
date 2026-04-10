@@ -18,7 +18,6 @@ const Apply = lazy(() => import('./pages/Apply'))
 const Resident = lazy(() => import('./pages/Resident'))
 const JoinUs = lazy(() => import('./pages/JoinUs'))
 const Manager = lazy(() => import('./pages/Manager'))
-const AxisManagementPortal = lazy(() => import('./axis-internal/ManagementPortal'))
 const AxisAdminPortal = lazy(() => import('./axis-internal/AdminPortal'))
 const SignLease = lazy(() => import('./pages/SignLease'))
 const AxisTeam = lazy(() => import('./pages/AxisTeam'))
@@ -122,14 +121,11 @@ function AppInner() {
   // or Chatbot). Check the full pathname so /manager/* and /sign/*
   // paths also match.
   const isManagerRoute = location.pathname === '/manager' || location.pathname.startsWith('/manager/')
-  const isManagementPortalRoute =
-    location.pathname === '/management' || location.pathname.startsWith('/management/')
   const isAdminPortalRoute = location.pathname === '/admin' || location.pathname.startsWith('/admin/')
   const isSignLeaseRoute = location.pathname.startsWith('/sign/')
   const isAxisTeamRoute = location.pathname === '/axis-team'
   const isStandaloneRoute =
     isManagerRoute ||
-    isManagementPortalRoute ||
     isAdminPortalRoute ||
     isSignLeaseRoute ||
     isAxisTeamRoute
@@ -158,8 +154,6 @@ function AppInner() {
           <Routes location={location} key={location.pathname}>
             <Route path="/manager" element={<Manager />} />
             <Route path="/manager/*" element={<Manager />} />
-            <Route path="/management" element={<AxisManagementPortal />} />
-            <Route path="/management/*" element={<AxisManagementPortal />} />
             <Route path="/admin" element={<AxisAdminPortal />} />
             <Route path="/admin/*" element={<AxisAdminPortal />} />
             <Route path="/sign/:token" element={<SignLease />} />

@@ -3,7 +3,8 @@
  * POST /api/tour  → saves a tour or meeting booking to Scheduling table
  */
 
-const AIRTABLE_BASE_ID = process.env.AIRTABLE_BASE_ID || 'appNBX2inqfJMyqYV'
+const AIRTABLE_BASE_ID =
+  process.env.VITE_AIRTABLE_BASE_ID || process.env.AIRTABLE_BASE_ID || 'appol57LKtMKaQ75T'
 const AIRTABLE_TOKEN = process.env.AIRTABLE_TOKEN || process.env.VITE_AIRTABLE_TOKEN
 const SCHEDULING_TABLE = 'Scheduling'
 
@@ -76,7 +77,7 @@ export default async function handler(req, res) {
     const token = process.env.AIRTABLE_TOKEN
     if (!token) return res.status(500).json({ error: 'AIRTABLE_TOKEN is not configured on the server.' })
 
-    const { name, email, phone, type, property, room, tourFormat, manager, tourAvailability, preferredDate, preferredTime, notes } = req.body ?? {}
+    const { name, email, phone, type, property, room, tourFormat, manager, managerEmail, tourAvailability, preferredDate, preferredTime, notes } = req.body ?? {}
     if (!name || !email) return res.status(400).json({ error: 'Name and email are required.' })
 
     const fields = {
@@ -90,6 +91,7 @@ export default async function handler(req, res) {
     if (room)              fields['Room'] = String(room).trim()
     if (tourFormat)        fields['Tour Format'] = tourFormat
     if (manager)           fields['Tour Manager'] = String(manager).trim()
+    if (managerEmail)      fields['Manager Email'] = String(managerEmail).trim().toLowerCase()
     if (tourAvailability)  fields['Tour Availability'] = String(tourAvailability).trim()
     if (preferredDate)     fields['Preferred Date'] = preferredDate
     if (preferredTime)     fields['Preferred Time'] = preferredTime

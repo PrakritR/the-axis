@@ -6,7 +6,7 @@ import { EmbeddedStripeCheckout } from '../components/EmbeddedStripeCheckout'
 import { readJsonResponse } from '../lib/readJsonResponse'
 import { errorFromAirtableApiBody } from '../lib/airtablePermissionError'
 
-const AIRTABLE_BASE_ID = import.meta.env.VITE_AIRTABLE_APPLICATIONS_BASE_ID || import.meta.env.VITE_AIRTABLE_BASE_ID || 'appNBX2inqfJMyqYV'
+const AIRTABLE_BASE_ID = import.meta.env.VITE_AIRTABLE_BASE_ID || 'appol57LKtMKaQ75T'
 const APPLICATIONS_TABLE = import.meta.env.VITE_AIRTABLE_APPLICATIONS_TABLE || 'Applications'
 const COSIGNERS_TABLE = import.meta.env.VITE_AIRTABLE_COAPPLICANTS_TABLE || 'Co-Signers'
 const AIRTABLE_TOKEN = import.meta.env.VITE_AIRTABLE_TOKEN

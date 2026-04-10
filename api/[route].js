@@ -8,9 +8,9 @@
 import formsGateway from '../server/forms-gateway.js'
 import portalGateway from '../server/portal-gateway.js'
 import adminPortalAuth from '../server/handlers/admin-portal-auth.js'
-import demo from '../server/handlers/demo.js'
 import generateLeaseDraft from '../server/handlers/generate-lease-draft.js'
 import managerAuth from '../server/handlers/manager-auth.js'
+import managerApproveApplication from '../server/handlers/manager-approve-application.js'
 import managerBillingPortal from '../server/handlers/manager-billing-portal.js'
 import managerCreateAccount from '../server/handlers/manager-create-account.js'
 import managerCreateSubscriptionSession from '../server/handlers/manager-create-subscription-session.js'
@@ -28,11 +28,11 @@ const routes = {
   forms: formsGateway,
   portal: portalGateway,
   stripe,
-  demo,
   tour,
   'software-team-meetings': softwareTeamMeetings,
   'generate-lease-draft': generateLeaseDraft,
   'manager-auth': managerAuth,
+  'manager-approve-application': managerApproveApplication,
   'manager-billing-portal': managerBillingPortal,
   'manager-create-account': managerCreateAccount,
   'manager-create-subscription-session': managerCreateSubscriptionSession,

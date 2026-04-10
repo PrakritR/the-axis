@@ -8,7 +8,8 @@ Local `.env` and Vercel project settings should include:
 
 ```bash
 VITE_AIRTABLE_TOKEN=...
-VITE_AIRTABLE_APPLICATIONS_BASE_ID=appNBX2inqfJMyqYV
+VITE_AIRTABLE_BASE_ID=...   # same base for Lease Drafts, Applications, Manager portal, etc.
+AIRTABLE_BASE_ID=...        # server: mirror VITE_AIRTABLE_BASE_ID on Vercel if needed
 ANTHROPIC_API_KEY=...
 
 # Optional, only if you want emailed signing links
@@ -28,7 +29,7 @@ SIGNFORGE_WEBHOOK_TOKEN=...     # random secret; use same value in webhook URL q
 Notes:
 
 - `ANTHROPIC_API_KEY` must stay server-side only. Do not prefix it with `VITE_`.
-- `VITE_AIRTABLE_TOKEN` is currently shared by both client and server code in this repo, so the Airtable token must have access to the AXIS Applications base.
+- `VITE_AIRTABLE_TOKEN` is shared by client and server code; the token must have access to the single base in `VITE_AIRTABLE_BASE_ID`.
 - If you deploy on Vercel, add the same values in Project Settings -> Environment Variables.
 
 ## Airtable Tables

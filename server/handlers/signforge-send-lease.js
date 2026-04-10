@@ -9,7 +9,8 @@ import { buildLeasePdfHtml } from '../lib/lease-html-document.js'
 import { renderHtmlToPdfBuffer } from '../lib/lease-puppeteer-pdf.js'
 
 const AIRTABLE_TOKEN = process.env.VITE_AIRTABLE_TOKEN
-const BASE_ID = process.env.VITE_AIRTABLE_APPLICATIONS_BASE_ID || 'appNBX2inqfJMyqYV'
+const BASE_ID =
+  process.env.VITE_AIRTABLE_BASE_ID || process.env.AIRTABLE_BASE_ID || 'appol57LKtMKaQ75T'
 const AIRTABLE_BASE_URL = `https://api.airtable.com/v0/${BASE_ID}`
 const SIGNFORGE_API = 'https://signforge.io/api/v1/quick-sign'
 

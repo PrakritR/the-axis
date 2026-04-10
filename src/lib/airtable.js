@@ -3,17 +3,13 @@ import {
   responseBodyIndicatesAirtablePermissionDenied,
 } from './airtablePermissionError.js'
 
+/** Single Airtable base for the whole app (portal, applications, tour, lease drafts, payments, etc.). */
 const BASE_ID = import.meta.env.VITE_AIRTABLE_BASE_ID || 'appol57LKtMKaQ75T'
-const APPS_BASE_ID = import.meta.env.VITE_AIRTABLE_APPLICATIONS_BASE_ID || 'appNBX2inqfJMyqYV'
-/** If Payments lives in a different base than the main portal base, set this (same token must have access). */
-const PAYMENTS_BASE_ID = String(import.meta.env.VITE_AIRTABLE_PAYMENTS_BASE_ID || BASE_ID).trim()
 const API_KEY = import.meta.env.VITE_AIRTABLE_TOKEN
 const BASE_URL = `https://api.airtable.com/v0/${BASE_ID}`
-const APPS_BASE_URL = `https://api.airtable.com/v0/${APPS_BASE_ID}`
-const PAYMENTS_BASE_URL = `https://api.airtable.com/v0/${PAYMENTS_BASE_ID}`
 
-/** Exposed for in-app setup hints (Manager payments panel). */
-export const AIRTABLE_PAYMENTS_BASE_ID = PAYMENTS_BASE_ID
+/** Exposed for in-app setup hints (Manager payments panel) — same as `VITE_AIRTABLE_BASE_ID`. */
+export const AIRTABLE_PAYMENTS_BASE_ID = BASE_ID
 
 /** Portal inbox (Messages table): add these fields in Airtable + optional form URL — see .env.example */
 export const PORTAL_INBOX_CHANNEL_INTERNAL = 'internal_mgmt_admin'
@@ -53,7 +49,7 @@ function tableUrl(table) {
 }
 
 function paymentsTableUrl() {
-  return `${PAYMENTS_BASE_URL}/${encodeURIComponent(TABLES.payments)}`
+  return `${BASE_URL}/${encodeURIComponent(TABLES.payments)}`
 }
 
 function applySearchParams(url, params = {}) {
@@ -114,6 +110,139 @@ function mapRecord(record) {
 
 function escapeFormulaValue(value) {
   return String(value).replace(/"/g, '\\"')
+}
+
+// ─── Inbox thread state (read / trash) — same base as Messages; see docs §1.6b ─
+function inboxThreadStateTableName() {
+  const raw = import.meta.env.VITE_AIRTABLE_INBOX_THREAD_STATE_TABLE
+  const t = raw !== undefined ? String(raw).trim() : 'Inbox Thread State'
+  if (!t || /^(none|false|0)$/i.test(t)) return ''
+  return t
+}
+
+const INBOX_STATE_THREAD_KEY_FIELD =
+  import.meta.env.VITE_AIRTABLE_INBOX_STATE_THREAD_KEY_FIELD !== undefined
+    ? String(import.meta.env.VITE_AIRTABLE_INBOX_STATE_THREAD_KEY_FIELD).trim()
+    : 'Thread Key'
+const INBOX_STATE_PARTICIPANT_FIELD =
+  import.meta.env.VITE_AIRTABLE_INBOX_STATE_PARTICIPANT_FIELD !== undefined
+    ? String(import.meta.env.VITE_AIRTABLE_INBOX_STATE_PARTICIPANT_FIELD).trim()
+    : 'Participant Email'
+const INBOX_STATE_LAST_READ_FIELD =
+  import.meta.env.VITE_AIRTABLE_INBOX_STATE_LAST_READ_FIELD !== undefined
+    ? String(import.meta.env.VITE_AIRTABLE_INBOX_STATE_LAST_READ_FIELD).trim()
+    : 'Last Read At'
+const INBOX_STATE_TRASHED_FIELD =
+  import.meta.env.VITE_AIRTABLE_INBOX_STATE_TRASHED_FIELD !== undefined
+    ? String(import.meta.env.VITE_AIRTABLE_INBOX_STATE_TRASHED_FIELD).trim()
+    : 'Trashed'
+
+export function inboxThreadStateAirtableEnabled() {
+  return Boolean(API_KEY && inboxThreadStateTableName())
+}
+
+/**
+ * @returns {Promise<Map<string, { id: string, lastReadAt: Date|null, trashed: boolean }>>}
+ */
+export async function fetchInboxThreadStateMap(participantEmail) {
+  const table = inboxThreadStateTableName()
+  const em = String(participantEmail || '').trim().toLowerCase()
+  if (!table || !em) return new Map()
+
+  const fPart = `{${INBOX_STATE_PARTICIPANT_FIELD}}`
+  const formula = `${fPart} = "${escapeFormulaValue(em)}"`
+  const allRecords = []
+  let offset = null
+  do {
+    const params = { filterByFormula: formula }
+    if (offset) params.offset = offset
+    const data = await request(buildUrl(table, params))
+    ;(data.records || []).forEach((r) => allRecords.push(mapRecord(r)))
+    offset = data.offset || null
+  } while (offset)
+
+  const m = new Map()
+  for (const r of allRecords) {
+    const tk = String(r[INBOX_STATE_THREAD_KEY_FIELD] || '').trim()
+    if (!tk) continue
+    const lr = r[INBOX_STATE_LAST_READ_FIELD]
+    const tr = r[INBOX_STATE_TRASHED_FIELD]
+    m.set(tk, {
+      id: r.id,
+      lastReadAt: lr ? new Date(lr) : null,
+      trashed: tr === true || tr === 1 || String(tr).toLowerCase() === 'true',
+    })
+  }
+  return m
+}
+
+async function findInboxThreadStateRecord(participantEmail, threadKey) {
+  const table = inboxThreadStateTableName()
+  const em = String(participantEmail || '').trim().toLowerCase()
+  const tk = String(threadKey || '').trim()
+  if (!table || !em || !tk) return null
+  const fPart = `{${INBOX_STATE_PARTICIPANT_FIELD}}`
+  const fTk = `{${INBOX_STATE_THREAD_KEY_FIELD}}`
+  const formula = `AND(${fPart} = "${escapeFormulaValue(em)}", ${fTk} = "${escapeFormulaValue(tk)}")`
+  const data = await request(
+    buildUrl(table, {
+      filterByFormula: formula,
+      maxRecords: 1,
+    }),
+  )
+  const rec = data.records?.[0]
+  return rec ? mapRecord(rec) : null
+}
+
+/**
+ * Create or update inbox UI state for one thread (read cursor + trash).
+ * @param {{ lastReadAt?: string|Date|null, trashed?: boolean }} patch
+ */
+export async function upsertInboxThreadState(participantEmail, threadKey, patch = {}) {
+  const table = inboxThreadStateTableName()
+  const em = String(participantEmail || '').trim().toLowerCase()
+  const tk = String(threadKey || '').trim()
+  if (!table || !em || !tk) {
+    throw new Error('Inbox thread state table is not configured or email/thread key is missing.')
+  }
+
+  const existing = await findInboxThreadStateRecord(em, tk)
+  const fields = {
+    [INBOX_STATE_PARTICIPANT_FIELD]: em,
+    [INBOX_STATE_THREAD_KEY_FIELD]: tk,
+  }
+  if (patch.lastReadAt !== undefined) {
+    const v = patch.lastReadAt
+    fields[INBOX_STATE_LAST_READ_FIELD] =
+      v == null ? null : v instanceof Date ? v.toISOString() : String(v)
+  }
+  if (patch.trashed !== undefined) {
+    fields[INBOX_STATE_TRASHED_FIELD] = Boolean(patch.trashed)
+  }
+
+  if (existing?.id) {
+    const data = await request(`${tableUrl(table)}/${existing.id}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ fields, typecast: true }),
+    })
+    return mapRecord(data)
+  }
+
+  const data = await request(tableUrl(table), {
+    method: 'POST',
+    body: JSON.stringify({ fields, typecast: true }),
+  })
+  return mapRecord(data)
+}
+
+export function markInboxThreadRead(participantEmail, threadKey) {
+  return upsertInboxThreadState(participantEmail, threadKey, {
+    lastReadAt: new Date().toISOString(),
+  })
+}
+
+export function setInboxThreadTrash(participantEmail, threadKey, trashed) {
+  return upsertInboxThreadState(participantEmail, threadKey, { trashed })
 }
 
 function titleCaseFromEmail(email) {
@@ -194,7 +323,7 @@ export async function getApplicationById(applicationId) {
   const recordId = raw.startsWith('APP-') ? raw.slice(4) : raw
   if (!recordId.startsWith('rec') || recordId.length < 10) return null
   try {
-    const data = await request(`${APPS_BASE_URL}/Applications/${recordId}`)
+    const data = await request(`${BASE_URL}/Applications/${recordId}`)
     return mapRecord(data)
   } catch {
     return null
@@ -809,7 +938,7 @@ export async function markPackagePickedUp(recordId) {
 // ---------------------------------------------------------------------------
 export async function signLease(applicationRecordId, signatureText) {
   const today = new Date().toISOString().slice(0, 10)
-  const data = await request(`${APPS_BASE_URL}/Applications/${applicationRecordId}`, {
+  const data = await request(`${BASE_URL}/Applications/${applicationRecordId}`, {
     method: 'PATCH',
     body: JSON.stringify({
       fields: {
@@ -826,7 +955,7 @@ export async function signLease(applicationRecordId, signatureText) {
 // Returns currently active signed leases — used to overlay dynamic room unavailability
 export async function getSignedLeases() {
   const formula = `AND({Lease Signed} = TRUE(), IS_AFTER({Lease End Date}, TODAY()))`
-  const url = new URL(`${APPS_BASE_URL}/Applications`)
+  const url = new URL(`${BASE_URL}/Applications`)
   url.searchParams.set('filterByFormula', formula)
   url.searchParams.set('fields[]', 'Property Name')
   url.searchParams.set('fields[]', 'Room Number')
@@ -971,7 +1100,7 @@ export async function getAllApplications() {
   const allRecords = []
   let offset = null
   do {
-    const url = new URL(`${APPS_BASE_URL}/Applications`)
+    const url = new URL(`${BASE_URL}/Applications`)
     if (offset) url.searchParams.set('offset', offset)
     const data = await request(url.toString())
     ;(data.records || []).forEach((r) => allRecords.push(mapRecord(r)))
@@ -985,7 +1114,7 @@ export async function getAllApplications() {
 }
 
 export async function getFullApplicationById(recordId) {
-  const app = await request(`${APPS_BASE_URL}/Applications/${recordId}`)
+  const app = await request(`${BASE_URL}/Applications/${recordId}`)
   return mapRecord(app)
 }
 
@@ -993,7 +1122,7 @@ export async function getFullApplicationById(recordId) {
 // Manager — lease management
 // ---------------------------------------------------------------------------
 export async function saveLease(recordId, { token, leaseJson, status = 'Pending' }) {
-  const data = await request(`${APPS_BASE_URL}/Applications/${recordId}`, {
+  const data = await request(`${BASE_URL}/Applications/${recordId}`, {
     method: 'PATCH',
     body: JSON.stringify({
       fields: {
@@ -1009,7 +1138,7 @@ export async function saveLease(recordId, { token, leaseJson, status = 'Pending'
 
 export async function getLeaseByToken(token) {
   const formula = `{Lease Token} = "${escapeFormulaValue(token)}"`
-  const url = new URL(`${APPS_BASE_URL}/Applications`)
+  const url = new URL(`${BASE_URL}/Applications`)
   url.searchParams.set('filterByFormula', formula)
   url.searchParams.set('maxRecords', '1')
   const data = await request(url.toString())
@@ -1025,7 +1154,7 @@ export async function getLeaseByToken(token) {
 }
 
 export async function updateLeaseRecord(recordId, fields) {
-  const data = await request(`${APPS_BASE_URL}/Applications/${recordId}`, {
+  const data = await request(`${BASE_URL}/Applications/${recordId}`, {
     method: 'PATCH',
     body: JSON.stringify({ fields, typecast: true }),
   })
@@ -1141,7 +1270,7 @@ export async function getApprovedLeaseForResident(residentRecordId) {
     {Resident Record ID} = "${escaped}",
     OR({Status} = "Published", {Status} = "Signed")
   )`
-  const url = new URL(`${APPS_BASE_URL}/Lease%20Drafts`)
+  const url = new URL(`${BASE_URL}/Lease%20Drafts`)
   url.searchParams.set('filterByFormula', formula)
   url.searchParams.set('sort[0][field]', 'Published At')
   url.searchParams.set('sort[0][direction]', 'desc')

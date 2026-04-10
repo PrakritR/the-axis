@@ -60,7 +60,7 @@ function getUpcomingDates(daySlotMap, daysAhead = 28) {
   return dates
 }
 
-const AIRTABLE_BASE_ID = import.meta.env.VITE_AIRTABLE_BASE_ID || 'appNBX2inqfJMyqYV'
+const AIRTABLE_BASE_ID = import.meta.env.VITE_AIRTABLE_BASE_ID || 'appol57LKtMKaQ75T'
 const AIRTABLE_TOKEN   = import.meta.env.VITE_AIRTABLE_TOKEN
 
 const DEFAULT_CALENDAR = {
@@ -265,6 +265,7 @@ function HousingScheduler() {
           property: selectedProperty?.name || '', room: room || '',
           tourFormat: tourType === 'virtual' ? 'Virtual' : 'In-Person',
           manager: selectedProperty?.manager || '',
+          managerEmail: selectedProperty?.managerEmail || '',
           preferredDate: selectedDate, preferredTime: selectedTime,
           notes: form.notes.trim(),
         }),
@@ -409,344 +410,6 @@ function HousingScheduler() {
   )
 }
 
-// ── Software demo scheduler ───────────────────────────────────────────────────
-
-async function readJsonBody(res) {
-  const text = await res.text()
-  if (!text.trim()) return {}
-  try {
-    return JSON.parse(text)
-  } catch {
-    throw new Error('Invalid response from server.')
-  }
-}
-
-function DemoScheduler() {
-  const [staff, setStaff] = useState([])
-  const [staffLoading, setStaffLoading] = useState(true)
-  const [selectedStaff, setSelectedStaff] = useState(null)
-  const [meetingFormat, setMeetingFormat] = useState('in-person')
-  const [inPersonLocation, setInPersonLocation] = useState('')
-  const [selectedDate, setSelectedDate] = useState('')
-  const [selectedTime, setSelectedTime] = useState('')
-  const [step, setStep] = useState(1)
-  const [form, setFormState] = useState({ name: '', email: '', phone: '', company: '', notes: '' })
-  const [submitting, setSubmitting] = useState(false)
-  const [submitted, setSubmitted] = useState(false)
-  const [submitError, setSubmitError] = useState('')
-
-  function setField(k, v) { setFormState(prev => ({ ...prev, [k]: v })) }
-
-  const staffDaySlotMap = selectedStaff
-    ? (() => {
-        const parsed = parseTourCalendar(selectedStaff.availability)
-        const DEFAULT_STAFF = {
-          Mon: ['9:00 AM', '10:00 AM', '2:00 PM', '3:00 PM'],
-          Tue: ['9:00 AM', '11:00 AM', '2:00 PM'],
-          Wed: ['10:00 AM', '1:00 PM', '3:00 PM'],
-          Thu: ['9:00 AM', '11:00 AM', '2:00 PM', '4:00 PM'],
-          Fri: ['9:00 AM', '10:00 AM', '1:00 PM'],
-        }
-        const hasParsed = Object.keys(parsed).length > 0
-        return hasParsed ? parsed : DEFAULT_STAFF
-      })()
-    : {}
-
-  const availableDates = selectedStaff ? getUpcomingDates(staffDaySlotMap, 28) : []
-  const selectableSet = useMemo(() => new Set(availableDates.map((d) => d.date)), [availableDates])
-  const selectedDateEntry = availableDates.find(d => d.date === selectedDate)
-  const currentSlots = selectedDateEntry?.slots || []
-
-  const noStaffDates = useMemo(() => getUpcomingDates(DEFAULT_CALENDAR, 28), [])
-  const selectableNoStaffSet = useMemo(() => new Set(noStaffDates.map((d) => d.date)), [noStaffDates])
-  const selectedDateEntryNoStaff = noStaffDates.find((d) => d.date === selectedDate)
-  const currentSlotsNoStaff = selectedDateEntryNoStaff?.slots || []
-
-  useEffect(() => {
-    fetch('/api/forms?action=demo')
-      .then(async (r) => readJsonBody(r))
-      .then((data) => {
-        setStaff(Array.isArray(data?.staff) ? data.staff : [])
-        setStaffLoading(false)
-      })
-      .catch(() => {
-        setStaff([])
-        setStaffLoading(false)
-      })
-  }, [])
-
-  useEffect(() => {
-    if (staffLoading || staff.length === 0) return
-    if (step === 2 && !selectedStaff) setStep(1)
-  }, [staffLoading, staff.length, step, selectedStaff])
-
-  function reset() {
-    setSelectedStaff(null); setMeetingFormat('in-person'); setInPersonLocation(''); setSelectedDate(''); setSelectedTime(''); setStep(1)
-    setFormState({ name: '', email: '', phone: '', company: '', notes: '' })
-    setSubmitted(false); setSubmitError('')
-  }
-
-  async function handleSubmit() {
-    setSubmitting(true); setSubmitError('')
-    const fmt = meetingFormat === 'virtual' ? 'Virtual' : 'In-person'
-    try {
-      const res = await fetch('/api/forms?action=demo', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          name: form.name.trim(), email: form.email.trim(), phone: form.phone.trim(),
-          company: form.company.trim(),
-          staffId: selectedStaff?.id || '',
-          staffName: selectedStaff?.name || '',
-          preferredDate: selectedDate || '',
-          preferredTime: selectedTime || '',
-          meetingFormat: fmt,
-          meetingLocation: meetingFormat === 'in-person' ? inPersonLocation.trim() : '',
-          bookingType: 'Software Meeting',
-          notes: form.notes.trim(),
-        }),
-      })
-      const data = await readJsonBody(res)
-      if (!res.ok) throw new Error(data.error || 'Submission failed.')
-      setSubmitted(true)
-    } catch (err) {
-      setSubmitError(err.message || 'Could not submit. Please try again.')
-    } finally {
-      setSubmitting(false)
-    }
-  }
-
-  if (submitted) return (
-    <SuccessCard
-      title="Meeting request sent!"
-      body={`We'll reach out to ${form.email} to confirm within 1 business day.`}
-      onReset={reset}
-    />
-  )
-
-  const demoSteps = useMemo(() => {
-    const step1 =
-      !staffLoading && staff.length === 0 ? 'How to meet' : "Who you'll meet"
-    return [['1', step1], ['2', 'Time'], ['3', 'Your details']]
-  }, [staffLoading, staff.length])
-
-  return (
-    <div>
-      <div className="mb-8 flex items-center gap-2">
-        {demoSteps.map(([s, label], idx) => (
-          <div key={s} className="flex items-center gap-1.5">
-            <div className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[11px] font-bold transition-colors ${step > idx + 1 ? 'bg-[#2563eb] text-white' : step === idx + 1 ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-400'}`}>
-              {step > idx + 1 ? <svg className="h-3 w-3" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5"/></svg> : s}
-            </div>
-            <span className={`hidden text-xs font-medium sm:block ${step >= idx + 1 ? 'text-slate-700' : 'text-slate-400'}`}>{label}</span>
-            {idx < 2 && <div className={`h-px w-4 shrink-0 sm:w-8 ${step > idx + 1 ? 'bg-[#2563eb]' : 'bg-slate-200'}`} />}
-          </div>
-        ))}
-      </div>
-
-      {step === 1 && (
-        <div>
-          {staffLoading ? (
-            <div className="flex items-center gap-2 py-8 text-sm text-slate-400">
-              <svg className="h-4 w-4 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>
-              Loading…
-            </div>
-          ) : staff.length === 0 ? (
-            <div className="space-y-4">
-              <p className="text-sm text-slate-500">
-                No calendar staff is connected right now. Choose meeting format, then pick a preferred time — we will confirm by email.
-              </p>
-              <div>
-                <div className="mb-3 text-sm font-semibold text-slate-700">Meeting format</div>
-                <div className="flex gap-3">
-                  {[['in-person', 'In-person'], ['virtual', 'Virtual']].map(([val, label]) => (
-                    <button key={val} type="button" onClick={() => { setMeetingFormat(val); if (val === 'virtual') setInPersonLocation('') }}
-                      className={`flex flex-1 items-center justify-center rounded-xl border px-4 py-3 text-sm font-semibold transition-all ${meetingFormat === val ? 'border-[#2563eb] bg-[#2563eb] text-white' : 'border-slate-200 bg-white text-slate-700 hover:border-[#2563eb]'}`}>
-                      {label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-              {meetingFormat === 'in-person' ? (
-                <div>
-                  <label className="mb-1.5 block text-xs font-semibold text-slate-700" htmlFor="demo-in-person-location">Where</label>
-                  <input id="demo-in-person-location" className={inputCls} placeholder="Address or neighborhood" value={inPersonLocation} onChange={(e) => setInPersonLocation(e.target.value)} />
-                </div>
-              ) : null}
-              <div className="flex justify-end pt-2">
-                <button
-                  type="button"
-                  onClick={() => { setSelectedDate(''); setSelectedTime(''); setStep(2) }}
-                  disabled={meetingFormat === 'in-person' && !inPersonLocation.trim()}
-                  className="rounded-full bg-slate-900 px-6 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-40"
-                >
-                  Continue
-                </button>
-              </div>
-            </div>
-          ) : (
-            <div>
-              <p className="mb-4 text-sm text-slate-500">Pick someone from the Axis software team.</p>
-              <div className="space-y-3">
-                {staff.map((s) => (
-                  <button key={s.id} type="button" onClick={() => { setSelectedStaff(s); setSelectedDate(''); setSelectedTime(''); setStep(2) }}
-                    className="group flex w-full items-center gap-4 rounded-2xl border border-slate-200 bg-white px-5 py-4 text-left transition-all hover:border-[#2563eb] hover:shadow-sm">
-                    <div className="flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-full bg-slate-100">
-                      {s.avatarUrl
-                        ? <img src={s.avatarUrl} alt={s.name} className="h-full w-full object-cover" />
-                        : <span className="text-base font-bold text-slate-500">{s.name.charAt(0)}</span>}
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <div className="font-semibold text-slate-900">{s.name}</div>
-                      {s.role ? <div className="text-xs text-slate-500">{s.role}</div> : null}
-                      {s.bio ? <div className="mt-0.5 truncate text-xs text-slate-400">{s.bio}</div> : null}
-                    </div>
-                    <svg className="h-4 w-4 shrink-0 text-slate-400 group-hover:text-slate-900" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7"/></svg>
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
-        </div>
-      )}
-
-      {step === 2 && selectedStaff && (
-        <div className="space-y-7">
-          <div className="flex items-center gap-3 rounded-2xl border border-slate-100 bg-slate-50 px-4 py-3">
-            <div className="flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-full bg-slate-200">
-              {selectedStaff.avatarUrl
-                ? <img src={selectedStaff.avatarUrl} alt={selectedStaff.name} className="h-full w-full object-cover" />
-                : <span className="text-sm font-bold text-slate-500">{selectedStaff.name.charAt(0)}</span>}
-            </div>
-            <div className="min-w-0 flex-1">
-              <div className="text-sm font-semibold text-slate-900">{selectedStaff.name}</div>
-              {selectedStaff.role ? <div className="text-xs text-slate-500">{selectedStaff.role}</div> : null}
-            </div>
-            <button type="button" onClick={() => setStep(1)} className="shrink-0 text-xs font-semibold text-slate-400 hover:text-slate-700">Change</button>
-          </div>
-
-          <div>
-            <div className="mb-3 text-sm font-semibold text-slate-700">Meeting format</div>
-            <div className="flex gap-3">
-              {[['in-person', 'In-person'], ['virtual', 'Virtual']].map(([val, label]) => (
-                <button key={val} type="button" onClick={() => setMeetingFormat(val)}
-                  className={`flex flex-1 items-center justify-center rounded-xl border px-4 py-3 text-sm font-semibold transition-all ${meetingFormat === val ? 'border-[#2563eb] bg-[#2563eb] text-white' : 'border-slate-200 bg-white text-slate-700 hover:border-[#2563eb]'}`}>
-                  {label}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          <div>
-            <div className="mb-3 text-sm font-semibold text-slate-700">Choose a date</div>
-            <MonthCalendar
-              selectableSet={selectableSet}
-              selectedDate={selectedDate}
-              onSelectDate={(d) => { setSelectedDate(d); setSelectedTime('') }}
-            />
-          </div>
-
-          {selectedDate && (
-            <div>
-              <div className="mb-3 text-sm font-semibold text-slate-700">
-                Times <span className="font-normal text-slate-400">— {selectedDateEntry?.display}</span>
-              </div>
-              <TimeSlots slots={currentSlots} selectedTime={selectedTime} onSelectTime={setSelectedTime} />
-            </div>
-          )}
-
-          <div className="flex gap-3 pt-1">
-            <button type="button" onClick={() => setStep(1)} className="rounded-full border border-slate-200 px-5 py-2.5 text-sm font-semibold text-slate-600 hover:border-slate-400">Back</button>
-            <button type="button" onClick={() => setStep(3)} disabled={!selectedDate || !selectedTime}
-              className="rounded-full bg-slate-900 px-6 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-40">
-              Continue
-            </button>
-          </div>
-        </div>
-      )}
-
-      {step === 2 && !staffLoading && staff.length === 0 && (
-        <div className="space-y-7">
-          <p className="text-sm text-slate-500">
-            Pick a preferred date and time. We will follow up to finalize your meeting.
-          </p>
-          <div>
-            <div className="mb-3 text-sm font-semibold text-slate-700">Choose a date</div>
-            <MonthCalendar
-              selectableSet={selectableNoStaffSet}
-              selectedDate={selectedDate}
-              onSelectDate={(d) => { setSelectedDate(d); setSelectedTime('') }}
-            />
-          </div>
-          {selectedDate && (
-            <div>
-              <div className="mb-3 text-sm font-semibold text-slate-700">
-                Times <span className="font-normal text-slate-400">— {selectedDateEntryNoStaff?.display}</span>
-              </div>
-              <TimeSlots slots={currentSlotsNoStaff} selectedTime={selectedTime} onSelectTime={setSelectedTime} />
-            </div>
-          )}
-          <div className="flex gap-3 pt-1">
-            <button type="button" onClick={() => setStep(1)} className="rounded-full border border-slate-200 px-5 py-2.5 text-sm font-semibold text-slate-600 hover:border-slate-400">Back</button>
-            <button
-              type="button"
-              onClick={() => setStep(3)}
-              disabled={!selectedDate || !selectedTime}
-              className="rounded-full bg-slate-900 px-6 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-40"
-            >
-              Continue
-            </button>
-          </div>
-        </div>
-      )}
-
-      {step === 3 && (
-        <div className="space-y-4">
-          {selectedStaff ? (
-            <div className="mb-2 flex items-center justify-between rounded-2xl border border-slate-100 bg-slate-50 px-4 py-2.5 text-sm">
-              <div className="flex flex-wrap items-center gap-2">
-                <span className="font-semibold text-slate-900">{selectedStaff.name}</span>
-                <span className="text-slate-300">·</span>
-                <span className="text-slate-600">{meetingFormat === 'virtual' ? 'Virtual' : 'In-person'}</span>
-                {selectedDate ? <><span className="text-slate-300">·</span><span className="text-slate-600">{selectedDateEntry?.display}</span></> : null}
-                {selectedTime ? <><span className="text-slate-300">·</span><span className="text-slate-600">{selectedTime}</span></> : null}
-              </div>
-              <button type="button" onClick={() => setStep(2)} className="ml-2 shrink-0 text-xs font-semibold text-slate-400 hover:text-slate-700">Edit</button>
-            </div>
-          ) : !staffLoading && staff.length === 0 ? (
-            <div className="mb-2 flex items-center justify-between rounded-2xl border border-slate-100 bg-slate-50 px-4 py-2.5 text-sm">
-              <div className="flex flex-wrap items-center gap-2">
-                <span className="text-slate-600">{meetingFormat === 'virtual' ? 'Virtual' : 'In-person'}</span>
-                {meetingFormat === 'in-person' && inPersonLocation.trim() ? <><span className="text-slate-300">·</span><span className="text-slate-600">{inPersonLocation.trim()}</span></> : null}
-                {selectedDate ? <><span className="text-slate-300">·</span><span className="text-slate-600">{selectedDateEntryNoStaff?.display}</span></> : null}
-                {selectedTime ? <><span className="text-slate-300">·</span><span className="text-slate-600">{selectedTime}</span></> : null}
-              </div>
-              <button type="button" onClick={() => setStep(2)} className="ml-2 shrink-0 text-xs font-semibold text-slate-400 hover:text-slate-700">Edit</button>
-            </div>
-          ) : null}
-          <ContactFields form={form} setField={setField} />
-          <div>
-            <label className="mb-1.5 block text-xs font-semibold text-slate-700">Company</label>
-            <input className={inputCls} placeholder="Smith Properties" value={form.company} onChange={e => setField('company', e.target.value)} />
-          </div>
-          <div>
-            <label className="mb-1.5 block text-xs font-semibold text-slate-700">Notes <span className="font-normal text-slate-400">(optional)</span></label>
-            <textarea className={`${inputCls} min-h-[90px] resize-y`} placeholder="Context for the call…" value={form.notes} onChange={e => setField('notes', e.target.value)} />
-          </div>
-          {submitError && <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{submitError}</div>}
-          <div className="flex gap-3 pt-2">
-            <button type="button" onClick={() => setStep(2)} className="rounded-full border border-slate-200 px-5 py-2.5 text-sm font-semibold text-slate-600 hover:border-slate-400">Back</button>
-            <button type="button" onClick={handleSubmit} disabled={!form.name.trim() || !form.email.trim() || submitting}
-              className="flex-1 rounded-full bg-[linear-gradient(180deg,#2f76ff_0%,#2450eb_100%)] py-3 text-sm font-semibold text-white shadow-[0_8px_20px_rgba(37,99,235,0.25)] hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40 transition-opacity">
-              {submitting ? 'Sending…' : 'Request meeting'}
-            </button>
-          </div>
-        </div>
-      )}
-    </div>
-  )
-}
-
 // ── Software message form ─────────────────────────────────────────────────────
 
 function SoftwareMessageForm() {
@@ -838,12 +501,10 @@ export default function Contact() {
   const location = useLocation()
   const [section, setSection] = useState('software')
   const [housingTab, setHousingTab] = useState('schedule')
-  const [softwareTab, setSoftwareTab] = useState('meeting')
 
   useEffect(() => {
     if (location.pathname.startsWith('/owners/contact')) {
       setSection('software')
-      setSoftwareTab('message')
       return
     }
     const params = new URLSearchParams(location.search)
@@ -854,7 +515,6 @@ export default function Contact() {
 
     let nextSection = 'software'
     let nextHousingTab = 'schedule'
-    let nextSoftwareTab = 'meeting'
 
     if (sectionParam === 'housing') {
       nextSection = 'housing'
@@ -865,7 +525,7 @@ export default function Contact() {
       nextSection = sectionParam
     } else if (subject.includes('tour')) {
       nextSection = 'housing'
-    } else if (subject.includes('contact') || subject.includes('axis') || subject.includes('demo') || subject.includes('software') || subject.includes('manage')) {
+    } else if (subject.includes('contact') || subject.includes('axis') || subject.includes('software') || subject.includes('manage')) {
       nextSection = 'software'
     }
 
@@ -873,15 +533,8 @@ export default function Contact() {
       nextHousingTab = 'message'
     }
 
-    if (nextSection === 'software' && tabParam === 'message') {
-      nextSoftwareTab = 'message'
-    } else if (nextSection === 'software' && (tabParam === 'demo' || tabParam === 'meeting')) {
-      nextSoftwareTab = 'meeting'
-    }
-
     setSection(nextSection)
     setHousingTab(nextHousingTab)
-    setSoftwareTab(nextSoftwareTab)
   }, [location.pathname, location.search])
 
   return (
@@ -916,13 +569,9 @@ export default function Contact() {
             <div>
               <div className="mb-6 border-b border-slate-100 pb-5">
                 <h2 className="text-3xl font-black tracking-tight text-slate-900">Connect with Axis Team</h2>
+                <p className="mt-2 text-sm text-slate-500">Send us a message and we&apos;ll get back within two business days.</p>
               </div>
-              <TabBar
-                tabs={[{ id: 'meeting', label: 'Set up meeting' }, { id: 'message', label: 'Send a message' }]}
-                active={softwareTab} onChange={setSoftwareTab}
-              />
-              {softwareTab === 'meeting' && <DemoScheduler />}
-              {softwareTab === 'message' && <SoftwareMessageForm />}
+              <SoftwareMessageForm />
             </div>
           )}
 

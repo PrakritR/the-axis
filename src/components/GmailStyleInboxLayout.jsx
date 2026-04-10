@@ -20,7 +20,7 @@ export default function GmailStyleInboxLayout({ left, right, className = '' }) {
 }
 
 /** Single thread row — Gmail-like snippet row */
-export function InboxThreadRow({ title, subtitle, preview, time, selected, onClick, unread }) {
+export function InboxThreadRow({ title, subtitle, preview, time, selected, onClick, unread = false }) {
   return (
     <button
       type="button"

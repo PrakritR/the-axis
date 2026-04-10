@@ -14,7 +14,7 @@ import {
 } from '../lib/airtable'
 import { errorFromAirtableApiBody } from '../lib/airtablePermissionError'
 
-const AIRTABLE_BASE_ID = import.meta.env.VITE_AIRTABLE_BASE_ID || 'appNBX2inqfJMyqYV'
+const AIRTABLE_BASE_ID = import.meta.env.VITE_AIRTABLE_BASE_ID || 'appol57LKtMKaQ75T'
 const AIRTABLE_TOKEN = import.meta.env.VITE_AIRTABLE_TOKEN
 
 export const inputCls =

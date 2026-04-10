@@ -17,13 +17,12 @@
 //   LeaseEditor        — full-screen editor with sidebar, tabs, action buttons
 //   Manager (default)  — root component managing session + view routing
 
-import React, { useCallback, useEffect, useMemo, useState } from 'react'
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, Navigate, useLocation } from 'react-router-dom'
 import toast from 'react-hot-toast'
 import { HOUSING_CONTACT_MESSAGE } from '../lib/housingSite'
 import { readJsonResponse } from '../lib/readJsonResponse'
 import AddHousingWizard from '../components/AddHousingWizard'
-import { AXIS_DEVELOPER_MANAGER_HANDOFF } from '../lib/developerPortal'
 import GmailStyleInboxLayout, { InboxThreadRow } from '../components/GmailStyleInboxLayout'
 import PortalInboxAnnouncementSection from '../components/PortalInboxAnnouncementSection'
 import {
@@ -41,6 +40,10 @@ import {
   getMessagesByThreadKey,
   siteManagerThreadKey,
   PORTAL_INBOX_CHANNEL_INTERNAL,
+  fetchInboxThreadStateMap,
+  inboxThreadStateAirtableEnabled,
+  markInboxThreadRead,
+  setInboxThreadTrash,
 } from '../lib/airtable'
 import {
   consolidateManagerDashboardWarnings,
@@ -57,6 +60,7 @@ import {
   PortalSegmentedControl,
   portalAuthInputCls,
 } from '../components/PortalAuthUI'
+import PortalShell from '../components/PortalShell'
 
 // ─── Session ──────────────────────────────────────────────────────────────────
 export const MANAGER_SESSION_KEY = 'axis_manager'
@@ -65,9 +69,7 @@ const MANAGER_ONBOARDING_KEY = 'axis_manager_onboarding'
 // ─── Records API config — split by Airtable base to match the rest of the app ─
 const AIRTABLE_TOKEN = import.meta.env.VITE_AIRTABLE_TOKEN
 const CORE_BASE_ID = import.meta.env.VITE_AIRTABLE_BASE_ID || 'appol57LKtMKaQ75T'
-const APPS_BASE_ID = import.meta.env.VITE_AIRTABLE_APPLICATIONS_BASE_ID || 'appNBX2inqfJMyqYV'
 const CORE_AIRTABLE_BASE_URL = `https://api.airtable.com/v0/${CORE_BASE_ID}`
-const APPS_AIRTABLE_BASE_URL = `https://api.airtable.com/v0/${APPS_BASE_ID}`
 
 // ─── Lease status configuration ───────────────────────────────────────────────
 // Each status has a color set used by StatusBadge and the stats row
@@ -309,6 +311,151 @@ function updateTourAvailabilityLines(currentAvailability, day, slot) {
   return nextLines.filter(Boolean).join('\n')
 }
 
+const TOUR_GRID_START_HOUR = 6
+const TOUR_GRID_END_HOUR = 22
+const TOUR_GRID_STEP_MIN = 30
+const TOUR_GRID_START_MIN = TOUR_GRID_START_HOUR * 60
+const TOUR_GRID_END_MIN = TOUR_GRID_END_HOUR * 60
+const TOUR_GRID_HALF_COUNT = Math.round((TOUR_GRID_END_MIN - TOUR_GRID_START_MIN) / TOUR_GRID_STEP_MIN)
+
+const CAL_DOW_TO_ABBR = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+
+/** Same shape as Contact.jsx parseTourCalendar — maps text to day → slot labels. */
+function parseManagerTourCalendarText(raw) {
+  const result = {}
+  String(raw || '')
+    .split(/[;\n]/)
+    .map((l) => l.trim())
+    .filter(Boolean)
+    .forEach((line) => {
+      const m = line.match(/^(Mon|Tue|Wed|Thu|Fri|Sat|Sun)\s*[:\-]\s*(.+)$/i)
+      if (!m) return
+      const day = m[1].slice(0, 1).toUpperCase() + m[1].slice(1, 3).toLowerCase()
+      result[day] = m[2].split(',').map((s) => s.trim()).filter(Boolean)
+    })
+  return result
+}
+
+function slotLabelToMinutes(label) {
+  const s = String(label).trim().toUpperCase().replace(/\./g, '').replace(/\s+/g, ' ')
+  const m = s.match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/)
+  if (!m) return null
+  let h = parseInt(m[1], 10)
+  const min = parseInt(m[2], 10)
+  const ap = m[3]
+  if (ap === 'PM' && h !== 12) h += 12
+  if (ap === 'AM' && h === 12) h = 0
+  return h * 60 + min
+}
+
+function slotRangeMinutes(slotLabel) {
+  const start = slotLabelToMinutes(slotLabel)
+  if (start == null) return null
+  return { start, end: start + 90 }
+}
+
+function halfHourIndicesOverlappingRange(startMin, endMin) {
+  const out = []
+  for (let t = TOUR_GRID_START_MIN; t < TOUR_GRID_END_MIN; t += TOUR_GRID_STEP_MIN) {
+    if (t < endMin && t + TOUR_GRID_STEP_MIN > startMin) {
+      out.push((t - TOUR_GRID_START_MIN) / TOUR_GRID_STEP_MIN)
+    }
+  }
+  return out
+}
+
+function weeklyFreeArraysFromTourText(text) {
+  const cal = parseManagerTourCalendarText(text)
+  const o = {}
+  for (const d of TOUR_DAYS) {
+    const set = new Set()
+    for (const slot of cal[d] || []) {
+      const range = slotRangeMinutes(slot)
+      if (!range) continue
+      for (const idx of halfHourIndicesOverlappingRange(range.start, range.end)) {
+        set.add(idx)
+      }
+    }
+    o[d] = [...set].sort((a, b) => a - b)
+  }
+  return o
+}
+
+function encodeTourAvailabilityFromWeeklyFree(weeklyArrays) {
+  const lines = []
+  for (const day of TOUR_DAYS) {
+    const set = new Set(weeklyArrays[day] || [])
+    const picked = []
+    for (const slot of TOUR_SLOTS) {
+      const range = slotRangeMinutes(slot)
+      if (!range) continue
+      const idxs = halfHourIndicesOverlappingRange(range.start, range.end)
+      if (idxs.some((i) => set.has(i))) picked.push(slot)
+    }
+    if (picked.length) lines.push(`${day}: ${picked.join(', ')}`)
+  }
+  return lines.join('\n')
+}
+
+function formatHalfHourIndexLabel(idx) {
+  const minTotal = TOUR_GRID_START_MIN + idx * TOUR_GRID_STEP_MIN
+  const h = Math.floor(minTotal / 60)
+  const m = minTotal % 60
+  const d = new Date(2000, 0, 1, h, m)
+  return d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })
+}
+
+function freeTourSlotCountForWeekday(weeklyArrays, dayAbbr) {
+  const set = new Set(weeklyArrays[dayAbbr] || [])
+  let n = 0
+  for (const slot of TOUR_SLOTS) {
+    const range = slotRangeMinutes(slot)
+    if (!range) continue
+    const idxs = halfHourIndicesOverlappingRange(range.start, range.end)
+    if (idxs.some((i) => set.has(i))) n += 1
+  }
+  return n
+}
+
+function cloneWeeklyArrays(src) {
+  const o = {}
+  for (const d of TOUR_DAYS) o[d] = [...(src[d] || [])]
+  return o
+}
+
+function emptyWeeklyFreeArrays() {
+  const o = {}
+  for (const d of TOUR_DAYS) o[d] = []
+  return o
+}
+
+function schedulingRowsToCalendarEvents(rows) {
+  const out = []
+  for (const r of rows || []) {
+    const d = parseCalendarDay(r['Preferred Date'])
+    if (!d) continue
+    const appr = String(r['Manager Approval'] || '').trim() || 'Pending'
+    const name = r.Name || 'Guest'
+    const prop = String(r.Property || '').trim()
+    const time = String(r['Preferred Time'] || '').trim()
+    out.push({
+      date: d,
+      label: `Tour · ${name}${prop ? ` · ${prop}` : ''}${time ? ` · ${time}` : ''}`,
+      type: 'tour_req',
+      schedulingId: r.id,
+      approval: appr,
+      tourRow: r,
+    })
+  }
+  return out
+}
+
+function tourApprovalNeedsAction(row) {
+  const a = String(row['Manager Approval'] || '').trim().toLowerCase()
+  if (a === 'approved' || a === 'declined') return false
+  return true
+}
+
 async function atRequest(url, options = {}) {
   const res = await fetch(url, { ...options, headers: { ...atHeaders(), ...(options.headers || {}) } })
   if (!res.ok) {
@@ -349,7 +496,7 @@ async function fetchLeaseDrafts({ status, property, resident } = {}) {
 
 // ─── Applications data layer ──────────────────────────────────────────────────
 async function fetchApplications({ property } = {}) {
-  const url = new URL(`${APPS_AIRTABLE_BASE_URL}/Applications`)
+  const url = new URL(`${CORE_AIRTABLE_BASE_URL}/Applications`)
   if (property) {
     url.searchParams.set('filterByFormula', `FIND("${property.replace(/"/g, '\\"')}", {Property Name}) > 0`)
   }
@@ -363,7 +510,7 @@ async function fetchApplications({ property } = {}) {
 }
 
 async function patchApplication(recordId, fields) {
-  const data = await atRequest(`${APPS_AIRTABLE_BASE_URL}/Applications/${recordId}`, {
+  const data = await atRequest(`${CORE_AIRTABLE_BASE_URL}/Applications/${recordId}`, {
     method: 'PATCH',
     body: JSON.stringify({ fields, typecast: true }),
   })
@@ -413,6 +560,36 @@ async function fetchManagerRecordById(recordId) {
 
 async function patchManagerRecord(recordId, fields) {
   const data = await atRequest(`${CORE_AIRTABLE_BASE_URL}/Manager%20Profile/${recordId}`, {
+    method: 'PATCH',
+    body: JSON.stringify({ fields, typecast: true }),
+  })
+  return mapRecord(data)
+}
+
+async function fetchSchedulingForManagerScope({ managerEmail, propertyNames }) {
+  const url = new URL(`${CORE_AIRTABLE_BASE_URL}/Scheduling`)
+  url.searchParams.set('sort[0][field]', 'Preferred Date')
+  url.searchParams.set('sort[0][direction]', 'desc')
+  url.searchParams.set('maxRecords', '100')
+  const data = await atRequest(url.toString())
+  const rows = (data.records || []).map(mapRecord)
+  const em = String(managerEmail || '').trim().toLowerCase()
+  const props = (propertyNames || []).map((p) => String(p).trim().toLowerCase()).filter(Boolean)
+  return rows.filter((r) => {
+    const typ = String(r.Type || '').trim().toLowerCase()
+    if (typ !== 'tour') return false
+    const rme = String(r['Manager Email'] || '').trim().toLowerCase()
+    if (em && rme === em) return true
+    const prop = String(r.Property || '').trim().toLowerCase()
+    if (!prop || !props.length) return false
+    return props.some((pn) => prop === pn || prop.includes(pn) || pn.includes(prop))
+  })
+}
+
+async function patchSchedulingRecord(recordId, fields) {
+  const id = String(recordId || '').trim()
+  if (!id) throw new Error('Missing scheduling record id.')
+  const data = await atRequest(`${CORE_AIRTABLE_BASE_URL}/Scheduling/${id}`, {
     method: 'PATCH',
     body: JSON.stringify({ fields, typecast: true }),
   })
@@ -1181,9 +1358,6 @@ function ManagerProfilePanel({ manager, onManagerUpdate, approvedPropertyCount =
   const [saveError, setSaveError] = useState('')
   const [properties, setProperties] = useState([])
   const [propsLoading, setPropsLoading] = useState(true)
-  const [tourAvail, setTourAvail] = useState('')
-  const [tourSaving, setTourSaving] = useState(false)
-  const [tourLoading, setTourLoading] = useState(true)
 
   const approvedForProfile = useMemo(() => {
     if (manager.__axisDeveloper) {
@@ -1198,45 +1372,6 @@ function ManagerProfilePanel({ manager, onManagerUpdate, approvedPropertyCount =
       .catch(() => setProperties([]))
       .finally(() => setPropsLoading(false))
   }, [])
-
-  useEffect(() => {
-    if (!manager?.id || manager.__axisDeveloper) {
-      setTourLoading(false)
-      return
-    }
-    let cancelled = false
-    setTourLoading(true)
-    fetchManagerRecordById(manager.id)
-      .then((rec) => {
-        if (!cancelled) setTourAvail(String(rec['Tour Availability'] || ''))
-      })
-      .catch(() => {
-        if (!cancelled) setTourAvail('')
-      })
-      .finally(() => {
-        if (!cancelled) setTourLoading(false)
-      })
-    return () => {
-      cancelled = true
-    }
-  }, [manager?.id])
-
-  function updateManagerTourSlot(day, slot) {
-    setTourAvail((current) => updateTourAvailabilityLines(current, day, slot))
-  }
-
-  async function handleSaveTourAvailability() {
-    if (!manager?.id || manager.__axisDeveloper) return
-    setTourSaving(true)
-    try {
-      await patchManagerRecord(manager.id, { 'Tour Availability': tourAvail.trim() })
-      toast.success('Tour availability saved')
-    } catch (err) {
-      toast.error(err.message || 'Could not save availability')
-    } finally {
-      setTourSaving(false)
-    }
-  }
 
   async function handleSaveProfile(event) {
     event.preventDefault()
@@ -1323,59 +1458,6 @@ function ManagerProfilePanel({ manager, onManagerUpdate, approvedPropertyCount =
             </button>
           </div>
         </form>
-      </section>
-
-      {/* Personal tour availability (applies when you give tours) */}
-      <section className="rounded-[28px] border border-slate-200 bg-white p-6">
-        <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-[#2563eb]">Tours</div>
-        <h2 className="mt-2 text-xl font-black text-slate-900">When you&apos;re free for tours</h2>
-        <p className="mt-2 max-w-xl text-sm text-slate-500">
-          Set your usual windows so applicants and staff see accurate times. Stored on your manager profile (field <code className="rounded bg-slate-100 px-1 text-xs">Tour Availability</code> in Airtable).
-        </p>
-        {tourLoading ? (
-          <p className="mt-4 text-sm text-slate-500">Loading…</p>
-        ) : (
-          <>
-            <div className="mt-5 grid gap-2 rounded-2xl border border-slate-200 bg-slate-50 p-3 sm:grid-cols-2 lg:grid-cols-3">
-              {TOUR_DAYS.map((day) => (
-                <div key={day} className="rounded-2xl border border-slate-100 bg-white p-3">
-                  <div className="mb-2 text-[11px] font-bold uppercase tracking-[0.14em] text-slate-400">{day}</div>
-                  <div className="flex flex-wrap gap-2">
-                    {TOUR_SLOTS.map((slot) => {
-                      const active =
-                        String(tourAvail || '').includes(`${day}:`) && String(tourAvail || '').includes(slot)
-                      return (
-                        <button
-                          key={`${day}-${slot}`}
-                          type="button"
-                          onClick={() => updateManagerTourSlot(day, slot)}
-                          className={`rounded-full border px-2.5 py-1.5 text-[11px] font-semibold transition ${active ? 'border-[#2563eb] bg-[#2563eb] text-white' : 'border-slate-200 bg-slate-50 text-slate-700 hover:border-[#2563eb]'}`}
-                        >
-                          {slot}
-                        </button>
-                      )
-                    })}
-                  </div>
-                </div>
-              ))}
-            </div>
-            <textarea
-              rows={4}
-              value={tourAvail}
-              onChange={(e) => setTourAvail(e.target.value)}
-              placeholder="Mon: 9:00 AM, 1:30 PM&#10;Tue: 10:30 AM …"
-              className={`mt-4 w-full ${inputCls}`}
-            />
-            <button
-              type="button"
-              onClick={handleSaveTourAvailability}
-              disabled={tourSaving}
-              className="mt-3 rounded-2xl bg-[#2563eb] px-5 py-2.5 text-sm font-semibold text-white disabled:opacity-50"
-            >
-              {tourSaving ? 'Saving…' : 'Save tour availability'}
-            </button>
-          </>
-        )}
       </section>
 
       {/* Plan & subscription summary */}
@@ -1691,24 +1773,8 @@ function buildCalendarEvents(drafts, workOrders, applications) {
   return events
 }
 
-const MANAGER_CALENDAR_BLOCKS_KEY = 'axis_manager_calendar_blocks_v1'
-
 function calendarDateKey(y, monthIndex, day) {
   return `${y}-${String(monthIndex + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`
-}
-
-function loadManagerCalendarBlocks() {
-  try {
-    const raw = localStorage.getItem(MANAGER_CALENDAR_BLOCKS_KEY)
-    const arr = raw ? JSON.parse(raw) : []
-    return Array.isArray(arr) ? arr : []
-  } catch {
-    return []
-  }
-}
-
-function saveManagerCalendarBlocks(blocks) {
-  localStorage.setItem(MANAGER_CALENDAR_BLOCKS_KEY, JSON.stringify(blocks))
 }
 
 const LEASE_STATUSES_NEEDING_ACTION = new Set(['Draft Generated', 'Under Review', 'Changes Needed', 'Approved'])
@@ -1773,7 +1839,7 @@ function ManagerDashboardHomePanel({
         <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-[#2563eb]">Home</div>
         <h2 className="mt-2 text-2xl font-black text-slate-900">Dashboard</h2>
         <p className="mt-2 max-w-2xl text-sm text-slate-500">
-          Tasks for your portfolio ({approvedHouseCount || 0} {approvedHouseCount === 1 ? 'house' : 'houses'}). Use the tabs above for full lists.
+          Tasks for your portfolio ({approvedHouseCount || 0} {approvedHouseCount === 1 ? 'house' : 'houses'}). Use the sidebar for full lists.
         </p>
       </div>
 
@@ -1855,24 +1921,56 @@ function ManagerDashboardHomePanel({
   )
 }
 
-function ManagerCalendarPanel() {
+function ManagerCalendarPanel({ manager, scopedPropertyNames = [] }) {
   const [cursor, setCursor] = useState(() => new Date())
   const [loading, setLoading] = useState(true)
   const [events, setEvents] = useState([])
   const [calendarIssues, setCalendarIssues] = useState([])
-  const [manualBlocks, setManualBlocks] = useState(() => loadManagerCalendarBlocks())
+  const [schedulingRows, setSchedulingRows] = useState([])
+  const [weeklyFree, setWeeklyFree] = useState(() => emptyWeeklyFreeArrays())
+  const [savedEncoded, setSavedEncoded] = useState('')
+  const [availLoading, setAvailLoading] = useState(true)
+  const [availSaving, setAvailSaving] = useState(false)
   const [selectedDay, setSelectedDay] = useState(null)
-  const [addSlot, setAddSlot] = useState('')
-  const [addTitle, setAddTitle] = useState('')
+  const [brushMode, setBrushMode] = useState('free')
+  const paintingRef = useRef(false)
+  const brushModeRef = useRef('free')
+
+  const propsKey = useMemo(
+    () => [...scopedPropertyNames].map((s) => String(s).trim()).filter(Boolean).sort().join('|'),
+    [scopedPropertyNames],
+  )
+
+  const reloadScheduling = useCallback(async () => {
+    if (!AIRTABLE_TOKEN) {
+      setSchedulingRows([])
+      return
+    }
+    const email = String(manager?.email || '').trim()
+    const props = (scopedPropertyNames || []).map((s) => String(s).trim()).filter(Boolean)
+    if (!email && !props.length) {
+      setSchedulingRows([])
+      return
+    }
+    try {
+      const rows = await fetchSchedulingForManagerScope({
+        managerEmail: email,
+        propertyNames: props,
+      })
+      setSchedulingRows(rows)
+    } catch {
+      setSchedulingRows([])
+    }
+  }, [manager?.email, propsKey])
+
+  useEffect(() => {
+    brushModeRef.current = brushMode
+  }, [brushMode])
 
   const y = cursor.getFullYear()
   const m = cursor.getMonth()
   const monthLabel = cursor.toLocaleString('en-US', { month: 'long', year: 'numeric' })
   const daysInMonth = new Date(y, m + 1, 0).getDate()
-
-  useEffect(() => {
-    setManualBlocks(loadManagerCalendarBlocks())
-  }, [])
 
   useEffect(() => {
     if (selectedDay != null && selectedDay > daysInMonth) setSelectedDay(null)
@@ -1903,18 +2001,60 @@ function ManagerCalendarPanel() {
     }
   }, [])
 
-  const manualAsEvents = useMemo(
-    () =>
-      manualBlocks.map((b) => ({
-        date: b.date,
-        label: b.title ? `${b.slot} · ${b.title}` : `Blocked · ${b.slot}`,
-        type: 'block',
-        _blockId: b.id,
-      })),
-    [manualBlocks],
-  )
+  useEffect(() => {
+    reloadScheduling()
+  }, [reloadScheduling])
 
-  const displayEvents = useMemo(() => [...events, ...manualAsEvents], [events, manualAsEvents])
+  useEffect(() => {
+    if (!manager?.id || manager.__axisDeveloper) {
+      setWeeklyFree(emptyWeeklyFreeArrays())
+      setSavedEncoded('')
+      setAvailLoading(false)
+      return
+    }
+    let cancelled = false
+    setAvailLoading(true)
+    fetchManagerRecordById(manager.id)
+      .then((rec) => {
+        if (cancelled) return
+        const text = String(rec['Tour Availability'] || '')
+        const w = weeklyFreeArraysFromTourText(text)
+        setWeeklyFree(w)
+        setSavedEncoded(encodeTourAvailabilityFromWeeklyFree(w))
+      })
+      .catch(() => {
+        if (cancelled) return
+        const w = emptyWeeklyFreeArrays()
+        setWeeklyFree(w)
+        setSavedEncoded('')
+      })
+      .finally(() => {
+        if (!cancelled) setAvailLoading(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [manager?.id, manager.__axisDeveloper])
+
+  useEffect(() => {
+    function endPaint() {
+      paintingRef.current = false
+    }
+    window.addEventListener('mouseup', endPaint)
+    window.addEventListener('blur', endPaint)
+    return () => {
+      window.removeEventListener('mouseup', endPaint)
+      window.removeEventListener('blur', endPaint)
+    }
+  }, [])
+
+  const schedulingEvents = useMemo(() => schedulingRowsToCalendarEvents(schedulingRows), [schedulingRows])
+  const displayEvents = useMemo(() => [...events, ...schedulingEvents], [events, schedulingEvents])
+
+  const encodedDraft = useMemo(() => encodeTourAvailabilityFromWeeklyFree(weeklyFree), [weeklyFree])
+  const availabilityDirty = encodedDraft !== savedEncoded
+
+  const pendingTourCount = useMemo(() => schedulingRows.filter(tourApprovalNeedsAction).length, [schedulingRows])
 
   const firstDow = new Date(y, m, 1).getDay()
   const cells = []
@@ -1927,94 +2067,100 @@ function ManagerCalendarPanel() {
     return displayEvents.filter((e) => e.date === key)
   }
 
-  const blockedSlotsForKey = (key) => {
-    const set = new Set()
-    manualBlocks.filter((b) => b.date === key).forEach((b) => set.add(b.slot))
-    return set
-  }
-
   const freeSlotCountForDay = (day) => {
-    if (!day) return TOUR_SLOTS.length
-    const key = calendarDateKey(y, m, day)
-    return TOUR_SLOTS.length - blockedSlotsForKey(key).size
+    if (!day) return 0
+    const abbr = CAL_DOW_TO_ABBR[new Date(y, m, day).getDay()]
+    return freeTourSlotCountForWeekday(weeklyFree, abbr)
   }
 
   const selectedKey = selectedDay != null ? calendarDateKey(y, m, selectedDay) : null
-  const selectedBlocked = selectedKey ? blockedSlotsForKey(selectedKey) : new Set()
-  const freeSlotsForSelected = TOUR_SLOTS.filter((s) => !selectedBlocked.has(s))
+  const selectedWeekdayAbbr =
+    selectedDay != null ? CAL_DOW_TO_ABBR[new Date(y, m, selectedDay).getDay()] : null
 
-  function persistBlocks(next) {
-    setManualBlocks(next)
-    saveManagerCalendarBlocks(next)
-  }
+  const toursThisDay = useMemo(() => {
+    if (!selectedKey) return []
+    return schedulingRows.filter((r) => parseCalendarDay(r['Preferred Date']) === selectedKey)
+  }, [schedulingRows, selectedKey])
 
-  function addTimeBlock() {
-    if (!selectedKey || !addSlot) {
-      toast.error('Pick a day and a time slot.')
-      return
+  function eventToneCls(ev) {
+    if (ev.type === 'tour_req') {
+      const a = String(ev.approval || '').toLowerCase()
+      if (a === 'approved') return 'bg-emerald-100 text-emerald-900'
+      if (a === 'declined') return 'bg-red-100 text-red-800'
+      return 'bg-sky-100 text-sky-900'
     }
-    if (selectedBlocked.has(addSlot)) {
-      toast.error('That slot is already blocked.')
-      return
-    }
-    const row = {
-      id: `cal_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
-      date: selectedKey,
-      slot: addSlot,
-      title: addTitle.trim() || 'Unavailable',
-    }
-    persistBlocks([...manualBlocks, row])
-    setAddTitle('')
-    toast.success('Time blocked on your calendar')
-  }
-
-  function removeBlock(id) {
-    persistBlocks(manualBlocks.filter((b) => b.id !== id))
-    toast.success('Removed')
-  }
-
-  function blockAllFreeOnSelected() {
-    if (!selectedKey) return
-    const next = [...manualBlocks]
-    let added = 0
-    const stamp = Date.now()
-    for (let i = 0; i < TOUR_SLOTS.length; i += 1) {
-      const slot = TOUR_SLOTS[i]
-      if (selectedBlocked.has(slot)) continue
-      next.push({
-        id: `cal_${stamp}_${i}_${slot.replace(/\s/g, '')}`,
-        date: selectedKey,
-        slot,
-        title: 'Unavailable',
-      })
-      added += 1
-    }
-    if (!added) {
-      toast.error('All slots are already blocked.')
-      return
-    }
-    persistBlocks(next)
-    toast.success(`Blocked ${added} windows`)
-  }
-
-  function clearDayBlocks() {
-    if (!selectedKey) return
-    const next = manualBlocks.filter((b) => b.date !== selectedKey)
-    if (next.length === manualBlocks.length) {
-      toast.error('No manual blocks on this day.')
-      return
-    }
-    persistBlocks(next)
-    toast.success('Cleared manual blocks for this day')
-  }
-
-  const toneCls = (type) => {
-    if (type === 'lease') return 'bg-blue-100 text-blue-800'
-    if (type === 'publish' || type === 'approve') return 'bg-axis/15 text-axis'
-    if (type === 'wo') return 'bg-amber-100 text-amber-900'
-    if (type === 'app') return 'bg-emerald-100 text-emerald-900'
-    if (type === 'block') return 'bg-violet-100 text-violet-900'
+    if (ev.type === 'lease') return 'bg-blue-100 text-blue-800'
+    if (ev.type === 'publish' || ev.type === 'approve') return 'bg-axis/15 text-axis'
+    if (ev.type === 'wo') return 'bg-amber-100 text-amber-900'
+    if (ev.type === 'app') return 'bg-emerald-100 text-emerald-900'
     return 'bg-slate-100 text-slate-700'
+  }
+
+  function applyPaintToCell(dayAbbr, halfIdx) {
+    const mode = brushModeRef.current
+    setWeeklyFree((prev) => {
+      const next = cloneWeeklyArrays(prev)
+      const arr = next[dayAbbr]
+      const i = arr.indexOf(halfIdx)
+      if (mode === 'free') {
+        if (i < 0) arr.push(halfIdx)
+      } else if (i >= 0) {
+        arr.splice(i, 1)
+      }
+      arr.sort((a, b) => a - b)
+      return next
+    })
+  }
+
+  function onGridCellDown(dayAbbr, halfIdx, e) {
+    e.preventDefault()
+    paintingRef.current = true
+    applyPaintToCell(dayAbbr, halfIdx)
+  }
+
+  function onGridCellEnter(dayAbbr, halfIdx) {
+    if (!paintingRef.current) return
+    applyPaintToCell(dayAbbr, halfIdx)
+  }
+
+  function clearSelectedWeekday() {
+    if (!selectedWeekdayAbbr) return
+    setWeeklyFree((prev) => {
+      const next = cloneWeeklyArrays(prev)
+      next[selectedWeekdayAbbr] = []
+      return next
+    })
+    toast.success(`Cleared ${selectedWeekdayAbbr} weekly hours`)
+  }
+
+  async function handleSaveWeeklyAvailability() {
+    if (!manager?.id || manager.__axisDeveloper) {
+      toast.info('Saving is disabled in developer preview mode.')
+      return
+    }
+    setAvailSaving(true)
+    try {
+      const enc = encodeTourAvailabilityFromWeeklyFree(weeklyFree)
+      await patchManagerRecord(manager.id, { 'Tour Availability': enc })
+      setSavedEncoded(enc)
+      toast.success('Weekly availability saved to your manager profile')
+    } catch (err) {
+      toast.error(err.message || 'Could not save availability')
+    } finally {
+      setAvailSaving(false)
+    }
+  }
+
+  async function respondTourRequest(row, approve) {
+    try {
+      await patchSchedulingRecord(row.id, {
+        'Manager Approval': approve ? 'Approved' : 'Declined',
+      })
+      toast.success(approve ? 'Tour approved' : 'Tour declined')
+      await reloadScheduling()
+    } catch (err) {
+      toast.error(err.message || 'Could not update this request. Add a single-line field "Manager Approval" to Scheduling in Airtable if missing.')
+    }
   }
 
   const today = new Date()
@@ -2031,14 +2177,24 @@ function ManagerCalendarPanel() {
         })
       : ''
 
+  const freeStandardOnSelected =
+    selectedWeekdayAbbr != null ? freeTourSlotCountForWeekday(weeklyFree, selectedWeekdayAbbr) : 0
+
   return (
     <div className="rounded-[24px] border border-slate-200 bg-white p-6 shadow-sm">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h2 className="text-xl font-black text-slate-900">Calendar</h2>
           <p className="mt-1 text-sm text-slate-500">
-            Airtable milestones plus your tour-style windows. Green counts = open slots (same times as public tour booking).
+            Leases, work orders, applications, tour requests, and your weekly tour availability (saved to{' '}
+            <code className="rounded bg-slate-100 px-1 text-[11px]">Tour Availability</code> on your manager profile — same format as
+            public tour slots).
           </p>
+          {pendingTourCount > 0 ? (
+            <p className="mt-2 text-sm font-semibold text-sky-800">
+              {pendingTourCount} tour request{pendingTourCount === 1 ? '' : 's'} need a yes/no response — open the day to approve or decline.
+            </p>
+          ) : null}
         </div>
         <div className="flex items-center gap-2">
           <button
@@ -2059,14 +2215,20 @@ function ManagerCalendarPanel() {
         </div>
       </div>
 
+      {manager.__axisDeveloper ? (
+        <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-950">
+          Developer preview: weekly availability is not saved to Airtable from this session.
+        </div>
+      ) : null}
+
       <div className="mt-3 flex flex-wrap gap-3 text-[11px] text-slate-600">
         <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 font-semibold text-emerald-800">
           <span className="h-2 w-2 rounded-full bg-emerald-500" />
-          Free slot
+          Standard tour window open
         </span>
-        <span className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 font-semibold text-slate-700">
-          <span className="h-2 w-2 rounded-full bg-slate-400" />
-          You blocked
+        <span className="inline-flex items-center gap-1.5 rounded-full border border-sky-200 bg-sky-50 px-2.5 py-1 font-semibold text-sky-900">
+          <span className="h-2 w-2 rounded-full bg-sky-500" />
+          Tour request
         </span>
       </div>
 
@@ -2121,14 +2283,14 @@ function ManagerCalendarPanel() {
                           freeN === 0 ? 'bg-slate-200 text-slate-700' : 'bg-emerald-100 text-emerald-800',
                         )}
                       >
-                        {freeN} free
+                        {freeN} open
                       </span>
                     </div>
                     <div className="mt-1 flex max-h-[56px] flex-col gap-0.5 overflow-y-auto">
                       {dayEvents.slice(0, 3).map((ev, i) => (
                         <span
-                          key={`${ev.date}-${i}-${ev.label}`}
-                          className={`truncate rounded px-1 py-0.5 text-[10px] font-semibold leading-tight ${toneCls(ev.type)}`}
+                          key={`${ev.date}-${ev.schedulingId || i}-${ev.label}`}
+                          className={`truncate rounded px-1 py-0.5 text-[10px] font-semibold leading-tight ${eventToneCls(ev)}`}
                           title={ev.label}
                         >
                           {ev.label}
@@ -2144,11 +2306,14 @@ function ManagerCalendarPanel() {
             </div>
           </div>
 
-          <div className="w-full shrink-0 rounded-2xl border border-slate-200 bg-slate-50/50 p-5 lg:w-[min(100%,400px)]">
+          <div className="w-full shrink-0 rounded-2xl border border-slate-200 bg-slate-50/50 p-5 lg:w-[min(100%,440px)]">
             {!selectedDay ? (
               <div className="text-sm text-slate-600">
-                <p className="font-semibold text-slate-900">Day schedule</p>
-                <p className="mt-2 text-slate-500">Select any day on the calendar to see which tour windows are still open and block times you are not available.</p>
+                <p className="font-semibold text-slate-900">Day detail</p>
+                <p className="mt-2 text-slate-500">
+                  Select a date. You will edit <strong>that weekday every week</strong> (like When2meet): click and drag on half-hour cells to mark
+                  when you are free or busy. Tour requests for that date appear below with approve / decline.
+                </p>
               </div>
             ) : (
               <>
@@ -2157,8 +2322,9 @@ function ManagerCalendarPanel() {
                     <p className="text-[11px] font-bold uppercase tracking-wide text-[#2563eb]">Selected day</p>
                     <p className="mt-0.5 text-base font-black text-slate-900">{selectedDateLabel}</p>
                     <p className="mt-1 text-sm text-slate-600">
-                      <span className="font-semibold text-emerald-700">{freeSlotsForSelected.length}</span> of {TOUR_SLOTS.length}{' '}
-                      standard windows free
+                      Editing weekly template for <span className="font-semibold text-slate-900">{selectedWeekdayAbbr}</span> —{' '}
+                      <span className="font-semibold text-emerald-700">{freeStandardOnSelected}</span> of {TOUR_SLOTS.length} standard tour
+                      windows covered.
                     </p>
                   </div>
                   <button
@@ -2166,108 +2332,162 @@ function ManagerCalendarPanel() {
                     onClick={() => setSelectedDay(null)}
                     className="rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-xs font-semibold text-slate-600 hover:bg-slate-50"
                   >
-                    Clear
+                    Close
                   </button>
                 </div>
 
-                <div className="mt-4 space-y-2">
-                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Time windows</p>
-                  <ul className="max-h-[220px] space-y-1.5 overflow-y-auto pr-1">
+                <div className="mt-4">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Paint availability</p>
+                  <p className="mt-1 text-[11px] text-slate-500">
+                    {TOUR_GRID_START_HOUR}:00–{TOUR_GRID_END_HOUR}:00 · hold and drag across cells (green = free for that half hour).
+                  </p>
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setBrushMode('free')}
+                      className={classNames(
+                        'rounded-full border px-3 py-1.5 text-xs font-semibold transition',
+                        brushMode === 'free'
+                          ? 'border-emerald-500 bg-emerald-500 text-white'
+                          : 'border-slate-200 bg-white text-slate-700 hover:border-emerald-300',
+                      )}
+                    >
+                      Mark free
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setBrushMode('busy')}
+                      className={classNames(
+                        'rounded-full border px-3 py-1.5 text-xs font-semibold transition',
+                        brushMode === 'busy'
+                          ? 'border-slate-700 bg-slate-700 text-white'
+                          : 'border-slate-200 bg-white text-slate-700 hover:border-slate-400',
+                      )}
+                    >
+                      Mark busy
+                    </button>
+                  </div>
+                  {availLoading ? (
+                    <p className="mt-3 text-sm text-slate-500">Loading your saved availability…</p>
+                  ) : (
+                    <div
+                      className="mt-3 max-h-[280px] select-none overflow-y-auto rounded-xl border border-slate-200 bg-white"
+                      onMouseLeave={() => {
+                        paintingRef.current = false
+                      }}
+                    >
+                      <div className="grid" style={{ gridTemplateColumns: '4.5rem 1fr' }}>
+                        {Array.from({ length: TOUR_GRID_HALF_COUNT }, (_, halfIdx) => {
+                          const active = (weeklyFree[selectedWeekdayAbbr] || []).includes(halfIdx)
+                          const showLabel = halfIdx % 2 === 0
+                          return (
+                            <React.Fragment key={halfIdx}>
+                              <div className="border-b border-r border-slate-100 px-1 py-0.5 text-[10px] text-slate-400">
+                                {showLabel ? formatHalfHourIndexLabel(halfIdx) : ''}
+                              </div>
+                              <button
+                                type="button"
+                                className={classNames(
+                                  'h-5 border-b border-slate-100 transition-colors',
+                                  active ? 'bg-emerald-400/90 hover:bg-emerald-500' : 'bg-slate-50 hover:bg-slate-200/80',
+                                )}
+                                onMouseDown={(e) => onGridCellDown(selectedWeekdayAbbr, halfIdx, e)}
+                                onMouseEnter={() => onGridCellEnter(selectedWeekdayAbbr, halfIdx)}
+                                aria-label={`${formatHalfHourIndexLabel(halfIdx)} ${active ? 'free' : 'busy'}`}
+                              />
+                            </React.Fragment>
+                          )
+                        })}
+                      </div>
+                    </div>
+                  )}
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      onClick={handleSaveWeeklyAvailability}
+                      disabled={availSaving || !availabilityDirty || manager.__axisDeveloper}
+                      className="rounded-xl bg-[#2563eb] px-4 py-2 text-xs font-semibold text-white disabled:opacity-50"
+                    >
+                      {availSaving ? 'Saving…' : 'Save weekly availability'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={clearSelectedWeekday}
+                      className="rounded-xl border border-red-200 bg-red-50 px-4 py-2 text-xs font-semibold text-red-800 hover:bg-red-100"
+                    >
+                      Clear {selectedWeekdayAbbr}
+                    </button>
+                  </div>
+                </div>
+
+                <div className="mt-6 border-t border-slate-200 pt-4">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Standard tour slots (this weekday)</p>
+                  <ul className="mt-2 max-h-[160px] space-y-1 overflow-y-auto">
                     {TOUR_SLOTS.map((slot) => {
-                      const blocked = selectedBlocked.has(slot)
-                      const row = manualBlocks.find((b) => b.date === selectedKey && b.slot === slot)
+                      const range = slotRangeMinutes(slot)
+                      const idxs = range ? halfHourIndicesOverlappingRange(range.start, range.end) : []
+                      const set = new Set(weeklyFree[selectedWeekdayAbbr] || [])
+                      const open = idxs.some((i) => set.has(i))
                       return (
                         <li
                           key={slot}
                           className={classNames(
-                            'flex items-center justify-between gap-2 rounded-xl border px-3 py-2 text-sm',
-                            blocked ? 'border-violet-200 bg-violet-50' : 'border-emerald-200 bg-emerald-50/60',
+                            'flex items-center justify-between rounded-lg border px-2.5 py-1.5 text-xs font-semibold',
+                            open ? 'border-emerald-200 bg-emerald-50 text-emerald-900' : 'border-slate-200 bg-white text-slate-500',
                           )}
                         >
-                          <div className="min-w-0">
-                            <div className="font-bold text-slate-900">{slot}</div>
-                            {blocked && row?.title ? (
-                              <div className="truncate text-xs text-violet-900/80">{row.title}</div>
-                            ) : null}
-                          </div>
-                          <div className="flex shrink-0 items-center gap-2">
-                            {blocked ? (
-                              <>
-                                <span className="text-[10px] font-bold uppercase text-violet-800">Blocked</span>
-                                {row ? (
-                                  <button
-                                    type="button"
-                                    onClick={() => removeBlock(row.id)}
-                                    className="rounded-lg border border-violet-200 bg-white px-2 py-1 text-[11px] font-semibold text-violet-800 hover:bg-violet-100"
-                                  >
-                                    Remove
-                                  </button>
-                                ) : null}
-                              </>
-                            ) : (
-                              <span className="text-[10px] font-bold uppercase text-emerald-800">Free</span>
-                            )}
-                          </div>
+                          <span>{slot}</span>
+                          <span>{open ? 'Open' : 'Closed'}</span>
                         </li>
                       )
                     })}
                   </ul>
                 </div>
 
-                <div className="mt-5 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-                  <p className="text-sm font-black text-slate-900">Block a time</p>
-                  <p className="mt-1 text-xs text-slate-500">Matches public tour slots (Contact page).</p>
-                  <div className="mt-3 space-y-3">
-                    <label className="block text-xs font-semibold text-slate-700">
-                      Slot
-                      <select
-                        value={addSlot}
-                        onChange={(e) => setAddSlot(e.target.value)}
-                        className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm font-medium text-slate-900 outline-none focus:border-[#2563eb] focus:ring-2 focus:ring-[#2563eb]/20"
-                      >
-                        <option value="">Choose a free window…</option>
-                        {freeSlotsForSelected.map((slot) => (
-                          <option key={slot} value={slot}>
-                            {slot}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
-                    <label className="block text-xs font-semibold text-slate-700">
-                      Label <span className="font-normal text-slate-400">(optional)</span>
-                      <input
-                        value={addTitle}
-                        onChange={(e) => setAddTitle(e.target.value)}
-                        placeholder="e.g. Staff meeting, Showing, PTO"
-                        className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-900 outline-none placeholder:text-slate-400 focus:border-[#2563eb] focus:ring-2 focus:ring-[#2563eb]/20"
-                      />
-                    </label>
-                    <button
-                      type="button"
-                      onClick={addTimeBlock}
-                      disabled={!addSlot}
-                      className="w-full rounded-xl bg-[linear-gradient(180deg,#2f76ff_0%,#2450eb_100%)] py-3 text-sm font-semibold text-white shadow-[0_4px_16px_rgba(37,99,235,0.25)] transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
-                    >
-                      Add to calendar
-                    </button>
-                  </div>
-                </div>
-
-                <div className="mt-3 flex flex-wrap gap-2">
-                  <button
-                    type="button"
-                    onClick={blockAllFreeOnSelected}
-                    className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50"
-                  >
-                    Block all open windows
-                  </button>
-                  <button
-                    type="button"
-                    onClick={clearDayBlocks}
-                    className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-xs font-semibold text-red-800 hover:bg-red-100"
-                  >
-                    Clear my blocks this day
-                  </button>
+                <div className="mt-6 border-t border-slate-200 pt-4">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Tour requests this date</p>
+                  {toursThisDay.length === 0 ? (
+                    <p className="mt-2 text-sm text-slate-500">No scheduled tour requests on this day.</p>
+                  ) : (
+                    <ul className="mt-2 space-y-3">
+                      {toursThisDay.map((row) => {
+                        const needs = tourApprovalNeedsAction(row)
+                        const appr = String(row['Manager Approval'] || '').trim() || 'Pending'
+                        return (
+                          <li key={row.id} className="rounded-xl border border-slate-200 bg-white p-3 text-sm shadow-sm">
+                            <div className="font-bold text-slate-900">{row.Name || 'Guest'}</div>
+                            <div className="mt-1 text-xs text-slate-600">
+                              {row.Property ? `${row.Property} · ` : ''}
+                              {row['Preferred Time'] || 'Time TBD'}
+                              {row['Tour Format'] ? ` · ${row['Tour Format']}` : ''}
+                            </div>
+                            {row.Email ? <div className="mt-0.5 text-xs text-slate-500">{row.Email}</div> : null}
+                            <div className="mt-2 text-[11px] font-semibold uppercase tracking-wide text-slate-400">
+                              Manager approval: {appr}
+                            </div>
+                            {needs ? (
+                              <div className="mt-2 flex flex-wrap gap-2">
+                                <button
+                                  type="button"
+                                  onClick={() => respondTourRequest(row, true)}
+                                  className="rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-700"
+                                >
+                                  Yes
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => respondTourRequest(row, false)}
+                                  className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                                >
+                                  No
+                                </button>
+                              </div>
+                            ) : null}
+                          </li>
+                        )
+                      })}
+                    </ul>
+                  )}
                 </div>
               </>
             )}
@@ -2289,6 +2509,64 @@ function managerInboxParseWoThreadId(s) {
   return String(s).slice(3)
 }
 
+const MANAGER_INBOX_THREAD_STATE_LS = 'axis_manager_inbox_thread_state_v1'
+
+function loadLocalInboxStateMap(email) {
+  const em = String(email || '').trim().toLowerCase()
+  if (!em) return new Map()
+  try {
+    const root = JSON.parse(localStorage.getItem(MANAGER_INBOX_THREAD_STATE_LS) || '{}')
+    const bucket = root[em] || {}
+    const m = new Map()
+    for (const [tk, v] of Object.entries(bucket)) {
+      m.set(tk, {
+        id: `local:${tk}`,
+        lastReadAt: v.lastReadAt ? new Date(v.lastReadAt) : null,
+        trashed: Boolean(v.trashed),
+      })
+    }
+    return m
+  } catch {
+    return new Map()
+  }
+}
+
+function saveLocalInboxStatePatch(email, threadKey, patch) {
+  const em = String(email || '').trim().toLowerCase()
+  const tk = String(threadKey || '').trim()
+  if (!em || !tk) return
+  try {
+    const root = JSON.parse(localStorage.getItem(MANAGER_INBOX_THREAD_STATE_LS) || '{}')
+    if (!root[em]) root[em] = {}
+    const cur = root[em][tk] || {}
+    const next = { ...cur }
+    if (patch.lastReadAt !== undefined) {
+      next.lastReadAt = patch.lastReadAt ? new Date(patch.lastReadAt).toISOString() : null
+    }
+    if (patch.trashed !== undefined) next.trashed = patch.trashed
+    root[em][tk] = next
+    localStorage.setItem(MANAGER_INBOX_THREAD_STATE_LS, JSON.stringify(root))
+  } catch {
+    /* ignore */
+  }
+}
+
+/** @param {number} lastMsgTs */
+function managerInboxSectionForRow(lastMsgTs, state) {
+  if (state?.trashed) return 'trash'
+  if (lastMsgTs <= 0) {
+    return state?.lastReadAt ? 'opened' : 'unopened'
+  }
+  if (!state?.lastReadAt) return 'unopened'
+  return lastMsgTs > state.lastReadAt.getTime() ? 'unopened' : 'opened'
+}
+
+function managerInboxStateKeyForSelection(selectedThreadId, axisThreadKey) {
+  if (selectedThreadId === MANAGER_INBOX_AXIS) return axisThreadKey || ''
+  if (!selectedThreadId || !String(selectedThreadId).startsWith('wo:')) return ''
+  return String(selectedThreadId)
+}
+
 function InboxTabPanel({ manager, allowedPropertyNames }) {
   const [allMsgs, setAllMsgs] = useState([])
   const [scopedWos, setScopedWos] = useState([])
@@ -2299,6 +2577,8 @@ function InboxTabPanel({ manager, allowedPropertyNames }) {
   const [threadLoading, setThreadLoading] = useState(false)
   const [reply, setReply] = useState('')
   const [sending, setSending] = useState(false)
+  const [inboxStateMap, setInboxStateMap] = useState(() => new Map())
+  const [inboxStateBackend, setInboxStateBackend] = useState('pending')
 
   const inboxScopeLower = useMemo(
     () => new Set((allowedPropertyNames || []).map((n) => String(n).trim().toLowerCase()).filter(Boolean)),
@@ -2311,6 +2591,25 @@ function InboxTabPanel({ manager, allowedPropertyNames }) {
     return siteManagerThreadKey(managerEmail)
   }, [managerEmail])
 
+  const refreshInboxThreadState = useCallback(async () => {
+    if (!managerEmail) {
+      setInboxStateMap(new Map())
+      setInboxStateBackend('none')
+      return
+    }
+    if (inboxThreadStateAirtableEnabled()) {
+      try {
+        setInboxStateMap(await fetchInboxThreadStateMap(managerEmail))
+        setInboxStateBackend('airtable')
+        return
+      } catch {
+        /* fall back to browser storage */
+      }
+    }
+    setInboxStateMap(loadLocalInboxStateMap(managerEmail))
+    setInboxStateBackend('local')
+  }, [managerEmail])
+
   const loadAll = useCallback(async () => {
     const hasScope = inboxScopeLower.size > 0
     const hasAxis = Boolean(axisThreadKey)
@@ -2319,6 +2618,11 @@ function InboxTabPanel({ manager, allowedPropertyNames }) {
       setScopedWos([])
       setAxisMsgs([])
       setLoading(false)
+      try {
+        await refreshInboxThreadState()
+      } catch {
+        /* non-fatal */
+      }
       return
     }
     setLoading(true)
@@ -2338,8 +2642,13 @@ function InboxTabPanel({ manager, allowedPropertyNames }) {
       }
     } finally {
       setLoading(false)
+      try {
+        await refreshInboxThreadState()
+      } catch {
+        /* non-fatal */
+      }
     }
-  }, [inboxScopeLower, axisThreadKey])
+  }, [inboxScopeLower, axisThreadKey, refreshInboxThreadState])
 
   useEffect(() => {
     loadAll()
@@ -2360,33 +2669,131 @@ function InboxTabPanel({ manager, allowedPropertyNames }) {
         woMsgs[0] || null,
       )
       const submitted = new Date(w['Date Submitted'] || w.created_at || 0).getTime()
-      const ts = Math.max(submitted, last ? msgTime(last) : 0)
+      const lastMsgTs = last ? msgTime(last) : 0
+      const ts = Math.max(submitted, lastMsgTs)
       rows.push({
         id: managerInboxWoThreadId(w.id),
+        stateKey: managerInboxWoThreadId(w.id),
         title: w.Title || 'Work order',
         subtitle: workOrderPropertyLabel(w) || undefined,
-        preview: last?.Message || 'No messages yet — open to reply.',
+        preview: last?.Message ? String(last.Message) : '',
         time: last ? fmtDateTime(last.Timestamp || last.created_at) : fmtDate(w['Date Submitted'] || w.created_at),
         ts,
+        lastMsgTs,
       })
     }
 
     if (axisThreadKey) {
       const sortedAxis = [...axisMsgs].sort((a, b) => msgTime(a) - msgTime(b))
       const last = sortedAxis[sortedAxis.length - 1]
+      const lastMsgTs = last ? msgTime(last) : 0
       rows.push({
         id: MANAGER_INBOX_AXIS,
+        stateKey: axisThreadKey,
         title: 'Axis team',
         subtitle: 'Internal · not tied to a work order',
-        preview: last?.Message || 'Message Axis admin from here.',
+        preview: last?.Message ? String(last.Message) : '',
         time: last ? fmtDateTime(last.Timestamp || last.created_at) : '',
-        ts: last ? msgTime(last) : 0,
+        ts: lastMsgTs,
+        lastMsgTs,
       })
     }
 
     rows.sort((a, b) => b.ts - a.ts)
     return rows
   }, [scopedWos, allMsgs, axisMsgs, axisThreadKey])
+
+  const threadRowsWithMeta = useMemo(() => {
+    return threadRows.map((row) => {
+      const st = inboxStateMap.get(row.stateKey)
+      const section = managerInboxSectionForRow(row.lastMsgTs, st)
+      const unread = section === 'unopened'
+      return { ...row, section, unread }
+    })
+  }, [threadRows, inboxStateMap])
+
+  const inboxSections = useMemo(() => {
+    const unopened = []
+    const opened = []
+    const trash = []
+    for (const row of threadRowsWithMeta) {
+      if (row.section === 'trash') trash.push(row)
+      else if (row.section === 'unopened') unopened.push(row)
+      else opened.push(row)
+    }
+    return { unopened, opened, trash }
+  }, [threadRowsWithMeta])
+
+  const touchThreadRead = useCallback(
+    async (stateKey) => {
+      if (!managerEmail || !stateKey) return
+      const iso = new Date().toISOString()
+      const tryAirtable =
+        (inboxStateBackend === 'airtable' || inboxStateBackend === 'pending') && inboxThreadStateAirtableEnabled()
+      if (tryAirtable) {
+        try {
+          await markInboxThreadRead(managerEmail, stateKey)
+          setInboxStateBackend('airtable')
+          setInboxStateMap(await fetchInboxThreadStateMap(managerEmail))
+          return
+        } catch {
+          saveLocalInboxStatePatch(managerEmail, stateKey, { lastReadAt: iso })
+          setInboxStateBackend('local')
+          setInboxStateMap(loadLocalInboxStateMap(managerEmail))
+          return
+        }
+      }
+      saveLocalInboxStatePatch(managerEmail, stateKey, { lastReadAt: iso })
+      setInboxStateMap(loadLocalInboxStateMap(managerEmail))
+      if (inboxStateBackend === 'pending') setInboxStateBackend('local')
+    },
+    [managerEmail, inboxStateBackend],
+  )
+
+  const moveThreadTrash = useCallback(
+    async (stateKey, trashed) => {
+      if (!managerEmail || !stateKey) return
+      const tryAirtable =
+        (inboxStateBackend === 'airtable' || inboxStateBackend === 'pending') && inboxThreadStateAirtableEnabled()
+      if (tryAirtable) {
+        try {
+          await setInboxThreadTrash(managerEmail, stateKey, trashed)
+          setInboxStateBackend('airtable')
+          setInboxStateMap(await fetchInboxThreadStateMap(managerEmail))
+          toast.success(trashed ? 'Moved to trash' : 'Restored to inbox')
+          return
+        } catch {
+          saveLocalInboxStatePatch(managerEmail, stateKey, { trashed })
+          setInboxStateBackend('local')
+          setInboxStateMap(loadLocalInboxStateMap(managerEmail))
+          toast.success(trashed ? 'Moved to trash' : 'Restored to inbox')
+          return
+        }
+      }
+      saveLocalInboxStatePatch(managerEmail, stateKey, { trashed })
+      setInboxStateMap(loadLocalInboxStateMap(managerEmail))
+      toast.success(trashed ? 'Moved to trash' : 'Restored to inbox')
+    },
+    [managerEmail, inboxStateBackend],
+  )
+
+  const selectedStateKey = managerInboxStateKeyForSelection(selectedThreadId, axisThreadKey)
+  const selectedMeta = selectedStateKey ? inboxStateMap.get(selectedStateKey) : null
+  const selectedInTrash = Boolean(selectedMeta?.trashed)
+
+  const touchThreadReadRef = useRef(touchThreadRead)
+  touchThreadReadRef.current = touchThreadRead
+  const lastTouchedThreadRef = useRef('')
+
+  useEffect(() => {
+    if (!selectedStateKey) {
+      lastTouchedThreadRef.current = ''
+      return
+    }
+    if (lastTouchedThreadRef.current === selectedStateKey) return
+    lastTouchedThreadRef.current = selectedStateKey
+    void touchThreadReadRef.current(selectedStateKey)
+  }, [selectedStateKey])
 
   useEffect(() => {
     if (!selectedThreadId) {
@@ -2468,6 +2875,8 @@ function InboxTabPanel({ manager, allowedPropertyNames }) {
         const woId = managerInboxParseWoThreadId(selectedThreadId)
         if (woId) setThread(await getMessages(woId))
       }
+      const sk = managerInboxStateKeyForSelection(selectedThreadId, axisThreadKey)
+      if (sk) await touchThreadRead(sk)
       toast.success('Sent')
     } catch (err) {
       toast.error(err.message || 'Send failed')
@@ -2495,7 +2904,7 @@ function InboxTabPanel({ manager, allowedPropertyNames }) {
         <div>
           <h2 className="text-xl font-black text-slate-900">Inbox</h2>
           <p className="mt-1 text-sm text-slate-500">
-            Work-order threads for your houses and your Axis team thread in one place — like email: pick a row, read on the right, reply below.
+            Message residents on work orders, chat with Axis, or send anything else — same as email: unopened, opened, and trash on the left; compose below the conversation.
           </p>
         </div>
         <button
@@ -2520,20 +2929,39 @@ function InboxTabPanel({ manager, allowedPropertyNames }) {
               ) : threadRows.length === 0 ? (
                 <div className="px-4 py-12 text-center text-sm text-slate-500">No conversations yet.</div>
               ) : (
-                <ul className="divide-y divide-slate-100">
-                  {threadRows.map((row) => (
-                    <li key={row.id}>
-                      <InboxThreadRow
-                        title={row.title}
-                        subtitle={row.subtitle}
-                        preview={row.preview}
-                        time={row.time}
-                        selected={selectedThreadId === row.id}
-                        onClick={() => setSelectedThreadId(row.id)}
-                      />
-                    </li>
+                <>
+                  {[
+                    { key: 'unopened', label: 'Unopened', rows: inboxSections.unopened },
+                    { key: 'opened', label: 'Opened', rows: inboxSections.opened },
+                    { key: 'trash', label: 'Trash', rows: inboxSections.trash },
+                  ].map(({ key, label, rows: secRows }) => (
+                    <div key={key} className="border-b border-slate-100 last:border-b-0">
+                      <div className="sticky top-0 z-[1] bg-slate-100/95 px-4 py-2 text-[10px] font-bold uppercase tracking-wide text-slate-600">
+                        {label}{' '}
+                        <span className="font-semibold tabular-nums text-slate-400">({secRows.length})</span>
+                      </div>
+                      {secRows.length === 0 ? (
+                        <div className="px-4 py-3 text-xs text-slate-400">None</div>
+                      ) : (
+                        <ul className="divide-y divide-slate-100">
+                          {secRows.map((row) => (
+                            <li key={row.id}>
+                              <InboxThreadRow
+                                title={row.title}
+                                subtitle={row.subtitle}
+                                preview={row.preview}
+                                time={row.time}
+                                selected={selectedThreadId === row.id}
+                                unread={row.unread}
+                                onClick={() => setSelectedThreadId(row.id)}
+                              />
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                    </div>
                   ))}
-                </ul>
+                </>
               )}
             </div>
           </>
@@ -2542,13 +2970,36 @@ function InboxTabPanel({ manager, allowedPropertyNames }) {
           <div className="flex h-full min-h-0 flex-1 flex-col overflow-hidden">
             <div className="shrink-0 border-b border-slate-200 bg-white px-4 py-3 lg:px-5">
               {selectedThreadId ? (
-                <div>
-                  <h3 className="text-base font-black text-slate-900">{readingTitle}</h3>
-                  <p className="mt-0.5 text-xs text-slate-500">
-                    {selectedThreadId === MANAGER_INBOX_AXIS
-                      ? axisThreadKey
-                      : managerInboxParseWoThreadId(selectedThreadId)}
-                  </p>
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <h3 className="text-base font-black text-slate-900">{readingTitle}</h3>
+                    <p className="mt-0.5 break-all text-xs text-slate-500">
+                      {selectedThreadId === MANAGER_INBOX_AXIS
+                        ? axisThreadKey
+                        : managerInboxParseWoThreadId(selectedThreadId)}
+                    </p>
+                  </div>
+                  {selectedStateKey ? (
+                    <div className="flex shrink-0 flex-wrap gap-2">
+                      {selectedInTrash ? (
+                        <button
+                          type="button"
+                          onClick={() => moveThreadTrash(selectedStateKey, false)}
+                          className="rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                        >
+                          Restore
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => moveThreadTrash(selectedStateKey, true)}
+                          className="rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-red-50 hover:text-red-800"
+                        >
+                          Trash
+                        </button>
+                      )}
+                    </div>
+                  ) : null}
                 </div>
               ) : (
                 <p className="text-sm text-slate-500">Select a conversation</p>
@@ -2562,7 +3013,12 @@ function InboxTabPanel({ manager, allowedPropertyNames }) {
               ) : threadLoading ? (
                 <div className="py-16 text-center text-sm text-slate-500">Loading thread…</div>
               ) : thread.length === 0 ? (
-                <div className="py-12 text-center text-sm text-slate-500">No messages in this thread yet.</div>
+                <div className="flex min-h-[14rem] flex-col items-center justify-center px-4 text-center">
+                  <p className="text-sm font-medium text-slate-600">This conversation is empty.</p>
+                  <p className="mt-2 max-w-xs text-xs leading-relaxed text-slate-400">
+                    Nothing to show here yet — use the message box below when you are ready to send.
+                  </p>
+                </div>
               ) : (
                 <div className="space-y-3">
                   {thread.map((m) => {
@@ -2596,29 +3052,22 @@ function InboxTabPanel({ manager, allowedPropertyNames }) {
                 </div>
               )}
             </div>
-            {selectedThreadId === MANAGER_INBOX_AXIS && axisThreadKey ? (
-              <PortalInboxAnnouncementSection
-                variant="site_manager"
-                userEmail={managerEmail}
-                notifyThreadKey={axisThreadKey}
-                onInboxRefresh={loadAll}
-                propertySuggestions={allowedPropertyNames || []}
-                listId="manager-inbox-announcement-props"
-              />
-            ) : null}
             {selectedThreadId ? (
               <form
                 onSubmit={handleSendReply}
                 className="shrink-0 border-t border-slate-200 bg-white p-4 lg:p-5"
               >
+                <label className="mb-1.5 block text-[11px] font-bold uppercase tracking-wide text-slate-500">
+                  Message
+                </label>
                 <textarea
                   value={reply}
                   onChange={(e) => setReply(e.target.value)}
                   rows={3}
                   placeholder={
                     selectedThreadId === MANAGER_INBOX_AXIS
-                      ? 'Write a message to Axis…'
-                      : 'Reply to the resident…'
+                      ? 'Write anything to Axis (questions, updates, requests)…'
+                      : 'Write your message to the resident…'
                   }
                   className="w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm outline-none focus:border-[#2563eb] focus:ring-2 focus:ring-[#2563eb]/20"
                 />
@@ -2632,6 +3081,16 @@ function InboxTabPanel({ manager, allowedPropertyNames }) {
                   </button>
                 </div>
               </form>
+            ) : null}
+            {selectedThreadId === MANAGER_INBOX_AXIS && axisThreadKey ? (
+              <PortalInboxAnnouncementSection
+                variant="site_manager"
+                userEmail={managerEmail}
+                notifyThreadKey={axisThreadKey}
+                onInboxRefresh={loadAll}
+                propertySuggestions={allowedPropertyNames || []}
+                listId="manager-inbox-announcement-props"
+              />
             ) : null}
           </div>
         }
@@ -3372,12 +3831,8 @@ function ManagerPaymentsPanel({ allowedPropertyNames }) {
               <strong className="font-mono text-xs">data.records:write</strong> for that base.
             </li>
             <li>
-              Payments are read from base <code className="rounded bg-white/80 px-1.5 py-0.5 text-xs">{AIRTABLE_PAYMENTS_BASE_ID}</code>
-              {import.meta.env.VITE_AIRTABLE_PAYMENTS_BASE_ID ? (
-                <span> (via <code className="text-xs">VITE_AIRTABLE_PAYMENTS_BASE_ID</code>)</span>
-              ) : (
-                <span> (same as <code className="text-xs">VITE_AIRTABLE_BASE_ID</code> unless you set <code className="text-xs">VITE_AIRTABLE_PAYMENTS_BASE_ID</code>)</span>
-              )}
+              Payments are read from your Airtable base <code className="rounded bg-white/80 px-1.5 py-0.5 text-xs">{AIRTABLE_PAYMENTS_BASE_ID}</code>
+              <span> (<code className="text-xs">VITE_AIRTABLE_BASE_ID</code>)</span>
               .
             </li>
           </ul>
@@ -3543,7 +3998,7 @@ function sortApplicationsList(rows, sortKey, sortDir) {
 }
 
 // ─── ApplicationsPanel ────────────────────────────────────────────────────────
-function ApplicationsPanel({ allowedPropertyNames }) {
+function ApplicationsPanel({ allowedPropertyNames, manager }) {
   const [scopedRows, setScopedRows] = useState([])
   const [loading, setLoading] = useState(true)
   const [propertyFilter, setPropertyFilter] = useState('')
@@ -3596,9 +4051,27 @@ function ApplicationsPanel({ allowedPropertyNames }) {
   async function handleDecision(recordId, approved) {
     setApproving(a => ({ ...a, [recordId]: approved ? 'approving' : 'rejecting' }))
     try {
-      const updated = await patchApplication(recordId, { Approved: approved })
-      setScopedRows(prev => prev.map(a => a.id === recordId ? { ...a, Approved: updated.Approved } : a))
-      toast.success(approved ? 'Application approved — resident can now log in.' : 'Application rejected.')
+      if (approved) {
+        const res = await fetch('/api/portal?action=manager-approve-application', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            applicationRecordId: recordId,
+            managerName: manager?.name || manager?.email || 'Axis Manager',
+            managerRole: manager?.role || 'Manager',
+          }),
+        })
+        const data = await readJsonResponse(res)
+        if (!res.ok) throw new Error(data.error || 'Could not approve application')
+        setScopedRows(prev => prev.map((a) => (
+          a.id === recordId ? { ...a, Approved: true, 'Approved At': data.application?.['Approved At'] || a['Approved At'] } : a
+        )))
+        toast.success(data.message || 'Application approved and lease draft generated.')
+      } else {
+        const updated = await patchApplication(recordId, { Approved: approved })
+        setScopedRows(prev => prev.map(a => a.id === recordId ? { ...a, Approved: updated.Approved } : a))
+        toast.success('Application rejected.')
+      }
     } catch (err) {
       toast.error('Could not update application: ' + err.message)
     } finally {
@@ -3791,6 +4264,8 @@ const MANAGER_DASH_TABS = [
   ['profile', 'Profile'],
 ]
 
+const MANAGER_NAV_ITEMS = MANAGER_DASH_TABS.map(([id, label]) => ({ id, label }))
+
 function ManagerDashboard({ manager: managerProp, onOpenDraft, onSignOut, onManagerUpdate }) {
   const [manager, setManager] = useState(managerProp)
   const [dashView, setDashView] = useState('dashboard')
@@ -3963,83 +4438,33 @@ function ManagerDashboard({ manager: managerProp, onOpenDraft, onSignOut, onMana
     }
   }
 
+  const managerUserMeta = [manager.role, manager.managerId].filter(Boolean).join(' · ') || undefined
+
   return (
-    <div className="min-h-screen bg-slate-50">
-      {manager.__axisDeveloper ? (
-        <div className="border-b border-violet-200 bg-violet-50 px-4 py-2.5 text-center text-sm text-violet-950 sm:px-6">
-          <span className="font-bold">Sentinel scope</span> — all approved properties in this base are visible. Profile and billing actions that need a real Manager record are turned off.
-        </div>
-      ) : null}
-      {/* Top nav — brand row + pill tab strip */}
-      <header className="sticky top-0 z-10 border-b border-slate-200/90 bg-white/90 shadow-sm backdrop-blur-md supports-[backdrop-filter]:bg-white/80">
-        <div className="mx-auto max-w-7xl px-4 pb-3 pt-3 sm:px-6 sm:pb-4 sm:pt-4">
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
-            <div className="flex min-w-0 items-center gap-3">
-              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-[#2563eb] shadow-md shadow-blue-500/20">
-                <svg className="h-5 w-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                </svg>
-              </div>
-              <div className="min-w-0">
-                <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-[#2563eb]">Axis</p>
-                <h1 className="truncate text-lg font-black tracking-tight text-slate-900 sm:text-xl">
-                  {manager.__axisDeveloper ? 'Manager · Developer' : 'Manager portal'}
-                </h1>
-                <p className="mt-0.5 truncate text-xs text-slate-500 sm:hidden">{manager.name}</p>
-              </div>
-            </div>
-            <div className="flex flex-wrap items-center gap-2 sm:justify-end">
-              <div className="hidden max-w-[min(100%,18rem)] rounded-2xl border border-slate-200/90 bg-slate-50/90 px-3 py-2 text-left sm:block">
-                <div className="truncate text-sm font-semibold text-slate-900">{manager.name}</div>
-                <div className="truncate font-mono text-[11px] text-slate-500">
-                  {manager.role}
-                  {manager.managerId ? ` · ${manager.managerId}` : ''}
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={handleBillingPortal}
-                disabled={billingLoading}
-                className="rounded-xl border border-slate-200 bg-white px-3.5 py-2 text-sm font-semibold text-slate-700 shadow-sm transition hover:border-slate-300 hover:bg-slate-50 disabled:opacity-50"
-              >
-                {billingLoading ? 'Opening…' : 'Billing'}
-              </button>
-              <button
-                type="button"
-                onClick={onSignOut}
-                className="rounded-xl bg-slate-900 px-3.5 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-slate-800"
-              >
-                Sign out
-              </button>
-            </div>
-          </div>
-
-          <nav
-            className="mt-3 flex gap-1 overflow-x-auto rounded-2xl border border-slate-200/80 bg-slate-100/80 p-1 scrollbar-none [-ms-overflow-style:none] [scrollbar-width:none] sm:mt-4 [&::-webkit-scrollbar]:hidden"
-            aria-label="Portal sections"
+    <>
+      <PortalShell
+        brandTitle="Axis"
+        brandSubtitle="Manager portal"
+        desktopNav="sidebar"
+        sidebarPosition="right"
+        navItems={MANAGER_NAV_ITEMS}
+        activeId={dashView}
+        onNavigate={setDashView}
+        userLabel={manager.name}
+        userMeta={managerUserMeta}
+        onSignOut={onSignOut}
+        sidebarFooterExtra={
+          <button
+            type="button"
+            onClick={handleBillingPortal}
+            disabled={billingLoading}
+            className="rounded-xl border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-50 disabled:opacity-50"
           >
-            {MANAGER_DASH_TABS.map(([key, label]) => {
-              const active = dashView === key
-              return (
-                <button
-                  key={key}
-                  type="button"
-                  onClick={() => setDashView(key)}
-                  className={`shrink-0 rounded-xl px-3 py-2 text-sm font-semibold transition sm:px-4 ${
-                    active
-                      ? 'bg-[linear-gradient(180deg,#2f76ff_0%,#2450eb_100%)] text-white shadow-[0_4px_16px_rgba(37,99,235,0.3)]'
-                      : 'text-slate-600 hover:bg-white/60 hover:text-slate-900'
-                  }`}
-                >
-                  {label}
-                </button>
-              )
-            })}
-          </nav>
-        </div>
-      </header>
-
-      <div className="mx-auto max-w-7xl px-6 py-8">
+            {billingLoading ? 'Opening…' : 'Billing'}
+          </button>
+        }
+      >
+        <div className="mx-auto w-full max-w-[1600px]">
         {dashView === 'profile' ? (
           <ManagerProfilePanel
             manager={manager}
@@ -4047,7 +4472,7 @@ function ManagerDashboard({ manager: managerProp, onOpenDraft, onSignOut, onMana
             approvedPropertyCount={managerScope.approvedNames.size}
           />
         ) : dashView === 'applications' ? (
-          <ApplicationsPanel allowedPropertyNames={scopedPropertyOptions} />
+          <ApplicationsPanel allowedPropertyNames={scopedPropertyOptions} manager={manager} />
         ) : dashView === 'properties' ? (
           <div id="house-management" className="scroll-mt-24">
             <HouseManagementPanel manager={manager} onPropertiesChange={handlePropertiesChange} />
@@ -4059,7 +4484,7 @@ function ManagerDashboard({ manager: managerProp, onOpenDraft, onSignOut, onMana
         ) : dashView === 'inbox' ? (
           <InboxTabPanel manager={manager} allowedPropertyNames={scopedPropertyOptions} />
         ) : dashView === 'calendar' ? (
-          <ManagerCalendarPanel />
+          <ManagerCalendarPanel manager={manager} scopedPropertyNames={scopedPropertyOptions} />
         ) : dashView === 'dashboard' ? (
           <ManagerDashboardHomePanel
             manager={manager}
@@ -4226,7 +4651,8 @@ function ManagerDashboard({ manager: managerProp, onOpenDraft, onSignOut, onMana
         </p>
       </>
       )}
-      </div>
+        </div>
+      </PortalShell>
 
       {showGenerateModal && (
         <GenerateDraftModal
@@ -4236,7 +4662,7 @@ function ManagerDashboard({ manager: managerProp, onOpenDraft, onSignOut, onMana
           onGenerated={handleGenerated}
         />
       )}
-    </div>
+    </>
   )
 }
 
@@ -4874,16 +5300,6 @@ export default function Manager() {
       const saved = sessionStorage.getItem(MANAGER_SESSION_KEY)
       if (saved) {
         setManager(JSON.parse(saved))
-      } else {
-        const handoffRaw = localStorage.getItem(AXIS_DEVELOPER_MANAGER_HANDOFF)
-        if (handoffRaw) {
-          const parsed = JSON.parse(handoffRaw)
-          if (parsed?.__axisDeveloper) {
-            setManager(parsed)
-            sessionStorage.setItem(MANAGER_SESSION_KEY, handoffRaw)
-            localStorage.removeItem(AXIS_DEVELOPER_MANAGER_HANDOFF)
-          }
-        }
       }
     } catch {
       sessionStorage.removeItem(MANAGER_SESSION_KEY)

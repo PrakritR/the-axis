@@ -6,7 +6,7 @@ export function parseAirtableBaseIdFromApiUrl(url) {
 }
 
 /** Shared instructions (no specific base id). */
-export const AIRTABLE_TOKEN_SETUP_HELP = `Open ${TOKEN_LINK}, edit your personal access token, add each required base under Access, and enable data.records:read and data.records:write. Core portal data (properties, managers, lease drafts in the core base) uses VITE_AIRTABLE_BASE_ID. Applications and related records use VITE_AIRTABLE_APPLICATIONS_BASE_ID. If the Payments table is in another base, set VITE_AIRTABLE_PAYMENTS_BASE_ID.`
+export const AIRTABLE_TOKEN_SETUP_HELP = `Open ${TOKEN_LINK}, edit your personal access token, add your Airtable base under Access, and enable data.records:read and data.records:write. The app uses a single base ID: set VITE_AIRTABLE_BASE_ID (and the same value as AIRTABLE_BASE_ID on the server if needed).`
 
 /** User-facing message when Airtable returns INVALID_PERMISSIONS_OR_MODEL_NOT_FOUND */
 export function airtablePermissionDeniedMessage(requestUrl) {

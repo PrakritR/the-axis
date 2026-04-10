@@ -9,6 +9,8 @@ import Modal from '../components/Modal'
 import scrollToTop from '../utils/scrollToTop'
 import { getAmenityIcon } from '../components/AmenityIcon'
 
+/** Space reserved below the fixed section nav so the gallery never sits underneath (wrap, fonts, subpixels). */
+const SECTION_NAV_LAYOUT_BUFFER_PX = 20
 
 function AvailableBadge({ text, bookedFrom, bookedUntil }) {
   const normalized = (text || '').toLowerCase().trim()
@@ -525,7 +527,7 @@ export default function PropertyPage(){
   const sectionRefs = useRef({})
   const sectionNavRef = useRef(null)
   /** Reserve layout space — section nav is `fixed` (page-wrapper overflow breaks `sticky`). */
-  const [sectionNavHeight, setSectionNavHeight] = useState(56)
+  const [sectionNavHeight, setSectionNavHeight] = useState(80)
   /** Ignore scroll-spy updates while a tab click or hash scroll is animating */
   const scrollSpyLockUntilRef = useRef(0)
 
@@ -597,7 +599,7 @@ export default function PropertyPage(){
     const nav = document.getElementById('section-nav')
     const chromeH = chrome ? chrome.getBoundingClientRect().height : 0
     const navH = nav ? nav.getBoundingClientRect().height : 0
-    const gap = 12
+    const gap = 16
     return chromeH + navH + gap
   }, [])
 
@@ -637,6 +639,12 @@ export default function PropertyPage(){
     setActiveTab((prev) => (prev === nextId ? prev : nextId))
   }, [getSectionScrollOffset, sectionScrollOrder])
 
+  const measureSectionNavSpacer = useCallback(() => {
+    const nav = sectionNavRef.current
+    if (!nav) return
+    setSectionNavHeight(Math.ceil(nav.getBoundingClientRect().height) + SECTION_NAV_LAYOUT_BUFFER_PX)
+  }, [])
+
   // Fixed nav sits below promo + header; keep `top` in sync with measured chrome height.
   useEffect(() => {
     if (!p) return undefined
@@ -649,7 +657,10 @@ export default function PropertyPage(){
       requestAnimationFrame(() => updateActiveTabFromScrollPosition())
     }
     syncStickyTop()
-    const ro = new ResizeObserver(syncStickyTop)
+    const ro = new ResizeObserver(() => {
+      syncStickyTop()
+      requestAnimationFrame(measureSectionNavSpacer)
+    })
     ro.observe(chrome)
     window.addEventListener('resize', syncStickyTop)
     return () => {
@@ -657,20 +668,36 @@ export default function PropertyPage(){
       window.removeEventListener('resize', syncStickyTop)
       nav.style.removeProperty('top')
     }
-  }, [p, updateActiveTabFromScrollPosition])
+  }, [p, updateActiveTabFromScrollPosition, measureSectionNavSpacer])
 
   useLayoutEffect(() => {
     if (!p) return undefined
     const nav = sectionNavRef.current
     if (!nav) return undefined
-    const measure = () => {
-      setSectionNavHeight(Math.ceil(nav.getBoundingClientRect().height))
-    }
-    measure()
-    const ro = new ResizeObserver(measure)
+    measureSectionNavSpacer()
+    const ro = new ResizeObserver(() => {
+      requestAnimationFrame(measureSectionNavSpacer)
+    })
     ro.observe(nav)
     return () => ro.disconnect()
-  }, [p, sectionNavTabs])
+  }, [p, sectionNavTabs, measureSectionNavSpacer])
+
+  // Remeasure after fonts / late layout so spacer matches wrapped nav height.
+  useEffect(() => {
+    if (!p) return undefined
+    const bump = () => requestAnimationFrame(measureSectionNavSpacer)
+    const t1 = window.setTimeout(bump, 0)
+    const t2 = window.setTimeout(bump, 320)
+    let cancelled = false
+    document.fonts?.ready?.then(() => {
+      if (!cancelled) bump()
+    })
+    return () => {
+      cancelled = true
+      clearTimeout(t1)
+      clearTimeout(t2)
+    }
+  }, [p, sectionNavTabs, measureSectionNavSpacer])
 
   // Hash links: App skips scrollIntoView on /properties/* so we can apply the same offset as tab clicks.
   useEffect(() => {
@@ -801,7 +828,7 @@ export default function PropertyPage(){
         >
           <div className="mx-auto max-w-[1480px] px-4 py-3 sm:px-6 sm:py-3.5 lg:px-10">
             <nav
-              className="flex flex-wrap items-center gap-x-3 gap-y-2.5 overflow-x-auto scrollbar-none sm:gap-x-4 sm:gap-y-3 md:gap-x-5 lg:gap-x-6 [&::-webkit-scrollbar]:hidden"
+              className="flex w-full max-w-full flex-wrap items-center justify-start gap-x-3 gap-y-2.5 overflow-x-auto scrollbar-none sm:gap-x-4 sm:gap-y-3 md:justify-center md:gap-x-5 lg:gap-x-6 [&::-webkit-scrollbar]:hidden"
               aria-label="Property sections"
             >
               {sectionNavTabs.map(([id, label]) => (
@@ -833,7 +860,7 @@ export default function PropertyPage(){
         <div
           id="overview"
           ref={(node) => { sectionRefs.current.overview = node }}
-          className="property-gallery mx-auto max-w-[1480px] scroll-mt-28 px-4 pt-4 sm:px-6 sm:pt-5 md:scroll-mt-40 lg:px-10 lg:pt-6"
+          className="property-gallery mx-auto max-w-[1480px] scroll-mt-32 px-4 pt-6 sm:px-6 sm:pt-7 md:scroll-mt-44 lg:px-10 lg:pt-8"
         >
           <h1 className="sr-only">{p.name}</h1>
           <PropertyGallery images={galleryImages} videos={p.videos || []} />
@@ -844,7 +871,7 @@ export default function PropertyPage(){
 
           {/* Floor Plans */}
           {displayedRoomPlans.length > 0 && (
-            <section id="floor-plans" ref={(node) => { sectionRefs.current['floor-plans'] = node }} className="mt-14 min-w-0 scroll-mt-28 md:scroll-mt-40">
+            <section id="floor-plans" ref={(node) => { sectionRefs.current['floor-plans'] = node }} className="mt-14 min-w-0 scroll-mt-32 md:scroll-mt-44">
               <div className="flex min-w-0 flex-wrap items-end justify-between gap-x-4 gap-y-3">
                 <div className="min-w-0 flex-1">
                   <h2 className="font-editorial text-3xl font-black leading-tight text-slate-900 sm:text-4xl">{roomPlansHeading}</h2>
@@ -862,7 +889,7 @@ export default function PropertyPage(){
           )}
 
           {sharedSpaceVideos.length > 0 ? (
-            <section id="shared-spaces" ref={(node) => { sectionRefs.current['shared-spaces'] = node }} className="mt-14 scroll-mt-28 md:scroll-mt-40">
+            <section id="shared-spaces" ref={(node) => { sectionRefs.current['shared-spaces'] = node }} className="mt-14 scroll-mt-32 md:scroll-mt-44">
               <div className="flex items-end justify-between gap-4">
                 <div>
                   <h2 className="font-editorial text-3xl font-black leading-tight text-slate-900 sm:text-4xl">Shared spaces</h2>
@@ -907,7 +934,7 @@ export default function PropertyPage(){
             </section>
           ) : null}
 
-          <section id="policies" ref={(node) => { sectionRefs.current.policies = node }} className="mt-14 scroll-mt-28 md:scroll-mt-40">
+          <section id="policies" ref={(node) => { sectionRefs.current.policies = node }} className="mt-14 scroll-mt-32 md:scroll-mt-44">
             <h2 className="font-editorial text-3xl font-black leading-tight text-slate-900 sm:text-4xl">Lease basics</h2>
             <div className="mt-8 overflow-hidden rounded-[24px] border border-slate-200 bg-white shadow-[0_24px_70px_rgba(15,23,42,0.06)]">
               {[
@@ -1066,7 +1093,7 @@ export default function PropertyPage(){
           )}
 
           {/* Amenities */}
-          <section id="amenities" ref={(node) => { sectionRefs.current.amenities = node }} className="mt-14 scroll-mt-28 border-t border-slate-200 pt-12 sm:pt-14 md:scroll-mt-40">
+          <section id="amenities" ref={(node) => { sectionRefs.current.amenities = node }} className="mt-14 scroll-mt-32 border-t border-slate-200 pt-12 sm:pt-14 md:scroll-mt-44">
             <h2 className="font-editorial text-3xl font-black leading-tight text-slate-900 sm:text-4xl">Amenities</h2>
             <div className="mt-10 space-y-12 sm:mt-12 sm:space-y-14">
               {communityUnique.length > 0 && (
@@ -1104,7 +1131,7 @@ export default function PropertyPage(){
           </section>
 
           {(rentTotals.totalHouseRent > 0 || leasingPackages.length > 0 || (p.leaseTerms && p.leaseTerms.length > 0)) ? (
-            <section id="leasing" ref={(node) => { sectionRefs.current.leasing = node }} className="mt-14 scroll-mt-28 md:scroll-mt-40">
+            <section id="leasing" ref={(node) => { sectionRefs.current.leasing = node }} className="mt-14 scroll-mt-32 md:scroll-mt-44">
               <h2 className="font-editorial text-3xl font-black leading-tight text-slate-900 sm:text-4xl">Bundles &amp; leasing</h2>
 
               <div className="mt-8 overflow-hidden rounded-[24px] border border-slate-200 bg-white shadow-[0_24px_70px_rgba(15,23,42,0.06)]">
@@ -1177,7 +1204,7 @@ export default function PropertyPage(){
             ref={(node) => {
               sectionRefs.current.location = node
             }}
-            className="mt-14 mb-14 scroll-mt-28 border-t border-slate-200 pt-12 sm:pt-14 md:scroll-mt-40"
+            className="mt-14 mb-14 scroll-mt-32 border-t border-slate-200 pt-12 sm:pt-14 md:scroll-mt-44"
           >
             <h2 className="font-editorial text-3xl font-black leading-tight text-slate-900 sm:text-4xl">Location</h2>
             <div className="mt-8 overflow-hidden rounded-[18px] border border-slate-200">

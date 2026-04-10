@@ -4,6 +4,7 @@
  */
 import generateLeaseDraft from './handlers/generate-lease-draft.js'
 import managerAuth from './handlers/manager-auth.js'
+import managerApproveApplication from './handlers/manager-approve-application.js'
 import managerBillingPortal from './handlers/manager-billing-portal.js'
 import managerCreateAccount from './handlers/manager-create-account.js'
 import managerCreateSubscriptionSession from './handlers/manager-create-subscription-session.js'
@@ -18,6 +19,7 @@ import workOrderAiSuggest from './handlers/work-order-ai-suggest.js'
 
 const handlers = {
   'manager-auth': managerAuth,
+  'manager-approve-application': managerApproveApplication,
   'manager-create-account': managerCreateAccount,
   'manager-lookup': managerLookup,
   'manager-subscription-complete': managerSubscriptionComplete,

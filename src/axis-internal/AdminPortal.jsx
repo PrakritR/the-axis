@@ -1,20 +1,37 @@
 import React, { useEffect, useMemo, useState } from 'react'
 import toast from 'react-hot-toast'
 import PortalInternalInbox from '../components/PortalInternalInbox'
-import PortalShell, { StatCard, StatusPill, DataTable } from './PortalShell'
+import PortalShell, { StatCard, StatusPill, DataTable } from '../components/PortalShell'
+
+const PROPERTY_STATUS_LABEL = {
+  pending: 'Pending approval',
+  changes_requested: 'Changes requested',
+  approved: 'Approved',
+  rejected: 'Rejected',
+  live: 'Live',
+  inactive: 'Inactive',
+}
+
+const LEASE_PIPELINE_LABEL = {
+  draft: 'Draft generated',
+  under_review: 'Under review',
+  manager_ok: 'Approved by manager',
+  admin_review: 'Awaiting Axis admin',
+  admin_ok: 'Approved by admin',
+  sent_resident: 'Sent to resident',
+  signed: 'Signed',
+  archived: 'Archived',
+}
+
+const LEAD_STATUS_LABEL = {
+  new: 'New lead',
+  contacted: 'Contacted',
+  follow_up: 'Follow-up needed',
+  qualified: 'Qualified',
+  onboarded: 'Onboarded',
+  closed: 'Closed',
+}
 import {
-  MOCK_MANAGEMENT_USER,
-  MOCK_PROPERTIES,
-  MOCK_APPLICATIONS,
-  MOCK_LEASES,
-  MOCK_LEADS,
-  MOCK_MANAGEMENT_ACCOUNTS,
-  PROPERTY_STATUS_LABEL,
-  LEAD_STATUS_LABEL,
-  LEASE_PIPELINE_LABEL,
-} from './mock'
-import {
-  AXIS_OWNER_SIMULATE_MANAGEMENT_KEY,
   approveAdminRequest,
   denyAdminRequest,
   listPendingAdminRequests,
@@ -25,8 +42,6 @@ import {
   markDeveloperPortalActive,
   clearDeveloperPortalFlags,
   seedDeveloperManagerSession,
-  stashDeveloperManagerHandoffForNewTab,
-  markDeveloperOpenedManagementDemo,
 } from '../lib/developerPortal'
 import { AXIS_ADMIN_SESSION_KEY } from './adminSessionConstants'
 
@@ -245,9 +260,11 @@ export default function AdminPortal() {
     }
   })
   const [tab, setTab] = useState('dashboard')
-  const [properties, setProperties] = useState(() => [...MOCK_PROPERTIES])
-  const [leads, setLeads] = useState(() => [...MOCK_LEADS])
-  const [accounts, setAccounts] = useState(() => [...MOCK_MANAGEMENT_ACCOUNTS])
+  const [properties, setProperties] = useState(() => [])
+  const [leads, setLeads] = useState(() => [])
+  const [accounts, setAccounts] = useState(() => [])
+  const [applications] = useState(() => [])
+  const [leasePipeline] = useState(() => [])
   const [selectedApprovalId, setSelectedApprovalId] = useState(null)
   const [accessTick, setAccessTick] = useState(0)
 
@@ -290,9 +307,18 @@ export default function AdminPortal() {
   const pendingApprovals = useMemo(() => properties.filter((p) => p.status === 'pending' || p.status === 'changes_requested'), [properties])
   const liveCount = useMemo(() => properties.filter((p) => p.status === 'live').length, [properties])
   const newLeads = useMemo(() => leads.filter((l) => l.status === 'new').length, [leads])
-  const pendingApps = MOCK_APPLICATIONS.filter((a) => a.status === 'submitted' || a.status === 'under_review').length
-  const leasesNeedAdmin = MOCK_LEASES.filter((l) => l.status === 'admin_review').length
-  const leasesSent = MOCK_LEASES.filter((l) => l.status === 'sent_resident').length
+  const pendingApps = useMemo(
+    () => applications.filter((a) => a.status === 'submitted' || a.status === 'under_review').length,
+    [applications],
+  )
+  const leasesNeedAdmin = useMemo(
+    () => leasePipeline.filter((l) => l.status === 'admin_review').length,
+    [leasePipeline],
+  )
+  const leasesSent = useMemo(
+    () => leasePipeline.filter((l) => l.status === 'sent_resident').length,
+    [leasePipeline],
+  )
 
   const ownerLabel = (ownerId) => accounts.find((a) => a.id === ownerId)?.businessName || accounts.find((a) => a.id === ownerId)?.name || ownerId
 
@@ -330,7 +356,7 @@ export default function AdminPortal() {
             <div className="rounded-[24px] border border-violet-300/60 bg-[linear-gradient(135deg,#f5f3ff_0%,#ffffff_100%)] p-5 shadow-sm">
               <h2 className="text-sm font-black text-violet-950">Sentinel access</h2>
               <p className="mt-1 text-xs text-violet-900/80">
-                Full internal scope: approve staff admins, open the real manager portal with every property in scope (same tab or new tab), and use demo Management.
+                Full internal scope: approve staff admins and open the real manager portal with every property in scope (opens in this tab).
               </p>
               <div className="mt-4 flex flex-wrap gap-2">
                 <button
@@ -342,33 +368,6 @@ export default function AdminPortal() {
                   className="rounded-xl bg-violet-600 px-4 py-2 text-xs font-semibold text-white shadow-sm transition-opacity hover:opacity-90"
                 >
                   Manager portal (full scope)
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    stashDeveloperManagerHandoffForNewTab()
-                    window.open('/manager', '_blank', 'noopener,noreferrer')
-                    toast.success('Opening manager in new tab…')
-                  }}
-                  className="rounded-xl border border-violet-300 bg-white px-4 py-2 text-xs font-semibold text-violet-900 transition hover:bg-violet-50"
-                >
-                  Manager (new tab)
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    try {
-                      markDeveloperOpenedManagementDemo()
-                      localStorage.setItem(AXIS_OWNER_SIMULATE_MANAGEMENT_KEY, JSON.stringify(MOCK_MANAGEMENT_USER))
-                      window.open('/management', '_blank', 'noopener,noreferrer')
-                      toast.success('Opening Management portal…')
-                    } catch {
-                      toast.error('Could not open portal')
-                    }
-                  }}
-                  className="rounded-xl border border-violet-200 bg-white px-4 py-2 text-xs font-semibold text-slate-800 transition hover:bg-slate-50"
-                >
-                  Management (demo)
                 </button>
                 <a
                   href="/portal"
@@ -385,24 +384,9 @@ export default function AdminPortal() {
             <div className="rounded-[24px] border border-[#2563eb]/25 bg-[linear-gradient(135deg,#eff6ff_0%,#ffffff_100%)] p-5 shadow-sm">
               <h2 className="text-sm font-black text-slate-900">Jump to other portals</h2>
               <p className="mt-1 text-xs text-slate-600">
-                Management opens with the mock partner account in a new tab. Resident and manager links go to their normal entry points (real sign-in).
+                Resident and manager links go to their normal entry points (real sign-in).
               </p>
               <div className="mt-4 flex flex-wrap gap-2">
-                <button
-                  type="button"
-                  onClick={() => {
-                    try {
-                      localStorage.setItem(AXIS_OWNER_SIMULATE_MANAGEMENT_KEY, JSON.stringify(MOCK_MANAGEMENT_USER))
-                      window.open('/management', '_blank', 'noopener,noreferrer')
-                      toast.success('Opening Management portal…')
-                    } catch {
-                      toast.error('Could not open portal')
-                    }
-                  }}
-                  className="rounded-xl bg-[linear-gradient(180deg,#2f76ff_0%,#2450eb_100%)] px-4 py-2 text-xs font-semibold text-white shadow-sm transition-opacity hover:opacity-90"
-                >
-                  Management (demo)
-                </button>
                 <a
                   href="/portal"
                   target="_blank"
@@ -415,7 +399,7 @@ export default function AdminPortal() {
                   href="/manager"
                   target="_blank"
                   rel="noreferrer"
-                  className="inline-flex items-center rounded-xl border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-50"
+                  className="inline-flex items-center rounded-xl bg-[linear-gradient(180deg,#2f76ff_0%,#2450eb_100%)] px-4 py-2 text-xs font-semibold text-white shadow-sm transition-opacity hover:opacity-90"
                 >
                   Manager portal
                 </a>
@@ -430,7 +414,7 @@ export default function AdminPortal() {
             <StatCard label="Leases awaiting admin" value={leasesNeedAdmin} onClick={() => setTab('leases')} />
             <StatCard label="Sent for signature" value={leasesSent} onClick={() => setTab('leases')} />
             <StatCard label="Management accounts" value={accounts.length} onClick={() => setTab('accounts')} />
-            <StatCard label="System" value="OK" hint="Mock mode" onClick={() => setTab('settings')} />
+            <StatCard label="Messages" value="Open" hint="Internal inbox" onClick={() => setTab('messages')} />
           </div>
         </div>
       )}
@@ -464,7 +448,7 @@ export default function AdminPortal() {
                   className="rounded-xl bg-emerald-600 px-4 py-2 text-sm font-semibold text-white"
                   onClick={() => {
                     setProperties((ps) => ps.map((x) => (x.id === approval.id ? { ...x, status: 'live', adminNotesVisible: 'Approved — listing can go live.' } : x)))
-                    toast.success('Approved (demo)')
+                    toast.success('Approved (local preview — connect Airtable to persist)')
                     setSelectedApprovalId(null)
                   }}
                 >
@@ -475,7 +459,7 @@ export default function AdminPortal() {
                   className="rounded-xl border border-amber-300 bg-amber-50 px-4 py-2 text-sm font-semibold text-amber-900"
                   onClick={() => {
                     setProperties((ps) => ps.map((x) => (x.id === approval.id ? { ...x, status: 'changes_requested', adminNotesVisible: 'Please update photos and pricing.' } : x)))
-                    toast.success('Requested changes (demo)')
+                    toast.success('Requested changes (local preview)')
                   }}
                 >
                   Request edits
@@ -485,7 +469,7 @@ export default function AdminPortal() {
                   className="rounded-xl border border-red-200 bg-red-50 px-4 py-2 text-sm font-semibold text-red-800"
                   onClick={() => {
                     setProperties((ps) => ps.map((x) => (x.id === approval.id ? { ...x, status: 'rejected' } : x)))
-                    toast.success('Rejected (demo)')
+                    toast.success('Rejected (local preview)')
                     setSelectedApprovalId(null)
                   }}
                 >
@@ -565,7 +549,7 @@ export default function AdminPortal() {
                   className="text-xs font-semibold text-[#2563eb]"
                   onClick={() => {
                     setAccounts((ac) => ac.map((x) => (x.id === d.id ? { ...x, enabled: !x.enabled } : x)))
-                    toast.success('Toggled (demo)')
+                    toast.success('Updated (local preview)')
                   }}
                 >
                   {d.enabled !== false ? 'Disable' : 'Enable'}
@@ -591,7 +575,7 @@ export default function AdminPortal() {
                 <span className="text-xs text-slate-400">→ Lease</span>
               ) },
             ]}
-            rows={MOCK_APPLICATIONS.map((a) => ({ key: a.id, data: a }))}
+            rows={applications.map((a) => ({ key: a.id, data: a }))}
           />
           <p className="text-xs text-slate-500">Final approve/reject and handoff to lease generation connect to existing Applications / Lease Drafts tables.</p>
         </div>
@@ -611,14 +595,14 @@ export default function AdminPortal() {
                   <button
                     type="button"
                     className="text-sm font-semibold text-emerald-700"
-                    onClick={() => toast.success('Admin approved (demo) — wire to patchLeaseDraft')}
+                    onClick={() => toast.success('Approve lease — wire to patchLeaseDraft when backend is connected')}
                   >
                     Approve lease
                   </button>
                 ) : '—'
               ) },
             ]}
-            rows={MOCK_LEASES.map((l) => ({ key: l.id, data: l }))}
+            rows={leasePipeline.map((l) => ({ key: l.id, data: l }))}
           />
         </div>
       )}
@@ -700,7 +684,9 @@ export default function AdminPortal() {
           <h1 className="text-2xl font-black">Settings</h1>
           <div className="rounded-[24px] border border-slate-200 bg-white p-6 space-y-4 text-sm text-slate-600">
             <p>Placeholder controls for application rules, lease templates, approval workflow flags, notifications, and role permissions.</p>
-            <p className="text-xs text-amber-800 bg-amber-50 border border-amber-100 rounded-xl px-3 py-2">No persistence in demo — structure only.</p>
+            <p className="text-xs text-slate-500 border border-slate-100 rounded-xl px-3 py-2 bg-slate-50">
+              Additional controls can be wired to Airtable or your backend when ready.
+            </p>
           </div>
         </div>
       )}

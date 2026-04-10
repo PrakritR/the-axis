@@ -18,7 +18,8 @@ export default async function handler(req, res) {
   }
 
   const AIRTABLE_TOKEN = process.env.VITE_AIRTABLE_TOKEN
-  const AIRTABLE_BASE_ID = process.env.VITE_AIRTABLE_APPLICATIONS_BASE_ID || 'appNBX2inqfJMyqYV'
+  const AIRTABLE_BASE_ID =
+    process.env.VITE_AIRTABLE_BASE_ID || process.env.AIRTABLE_BASE_ID || 'appol57LKtMKaQ75T'
   const EMAILJS_SERVICE_ID = process.env.VITE_EMAILJS_SERVICE_ID
   const EMAILJS_PUBLIC_KEY = process.env.VITE_EMAILJS_PUBLIC_KEY
   const EMAILJS_LEASE_TEMPLATE = process.env.VITE_EMAILJS_LEASE_TEMPLATE || process.env.VITE_EMAILJS_TEMPLATE_ID

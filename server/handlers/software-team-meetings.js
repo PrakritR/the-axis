@@ -4,7 +4,8 @@
  * Returns { meetings } from Scheduling (Demo + Software Meeting).
  */
 
-const AIRTABLE_BASE_ID = process.env.AIRTABLE_BASE_ID || 'appNBX2inqfJMyqYV'
+const AIRTABLE_BASE_ID =
+  process.env.VITE_AIRTABLE_BASE_ID || process.env.AIRTABLE_BASE_ID || 'appol57LKtMKaQ75T'
 const AIRTABLE_TOKEN = process.env.AIRTABLE_TOKEN || process.env.VITE_AIRTABLE_TOKEN
 const SCHEDULING_TABLE = 'Scheduling'
 

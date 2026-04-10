@@ -81,7 +81,7 @@ async function getManagerByEmail(email) {
     }
     if (atRes.status === 404) {
       throw new Error(
-        `Airtable base or table not found (404). Check VITE_AIRTABLE_APPLICATIONS_BASE_ID / AIRTABLE_APPLICATIONS_BASE_ID and that a table named exactly "Manager Profile" exists.`,
+        `Airtable base or table not found (404). Check VITE_AIRTABLE_BASE_ID / AIRTABLE_BASE_ID and that a table named exactly "Manager Profile" exists.`,
       )
     }
     throw new Error(

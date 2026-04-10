@@ -13,9 +13,8 @@ import {
 const PRIORITIES = ['Low', 'Normal', 'High', 'Urgent']
 
 /**
- * Announcements backed by Airtable "Announcements", coordinated with portal inbox Messages.
- * - Managers/partners/site managers: creates rows with Show=false (pending) + inbox note on their thread.
- * - Admins: can publish immediately; optional copy to the selected inbox thread; review queue for pending rows.
+ * Optional resident bulletin composer — separate from normal inbox chat.
+ * Backed by Airtable "Announcements", optionally mirrored into the portal Messages thread.
  */
 export default function PortalInboxAnnouncementSection({
   variant,
@@ -140,7 +139,7 @@ export default function PortalInboxAnnouncementSection({
       <summary className="cursor-pointer list-none px-4 py-3 text-sm font-bold text-slate-800 hover:bg-slate-100/80 lg:px-5 [&::-webkit-details-marker]:hidden">
         <span className="inline-flex items-center gap-2">
           <span className="text-slate-400 transition group-open:rotate-90">▸</span>
-          Announcements to residents
+          Optional: post to resident bulletin
           {pending.length > 0 ? (
             <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-semibold text-amber-900">
               {isAdmin ? `${pending.length} pending` : `${pending.length} awaiting publish`}
@@ -200,8 +199,8 @@ export default function PortalInboxAnnouncementSection({
         <form onSubmit={handleComposerSubmit} className="space-y-3">
           <p className="text-xs text-slate-500">
             {isAdmin
-              ? 'Creates an Announcements row in Airtable. Residents only see items with Show on.'
-              : 'Sends a pending announcement (Show off) and posts a copy in this inbox thread for Axis.'}
+              ? 'Use the message box above for general chat. This form only creates an entry in the Announcements table for the resident portal (Show controls visibility).'
+              : 'For everyday messages, use the composer above. This section is only if you want a resident-facing bulletin post (pending until Axis publishes).'}
           </p>
           <input
             value={title}
@@ -219,7 +218,7 @@ export default function PortalInboxAnnouncementSection({
           <textarea
             value={message}
             onChange={(e) => setMessage(e.target.value)}
-            placeholder="Full message for residents"
+            placeholder="Body text shown to residents when published"
             required
             rows={4}
             className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm outline-none focus:border-[#2563eb] focus:ring-2 focus:ring-[#2563eb]/20"
@@ -284,7 +283,7 @@ export default function PortalInboxAnnouncementSection({
             disabled={submitting || !title.trim() || !message.trim()}
             className="w-full rounded-2xl border border-slate-800 bg-slate-900 py-2.5 text-sm font-semibold text-white hover:bg-slate-800 disabled:opacity-50 sm:w-auto sm:px-6"
           >
-            {submitting ? 'Saving…' : isAdmin && publishNow ? 'Publish announcement' : 'Submit announcement'}
+            {submitting ? 'Saving…' : isAdmin && publishNow ? 'Publish to bulletin' : 'Submit for bulletin review'}
           </button>
         </form>
       </div>
