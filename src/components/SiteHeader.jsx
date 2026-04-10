@@ -8,7 +8,7 @@ import PortalNavLink from './PortalNavLink'
 import PortalBubble from './PortalBubble'
 
 const hubNavLink =
-  'text-lg font-black tracking-tight text-slate-900 transition hover:text-[#2563eb] sm:text-xl'
+  'text-sm font-medium text-slate-500 transition hover:text-slate-900'
 
 function HomeIcon() {
   return (
@@ -77,14 +77,18 @@ export default function SiteHeader() {
 
   const isHome = pathname === '/' || pathname.startsWith('/properties/')
   const isApply = pathname === '/apply'
-  const isScheduleTour = pathname === '/contact' && new URLSearchParams(location.search).get('tab') === 'schedule'
+  const contactParams = new URLSearchParams(location.search)
+  const isScheduleTour =
+    pathname === '/contact' &&
+    contactParams.get('section') === 'housing' &&
+    contactParams.get('tab') === 'schedule'
   const isPortal = pathname === '/portal'
 
   const showMobileDock = variant === 'marketing' && ['/', '/apply', '/contact'].includes(pathname)
 
   const marketingCenterNav = [
     { label: 'Explore houses', to: '/', isActive: isHome },
-    { label: 'Schedule tour', to: '/contact?tab=schedule', isActive: isScheduleTour },
+    { label: 'Schedule tour', to: '/contact?section=housing&tab=schedule', isActive: isScheduleTour },
     { label: 'Apply', to: '/apply', isActive: isApply },
     { label: 'Partner with Axis', to: '/owners/about', isActive: false },
   ]
