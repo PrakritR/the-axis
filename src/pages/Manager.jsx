@@ -19,7 +19,6 @@
 
 import React, { useCallback, useEffect, useMemo, useState } from 'react'
 import toast from 'react-hot-toast'
-import PortalBubble from '../components/PortalBubble'
 
 // ─── Session ──────────────────────────────────────────────────────────────────
 const MANAGER_SESSION_KEY = 'axis_manager'
@@ -525,7 +524,7 @@ function ManagerLogin({ onLogin }) {
               <button
                 type="submit"
                 disabled={loginLoading}
-                className="w-full rounded-full bg-[linear-gradient(180deg,#2f76ff_0%,#2450eb_100%)] px-5 py-4 text-base font-semibold text-white shadow-[0_8px_24px_rgba(37,99,235,0.22)] transition hover:brightness-105 disabled:opacity-50"
+                className="w-full rounded-full bg-slate-900 py-4 text-base font-semibold text-white transition hover:bg-slate-800 disabled:opacity-50"
               >
                 {loginLoading ? 'Signing in…' : 'Sign in'}
               </button>
@@ -649,7 +648,7 @@ function ManagerLogin({ onLogin }) {
                 type="button"
                 onClick={handleCreateAccount}
                 disabled={activationLoading || !activationForm.managerId.trim() || !activationForm.password.trim()}
-                className="w-full rounded-full bg-[linear-gradient(180deg,#2f76ff_0%,#2450eb_100%)] px-5 py-4 text-base font-semibold text-white shadow-[0_8px_24px_rgba(37,99,235,0.22)] transition hover:brightness-105 disabled:opacity-50"
+                className="w-full rounded-full bg-slate-900 py-4 text-base font-semibold text-white transition hover:bg-slate-800 disabled:opacity-50"
               >
                 {activationLoading ? 'Creating account…' : 'Create account'}
               </button>
@@ -673,11 +672,9 @@ function ManagerLogin({ onLogin }) {
               </div>
             </div>
           )}
-          <div className="mt-8 flex flex-wrap items-center justify-center gap-2">
-            <span className="text-sm font-medium text-slate-500">Back to</span>
-            <PortalBubble as="a" href="/portal">
-              Portal
-            </PortalBubble>
+          <div className="mt-8 text-center text-sm text-slate-400">
+            Resident?{' '}
+            <a href="/resident" className="font-semibold text-slate-600 hover:text-slate-900">Sign in at /resident</a>
           </div>
         </section>
       </div>
