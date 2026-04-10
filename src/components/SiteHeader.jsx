@@ -87,7 +87,7 @@ export default function SiteHeader() {
   const showMobileDock = variant === 'marketing' && ['/', '/apply', '/contact'].includes(pathname)
 
   const marketingCenterNav = [
-    { label: 'Explore houses', to: '/', isActive: isHome },
+    { label: 'Explore Houses', to: '/', isActive: isHome },
     { label: 'Schedule tour', to: '/contact?section=housing&tab=schedule', isActive: isScheduleTour },
     { label: 'Apply', to: '/apply', isActive: isApply },
     { label: 'Partner with Axis', to: '/owners/about', isActive: false },
@@ -149,7 +149,7 @@ export default function SiteHeader() {
               aria-label="Browse housing and partners"
             >
               <Link to={HOUSING_EXPLORE_PATH} onClick={scrollToTop} className={hubNavLink}>
-                Explore houses
+                Explore Houses
               </Link>
               <Link to="/owners/about" onClick={scrollToTop} className={hubNavLink}>
                 Partner with Axis
@@ -198,14 +198,14 @@ export default function SiteHeader() {
               key={item.label}
               to={item.to}
               onClick={scrollToTop}
-              className={`relative shrink-0 text-sm font-medium transition ${
+              className={`relative shrink-0 text-[15px] font-semibold tracking-[-0.01em] transition ${
                 variant === 'owners'
                   ? item.isActive
                     ? 'text-slate-900'
                     : 'text-slate-600 hover:text-slate-900'
                   : item.isActive
                     ? 'text-slate-900'
-                    : 'text-slate-500 hover:text-slate-900'
+                    : 'text-slate-600 hover:text-slate-900'
               }`}
             >
               {item.label}
@@ -261,7 +261,7 @@ export default function SiteHeader() {
                     onClick={() => { closeMobileMenu(); scrollToTop() }}
                     className="rounded-xl px-3 py-2.5 text-sm font-medium text-slate-600 transition hover:bg-slate-50 hover:text-slate-900"
                   >
-                    Explore houses
+                    Explore Houses
                   </Link>
                   <Link
                     to="/apply"
