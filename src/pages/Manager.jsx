@@ -1780,14 +1780,11 @@ function calendarDateKey(y, monthIndex, day) {
 const LEASE_STATUSES_NEEDING_ACTION = new Set(['Draft Generated', 'Under Review', 'Changes Needed', 'Approved'])
 
 function ManagerDashboardHomePanel({
-  manager,
   approvedHouseCount,
   stats,
   statsLoading,
   dataWarnings,
   onNavigate,
-  onGenerateDraft,
-  onOpenBilling,
 }) {
   const displayDataWarnings = useMemo(
     () => consolidateManagerDashboardWarnings(dataWarnings || []),
@@ -1892,30 +1889,6 @@ function ManagerDashboardHomePanel({
             ))}
           </ul>
         )}
-      </div>
-
-      <div className="flex flex-wrap gap-3">
-        <button
-          type="button"
-          onClick={onGenerateDraft}
-          className="rounded-2xl bg-[#2563eb] px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:brightness-110"
-        >
-          Generate lease draft
-        </button>
-        <button
-          type="button"
-          onClick={onOpenBilling}
-          className="rounded-2xl border border-slate-200 bg-white px-5 py-2.5 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50"
-        >
-          Manager billing
-        </button>
-        <button
-          type="button"
-          onClick={() => onNavigate('properties')}
-          className="rounded-2xl border border-slate-200 bg-white px-5 py-2.5 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50"
-        >
-          Properties
-        </button>
       </div>
     </div>
   )
@@ -4446,7 +4419,6 @@ function ManagerDashboard({ manager: managerProp, onOpenDraft, onSignOut, onMana
         brandTitle="Axis"
         brandSubtitle="Manager portal"
         desktopNav="sidebar"
-        sidebarPosition="right"
         navItems={MANAGER_NAV_ITEMS}
         activeId={dashView}
         onNavigate={setDashView}
@@ -4487,14 +4459,11 @@ function ManagerDashboard({ manager: managerProp, onOpenDraft, onSignOut, onMana
           <ManagerCalendarPanel manager={manager} scopedPropertyNames={scopedPropertyOptions} />
         ) : dashView === 'dashboard' ? (
           <ManagerDashboardHomePanel
-            manager={manager}
             approvedHouseCount={managerScope.approvedNames.size}
             stats={overviewStats}
             statsLoading={overviewStatsLoading}
             dataWarnings={overviewDataWarnings}
             onNavigate={setDashView}
-            onGenerateDraft={() => setShowGenerateModal(true)}
-            onOpenBilling={handleBillingPortal}
           />
         ) : (
         <>

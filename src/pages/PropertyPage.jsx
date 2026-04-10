@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { useParams, Link, useLocation } from 'react-router-dom'
+import { usePropertyListingChrome } from '../contexts/PropertyListingChromeContext'
 import MapView from '../components/Map'
 import PropertyGallery from '../components/PropertyGallery'
 import { properties } from '../data/properties'
@@ -516,6 +517,7 @@ function getSharedSpaceDetailMeta(video) {
 export default function PropertyPage(){
   const { slug } = useParams()
   const { hash } = useLocation()
+  const listingChrome = usePropertyListingChrome()
   const p = properties.find(x=>x.slug===slug)
 
   const [showAllPhotos, setShowAllPhotos] = useState(false)
@@ -595,13 +597,18 @@ export default function PropertyPage(){
   }, [p, scarcePlanForEffect?.title, scarcePlanForEffect?.priceRange])
 
   const getSectionScrollOffset = useCallback(() => {
-    const chrome = document.getElementById('site-sticky-chrome')
     const nav = document.getElementById('section-nav')
-    const chromeH = chrome ? chrome.getBoundingClientRect().height : 0
+    const chromeH =
+      listingChrome && typeof listingChrome.siteChromeInsetPx === 'number'
+        ? listingChrome.siteChromeInsetPx
+        : (() => {
+            const chrome = document.getElementById('site-sticky-chrome')
+            return chrome ? chrome.getBoundingClientRect().height : 0
+          })()
     const navH = nav ? nav.getBoundingClientRect().height : 0
     const gap = 16
     return chromeH + navH + gap
-  }, [])
+  }, [listingChrome])
 
   // Scroll window only; offset = full sticky site chrome (promo + header) + in-page section nav.
   const scrollToId = useCallback(
@@ -645,30 +652,37 @@ export default function PropertyPage(){
     setSectionNavHeight(Math.ceil(nav.getBoundingClientRect().height) + SECTION_NAV_LAYOUT_BUFFER_PX)
   }, [])
 
-  // Fixed nav sits below promo + header; keep `top` in sync with measured chrome height.
+  // Fixed section nav under site chrome; inset from context when property chrome auto-hides.
   useEffect(() => {
     if (!p) return undefined
     const chrome = document.getElementById('site-sticky-chrome')
     const nav = sectionNavRef.current || document.getElementById('section-nav')
-    if (!chrome || !nav) return undefined
+    if (!nav) return undefined
     function syncStickyTop() {
-      const h = Math.ceil(chrome.getBoundingClientRect().height)
+      const h =
+        listingChrome && typeof listingChrome.siteChromeInsetPx === 'number'
+          ? listingChrome.siteChromeInsetPx
+          : chrome
+            ? Math.ceil(chrome.getBoundingClientRect().height)
+            : 0
       nav.style.top = `${h}px`
       requestAnimationFrame(() => updateActiveTabFromScrollPosition())
     }
     syncStickyTop()
-    const ro = new ResizeObserver(() => {
-      syncStickyTop()
-      requestAnimationFrame(measureSectionNavSpacer)
-    })
-    ro.observe(chrome)
+    const ro = chrome
+      ? new ResizeObserver(() => {
+          syncStickyTop()
+          requestAnimationFrame(measureSectionNavSpacer)
+        })
+      : null
+    if (chrome && ro) ro.observe(chrome)
     window.addEventListener('resize', syncStickyTop)
     return () => {
-      ro.disconnect()
+      ro?.disconnect()
       window.removeEventListener('resize', syncStickyTop)
       nav.style.removeProperty('top')
     }
-  }, [p, updateActiveTabFromScrollPosition, measureSectionNavSpacer])
+  }, [p, listingChrome, updateActiveTabFromScrollPosition, measureSectionNavSpacer])
 
   useLayoutEffect(() => {
     if (!p) return undefined

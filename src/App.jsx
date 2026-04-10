@@ -1,4 +1,4 @@
-import React, { Suspense, lazy, useEffect, useLayoutEffect, Component } from 'react'
+import React, { Suspense, lazy, useEffect, useLayoutEffect, useMemo, Component } from 'react'
 import { Routes, Route, useLocation, Navigate } from 'react-router-dom'
 import { AnimatePresence, motion } from 'framer-motion'
 import { Toaster } from 'react-hot-toast'
@@ -11,6 +11,8 @@ import Home from './pages/Home'
 import PortalSelect from './pages/PortalSelect'
 import scrollToTop from './utils/scrollToTop'
 import Chatbot from './components/Chatbot'
+import { PropertyListingChromeContext } from './contexts/PropertyListingChromeContext'
+import { usePropertyListingAutoChrome } from './hooks/usePropertyListingAutoChrome'
 
 const PropertyPage = lazy(() => import('./pages/PropertyPage'))
 const Contact = lazy(() => import('./pages/Contact'))
@@ -113,13 +115,8 @@ class ErrorBoundary extends Component {
 function AppInner() {
   const location = useLocation()
 
-  if (MAINTENANCE_MODE) {
-    return <MaintenancePage />
-  }
-
-  // The manager portal renders its own standalone UI — no public shell (SiteHeader, Footer,
-  // or Chatbot). Check the full pathname so /manager/* and /sign/*
-  // paths also match.
+  // Manager/admin use the same sticky site chrome as marketing pages so users can return to the site.
+  // Signing and axis-team stay minimal (no header). Paths: /manager/*, /admin/*, /sign/*, /axis-team.
   const isManagerRoute = location.pathname === '/manager' || location.pathname.startsWith('/manager/')
   const isAdminPortalRoute = location.pathname === '/admin' || location.pathname.startsWith('/admin/')
   const isSignLeaseRoute = location.pathname.startsWith('/sign/')
@@ -130,17 +127,103 @@ function AppInner() {
     isSignLeaseRoute ||
     isAxisTeamRoute
 
+  const isPortalWithSiteChrome = isManagerRoute || isAdminPortalRoute
+
   const isOwnersRoute = location.pathname.startsWith('/owners')
   const isPortalHub = location.pathname === '/portal'
-  /** Same strip as the main marketing site on every page except standalone manager / sign / axis-team / portal hub. */
-  const showPromoBanner = !isStandaloneRoute && !isPortalHub
+  /** Promo + header: main site, plus manager/admin portals (not sign lease, axis-team, or /portal hub). */
+  const showPromoBanner = !isPortalHub && (!isStandaloneRoute || isPortalWithSiteChrome)
   const showMainMobileDock =
     !isOwnersRoute && ['/', '/apply', '/contact'].includes(location.pathname)
-  // Manager portal and signing flow render completely standalone — skip the public shell entirely
+
+  const isPropertyDetail = /^\/properties\/[^/]+/.test(location.pathname)
+  const propertyAutoChrome = usePropertyListingAutoChrome(isPropertyDetail, showPromoBanner)
+  const propertyChromeContextValue = useMemo(
+    () => (isPropertyDetail ? { siteChromeInsetPx: propertyAutoChrome.insetPx ?? 0 } : null),
+    [isPropertyDetail, propertyAutoChrome.insetPx],
+  )
+
+  if (MAINTENANCE_MODE) {
+    return <MaintenancePage />
+  }
+
+  const standaloneToaster = (
+    <Toaster
+      position="top-center"
+      toastOptions={{
+        duration: 4500,
+        style: { borderRadius: '14px', fontFamily: 'Inter, sans-serif', fontSize: '14px', fontWeight: 500 },
+        success: { style: { background: '#f0fdf4', color: '#166534', border: '1px solid #bbf7d0' } },
+        error: { style: { background: '#fef2f2', color: '#991b1b', border: '1px solid #fecaca' } },
+      }}
+    />
+  )
+
+  const standaloneRoutes = (
+    <Suspense fallback={<PageFallback />}>
+      <Routes location={location} key={location.pathname}>
+        <Route path="/manager" element={<Manager />} />
+        <Route path="/manager/*" element={<Manager />} />
+        <Route path="/admin" element={<AxisAdminPortal />} />
+        <Route path="/admin/*" element={<AxisAdminPortal />} />
+        <Route path="/sign/:token" element={<SignLease />} />
+        <Route path="/axis-team" element={<AxisTeam />} />
+      </Routes>
+    </Suspense>
+  )
+
   if (isStandaloneRoute) {
+    if (isPortalWithSiteChrome) {
+      return (
+        <div className="app-shell axis-page min-h-screen min-h-svh flex flex-col">
+          <ScrollToTop />
+          <div id="site-sticky-chrome" className="sticky top-0 z-50 w-full">
+            {showPromoBanner ? <PromoBanner /> : null}
+            <SiteHeader />
+          </div>
+          {standaloneToaster}
+          <main className="min-h-0 w-full flex-1">{standaloneRoutes}</main>
+        </div>
+      )
+    }
+
     return (
       <>
         <ScrollToTop />
+        {standaloneToaster}
+        {standaloneRoutes}
+      </>
+    )
+  }
+
+  const marketingSiteChrome = (
+    <>
+      {showPromoBanner ? <PromoBanner /> : null}
+      <SiteHeader />
+    </>
+  )
+
+  return (
+    <PropertyListingChromeContext.Provider value={propertyChromeContextValue}>
+      <div className="app-shell axis-page min-h-screen min-h-svh flex flex-col">
+        <ScrollToTop />
+        {isPropertyDetail ? (
+          <div
+            ref={propertyAutoChrome.chromeRef}
+            id="site-sticky-chrome"
+            className={`fixed left-0 right-0 top-0 z-50 w-full bg-white shadow-[0_1px_0_0_rgba(15,23,42,0.06)] transition-transform duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] will-change-transform ${
+              propertyAutoChrome.hidden ? 'pointer-events-none -translate-y-full' : 'translate-y-0'
+            }`}
+            onMouseEnter={propertyAutoChrome.onChromeEnter}
+            onMouseLeave={propertyAutoChrome.onChromeLeave}
+          >
+            {marketingSiteChrome}
+          </div>
+        ) : (
+          <div id="site-sticky-chrome" className="sticky top-0 z-50 w-full">
+            {marketingSiteChrome}
+          </div>
+        )}
         <Toaster
           position="top-center"
           toastOptions={{
@@ -150,59 +233,40 @@ function AppInner() {
             error: { style: { background: '#fef2f2', color: '#991b1b', border: '1px solid #fecaca' } },
           }}
         />
-        <Suspense fallback={<PageFallback />}>
-          <Routes location={location} key={location.pathname}>
-            <Route path="/manager" element={<Manager />} />
-            <Route path="/manager/*" element={<Manager />} />
-            <Route path="/admin" element={<AxisAdminPortal />} />
-            <Route path="/admin/*" element={<AxisAdminPortal />} />
-            <Route path="/sign/:token" element={<SignLease />} />
-            <Route path="/axis-team" element={<AxisTeam />} />
-          </Routes>
-        </Suspense>
-      </>
-    )
-  }
-
-  return (
-    <div className="app-shell axis-page min-h-screen min-h-svh flex flex-col">
-      <ScrollToTop />
-      <div id="site-sticky-chrome" className="sticky top-0 z-50 w-full">
-        {showPromoBanner ? <PromoBanner /> : null}
-        <SiteHeader />
+        <main
+          className={`flex-1 min-h-0 w-full ${showMainMobileDock ? 'pb-[calc(5rem+env(safe-area-inset-bottom))] md:pb-0' : ''}`}
+          style={
+            isPropertyDetail
+              ? {
+                  paddingTop: propertyAutoChrome.insetPx ?? 0,
+                  transition: 'padding-top 0.3s cubic-bezier(0.22, 1, 0.36, 1)',
+                }
+              : undefined
+          }
+        >
+          <Suspense fallback={<PageFallback />}>
+            <AnimatePresence mode="wait">
+              <Routes location={location} key={location.pathname}>
+                <Route path="/" element={<AnimatedPage><Home /></AnimatedPage>} />
+                <Route path="/properties/:slug" element={<AnimatedPage><PropertyPage /></AnimatedPage>} />
+                <Route path="/contact" element={<AnimatedPage><Contact /></AnimatedPage>} />
+                <Route path="/owners/contact" element={<AnimatedPage><Contact /></AnimatedPage>} />
+                <Route path="/apply" element={<AnimatedPage><Apply /></AnimatedPage>} />
+                <Route path="/resident" element={<AnimatedPage><Resident /></AnimatedPage>} />
+                <Route path="/portal" element={<AnimatedPage key="portal-hub"><PortalSelect /></AnimatedPage>} />
+                <Route path="/owners" element={<Navigate to="/owners/about" replace />} />
+                <Route path="/owners/about" element={<AnimatedPage><OwnersAbout /></AnimatedPage>} />
+                <Route path="/owners/pricing" element={<AnimatedPage><JoinUs /></AnimatedPage>} />
+                <Route path="/join-us" element={<Navigate to="/owners/pricing" replace />} />
+                <Route path="*" element={<AnimatedPage><div className="container mx-auto px-6 py-12">Page not found</div></AnimatedPage>} />
+              </Routes>
+            </AnimatePresence>
+          </Suspense>
+        </main>
+        {!isPortalHub ? <Footer /> : null}
+        {!isPortalHub ? <Chatbot /> : null}
       </div>
-      <Toaster
-        position="top-center"
-        toastOptions={{
-          duration: 4500,
-          style: { borderRadius: '14px', fontFamily: 'Inter, sans-serif', fontSize: '14px', fontWeight: 500 },
-          success: { style: { background: '#f0fdf4', color: '#166534', border: '1px solid #bbf7d0' } },
-          error: { style: { background: '#fef2f2', color: '#991b1b', border: '1px solid #fecaca' } },
-        }}
-      />
-      <main className={`flex-1 min-h-0 w-full ${showMainMobileDock ? 'pb-[calc(5rem+env(safe-area-inset-bottom))] md:pb-0' : ''}`}>
-        <Suspense fallback={<PageFallback />}>
-          <AnimatePresence mode="wait">
-            <Routes location={location} key={location.pathname}>
-              <Route path="/" element={<AnimatedPage><Home /></AnimatedPage>} />
-              <Route path="/properties/:slug" element={<AnimatedPage><PropertyPage /></AnimatedPage>} />
-              <Route path="/contact" element={<AnimatedPage><Contact /></AnimatedPage>} />
-              <Route path="/owners/contact" element={<AnimatedPage><Contact /></AnimatedPage>} />
-              <Route path="/apply" element={<AnimatedPage><Apply /></AnimatedPage>} />
-              <Route path="/resident" element={<AnimatedPage><Resident /></AnimatedPage>} />
-              <Route path="/portal" element={<AnimatedPage key="portal-hub"><PortalSelect /></AnimatedPage>} />
-              <Route path="/owners" element={<Navigate to="/owners/about" replace />} />
-              <Route path="/owners/about" element={<AnimatedPage><OwnersAbout /></AnimatedPage>} />
-              <Route path="/owners/pricing" element={<AnimatedPage><JoinUs /></AnimatedPage>} />
-              <Route path="/join-us" element={<Navigate to="/owners/pricing" replace />} />
-              <Route path="*" element={<AnimatedPage><div className="container mx-auto px-6 py-12">Page not found</div></AnimatedPage>} />
-            </Routes>
-          </AnimatePresence>
-        </Suspense>
-      </main>
-      {!isPortalHub ? <Footer /> : null}
-      {!isPortalHub ? <Chatbot /> : null}
-    </div>
+    </PropertyListingChromeContext.Provider>
   )
 }
 

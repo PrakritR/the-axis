@@ -10,7 +10,7 @@
     "dev": "vite",
     "dev:full": "node scripts/dev-local.mjs",
     "dev:api": "node scripts/local-api-server.mjs",
-    "build": "node scripts/generate-seo-files.mjs && vite build",
+    "build": "node scripts/generate-seo-files.mjs && vite build && cp dist/index.html dist/404.html",
     "preview": "vite preview",
     "predeploy": "npm run build && cp dist/index.html dist/404.html",
     "deploy": "gh-pages -d dist"
