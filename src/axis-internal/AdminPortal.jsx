@@ -1,7 +1,17 @@
-import React, { useEffect, useMemo, useState } from 'react'
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import toast from 'react-hot-toast'
 import PortalInternalInbox from '../components/PortalInternalInbox'
 import PortalShell, { StatCard, StatusPill, DataTable } from '../components/PortalShell'
+import {
+  adminApproveProperty,
+  adminPatchInquiryLeadStatus,
+  adminPublishLeaseDraft,
+  adminRejectProperty,
+  adminRequestPropertyEdits,
+  adminSetManagerActive,
+  isAdminPortalAirtableConfigured,
+  loadAdminPortalDataset,
+} from '../lib/adminPortalAirtable.js'
 
 const PROPERTY_STATUS_LABEL = {
   pending: 'Pending approval',
@@ -263,16 +273,49 @@ export default function AdminPortal() {
   const [properties, setProperties] = useState(() => [])
   const [leads, setLeads] = useState(() => [])
   const [accounts, setAccounts] = useState(() => [])
-  const [applications] = useState(() => [])
-  const [leasePipeline] = useState(() => [])
+  const [applications, setApplications] = useState(() => [])
+  const [leasePipeline, setLeasePipeline] = useState(() => [])
   const [selectedApprovalId, setSelectedApprovalId] = useState(null)
   const [accessTick, setAccessTick] = useState(0)
+  const [dataLoading, setDataLoading] = useState(false)
+  const [approvalBusy, setApprovalBusy] = useState(false)
+  const airtableConfigWarned = useRef(false)
 
   const user = session
 
   useEffect(() => {
     if (session?.role === 'developer') markDeveloperPortalActive()
   }, [session])
+
+  const refreshPortalData = useCallback(async () => {
+    if (!session) return
+    if (!isAdminPortalAirtableConfigured()) return
+    setDataLoading(true)
+    try {
+      const next = await loadAdminPortalDataset()
+      setProperties(next.properties)
+      setLeads(next.leads)
+      setAccounts(next.accounts)
+      setApplications(next.applications)
+      setLeasePipeline(next.leasePipeline)
+    } catch (e) {
+      toast.error(e?.message || 'Could not load Airtable data.')
+    } finally {
+      setDataLoading(false)
+    }
+  }, [session])
+
+  useEffect(() => {
+    if (!session) return
+    if (!isAdminPortalAirtableConfigured()) {
+      if (!airtableConfigWarned.current) {
+        airtableConfigWarned.current = true
+        toast.error('Admin data needs VITE_AIRTABLE_TOKEN and VITE_AIRTABLE_BASE_ID (same as manager portal).')
+      }
+      return
+    }
+    refreshPortalData()
+  }, [session, refreshPortalData])
 
   function persistSession(u) {
     setSession(u)
@@ -308,7 +351,7 @@ export default function AdminPortal() {
   const liveCount = useMemo(() => properties.filter((p) => p.status === 'live').length, [properties])
   const newLeads = useMemo(() => leads.filter((l) => l.status === 'new').length, [leads])
   const pendingApps = useMemo(
-    () => applications.filter((a) => a.status === 'submitted' || a.status === 'under_review').length,
+    () => applications.filter((a) => a.approvalPending).length,
     [applications],
   )
   const leasesNeedAdmin = useMemo(
@@ -352,6 +395,9 @@ export default function AdminPortal() {
           <h1 className="text-2xl font-black text-slate-900">
             {user.role === 'developer' ? 'Developer dashboard' : 'Admin dashboard'}
           </h1>
+          {dataLoading ? (
+            <p className="text-sm text-slate-500">Syncing data from Airtable…</p>
+          ) : null}
           {user.role === 'developer' ? (
             <div className="rounded-[24px] border border-violet-300/60 bg-[linear-gradient(135deg,#f5f3ff_0%,#ffffff_100%)] p-5 shadow-sm">
               <h2 className="text-sm font-black text-violet-950">Sentinel access</h2>
@@ -445,32 +491,62 @@ export default function AdminPortal() {
               <div className="flex flex-wrap gap-2">
                 <button
                   type="button"
-                  className="rounded-xl bg-emerald-600 px-4 py-2 text-sm font-semibold text-white"
-                  onClick={() => {
-                    setProperties((ps) => ps.map((x) => (x.id === approval.id ? { ...x, status: 'live', adminNotesVisible: 'Approved — listing can go live.' } : x)))
-                    toast.success('Approved (local preview — connect Airtable to persist)')
-                    setSelectedApprovalId(null)
+                  disabled={approvalBusy}
+                  className="rounded-xl bg-emerald-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
+                  onClick={async () => {
+                    if (!approval?.id) return
+                    setApprovalBusy(true)
+                    try {
+                      await adminApproveProperty(approval.id)
+                      await refreshPortalData()
+                      toast.success('Property approved in Airtable')
+                      setSelectedApprovalId(null)
+                    } catch (e) {
+                      toast.error(e?.message || 'Approve failed')
+                    } finally {
+                      setApprovalBusy(false)
+                    }
                   }}
                 >
                   Approve
                 </button>
                 <button
                   type="button"
-                  className="rounded-xl border border-amber-300 bg-amber-50 px-4 py-2 text-sm font-semibold text-amber-900"
-                  onClick={() => {
-                    setProperties((ps) => ps.map((x) => (x.id === approval.id ? { ...x, status: 'changes_requested', adminNotesVisible: 'Please update photos and pricing.' } : x)))
-                    toast.success('Requested changes (local preview)')
+                  disabled={approvalBusy}
+                  className="rounded-xl border border-amber-300 bg-amber-50 px-4 py-2 text-sm font-semibold text-amber-900 disabled:opacity-50"
+                  onClick={async () => {
+                    if (!approval?.id) return
+                    setApprovalBusy(true)
+                    try {
+                      await adminRequestPropertyEdits(approval.id)
+                      await refreshPortalData()
+                      toast.success('Marked as changes requested in Airtable')
+                    } catch (e) {
+                      toast.error(e?.message || 'Update failed (add single-line field "Approval Status" if missing).')
+                    } finally {
+                      setApprovalBusy(false)
+                    }
                   }}
                 >
                   Request edits
                 </button>
                 <button
                   type="button"
-                  className="rounded-xl border border-red-200 bg-red-50 px-4 py-2 text-sm font-semibold text-red-800"
-                  onClick={() => {
-                    setProperties((ps) => ps.map((x) => (x.id === approval.id ? { ...x, status: 'rejected' } : x)))
-                    toast.success('Rejected (local preview)')
-                    setSelectedApprovalId(null)
+                  disabled={approvalBusy}
+                  className="rounded-xl border border-red-200 bg-red-50 px-4 py-2 text-sm font-semibold text-red-800 disabled:opacity-50"
+                  onClick={async () => {
+                    if (!approval?.id) return
+                    setApprovalBusy(true)
+                    try {
+                      await adminRejectProperty(approval.id)
+                      await refreshPortalData()
+                      toast.success('Property rejected in Airtable')
+                      setSelectedApprovalId(null)
+                    } catch (e) {
+                      toast.error(e?.message || 'Reject failed')
+                    } finally {
+                      setApprovalBusy(false)
+                    }
                   }}
                 >
                   Reject
@@ -516,10 +592,16 @@ export default function AdminPortal() {
                 <select
                   className="rounded-lg border border-slate-200 text-xs"
                   value={d.status}
-                  onChange={(e) => {
+                  onChange={async (e) => {
                     const v = e.target.value
                     setLeads((ls) => ls.map((x) => (x.id === d.id ? { ...x, status: v } : x)))
-                    toast.success('Lead updated')
+                    try {
+                      await adminPatchInquiryLeadStatus(d.id, v)
+                      toast.success('Lead status saved')
+                    } catch (err) {
+                      toast.error(err?.message || 'Could not save (add a single-line field "Lead Status" to Inquiries).')
+                      await refreshPortalData()
+                    }
                   }}
                 >
                   {Object.entries(LEAD_STATUS_LABEL).map(([k, lab]) => (
@@ -547,9 +629,17 @@ export default function AdminPortal() {
                 <button
                   type="button"
                   className="text-xs font-semibold text-[#2563eb]"
-                  onClick={() => {
-                    setAccounts((ac) => ac.map((x) => (x.id === d.id ? { ...x, enabled: !x.enabled } : x)))
-                    toast.success('Updated (local preview)')
+                  onClick={async () => {
+                    const next = !d.enabled
+                    setAccounts((ac) => ac.map((x) => (x.id === d.id ? { ...x, enabled: next } : x)))
+                    try {
+                      await adminSetManagerActive(d.id, next)
+                      toast.success(next ? 'Manager activated' : 'Manager deactivated')
+                      await refreshPortalData()
+                    } catch (err) {
+                      toast.error(err?.message || 'Could not update manager')
+                      await refreshPortalData()
+                    }
                   }}
                 >
                   {d.enabled !== false ? 'Disable' : 'Enable'}
@@ -595,9 +685,17 @@ export default function AdminPortal() {
                   <button
                     type="button"
                     className="text-sm font-semibold text-emerald-700"
-                    onClick={() => toast.success('Approve lease — wire to patchLeaseDraft when backend is connected')}
+                    onClick={async () => {
+                      try {
+                        await adminPublishLeaseDraft(d.id, user?.name || user?.email || 'Axis admin')
+                        await refreshPortalData()
+                        toast.success('Lease published to resident portal')
+                      } catch (err) {
+                        toast.error(err?.message || 'Publish failed')
+                      }
+                    }}
                   >
-                    Approve lease
+                    Publish to portal
                   </button>
                 ) : '—'
               ) },

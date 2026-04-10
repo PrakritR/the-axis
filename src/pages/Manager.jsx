@@ -279,11 +279,35 @@ function workOrderPropertyLabel(w) {
   return String(w.Property || w['Property Name'] || w['House'] || '').trim()
 }
 
+function normalizePortalScopeLabel(value) {
+  return String(value || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .replace(/\b(avenue|ave|street|st|road|rd|boulevard|blvd|place|pl|drive|dr)\b/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
 function workOrderInScope(w, approvedNamesLowerSet) {
   if (!approvedNamesLowerSet?.size) return false
-  const prop = workOrderPropertyLabel(w).toLowerCase()
-  if (!prop) return false
-  return [...approvedNamesLowerSet].some((ns) => prop === ns || prop.includes(ns))
+  const raw = workOrderPropertyLabel(w)
+  const prop = raw.toLowerCase()
+  const normalizedProp = normalizePortalScopeLabel(raw)
+  if (!prop && !normalizedProp) return false
+  return [...approvedNamesLowerSet].some((ns) => {
+    const normalizedScope = normalizePortalScopeLabel(ns)
+    return (
+      prop === ns ||
+      prop.includes(ns) ||
+      ns.includes(prop) ||
+      (normalizedProp && normalizedScope && (
+        normalizedProp === normalizedScope ||
+        normalizedProp.includes(normalizedScope) ||
+        normalizedScope.includes(normalizedProp)
+      ))
+    )
+  })
 }
 
 function workOrderIsResolvedRecord(w) {
@@ -1777,6 +1801,52 @@ function calendarDateKey(y, monthIndex, day) {
   return `${y}-${String(monthIndex + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`
 }
 
+function dateKeyFromDate(d) {
+  return calendarDateKey(d.getFullYear(), d.getMonth(), d.getDate())
+}
+
+function startOfWeekSunday(d) {
+  const x = new Date(d.getFullYear(), d.getMonth(), d.getDate())
+  x.setDate(x.getDate() - x.getDay())
+  return x
+}
+
+function addDaysDate(d, delta) {
+  const x = new Date(d.getFullYear(), d.getMonth(), d.getDate())
+  x.setDate(x.getDate() + delta)
+  return x
+}
+
+function formatWeekRangeLabel(weekStart) {
+  const end = addDaysDate(weekStart, 6)
+  const sameMonth = weekStart.getMonth() === end.getMonth()
+  const a = weekStart.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+  const b = end.toLocaleDateString('en-US', {
+    month: sameMonth ? undefined : 'short',
+    day: 'numeric',
+    year: 'numeric',
+  })
+  return `${a} – ${b}`
+}
+
+function toggleStandardTourSlotInWeekly(weeklyFree, dayAbbr, slot) {
+  const range = slotRangeMinutes(slot)
+  if (!range) return weeklyFree
+  const idxs = halfHourIndicesOverlappingRange(range.start, range.end)
+  const next = cloneWeeklyArrays(weeklyFree)
+  const arr = next[dayAbbr]
+  const allOn = idxs.length > 0 && idxs.every((i) => arr.includes(i))
+  if (allOn) {
+    const rm = new Set(idxs)
+    next[dayAbbr] = arr.filter((i) => !rm.has(i))
+  } else {
+    const set = new Set(arr)
+    idxs.forEach((i) => set.add(i))
+    next[dayAbbr] = [...set].sort((a, b) => a - b)
+  }
+  return next
+}
+
 const LEASE_STATUSES_NEEDING_ACTION = new Set(['Draft Generated', 'Under Review', 'Changes Needed', 'Approved'])
 
 function ManagerDashboardHomePanel({
@@ -1895,7 +1965,10 @@ function ManagerDashboardHomePanel({
 }
 
 function ManagerCalendarPanel({ manager, scopedPropertyNames = [] }) {
-  const [cursor, setCursor] = useState(() => new Date())
+  const [anchorDate, setAnchorDate] = useState(() => new Date())
+  const [calView, setCalView] = useState(() => /** @type {'month' | 'week' | 'day'} */ ('month'))
+  const [editWeekday, setEditWeekday] = useState(() => 'Mon')
+  const [detailDateKey, setDetailDateKey] = useState(() => dateKeyFromDate(new Date()))
   const [loading, setLoading] = useState(true)
   const [events, setEvents] = useState([])
   const [calendarIssues, setCalendarIssues] = useState([])
@@ -1904,7 +1977,6 @@ function ManagerCalendarPanel({ manager, scopedPropertyNames = [] }) {
   const [savedEncoded, setSavedEncoded] = useState('')
   const [availLoading, setAvailLoading] = useState(true)
   const [availSaving, setAvailSaving] = useState(false)
-  const [selectedDay, setSelectedDay] = useState(null)
   const [brushMode, setBrushMode] = useState('free')
   const paintingRef = useRef(false)
   const brushModeRef = useRef('free')
@@ -1940,14 +2012,15 @@ function ManagerCalendarPanel({ manager, scopedPropertyNames = [] }) {
     brushModeRef.current = brushMode
   }, [brushMode])
 
-  const y = cursor.getFullYear()
-  const m = cursor.getMonth()
-  const monthLabel = cursor.toLocaleString('en-US', { month: 'long', year: 'numeric' })
+  const y = anchorDate.getFullYear()
+  const m = anchorDate.getMonth()
+  const monthLabel = anchorDate.toLocaleString('en-US', { month: 'long', year: 'numeric' })
   const daysInMonth = new Date(y, m + 1, 0).getDate()
-
-  useEffect(() => {
-    if (selectedDay != null && selectedDay > daysInMonth) setSelectedDay(null)
-  }, [y, m, daysInMonth, selectedDay])
+  const weekStart = useMemo(() => startOfWeekSunday(anchorDate), [anchorDate])
+  const weekDays = useMemo(
+    () => Array.from({ length: 7 }, (_, i) => addDaysDate(weekStart, i)),
+    [weekStart],
+  )
 
   useEffect(() => {
     let cancelled = false
@@ -2034,26 +2107,31 @@ function ManagerCalendarPanel({ manager, scopedPropertyNames = [] }) {
   for (let i = 0; i < firstDow; i++) cells.push(null)
   for (let d = 1; d <= daysInMonth; d++) cells.push(d)
 
-  const eventsForDay = (day) => {
+  const eventsForMonthCell = (day) => {
     if (!day) return []
     const key = calendarDateKey(y, m, day)
     return displayEvents.filter((e) => e.date === key)
   }
 
-  const freeSlotCountForDay = (day) => {
+  const freeSlotCountForMonthCell = (day) => {
     if (!day) return 0
     const abbr = CAL_DOW_TO_ABBR[new Date(y, m, day).getDay()]
     return freeTourSlotCountForWeekday(weeklyFree, abbr)
   }
 
-  const selectedKey = selectedDay != null ? calendarDateKey(y, m, selectedDay) : null
-  const selectedWeekdayAbbr =
-    selectedDay != null ? CAL_DOW_TO_ABBR[new Date(y, m, selectedDay).getDay()] : null
+  const eventsForKey = (key) => displayEvents.filter((e) => e.date === key)
 
-  const toursThisDay = useMemo(() => {
-    if (!selectedKey) return []
-    return schedulingRows.filter((r) => parseCalendarDay(r['Preferred Date']) === selectedKey)
-  }, [schedulingRows, selectedKey])
+  const freeSlotCountForDateKey = (key) => {
+    const [yy, mm, dd] = String(key || '').split('-').map(Number)
+    if (!yy || !mm || !dd) return 0
+    const abbr = CAL_DOW_TO_ABBR[new Date(yy, mm - 1, dd).getDay()]
+    return freeTourSlotCountForWeekday(weeklyFree, abbr)
+  }
+
+  const toursForDetailDate = useMemo(() => {
+    if (!detailDateKey) return []
+    return schedulingRows.filter((r) => parseCalendarDay(r['Preferred Date']) === detailDateKey)
+  }, [schedulingRows, detailDateKey])
 
   function eventToneCls(ev) {
     if (ev.type === 'tour_req') {
@@ -2096,14 +2174,14 @@ function ManagerCalendarPanel({ manager, scopedPropertyNames = [] }) {
     applyPaintToCell(dayAbbr, halfIdx)
   }
 
-  function clearSelectedWeekday() {
-    if (!selectedWeekdayAbbr) return
+  function clearEditWeekdaySlots() {
+    if (!editWeekday) return
     setWeeklyFree((prev) => {
       const next = cloneWeeklyArrays(prev)
-      next[selectedWeekdayAbbr] = []
+      next[editWeekday] = []
       return next
     })
-    toast.success(`Cleared ${selectedWeekdayAbbr} weekly hours`)
+    toast.success(`Cleared ${editWeekday} — click Save to update public tour times`)
   }
 
   async function handleSaveWeeklyAvailability() {
@@ -2137,21 +2215,64 @@ function ManagerCalendarPanel({ manager, scopedPropertyNames = [] }) {
   }
 
   const today = new Date()
-  const isToday = (day) =>
+  const todayKey = dateKeyFromDate(today)
+  const isTodayMonthCell = (day) =>
     day != null && today.getFullYear() === y && today.getMonth() === m && today.getDate() === day
 
-  const selectedDateLabel =
-    selectedDay != null
-      ? new Date(y, m, selectedDay).toLocaleDateString('en-US', {
+  const detailDateLabel = detailDateKey
+    ? (() => {
+        const [yy, mm, dd] = detailDateKey.split('-').map(Number)
+        return new Date(yy, mm - 1, dd).toLocaleDateString('en-US', {
           weekday: 'long',
           month: 'long',
           day: 'numeric',
           year: 'numeric',
         })
-      : ''
+      })()
+    : ''
 
-  const freeStandardOnSelected =
-    selectedWeekdayAbbr != null ? freeTourSlotCountForWeekday(weeklyFree, selectedWeekdayAbbr) : 0
+  const freeStandardOnEditDay = freeTourSlotCountForWeekday(weeklyFree, editWeekday)
+
+  const navLabel =
+    calView === 'month'
+      ? monthLabel
+      : calView === 'week'
+        ? formatWeekRangeLabel(weekStart)
+        : anchorDate.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })
+
+  function goPrev() {
+    if (calView === 'month') setAnchorDate((d) => new Date(d.getFullYear(), d.getMonth() - 1, 1))
+    else if (calView === 'week') setAnchorDate((d) => addDaysDate(d, -7))
+    else setAnchorDate((d) => addDaysDate(d, -1))
+  }
+
+  function goNext() {
+    if (calView === 'month') setAnchorDate((d) => new Date(d.getFullYear(), d.getMonth() + 1, 1))
+    else if (calView === 'week') setAnchorDate((d) => addDaysDate(d, 7))
+    else setAnchorDate((d) => addDaysDate(d, 1))
+  }
+
+  function goToday() {
+    const n = new Date()
+    setAnchorDate(n)
+    setDetailDateKey(dateKeyFromDate(n))
+    setEditWeekday(CAL_DOW_TO_ABBR[n.getDay()])
+  }
+
+  function selectCalendarDateKey(key, syncWeekday = true) {
+    setDetailDateKey(key)
+    const [yy, mm, dd] = key.split('-').map(Number)
+    if (yy && mm && dd) {
+      setAnchorDate(new Date(yy, mm - 1, dd))
+      if (syncWeekday) setEditWeekday(CAL_DOW_TO_ABBR[new Date(yy, mm - 1, dd).getDay()])
+    }
+  }
+
+  const viewToggleCls = (id) =>
+    classNames(
+      'rounded-lg px-3 py-1.5 text-xs font-semibold transition',
+      calView === id ? 'bg-[#2563eb] text-white shadow-sm' : 'text-slate-600 hover:bg-slate-100',
+    )
 
   return (
     <div className="rounded-[24px] border border-slate-200 bg-white p-6 shadow-sm">
@@ -4419,6 +4540,7 @@ function ManagerDashboard({ manager: managerProp, onOpenDraft, onSignOut, onMana
         brandTitle="Axis"
         brandSubtitle="Manager portal"
         desktopNav="sidebar"
+        sidebarPosition="right"
         navItems={MANAGER_NAV_ITEMS}
         activeId={dashView}
         onNavigate={setDashView}
@@ -4536,16 +4658,6 @@ function ManagerDashboard({ manager: managerProp, onOpenDraft, onSignOut, onMana
             ))}
           </select>
 
-          {/* Generate new draft */}
-          <button
-            onClick={() => setShowGenerateModal(true)}
-            className="inline-flex items-center gap-2 rounded-2xl bg-[#2563eb] px-5 py-2.5 text-sm font-semibold text-white transition hover:brightness-110"
-          >
-            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z" />
-            </svg>
-            Generate draft
-          </button>
         </div>
 
         {/* Drafts table */}
