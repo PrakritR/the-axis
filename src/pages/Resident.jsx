@@ -3,7 +3,7 @@ import { Link, useNavigate } from 'react-router-dom'
 import { properties } from '../data/properties'
 import { EmbeddedStripeCheckout } from '../components/EmbeddedStripeCheckout'
 import { readJsonResponse } from '../lib/readJsonResponse'
-import { HousingMessageForm } from '../components/HousingMessageForm'
+import PortalInternalInbox from '../components/PortalInternalInbox'
 import {
   PortalAuthCard,
   PortalAuthPage,
@@ -16,6 +16,7 @@ import {
 } from '../components/PortalAuthUI'
 import { ManagerAuthForm, MANAGER_SESSION_KEY } from './Manager'
 import GmailStyleInboxLayout, { InboxThreadRow } from '../components/GmailStyleInboxLayout'
+import PortalShell from '../components/PortalShell'
 import { HOUSING_CONTACT_MESSAGE, HOUSING_CONTACT_SCHEDULE } from '../lib/housingSite'
 import {
   airtableReady,
@@ -1545,27 +1546,23 @@ function LeasingPanel({ resident, onOpenPayments }) {
   )
 }
 
-// ─── Contact (leasing messages in-app; tour still on /contact) ───────────────
+// ─── Inbox (same Messages + thread model as manager / admin portals) ─────────
 
-function ContactPanel({ resident }) {
-  const prefill = useMemo(
-    () => ({
-      name: resident.Name || '',
-      email: resident.Email || '',
-      phone: resident['Phone Number'] || resident.Phone || '',
-      house: resident.House || '',
-      unitNumber: resident['Unit Number'] || '',
-    }),
-    [resident],
-  )
-
+function ResidentInboxPanel({ resident }) {
   return (
-    <div className="space-y-8">
+    <div className="space-y-6">
       <SectionCard
-        title="Message leasing"
-        description="Send a message to the leasing team from here — same inbox as the main contact page. Your name, email, and home are filled in when we can match them."
+        title="Inbox"
+        description="Message your house team here. Your home and room are attached automatically — you don’t need to pick a topic."
       >
-        <HousingMessageForm variant="resident" prefill={prefill} formIdPrefix="resident-housing-msg" />
+        <div className="min-h-[380px]">
+          <PortalInternalInbox
+            variant="resident"
+            resident={resident}
+            userEmail={resident.Email}
+            userDisplayName={resident.Name}
+          />
+        </div>
       </SectionCard>
 
       <div className="rounded-[24px] border border-slate-200 bg-white px-5 py-4 text-sm leading-6 text-slate-600 shadow-soft sm:px-6">
@@ -1580,8 +1577,8 @@ function ContactPanel({ resident }) {
       </div>
 
       <div className="rounded-[18px] border border-slate-100 bg-slate-50/70 px-4 py-3 text-sm leading-6 text-slate-600">
-        <span className="font-semibold text-slate-800">Work orders &amp; rent:</span>{' '}
-        use <strong>Work Orders</strong> and <strong>Payments</strong> in this portal — not this form.
+        <span className="font-semibold text-slate-800">Maintenance &amp; rent:</span>{' '}
+        use <strong>Work Orders</strong> and <strong>Payments</strong> in this portal.
       </div>
     </div>
   )
@@ -1636,58 +1633,32 @@ function Dashboard({ resident, onResidentUpdated, onSignOut }) {
     ['leasing', 'Leasing'],
     ['payments', 'Payments'],
     ['announcements', 'Announcements'],
-    ['contact', 'Contact'],
+    ['inbox', 'Inbox'],
     ['profile', 'Profile'],
   ]
 
   return (
-    <div className="min-h-screen bg-[linear-gradient(180deg,#f8fafc_0%,#ffffff_55%,#f8fafc_100%)]">
-      <header className="border-b border-slate-200 bg-white">
-        <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-4 px-4 py-5 sm:px-6">
-          <div>
-            <div className="text-sm font-semibold text-slate-900">{homeLabel}</div>
-            <div className="mt-0.5 text-sm text-slate-400">{resident.Email}</div>
-          </div>
-          <button type="button" onClick={onSignOut}
-            className="rounded-full border border-slate-300 px-5 py-2.5 text-sm font-semibold text-slate-700 transition hover:border-slate-500">
-            Sign out
-          </button>
-        </div>
-      </header>
-
-      <div className="mx-auto max-w-6xl px-4 py-8 sm:px-6 sm:py-10">
+    <PortalShell
+      brandTitle="Axis"
+      brandSubtitle="Resident portal"
+      navItems={TABS.map(([id, label]) => ({ id, label }))}
+      activeId={tab}
+      onNavigate={setTab}
+      userLabel={resident.Name || 'Resident'}
+      userMeta={[homeLabel, resident.Email].filter(Boolean).join(' · ') || undefined}
+      onSignOut={onSignOut}
+    >
+      <div className="mx-auto w-full max-w-[1600px]">
         <div className="mb-8">
           <h1 className="text-4xl font-black tracking-tight text-slate-900">
             Welcome back, {resident.Name || 'Resident'}
           </h1>
           <div className="mt-3 flex flex-wrap gap-4 text-sm text-slate-500">
-            <span>
-              {getLeaseTermLabel(resident)}
-              {resident['Lease End Date'] ? ` · through ${formatDate(resident['Lease End Date'])}` : ''}
-            </span>
+            <span>{getLeaseTermLabel(resident)}</span>
             {openRequestCount > 0 ? (
               <span className="font-semibold text-sky-600">{openRequestCount} open work order{openRequestCount === 1 ? '' : 's'}</span>
             ) : null}
           </div>
-        </div>
-
-        <div className="mb-6 flex flex-wrap gap-2 rounded-[24px] border border-slate-200 bg-white p-2 shadow-soft">
-          {TABS.map(([id, label]) => (
-            <button key={id} type="button" onClick={() => setTab(id)}
-              className={classNames(
-                'rounded-[18px] px-4 py-3 text-sm font-semibold transition',
-                tab === id
-                  ? 'bg-[linear-gradient(180deg,#2f76ff_0%,#2450eb_100%)] text-white shadow-[0_4px_16px_rgba(37,99,235,0.3)]'
-                  : 'text-slate-500 hover:bg-slate-50 hover:text-slate-900'
-              )}>
-              <span className="inline-flex items-center gap-2">
-                <span>{label}</span>
-                {id === 'announcements' && announcements.length > 0 && tab !== id ? (
-                  <span className="h-2 w-2 rounded-full bg-axis" />
-                ) : null}
-              </span>
-            </button>
-          ))}
         </div>
 
         {loading ? (
@@ -1713,12 +1684,12 @@ function Dashboard({ resident, onResidentUpdated, onSignOut }) {
         {!loading && tab === 'announcements' ? (
           <AnnouncementsPanel items={announcements} />
         ) : null}
-        {!loading && tab === 'contact' ? <ContactPanel resident={resident} /> : null}
+        {!loading && tab === 'inbox' ? <ResidentInboxPanel resident={resident} /> : null}
         {!loading && tab === 'profile' ? (
           <ProfilePanel resident={resident} onUpdated={onResidentUpdated} />
         ) : null}
       </div>
-    </div>
+    </PortalShell>
   )
 }
 

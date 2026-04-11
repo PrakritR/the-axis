@@ -9,10 +9,15 @@ import {
   sendMessage,
   managementAdminThreadKey,
   siteManagerThreadKey,
+  residentLeasingThreadKey,
   PORTAL_INBOX_CHANNEL_INTERNAL,
   buildAirtableFormPrefillUrl,
   portalInboxThreadKeyFromRecord,
 } from '../lib/airtable'
+import PortalInboxThreadView, {
+  buildResidentLeasingMessageBody,
+  displayMessageForResidentPortal,
+} from './PortalInboxThreadView.jsx'
 
 const PORTAL_INBOX_FORM_URL = import.meta.env.VITE_AIRTABLE_PORTAL_INBOX_FORM_URL || ''
 const CHANNEL_FIELD =
@@ -46,6 +51,9 @@ function threadTitle(threadKey) {
   }
   if (t.startsWith('internal:admin-public:')) {
     return `Website · ${t.slice('internal:admin-public:'.length)}`
+  }
+  if (t.startsWith('internal:resident-leasing:')) {
+    return 'Resident · House team'
   }
   return t || 'Thread'
 }
@@ -95,18 +103,24 @@ function SetupBanner({ variant }) {
 }
 
 /**
- * Internal Axis inbox: Management ↔ Admin and Site manager ↔ Admin.
- * @param {'admin' | 'management' | 'site_manager'} variant
+ * Unified portal inbox (Messages table + thread key): resident, partner/management, site manager, or admin.
+ * @param {'admin' | 'management' | 'site_manager' | 'resident'} variant
+ * @param {object} [resident] — required when variant === 'resident' (Airtable resident row)
  */
-export default function PortalInternalInbox({ variant, userEmail, userDisplayName }) {
-  const email = String(userEmail || '').trim()
-  const name = String(userDisplayName || email || 'User').trim()
+export default function PortalInternalInbox({ variant, userEmail, userDisplayName, resident = null }) {
+  const email = String(
+    variant === 'resident' ? resident?.Email || userEmail || '' : userEmail || '',
+  ).trim()
+  const name = String(
+    variant === 'resident' ? resident?.Name || email || 'Resident' : userDisplayName || email || 'User',
+  ).trim()
 
   const fixedThreadKey = useMemo(() => {
+    if (variant === 'resident' && resident?.id) return residentLeasingThreadKey(resident.id)
     if (variant === 'management') return managementAdminThreadKey(email)
     if (variant === 'site_manager') return siteManagerThreadKey(email)
     return ''
-  }, [variant, email])
+  }, [variant, email, resident?.id])
 
   const [allInternal, setAllInternal] = useState([])
   const [loading, setLoading] = useState(true)
@@ -188,9 +202,11 @@ export default function PortalInternalInbox({ variant, userEmail, userDisplayNam
     if (!text || !activeThreadKey || !email) return
     setSending(true)
     try {
+      const body =
+        variant === 'resident' && resident ? buildResidentLeasingMessageBody(text, resident) : text
       await sendMessage({
         senderEmail: email,
-        message: text,
+        message: body,
         isAdmin: variant === 'admin',
         threadKey: activeThreadKey,
         channel: PORTAL_INBOX_CHANNEL_INTERNAL,
@@ -335,11 +351,16 @@ export default function PortalInternalInbox({ variant, userEmail, userDisplayNam
           {(() => {
             const msgs = threadGroups.find(([k]) => k === fixedThreadKey)?.[1] || []
             const last = msgs[msgs.length - 1]
+            const rawPreview = last?.Message || ''
+            const preview =
+              variant === 'resident' && rawPreview
+                ? displayMessageForResidentPortal(rawPreview)
+                : rawPreview || 'No messages yet'
             return (
               <InboxThreadRow
                 title={threadTitle(fixedThreadKey)}
                 subtitle="Your conversation"
-                preview={last?.Message || 'No messages yet'}
+                preview={preview}
                 time={formatDt(last?.created_at)}
                 selected
                 onClick={() => {}}
@@ -350,83 +371,77 @@ export default function PortalInternalInbox({ variant, userEmail, userDisplayNam
       </>
     )
 
-  const rightPane = (
-    <div className="flex h-full min-h-0 flex-1 flex-col overflow-hidden">
-      <div className="shrink-0 border-b border-slate-200 bg-white px-4 py-3 lg:px-5">
-        <h2 className="truncate text-base font-black text-slate-900">
-          {activeThreadKey ? threadTitle(activeThreadKey) : 'Select a conversation'}
-        </h2>
-        {variant !== 'admin' && activeThreadKey ? (
-          <p className="mt-0.5 truncate text-xs text-slate-500">{activeThreadKey}</p>
-        ) : null}
+  const adminLabel = variant === 'resident' ? 'House team' : 'Axis Admin'
+  const mapBody =
+    variant === 'resident'
+      ? (m) => displayMessageForResidentPortal(m.Message)
+      : (m) => m.Message
+
+  const rightPane =
+    variant === 'admin' && !activeThreadKey ? (
+      <div className="flex h-full min-h-0 flex-1 flex-col items-center justify-center px-4 py-8">
+        <p className="text-center text-sm text-slate-500">Select a thread from the list or open one by email.</p>
       </div>
-      {variant === 'admin' && !activeThreadKey ? (
-        <div className="flex flex-1 items-center justify-center px-4 py-8">
-          <p className="text-center text-sm text-slate-500">Select a thread from the list or open one by email.</p>
-        </div>
-      ) : loading ? (
-        <div className="flex flex-1 items-center justify-center py-12">
-          <p className="text-sm text-slate-500">Loading…</p>
-        </div>
-      ) : (
-        <>
-          <div className="min-h-0 flex-1 space-y-3 overflow-y-auto px-4 py-4 lg:px-5">
-            {threadMessages.length === 0 ? (
-              <p className="text-sm text-slate-500">
-                No messages yet. Say hello below{variant === 'admin' ? ' (first message starts the thread).' : '.'}
-              </p>
-            ) : (
-              threadMessages.map((m) => {
-                const admin = Boolean(m['Is Admin'])
-                const label = admin ? 'Axis Admin' : m['Sender Email'] || name
-                return (
-                  <div
-                    key={m.id}
-                    className={`rounded-xl border px-3 py-2 text-sm ${
-                      admin ? 'ml-2 border-violet-200 bg-violet-50 md:ml-6' : 'mr-2 border-slate-200 bg-white md:mr-6'
-                    }`}
-                  >
-                    <div className="text-[11px] font-semibold text-slate-400">
-                      {label} · {formatDt(m.Timestamp || m.created_at)}
-                    </div>
-                    <p className="mt-1 whitespace-pre-wrap text-slate-800">{m.Message}</p>
-                  </div>
-                )
-              })
-            )}
+    ) : loading ? (
+      <div className="flex h-full min-h-0 flex-1 flex-col items-center justify-center py-12">
+        <p className="text-sm text-slate-500">Loading…</p>
+      </div>
+    ) : (
+      <PortalInboxThreadView
+        title={activeThreadKey ? threadTitle(activeThreadKey) : 'Inbox'}
+        subtitle={
+          variant === 'admin' || variant === 'resident' || !activeThreadKey
+            ? null
+            : activeThreadKey
+        }
+        messages={threadMessages}
+        bubbleMeLabel={name}
+        bubbleOtherLabel={adminLabel}
+        getIsOtherAdmin={(m) => Boolean(m['Is Admin'])}
+        mapMessageBody={mapBody}
+        emptyHint={
+          variant === 'resident'
+            ? 'No messages yet. Write below — your home is attached automatically for the team.'
+            : `No messages yet. Say hello below${variant === 'admin' ? ' (first message starts the thread).' : '.'}`
+        }
+      >
+        <PortalInboxAnnouncementSection
+          variant={variant === 'resident' ? 'management' : variant}
+          userEmail={email}
+          notifyThreadKey={activeThreadKey}
+          onInboxRefresh={refresh}
+          listId={`portal-inbox-ann-${announcementListId}`}
+          propertySuggestions={variant === 'resident' && resident?.House ? [String(resident.House)] : []}
+        />
+        <form
+          onSubmit={handleSend}
+          className="shrink-0 border-t border-slate-200 bg-white px-4 py-3 lg:px-5"
+        >
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
+            <textarea
+              value={draft}
+              onChange={(e) => setDraft(e.target.value)}
+              rows={3}
+              placeholder={
+                variant === 'admin'
+                  ? 'Reply as Axis Admin…'
+                  : variant === 'resident'
+                    ? 'Message your house team…'
+                    : 'Message Axis…'
+              }
+              className="min-w-0 flex-1 rounded-2xl border border-slate-200 px-4 py-3 text-sm outline-none focus:border-[#2563eb] focus:ring-2 focus:ring-[#2563eb]/20"
+            />
+            <button
+              type="submit"
+              disabled={sending || !draft.trim() || !activeThreadKey}
+              className="rounded-2xl bg-[#2563eb] px-5 py-3 text-sm font-semibold text-white disabled:opacity-50"
+            >
+              {sending ? 'Sending…' : 'Send'}
+            </button>
           </div>
-          <PortalInboxAnnouncementSection
-            variant={variant}
-            userEmail={email}
-            notifyThreadKey={activeThreadKey}
-            onInboxRefresh={refresh}
-            listId={`portal-inbox-ann-${announcementListId}`}
-          />
-          <form
-            onSubmit={handleSend}
-            className="shrink-0 border-t border-slate-200 bg-white px-4 py-3 lg:px-5"
-          >
-            <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
-              <textarea
-                value={draft}
-                onChange={(e) => setDraft(e.target.value)}
-                rows={3}
-                placeholder={variant === 'admin' ? 'Reply as Axis Admin…' : 'Message Axis…'}
-                className="min-w-0 flex-1 rounded-2xl border border-slate-200 px-4 py-3 text-sm outline-none focus:border-[#2563eb] focus:ring-2 focus:ring-[#2563eb]/20"
-              />
-              <button
-                type="submit"
-                disabled={sending || !draft.trim() || !activeThreadKey}
-                className="rounded-2xl bg-[#2563eb] px-5 py-3 text-sm font-semibold text-white disabled:opacity-50"
-              >
-                {sending ? 'Sending…' : 'Send'}
-              </button>
-            </div>
-          </form>
-        </>
-      )}
-    </div>
-  )
+        </form>
+      </PortalInboxThreadView>
+    )
 
   return <GmailStyleInboxLayout left={leftPane} right={rightPane} />
 }

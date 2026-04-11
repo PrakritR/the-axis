@@ -65,7 +65,7 @@ const NAV_BASE = [
   { id: 'accounts', label: 'Management accounts' },
   { id: 'applications', label: 'Applications' },
   { id: 'leases', label: 'Lease approval' },
-  { id: 'messages', label: 'Messages' },
+  { id: 'messages', label: 'Inbox' },
   { id: 'access', label: 'Admin access' },
   { id: 'settings', label: 'Settings' },
 ]
@@ -460,7 +460,7 @@ export default function AdminPortal() {
             <StatCard label="Leases awaiting admin" value={leasesNeedAdmin} onClick={() => setTab('leases')} />
             <StatCard label="Sent for signature" value={leasesSent} onClick={() => setTab('leases')} />
             <StatCard label="Management accounts" value={accounts.length} onClick={() => setTab('accounts')} />
-            <StatCard label="Messages" value="Open" hint="Internal inbox" onClick={() => setTab('messages')} />
+            <StatCard label="Inbox" value="Open" hint="All portal threads" onClick={() => setTab('messages')} />
           </div>
         </div>
       )}
@@ -708,12 +708,14 @@ export default function AdminPortal() {
       {tab === 'messages' && (
         <div className="space-y-4">
           <div>
-            <h1 className="text-2xl font-black text-slate-900">Messages</h1>
+            <h1 className="text-2xl font-black text-slate-900">Inbox</h1>
             <p className="mt-1 text-sm text-slate-500">
-              Inbox for partners and site managers. Threads use the <strong>Messages</strong> table (Thread Key + Channel); optional Airtable Form for submissions.
+              Same <strong>Messages</strong> threads as resident and manager portals: partners, site managers, public inquiries, and resident house inboxes (Thread Key + internal channel).
             </p>
           </div>
-          <PortalInternalInbox variant="admin" userEmail={user.email} userDisplayName={user.name} />
+          <div className="min-h-[min(70vh,640px)] overflow-hidden rounded-[24px] border border-slate-200 bg-white shadow-sm">
+            <PortalInternalInbox variant="admin" userEmail={user.email} userDisplayName={user.name} />
+          </div>
         </div>
       )}
 

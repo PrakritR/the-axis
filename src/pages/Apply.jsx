@@ -5,6 +5,7 @@ import { signLease, getSignedLeases } from '../lib/airtable'
 import { EmbeddedStripeCheckout } from '../components/EmbeddedStripeCheckout'
 import { readJsonResponse } from '../lib/readJsonResponse'
 import { errorFromAirtableApiBody } from '../lib/airtablePermissionError'
+import { openAxisAssistant } from '../lib/axisAssistant.js'
 
 const AIRTABLE_BASE_ID = import.meta.env.VITE_AIRTABLE_BASE_ID || 'appol57LKtMKaQ75T'
 const APPLICATIONS_TABLE = import.meta.env.VITE_AIRTABLE_APPLICATIONS_TABLE || 'Applications'
@@ -1994,8 +1995,23 @@ export default function Apply() {
       />
 
       <div className="mx-auto max-w-5xl px-4 py-12 sm:px-6 sm:py-16">
-        <div className="mb-8">
+        <div className="mb-8 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
           <h1 className="text-3xl font-black tracking-tight text-slate-900 sm:text-4xl">Residential Rental Application</h1>
+          <button
+            type="button"
+            onClick={() =>
+              openAxisAssistant({
+                topic: 'apply',
+                hint:
+                  applicationType && steps[step]
+                    ? `I'm on the Axis rental application (${applicationType}), on step "${steps[step].title}". Walk me through what to enter here.`
+                    : 'I need help starting or continuing the Axis rental application.',
+              })
+            }
+            className="inline-flex shrink-0 items-center justify-center rounded-full border border-[#2563eb]/35 bg-white px-5 py-2.5 text-sm font-semibold text-[#2563eb] shadow-sm transition hover:bg-[#2563eb]/5"
+          >
+            Chat help for this form
+          </button>
         </div>
 
         {/* Step 0 — type selection (always shown first, outside steps) */}

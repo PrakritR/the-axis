@@ -12,7 +12,7 @@ import PortalSelect from './pages/PortalSelect'
 import scrollToTop from './utils/scrollToTop'
 import Chatbot from './components/Chatbot'
 import { PropertyListingChromeContext } from './contexts/PropertyListingChromeContext'
-import { usePropertyListingAutoChrome } from './hooks/usePropertyListingAutoChrome'
+import { useSiteChromeInset } from './hooks/useSiteChromeInset'
 
 const PropertyPage = lazy(() => import('./pages/PropertyPage'))
 const Contact = lazy(() => import('./pages/Contact'))
@@ -115,7 +115,7 @@ class ErrorBoundary extends Component {
 function AppInner() {
   const location = useLocation()
 
-  // Manager/admin use the same sticky site chrome as marketing pages so users can return to the site.
+  // Manager/admin use the same fixed promo + site header as marketing pages so users can return to the site.
   // Signing and axis-team stay minimal (no header). Paths: /manager/*, /admin/*, /sign/*, /axis-team.
   const isManagerRoute = location.pathname === '/manager' || location.pathname.startsWith('/manager/')
   const isAdminPortalRoute = location.pathname === '/admin' || location.pathname.startsWith('/admin/')
@@ -127,20 +127,21 @@ function AppInner() {
     isSignLeaseRoute ||
     isAxisTeamRoute
 
-  const isPortalWithSiteChrome = isManagerRoute || isAdminPortalRoute
+  const isPortalWithSiteChrome = isAdminPortalRoute || isManagerRoute
 
   const isOwnersRoute = location.pathname.startsWith('/owners')
   const isPortalHub = location.pathname === '/portal'
-  /** Promo + header: main site, plus manager/admin portals (not sign lease, axis-team, or /portal hub). */
+  /** Promo + header: main site, plus manager & admin portals (not sign lease, axis-team, or /portal hub). */
   const showPromoBanner = !isPortalHub && (!isStandaloneRoute || isPortalWithSiteChrome)
   const showMainMobileDock =
     !isOwnersRoute && ['/', '/apply', '/contact'].includes(location.pathname)
 
   const isPropertyDetail = /^\/properties\/[^/]+/.test(location.pathname)
-  const propertyAutoChrome = usePropertyListingAutoChrome(isPropertyDetail, showPromoBanner)
+  const marketingChromeInset = useSiteChromeInset(!isStandaloneRoute)
+  const portalChromeInset = useSiteChromeInset(isStandaloneRoute && isPortalWithSiteChrome)
   const propertyChromeContextValue = useMemo(
-    () => (isPropertyDetail ? { siteChromeInsetPx: propertyAutoChrome.insetPx ?? 0 } : null),
-    [isPropertyDetail, propertyAutoChrome.insetPx],
+    () => (isPropertyDetail ? { siteChromeInsetPx: marketingChromeInset.insetPx ?? 0 } : null),
+    [isPropertyDetail, marketingChromeInset.insetPx],
   )
 
   if (MAINTENANCE_MODE) {
@@ -177,12 +178,19 @@ function AppInner() {
       return (
         <div className="app-shell axis-page min-h-screen min-h-svh flex flex-col">
           <ScrollToTop />
-          <div id="site-sticky-chrome" className="sticky top-0 z-50 w-full">
+          <div
+            ref={portalChromeInset.chromeRef}
+            id="site-sticky-chrome"
+            className="fixed left-0 right-0 top-0 z-50 w-full bg-white shadow-[0_1px_0_0_rgba(15,23,42,0.06)]"
+          >
             {showPromoBanner ? <PromoBanner /> : null}
             <SiteHeader />
           </div>
           {standaloneToaster}
-          <main className="min-h-0 w-full flex-1">{standaloneRoutes}</main>
+          <main className="min-h-0 w-full flex-1" style={{ paddingTop: portalChromeInset.insetPx }}>
+            {standaloneRoutes}
+          </main>
+          <Chatbot />
         </div>
       )
     }
@@ -192,6 +200,7 @@ function AppInner() {
         <ScrollToTop />
         {standaloneToaster}
         {standaloneRoutes}
+        <Chatbot />
       </>
     )
   }
@@ -207,23 +216,13 @@ function AppInner() {
     <PropertyListingChromeContext.Provider value={propertyChromeContextValue}>
       <div className="app-shell axis-page min-h-screen min-h-svh flex flex-col">
         <ScrollToTop />
-        {isPropertyDetail ? (
-          <div
-            ref={propertyAutoChrome.chromeRef}
-            id="site-sticky-chrome"
-            className={`fixed left-0 right-0 top-0 z-50 w-full bg-white shadow-[0_1px_0_0_rgba(15,23,42,0.06)] transition-transform duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] will-change-transform ${
-              propertyAutoChrome.hidden ? 'pointer-events-none -translate-y-full' : 'translate-y-0'
-            }`}
-            onMouseEnter={propertyAutoChrome.onChromeEnter}
-            onMouseLeave={propertyAutoChrome.onChromeLeave}
-          >
-            {marketingSiteChrome}
-          </div>
-        ) : (
-          <div id="site-sticky-chrome" className="sticky top-0 z-50 w-full">
-            {marketingSiteChrome}
-          </div>
-        )}
+        <div
+          ref={marketingChromeInset.chromeRef}
+          id="site-sticky-chrome"
+          className="fixed left-0 right-0 top-0 z-50 w-full bg-white shadow-[0_1px_0_0_rgba(15,23,42,0.06)]"
+        >
+          {marketingSiteChrome}
+        </div>
         <Toaster
           position="top-center"
           toastOptions={{
@@ -235,14 +234,7 @@ function AppInner() {
         />
         <main
           className={`flex-1 min-h-0 w-full ${showMainMobileDock ? 'pb-[calc(5rem+env(safe-area-inset-bottom))] md:pb-0' : ''}`}
-          style={
-            isPropertyDetail
-              ? {
-                  paddingTop: propertyAutoChrome.insetPx ?? 0,
-                  transition: 'padding-top 0.3s cubic-bezier(0.22, 1, 0.36, 1)',
-                }
-              : undefined
-          }
+          style={{ paddingTop: marketingChromeInset.insetPx }}
         >
           <Suspense fallback={<PageFallback />}>
             <AnimatePresence mode="wait">
@@ -264,7 +256,7 @@ function AppInner() {
           </Suspense>
         </main>
         {!isPortalHub ? <Footer /> : null}
-        {!isPortalHub ? <Chatbot /> : null}
+        <Chatbot />
       </div>
     </PropertyListingChromeContext.Provider>
   )

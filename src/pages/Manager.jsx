@@ -22,6 +22,7 @@ import { Link, Navigate, useLocation } from 'react-router-dom'
 import toast from 'react-hot-toast'
 import { HOUSING_CONTACT_MESSAGE } from '../lib/housingSite'
 import { readJsonResponse } from '../lib/readJsonResponse'
+import { openAxisAssistant } from '../lib/axisAssistant.js'
 import AddHousingWizard from '../components/AddHousingWizard'
 import GmailStyleInboxLayout, { InboxThreadRow } from '../components/GmailStyleInboxLayout'
 import PortalInboxAnnouncementSection from '../components/PortalInboxAnnouncementSection'
@@ -39,6 +40,9 @@ import {
   portalInboxAirtableConfigured,
   getMessagesByThreadKey,
   siteManagerThreadKey,
+  residentLeasingThreadKey,
+  parseResidentLeasingThreadKey,
+  portalInboxThreadKeyFromRecord,
   PORTAL_INBOX_CHANNEL_INTERNAL,
   fetchInboxThreadStateMap,
   inboxThreadStateAirtableEnabled,
@@ -50,6 +54,7 @@ import {
   errorFromAirtableApiBody,
   isAirtablePermissionErrorMessage,
 } from '../lib/airtablePermissionError'
+import { residentLeasingThreadVisibleToManager, extractResidentScopeTextFromMessageBody } from '../lib/portalInboxResidentScope.js'
 import {
   PortalAuthCard,
   PortalAuthPage,
@@ -2012,6 +2017,13 @@ function ManagerCalendarPanel({ manager, scopedPropertyNames = [] }) {
     brushModeRef.current = brushMode
   }, [brushMode])
 
+  useEffect(() => {
+    if (calView !== 'day') return
+    const k = dateKeyFromDate(anchorDate)
+    setDetailDateKey(k)
+    setEditWeekday(CAL_DOW_TO_ABBR[anchorDate.getDay()])
+  }, [calView, anchorDate])
+
   const y = anchorDate.getFullYear()
   const m = anchorDate.getMonth()
   const monthLabel = anchorDate.toLocaleString('en-US', { month: 'long', year: 'numeric' })
@@ -2276,53 +2288,80 @@ function ManagerCalendarPanel({ manager, scopedPropertyNames = [] }) {
 
   return (
     <div className="rounded-[24px] border border-slate-200 bg-white p-6 shadow-sm">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h2 className="text-xl font-black text-slate-900">Calendar</h2>
-          <p className="mt-1 text-sm text-slate-500">
-            Leases, work orders, applications, tour requests, and your weekly tour availability (saved to{' '}
-            <code className="rounded bg-slate-100 px-1 text-[11px]">Tour Availability</code> on your manager profile — same format as
-            public tour slots).
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div className="min-w-0 max-w-xl">
+          <div className="flex flex-wrap items-center gap-2">
+            <h2 className="text-xl font-black text-slate-900">Calendar &amp; tour hours</h2>
+            <button
+              type="button"
+              onClick={() =>
+                openAxisAssistant({
+                  topic: 'manager-calendar',
+                  hint: "I'm in the manager portal calendar. Help me set weekly tour hours, use month/week/day views, or respond to tour requests.",
+                })
+              }
+              className="rounded-full border border-[#2563eb]/30 bg-white px-3 py-1 text-[11px] font-bold uppercase tracking-wide text-[#2563eb] hover:bg-sky-50"
+            >
+              Chat help
+            </button>
+          </div>
+          <p className="mt-1 text-sm text-slate-600">
+            <strong className="text-slate-800">Step 1:</strong> Set when you&apos;re free for tours (repeats every week).{' '}
+            <strong className="text-slate-800">Step 2:</strong> Use the calendar to review leases, applications, and tour requests.
           </p>
           {pendingTourCount > 0 ? (
             <p className="mt-2 text-sm font-semibold text-sky-800">
-              {pendingTourCount} tour request{pendingTourCount === 1 ? '' : 's'} need a yes/no response — open the day to approve or decline.
+              {pendingTourCount} tour request{pendingTourCount === 1 ? '' : 's'} awaiting yes/no — pick that day below.
             </p>
           ) : null}
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="flex rounded-xl border border-slate-200 bg-slate-50 p-0.5">
+            <button type="button" className={viewToggleCls('month')} onClick={() => setCalView('month')}>
+              Month
+            </button>
+            <button type="button" className={viewToggleCls('week')} onClick={() => setCalView('week')}>
+              Week
+            </button>
+            <button type="button" className={viewToggleCls('day')} onClick={() => setCalView('day')}>
+              Day
+            </button>
+          </div>
           <button
             type="button"
-            onClick={() => setCursor(new Date(y, m - 1, 1))}
-            className="rounded-xl border border-slate-200 px-3 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-50"
+            onClick={goToday}
+            className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-[#2563eb] hover:bg-slate-50"
           >
-            ←
+            Today
           </button>
-          <span className="min-w-[10rem] text-center text-sm font-bold text-slate-800">{monthLabel}</span>
-          <button
-            type="button"
-            onClick={() => setCursor(new Date(y, m + 1, 1))}
-            className="rounded-xl border border-slate-200 px-3 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-50"
-          >
-            →
-          </button>
+          <div className="flex items-center gap-1 rounded-xl border border-slate-200 bg-white p-0.5">
+            <button type="button" onClick={goPrev} className="rounded-lg px-2.5 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-50">
+              ←
+            </button>
+            <span className="min-w-[8rem] max-w-[14rem] truncate px-1 text-center text-xs font-bold text-slate-800 sm:min-w-[11rem]">
+              {navLabel}
+            </span>
+            <button type="button" onClick={goNext} className="rounded-lg px-2.5 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-50">
+              →
+            </button>
+          </div>
         </div>
       </div>
 
       {manager.__axisDeveloper ? (
         <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-950">
-          Developer preview: weekly availability is not saved to Airtable from this session.
+          Developer preview: tour hours are not saved to Airtable from this session.
         </div>
       ) : null}
 
       <div className="mt-3 flex flex-wrap gap-3 text-[11px] text-slate-600">
         <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 font-semibold text-emerald-800">
           <span className="h-2 w-2 rounded-full bg-emerald-500" />
-          Standard tour window open
+          Tour slot open (weekly)
         </span>
         <span className="inline-flex items-center gap-1.5 rounded-full border border-sky-200 bg-sky-50 px-2.5 py-1 font-semibold text-sky-900">
           <span className="h-2 w-2 rounded-full bg-sky-500" />
-          Tour request
+          Guest tour request
         </span>
       </div>
 
@@ -2336,255 +2375,350 @@ function ManagerCalendarPanel({ manager, scopedPropertyNames = [] }) {
         </div>
       ) : null}
 
-      {loading ? (
-        <div className="mt-8 py-16 text-center text-sm text-slate-500">Loading calendar…</div>
-      ) : (
-        <div className="mt-6 flex flex-col gap-8 lg:flex-row lg:items-start">
-          <div className="min-w-0 flex-1 overflow-x-auto">
-            <div className="grid min-w-[640px] grid-cols-7 gap-1 text-center text-[11px] font-bold uppercase tracking-wide text-slate-400">
-              {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((d) => (
-                <div key={d} className="py-2">
-                  {d}
-                </div>
-              ))}
-            </div>
-            <div className="grid min-w-[640px] grid-cols-7 gap-1">
-              {cells.map((day, idx) => {
-                if (day == null) {
-                  return <div key={`pad-${idx}`} className="min-h-[96px] rounded-xl bg-slate-50/50" />
-                }
-                const dayEvents = eventsForDay(day)
-                const freeN = freeSlotCountForDay(day)
-                const sel = selectedDay === day
+      {/* —— Tour availability (always first — no need to pick a calendar day) —— */}
+      <div className="mt-8 rounded-2xl border border-slate-200 bg-gradient-to-br from-slate-50/80 to-white p-5">
+        <div className="text-[11px] font-bold uppercase tracking-[0.14em] text-[#2563eb]">Your weekly tour hours</div>
+        <p className="mt-1 text-sm text-slate-600">
+          Saved to <code className="rounded bg-white px-1 text-[11px] ring-1 ring-slate-200">Tour Availability</code> on your manager profile.
+          Green blocks = you&apos;re free; guests only book inside those windows.
+        </p>
+        <p className="mt-2 text-xs text-slate-500">
+          <span className="font-semibold text-slate-700">{editWeekday}:</span> {freeStandardOnEditDay} of {TOUR_SLOTS.length} preset tour windows
+          covered — or paint any half-hour below.
+        </p>
+
+        <div className="mt-4 flex flex-wrap gap-2">
+          {TOUR_DAYS.map((d) => (
+            <button
+              key={d}
+              type="button"
+              onClick={() => setEditWeekday(d)}
+              className={classNames(
+                'rounded-xl border px-3 py-2 text-xs font-bold transition',
+                editWeekday === d
+                  ? 'border-[#2563eb] bg-[#2563eb] text-white shadow-sm'
+                  : 'border-slate-200 bg-white text-slate-700 hover:border-slate-300',
+              )}
+            >
+              {d}
+            </button>
+          ))}
+        </div>
+
+        <p className="mt-4 text-xs font-semibold text-slate-700">Quick toggles (preset tour times)</p>
+        <div className="mt-2 flex flex-wrap gap-2">
+          {TOUR_SLOTS.map((slot) => {
+            const range = slotRangeMinutes(slot)
+            const idxs = range ? halfHourIndicesOverlappingRange(range.start, range.end) : []
+            const set = new Set(weeklyFree[editWeekday] || [])
+            const on = idxs.some((i) => set.has(i))
+            return (
+              <button
+                key={slot}
+                type="button"
+                onClick={() => setWeeklyFree((prev) => toggleStandardTourSlotInWeekly(prev, editWeekday, slot))}
+                className={classNames(
+                  'rounded-full border px-3 py-1.5 text-xs font-semibold transition',
+                  on ? 'border-emerald-500 bg-emerald-500 text-white' : 'border-slate-200 bg-white text-slate-600 hover:border-emerald-300',
+                )}
+              >
+                {slot}
+              </button>
+            )
+          })}
+        </div>
+
+        <div className="mt-4 flex flex-wrap gap-2">
+          <button
+            type="button"
+            onClick={() => setBrushMode('free')}
+            className={classNames(
+              'rounded-full border px-3 py-1.5 text-xs font-semibold transition',
+              brushMode === 'free'
+                ? 'border-emerald-500 bg-emerald-500 text-white'
+                : 'border-slate-200 bg-white text-slate-700 hover:border-emerald-300',
+            )}
+          >
+            Paint free
+          </button>
+          <button
+            type="button"
+            onClick={() => setBrushMode('busy')}
+            className={classNames(
+              'rounded-full border px-3 py-1.5 text-xs font-semibold transition',
+              brushMode === 'busy'
+                ? 'border-slate-700 bg-slate-700 text-white'
+                : 'border-slate-200 bg-white text-slate-700 hover:border-slate-400',
+            )}
+          >
+            Paint busy
+          </button>
+        </div>
+
+        {availLoading ? (
+          <p className="mt-3 text-sm text-slate-500">Loading saved hours…</p>
+        ) : (
+          <div
+            className="mt-3 max-h-[220px] select-none overflow-y-auto rounded-xl border border-slate-200 bg-white"
+            onMouseLeave={() => {
+              paintingRef.current = false
+            }}
+          >
+            <div className="grid" style={{ gridTemplateColumns: '4.5rem 1fr' }}>
+              {Array.from({ length: TOUR_GRID_HALF_COUNT }, (_, halfIdx) => {
+                const active = (weeklyFree[editWeekday] || []).includes(halfIdx)
+                const showLabel = halfIdx % 2 === 0
                 return (
-                  <button
-                    key={day}
-                    type="button"
-                    onClick={() => setSelectedDay(day)}
-                    className={classNames(
-                      'flex min-h-[96px] flex-col rounded-xl border p-1.5 text-left transition',
-                      sel
-                        ? 'border-[#2563eb] bg-[#2563eb]/5 ring-2 ring-[#2563eb]/25'
-                        : 'border-slate-100 bg-slate-50/80 hover:border-slate-200 hover:bg-white',
-                      isToday(day) && !sel ? 'ring-1 ring-slate-300' : '',
-                    )}
-                  >
-                    <div className="flex items-start justify-between gap-1">
-                      <span className="text-xs font-bold text-slate-800">{day}</span>
-                      <span
-                        className={classNames(
-                          'shrink-0 rounded-full px-1.5 py-0.5 text-[9px] font-bold',
-                          freeN === 0 ? 'bg-slate-200 text-slate-700' : 'bg-emerald-100 text-emerald-800',
-                        )}
-                      >
-                        {freeN} open
-                      </span>
+                  <React.Fragment key={halfIdx}>
+                    <div className="border-b border-r border-slate-100 px-1 py-0.5 text-[10px] text-slate-400">
+                      {showLabel ? formatHalfHourIndexLabel(halfIdx) : ''}
                     </div>
-                    <div className="mt-1 flex max-h-[56px] flex-col gap-0.5 overflow-y-auto">
-                      {dayEvents.slice(0, 3).map((ev, i) => (
-                        <span
-                          key={`${ev.date}-${ev.schedulingId || i}-${ev.label}`}
-                          className={`truncate rounded px-1 py-0.5 text-[10px] font-semibold leading-tight ${eventToneCls(ev)}`}
-                          title={ev.label}
-                        >
-                          {ev.label}
-                        </span>
-                      ))}
-                      {dayEvents.length > 3 ? (
-                        <span className="text-[10px] text-slate-400">+{dayEvents.length - 3} more</span>
-                      ) : null}
-                    </div>
-                  </button>
+                    <button
+                      type="button"
+                      className={classNames(
+                        'h-5 border-b border-slate-100 transition-colors',
+                        active ? 'bg-emerald-400/90 hover:bg-emerald-500' : 'bg-slate-50 hover:bg-slate-200/80',
+                      )}
+                      onMouseDown={(e) => onGridCellDown(editWeekday, halfIdx, e)}
+                      onMouseEnter={() => onGridCellEnter(editWeekday, halfIdx)}
+                      aria-label={`${formatHalfHourIndexLabel(halfIdx)} ${active ? 'free' : 'busy'}`}
+                    />
+                  </React.Fragment>
                 )
               })}
             </div>
           </div>
+        )}
 
-          <div className="w-full shrink-0 rounded-2xl border border-slate-200 bg-slate-50/50 p-5 lg:w-[min(100%,440px)]">
-            {!selectedDay ? (
-              <div className="text-sm text-slate-600">
-                <p className="font-semibold text-slate-900">Day detail</p>
-                <p className="mt-2 text-slate-500">
-                  Select a date. You will edit <strong>that weekday every week</strong> (like When2meet): click and drag on half-hour cells to mark
-                  when you are free or busy. Tour requests for that date appear below with approve / decline.
-                </p>
+        <div className="mt-4 flex flex-wrap gap-2">
+          <button
+            type="button"
+            onClick={handleSaveWeeklyAvailability}
+            disabled={availSaving || !availabilityDirty || manager.__axisDeveloper}
+            className="rounded-xl bg-[#2563eb] px-4 py-2.5 text-sm font-semibold text-white shadow-sm disabled:opacity-50"
+          >
+            {availSaving ? 'Saving…' : 'Save tour hours'}
+          </button>
+          <button
+            type="button"
+            onClick={clearEditWeekdaySlots}
+            className="rounded-xl border border-red-200 bg-red-50 px-4 py-2.5 text-sm font-semibold text-red-800 hover:bg-red-100"
+          >
+            Clear {editWeekday}
+          </button>
+        </div>
+      </div>
+
+      {loading ? (
+        <div className="mt-8 py-16 text-center text-sm text-slate-500">Loading schedule…</div>
+      ) : (
+        <div className="mt-8 space-y-8">
+          {calView === 'month' ? (
+            <div className="min-w-0 overflow-x-auto">
+              <div className="grid min-w-[640px] grid-cols-7 gap-1 text-center text-[11px] font-bold uppercase tracking-wide text-slate-400">
+                {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((d) => (
+                  <div key={d} className="py-2">
+                    {d}
+                  </div>
+                ))}
               </div>
-            ) : (
-              <>
-                <div className="flex flex-wrap items-start justify-between gap-2 border-b border-slate-200 pb-3">
-                  <div>
-                    <p className="text-[11px] font-bold uppercase tracking-wide text-[#2563eb]">Selected day</p>
-                    <p className="mt-0.5 text-base font-black text-slate-900">{selectedDateLabel}</p>
-                    <p className="mt-1 text-sm text-slate-600">
-                      Editing weekly template for <span className="font-semibold text-slate-900">{selectedWeekdayAbbr}</span> —{' '}
-                      <span className="font-semibold text-emerald-700">{freeStandardOnSelected}</span> of {TOUR_SLOTS.length} standard tour
-                      windows covered.
-                    </p>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => setSelectedDay(null)}
-                    className="rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-xs font-semibold text-slate-600 hover:bg-slate-50"
-                  >
-                    Close
-                  </button>
-                </div>
-
-                <div className="mt-4">
-                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Paint availability</p>
-                  <p className="mt-1 text-[11px] text-slate-500">
-                    {TOUR_GRID_START_HOUR}:00–{TOUR_GRID_END_HOUR}:00 · hold and drag across cells (green = free for that half hour).
-                  </p>
-                  <div className="mt-2 flex flex-wrap gap-2">
+              <div className="grid min-w-[640px] grid-cols-7 gap-1">
+                {cells.map((day, idx) => {
+                  if (day == null) {
+                    return <div key={`pad-${idx}`} className="min-h-[88px] rounded-xl bg-slate-50/50" />
+                  }
+                  const key = calendarDateKey(y, m, day)
+                  const dayEvents = eventsForMonthCell(day)
+                  const freeN = freeSlotCountForMonthCell(day)
+                  const sel = detailDateKey === key
+                  return (
                     <button
+                      key={day}
                       type="button"
-                      onClick={() => setBrushMode('free')}
+                      onClick={() => selectCalendarDateKey(key)}
                       className={classNames(
-                        'rounded-full border px-3 py-1.5 text-xs font-semibold transition',
-                        brushMode === 'free'
-                          ? 'border-emerald-500 bg-emerald-500 text-white'
-                          : 'border-slate-200 bg-white text-slate-700 hover:border-emerald-300',
+                        'flex min-h-[88px] flex-col rounded-xl border p-1.5 text-left transition',
+                        sel
+                          ? 'border-[#2563eb] bg-[#2563eb]/5 ring-2 ring-[#2563eb]/25'
+                          : 'border-slate-100 bg-slate-50/80 hover:border-slate-200 hover:bg-white',
+                        isTodayMonthCell(day) && !sel ? 'ring-1 ring-slate-300' : '',
                       )}
                     >
-                      Mark free
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setBrushMode('busy')}
-                      className={classNames(
-                        'rounded-full border px-3 py-1.5 text-xs font-semibold transition',
-                        brushMode === 'busy'
-                          ? 'border-slate-700 bg-slate-700 text-white'
-                          : 'border-slate-200 bg-white text-slate-700 hover:border-slate-400',
-                      )}
-                    >
-                      Mark busy
-                    </button>
-                  </div>
-                  {availLoading ? (
-                    <p className="mt-3 text-sm text-slate-500">Loading your saved availability…</p>
-                  ) : (
-                    <div
-                      className="mt-3 max-h-[280px] select-none overflow-y-auto rounded-xl border border-slate-200 bg-white"
-                      onMouseLeave={() => {
-                        paintingRef.current = false
-                      }}
-                    >
-                      <div className="grid" style={{ gridTemplateColumns: '4.5rem 1fr' }}>
-                        {Array.from({ length: TOUR_GRID_HALF_COUNT }, (_, halfIdx) => {
-                          const active = (weeklyFree[selectedWeekdayAbbr] || []).includes(halfIdx)
-                          const showLabel = halfIdx % 2 === 0
-                          return (
-                            <React.Fragment key={halfIdx}>
-                              <div className="border-b border-r border-slate-100 px-1 py-0.5 text-[10px] text-slate-400">
-                                {showLabel ? formatHalfHourIndexLabel(halfIdx) : ''}
-                              </div>
-                              <button
-                                type="button"
-                                className={classNames(
-                                  'h-5 border-b border-slate-100 transition-colors',
-                                  active ? 'bg-emerald-400/90 hover:bg-emerald-500' : 'bg-slate-50 hover:bg-slate-200/80',
-                                )}
-                                onMouseDown={(e) => onGridCellDown(selectedWeekdayAbbr, halfIdx, e)}
-                                onMouseEnter={() => onGridCellEnter(selectedWeekdayAbbr, halfIdx)}
-                                aria-label={`${formatHalfHourIndexLabel(halfIdx)} ${active ? 'free' : 'busy'}`}
-                              />
-                            </React.Fragment>
-                          )
-                        })}
-                      </div>
-                    </div>
-                  )}
-                  <div className="mt-3 flex flex-wrap gap-2">
-                    <button
-                      type="button"
-                      onClick={handleSaveWeeklyAvailability}
-                      disabled={availSaving || !availabilityDirty || manager.__axisDeveloper}
-                      className="rounded-xl bg-[#2563eb] px-4 py-2 text-xs font-semibold text-white disabled:opacity-50"
-                    >
-                      {availSaving ? 'Saving…' : 'Save weekly availability'}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={clearSelectedWeekday}
-                      className="rounded-xl border border-red-200 bg-red-50 px-4 py-2 text-xs font-semibold text-red-800 hover:bg-red-100"
-                    >
-                      Clear {selectedWeekdayAbbr}
-                    </button>
-                  </div>
-                </div>
-
-                <div className="mt-6 border-t border-slate-200 pt-4">
-                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Standard tour slots (this weekday)</p>
-                  <ul className="mt-2 max-h-[160px] space-y-1 overflow-y-auto">
-                    {TOUR_SLOTS.map((slot) => {
-                      const range = slotRangeMinutes(slot)
-                      const idxs = range ? halfHourIndicesOverlappingRange(range.start, range.end) : []
-                      const set = new Set(weeklyFree[selectedWeekdayAbbr] || [])
-                      const open = idxs.some((i) => set.has(i))
-                      return (
-                        <li
-                          key={slot}
+                      <div className="flex items-start justify-between gap-1">
+                        <span className="text-xs font-bold text-slate-800">{day}</span>
+                        <span
                           className={classNames(
-                            'flex items-center justify-between rounded-lg border px-2.5 py-1.5 text-xs font-semibold',
-                            open ? 'border-emerald-200 bg-emerald-50 text-emerald-900' : 'border-slate-200 bg-white text-slate-500',
+                            'shrink-0 rounded-full px-1.5 py-0.5 text-[9px] font-bold',
+                            freeN === 0 ? 'bg-slate-200 text-slate-700' : 'bg-emerald-100 text-emerald-800',
                           )}
                         >
-                          <span>{slot}</span>
-                          <span>{open ? 'Open' : 'Closed'}</span>
-                        </li>
-                      )
-                    })}
-                  </ul>
-                </div>
+                          {freeN} slots
+                        </span>
+                      </div>
+                      <div className="mt-1 flex max-h-[52px] flex-col gap-0.5 overflow-y-auto">
+                        {dayEvents.slice(0, 3).map((ev, i) => (
+                          <span
+                            key={`${ev.date}-${ev.schedulingId || i}-${ev.label}`}
+                            className={`truncate rounded px-1 py-0.5 text-[10px] font-semibold leading-tight ${eventToneCls(ev)}`}
+                            title={ev.label}
+                          >
+                            {ev.label}
+                          </span>
+                        ))}
+                        {dayEvents.length > 3 ? (
+                          <span className="text-[10px] text-slate-400">+{dayEvents.length - 3} more</span>
+                        ) : null}
+                      </div>
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
+          ) : null}
 
-                <div className="mt-6 border-t border-slate-200 pt-4">
-                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Tour requests this date</p>
-                  {toursThisDay.length === 0 ? (
-                    <p className="mt-2 text-sm text-slate-500">No scheduled tour requests on this day.</p>
-                  ) : (
-                    <ul className="mt-2 space-y-3">
-                      {toursThisDay.map((row) => {
-                        const needs = tourApprovalNeedsAction(row)
-                        const appr = String(row['Manager Approval'] || '').trim() || 'Pending'
-                        return (
-                          <li key={row.id} className="rounded-xl border border-slate-200 bg-white p-3 text-sm shadow-sm">
-                            <div className="font-bold text-slate-900">{row.Name || 'Guest'}</div>
-                            <div className="mt-1 text-xs text-slate-600">
-                              {row.Property ? `${row.Property} · ` : ''}
-                              {row['Preferred Time'] || 'Time TBD'}
-                              {row['Tour Format'] ? ` · ${row['Tour Format']}` : ''}
-                            </div>
-                            {row.Email ? <div className="mt-0.5 text-xs text-slate-500">{row.Email}</div> : null}
-                            <div className="mt-2 text-[11px] font-semibold uppercase tracking-wide text-slate-400">
-                              Manager approval: {appr}
-                            </div>
-                            {needs ? (
-                              <div className="mt-2 flex flex-wrap gap-2">
-                                <button
-                                  type="button"
-                                  onClick={() => respondTourRequest(row, true)}
-                                  className="rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-700"
-                                >
-                                  Yes
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => respondTourRequest(row, false)}
-                                  className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50"
-                                >
-                                  No
-                                </button>
-                              </div>
-                            ) : null}
-                          </li>
-                        )
-                      })}
+          {calView === 'week' ? (
+            <div className="grid gap-2 sm:grid-cols-7">
+              {weekDays.map((d) => {
+                const key = dateKeyFromDate(d)
+                const evs = eventsForKey(key)
+                const freeN = freeSlotCountForDateKey(key)
+                const sel = detailDateKey === key
+                return (
+                  <button
+                    key={key}
+                    type="button"
+                    onClick={() => selectCalendarDateKey(key)}
+                    className={classNames(
+                      'min-h-[140px] rounded-2xl border p-3 text-left transition',
+                      sel ? 'border-[#2563eb] bg-[#2563eb]/5 ring-2 ring-[#2563eb]/20' : 'border-slate-200 bg-slate-50/60 hover:bg-white',
+                      key === todayKey ? 'ring-1 ring-slate-300' : '',
+                    )}
+                  >
+                    <div className="text-[10px] font-bold uppercase text-slate-400">
+                      {d.toLocaleDateString('en-US', { weekday: 'short' })}
+                    </div>
+                    <div className="text-lg font-black text-slate-900">{d.getDate()}</div>
+                    <div className="mt-1 text-[10px] font-semibold text-emerald-800">{freeN} tour slots</div>
+                    <ul className="mt-2 max-h-[72px] space-y-0.5 overflow-y-auto text-left">
+                      {evs.slice(0, 4).map((ev, i) => (
+                        <li
+                          key={`${ev.date}-${i}-${ev.label}`}
+                          className={`truncate rounded px-1 py-0.5 text-[9px] font-semibold ${eventToneCls(ev)}`}
+                        >
+                          {ev.label}
+                        </li>
+                      ))}
                     </ul>
-                  )}
-                </div>
-              </>
-            )}
+                  </button>
+                )
+              })}
+            </div>
+          ) : null}
+
+          {calView === 'day' ? (
+            <div className="rounded-2xl border border-slate-200 bg-slate-50/40 p-4">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <p className="text-sm font-black text-slate-900">
+                  {anchorDate.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}
+                </p>
+                <span className="text-xs font-semibold text-emerald-800">
+                  {freeSlotCountForDateKey(dateKeyFromDate(anchorDate))} tour windows this weekday
+                </span>
+              </div>
+              <ul className="mt-4 space-y-2">
+                {eventsForKey(dateKeyFromDate(anchorDate)).length === 0 ? (
+                  <li className="text-sm text-slate-500">Nothing scheduled on this day.</li>
+                ) : (
+                  eventsForKey(dateKeyFromDate(anchorDate)).map((ev, i) => (
+                    <li
+                      key={`${ev.date}-${i}-${ev.label}`}
+                      className={`rounded-xl border border-slate-100 px-3 py-2 text-sm font-semibold ${eventToneCls(ev)}`}
+                    >
+                      {ev.label}
+                    </li>
+                  ))
+                )}
+              </ul>
+            </div>
+          ) : null}
+
+          {/* Selected date: tour requests + full event list */}
+          <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+            <div className="flex flex-wrap items-start justify-between gap-2">
+              <div>
+                <p className="text-[11px] font-bold uppercase tracking-wide text-[#2563eb]">Selected date</p>
+                <p className="text-lg font-black text-slate-900">{detailDateLabel}</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => selectCalendarDateKey(todayKey)}
+                className="rounded-lg border border-slate-200 px-3 py-1 text-xs font-semibold text-slate-600 hover:bg-slate-50"
+              >
+                Jump to today
+              </button>
+            </div>
+
+            <div className="mt-4 border-t border-slate-100 pt-4">
+              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Tour requests</p>
+              {toursForDetailDate.length === 0 ? (
+                <p className="mt-2 text-sm text-slate-500">No tour requests on this date.</p>
+              ) : (
+                <ul className="mt-2 space-y-3">
+                  {toursForDetailDate.map((row) => {
+                    const needs = tourApprovalNeedsAction(row)
+                    const appr = String(row['Manager Approval'] || '').trim() || 'Pending'
+                    return (
+                      <li key={row.id} className="rounded-xl border border-slate-200 bg-slate-50/50 p-3 text-sm">
+                        <div className="font-bold text-slate-900">{row.Name || 'Guest'}</div>
+                        <div className="mt-1 text-xs text-slate-600">
+                          {row.Property ? `${row.Property} · ` : ''}
+                          {row['Preferred Time'] || 'Time TBD'}
+                          {row['Tour Format'] ? ` · ${row['Tour Format']}` : ''}
+                        </div>
+                        {row.Email ? <div className="mt-0.5 text-xs text-slate-500">{row.Email}</div> : null}
+                        <div className="mt-2 text-[11px] font-semibold uppercase tracking-wide text-slate-400">Status: {appr}</div>
+                        {needs ? (
+                          <div className="mt-2 flex flex-wrap gap-2">
+                            <button
+                              type="button"
+                              onClick={() => respondTourRequest(row, true)}
+                              className="rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-700"
+                            >
+                              Approve
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => respondTourRequest(row, false)}
+                              className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                            >
+                              Decline
+                            </button>
+                          </div>
+                        ) : null}
+                      </li>
+                    )
+                  })}
+                </ul>
+              )}
+            </div>
+
+            <div className="mt-6 border-t border-slate-100 pt-4">
+              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">All items this day</p>
+              <ul className="mt-2 space-y-1.5">
+                {eventsForKey(detailDateKey).length === 0 ? (
+                  <li className="text-sm text-slate-500">No other calendar items.</li>
+                ) : (
+                  eventsForKey(detailDateKey).map((ev, i) => (
+                    <li
+                      key={`${detailDateKey}-${i}-${ev.label}`}
+                      className={`rounded-lg px-3 py-2 text-sm font-medium ${eventToneCls(ev)}`}
+                    >
+                      {ev.label}
+                    </li>
+                  ))
+                )}
+              </ul>
+            </div>
           </div>
         </div>
       )}
@@ -2593,6 +2727,17 @@ function ManagerCalendarPanel({ manager, scopedPropertyNames = [] }) {
 }
 
 const MANAGER_INBOX_AXIS = 'inbox:axis'
+
+function managerInboxResidentThreadId(residentRecordId) {
+  return `resident:${String(residentRecordId || '').trim()}`
+}
+
+function managerInboxParseResidentThreadId(selectedId) {
+  const s = String(selectedId || '')
+  if (!s.startsWith('resident:')) return null
+  const id = s.slice('resident:'.length).trim()
+  return id || null
+}
 
 function managerInboxWoThreadId(woId) {
   return `wo:${woId}`
@@ -2657,6 +2802,8 @@ function managerInboxSectionForRow(lastMsgTs, state) {
 
 function managerInboxStateKeyForSelection(selectedThreadId, axisThreadKey) {
   if (selectedThreadId === MANAGER_INBOX_AXIS) return axisThreadKey || ''
+  const resId = managerInboxParseResidentThreadId(selectedThreadId)
+  if (resId) return residentLeasingThreadKey(resId)
   if (!selectedThreadId || !String(selectedThreadId).startsWith('wo:')) return ''
   return String(selectedThreadId)
 }
@@ -2673,6 +2820,8 @@ function InboxTabPanel({ manager, allowedPropertyNames }) {
   const [sending, setSending] = useState(false)
   const [inboxStateMap, setInboxStateMap] = useState(() => new Map())
   const [inboxStateBackend, setInboxStateBackend] = useState('pending')
+  const [sectionFilter, setSectionFilter] = useState('all')
+  const [threadSearch, setThreadSearch] = useState('')
 
   const inboxScopeLower = useMemo(
     () => new Set((allowedPropertyNames || []).map((n) => String(n).trim().toLowerCase()).filter(Boolean)),
@@ -2793,9 +2942,36 @@ function InboxTabPanel({ manager, allowedPropertyNames }) {
       })
     }
 
+    const residentByKey = new Map()
+    for (const m of allMsgs) {
+      const tk = portalInboxThreadKeyFromRecord(m)
+      if (!tk || !tk.startsWith('internal:resident-leasing:')) continue
+      if (!residentByKey.has(tk)) residentByKey.set(tk, [])
+      residentByKey.get(tk).push(m)
+    }
+    for (const [tk, rmsgs] of residentByKey) {
+      if (!residentLeasingThreadVisibleToManager(rmsgs, inboxScopeLower)) continue
+      const sorted = [...rmsgs].sort((a, b) => msgTime(a) - msgTime(b))
+      const last = sorted[sorted.length - 1]
+      const rid = parseResidentLeasingThreadKey(tk)
+      if (!rid) continue
+      const scopeHint = extractResidentScopeTextFromMessageBody(sorted[0]?.Message || last?.Message || '')
+      const lastMsgTs = last ? msgTime(last) : 0
+      rows.push({
+        id: managerInboxResidentThreadId(rid),
+        stateKey: tk,
+        title: 'Resident inbox',
+        subtitle: scopeHint || undefined,
+        preview: last?.Message ? String(last.Message) : '',
+        time: last ? fmtDateTime(last.Timestamp || last.created_at) : '',
+        ts: lastMsgTs,
+        lastMsgTs,
+      })
+    }
+
     rows.sort((a, b) => b.ts - a.ts)
     return rows
-  }, [scopedWos, allMsgs, axisMsgs, axisThreadKey])
+  }, [scopedWos, allMsgs, axisMsgs, axisThreadKey, inboxScopeLower])
 
   const threadRowsWithMeta = useMemo(() => {
     return threadRows.map((row) => {
@@ -2817,6 +2993,18 @@ function InboxTabPanel({ manager, allowedPropertyNames }) {
     }
     return { unopened, opened, trash }
   }, [threadRowsWithMeta])
+
+  const visibleThreadRows = useMemo(() => {
+    const q = threadSearch.trim().toLowerCase()
+    let rows = threadRowsWithMeta
+    if (sectionFilter === 'unopened') rows = rows.filter((row) => row.section === 'unopened')
+    else if (sectionFilter === 'opened') rows = rows.filter((row) => row.section === 'opened')
+    else if (sectionFilter === 'trash') rows = rows.filter((row) => row.section === 'trash')
+    if (!q) return rows
+    return rows.filter((row) =>
+      `${row.title} ${row.subtitle || ''} ${row.preview || ''}`.toLowerCase().includes(q),
+    )
+  }, [threadRowsWithMeta, sectionFilter, threadSearch])
 
   const touchThreadRead = useCallback(
     async (stateKey) => {
@@ -2890,6 +3078,16 @@ function InboxTabPanel({ manager, allowedPropertyNames }) {
   }, [selectedStateKey])
 
   useEffect(() => {
+    if (!visibleThreadRows.length) {
+      if (selectedThreadId) setSelectedThreadId(null)
+      return
+    }
+    if (!selectedThreadId || !visibleThreadRows.some((row) => row.id === selectedThreadId)) {
+      setSelectedThreadId(visibleThreadRows[0].id)
+    }
+  }, [visibleThreadRows, selectedThreadId])
+
+  useEffect(() => {
     if (!selectedThreadId) {
       setThread([])
       return
@@ -2900,6 +3098,19 @@ function InboxTabPanel({ manager, allowedPropertyNames }) {
       try {
         if (selectedThreadId === MANAGER_INBOX_AXIS) {
           const next = await getMessagesByThreadKey(axisThreadKey)
+          if (!cancelled) {
+            setThread(
+              [...next].sort(
+                (a, b) =>
+                  new Date(a.Timestamp || a.created_at || 0) - new Date(b.Timestamp || b.created_at || 0),
+              ),
+            )
+          }
+          return
+        }
+        const resId = managerInboxParseResidentThreadId(selectedThreadId)
+        if (resId) {
+          const next = await getMessagesByThreadKey(residentLeasingThreadKey(resId))
           if (!cancelled) {
             setThread(
               [...next].sort(
@@ -2946,14 +3157,25 @@ function InboxTabPanel({ manager, allowedPropertyNames }) {
           channel: PORTAL_INBOX_CHANNEL_INTERNAL,
         })
       } else {
-        const woId = managerInboxParseWoThreadId(selectedThreadId)
-        if (!woId) return
-        await sendMessage({
-          workOrderId: woId,
-          senderEmail: managerEmail,
-          message: reply.trim(),
-          isAdmin: true,
-        })
+        const resId = managerInboxParseResidentThreadId(selectedThreadId)
+        if (resId) {
+          await sendMessage({
+            senderEmail: managerEmail,
+            message: reply.trim(),
+            isAdmin: true,
+            threadKey: residentLeasingThreadKey(resId),
+            channel: PORTAL_INBOX_CHANNEL_INTERNAL,
+          })
+        } else {
+          const woId = managerInboxParseWoThreadId(selectedThreadId)
+          if (!woId) return
+          await sendMessage({
+            workOrderId: woId,
+            senderEmail: managerEmail,
+            message: reply.trim(),
+            isAdmin: true,
+          })
+        }
       }
       setReply('')
       await loadAll()
@@ -2966,8 +3188,19 @@ function InboxTabPanel({ manager, allowedPropertyNames }) {
           ),
         )
       } else {
-        const woId = managerInboxParseWoThreadId(selectedThreadId)
-        if (woId) setThread(await getMessages(woId))
+        const resId2 = managerInboxParseResidentThreadId(selectedThreadId)
+        if (resId2) {
+          const next = await getMessagesByThreadKey(residentLeasingThreadKey(resId2))
+          setThread(
+            [...next].sort(
+              (a, b) =>
+                new Date(a.Timestamp || a.created_at || 0) - new Date(b.Timestamp || b.created_at || 0),
+            ),
+          )
+        } else {
+          const woId = managerInboxParseWoThreadId(selectedThreadId)
+          if (woId) setThread(await getMessages(woId))
+        }
       }
       const sk = managerInboxStateKeyForSelection(selectedThreadId, axisThreadKey)
       if (sk) await touchThreadRead(sk)
@@ -2986,11 +3219,13 @@ function InboxTabPanel({ manager, allowedPropertyNames }) {
   const readingTitle =
     selectedThreadId === MANAGER_INBOX_AXIS
       ? 'Axis team'
-      : (() => {
-          const woId = managerInboxParseWoThreadId(selectedThreadId || '')
-          const w = scopedWos.find((x) => x.id === woId)
-          return w?.Title || 'Work order'
-        })()
+      : managerInboxParseResidentThreadId(selectedThreadId || '')
+        ? 'Resident inbox'
+        : (() => {
+            const woId = managerInboxParseWoThreadId(selectedThreadId || '')
+            const w = scopedWos.find((x) => x.id === woId)
+            return w?.Title || 'Work order'
+          })()
 
   return (
     <div className="mb-6 space-y-3">
@@ -2998,7 +3233,7 @@ function InboxTabPanel({ manager, allowedPropertyNames }) {
         <div>
           <h2 className="text-xl font-black text-slate-900">Inbox</h2>
           <p className="mt-1 text-sm text-slate-500">
-            Message residents on work orders, chat with Axis, or send anything else — same as email: unopened, opened, and trash on the left; compose below the conversation.
+            Work orders, resident leasing threads, and Axis chat in one inbox.
           </p>
         </div>
         <button
@@ -3017,45 +3252,57 @@ function InboxTabPanel({ manager, allowedPropertyNames }) {
               <span className="text-sm font-black text-slate-900">Conversations</span>
               <span className="text-xs text-slate-400">{threadRows.length}</span>
             </div>
+            <div className="border-b border-slate-100 bg-white px-4 py-3">
+              <div className="flex flex-wrap gap-2">
+                {[
+                  ['all', 'All', threadRows.length],
+                  ['unopened', 'Unopened', inboxSections.unopened.length],
+                  ['opened', 'Opened', inboxSections.opened.length],
+                  ['trash', 'Trash', inboxSections.trash.length],
+                ].map(([id, label, count]) => (
+                  <button
+                    key={id}
+                    type="button"
+                    onClick={() => setSectionFilter(id)}
+                    className={classNames(
+                      'rounded-full px-3 py-1.5 text-[11px] font-semibold transition',
+                      sectionFilter === id
+                        ? 'bg-[linear-gradient(180deg,#2f76ff_0%,#2450eb_100%)] text-white shadow-[0_3px_10px_rgba(37,99,235,0.25)]'
+                        : 'border border-slate-200 bg-white text-slate-600 hover:bg-slate-50',
+                    )}
+                  >
+                    {label} <span className="opacity-80">({count})</span>
+                  </button>
+                ))}
+              </div>
+              <input
+                value={threadSearch}
+                onChange={(e) => setThreadSearch(e.target.value)}
+                placeholder="Search conversations…"
+                className="mt-3 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm outline-none transition focus:border-[#2563eb] focus:ring-2 focus:ring-[#2563eb]/20"
+              />
+            </div>
             <div className="min-h-0 flex-1 overflow-y-auto">
               {loading ? (
                 <div className="py-12 text-center text-sm text-slate-500">Loading…</div>
-              ) : threadRows.length === 0 ? (
+              ) : visibleThreadRows.length === 0 ? (
                 <div className="px-4 py-12 text-center text-sm text-slate-500">No conversations yet.</div>
               ) : (
-                <>
-                  {[
-                    { key: 'unopened', label: 'Unopened', rows: inboxSections.unopened },
-                    { key: 'opened', label: 'Opened', rows: inboxSections.opened },
-                    { key: 'trash', label: 'Trash', rows: inboxSections.trash },
-                  ].map(({ key, label, rows: secRows }) => (
-                    <div key={key} className="border-b border-slate-100 last:border-b-0">
-                      <div className="sticky top-0 z-[1] bg-slate-100/95 px-4 py-2 text-[10px] font-bold uppercase tracking-wide text-slate-600">
-                        {label}{' '}
-                        <span className="font-semibold tabular-nums text-slate-400">({secRows.length})</span>
-                      </div>
-                      {secRows.length === 0 ? (
-                        <div className="px-4 py-3 text-xs text-slate-400">None</div>
-                      ) : (
-                        <ul className="divide-y divide-slate-100">
-                          {secRows.map((row) => (
-                            <li key={row.id}>
-                              <InboxThreadRow
-                                title={row.title}
-                                subtitle={row.subtitle}
-                                preview={row.preview}
-                                time={row.time}
-                                selected={selectedThreadId === row.id}
-                                unread={row.unread}
-                                onClick={() => setSelectedThreadId(row.id)}
-                              />
-                            </li>
-                          ))}
-                        </ul>
-                      )}
-                    </div>
+                <ul className="divide-y divide-slate-100">
+                  {visibleThreadRows.map((row) => (
+                    <li key={row.id}>
+                      <InboxThreadRow
+                        title={row.title}
+                        subtitle={row.subtitle}
+                        preview={row.preview}
+                        time={row.time}
+                        selected={selectedThreadId === row.id}
+                        unread={row.unread}
+                        onClick={() => setSelectedThreadId(row.id)}
+                      />
+                    </li>
                   ))}
-                </>
+                </ul>
               )}
             </div>
           </>
@@ -3070,7 +3317,9 @@ function InboxTabPanel({ manager, allowedPropertyNames }) {
                     <p className="mt-0.5 break-all text-xs text-slate-500">
                       {selectedThreadId === MANAGER_INBOX_AXIS
                         ? axisThreadKey
-                        : managerInboxParseWoThreadId(selectedThreadId)}
+                        : managerInboxParseResidentThreadId(selectedThreadId)
+                          ? 'House / room scoped from thread'
+                          : managerInboxParseWoThreadId(selectedThreadId)}
                     </p>
                   </div>
                   {selectedStateKey ? (
@@ -3253,6 +3502,7 @@ function WorkOrdersTabPanel({ manager, allowedPropertyNames }) {
     if (!scopeLower.size) {
       setList([])
       setListLoading(false)
+      setListError('')
       return
     }
     setListLoading(true)
@@ -3429,10 +3679,6 @@ function WorkOrdersTabPanel({ manager, allowedPropertyNames }) {
     }
   }
 
-  if (!scopeLower.size) {
-    return null
-  }
-
   return (
     <div className="mb-10 space-y-5">
       <div className="flex flex-wrap items-end justify-between gap-3">
@@ -3458,6 +3704,12 @@ function WorkOrdersTabPanel({ manager, allowedPropertyNames }) {
         >
           <div className="font-semibold text-amber-900">Could not load work orders</div>
           <p className="mt-2 text-amber-900/90">{listError}</p>
+        </div>
+      ) : null}
+
+      {!scopeLower.size ? (
+        <div className="rounded-2xl border border-slate-200 bg-white px-5 py-4 text-sm text-slate-600 shadow-sm">
+          Work orders will appear here once a property is linked to this manager account.
         </div>
       ) : null}
 
@@ -4540,7 +4792,7 @@ function ManagerDashboard({ manager: managerProp, onOpenDraft, onSignOut, onMana
         brandTitle="Axis"
         brandSubtitle="Manager portal"
         desktopNav="sidebar"
-        sidebarPosition="right"
+        sidebarPosition="left"
         navItems={MANAGER_NAV_ITEMS}
         activeId={dashView}
         onNavigate={setDashView}

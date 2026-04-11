@@ -21,15 +21,19 @@ export default function PortalShell({
 }) {
   const isRight = sidebarPosition === 'right'
   const asideBorder = isRight ? 'border-l border-slate-200' : 'border-r border-slate-200'
+  const asideOrder = isRight ? 'lg:order-last' : 'lg:order-first'
+  const mainOrder = isRight ? 'lg:order-first' : 'lg:order-last'
   const showDesktopSidebar = desktopNav === 'sidebar'
   const rootFlex = showDesktopSidebar
-    ? `flex min-h-screen bg-slate-50 text-slate-900 ${isRight ? 'flex-row-reverse' : ''}`
+    ? 'flex min-h-screen flex-row bg-slate-50 text-slate-900'
     : 'flex min-h-screen flex-col bg-slate-50 text-slate-900'
 
   return (
-    <div className={rootFlex}>
+    // dir="ltr" keeps the sidebar on the correct physical edge when the document is RTL
+    // (browser/OS setting or translation extensions); flex main-start would otherwise be on the right.
+    <div className={rootFlex} dir="ltr">
       {showDesktopSidebar ? (
-        <aside className={`hidden w-56 shrink-0 flex-col bg-white lg:flex ${asideBorder}`}>
+        <aside className={`hidden w-56 shrink-0 flex-col bg-white lg:flex ${asideBorder} ${asideOrder}`}>
           <div className="border-b border-slate-100 px-5 py-5">
             <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-[#2f76ff]">{brandTitle}</div>
             <div className="mt-1 text-sm font-black text-slate-900">{brandSubtitle}</div>
@@ -65,7 +69,7 @@ export default function PortalShell({
         </aside>
       ) : null}
 
-      <div className="flex min-w-0 flex-1 flex-col">
+      <div className={`flex min-w-0 flex-1 flex-col ${mainOrder}`}>
         <header
           className={`sticky top-0 z-20 border-b border-slate-200 bg-white/95 backdrop-blur ${showDesktopSidebar ? 'lg:hidden' : ''}`}
         >

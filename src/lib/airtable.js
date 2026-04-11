@@ -553,6 +553,21 @@ export function siteManagerThreadKey(managerEmail) {
   return `internal:site-manager:${e}`
 }
 
+const RESIDENT_LEASING_PREFIX = 'internal:resident-leasing:'
+
+/** Stable thread id: resident ↔ house team / admin (one thread per resident record). */
+export function residentLeasingThreadKey(residentRecordId) {
+  const id = String(residentRecordId || '').trim()
+  if (!id) return ''
+  return `${RESIDENT_LEASING_PREFIX}${id}`
+}
+
+export function parseResidentLeasingThreadKey(threadKey) {
+  const t = String(threadKey || '').trim()
+  if (!t.startsWith(RESIDENT_LEASING_PREFIX)) return ''
+  return t.slice(RESIDENT_LEASING_PREFIX.length).trim()
+}
+
 /** Public Contact / housing message with no specific property — visible in Admin portal inbox only. */
 export const HOUSING_PUBLIC_ADMIN_GENERAL_THREAD = 'internal:admin-public:general'
 
@@ -613,7 +628,7 @@ export async function getAllPortalInternalThreadMessages() {
     throw new Error('Add a "Thread Key" text field to Messages (or set VITE_AIRTABLE_MESSAGE_THREAD_KEY_FIELD).')
   }
   const f = `{${MESSAGE_THREAD_KEY_FIELD}}`
-  const formula = `OR(FIND("internal:mgmt-admin", ${f} & "") > 0, FIND("internal:site-manager", ${f} & "") > 0, FIND("internal:admin-public", ${f} & "") > 0)`
+  const formula = `OR(FIND("internal:mgmt-admin", ${f} & "") > 0, FIND("internal:site-manager", ${f} & "") > 0, FIND("internal:admin-public", ${f} & "") > 0, FIND("internal:resident-leasing", ${f} & "") > 0)`
   return listMessagesByFormulaPaginated(formula)
 }
 
@@ -628,7 +643,8 @@ export function isInternalPortalThreadMessage(record) {
   return (
     tk.includes('internal:mgmt-admin') ||
     tk.includes('internal:site-manager') ||
-    tk.includes('internal:admin-public')
+    tk.includes('internal:admin-public') ||
+    tk.includes('internal:resident-leasing')
   )
 }
 

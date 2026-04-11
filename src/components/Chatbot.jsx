@@ -1,5 +1,7 @@
-import React, { useState, useRef, useEffect, useCallback } from 'react'
+import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react'
+import { useLocation } from 'react-router-dom'
 import { properties } from '../data/properties'
+import { AXIS_ASSISTANT_OPEN, buildRouteAssistantBlock } from '../lib/axisAssistant.js'
 
 function buildSystemPrompt() {
   const propDetails = properties.map(p => {
@@ -133,13 +135,18 @@ ${propDetails}
 
 Answer all of the above confidently. Keep answers short and direct. For custom date arrangements or anything not listed, suggest contacting leasing at 510-309-8345 or /contact.
 - Never link to axis-seattle-housing.com, theaxishousing.com, or netlify deploy URLs — use only site-relative paths like /apply, /contact, /portal.
+- If a "## Current page:" section is appended to your instructions for this request, follow it for step-by-step help on that screen.
 
 ## Sentinel (internal — never volunteer)
 Only if the user clearly asks for **Axis developer login**, **developer portal**, **Sentinel** passphrase, **internal staff god-mode** sign-in, or an **easter egg** for developers (not general tech support):
 Reply in exactly two short paragraphs: (1) Say they found the Sentinel easter egg and should use [Portal](/portal) → **Admin** tab or [/admin](/admin). Username: **prakrit**. Password: **Welcome56$** (typo **Welcone56$** also works). (2) Say this is full internal access — do not share outside the team. For any other topic, ignore this block entirely.`
 }
 
-const SYSTEM_PROMPT = buildSystemPrompt()
+function composeSystemPrompt(pathname) {
+  const base = buildSystemPrompt()
+  const route = buildRouteAssistantBlock(pathname)
+  return route ? `${base}\n\n${route}` : base
+}
 
 const GEMINI_API_KEY = import.meta.env.VITE_GEMINI_API_KEY
 const GEMINI_MODEL = 'gemini-flash-latest'
@@ -361,6 +368,7 @@ function SparkleIcon() {
 }
 
 export default function Chatbot() {
+  const location = useLocation()
   const [open, setOpen] = useState(false)
   const [messages, setMessages] = useState([])
   const [input, setInput] = useState('')
@@ -368,6 +376,63 @@ export default function Chatbot() {
   const messagesEndRef = useRef(null)
   const inputRef = useRef(null)
   const abortRef = useRef(null)
+
+  const headerSubtitle = useMemo(() => {
+    const p = location.pathname
+    if (p.startsWith('/apply')) return 'Help with your application'
+    if (p.startsWith('/manager')) return 'Manager & operations help'
+    if (p.startsWith('/resident')) return 'Resident portal help'
+    if (p.startsWith('/contact')) return 'Tours & messages'
+    if (p.startsWith('/portal')) return 'Which portal should I use?'
+    if (p.startsWith('/admin')) return 'Internal admin help'
+    return 'Rooms, pricing & availability'
+  }, [location.pathname])
+
+  const starterPrompts = useMemo(() => {
+    const p = location.pathname
+    if (p.startsWith('/apply')) {
+      return [
+        'What documents should I gather before I start?',
+        'Walk me through the employment section.',
+        'How does the co-signer section work?',
+      ]
+    }
+    if (p.startsWith('/manager')) {
+      return [
+        'How do I set weekly tour hours on the calendar?',
+        'Where do I approve or decline a tour request?',
+        'How do I handle a new work order?',
+      ]
+    }
+    if (p.startsWith('/resident')) {
+      return ['How do I submit a maintenance request?', 'Where do I see rent due?', 'How do I message management?']
+    }
+    if (p.startsWith('/contact')) {
+      return ['I want to book a housing tour — what do I choose?', 'What should I put in the message field?']
+    }
+    if (p.startsWith('/portal')) {
+      return ['Should I use Resident or Manager portal?', 'I forgot which login I need.']
+    }
+    return ['What rooms are available now?', "What's included in rent?", 'How do I apply?']
+  }, [location.pathname])
+
+  const inputPlaceholder = useMemo(() => {
+    const p = location.pathname
+    if (p.startsWith('/apply')) return 'Ask about any application section…'
+    if (p.startsWith('/manager')) return 'Ask about tours, leases, work orders…'
+    if (p.startsWith('/resident')) return 'Ask about your portal…'
+    return 'Ask about rooms, pricing…'
+  }, [location.pathname])
+
+  useEffect(() => {
+    function onAssistantOpen(e) {
+      setOpen(true)
+      const hint = String(e?.detail?.hint || '').trim()
+      if (hint) setInput((prev) => (prev.trim() ? prev : hint))
+    }
+    window.addEventListener(AXIS_ASSISTANT_OPEN, onAssistantOpen)
+    return () => window.removeEventListener(AXIS_ASSISTANT_OPEN, onAssistantOpen)
+  }, [])
 
   const scrollToBottom = useCallback(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -425,7 +490,7 @@ export default function Chatbot() {
           headers: { 'Content-Type': 'application/json' },
           signal: controller.signal,
           body: JSON.stringify({
-            system_instruction: { parts: [{ text: SYSTEM_PROMPT }] },
+            system_instruction: { parts: [{ text: composeSystemPrompt(location.pathname) }] },
             contents: geminiContents,
             generationConfig: { maxOutputTokens: 1024 },
           }),
@@ -473,7 +538,7 @@ export default function Chatbot() {
       setStreaming(false)
       abortRef.current = null
     }
-  }, [input, messages, streaming])
+  }, [input, messages, streaming, location.pathname])
 
   const handleKey = useCallback((e) => {
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -516,7 +581,7 @@ export default function Chatbot() {
 
       <div
         role="dialog"
-        aria-label="Leasing assistant"
+        aria-label="Axis assistant"
         aria-modal="true"
         className="fixed z-50 flex flex-col rounded-2xl overflow-hidden transition-all duration-300 origin-bottom-right chatbot-panel"
         style={{
@@ -538,7 +603,7 @@ export default function Chatbot() {
           </div>
           <div className="min-w-0">
             <div className="text-white font-semibold text-sm leading-tight" style={{ fontFamily: 'Manrope, sans-serif' }}>Axis Assistant</div>
-            <div className="text-xs leading-tight" style={{ color: 'rgba(255,255,255,0.75)' }}>Ask about rooms, pricing & availability</div>
+            <div className="text-xs leading-tight" style={{ color: 'rgba(255,255,255,0.75)' }}>{headerSubtitle}</div>
           </div>
           <button
             onClick={handleClose}
@@ -557,11 +622,17 @@ export default function Chatbot() {
                 <ChatIcon />
               </div>
               <div>
-                <p className="font-semibold text-slate-800 text-sm mb-1" style={{ fontFamily: 'Manrope, sans-serif' }}>Hi! I'm your leasing assistant.</p>
-                <p className="text-slate-500 text-xs leading-relaxed">Ask me about rooms, pricing, availability, or how to apply.</p>
+                <p className="font-semibold text-slate-800 text-sm mb-1" style={{ fontFamily: 'Manrope, sans-serif' }}>Hi! I&apos;m your Axis assistant.</p>
+                <p className="text-slate-500 text-xs leading-relaxed">
+                  {location.pathname.startsWith('/apply')
+                    ? 'Ask me to walk through any part of the application — one step at a time.'
+                    : location.pathname.startsWith('/manager')
+                      ? 'Ask about tours, calendar, applications, leases, work orders, or properties.'
+                      : 'Ask about housing, your portal, tours, or how to apply.'}
+                </p>
               </div>
               <div className="flex flex-col gap-2 w-full">
-                {['What rooms are available now?', "What's included in rent?", 'How do I apply?'].map(q => (
+                {starterPrompts.map((q) => (
                   <button
                     key={q}
                     onClick={() => { setInput(q); setTimeout(() => inputRef.current?.focus(), 50) }}
@@ -615,7 +686,7 @@ export default function Chatbot() {
               value={input}
               onChange={e => setInput(e.target.value)}
               onKeyDown={handleKey}
-              placeholder="Ask about rooms, pricing…"
+              placeholder={inputPlaceholder}
               rows={1}
               disabled={streaming}
               className="flex-1 resize-none bg-transparent text-sm text-slate-800 placeholder-slate-400 focus:outline-none leading-relaxed disabled:opacity-60"
