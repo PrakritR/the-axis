@@ -4792,7 +4792,6 @@ function ManagerDashboard({ manager: managerProp, onOpenDraft, onSignOut, onMana
         brandTitle="Axis"
         brandSubtitle="Manager portal"
         desktopNav="sidebar"
-        sidebarPosition="left"
         navItems={MANAGER_NAV_ITEMS}
         activeId={dashView}
         onNavigate={setDashView}

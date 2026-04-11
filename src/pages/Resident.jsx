@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { Link, Navigate } from 'react-router-dom'
 import { properties } from '../data/properties'
 import { EmbeddedStripeCheckout } from '../components/EmbeddedStripeCheckout'
 import { readJsonResponse } from '../lib/readJsonResponse'
@@ -14,7 +14,6 @@ import {
   PortalSegmentedControl,
   portalAuthInputCls,
 } from '../components/PortalAuthUI'
-import { ManagerAuthForm, MANAGER_SESSION_KEY } from './Manager'
 import GmailStyleInboxLayout, { InboxThreadRow } from '../components/GmailStyleInboxLayout'
 import PortalShell from '../components/PortalShell'
 import { HOUSING_CONTACT_MESSAGE, HOUSING_CONTACT_SCHEDULE } from '../lib/housingSite'
@@ -521,39 +520,6 @@ export function ResidentAuthForm({ onLogin, footer = null, variant = 'default' }
 
       {footer ? <div className="mt-8 text-center text-sm text-slate-400">{footer}</div> : null}
     </>
-  )
-}
-
-function PortalEntryLogin({ onLogin }) {
-  const navigate = useNavigate()
-  const [portalType, setPortalType] = useState('resident')
-  const isResident = portalType === 'resident'
-
-  function handleManagerLogin(manager) {
-    sessionStorage.setItem(MANAGER_SESSION_KEY, JSON.stringify(manager))
-    navigate('/manager')
-  }
-
-  return (
-    <PortalAuthPage>
-      <PortalAuthCard title={isResident ? 'Resident portal' : 'Manager portal'}>
-        <PortalSegmentedControl
-          tabs={[
-            ['resident', 'Resident portal'],
-            ['manager', 'Manager portal'],
-          ]}
-          active={portalType}
-          onChange={setPortalType}
-        />
-        <div className="mt-6">
-          {isResident ? (
-            <ResidentAuthForm onLogin={onLogin} variant="portal-entry" />
-          ) : (
-            <ManagerAuthForm onLogin={handleManagerLogin} variant="portal-entry" />
-          )}
-        </div>
-      </PortalAuthCard>
-    </PortalAuthPage>
   )
 }
 
@@ -1711,11 +1677,6 @@ export default function Resident() {
     return () => { mounted = false }
   }, [])
 
-  function handleLogin(r) {
-    sessionStorage.setItem(SESSION_KEY, r.id)
-    setResident(r)
-  }
-
   function handleSignOut() {
     sessionStorage.removeItem(SESSION_KEY)
     setResident(null)
@@ -1729,7 +1690,9 @@ export default function Resident() {
       </div>
     )
   }
-  if (!resident) return <PortalEntryLogin onLogin={handleLogin} />
+  if (!resident) {
+    return <Navigate to="/portal?portal=resident" replace />
+  }
 
   return (
     <Dashboard
