@@ -11,6 +11,10 @@ const APPS_BASE_ID =
 const APPS_AIRTABLE_BASE_URL = `https://api.airtable.com/v0/${APPS_BASE_ID}`
 const CORE_AIRTABLE_BASE_URL = `https://api.airtable.com/v0/${CORE_BASE_ID}`
 const RESIDENT_PROFILE_TABLE = 'Resident Profile'
+const APPLICATIONS_TABLE =
+  process.env.VITE_AIRTABLE_APPLICATIONS_TABLE ||
+  process.env.AIRTABLE_APPLICATIONS_TABLE ||
+  'Applications'
 
 function airtableHeaders() {
   return {
@@ -52,13 +56,15 @@ function normalizeRecordId(raw) {
 }
 
 async function getApplication(recordId) {
-  const data = await airtableGet(`${APPS_AIRTABLE_BASE_URL}/Applications/${recordId}`)
+  const enc = encodeURIComponent(APPLICATIONS_TABLE)
+  const data = await airtableGet(`${APPS_AIRTABLE_BASE_URL}/${enc}/${recordId}`)
   return mapRecord(data)
 }
 
 async function approveApplication(recordId) {
   const now = new Date().toISOString()
-  const data = await airtablePatch(`${APPS_AIRTABLE_BASE_URL}/Applications/${recordId}`, {
+  const enc = encodeURIComponent(APPLICATIONS_TABLE)
+  const data = await airtablePatch(`${APPS_AIRTABLE_BASE_URL}/${enc}/${recordId}`, {
     Approved: true,
     'Approved At': now,
   })

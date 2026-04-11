@@ -11,10 +11,13 @@ const BASE_ID = import.meta.env.VITE_AIRTABLE_BASE_ID || 'appol57LKtMKaQ75T'
 const API_KEY = import.meta.env.VITE_AIRTABLE_TOKEN
 const BASE_URL = `https://api.airtable.com/v0/${BASE_ID}`
 
+const APPLICATIONS_TABLE =
+  String(import.meta.env.VITE_AIRTABLE_APPLICATIONS_TABLE || 'Applications').trim() || 'Applications'
+
 const TABLES = {
   properties: 'Properties',
   managers: 'Manager Profile',
-  applications: 'Applications',
+  applications: APPLICATIONS_TABLE,
 }
 
 function headers() {

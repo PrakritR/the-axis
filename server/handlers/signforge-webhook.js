@@ -8,7 +8,7 @@
  * HMAC verification (x-webhook-signature) requires raw body; Vercel parses JSON, so we
  * use a shared token in the URL instead. See LEASE_WORKFLOW_SETUP.md.
  */
-const AIRTABLE_TOKEN = process.env.VITE_AIRTABLE_TOKEN
+const AIRTABLE_TOKEN = process.env.AIRTABLE_TOKEN || process.env.VITE_AIRTABLE_TOKEN
 const BASE_ID =
   process.env.VITE_AIRTABLE_BASE_ID || process.env.AIRTABLE_BASE_ID || 'appol57LKtMKaQ75T'
 const AIRTABLE_BASE_URL = `https://api.airtable.com/v0/${BASE_ID}`

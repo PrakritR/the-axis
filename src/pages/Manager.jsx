@@ -57,10 +57,14 @@ const MANAGER_ONBOARDING_KEY = 'axis_manager_onboarding'
 const AIRTABLE_TOKEN = import.meta.env.VITE_AIRTABLE_TOKEN
 const CORE_BASE_ID = import.meta.env.VITE_AIRTABLE_BASE_ID || 'appol57LKtMKaQ75T'
 const CORE_AIRTABLE_BASE_URL = `https://api.airtable.com/v0/${CORE_BASE_ID}`
+const APPLICATIONS_TABLE_NAME =
+  String(import.meta.env.VITE_AIRTABLE_APPLICATIONS_TABLE || 'Applications').trim() || 'Applications'
 
 // ─── Lease status configuration ───────────────────────────────────────────────
 // Each status has a color set used by StatusBadge and the stats row
 const STATUS_CONFIG = {
+  'Draft ready':     { bg: 'bg-amber-50',  text: 'text-amber-700',  border: 'border-amber-200',  dot: 'bg-amber-400'  },
+  'Sent to resident':{ bg: 'bg-axis/5',    text: 'text-axis',       border: 'border-axis/20',    dot: 'bg-axis'       },
   'Draft Generated': { bg: 'bg-blue-50',   text: 'text-blue-700',   border: 'border-blue-200',   dot: 'bg-blue-400'   },
   'Under Review':    { bg: 'bg-amber-50',  text: 'text-amber-700',  border: 'border-amber-200',  dot: 'bg-amber-400'  },
   'Changes Needed':  { bg: 'bg-red-50',    text: 'text-red-700',    border: 'border-red-200',    dot: 'bg-red-500'    },
@@ -70,6 +74,48 @@ const STATUS_CONFIG = {
 }
 
 const ALL_STATUSES = Object.keys(STATUS_CONFIG)
+const LEASE_FLOW_CARDS = [
+  {
+    id: 'draft_ready',
+    label: 'Draft Ready',
+    match: (status) => ['Draft Generated', 'Under Review', 'Changes Needed', 'Approved'].includes(status),
+    activeStatuses: ['Draft Generated', 'Under Review', 'Changes Needed', 'Approved'],
+    cls: 'border-amber-200 bg-amber-50 text-amber-700',
+  },
+  {
+    id: 'sent_to_resident',
+    label: 'Sent to Resident',
+    match: (status) => status === 'Published',
+    activeStatuses: ['Published'],
+    cls: 'border-axis/20 bg-axis/5 text-axis',
+  },
+  {
+    id: 'signed',
+    label: 'Signed',
+    match: (status) => status === 'Signed',
+    activeStatuses: ['Signed'],
+    cls: 'border-emerald-200 bg-emerald-50 text-emerald-700',
+  },
+]
+
+function leaseDraftMatchesQueueFilter(status, filterValue) {
+  const normalized = String(status || '').trim()
+  if (!filterValue) return true
+  if (filterValue === '__draft_ready__') {
+    return ['Draft Generated', 'Under Review', 'Changes Needed', 'Approved'].includes(normalized)
+  }
+  if (filterValue === '__sent_to_resident__') return normalized === 'Published'
+  if (filterValue === '__signed__') return normalized === 'Signed'
+  return normalized === filterValue
+}
+
+function leaseUiStatusLabel(status) {
+  const normalized = String(status || '').trim()
+  if (['Draft Generated', 'Under Review', 'Changes Needed', 'Approved'].includes(normalized)) return 'Draft ready'
+  if (normalized === 'Published') return 'Sent to resident'
+  if (normalized === 'Signed') return 'Signed'
+  return normalized || 'Draft ready'
+}
 
 const LEASE_TERMS = [
   '3-Month', '9-Month', '12-Month', 'Month-to-Month',
@@ -1195,9 +1241,25 @@ async function fetchLeaseDrafts({ status, property, resident } = {}) {
   return (data.records || []).map(mapRecord)
 }
 
+/** Full list for manager calendar (Airtable returns max ~100 rows per request without pagination). */
+async function fetchAllLeaseDraftsForCalendar() {
+  const rows = []
+  let offset = null
+  do {
+    const url = new URL(`${CORE_AIRTABLE_BASE_URL}/Lease%20Drafts`)
+    url.searchParams.set('sort[0][field]', 'Updated At')
+    url.searchParams.set('sort[0][direction]', 'desc')
+    if (offset) url.searchParams.set('offset', offset)
+    const data = await atRequest(url.toString())
+    for (const r of data.records || []) rows.push(mapRecord(r))
+    offset = data.offset || null
+  } while (offset)
+  return rows
+}
+
 // ─── Applications data layer ──────────────────────────────────────────────────
 async function fetchApplications({ property } = {}) {
-  const url = new URL(`${CORE_AIRTABLE_BASE_URL}/Applications`)
+  const url = new URL(`${CORE_AIRTABLE_BASE_URL}/${encodeURIComponent(APPLICATIONS_TABLE_NAME)}`)
   if (property) {
     url.searchParams.set('filterByFormula', `FIND("${property.replace(/"/g, '\\"')}", {Property Name}) > 0`)
   }
@@ -1211,10 +1273,13 @@ async function fetchApplications({ property } = {}) {
 }
 
 async function patchApplication(recordId, fields) {
-  const data = await atRequest(`${CORE_AIRTABLE_BASE_URL}/Applications/${recordId}`, {
-    method: 'PATCH',
-    body: JSON.stringify({ fields, typecast: true }),
-  })
+  const data = await atRequest(
+    `${CORE_AIRTABLE_BASE_URL}/${encodeURIComponent(APPLICATIONS_TABLE_NAME)}/${recordId}`,
+    {
+      method: 'PATCH',
+      body: JSON.stringify({ fields, typecast: true }),
+    },
+  )
   return mapRecord(data)
 }
 
@@ -2930,8 +2995,8 @@ function ManagerCalendarPanel({ manager, scopedPropertyNames = [] }) {
     )
 
   return (
-    <div className="rounded-[24px] border border-slate-200 bg-white p-6 shadow-sm">
-      <div className="flex flex-wrap items-start justify-between gap-4">
+    <div className="min-w-0 w-full max-w-full rounded-[24px] border border-slate-200 bg-white p-4 shadow-sm sm:p-6">
+      <div className="flex flex-col gap-4 lg:flex-row lg:flex-wrap lg:items-start lg:justify-between">
         <div className="min-w-0 max-w-xl">
           <h2 className="text-xl font-black text-slate-900">Calendar &amp; tour hours</h2>
           {pendingTourCount > 0 ? (
@@ -2940,7 +3005,7 @@ function ManagerCalendarPanel({ manager, scopedPropertyNames = [] }) {
             </p>
           ) : null}
         </div>
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="flex min-w-0 flex-wrap items-center gap-2">
           <div className="flex rounded-xl border border-slate-200 bg-slate-50 p-0.5">
             <button type="button" className={viewToggleCls('month')} onClick={() => setCalView('month')}>
               Month
@@ -3164,7 +3229,7 @@ function ManagerCalendarPanel({ manager, scopedPropertyNames = [] }) {
                       type="button"
                       onClick={() => selectCalendarDateKey(key)}
                       className={classNames(
-                        'flex min-h-[88px] flex-col rounded-xl border p-1.5 text-left transition',
+                        'flex min-h-[76px] flex-col rounded-xl border p-1.5 text-left transition sm:min-h-[88px]',
                         sel
                           ? 'border-[#2563eb] bg-[#2563eb]/5 ring-2 ring-[#2563eb]/25'
                           : 'border-slate-100 bg-slate-50/80 hover:border-slate-200 hover:bg-white',
@@ -3204,7 +3269,7 @@ function ManagerCalendarPanel({ manager, scopedPropertyNames = [] }) {
           ) : null}
 
           {calView === 'week' ? (
-            <div className="grid gap-2 sm:grid-cols-7">
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-7">
               {weekDays.map((d) => {
                 const key = dateKeyFromDate(d)
                 const evs = eventsForKey(key)
@@ -4491,10 +4556,11 @@ function ManagerDashboard({ manager: managerProp, onOpenDraft, onSignOut, onMana
     setLoading(true)
     setLeasesLoadError('')
     try {
-      const rows = await fetchLeaseDrafts(filters)
+      const rows = await fetchLeaseDrafts({ ...filters, status: '' })
       const names = managerScope.approvedNames
-      const scoped =
+      let scoped =
         names.size > 0 ? rows.filter((d) => leaseDraftInScope(d, names)) : []
+      scoped = scoped.filter((d) => leaseDraftMatchesQueueFilter(d.Status, filters.status))
       setDrafts(scoped)
     } catch (err) {
       setLeasesLoadError(formatDataLoadError(err))
@@ -4596,6 +4662,15 @@ function ManagerDashboard({ manager: managerProp, onOpenDraft, onSignOut, onMana
     return c
   }, [drafts])
 
+  const leaseFlowCounts = useMemo(
+    () =>
+      LEASE_FLOW_CARDS.map((card) => ({
+        ...card,
+        count: drafts.filter((draft) => card.match(String(draft.Status || '').trim())).length,
+      })),
+    [drafts],
+  )
+
   function handleGenerated(newDraft) {
     setDrafts(prev => [{ id: newDraft.id, ...newDraft }, ...prev])
   }
@@ -4688,21 +4763,27 @@ function ManagerDashboard({ manager: managerProp, onOpenDraft, onSignOut, onMana
             <p className="mt-1 text-red-900/90">{leasesLoadError}</p>
           </div>
         ) : null}
-        {/* Status stat cards — clicking one filters the table */}
-        <div className="mb-8 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
-          {ALL_STATUSES.map(status => {
-            const cfg = STATUS_CONFIG[status]
-            const active = filters.status === status
+        <div className="mb-4">
+          <h2 className="text-xl font-black text-slate-900">Lease workflow</h2>
+          <p className="mt-1 text-sm text-slate-500">
+            Applications create draft leases. Sending a lease makes it visible to the resident, and once signed it comes back here automatically.
+          </p>
+        </div>
+
+        {/* Simplified flow cards — clicking one filters the queue */}
+        <div className="mb-8 grid grid-cols-1 gap-3 sm:grid-cols-3">
+          {leaseFlowCounts.map((card) => {
+            const active = filters.status === card.id
             return (
               <button
-                key={status}
-                onClick={() => setFilters(f => ({ ...f, status: f.status === status ? '' : status }))}
-                className={`rounded-2xl border p-4 text-left transition ${active ? `${cfg.bg} ${cfg.border}` : 'border-slate-200 bg-white hover:border-slate-300'}`}
+                key={card.id}
+                onClick={() => setFilters((f) => ({ ...f, status: active ? '' : card.id }))}
+                className={`rounded-2xl border p-5 text-left transition ${active ? card.cls : 'border-slate-200 bg-white hover:border-slate-300'}`}
               >
-                <div className={`text-2xl font-black ${active ? cfg.text : 'text-slate-900'}`}>
-                  {statusCounts[status]}
+                <div className={`text-3xl font-black ${active ? '' : 'text-slate-900'}`}>
+                  {card.count}
                 </div>
-                <div className="mt-0.5 text-[11px] font-semibold leading-tight text-slate-500">{status}</div>
+                <div className="mt-1 text-sm font-semibold leading-tight">{card.label}</div>
               </button>
             )
           })}
@@ -4710,7 +4791,9 @@ function ManagerDashboard({ manager: managerProp, onOpenDraft, onSignOut, onMana
 
         {/* Toolbar */}
         <div className="mb-5 flex flex-wrap items-center gap-3">
-          <h2 className="mr-auto text-xl font-black text-slate-900">Leases &amp; signing</h2>
+          <div className="mr-auto text-sm font-semibold text-slate-500">
+            Queue
+          </div>
 
           {/* Resident search */}
           <div className="relative">
@@ -4732,8 +4815,12 @@ function ManagerDashboard({ manager: managerProp, onOpenDraft, onSignOut, onMana
             onChange={e => setFilters(f => ({ ...f, status: e.target.value }))}
             className="rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition focus:border-[#2563eb] focus:outline-none focus:ring-2 focus:ring-[#2563eb]/20"
           >
-            <option value="">All statuses</option>
-            {ALL_STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
+            <option value="">All lease stages</option>
+            <option value="__draft_ready__">Draft ready</option>
+            <option value="Under Review">Manager reviewing</option>
+            <option value="Changes Needed">Needs changes</option>
+            <option value="__sent_to_resident__">Sent to resident</option>
+            <option value="__signed__">Signed</option>
           </select>
 
           {/* Property filter */}
@@ -4761,7 +4848,7 @@ function ManagerDashboard({ manager: managerProp, onOpenDraft, onSignOut, onMana
               <p className="mt-1 text-sm text-slate-500">
                 {Object.values(filters).some(Boolean)
                   ? 'Try clearing your filters.'
-                  : 'Click "Generate draft" to create the first AI lease draft.'}
+                  : 'Approved applications will create draft leases automatically.'}
               </p>
             </div>
           ) : (
@@ -4795,7 +4882,7 @@ function ManagerDashboard({ manager: managerProp, onOpenDraft, onSignOut, onMana
                         )}
                       </td>
                       <td className="px-5 py-4">
-                        <StatusBadge status={draft['Status']} />
+                        <StatusBadge status={leaseUiStatusLabel(draft['Status'])} />
                       </td>
                       <td className="hidden px-5 py-4 text-sm text-slate-500 lg:table-cell">
                         {fmtDate(draft['Updated At'] || draft.created_at)}
@@ -4874,7 +4961,7 @@ function LeaseEditor({ draftId, manager, onBack }) {
       setEditorContent(d['Manager Edited Content'] || d['AI Draft Content'] || '')
       setManagerNotes(d['Manager Notes'] || '')
 
-      // Auto-transition from "Draft Generated" to "Under Review" when first opened
+      // Auto-transition to manager review when the draft is first opened
       if (d['Status'] === 'Draft Generated') {
         const updated = await patchLeaseDraft(draftId, {
           'Status': 'Under Review',
@@ -4999,7 +5086,7 @@ function LeaseEditor({ draftId, manager, onBack }) {
           setDraft(await fetchLeaseDraft(draftId))
         }
         await refreshAudit()
-        toast.success('Lease approved and sent to the resident for e-signature.')
+        toast.success('Lease sent to the resident for signature.')
       } else if (sfRes.status === 501) {
         toast.success(
           'Lease approved and published. Add SIGNFORGE_API_KEY to your server environment to email the lease for signature.',
@@ -5007,7 +5094,7 @@ function LeaseEditor({ draftId, manager, onBack }) {
       } else {
         toast.error(
           sfData.error ||
-            'Lease is published, but SignForge could not send. Use “Send for e-sign” in the header to retry.',
+          'Lease is visible to the resident, but the signing email did not go out. Use “Resend signing link” to retry.',
         )
       }
     } catch (err) {
@@ -5173,7 +5260,7 @@ function LeaseEditor({ draftId, manager, onBack }) {
                 disabled={!!actionLoading}
                 className="rounded-xl bg-green-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-green-700 disabled:opacity-50"
               >
-                {actionLoading === 'approve' ? 'Sending…' : 'Approve & send to resident'}
+                {actionLoading === 'approve' ? 'Sending…' : 'Send to resident'}
               </button>
             )}
             {canPublish && (
@@ -5182,7 +5269,7 @@ function LeaseEditor({ draftId, manager, onBack }) {
                 disabled={!!actionLoading}
                 className="rounded-xl bg-[#2563eb] px-4 py-2 text-sm font-semibold text-white transition hover:brightness-110 disabled:opacity-50"
               >
-                {actionLoading === 'publish' ? 'Publishing…' : 'Publish to portal'}
+                {actionLoading === 'publish' ? 'Sending…' : 'Send to resident'}
               </button>
             )}
             {canSignforgeSend && (
@@ -5192,7 +5279,7 @@ function LeaseEditor({ draftId, manager, onBack }) {
                 disabled={!!actionLoading}
                 className="rounded-xl border border-violet-200 bg-violet-50 px-4 py-2 text-sm font-semibold text-violet-800 transition hover:bg-violet-100 disabled:opacity-50"
               >
-                {actionLoading === 'signforge' ? 'Sending…' : 'Send for e-sign (SignForge)'}
+                {actionLoading === 'signforge' ? 'Sending…' : 'Resend signing link'}
               </button>
             )}
             {canSignforgeRefresh && (
@@ -5397,15 +5484,15 @@ function LeaseEditor({ draftId, manager, onBack }) {
             <div className="rounded-[24px] border border-slate-200 bg-slate-50 p-5">
               <div className="text-sm font-semibold text-slate-700">Ready to send?</div>
               <p className="mt-1.5 text-sm text-slate-500">
-                Save your edits, then click <strong>Approve &amp; send to resident</strong>. That publishes the lease to the portal and emails the SignForge signing link (when <code className="rounded bg-slate-200 px-1 text-[11px]">SIGNFORGE_API_KEY</code> is set).
+                Save your edits, then click <strong>Send to resident</strong>. That makes the lease visible in the resident portal and emails the signing link when SignForge is configured.
               </p>
             </div>
           )}
           {canPublish && (
             <div className="rounded-[24px] border border-axis/20 bg-axis/5 p-5">
-              <div className="text-sm font-semibold text-axis">Approved — publish manually</div>
+              <div className="text-sm font-semibold text-axis">Legacy lease waiting to send</div>
               <p className="mt-1.5 text-sm text-axis/80">
-                This draft was left in <strong>Approved</strong> (older flow). Use <strong>Publish to portal</strong>, then <strong>Send for e-sign</strong> if needed.
+                This lease is in an older intermediate state. Use <strong>Send to resident</strong>, then resend the signing link if needed.
               </p>
             </div>
           )}
@@ -5413,7 +5500,7 @@ function LeaseEditor({ draftId, manager, onBack }) {
             <div className="rounded-[24px] border border-violet-200 bg-violet-50/80 p-5">
               <div className="text-sm font-semibold text-violet-900">E-sign (SignForge)</div>
               <p className="mt-1.5 text-sm text-violet-800/90">
-                New leases are emailed for signature when you approve. If sending failed or this lease predates that flow, use <strong>Send for e-sign</strong> in the header (
+                New leases are emailed for signature when you send them to the resident. If sending failed or this lease predates that flow, use <strong>Resend signing link</strong> in the header (
                 <a className="underline font-medium" href="https://signforge.io/dashboard" target="_blank" rel="noreferrer">
                   SignForge
                 </a>
@@ -5444,12 +5531,12 @@ function LeaseEditor({ draftId, manager, onBack }) {
             )}
             {canApprove && (
               <button onClick={handleApprove} disabled={!!actionLoading} className="w-full rounded-2xl bg-green-600 py-3 text-sm font-semibold text-white transition hover:bg-green-700 disabled:opacity-50">
-                {actionLoading === 'approve' ? 'Sending…' : 'Approve & send to resident'}
+                {actionLoading === 'approve' ? 'Sending…' : 'Send to resident'}
               </button>
             )}
             {canPublish && (
               <button onClick={handlePublish} disabled={!!actionLoading} className="w-full rounded-2xl bg-[#2563eb] py-3 text-sm font-semibold text-white transition hover:brightness-110 disabled:opacity-50">
-                {actionLoading === 'publish' ? 'Publishing…' : 'Publish to resident portal'}
+                {actionLoading === 'publish' ? 'Sending…' : 'Send to resident'}
               </button>
             )}
             {canSignforgeSend && (
@@ -5459,7 +5546,7 @@ function LeaseEditor({ draftId, manager, onBack }) {
                 disabled={!!actionLoading}
                 className="w-full rounded-2xl border border-violet-200 bg-violet-50 py-3 text-sm font-semibold text-violet-800 transition hover:bg-violet-100 disabled:opacity-50"
               >
-                {actionLoading === 'signforge' ? 'Sending…' : 'Send for e-sign (SignForge)'}
+                {actionLoading === 'signforge' ? 'Sending…' : 'Resend signing link'}
               </button>
             )}
             {canSignforgeRefresh && (

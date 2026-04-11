@@ -17,9 +17,13 @@ export default async function handler(req, res) {
     return res.status(400).json({ error: 'Missing required fields: recordId, leaseData, tenantEmail' })
   }
 
-  const AIRTABLE_TOKEN = process.env.VITE_AIRTABLE_TOKEN
+  const AIRTABLE_TOKEN = process.env.AIRTABLE_TOKEN || process.env.VITE_AIRTABLE_TOKEN
   const AIRTABLE_BASE_ID =
     process.env.VITE_AIRTABLE_BASE_ID || process.env.AIRTABLE_BASE_ID || 'appol57LKtMKaQ75T'
+  const APPLICATIONS_TABLE =
+    process.env.VITE_AIRTABLE_APPLICATIONS_TABLE ||
+    process.env.AIRTABLE_APPLICATIONS_TABLE ||
+    'Applications'
   const EMAILJS_SERVICE_ID = process.env.VITE_EMAILJS_SERVICE_ID
   const EMAILJS_PUBLIC_KEY = process.env.VITE_EMAILJS_PUBLIC_KEY
   const EMAILJS_LEASE_TEMPLATE = process.env.VITE_EMAILJS_LEASE_TEMPLATE || process.env.VITE_EMAILJS_TEMPLATE_ID
@@ -34,7 +38,7 @@ export default async function handler(req, res) {
 
   // 1. Save lease token + JSON to applications store
   const airtableRes = await fetch(
-    `https://api.airtable.com/v0/${AIRTABLE_BASE_ID}/Applications/${recordId}`,
+    `https://api.airtable.com/v0/${AIRTABLE_BASE_ID}/${encodeURIComponent(APPLICATIONS_TABLE)}/${recordId}`,
     {
       method: 'PATCH',
       headers: {
