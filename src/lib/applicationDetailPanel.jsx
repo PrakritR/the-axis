@@ -133,9 +133,9 @@ export function applicationViewModelFromAirtableRow(row) {
 }
 
 /**
- * @param {{ application: { id: string, _airtable: object, applicantName: string, propertyName: string, status: string, approvalPending?: boolean }, partnerLabel?: string, onClose: () => void }} props
+ * @param {{ application: { id: string, _airtable: object, applicantName: string, propertyName: string, status: string, approvalPending?: boolean }, partnerLabel?: string, onClose: () => void, adminReview?: { busy: boolean, onApprove: () => void, onReject: () => void } | null }} props
  */
-export function ApplicationDetailPanel({ application, partnerLabel, onClose }) {
+export function ApplicationDetailPanel({ application, partnerLabel, onClose, adminReview = null }) {
   const raw = application?._airtable
   if (!raw) return null
 
@@ -182,7 +182,9 @@ export function ApplicationDetailPanel({ application, partnerLabel, onClose }) {
           <div className="mt-2 flex flex-wrap items-center gap-2">
             <StatusPill tone="blue">{application.status}</StatusPill>
             {application.approvalPending ? (
-              <span className="text-xs font-medium text-amber-700">Pending manager review</span>
+              <span className="text-xs font-medium text-amber-700">
+                {adminReview ? 'Pending review (manager or admin)' : 'Pending manager review'}
+              </span>
             ) : null}
           </div>
         </div>
@@ -190,6 +192,27 @@ export function ApplicationDetailPanel({ application, partnerLabel, onClose }) {
           Close
         </button>
       </div>
+
+      {adminReview && application.approvalPending ? (
+        <div className="flex flex-wrap gap-2 border-t border-slate-100 pt-4">
+          <button
+            type="button"
+            disabled={adminReview.busy}
+            className="rounded-xl bg-emerald-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
+            onClick={adminReview.onApprove}
+          >
+            Approve application
+          </button>
+          <button
+            type="button"
+            disabled={adminReview.busy}
+            className="rounded-xl border border-red-200 bg-red-50 px-4 py-2 text-sm font-semibold text-red-800 disabled:opacity-50"
+            onClick={adminReview.onReject}
+          >
+            Reject
+          </button>
+        </div>
+      ) : null}
 
       <dl className="space-y-0 border-t border-slate-100 pt-4">
         {submitted ? (

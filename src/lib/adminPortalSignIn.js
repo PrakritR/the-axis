@@ -1,5 +1,5 @@
 /**
- * @param {string} identifier - Email (Admin Profile, env CEO, or site owner)
+ * @param {string} identifier - Email
  * @param {string} password
  * @returns {Promise<{ ok: true, user: object } | { ok: false, error: string }>}
  */
@@ -71,6 +71,6 @@ export async function authenticateAdminPortal(identifier, password) {
   return {
     ok: false,
     error:
-      'Invalid credentials. Use the email and password from your internal Admin Profile, or site owner / CEO credentials configured on the server.',
+      'Invalid email or password.',
   }
 }

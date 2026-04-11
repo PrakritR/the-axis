@@ -210,9 +210,16 @@ export async function loadAdminPortalDataset() {
 
   const accounts = managerRows.map((raw) => {
     const email = String(raw.Email || '').trim().toLowerCase()
-    const propertyCount = propertyRows.filter(
+    const linkedProps = propertyRows.filter(
       (p) => String(p['Manager Email'] || '').trim().toLowerCase() === email,
-    ).length
+    )
+    const propertyCount = linkedProps.length
+    const houseNames = linkedProps.map((p) => propertyRecordName(p)).filter(Boolean)
+    const houseNamesSorted = [...houseNames].sort((a, b) =>
+      a.localeCompare(b, undefined, { sensitivity: 'base' }),
+    )
+    const houseSortKey = (houseNamesSorted[0] || '').toLowerCase()
+    const managedHousesLabel = houseNamesSorted.length ? houseNamesSorted.join(', ') : '—'
     const active =
       raw.Active === true ||
       raw.Active === 1 ||
@@ -228,6 +235,8 @@ export async function loadAdminPortalDataset() {
       verificationStatus: verified ? 'verified' : 'pending',
       propertyCount,
       enabled: active,
+      houseSortKey,
+      managedHousesLabel,
     }
   })
 
@@ -280,5 +289,19 @@ export async function adminSetManagerActive(recordId, active) {
     body: JSON.stringify({ fields: { Active: Boolean(active) }, typecast: true }),
   })
   return mapRecord(data)
+}
+
+export async function adminPatchApplication(recordId, fields) {
+  const enc = encodeURIComponent(TABLES.applications)
+  const data = await requestJson(`${BASE_URL}/${enc}/${recordId}`, {
+    method: 'PATCH',
+    body: JSON.stringify({ fields, typecast: true }),
+  })
+  return mapRecord(data)
+}
+
+/** Reject rental application (same field semantics as manager portal). */
+export async function adminRejectApplication(recordId) {
+  return adminPatchApplication(recordId, { Approved: false })
 }
 

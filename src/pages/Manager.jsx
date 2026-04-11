@@ -260,6 +260,18 @@ function isRentPaymentRecord(p) {
   return true
 }
 
+/** Same rules as resident portal PaymentsPanel — rent vs fee/extra charges. */
+function getPaymentKind(payment) {
+  if (!payment) return 'rent'
+  const raw = [payment.Type, payment.Category, payment.Kind, payment['Line Item Type'], payment.Month, payment.Notes]
+    .filter(Boolean)
+    .map((x) => String(x))
+    .join(' ')
+    .toLowerCase()
+  if (/(fee|fine|damage|late fee|late charge|cleaning|lockout)/.test(raw)) return 'fee'
+  return 'rent'
+}
+
 function isPaymentOverdueRecord(p) {
   if (String(p.Status || '').trim().toLowerCase() === 'paid') return false
   if (String(p.Status || '').trim().toLowerCase() === 'overdue') return true
@@ -574,6 +586,12 @@ function weeklyFreeArraysFromTourText(text) {
   return o
 }
 
+function extractNoteValue(notes, label) {
+  const escaped = String(label || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  const match = String(notes || '').match(new RegExp(`(?:^|\\n)${escaped}:\\s*(.+?)(?:\\n|$)`, 'i'))
+  return match ? match[1].trim() : ''
+}
+
 function buildTourNotesText(existingNotes, metadata) {
   const labels = ['Tour Manager', 'Tour Availability', 'Tour Notes']
   let stripped = String(existingNotes || '').trim()
@@ -788,6 +806,40 @@ function bookingLabel(row) {
   return 'Booked tour'
 }
 
+function parsePreferredTimeRange(preferredTime) {
+  const parts = String(preferredTime || '')
+    .split('-')
+    .map((part) => part.trim())
+    .filter(Boolean)
+  if (parts.length !== 2) return null
+  const parseLabel = (value) => {
+    const match = String(value).match(/^(\d{1,2})(?::(\d{2}))?\s*(AM|PM)$/i)
+    if (!match) return null
+    let hour = Number(match[1]) % 12
+    const minute = Number(match[2] || '0')
+    const meridiem = String(match[3] || '').toUpperCase()
+    if (meridiem === 'PM') hour += 12
+    return hour * 60 + minute
+  }
+  const start = parseLabel(parts[0])
+  const end = parseLabel(parts[1])
+  if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) return null
+  return {
+    start: Math.max(TOUR_GRID_START_MIN, start),
+    end: Math.min(TOUR_GRID_END_MIN, end),
+  }
+}
+
+function timelineBlockStyle(start, end) {
+  const total = TOUR_GRID_END_MIN - TOUR_GRID_START_MIN
+  const safeStart = Math.max(TOUR_GRID_START_MIN, Math.min(TOUR_GRID_END_MIN, start))
+  const safeEnd = Math.max(safeStart, Math.min(TOUR_GRID_END_MIN, end))
+  return {
+    top: `${((safeStart - TOUR_GRID_START_MIN) / total) * 100}%`,
+    height: `${Math.max(((safeEnd - safeStart) / total) * 100, 2)}%`,
+  }
+}
+
 function TimeRangeRow({ range, onChange, onRemove, disabled = false, disableRemove = false }) {
   return (
     <div className="grid grid-cols-[1fr_auto_1fr_auto] items-center gap-2 rounded-2xl border border-slate-200 bg-white p-3">
@@ -932,6 +984,7 @@ function AvailabilityCalendar({ view, anchorDate, selectedDateKey, onSelectDate,
     const dateKey = dateKeyFromDate(anchorDate)
     const ranges = dayRanges(dateKey)
     const dayBookings = bookings(dateKey)
+    const hourMarkers = Array.from({ length: TOUR_GRID_END_HOUR - TOUR_GRID_START_HOUR + 1 }, (_, idx) => TOUR_GRID_START_HOUR + idx)
     return (
       <div className="rounded-[28px] border border-slate-200 bg-white p-5 shadow-sm">
         <div className="text-[11px] font-bold uppercase tracking-[0.16em] text-slate-400">
@@ -940,28 +993,72 @@ function AvailabilityCalendar({ view, anchorDate, selectedDateKey, onSelectDate,
         <div className="mt-1 text-2xl font-black text-slate-900">
           {anchorDate.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}
         </div>
-        <div className="mt-5 grid gap-4 md:grid-cols-2">
-          <div className="rounded-2xl border border-slate-200 bg-slate-50/70 p-4">
-            <div className="text-sm font-bold text-slate-900">Available tour slots</div>
-            <div className="mt-3 space-y-2">
-              {ranges.length ? ranges.map((range) => (
-                <div key={`${range.start}-${range.end}`} className="rounded-xl bg-emerald-50 px-3 py-2 text-sm font-semibold text-emerald-800">
-                  {formatTimeRangeLabel(range)}
-                </div>
-              )) : <div className="text-sm text-slate-500">Not available</div>}
+        <div className="mt-5 rounded-[28px] border border-slate-200 bg-slate-50/70 p-4">
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <div className="text-sm font-bold text-slate-900">Day preview</div>
+              <div className="mt-1 text-xs text-slate-500">Full schedule from 8:00 AM to 12:00 AM, with availability and booked items in one view.</div>
+            </div>
+            <div className="flex flex-wrap gap-2 text-xs font-semibold">
+              <span className="rounded-full bg-emerald-50 px-3 py-1.5 text-emerald-800 ring-1 ring-emerald-100">Available</span>
+              <span className="rounded-full bg-sky-50 px-3 py-1.5 text-sky-800 ring-1 ring-sky-100">Tour</span>
+              <span className="rounded-full bg-violet-50 px-3 py-1.5 text-violet-800 ring-1 ring-violet-100">Meeting</span>
+              <span className="rounded-full bg-amber-50 px-3 py-1.5 text-amber-800 ring-1 ring-amber-100">Work order</span>
             </div>
           </div>
-          <div className="rounded-2xl border border-slate-200 bg-slate-50/70 p-4">
-            <div className="text-sm font-bold text-slate-900">Booked tours</div>
-            <div className="mt-3 space-y-2">
-              {dayBookings.length ? dayBookings.map((row) => (
-                <div key={row.id} className={`rounded-xl border px-3 py-2 text-sm ${bookingBadgeTone(row)}`}>
-                  <div className="font-semibold">{bookingLabel(row)}</div>
-                  <div className="mt-1 text-xs opacity-80">
-                    {row.Name || 'Guest'}{row['Preferred Time'] ? ` · ${row['Preferred Time']}` : ''}{row.Property ? ` · ${row.Property}` : ''}
+          <div className="grid grid-cols-[72px_minmax(0,1fr)] gap-3">
+            <div className="relative h-[720px]">
+              {hourMarkers.map((hour, idx) => {
+                const top = `${(idx / (hourMarkers.length - 1)) * 100}%`
+                return (
+                  <div key={hour} className="absolute left-0 right-0 -translate-y-1/2 text-xs font-semibold text-slate-400" style={{ top }}>
+                    {displayTimeFromMinutes(hour * 60)}
                   </div>
+                )
+              })}
+            </div>
+            <div className="relative h-[720px] overflow-hidden rounded-[24px] border border-slate-200 bg-white">
+              {hourMarkers.slice(0, -1).map((hour, idx) => (
+                <div
+                  key={`line-${hour}`}
+                  className="absolute left-0 right-0 border-t border-dashed border-slate-200"
+                  style={{ top: `${(idx / (hourMarkers.length - 1)) * 100}%` }}
+                />
+              ))}
+              {ranges.map((range) => (
+                <div
+                  key={`avail-${range.start}-${range.end}`}
+                  className="absolute left-3 right-3 rounded-2xl bg-emerald-100/90 px-4 py-3 text-sm font-semibold text-emerald-900 shadow-sm ring-1 ring-emerald-200"
+                  style={timelineBlockStyle(range.start, range.end)}
+                >
+                  {formatTimeRangeLabel(range)}
                 </div>
-              )) : <div className="text-sm text-slate-500">No booked tours</div>}
+              ))}
+              {dayBookings.map((row, idx) => {
+                const parsed = parsePreferredTimeRange(row['Preferred Time'])
+                if (!parsed) return null
+                return (
+                  <div
+                    key={row.id}
+                    className={`absolute rounded-2xl border px-3 py-2 text-sm shadow-sm ${bookingBadgeTone(row)}`}
+                    style={{
+                      ...timelineBlockStyle(parsed.start, parsed.end),
+                      left: idx % 2 === 0 ? '0.75rem' : '50%',
+                      right: idx % 2 === 0 ? '50%' : '0.75rem',
+                    }}
+                  >
+                    <div className="font-semibold">{bookingLabel(row)}</div>
+                    <div className="mt-1 text-xs opacity-80">
+                      {[row.Name || 'Guest', row['Preferred Time'], row.Property].filter(Boolean).join(' · ')}
+                    </div>
+                  </div>
+                )
+              })}
+              {!ranges.length && !dayBookings.length ? (
+                <div className="absolute inset-0 flex items-center justify-center px-6 text-center text-sm text-slate-500">
+                  No availability or scheduled items for this date yet.
+                </div>
+              ) : null}
             </div>
           </div>
         </div>
@@ -1464,6 +1561,22 @@ function fmtDateTime(val) {
   if (!val) return '—'
   try { return new Date(val).toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' }) }
   catch { return String(val) }
+}
+
+/** Airtable sometimes returns linked/rich values as objects or arrays — never pass those raw to React text nodes. */
+function safePortalText(value, fallback = '') {
+  if (value == null || value === '') return fallback
+  if (typeof value === 'string') return value
+  if (typeof value === 'number' || typeof value === 'boolean') return String(value)
+  if (Array.isArray(value)) {
+    const parts = value.map((v) => safePortalText(v, '')).filter(Boolean)
+    return parts.length ? parts.join(' ') : fallback
+  }
+  if (typeof value === 'object') {
+    if (typeof value.text === 'string') return value.text
+    if (typeof value.name === 'string') return value.name
+  }
+  return fallback
 }
 
 // ─── StatusBadge ─────────────────────────────────────────────────────────────
@@ -2562,7 +2675,7 @@ function buildCalendarEvents(drafts, workOrders, applications) {
     if (ap && ap !== pub) events.push({ date: ap, label: `Approved · ${name}`, type: 'approve' })
   }
   for (const w of workOrders || []) {
-    const title = (w.Title || 'Request').slice(0, 48)
+    const title = safePortalText(w.Title, 'Request').slice(0, 48)
     const sub = parseCalendarDay(w['Date Submitted'] || w.created_at)
     if (sub) events.push({ date: sub, label: `Work order · ${title}`, type: 'wo' })
     const lu = parseCalendarDay(w['Last Update'])
@@ -3026,7 +3139,7 @@ function WorkOrdersTabPanel({ allowedPropertyNames }) {
     'w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none transition focus:border-[#2563eb] focus:ring-2 focus:ring-[#2563eb]/20'
 
   const priorityOptions = useMemo(() => {
-    const p = record?.Priority
+    const p = safePortalText(record?.Priority, '')
     if (p && !WORK_ORDER_PRIORITIES.includes(p)) return [p, ...WORK_ORDER_PRIORITIES]
     return WORK_ORDER_PRIORITIES
   }, [record?.Priority])
@@ -3034,12 +3147,12 @@ function WorkOrdersTabPanel({ allowedPropertyNames }) {
   function applyRecordToForm(nextRecord) {
     const meta = parseWorkOrderMetaBlock(nextRecord?.['Management Notes'])
     setStatus(managerWorkOrderStatusLabel(nextRecord))
-    setPriority(nextRecord?.Priority || 'Normal')
+    setPriority(safePortalText(nextRecord?.Priority, 'Normal') || 'Normal')
     setAssignedTo(meta['assigned to'] || '')
     setScheduledAt(meta.scheduled || '')
     setManagementNotes(workOrderPlainNotes(nextRecord?.['Management Notes']))
-    setResidentUpdate(String(nextRecord?.Update ?? ''))
-    setResolutionSummary(String(nextRecord?.['Resolution Summary'] ?? ''))
+    setResidentUpdate(safePortalText(nextRecord?.Update, ''))
+    setResolutionSummary(safePortalText(nextRecord?.['Resolution Summary'], ''))
   }
 
   const loadList = useCallback(async () => {
@@ -3077,7 +3190,7 @@ function WorkOrdersTabPanel({ allowedPropertyNames }) {
     const q = search.trim().toLowerCase()
     if (q) {
       rows = rows.filter((row) => {
-        const haystack = `${workOrderPropertyLabel(row)} ${row['Room Number'] || ''} ${paymentResidentLabel(row)} ${row.Title || ''} ${row.Description || ''}`.toLowerCase()
+        const haystack = `${workOrderPropertyLabel(row)} ${row['Room Number'] || ''} ${paymentResidentLabel(row)} ${safePortalText(row.Title)} ${safePortalText(row.Description)}`.toLowerCase()
         return haystack.includes(q)
       })
     }
@@ -3238,10 +3351,10 @@ function WorkOrdersTabPanel({ allowedPropertyNames }) {
                       <td className="px-4 py-4 text-sm text-slate-600">{row['Room Number'] || row.Room || '—'}</td>
                       <td className="px-4 py-4 text-sm text-slate-600">{paymentResidentLabel(row)}</td>
                       <td className="px-4 py-4">
-                        <div className="text-sm font-semibold text-slate-900">{row.Title || 'Untitled request'}</div>
-                        <div className="mt-1 text-xs text-slate-400">{row.Category || 'General Maintenance'}</div>
+                        <div className="text-sm font-semibold text-slate-900">{safePortalText(row.Title, 'Untitled request')}</div>
+                        <div className="mt-1 text-xs text-slate-400">{safePortalText(row.Category, 'General Maintenance')}</div>
                       </td>
-                      <td className="px-4 py-4 text-sm text-slate-600">{row.Priority || 'Normal'}</td>
+                      <td className="px-4 py-4 text-sm text-slate-600">{safePortalText(row.Priority, 'Normal')}</td>
                       <td className="px-4 py-4 text-sm text-slate-600">{fmtDate(row['Date Submitted'] || row.created_at)}</td>
                       <td className="px-4 py-4">
                         <PortalOpsStatusBadge tone={managerWorkOrderStatusTone(row)}>
@@ -3258,7 +3371,7 @@ function WorkOrdersTabPanel({ allowedPropertyNames }) {
 
         {record ? (
           <PortalOpsCard
-            title={record.Title || 'Work order'}
+            title={safePortalText(record.Title, 'Work order')}
             description={`${workOrderPropertyLabel(record) || 'House not set'} · ${paymentResidentLabel(record)}`}
             action={
               <button
@@ -3278,14 +3391,14 @@ function WorkOrdersTabPanel({ allowedPropertyNames }) {
               <PortalOpsStatusBadge tone={managerWorkOrderStatusTone(record)}>
                 {managerWorkOrderStatusLabel(record)}
               </PortalOpsStatusBadge>
-              <PortalOpsStatusBadge tone={['urgent', 'emergency', 'critical'].includes(String(record.Priority || '').trim().toLowerCase()) ? 'red' : 'slate'}>
-                {record.Priority || 'Normal'}
+              <PortalOpsStatusBadge tone={['urgent', 'emergency', 'critical'].includes(safePortalText(record.Priority, '').trim().toLowerCase()) ? 'red' : 'slate'}>
+                {safePortalText(record.Priority, 'Normal')}
               </PortalOpsStatusBadge>
             </div>
 
             <div className="rounded-[24px] border border-slate-200 bg-slate-50 px-5 py-4">
               <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">Issue details</div>
-              <p className="mt-2 whitespace-pre-wrap text-sm leading-7 text-slate-700">{record.Description || 'No description provided.'}</p>
+              <p className="mt-2 whitespace-pre-wrap text-sm leading-7 text-slate-700">{safePortalText(record.Description, 'No description provided.')}</p>
             </div>
 
             <form onSubmit={handleSave} className="mt-5 space-y-4">

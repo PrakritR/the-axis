@@ -4,12 +4,14 @@ import ManagerInboxPage from '../components/manager-inbox/ManagerInboxPage'
 import PortalShell, { StatCard, StatusPill, DataTable } from '../components/PortalShell'
 import {
   adminApproveProperty,
+  adminRejectApplication,
   adminRejectProperty,
   adminRequestPropertyEdits,
   adminSetManagerActive,
   isAdminPortalAirtableConfigured,
   loadAdminPortalDataset,
 } from '../lib/adminPortalAirtable.js'
+import { readJsonResponse } from '../lib/readJsonResponse'
 import { authenticateAdminPortal } from '../lib/adminPortalSignIn'
 import {
   markDeveloperPortalActive,
@@ -41,9 +43,74 @@ const NAV_BASE = [
   { id: 'messages', label: 'Inbox' },
 ]
 
-const APPROVER_ONLY_NAV = [
+/** Property approvals + applications (read-only) + inbox. */
+const APPROVER_NAV = [
   { id: 'dashboard', label: 'Dashboard' },
   { id: 'approvals', label: 'Property approvals' },
+  { id: 'applications', label: 'Applications' },
+  { id: 'messages', label: 'Inbox' },
+]
+
+/** Property Admin role may view applications only — no approve/reject. */
+function canReviewApplicationsFromAdmin(role) {
+  return role === 'ceo' || role === 'owner' || role === 'internal_exec'
+}
+
+function adminApplicationActorMeta(user) {
+  if (user.role === 'ceo') return { name: user.name || user.email || 'CEO', role: 'CEO' }
+  if (user.role === 'owner') return { name: user.name || user.email || 'Site owner', role: 'Site owner' }
+  if (user.role === 'internal_exec')
+    return { name: user.name || user.email || 'Executive', role: user.airtableRole || 'Executive' }
+  return { name: user.name || user.email || 'Axis Admin', role: 'Axis Admin' }
+}
+
+const adminSelectCls =
+  'rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-800 shadow-sm outline-none focus:border-[#2563eb] focus:ring-2 focus:ring-[#2563eb]/20'
+
+function sortAccountsByMode(list, mode) {
+  const copy = [...list]
+  const house = (a) => String(a.houseSortKey || '')
+  const acct = (a) => String(a.businessName || a.name || a.email || '').toLowerCase()
+  if (mode === 'house_asc') {
+    copy.sort(
+      (a, b) =>
+        house(a).localeCompare(house(b), undefined, { sensitivity: 'base' }) || acct(a).localeCompare(acct(b)),
+    )
+  } else if (mode === 'house_desc') {
+    copy.sort(
+      (a, b) =>
+        house(b).localeCompare(house(a), undefined, { sensitivity: 'base' }) || acct(a).localeCompare(acct(b)),
+    )
+  } else if (mode === 'account_asc') {
+    copy.sort((a, b) => acct(a).localeCompare(acct(b)))
+  }
+  return copy
+}
+
+function sortApplicationsByMode(list, mode) {
+  const copy = [...list]
+  const prop = (r) => String(r.propertyName || '').toLowerCase()
+  const app = (r) => String(r.applicantName || '').toLowerCase()
+  if (mode === 'house_asc') {
+    copy.sort(
+      (a, b) =>
+        prop(a).localeCompare(prop(b), undefined, { sensitivity: 'base' }) || app(a).localeCompare(app(b)),
+    )
+  } else if (mode === 'house_desc') {
+    copy.sort(
+      (a, b) =>
+        prop(b).localeCompare(prop(a), undefined, { sensitivity: 'base' }) || app(a).localeCompare(app(b)),
+    )
+  } else if (mode === 'applicant_asc') {
+    copy.sort((a, b) => app(a).localeCompare(app(b)) || prop(a).localeCompare(prop(b)))
+  }
+  return copy
+}
+
+/** SWE: inbox + test portal shortcuts only — no property/manager operational nav. */
+const SWE_ONLY_NAV = [
+  { id: 'dashboard', label: 'Dashboard' },
+  { id: 'messages', label: 'Inbox' },
 ]
 
 /** Internal staff can open portal test flows from the admin console. */
@@ -51,8 +118,9 @@ function showInternalPortalHandoff(role) {
   return role === 'ceo' || role === 'internal_exec' || role === 'internal_swe'
 }
 
+/** Resident / manager hub links (not shown to SWE — they use Open test portals instead). */
 function showOwnerPortalJumps(role) {
-  return role === 'owner' || role === 'ceo' || role === 'internal_exec' || role === 'internal_swe'
+  return role === 'owner' || role === 'ceo' || role === 'internal_exec'
 }
 
 const loginInputCls =
@@ -106,9 +174,6 @@ function AdminLoginView({ onAuthenticated }) {
       <div className="w-full max-w-md rounded-[28px] border border-slate-700 bg-slate-800 p-8 shadow-xl">
         <div className="text-[11px] font-bold uppercase tracking-[0.2em] text-sky-400">Axis Admin</div>
         <h1 className="mt-2 text-2xl font-black text-white">Internal portal</h1>
-        <p className="mt-2 text-sm text-slate-400">
-          Use the email and password from your internal <strong>Admin Profile</strong>, or the env CEO / site owner account configured on the server.
-        </p>
 
         <form onSubmit={handleSignIn} className="mt-6 space-y-4">
           <label className="block text-sm font-semibold text-slate-300">
@@ -165,6 +230,9 @@ export default function AdminPortal() {
   const [selectedApplicationId, setSelectedApplicationId] = useState(null)
   const [dataLoading, setDataLoading] = useState(false)
   const [approvalBusy, setApprovalBusy] = useState(false)
+  const [applicationReviewBusy, setApplicationReviewBusy] = useState(false)
+  const [managerTableSort, setManagerTableSort] = useState('house_asc')
+  const [applicationsTableSort, setApplicationsTableSort] = useState('house_asc')
   const airtableConfigWarned = useRef(false)
 
   const user = session
@@ -217,7 +285,16 @@ export default function AdminPortal() {
 
   useEffect(() => {
     if (!session) return
-    if (session.role === 'internal_approver' && tab !== 'dashboard' && tab !== 'approvals') {
+    if (
+      session.role === 'internal_approver' &&
+      tab !== 'dashboard' &&
+      tab !== 'approvals' &&
+      tab !== 'applications' &&
+      tab !== 'messages'
+    ) {
+      setTab('dashboard')
+    }
+    if (session.role === 'internal_swe' && tab !== 'dashboard' && tab !== 'messages') {
       setTab('dashboard')
     }
   }, [session, tab])
@@ -228,7 +305,8 @@ export default function AdminPortal() {
 
   const navItems = useMemo(() => {
     if (!session) return NAV_BASE
-    if (session.role === 'internal_approver') return APPROVER_ONLY_NAV
+    if (session.role === 'internal_approver') return APPROVER_NAV
+    if (session.role === 'internal_swe') return SWE_ONLY_NAV
     return NAV_BASE
   }, [session])
 
@@ -236,6 +314,15 @@ export default function AdminPortal() {
   const pendingApps = useMemo(
     () => applications.filter((a) => a.approvalPending).length,
     [applications],
+  )
+
+  const sortedAccounts = useMemo(
+    () => sortAccountsByMode(accounts, managerTableSort),
+    [accounts, managerTableSort],
+  )
+  const sortedApplications = useMemo(
+    () => sortApplicationsByMode(applications, applicationsTableSort),
+    [applications, applicationsTableSort],
   )
 
   const ownerLabel = (ownerId) => accounts.find((a) => a.id === ownerId)?.businessName || accounts.find((a) => a.id === ownerId)?.name || ownerId
@@ -275,7 +362,7 @@ export default function AdminPortal() {
               : user.role === 'internal_swe'
                 ? `${user.airtableRole || 'SWE'} · full test access`
                 : user.role === 'internal_approver'
-                  ? 'Property approvals only'
+                  ? 'Approvals · applications · inbox'
                   : user.role || 'Admin'
       }
       onSignOut={handleSignOut}
@@ -353,9 +440,21 @@ export default function AdminPortal() {
               </div>
             </div>
           ) : null}
-          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-            {user.role === 'internal_approver' ? (
-              <StatCard label="Property approvals queue" value={pendingApprovals.length} onClick={() => setTab('approvals')} />
+          <div
+            className={
+              user.role === 'internal_swe'
+                ? 'grid max-w-sm gap-3'
+                : 'grid gap-3 sm:grid-cols-2 xl:grid-cols-4'
+            }
+          >
+            {user.role === 'internal_swe' ? (
+              <StatCard label="Inbox" value="Open" onClick={() => setTab('messages')} />
+            ) : user.role === 'internal_approver' ? (
+              <>
+                <StatCard label="Property approvals queue" value={pendingApprovals.length} onClick={() => setTab('approvals')} />
+                <StatCard label="Pending applications" value={pendingApps} onClick={() => setTab('applications')} />
+                <StatCard label="Inbox" value="Open" onClick={() => setTab('messages')} />
+              </>
             ) : (
               <>
                 <StatCard label="Property approvals queue" value={pendingApprovals.length} onClick={() => setTab('approvals')} />
@@ -484,11 +583,26 @@ export default function AdminPortal() {
 
       {tab === 'accounts' && (
         <div className="space-y-6">
-          <h1 className="text-2xl font-black">Managers</h1>
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <h1 className="text-2xl font-black">Managers</h1>
+            <label className="flex flex-wrap items-center gap-2 text-sm text-slate-600">
+              <span className="font-semibold text-slate-800">Sort by</span>
+              <select
+                className={adminSelectCls}
+                value={managerTableSort}
+                onChange={(e) => setManagerTableSort(e.target.value)}
+              >
+                <option value="house_asc">House (A–Z)</option>
+                <option value="house_desc">House (Z–A)</option>
+                <option value="account_asc">Account (A–Z)</option>
+              </select>
+            </label>
+          </div>
           <DataTable
             empty="No accounts."
             columns={[
               { key: 'n', label: 'Account', render: (d) => <><div className="font-semibold">{d.businessName || d.name}</div><div className="text-xs text-slate-500">{d.email}</div></> },
+              { key: 'h', label: 'House / property', render: (d) => <span className="text-slate-700">{d.managedHousesLabel || '—'}</span> },
               { key: 'v', label: 'Verification', render: (d) => <StatusPill tone={d.verificationStatus === 'verified' ? 'green' : 'amber'}>{d.verificationStatus}</StatusPill> },
               { key: 'p', label: 'Properties', render: (d) => d.propertyCount },
               { key: 'en', label: 'Enabled', render: (d) => (
@@ -512,19 +626,33 @@ export default function AdminPortal() {
                 </button>
               ) },
             ]}
-            rows={accounts.map((a) => ({ key: a.id, data: a }))}
+            rows={sortedAccounts.map((a) => ({ key: a.id, data: a }))}
           />
         </div>
       )}
 
       {tab === 'applications' && (
         <div className="space-y-6">
-          <h1 className="text-2xl font-black">Applications</h1>
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <h1 className="text-2xl font-black">Applications</h1>
+            <label className="flex flex-wrap items-center gap-2 text-sm text-slate-600">
+              <span className="font-semibold text-slate-800">Sort by</span>
+              <select
+                className={adminSelectCls}
+                value={applicationsTableSort}
+                onChange={(e) => setApplicationsTableSort(e.target.value)}
+              >
+                <option value="house_asc">House (A–Z)</option>
+                <option value="house_desc">House (Z–A)</option>
+                <option value="applicant_asc">Applicant (A–Z)</option>
+              </select>
+            </label>
+          </div>
           <DataTable
             empty="No applications."
             columns={[
+              { key: 'p', label: 'House / property', render: (d) => d.propertyName },
               { key: 'a', label: 'Applicant', render: (d) => d.applicantName },
-              { key: 'p', label: 'Property', render: (d) => d.propertyName },
               { key: 'o', label: 'Partner', render: (d) => ownerLabel(d.ownerId) },
               { key: 's', label: 'Status', render: (d) => <StatusPill tone="blue">{d.status}</StatusPill> },
               {
@@ -541,13 +669,68 @@ export default function AdminPortal() {
                 ),
               },
             ]}
-            rows={applications.map((a) => ({ key: a.id, data: a }))}
+            rows={sortedApplications.map((a) => ({ key: a.id, data: a }))}
           />
           {selectedApplication ? (
             <ApplicationDetailPanel
               application={selectedApplication}
               partnerLabel={ownerLabel(selectedApplication.ownerId)}
               onClose={() => setSelectedApplicationId(null)}
+              adminReview={
+                selectedApplication.approvalPending && canReviewApplicationsFromAdmin(user.role)
+                  ? {
+                      busy: applicationReviewBusy,
+                      onApprove: async () => {
+                        const id = selectedApplication.id
+                        if (!id) return
+                        setApplicationReviewBusy(true)
+                        try {
+                          const { name: managerName, role: managerRole } = adminApplicationActorMeta(user)
+                          const res = await fetch('/api/portal?action=manager-approve-application', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                              applicationRecordId: id,
+                              managerName,
+                              managerRole,
+                            }),
+                          })
+                          const data = await readJsonResponse(res)
+                          if (!res.ok) throw new Error(data.error || 'Could not approve application')
+                          await refreshPortalData()
+                          if (Array.isArray(data.residentRecordsUpdated) && data.residentRecordsUpdated.length > 0) {
+                            toast.success(
+                              (data.message || 'Application approved.') +
+                                ` Resident portal updated (${data.residentRecordsUpdated.length} profile${data.residentRecordsUpdated.length === 1 ? '' : 's'}).`,
+                            )
+                          } else {
+                            toast.success(data.message || 'Application approved.')
+                          }
+                          setSelectedApplicationId(null)
+                        } catch (e) {
+                          toast.error(e?.message || 'Approve failed')
+                        } finally {
+                          setApplicationReviewBusy(false)
+                        }
+                      },
+                      onReject: async () => {
+                        const id = selectedApplication.id
+                        if (!id) return
+                        setApplicationReviewBusy(true)
+                        try {
+                          await adminRejectApplication(id)
+                          await refreshPortalData()
+                          toast.success('Application rejected.')
+                          setSelectedApplicationId(null)
+                        } catch (e) {
+                          toast.error(e?.message || 'Reject failed')
+                        } finally {
+                          setApplicationReviewBusy(false)
+                        }
+                      },
+                    }
+                  : null
+              }
             />
           ) : null}
         </div>

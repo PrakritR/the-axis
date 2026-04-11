@@ -64,7 +64,7 @@ export default async function handler(req, res) {
     if (!AIRTABLE_TOKEN) {
       return res.status(503).json({
         error:
-          'Admin profile sign-in needs the server data API token and workspace base ID configured (see deployment environment variables).',
+          'Internal sign-in is not configured on the server (data API token and base ID).',
       })
     }
     const tableEnc = encodeURIComponent(ADMIN_PROFILE_TABLE)
@@ -92,8 +92,7 @@ export default async function handler(req, res) {
     const appRole = mapAppRoleFromAirtableRole(fields.Role)
     if (!appRole) {
       return res.status(403).json({
-        error:
-          'This account has no supported Role in Admin Profile. Use CEO, CTO, CFO, SWE, or Admin.',
+        error: 'This account is not authorized for internal sign-in.',
       })
     }
     const name = String(fields.Name || '').trim() || email
@@ -147,8 +146,7 @@ export default async function handler(req, res) {
 
   if (!ownerEmail || !ownerPassword) {
     return res.status(503).json({
-      error:
-        'Site owner sign-in is not configured. Set SITE_OWNER_EMAIL and SITE_OWNER_PASSWORD in the server environment (e.g. Vercel project env, not VITE_*).',
+      error: 'Internal sign-in is not fully configured on the server.',
     })
   }
 

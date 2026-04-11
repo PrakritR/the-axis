@@ -8,7 +8,7 @@ import {
   PortalOpsMetric,
   PortalOpsStatusBadge,
 } from '../components/PortalOpsUI'
-import PortalInternalInbox from '../components/PortalInternalInbox'
+import ResidentPortalInbox from '../components/portal-inbox/ResidentPortalInbox'
 import {
   PortalAuthCard,
   PortalAuthPage,
@@ -27,6 +27,7 @@ import {
   createWorkOrder,
   getApplicationById,
   getApprovedLeaseForResident,
+  getLeaseDraftsForResident,
   getPaymentsForResident,
   getPropertyByName,
   getResidentByEmail,
@@ -1402,6 +1403,42 @@ function PaymentsPanel({ resident, onResidentUpdated, highlightCategory, onPayme
 
 // ─── Leasing ──────────────────────────────────────────────────────────────────
 
+const RESIDENT_LEASING_STAGE_OPTIONS = [
+  { id: 'draft', label: 'Draft' },
+  { id: 'ready', label: 'Ready' },
+  { id: 'sent', label: 'Sent to resident' },
+  { id: 'signed', label: 'Signed' },
+]
+
+function residentLeaseStageMatchesDraft(stageId, statusRaw) {
+  const s = String(statusRaw || '').trim()
+  if (stageId === 'draft') return s === 'Draft Generated'
+  if (stageId === 'ready') return ['Under Review', 'Changes Needed', 'Approved'].includes(s)
+  if (stageId === 'sent') return s === 'Published'
+  if (stageId === 'signed') return s === 'Signed'
+  return false
+}
+
+function inferDefaultResidentLeaseStage(drafts) {
+  const statuses = new Set(drafts.map((d) => String(d.Status || '').trim()))
+  if (statuses.has('Signed')) return 'signed'
+  if (statuses.has('Published')) return 'sent'
+  if (['Under Review', 'Changes Needed', 'Approved'].some((x) => statuses.has(x))) return 'ready'
+  if (statuses.has('Draft Generated')) return 'draft'
+  return 'sent'
+}
+
+function pickResidentLeaseDraftForStage(drafts, stageId) {
+  const matches = drafts.filter((d) => residentLeaseStageMatchesDraft(stageId, d.Status))
+  matches.sort((a, b) => {
+    const pb = new Date(b['Published At'] || 0).getTime()
+    const pa = new Date(a['Published At'] || 0).getTime()
+    if (pb !== pa) return pb - pa
+    return new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime()
+  })
+  return matches[0] || null
+}
+
 function LeasingPanel({ resident, onOpenPayments }) {
   const leaseTermLabel = getLeaseTermLabel(resident)
   const isMonthToMonth = leaseTermLabel.toLowerCase().includes('month-to-month')
@@ -1411,7 +1448,8 @@ function LeasingPanel({ resident, onOpenPayments }) {
   const leaseDepositPaid = Boolean(resident['Security Deposit Paid'] || resident['Deposit Paid'])
   const signedLeaseNote = String(resident['Security Deposit Paid Date'] || resident['Deposit Paid Date'] || '').trim()
 
-  const [approvedLease, setApprovedLease] = useState(null)
+  const [leaseDrafts, setLeaseDrafts] = useState([])
+  const [leaseStage, setLeaseStage] = useState('sent')
   const [leaseLoading, setLeaseLoading] = useState(true)
   const [showLeaseText, setShowLeaseText] = useState(false)
   const [houseDeposit, setHouseDeposit] = useState(0)
@@ -1424,9 +1462,18 @@ function LeasingPanel({ resident, onOpenPayments }) {
   useEffect(() => {
     let cancelled = false
     setLeaseLoading(true)
-    getApprovedLeaseForResident(resident.id)
-      .then((lease) => { if (!cancelled) setApprovedLease(lease) })
-      .catch(() => {})
+    getLeaseDraftsForResident(resident.id)
+      .then((drafts) => {
+        if (cancelled) return
+        setLeaseDrafts(drafts)
+        setLeaseStage(inferDefaultResidentLeaseStage(drafts))
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setLeaseDrafts([])
+          setLeaseStage('sent')
+        }
+      })
       .finally(() => { if (!cancelled) setLeaseLoading(false) })
     return () => { cancelled = true }
   }, [resident.id])
@@ -1456,9 +1503,41 @@ function LeasingPanel({ resident, onOpenPayments }) {
     setDepositPaidState(leaseDepositPaid)
   }, [leaseDepositPaid])
 
-  const leaseContent = approvedLease?.['Manager Edited Content'] || approvedLease?.['AI Draft Content'] || ''
-  const leaseStatus = approvedLease?.['Status']
-  const leasePreview = leaseContent || `Axis Resident Lease\n\nProperty: ${resident.House || '—'}\nUnit: ${resident['Unit Number'] || '—'}\nTerm: ${leaseTermLabel}\nMove-in: ${moveInLabel}\nMove-out: ${moveOutLabel}\nSecurity Deposit: ${houseDeposit ? formatMoney(houseDeposit) : '—'}\n\nThis is a placeholder lease document for now. Your final document will appear here for review and signature.`
+  const activeLeaseDraft = useMemo(
+    () => pickResidentLeaseDraftForStage(leaseDrafts, leaseStage),
+    [leaseDrafts, leaseStage],
+  )
+  const leaseBodyAllowed = leaseStage === 'sent' || leaseStage === 'signed'
+  const leaseContent = leaseBodyAllowed
+    ? (activeLeaseDraft?.['Manager Edited Content'] || activeLeaseDraft?.['AI Draft Content'] || '')
+    : ''
+  const leaseStatus = activeLeaseDraft?.Status
+  const leasePreview = useMemo(() => {
+    if (leaseStage === 'draft') {
+      if (activeLeaseDraft) {
+        return 'Your lease is being drafted. Final terms will appear here once your manager prepares your lease.'
+      }
+      return 'Nothing is in the Draft stage yet. When your manager starts a lease draft, it will show here.'
+    }
+    if (leaseStage === 'ready') {
+      if (activeLeaseDraft) {
+        return 'Your lease is being reviewed internally. You’ll see the full document when it’s sent to you.'
+      }
+      return 'Nothing is in the Ready stage yet.'
+    }
+    if (leaseContent) return leaseContent
+    return `Axis Resident Lease\n\nProperty: ${resident.House || '—'}\nUnit: ${resident['Unit Number'] || '—'}\nTerm: ${leaseTermLabel}\nMove-in: ${moveInLabel}\nMove-out: ${moveOutLabel}\nSecurity Deposit: ${houseDeposit ? formatMoney(houseDeposit) : '—'}\n\nThis is a placeholder lease document for now. Your final document will appear here for review and signature.`
+  }, [
+    leaseStage,
+    activeLeaseDraft,
+    leaseContent,
+    resident.House,
+    resident['Unit Number'],
+    leaseTermLabel,
+    moveInLabel,
+    moveOutLabel,
+    houseDeposit,
+  ])
 
   async function handleDepositPaid() {
     setDepositCheckoutLoading(true)
@@ -1506,18 +1585,41 @@ function LeasingPanel({ resident, onOpenPayments }) {
         </div>
 
         <div className="rounded-[24px] border border-[#2563eb]/20 bg-[linear-gradient(135deg,#eff6ff_0%,#ffffff_100%)] p-5">
-          <div className="flex items-start justify-between gap-4">
-            <div>
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+            <div className="min-w-0 flex-1">
               <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-[#2563eb]">Lease Document</div>
-              <h3 className="mt-2 text-xl font-black text-slate-900">Placeholder lease</h3>
+              <h3 className="mt-2 text-xl font-black text-slate-900">
+                {leaseLoading ? 'Loading…' : 'Lease document'}
+              </h3>
+              {leaseStatus && !leaseLoading ? (
+                <p className="mt-1 text-xs font-semibold text-slate-500">Status in Axis: {leaseStatus}</p>
+              ) : null}
             </div>
-            <button
-              type="button"
-              onClick={() => setShowLeaseText((v) => !v)}
-              className="shrink-0 rounded-full bg-[linear-gradient(180deg,#2f76ff_0%,#2450eb_100%)] px-5 py-2.5 text-sm font-semibold text-white transition hover:brightness-105"
-            >
-              {showLeaseText ? 'Hide' : 'View lease'}
-            </button>
+            <div className="flex w-full flex-col gap-3 sm:flex-row sm:items-end sm:justify-end lg:w-auto lg:shrink-0">
+              <div className="w-full sm:min-w-[220px]">
+                <label htmlFor="resident-lease-stage" className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-500">
+                  Sort by stage
+                </label>
+                <select
+                  id="resident-lease-stage"
+                  value={leaseStage}
+                  onChange={(e) => setLeaseStage(e.target.value)}
+                  disabled={leaseLoading}
+                  className="mt-2 w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-800 shadow-sm disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {RESIDENT_LEASING_STAGE_OPTIONS.map((o) => (
+                    <option key={o.id} value={o.id}>{o.label}</option>
+                  ))}
+                </select>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowLeaseText((v) => !v)}
+                className="shrink-0 rounded-full bg-[linear-gradient(180deg,#2f76ff_0%,#2450eb_100%)] px-5 py-2.5 text-sm font-semibold text-white transition hover:brightness-105"
+              >
+                {showLeaseText ? 'Hide' : 'View lease'}
+              </button>
+            </div>
           </div>
           {showLeaseText && (
             <div className="mt-5 overflow-hidden rounded-[20px] border border-slate-200 bg-white">
@@ -1525,21 +1627,25 @@ function LeasingPanel({ resident, onOpenPayments }) {
                 <span className="text-xs font-semibold text-slate-500">
                   {resident.House}{resident['Unit Number'] ? ` · ${normalizeUnitLabel(resident['Unit Number'])}` : ''} · {resident.Name}
                 </span>
-                <button
-                  type="button"
-                  onClick={() => {
-                    const blob = new Blob([leasePreview], { type: 'text/plain' })
-                    const url = URL.createObjectURL(blob)
-                    const a = document.createElement('a')
-                    a.href = url
-                    a.download = `lease-${String(resident.Name || 'document').replace(/\s+/g, '-').toLowerCase()}.txt`
-                    a.click()
-                    URL.revokeObjectURL(url)
-                  }}
-                  className="text-xs font-semibold text-[#2563eb] hover:underline"
-                >
-                  Download
-                </button>
+                {leaseBodyAllowed ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const blob = new Blob([leasePreview], { type: 'text/plain' })
+                      const url = URL.createObjectURL(blob)
+                      const a = document.createElement('a')
+                      a.href = url
+                      a.download = `lease-${String(resident.Name || 'document').replace(/\s+/g, '-').toLowerCase()}.txt`
+                      a.click()
+                      URL.revokeObjectURL(url)
+                    }}
+                    className="text-xs font-semibold text-[#2563eb] hover:underline"
+                  >
+                    Download
+                  </button>
+                ) : (
+                  <span className="text-xs text-slate-400">Download available when sent for review</span>
+                )}
               </div>
               <div className="max-h-[500px] overflow-y-auto p-6">
                 <pre className="whitespace-pre-wrap font-mono text-sm leading-7 text-slate-800">{leasePreview}</pre>
@@ -1636,15 +1742,10 @@ function ResidentInboxPanel({ resident }) {
   return (
     <SectionCard
       title="Inbox"
-      description="Message your house team here. Your home and room are attached automatically — you don’t need to pick a topic."
+      description="Email-style threads with your house team and Axis admin — subjects, trash, and read state stay in sync across portals."
     >
       <div className="min-h-[380px]">
-        <PortalInternalInbox
-          variant="resident"
-          resident={resident}
-          userEmail={resident.Email}
-          userDisplayName={resident.Name}
-        />
+        <ResidentPortalInbox resident={resident} />
       </div>
     </SectionCard>
   )

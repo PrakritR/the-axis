@@ -15,7 +15,14 @@ import {
   inboxThreadStateAirtableEnabled,
   markInboxThreadRead,
   setInboxThreadTrash,
+  getPortalInboxSubjectFieldName,
+  HOUSING_PUBLIC_ADMIN_GENERAL_THREAD,
+  managementAdminThreadKey,
 } from '../../lib/airtable'
+import { portalAxisAdminContactEmail } from '../../lib/portalInboxConstants.js'
+import { resolveInboxSubject } from '../../lib/portalInboxSubjects.js'
+import { threadSubjectFromMessages, threadBodyPreviewFromMessage, mergeSubjectIntoMessageIfNeeded } from '../../lib/portalInboxThreadUtils.js'
+import InboxSubjectPicker from '../portal-inbox/InboxSubjectPicker.jsx'
 import {
   isAirtablePermissionErrorMessage,
 } from '../../lib/airtablePermissionError'
@@ -138,6 +145,47 @@ function managerInboxSectionForRow(lastMsgTs, state) {
   return lastMsgTs > state.lastReadAt.getTime() ? 'unopened' : 'opened'
 }
 
+function threadSearchHaystack(sorted, subjectKey, participantLabel, subjectLine) {
+  const parts = [participantLabel, subjectLine]
+  for (const m of sorted || []) {
+    parts.push(String(m.Message || ''), subjectKey ? String(m[subjectKey] || '') : '', String(m['Sender Email'] || ''))
+  }
+  return parts.join(' ').toLowerCase()
+}
+
+function adminRecipientLabelForThreadId(threadId) {
+  const t = String(threadId || '')
+  if (t.startsWith('internal:mgmt-admin:')) {
+    return `Partner · ${t.slice('internal:mgmt-admin:'.length)}`
+  }
+  if (t.startsWith('internal:site-manager:')) {
+    return `Site manager · ${t.slice('internal:site-manager:'.length)}`
+  }
+  if (t === HOUSING_PUBLIC_ADMIN_GENERAL_THREAD) {
+    return 'Website · General inquiry'
+  }
+  if (t.startsWith('internal:admin-public:property:')) {
+    return `Website · Property (${t.slice('internal:admin-public:property:'.length)})`
+  }
+  if (t.startsWith('internal:admin-public:')) {
+    return `Website · ${t.slice('internal:admin-public:'.length)}`
+  }
+  if (t.startsWith('internal:resident-leasing:')) {
+    return `Resident · House team (${t.slice('internal:resident-leasing:'.length)})`
+  }
+  if (t.startsWith('internal:resident-admin:')) {
+    return `Resident · Admin (${t.slice('internal:resident-admin:'.length)})`
+  }
+  return t || 'Thread'
+}
+
+function managerComposerToLabel(selectedThreadId, adminFullInbox) {
+  if (adminFullInbox && selectedThreadId) return adminRecipientLabelForThreadId(selectedThreadId)
+  if (selectedThreadId === MANAGER_INBOX_AXIS) return 'Axis internal team'
+  if (managerInboxParseResidentThreadId(selectedThreadId)) return 'Resident (leasing thread)'
+  return ''
+}
+
 function adminPortalThreadTitle(threadKey) {
   const t = String(threadKey)
   if (t.startsWith('internal:mgmt-admin:')) {
@@ -158,6 +206,9 @@ function adminPortalThreadTitle(threadKey) {
   if (t.startsWith('internal:resident-leasing:')) {
     return 'Resident · House team'
   }
+  if (t.startsWith('internal:resident-admin:')) {
+    return 'Resident · Admin'
+  }
   return t || 'Thread'
 }
 
@@ -171,11 +222,30 @@ function managerInboxStateKeyForSelection(selectedThreadId, axisThreadKey, admin
   return ''
 }
 
+function inboxParticipantsLine(selectedThreadId, adminFullInbox) {
+  if (!selectedThreadId) return ''
+  const t = String(selectedThreadId)
+  if (adminFullInbox) {
+    if (t.startsWith('internal:resident-leasing:')) return 'Resident ↔ Manager / House team'
+    if (t.startsWith('internal:resident-admin:')) return 'Resident ↔ Admin'
+    if (t.startsWith('internal:mgmt-admin:')) return 'Partner ↔ Admin'
+    if (t.startsWith('internal:site-manager:')) return 'Site manager ↔ Admin'
+    if (t.startsWith('internal:admin-public:')) return 'Public ↔ Admin'
+    return 'Portal thread'
+  }
+  if (selectedThreadId === MANAGER_INBOX_AXIS) return 'You ↔ Axis internal team'
+  if (managerInboxParseResidentThreadId(selectedThreadId)) return 'You ↔ Resident (leasing)'
+  return ''
+}
+
 /**
  * Manager portal inbox — two-column messaging.
  * @param {boolean} [adminFullInbox] — load all internal portal threads (admin console); same UI as manager inbox.
  */
 export default function ManagerInboxPage({ manager, allowedPropertyNames, adminFullInbox = false }) {
+  const subjectFieldName = getPortalInboxSubjectFieldName()
+  const showSubjectField = Boolean(subjectFieldName)
+
   const [allMsgs, setAllMsgs] = useState([])
   const [axisMsgs, setAxisMsgs] = useState([])
   const [loading, setLoading] = useState(true)
@@ -184,7 +254,17 @@ export default function ManagerInboxPage({ manager, allowedPropertyNames, adminF
   const [thread, setThread] = useState([])
   const [threadLoading, setThreadLoading] = useState(false)
   const [reply, setReply] = useState('')
+  const [replySubjectPreset, setReplySubjectPreset] = useState('')
+  const [replySubjectCustom, setReplySubjectCustom] = useState('')
   const [sending, setSending] = useState(false)
+  const [composeOpen, setComposeOpen] = useState(false)
+  const [composeKind, setComposeKind] = useState('site')
+  const [composeEmail, setComposeEmail] = useState('')
+  const [composeResidentRecordId, setComposeResidentRecordId] = useState('')
+  const [composeSubjectPreset, setComposeSubjectPreset] = useState('')
+  const [composeSubjectCustom, setComposeSubjectCustom] = useState('')
+  const [composeBody, setComposeBody] = useState('')
+  const [composeSending, setComposeSending] = useState(false)
   const [inboxStateMap, setInboxStateMap] = useState(() => new Map())
   const [inboxStateBackend, setInboxStateBackend] = useState('pending')
   const [sectionFilter, setSectionFilter] = useState('all')
@@ -299,6 +379,11 @@ export default function ManagerInboxPage({ manager, allowedPropertyNames, adminF
   }, [loadAll])
 
   useEffect(() => {
+    setReplySubjectPreset('')
+    setReplySubjectCustom('')
+  }, [selectedThreadId])
+
+  useEffect(() => {
     if (!threadMenuOpen) return
     const close = (e) => {
       if (threadMenuRef.current && !threadMenuRef.current.contains(e.target)) {
@@ -325,16 +410,16 @@ export default function ManagerInboxPage({ manager, allowedPropertyNames, adminF
         const sorted = [...rmsgs].sort((a, b) => msgTime(a) - msgTime(b))
         const last = sorted[sorted.length - 1]
         const lastMsgTs = last ? msgTime(last) : 0
-        const scopeHint =
-          tk.startsWith('internal:resident-leasing:') && last
-            ? extractResidentScopeTextFromMessageBody(sorted[0]?.Message || last?.Message || '')
-            : ''
+        const participantLabel = adminRecipientLabelForThreadId(tk)
+        const subjectLine =
+          threadSubjectFromMessages(sorted, subjectFieldName) || adminPortalThreadTitle(tk)
         rows.push({
           id: tk,
           stateKey: tk,
-          title: adminPortalThreadTitle(tk),
-          subtitle: scopeHint || undefined,
-          preview: last?.Message ? String(last.Message) : '',
+          participantLabel,
+          subjectLine,
+          preview: threadBodyPreviewFromMessage(last),
+          searchText: threadSearchHaystack(sorted, subjectFieldName, participantLabel, subjectLine),
           time: last ? fmtDateTime(last.Timestamp || last.created_at) : '',
           ts: lastMsgTs,
           lastMsgTs,
@@ -349,12 +434,16 @@ export default function ManagerInboxPage({ manager, allowedPropertyNames, adminF
       const sortedAxis = [...axisMsgs].sort((a, b) => msgTime(a) - msgTime(b))
       const last = sortedAxis[sortedAxis.length - 1]
       const lastMsgTs = last ? msgTime(last) : 0
+      const participantLabel = 'Axis internal team'
+      const subjectLine =
+        threadSubjectFromMessages(sortedAxis, subjectFieldName) || 'Axis support'
       rows.push({
         id: MANAGER_INBOX_AXIS,
         stateKey: axisThreadKey,
-        title: 'Axis team',
-        subtitle: 'Internal',
-        preview: last?.Message ? String(last.Message) : '',
+        participantLabel,
+        subjectLine,
+        preview: threadBodyPreviewFromMessage(last),
+        searchText: threadSearchHaystack(sortedAxis, subjectFieldName, participantLabel, subjectLine),
         time: last ? fmtDateTime(last.Timestamp || last.created_at) : '',
         ts: lastMsgTs,
         lastMsgTs,
@@ -376,12 +465,16 @@ export default function ManagerInboxPage({ manager, allowedPropertyNames, adminF
       if (!rid) continue
       const scopeHint = extractResidentScopeTextFromMessageBody(sorted[0]?.Message || last?.Message || '')
       const lastMsgTs = last ? msgTime(last) : 0
+      const participantLabel = scopeHint || 'Resident'
+      const subjectLine =
+        threadSubjectFromMessages(sorted, subjectFieldName) || 'House team'
       rows.push({
         id: managerInboxResidentThreadId(rid),
         stateKey: tk,
-        title: 'Resident inbox',
-        subtitle: scopeHint || undefined,
-        preview: last?.Message ? String(last.Message) : '',
+        participantLabel,
+        subjectLine,
+        preview: threadBodyPreviewFromMessage(last),
+        searchText: threadSearchHaystack(sorted, subjectFieldName, participantLabel, subjectLine),
         time: last ? fmtDateTime(last.Timestamp || last.created_at) : '',
         ts: lastMsgTs,
         lastMsgTs,
@@ -390,7 +483,7 @@ export default function ManagerInboxPage({ manager, allowedPropertyNames, adminF
 
     rows.sort((a, b) => b.ts - a.ts)
     return rows
-  }, [adminFullInbox, allMsgs, axisMsgs, axisThreadKey, inboxScopeLower])
+  }, [adminFullInbox, allMsgs, axisMsgs, axisThreadKey, inboxScopeLower, subjectFieldName])
 
   const threadRowsWithMeta = useMemo(() => {
     return threadRows.map((row) => {
@@ -420,12 +513,9 @@ export default function ManagerInboxPage({ manager, allowedPropertyNames, adminF
     let rows = threadRowsWithMeta
     if (sectionFilter === 'all') rows = rows.filter((row) => row.section !== 'trash')
     else if (sectionFilter === 'unread') rows = rows.filter((row) => row.section === 'unopened')
-    else if (sectionFilter === 'open') rows = rows.filter((row) => row.section === 'opened')
     else if (sectionFilter === 'trash') rows = rows.filter((row) => row.section === 'trash')
     if (!q) return rows
-    return rows.filter((row) =>
-      `${row.title} ${row.subtitle || ''} ${row.preview || ''}`.toLowerCase().includes(q),
-    )
+    return rows.filter((row) => (row.searchText || '').includes(q))
   }, [threadRowsWithMeta, sectionFilter, threadSearch])
 
   const touchThreadRead = useCallback(
@@ -500,18 +590,13 @@ export default function ManagerInboxPage({ manager, allowedPropertyNames, adminF
   }, [selectedStateKey])
 
   useEffect(() => {
-    if (!visibleThreadRows.length) {
-      if (selectedThreadId) setSelectedThreadId(null)
-      return
-    }
-    if (!selectedThreadId || !visibleThreadRows.some((row) => row.id === selectedThreadId)) {
-      setSelectedThreadId(visibleThreadRows[0].id)
-    }
-  }, [visibleThreadRows, selectedThreadId])
-
-  useEffect(() => {
     setThreadMenuOpen(false)
   }, [selectedThreadId])
+
+  useEffect(() => {
+    if (!composeOpen) return
+    if (!adminFullInbox) setComposeKind('resident')
+  }, [composeOpen, adminFullInbox])
 
   useEffect(() => {
     if (!selectedThreadId) {
@@ -575,20 +660,109 @@ export default function ManagerInboxPage({ manager, allowedPropertyNames, adminF
     }
   }, [selectedThreadId, axisThreadKey, adminFullInbox])
 
+  async function handleComposeSend(e) {
+    e.preventDefault()
+    if (!managerEmail || !composeBody.trim()) return
+    if (!composeSubjectPreset) {
+      toast.error('Choose a subject.')
+      return
+    }
+    if (composeSubjectPreset === 'other' && !composeSubjectCustom.trim()) {
+      toast.error('Enter a custom subject.')
+      return
+    }
+    const subjResolved = resolveInboxSubject(composeSubjectPreset, composeSubjectCustom)
+    let threadKey = ''
+    if (composeKind === 'website') {
+      threadKey = HOUSING_PUBLIC_ADMIN_GENERAL_THREAD
+    } else if (composeKind === 'admin') {
+      const em = portalAxisAdminContactEmail()
+      if (!em.includes('@')) {
+        toast.error('Set VITE_PORTAL_AXIS_ADMIN_EMAIL in your environment to message admin.')
+        return
+      }
+      threadKey = managementAdminThreadKey(em)
+    } else if (composeKind === 'resident') {
+      const id = composeResidentRecordId.trim()
+      if (!/^rec[a-zA-Z0-9]{14,}$/.test(id)) {
+        toast.error('Select a resident or enter their Airtable record ID (rec…).')
+        return
+      }
+      threadKey = residentLeasingThreadKey(id)
+    } else {
+      const em = composeEmail.trim().toLowerCase()
+      if (!em.includes('@')) {
+        toast.error('Enter a valid email for the recipient.')
+        return
+      }
+      threadKey =
+        composeKind === 'partner' ? managementAdminThreadKey(em) : siteManagerThreadKey(em)
+    }
+    const bodyOut = mergeSubjectIntoMessageIfNeeded(composeBody.trim(), subjResolved, showSubjectField)
+    setComposeSending(true)
+    try {
+      await sendMessage({
+        senderEmail: managerEmail,
+        message: bodyOut,
+        isAdmin: true,
+        threadKey,
+        channel: PORTAL_INBOX_CHANNEL_INTERNAL,
+        subject: showSubjectField ? subjResolved : '',
+      })
+      const ridForSelect = composeResidentRecordId.trim()
+      setComposeOpen(false)
+      setComposeBody('')
+      setComposeSubjectPreset('')
+      setComposeSubjectCustom('')
+      setComposeEmail('')
+      setComposeResidentRecordId('')
+      setComposeKind('site')
+      await loadAll()
+      const selectionId =
+        composeKind === 'resident' ? managerInboxResidentThreadId(ridForSelect) : threadKey
+      setSelectedThreadId(selectionId)
+      const next = await getMessagesByThreadKey(threadKey)
+      setThread(
+        [...next].sort(
+          (a, b) =>
+            new Date(a.Timestamp || a.created_at || 0) - new Date(b.Timestamp || b.created_at || 0),
+        ),
+      )
+      if (threadKey) await touchThreadRead(threadKey)
+      toast.success('Sent')
+    } catch (err) {
+      toast.error(err.message || 'Send failed')
+    } finally {
+      setComposeSending(false)
+    }
+  }
+
   async function handleSendReply(e) {
     e.preventDefault()
     if (!selectedThreadId || !reply.trim() || !managerEmail) return
+    let subjResolved = ''
+    if (showSubjectField && replySubjectPreset) {
+      if (replySubjectPreset === 'other' && !replySubjectCustom.trim()) {
+        toast.error('Enter a custom subject or leave subject as “Same as thread”.')
+        return
+      }
+      subjResolved = resolveInboxSubject(replySubjectPreset, replySubjectCustom)
+    }
+    const bodyOut = mergeSubjectIntoMessageIfNeeded(reply.trim(), subjResolved, showSubjectField)
     setSending(true)
     try {
       if (adminFullInbox) {
         await sendMessage({
           senderEmail: managerEmail,
-          message: reply.trim(),
+          message: bodyOut,
           isAdmin: true,
           threadKey: selectedThreadId,
           channel: PORTAL_INBOX_CHANNEL_INTERNAL,
+          subject: showSubjectField ? subjResolved : '',
         })
         setReply('')
+        setReplySubjectPreset('')
+        setReplySubjectCustom('')
         await loadAll()
         const next = await getMessagesByThreadKey(selectedThreadId)
         setThread(
@@ -605,23 +779,27 @@ export default function ManagerInboxPage({ manager, allowedPropertyNames, adminF
       if (selectedThreadId === MANAGER_INBOX_AXIS) {
         await sendMessage({
           senderEmail: managerEmail,
-          message: reply.trim(),
+          message: bodyOut,
           isAdmin: false,
           threadKey: axisThreadKey,
           channel: PORTAL_INBOX_CHANNEL_INTERNAL,
+          subject: showSubjectField ? subjResolved : '',
         })
       } else {
         const resId = managerInboxParseResidentThreadId(selectedThreadId)
         if (!resId) return
         await sendMessage({
           senderEmail: managerEmail,
-          message: reply.trim(),
+          message: bodyOut,
           isAdmin: true,
           threadKey: residentLeasingThreadKey(resId),
           channel: PORTAL_INBOX_CHANNEL_INTERNAL,
+          subject: showSubjectField ? subjResolved : '',
         })
       }
       setReply('')
+      setReplySubjectPreset('')
+      setReplySubjectCustom('')
       await loadAll()
       if (selectedThreadId === MANAGER_INBOX_AXIS) {
         const next = await getMessagesByThreadKey(axisThreadKey)
@@ -653,6 +831,37 @@ export default function ManagerInboxPage({ manager, allowedPropertyNames, adminF
     }
   }
 
+  const activeThreadSubject = useMemo(
+    () =>
+      selectedThreadId && thread.length ? threadSubjectFromMessages(thread, subjectFieldName) : '',
+    [thread, subjectFieldName, selectedThreadId],
+  )
+
+  const residentComposeOptions = useMemo(
+    () =>
+      threadRows
+        .map((r) => {
+          const rid = managerInboxParseResidentThreadId(r.id)
+          if (!rid) return null
+          return { id: rid, label: r.participantLabel || 'Resident' }
+        })
+        .filter(Boolean),
+    [threadRows],
+  )
+
+  const selectedRowMeta = useMemo(
+    () => visibleThreadRows.find((r) => r.id === selectedThreadId),
+    [visibleThreadRows, selectedThreadId],
+  )
+
+  useEffect(() => {
+    if (composeOpen) return
+    if (!selectedThreadId) return
+    if (!visibleThreadRows.some((r) => r.id === selectedThreadId)) {
+      setSelectedThreadId(null)
+    }
+  }, [visibleThreadRows, selectedThreadId, composeOpen])
+
   if (!adminFullInbox && !inboxScopeLower.size && !axisThreadKey) {
     return null
   }
@@ -675,21 +884,27 @@ export default function ManagerInboxPage({ manager, allowedPropertyNames, adminF
         ? 'Leasing thread'
         : ''
 
+  const headerSubject =
+    activeThreadSubject || selectedRowMeta?.subjectLine || readingTitle
+
   const listEmptyMessage =
     sectionFilter === 'trash' && inboxSections.trash.length === 0
-      ? 'Empty'
+      ? 'Nothing in trash'
       : inboxActiveTotal === 0 && sectionFilter !== 'trash'
-        ? 'Empty'
+        ? 'No conversations yet'
         : threadSearch.trim()
-          ? 'No matches'
+          ? 'No matches for your search'
           : sectionFilter === 'unread'
-            ? 'Empty'
-            : sectionFilter === 'open'
-              ? 'Empty'
-              : 'Empty'
+            ? 'No unread conversations'
+            : 'No conversations'
 
   const composerPlaceholder =
     adminFullInbox || selectedThreadId !== MANAGER_INBOX_AXIS ? 'Write a reply…' : 'Message Axis…'
+
+  const composerToLabel = useMemo(() => {
+    if (!selectedThreadId) return ''
+    return managerComposerToLabel(selectedThreadId, adminFullInbox)
+  }, [selectedThreadId, adminFullInbox])
 
   return (
     <div className="mb-8">
@@ -697,13 +912,26 @@ export default function ManagerInboxPage({ manager, allowedPropertyNames, adminF
         <div>
           <h2 className="text-xl font-bold tracking-tight text-slate-900">Inbox</h2>
         </div>
-        <button
-          type="button"
-          onClick={() => loadAll()}
-          className="rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-50"
-        >
-          Refresh
-        </button>
+        <div className="flex flex-wrap gap-2">
+          <button
+            type="button"
+            onClick={() => {
+              setComposeOpen(true)
+              setSelectedThreadId(null)
+              setThread([])
+            }}
+            className="rounded-full bg-[linear-gradient(180deg,#2f76ff_0%,#2450eb_100%)] px-4 py-2 text-xs font-semibold text-white shadow-sm hover:opacity-95"
+          >
+            New message
+          </button>
+          <button
+            type="button"
+            onClick={() => loadAll()}
+            className="rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-50"
+          >
+            Refresh
+          </button>
+        </div>
       </div>
 
       <div className="flex min-h-[min(420px,calc(100dvh-10rem))] max-h-[calc(100dvh-10rem)] flex-col overflow-hidden rounded-2xl border border-slate-200 bg-slate-50/80 shadow-sm md:flex-row">
@@ -717,86 +945,244 @@ export default function ManagerInboxPage({ manager, allowedPropertyNames, adminF
           counts={{
             all: inboxActiveTotal,
             unread: inboxSections.unopened.length,
-            open: inboxSections.opened.length,
+            trash: inboxSections.trash.length,
           }}
-          trashCount={inboxSections.trash.length}
-          onOpenTrash={() => setSectionFilter('trash')}
-          inTrashMode={sectionFilter === 'trash'}
-          onLeaveTrash={() => setSectionFilter('all')}
           rows={visibleThreadRows}
           selectedId={selectedThreadId}
-          onSelect={setSelectedThreadId}
+          onSelect={(id) => {
+            setComposeOpen(false)
+            setSelectedThreadId(id)
+          }}
           emptyMessage={listEmptyMessage}
+          onTrashThread={(stateKey, trashed = true) => moveThreadTrash(stateKey, trashed)}
         />
 
         <div className="flex min-h-[min(50vh,440px)] min-w-0 flex-1 flex-col overflow-hidden bg-white md:min-h-0">
           <header className="shrink-0 border-b border-slate-100 px-4 py-4 md:px-6">
-            {selectedThreadId ? (
-              <div className="flex items-start justify-between gap-3">
-                <div className="min-w-0">
-                  <h3 className="truncate text-base font-bold text-slate-900">{readingTitle}</h3>
-                  {readingSubtitle ? (
-                    <p className="mt-0.5 text-xs text-slate-500">{readingSubtitle}</p>
+            {composeOpen ? (
+              <div className="rounded-2xl border border-indigo-200 bg-indigo-50/60 p-4">
+                <div className="flex items-start justify-between gap-2">
+                  <h4 className="text-sm font-black text-slate-900">New message</h4>
+                  <button
+                    type="button"
+                    onClick={() => setComposeOpen(false)}
+                    className="shrink-0 text-xs font-semibold text-slate-500 hover:text-slate-800"
+                  >
+                    Cancel
+                  </button>
+                </div>
+                <p className="mt-1 text-xs text-slate-600">
+                  Choose a recipient, subject, and message. Recipients are roles or saved contacts — not free-text email in the To field unless you pick a role that asks for an address.
+                </p>
+                <form onSubmit={handleComposeSend} className="mt-4 space-y-3">
+                  <label className="block text-xs font-semibold text-slate-700">
+                    To (required)
+                    <select
+                      value={composeKind}
+                      onChange={(e) => setComposeKind(e.target.value)}
+                      className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900"
+                    >
+                      {adminFullInbox ? (
+                        <>
+                          <option value="site">Site manager — enter their email</option>
+                          <option value="partner">Partner / management — enter their email</option>
+                          <option value="website">Website — general inquiry thread</option>
+                          <option value="admin">Axis admin (uses VITE_PORTAL_AXIS_ADMIN_EMAIL)</option>
+                          <option value="resident">Resident — leasing thread (record ID)</option>
+                        </>
+                      ) : (
+                        <>
+                          <option value="resident">Resident — leasing thread</option>
+                          <option value="admin">Axis admin (uses VITE_PORTAL_AXIS_ADMIN_EMAIL)</option>
+                          <option value="site">Another site manager — email</option>
+                          <option value="partner">Partner / management — email</option>
+                        </>
+                      )}
+                    </select>
+                  </label>
+                  {composeKind === 'resident' ? (
+                    <div className="space-y-2">
+                      {residentComposeOptions.length ? (
+                        <label className="block text-xs font-semibold text-slate-700">
+                          Resident in your inbox
+                          <select
+                            value={
+                              residentComposeOptions.some((o) => o.id === composeResidentRecordId)
+                                ? composeResidentRecordId
+                                : ''
+                            }
+                            onChange={(e) => setComposeResidentRecordId(e.target.value)}
+                            className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900"
+                          >
+                            <option value="">Select…</option>
+                            {residentComposeOptions.map((o) => (
+                              <option key={o.id} value={o.id}>
+                                {o.label}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+                      ) : null}
+                      <label className="block text-xs font-semibold text-slate-700">
+                        Or resident record ID (rec…)
+                        <input
+                          type="text"
+                          value={composeResidentRecordId}
+                          onChange={(e) => setComposeResidentRecordId(e.target.value)}
+                          placeholder="recXXXXXXXXXXXXXX"
+                          className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 font-mono text-sm text-slate-900"
+                        />
+                      </label>
+                    </div>
                   ) : null}
+                  {(composeKind === 'site' || composeKind === 'partner') ? (
+                    <label className="block text-xs font-semibold text-slate-700">
+                      Recipient email (required)
+                      <input
+                        type="email"
+                        value={composeEmail}
+                        onChange={(e) => setComposeEmail(e.target.value)}
+                        placeholder="name@example.com"
+                        required
+                        className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900"
+                      />
+                    </label>
+                  ) : null}
+                  <InboxSubjectPicker
+                    presetId={composeSubjectPreset}
+                    onPresetIdChange={setComposeSubjectPreset}
+                    customSubject={composeSubjectCustom}
+                    onCustomSubjectChange={setComposeSubjectCustom}
+                    disabled={composeSending}
+                    required
+                  />
+                  <label className="block text-xs font-semibold text-slate-700">
+                    Message (required)
+                    <textarea
+                      value={composeBody}
+                      onChange={(e) => setComposeBody(e.target.value)}
+                      rows={4}
+                      required
+                      placeholder="Write your message…"
+                      className="mt-1 w-full resize-none rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900"
+                    />
+                  </label>
+                  <div className="flex justify-end pt-1">
+                    <button
+                      type="submit"
+                      disabled={composeSending || !composeBody.trim()}
+                      className="rounded-xl bg-[#2563eb] px-5 py-2.5 text-sm font-semibold text-white shadow-sm disabled:opacity-45"
+                    >
+                      {composeSending ? 'Sending…' : 'Send'}
+                    </button>
+                  </div>
+                </form>
+              </div>
+            ) : null}
+            {!composeOpen && selectedThreadId ? (
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div className="min-w-0 flex-1">
+                  <h3 className="text-lg font-black tracking-tight text-slate-900 md:text-xl">{headerSubject}</h3>
+                  <p className="mt-1 text-sm text-slate-600">{inboxParticipantsLine(selectedThreadId, adminFullInbox)}</p>
+                  {readingSubtitle ? <p className="mt-0.5 text-xs text-slate-400">{readingSubtitle}</p> : null}
                   {selectedInTrash ? (
-                    <p className="mt-1 text-xs font-medium text-amber-800">Removed from inbox</p>
+                    <p className="mt-2 text-xs font-medium text-amber-800">In trash — restore from the list or menu.</p>
                   ) : null}
                 </div>
                 {selectedStateKey ? (
-                  <div className="relative shrink-0" ref={threadMenuRef}>
-                    <button
-                      type="button"
-                      onClick={() => setThreadMenuOpen((v) => !v)}
-                      className="rounded-lg border border-slate-200 bg-white p-2 text-slate-600 hover:bg-slate-50"
-                      aria-label="Conversation actions"
-                      aria-expanded={threadMenuOpen}
-                    >
-                      <span className="block px-0.5 text-lg leading-none">⋯</span>
-                    </button>
-                    {threadMenuOpen ? (
-                      <div className="absolute right-0 z-20 mt-1 min-w-[11rem] rounded-xl border border-slate-200 bg-white py-1 shadow-lg">
-                        {selectedInTrash ? (
-                          <button
-                            type="button"
-                            className="block w-full px-4 py-2.5 text-left text-sm text-slate-700 hover:bg-slate-50"
-                            onClick={() => {
-                              moveThreadTrash(selectedStateKey, false)
-                              setThreadMenuOpen(false)
-                            }}
-                          >
-                            Restore conversation
-                          </button>
-                        ) : (
-                          <button
-                            type="button"
-                            className="block w-full px-4 py-2.5 text-left text-sm text-red-700 hover:bg-red-50"
-                            onClick={() => {
-                              moveThreadTrash(selectedStateKey, true)
-                              setThreadMenuOpen(false)
-                            }}
-                          >
-                            Remove conversation…
-                          </button>
-                        )}
-                      </div>
-                    ) : null}
+                  <div className="flex shrink-0 items-center gap-2">
+                    {selectedInTrash ? (
+                      <button
+                        type="button"
+                        onClick={() => moveThreadTrash(selectedStateKey, false)}
+                        className="rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                      >
+                        Restore
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => moveThreadTrash(selectedStateKey, true)}
+                        className="rounded-full border border-red-200 bg-red-50 px-4 py-2 text-xs font-semibold text-red-700 hover:bg-red-100"
+                      >
+                        Trash
+                      </button>
+                    )}
+                    <div className="relative" ref={threadMenuRef}>
+                      <button
+                        type="button"
+                        onClick={() => setThreadMenuOpen((v) => !v)}
+                        className="rounded-lg border border-slate-200 bg-white p-2 text-slate-600 hover:bg-slate-50"
+                        aria-label="More actions"
+                        aria-expanded={threadMenuOpen}
+                      >
+                        <span className="block px-0.5 text-lg leading-none">⋯</span>
+                      </button>
+                      {threadMenuOpen ? (
+                        <div className="absolute right-0 z-20 mt-1 min-w-[11rem] rounded-xl border border-slate-200 bg-white py-1 shadow-lg">
+                          {selectedInTrash ? (
+                            <button
+                              type="button"
+                              className="block w-full px-4 py-2.5 text-left text-sm text-slate-700 hover:bg-slate-50"
+                              onClick={() => {
+                                moveThreadTrash(selectedStateKey, false)
+                                setThreadMenuOpen(false)
+                              }}
+                            >
+                              Restore conversation
+                            </button>
+                          ) : (
+                            <button
+                              type="button"
+                              className="block w-full px-4 py-2.5 text-left text-sm text-red-700 hover:bg-red-50"
+                              onClick={() => {
+                                moveThreadTrash(selectedStateKey, true)
+                                setThreadMenuOpen(false)
+                              }}
+                            >
+                              Move to trash…
+                            </button>
+                          )}
+                        </div>
+                      ) : null}
+                    </div>
                   </div>
                 ) : null}
               </div>
             ) : null}
           </header>
 
-          <div className="min-h-0 flex-1 overflow-y-auto bg-slate-50/40">
-            <ConversationThread
-              messages={thread}
-              loading={threadLoading}
-              selectedThreadId={selectedThreadId}
-              isAxisThread={selectedThreadId === MANAGER_INBOX_AXIS}
-              formatTime={fmtDateTime}
-            />
-          </div>
+          {!composeOpen && !selectedThreadId ? (
+            <div className="flex min-h-[220px] flex-1 flex-col items-center justify-center gap-4 px-6 py-10 text-center">
+              <p className="max-w-sm text-sm text-slate-600">Select a conversation to view messages, or start a new one.</p>
+              <button
+                type="button"
+                onClick={() => {
+                  setComposeOpen(true)
+                  setThread([])
+                }}
+                className="rounded-full bg-[#2563eb] px-5 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-[#1d4ed8]"
+              >
+                New message
+              </button>
+            </div>
+          ) : null}
 
-          {selectedThreadId ? (
+          {composeOpen || selectedThreadId ? (
+            <div className="min-h-0 flex-1 overflow-y-auto bg-slate-50/40">
+              <ConversationThread
+                messages={thread}
+                loading={threadLoading}
+                selectedThreadId={selectedThreadId}
+                isAxisThread={selectedThreadId === MANAGER_INBOX_AXIS}
+                formatTime={fmtDateTime}
+                messageSubjectKey={subjectFieldName}
+                hideInlineSubject={Boolean(activeThreadSubject && subjectFieldName)}
+              />
+            </div>
+          ) : null}
+
+          {selectedThreadId && !composeOpen ? (
             <MessageComposer
               value={reply}
               onChange={setReply}
@@ -804,6 +1190,14 @@ export default function ManagerInboxPage({ manager, allowedPropertyNames, adminF
               disabled={!selectedThreadId}
               sending={sending}
               placeholder={composerPlaceholder}
+              showSubject={showSubjectField}
+              useSubjectPresets={showSubjectField}
+              subjectPresetId={replySubjectPreset}
+              onSubjectPresetIdChange={setReplySubjectPreset}
+              subjectCustom={replySubjectCustom}
+              onSubjectCustomChange={setReplySubjectCustom}
+              allowSubjectEmpty
+              toLabel={composerToLabel || null}
             />
           ) : null}
         </div>

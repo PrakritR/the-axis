@@ -22,6 +22,15 @@ const MESSAGE_CHANNEL_FIELD =
     ? import.meta.env.VITE_AIRTABLE_MESSAGE_CHANNEL_FIELD
     : 'Channel'
 
+/** Single-line text on Messages; set VITE_AIRTABLE_MESSAGE_SUBJECT_FIELD=none to omit from API writes. */
+const MESSAGE_SUBJECT_FIELD = (() => {
+  const raw = import.meta.env.VITE_AIRTABLE_MESSAGE_SUBJECT_FIELD
+  if (raw === 'none' || raw === false) return ''
+  if (raw === undefined || raw === null) return 'Subject'
+  const s = String(raw).trim()
+  return s || ''
+})()
+
 /** When set, Work Orders always link to this Resident Profile row (e.g. placeholder "Unnamed record") instead of the portal user row. */
 const WORK_ORDER_RESIDENT_PLACEHOLDER_ID = (() => {
   const id = String(import.meta.env.VITE_AIRTABLE_WORK_ORDER_RESIDENT_RECORD_ID || '').trim()
@@ -624,6 +633,21 @@ export function parseResidentLeasingThreadKey(threadKey) {
   return t.slice(RESIDENT_LEASING_PREFIX.length).trim()
 }
 
+const RESIDENT_ADMIN_PREFIX = 'internal:resident-admin:'
+
+/** Resident ↔ Axis admin (separate from house-team leasing thread). */
+export function residentAdminThreadKey(residentRecordId) {
+  const id = String(residentRecordId || '').trim()
+  if (!id) return ''
+  return `${RESIDENT_ADMIN_PREFIX}${id}`
+}
+
+export function parseResidentAdminThreadKey(threadKey) {
+  const t = String(threadKey || '').trim()
+  if (!t.startsWith(RESIDENT_ADMIN_PREFIX)) return ''
+  return t.slice(RESIDENT_ADMIN_PREFIX.length).trim()
+}
+
 /** Public Contact / housing message with no specific property — visible in Admin portal inbox only. */
 export const HOUSING_PUBLIC_ADMIN_GENERAL_THREAD = 'internal:admin-public:general'
 
@@ -684,12 +708,17 @@ export async function getAllPortalInternalThreadMessages() {
     throw new Error('Add a "Thread Key" text field to Messages (or set the thread-key field name in your project environment).')
   }
   const f = `{${MESSAGE_THREAD_KEY_FIELD}}`
-  const formula = `OR(FIND("internal:mgmt-admin", ${f} & "") > 0, FIND("internal:site-manager", ${f} & "") > 0, FIND("internal:admin-public", ${f} & "") > 0, FIND("internal:resident-leasing", ${f} & "") > 0)`
+  const formula = `OR(FIND("internal:mgmt-admin", ${f} & "") > 0, FIND("internal:site-manager", ${f} & "") > 0, FIND("internal:admin-public", ${f} & "") > 0, FIND("internal:resident-leasing", ${f} & "") > 0, FIND("internal:resident-admin", ${f} & "") > 0)`
   return listMessagesByFormulaPaginated(formula)
 }
 
 export function portalInboxAirtableConfigured() {
   return airtableReady && messageFieldNameConfigured(MESSAGE_THREAD_KEY_FIELD)
+}
+
+/** When non-empty, inbox UI shows Subject and sendMessage writes this field name. */
+export function getPortalInboxSubjectFieldName() {
+  return MESSAGE_SUBJECT_FIELD
 }
 
 /** True when this Messages row belongs to Management/Admin or Site Manager threads (not work-order chat). */
@@ -700,7 +729,8 @@ export function isInternalPortalThreadMessage(record) {
     tk.includes('internal:mgmt-admin') ||
     tk.includes('internal:site-manager') ||
     tk.includes('internal:admin-public') ||
-    tk.includes('internal:resident-leasing')
+    tk.includes('internal:resident-leasing') ||
+    tk.includes('internal:resident-admin')
   )
 }
 
@@ -720,7 +750,15 @@ export async function getMessages(workOrderId) {
     .sort((a, b) => new Date(a.Timestamp || a.created_at) - new Date(b.Timestamp || b.created_at))
 }
 
-export async function sendMessage({ workOrderId, senderEmail, message, isAdmin = false, threadKey, channel }) {
+export async function sendMessage({
+  workOrderId,
+  senderEmail,
+  message,
+  isAdmin = false,
+  threadKey,
+  channel,
+  subject,
+}) {
   const wo = workOrderId ? String(workOrderId).trim() : ''
   const tk = threadKey ? String(threadKey).trim() : ''
   if (!wo && !(tk && messageFieldNameConfigured(MESSAGE_THREAD_KEY_FIELD))) {
@@ -740,6 +778,10 @@ export async function sendMessage({ workOrderId, senderEmail, message, isAdmin =
   }
   if (channel && messageFieldNameConfigured(MESSAGE_CHANNEL_FIELD)) {
     fields[MESSAGE_CHANNEL_FIELD] = channel
+  }
+  const subj = String(subject || '').trim()
+  if (MESSAGE_SUBJECT_FIELD && subj) {
+    fields[MESSAGE_SUBJECT_FIELD] = subj
   }
 
   const data = await request(tableUrl(TABLES.messages), {
@@ -1172,10 +1214,9 @@ export async function deleteAnnouncement(recordId) {
 // Lease Drafts — resident-facing read
 // ---------------------------------------------------------------------------
 
-// Returns the most recent approved-and-published (or signed) lease draft for a
-// given resident record ID. This is what the resident portal shows in the
-// Leasing tab. Drafts, "Under Review", and "Changes Needed" records are never
-// returned here — residents must not see un-approved content.
+// Returns the most recent published (or signed) lease draft for dashboard /
+// snapshots. The Leasing tab loads all stages via `getLeaseDraftsForResident`
+// and only shows full lease text for Published / Signed.
 export async function getApprovedLeaseForResident(residentRecordId) {
   if (!residentRecordId) return null
   const escaped = escapeFormulaValue(residentRecordId)
@@ -1191,4 +1232,29 @@ export async function getApprovedLeaseForResident(residentRecordId) {
   const data = await request(url.toString())
   const record = data.records?.[0]
   return record ? mapRecord(record) : null
+}
+
+/** All lease draft rows for a resident (any status), newest first — for portal stage filter. */
+export async function getLeaseDraftsForResident(residentRecordId) {
+  if (!residentRecordId) return []
+  const escaped = escapeFormulaValue(residentRecordId)
+  const formula = `{Resident Record ID} = "${escaped}"`
+  const table = 'Lease Drafts'
+  const allRecords = []
+  let offset = null
+  do {
+    const params = { filterByFormula: formula }
+    if (offset) params.offset = offset
+    const data = await request(buildUrl(table, params))
+    ;(data.records || []).forEach((r) => allRecords.push(mapRecord(r)))
+    offset = data.offset || null
+  } while (offset)
+
+  allRecords.sort((a, b) => {
+    const pb = new Date(b['Published At'] || 0).getTime()
+    const pa = new Date(a['Published At'] || 0).getTime()
+    if (pb !== pa) return pb - pa
+    return new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime()
+  })
+  return allRecords
 }

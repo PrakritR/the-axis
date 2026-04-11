@@ -13,6 +13,9 @@ export default function ConversationThread({
   selectedThreadId,
   isAxisThread,
   formatTime,
+  messageSubjectKey = '',
+  hideInlineSubject = false,
+  mapMessageBody = null,
 }) {
   if (!selectedThreadId) {
     return <div className="min-h-[280px] flex-1" aria-hidden />
@@ -38,6 +41,13 @@ export default function ConversationThread({
           : admin
             ? 'You'
             : m['Sender Email'] || 'Resident'
+        const subj =
+          !hideInlineSubject &&
+          messageSubjectKey &&
+          m[messageSubjectKey] != null &&
+          String(m[messageSubjectKey]).trim()
+            ? String(m[messageSubjectKey]).trim()
+            : ''
         return (
           <div
             key={m.id}
@@ -51,7 +61,14 @@ export default function ConversationThread({
             <div className="text-[11px] font-medium text-slate-400">
               {who} · {formatTime(m.Timestamp || m.created_at)}
             </div>
-            <p className="mt-2 whitespace-pre-wrap leading-relaxed">{m.Message}</p>
+            {subj ? (
+              <p className="mt-2 text-xs font-semibold text-slate-700">
+                <span className="text-slate-400">Subject:</span> {subj}
+              </p>
+            ) : null}
+            <p className={cn('whitespace-pre-wrap leading-relaxed', subj ? 'mt-1' : 'mt-2')}>
+              {mapMessageBody ? mapMessageBody(m) : m.Message}
+            </p>
           </div>
         )
       })}

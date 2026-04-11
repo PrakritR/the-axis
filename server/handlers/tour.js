@@ -80,10 +80,20 @@ export default async function handler(req, res) {
     const { name, email, phone, type, property, room, tourFormat, manager, managerEmail, tourAvailability, preferredDate, preferredTime, notes } = req.body ?? {}
     if (!name || !email) return res.status(400).json({ error: 'Name and email are required.' })
 
+    const rawType = String(type || '').trim().toLowerCase()
+    const normalizedType =
+      rawType === 'meeting'
+        ? 'Meeting'
+        : rawType === 'work order'
+          ? 'Work Order'
+          : rawType === 'issue' || rawType === 'other'
+            ? 'Issue'
+            : 'Tour'
+
     const fields = {
       'Name': String(name).trim(),
       'Email': String(email).trim().toLowerCase(),
-      'Type': type === 'Meeting' ? 'Meeting' : 'Tour',
+      'Type': normalizedType,
       'Status': 'New',
     }
     if (phone)             fields['Phone'] = String(phone).trim()
