@@ -22,6 +22,17 @@ const MESSAGE_CHANNEL_FIELD =
     ? import.meta.env.VITE_AIRTABLE_MESSAGE_CHANNEL_FIELD
     : 'Channel'
 
+/** When set, Work Orders always link to this Resident Profile row (e.g. placeholder "Unnamed record") instead of the portal user row. */
+const WORK_ORDER_RESIDENT_PLACEHOLDER_ID = (() => {
+  const id = String(import.meta.env.VITE_AIRTABLE_WORK_ORDER_RESIDENT_RECORD_ID || '').trim()
+  return /^rec[a-zA-Z0-9]{14,}$/.test(id) ? id : ''
+})()
+
+/** Optional Work Orders single-line text field holding the real submitter email when using WORK_ORDER_RESIDENT_PLACEHOLDER_ID. */
+const WORK_ORDER_SUBMITTER_EMAIL_FIELD = String(
+  import.meta.env.VITE_AIRTABLE_WORK_ORDER_SUBMITTER_EMAIL_FIELD || '',
+).trim()
+
 const TABLES = {
   workOrders: 'Work Orders',
   messages: 'Messages',
@@ -428,15 +439,39 @@ export async function getAnnouncements() {
   return items
 }
 
+/** Strips internal portal tag from work order description for display. */
+export function stripWorkOrderPortalSubmitterLine(description) {
+  return String(description || '').replace(/^portal_submitter_email:[^\n]+\n\n?/i, '')
+}
+
+function workOrderPortalSubmitterDescriptionTag(email) {
+  const e = String(email || '').trim().toLowerCase()
+  if (!e) return ''
+  return `portal_submitter_email:${e}\n\n`
+}
+
 export async function getWorkOrdersForResident(resident) {
   // Work Orders "Resident" is a linked record field storing the Resident record ID.
   // "Resident Email" is a lookup (array) field — avoid LOWER() on it.
   const residentId = escapeFormulaValue(resident.id)
-  const residentEmail = escapeFormulaValue(String(resident.Email || '').trim().toLowerCase())
+  const emailRaw = String(resident.Email || '').trim().toLowerCase()
+  const residentEmail = escapeFormulaValue(emailRaw)
+  const portalTag = emailRaw ? escapeFormulaValue(`portal_submitter_email:${emailRaw}`) : ''
 
-  const formula = residentEmail
-    ? `OR(FIND("${residentId}", ARRAYJOIN({Resident})) > 0, FIND("${residentEmail}", LOWER(ARRAYJOIN({Resident Email}))) > 0)`
-    : `FIND("${residentId}", ARRAYJOIN({Resident})) > 0`
+  const parts = [`FIND("${residentId}", ARRAYJOIN({Resident})) > 0`]
+  if (residentEmail) {
+    parts.push(`FIND("${residentEmail}", LOWER(ARRAYJOIN({Resident Email}))) > 0`)
+  }
+  if (portalTag) {
+    parts.push(`FIND("${portalTag}", LOWER({Description})) > 0`)
+  }
+  if (WORK_ORDER_SUBMITTER_EMAIL_FIELD && residentEmail) {
+    parts.push(
+      `FIND("${residentEmail}", LOWER({${WORK_ORDER_SUBMITTER_EMAIL_FIELD}} & "")) > 0`,
+    )
+  }
+
+  const formula = parts.length === 1 ? parts[0] : `OR(${parts.join(', ')})`
 
   const data = await request(buildUrl(TABLES.workOrders, {
     filterByFormula: formula,
@@ -498,11 +533,19 @@ export async function createWorkOrder({
   preferredEntry,
   photoFile = null,
 }) {
-  const residentId = resident.id
+  const usePlaceholderResident = Boolean(WORK_ORDER_RESIDENT_PLACEHOLDER_ID)
+  const residentLinkId = usePlaceholderResident ? WORK_ORDER_RESIDENT_PLACEHOLDER_ID : resident.id
   const airtablePriority = urgency === 'Emergency' ? 'Urgent' : urgency
-  const normalizedDescription = urgency === 'Emergency'
+  let normalizedDescription = urgency === 'Emergency'
     ? `Resident marked this request as Emergency.\n\n${description}`
     : description
+  if (
+    usePlaceholderResident &&
+    (!WORK_ORDER_SUBMITTER_EMAIL_FIELD || !String(resident?.Email || '').trim())
+  ) {
+    const tag = workOrderPortalSubmitterDescriptionTag(resident?.Email)
+    if (tag) normalizedDescription = tag + normalizedDescription
+  }
   const fields = {
     Title: title,
     Description: normalizedDescription,
@@ -510,8 +553,11 @@ export async function createWorkOrder({
     Priority: airtablePriority,
     Status: 'Submitted',
     'Preferred Entry Time': preferredEntry,
-    Resident: [residentId],
-    ...workOrderApplicationFieldsFromResident(resident),
+    Resident: [residentLinkId],
+    ...(usePlaceholderResident ? {} : workOrderApplicationFieldsFromResident(resident)),
+  }
+  if (usePlaceholderResident && WORK_ORDER_SUBMITTER_EMAIL_FIELD && String(resident?.Email || '').trim()) {
+    fields[WORK_ORDER_SUBMITTER_EMAIL_FIELD] = String(resident.Email).trim()
   }
 
   const data = await request(tableUrl(TABLES.workOrders), {
@@ -751,173 +797,13 @@ export async function getPropertyByName(propertyName) {
 }
 
 // ---------------------------------------------------------------------------
-// Rooms (linked to Properties — manager “add housing” wizard)
+// Rooms (optional — admin portal reads linked rows for min rent per property)
 // ---------------------------------------------------------------------------
 
-/** Airtable table name for room inventory (default: "Rooms"). */
+/** Airtable table name (default: "Rooms"). */
 export function getAirtableRoomsTableName() {
   const t = String(import.meta.env.VITE_AIRTABLE_ROOMS_TABLE || TABLES.rooms).trim()
   return t || TABLES.rooms
-}
-
-function roomLinkFieldName() {
-  return String(import.meta.env.VITE_AIRTABLE_ROOM_LINK_FIELD || 'Property').trim() || 'Property'
-}
-
-function roomFieldMap() {
-  return {
-    link: roomLinkFieldName(),
-    roomNumber: String(import.meta.env.VITE_AIRTABLE_ROOM_NUMBER_FIELD || 'Room Number'),
-    monthlyRent: String(import.meta.env.VITE_AIRTABLE_ROOM_RENT_FIELD || 'Monthly Rent'),
-    furnished: String(import.meta.env.VITE_AIRTABLE_ROOM_FURNISHED_FIELD || 'Furnished'),
-    furnishingDetail: String(
-      import.meta.env.VITE_AIRTABLE_ROOM_FURNISHING_DETAIL_FIELD || 'Furnishing Detail',
-    ),
-    floor: String(import.meta.env.VITE_AIRTABLE_ROOM_FLOOR_FIELD || 'Floor'),
-    bathroomType: String(import.meta.env.VITE_AIRTABLE_ROOM_BATHROOM_FIELD || 'Bathroom Type'),
-    squareFeet: String(import.meta.env.VITE_AIRTABLE_ROOM_SQFT_FIELD || 'Square Feet'),
-    bedSize: String(import.meta.env.VITE_AIRTABLE_ROOM_BED_FIELD || 'Bed Size'),
-    deskIncluded: String(import.meta.env.VITE_AIRTABLE_ROOM_DESK_FIELD || 'Desk Included'),
-    acIncluded: String(import.meta.env.VITE_AIRTABLE_ROOM_AC_FIELD || 'AC'),
-    storageNotes: String(import.meta.env.VITE_AIRTABLE_ROOM_STORAGE_FIELD || 'Closet / Storage'),
-    windowsLight: String(import.meta.env.VITE_AIRTABLE_ROOM_WINDOWS_FIELD || 'Windows / Natural Light'),
-    roomNotes: String(import.meta.env.VITE_AIRTABLE_ROOM_NOTES_FIELD || 'Room Notes'),
-    availability: String(import.meta.env.VITE_AIRTABLE_ROOM_AVAILABILITY_FIELD || 'Availability'),
-    kitchenIncluded: String(
-      import.meta.env.VITE_AIRTABLE_ROOM_KITCHEN_INCLUDED_FIELD || 'Kitchen Included',
-    ),
-    laundryAccess: String(import.meta.env.VITE_AIRTABLE_ROOM_LAUNDRY_FIELD || 'Laundry Access'),
-    parkingAccess: String(import.meta.env.VITE_AIRTABLE_ROOM_PARKING_FIELD || 'Parking Access'),
-  }
-}
-
-const ROOM_LAUNDRY_LABELS = {
-  building_default: 'Uses building laundry default',
-  in_unit: 'In-unit laundry in this room',
-  shared_on_site: 'Shared on-site laundry (not in room)',
-  none: 'No laundry for this room',
-}
-
-const ROOM_PARKING_LABELS = {
-  building_default: 'Uses building parking default',
-  designated: 'Designated / assigned spot with this room',
-  street: 'Street parking only',
-  none: 'No parking',
-  other: 'Other (see notes)',
-}
-
-function formatRoomLaundryForAirtable(room) {
-  const parts = []
-  const a = String(room?.laundryAccess || '').trim()
-  if (a) parts.push(ROOM_LAUNDRY_LABELS[a] || a)
-  const share = String(room?.laundrySharesWith || '').trim()
-  if (share) parts.push(`Shares with: ${share}`)
-  return parts.join(' · ')
-}
-
-function formatRoomParkingForAirtable(room) {
-  const parts = []
-  const a = String(room?.parkingAccess || '').trim()
-  if (a) parts.push(ROOM_PARKING_LABELS[a] || a)
-  const detail = String(room?.parkingDetail || '').trim()
-  if (detail) parts.push(detail)
-  return parts.join(' · ')
-}
-
-/**
- * Build Airtable field object for a Rooms row. Omits empty optional values.
- * @param {string} propertyRecordId — Properties record id (rec…)
- * @param {object} room — shape from Add Housing wizard
- */
-export function buildRoomFieldsForAirtable(propertyRecordId, room) {
-  const id = String(propertyRecordId || '').trim()
-  if (!/^rec[a-zA-Z0-9]{14,}$/.test(id)) {
-    throw new Error('Invalid property record id for room link.')
-  }
-  const fm = roomFieldMap()
-  const fields = { [fm.link]: [id] }
-
-  const rn = String(room.roomNumber || '').trim()
-  if (rn) fields[fm.roomNumber] = rn
-
-  if (room.monthlyRent !== '' && room.monthlyRent != null) {
-    const n = Number(room.monthlyRent)
-    if (!Number.isNaN(n)) fields[fm.monthlyRent] = n
-  }
-
-  const lev = String(room.furnishingLevel || 'none')
-  fields[fm.furnished] = lev === 'full' || lev === 'partial'
-
-  const fd = String(room.furnishingDetail || '').trim()
-  if (fd) fields[fm.furnishingDetail] = fd
-
-  const fl = String(room.floor || '').trim()
-  if (fl) fields[fm.floor] = fl
-
-  const bath = String(room.bathroomType || '').trim()
-  if (bath) fields[fm.bathroomType] = bath
-
-  if (room.squareFeet !== '' && room.squareFeet != null) {
-    const sq = Number(room.squareFeet)
-    if (!Number.isNaN(sq)) fields[fm.squareFeet] = sq
-  }
-
-  const bed = String(room.bedSize || '').trim()
-  if (bed) fields[fm.bedSize] = bed
-
-  if (room.deskIncluded === true || room.deskIncluded === false) {
-    fields[fm.deskIncluded] = room.deskIncluded
-  }
-  if (room.acIncluded === true || room.acIncluded === false) {
-    fields[fm.acIncluded] = room.acIncluded
-  }
-
-  const st = String(room.storageNotes || '').trim()
-  if (st) fields[fm.storageNotes] = st
-
-  const win = String(room.windowsLight || '').trim()
-  if (win) fields[fm.windowsLight] = win
-
-  const notes = String(room.roomNotes || '').trim()
-  if (notes) fields[fm.roomNotes] = notes
-
-  const av = String(room.availability || '').trim()
-  if (av) fields[fm.availability] = av
-
-  const kit = String(room.kitchenIncluded || '').trim()
-  if (kit) fields[fm.kitchenIncluded] = kit
-
-  const laundryLine = formatRoomLaundryForAirtable(room)
-  if (laundryLine) fields[fm.laundryAccess] = laundryLine
-
-  const parkingLine = formatRoomParkingForAirtable(room)
-  if (parkingLine) fields[fm.parkingAccess] = parkingLine
-
-  return fields
-}
-
-export async function createRoomForProperty(propertyRecordId, room) {
-  const fields = buildRoomFieldsForAirtable(propertyRecordId, room)
-  const table = getAirtableRoomsTableName()
-  const data = await request(tableUrl(table), {
-    method: 'POST',
-    body: JSON.stringify({ fields, typecast: true }),
-  })
-  return mapRecord(data)
-}
-
-/** All room rows linked to a property (for dashboards / verification). */
-export async function fetchRoomsForProperty(propertyRecordId) {
-  const pid = String(propertyRecordId || '').trim()
-  if (!pid) return []
-  const lf = roomLinkFieldName()
-  const formula = `FIND("${escapeFormulaValue(pid)}", ARRAYJOIN({${lf}})) > 0`
-  const data = await request(
-    buildUrl(getAirtableRoomsTableName(), {
-      filterByFormula: formula,
-    }),
-  )
-  return (data.records || []).map(mapRecord)
 }
 
 // ---------------------------------------------------------------------------

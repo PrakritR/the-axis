@@ -1,7 +1,6 @@
-import React, { useCallback, useEffect, useId, useMemo, useState } from 'react'
+import React, { useCallback, useEffect, useMemo, useState } from 'react'
 import toast from 'react-hot-toast'
 import GmailStyleInboxLayout, { InboxThreadRow } from './GmailStyleInboxLayout'
-import PortalInboxAnnouncementSection from './PortalInboxAnnouncementSection'
 import {
   portalInboxAirtableConfigured,
   getMessagesByThreadKey,
@@ -131,7 +130,6 @@ export default function PortalInternalInbox({ variant, userEmail, userDisplayNam
   const [jumpManagerEmail, setJumpManagerEmail] = useState('')
 
   const live = portalInboxAirtableConfigured()
-  const announcementListId = useId().replace(/:/g, '')
 
   const loadAdminFeed = useCallback(async () => {
     const rows = await getAllPortalInternalThreadMessages()
@@ -405,14 +403,6 @@ export default function PortalInternalInbox({ variant, userEmail, userDisplayNam
             : `No messages yet. Say hello below${variant === 'admin' ? ' (first message starts the thread).' : '.'}`
         }
       >
-        <PortalInboxAnnouncementSection
-          variant={variant === 'resident' ? 'management' : variant}
-          userEmail={email}
-          notifyThreadKey={activeThreadKey}
-          onInboxRefresh={refresh}
-          listId={`portal-inbox-ann-${announcementListId}`}
-          propertySuggestions={variant === 'resident' && resident?.House ? [String(resident.House)] : []}
-        />
         <form
           onSubmit={handleSend}
           className="shrink-0 border-t border-slate-200 bg-white px-4 py-3 lg:px-5"

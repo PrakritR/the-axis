@@ -40,7 +40,13 @@ function AdminPortalAuthForm({ onSuccess }) {
       const result = await authenticateAdminPortal(identifier, password)
       if (result.ok) {
         sessionStorage.setItem(AXIS_ADMIN_SESSION_KEY, JSON.stringify(result.user))
-        if (result.user.role === 'developer') markDeveloperPortalActive()
+        if (
+          result.user.role === 'ceo' ||
+          result.user.role === 'internal_exec' ||
+          result.user.role === 'internal_swe'
+        ) {
+          markDeveloperPortalActive()
+        }
         onSuccess()
         return
       }
@@ -53,16 +59,16 @@ function AdminPortalAuthForm({ onSuccess }) {
   return (
     <form onSubmit={handleSubmit} className="mt-0 space-y-4">
       <p className="text-sm text-slate-600">
-        Internal Axis console for site owners, approved staff, and Sentinel developers.
+        Internal Axis console — Admin Profile (Airtable), env CEO, or site owner credentials.
       </p>
-      <PortalField label="Work email or developer username">
+      <PortalField label="Email">
         <input
-          type="text"
+          type="email"
           required
           autoComplete="username"
           value={identifier}
           onChange={(e) => setIdentifier(e.target.value)}
-          placeholder="you@company.com or prakrit"
+          placeholder="you@company.com"
           className={portalAuthInputCls}
         />
       </PortalField>

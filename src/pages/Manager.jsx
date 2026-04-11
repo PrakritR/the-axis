@@ -22,39 +22,20 @@ import { Link, Navigate, useLocation } from 'react-router-dom'
 import toast from 'react-hot-toast'
 import { HOUSING_CONTACT_MESSAGE } from '../lib/housingSite'
 import { readJsonResponse } from '../lib/readJsonResponse'
-import { openAxisAssistant } from '../lib/axisAssistant.js'
-import AddHousingWizard from '../components/AddHousingWizard'
-import GmailStyleInboxLayout, { InboxThreadRow } from '../components/GmailStyleInboxLayout'
-import PortalInboxAnnouncementSection from '../components/PortalInboxAnnouncementSection'
+import ManagerInboxPage from '../components/manager-inbox/ManagerInboxPage'
 import {
   getWorkOrderById,
   updateWorkOrder,
   getAllWorkOrders,
-  getAllMessages,
-  getMessages,
-  sendMessage,
-  isInternalPortalThreadMessage,
   getAllPaymentsRecords,
   updatePaymentRecord,
   AIRTABLE_PAYMENTS_BASE_ID,
-  portalInboxAirtableConfigured,
-  getMessagesByThreadKey,
-  siteManagerThreadKey,
-  residentLeasingThreadKey,
-  parseResidentLeasingThreadKey,
-  portalInboxThreadKeyFromRecord,
-  PORTAL_INBOX_CHANNEL_INTERNAL,
-  fetchInboxThreadStateMap,
-  inboxThreadStateAirtableEnabled,
-  markInboxThreadRead,
-  setInboxThreadTrash,
 } from '../lib/airtable'
 import {
   consolidateManagerDashboardWarnings,
   errorFromAirtableApiBody,
   isAirtablePermissionErrorMessage,
 } from '../lib/airtablePermissionError'
-import { residentLeasingThreadVisibleToManager, extractResidentScopeTextFromMessageBody } from '../lib/portalInboxResidentScope.js'
 import {
   PortalAuthCard,
   PortalAuthPage,
@@ -162,11 +143,23 @@ function propertyAssignedToManager(p, manager) {
   return false
 }
 
+function isManagerInternalPreview(manager) {
+  return manager?.__axisDeveloper === true || manager?.__axisInternalStaff === true
+}
+
+/** SWE internal preview: full manager scope but cannot approve/decline tour requests (manager-side). */
+function managerCannotApproveTours(manager) {
+  const r = String(manager?.axisStaffRole || '')
+    .trim()
+    .toLowerCase()
+  return manager?.__axisInternalStaff === true && r === 'swe'
+}
+
 function computeManagerScope(propertyRecords, manager) {
   const list = Array.isArray(propertyRecords) ? propertyRecords : []
   const approvedNames = new Set()
   const pendingAssigned = []
-  if (manager?.__axisDeveloper === true) {
+  if (isManagerInternalPreview(manager)) {
     for (const p of list) {
       if (isPropertyRecordApproved(p)) {
         const n = propertyRecordName(p)
@@ -313,6 +306,129 @@ function workOrderInScope(w, approvedNamesLowerSet) {
       ))
     )
   })
+}
+
+function parseCurrencyAmount(value) {
+  const number = Number(value)
+  return Number.isFinite(number) ? number : 0
+}
+
+function money(value) {
+  return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(parseCurrencyAmount(value))
+}
+
+function paymentAmountDue(record) {
+  return parseCurrencyAmount(record?.Amount ?? record?.['Amount Due'] ?? record?.Total)
+}
+
+function paymentAmountPaid(record) {
+  const explicit = parseCurrencyAmount(record?.['Amount Paid'] ?? record?.['Paid Amount'] ?? record?.Paid ?? record?.['Collected Amount'])
+  if (explicit > 0) return explicit
+  return String(record?.Status || '').trim().toLowerCase() === 'paid' ? paymentAmountDue(record) : 0
+}
+
+function paymentBalanceDue(record) {
+  const explicit = Number(record?.Balance ?? record?.['Balance Due'] ?? record?.Outstanding)
+  if (Number.isFinite(explicit)) return Math.max(0, explicit)
+  return Math.max(0, paymentAmountDue(record) - paymentAmountPaid(record))
+}
+
+function paymentComputedStatus(record) {
+  const balance = paymentBalanceDue(record)
+  const total = paymentAmountDue(record)
+  const due = record?.['Due Date'] ? new Date(record['Due Date']) : null
+  const today = new Date()
+  today.setHours(0, 0, 0, 0)
+  if (balance <= 0) return 'paid'
+  if (balance < total) return 'partial'
+  if (due && !Number.isNaN(due.getTime())) {
+    const diffDays = Math.ceil((due.getTime() - today.getTime()) / 86400000)
+    if (diffDays < 0) return 'overdue'
+    if (diffDays <= 5) return 'due_soon'
+  }
+  return 'unpaid'
+}
+
+function paymentStatusLabel(status) {
+  switch (status) {
+    case 'paid': return 'Paid'
+    case 'partial': return 'Partial'
+    case 'due_soon': return 'Due Soon'
+    case 'overdue': return 'Overdue'
+    default: return 'Unpaid'
+  }
+}
+
+function paymentStatusTone(status) {
+  switch (status) {
+    case 'paid': return 'emerald'
+    case 'partial': return 'axis'
+    case 'due_soon': return 'amber'
+    case 'overdue': return 'red'
+    default: return 'slate'
+  }
+}
+
+function paymentResidentLabel(record) {
+  return String(record?.['Resident Name'] || record?.Resident || record?.Name || '').trim() || 'Resident not set'
+}
+
+function paymentRoomLabel(record) {
+  return formatPaymentRoomTitle(record)
+}
+
+function managerWorkOrderStatusLabel(record) {
+  if (!record) return 'Submitted'
+  const resolved = workOrderIsResolvedRecord(record)
+  const raw = String(record.Status || '').trim().toLowerCase()
+  if (resolved) return raw === 'closed' ? 'Closed' : 'Completed'
+  if (raw.includes('schedule')) return 'Scheduled'
+  if (raw.includes('progress')) return 'In Progress'
+  if (raw.includes('review')) return 'In Review'
+  return 'Submitted'
+}
+
+function managerWorkOrderStatusTone(record) {
+  const label = managerWorkOrderStatusLabel(record)
+  if (label === 'Completed' || label === 'Closed') return 'emerald'
+  if (label === 'Scheduled') return 'axis'
+  if (label === 'In Progress' || label === 'In Review') return 'amber'
+  return 'slate'
+}
+
+function parseWorkOrderMetaBlock(value = '') {
+  const out = {}
+  String(value || '')
+    .split('\n')
+    .map((line) => line.trim())
+    .forEach((line) => {
+      const [key, ...rest] = line.split(':')
+      if (!key || rest.length === 0) return
+      out[key.trim().toLowerCase()] = rest.join(':').trim()
+    })
+  return out
+}
+
+function mergeWorkOrderMetaBlock(baseText = '', meta = {}) {
+  const current = parseWorkOrderMetaBlock(baseText)
+  Object.entries(meta).forEach(([key, value]) => {
+    if (value == null || String(value).trim() === '') delete current[key]
+    else current[key] = String(value).trim()
+  })
+  const otherLines = String(baseText || '')
+    .split('\n')
+    .map((line) => line.trim())
+    .filter((line) => line && !/^[a-z ]+:/i.test(line))
+  const metaLines = Object.entries(current).map(([key, value]) => `${key}: ${value}`)
+  return [...otherLines, ...metaLines].join('\n').trim()
+}
+
+function workOrderPlainNotes(value = '') {
+  return String(value || '')
+    .split('\n')
+    .map((line) => line.trim())
+    .filter((line) => line && !/^[a-z ]+:/i.test(line))
+    .join('\n')
 }
 
 function workOrderIsResolvedRecord(w) {
@@ -485,6 +601,561 @@ function tourApprovalNeedsAction(row) {
   return true
 }
 
+function dateFromCalendarKey(key) {
+  const [yy, mm, dd] = String(key || '').split('-').map(Number)
+  if (!yy || !mm || !dd) return new Date()
+  return new Date(yy, mm - 1, dd)
+}
+
+function weekdayAbbrFromDateKey(key) {
+  return CAL_DOW_TO_ABBR[dateFromCalendarKey(key).getDay()]
+}
+
+function inputValueFromMinutes(minutes) {
+  const h = Math.floor(minutes / 60)
+  const m = minutes % 60
+  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`
+}
+
+function minutesFromInputValue(value) {
+  const m = String(value || '').match(/^(\d{2}):(\d{2})$/)
+  if (!m) return null
+  return Number(m[1]) * 60 + Number(m[2])
+}
+
+function displayTimeFromMinutes(minutes) {
+  return new Date(2000, 0, 1, Math.floor(minutes / 60), minutes % 60).toLocaleTimeString('en-US', {
+    hour: 'numeric',
+    minute: '2-digit',
+    hour12: true,
+  })
+}
+
+function formatTimeRangeLabel(range) {
+  return `${displayTimeFromMinutes(range.start)} – ${displayTimeFromMinutes(range.end)}`
+}
+
+function normalizeTimeRanges(ranges) {
+  const parsed = (ranges || [])
+    .map((range) => {
+      const start = typeof range.start === 'number' ? range.start : minutesFromInputValue(range.start)
+      const end = typeof range.end === 'number' ? range.end : minutesFromInputValue(range.end)
+      if (!Number.isFinite(start) || !Number.isFinite(end)) return null
+      const clampedStart = Math.max(TOUR_GRID_START_MIN, Math.min(TOUR_GRID_END_MIN - TOUR_GRID_STEP_MIN, start))
+      const clampedEnd = Math.max(TOUR_GRID_START_MIN + TOUR_GRID_STEP_MIN, Math.min(TOUR_GRID_END_MIN, end))
+      if (clampedEnd <= clampedStart) return null
+      return { start: clampedStart, end: clampedEnd }
+    })
+    .filter(Boolean)
+    .sort((a, b) => a.start - b.start)
+
+  const merged = []
+  for (const range of parsed) {
+    const prev = merged[merged.length - 1]
+    if (prev && range.start <= prev.end) prev.end = Math.max(prev.end, range.end)
+    else merged.push({ ...range })
+  }
+  return merged
+}
+
+function timeRangesFromWeeklyFree(weeklyArrays, dayAbbr) {
+  const arr = [...(weeklyArrays?.[dayAbbr] || [])].sort((a, b) => a - b)
+  if (!arr.length) return []
+  const ranges = []
+  let startIdx = arr[0]
+  let prevIdx = arr[0]
+  for (let i = 1; i < arr.length; i += 1) {
+    const idx = arr[i]
+    if (idx === prevIdx + 1) {
+      prevIdx = idx
+      continue
+    }
+    ranges.push({
+      start: TOUR_GRID_START_MIN + startIdx * TOUR_GRID_STEP_MIN,
+      end: TOUR_GRID_START_MIN + (prevIdx + 1) * TOUR_GRID_STEP_MIN,
+    })
+    startIdx = idx
+    prevIdx = idx
+  }
+  ranges.push({
+    start: TOUR_GRID_START_MIN + startIdx * TOUR_GRID_STEP_MIN,
+    end: TOUR_GRID_START_MIN + (prevIdx + 1) * TOUR_GRID_STEP_MIN,
+  })
+  return ranges
+}
+
+function weeklyFreeWithDayRanges(weeklyArrays, dayAbbr, ranges) {
+  const next = cloneWeeklyArrays(weeklyArrays)
+  const idxSet = new Set()
+  for (const range of normalizeTimeRanges(ranges)) {
+    for (const idx of halfHourIndicesOverlappingRange(range.start, range.end)) {
+      idxSet.add(idx)
+    }
+  }
+  next[dayAbbr] = [...idxSet].sort((a, b) => a - b)
+  return next
+}
+
+function addDefaultTimeRange(ranges) {
+  const normalized = normalizeTimeRanges(ranges)
+  const last = normalized[normalized.length - 1]
+  const start = last ? Math.min(last.end + TOUR_GRID_STEP_MIN, 18 * 60) : 10 * 60
+  const end = Math.min(start + 120, TOUR_GRID_END_MIN)
+  return [...normalized, { start, end }]
+}
+
+function bookingBadgeTone(row) {
+  const type = String(row.Type || '').trim().toLowerCase()
+  const approval = String(row['Manager Approval'] || '').trim().toLowerCase()
+  if (type === 'meeting') return 'bg-violet-50 text-violet-800 border-violet-200'
+  if (approval === 'approved') return 'bg-emerald-50 text-emerald-800 border-emerald-200'
+  if (approval === 'declined') return 'bg-red-50 text-red-700 border-red-200'
+  return 'bg-sky-50 text-sky-800 border-sky-200'
+}
+
+function bookingLabel(row) {
+  return String(row.Type || '').trim().toLowerCase() === 'meeting' ? 'Meeting' : 'Booked tour'
+}
+
+function TimeRangeRow({ range, onChange, onRemove, disabled = false, disableRemove = false }) {
+  return (
+    <div className="grid grid-cols-[1fr_auto_1fr_auto] items-center gap-2 rounded-2xl border border-slate-200 bg-white p-3">
+      <input
+        type="time"
+        step="1800"
+        value={inputValueFromMinutes(range.start)}
+        disabled={disabled}
+        onChange={(e) => onChange({ ...range, start: minutesFromInputValue(e.target.value) ?? range.start })}
+        className="rounded-xl border border-slate-200 px-3 py-2 text-sm font-medium text-slate-800 outline-none transition focus:border-[#2563eb] focus:ring-2 focus:ring-[#2563eb]/20"
+      />
+      <span className="text-sm font-semibold text-slate-400">to</span>
+      <input
+        type="time"
+        step="1800"
+        value={inputValueFromMinutes(range.end)}
+        disabled={disabled}
+        onChange={(e) => onChange({ ...range, end: minutesFromInputValue(e.target.value) ?? range.end })}
+        className="rounded-xl border border-slate-200 px-3 py-2 text-sm font-medium text-slate-800 outline-none transition focus:border-[#2563eb] focus:ring-2 focus:ring-[#2563eb]/20"
+      />
+      <button
+        type="button"
+        onClick={onRemove}
+        disabled={disabled || disableRemove}
+        className="rounded-xl border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-500 hover:bg-slate-50 disabled:opacity-40"
+      >
+        Remove
+      </button>
+    </div>
+  )
+}
+
+function TimeRangeList({ ranges, onChangeRange, onRemoveRange, disabled = false }) {
+  if (!ranges.length) {
+    return (
+      <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 px-4 py-6 text-sm text-slate-500">
+        No hours set for this day.
+      </div>
+    )
+  }
+  return (
+    <div className="space-y-3">
+      {ranges.map((range, idx) => (
+        <TimeRangeRow
+          key={`${range.start}-${range.end}-${idx}`}
+          range={range}
+          disabled={disabled}
+          disableRemove={ranges.length === 1}
+          onChange={(next) => onChangeRange(idx, next)}
+          onRemove={() => onRemoveRange(idx)}
+        />
+      ))}
+    </div>
+  )
+}
+
+function CalendarToolbar({ view, label, onViewChange, onPrev, onNext, onToday }) {
+  const tabCls = (id) =>
+    classNames(
+      'rounded-xl px-3 py-2 text-sm font-semibold transition',
+      view === id ? 'bg-[linear-gradient(180deg,#2f76ff_0%,#2450eb_100%)] text-white shadow-[0_6px_18px_rgba(37,99,235,0.25)]' : 'text-slate-600 hover:bg-slate-100',
+    )
+
+  return (
+    <div className="flex flex-wrap items-center justify-between gap-3">
+      <div className="flex rounded-2xl border border-slate-200 bg-slate-50 p-1">
+        <button type="button" className={tabCls('day')} onClick={() => onViewChange('day')}>Day</button>
+        <button type="button" className={tabCls('week')} onClick={() => onViewChange('week')}>Week</button>
+        <button type="button" className={tabCls('month')} onClick={() => onViewChange('month')}>Month</button>
+      </div>
+      <div className="flex items-center gap-2">
+        <button type="button" onClick={onToday} className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-[#2563eb] hover:bg-slate-50">
+          Today
+        </button>
+        <div className="flex items-center gap-1 rounded-2xl border border-slate-200 bg-white p-1">
+          <button type="button" onClick={onPrev} className="rounded-xl px-3 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-50">←</button>
+          <div className="min-w-[10rem] px-3 text-center text-sm font-bold text-slate-900">{label}</div>
+          <button type="button" onClick={onNext} className="rounded-xl px-3 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-50">→</button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function AvailabilityCalendar({ view, anchorDate, selectedDateKey, onSelectDate, weeklyFree, bookedByDate }) {
+  const y = anchorDate.getFullYear()
+  const m = anchorDate.getMonth()
+  const daysInMonth = new Date(y, m + 1, 0).getDate()
+  const firstDow = new Date(y, m, 1).getDay()
+  const todayKey = dateKeyFromDate(new Date())
+  const weekStart = startOfWeekSunday(anchorDate)
+  const weekDays = Array.from({ length: 7 }, (_, i) => addDaysDate(weekStart, i))
+
+  const dayRanges = (key) => timeRangesFromWeeklyFree(weeklyFree, weekdayAbbrFromDateKey(key))
+  const bookings = (key) => bookedByDate.get(key) || []
+
+  const renderDayCard = (dateKey, dayLabel, dateLabel) => {
+    const ranges = dayRanges(dateKey)
+    const dayBookings = bookings(dateKey)
+    const selected = selectedDateKey === dateKey
+    return (
+      <button
+        key={dateKey}
+        type="button"
+        onClick={() => onSelectDate(dateKey)}
+        className={classNames(
+          'min-h-[154px] rounded-[24px] border p-4 text-left transition',
+          selected ? 'border-[#2563eb] bg-[#2563eb]/5 ring-2 ring-[#2563eb]/20' : 'border-slate-200 bg-slate-50/70 hover:bg-white',
+          dateKey === todayKey ? 'ring-1 ring-slate-300' : '',
+        )}
+      >
+        <div className="flex items-start justify-between gap-2">
+          <div>
+            <div className="text-[10px] font-bold uppercase tracking-[0.14em] text-slate-400">{dayLabel}</div>
+            <div className="mt-1 text-lg font-black text-slate-900">{dateLabel}</div>
+          </div>
+          <span className="rounded-full bg-white px-2 py-1 text-[10px] font-bold text-slate-500 ring-1 ring-slate-200">
+            {ranges.length ? `${ranges.length} range${ranges.length === 1 ? '' : 's'}` : 'Off'}
+          </span>
+        </div>
+        <div className="mt-3 space-y-1">
+          {ranges.slice(0, 2).map((range) => (
+            <div key={`${range.start}-${range.end}`} className="rounded-xl bg-emerald-50 px-2.5 py-1.5 text-xs font-semibold text-emerald-800">
+              {formatTimeRangeLabel(range)}
+            </div>
+          ))}
+          {ranges.length > 2 ? <div className="text-xs text-slate-400">+{ranges.length - 2} more</div> : null}
+        </div>
+        <div className="mt-4 space-y-1">
+          {dayBookings.slice(0, 2).map((row) => (
+            <div key={row.id} className={`rounded-xl border px-2.5 py-1.5 text-xs font-semibold ${bookingBadgeTone(row)}`}>
+              {bookingLabel(row)}{row['Preferred Time'] ? ` · ${row['Preferred Time']}` : ''}
+            </div>
+          ))}
+          {!dayBookings.length ? <div className="text-xs text-slate-400">No bookings</div> : null}
+        </div>
+      </button>
+    )
+  }
+
+  if (view === 'day') {
+    const dateKey = dateKeyFromDate(anchorDate)
+    const ranges = dayRanges(dateKey)
+    const dayBookings = bookings(dateKey)
+    return (
+      <div className="rounded-[28px] border border-slate-200 bg-white p-5 shadow-sm">
+        <div className="text-[11px] font-bold uppercase tracking-[0.16em] text-slate-400">
+          {anchorDate.toLocaleDateString('en-US', { weekday: 'long' })}
+        </div>
+        <div className="mt-1 text-2xl font-black text-slate-900">
+          {anchorDate.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}
+        </div>
+        <div className="mt-5 grid gap-4 md:grid-cols-2">
+          <div className="rounded-2xl border border-slate-200 bg-slate-50/70 p-4">
+            <div className="text-sm font-bold text-slate-900">Available tour slots</div>
+            <div className="mt-3 space-y-2">
+              {ranges.length ? ranges.map((range) => (
+                <div key={`${range.start}-${range.end}`} className="rounded-xl bg-emerald-50 px-3 py-2 text-sm font-semibold text-emerald-800">
+                  {formatTimeRangeLabel(range)}
+                </div>
+              )) : <div className="text-sm text-slate-500">Not available</div>}
+            </div>
+          </div>
+          <div className="rounded-2xl border border-slate-200 bg-slate-50/70 p-4">
+            <div className="text-sm font-bold text-slate-900">Booked tours</div>
+            <div className="mt-3 space-y-2">
+              {dayBookings.length ? dayBookings.map((row) => (
+                <div key={row.id} className={`rounded-xl border px-3 py-2 text-sm ${bookingBadgeTone(row)}`}>
+                  <div className="font-semibold">{bookingLabel(row)}</div>
+                  <div className="mt-1 text-xs opacity-80">
+                    {row.Name || 'Guest'}{row['Preferred Time'] ? ` · ${row['Preferred Time']}` : ''}{row.Property ? ` · ${row.Property}` : ''}
+                  </div>
+                </div>
+              )) : <div className="text-sm text-slate-500">No booked tours</div>}
+            </div>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  if (view === 'week') {
+    return (
+      <div className="grid gap-3 lg:grid-cols-7">
+        {weekDays.map((day) => renderDayCard(
+          dateKeyFromDate(day),
+          day.toLocaleDateString('en-US', { weekday: 'short' }),
+          String(day.getDate()),
+        ))}
+      </div>
+    )
+  }
+
+  const cells = []
+  for (let i = 0; i < firstDow; i += 1) cells.push(null)
+  for (let day = 1; day <= daysInMonth; day += 1) cells.push(day)
+
+  return (
+    <div className="rounded-[28px] border border-slate-200 bg-white p-4 shadow-sm">
+      <div className="grid grid-cols-7 gap-2 px-1 pb-3 text-center text-[11px] font-bold uppercase tracking-[0.14em] text-slate-400">
+        {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((day) => (
+          <div key={day}>{day}</div>
+        ))}
+      </div>
+      <div className="grid grid-cols-7 gap-2">
+        {cells.map((day, idx) => {
+          if (day == null) return <div key={`pad-${idx}`} className="min-h-[132px] rounded-2xl bg-transparent" />
+          const key = calendarDateKey(y, m, day)
+          return renderDayCard(key, new Date(y, m, day).toLocaleDateString('en-US', { weekday: 'short' }), String(day))
+        })}
+      </div>
+    </div>
+  )
+}
+
+function AvailabilityEditorPanel({
+  selectedDateKey,
+  ranges,
+  isAvailable,
+  setIsAvailable,
+  onAddRange,
+  onChangeRange,
+  onRemoveRange,
+  onOpenMeet,
+  onSave,
+  onApplyWeekday,
+  onClearDay,
+  availSaving,
+  manager,
+}) {
+  const selectedDate = dateFromCalendarKey(selectedDateKey)
+  const weekday = weekdayAbbrFromDateKey(selectedDateKey)
+
+  return (
+    <div className="rounded-[28px] border border-slate-200 bg-white p-6 shadow-sm lg:sticky lg:top-6">
+      <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-[#2563eb]">Tour availability</div>
+      <h2 className="mt-2 text-2xl font-black text-slate-900">
+        {selectedDate.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}
+      </h2>
+      <p className="mt-2 text-sm text-slate-500">
+        Edit tour hours for this day. Saving updates your recurring {weekday} schedule.
+      </p>
+
+      {isManagerInternalPreview(manager) ? (
+        <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950">
+          {manager.__axisDeveloper
+            ? 'Developer preview: availability edits are disabled.'
+            : 'Internal preview: availability edits are disabled (no linked manager profile).'}
+        </div>
+      ) : null}
+
+      <div className="mt-6 flex rounded-2xl border border-slate-200 bg-slate-50 p-1">
+        <button
+          type="button"
+          onClick={() => setIsAvailable(true)}
+          className={classNames(
+            'flex-1 rounded-xl px-4 py-3 text-sm font-semibold transition',
+            isAvailable ? 'bg-[linear-gradient(180deg,#2f76ff_0%,#2450eb_100%)] text-white shadow-[0_8px_18px_rgba(37,99,235,0.25)]' : 'text-slate-500 hover:bg-white',
+          )}
+        >
+          Available
+        </button>
+        <button
+          type="button"
+          onClick={() => setIsAvailable(false)}
+          className={classNames(
+            'flex-1 rounded-xl px-4 py-3 text-sm font-semibold transition',
+            !isAvailable ? 'bg-slate-900 text-white shadow-[0_8px_18px_rgba(15,23,42,0.16)]' : 'text-slate-500 hover:bg-white',
+          )}
+        >
+          Not available
+        </button>
+      </div>
+
+      <div className="mt-6">
+        <div className="mb-3 flex items-center justify-between gap-3">
+          <div className="text-sm font-bold text-slate-900">Time ranges</div>
+          <button
+            type="button"
+            disabled={!isAvailable}
+            onClick={onAddRange}
+            className="rounded-xl border border-slate-200 px-3 py-2 text-sm font-semibold text-[#2563eb] hover:bg-slate-50 disabled:opacity-40"
+          >
+            + Add time range
+          </button>
+        </div>
+        {isAvailable ? (
+          <TimeRangeList ranges={ranges} onChangeRange={onChangeRange} onRemoveRange={onRemoveRange} />
+        ) : (
+          <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 px-4 py-6 text-sm text-slate-500">
+            This day is marked unavailable.
+          </div>
+        )}
+      </div>
+
+      <div className="mt-6 flex flex-wrap gap-2 text-sm">
+        <button
+          type="button"
+          onClick={onApplyWeekday}
+          disabled={availSaving || isManagerInternalPreview(manager)}
+          className="rounded-xl border border-slate-200 px-3 py-2 font-semibold text-slate-600 hover:bg-slate-50 disabled:opacity-40"
+        >
+          Apply to every {weekday}
+        </button>
+        <button
+          type="button"
+          onClick={onClearDay}
+          disabled={availSaving || isManagerInternalPreview(manager)}
+          className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 font-semibold text-red-700 hover:bg-red-100 disabled:opacity-40"
+        >
+          Clear day
+        </button>
+      </div>
+
+      <div className="mt-6 grid gap-3">
+        <button
+          type="button"
+          onClick={onOpenMeet}
+          disabled={isManagerInternalPreview(manager)}
+          className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-40"
+        >
+          Let us meet
+        </button>
+        <button
+          type="button"
+          onClick={onSave}
+          disabled={availSaving || isManagerInternalPreview(manager)}
+          className="rounded-2xl bg-[linear-gradient(180deg,#2f76ff_0%,#2450eb_100%)] px-4 py-3 text-sm font-semibold text-white shadow-[0_12px_28px_rgba(37,99,235,0.22)] disabled:opacity-50"
+        >
+          {availSaving ? 'Saving…' : 'Save availability'}
+        </button>
+      </div>
+    </div>
+  )
+}
+
+function LetUsMeetModal({ open, initialDateKey, manager, onClose, onCreated }) {
+  const [date, setDate] = useState(initialDateKey)
+  const [startTime, setStartTime] = useState('10:00')
+  const [endTime, setEndTime] = useState('11:00')
+  const [notes, setNotes] = useState('')
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState('')
+
+  useEffect(() => {
+    if (!open) return
+    setDate(initialDateKey)
+    setStartTime('10:00')
+    setEndTime('11:00')
+    setNotes('')
+    setSaving(false)
+    setError('')
+  }, [open, initialDateKey])
+
+  if (!open) return null
+
+  async function handleSave() {
+    setError('')
+    const startMinutes = minutesFromInputValue(startTime)
+    const endMinutes = minutesFromInputValue(endTime)
+    if (!date || startMinutes == null || endMinutes == null || endMinutes <= startMinutes) {
+      setError('Choose a valid date and time range.')
+      return
+    }
+
+    setSaving(true)
+    try {
+      const res = await fetch('/api/forms?action=tour', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: manager?.name || 'Axis manager',
+          email: manager?.email || 'manager@axis.invalid',
+          type: 'Meeting',
+          manager: manager?.name || '',
+          managerEmail: manager?.email || '',
+          preferredDate: date,
+          preferredTime: `${displayTimeFromMinutes(startMinutes)} - ${displayTimeFromMinutes(endMinutes)}`,
+          notes: String(notes || '').trim(),
+        }),
+      })
+      const data = await readJsonResponse(res)
+      if (!res.ok) throw new Error(data.error || 'Could not save meeting.')
+      toast.success('Meeting saved')
+      onCreated?.()
+      onClose()
+    } catch (err) {
+      setError(err.message || 'Could not save meeting.')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <Modal onClose={onClose}>
+      <div className="pr-8">
+        <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-[#2563eb]">Let us meet</div>
+        <h3 className="mt-2 text-2xl font-black text-slate-900">Quick meeting slot</h3>
+        <p className="mt-2 text-sm text-slate-500">Create a one-off meeting slot without changing your weekly schedule.</p>
+      </div>
+      <div className="mt-6 grid gap-4 sm:grid-cols-2">
+        <div>
+          <label className="mb-1.5 block text-xs font-semibold text-slate-700">Date</label>
+          <input type="date" value={date} onChange={(e) => setDate(e.target.value)} className={portalAuthInputCls} />
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label className="mb-1.5 block text-xs font-semibold text-slate-700">Start time</label>
+            <input type="time" step="1800" value={startTime} onChange={(e) => setStartTime(e.target.value)} className={portalAuthInputCls} />
+          </div>
+          <div>
+            <label className="mb-1.5 block text-xs font-semibold text-slate-700">End time</label>
+            <input type="time" step="1800" value={endTime} onChange={(e) => setEndTime(e.target.value)} className={portalAuthInputCls} />
+          </div>
+        </div>
+      </div>
+      <div className="mt-4">
+        <label className="mb-1.5 block text-xs font-semibold text-slate-700">Notes</label>
+        <textarea
+          rows={4}
+          value={notes}
+          onChange={(e) => setNotes(e.target.value)}
+          placeholder="Optional details"
+          className={`${portalAuthInputCls} min-h-[120px] resize-y`}
+        />
+      </div>
+      {error ? <div className="mt-4 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">{error}</div> : null}
+      <div className="mt-6 flex justify-end gap-3">
+        <button type="button" onClick={onClose} className="rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-semibold text-slate-600 hover:bg-slate-50">
+          Cancel
+        </button>
+        <PortalPrimaryButton type="button" onClick={handleSave} disabled={saving}>
+          {saving ? 'Saving…' : 'Save'}
+        </PortalPrimaryButton>
+      </div>
+    </Modal>
+  )
+}
+
 async function atRequest(url, options = {}) {
   const res = await fetch(url, { ...options, headers: { ...atHeaders(), ...(options.headers || {}) } })
   if (!res.ok) {
@@ -562,14 +1233,6 @@ async function patchLeaseDraft(recordId, fields) {
 async function fetchPropertiesAdmin() {
   const data = await atRequest(`${CORE_AIRTABLE_BASE_URL}/Properties`)
   return (data.records || []).map(mapRecord)
-}
-
-async function createPropertyAdmin(fields) {
-  const data = await atRequest(`${CORE_AIRTABLE_BASE_URL}/Properties`, {
-    method: 'POST',
-    body: JSON.stringify({ fields, typecast: true }),
-  })
-  return mapRecord(data)
 }
 
 async function updatePropertyAdmin(recordId, fields) {
@@ -1198,31 +1861,7 @@ function HouseManagementPanel({ manager, onPropertiesChange }) {
   }
 
   return (
-    <div className="grid gap-6 lg:grid-cols-[0.95fr_1.05fr]">
-      <div className="rounded-[24px] border border-slate-200 bg-white p-6">
-        <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-[#2563eb]">House Management</div>
-        <h3 className="mt-2 text-xl font-black text-slate-900">Add a house</h3>
-        <p className="mt-2 text-sm leading-6 text-slate-500">
-          Add internal property records for leasing and resident operations. Enter building details, then go room by room (furnished status,
-          rent, bath type, and more). Rows are written to Airtable <strong>Properties</strong> and <strong>Rooms</strong>. Public marketing
-          listings still use the website property dataset.
-        </p>
-
-        <div className="mt-5">
-          <AddHousingWizard
-            createProperty={createPropertyAdmin}
-            onSuccess={(created) => {
-              setProperties((current) => {
-                const next = [created, ...current]
-                onPropertiesChange?.(next)
-                return next
-              })
-            }}
-          />
-        </div>
-      </div>
-
-      <div className="rounded-[24px] border border-slate-200 bg-white p-6">
+    <div className="rounded-[24px] border border-slate-200 bg-white p-6">
         <div className="flex items-center justify-between gap-3">
           <div>
             <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">Current Houses</div>
@@ -1241,7 +1880,7 @@ function HouseManagementPanel({ manager, onPropertiesChange }) {
           <div className="mt-5 rounded-2xl border border-slate-100 bg-slate-50 px-4 py-5 text-sm text-slate-500">Loading houses…</div>
         ) : approvedAssigned.length === 0 && pendingAssigned.length === 0 ? (
           <div className="mt-5 rounded-2xl border border-slate-100 bg-slate-50 px-4 py-5 text-sm text-slate-500">
-            No houses on your account yet. Add a property below—it will show here once it&apos;s linked.
+            No houses linked yet. Contact Axis.
           </div>
         ) : (
           <div className="mt-5 space-y-3">
@@ -1374,7 +2013,6 @@ function HouseManagementPanel({ manager, onPropertiesChange }) {
             ))}
           </div>
         )}
-      </div>
     </div>
   )
 }
@@ -1389,7 +2027,7 @@ function ManagerProfilePanel({ manager, onManagerUpdate, approvedPropertyCount =
   const [propsLoading, setPropsLoading] = useState(true)
 
   const approvedForProfile = useMemo(() => {
-    if (manager.__axisDeveloper) {
+    if (isManagerInternalPreview(manager)) {
       return properties.filter((p) => isPropertyRecordApproved(p))
     }
     return properties.filter((p) => propertyAssignedToManager(p, manager) && isPropertyRecordApproved(p))
@@ -1404,8 +2042,8 @@ function ManagerProfilePanel({ manager, onManagerUpdate, approvedPropertyCount =
 
   async function handleSaveProfile(event) {
     event.preventDefault()
-    if (manager.__axisDeveloper) {
-      toast.info('Profile save is disabled in developer preview mode.')
+    if (isManagerInternalPreview(manager)) {
+      toast.info('Profile save is disabled in preview mode.')
       return
     }
     setSaving(true)
@@ -1519,7 +2157,7 @@ function ManagerProfilePanel({ manager, onManagerUpdate, approvedPropertyCount =
           <div className="mt-5 text-sm text-slate-500">Loading properties…</div>
         ) : approvedForProfile.length === 0 ? (
           <div className="mt-5 rounded-2xl border border-slate-100 bg-slate-50 p-6 text-center text-sm text-slate-500">
-            No properties yet. Add a house under Properties or contact Axis to link your manager email.
+            No properties yet. Contact Axis to link your manager email to properties.
           </div>
         ) : (
           <div className="mt-5 grid gap-3 sm:grid-cols-2">
@@ -1936,7 +2574,7 @@ function ManagerDashboardHomePanel({
           <p className="mt-6 text-sm text-slate-500">Loading…</p>
         ) : (approvedHouseCount ?? 0) === 0 ? (
           <p className="mt-6 text-sm text-slate-600">
-            You don&apos;t have any houses in your portfolio yet. Add a house under Properties—applications, leases, and rent will show here once properties are linked to your account.
+            You don&apos;t have any houses in your portfolio yet. Once properties are linked to your account, applications, leases, and rent will show here.
           </p>
         ) : visibleTasks.length === 0 ? (
           <p className="mt-6 text-sm text-emerald-800 bg-emerald-50 border border-emerald-100 rounded-2xl px-4 py-3">
@@ -2064,7 +2702,7 @@ function ManagerCalendarPanel({ manager, scopedPropertyNames = [] }) {
   }, [reloadScheduling])
 
   useEffect(() => {
-    if (!manager?.id || manager.__axisDeveloper) {
+    if (!manager?.id || isManagerInternalPreview(manager)) {
       setWeeklyFree(emptyWeeklyFreeArrays())
       setSavedEncoded('')
       setAvailLoading(false)
@@ -2092,7 +2730,7 @@ function ManagerCalendarPanel({ manager, scopedPropertyNames = [] }) {
     return () => {
       cancelled = true
     }
-  }, [manager?.id, manager.__axisDeveloper])
+  }, [manager?.id, manager?.__axisDeveloper, manager?.__axisInternalStaff])
 
   useEffect(() => {
     function endPaint() {
@@ -2197,8 +2835,8 @@ function ManagerCalendarPanel({ manager, scopedPropertyNames = [] }) {
   }
 
   async function handleSaveWeeklyAvailability() {
-    if (!manager?.id || manager.__axisDeveloper) {
-      toast.info('Saving is disabled in developer preview mode.')
+    if (!manager?.id || isManagerInternalPreview(manager)) {
+      toast.info('Saving is disabled in preview mode.')
       return
     }
     setAvailSaving(true)
@@ -2215,6 +2853,10 @@ function ManagerCalendarPanel({ manager, scopedPropertyNames = [] }) {
   }
 
   async function respondTourRequest(row, approve) {
+    if (managerCannotApproveTours(manager)) {
+      toast.error('Tour approvals are disabled for your account.')
+      return
+    }
     try {
       await patchSchedulingRecord(row.id, {
         'Manager Approval': approve ? 'Approved' : 'Declined',
@@ -2290,25 +2932,7 @@ function ManagerCalendarPanel({ manager, scopedPropertyNames = [] }) {
     <div className="rounded-[24px] border border-slate-200 bg-white p-6 shadow-sm">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div className="min-w-0 max-w-xl">
-          <div className="flex flex-wrap items-center gap-2">
-            <h2 className="text-xl font-black text-slate-900">Calendar &amp; tour hours</h2>
-            <button
-              type="button"
-              onClick={() =>
-                openAxisAssistant({
-                  topic: 'manager-calendar',
-                  hint: "I'm in the manager portal calendar. Help me set weekly tour hours, use month/week/day views, or respond to tour requests.",
-                })
-              }
-              className="rounded-full border border-[#2563eb]/30 bg-white px-3 py-1 text-[11px] font-bold uppercase tracking-wide text-[#2563eb] hover:bg-sky-50"
-            >
-              Chat help
-            </button>
-          </div>
-          <p className="mt-1 text-sm text-slate-600">
-            <strong className="text-slate-800">Step 1:</strong> Set when you&apos;re free for tours (repeats every week).{' '}
-            <strong className="text-slate-800">Step 2:</strong> Use the calendar to review leases, applications, and tour requests.
-          </p>
+          <h2 className="text-xl font-black text-slate-900">Calendar &amp; tour hours</h2>
           {pendingTourCount > 0 ? (
             <p className="mt-2 text-sm font-semibold text-sky-800">
               {pendingTourCount} tour request{pendingTourCount === 1 ? '' : 's'} awaiting yes/no — pick that day below.
@@ -2348,9 +2972,11 @@ function ManagerCalendarPanel({ manager, scopedPropertyNames = [] }) {
         </div>
       </div>
 
-      {manager.__axisDeveloper ? (
+      {isManagerInternalPreview(manager) ? (
         <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-950">
-          Developer preview: tour hours are not saved to Airtable from this session.
+          {manager.__axisDeveloper
+            ? 'Developer preview: tour hours are not saved to Airtable from this session.'
+            : 'Internal preview: tour hours are not saved to Airtable from this session.'}
         </div>
       ) : null}
 
@@ -2494,7 +3120,7 @@ function ManagerCalendarPanel({ manager, scopedPropertyNames = [] }) {
           <button
             type="button"
             onClick={handleSaveWeeklyAvailability}
-            disabled={availSaving || !availabilityDirty || manager.__axisDeveloper}
+            disabled={availSaving || !availabilityDirty || isManagerInternalPreview(manager)}
             className="rounded-xl bg-[#2563eb] px-4 py-2.5 text-sm font-semibold text-white shadow-sm disabled:opacity-50"
           >
             {availSaving ? 'Saving…' : 'Save tour hours'}
@@ -2678,22 +3304,28 @@ function ManagerCalendarPanel({ manager, scopedPropertyNames = [] }) {
                         {row.Email ? <div className="mt-0.5 text-xs text-slate-500">{row.Email}</div> : null}
                         <div className="mt-2 text-[11px] font-semibold uppercase tracking-wide text-slate-400">Status: {appr}</div>
                         {needs ? (
-                          <div className="mt-2 flex flex-wrap gap-2">
-                            <button
-                              type="button"
-                              onClick={() => respondTourRequest(row, true)}
-                              className="rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-700"
-                            >
-                              Approve
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => respondTourRequest(row, false)}
-                              className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50"
-                            >
-                              Decline
-                            </button>
-                          </div>
+                          managerCannotApproveTours(manager) ? (
+                            <p className="mt-2 text-xs font-medium text-amber-800">
+                              Approve and decline are not available for SWE preview accounts.
+                            </p>
+                          ) : (
+                            <div className="mt-2 flex flex-wrap gap-2">
+                              <button
+                                type="button"
+                                onClick={() => respondTourRequest(row, true)}
+                                className="rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-700"
+                              >
+                                Approve
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => respondTourRequest(row, false)}
+                                className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                              >
+                                Decline
+                              </button>
+                            </div>
+                          )
                         ) : null}
                       </li>
                     )
@@ -2726,761 +3358,30 @@ function ManagerCalendarPanel({ manager, scopedPropertyNames = [] }) {
   )
 }
 
-const MANAGER_INBOX_AXIS = 'inbox:axis'
 
-function managerInboxResidentThreadId(residentRecordId) {
-  return `resident:${String(residentRecordId || '').trim()}`
-}
-
-function managerInboxParseResidentThreadId(selectedId) {
-  const s = String(selectedId || '')
-  if (!s.startsWith('resident:')) return null
-  const id = s.slice('resident:'.length).trim()
-  return id || null
-}
-
-function managerInboxWoThreadId(woId) {
-  return `wo:${woId}`
-}
-
-function managerInboxParseWoThreadId(s) {
-  if (!s || !String(s).startsWith('wo:')) return null
-  return String(s).slice(3)
-}
-
-const MANAGER_INBOX_THREAD_STATE_LS = 'axis_manager_inbox_thread_state_v1'
-
-function loadLocalInboxStateMap(email) {
-  const em = String(email || '').trim().toLowerCase()
-  if (!em) return new Map()
-  try {
-    const root = JSON.parse(localStorage.getItem(MANAGER_INBOX_THREAD_STATE_LS) || '{}')
-    const bucket = root[em] || {}
-    const m = new Map()
-    for (const [tk, v] of Object.entries(bucket)) {
-      m.set(tk, {
-        id: `local:${tk}`,
-        lastReadAt: v.lastReadAt ? new Date(v.lastReadAt) : null,
-        trashed: Boolean(v.trashed),
-      })
-    }
-    return m
-  } catch {
-    return new Map()
-  }
-}
-
-function saveLocalInboxStatePatch(email, threadKey, patch) {
-  const em = String(email || '').trim().toLowerCase()
-  const tk = String(threadKey || '').trim()
-  if (!em || !tk) return
-  try {
-    const root = JSON.parse(localStorage.getItem(MANAGER_INBOX_THREAD_STATE_LS) || '{}')
-    if (!root[em]) root[em] = {}
-    const cur = root[em][tk] || {}
-    const next = { ...cur }
-    if (patch.lastReadAt !== undefined) {
-      next.lastReadAt = patch.lastReadAt ? new Date(patch.lastReadAt).toISOString() : null
-    }
-    if (patch.trashed !== undefined) next.trashed = patch.trashed
-    root[em][tk] = next
-    localStorage.setItem(MANAGER_INBOX_THREAD_STATE_LS, JSON.stringify(root))
-  } catch {
-    /* ignore */
-  }
-}
-
-/** @param {number} lastMsgTs */
-function managerInboxSectionForRow(lastMsgTs, state) {
-  if (state?.trashed) return 'trash'
-  if (lastMsgTs <= 0) {
-    return state?.lastReadAt ? 'opened' : 'unopened'
-  }
-  if (!state?.lastReadAt) return 'unopened'
-  return lastMsgTs > state.lastReadAt.getTime() ? 'unopened' : 'opened'
-}
-
-function managerInboxStateKeyForSelection(selectedThreadId, axisThreadKey) {
-  if (selectedThreadId === MANAGER_INBOX_AXIS) return axisThreadKey || ''
-  const resId = managerInboxParseResidentThreadId(selectedThreadId)
-  if (resId) return residentLeasingThreadKey(resId)
-  if (!selectedThreadId || !String(selectedThreadId).startsWith('wo:')) return ''
-  return String(selectedThreadId)
-}
-
-function InboxTabPanel({ manager, allowedPropertyNames }) {
-  const [allMsgs, setAllMsgs] = useState([])
-  const [scopedWos, setScopedWos] = useState([])
-  const [axisMsgs, setAxisMsgs] = useState([])
-  const [loading, setLoading] = useState(true)
-  const [selectedThreadId, setSelectedThreadId] = useState(null)
-  const [thread, setThread] = useState([])
-  const [threadLoading, setThreadLoading] = useState(false)
-  const [reply, setReply] = useState('')
-  const [sending, setSending] = useState(false)
-  const [inboxStateMap, setInboxStateMap] = useState(() => new Map())
-  const [inboxStateBackend, setInboxStateBackend] = useState('pending')
-  const [sectionFilter, setSectionFilter] = useState('all')
-  const [threadSearch, setThreadSearch] = useState('')
-
-  const inboxScopeLower = useMemo(
-    () => new Set((allowedPropertyNames || []).map((n) => String(n).trim().toLowerCase()).filter(Boolean)),
-    [allowedPropertyNames],
-  )
-
-  const managerEmail = String(manager?.email || '').trim()
-  const axisThreadKey = useMemo(() => {
-    if (!portalInboxAirtableConfigured() || !managerEmail) return ''
-    return siteManagerThreadKey(managerEmail)
-  }, [managerEmail])
-
-  const refreshInboxThreadState = useCallback(async () => {
-    if (!managerEmail) {
-      setInboxStateMap(new Map())
-      setInboxStateBackend('none')
-      return
-    }
-    if (inboxThreadStateAirtableEnabled()) {
-      try {
-        setInboxStateMap(await fetchInboxThreadStateMap(managerEmail))
-        setInboxStateBackend('airtable')
-        return
-      } catch {
-        /* fall back to browser storage */
-      }
-    }
-    setInboxStateMap(loadLocalInboxStateMap(managerEmail))
-    setInboxStateBackend('local')
-  }, [managerEmail])
-
-  const loadAll = useCallback(async () => {
-    const hasScope = inboxScopeLower.size > 0
-    const hasAxis = Boolean(axisThreadKey)
-    if (!hasScope && !hasAxis) {
-      setAllMsgs([])
-      setScopedWos([])
-      setAxisMsgs([])
-      setLoading(false)
-      try {
-        await refreshInboxThreadState()
-      } catch {
-        /* non-fatal */
-      }
-      return
-    }
-    setLoading(true)
-    try {
-      const tasks = [getAllMessages(), getAllWorkOrders()]
-      if (hasAxis) tasks.push(getMessagesByThreadKey(axisThreadKey))
-      const results = await Promise.all(tasks)
-      const msgs = results[0]
-      const wos = results[1]
-      const axis = hasAxis ? results[2] : []
-      setAllMsgs(msgs)
-      setAxisMsgs(axis)
-      setScopedWos(hasScope ? wos.filter((w) => workOrderInScope(w, inboxScopeLower)) : [])
-    } catch (err) {
-      if (!isAirtablePermissionErrorMessage(err?.message)) {
-        toast.error('Inbox failed to load: ' + formatDataLoadError(err))
-      }
-    } finally {
-      setLoading(false)
-      try {
-        await refreshInboxThreadState()
-      } catch {
-        /* non-fatal */
-      }
-    }
-  }, [inboxScopeLower, axisThreadKey, refreshInboxThreadState])
-
-  useEffect(() => {
-    loadAll()
-  }, [loadAll])
-
-  const threadRows = useMemo(() => {
-    const rows = []
-    const msgTime = (m) => new Date(m?.Timestamp || m?.created_at || 0).getTime()
-
-    for (const w of scopedWos) {
-      const woMsgs = allMsgs.filter((m) => {
-        if (isInternalPortalThreadMessage(m)) return false
-        const id = workOrderLinkedId(m['Work Order'])
-        return id === w.id
-      })
-      const last = woMsgs.reduce(
-        (best, m) => (msgTime(m) > msgTime(best) ? m : best),
-        woMsgs[0] || null,
-      )
-      const submitted = new Date(w['Date Submitted'] || w.created_at || 0).getTime()
-      const lastMsgTs = last ? msgTime(last) : 0
-      const ts = Math.max(submitted, lastMsgTs)
-      rows.push({
-        id: managerInboxWoThreadId(w.id),
-        stateKey: managerInboxWoThreadId(w.id),
-        title: w.Title || 'Work order',
-        subtitle: workOrderPropertyLabel(w) || undefined,
-        preview: last?.Message ? String(last.Message) : '',
-        time: last ? fmtDateTime(last.Timestamp || last.created_at) : fmtDate(w['Date Submitted'] || w.created_at),
-        ts,
-        lastMsgTs,
-      })
-    }
-
-    if (axisThreadKey) {
-      const sortedAxis = [...axisMsgs].sort((a, b) => msgTime(a) - msgTime(b))
-      const last = sortedAxis[sortedAxis.length - 1]
-      const lastMsgTs = last ? msgTime(last) : 0
-      rows.push({
-        id: MANAGER_INBOX_AXIS,
-        stateKey: axisThreadKey,
-        title: 'Axis team',
-        subtitle: 'Internal · not tied to a work order',
-        preview: last?.Message ? String(last.Message) : '',
-        time: last ? fmtDateTime(last.Timestamp || last.created_at) : '',
-        ts: lastMsgTs,
-        lastMsgTs,
-      })
-    }
-
-    const residentByKey = new Map()
-    for (const m of allMsgs) {
-      const tk = portalInboxThreadKeyFromRecord(m)
-      if (!tk || !tk.startsWith('internal:resident-leasing:')) continue
-      if (!residentByKey.has(tk)) residentByKey.set(tk, [])
-      residentByKey.get(tk).push(m)
-    }
-    for (const [tk, rmsgs] of residentByKey) {
-      if (!residentLeasingThreadVisibleToManager(rmsgs, inboxScopeLower)) continue
-      const sorted = [...rmsgs].sort((a, b) => msgTime(a) - msgTime(b))
-      const last = sorted[sorted.length - 1]
-      const rid = parseResidentLeasingThreadKey(tk)
-      if (!rid) continue
-      const scopeHint = extractResidentScopeTextFromMessageBody(sorted[0]?.Message || last?.Message || '')
-      const lastMsgTs = last ? msgTime(last) : 0
-      rows.push({
-        id: managerInboxResidentThreadId(rid),
-        stateKey: tk,
-        title: 'Resident inbox',
-        subtitle: scopeHint || undefined,
-        preview: last?.Message ? String(last.Message) : '',
-        time: last ? fmtDateTime(last.Timestamp || last.created_at) : '',
-        ts: lastMsgTs,
-        lastMsgTs,
-      })
-    }
-
-    rows.sort((a, b) => b.ts - a.ts)
-    return rows
-  }, [scopedWos, allMsgs, axisMsgs, axisThreadKey, inboxScopeLower])
-
-  const threadRowsWithMeta = useMemo(() => {
-    return threadRows.map((row) => {
-      const st = inboxStateMap.get(row.stateKey)
-      const section = managerInboxSectionForRow(row.lastMsgTs, st)
-      const unread = section === 'unopened'
-      return { ...row, section, unread }
-    })
-  }, [threadRows, inboxStateMap])
-
-  const inboxSections = useMemo(() => {
-    const unopened = []
-    const opened = []
-    const trash = []
-    for (const row of threadRowsWithMeta) {
-      if (row.section === 'trash') trash.push(row)
-      else if (row.section === 'unopened') unopened.push(row)
-      else opened.push(row)
-    }
-    return { unopened, opened, trash }
-  }, [threadRowsWithMeta])
-
-  const visibleThreadRows = useMemo(() => {
-    const q = threadSearch.trim().toLowerCase()
-    let rows = threadRowsWithMeta
-    if (sectionFilter === 'unopened') rows = rows.filter((row) => row.section === 'unopened')
-    else if (sectionFilter === 'opened') rows = rows.filter((row) => row.section === 'opened')
-    else if (sectionFilter === 'trash') rows = rows.filter((row) => row.section === 'trash')
-    if (!q) return rows
-    return rows.filter((row) =>
-      `${row.title} ${row.subtitle || ''} ${row.preview || ''}`.toLowerCase().includes(q),
-    )
-  }, [threadRowsWithMeta, sectionFilter, threadSearch])
-
-  const touchThreadRead = useCallback(
-    async (stateKey) => {
-      if (!managerEmail || !stateKey) return
-      const iso = new Date().toISOString()
-      const tryAirtable =
-        (inboxStateBackend === 'airtable' || inboxStateBackend === 'pending') && inboxThreadStateAirtableEnabled()
-      if (tryAirtable) {
-        try {
-          await markInboxThreadRead(managerEmail, stateKey)
-          setInboxStateBackend('airtable')
-          setInboxStateMap(await fetchInboxThreadStateMap(managerEmail))
-          return
-        } catch {
-          saveLocalInboxStatePatch(managerEmail, stateKey, { lastReadAt: iso })
-          setInboxStateBackend('local')
-          setInboxStateMap(loadLocalInboxStateMap(managerEmail))
-          return
-        }
-      }
-      saveLocalInboxStatePatch(managerEmail, stateKey, { lastReadAt: iso })
-      setInboxStateMap(loadLocalInboxStateMap(managerEmail))
-      if (inboxStateBackend === 'pending') setInboxStateBackend('local')
-    },
-    [managerEmail, inboxStateBackend],
-  )
-
-  const moveThreadTrash = useCallback(
-    async (stateKey, trashed) => {
-      if (!managerEmail || !stateKey) return
-      const tryAirtable =
-        (inboxStateBackend === 'airtable' || inboxStateBackend === 'pending') && inboxThreadStateAirtableEnabled()
-      if (tryAirtable) {
-        try {
-          await setInboxThreadTrash(managerEmail, stateKey, trashed)
-          setInboxStateBackend('airtable')
-          setInboxStateMap(await fetchInboxThreadStateMap(managerEmail))
-          toast.success(trashed ? 'Moved to trash' : 'Restored to inbox')
-          return
-        } catch {
-          saveLocalInboxStatePatch(managerEmail, stateKey, { trashed })
-          setInboxStateBackend('local')
-          setInboxStateMap(loadLocalInboxStateMap(managerEmail))
-          toast.success(trashed ? 'Moved to trash' : 'Restored to inbox')
-          return
-        }
-      }
-      saveLocalInboxStatePatch(managerEmail, stateKey, { trashed })
-      setInboxStateMap(loadLocalInboxStateMap(managerEmail))
-      toast.success(trashed ? 'Moved to trash' : 'Restored to inbox')
-    },
-    [managerEmail, inboxStateBackend],
-  )
-
-  const selectedStateKey = managerInboxStateKeyForSelection(selectedThreadId, axisThreadKey)
-  const selectedMeta = selectedStateKey ? inboxStateMap.get(selectedStateKey) : null
-  const selectedInTrash = Boolean(selectedMeta?.trashed)
-
-  const touchThreadReadRef = useRef(touchThreadRead)
-  touchThreadReadRef.current = touchThreadRead
-  const lastTouchedThreadRef = useRef('')
-
-  useEffect(() => {
-    if (!selectedStateKey) {
-      lastTouchedThreadRef.current = ''
-      return
-    }
-    if (lastTouchedThreadRef.current === selectedStateKey) return
-    lastTouchedThreadRef.current = selectedStateKey
-    void touchThreadReadRef.current(selectedStateKey)
-  }, [selectedStateKey])
-
-  useEffect(() => {
-    if (!visibleThreadRows.length) {
-      if (selectedThreadId) setSelectedThreadId(null)
-      return
-    }
-    if (!selectedThreadId || !visibleThreadRows.some((row) => row.id === selectedThreadId)) {
-      setSelectedThreadId(visibleThreadRows[0].id)
-    }
-  }, [visibleThreadRows, selectedThreadId])
-
-  useEffect(() => {
-    if (!selectedThreadId) {
-      setThread([])
-      return
-    }
-    let cancelled = false
-    async function run() {
-      setThreadLoading(true)
-      try {
-        if (selectedThreadId === MANAGER_INBOX_AXIS) {
-          const next = await getMessagesByThreadKey(axisThreadKey)
-          if (!cancelled) {
-            setThread(
-              [...next].sort(
-                (a, b) =>
-                  new Date(a.Timestamp || a.created_at || 0) - new Date(b.Timestamp || b.created_at || 0),
-              ),
-            )
-          }
-          return
-        }
-        const resId = managerInboxParseResidentThreadId(selectedThreadId)
-        if (resId) {
-          const next = await getMessagesByThreadKey(residentLeasingThreadKey(resId))
-          if (!cancelled) {
-            setThread(
-              [...next].sort(
-                (a, b) =>
-                  new Date(a.Timestamp || a.created_at || 0) - new Date(b.Timestamp || b.created_at || 0),
-              ),
-            )
-          }
-          return
-        }
-        const woId = managerInboxParseWoThreadId(selectedThreadId)
-        if (!woId) {
-          if (!cancelled) setThread([])
-          return
-        }
-        const next = await getMessages(woId)
-        if (!cancelled) setThread(next)
-      } catch (err) {
-        if (!cancelled) {
-          setThread([])
-          toast.error(formatDataLoadError(err))
-        }
-      } finally {
-        if (!cancelled) setThreadLoading(false)
-      }
-    }
-    run()
-    return () => {
-      cancelled = true
-    }
-  }, [selectedThreadId, axisThreadKey])
-
-  async function handleSendReply(e) {
-    e.preventDefault()
-    if (!selectedThreadId || !reply.trim() || !managerEmail) return
-    setSending(true)
-    try {
-      if (selectedThreadId === MANAGER_INBOX_AXIS) {
-        await sendMessage({
-          senderEmail: managerEmail,
-          message: reply.trim(),
-          isAdmin: false,
-          threadKey: axisThreadKey,
-          channel: PORTAL_INBOX_CHANNEL_INTERNAL,
-        })
-      } else {
-        const resId = managerInboxParseResidentThreadId(selectedThreadId)
-        if (resId) {
-          await sendMessage({
-            senderEmail: managerEmail,
-            message: reply.trim(),
-            isAdmin: true,
-            threadKey: residentLeasingThreadKey(resId),
-            channel: PORTAL_INBOX_CHANNEL_INTERNAL,
-          })
-        } else {
-          const woId = managerInboxParseWoThreadId(selectedThreadId)
-          if (!woId) return
-          await sendMessage({
-            workOrderId: woId,
-            senderEmail: managerEmail,
-            message: reply.trim(),
-            isAdmin: true,
-          })
-        }
-      }
-      setReply('')
-      await loadAll()
-      if (selectedThreadId === MANAGER_INBOX_AXIS) {
-        const next = await getMessagesByThreadKey(axisThreadKey)
-        setThread(
-          [...next].sort(
-            (a, b) =>
-              new Date(a.Timestamp || a.created_at || 0) - new Date(b.Timestamp || b.created_at || 0),
-          ),
-        )
-      } else {
-        const resId2 = managerInboxParseResidentThreadId(selectedThreadId)
-        if (resId2) {
-          const next = await getMessagesByThreadKey(residentLeasingThreadKey(resId2))
-          setThread(
-            [...next].sort(
-              (a, b) =>
-                new Date(a.Timestamp || a.created_at || 0) - new Date(b.Timestamp || b.created_at || 0),
-            ),
-          )
-        } else {
-          const woId = managerInboxParseWoThreadId(selectedThreadId)
-          if (woId) setThread(await getMessages(woId))
-        }
-      }
-      const sk = managerInboxStateKeyForSelection(selectedThreadId, axisThreadKey)
-      if (sk) await touchThreadRead(sk)
-      toast.success('Sent')
-    } catch (err) {
-      toast.error(err.message || 'Send failed')
-    } finally {
-      setSending(false)
-    }
-  }
-
-  if (!inboxScopeLower.size && !axisThreadKey) {
-    return null
-  }
-
-  const readingTitle =
-    selectedThreadId === MANAGER_INBOX_AXIS
-      ? 'Axis team'
-      : managerInboxParseResidentThreadId(selectedThreadId || '')
-        ? 'Resident inbox'
-        : (() => {
-            const woId = managerInboxParseWoThreadId(selectedThreadId || '')
-            const w = scopedWos.find((x) => x.id === woId)
-            return w?.Title || 'Work order'
-          })()
-
-  return (
-    <div className="mb-6 space-y-3">
-      <div className="flex flex-wrap items-end justify-between gap-3">
-        <div>
-          <h2 className="text-xl font-black text-slate-900">Inbox</h2>
-          <p className="mt-1 text-sm text-slate-500">
-            Work orders, resident leasing threads, and Axis chat in one inbox.
-          </p>
-        </div>
-        <button
-          type="button"
-          onClick={() => loadAll()}
-          className="rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-50"
-        >
-          Refresh
-        </button>
-      </div>
-
-      <GmailStyleInboxLayout
-        left={
-          <>
-            <div className="flex items-center justify-between gap-2 border-b border-slate-100 bg-white px-4 py-3">
-              <span className="text-sm font-black text-slate-900">Conversations</span>
-              <span className="text-xs text-slate-400">{threadRows.length}</span>
-            </div>
-            <div className="border-b border-slate-100 bg-white px-4 py-3">
-              <div className="flex flex-wrap gap-2">
-                {[
-                  ['all', 'All', threadRows.length],
-                  ['unopened', 'Unopened', inboxSections.unopened.length],
-                  ['opened', 'Opened', inboxSections.opened.length],
-                  ['trash', 'Trash', inboxSections.trash.length],
-                ].map(([id, label, count]) => (
-                  <button
-                    key={id}
-                    type="button"
-                    onClick={() => setSectionFilter(id)}
-                    className={classNames(
-                      'rounded-full px-3 py-1.5 text-[11px] font-semibold transition',
-                      sectionFilter === id
-                        ? 'bg-[linear-gradient(180deg,#2f76ff_0%,#2450eb_100%)] text-white shadow-[0_3px_10px_rgba(37,99,235,0.25)]'
-                        : 'border border-slate-200 bg-white text-slate-600 hover:bg-slate-50',
-                    )}
-                  >
-                    {label} <span className="opacity-80">({count})</span>
-                  </button>
-                ))}
-              </div>
-              <input
-                value={threadSearch}
-                onChange={(e) => setThreadSearch(e.target.value)}
-                placeholder="Search conversations…"
-                className="mt-3 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm outline-none transition focus:border-[#2563eb] focus:ring-2 focus:ring-[#2563eb]/20"
-              />
-            </div>
-            <div className="min-h-0 flex-1 overflow-y-auto">
-              {loading ? (
-                <div className="py-12 text-center text-sm text-slate-500">Loading…</div>
-              ) : visibleThreadRows.length === 0 ? (
-                <div className="px-4 py-12 text-center text-sm text-slate-500">No conversations yet.</div>
-              ) : (
-                <ul className="divide-y divide-slate-100">
-                  {visibleThreadRows.map((row) => (
-                    <li key={row.id}>
-                      <InboxThreadRow
-                        title={row.title}
-                        subtitle={row.subtitle}
-                        preview={row.preview}
-                        time={row.time}
-                        selected={selectedThreadId === row.id}
-                        unread={row.unread}
-                        onClick={() => setSelectedThreadId(row.id)}
-                      />
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </div>
-          </>
-        }
-        right={
-          <div className="flex h-full min-h-0 flex-1 flex-col overflow-hidden">
-            <div className="shrink-0 border-b border-slate-200 bg-white px-4 py-3 lg:px-5">
-              {selectedThreadId ? (
-                <div className="flex flex-wrap items-start justify-between gap-3">
-                  <div className="min-w-0">
-                    <h3 className="text-base font-black text-slate-900">{readingTitle}</h3>
-                    <p className="mt-0.5 break-all text-xs text-slate-500">
-                      {selectedThreadId === MANAGER_INBOX_AXIS
-                        ? axisThreadKey
-                        : managerInboxParseResidentThreadId(selectedThreadId)
-                          ? 'House / room scoped from thread'
-                          : managerInboxParseWoThreadId(selectedThreadId)}
-                    </p>
-                  </div>
-                  {selectedStateKey ? (
-                    <div className="flex shrink-0 flex-wrap gap-2">
-                      {selectedInTrash ? (
-                        <button
-                          type="button"
-                          onClick={() => moveThreadTrash(selectedStateKey, false)}
-                          className="rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50"
-                        >
-                          Restore
-                        </button>
-                      ) : (
-                        <button
-                          type="button"
-                          onClick={() => moveThreadTrash(selectedStateKey, true)}
-                          className="rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-red-50 hover:text-red-800"
-                        >
-                          Trash
-                        </button>
-                      )}
-                    </div>
-                  ) : null}
-                </div>
-              ) : (
-                <p className="text-sm text-slate-500">Select a conversation</p>
-              )}
-            </div>
-            <div className="min-h-0 flex-1 overflow-y-auto p-4 lg:p-5">
-              {!selectedThreadId ? (
-                <div className="flex h-full min-h-[200px] flex-col items-center justify-center text-center text-sm text-slate-400">
-                  Choose a thread on the left to read messages.
-                </div>
-              ) : threadLoading ? (
-                <div className="py-16 text-center text-sm text-slate-500">Loading thread…</div>
-              ) : thread.length === 0 ? (
-                <div className="flex min-h-[14rem] flex-col items-center justify-center px-4 text-center">
-                  <p className="text-sm font-medium text-slate-600">This conversation is empty.</p>
-                  <p className="mt-2 max-w-xs text-xs leading-relaxed text-slate-400">
-                    Nothing to show here yet — use the message box below when you are ready to send.
-                  </p>
-                </div>
-              ) : (
-                <div className="space-y-3">
-                  {thread.map((m) => {
-                    const admin = m['Is Admin'] === true || m['Is Admin'] === 1
-                    const isAxis = selectedThreadId === MANAGER_INBOX_AXIS
-                    const you = isAxis ? !admin : admin
-                    return (
-                      <div
-                        key={m.id}
-                        className={classNames(
-                          'max-w-[min(100%,40rem)] rounded-2xl border px-4 py-3 text-sm shadow-sm',
-                          you
-                            ? 'ml-auto border-blue-200 bg-blue-50/90 text-slate-900'
-                            : 'mr-auto border-slate-200 bg-white text-slate-900',
-                        )}
-                      >
-                        <div className="text-[10px] font-bold uppercase tracking-wide text-slate-400">
-                          {isAxis
-                            ? admin
-                              ? 'Axis Admin'
-                              : 'You'
-                            : admin
-                              ? 'You (management)'
-                              : m['Sender Email'] || 'Resident'}{' '}
-                          · {fmtDateTime(m.Timestamp || m.created_at)}
-                        </div>
-                        <p className="mt-1.5 whitespace-pre-wrap leading-relaxed">{m.Message}</p>
-                      </div>
-                    )
-                  })}
-                </div>
-              )}
-            </div>
-            {selectedThreadId ? (
-              <form
-                onSubmit={handleSendReply}
-                className="shrink-0 border-t border-slate-200 bg-white p-4 lg:p-5"
-              >
-                <label className="mb-1.5 block text-[11px] font-bold uppercase tracking-wide text-slate-500">
-                  Message
-                </label>
-                <textarea
-                  value={reply}
-                  onChange={(e) => setReply(e.target.value)}
-                  rows={3}
-                  placeholder={
-                    selectedThreadId === MANAGER_INBOX_AXIS
-                      ? 'Write anything to Axis (questions, updates, requests)…'
-                      : 'Write your message to the resident…'
-                  }
-                  className="w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm outline-none focus:border-[#2563eb] focus:ring-2 focus:ring-[#2563eb]/20"
-                />
-                <div className="mt-3 flex justify-end">
-                  <button
-                    type="submit"
-                    disabled={sending || !reply.trim()}
-                    className="rounded-2xl bg-[#2563eb] px-6 py-2.5 text-sm font-semibold text-white disabled:opacity-50"
-                  >
-                    {sending ? 'Sending…' : 'Send'}
-                  </button>
-                </div>
-              </form>
-            ) : null}
-            {selectedThreadId === MANAGER_INBOX_AXIS && axisThreadKey ? (
-              <PortalInboxAnnouncementSection
-                variant="site_manager"
-                userEmail={managerEmail}
-                notifyThreadKey={axisThreadKey}
-                onInboxRefresh={loadAll}
-                propertySuggestions={allowedPropertyNames || []}
-                listId="manager-inbox-announcement-props"
-              />
-            ) : null}
-          </div>
-        }
-      />
-    </div>
-  )
-}
-
-function WorkOrdersTabPanel({ manager, allowedPropertyNames }) {
+function WorkOrdersTabPanel({ allowedPropertyNames }) {
   const scopeLower = useMemo(
     () => new Set((allowedPropertyNames || []).map((n) => String(n).trim().toLowerCase()).filter(Boolean)),
     [allowedPropertyNames],
   )
-
   const [list, setList] = useState([])
   const [listLoading, setListLoading] = useState(true)
   const [listError, setListError] = useState('')
   const [quickFilter, setQuickFilter] = useState('open')
   const [search, setSearch] = useState('')
   const [record, setRecord] = useState(null)
-  const [openingId, setOpeningId] = useState(null)
-  const [loading, setLoading] = useState(false)
-  const [saving, setSaving] = useState(false)
   const [loadError, setLoadError] = useState('')
-
+  const [saving, setSaving] = useState(false)
   const [status, setStatus] = useState('Submitted')
-  const [priority, setPriority] = useState('Routine')
+  const [priority, setPriority] = useState('Normal')
+  const [assignedTo, setAssignedTo] = useState('')
+  const [scheduledAt, setScheduledAt] = useState('')
   const [managementNotes, setManagementNotes] = useState('')
-  const [updateText, setUpdateText] = useState('')
+  const [residentUpdate, setResidentUpdate] = useState('')
   const [resolutionSummary, setResolutionSummary] = useState('')
-  const [resolved, setResolved] = useState(false)
-  const [lastUpdate, setLastUpdate] = useState('')
-
-  const [messages, setMessages] = useState([])
-  const [reply, setReply] = useState('')
-  const [msgBusy, setMsgBusy] = useState(false)
-  const [aiBusy, setAiBusy] = useState(false)
-  const [showAdvanced, setShowAdvanced] = useState(false)
 
   const fieldCls =
     'w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none transition focus:border-[#2563eb] focus:ring-2 focus:ring-[#2563eb]/20'
-
-  const statusOptions = useMemo(() => {
-    const s = record?.Status
-    if (s && !WORK_ORDER_STATUSES.includes(s)) return [s, ...WORK_ORDER_STATUSES]
-    return WORK_ORDER_STATUSES
-  }, [record?.Status])
 
   const priorityOptions = useMemo(() => {
     const p = record?.Priority
@@ -3488,14 +3389,15 @@ function WorkOrdersTabPanel({ manager, allowedPropertyNames }) {
     return WORK_ORDER_PRIORITIES
   }, [record?.Priority])
 
-  function applyRecordToForm(r) {
-    setStatus(r.Status || 'Submitted')
-    setPriority(r.Priority || 'Routine')
-    setManagementNotes(String(r['Management Notes'] ?? ''))
-    setUpdateText(String(r.Update ?? ''))
-    setResolutionSummary(String(r['Resolution Summary'] ?? ''))
-    setResolved(workOrderIsResolvedRecord(r))
-    setLastUpdate(workOrderLastUpdateToInput(r['Last Update']))
+  function applyRecordToForm(nextRecord) {
+    const meta = parseWorkOrderMetaBlock(nextRecord?.['Management Notes'])
+    setStatus(managerWorkOrderStatusLabel(nextRecord))
+    setPriority(nextRecord?.Priority || 'Normal')
+    setAssignedTo(meta['assigned to'] || '')
+    setScheduledAt(meta.scheduled || '')
+    setManagementNotes(workOrderPlainNotes(nextRecord?.['Management Notes']))
+    setResidentUpdate(String(nextRecord?.Update ?? ''))
+    setResolutionSummary(String(nextRecord?.['Resolution Summary'] ?? ''))
   }
 
   const loadList = useCallback(async () => {
@@ -3509,14 +3411,12 @@ function WorkOrdersTabPanel({ manager, allowedPropertyNames }) {
     setListError('')
     try {
       const all = await getAllWorkOrders()
-      setList(all.filter((w) => workOrderInScope(w, scopeLower)))
+      setList(all.filter((row) => workOrderInScope(row, scopeLower)))
     } catch (err) {
       setList([])
       const msg = formatDataLoadError(err)
       setListError(msg)
-      if (!isAirtablePermissionErrorMessage(err?.message)) {
-        toast.error('Work orders failed to load: ' + msg)
-      }
+      if (!isAirtablePermissionErrorMessage(err?.message)) toast.error('Work orders failed to load: ' + msg)
     } finally {
       setListLoading(false)
     }
@@ -3528,67 +3428,78 @@ function WorkOrdersTabPanel({ manager, allowedPropertyNames }) {
 
   const filteredList = useMemo(() => {
     let rows = list
-    if (quickFilter === 'open') rows = rows.filter((w) => !workOrderIsResolvedRecord(w))
-    if (quickFilter === 'resolved') rows = rows.filter((w) => workOrderIsResolvedRecord(w))
+    if (quickFilter === 'open') rows = rows.filter((row) => !['Completed', 'Closed'].includes(managerWorkOrderStatusLabel(row)))
+    if (quickFilter === 'urgent') rows = rows.filter((row) => ['urgent', 'emergency', 'critical'].includes(String(row.Priority || '').trim().toLowerCase()))
+    if (quickFilter === 'scheduled') rows = rows.filter((row) => managerWorkOrderStatusLabel(row) === 'Scheduled')
+    if (quickFilter === 'completed') rows = rows.filter((row) => ['Completed', 'Closed'].includes(managerWorkOrderStatusLabel(row)))
     const q = search.trim().toLowerCase()
     if (q) {
-      rows = rows.filter((w) => {
-        const prop = workOrderPropertyLabel(w).toLowerCase()
-        const t = `${w.Title || ''} ${w.Description || ''} ${w.id} ${prop}`.toLowerCase()
-        return t.includes(q)
+      rows = rows.filter((row) => {
+        const haystack = `${workOrderPropertyLabel(row)} ${row['Room Number'] || ''} ${paymentResidentLabel(row)} ${row.Title || ''} ${row.Description || ''}`.toLowerCase()
+        return haystack.includes(q)
       })
     }
-    return [...rows].sort(
-      (a, b) =>
-        new Date(b['Date Submitted'] || b.created_at || 0) -
-        new Date(a['Date Submitted'] || a.created_at || 0),
-    )
+    return [...rows].sort((a, b) => new Date(b['Date Submitted'] || b.created_at || 0) - new Date(a['Date Submitted'] || a.created_at || 0))
   }, [list, quickFilter, search])
 
-  const openCount = useMemo(() => list.filter((w) => !workOrderIsResolvedRecord(w)).length, [list])
+  const openCount = useMemo(() => list.filter((row) => !['Completed', 'Closed'].includes(managerWorkOrderStatusLabel(row))).length, [list])
+  const urgentCount = useMemo(() => list.filter((row) => ['urgent', 'emergency', 'critical'].includes(String(row.Priority || '').trim().toLowerCase())).length, [list])
+  const scheduledCount = useMemo(() => list.filter((row) => managerWorkOrderStatusLabel(row) === 'Scheduled').length, [list])
+  const completedCount = useMemo(() => list.filter((row) => ['Completed', 'Closed'].includes(managerWorkOrderStatusLabel(row))).length, [list])
 
-  async function openWorkOrder(id) {
-    const rid = normalizeWorkOrderRecordId(id)
-    if (!rid) return
-    setOpeningId(rid)
-    setLoadError('')
-    setLoading(true)
-    setRecord(null)
-    setMessages([])
-    try {
-      const wo = await getWorkOrderById(rid)
-      if (!workOrderInScope(wo, scopeLower)) {
-        setLoadError('This work order is not linked to a house in your portfolio.')
-        return
-      }
-      setRecord(wo)
-      applyRecordToForm(wo)
-      setMessages(await getMessages(rid))
-    } catch (err) {
-      setLoadError(err.message || 'Could not load work order.')
-    } finally {
-      setLoading(false)
-      setOpeningId(null)
+  useEffect(() => {
+    if (filteredList.length === 0) {
+      setRecord(null)
+      return
     }
-  }
+    setRecord((current) => {
+      if (current) {
+        const match = filteredList.find((row) => row.id === current.id)
+        if (match) return match
+      }
+      return filteredList[0]
+    })
+  }, [filteredList])
+
+  useEffect(() => {
+    if (!record?.id) return
+    let cancelled = false
+    setLoadError('')
+    getWorkOrderById(record.id)
+      .then((nextRecord) => {
+        if (cancelled) return
+        setRecord(nextRecord)
+        applyRecordToForm(nextRecord)
+      })
+      .catch((err) => {
+        if (!cancelled) setLoadError(err.message || 'Could not load work order.')
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [record?.id])
 
   async function handleSave(event) {
     event.preventDefault()
     if (!record?.id) return
     setSaving(true)
     try {
+      const resolved = status === 'Completed' || status === 'Closed'
       const fields = {
-        Status: status,
+        Status: resolved ? 'Resolved' : status,
         Priority: priority,
-        'Management Notes': managementNotes || '',
-        Update: updateText || '',
+        'Management Notes': mergeWorkOrderMetaBlock(managementNotes, {
+          'assigned to': assignedTo,
+          scheduled: scheduledAt,
+        }),
+        Update: residentUpdate || '',
         'Resolution Summary': resolutionSummary || '',
         Resolved: resolved,
+        'Last Update': new Date().toISOString().slice(0, 10),
       }
-      if (lastUpdate.trim()) fields['Last Update'] = lastUpdate.trim()
-      const next = await updateWorkOrder(record.id, fields)
-      setRecord(next)
-      applyRecordToForm(next)
+      const nextRecord = await updateWorkOrder(record.id, fields)
+      setRecord(nextRecord)
+      applyRecordToForm(nextRecord)
       await loadList()
       toast.success('Work order saved')
     } catch (err) {
@@ -3598,387 +3509,205 @@ function WorkOrdersTabPanel({ manager, allowedPropertyNames }) {
     }
   }
 
-  async function handleMarkFixed() {
-    if (!record?.id) return
-    setSaving(true)
-    const today = new Date().toISOString().slice(0, 10)
-    try {
-      const fields = {
-        Resolved: true,
-        Status: 'Resolved',
-        'Last Update': lastUpdate.trim() || today,
-      }
-      if (resolutionSummary.trim()) fields['Resolution Summary'] = resolutionSummary.trim()
-      const next = await updateWorkOrder(record.id, fields)
-      setRecord(next)
-      applyRecordToForm(next)
-      setStatus('Resolved')
-      setResolved(true)
-      await loadList()
-      toast.success('Marked as fixed')
-    } catch (err) {
-      toast.error(err.message || 'Could not update')
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  async function handleSendThreadReply(e) {
-    e.preventDefault()
-    if (!record?.id || !reply.trim()) return
-    const email = String(manager?.email || 'manager@axis').trim()
-    setMsgBusy(true)
-    try {
-      await sendMessage({
-        workOrderId: record.id,
-        senderEmail: email,
-        message: reply.trim(),
-        isAdmin: true,
-      })
-      setReply('')
-      setMessages(await getMessages(record.id))
-      await loadList()
-      toast.success('Reply sent')
-    } catch (err) {
-      toast.error(err.message || 'Could not send')
-    } finally {
-      setMsgBusy(false)
-    }
-  }
-
-  async function handleAiSuggest() {
-    if (!record?.id) return
-    setAiBusy(true)
-    try {
-      const res = await fetch('/api/portal?action=work-order-ai-suggest', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          title: record.Title,
-          description: record.Description,
-          property: workOrderPropertyLabel(record),
-          status,
-          priority,
-          managerName: manager?.name || manager?.email || 'Manager',
-          messages: messages.map((m) => ({
-            text: m.Message,
-            isAdmin: m['Is Admin'] === true || m['Is Admin'] === 1,
-          })),
-        }),
-      })
-      const data = await readJsonResponse(res)
-      if (!res.ok) throw new Error(data.error || 'AI suggestion failed')
-      const suggestion = String(data.suggestion || '').trim()
-      if (!suggestion) throw new Error('Empty suggestion')
-      setReply((prev) => (prev.trim() ? `${prev.trim()}\n\n${suggestion}` : suggestion))
-      toast.success('Draft added — edit before sending')
-    } catch (err) {
-      toast.error(err.message || 'AI failed')
-    } finally {
-      setAiBusy(false)
-    }
+  function handleMarkCompleted() {
+    setStatus('Completed')
   }
 
   return (
     <div className="mb-10 space-y-5">
-      <div className="flex flex-wrap items-end justify-between gap-3">
-        <div>
-          <h2 className="text-xl font-black text-slate-900">Work orders</h2>
-          <p className="mt-1 max-w-2xl text-sm text-slate-500">
-            Requests for your houses only. Use the thread to message residents, or mark fixed when the job is done. AI can draft a reply (optional) — always review before sending.
-          </p>
-        </div>
-        <button
-          type="button"
-          onClick={() => loadList()}
-          className="rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-50"
-        >
-          Refresh
-        </button>
+      <div>
+        <h2 className="text-xl font-black text-slate-900">Work orders</h2>
+        <p className="mt-1 max-w-2xl text-sm text-slate-500">
+          Track open maintenance requests, update residents, and keep scheduling simple.
+        </p>
       </div>
 
       {listError ? (
-        <div
-          role="alert"
-          className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-4 text-sm text-amber-950"
-        >
+        <div role="alert" className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-4 text-sm text-amber-950">
           <div className="font-semibold text-amber-900">Could not load work orders</div>
           <p className="mt-2 text-amber-900/90">{listError}</p>
         </div>
       ) : null}
 
       {!scopeLower.size ? (
-        <div className="rounded-2xl border border-slate-200 bg-white px-5 py-4 text-sm text-slate-600 shadow-sm">
-          Work orders will appear here once a property is linked to this manager account.
-        </div>
+        <PortalOpsEmptyState
+          icon="🏠"
+          title="No linked houses yet"
+          description="Work orders will appear here after a property is linked to this manager account."
+        />
       ) : null}
 
-      <div className="flex flex-wrap items-center gap-2">
-        {[
-          ['open', 'Open', openCount],
-          ['all', 'All', list.length],
-          ['resolved', 'Resolved', list.length - openCount],
-        ].map(([k, lab, count]) => (
-          <button
-            key={k}
-            type="button"
-            onClick={() => setQuickFilter(k)}
-            className={`rounded-full px-4 py-2 text-xs font-semibold transition ${
-              quickFilter === k ? 'bg-[#2563eb] text-white' : 'border border-slate-200 bg-white text-slate-600 hover:bg-slate-50'
-            }`}
-          >
-            {lab}
-            <span className="ml-1.5 tabular-nums opacity-80">({count})</span>
-          </button>
-        ))}
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <PortalOpsMetric label="Open" value={openCount} hint="Needs review or action." tone="amber" />
+        <PortalOpsMetric label="Urgent" value={urgentCount} hint="High-priority requests." tone="red" />
+        <PortalOpsMetric label="Scheduled" value={scheduledCount} hint="A visit time is set." tone="axis" />
+        <PortalOpsMetric label="Completed" value={completedCount} hint="Finished requests." tone="emerald" />
       </div>
+
+      <PortalOpsFilterPills
+        value={quickFilter}
+        onChange={setQuickFilter}
+        items={[
+          { id: 'all', label: 'All', count: list.length },
+          { id: 'open', label: 'Open', count: openCount },
+          { id: 'urgent', label: 'Urgent', count: urgentCount },
+          { id: 'scheduled', label: 'Scheduled', count: scheduledCount },
+          { id: 'completed', label: 'Completed', count: completedCount },
+        ]}
+      />
 
       <input
         value={search}
         onChange={(e) => setSearch(e.target.value)}
-        placeholder="Search by title, house, or description…"
+        placeholder="Search by property, resident, or issue…"
         className={fieldCls}
       />
 
-      <div className="overflow-hidden rounded-[24px] border border-slate-200 bg-white shadow-sm">
-        {listLoading ? (
-          <div className="px-6 py-14 text-center text-sm text-slate-500">Loading work orders…</div>
-        ) : filteredList.length === 0 ? (
-          <div className="px-6 py-14 text-center text-sm text-slate-500">
-            {list.length === 0 ? 'No work orders for your houses yet.' : 'Nothing matches this filter.'}
-          </div>
-        ) : (
-          <ul className="max-h-[min(52vh,420px)] divide-y divide-slate-100 overflow-y-auto">
-            {filteredList.map((w) => {
-              const house = workOrderPropertyLabel(w)
-              const done = workOrderIsResolvedRecord(w)
-              return (
-                <li key={w.id}>
-                  <button
-                    type="button"
-                    onClick={() => openWorkOrder(w.id)}
-                    className={classNames(
-                      'flex w-full flex-col gap-1 px-5 py-4 text-left transition',
-                      (record?.id === w.id || openingId === w.id)
-                        ? 'bg-[#2563eb]/6 ring-1 ring-inset ring-[#2563eb]/25'
-                        : 'hover:bg-slate-50/80',
-                    )}
-                  >
-                    <div className="flex flex-wrap items-start justify-between gap-2">
-                      <span className="font-bold text-slate-900">{w.Title || 'Untitled request'}</span>
-                      <span
-                        className={classNames(
-                          'shrink-0 rounded-full px-2.5 py-0.5 text-[11px] font-bold uppercase tracking-wide',
-                          done ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-900',
-                        )}
-                      >
-                        {done ? 'Fixed' : 'Open'}
-                      </span>
-                    </div>
-                    <div className="text-xs font-medium text-slate-500">
-                      {house || 'House not set'} · {fmtDate(w['Date Submitted'] || w.created_at)}
-                      {w.Status ? <span> · {w.Status}</span> : null}
-                    </div>
-                    {w.Description ? (
-                      <p className="line-clamp-2 text-sm text-slate-600">{w.Description}</p>
-                    ) : null}
-                  </button>
-                </li>
-              )
-            })}
-          </ul>
-        )}
-      </div>
-
-      {loadError ? (
-        <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">{loadError}</div>
-      ) : null}
-
-      {record || openingId ? (
+      <div className="grid gap-6 xl:grid-cols-[minmax(0,1.15fr)_minmax(360px,0.85fr)]">
         <div className="overflow-hidden rounded-[24px] border border-slate-200 bg-white shadow-sm">
-          {loading || !record ? (
-            <div className="px-6 py-16 text-center text-sm text-slate-500">Loading work order…</div>
+          {listLoading ? (
+            <div className="px-6 py-14 text-center text-sm text-slate-500">Loading work orders…</div>
+          ) : filteredList.length === 0 ? (
+            <div className="px-6 py-14 text-center text-sm text-slate-500">
+              {list.length === 0 ? 'No work orders for your houses yet.' : 'Nothing matches this filter.'}
+            </div>
           ) : (
-            <div className="space-y-6 p-6 sm:p-8">
-              <div className="flex flex-col gap-4 border-b border-slate-100 pb-6 sm:flex-row sm:items-start sm:justify-between">
-                <div className="min-w-0 flex-1">
-                  <div className="text-[11px] font-bold uppercase tracking-[0.14em] text-slate-400">Selected request</div>
-                  <h3 className="mt-1 text-xl font-black text-slate-900">{record.Title || 'Work order'}</h3>
-                  <p className="mt-1 text-sm text-slate-500">
-                    {workOrderPropertyLabel(record) || 'House not set'} · Submitted{' '}
-                    {fmtDate(record['Date Submitted'] || record.created_at)}
-                  </p>
-                  <p className="mt-1 font-mono text-[11px] text-slate-400">{record.id}</p>
-                </div>
-                <div className="flex flex-wrap gap-2">
-                  <button
-                    type="button"
-                    disabled={saving || workOrderIsResolvedRecord(record)}
-                    onClick={handleMarkFixed}
-                    className="rounded-2xl bg-emerald-600 px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-40"
-                  >
-                    {saving ? 'Saving…' : 'Mark as fixed'}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setShowAdvanced((v) => !v)}
-                    className="rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50"
-                  >
-                    {showAdvanced ? 'Hide' : 'Show'} Airtable fields
-                  </button>
-                </div>
-              </div>
-
-              {record.Description ? (
-                <div className="rounded-2xl border border-slate-100 bg-slate-50/80 px-4 py-3">
-                  <div className="text-[11px] font-bold uppercase tracking-wide text-slate-400">Resident description</div>
-                  <p className="mt-2 whitespace-pre-wrap text-sm leading-relaxed text-slate-800">{record.Description}</p>
-                </div>
-              ) : null}
-
-              <div>
-                <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-                  <h4 className="text-sm font-black text-slate-900">Conversation</h4>
-                  <span className="text-xs text-slate-400">Same thread as the resident portal</span>
-                </div>
-                <div className="max-h-[min(45vh,380px)] space-y-3 overflow-y-auto rounded-2xl border border-slate-200 bg-gradient-to-b from-slate-50 to-white p-4">
-                  {messages.length === 0 ? (
-                    <p className="py-6 text-center text-sm text-slate-500">No messages yet — say hello below.</p>
-                  ) : (
-                    messages.map((m) => {
-                      const admin = m['Is Admin'] === true || m['Is Admin'] === 1
-                      return (
-                        <div
-                          key={m.id}
-                          className={classNames(
-                            'max-w-[min(100%,42rem)] rounded-2xl border px-4 py-3 text-sm shadow-sm',
-                            admin
-                              ? 'ml-auto border-violet-200 bg-violet-50/90 text-violet-950'
-                              : 'mr-auto border-slate-200 bg-white text-slate-900',
-                          )}
-                        >
-                          <div className="text-[10px] font-bold uppercase tracking-wide text-slate-400">
-                            {admin ? 'You (management)' : m['Sender Email'] || 'Resident'} ·{' '}
-                            {fmtDateTime(m.Timestamp || m.created_at)}
-                          </div>
-                          <p className="mt-1.5 whitespace-pre-wrap leading-relaxed">{m.Message}</p>
-                        </div>
-                      )
-                    })
-                  )}
-                </div>
-
-                <div className="mt-4 space-y-3">
-                  <div className="flex flex-wrap gap-2">
-                    <button
-                      type="button"
-                      disabled={aiBusy}
-                      onClick={handleAiSuggest}
-                      className="rounded-2xl border border-indigo-200 bg-indigo-50 px-4 py-2 text-xs font-semibold text-indigo-900 hover:bg-indigo-100 disabled:opacity-50"
+            <div className="overflow-x-auto">
+              <table className="min-w-full text-left">
+                <thead className="border-b border-slate-200 bg-slate-50">
+                  <tr>
+                    <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-[0.14em] text-slate-400">Property</th>
+                    <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-[0.14em] text-slate-400">Room</th>
+                    <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-[0.14em] text-slate-400">Resident</th>
+                    <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-[0.14em] text-slate-400">Title</th>
+                    <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-[0.14em] text-slate-400">Priority</th>
+                    <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-[0.14em] text-slate-400">Submitted</th>
+                    <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-[0.14em] text-slate-400">Status</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {filteredList.map((row) => (
+                    <tr
+                      key={row.id}
+                      onClick={() => setRecord(row)}
+                      className={classNames('cursor-pointer transition hover:bg-slate-50', record?.id === row.id ? 'bg-axis/5' : '')}
                     >
-                      {aiBusy ? 'Drafting…' : 'AI draft reply'}
-                    </button>
-                    <span className="self-center text-xs text-slate-400">Uses Claude on the server · needs ANTHROPIC_API_KEY</span>
-                  </div>
-                  <form onSubmit={handleSendThreadReply} className="flex flex-col gap-3 sm:flex-row sm:items-end">
-                    <textarea
-                      value={reply}
-                      onChange={(e) => setReply(e.target.value)}
-                      rows={4}
-                      placeholder="Write a reply to the resident…"
-                      className="min-w-0 flex-1 rounded-2xl border border-slate-200 px-4 py-3 text-sm outline-none focus:border-[#2563eb] focus:ring-2 focus:ring-[#2563eb]/20"
-                    />
-                    <button
-                      type="submit"
-                      disabled={msgBusy || !reply.trim()}
-                      className="rounded-2xl bg-[linear-gradient(180deg,#2f76ff_0%,#2450eb_100%)] px-6 py-3 text-sm font-semibold text-white shadow-[0_6px_18px_rgba(37,99,235,0.22)] disabled:opacity-50"
-                    >
-                      {msgBusy ? 'Sending…' : 'Send reply'}
-                    </button>
-                  </form>
-                </div>
-              </div>
-
-              {showAdvanced ? (
-                <form onSubmit={handleSave} className="space-y-4 border-t border-slate-100 pt-6">
-                  <h4 className="text-sm font-black text-slate-900">Airtable fields</h4>
-                  <div className="grid gap-4 sm:grid-cols-2">
-                    <div>
-                      <label className="mb-1.5 block text-xs font-semibold text-slate-600">Status</label>
-                      <select value={status} onChange={(e) => setStatus(e.target.value)} className={fieldCls}>
-                        {statusOptions.map((s) => (
-                          <option key={s} value={s}>
-                            {s}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                    <div>
-                      <label className="mb-1.5 block text-xs font-semibold text-slate-600">Priority</label>
-                      <select value={priority} onChange={(e) => setPriority(e.target.value)} className={fieldCls}>
-                        {priorityOptions.map((p) => (
-                          <option key={p} value={p}>
-                            {p}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                  </div>
-                  <div>
-                    <label className="mb-1.5 block text-xs font-semibold text-slate-600">Management notes</label>
-                    <textarea
-                      rows={2}
-                      value={managementNotes}
-                      onChange={(e) => setManagementNotes(e.target.value)}
-                      className={fieldCls}
-                    />
-                  </div>
-                  <div>
-                    <label className="mb-1.5 block text-xs font-semibold text-slate-600">Internal update log</label>
-                    <textarea rows={3} value={updateText} onChange={(e) => setUpdateText(e.target.value)} className={fieldCls} />
-                  </div>
-                  <div>
-                    <label className="mb-1.5 block text-xs font-semibold text-slate-600">Resolution summary</label>
-                    <textarea
-                      rows={2}
-                      value={resolutionSummary}
-                      onChange={(e) => setResolutionSummary(e.target.value)}
-                      className={fieldCls}
-                    />
-                  </div>
-                  <div className="grid gap-4 sm:grid-cols-2">
-                    <label className="flex cursor-pointer items-center gap-3 rounded-2xl border border-slate-200 px-4 py-3">
-                      <input
-                        type="checkbox"
-                        checked={resolved}
-                        onChange={(e) => setResolved(e.target.checked)}
-                        className="h-4 w-4 rounded border-slate-300 text-[#2563eb]"
-                      />
-                      <span className="text-sm font-semibold text-slate-800">Resolved</span>
-                    </label>
-                    <div>
-                      <label className="mb-1.5 block text-xs font-semibold text-slate-600">Last update (date)</label>
-                      <input type="date" value={lastUpdate} onChange={(e) => setLastUpdate(e.target.value)} className={fieldCls} />
-                    </div>
-                  </div>
-                  <button
-                    type="submit"
-                    disabled={saving}
-                    className="rounded-2xl border border-slate-300 bg-white px-6 py-3 text-sm font-semibold text-slate-800 hover:bg-slate-50 disabled:opacity-50"
-                  >
-                    {saving ? 'Saving…' : 'Save to Airtable'}
-                  </button>
-                </form>
-              ) : null}
+                      <td className="px-4 py-4 text-sm font-semibold text-slate-900">{workOrderPropertyLabel(row) || 'House not set'}</td>
+                      <td className="px-4 py-4 text-sm text-slate-600">{row['Room Number'] || row.Room || '—'}</td>
+                      <td className="px-4 py-4 text-sm text-slate-600">{paymentResidentLabel(row)}</td>
+                      <td className="px-4 py-4">
+                        <div className="text-sm font-semibold text-slate-900">{row.Title || 'Untitled request'}</div>
+                        <div className="mt-1 text-xs text-slate-400">{row.Category || 'General Maintenance'}</div>
+                      </td>
+                      <td className="px-4 py-4 text-sm text-slate-600">{row.Priority || 'Normal'}</td>
+                      <td className="px-4 py-4 text-sm text-slate-600">{fmtDate(row['Date Submitted'] || row.created_at)}</td>
+                      <td className="px-4 py-4">
+                        <PortalOpsStatusBadge tone={managerWorkOrderStatusTone(row)}>
+                          {managerWorkOrderStatusLabel(row)}
+                        </PortalOpsStatusBadge>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
           )}
         </div>
-      ) : (
-        !listLoading &&
-        filteredList.length > 0 && (
-          <p className="text-center text-sm text-slate-400">Select a work order above to view the thread and reply.</p>
-        )
-      )}
+
+        {record ? (
+          <PortalOpsCard
+            title={record.Title || 'Work order'}
+            description={`${workOrderPropertyLabel(record) || 'House not set'} · ${paymentResidentLabel(record)}`}
+            action={
+              <button
+                type="button"
+                onClick={handleMarkCompleted}
+                className="rounded-full border border-emerald-200 bg-emerald-50 px-4 py-2 text-sm font-semibold text-emerald-700 transition hover:bg-emerald-100"
+              >
+                Mark Completed
+              </button>
+            }
+          >
+            {loadError ? (
+              <div className="mb-4 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">{loadError}</div>
+            ) : null}
+
+            <div className="mb-5 flex flex-wrap items-center gap-2">
+              <PortalOpsStatusBadge tone={managerWorkOrderStatusTone(record)}>
+                {managerWorkOrderStatusLabel(record)}
+              </PortalOpsStatusBadge>
+              <PortalOpsStatusBadge tone={['urgent', 'emergency', 'critical'].includes(String(record.Priority || '').trim().toLowerCase()) ? 'red' : 'slate'}>
+                {record.Priority || 'Normal'}
+              </PortalOpsStatusBadge>
+            </div>
+
+            <div className="rounded-[24px] border border-slate-200 bg-slate-50 px-5 py-4">
+              <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">Issue details</div>
+              <p className="mt-2 whitespace-pre-wrap text-sm leading-7 text-slate-700">{record.Description || 'No description provided.'}</p>
+            </div>
+
+            <form onSubmit={handleSave} className="mt-5 space-y-4">
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div>
+                  <label className="mb-2 block text-xs font-semibold uppercase tracking-[0.14em] text-slate-400">Status</label>
+                  <select value={status} onChange={(e) => setStatus(e.target.value)} className={fieldCls}>
+                    {['Submitted', 'In Review', 'Scheduled', 'In Progress', 'Completed', 'Closed'].map((option) => (
+                      <option key={option} value={option}>{option}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="mb-2 block text-xs font-semibold uppercase tracking-[0.14em] text-slate-400">Priority</label>
+                  <select value={priority} onChange={(e) => setPriority(e.target.value)} className={fieldCls}>
+                    {priorityOptions.map((option) => (
+                      <option key={option} value={option}>{option}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="mb-2 block text-xs font-semibold uppercase tracking-[0.14em] text-slate-400">Assign vendor / person</label>
+                  <input value={assignedTo} onChange={(e) => setAssignedTo(e.target.value)} className={fieldCls} placeholder="Axis maintenance team" />
+                </div>
+                <div>
+                  <label className="mb-2 block text-xs font-semibold uppercase tracking-[0.14em] text-slate-400">Scheduled date / time</label>
+                  <input value={scheduledAt} onChange={(e) => setScheduledAt(e.target.value)} className={fieldCls} placeholder="Apr 18, 10:00 AM" />
+                </div>
+              </div>
+
+              <div>
+                <label className="mb-2 block text-xs font-semibold uppercase tracking-[0.14em] text-slate-400">Internal note</label>
+                <textarea rows={3} value={managementNotes} onChange={(e) => setManagementNotes(e.target.value)} className={fieldCls} placeholder="Notes only managers should see." />
+              </div>
+
+              <div>
+                <label className="mb-2 block text-xs font-semibold uppercase tracking-[0.14em] text-slate-400">Resident-facing update</label>
+                <textarea rows={3} value={residentUpdate} onChange={(e) => setResidentUpdate(e.target.value)} className={fieldCls} placeholder="We scheduled a visit for Friday morning." />
+              </div>
+
+              <div>
+                <label className="mb-2 block text-xs font-semibold uppercase tracking-[0.14em] text-slate-400">Completion note</label>
+                <textarea rows={3} value={resolutionSummary} onChange={(e) => setResolutionSummary(e.target.value)} className={fieldCls} placeholder="What was fixed and anything the resident should know." />
+              </div>
+
+              <button
+                type="submit"
+                disabled={saving}
+                className="rounded-full bg-axis px-5 py-3 text-sm font-semibold text-white transition hover:brightness-105 disabled:opacity-50"
+              >
+                {saving ? 'Saving…' : 'Save Updates'}
+              </button>
+            </form>
+          </PortalOpsCard>
+        ) : (
+          !listLoading && (
+            <PortalOpsEmptyState
+              icon="🧰"
+              title="Select a work order"
+              description="Choose a request from the table to update status, scheduling, and resident notes."
+            />
+          )
+        )}
+      </div>
     </div>
   )
 }
@@ -3995,6 +3724,7 @@ function ManagerPaymentsPanel({ allowedPropertyNames }) {
   const [busy, setBusy] = useState({})
   const [paymentsLoadError, setPaymentsLoadError] = useState('')
   const [selectedYm, setSelectedYm] = useState(() => currentYm())
+  const [selectedId, setSelectedId] = useState('')
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -4046,50 +3776,73 @@ function ManagerPaymentsPanel({ allowedPropertyNames }) {
     [rows, selectedYm],
   )
 
-  const monthOverdueCount = useMemo(
-    () => rowsForSelectedMonth.filter((p) => isPaymentOverdueRecord(p)).length,
+  const paymentRows = useMemo(
+    () => rowsForSelectedMonth.map((row) => ({ ...row, __computedStatus: paymentComputedStatus(row) })),
     [rowsForSelectedMonth],
   )
-  const monthPaidCount = useMemo(
-    () => rowsForSelectedMonth.filter((p) => String(p.Status || '').trim().toLowerCase() === 'paid').length,
-    [rowsForSelectedMonth],
+
+  const totalExpected = useMemo(
+    () => paymentRows.reduce((sum, row) => sum + paymentAmountDue(row), 0),
+    [paymentRows],
   )
-  const monthPendingCount = useMemo(
-    () =>
-      rowsForSelectedMonth.filter((p) => {
-        if (String(p.Status || '').trim().toLowerCase() === 'paid') return false
-        return !isPaymentOverdueRecord(p)
-      }).length,
-    [rowsForSelectedMonth],
+  const totalCollected = useMemo(
+    () => paymentRows.reduce((sum, row) => sum + paymentAmountPaid(row), 0),
+    [paymentRows],
+  )
+  const totalOutstanding = useMemo(
+    () => paymentRows.reduce((sum, row) => sum + paymentBalanceDue(row), 0),
+    [paymentRows],
+  )
+  const overdueResidents = useMemo(
+    () => new Set(paymentRows.filter((row) => row.__computedStatus === 'overdue').map((row) => paymentResidentLabel(row))).size,
+    [paymentRows],
   )
 
   const filteredForList = useMemo(() => {
-    let list = rowsForSelectedMonth
-    if (filter === 'overdue') list = list.filter((p) => isPaymentOverdueRecord(p))
-    if (filter === 'paid') list = list.filter((p) => String(p.Status || '').trim().toLowerCase() === 'paid')
-    if (filter === 'unpaid') list = list.filter((p) => String(p.Status || '').trim().toLowerCase() !== 'paid')
-    return list
-  }, [rowsForSelectedMonth, filter])
+    let list = paymentRows
+    if (filter !== 'all') list = list.filter((row) => row.__computedStatus === filter)
+    return [...list].sort((a, b) => {
+      const propertyCmp = String(paymentPropertyLabel(a)).localeCompare(String(paymentPropertyLabel(b)), undefined, { sensitivity: 'base' })
+      if (propertyCmp !== 0) return propertyCmp
+      return comparePaymentByRoom(a, b)
+    })
+  }, [filter, paymentRows])
 
-  const groupedByHouse = useMemo(() => {
-    const map = new Map()
-    for (const p of filteredForList) {
-      const house = paymentPropertyLabel(p) || 'House'
-      if (!map.has(house)) map.set(house, [])
-      map.get(house).push(p)
+  useEffect(() => {
+    if (filteredForList.length === 0) {
+      setSelectedId('')
+      return
     }
-    return [...map.entries()]
-      .sort(([a], [b]) => a.localeCompare(b, undefined, { sensitivity: 'base' }))
-      .map(([house, items]) => ({
-        house,
-        items: [...items].sort(comparePaymentByRoom),
-      }))
+    setSelectedId((current) => (current && filteredForList.some((row) => row.id === current) ? current : filteredForList[0].id))
   }, [filteredForList])
+
+  const selectedRow = useMemo(
+    () => filteredForList.find((row) => row.id === selectedId) || paymentRows.find((row) => row.id === selectedId) || null,
+    [filteredForList, paymentRows, selectedId],
+  )
+
+  const residentDetailRows = useMemo(() => {
+    if (!selectedRow) return []
+    const residentName = paymentResidentLabel(selectedRow)
+    return rows
+      .filter((row) => paymentResidentLabel(row) === residentName)
+      .sort((a, b) => new Date(b['Due Date'] || b.created_at || 0) - new Date(a['Due Date'] || a.created_at || 0))
+  }, [rows, selectedRow])
+
+  const extraChargeRows = useMemo(
+    () => residentDetailRows.filter((row) => getPaymentKind(row) === 'fee'),
+    [residentDetailRows],
+  )
 
   async function markPaid(id) {
     setBusy((b) => ({ ...b, [id]: true }))
     try {
-      await updatePaymentRecord(id, { Status: 'Paid' })
+      await updatePaymentRecord(id, {
+        Status: 'Paid',
+        'Paid Date': new Date().toISOString().slice(0, 10),
+        'Amount Paid': paymentAmountDue(rows.find((row) => row.id === id) || {}),
+        Balance: 0,
+      })
       await load()
       toast.success('Marked as paid')
     } catch (err) {
@@ -4109,7 +3862,7 @@ function ManagerPaymentsPanel({ allowedPropertyNames }) {
         <div>
           <h2 className="text-xl font-black text-slate-900">Rent &amp; payments</h2>
           <p className="mt-1 text-sm text-slate-500">
-            By house and room. Totals below are for the month you select. Mark paid when you&apos;ve recorded payment in Airtable.
+            Track rent status by house, room, and resident. Keep the month view simple and easy to scan.
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -4127,30 +3880,20 @@ function ManagerPaymentsPanel({ allowedPropertyNames }) {
               ))}
             </select>
           </label>
-          {[
-            ['all', 'All'],
-            ['unpaid', 'Unpaid'],
-            ['overdue', 'Overdue'],
-            ['paid', 'Paid'],
-          ].map(([k, lab]) => (
-            <button
-              key={k}
-              type="button"
-              onClick={() => setFilter(k)}
-              className={`rounded-full px-4 py-2 text-xs font-semibold transition ${filter === k ? 'bg-[#2563eb] text-white' : 'border border-slate-200 bg-white text-slate-600 hover:bg-slate-50'}`}
-            >
-              {lab}
-            </button>
-          ))}
-          <button
-            type="button"
-            onClick={() => load()}
-            className="rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-50"
-          >
-            Refresh
-          </button>
         </div>
       </div>
+
+      <PortalOpsFilterPills
+        value={filter}
+        onChange={setFilter}
+        items={[
+          { id: 'all', label: 'All', count: paymentRows.length },
+          { id: 'paid', label: 'Paid', count: paymentRows.filter((row) => row.__computedStatus === 'paid').length },
+          { id: 'due_soon', label: 'Due Soon', count: paymentRows.filter((row) => row.__computedStatus === 'due_soon').length },
+          { id: 'overdue', label: 'Overdue', count: paymentRows.filter((row) => row.__computedStatus === 'overdue').length },
+          { id: 'partial', label: 'Partial', count: paymentRows.filter((row) => row.__computedStatus === 'partial').length },
+        ]}
+      />
 
       {paymentsLoadError ? (
         <div
@@ -4185,99 +3928,147 @@ function ManagerPaymentsPanel({ allowedPropertyNames }) {
         </div>
       ) : null}
 
-      <div className="rounded-2xl border border-slate-200 bg-gradient-to-br from-slate-50 to-blue-50/40 px-4 py-4 sm:px-5">
-        <div className="text-center text-[11px] font-bold uppercase tracking-[0.16em] text-slate-400">
-          {formatYmLong(selectedYm)}
-        </div>
-        <div className="mt-3 grid gap-3 sm:grid-cols-3">
-          <div className="rounded-2xl border border-red-200/80 bg-white/90 p-4 shadow-sm">
-            <div className="text-[11px] font-bold uppercase tracking-wide text-red-700/90">Overdue rent</div>
-            <div className="mt-1 text-2xl font-black text-red-950">{monthOverdueCount}</div>
-            <div className="mt-0.5 text-xs text-red-800/70">Past due, not paid</div>
-          </div>
-          <div className="rounded-2xl border border-emerald-200/80 bg-white/90 p-4 shadow-sm">
-            <div className="text-[11px] font-bold uppercase tracking-wide text-emerald-800">Paid rent</div>
-            <div className="mt-1 text-2xl font-black text-emerald-950">{monthPaidCount}</div>
-            <div className="mt-0.5 text-xs text-emerald-900/70">Marked paid this month</div>
-          </div>
-          <div className="rounded-2xl border border-amber-200/80 bg-white/90 p-4 shadow-sm">
-            <div className="text-[11px] font-bold uppercase tracking-wide text-amber-800">Pending rent</div>
-            <div className="mt-1 text-2xl font-black text-amber-950">{monthPendingCount}</div>
-            <div className="mt-0.5 text-xs text-amber-900/70">Not yet due or awaiting payment</div>
-          </div>
-        </div>
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <PortalOpsMetric label="Expected this month" value={money(totalExpected)} hint={formatYmLong(selectedYm)} tone="axis" />
+        <PortalOpsMetric label="Collected" value={money(totalCollected)} hint="Recorded as paid." tone="emerald" />
+        <PortalOpsMetric label="Outstanding" value={money(totalOutstanding)} hint="Still not fully paid." tone="amber" />
+        <PortalOpsMetric label="Overdue residents" value={overdueResidents} hint="Residents with past-due rent." tone="red" />
       </div>
 
-      <div className="overflow-hidden rounded-[24px] border border-slate-200 bg-white">
-        {loading ? (
-          <div className="px-6 py-14 text-center text-sm text-slate-500">Loading payments…</div>
-        ) : rows.length === 0 ? (
-          <div className="px-6 py-14 text-center text-sm text-slate-500">No rent charges to show.</div>
-        ) : rowsForSelectedMonth.length === 0 ? (
-          <div className="px-6 py-14 text-center text-sm text-slate-500">
-            No rent charges for {formatYmLong(selectedYm)}. Try another month above.
-          </div>
-        ) : filteredForList.length === 0 ? (
-          <div className="px-6 py-14 text-center text-sm text-slate-500">No rows match this filter for {formatYmLong(selectedYm)}.</div>
-        ) : (
-          <div>
-            {groupedByHouse.map(({ house, items }) => (
-              <div key={house} className="border-b border-slate-200 last:border-b-0">
-                <div className="sticky top-0 z-[1] border-b border-slate-100 bg-slate-50 px-4 py-2.5 sm:px-6">
-                  <div className="text-[11px] font-bold uppercase tracking-[0.14em] text-slate-500">House</div>
-                  <div className="text-sm font-black text-slate-900">{house}</div>
-                </div>
-                <ul className="divide-y divide-slate-100">
-                  {items.map((p) => {
-                    const { phrase, tone } = rentStatusPresentation(p)
-                    const stLower = String(p.Status || '').trim().toLowerCase()
-                    const borderL =
-                      tone === 'emerald' ? 'border-l-emerald-500' : tone === 'red' ? 'border-l-red-500' : 'border-l-amber-500'
-                    const rowBg =
-                      tone === 'emerald'
-                        ? 'bg-emerald-50/25'
-                        : tone === 'red'
-                          ? 'bg-red-50/30'
-                          : 'bg-amber-50/20'
-                    const resident = p['Resident Name'] || p['Resident']
+      <div className="grid gap-6 xl:grid-cols-[minmax(0,1.2fr)_minmax(360px,0.8fr)]">
+        <div className="overflow-hidden rounded-[24px] border border-slate-200 bg-white">
+          {loading ? (
+            <div className="px-6 py-14 text-center text-sm text-slate-500">Loading payments…</div>
+          ) : rows.length === 0 ? (
+            <div className="px-6 py-14 text-center text-sm text-slate-500">No rent charges to show.</div>
+          ) : rowsForSelectedMonth.length === 0 ? (
+            <div className="px-6 py-14 text-center text-sm text-slate-500">
+              No rent charges for {formatYmLong(selectedYm)}. Try another month above.
+            </div>
+          ) : filteredForList.length === 0 ? (
+            <div className="px-6 py-14 text-center text-sm text-slate-500">No rows match this filter for {formatYmLong(selectedYm)}.</div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="min-w-full text-left">
+                <thead className="border-b border-slate-200 bg-slate-50">
+                  <tr>
+                    <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-[0.14em] text-slate-400">Property</th>
+                    <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-[0.14em] text-slate-400">Room</th>
+                    <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-[0.14em] text-slate-400">Resident</th>
+                    <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-[0.14em] text-slate-400">Monthly Rent</th>
+                    <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-[0.14em] text-slate-400">Amount Paid</th>
+                    <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-[0.14em] text-slate-400">Balance Due</th>
+                    <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-[0.14em] text-slate-400">Due Date</th>
+                    <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-[0.14em] text-slate-400">Status</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {filteredForList.map((row) => {
+                    const computed = row.__computedStatus
                     return (
-                      <li key={p.id} className={classNames('flex flex-col gap-3 px-4 py-4 sm:flex-row sm:items-center sm:justify-between sm:gap-4 sm:px-6', rowBg)}>
-                        <div className={classNames('min-w-0 flex-1 border-l-4 pl-3 sm:pl-4', borderL)}>
-                          <div className="text-base font-black text-slate-900">{formatPaymentRoomTitle(p)}</div>
-                          {stLower !== 'paid' ? (
-                            <p className="mt-1 text-sm font-semibold leading-snug text-slate-800">{phrase}</p>
-                          ) : null}
-                          <p className="mt-1 text-xs text-slate-500">
-                            {resident ? <span>{resident} · </span> : null}
-                            {p.Amount != null ? <span className="font-semibold text-slate-700">${Number(p.Amount).toFixed(0)}</span> : <span>—</span>}
-                            <span> · Due {fmtDate(p['Due Date'])}</span>
-                            {p.Month ? <span> · {p.Month}</span> : null}
-                          </p>
-                        </div>
-                        <div className="flex shrink-0 flex-col items-stretch gap-2 sm:items-end">
-                          {stLower === 'paid' ? (
-                            <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-center sm:text-right">
-                              <div className="text-xs font-bold uppercase tracking-wide text-emerald-800">System</div>
-                              <div className="text-sm font-semibold text-emerald-900">Rent paid</div>
-                            </div>
-                          ) : (
-                            <button
-                              type="button"
-                              disabled={busy[p.id]}
-                              onClick={() => markPaid(p.id)}
-                              className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-2 text-xs font-semibold text-emerald-800 transition hover:bg-emerald-100 disabled:opacity-50"
-                            >
-                              {busy[p.id] ? 'Updating…' : 'Mark paid'}
-                            </button>
-                          )}
-                        </div>
-                      </li>
+                      <tr
+                        key={row.id}
+                        onClick={() => setSelectedId(row.id)}
+                        className={classNames('cursor-pointer transition hover:bg-slate-50', selectedId === row.id ? 'bg-axis/5' : '')}
+                      >
+                        <td className="px-4 py-4 text-sm font-semibold text-slate-900">{paymentPropertyLabel(row) || 'House not set'}</td>
+                        <td className="px-4 py-4 text-sm text-slate-600">{paymentRoomLabel(row)}</td>
+                        <td className="px-4 py-4 text-sm text-slate-600">{paymentResidentLabel(row)}</td>
+                        <td className="px-4 py-4 text-sm text-slate-600">{money(paymentAmountDue(row))}</td>
+                        <td className="px-4 py-4 text-sm text-slate-600">{money(paymentAmountPaid(row))}</td>
+                        <td className="px-4 py-4 text-sm text-slate-600">{money(paymentBalanceDue(row))}</td>
+                        <td className="px-4 py-4 text-sm text-slate-600">{fmtDate(row['Due Date'])}</td>
+                        <td className="px-4 py-4">
+                          <PortalOpsStatusBadge tone={paymentStatusTone(computed)}>
+                            {paymentStatusLabel(computed)}
+                          </PortalOpsStatusBadge>
+                        </td>
+                      </tr>
                     )
                   })}
-                </ul>
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+
+        {selectedRow ? (
+          <PortalOpsCard
+            title={paymentResidentLabel(selectedRow)}
+            description={`${paymentPropertyLabel(selectedRow) || 'House not set'} · ${paymentRoomLabel(selectedRow)}`}
+            action={
+              paymentComputedStatus(selectedRow) !== 'paid' ? (
+                <button
+                  type="button"
+                  disabled={busy[selectedRow.id]}
+                  onClick={() => markPaid(selectedRow.id)}
+                  className="rounded-full bg-axis px-4 py-2 text-sm font-semibold text-white transition hover:brightness-105 disabled:opacity-50"
+                >
+                  {busy[selectedRow.id] ? 'Updating…' : 'Mark Paid'}
+                </button>
+              ) : null
+            }
+          >
+            <div className="grid gap-4 sm:grid-cols-2">
+              <PortalOpsMetric label="Rent amount" value={money(paymentAmountDue(selectedRow))} hint={selectedRow.Month || 'Current billing period'} />
+              <PortalOpsMetric label="Remaining balance" value={money(paymentBalanceDue(selectedRow))} hint={`Due ${fmtDate(selectedRow['Due Date'])}`} tone={paymentStatusTone(paymentComputedStatus(selectedRow))} />
+            </div>
+
+            <div className="mt-5">
+              <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">Payment history</div>
+              <div className="mt-3 space-y-3">
+                {residentDetailRows.filter((row) => getPaymentKind(row) === 'rent').slice(0, 6).map((row) => {
+                  const computed = paymentComputedStatus(row)
+                  return (
+                    <div key={row.id} className="flex flex-wrap items-center justify-between gap-3 rounded-[24px] border border-slate-200 px-4 py-4">
+                      <div>
+                        <div className="text-sm font-bold text-slate-900">{row.Month || 'Rent payment'}</div>
+                        <div className="mt-1 text-sm text-slate-500">Due {fmtDate(row['Due Date'])}</div>
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <div className="text-sm font-bold text-slate-900">{money(paymentBalanceDue(row))}</div>
+                        <PortalOpsStatusBadge tone={paymentStatusTone(computed)}>
+                          {paymentStatusLabel(computed)}
+                        </PortalOpsStatusBadge>
+                      </div>
+                    </div>
+                  )
+                })}
               </div>
-            ))}
-          </div>
+            </div>
+
+            <div className="mt-5">
+              <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">Fines & extra charges</div>
+              {extraChargeRows.length === 0 ? (
+                <p className="mt-3 text-sm text-slate-500">No extra charges for this resident.</p>
+              ) : (
+                <div className="mt-3 space-y-3">
+                  {extraChargeRows.map((row) => (
+                    <div key={row.id} className="flex flex-wrap items-center justify-between gap-3 rounded-[24px] border border-slate-200 px-4 py-4">
+                      <div>
+                        <div className="text-sm font-bold text-slate-900">{row.Month || row.Type || 'Extra charge'}</div>
+                        <div className="mt-1 text-sm text-slate-500">{row.Notes || 'Additional charge'}</div>
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <div className="text-sm font-bold text-slate-900">{money(paymentBalanceDue(row) || paymentAmountDue(row))}</div>
+                        <PortalOpsStatusBadge tone={paymentStatusTone(paymentComputedStatus(row))}>
+                          {paymentStatusLabel(paymentComputedStatus(row))}
+                        </PortalOpsStatusBadge>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </PortalOpsCard>
+        ) : (
+          !loading && (
+            <PortalOpsEmptyState
+              icon="💳"
+              title="Select a resident payment"
+              description="Choose a row to review balance, history, and extra charges."
+            />
+          )
         )}
       </div>
     </div>
@@ -4764,8 +4555,8 @@ function ManagerDashboard({ manager: managerProp, onOpenDraft, onSignOut, onMana
   const canReview = status => ['Draft Generated', 'Under Review', 'Changes Needed'].includes(status)
 
   async function handleBillingPortal() {
-    if (manager.__axisDeveloper) {
-      toast.error('Billing is not available in developer preview.')
+    if (isManagerInternalPreview(manager)) {
+      toast.error('Billing is not available in preview mode.')
       return
     }
     setBillingLoading(true)
@@ -4827,7 +4618,7 @@ function ManagerDashboard({ manager: managerProp, onOpenDraft, onSignOut, onMana
         ) : dashView === 'workorders' ? (
           <WorkOrdersTabPanel manager={manager} allowedPropertyNames={scopedPropertyOptions} />
         ) : dashView === 'inbox' ? (
-          <InboxTabPanel manager={manager} allowedPropertyNames={scopedPropertyOptions} />
+          <ManagerInboxPage manager={manager} allowedPropertyNames={scopedPropertyOptions} />
         ) : dashView === 'calendar' ? (
           <ManagerCalendarPanel manager={manager} scopedPropertyNames={scopedPropertyOptions} />
         ) : dashView === 'dashboard' ? (

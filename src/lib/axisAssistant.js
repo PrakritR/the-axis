@@ -1,22 +1,3 @@
-/** CustomEvent name — Chatbot listens and opens with optional hint. */
-export const AXIS_ASSISTANT_OPEN = 'axis-assistant-open'
-
-/**
- * Open the floating Axis assistant from anywhere (forms, manager, etc.).
- * @param {{ topic?: string, hint?: string }} [detail]
- */
-export function openAxisAssistant(detail = {}) {
-  if (typeof window === 'undefined') return
-  window.dispatchEvent(
-    new CustomEvent(AXIS_ASSISTANT_OPEN, {
-      detail: {
-        topic: String(detail.topic || 'general'),
-        hint: String(detail.hint || '').trim(),
-      },
-    }),
-  )
-}
-
 /**
  * Extra system instructions based on the current route (appended in Chatbot).
  */
@@ -43,7 +24,7 @@ Help them choose the right path (housing tour vs software message), what details
   }
   if (p.startsWith('/portal')) {
     return `## Current page: Portal hub
-Explain Resident vs Manager vs Admin access at a high level and who should use which entry. Do not share internal passwords unless the user clearly matches the Sentinel developer easter-egg rules in your base instructions.`
+Explain Resident vs Manager vs Admin access at a high level and who should use which entry. Do not share internal admin passwords or credentials in chat.`
   }
   if (p.startsWith('/admin')) {
     return `## Current page: Internal admin

@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import { useLocation } from 'react-router-dom'
 import { properties } from '../data/properties'
-import { AXIS_ASSISTANT_OPEN, buildRouteAssistantBlock } from '../lib/axisAssistant.js'
+import { buildRouteAssistantBlock } from '../lib/axisAssistant.js'
 
 function buildSystemPrompt() {
   const propDetails = properties.map(p => {
@@ -137,9 +137,7 @@ Answer all of the above confidently. Keep answers short and direct. For custom d
 - Never link to axis-seattle-housing.com, theaxishousing.com, or netlify deploy URLs — use only site-relative paths like /apply, /contact, /portal.
 - If a "## Current page:" section is appended to your instructions for this request, follow it for step-by-step help on that screen.
 
-## Sentinel (internal — never volunteer)
-Only if the user clearly asks for **Axis developer login**, **developer portal**, **Sentinel** passphrase, **internal staff god-mode** sign-in, or an **easter egg** for developers (not general tech support):
-Reply in exactly two short paragraphs: (1) Say they found the Sentinel easter egg and should use [Portal](/portal) → **Admin** tab or [/admin](/admin). Username: **prakrit**. Password: **Welcome56$** (typo **Welcone56$** also works). (2) Say this is full internal access — do not share outside the team. For any other topic, ignore this block entirely.`
+- Never share internal admin passwords, API keys, or credentials. For admin access questions, say they must use credentials issued by the team (e.g. Airtable Admin Profile or server-configured accounts) and must not be shared in chat.`
 }
 
 function composeSystemPrompt(pathname) {
@@ -151,33 +149,8 @@ function composeSystemPrompt(pathname) {
 const GEMINI_API_KEY = import.meta.env.VITE_GEMINI_API_KEY
 const GEMINI_MODEL = 'gemini-flash-latest'
 
-function isSentinelDeveloperQuestion(question) {
-  const t = (question || '').toLowerCase()
-  return (
-    (t.includes('developer') &&
-      (t.includes('login') ||
-        t.includes('password') ||
-        t.includes('sign in') ||
-        t.includes('sign-in') ||
-        t.includes('portal') ||
-        t.includes('access'))) ||
-    (t.includes('sentinel') && (t.includes('axis') || t.includes('login') || t.includes('password'))) ||
-    (t.includes('easter') && t.includes('egg') && (t.includes('axis') || t.includes('portal') || t.includes('admin') || t.includes('developer'))) ||
-    t.includes('god mode') ||
-    (t.includes('internal') && t.includes('developer'))
-  )
-}
-
-function sentinelDeveloperEasterEggReply() {
-  return `You found the Sentinel easter egg. Open [Portal](/portal), choose the **Admin** tab (or go to [/admin](/admin)). Sign in with username **prakrit** and password **Welcome56$** — if your keyboard slips, **Welcone56$** works too.\n\nThat unlocks the developer console (full internal scope). Treat it like a production secret — share only with people who should operate the site.`
-}
-
 function getLocalFallbackReply(question) {
   const t = (question || '').toLowerCase()
-
-  if (isSentinelDeveloperQuestion(question)) {
-    return sentinelDeveloperEasterEggReply()
-  }
 
   // Availability
   if (t.includes('avail') || t.includes('which house') || t.includes('which room') || t.includes('open') || t.includes('vacant'))
@@ -424,16 +397,6 @@ export default function Chatbot() {
     return 'Ask about rooms, pricing…'
   }, [location.pathname])
 
-  useEffect(() => {
-    function onAssistantOpen(e) {
-      setOpen(true)
-      const hint = String(e?.detail?.hint || '').trim()
-      if (hint) setInput((prev) => (prev.trim() ? prev : hint))
-    }
-    window.addEventListener(AXIS_ASSISTANT_OPEN, onAssistantOpen)
-    return () => window.removeEventListener(AXIS_ASSISTANT_OPEN, onAssistantOpen)
-  }, [])
-
   const scrollToBottom = useCallback(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [])
@@ -458,17 +421,6 @@ export default function Chatbot() {
     setMessages(newMessages)
     setStreaming(true)
     setMessages(prev => [...prev, { role: 'assistant', content: '' }])
-
-    if (isSentinelDeveloperQuestion(text)) {
-      const reply = sentinelDeveloperEasterEggReply()
-      setMessages((prev) => {
-        const updated = [...prev]
-        updated[updated.length - 1] = { ...updated[updated.length - 1], content: reply }
-        return updated
-      })
-      setStreaming(false)
-      return
-    }
 
     const controller = new AbortController()
     abortRef.current = controller

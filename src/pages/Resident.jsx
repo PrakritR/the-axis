@@ -2,7 +2,12 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link, Navigate } from 'react-router-dom'
 import { properties } from '../data/properties'
 import { EmbeddedStripeCheckout } from '../components/EmbeddedStripeCheckout'
-import { readJsonResponse } from '../lib/readJsonResponse'
+import {
+  PortalOpsCard,
+  PortalOpsEmptyState,
+  PortalOpsMetric,
+  PortalOpsStatusBadge,
+} from '../components/PortalOpsUI'
 import PortalInternalInbox from '../components/PortalInternalInbox'
 import {
   PortalAuthCard,
@@ -14,18 +19,14 @@ import {
   PortalSegmentedControl,
   portalAuthInputCls,
 } from '../components/PortalAuthUI'
-import GmailStyleInboxLayout, { InboxThreadRow } from '../components/GmailStyleInboxLayout'
 import PortalShell from '../components/PortalShell'
 import { HOUSING_CONTACT_MESSAGE, HOUSING_CONTACT_SCHEDULE } from '../lib/housingSite'
 import {
   airtableReady,
-  announcementResidentTargetTokens,
   createResident,
   createWorkOrder,
-  getAnnouncements,
   getApplicationById,
   getApprovedLeaseForResident,
-  getMessages,
   getPaymentsForResident,
   getPropertyByName,
   getResidentByEmail,
@@ -33,15 +34,14 @@ import {
   appendWorkOrderUpdateFromResident,
   getWorkOrdersForResident,
   loginResident,
-  sendMessage,
+  stripWorkOrderPortalSubmitterLine,
   updateResident,
 } from '../lib/airtable'
 
 const SESSION_KEY = 'axis_resident'
 
-const requestCategories = ['Plumbing', 'Electrical', 'HVAC', 'Appliance', 'Pest', 'Structural', 'Other']
-const urgencyOptions = ['Routine', 'Urgent', 'Emergency']
-const entryOptions = ['Morning', 'Afternoon', 'Evening']
+const requestCategories = ['Plumbing', 'Electrical', 'Heating / Cooling', 'Appliance', 'General Maintenance', 'Cleaning', 'Other']
+const urgencyOptions = ['Low', 'Medium', 'Urgent']
 
 function normalizeUnitLabel(value) {
   return String(value || '').replace(/^Unit\s+/i, 'Room ').trim()
@@ -56,34 +56,6 @@ function compareRoomLabels(a, b) {
   const n = extractRoomNumber(a) - extractRoomNumber(b)
   if (n !== 0) return n
   return String(a || '').localeCompare(String(b || ''), undefined, { numeric: true, sensitivity: 'base' })
-}
-
-const MATCH_ALL_TOKENS = new Set(['all', 'all properties', 'all residents', 'everyone'])
-
-function buildResidentMatchKeys(resident) {
-  const house = String(resident.House || '').trim()
-  const room = normalizeUnitLabel(resident['Unit Number'] || '')
-  const propCode = house.match(/4709[AB]|5259/i)?.[0]?.toUpperCase() || ''
-  const keys = new Set()
-  const add = (...vals) => vals.forEach((v) => { if (v) keys.add(v.toLowerCase().trim()) })
-  add(house, propCode)
-  const roomNum = room.replace(/^Room\s*/i, '')
-  add(room, roomNum)
-  if (propCode && room) {
-    add(
-      `${propCode} - ${room}`, `${propCode} - ${roomNum}`,
-      `${propCode} ${room}`, `${propCode} ${roomNum}`,
-      `${house} - ${room}`, `${house} ${room}`,
-    )
-  }
-  return keys
-}
-
-function announcementMatchesResident(item, resident) {
-  const tokens = announcementResidentTargetTokens(item)
-  if (tokens.length === 0 || tokens.some((t) => MATCH_ALL_TOKENS.has(t))) return true
-  const residentKeys = buildResidentMatchKeys(resident)
-  return tokens.some((token) => residentKeys.has(token.toLowerCase().trim()))
 }
 
 const statusStyles = {
@@ -142,6 +114,38 @@ function isWorkOrderOpen(record) {
   return !isWorkOrderResolved(record)
 }
 
+function residentWorkOrderStatusLabel(record) {
+  if (!record) return 'Submitted'
+  if (isWorkOrderResolved(record)) {
+    const raw = String(record.Status || '').trim().toLowerCase()
+    return raw === 'closed' ? 'Closed' : 'Completed'
+  }
+  const raw = String(record.Status || '').trim().toLowerCase()
+  if (raw.includes('review')) return 'In Review'
+  if (raw.includes('schedule')) return 'Scheduled'
+  if (raw.includes('progress')) return 'In Progress'
+  return 'Submitted'
+}
+
+function residentWorkOrderStatusTone(record) {
+  const label = residentWorkOrderStatusLabel(record)
+  if (label === 'Completed' || label === 'Closed') return 'emerald'
+  if (label === 'Scheduled') return 'axis'
+  if (label === 'In Progress' || label === 'In Review') return 'amber'
+  return 'slate'
+}
+
+function parseWorkOrderSchedule(record) {
+  const explicit =
+    record?.['Scheduled Date'] ||
+    record?.['Scheduled At'] ||
+    record?.['Schedule Date'] ||
+    record?.['Scheduled Time']
+  if (explicit) return String(explicit)
+  const raw = String(record?.Update || '').match(/scheduled for:\s*(.+)/i)
+  return raw?.[1]?.trim() || ''
+}
+
 const priorityStyles = {
   Routine: 'border-slate-200 bg-slate-100 text-slate-600',
   Low: 'border-slate-200 bg-slate-100 text-slate-600',
@@ -150,13 +154,6 @@ const priorityStyles = {
   Urgent: 'border-amber-200 bg-amber-50 text-amber-700',
   Emergency: 'border-red-200 bg-red-50 text-red-700',
   Critical: 'border-red-200 bg-red-50 text-red-700',
-}
-
-const paymentStatusStyles = {
-  Paid: 'border-emerald-200 bg-emerald-50 text-emerald-700',
-  Pending: 'border-amber-200 bg-amber-50 text-amber-700',
-  Overdue: 'border-red-200 bg-red-50 text-red-700',
-  Partial: 'border-sky-200 bg-sky-50 text-sky-700',
 }
 
 function parseDisplayDate(value) {
@@ -210,13 +207,6 @@ function getRoomMonthlyRent(propertyName, unitNumber) {
   return 0
 }
 
-function getUtilitiesFee(propertyName) {
-  const property = properties.find((p) => p.name === propertyName)
-  if (!property?.utilitiesFee) return 0
-  const amount = parseInt(String(property.utilitiesFee).replace(/[^0-9]/g, ''), 10)
-  return Number.isFinite(amount) && amount > 0 ? amount : 0
-}
-
 function getStaticSecurityDeposit(propertyName) {
   const property = properties.find((p) => p.name === propertyName)
   if (!property?.securityDeposit) return 0
@@ -225,9 +215,6 @@ function getStaticSecurityDeposit(propertyName) {
 }
 
 const leaseSigningFields = ['DocuSign Signing URL', 'DocuSign URL', 'Lease Signing URL', 'Lease Sign URL', 'Lease Document URL', 'Lease URL']
-const residentPaymentFields = ['Resident Payment URL', 'Payment URL', 'Payment Link', 'Resident Portal URL', 'Portal URL']
-const stripeCustomerFields = ['Stripe Customer ID', 'Stripe Customer', 'Stripe CustomerId']
-const paymentRecordLinkFields = ['Checkout URL', 'Payment URL', 'Payment Link', 'Portal URL']
 
 function firstAvailableLink(record, fields) {
   if (!record) return ''
@@ -240,21 +227,6 @@ function firstAvailableLink(record, fields) {
 
 function resolveLeaseSigningUrl(resident) {
   return firstAvailableLink(resident, leaseSigningFields) || import.meta.env.VITE_DOCUSIGN_SIGNING_URL || ''
-}
-
-function resolveResidentPaymentUrl(resident, payments = []) {
-  return (
-    firstAvailableLink(resident, residentPaymentFields) ||
-    payments.map((p) => firstAvailableLink(p, paymentRecordLinkFields)).find(Boolean) ||
-    import.meta.env.VITE_RESIDENT_PAYMENT_URL || ''
-  )
-}
-
-function getResidentStripeCustomerId(resident, payments = []) {
-  return (
-    firstAvailableLink(resident, stripeCustomerFields) ||
-    payments.map((p) => firstAvailableLink(p, stripeCustomerFields)).find(Boolean) || ''
-  )
 }
 
 function getPaymentKind(payment) {
@@ -318,11 +290,13 @@ export function ResidentAuthForm({ onLogin, footer = null, variant = 'default' }
   const [activationLoading, setActivationLoading] = useState(false)
   const [signInError, setSignInError] = useState('')
   const [activationError, setActivationError] = useState('')
+  const [postCreateMessage, setPostCreateMessage] = useState('')
 
   async function handleLogin(event) {
     event.preventDefault()
     setSignInLoading(true)
     setSignInError('')
+    setPostCreateMessage('')
     try {
       const resident = await loginResident(signInForm.email.trim(), signInForm.password)
       if (!resident) {
@@ -363,10 +337,6 @@ export function ResidentAuthForm({ onLogin, footer = null, variant = 'default' }
         setActivationError('Application not found. Check your Application ID (format: APP-recXXXXXXXXXXXXXX).')
         return
       }
-      if (app.Approved !== true) {
-        setActivationError('Your application hasn\'t been approved yet. A manager needs to review and approve it before you can create your account. Check back soon or contact Axis.')
-        return
-      }
       const appEmail = String(app['Signer Email'] || '').trim().toLowerCase()
       if (appEmail !== activateForm.email.trim().toLowerCase()) {
         setActivationError('Email does not match the application. Use the email you applied with.')
@@ -388,7 +358,6 @@ export function ResidentAuthForm({ onLogin, footer = null, variant = 'default' }
         const patch = {
           Password: activateForm.password,
           Status: 'Active',
-          Approved: true,
           'Lease Term': existing['Lease Term'] || app['Lease Term'] || '',
         }
         if (applicationLink && !(Array.isArray(existing.Applications) && existing.Applications.length)) {
@@ -397,11 +366,16 @@ export function ResidentAuthForm({ onLogin, footer = null, variant = 'default' }
         if (app['Application ID'] != null && existing['Application ID'] == null) {
           patch['Application ID'] = app['Application ID']
         }
-        const resident = await updateResident(existing.id, patch)
-        onLogin(resident)
+        await updateResident(existing.id, patch)
+        setPostCreateMessage(
+          'Account saved. Sign in below once a manager has approved your application.',
+        )
+        setSignInForm((c) => ({ ...c, email: activateForm.email.trim(), password: '' }))
+        setActivateForm((c) => ({ ...c, password: '' }))
+        setTab('signin')
         return
       }
-      const resident = await createResident({
+      await createResident({
         Name: app['Signer Full Name'] || '',
         Email: app['Signer Email'] || '',
         Password: activateForm.password,
@@ -412,11 +386,16 @@ export function ResidentAuthForm({ onLogin, footer = null, variant = 'default' }
         'Lease Start Date': app['Lease Start Date'] || null,
         'Lease End Date': app['Lease End Date'] || null,
         Status: 'Active',
-        Approved: true,
+        Approved: false,
         ...(applicationLink ? { Applications: applicationLink } : {}),
         ...(app['Application ID'] != null ? { 'Application ID': app['Application ID'] } : {}),
       })
-      onLogin(resident)
+      setPostCreateMessage(
+        'Account created. Sign in below once a manager has approved your application.',
+      )
+      setSignInForm((c) => ({ ...c, email: activateForm.email.trim(), password: '' }))
+      setActivateForm({ applicationId: '', email: '', password: '' })
+      setTab('signin')
     } catch (err) {
       setActivationError(err.message || 'Could not create account. Please try again.')
     } finally {
@@ -433,12 +412,18 @@ export function ResidentAuthForm({ onLogin, footer = null, variant = 'default' }
         <PortalSegmentedControl
           tabs={[['signin', 'Sign in'], ['activate', 'Create account']]}
           active={tab}
-          onChange={(id) => { setTab(id); setSignInError(''); setActivationError('') }}
+          onChange={(id) => {
+            setTab(id)
+            setSignInError('')
+            setActivationError('')
+            setPostCreateMessage('')
+          }}
         />
       ) : null}
 
       {tab === 'signin' ? (
         <form onSubmit={handleLogin} className={showSignInActivateTabs ? 'mt-6 space-y-4' : 'mt-0 space-y-4'}>
+          {postCreateMessage ? <PortalNotice>{postCreateMessage}</PortalNotice> : null}
           <PortalField label="Email">
             <input type="email" required value={signInForm.email}
               onChange={(e) => setSignInForm((c) => ({ ...c, email: e.target.value }))}
@@ -471,7 +456,12 @@ export function ResidentAuthForm({ onLogin, footer = null, variant = 'default' }
               </div>
               <button
                 type="button"
-                onClick={() => { setTab('activate'); setSignInError(''); setActivationError('') }}
+                onClick={() => {
+                  setTab('activate')
+                  setSignInError('')
+                  setActivationError('')
+                  setPostCreateMessage('')
+                }}
                 className="font-semibold text-slate-600 hover:text-slate-900"
               >
                 Create account
@@ -485,7 +475,12 @@ export function ResidentAuthForm({ onLogin, footer = null, variant = 'default' }
             <div className="mb-4 text-center">
               <button
                 type="button"
-                onClick={() => { setTab('signin'); setSignInError(''); setActivationError('') }}
+                onClick={() => {
+                  setTab('signin')
+                  setSignInError('')
+                  setActivationError('')
+                  setPostCreateMessage('')
+                }}
                 className="text-sm font-semibold text-[#2563eb] hover:text-slate-900"
               >
                 ← Back to sign in
@@ -493,7 +488,7 @@ export function ResidentAuthForm({ onLogin, footer = null, variant = 'default' }
             </div>
           ) : null}
           <PortalNotice>
-            Use the email and Application ID from your approved application.{' '}
+            Use the email and Application ID from your application. You can create an account anytime; sign-in stays locked until a manager approves your application.{' '}
             <span className="font-mono font-semibold text-slate-800">APP-rec…</span>
           </PortalNotice>
           <PortalField label="Application ID" required>
@@ -525,17 +520,17 @@ export function ResidentAuthForm({ onLogin, footer = null, variant = 'default' }
 
 // ─── Work Orders ──────────────────────────────────────────────────────────────
 
-function RequestThread({ workOrder, residentEmail, onThreadUpdated, embedded = false }) {
-  const [messages, setMessages] = useState([])
+/** Append-only notes on the Work Orders record (no Messages table). */
+function WorkOrderNotesComposer({ workOrder, residentEmail, onUpdated, embedded = false }) {
   const [draft, setDraft] = useState('')
   const [sending, setSending] = useState(false)
 
-  const loadMessages = useCallback(async () => {
-    const next = await getMessages(workOrder.id)
-    setMessages(next)
-  }, [workOrder.id])
-
-  useEffect(() => { loadMessages() }, [loadMessages])
+  const wrap = embedded
+    ? 'flex min-h-0 flex-1 flex-col overflow-hidden border-t border-slate-200 bg-slate-50/80'
+    : 'mt-4 rounded-[24px] border border-slate-200 bg-slate-50 p-4'
+  const scroll = embedded ? 'min-h-0 flex-1 space-y-3 overflow-y-auto px-4 py-4' : 'space-y-3'
+  const formWrap = classNames('flex gap-2', embedded ? 'shrink-0 border-t border-slate-200 bg-white px-4 py-3' : 'mt-4')
+  const updateText = String(workOrder.Update || workOrder['Latest Update'] || '').trim()
 
   async function handleSend(event) {
     event.preventDefault()
@@ -543,145 +538,41 @@ function RequestThread({ workOrder, residentEmail, onThreadUpdated, embedded = f
     const text = draft.trim()
     setSending(true)
     try {
-      await sendMessage({ workOrderId: workOrder.id, senderEmail: residentEmail, message: text })
+      await appendWorkOrderUpdateFromResident(workOrder.id, residentEmail, text)
       setDraft('')
-      try {
-        await appendWorkOrderUpdateFromResident(workOrder.id, residentEmail, text)
-      } catch (syncErr) {
-        console.warn('[work order] Update field sync skipped:', syncErr?.message || syncErr)
-      }
-      await loadMessages()
-      onThreadUpdated?.()
+      onUpdated?.()
     } finally {
       setSending(false)
     }
   }
 
-  const wrap = embedded
-    ? 'flex min-h-0 flex-1 flex-col overflow-hidden border-t border-slate-200 bg-slate-50/80'
-    : 'mt-4 rounded-[24px] border border-slate-200 bg-slate-50 p-4'
-  const scroll = embedded ? 'min-h-0 flex-1 space-y-3 overflow-y-auto px-4 py-4' : 'space-y-3'
-  const formWrap = classNames('flex gap-2', embedded ? 'shrink-0 border-t border-slate-200 bg-white px-4 py-3' : 'mt-4')
-
   return (
     <div className={wrap}>
       <div className={scroll}>
-        {messages.length === 0 ? (
-          <p className="text-sm text-slate-400">No updates yet.</p>
+        {!updateText ? (
+          <p className="text-sm text-slate-400">No updates yet. Add a note below — your property team sees it on the work order.</p>
         ) : (
-          messages.map((msg) => {
-            const isAdmin = Boolean(msg['Is Admin'])
-            return (
-              <div key={msg.id} className={classNames('flex', isAdmin ? 'justify-start' : 'justify-end')}>
-                <div className={classNames(
-                  'max-w-[85%] rounded-2xl px-4 py-3 text-sm leading-6',
-                  isAdmin ? 'rounded-tl-sm bg-white text-slate-800' : 'rounded-tr-sm bg-slate-900 text-white'
-                )}>
-                  <div className={classNames('mb-1 text-[11px] font-bold uppercase tracking-[0.18em]', isAdmin ? 'text-slate-400' : 'text-white/55')}>
-                    {isAdmin ? 'Axis Team' : 'You'}
-                  </div>
-                  <p>{msg.Message}</p>
-                  <div className={classNames('mt-2 text-[11px]', isAdmin ? 'text-slate-400' : 'text-white/55')}>
-                    {formatDate(msg.Timestamp || msg.created_at)}
-                  </div>
-                </div>
-              </div>
-            )
-          })
+          <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3">
+            <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">Update log</div>
+            <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-slate-700">{updateText}</p>
+          </div>
         )}
       </div>
       <form onSubmit={handleSend} className={formWrap}>
-        <input value={draft} onChange={(e) => setDraft(e.target.value)}
-          placeholder="Send an update or reply..."
-          className="flex-1 rounded-full border border-slate-200 px-4 py-2.5 text-sm outline-none transition focus:border-slate-900 focus:ring-2 focus:ring-slate-900/10" />
-        <button type="submit" disabled={sending || !draft.trim()}
-          className="rounded-full bg-slate-900 px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:opacity-50">
+        <input
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          placeholder="Add a note for the team…"
+          className="flex-1 rounded-full border border-slate-200 px-4 py-2.5 text-sm outline-none transition focus:border-slate-900 focus:ring-2 focus:ring-slate-900/10"
+        />
+        <button
+          type="submit"
+          disabled={sending || !draft.trim()}
+          className="rounded-full bg-slate-900 px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:opacity-50"
+        >
           Send
         </button>
       </form>
-    </div>
-  )
-}
-
-function WorkOrderReadingPane({ request, residentEmail, onWorkOrderUpdated }) {
-  const status = request.Status || 'Submitted'
-  const priority = request.Priority || 'Routine'
-  const notes = request['Management Notes']
-  const photo = Array.isArray(request.Photo) ? request.Photo[0] : null
-  const resolved = isWorkOrderResolved(request)
-  const appId = request['Application ID']
-  const updateLog = request.Update || request['Latest Update']
-  const resolutionSummary = request['Resolution Summary']
-
-  const hasMeta =
-    (resolutionSummary && resolved) || updateLog || notes || photo?.url
-
-  return (
-    <div className="flex h-full min-h-0 flex-1 flex-col overflow-hidden">
-      <div className="shrink-0 border-b border-slate-200 bg-white px-4 py-3 lg:px-5">
-        <div className="flex flex-wrap items-center gap-2">
-          <h3 className="min-w-0 flex-1 truncate text-base font-black text-slate-900">{request.Title}</h3>
-          <span className={classNames('rounded-full border px-2.5 py-1 text-[11px] font-semibold', statusStyles[status] || statusStyles.Submitted)}>
-            {status}
-          </span>
-          <span className={classNames('rounded-full border px-2.5 py-1 text-[11px] font-semibold', priorityStyles[priority] || priorityStyles.Routine)}>
-            {priority}
-          </span>
-          {resolved ? (
-            <span className="rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-[11px] font-semibold text-emerald-700">
-              Resolved
-            </span>
-          ) : null}
-        </div>
-        <p className="mt-2 text-sm leading-6 text-slate-600">{request.Description}</p>
-        <div className="mt-2 flex flex-wrap gap-x-4 text-xs text-slate-400">
-          <span>{request.Category}</span>
-          <span>{formatDate(request['Date Submitted'] || request.created_at)}</span>
-        </div>
-        {appId != null && String(appId).trim() !== '' ? (
-          <p className="mt-2 text-xs font-medium text-slate-400">Application ID: {String(appId)}</p>
-        ) : null}
-      </div>
-      {hasMeta ? (
-        <div className="max-h-[min(36vh,280px)] shrink-0 overflow-y-auto border-b border-slate-200 bg-white px-4 py-3 lg:px-5">
-          {resolutionSummary && resolved ? (
-            <div className="mb-3 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3">
-              <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-emerald-700">Resolution summary</div>
-              <div className="mt-1 whitespace-pre-wrap text-sm leading-6 text-emerald-900">{resolutionSummary}</div>
-            </div>
-          ) : null}
-          {updateLog ? (
-            <div className="mb-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
-              <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">Update log</div>
-              <div className="mt-1 whitespace-pre-wrap text-sm leading-6 text-slate-700">{updateLog}</div>
-            </div>
-          ) : null}
-          {notes ? (
-            <div className="mb-3 rounded-2xl bg-slate-50 px-4 py-3">
-              <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">Management Notes</div>
-              <div className="mt-1 text-sm text-slate-600">{notes}</div>
-            </div>
-          ) : null}
-          {photo?.url ? (
-            <div>
-              <a
-                href={photo.url}
-                target="_blank"
-                rel="noreferrer"
-                className="inline-flex rounded-full border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 transition hover:border-slate-500"
-              >
-                View attached photo
-              </a>
-            </div>
-          ) : null}
-        </div>
-      ) : null}
-      <RequestThread
-        workOrder={request}
-        residentEmail={residentEmail}
-        onThreadUpdated={onWorkOrderUpdated}
-        embedded
-      />
     </div>
   )
 }
@@ -690,8 +581,10 @@ function WorkOrdersPanel({ resident, requests, onRequestCreated, onWorkOrderUpda
   const [showForm, setShowForm] = useState(false)
   const [selectedId, setSelectedId] = useState(null)
   const [form, setForm] = useState({
-    title: '', category: requestCategories[0], urgency: urgencyOptions[0],
-    preferredEntry: entryOptions[0], description: '',
+    title: '',
+    category: requestCategories[0],
+    urgency: urgencyOptions[1],
+    description: '',
   })
   const [photo, setPhoto] = useState(null)
   const [submitting, setSubmitting] = useState(false)
@@ -724,11 +617,15 @@ function WorkOrdersPanel({ resident, requests, onRequestCreated, onWorkOrderUpda
         if (photo.size > 10 * 1024 * 1024) throw new Error('Keep the photo under 10 MB.')
       }
       const created = await createWorkOrder({
-        resident, title: form.title, category: form.category,
-        urgency: form.urgency, preferredEntry: form.preferredEntry,
-        description: form.description, photoFile: photo || null,
+        resident,
+        title: form.title,
+        category: form.category,
+        urgency: form.urgency === 'Medium' ? 'Routine' : form.urgency,
+        preferredEntry: 'Anytime',
+        description: form.description,
+        photoFile: photo || null,
       })
-      setForm({ title: '', category: requestCategories[0], urgency: urgencyOptions[0], preferredEntry: entryOptions[0], description: '' })
+      setForm({ title: '', category: requestCategories[0], urgency: urgencyOptions[1], description: '' })
       setPhoto(null)
       setSuccess('Request submitted.')
       setShowForm(false)
@@ -741,159 +638,223 @@ function WorkOrdersPanel({ resident, requests, onRequestCreated, onWorkOrderUpda
   }
 
   return (
-    <SectionCard
-      title="Work Orders"
-      description="Submit and track requests. Resolved items stay here for 7 days after the last update date in Airtable."
-      action={
-        <button type="button"
-          onClick={() => { setShowForm((v) => !v); setError(''); setSuccess('') }}
-          className="rounded-full border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 transition hover:border-slate-500">
-          {showForm ? 'Cancel' : '+ New request'}
-        </button>
-      }
-    >
-      {showForm && (
-        <form onSubmit={handleSubmit} className="mb-8 grid gap-4 border-b border-slate-100 pb-8 sm:grid-cols-2">
-          <div className="sm:col-span-2">
-            <label className="mb-2 block text-sm font-semibold text-slate-700">Issue Title</label>
-            <input required value={form.title}
-              onChange={(e) => setForm((c) => ({ ...c, title: e.target.value }))}
-              className={fieldCls} placeholder="Kitchen sink leaking" />
-          </div>
-          <div>
-            <label className="mb-2 block text-sm font-semibold text-slate-700">Category</label>
-            <select value={form.category} onChange={(e) => setForm((c) => ({ ...c, category: e.target.value }))} className={fieldCls}>
-              {requestCategories.map((o) => <option key={o}>{o}</option>)}
-            </select>
-          </div>
-          <div>
-            <label className="mb-2 block text-sm font-semibold text-slate-700">Urgency</label>
-            <select value={form.urgency} onChange={(e) => setForm((c) => ({ ...c, urgency: e.target.value }))} className={fieldCls}>
-              {urgencyOptions.map((o) => <option key={o}>{o}</option>)}
-            </select>
-          </div>
-          <div className="sm:col-span-2">
-            <label className="mb-2 block text-sm font-semibold text-slate-700">Description</label>
-            <textarea required rows={4} value={form.description}
-              onChange={(e) => setForm((c) => ({ ...c, description: e.target.value }))}
-              className={fieldCls} placeholder="Describe the issue and its location." />
-          </div>
-          <div>
-            <label className="mb-2 block text-sm font-semibold text-slate-700">Preferred Entry</label>
-            <select value={form.preferredEntry} onChange={(e) => setForm((c) => ({ ...c, preferredEntry: e.target.value }))} className={fieldCls}>
-              {entryOptions.map((o) => <option key={o}>{o}</option>)}
-            </select>
-          </div>
-          <div>
-            <label className="mb-2 block text-sm font-semibold text-slate-700">Photo (optional)</label>
-            <label className="flex min-h-[112px] cursor-pointer flex-col items-center justify-center rounded-2xl border border-dashed border-slate-300 bg-slate-50 px-4 py-4 text-center transition hover:border-slate-900">
-              <span className="text-sm font-semibold text-slate-700">{photo ? photo.name : 'Upload photo'}</span>
-              <span className="mt-1 text-xs text-slate-400">JPG, PNG, or HEIC · max 10 MB</span>
-              <input type="file" accept="image/*" onChange={(e) => setPhoto(e.target.files?.[0] || null)} className="hidden" />
-            </label>
-          </div>
-          {success ? <div className="sm:col-span-2 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">{success}</div> : null}
-          {error ? <div className="sm:col-span-2 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div> : null}
-          <div className="sm:col-span-2">
-            <button type="submit" disabled={submitting}
-              className="rounded-full bg-slate-900 px-6 py-3 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:opacity-50">
-              {submitting ? 'Submitting...' : 'Submit request'}
-            </button>
-          </div>
-        </form>
-      )}
-
-      {requests.length === 0 && !showForm ? (
-        <div className="flex flex-col items-center gap-4 py-12 text-center">
-          <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-slate-100 text-2xl">📋</div>
-          <div>
-            <p className="text-base font-semibold text-slate-900">No work orders yet</p>
-            <p className="mt-1 text-sm text-slate-500">Submit a request and it'll appear here with status updates.</p>
-          </div>
+    <div className="space-y-6">
+      <PortalOpsCard
+        title="Work Orders"
+        description="Submit a request fast, then track updates and visit times in one place."
+        action={
+          <button
+            type="button"
+            onClick={() => {
+              setShowForm((value) => !value)
+              setError('')
+              setSuccess('')
+            }}
+            className="rounded-full bg-axis px-5 py-3 text-sm font-semibold text-white transition hover:brightness-105"
+          >
+            {showForm ? 'Close form' : 'Submit Work Order'}
+          </button>
+        }
+      >
+        <div className="grid gap-4 lg:grid-cols-3">
+          <PortalOpsMetric
+            label="Open requests"
+            value={requests.filter((item) => isWorkOrderOpen(item)).length}
+            hint="Still waiting on review, scheduling, or repair."
+            tone="amber"
+          />
+          <PortalOpsMetric
+            label="Scheduled"
+            value={requests.filter((item) => residentWorkOrderStatusLabel(item) === 'Scheduled').length}
+            hint="A visit time has been added."
+            tone="axis"
+          />
+          <PortalOpsMetric
+            label="Completed"
+            value={requests.filter((item) => residentWorkOrderStatusLabel(item) === 'Completed' || residentWorkOrderStatusLabel(item) === 'Closed').length}
+            hint="Resolved and visible here for a few days."
+            tone="emerald"
+          />
         </div>
-      ) : (
-        <GmailStyleInboxLayout
-          left={
-            <>
-              <div className="shrink-0 border-b border-slate-100 bg-white px-4 py-3">
-                <h3 className="text-sm font-black text-slate-900">Your requests</h3>
-                <p className="mt-0.5 text-xs text-slate-500">Select one to read details and reply</p>
-              </div>
-              <div className="min-h-0 flex-1 overflow-y-auto bg-white">
-                {requests.map((request) => {
-                  const status = request.Status || 'Submitted'
-                  const priority = request.Priority || 'Routine'
-                  const resolved = isWorkOrderResolved(request)
-                  return (
-                    <InboxThreadRow
-                      key={request.id}
-                      title={request.Title || 'Request'}
-                      subtitle={`${status} · ${priority}${resolved ? ' · Resolved' : ''}`}
-                      preview={request.Description || '—'}
-                      time={formatDate(request['Date Submitted'] || request.created_at)}
-                      selected={selectedId === request.id}
-                      onClick={() => setSelectedId(request.id)}
-                    />
-                  )
-                })}
-              </div>
-            </>
-          }
-          right={
-            selectedRequest ? (
-              <WorkOrderReadingPane
-                request={selectedRequest}
-                residentEmail={resident.Email}
-                onWorkOrderUpdated={onWorkOrderUpdated}
+
+        {showForm ? (
+          <form onSubmit={handleSubmit} className="mt-6 grid gap-4 border-t border-slate-100 pt-6 sm:grid-cols-2">
+            <div className="sm:col-span-2">
+              <label className="mb-2 block text-sm font-semibold text-slate-700">Title</label>
+              <input
+                required
+                value={form.title}
+                onChange={(e) => setForm((current) => ({ ...current, title: e.target.value }))}
+                className={fieldCls}
+                placeholder="Kitchen sink leaking"
               />
-            ) : (
-              <div className="flex flex-1 items-center justify-center px-4 py-12 text-sm text-slate-500">
-                Select a request
-              </div>
-            )
-          }
-        />
-      )}
-    </SectionCard>
-  )
-}
-
-// ─── Announcements ────────────────────────────────────────────────────────────
-
-function AnnouncementsPanel({ items }) {
-  return (
-    <SectionCard title="Announcements" description="Updates from the Axis team.">
-      {items.length === 0 ? (
-        <p className="text-sm text-slate-500">No announcements right now.</p>
-      ) : (
-        <div className="space-y-4">
-          {items.map((item) => (
-            <div key={item.id} className="rounded-[24px] border border-slate-200 p-5">
-              <div className="flex flex-wrap items-center gap-2">
-                <h3 className="text-base font-bold text-slate-900">{item.Title}</h3>
-                {item.Pinned ? (
-                  <span className="rounded-full border border-sky-200 bg-sky-50 px-2.5 py-1 text-[11px] font-semibold text-sky-700">Pinned</span>
-                ) : null}
-                {item.Priority ? (
-                  <span className={classNames('rounded-full border px-2.5 py-1 text-[11px] font-semibold', priorityStyles[item.Priority] || priorityStyles.Routine)}>
-                    {item.Priority}
-                  </span>
-                ) : null}
-              </div>
-              {item['Short Summary'] ? <p className="mt-2 text-sm font-medium text-slate-500">{item['Short Summary']}</p> : null}
-              <p className="mt-2 text-sm leading-7 text-slate-600">{item.Message}</p>
-              <div className="mt-2 text-xs text-slate-400">{formatDate(item['Start Date'] || item['Date Posted'] || item.CreatedAt)}</div>
-              {item['CTA Text'] && item['CTA Link'] ? (
-                <a href={item['CTA Link']} target="_blank" rel="noreferrer"
-                  className="mt-3 inline-flex rounded-full border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 transition hover:border-slate-500">
-                  {item['CTA Text']}
-                </a>
-              ) : null}
             </div>
-          ))}
-        </div>
-      )}
-    </SectionCard>
+            <div>
+              <label className="mb-2 block text-sm font-semibold text-slate-700">Category</label>
+              <select
+                value={form.category}
+                onChange={(e) => setForm((current) => ({ ...current, category: e.target.value }))}
+                className={fieldCls}
+              >
+                {requestCategories.map((option) => (
+                  <option key={option}>{option}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="mb-2 block text-sm font-semibold text-slate-700">Priority</label>
+              <select
+                value={form.urgency}
+                onChange={(e) => setForm((current) => ({ ...current, urgency: e.target.value }))}
+                className={fieldCls}
+              >
+                {urgencyOptions.map((option) => (
+                  <option key={option}>{option}</option>
+                ))}
+              </select>
+            </div>
+            <div className="sm:col-span-2">
+              <label className="mb-2 block text-sm font-semibold text-slate-700">Description</label>
+              <textarea
+                required
+                rows={5}
+                value={form.description}
+                onChange={(e) => setForm((current) => ({ ...current, description: e.target.value }))}
+                className={fieldCls}
+                placeholder="What is happening, where is it, and anything the team should know before they arrive."
+              />
+            </div>
+            <div className="sm:col-span-2">
+              <label className="mb-2 block text-sm font-semibold text-slate-700">Photo (optional)</label>
+              <label className="flex min-h-[120px] cursor-pointer flex-col items-center justify-center rounded-[24px] border border-dashed border-slate-300 bg-slate-50 px-4 py-5 text-center transition hover:border-axis">
+                <span className="text-sm font-semibold text-slate-700">{photo ? photo.name : 'Upload photo'}</span>
+                <span className="mt-1 text-xs text-slate-400">JPG, PNG, or HEIC · max 10 MB</span>
+                <input type="file" accept="image/*" onChange={(e) => setPhoto(e.target.files?.[0] || null)} className="hidden" />
+              </label>
+            </div>
+            {success ? <div className="sm:col-span-2 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">{success}</div> : null}
+            {error ? <div className="sm:col-span-2 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div> : null}
+            <div className="sm:col-span-2">
+              <button
+                type="submit"
+                disabled={submitting}
+                className="rounded-full bg-slate-900 px-6 py-3 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:opacity-50"
+              >
+                {submitting ? 'Submitting...' : 'Submit Work Order'}
+              </button>
+            </div>
+          </form>
+        ) : null}
+
+        {requests.length === 0 ? (
+          <div className="mt-6">
+            <PortalOpsEmptyState
+              icon="🛠"
+              title="No work orders yet"
+              description="When you submit a maintenance request, it will appear here with status updates."
+            />
+          </div>
+        ) : (
+          <div className="mt-6 grid gap-6 xl:grid-cols-[360px_minmax(0,1fr)]">
+            <div className="overflow-hidden rounded-[24px] border border-slate-200 bg-white">
+              <div className="border-b border-slate-100 px-5 py-4">
+                <h3 className="text-sm font-black text-slate-900">My Work Orders</h3>
+              </div>
+              <div className="divide-y divide-slate-100">
+                {requests.map((request) => (
+                  <button
+                    key={request.id}
+                    type="button"
+                    onClick={() => setSelectedId(request.id)}
+                    className={classNames(
+                      'flex w-full flex-col gap-2 px-5 py-4 text-left transition',
+                      selectedId === request.id ? 'bg-axis/5' : 'hover:bg-slate-50',
+                    )}
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <div className="truncate text-sm font-bold text-slate-900">{request.Title || 'Work order'}</div>
+                        <div className="mt-1 text-xs text-slate-400">
+                          {request.Category || 'General'} · {formatDate(request['Date Submitted'] || request.created_at)}
+                        </div>
+                      </div>
+                      <PortalOpsStatusBadge tone={residentWorkOrderStatusTone(request)}>
+                        {residentWorkOrderStatusLabel(request)}
+                      </PortalOpsStatusBadge>
+                    </div>
+                    <p className="line-clamp-2 text-sm text-slate-500">
+                      {stripWorkOrderPortalSubmitterLine(request.Description) || 'No description added.'}
+                    </p>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {selectedRequest ? (
+              <PortalOpsCard
+                title={selectedRequest.Title || 'Work order'}
+                description={`${selectedRequest.Category || 'General'} · Submitted ${formatDate(selectedRequest['Date Submitted'] || selectedRequest.created_at)}`}
+              >
+                <div className="flex flex-wrap items-center gap-2">
+                  <PortalOpsStatusBadge tone={residentWorkOrderStatusTone(selectedRequest)}>
+                    {residentWorkOrderStatusLabel(selectedRequest)}
+                  </PortalOpsStatusBadge>
+                  <PortalOpsStatusBadge tone={selectedRequest.Priority === 'Urgent' || selectedRequest.Priority === 'Emergency' ? 'red' : 'slate'}>
+                    {selectedRequest.Priority || 'Medium'}
+                  </PortalOpsStatusBadge>
+                  {parseWorkOrderSchedule(selectedRequest) ? (
+                    <PortalOpsStatusBadge tone="axis">
+                      Scheduled {parseWorkOrderSchedule(selectedRequest)}
+                    </PortalOpsStatusBadge>
+                  ) : null}
+                </div>
+
+                <div className="mt-5 rounded-[24px] border border-slate-200 bg-slate-50 px-5 py-4">
+                  <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">Issue details</div>
+                  <p className="mt-2 whitespace-pre-wrap text-sm leading-7 text-slate-700">
+                    {stripWorkOrderPortalSubmitterLine(selectedRequest.Description) || 'No description added.'}
+                  </p>
+                </div>
+
+                {selectedRequest['Resolution Summary'] || selectedRequest['Management Notes'] ? (
+                  <div className="mt-5 grid gap-4 lg:grid-cols-2">
+                    {selectedRequest['Resolution Summary'] ? (
+                      <div className="rounded-[24px] border border-emerald-200 bg-emerald-50 px-5 py-4">
+                        <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-emerald-700">Completion note</div>
+                        <p className="mt-2 whitespace-pre-wrap text-sm leading-7 text-emerald-900">
+                          {selectedRequest['Resolution Summary']}
+                        </p>
+                      </div>
+                    ) : null}
+                    {selectedRequest['Management Notes'] && !selectedRequest['Resolution Summary'] ? (
+                      <div className="rounded-[24px] border border-slate-200 bg-white px-5 py-4">
+                        <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">Team notes</div>
+                        <p className="mt-2 whitespace-pre-wrap text-sm leading-7 text-slate-700">
+                          {selectedRequest['Management Notes']}
+                        </p>
+                      </div>
+                    ) : null}
+                  </div>
+                ) : null}
+
+                <div className="mt-5 overflow-hidden rounded-[24px] border border-slate-200">
+                  <div className="border-b border-slate-200 bg-white px-5 py-4">
+                    <div className="text-sm font-black text-slate-900">Notes to the team</div>
+                    <div className="mt-1 text-xs text-slate-400">Appends to the work order update log (no separate message thread).</div>
+                  </div>
+                  <WorkOrderNotesComposer
+                    workOrder={selectedRequest}
+                    residentEmail={resident.Email}
+                    onUpdated={onWorkOrderUpdated}
+                    embedded
+                  />
+                </div>
+              </PortalOpsCard>
+            ) : null}
+          </div>
+        )}
+      </PortalOpsCard>
+    </div>
   )
 }
 
@@ -1027,21 +988,79 @@ function PaymentsPanel({ resident, onResidentUpdated, highlightCategory }) {
       .finally(() => setLoading(false))
   }, [resident])
 
-  const unpaidPayments = payments.filter((p) => p.Status !== 'Paid')
-  const outstanding = unpaidPayments.reduce((sum, p) => sum + (Number(p.Amount) || 0), 0)
-  const rentPayments = unpaidPayments.filter((p) => getPaymentKind(p) === 'rent')
-  const feePayments = unpaidPayments.filter((p) => getPaymentKind(p) === 'fee')
-  const nextDue = rentPayments[0] || unpaidPayments.find((p) => p.Status === 'Pending' || p.Status === 'Overdue')
-  const feesDue = feePayments.reduce((sum, p) => sum + (Number(p.Amount) || 0), 0)
-  const paymentUrl = useMemo(() => resolveResidentPaymentUrl(resident, payments), [resident, payments])
-  const stripeCustomerId = useMemo(() => getResidentStripeCustomerId(resident, payments), [resident, payments])
+  const amountDueForRecord = useCallback((payment) => {
+    const direct = Number(payment?.Amount ?? payment?.['Amount Due'] ?? payment?.Total ?? 0)
+    return Number.isFinite(direct) ? direct : 0
+  }, [])
+
+  const amountPaidForRecord = useCallback((payment) => {
+    const explicit = Number(payment?.['Amount Paid'] ?? payment?.['Paid Amount'] ?? payment?.Paid ?? payment?.['Collected Amount'])
+    if (Number.isFinite(explicit) && explicit >= 0) return explicit
+    const rawStatus = String(payment?.Status || '').trim().toLowerCase()
+    return rawStatus === 'paid' ? amountDueForRecord(payment) : 0
+  }, [amountDueForRecord])
+
+  const balanceForRecord = useCallback((payment) => {
+    const explicit = Number(payment?.Balance ?? payment?.['Balance Due'] ?? payment?.Outstanding)
+    if (Number.isFinite(explicit)) return Math.max(0, explicit)
+    return Math.max(0, amountDueForRecord(payment) - amountPaidForRecord(payment))
+  }, [amountDueForRecord, amountPaidForRecord])
+
+  const paymentStatusForRecord = useCallback((payment) => {
+    const balance = balanceForRecord(payment)
+    const due = parseDisplayDate(payment?.['Due Date'])
+    const today = new Date()
+    today.setHours(0, 0, 0, 0)
+    if (balance <= 0) return 'Paid'
+    if (balance < amountDueForRecord(payment)) return 'Partial'
+    if (due) {
+      const diffDays = Math.ceil((due.getTime() - today.getTime()) / 86400000)
+      if (diffDays < 0) return 'Overdue'
+      if (diffDays <= 5) return 'Due Soon'
+    }
+    return 'Unpaid'
+  }, [amountDueForRecord, balanceForRecord])
+
+  const paymentToneForStatus = useCallback((status) => {
+    if (status === 'Paid') return 'emerald'
+    if (status === 'Partial') return 'axis'
+    if (status === 'Due Soon') return 'amber'
+    if (status === 'Overdue') return 'red'
+    return 'slate'
+  }, [])
+
+  const sortedPayments = useMemo(
+    () => [...payments].sort((a, b) => new Date(a['Due Date'] || a.created_at || 0) - new Date(b['Due Date'] || b.created_at || 0)),
+    [payments],
+  )
+
+  const rentPayments = useMemo(() => sortedPayments.filter((payment) => getPaymentKind(payment) === 'rent'), [sortedPayments])
+  const feePayments = useMemo(() => sortedPayments.filter((payment) => getPaymentKind(payment) === 'fee'), [sortedPayments])
+  const unpaidRentPayments = useMemo(
+    () => rentPayments.filter((payment) => balanceForRecord(payment) > 0),
+    [balanceForRecord, rentPayments],
+  )
+  const currentDuePayment = unpaidRentPayments[0] || null
+  const currentStatus = currentDuePayment ? paymentStatusForRecord(currentDuePayment) : 'Paid'
+  const currentAmountDue = currentDuePayment ? balanceForRecord(currentDuePayment) : 0
   const fallbackRentAmount = useMemo(() => getRoomMonthlyRent(resident.House, resident['Unit Number']), [resident])
-  const utilitiesAmount = useMemo(() => getUtilitiesFee(resident.House), [resident])
-  const effectiveNextDue = nextDue || (fallbackRentAmount > 0 ? {
-    Amount: fallbackRentAmount, Month: 'Current rent',
-    Notes: 'Calculated from your current house and room assignment.',
+  const effectiveCurrentDue = currentDuePayment || (fallbackRentAmount > 0 ? {
+    Amount: fallbackRentAmount,
+    Month: 'Current rent',
+    'Due Date': resident['Next Rent Due'] || '',
   } : null)
-  const leaseExtensionAmount = fallbackRentAmount + utilitiesAmount
+  const upcomingPayments = useMemo(
+    () => unpaidRentPayments.filter((payment) => payment !== currentDuePayment),
+    [currentDuePayment, unpaidRentPayments],
+  )
+  const paymentHistory = useMemo(
+    () => [...rentPayments].filter((payment) => paymentStatusForRecord(payment) === 'Paid').sort((a, b) => new Date(b['Paid Date'] || b['Due Date'] || 0) - new Date(a['Paid Date'] || a['Due Date'] || 0)),
+    [paymentStatusForRecord, rentPayments],
+  )
+  const feeChargeRows = useMemo(
+    () => [...feePayments].sort((a, b) => new Date(a['Due Date'] || a.created_at || 0) - new Date(b['Due Date'] || b.created_at || 0)),
+    [feePayments],
+  )
 
   async function launchCheckout({ amount, items, description, category, paymentRecordId }) {
     setActionError('')
@@ -1077,32 +1096,8 @@ function PaymentsPanel({ resident, onResidentUpdated, highlightCategory }) {
     }
   }
 
-  async function openPortal() {
-    if (!stripeCustomerId) {
-      if (paymentUrl) { window.location.href = paymentUrl; return }
-      setActionError('A Stripe customer ID is needed before the billing portal can open.')
-      return
-    }
-    setActionError('')
-    setActionLoading('portal')
-    try {
-      const response = await fetch('/api/stripe', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'portal', customerId: stripeCustomerId }),
-      })
-      const data = await readJsonResponse(response)
-      if (!response.ok) throw new Error(data.error || 'Unable to open customer portal.')
-      window.location.href = data.url
-    } catch (err) {
-      setActionError(err.message || 'Unable to open the billing portal.')
-    } finally {
-      setActionLoading('')
-    }
-  }
-
   return (
-    <SectionCard title="Payments" description="Pay rent, clear fees, and review your payment history.">
+    <PortalOpsCard title="Payments" description="See what is due, pay it fast, and review past charges without extra clutter.">
       {loading ? <p className="text-sm text-slate-400">Loading payments...</p> : null}
       {!loading && (
         <>
@@ -1112,133 +1107,36 @@ function PaymentsPanel({ resident, onResidentUpdated, highlightCategory }) {
             </div>
           ) : null}
 
-          <div className="rounded-[24px] border border-slate-200 bg-[linear-gradient(135deg,#ffffff_0%,#f8fafc_100%)] p-6">
+          <div className="rounded-[28px] border border-slate-200 bg-[linear-gradient(135deg,#ffffff_0%,#f8fbff_100%)] p-6 sm:p-7">
             <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
               <div>
-                <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">Current Due</div>
+                <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">Rent Due</div>
                 <div className="mt-3 text-4xl font-black tracking-tight text-slate-900">
-                  {effectiveNextDue ? formatMoney(effectiveNextDue.Amount) : '$0'}
+                  {effectiveCurrentDue ? formatMoney(currentDuePayment ? currentAmountDue : effectiveCurrentDue.Amount) : '$0'}
                 </div>
                 <div className="mt-2 text-sm leading-6 text-slate-500">
-                  {effectiveNextDue
-                    ? `${effectiveNextDue.Month || 'Current rent'}${effectiveNextDue['Due Date'] ? ` · Due ${formatDate(effectiveNextDue['Due Date'])}` : ''}`
-                    : 'No rent currently due'}
+                  {effectiveCurrentDue?.['Due Date'] ? `Due Date: ${formatDate(effectiveCurrentDue['Due Date'])}` : 'No rent currently due'}
+                </div>
+                <div className="mt-3">
+                  <PortalOpsStatusBadge tone={paymentToneForStatus(currentStatus)}>
+                    {currentStatus}
+                  </PortalOpsStatusBadge>
                 </div>
               </div>
               <div className="flex flex-wrap gap-3">
-                <button type="button"
-                  disabled={!effectiveNextDue || actionLoading === 'rent'}
+                <button
+                  type="button"
+                  disabled={!effectiveCurrentDue || actionLoading === 'rent'}
                   onClick={() => launchCheckout({
-                    amount: Number(effectiveNextDue?.Amount || 0),
-                    description: effectiveNextDue?.Month ? `Rent payment - ${effectiveNextDue.Month}` : 'Rent payment',
-                    category: 'rent', paymentRecordId: effectiveNextDue?.id,
+                    amount: Number(currentDuePayment ? currentAmountDue : effectiveCurrentDue?.Amount || 0),
+                    description: effectiveCurrentDue?.Month ? `Rent payment - ${effectiveCurrentDue.Month}` : 'Rent payment',
+                    category: 'rent',
+                    paymentRecordId: effectiveCurrentDue?.id,
                   })}
-                  className="rounded-full bg-slate-900 px-5 py-3 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50">
-                  {actionLoading === 'rent' ? 'Opening...' : 'Pay rent'}
+                  className="rounded-full bg-axis px-6 py-3 text-sm font-semibold text-white transition hover:brightness-105 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {actionLoading === 'rent' ? 'Opening...' : 'Pay Now'}
                 </button>
-                <button type="button"
-                  disabled={actionLoading === 'portal'}
-                  onClick={openPortal}
-                  className="rounded-full border border-slate-300 bg-white px-5 py-3 text-sm font-semibold text-slate-700 transition hover:border-slate-500 disabled:opacity-50">
-                  {actionLoading === 'portal' ? 'Opening...' : 'Billing portal'}
-                </button>
-              </div>
-            </div>
-
-            <div className="mt-5 grid gap-3 sm:grid-cols-3">
-              <div className="rounded-2xl border border-slate-200 bg-white px-4 py-4">
-                <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">Outstanding Balance</div>
-                <div className={classNames('mt-2 text-2xl font-black', outstanding > 0 ? 'text-red-600' : 'text-emerald-600')}>
-                  {outstanding > 0 ? `$${outstanding.toLocaleString()}` : '$0'}
-                </div>
-              </div>
-              <div className="rounded-2xl border border-slate-200 bg-white px-4 py-4">
-                <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">Next Due</div>
-                <div className="mt-2 text-lg font-black text-slate-900">
-                  {effectiveNextDue ? effectiveNextDue.Month || formatDate(effectiveNextDue['Due Date']) : '—'}
-                </div>
-                {effectiveNextDue?.['Due Date'] && <div className="mt-0.5 text-xs text-slate-400">{formatDate(effectiveNextDue['Due Date'])}</div>}
-              </div>
-              <div className="rounded-2xl border border-slate-200 bg-white px-4 py-4">
-                <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">Payment Records</div>
-                <div className="mt-2 text-lg font-black text-slate-900">{payments.length}</div>
-                <div className="mt-0.5 text-xs text-slate-400">{feePayments.length} open fee item{feePayments.length === 1 ? '' : 's'}</div>
-              </div>
-            </div>
-          </div>
-
-          <div className="mt-4 grid gap-4 lg:grid-cols-2">
-            <div className="rounded-[24px] border border-slate-200 bg-white p-5">
-              <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">Other Fees & Fines</div>
-              <h3 className="mt-2 text-xl font-black text-slate-900">{formatMoney(feesDue)}</h3>
-              <div className="mt-3 flex flex-wrap items-end justify-between gap-4">
-                <div className="text-sm text-slate-500">
-                  {feePayments.length > 0 ? `${feePayments.length} open item${feePayments.length === 1 ? '' : 's'}` : 'No open fees or fines'}
-                </div>
-                <button type="button"
-                  disabled={feesDue <= 0 || actionLoading === 'fees'}
-                  onClick={() => launchCheckout({
-                    amount: feesDue, description: 'Resident fees and fines',
-                    category: 'fees', paymentRecordId: feePayments.map((p) => p.id).join(','),
-                  })}
-                  className="rounded-full border border-slate-300 px-5 py-3 text-sm font-semibold text-slate-700 transition hover:border-slate-500 disabled:opacity-50">
-                  {actionLoading === 'fees' ? 'Opening...' : 'Pay fees'}
-                </button>
-              </div>
-              {feePayments.length > 0 ? (
-                <div className="mt-4 space-y-2">
-                  {feePayments.slice(0, 4).map((p) => (
-                    <div key={p.id} className="flex items-center justify-between gap-3 rounded-2xl bg-slate-50 px-4 py-3">
-                      <div>
-                        <div className="text-sm font-semibold text-slate-900">{p.Month || p.Type || 'Fee'}</div>
-                        {p.Notes ? <div className="mt-0.5 text-xs text-slate-400">{p.Notes}</div> : null}
-                      </div>
-                      <div className="text-sm font-bold text-slate-900">{formatMoney(p.Amount)}</div>
-                    </div>
-                  ))}
-                </div>
-              ) : null}
-            </div>
-
-            <div className={classNames(
-              'rounded-[24px] border bg-slate-50 p-5 transition',
-              highlightCategory === 'extension' ? 'border-axis/50 ring-2 ring-axis/20' : 'border-slate-200'
-            )}>
-              <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">Lease Extension</div>
-              <h3 className="mt-2 text-xl font-black text-slate-900">{formatMoney(leaseExtensionAmount)}</h3>
-              <p className="mt-3 text-sm leading-6 text-slate-500">
-                Continue your lease by paying the next month of rent and utilities.
-              </p>
-              <div className="mt-4 space-y-2 rounded-2xl bg-white px-4 py-4 text-sm text-slate-600">
-                <div className="flex items-center justify-between gap-3">
-                  <span>Next month rent</span>
-                  <span className="font-semibold text-slate-900">{formatMoney(fallbackRentAmount)}</span>
-                </div>
-                <div className="flex items-center justify-between gap-3">
-                  <span>Utilities</span>
-                  <span className="font-semibold text-slate-900">{formatMoney(utilitiesAmount)}</span>
-                </div>
-                <div className="flex items-center justify-between gap-3 border-t border-slate-100 pt-2">
-                  <span className="font-semibold text-slate-900">Total due</span>
-                  <span className="text-base font-black text-slate-900">{formatMoney(leaseExtensionAmount)}</span>
-                </div>
-              </div>
-              <button type="button"
-                disabled={leaseExtensionAmount <= 0 || actionLoading === 'extension'}
-                onClick={() => launchCheckout({
-                  amount: leaseExtensionAmount,
-                  items: [
-                    { name: 'Next month rent', amount: fallbackRentAmount },
-                    { name: 'Utilities', amount: utilitiesAmount },
-                  ].filter((i) => i.amount > 0),
-                  description: 'Lease extension payment',
-                  category: 'extension',
-                })}
-                className="mt-4 rounded-full bg-slate-900 px-5 py-3 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:opacity-50">
-                {actionLoading === 'extension' ? 'Opening...' : 'Pay to extend lease'}
-              </button>
-              <div className="mt-3 text-xs text-slate-400">
-                {resident.Email} · {[resident.House, resident['Unit Number']].filter(Boolean).join(' · ') || 'House / unit not set'}
               </div>
             </div>
           </div>
@@ -1247,27 +1145,99 @@ function PaymentsPanel({ resident, onResidentUpdated, highlightCategory }) {
             <div className="mt-4 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{actionError}</div>
           ) : null}
 
-          {payments.length === 0 ? (
-            <p className="mt-6 text-sm text-slate-400">No payment records yet. Contact Axis if you have questions about your balance.</p>
-          ) : (
-            <div className="mt-6 space-y-3">
-              {payments.map((p) => (
-                <div key={p.id} className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-200 px-4 py-3">
-                  <div>
-                    <div className="font-semibold text-slate-900">{p.Month || 'Payment'}</div>
-                    {p.Notes && <div className="mt-0.5 text-xs text-slate-400">{p.Notes}</div>}
+          <div className="mt-6 grid gap-6 xl:grid-cols-[minmax(0,1.2fr)_minmax(0,0.8fr)]">
+            <div className="space-y-6">
+              <PortalOpsCard title="Upcoming Payments" description="Upcoming rent that still needs payment.">
+                {upcomingPayments.length === 0 ? (
+                  <PortalOpsEmptyState
+                    icon="📅"
+                    title="No upcoming payments"
+                    description="Nothing else is scheduled after your current due amount."
+                  />
+                ) : (
+                  <div className="space-y-3">
+                    {upcomingPayments.map((payment) => {
+                      const status = paymentStatusForRecord(payment)
+                      return (
+                        <div key={payment.id} className="flex flex-wrap items-center justify-between gap-3 rounded-[24px] border border-slate-200 px-4 py-4">
+                          <div>
+                            <div className="text-sm font-bold text-slate-900">{payment.Month || 'Rent payment'}</div>
+                            <div className="mt-1 text-sm text-slate-500">Due {formatDate(payment['Due Date'])}</div>
+                          </div>
+                          <div className="flex items-center gap-3">
+                            <div className="text-sm font-bold text-slate-900">{formatMoney(balanceForRecord(payment))}</div>
+                            <PortalOpsStatusBadge tone={paymentToneForStatus(status)}>{status}</PortalOpsStatusBadge>
+                          </div>
+                        </div>
+                      )
+                    })}
                   </div>
-                  <div className="flex items-center gap-3">
-                    <div className="text-sm font-bold text-slate-900">${Number(p.Amount || 0).toLocaleString()}</div>
-                    <span className={classNames('rounded-full border px-2.5 py-1 text-[11px] font-semibold', paymentStatusStyles[p.Status] || paymentStatusStyles.Pending)}>
-                      {p.Status || 'Pending'}
-                    </span>
-                    {p['Paid Date'] && <div className="text-xs text-slate-400">Paid {formatDate(p['Paid Date'])}</div>}
+                )}
+              </PortalOpsCard>
+
+              <PortalOpsCard title="Past Payments" description="Your recent paid rent history.">
+                {paymentHistory.length === 0 ? (
+                  <PortalOpsEmptyState icon="🧾" title="No past payments yet" description="Paid rent will show up here once the first charge is settled." />
+                ) : (
+                  <div className="space-y-3">
+                    {paymentHistory.map((payment) => (
+                      <div key={payment.id} className="flex flex-wrap items-center justify-between gap-3 rounded-[24px] border border-slate-200 px-4 py-4">
+                        <div>
+                          <div className="text-sm font-bold text-slate-900">{payment.Month || 'Rent payment'}</div>
+                          <div className="mt-1 text-sm text-slate-500">
+                            {payment['Paid Date'] ? `Paid ${formatDate(payment['Paid Date'])}` : `Due ${formatDate(payment['Due Date'])}`}
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-3">
+                          <div className="text-sm font-bold text-slate-900">{formatMoney(amountDueForRecord(payment))}</div>
+                          <PortalOpsStatusBadge tone="emerald">Paid</PortalOpsStatusBadge>
+                        </div>
+                      </div>
+                    ))}
                   </div>
-                </div>
-              ))}
+                )}
+              </PortalOpsCard>
             </div>
-          )}
+
+            <PortalOpsCard title="Fines & Extra Charges" description="Fees, fines, or other non-rent charges are listed separately here.">
+              {feeChargeRows.length === 0 ? (
+                <PortalOpsEmptyState
+                  icon="✅"
+                  title="No extra charges"
+                  description="There are no fines or additional charges on your account right now."
+                />
+              ) : (
+                <div className="space-y-3">
+                  {feeChargeRows.map((payment) => {
+                    const status = paymentStatusForRecord(payment)
+                    return (
+                      <div
+                        key={payment.id}
+                        className={classNames(
+                          'rounded-[24px] border px-4 py-4',
+                          highlightCategory === 'extension' ? 'border-axis/40 bg-axis/5' : 'border-slate-200',
+                        )}
+                      >
+                        <div className="flex flex-wrap items-center justify-between gap-3">
+                          <div>
+                            <div className="text-sm font-bold text-slate-900">{payment.Month || payment.Type || 'Extra charge'}</div>
+                            <div className="mt-1 text-sm text-slate-500">
+                              {payment['Due Date'] ? `Due ${formatDate(payment['Due Date'])}` : 'Extra charge'}
+                            </div>
+                            {payment.Notes ? <div className="mt-1 text-xs text-slate-400">{payment.Notes}</div> : null}
+                          </div>
+                          <div className="flex items-center gap-3">
+                            <div className="text-sm font-bold text-slate-900">{formatMoney(balanceForRecord(payment) || amountDueForRecord(payment))}</div>
+                            <PortalOpsStatusBadge tone={paymentToneForStatus(status)}>{status}</PortalOpsStatusBadge>
+                          </div>
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+            </PortalOpsCard>
+          </div>
 
           <EmbeddedStripeCheckout
             open={Boolean(embeddedCheckout)}
@@ -1278,7 +1248,7 @@ function PaymentsPanel({ resident, onResidentUpdated, highlightCategory }) {
           />
         </>
       )}
-    </SectionCard>
+    </PortalOpsCard>
   )
 }
 
@@ -1556,7 +1526,6 @@ function Dashboard({ resident, onResidentUpdated, onSignOut }) {
   const [tab, setTab] = useState('workorders')
   const [paymentFocus, setPaymentFocus] = useState('')
   const [requests, setRequests] = useState([])
-  const [announcements, setAnnouncements] = useState([])
   const [loading, setLoading] = useState(true)
 
   const visibleWorkOrders = useMemo(
@@ -1572,12 +1541,8 @@ function Dashboard({ resident, onResidentUpdated, onSignOut }) {
   const loadData = useCallback(async () => {
     setLoading(true)
     try {
-      const [nextRequests, nextAnnouncements] = await Promise.all([
-        getWorkOrdersForResident(resident).catch(() => []),
-        getAnnouncements().catch(() => []),
-      ])
+      const nextRequests = await getWorkOrdersForResident(resident).catch(() => [])
       setRequests(nextRequests)
-      setAnnouncements(nextAnnouncements.filter((item) => announcementMatchesResident(item, resident)))
     } finally {
       setLoading(false)
     }
@@ -1585,20 +1550,12 @@ function Dashboard({ resident, onResidentUpdated, onSignOut }) {
 
   useEffect(() => {
     loadData()
-    const interval = setInterval(async () => {
-      try {
-        const next = await getAnnouncements()
-        setAnnouncements(next.filter((item) => announcementMatchesResident(item, resident)))
-      } catch {}
-    }, 60_000)
-    return () => clearInterval(interval)
-  }, [loadData, resident])
+  }, [loadData])
 
   const TABS = [
     ['workorders', 'Work Orders'],
     ['leasing', 'Leasing'],
     ['payments', 'Payments'],
-    ['announcements', 'Announcements'],
     ['inbox', 'Inbox'],
     ['profile', 'Profile'],
   ]
@@ -1647,9 +1604,6 @@ function Dashboard({ resident, onResidentUpdated, onSignOut }) {
         {!loading && tab === 'payments' ? (
           <PaymentsPanel resident={resident} onResidentUpdated={onResidentUpdated} highlightCategory={paymentFocus} />
         ) : null}
-        {!loading && tab === 'announcements' ? (
-          <AnnouncementsPanel items={announcements} />
-        ) : null}
         {!loading && tab === 'inbox' ? <ResidentInboxPanel resident={resident} /> : null}
         {!loading && tab === 'profile' ? (
           <ProfilePanel resident={resident} onUpdated={onResidentUpdated} />
@@ -1671,7 +1625,22 @@ export default function Resident() {
     if (!storedId) { setLoading(false); return }
     let mounted = true
     getResidentById(storedId)
-      .then((r) => { if (mounted && r) setResident(r) })
+      .then((r) => {
+        if (!mounted || !r) return
+        const approved =
+          isApprovalGranted(r['Application Approval']) ||
+          isApprovalGranted(r.Approved)
+        if (!approved) {
+          sessionStorage.removeItem(SESSION_KEY)
+          return
+        }
+        const leaseEnd = r['Lease End Date']
+        if (leaseEnd && new Date(leaseEnd) < new Date(new Date().toDateString())) {
+          sessionStorage.removeItem(SESSION_KEY)
+          return
+        }
+        setResident(r)
+      })
       .catch(() => { sessionStorage.removeItem(SESSION_KEY) })
       .finally(() => { if (mounted) setLoading(false) })
     return () => { mounted = false }

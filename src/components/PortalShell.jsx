@@ -1,10 +1,12 @@
 import React from 'react'
 
 /**
- * Shared chrome: vertical sidebar + main content for portal pages.
- * Desktop portal navigation is intentionally left-aligned everywhere so
- * manager, resident, and admin all use one consistent shell.
- * @param {'sidebar' | 'none'} [desktopNav='sidebar'] — 'none' hides the desktop aside.
+ * Shared chrome: vertical sidebar + main content for Manager, Resident, and Admin portals.
+ * Desktop layout uses CSS Grid (not flex + order) so the sidebar column stays physically left
+ * even with `dir="ltr"` fixes, hidden `aside` on small breakpoints, or RTL document settings.
+ *
+ * @param {'left' | 'right'} [sidebarPosition='left'] — desktop sidebar edge (when desktopNav is 'sidebar')
+ * @param {'sidebar' | 'none'} [desktopNav='sidebar'] — 'none' hides the desktop aside
  */
 export default function PortalShell({
   brandTitle,
@@ -20,72 +22,114 @@ export default function PortalShell({
   desktopNav = 'sidebar',
   children,
 }) {
-  void sidebarPosition
+  const isRight = sidebarPosition === 'right'
+  const asideBorder = isRight ? 'border-l border-slate-200' : 'border-r border-slate-200'
   const showDesktopSidebar = desktopNav === 'sidebar'
-  const rootFlex = showDesktopSidebar
-    ? 'flex min-h-screen flex-row bg-slate-50 text-slate-900'
-    : 'flex min-h-screen flex-col bg-slate-50 text-slate-900'
 
-  return (
-    // dir="ltr" keeps the sidebar on the correct physical edge when the document is RTL
-    // (browser/OS setting or translation extensions); flex main-start would otherwise be on the right.
-    <div className={rootFlex} dir="ltr">
-      {showDesktopSidebar ? (
-        <aside className="hidden w-56 shrink-0 flex-col border-r border-slate-200 bg-white lg:flex">
-          <div className="border-b border-slate-100 px-5 py-5">
-            <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-[#2f76ff]">{brandTitle}</div>
-            <div className="mt-1 text-sm font-black text-slate-900">{brandSubtitle}</div>
-          </div>
-          <nav className="flex-1 space-y-0.5 overflow-y-auto p-3">
-            {navItems.map((item) => (
-              <button
-                key={item.id}
-                type="button"
-                onClick={() => onNavigate(item.id)}
-                className={`flex w-full items-center rounded-xl px-3 py-2.5 text-left text-sm font-semibold transition ${
-                  activeId === item.id
-                    ? 'bg-[linear-gradient(180deg,#2f76ff_0%,#2450eb_100%)] text-white shadow-[0_4px_16px_rgba(37,99,235,0.35)]'
-                    : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
-                }`}
-              >
-                {item.label}
-              </button>
-            ))}
-          </nav>
-          <div className="border-t border-slate-100 p-4">
-            <div className="text-xs font-semibold text-slate-800">{userLabel}</div>
-            {userMeta ? <div className="mt-0.5 text-[11px] text-slate-500">{userMeta}</div> : null}
-            {sidebarFooterExtra ? <div className="mt-3">{sidebarFooterExtra}</div> : null}
-            <button
-              type="button"
-              onClick={onSignOut}
-              className="mt-3 w-full rounded-xl border border-slate-200 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-50"
-            >
-              Sign out
-            </button>
-          </div>
-        </aside>
-      ) : null}
+  const asideGrid = isRight ? 'lg:col-start-2 lg:row-start-1' : 'lg:col-start-1 lg:row-start-1'
+  const mainGrid = isRight ? 'lg:col-start-1 lg:row-start-1' : 'lg:col-start-2 lg:row-start-1'
 
-      <div className="flex min-w-0 flex-1 flex-col">
-        <header
-          className={`sticky top-0 z-20 border-b border-slate-200 bg-white/95 backdrop-blur ${showDesktopSidebar ? 'lg:hidden' : ''}`}
-        >
+  if (!showDesktopSidebar) {
+    return (
+      <div className="flex min-h-screen flex-col bg-slate-50 text-slate-900" dir="ltr">
+        <header className="sticky top-0 z-20 border-b border-slate-200 bg-white/95 backdrop-blur">
           <div className="flex items-center justify-between gap-3 px-4 py-3">
             <div className="min-w-0">
               <div className="text-[10px] font-bold uppercase tracking-wider text-[#2f76ff]">{brandTitle}</div>
               <div className="text-sm font-black">{brandSubtitle}</div>
             </div>
             <div className="flex shrink-0 items-center gap-2">
-              {!showDesktopSidebar && sidebarFooterExtra ? sidebarFooterExtra : null}
+              {sidebarFooterExtra ? sidebarFooterExtra : null}
               <button
                 type="button"
                 onClick={onSignOut}
-                className={`rounded-lg border border-slate-200 font-semibold text-slate-600 ${
-                  !showDesktopSidebar ? 'px-3 py-2 text-xs' : 'px-3 py-1.5 text-xs'
+                className="rounded-lg border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-600"
+              >
+                Sign out
+              </button>
+            </div>
+          </div>
+          <div className="flex gap-1 overflow-x-auto px-2 pb-2 scrollbar-none">
+            {navItems.map((item) => (
+              <button
+                key={item.id}
+                type="button"
+                onClick={() => onNavigate(item.id)}
+                className={`shrink-0 rounded-full px-3 py-1.5 text-xs font-semibold transition ${
+                  activeId === item.id
+                    ? 'bg-[linear-gradient(180deg,#2f76ff_0%,#2450eb_100%)] text-white shadow-[0_2px_10px_rgba(37,99,235,0.35)]'
+                    : 'bg-slate-100 text-slate-600'
                 }`}
               >
-                {!showDesktopSidebar ? 'Sign out' : 'Out'}
+                {item.label}
+              </button>
+            ))}
+          </div>
+        </header>
+
+        <main className="flex min-h-0 min-w-0 flex-1 flex-col">{children}</main>
+      </div>
+    )
+  }
+
+  return (
+    <div
+      className={`grid min-h-screen w-full max-w-full grid-cols-1 bg-slate-50 text-slate-900 ${
+        isRight ? 'lg:grid-cols-[minmax(0,1fr)_14rem]' : 'lg:grid-cols-[14rem_minmax(0,1fr)]'
+      }`}
+      dir="ltr"
+    >
+      <aside
+        className={`hidden min-h-0 w-full shrink-0 flex-col bg-white lg:flex ${asideBorder} ${asideGrid}`}
+      >
+        <div className="border-b border-slate-100 px-5 py-5">
+          <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-[#2f76ff]">{brandTitle}</div>
+          <div className="mt-1 text-sm font-black text-slate-900">{brandSubtitle}</div>
+        </div>
+        <nav className="flex-1 space-y-0.5 overflow-y-auto p-3">
+          {navItems.map((item) => (
+            <button
+              key={item.id}
+              type="button"
+              onClick={() => onNavigate(item.id)}
+              className={`flex w-full items-center rounded-xl px-3 py-2.5 text-left text-sm font-semibold transition ${
+                activeId === item.id
+                  ? 'bg-[linear-gradient(180deg,#2f76ff_0%,#2450eb_100%)] text-white shadow-[0_4px_16px_rgba(37,99,235,0.35)]'
+                  : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
+              }`}
+            >
+              {item.label}
+            </button>
+          ))}
+        </nav>
+        <div className="border-t border-slate-100 p-4">
+          <div className="text-xs font-semibold text-slate-800">{userLabel}</div>
+          {userMeta ? <div className="mt-0.5 text-[11px] text-slate-500">{userMeta}</div> : null}
+          {sidebarFooterExtra ? <div className="mt-3">{sidebarFooterExtra}</div> : null}
+          <button
+            type="button"
+            onClick={onSignOut}
+            className="mt-3 w-full rounded-xl border border-slate-200 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-50"
+          >
+            Sign out
+          </button>
+        </div>
+      </aside>
+
+      <div className={`flex min-h-0 min-w-0 flex-col ${mainGrid}`}>
+        <header className="sticky top-0 z-20 border-b border-slate-200 bg-white/95 backdrop-blur lg:hidden">
+          <div className="flex items-center justify-between gap-3 px-4 py-3">
+            <div className="min-w-0">
+              <div className="text-[10px] font-bold uppercase tracking-wider text-[#2f76ff]">{brandTitle}</div>
+              <div className="text-sm font-black">{brandSubtitle}</div>
+            </div>
+            <div className="flex shrink-0 items-center gap-2">
+              <button
+                type="button"
+                onClick={onSignOut}
+                className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-600"
+              >
+                Out
               </button>
             </div>
           </div>
@@ -107,13 +151,7 @@ export default function PortalShell({
           </div>
         </header>
 
-        <main
-          className={
-            showDesktopSidebar ? 'flex-1 px-4 py-6 sm:px-6 lg:px-8' : 'flex min-h-0 min-w-0 flex-1 flex-col'
-          }
-        >
-          {children}
-        </main>
+        <main className="flex-1 px-4 py-6 sm:px-6 lg:px-8">{children}</main>
       </div>
     </div>
   )

@@ -62,16 +62,16 @@ Create these tables (names must match unless you change code).
 
 ### 1.3 `Properties`
 
-**Used for:** manager “add housing”, property scope, tour API (when pointed at this base), resident deposit lookup, work-order/property labels.
+**Used for:** property scope, tour API (when pointed at this base), resident deposit lookup, work-order/property labels.
 
 **Fields referenced:**
 
 - `Name` or `Property` — primary label (tour + `getPropertyByName` use `Name`).
 - `Address`
-- `Notes` — long text; embeds **Tour Manager**, **Tour Availability**, **Tour Notes**, **Site Manager Email** as `Label: value` lines; also **Axis property profile JSON** block from Add Housing wizard.
+- `Notes` — long text; embeds **Tour Manager**, **Tour Availability**, **Tour Notes**, **Site Manager Email** as `Label: value` lines.
 - `Manager Email`, `Site Manager Email`, `Manager`, `Site Manager`, `Property Manager`, `Manager ID` — linking properties to managers (see `propertyAssignedToManager` in `Manager.jsx`).
 - `Security Deposit` — number (optional).
-- `Utilities Fee` — number (wizard).
+- `Utilities Fee` — number (optional).
 - `Application Fee` — number; overrides Apply page default when set.
 - Approval-style fields used in manager scope: e.g. status in notes or dedicated fields your `isPropertyRecordApproved` expects (inspect `Manager.jsx` for `isPropertyRecordApproved` / `propertyRecordName`).
 
@@ -79,25 +79,9 @@ Create these tables (names must match unless you change code).
 
 ---
 
-### 1.4 `Rooms`
+### 1.4 `Rooms` (optional)
 
-**Used for:** Add Housing Wizard — creates rows linked to a property.
-
-**Required:**
-
-- Link field to **Properties** (default field name **`Property`**; override with `VITE_AIRTABLE_ROOM_LINK_FIELD`).
-
-**Default column set** (all overridable via `VITE_AIRTABLE_ROOM_*` env — see `.env.example`):
-
-- `Room Number` (text)
-- `Monthly Rent` (number)
-- `Furnished` (checkbox)
-- `Furnishing Detail` (long text)
-- `Floor`, `Bathroom Type`, `Square Feet`, `Bed Size`
-- `Desk Included`, `AC` (checkboxes)
-- `Closet / Storage`, `Windows / Natural Light`, `Room Notes` (text/long text)
-- `Availability`
-- `Kitchen Included`, `Laundry Access`, `Parking Access` (long text)
+**Used for:** admin portal “rent from” display — reads linked rows and takes the minimum **Monthly Rent** per property (`VITE_AIRTABLE_ROOM_RENT_FIELD`). Table name: `VITE_AIRTABLE_ROOMS_TABLE` (default `Rooms`). Each row should link to **Properties** (typical link field name `Property`).
 
 ---
 
@@ -324,8 +308,20 @@ Same as section 1.12; used by `generate-lease-draft`, SignForge webhook, and the
 
 ## 3) Optional / “not Airtable”
 
-- **Admin portal staff approvals** (`/admin`): currently **localStorage** (`adminPortalLocalAuth.js`), not Airtable — no table required unless you migrate.
 - **Axis internal Management/Admin mock portals:** mock data; no tables.
+
+Admin sign-in for most roles uses the **Admin Profile** table in Airtable (see server `admin-profile-login`); env CEO and site owner use server environment variables only.
+
+### 3.1 Internal admin / CEO (manual row for your ops base)
+
+The app does **not** read this table — add a row only for your own contact directory / team records.
+
+| Suggested field | Value |
+|-----------------|--------|
+| **Name** | Prakrit |
+| **Email** | prakritramachandran@gmail.com |
+| **Role** | CEO |
+| **Notes** | Full `/admin` access via server env `AXIS_CEO_EMAIL`, `AXIS_CEO_PASSWORD`, `AXIS_CEO_NAME` — **do not** store portal passwords in Airtable. |
 
 ---
 

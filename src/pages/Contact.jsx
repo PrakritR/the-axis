@@ -3,7 +3,6 @@ import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { Seo } from '../lib/seo'
 import { errorFromAirtableApiBody } from '../lib/airtablePermissionError'
 import { isHousingMessageCategoryId } from '../lib/housingSite'
-import { openAxisAssistant } from '../lib/axisAssistant.js'
 import {
   DEFAULT_PROPERTIES,
   HousingMessageForm,
@@ -551,25 +550,10 @@ export default function Contact() {
           {/* Housing section */}
           {section === 'housing' && (
             <div>
-              <div className="mb-6 flex flex-wrap items-end justify-between gap-3 border-b border-slate-100 pb-5">
+              <div className="mb-6 border-b border-slate-100 pb-5">
                 <h2 className="text-3xl font-black tracking-tight text-slate-900">
                   {housingTab === 'schedule' ? 'Schedule tour' : 'Message Axis'}
                 </h2>
-                <button
-                  type="button"
-                  onClick={() =>
-                    openAxisAssistant({
-                      topic: 'contact-housing',
-                      hint:
-                        housingTab === 'schedule'
-                          ? 'Help me fill out the housing tour scheduler on the Contact page.'
-                          : 'Help me write a housing message to Axis on the Contact page.',
-                    })
-                  }
-                  className="rounded-full border border-[#2563eb]/30 bg-white px-4 py-2 text-xs font-semibold text-[#2563eb] hover:bg-sky-50"
-                >
-                  Chat help
-                </button>
               </div>
               <TabBar
                 tabs={[{ id: 'schedule', label: 'Set up tour' }, { id: 'message', label: 'Send message' }]}
@@ -584,21 +568,8 @@ export default function Contact() {
           {section === 'software' && (
             <div>
               <div className="mb-6 border-b border-slate-100 pb-5">
-                <div className="flex flex-wrap items-start justify-between gap-3">
-                  <div>
-                    <h2 className="text-3xl font-black tracking-tight text-slate-900">Connect with Axis Team</h2>
-                    <p className="mt-2 text-sm text-slate-500">Send us a message and we&apos;ll get back within two business days.</p>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() =>
-                      openAxisAssistant({ topic: 'contact-software', hint: 'Help me with the software / business inquiry form on Contact.' })
-                    }
-                    className="rounded-full border border-[#2563eb]/30 bg-white px-4 py-2 text-xs font-semibold text-[#2563eb] hover:bg-sky-50"
-                  >
-                    Chat help
-                  </button>
-                </div>
+                <h2 className="text-3xl font-black tracking-tight text-slate-900">Connect with Axis Team</h2>
+                <p className="mt-2 text-sm text-slate-500">Send us a message and we&apos;ll get back within two business days.</p>
               </div>
               <SoftwareMessageForm />
             </div>

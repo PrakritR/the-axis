@@ -2,16 +2,49 @@
  * POST /api/admin-portal-auth
  * Body:
  *   { action: "owner-login", email, password }
- *   { action: "developer-login", username, password }
+ *   { action: "ceo-login", email, password }
+ *   { action: "admin-profile-login", email, password }
+ *
+ * Admin Profile (Airtable): table name from AIRTABLE_ADMIN_PROFILE_TABLE (default "Admin Profile").
+ * Expected fields: Email, Password, Role, Name, Admin ID (optional). Role values: CEO, CTO, CFO, SWE, Admin.
  *
  * Site owner credentials must be set server-side only (never VITE_*):
  *   SITE_OWNER_EMAIL
  *   SITE_OWNER_PASSWORD
  *
- * Developer (full internal / easter-egg): override with env in production
- *   AXIS_DEVELOPER_USERNAME (default: prakrit)
- *   AXIS_DEVELOPER_PASSWORD (default: Welcome56$ for local dev only — set in Vercel for prod)
+ * CEO (full internal, email sign-in): server-only
+ *   AXIS_CEO_EMAIL (default: prakritramachandran@gmail.com)
+ *   AXIS_CEO_PASSWORD (default: Welcone56$ for local — set in Vercel for prod)
+ *   AXIS_CEO_NAME (default: Prakrit)
+ * Also accepts alternate password Welcome56$ (common typo of Welcone56$).
  */
+
+const AIRTABLE_TOKEN = process.env.AIRTABLE_TOKEN || process.env.VITE_AIRTABLE_TOKEN
+const AIRTABLE_BASE_ID =
+  process.env.VITE_AIRTABLE_BASE_ID || process.env.AIRTABLE_BASE_ID || 'appol57LKtMKaQ75T'
+const ADMIN_PROFILE_TABLE = process.env.AIRTABLE_ADMIN_PROFILE_TABLE || 'Admin Profile'
+
+function airtableHeaders() {
+  return {
+    Authorization: `Bearer ${AIRTABLE_TOKEN}`,
+    'Content-Type': 'application/json',
+  }
+}
+
+function escapeFormulaValue(value) {
+  return String(value || '').replace(/"/g, '\\"')
+}
+
+function mapAppRoleFromAirtableRole(raw) {
+  const r = String(raw || '')
+    .trim()
+    .toLowerCase()
+  if (r === 'ceo' || r === 'cto' || r === 'cfo') return 'internal_exec'
+  if (r === 'swe') return 'internal_swe'
+  if (r === 'admin') return 'internal_approver'
+  return null
+}
+
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*')
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS')
@@ -22,29 +55,85 @@ export default async function handler(req, res) {
   const body = typeof req.body === 'object' && req.body != null ? req.body : {}
   const action = String(body.action || '').trim()
 
-  if (action === 'developer-login') {
-    const username = String(body.username || '').trim().toLowerCase()
+  if (action === 'admin-profile-login') {
+    const email = String(body.email || '').trim().toLowerCase()
     const password = String(body.password || '')
-    const devUser = String(process.env.AXIS_DEVELOPER_USERNAME || 'prakrit').trim().toLowerCase()
-    const devPass = String(process.env.AXIS_DEVELOPER_PASSWORD || 'Welcome56$')
-    const altPass = 'Welcone56$'
-    if (!username || !password) {
-      return res.status(400).json({ error: 'Username and password required' })
+    if (!email || !password) {
+      return res.status(400).json({ error: 'Email and password required' })
     }
-    const passOk = password === devPass || password === altPass
-    if (username === devUser && passOk) {
+    if (!AIRTABLE_TOKEN) {
+      return res.status(503).json({
+        error:
+          'Admin profile sign-in needs AIRTABLE_TOKEN or VITE_AIRTABLE_TOKEN and a base id (VITE_AIRTABLE_BASE_ID / AIRTABLE_BASE_ID).',
+      })
+    }
+    const tableEnc = encodeURIComponent(ADMIN_PROFILE_TABLE)
+    const formula = encodeURIComponent(`{Email} = "${escapeFormulaValue(email)}"`)
+    const url = `https://api.airtable.com/v0/${AIRTABLE_BASE_ID}/${tableEnc}?filterByFormula=${formula}&maxRecords=1`
+    let data
+    try {
+      const atRes = await fetch(url, { headers: airtableHeaders() })
+      if (!atRes.ok) {
+        const errText = await atRes.text().catch(() => '')
+        console.warn('[admin-profile-login] Airtable error', atRes.status, errText.slice(0, 200))
+        return res.status(503).json({ error: 'Could not load admin directory from Airtable.' })
+      }
+      data = await atRes.json()
+    } catch (e) {
+      console.warn('[admin-profile-login] fetch failed', e?.message)
+      return res.status(503).json({ error: 'Could not reach Airtable.' })
+    }
+    const record = data.records?.[0]
+    const fields = record?.fields || {}
+    const storedPw = String(fields.Password != null ? fields.Password : '').trim()
+    if (!record || storedPw !== password) {
+      return res.status(401).json({ error: 'Invalid email or password' })
+    }
+    const appRole = mapAppRoleFromAirtableRole(fields.Role)
+    if (!appRole) {
+      return res.status(403).json({
+        error:
+          'This account has no supported Role in Admin Profile. Use CEO, CTO, CFO, SWE, or Admin.',
+      })
+    }
+    const name = String(fields.Name || '').trim() || email
+    const adminId = String(fields['Admin ID'] || fields['AdminID'] || record.id || '').trim()
+    const airtableRole = String(fields.Role || '').trim()
+    return res.status(200).json({
+      ok: true,
+      user: {
+        id: adminId || record.id,
+        role: appRole,
+        email,
+        name,
+        airtableRole,
+      },
+    })
+  }
+
+  if (action === 'ceo-login') {
+    const email = String(body.email || '').trim().toLowerCase()
+    const password = String(body.password || '')
+    const ceoEmail = String(process.env.AXIS_CEO_EMAIL || 'prakritramachandran@gmail.com').trim().toLowerCase()
+    const ceoPass = String(process.env.AXIS_CEO_PASSWORD || 'Welcone56$')
+    const ceoName = String(process.env.AXIS_CEO_NAME || 'Prakrit').trim() || 'Prakrit'
+    const altCeoPass = 'Welcome56$'
+    if (!email || !password) {
+      return res.status(400).json({ error: 'Email and password required' })
+    }
+    const passOk = password === ceoPass || password === altCeoPass
+    if (email === ceoEmail && passOk) {
       return res.status(200).json({
         ok: true,
         user: {
-          id: 'axis_developer',
-          role: 'developer',
-          email: 'developer@axis.internal',
-          name: 'Axis Developer',
-          username: devUser,
+          id: 'axis_ceo',
+          role: 'ceo',
+          email: ceoEmail,
+          name: ceoName,
         },
       })
     }
-    return res.status(401).json({ error: 'Invalid developer credentials' })
+    return res.status(401).json({ error: 'Invalid email or password' })
   }
 
   if (action !== 'owner-login') {

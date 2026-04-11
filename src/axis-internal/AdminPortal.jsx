@@ -41,17 +41,12 @@ const LEAD_STATUS_LABEL = {
   onboarded: 'Onboarded',
   closed: 'Closed',
 }
-import {
-  approveAdminRequest,
-  denyAdminRequest,
-  listPendingAdminRequests,
-  submitAdminAccessRequest,
-} from '../lib/adminPortalLocalAuth'
 import { authenticateAdminPortal } from '../lib/adminPortalSignIn'
 import {
   markDeveloperPortalActive,
   clearDeveloperPortalFlags,
   seedDeveloperManagerSession,
+  seedInternalStaffManagerSession,
 } from '../lib/developerPortal'
 import { AXIS_ADMIN_SESSION_KEY } from './adminSessionConstants'
 
@@ -66,9 +61,22 @@ const NAV_BASE = [
   { id: 'applications', label: 'Applications' },
   { id: 'leases', label: 'Lease approval' },
   { id: 'messages', label: 'Inbox' },
-  { id: 'access', label: 'Admin access' },
   { id: 'settings', label: 'Settings' },
 ]
+
+const APPROVER_ONLY_NAV = [
+  { id: 'dashboard', label: 'Dashboard' },
+  { id: 'approvals', label: 'Property approvals' },
+]
+
+/** Dashboard handoff: open /manager with full property scope (CEO stub or internal staff preview). */
+function showManagerHandoffDashboard(role) {
+  return role === 'ceo' || role === 'internal_exec' || role === 'internal_swe'
+}
+
+function showOwnerPortalJumps(role) {
+  return role === 'owner' || role === 'ceo'
+}
 
 const loginInputCls =
   'mt-1 w-full rounded-xl border border-slate-600 bg-slate-900/40 px-3 py-2.5 text-sm text-white placeholder:text-slate-500 outline-none focus:border-sky-400 focus:ring-1 focus:ring-sky-500/40'
@@ -89,15 +97,10 @@ function leadTone(st) {
 }
 
 function AdminLoginView({ onAuthenticated }) {
-  const [mode, setMode] = useState('signin')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState('')
-  const [reqName, setReqName] = useState('')
-  const [reqEmail, setReqEmail] = useState('')
-  const [reqPassword, setReqPassword] = useState('')
-  const [reqDone, setReqDone] = useState(false)
 
   async function handleSignIn(e) {
     e.preventDefault()
@@ -107,8 +110,14 @@ function AdminLoginView({ onAuthenticated }) {
       const result = await authenticateAdminPortal(email, password)
       if (result.ok) {
         onAuthenticated(result.user)
-        if (result.user.role === 'developer') {
-          toast.success('Developer console unlocked')
+        if (result.user.role === 'ceo') {
+          toast.success('Signed in as CEO')
+        } else if (result.user.role === 'internal_exec') {
+          toast.success('Signed in (executive)')
+        } else if (result.user.role === 'internal_swe') {
+          toast.success('Signed in (engineering)')
+        } else if (result.user.role === 'internal_approver') {
+          toast.success('Signed in (approvals)')
         } else if (result.user.role === 'owner') {
           toast.success('Signed in as site owner')
         } else {
@@ -122,139 +131,48 @@ function AdminLoginView({ onAuthenticated }) {
     }
   }
 
-  async function handleRequestAccess(e) {
-    e.preventDefault()
-    setErr('')
-    setBusy(true)
-    try {
-      await submitAdminAccessRequest({ name: reqName, email: reqEmail, password: reqPassword })
-      setReqDone(true)
-      toast.success('Request submitted for owner review')
-    } catch (ex) {
-      setErr(ex?.message || 'Could not submit request')
-    } finally {
-      setBusy(false)
-    }
-  }
-
   return (
     <div className="flex min-h-screen flex-col items-center justify-center bg-slate-900 px-6 py-12">
       <div className="w-full max-w-md rounded-[28px] border border-slate-700 bg-slate-800 p-8 shadow-xl">
         <div className="text-[11px] font-bold uppercase tracking-[0.2em] text-sky-400">Axis Admin</div>
         <h1 className="mt-2 text-2xl font-black text-white">Internal portal</h1>
         <p className="mt-2 text-sm text-slate-400">
-          Sign in at this URL only. Site owner uses server-configured credentials; other admins are approved by the owner or developer.
+          Use the email and password from your <strong>Admin Profile</strong> row in Airtable, or the env CEO / site owner account configured on the server.
         </p>
 
-        <div className="mt-6 flex gap-1 rounded-2xl border border-slate-600 bg-slate-900/50 p-1">
+        <form onSubmit={handleSignIn} className="mt-6 space-y-4">
+          <label className="block text-sm font-semibold text-slate-300">
+            Email
+            <input
+              type="email"
+              required
+              autoComplete="username"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              className={loginInputCls}
+              placeholder="you@company.com"
+            />
+          </label>
+          <label className="block text-sm font-semibold text-slate-300">
+            Password
+            <input
+              type="password"
+              required
+              autoComplete="current-password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              className={loginInputCls}
+            />
+          </label>
+          {err ? <p className="text-sm text-red-300">{err}</p> : null}
           <button
-            type="button"
-            onClick={() => {
-              setMode('signin')
-              setErr('')
-            }}
-            className={`flex-1 rounded-xl py-2.5 text-sm font-semibold transition ${
-              mode === 'signin' ? 'bg-sky-500 text-white' : 'text-slate-400 hover:text-white'
-            }`}
+            type="submit"
+            disabled={busy}
+            className="w-full rounded-2xl bg-[linear-gradient(180deg,#2f76ff_0%,#2450eb_100%)] py-3 text-sm font-semibold text-white shadow-[0_8px_20px_rgba(37,99,235,0.25)] transition-opacity hover:opacity-90 disabled:opacity-50"
           >
-            Sign in
+            {busy ? 'Signing in…' : 'Sign in'}
           </button>
-          <button
-            type="button"
-            onClick={() => {
-              setMode('request')
-              setErr('')
-            }}
-            className={`flex-1 rounded-xl py-2.5 text-sm font-semibold transition ${
-              mode === 'request' ? 'bg-sky-500 text-white' : 'text-slate-400 hover:text-white'
-            }`}
-          >
-            Request access
-          </button>
-        </div>
-
-        {mode === 'signin' ? (
-          <form onSubmit={handleSignIn} className="mt-6 space-y-4">
-            <label className="block text-sm font-semibold text-slate-300">
-              Work email or developer username
-              <input
-                type="text"
-                required
-                autoComplete="username"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                className={loginInputCls}
-                placeholder="you@company.com or prakrit"
-              />
-            </label>
-            <label className="block text-sm font-semibold text-slate-300">
-              Password
-              <input
-                type="password"
-                required
-                autoComplete="current-password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                className={loginInputCls}
-              />
-            </label>
-            {err ? <p className="text-sm text-red-300">{err}</p> : null}
-            <button
-              type="submit"
-              disabled={busy}
-              className="w-full rounded-2xl bg-[linear-gradient(180deg,#2f76ff_0%,#2450eb_100%)] py-3 text-sm font-semibold text-white shadow-[0_8px_20px_rgba(37,99,235,0.25)] transition-opacity hover:opacity-90 disabled:opacity-50"
-            >
-              {busy ? 'Signing in…' : 'Sign in'}
-            </button>
-          </form>
-        ) : reqDone ? (
-          <div className="mt-6 rounded-2xl border border-emerald-700/50 bg-emerald-950/40 px-4 py-4 text-sm text-emerald-100">
-            Your request is pending. The site owner can approve or deny it under <strong>Admin access</strong> after signing in.
-          </div>
-        ) : (
-          <form onSubmit={handleRequestAccess} className="mt-6 space-y-4">
-            <label className="block text-sm font-semibold text-slate-300">
-              Full name
-              <input
-                required
-                value={reqName}
-                onChange={(e) => setReqName(e.target.value)}
-                className={loginInputCls}
-              />
-            </label>
-            <label className="block text-sm font-semibold text-slate-300">
-              Work email
-              <input
-                type="email"
-                required
-                value={reqEmail}
-                onChange={(e) => setReqEmail(e.target.value)}
-                className={loginInputCls}
-              />
-            </label>
-            <label className="block text-sm font-semibold text-slate-300">
-              Choose password
-              <input
-                type="password"
-                required
-                minLength={8}
-                autoComplete="new-password"
-                value={reqPassword}
-                onChange={(e) => setReqPassword(e.target.value)}
-                className={loginInputCls}
-              />
-            </label>
-            <p className="text-xs text-slate-500">You will use this email and password at the same /admin sign-in after approval.</p>
-            {err ? <p className="text-sm text-red-300">{err}</p> : null}
-            <button
-              type="submit"
-              disabled={busy}
-              className="w-full rounded-2xl bg-[linear-gradient(180deg,#2f76ff_0%,#2450eb_100%)] py-3 text-sm font-semibold text-white shadow-[0_8px_20px_rgba(37,99,235,0.25)] transition-opacity hover:opacity-90 disabled:opacity-50"
-            >
-              {busy ? 'Submitting…' : 'Submit request'}
-            </button>
-          </form>
-        )}
+        </form>
       </div>
     </div>
   )
@@ -276,7 +194,6 @@ export default function AdminPortal() {
   const [applications, setApplications] = useState(() => [])
   const [leasePipeline, setLeasePipeline] = useState(() => [])
   const [selectedApprovalId, setSelectedApprovalId] = useState(null)
-  const [accessTick, setAccessTick] = useState(0)
   const [dataLoading, setDataLoading] = useState(false)
   const [approvalBusy, setApprovalBusy] = useState(false)
   const airtableConfigWarned = useRef(false)
@@ -284,7 +201,7 @@ export default function AdminPortal() {
   const user = session
 
   useEffect(() => {
-    if (session?.role === 'developer') markDeveloperPortalActive()
+    if (session && showManagerHandoffDashboard(session.role)) markDeveloperPortalActive()
   }, [session])
 
   const refreshPortalData = useCallback(async () => {
@@ -320,7 +237,7 @@ export default function AdminPortal() {
   function persistSession(u) {
     setSession(u)
     sessionStorage.setItem(AXIS_ADMIN_SESSION_KEY, JSON.stringify(u))
-    if (u?.role === 'developer') {
+    if (u && showManagerHandoffDashboard(u.role)) {
       markDeveloperPortalActive()
     }
   }
@@ -332,20 +249,18 @@ export default function AdminPortal() {
   }
 
   useEffect(() => {
-    if (session && session.role !== 'owner' && session.role !== 'developer' && tab === 'access') {
+    if (!session) return
+    if (session.role === 'internal_approver' && tab !== 'dashboard' && tab !== 'approvals') {
       setTab('dashboard')
     }
   }, [session, tab])
 
   const navItems = useMemo(() => {
-    if (!session || session.role === 'owner' || session.role === 'developer') return NAV_BASE
-    return NAV_BASE.filter((n) => n.id !== 'access')
+    if (!session) return NAV_BASE
+    if (session.role === 'internal_approver') return APPROVER_ONLY_NAV
+    if (session.role === 'internal_swe') return NAV_BASE.filter((n) => n.id !== 'approvals')
+    return NAV_BASE
   }, [session])
-
-  const pendingAdminRows = useMemo(() => {
-    if (tab !== 'access') return []
-    return listPendingAdminRequests().map((p) => ({ key: p.id, data: p }))
-  }, [tab, accessTick])
 
   const pendingApprovals = useMemo(() => properties.filter((p) => p.status === 'pending' || p.status === 'changes_requested'), [properties])
   const liveCount = useMemo(() => properties.filter((p) => p.status === 'live').length, [properties])
@@ -374,7 +289,17 @@ export default function AdminPortal() {
   return (
     <PortalShell
       brandTitle="Axis internal"
-      brandSubtitle={user.role === 'developer' ? 'Developer console' : 'Admin portal'}
+      brandSubtitle={
+        user.role === 'ceo'
+          ? 'CEO'
+          : user.role === 'internal_exec'
+            ? 'Executive'
+            : user.role === 'internal_swe'
+              ? 'Engineering'
+              : user.role === 'internal_approver'
+                ? 'Approvals'
+                : 'Admin portal'
+      }
       navItems={navItems}
       activeId={tab}
       onNavigate={setTab}
@@ -382,33 +307,55 @@ export default function AdminPortal() {
       userMeta={
         user.role === 'owner'
           ? 'Site owner'
-          : user.role === 'developer'
-            ? 'Developer · Sentinel'
-            : user.role === 'admin'
-              ? 'Staff admin'
-              : user.role || 'Admin'
+          : user.role === 'ceo'
+            ? 'CEO · full access'
+            : user.role === 'internal_exec'
+              ? `${user.airtableRole || 'Executive'} · full access`
+              : user.role === 'internal_swe'
+                ? `${user.airtableRole || 'SWE'} · no property / tour approvals`
+                : user.role === 'internal_approver'
+                  ? 'Property approvals only'
+                  : user.role || 'Admin'
       }
       onSignOut={handleSignOut}
     >
       {tab === 'dashboard' && (
         <div className="space-y-8">
           <h1 className="text-2xl font-black text-slate-900">
-            {user.role === 'developer' ? 'Developer dashboard' : 'Admin dashboard'}
+            {user.role === 'ceo'
+              ? 'CEO dashboard'
+              : user.role === 'internal_exec'
+                ? 'Executive dashboard'
+                : user.role === 'internal_swe'
+                  ? 'Engineering dashboard'
+                  : user.role === 'internal_approver'
+                    ? 'Approvals dashboard'
+                    : 'Admin dashboard'}
           </h1>
           {dataLoading ? (
             <p className="text-sm text-slate-500">Syncing data from Airtable…</p>
           ) : null}
-          {user.role === 'developer' ? (
+          {showManagerHandoffDashboard(user.role) ? (
             <div className="rounded-[24px] border border-violet-300/60 bg-[linear-gradient(135deg,#f5f3ff_0%,#ffffff_100%)] p-5 shadow-sm">
-              <h2 className="text-sm font-black text-violet-950">Sentinel access</h2>
+              <h2 className="text-sm font-black text-violet-950">Internal portal access</h2>
               <p className="mt-1 text-xs text-violet-900/80">
-                Full internal scope: approve staff admins and open the real manager portal with every property in scope (opens in this tab).
+                {user.role === 'internal_swe'
+                  ? 'Open the manager and resident portals with full property scope for review. SWE accounts cannot approve manager-submitted properties in admin or approve/decline tour requests in the manager calendar.'
+                  : 'Open the manager portal with every approved property in scope (this tab), plus the resident hub. Use your Admin Profile or env CEO credentials at /admin.'}
               </p>
               <div className="mt-4 flex flex-wrap gap-2">
                 <button
                   type="button"
                   onClick={() => {
-                    seedDeveloperManagerSession()
+                    if (user.role === 'internal_exec' || user.role === 'internal_swe') {
+                      seedInternalStaffManagerSession({
+                        email: user.email,
+                        name: user.name,
+                        staffRole: user.airtableRole || '',
+                      })
+                    } else {
+                      seedDeveloperManagerSession()
+                    }
                     window.location.assign('/manager')
                   }}
                   className="rounded-xl bg-violet-600 px-4 py-2 text-xs font-semibold text-white shadow-sm transition-opacity hover:opacity-90"
@@ -426,7 +373,7 @@ export default function AdminPortal() {
               </div>
             </div>
           ) : null}
-          {user.role === 'owner' ? (
+          {showOwnerPortalJumps(user.role) ? (
             <div className="rounded-[24px] border border-[#2563eb]/25 bg-[linear-gradient(135deg,#eff6ff_0%,#ffffff_100%)] p-5 shadow-sm">
               <h2 className="text-sm font-black text-slate-900">Jump to other portals</h2>
               <p className="mt-1 text-xs text-slate-600">
@@ -453,15 +400,26 @@ export default function AdminPortal() {
             </div>
           ) : null}
           <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-            <StatCard label="Property approvals queue" value={pendingApprovals.length} onClick={() => setTab('approvals')} />
-            <StatCard label="New management leads" value={newLeads} onClick={() => setTab('leads')} />
-            <StatCard label="Live properties" value={liveCount} onClick={() => setTab('properties')} />
-            <StatCard label="Pending applications" value={pendingApps} onClick={() => setTab('applications')} />
-            <StatCard label="Leases awaiting admin" value={leasesNeedAdmin} onClick={() => setTab('leases')} />
-            <StatCard label="Sent for signature" value={leasesSent} onClick={() => setTab('leases')} />
-            <StatCard label="Management accounts" value={accounts.length} onClick={() => setTab('accounts')} />
-            <StatCard label="Inbox" value="Open" hint="All portal threads" onClick={() => setTab('messages')} />
+            {user.role !== 'internal_swe' ? (
+              <StatCard label="Property approvals queue" value={pendingApprovals.length} onClick={() => setTab('approvals')} />
+            ) : null}
+            {user.role === 'internal_approver' ? null : (
+              <>
+                <StatCard label="New management leads" value={newLeads} onClick={() => setTab('leads')} />
+                <StatCard label="Live properties" value={liveCount} onClick={() => setTab('properties')} />
+                <StatCard label="Pending applications" value={pendingApps} onClick={() => setTab('applications')} />
+                <StatCard label="Leases awaiting admin" value={leasesNeedAdmin} onClick={() => setTab('leases')} />
+                <StatCard label="Sent for signature" value={leasesSent} onClick={() => setTab('leases')} />
+                <StatCard label="Management accounts" value={accounts.length} onClick={() => setTab('accounts')} />
+                <StatCard label="Inbox" value="Open" hint="All portal threads" onClick={() => setTab('messages')} />
+              </>
+            )}
           </div>
+          {user.role === 'internal_approver' ? (
+            <p className="text-sm text-slate-600">
+              Use <strong>Property approvals</strong> in the sidebar to review houses submitted by managers. Other internal areas are not available for this role.
+            </p>
+          ) : null}
         </div>
       )}
 
@@ -718,66 +676,6 @@ export default function AdminPortal() {
           </div>
         </div>
       )}
-
-      {tab === 'access' && (user.role === 'owner' || user.role === 'developer') ? (
-        <div className="space-y-6">
-          <h1 className="text-2xl font-black text-slate-900">Admin access</h1>
-          <p className="max-w-2xl text-sm text-slate-600">
-            Approve or deny requests from the <strong>Request access</strong> tab on the sign-in screen. Site owner, Sentinel developer, and anyone with this tab can approve. Data lives in this browser&apos;s local storage until you connect Airtable or another backend.
-          </p>
-          <DataTable
-            empty="No pending admin access requests."
-            columns={[
-              {
-                key: 'n',
-                label: 'Name',
-                render: (d) => <span className="font-semibold">{d.name}</span>,
-              },
-              { key: 'e', label: 'Email', render: (d) => d.email },
-              {
-                key: 't',
-                label: 'Requested',
-                render: (d) => new Date(d.requestedAt).toLocaleString(),
-              },
-              {
-                key: 'a',
-                label: '',
-                render: (d) => (
-                  <div className="flex flex-wrap gap-2">
-                    <button
-                      type="button"
-                      className="rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-500"
-                      onClick={async () => {
-                        try {
-                          await approveAdminRequest(d.id)
-                          setAccessTick((x) => x + 1)
-                          toast.success('Approved — they can sign in at /admin')
-                        } catch (ex) {
-                          toast.error(ex?.message || 'Approve failed')
-                        }
-                      }}
-                    >
-                      Approve
-                    </button>
-                    <button
-                      type="button"
-                      className="rounded-lg border border-red-200 bg-red-50 px-3 py-1.5 text-xs font-semibold text-red-800 hover:bg-red-100"
-                      onClick={() => {
-                        denyAdminRequest(d.id)
-                        setAccessTick((x) => x + 1)
-                        toast.success('Request denied')
-                      }}
-                    >
-                      Deny
-                    </button>
-                  </div>
-                ),
-              },
-            ]}
-            rows={pendingAdminRows}
-          />
-        </div>
-      ) : null}
 
       {tab === 'settings' && (
         <div className="max-w-2xl space-y-6">
