@@ -76,16 +76,16 @@ async function getManagerByEmail(email) {
     console.error('[manager-start-free-tier] Manager Profile GET failed', { status: atRes.status, baseId: BASE_ID, detail })
     if (atRes.status === 401 || atRes.status === 403) {
       throw new Error(
-        'Airtable rejected the API token (401/403). Use a personal access token with data.records:read and data.records:write on this base, and set AIRTABLE_TOKEN or VITE_AIRTABLE_TOKEN on the server.',
+        'The data service rejected the API token (401/403). Use a personal access token with data.records:read and data.records:write on this base, and set the server data API token environment variable.',
       )
     }
     if (atRes.status === 404) {
       throw new Error(
-        `Airtable base or table not found (404). Check VITE_AIRTABLE_BASE_ID / AIRTABLE_BASE_ID and that a table named exactly "Manager Profile" exists.`,
+        `Workspace or table not found (404). Check your configured workspace base ID and that a table named exactly "Manager Profile" exists.`,
       )
     }
     throw new Error(
-      `Could not read Manager Profile from Airtable (HTTP ${atRes.status}). ${String(detail).slice(0, 280)}`,
+      `Could not read Manager Profile (HTTP ${atRes.status}). ${String(detail).slice(0, 280)}`,
     )
   }
   const data = await atRes.json()
@@ -126,7 +126,7 @@ export default async function handler(req, res) {
   if (!AIRTABLE_TOKEN) {
     return res.status(500).json({
       error:
-        'Server data connection is not configured. Set AIRTABLE_TOKEN or VITE_AIRTABLE_TOKEN on the server (e.g. Vercel → Environment Variables).',
+        'Server data connection is not configured. Set the data API token in your server environment (e.g. hosting → Environment Variables).',
     })
   }
 

@@ -157,7 +157,7 @@ export default async function handler(req, res) {
   }
 
   if (!AIRTABLE_TOKEN) {
-    return res.status(500).json({ error: 'Airtable is not configured on the server.' })
+    return res.status(500).json({ error: 'Data service is not configured on the server.' })
   }
 
   const recordId = normalizeRecordId(req.body?.applicationRecordId)

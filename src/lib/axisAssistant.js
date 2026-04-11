@@ -12,7 +12,7 @@ Keep answers short and actionable.`
   if (p.startsWith('/manager')) {
     return `## Current page: Manager portal
 You help property managers with: tour calendar & weekly availability, approving tour requests, applications, lease drafts, rent/payments, work orders, properties/houses, and inbox messages.
-Give concrete next steps (which area of the portal, what to look for). Remind them saving happens through the portal and Airtable-backed actions they trigger in the UI.`
+Give concrete next steps (which area of the portal, what to look for). Remind them saving happens through the portal and the actions they trigger in the UI.`
   }
   if (p.startsWith('/resident')) {
     return `## Current page: Resident portal
@@ -28,7 +28,7 @@ Explain Resident vs Manager vs Admin access at a high level and who should use w
   }
   if (p.startsWith('/admin')) {
     return `## Current page: Internal admin
-Help with approvals, properties, leads, applications, and leases at a workflow level. Do not invent data — remind them to verify in Airtable if unsure.`
+Help with approvals, properties, leads, applications, and leases at a workflow level. Do not invent data — remind them to verify in their workspace records if unsure.`
   }
   return ''
 }

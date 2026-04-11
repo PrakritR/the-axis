@@ -1,7 +1,7 @@
 /**
  * POST /api/portal?action=application-create-lease-draft
  *
- * After a signer submits an application (main Airtable base), queues an AI lease draft
+ * After a signer submits an application (main data workspace), queues an AI lease draft
  * in Lease Drafts. Idempotent per application record (reuses existing draft if present).
  */
 import { createLeaseDraftFromApplication } from './generate-lease-draft.js'
@@ -33,7 +33,7 @@ export default async function handler(req, res) {
   }
 
   if (!AIRTABLE_TOKEN) {
-    return res.status(500).json({ error: 'Airtable is not configured on the server.' })
+    return res.status(500).json({ error: 'Data service is not configured on the server.' })
   }
 
   const applicationRecordId = String(req.body?.applicationRecordId || '').trim()

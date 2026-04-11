@@ -47,6 +47,7 @@ import {
   portalAuthInputCls,
 } from '../components/PortalAuthUI'
 import PortalShell from '../components/PortalShell'
+import Modal from '../components/Modal'
 import { ApplicationDetailPanel, applicationViewModelFromAirtableRow } from '../lib/applicationDetailPanel.jsx'
 
 // ─── Session ──────────────────────────────────────────────────────────────────
@@ -503,8 +504,8 @@ function updateTourAvailabilityLines(currentAvailability, day, slot) {
   return nextLines.filter(Boolean).join('\n')
 }
 
-const TOUR_GRID_START_HOUR = 6
-const TOUR_GRID_END_HOUR = 22
+const TOUR_GRID_START_HOUR = 8
+const TOUR_GRID_END_HOUR = 24
 const TOUR_GRID_STEP_MIN = 30
 const TOUR_GRID_START_MIN = TOUR_GRID_START_HOUR * 60
 const TOUR_GRID_END_MIN = TOUR_GRID_END_HOUR * 60
@@ -571,6 +572,23 @@ function weeklyFreeArraysFromTourText(text) {
     o[d] = [...set].sort((a, b) => a - b)
   }
   return o
+}
+
+function buildTourNotesText(existingNotes, metadata) {
+  const labels = ['Tour Manager', 'Tour Availability', 'Tour Notes']
+  let stripped = String(existingNotes || '').trim()
+  labels.forEach((label) => {
+    const escaped = label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+    stripped = stripped.replace(new RegExp(`(?:^|\\n)${escaped}:\\s*.+?(?=\\n|$)`, 'gi'), '')
+  })
+  stripped = stripped.replace(/^\n+|\n+$/g, '').trim()
+
+  const parts = []
+  if (metadata.manager) parts.push(`Tour Manager: ${metadata.manager}`)
+  if (metadata.availability) parts.push(`Tour Availability: ${metadata.availability}`)
+  if (metadata.notes) parts.push(`Tour Notes: ${metadata.notes}`)
+  if (stripped) parts.push(stripped)
+  return parts.join('\n')
 }
 
 function encodeTourAvailabilityFromWeeklyFree(weeklyArrays) {
@@ -754,6 +772,8 @@ function addDefaultTimeRange(ranges) {
 function bookingBadgeTone(row) {
   const type = String(row.Type || '').trim().toLowerCase()
   const approval = String(row['Manager Approval'] || '').trim().toLowerCase()
+  if (type === 'work order') return 'bg-amber-50 text-amber-900 border-amber-200'
+  if (type === 'issue' || type === 'other') return 'bg-slate-100 text-slate-700 border-slate-200'
   if (type === 'meeting') return 'bg-violet-50 text-violet-800 border-violet-200'
   if (approval === 'approved') return 'bg-emerald-50 text-emerald-800 border-emerald-200'
   if (approval === 'declined') return 'bg-red-50 text-red-700 border-red-200'
@@ -761,7 +781,11 @@ function bookingBadgeTone(row) {
 }
 
 function bookingLabel(row) {
-  return String(row.Type || '').trim().toLowerCase() === 'meeting' ? 'Meeting' : 'Booked tour'
+  const type = String(row.Type || '').trim().toLowerCase()
+  if (type === 'meeting') return 'Meeting'
+  if (type === 'work order') return 'Work order'
+  if (type === 'issue' || type === 'other') return 'Issue'
+  return 'Booked tour'
 }
 
 function TimeRangeRow({ range, onChange, onRemove, disabled = false, disableRemove = false }) {
@@ -991,6 +1015,7 @@ function AvailabilityEditorPanel({
   onSave,
   onApplyWeekday,
   onClearDay,
+  scheduledItems,
   availSaving,
   manager,
 }) {
@@ -1059,6 +1084,29 @@ function AvailabilityEditorPanel({
         )}
       </div>
 
+      <div className="mt-6">
+        <div className="mb-3 text-sm font-bold text-slate-900">Items on this date</div>
+        {scheduledItems?.length ? (
+          <div className="space-y-2">
+            {scheduledItems.map((item) => (
+              <div
+                key={item.id}
+                className={`rounded-2xl border px-3 py-3 text-sm ${bookingBadgeTone(item)}`}
+              >
+                <div className="font-semibold">{bookingLabel(item)}</div>
+                <div className="mt-1 text-xs opacity-80">
+                  {[item.Name || 'Guest', item['Preferred Time'], item.Property].filter(Boolean).join(' · ')}
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 px-4 py-5 text-sm text-slate-500">
+            Nothing scheduled for this date.
+          </div>
+        )}
+      </div>
+
       <div className="mt-6 flex flex-wrap gap-2 text-sm">
         <button
           type="button"
@@ -1102,6 +1150,8 @@ function AvailabilityEditorPanel({
 
 function LetUsMeetModal({ open, initialDateKey, manager, onClose, onCreated }) {
   const [date, setDate] = useState(initialDateKey)
+  const [itemType, setItemType] = useState('Meeting')
+  const [property, setProperty] = useState('')
   const [startTime, setStartTime] = useState('10:00')
   const [endTime, setEndTime] = useState('11:00')
   const [notes, setNotes] = useState('')
@@ -1111,6 +1161,8 @@ function LetUsMeetModal({ open, initialDateKey, manager, onClose, onCreated }) {
   useEffect(() => {
     if (!open) return
     setDate(initialDateKey)
+    setItemType('Meeting')
+    setProperty('')
     setStartTime('10:00')
     setEndTime('11:00')
     setNotes('')
@@ -1137,7 +1189,8 @@ function LetUsMeetModal({ open, initialDateKey, manager, onClose, onCreated }) {
         body: JSON.stringify({
           name: manager?.name || 'Axis manager',
           email: manager?.email || 'manager@axis.invalid',
-          type: 'Meeting',
+          type: itemType,
+          property: property || '',
           manager: manager?.name || '',
           managerEmail: manager?.email || '',
           preferredDate: date,
@@ -1161,13 +1214,32 @@ function LetUsMeetModal({ open, initialDateKey, manager, onClose, onCreated }) {
     <Modal onClose={onClose}>
       <div className="pr-8">
         <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-[#2563eb]">Let us meet</div>
-        <h3 className="mt-2 text-2xl font-black text-slate-900">Quick meeting slot</h3>
-        <p className="mt-2 text-sm text-slate-500">Create a one-off meeting slot without changing your weekly schedule.</p>
+        <h3 className="mt-2 text-2xl font-black text-slate-900">Quick schedule item</h3>
+        <p className="mt-2 text-sm text-slate-500">Create a one-off tour, meeting, work order visit, or issue reminder for this day.</p>
       </div>
       <div className="mt-6 grid gap-4 sm:grid-cols-2">
         <div>
+          <label className="mb-1.5 block text-xs font-semibold text-slate-700">Type</label>
+          <select value={itemType} onChange={(e) => setItemType(e.target.value)} className={portalAuthInputCls}>
+            <option value="Meeting">Meeting</option>
+            <option value="Tour">Tour</option>
+            <option value="Work Order">Work Order</option>
+            <option value="Issue">Issue</option>
+          </select>
+        </div>
+        <div>
           <label className="mb-1.5 block text-xs font-semibold text-slate-700">Date</label>
           <input type="date" value={date} onChange={(e) => setDate(e.target.value)} className={portalAuthInputCls} />
+        </div>
+        <div className="sm:col-span-2">
+          <label className="mb-1.5 block text-xs font-semibold text-slate-700">Property</label>
+          <input
+            type="text"
+            value={property}
+            onChange={(e) => setProperty(e.target.value)}
+            placeholder="Optional property"
+            className={portalAuthInputCls}
+          />
         </div>
         <div className="grid grid-cols-2 gap-3">
           <div>
@@ -1334,8 +1406,6 @@ async function fetchSchedulingForManagerScope({ managerEmail, propertyNames }) {
   const em = String(managerEmail || '').trim().toLowerCase()
   const props = (propertyNames || []).map((p) => String(p).trim().toLowerCase()).filter(Boolean)
   return rows.filter((r) => {
-    const typ = String(r.Type || '').trim().toLowerCase()
-    if (typ !== 'tour') return false
     const rme = String(r['Manager Email'] || '').trim().toLowerCase()
     if (em && rme === em) return true
     const prop = String(r.Property || '').trim().toLowerCase()
@@ -2676,19 +2746,13 @@ function ManagerDashboardHomePanel({
 function ManagerCalendarPanel({ manager, scopedPropertyNames = [] }) {
   const [anchorDate, setAnchorDate] = useState(() => new Date())
   const [calView, setCalView] = useState(() => /** @type {'month' | 'week' | 'day'} */ ('month'))
-  const [editWeekday, setEditWeekday] = useState(() => 'Mon')
-  const [detailDateKey, setDetailDateKey] = useState(() => dateKeyFromDate(new Date()))
-  const [loading, setLoading] = useState(true)
-  const [events, setEvents] = useState([])
-  const [calendarIssues, setCalendarIssues] = useState([])
+  const [selectedDateKey, setSelectedDateKey] = useState(() => dateKeyFromDate(new Date()))
   const [schedulingRows, setSchedulingRows] = useState([])
   const [weeklyFree, setWeeklyFree] = useState(() => emptyWeeklyFreeArrays())
   const [savedEncoded, setSavedEncoded] = useState('')
   const [availLoading, setAvailLoading] = useState(true)
   const [availSaving, setAvailSaving] = useState(false)
-  const [brushMode, setBrushMode] = useState('free')
-  const paintingRef = useRef(false)
-  const brushModeRef = useRef('free')
+  const [meetOpen, setMeetOpen] = useState(false)
 
   const propsKey = useMemo(
     () => [...scopedPropertyNames].map((s) => String(s).trim()).filter(Boolean).sort().join('|'),
@@ -2718,50 +2782,14 @@ function ManagerCalendarPanel({ manager, scopedPropertyNames = [] }) {
   }, [manager?.email, propsKey])
 
   useEffect(() => {
-    brushModeRef.current = brushMode
-  }, [brushMode])
-
-  useEffect(() => {
     if (calView !== 'day') return
-    const k = dateKeyFromDate(anchorDate)
-    setDetailDateKey(k)
-    setEditWeekday(CAL_DOW_TO_ABBR[anchorDate.getDay()])
+    setSelectedDateKey(dateKeyFromDate(anchorDate))
   }, [calView, anchorDate])
 
   const y = anchorDate.getFullYear()
   const m = anchorDate.getMonth()
   const monthLabel = anchorDate.toLocaleString('en-US', { month: 'long', year: 'numeric' })
-  const daysInMonth = new Date(y, m + 1, 0).getDate()
   const weekStart = useMemo(() => startOfWeekSunday(anchorDate), [anchorDate])
-  const weekDays = useMemo(
-    () => Array.from({ length: 7 }, (_, i) => addDaysDate(weekStart, i)),
-    [weekStart],
-  )
-
-  useEffect(() => {
-    let cancelled = false
-    setLoading(true)
-    setCalendarIssues([])
-    Promise.allSettled([fetchLeaseDrafts({}), getAllWorkOrders(), fetchApplications({})])
-      .then((results) => {
-        if (cancelled) return
-        const issues = []
-        const d = results[0].status === 'fulfilled' ? results[0].value : null
-        const w = results[1].status === 'fulfilled' ? results[1].value : null
-        const a = results[2].status === 'fulfilled' ? results[2].value : null
-        if (results[0].status === 'rejected') issues.push(`Leases: ${formatDataLoadError(results[0].reason)}`)
-        if (results[1].status === 'rejected') issues.push(`Work orders: ${formatDataLoadError(results[1].reason)}`)
-        if (results[2].status === 'rejected') issues.push(`Applications: ${formatDataLoadError(results[2].reason)}`)
-        setCalendarIssues(issues)
-        setEvents(buildCalendarEvents(d || [], w || [], a || []))
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false)
-      })
-    return () => {
-      cancelled = true
-    }
-  }, [])
 
   useEffect(() => {
     reloadScheduling()
@@ -2798,107 +2826,19 @@ function ManagerCalendarPanel({ manager, scopedPropertyNames = [] }) {
     }
   }, [manager?.id, manager?.__axisDeveloper, manager?.__axisInternalStaff])
 
-  useEffect(() => {
-    function endPaint() {
-      paintingRef.current = false
-    }
-    window.addEventListener('mouseup', endPaint)
-    window.addEventListener('blur', endPaint)
-    return () => {
-      window.removeEventListener('mouseup', endPaint)
-      window.removeEventListener('blur', endPaint)
-    }
-  }, [])
-
-  const schedulingEvents = useMemo(() => schedulingRowsToCalendarEvents(schedulingRows), [schedulingRows])
-  const displayEvents = useMemo(() => [...events, ...schedulingEvents], [events, schedulingEvents])
-
   const encodedDraft = useMemo(() => encodeTourAvailabilityFromWeeklyFree(weeklyFree), [weeklyFree])
   const availabilityDirty = encodedDraft !== savedEncoded
-
-  const pendingTourCount = useMemo(() => schedulingRows.filter(tourApprovalNeedsAction).length, [schedulingRows])
-
-  const firstDow = new Date(y, m, 1).getDay()
-  const cells = []
-  for (let i = 0; i < firstDow; i++) cells.push(null)
-  for (let d = 1; d <= daysInMonth; d++) cells.push(d)
-
-  const eventsForMonthCell = (day) => {
-    if (!day) return []
-    const key = calendarDateKey(y, m, day)
-    return displayEvents.filter((e) => e.date === key)
-  }
-
-  const freeSlotCountForMonthCell = (day) => {
-    if (!day) return 0
-    const abbr = CAL_DOW_TO_ABBR[new Date(y, m, day).getDay()]
-    return freeTourSlotCountForWeekday(weeklyFree, abbr)
-  }
-
-  const eventsForKey = (key) => displayEvents.filter((e) => e.date === key)
-
-  const freeSlotCountForDateKey = (key) => {
-    const [yy, mm, dd] = String(key || '').split('-').map(Number)
-    if (!yy || !mm || !dd) return 0
-    const abbr = CAL_DOW_TO_ABBR[new Date(yy, mm - 1, dd).getDay()]
-    return freeTourSlotCountForWeekday(weeklyFree, abbr)
-  }
-
-  const toursForDetailDate = useMemo(() => {
-    if (!detailDateKey) return []
-    return schedulingRows.filter((r) => parseCalendarDay(r['Preferred Date']) === detailDateKey)
-  }, [schedulingRows, detailDateKey])
-
-  function eventToneCls(ev) {
-    if (ev.type === 'tour_req') {
-      const a = String(ev.approval || '').toLowerCase()
-      if (a === 'approved') return 'bg-emerald-100 text-emerald-900'
-      if (a === 'declined') return 'bg-red-100 text-red-800'
-      return 'bg-sky-100 text-sky-900'
+  const bookedByDate = useMemo(() => {
+    const map = new Map()
+    for (const row of schedulingRows) {
+      const key = parseCalendarDay(row['Preferred Date'])
+      if (!key) continue
+      const current = map.get(key) || []
+      current.push(row)
+      map.set(key, current)
     }
-    if (ev.type === 'lease') return 'bg-blue-100 text-blue-800'
-    if (ev.type === 'publish' || ev.type === 'approve') return 'bg-axis/15 text-axis'
-    if (ev.type === 'wo') return 'bg-amber-100 text-amber-900'
-    if (ev.type === 'app') return 'bg-emerald-100 text-emerald-900'
-    return 'bg-slate-100 text-slate-700'
-  }
-
-  function applyPaintToCell(dayAbbr, halfIdx) {
-    const mode = brushModeRef.current
-    setWeeklyFree((prev) => {
-      const next = cloneWeeklyArrays(prev)
-      const arr = next[dayAbbr]
-      const i = arr.indexOf(halfIdx)
-      if (mode === 'free') {
-        if (i < 0) arr.push(halfIdx)
-      } else if (i >= 0) {
-        arr.splice(i, 1)
-      }
-      arr.sort((a, b) => a - b)
-      return next
-    })
-  }
-
-  function onGridCellDown(dayAbbr, halfIdx, e) {
-    e.preventDefault()
-    paintingRef.current = true
-    applyPaintToCell(dayAbbr, halfIdx)
-  }
-
-  function onGridCellEnter(dayAbbr, halfIdx) {
-    if (!paintingRef.current) return
-    applyPaintToCell(dayAbbr, halfIdx)
-  }
-
-  function clearEditWeekdaySlots() {
-    if (!editWeekday) return
-    setWeeklyFree((prev) => {
-      const next = cloneWeeklyArrays(prev)
-      next[editWeekday] = []
-      return next
-    })
-    toast.success(`Cleared ${editWeekday} — click Save to update public tour times`)
-  }
+    return map
+  }, [schedulingRows])
 
   async function handleSaveWeeklyAvailability() {
     if (!manager?.id || isManagerInternalPreview(manager)) {
@@ -2909,49 +2849,33 @@ function ManagerCalendarPanel({ manager, scopedPropertyNames = [] }) {
     try {
       const enc = encodeTourAvailabilityFromWeeklyFree(weeklyFree)
       await patchManagerRecord(manager.id, { 'Tour Availability': enc })
+      try {
+        const propertyRows = await fetchPropertiesAdmin()
+        const assignedApproved = propertyRows.filter(
+          (property) => propertyAssignedToManager(property, manager) && isPropertyRecordApproved(property),
+        )
+        await Promise.all(
+          assignedApproved.map((property) =>
+            updatePropertyAdmin(property.id, {
+              Notes: buildTourNotesText(property.Notes, {
+                manager: manager?.name || '',
+                availability: enc,
+                notes: extractNoteValue(property.Notes, 'Tour Notes'),
+              }),
+            }),
+          ),
+        )
+      } catch {
+        // Property sync is best-effort; manager profile save is the durable source.
+      }
       setSavedEncoded(enc)
-      toast.success('Weekly availability saved to your manager profile')
+      toast.success('Availability saved and synced to your properties')
     } catch (err) {
       toast.error(err.message || 'Could not save availability')
     } finally {
       setAvailSaving(false)
     }
   }
-
-  async function respondTourRequest(row, approve) {
-    if (managerCannotApproveTours(manager)) {
-      toast.error('Tour approvals are disabled for your account.')
-      return
-    }
-    try {
-      await patchSchedulingRecord(row.id, {
-        'Manager Approval': approve ? 'Approved' : 'Declined',
-      })
-      toast.success(approve ? 'Tour approved' : 'Tour declined')
-      await reloadScheduling()
-    } catch (err) {
-      toast.error(err.message || 'Could not update this request. Add a single-line field "Manager Approval" to Scheduling in Airtable if missing.')
-    }
-  }
-
-  const today = new Date()
-  const todayKey = dateKeyFromDate(today)
-  const isTodayMonthCell = (day) =>
-    day != null && today.getFullYear() === y && today.getMonth() === m && today.getDate() === day
-
-  const detailDateLabel = detailDateKey
-    ? (() => {
-        const [yy, mm, dd] = detailDateKey.split('-').map(Number)
-        return new Date(yy, mm - 1, dd).toLocaleDateString('en-US', {
-          weekday: 'long',
-          month: 'long',
-          day: 'numeric',
-          year: 'numeric',
-        })
-      })()
-    : ''
-
-  const freeStandardOnEditDay = freeTourSlotCountForWeekday(weeklyFree, editWeekday)
 
   const navLabel =
     calView === 'month'
@@ -2975,451 +2899,103 @@ function ManagerCalendarPanel({ manager, scopedPropertyNames = [] }) {
   function goToday() {
     const n = new Date()
     setAnchorDate(n)
-    setDetailDateKey(dateKeyFromDate(n))
-    setEditWeekday(CAL_DOW_TO_ABBR[n.getDay()])
+    setSelectedDateKey(dateKeyFromDate(n))
   }
 
-  function selectCalendarDateKey(key, syncWeekday = true) {
-    setDetailDateKey(key)
+  function selectCalendarDateKey(key) {
+    setSelectedDateKey(key)
     const [yy, mm, dd] = key.split('-').map(Number)
     if (yy && mm && dd) {
       setAnchorDate(new Date(yy, mm - 1, dd))
-      if (syncWeekday) setEditWeekday(CAL_DOW_TO_ABBR[new Date(yy, mm - 1, dd).getDay()])
     }
   }
-
-  const viewToggleCls = (id) =>
-    classNames(
-      'rounded-lg px-3 py-1.5 text-xs font-semibold transition',
-      calView === id ? 'bg-[#2563eb] text-white shadow-sm' : 'text-slate-600 hover:bg-slate-100',
-    )
+  const selectedWeekday = weekdayAbbrFromDateKey(selectedDateKey)
+  const selectedRanges = timeRangesFromWeeklyFree(weeklyFree, selectedWeekday)
+  const selectedItems = bookedByDate.get(selectedDateKey) || []
 
   return (
-    <div className="min-w-0 w-full max-w-full rounded-[24px] border border-slate-200 bg-white p-4 shadow-sm sm:p-6">
-      <div className="flex flex-col gap-4 lg:flex-row lg:flex-wrap lg:items-start lg:justify-between">
-        <div className="min-w-0 max-w-xl">
-          <h2 className="text-xl font-black text-slate-900">Calendar &amp; tour hours</h2>
-          {pendingTourCount > 0 ? (
-            <p className="mt-2 text-sm font-semibold text-sky-800">
-              {pendingTourCount} tour request{pendingTourCount === 1 ? '' : 's'} awaiting yes/no — pick that day below.
-            </p>
-          ) : null}
-        </div>
-        <div className="flex min-w-0 flex-wrap items-center gap-2">
-          <div className="flex rounded-xl border border-slate-200 bg-slate-50 p-0.5">
-            <button type="button" className={viewToggleCls('month')} onClick={() => setCalView('month')}>
-              Month
-            </button>
-            <button type="button" className={viewToggleCls('week')} onClick={() => setCalView('week')}>
-              Week
-            </button>
-            <button type="button" className={viewToggleCls('day')} onClick={() => setCalView('day')}>
-              Day
-            </button>
-          </div>
-          <button
-            type="button"
-            onClick={goToday}
-            className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-[#2563eb] hover:bg-slate-50"
-          >
-            Today
-          </button>
-          <div className="flex items-center gap-1 rounded-xl border border-slate-200 bg-white p-0.5">
-            <button type="button" onClick={goPrev} className="rounded-lg px-2.5 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-50">
-              ←
-            </button>
-            <span className="min-w-[8rem] max-w-[14rem] truncate px-1 text-center text-xs font-bold text-slate-800 sm:min-w-[11rem]">
-              {navLabel}
-            </span>
-            <button type="button" onClick={goNext} className="rounded-lg px-2.5 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-50">
-              →
-            </button>
-          </div>
-        </div>
+    <div className="space-y-6">
+      <div className="max-w-2xl">
+        <h2 className="text-2xl font-black text-slate-900">Tour availability</h2>
+        <p className="mt-2 text-sm text-slate-500">
+          Pick a day, set when you are free for tours, and preview only the schedule items tied to your houses. This stays tour-focused and avoids the extra operations clutter.
+        </p>
       </div>
 
       {isManagerInternalPreview(manager) ? (
-        <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-950">
+        <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-950">
           {manager.__axisDeveloper
-            ? 'Developer preview: tour hours are not saved to Airtable from this session.'
-            : 'Internal preview: tour hours are not saved to Airtable from this session.'}
+            ? 'Developer preview: changes here do not save to Airtable.'
+            : 'Internal preview: changes here do not save to Airtable.'}
         </div>
       ) : null}
 
-      <div className="mt-3 flex flex-wrap gap-3 text-[11px] text-slate-600">
-        <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 font-semibold text-emerald-800">
-          <span className="h-2 w-2 rounded-full bg-emerald-500" />
-          Tour slot open (weekly)
-        </span>
-        <span className="inline-flex items-center gap-1.5 rounded-full border border-sky-200 bg-sky-50 px-2.5 py-1 font-semibold text-sky-900">
-          <span className="h-2 w-2 rounded-full bg-sky-500" />
-          Guest tour request
-        </span>
-      </div>
-
-      {calendarIssues.length ? (
-        <div
-          role="status"
-          className="mt-4 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2.5 text-sm text-amber-950"
-        >
-          <span className="font-semibold text-amber-900">Partial calendar: </span>
-          <span className="text-amber-900/90">{calendarIssues.join(' · ')}</span>
-        </div>
-      ) : null}
-
-      {/* —— Tour availability (always first — no need to pick a calendar day) —— */}
-      <div className="mt-8 rounded-2xl border border-slate-200 bg-gradient-to-br from-slate-50/80 to-white p-5">
-        <div className="text-[11px] font-bold uppercase tracking-[0.14em] text-[#2563eb]">Your weekly tour hours</div>
-        <p className="mt-1 text-sm text-slate-600">
-          Saved to <code className="rounded bg-white px-1 text-[11px] ring-1 ring-slate-200">Tour Availability</code> on your manager profile.
-          Green blocks = you&apos;re free; guests only book inside those windows.
-        </p>
-        <p className="mt-2 text-xs text-slate-500">
-          <span className="font-semibold text-slate-700">{editWeekday}:</span> {freeStandardOnEditDay} of {TOUR_SLOTS.length} preset tour windows
-          covered — or paint any half-hour below.
-        </p>
-
-        <div className="mt-4 flex flex-wrap gap-2">
-          {TOUR_DAYS.map((d) => (
-            <button
-              key={d}
-              type="button"
-              onClick={() => setEditWeekday(d)}
-              className={classNames(
-                'rounded-xl border px-3 py-2 text-xs font-bold transition',
-                editWeekday === d
-                  ? 'border-[#2563eb] bg-[#2563eb] text-white shadow-sm'
-                  : 'border-slate-200 bg-white text-slate-700 hover:border-slate-300',
-              )}
-            >
-              {d}
-            </button>
-          ))}
-        </div>
-
-        <p className="mt-4 text-xs font-semibold text-slate-700">Quick toggles (preset tour times)</p>
-        <div className="mt-2 flex flex-wrap gap-2">
-          {TOUR_SLOTS.map((slot) => {
-            const range = slotRangeMinutes(slot)
-            const idxs = range ? halfHourIndicesOverlappingRange(range.start, range.end) : []
-            const set = new Set(weeklyFree[editWeekday] || [])
-            const on = idxs.some((i) => set.has(i))
-            return (
-              <button
-                key={slot}
-                type="button"
-                onClick={() => setWeeklyFree((prev) => toggleStandardTourSlotInWeekly(prev, editWeekday, slot))}
-                className={classNames(
-                  'rounded-full border px-3 py-1.5 text-xs font-semibold transition',
-                  on ? 'border-emerald-500 bg-emerald-500 text-white' : 'border-slate-200 bg-white text-slate-600 hover:border-emerald-300',
-                )}
-              >
-                {slot}
-              </button>
+      <div className="grid gap-6 xl:grid-cols-[minmax(0,430px)_minmax(0,1fr)]">
+        <AvailabilityEditorPanel
+          selectedDateKey={selectedDateKey}
+          ranges={selectedRanges}
+          isAvailable={selectedRanges.length > 0}
+          setIsAvailable={(next) => {
+            if (!next) {
+              setWeeklyFree((prev) => weeklyFreeWithDayRanges(prev, selectedWeekday, []))
+              return
+            }
+            if (selectedRanges.length === 0) {
+              setWeeklyFree((prev) => weeklyFreeWithDayRanges(prev, selectedWeekday, addDefaultTimeRange([])))
+            }
+          }}
+          onAddRange={() =>
+            setWeeklyFree((prev) =>
+              weeklyFreeWithDayRanges(prev, selectedWeekday, addDefaultTimeRange(selectedRanges)),
             )
-          })}
-        </div>
+          }
+          onChangeRange={(idx, nextRange) => {
+            const nextRanges = selectedRanges.map((range, index) => (index === idx ? nextRange : range))
+            setWeeklyFree((prev) => weeklyFreeWithDayRanges(prev, selectedWeekday, nextRanges))
+          }}
+          onRemoveRange={(idx) => {
+            const nextRanges = selectedRanges.filter((_, index) => index !== idx)
+            setWeeklyFree((prev) => weeklyFreeWithDayRanges(prev, selectedWeekday, nextRanges))
+          }}
+          onOpenMeet={() => setMeetOpen(true)}
+          onSave={handleSaveWeeklyAvailability}
+          onApplyWeekday={handleSaveWeeklyAvailability}
+          onClearDay={() => setWeeklyFree((prev) => weeklyFreeWithDayRanges(prev, selectedWeekday, []))}
+          scheduledItems={selectedItems}
+          availSaving={availSaving || availLoading}
+          manager={manager}
+        />
 
-        <div className="mt-4 flex flex-wrap gap-2">
-          <button
-            type="button"
-            onClick={() => setBrushMode('free')}
-            className={classNames(
-              'rounded-full border px-3 py-1.5 text-xs font-semibold transition',
-              brushMode === 'free'
-                ? 'border-emerald-500 bg-emerald-500 text-white'
-                : 'border-slate-200 bg-white text-slate-700 hover:border-emerald-300',
-            )}
-          >
-            Paint free
-          </button>
-          <button
-            type="button"
-            onClick={() => setBrushMode('busy')}
-            className={classNames(
-              'rounded-full border px-3 py-1.5 text-xs font-semibold transition',
-              brushMode === 'busy'
-                ? 'border-slate-700 bg-slate-700 text-white'
-                : 'border-slate-200 bg-white text-slate-700 hover:border-slate-400',
-            )}
-          >
-            Paint busy
-          </button>
-        </div>
+        <div className="rounded-[28px] border border-slate-200 bg-white p-5 shadow-sm">
+          <CalendarToolbar
+            view={calView}
+            label={navLabel}
+            onViewChange={setCalView}
+            onPrev={goPrev}
+            onNext={goNext}
+            onToday={goToday}
+          />
 
-        {availLoading ? (
-          <p className="mt-3 text-sm text-slate-500">Loading saved hours…</p>
-        ) : (
-          <div
-            className="mt-3 max-h-[220px] select-none overflow-y-auto rounded-xl border border-slate-200 bg-white"
-            onMouseLeave={() => {
-              paintingRef.current = false
-            }}
-          >
-            <div className="grid" style={{ gridTemplateColumns: '4.5rem 1fr' }}>
-              {Array.from({ length: TOUR_GRID_HALF_COUNT }, (_, halfIdx) => {
-                const active = (weeklyFree[editWeekday] || []).includes(halfIdx)
-                const showLabel = halfIdx % 2 === 0
-                return (
-                  <React.Fragment key={halfIdx}>
-                    <div className="border-b border-r border-slate-100 px-1 py-0.5 text-[10px] text-slate-400">
-                      {showLabel ? formatHalfHourIndexLabel(halfIdx) : ''}
-                    </div>
-                    <button
-                      type="button"
-                      className={classNames(
-                        'h-5 border-b border-slate-100 transition-colors',
-                        active ? 'bg-emerald-400/90 hover:bg-emerald-500' : 'bg-slate-50 hover:bg-slate-200/80',
-                      )}
-                      onMouseDown={(e) => onGridCellDown(editWeekday, halfIdx, e)}
-                      onMouseEnter={() => onGridCellEnter(editWeekday, halfIdx)}
-                      aria-label={`${formatHalfHourIndexLabel(halfIdx)} ${active ? 'free' : 'busy'}`}
-                    />
-                  </React.Fragment>
-                )
-              })}
-            </div>
+          <div className="mt-5">
+            <AvailabilityCalendar
+              view={calView}
+              anchorDate={anchorDate}
+              selectedDateKey={selectedDateKey}
+              onSelectDate={selectCalendarDateKey}
+              weeklyFree={weeklyFree}
+              bookedByDate={bookedByDate}
+            />
           </div>
-        )}
-
-        <div className="mt-4 flex flex-wrap gap-2">
-          <button
-            type="button"
-            onClick={handleSaveWeeklyAvailability}
-            disabled={availSaving || !availabilityDirty || isManagerInternalPreview(manager)}
-            className="rounded-xl bg-[#2563eb] px-4 py-2.5 text-sm font-semibold text-white shadow-sm disabled:opacity-50"
-          >
-            {availSaving ? 'Saving…' : 'Save tour hours'}
-          </button>
-          <button
-            type="button"
-            onClick={clearEditWeekdaySlots}
-            className="rounded-xl border border-red-200 bg-red-50 px-4 py-2.5 text-sm font-semibold text-red-800 hover:bg-red-100"
-          >
-            Clear {editWeekday}
-          </button>
         </div>
       </div>
 
-      {loading ? (
-        <div className="mt-8 py-16 text-center text-sm text-slate-500">Loading schedule…</div>
-      ) : (
-        <div className="mt-8 space-y-8">
-          {calView === 'month' ? (
-            <div className="min-w-0 overflow-x-auto">
-              <div className="grid min-w-[640px] grid-cols-7 gap-1 text-center text-[11px] font-bold uppercase tracking-wide text-slate-400">
-                {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((d) => (
-                  <div key={d} className="py-2">
-                    {d}
-                  </div>
-                ))}
-              </div>
-              <div className="grid min-w-[640px] grid-cols-7 gap-1">
-                {cells.map((day, idx) => {
-                  if (day == null) {
-                    return <div key={`pad-${idx}`} className="min-h-[88px] rounded-xl bg-slate-50/50" />
-                  }
-                  const key = calendarDateKey(y, m, day)
-                  const dayEvents = eventsForMonthCell(day)
-                  const freeN = freeSlotCountForMonthCell(day)
-                  const sel = detailDateKey === key
-                  return (
-                    <button
-                      key={day}
-                      type="button"
-                      onClick={() => selectCalendarDateKey(key)}
-                      className={classNames(
-                        'flex min-h-[76px] flex-col rounded-xl border p-1.5 text-left transition sm:min-h-[88px]',
-                        sel
-                          ? 'border-[#2563eb] bg-[#2563eb]/5 ring-2 ring-[#2563eb]/25'
-                          : 'border-slate-100 bg-slate-50/80 hover:border-slate-200 hover:bg-white',
-                        isTodayMonthCell(day) && !sel ? 'ring-1 ring-slate-300' : '',
-                      )}
-                    >
-                      <div className="flex items-start justify-between gap-1">
-                        <span className="text-xs font-bold text-slate-800">{day}</span>
-                        <span
-                          className={classNames(
-                            'shrink-0 rounded-full px-1.5 py-0.5 text-[9px] font-bold',
-                            freeN === 0 ? 'bg-slate-200 text-slate-700' : 'bg-emerald-100 text-emerald-800',
-                          )}
-                        >
-                          {freeN} slots
-                        </span>
-                      </div>
-                      <div className="mt-1 flex max-h-[52px] flex-col gap-0.5 overflow-y-auto">
-                        {dayEvents.slice(0, 3).map((ev, i) => (
-                          <span
-                            key={`${ev.date}-${ev.schedulingId || i}-${ev.label}`}
-                            className={`truncate rounded px-1 py-0.5 text-[10px] font-semibold leading-tight ${eventToneCls(ev)}`}
-                            title={ev.label}
-                          >
-                            {ev.label}
-                          </span>
-                        ))}
-                        {dayEvents.length > 3 ? (
-                          <span className="text-[10px] text-slate-400">+{dayEvents.length - 3} more</span>
-                        ) : null}
-                      </div>
-                    </button>
-                  )
-                })}
-              </div>
-            </div>
-          ) : null}
-
-          {calView === 'week' ? (
-            <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-7">
-              {weekDays.map((d) => {
-                const key = dateKeyFromDate(d)
-                const evs = eventsForKey(key)
-                const freeN = freeSlotCountForDateKey(key)
-                const sel = detailDateKey === key
-                return (
-                  <button
-                    key={key}
-                    type="button"
-                    onClick={() => selectCalendarDateKey(key)}
-                    className={classNames(
-                      'min-h-[140px] rounded-2xl border p-3 text-left transition',
-                      sel ? 'border-[#2563eb] bg-[#2563eb]/5 ring-2 ring-[#2563eb]/20' : 'border-slate-200 bg-slate-50/60 hover:bg-white',
-                      key === todayKey ? 'ring-1 ring-slate-300' : '',
-                    )}
-                  >
-                    <div className="text-[10px] font-bold uppercase text-slate-400">
-                      {d.toLocaleDateString('en-US', { weekday: 'short' })}
-                    </div>
-                    <div className="text-lg font-black text-slate-900">{d.getDate()}</div>
-                    <div className="mt-1 text-[10px] font-semibold text-emerald-800">{freeN} tour slots</div>
-                    <ul className="mt-2 max-h-[72px] space-y-0.5 overflow-y-auto text-left">
-                      {evs.slice(0, 4).map((ev, i) => (
-                        <li
-                          key={`${ev.date}-${i}-${ev.label}`}
-                          className={`truncate rounded px-1 py-0.5 text-[9px] font-semibold ${eventToneCls(ev)}`}
-                        >
-                          {ev.label}
-                        </li>
-                      ))}
-                    </ul>
-                  </button>
-                )
-              })}
-            </div>
-          ) : null}
-
-          {calView === 'day' ? (
-            <div className="rounded-2xl border border-slate-200 bg-slate-50/40 p-4">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <p className="text-sm font-black text-slate-900">
-                  {anchorDate.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}
-                </p>
-                <span className="text-xs font-semibold text-emerald-800">
-                  {freeSlotCountForDateKey(dateKeyFromDate(anchorDate))} tour windows this weekday
-                </span>
-              </div>
-              <ul className="mt-4 space-y-2">
-                {eventsForKey(dateKeyFromDate(anchorDate)).length === 0 ? (
-                  <li className="text-sm text-slate-500">Nothing scheduled on this day.</li>
-                ) : (
-                  eventsForKey(dateKeyFromDate(anchorDate)).map((ev, i) => (
-                    <li
-                      key={`${ev.date}-${i}-${ev.label}`}
-                      className={`rounded-xl border border-slate-100 px-3 py-2 text-sm font-semibold ${eventToneCls(ev)}`}
-                    >
-                      {ev.label}
-                    </li>
-                  ))
-                )}
-              </ul>
-            </div>
-          ) : null}
-
-          {/* Selected date: tour requests + full event list */}
-          <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-            <div className="flex flex-wrap items-start justify-between gap-2">
-              <div>
-                <p className="text-[11px] font-bold uppercase tracking-wide text-[#2563eb]">Selected date</p>
-                <p className="text-lg font-black text-slate-900">{detailDateLabel}</p>
-              </div>
-              <button
-                type="button"
-                onClick={() => selectCalendarDateKey(todayKey)}
-                className="rounded-lg border border-slate-200 px-3 py-1 text-xs font-semibold text-slate-600 hover:bg-slate-50"
-              >
-                Jump to today
-              </button>
-            </div>
-
-            <div className="mt-4 border-t border-slate-100 pt-4">
-              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Tour requests</p>
-              {toursForDetailDate.length === 0 ? (
-                <p className="mt-2 text-sm text-slate-500">No tour requests on this date.</p>
-              ) : (
-                <ul className="mt-2 space-y-3">
-                  {toursForDetailDate.map((row) => {
-                    const needs = tourApprovalNeedsAction(row)
-                    const appr = String(row['Manager Approval'] || '').trim() || 'Pending'
-                    return (
-                      <li key={row.id} className="rounded-xl border border-slate-200 bg-slate-50/50 p-3 text-sm">
-                        <div className="font-bold text-slate-900">{row.Name || 'Guest'}</div>
-                        <div className="mt-1 text-xs text-slate-600">
-                          {row.Property ? `${row.Property} · ` : ''}
-                          {row['Preferred Time'] || 'Time TBD'}
-                          {row['Tour Format'] ? ` · ${row['Tour Format']}` : ''}
-                        </div>
-                        {row.Email ? <div className="mt-0.5 text-xs text-slate-500">{row.Email}</div> : null}
-                        <div className="mt-2 text-[11px] font-semibold uppercase tracking-wide text-slate-400">Status: {appr}</div>
-                        {needs ? (
-                          managerCannotApproveTours(manager) ? (
-                            <p className="mt-2 text-xs font-medium text-amber-800">
-                              Approve and decline are not available for SWE preview accounts.
-                            </p>
-                          ) : (
-                            <div className="mt-2 flex flex-wrap gap-2">
-                              <button
-                                type="button"
-                                onClick={() => respondTourRequest(row, true)}
-                                className="rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-700"
-                              >
-                                Approve
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => respondTourRequest(row, false)}
-                                className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50"
-                              >
-                                Decline
-                              </button>
-                            </div>
-                          )
-                        ) : null}
-                      </li>
-                    )
-                  })}
-                </ul>
-              )}
-            </div>
-
-            <div className="mt-6 border-t border-slate-100 pt-4">
-              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">All items this day</p>
-              <ul className="mt-2 space-y-1.5">
-                {eventsForKey(detailDateKey).length === 0 ? (
-                  <li className="text-sm text-slate-500">No other calendar items.</li>
-                ) : (
-                  eventsForKey(detailDateKey).map((ev, i) => (
-                    <li
-                      key={`${detailDateKey}-${i}-${ev.label}`}
-                      className={`rounded-lg px-3 py-2 text-sm font-medium ${eventToneCls(ev)}`}
-                    >
-                      {ev.label}
-                    </li>
-                  ))
-                )}
-              </ul>
-            </div>
-          </div>
-        </div>
-      )}
+      <LetUsMeetModal
+        open={meetOpen}
+        initialDateKey={selectedDateKey}
+        manager={manager}
+        onClose={() => setMeetOpen(false)}
+        onCreated={reloadScheduling}
+      />
     </div>
   )
 }
@@ -3972,25 +3548,15 @@ function ManagerPaymentsPanel({ allowedPropertyNames }) {
           <p className="mt-2 text-amber-900/90">{paymentsLoadError}</p>
           <ul className="mt-3 list-disc space-y-1 pl-5 text-amber-900/85">
             <li>
-              In{' '}
-              <a
-                href="https://airtable.com/create/tokens"
-                target="_blank"
-                rel="noreferrer"
-                className="font-semibold text-[#2563eb] underline underline-offset-2"
-              >
-                Airtable → Developer hub → Personal access tokens
-              </a>
-              , open your token and add the base that contains the <strong>Payments</strong> table.
+              In your data service’s developer console, open your personal access token and grant access to the base that contains the{' '}
+              <strong>Payments</strong> table.
             </li>
             <li>
               Enable scopes <strong className="font-mono text-xs">data.records:read</strong> and{' '}
               <strong className="font-mono text-xs">data.records:write</strong> for that base.
             </li>
             <li>
-              Payments are read from your Airtable base <code className="rounded bg-white/80 px-1.5 py-0.5 text-xs">{AIRTABLE_PAYMENTS_BASE_ID}</code>
-              <span> (<code className="text-xs">VITE_AIRTABLE_BASE_ID</code>)</span>
-              .
+              Payments are read from workspace <code className="rounded bg-white/80 px-1.5 py-0.5 text-xs">{AIRTABLE_PAYMENTS_BASE_ID}</code>.
             </li>
           </ul>
         </div>

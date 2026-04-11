@@ -1,17 +1,21 @@
-const TOKEN_LINK = 'https://airtable.com/create/tokens'
-
 export function parseAirtableBaseIdFromApiUrl(url) {
   const m = String(url || '').match(/\/v0\/(app[a-zA-Z0-9]+)\//)
   return m ? m[1] : null
 }
 
-/** Shared instructions (no specific base id). */
-export const AIRTABLE_TOKEN_SETUP_HELP = `Open ${TOKEN_LINK}, edit your personal access token, add your Airtable base under Access, and enable data.records:read and data.records:write. The app uses a single base ID: set VITE_AIRTABLE_BASE_ID (and the same value as AIRTABLE_BASE_ID on the server if needed).`
+/** User-facing steps when API token cannot read the workspace (no vendor branding in copy). */
+export const DATA_API_TOKEN_SETUP_HELP =
+  'In your data service’s developer console, edit your personal access token: grant access to the workspace matching your configured base ID and enable data.records:read and data.records:write.'
 
-/** User-facing message when Airtable returns INVALID_PERMISSIONS_OR_MODEL_NOT_FOUND */
+/** @deprecated use DATA_API_TOKEN_SETUP_HELP */
+export const AIRTABLE_TOKEN_SETUP_HELP = DATA_API_TOKEN_SETUP_HELP
+
+const DATA_ACCESS_PREFIX = 'Data access blocked for workspace'
+
+/** User-facing message when the records API returns INVALID_PERMISSIONS_OR_MODEL_NOT_FOUND */
 export function airtablePermissionDeniedMessage(requestUrl) {
-  const baseId = parseAirtableBaseIdFromApiUrl(requestUrl) || 'this base'
-  return `Airtable blocked access to base ${baseId}. ${AIRTABLE_TOKEN_SETUP_HELP}`
+  const baseId = parseAirtableBaseIdFromApiUrl(requestUrl) || 'this workspace'
+  return `${DATA_ACCESS_PREFIX} ${baseId}. ${DATA_API_TOKEN_SETUP_HELP}`
 }
 
 function rawTextIndicatesAirtableAccessDenied(text) {
@@ -32,7 +36,7 @@ export function responseBodyIndicatesAirtablePermissionDenied(body) {
   return rawTextIndicatesAirtableAccessDenied(body)
 }
 
-/** If body is an Airtable permission error, return an Error to throw; otherwise null. */
+/** If body is a permission error from the records API, return an Error to throw; otherwise null. */
 export function errorFromAirtableApiBody(requestUrl, bodyText) {
   if (!responseBodyIndicatesAirtablePermissionDenied(bodyText)) return null
   return new Error(airtablePermissionDeniedMessage(requestUrl))
@@ -41,6 +45,7 @@ export function errorFromAirtableApiBody(requestUrl, bodyText) {
 export function isAirtablePermissionErrorMessage(message) {
   const s = String(message || '')
   return (
+    s.includes(DATA_ACCESS_PREFIX) ||
     s.includes('Airtable blocked access to base') ||
     s.includes('INVALID_PERMISSIONS_OR_MODEL_NOT_FOUND') ||
     s.includes('does not have permission to read this base') ||
@@ -49,7 +54,7 @@ export function isAirtablePermissionErrorMessage(message) {
 }
 
 /**
- * When every dashboard warning is the same class of Airtable token/base issue,
+ * When every dashboard warning is the same class of token/base issue,
  * collapse duplicate instructions into one short list + one help paragraph.
  */
 export function consolidateManagerDashboardWarnings(warnings) {
@@ -64,10 +69,10 @@ export function consolidateManagerDashboardWarnings(warnings) {
   const allPerm = parsed.every((p) => isAirtablePermissionErrorMessage(p.message))
   if (!allPerm || parsed.length <= 1) return warnings
 
-  const baseRe = /\bbase (app[a-zA-Z0-9]+)\b/
+  const baseRe = /\b(app[a-zA-Z0-9]+)\b/
   const sectionLines = parsed.map((p) => {
     const bid = p.message.match(baseRe)?.[1]
     return bid ? `${p.label} (${bid})` : p.label
   })
-  return [`Could not load: ${sectionLines.join(', ')}.`, AIRTABLE_TOKEN_SETUP_HELP]
+  return [`Could not load: ${sectionLines.join(', ')}.`, DATA_API_TOKEN_SETUP_HELP]
 }

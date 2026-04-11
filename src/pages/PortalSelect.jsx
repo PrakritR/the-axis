@@ -59,7 +59,7 @@ function AdminPortalAuthForm({ onSuccess }) {
   return (
     <form onSubmit={handleSubmit} className="mt-0 space-y-4">
       <p className="text-sm text-slate-600">
-        Internal Axis console — Admin Profile (Airtable), env CEO, or site owner credentials.
+        Internal Axis console — Admin Profile, env CEO, or site owner credentials.
       </p>
       <PortalField label="Email">
         <input

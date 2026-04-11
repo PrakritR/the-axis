@@ -107,7 +107,7 @@ function AdminLoginView({ onAuthenticated }) {
         <div className="text-[11px] font-bold uppercase tracking-[0.2em] text-sky-400">Axis Admin</div>
         <h1 className="mt-2 text-2xl font-black text-white">Internal portal</h1>
         <p className="mt-2 text-sm text-slate-400">
-          Use the email and password from your <strong>Admin Profile</strong> row in Airtable, or the env CEO / site owner account configured on the server.
+          Use the email and password from your internal <strong>Admin Profile</strong>, or the env CEO / site owner account configured on the server.
         </p>
 
         <form onSubmit={handleSignIn} className="mt-6 space-y-4">
@@ -183,7 +183,7 @@ export default function AdminPortal() {
       setAccounts(next.accounts)
       setApplications(next.applications)
     } catch (e) {
-      toast.error(e?.message || 'Could not load Airtable data.')
+      toast.error(e?.message || 'Could not load data.')
     } finally {
       setDataLoading(false)
     }
@@ -194,7 +194,7 @@ export default function AdminPortal() {
     if (!isAdminPortalAirtableConfigured()) {
       if (!airtableConfigWarned.current) {
         airtableConfigWarned.current = true
-        toast.error('Admin data needs VITE_AIRTABLE_TOKEN and VITE_AIRTABLE_BASE_ID (same as manager portal).')
+        toast.error('Admin data needs API token and base ID configured (same as manager portal).')
       }
       return
     }
@@ -294,13 +294,13 @@ export default function AdminPortal() {
                     : 'Admin dashboard'}
           </h1>
           {dataLoading ? (
-            <p className="text-sm text-slate-500">Syncing data from Airtable…</p>
+            <p className="text-sm text-slate-500">Syncing data…</p>
           ) : null}
           {showInternalPortalHandoff(user.role) ? (
             <div className="rounded-[24px] border border-violet-300/60 bg-[linear-gradient(135deg,#f5f3ff_0%,#ffffff_100%)] p-5 shadow-sm">
               <h2 className="text-sm font-black text-violet-950">Open test portals</h2>
               <p className="mt-2 text-xs text-violet-900/80">
-                Use the shared test records from Airtable to verify manager, resident, and admin flows end-to-end.
+                Use the shared test records in your workspace to verify manager, resident, and admin flows end-to-end.
               </p>
               <div className="mt-4 flex flex-wrap gap-2">
                 <button
@@ -404,7 +404,7 @@ export default function AdminPortal() {
                     try {
                       await adminApproveProperty(approval.id)
                       await refreshPortalData()
-                      toast.success('Property approved in Airtable')
+                      toast.success('Property approved')
                       setSelectedApprovalId(null)
                     } catch (e) {
                       toast.error(e?.message || 'Approve failed')
@@ -425,7 +425,7 @@ export default function AdminPortal() {
                     try {
                       await adminRequestPropertyEdits(approval.id)
                       await refreshPortalData()
-                      toast.success('Marked as changes requested in Airtable')
+                      toast.success('Marked as changes requested')
                     } catch (e) {
                       toast.error(e?.message || 'Update failed (add single-line field "Approval Status" if missing).')
                     } finally {
@@ -445,7 +445,7 @@ export default function AdminPortal() {
                     try {
                       await adminRejectProperty(approval.id)
                       await refreshPortalData()
-                      toast.success('Property rejected in Airtable')
+                      toast.success('Property rejected')
                       setSelectedApprovalId(null)
                     } catch (e) {
                       toast.error(e?.message || 'Reject failed')

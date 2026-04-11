@@ -669,7 +669,7 @@ async function listMessagesByFormulaPaginated(formula) {
 
 export async function getMessagesByThreadKey(threadKey) {
   if (!messageFieldNameConfigured(MESSAGE_THREAD_KEY_FIELD)) {
-    throw new Error('Configure VITE_AIRTABLE_MESSAGE_THREAD_KEY_FIELD and add that field on the Messages table.')
+    throw new Error('Configure the Messages thread-key field name in your project environment and add that field on the Messages table.')
   }
   const tk = String(threadKey || '').trim()
   if (!tk) return []
@@ -681,7 +681,7 @@ export async function getMessagesByThreadKey(threadKey) {
 /** All internal portal threads (management & site managers) for the Admin inbox. */
 export async function getAllPortalInternalThreadMessages() {
   if (!messageFieldNameConfigured(MESSAGE_THREAD_KEY_FIELD)) {
-    throw new Error('Add a "Thread Key" text field to Messages (or set VITE_AIRTABLE_MESSAGE_THREAD_KEY_FIELD).')
+    throw new Error('Add a "Thread Key" text field to Messages (or set the thread-key field name in your project environment).')
   }
   const f = `{${MESSAGE_THREAD_KEY_FIELD}}`
   const formula = `OR(FIND("internal:mgmt-admin", ${f} & "") > 0, FIND("internal:site-manager", ${f} & "") > 0, FIND("internal:admin-public", ${f} & "") > 0, FIND("internal:resident-leasing", ${f} & "") > 0)`
@@ -883,7 +883,8 @@ export async function getSignedLeases() {
 export const airtableReady = Boolean(
   BASE_ID &&
   API_KEY &&
-  API_KEY !== 'your_airtable_token'
+  API_KEY !== 'your_airtable_token' &&
+  API_KEY !== 'your_data_api_token'
 )
 
 // ---------------------------------------------------------------------------
@@ -930,7 +931,7 @@ export async function getAllWorkOrders() {
 export async function getWorkOrderById(recordId) {
   const id = String(recordId || '').trim()
   if (!/^rec[a-zA-Z0-9]{14,}$/.test(id)) {
-    throw new Error('Enter a valid Airtable record ID (e.g. recXXXXXXXXXXXXXX).')
+    throw new Error('Enter a valid record ID (e.g. recXXXXXXXXXXXXXX).')
   }
   const data = await request(`${tableUrl(TABLES.workOrders)}/${id}`)
   return mapRecord(data)

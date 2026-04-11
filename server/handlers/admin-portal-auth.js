@@ -5,7 +5,7 @@
  *   { action: "ceo-login", email, password }
  *   { action: "admin-profile-login", email, password }
  *
- * Admin Profile (Airtable): table name from AIRTABLE_ADMIN_PROFILE_TABLE (default "Admin Profile").
+ * Admin Profile: table name from AIRTABLE_ADMIN_PROFILE_TABLE (default "Admin Profile").
  * Expected fields: Email, Password, Role, Name, Admin ID (optional). Role values: CEO, CTO, CFO, SWE, Admin.
  *
  * Site owner credentials must be set server-side only (never VITE_*):
@@ -64,7 +64,7 @@ export default async function handler(req, res) {
     if (!AIRTABLE_TOKEN) {
       return res.status(503).json({
         error:
-          'Admin profile sign-in needs AIRTABLE_TOKEN or VITE_AIRTABLE_TOKEN and a base id (VITE_AIRTABLE_BASE_ID / AIRTABLE_BASE_ID).',
+          'Admin profile sign-in needs the server data API token and workspace base ID configured (see deployment environment variables).',
       })
     }
     const tableEnc = encodeURIComponent(ADMIN_PROFILE_TABLE)
@@ -75,13 +75,13 @@ export default async function handler(req, res) {
       const atRes = await fetch(url, { headers: airtableHeaders() })
       if (!atRes.ok) {
         const errText = await atRes.text().catch(() => '')
-        console.warn('[admin-profile-login] Airtable error', atRes.status, errText.slice(0, 200))
-        return res.status(503).json({ error: 'Could not load admin directory from Airtable.' })
+        console.warn('[admin-profile-login] data API error', atRes.status, errText.slice(0, 200))
+        return res.status(503).json({ error: 'Could not load admin directory.' })
       }
       data = await atRes.json()
     } catch (e) {
       console.warn('[admin-profile-login] fetch failed', e?.message)
-      return res.status(503).json({ error: 'Could not reach Airtable.' })
+      return res.status(503).json({ error: 'Could not reach the data service.' })
     }
     const record = data.records?.[0]
     const fields = record?.fields || {}

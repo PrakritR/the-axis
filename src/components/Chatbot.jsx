@@ -137,7 +137,7 @@ Answer all of the above confidently. Keep answers short and direct. For custom d
 - Never link to axis-seattle-housing.com, theaxishousing.com, or netlify deploy URLs — use only site-relative paths like /apply, /contact, /portal.
 - If a "## Current page:" section is appended to your instructions for this request, follow it for step-by-step help on that screen.
 
-- Never share internal admin passwords, API keys, or credentials. For admin access questions, say they must use credentials issued by the team (e.g. Airtable Admin Profile or server-configured accounts) and must not be shared in chat.`
+- Never share internal admin passwords, API keys, or credentials. For admin access questions, say they must use credentials issued by the team (internal admin profile or server-configured accounts) and must not be shared in chat.`
 }
 
 function composeSystemPrompt(pathname) {

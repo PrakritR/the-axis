@@ -158,7 +158,7 @@ export function ApplicationDetailPanel({ application, partnerLabel, onClose }) {
     const v = formatApplicationDetailValue(raw[key])
     if (v) otherItems.push({ label: key, value: v })
   }
-  if (otherItems.length) sections.push({ title: 'Other fields (Airtable)', items: otherItems })
+  if (otherItems.length) sections.push({ title: 'Other fields', items: otherItems })
 
   const submitted = raw.created_at
     ? (() => {
@@ -192,10 +192,6 @@ export function ApplicationDetailPanel({ application, partnerLabel, onClose }) {
       </div>
 
       <dl className="space-y-0 border-t border-slate-100 pt-4">
-        <div className="grid gap-1 border-b border-slate-100 py-2 sm:grid-cols-[minmax(0,200px)_1fr] sm:gap-4">
-          <dt className="text-xs font-semibold uppercase tracking-wide text-slate-500">Airtable record</dt>
-          <dd className="font-mono text-xs text-slate-700">{application.id}</dd>
-        </div>
         {submitted ? (
           <div className="grid gap-1 border-b border-slate-100 py-2 sm:grid-cols-[minmax(0,200px)_1fr] sm:gap-4">
             <dt className="text-xs font-semibold uppercase tracking-wide text-slate-500">Submitted</dt>

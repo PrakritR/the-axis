@@ -4,7 +4,7 @@
  * Register this URL in SignForge (Dashboard → Webhooks), with query token for auth:
  *   https://<your-domain>/api/signforge-webhook?token=<SIGNFORGE_WEBHOOK_TOKEN>
  *
- * On envelope.completed, marks the matching Lease Draft as Signed in Airtable.
+ * On envelope.completed, marks the matching Lease Draft as Signed in the workspace.
  * HMAC verification (x-webhook-signature) requires raw body; Vercel parses JSON, so we
  * use a shared token in the URL instead. See LEASE_WORKFLOW_SETUP.md.
  */
@@ -30,7 +30,7 @@ async function findDraftByEnvelopeId(envelopeId) {
   const res = await fetch(url, { headers: airtableHeaders() })
   if (!res.ok) {
     const t = await res.text()
-    throw new Error(`Airtable list failed: ${t.slice(0, 300)}`)
+    throw new Error(`Record list failed: ${t.slice(0, 300)}`)
   }
   const data = await res.json()
   const rec = data.records?.[0]
@@ -52,7 +52,7 @@ async function patchDraftSigned(recordId) {
   })
   if (!res.ok) {
     const t = await res.text()
-    throw new Error(`Airtable patch failed: ${t.slice(0, 400)}`)
+    throw new Error(`Record patch failed: ${t.slice(0, 400)}`)
   }
   return res.json()
 }
@@ -98,7 +98,7 @@ export default async function handler(req, res) {
   }
 
   if (!AIRTABLE_TOKEN) {
-    return res.status(500).json({ error: 'Airtable not configured' })
+    return res.status(500).json({ error: 'Data service not configured' })
   }
 
   const body = req.body || {}

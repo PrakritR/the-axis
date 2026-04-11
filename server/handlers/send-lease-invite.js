@@ -29,7 +29,7 @@ export default async function handler(req, res) {
   const EMAILJS_LEASE_TEMPLATE = process.env.VITE_EMAILJS_LEASE_TEMPLATE || process.env.VITE_EMAILJS_TEMPLATE_ID
 
   if (!AIRTABLE_TOKEN) {
-    return res.status(500).json({ error: 'Server misconfigured: missing VITE_AIRTABLE_TOKEN' })
+    return res.status(500).json({ error: 'Server misconfigured: missing data API token.' })
   }
 
   const token = randomUUID()

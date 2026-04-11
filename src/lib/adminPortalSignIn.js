@@ -71,6 +71,6 @@ export async function authenticateAdminPortal(identifier, password) {
   return {
     ok: false,
     error:
-      'Invalid credentials. Use the email and password from your Airtable Admin Profile, or site owner / CEO credentials configured on the server.',
+      'Invalid credentials. Use the email and password from your internal Admin Profile, or site owner / CEO credentials configured on the server.',
   }
 }

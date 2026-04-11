@@ -42,7 +42,7 @@ async function airtablePatchLeaseDraft(recordId, fields) {
   if (!res.ok) {
     const t = await res.text()
     throw new Error(
-      `Airtable update failed. Add optional columns "SignForge Envelope ID" and "SignForge Sent At" (date) to Lease Drafts if missing. ${t.slice(0, 500)}`
+      `Record update failed. Add optional columns "SignForge Envelope ID" and "SignForge Sent At" (date) to Lease Drafts if missing. ${t.slice(0, 500)}`
     )
   }
   const data = await res.json()
@@ -90,13 +90,13 @@ export default async function handler(req, res) {
   }
 
   if (!AIRTABLE_TOKEN) {
-    return res.status(500).json({ error: 'Airtable token is not configured.' })
+    return res.status(500).json({ error: 'Data API token is not configured.' })
   }
 
   const { leaseDraftId, performedBy, performedByRole } = req.body || {}
   const id = String(leaseDraftId || '').trim()
   if (!id.startsWith('rec')) {
-    return res.status(400).json({ error: 'leaseDraftId (Airtable record id) is required.' })
+    return res.status(400).json({ error: 'leaseDraftId (record id) is required.' })
   }
 
   try {

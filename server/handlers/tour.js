@@ -75,7 +75,7 @@ export default async function handler(req, res) {
   // ── POST: schedule a tour ─────────────────────────────────────────────────
   if (req.method === 'POST') {
     const token = process.env.AIRTABLE_TOKEN
-    if (!token) return res.status(500).json({ error: 'AIRTABLE_TOKEN is not configured on the server.' })
+    if (!token) return res.status(500).json({ error: 'Data API token is not configured on the server.' })
 
     const { name, email, phone, type, property, room, tourFormat, manager, managerEmail, tourAvailability, preferredDate, preferredTime, notes } = req.body ?? {}
     if (!name || !email) return res.status(400).json({ error: 'Name and email are required.' })

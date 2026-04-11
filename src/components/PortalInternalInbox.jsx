@@ -74,7 +74,7 @@ function SetupBanner({ variant }) {
 
   return (
     <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950">
-      <p className="font-semibold text-amber-900">Connect the portal inbox in Airtable</p>
+      <p className="font-semibold text-amber-900">Connect the portal inbox</p>
       <ol className="mt-2 list-decimal space-y-1 pl-5 text-amber-900/90">
         <li>
           On the <strong>Messages</strong> table, add a single-line text field <code className="rounded bg-white/80 px-1">{THREAD_FIELD}</code>{' '}
@@ -83,7 +83,7 @@ function SetupBanner({ variant }) {
         </li>
         <li>Allow <strong>Work Order</strong> to be empty for rows created from these threads (optional link field).</li>
         <li>
-          Optional: create an Airtable Form for this table and set <code className="rounded bg-white/80 px-1">VITE_AIRTABLE_PORTAL_INBOX_FORM_URL</code>{' '}
+          Optional: create a web form for this table and set the portal inbox form URL in your project environment
           — the button below pre-fills thread and channel.
         </li>
       </ol>
@@ -94,7 +94,7 @@ function SetupBanner({ variant }) {
           rel="noreferrer"
           className="mt-3 inline-flex rounded-xl bg-amber-900 px-4 py-2 text-xs font-semibold text-white hover:bg-amber-800"
         >
-          Open Airtable message form
+          Open message form
         </a>
       ) : null}
     </div>
@@ -104,7 +104,7 @@ function SetupBanner({ variant }) {
 /**
  * Unified portal inbox (Messages table + thread key): resident, partner/management, site manager, or admin.
  * @param {'admin' | 'management' | 'site_manager' | 'resident'} variant
- * @param {object} [resident] — required when variant === 'resident' (Airtable resident row)
+ * @param {object} [resident] — required when variant === 'resident' (resident record)
  */
 export default function PortalInternalInbox({ variant, userEmail, userDisplayName, resident = null }) {
   const email = String(
@@ -233,7 +233,7 @@ export default function PortalInternalInbox({ variant, userEmail, userDisplayNam
       <div className="space-y-4">
         <SetupBanner variant={variant} />
         <p className="text-sm text-slate-500">
-          Set <code className="rounded bg-slate-100 px-1">VITE_AIRTABLE_TOKEN</code> and base ID, then add the fields above.
+          Set your data API token and workspace base ID in the project environment, then add the fields above.
         </p>
       </div>
     )
@@ -339,7 +339,7 @@ export default function PortalInternalInbox({ variant, userEmail, userDisplayNam
               rel="noreferrer"
               className="mt-2 inline-flex text-xs font-semibold text-[#2563eb] hover:underline"
             >
-              Submit via Airtable form →
+              Submit via web form →
             </a>
           ) : null}
         </div>
