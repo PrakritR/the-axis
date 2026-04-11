@@ -1,0 +1,144 @@
+Create field in table `Admin Profile`
+`SWE Test` -> checkbox
+
+Create field in table `Manager Profile`
+`SWE Test` -> checkbox
+
+Create field in table `Resident Profile`
+`SWE Test` -> checkbox
+
+Create field in table `Applications`
+`SWE Test` -> checkbox
+
+Create field in table `Properties`
+`SWE Test` -> checkbox
+
+Create field in table `Lease Drafts`
+`SWE Test` -> checkbox
+
+Create field in table `Work Orders`
+`SWE Test` -> checkbox
+
+Create field in table `Messages`
+`SWE Test` -> checkbox
+
+Create field in table `Payments`
+`SWE Test` -> checkbox
+
+Create field in table `Audit Log`
+`SWE Test` -> checkbox
+
+Create record in table `Admin Profile`
+`Name` -> single line text value `Axis SWE Test`
+`Email` -> email value `swe-test@axis.internal`
+`Password` -> single line text value `Choose a password`
+`Role` -> single select value `SWE`
+`SWE Test` -> checked
+
+Create record in table `Manager Profile`
+`Name` -> single line text value `Axis SWE Test Manager`
+`Email` -> email value `manager-test@axis.internal`
+`Password` -> single line text value `Choose a password`
+`Phone Number` -> phone number value `2065550100`
+`Manager ID` -> single line text value `MGR-SWETEST`
+`Role` -> single line text value `Manager`
+`Plan Type` -> single line text value `Test`
+`Billing Interval` -> single line text value `Manual`
+`Active` -> checked
+`SWE Test` -> checked
+
+Create record in table `Properties`
+`Name` -> single line text value `Axis SWE Test House`
+`Address` -> long text value `Test address`
+`Property` -> single line text value `Axis SWE Test House`
+`Approved` -> checked
+`Approval Status` -> single select value `Approved`
+`Status` -> single select value `Live`
+`Manager Email` -> email value `manager-test@axis.internal`
+`Site Manager Email` -> email value `manager-test@axis.internal`
+`Manager ID` -> single line text value `MGR-SWETEST`
+`SWE Test` -> checked
+
+Create record in table `Applications`
+`Signer Full Name` -> single line text value `Axis SWE Test Resident`
+`Signer Email` -> email value `resident-test@axis.internal`
+`Signer Phone Number` -> phone number value `2065550101`
+`Property Name` -> single line text value `Axis SWE Test House`
+`Room Number` -> single line text value `101`
+`Lease Term` -> single line text value `12-Month`
+`Lease Start Date` -> date value `Set a start date`
+`Lease End Date` -> date value `Set an end date`
+`Approved` -> checked
+`Application Approval` -> checked
+`Rent Amount` -> currency value `Set rent`
+`Security Deposit` -> currency value `Set deposit`
+`Utilities Fee` -> currency value `Set utilities`
+`SWE Test` -> checked
+
+Create record in table `Resident Profile`
+`Name` -> single line text value `Axis SWE Test Resident`
+`Email` -> email value `resident-test@axis.internal`
+`Password` -> single line text value `Choose a password`
+`Phone` -> phone number value `2065550101`
+`Status` -> single line text value `Active`
+`House` -> single line text value `Axis SWE Test House`
+`Unit Number` -> single line text value `101`
+`Lease Term` -> single line text value `12-Month`
+`Lease Start Date` -> date value `Match application start date`
+`Lease End Date` -> date value `Match application end date`
+`Application Approval` -> checked
+`Application` -> link to `Applications` value `Axis SWE Test Resident application`
+`SWE Test` -> checked
+
+Create record in table `Lease Drafts`
+`Resident Name` -> single line text value `Axis SWE Test Resident`
+`Resident Email` -> email value `resident-test@axis.internal`
+`Property` -> single line text value `Axis SWE Test House`
+`Unit` -> single line text value `101`
+`Lease Start Date` -> date value `Match application start date`
+`Lease End Date` -> date value `Match application end date`
+`Rent Amount` -> currency value `Match application rent`
+`Deposit Amount` -> currency value `Match application deposit`
+`Utilities Fee` -> currency value `Match application utilities`
+`Lease Term` -> single line text value `12-Month`
+`Status` -> single select value `Draft Generated`
+`Application Record ID` -> single line text value `Use the Airtable application record id`
+`SWE Test` -> checked
+
+Create record in table `Payments`
+`Resident` -> link to `Resident Profile` value `Axis SWE Test Resident`
+`Resident Name` -> single line text value `Axis SWE Test Resident`
+`Property Name` -> single line text value `Axis SWE Test House`
+`Room Number` -> single line text value `101`
+`Type` -> single line text value `Rent`
+`Month` -> single line text value `Test Month`
+`Amount Due` -> currency value `Set amount`
+`Amount Paid` -> currency value `0`
+`Balance` -> currency value `Match amount due`
+`Due Date` -> date value `Set due date`
+`Status` -> single select value `Unpaid`
+`SWE Test` -> checked
+
+Create record in table `Work Orders`
+`Title` -> single line text value `Axis SWE Test Work Order`
+`Description` -> long text value `Test issue`
+`Category` -> single line text value `General Maintenance`
+`Priority` -> single select value `Low`
+`Status` -> single select value `Submitted`
+`Resident` -> link to `Resident Profile` value `Axis SWE Test Resident`
+`Property` -> single line text value `Axis SWE Test House`
+`SWE Test` -> checked
+
+Create record in table `Messages`
+`Thread Key` -> single line text value `resident::swe-test`
+`Channel` -> single line text value `portal`
+`Sender Email` -> email value `resident-test@axis.internal`
+`Message` -> long text value `Test message`
+`SWE Test` -> checked
+
+Create record in table `Audit Log`
+`Action Type` -> single line text value `SWE Test Setup`
+`Performed By` -> single line text value `Axis SWE Test`
+`Performed By Role` -> single line text value `SWE`
+`Notes` -> long text value `Initial SWE test seed`
+`SWE Test` -> checked

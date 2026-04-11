@@ -15,6 +15,7 @@ import {
   markDeveloperPortalActive,
   clearDeveloperPortalFlags,
   seedDeveloperManagerSession,
+  seedInternalStaffManagerSession,
 } from '../lib/developerPortal'
 import { ApplicationDetailPanel } from '../lib/applicationDetailPanel.jsx'
 import { PropertyDetailPanel } from '../lib/propertyDetailPanel.jsx'
@@ -45,19 +46,13 @@ const APPROVER_ONLY_NAV = [
   { id: 'approvals', label: 'Property approvals' },
 ]
 
-/** SWE: inbox + dashboard only (no approvals, properties list, managers, or applications). */
-const SWE_NAV = [
-  { id: 'dashboard', label: 'Dashboard' },
-  { id: 'messages', label: 'Inbox' },
-]
-
-/** CEO-only: seed session and open manager/resident portals from admin. Exec/SWE use admin data here only. */
-function showCeoPortalHandoff(role) {
-  return role === 'ceo'
+/** Internal staff can open portal test flows from the admin console. */
+function showInternalPortalHandoff(role) {
+  return role === 'ceo' || role === 'internal_exec' || role === 'internal_swe'
 }
 
 function showOwnerPortalJumps(role) {
-  return role === 'owner' || role === 'ceo'
+  return role === 'owner' || role === 'ceo' || role === 'internal_exec' || role === 'internal_swe'
 }
 
 const loginInputCls =
@@ -209,7 +204,9 @@ export default function AdminPortal() {
   function persistSession(u) {
     setSession(u)
     sessionStorage.setItem(AXIS_ADMIN_SESSION_KEY, JSON.stringify(u))
-    if (u?.role === 'ceo') markDeveloperPortalActive()
+    if (u?.role === 'ceo' || u?.role === 'internal_exec' || u?.role === 'internal_swe') {
+      markDeveloperPortalActive()
+    }
   }
 
   function handleSignOut() {
@@ -223,9 +220,6 @@ export default function AdminPortal() {
     if (session.role === 'internal_approver' && tab !== 'dashboard' && tab !== 'approvals') {
       setTab('dashboard')
     }
-    if (session.role === 'internal_swe' && tab !== 'dashboard' && tab !== 'messages') {
-      setTab('dashboard')
-    }
   }, [session, tab])
 
   useEffect(() => {
@@ -235,7 +229,6 @@ export default function AdminPortal() {
   const navItems = useMemo(() => {
     if (!session) return NAV_BASE
     if (session.role === 'internal_approver') return APPROVER_ONLY_NAV
-    if (session.role === 'internal_swe') return SWE_NAV
     return NAV_BASE
   }, [session])
 
@@ -280,7 +273,7 @@ export default function AdminPortal() {
             : user.role === 'internal_exec'
               ? `${user.airtableRole || 'Executive'} · full access`
               : user.role === 'internal_swe'
-                ? `${user.airtableRole || 'SWE'} · inbox only`
+                ? `${user.airtableRole || 'SWE'} · full test access`
                 : user.role === 'internal_approver'
                   ? 'Property approvals only'
                   : user.role || 'Admin'
@@ -303,27 +296,36 @@ export default function AdminPortal() {
           {dataLoading ? (
             <p className="text-sm text-slate-500">Syncing data from Airtable…</p>
           ) : null}
-          {showCeoPortalHandoff(user.role) ? (
+          {showInternalPortalHandoff(user.role) ? (
             <div className="rounded-[24px] border border-violet-300/60 bg-[linear-gradient(135deg,#f5f3ff_0%,#ffffff_100%)] p-5 shadow-sm">
-              <h2 className="text-sm font-black text-violet-950">Open manager / resident portals</h2>
+              <h2 className="text-sm font-black text-violet-950">Open test portals</h2>
+              <p className="mt-2 text-xs text-violet-900/80">
+                Use the shared test records from Airtable to verify manager, resident, and admin flows end-to-end.
+              </p>
               <div className="mt-4 flex flex-wrap gap-2">
                 <button
                   type="button"
                   onClick={() => {
-                    seedDeveloperManagerSession()
+                    if (user.role === 'ceo') {
+                      seedDeveloperManagerSession()
+                    } else {
+                      seedInternalStaffManagerSession({
+                        email: user.email,
+                        name: user.name,
+                        staffRole: user.airtableRole || user.role,
+                      })
+                    }
                     window.location.assign('/manager')
                   }}
                   className="rounded-xl bg-violet-600 px-4 py-2 text-xs font-semibold text-white shadow-sm transition-opacity hover:opacity-90"
                 >
-                  Manager portal (full scope)
+                  Open manager test portal
                 </button>
                 <a
-                  href="/portal"
-                  target="_blank"
-                  rel="noreferrer"
+                  href="/portal?portal=resident"
                   className="inline-flex items-center rounded-xl border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-50"
                 >
-                  Resident hub
+                  Open resident test login
                 </a>
               </div>
             </div>
@@ -352,9 +354,7 @@ export default function AdminPortal() {
             </div>
           ) : null}
           <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-            {user.role === 'internal_swe' ? (
-              <StatCard label="Inbox" value="Open" onClick={() => setTab('messages')} />
-            ) : user.role === 'internal_approver' ? (
+            {user.role === 'internal_approver' ? (
               <StatCard label="Property approvals queue" value={pendingApprovals.length} onClick={() => setTab('approvals')} />
             ) : (
               <>
