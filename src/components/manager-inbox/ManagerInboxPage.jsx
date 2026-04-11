@@ -2,8 +2,8 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import toast from 'react-hot-toast'
 import {
   getAllMessages,
+  getAllPortalInternalThreadMessages,
   sendMessage,
-  isInternalPortalThreadMessage,
   getMessagesByThreadKey,
   siteManagerThreadKey,
   residentLeasingThreadKey,
@@ -138,7 +138,33 @@ function managerInboxSectionForRow(lastMsgTs, state) {
   return lastMsgTs > state.lastReadAt.getTime() ? 'unopened' : 'opened'
 }
 
-function managerInboxStateKeyForSelection(selectedThreadId, axisThreadKey) {
+function adminPortalThreadTitle(threadKey) {
+  const t = String(threadKey)
+  if (t.startsWith('internal:mgmt-admin:')) {
+    return `Partner · ${t.slice('internal:mgmt-admin:'.length)}`
+  }
+  if (t.startsWith('internal:site-manager:')) {
+    return `Site manager · ${t.slice('internal:site-manager:'.length)}`
+  }
+  if (t === 'internal:admin-public:general') {
+    return 'Website · General inquiry'
+  }
+  if (t.startsWith('internal:admin-public:property:')) {
+    return 'Website · Property inquiry (admin)'
+  }
+  if (t.startsWith('internal:admin-public:')) {
+    return `Website · ${t.slice('internal:admin-public:'.length)}`
+  }
+  if (t.startsWith('internal:resident-leasing:')) {
+    return 'Resident · House team'
+  }
+  return t || 'Thread'
+}
+
+function managerInboxStateKeyForSelection(selectedThreadId, axisThreadKey, adminFullInbox) {
+  if (adminFullInbox && selectedThreadId && String(selectedThreadId).startsWith('internal:')) {
+    return selectedThreadId
+  }
   if (selectedThreadId === MANAGER_INBOX_AXIS) return axisThreadKey || ''
   const resId = managerInboxParseResidentThreadId(selectedThreadId)
   if (resId) return residentLeasingThreadKey(resId)
@@ -147,8 +173,9 @@ function managerInboxStateKeyForSelection(selectedThreadId, axisThreadKey) {
 
 /**
  * Manager portal inbox — two-column messaging.
+ * @param {boolean} [adminFullInbox] — load all internal portal threads (admin console); same UI as manager inbox.
  */
-export default function ManagerInboxPage({ manager, allowedPropertyNames }) {
+export default function ManagerInboxPage({ manager, allowedPropertyNames, adminFullInbox = false }) {
   const [allMsgs, setAllMsgs] = useState([])
   const [axisMsgs, setAxisMsgs] = useState([])
   const [loading, setLoading] = useState(true)
@@ -196,9 +223,42 @@ export default function ManagerInboxPage({ manager, allowedPropertyNames }) {
   }, [managerEmail])
 
   const loadAll = useCallback(async () => {
+    setLoadError('')
+    if (adminFullInbox) {
+      if (!managerEmail) {
+        setAllMsgs([])
+        setAxisMsgs([])
+        setLoading(false)
+        try {
+          await refreshInboxThreadState()
+        } catch {
+          /* non-fatal */
+        }
+        return
+      }
+      setLoading(true)
+      try {
+        const rows = await getAllPortalInternalThreadMessages()
+        setAllMsgs(rows)
+        setAxisMsgs([])
+      } catch (err) {
+        if (!isAirtablePermissionErrorMessage(err?.message)) {
+          setLoadError(formatDataLoadError(err))
+          toast.error('Inbox failed to load: ' + formatDataLoadError(err))
+        }
+      } finally {
+        setLoading(false)
+        try {
+          await refreshInboxThreadState()
+        } catch {
+          /* non-fatal */
+        }
+      }
+      return
+    }
+
     const hasScope = inboxScopeLower.size > 0
     const hasAxis = Boolean(axisThreadKey)
-    setLoadError('')
     if (!hasScope && !hasAxis) {
       setAllMsgs([])
       setAxisMsgs([])
@@ -232,7 +292,7 @@ export default function ManagerInboxPage({ manager, allowedPropertyNames }) {
         /* non-fatal */
       }
     }
-  }, [inboxScopeLower, axisThreadKey, refreshInboxThreadState])
+  }, [adminFullInbox, managerEmail, inboxScopeLower, axisThreadKey, refreshInboxThreadState])
 
   useEffect(() => {
     loadAll()
@@ -250,9 +310,41 @@ export default function ManagerInboxPage({ manager, allowedPropertyNames }) {
   }, [threadMenuOpen])
 
   const threadRows = useMemo(() => {
-    const rows = []
     const msgTime = (m) => new Date(m?.Timestamp || m?.created_at || 0).getTime()
 
+    if (adminFullInbox) {
+      const byKey = new Map()
+      for (const m of allMsgs) {
+        const tk = portalInboxThreadKeyFromRecord(m)
+        if (!tk) continue
+        if (!byKey.has(tk)) byKey.set(tk, [])
+        byKey.get(tk).push(m)
+      }
+      const rows = []
+      for (const [tk, rmsgs] of byKey) {
+        const sorted = [...rmsgs].sort((a, b) => msgTime(a) - msgTime(b))
+        const last = sorted[sorted.length - 1]
+        const lastMsgTs = last ? msgTime(last) : 0
+        const scopeHint =
+          tk.startsWith('internal:resident-leasing:') && last
+            ? extractResidentScopeTextFromMessageBody(sorted[0]?.Message || last?.Message || '')
+            : ''
+        rows.push({
+          id: tk,
+          stateKey: tk,
+          title: adminPortalThreadTitle(tk),
+          subtitle: scopeHint || undefined,
+          preview: last?.Message ? String(last.Message) : '',
+          time: last ? fmtDateTime(last.Timestamp || last.created_at) : '',
+          ts: lastMsgTs,
+          lastMsgTs,
+        })
+      }
+      rows.sort((a, b) => b.ts - a.ts)
+      return rows
+    }
+
+    const rows = []
     if (axisThreadKey) {
       const sortedAxis = [...axisMsgs].sort((a, b) => msgTime(a) - msgTime(b))
       const last = sortedAxis[sortedAxis.length - 1]
@@ -298,7 +390,7 @@ export default function ManagerInboxPage({ manager, allowedPropertyNames }) {
 
     rows.sort((a, b) => b.ts - a.ts)
     return rows
-  }, [allMsgs, axisMsgs, axisThreadKey, inboxScopeLower])
+  }, [adminFullInbox, allMsgs, axisMsgs, axisThreadKey, inboxScopeLower])
 
   const threadRowsWithMeta = useMemo(() => {
     return threadRows.map((row) => {
@@ -389,7 +481,7 @@ export default function ManagerInboxPage({ manager, allowedPropertyNames }) {
     [managerEmail, inboxStateBackend],
   )
 
-  const selectedStateKey = managerInboxStateKeyForSelection(selectedThreadId, axisThreadKey)
+  const selectedStateKey = managerInboxStateKeyForSelection(selectedThreadId, axisThreadKey, adminFullInbox)
   const selectedMeta = selectedStateKey ? inboxStateMap.get(selectedStateKey) : null
   const selectedInTrash = Boolean(selectedMeta?.trashed)
 
@@ -442,6 +534,18 @@ export default function ManagerInboxPage({ manager, allowedPropertyNames }) {
           }
           return
         }
+        if (adminFullInbox && String(selectedThreadId).startsWith('internal:')) {
+          const next = await getMessagesByThreadKey(selectedThreadId)
+          if (!cancelled) {
+            setThread(
+              [...next].sort(
+                (a, b) =>
+                  new Date(a.Timestamp || a.created_at || 0) - new Date(b.Timestamp || b.created_at || 0),
+              ),
+            )
+          }
+          return
+        }
         const resId = managerInboxParseResidentThreadId(selectedThreadId)
         if (resId) {
           const next = await getMessagesByThreadKey(residentLeasingThreadKey(resId))
@@ -469,13 +573,35 @@ export default function ManagerInboxPage({ manager, allowedPropertyNames }) {
     return () => {
       cancelled = true
     }
-  }, [selectedThreadId, axisThreadKey])
+  }, [selectedThreadId, axisThreadKey, adminFullInbox])
 
   async function handleSendReply(e) {
     e.preventDefault()
     if (!selectedThreadId || !reply.trim() || !managerEmail) return
     setSending(true)
     try {
+      if (adminFullInbox) {
+        await sendMessage({
+          senderEmail: managerEmail,
+          message: reply.trim(),
+          isAdmin: true,
+          threadKey: selectedThreadId,
+          channel: PORTAL_INBOX_CHANNEL_INTERNAL,
+        })
+        setReply('')
+        await loadAll()
+        const next = await getMessagesByThreadKey(selectedThreadId)
+        setThread(
+          [...next].sort(
+            (a, b) =>
+              new Date(a.Timestamp || a.created_at || 0) - new Date(b.Timestamp || b.created_at || 0),
+          ),
+        )
+        const sk = managerInboxStateKeyForSelection(selectedThreadId, axisThreadKey, adminFullInbox)
+        if (sk) await touchThreadRead(sk)
+        toast.success('Sent')
+        return
+      }
       if (selectedThreadId === MANAGER_INBOX_AXIS) {
         await sendMessage({
           senderEmail: managerEmail,
@@ -517,7 +643,7 @@ export default function ManagerInboxPage({ manager, allowedPropertyNames }) {
           )
         }
       }
-      const sk = managerInboxStateKeyForSelection(selectedThreadId, axisThreadKey)
+      const sk = managerInboxStateKeyForSelection(selectedThreadId, axisThreadKey, adminFullInbox)
       if (sk) await touchThreadRead(sk)
       toast.success('Sent')
     } catch (err) {
@@ -527,19 +653,23 @@ export default function ManagerInboxPage({ manager, allowedPropertyNames }) {
     }
   }
 
-  if (!inboxScopeLower.size && !axisThreadKey) {
+  if (!adminFullInbox && !inboxScopeLower.size && !axisThreadKey) {
     return null
   }
 
-  const readingTitle =
-    selectedThreadId === MANAGER_INBOX_AXIS
+  const readingTitle = adminFullInbox
+    ? selectedThreadId
+      ? adminPortalThreadTitle(selectedThreadId)
+      : 'Inbox'
+    : selectedThreadId === MANAGER_INBOX_AXIS
       ? 'Axis team'
       : managerInboxParseResidentThreadId(selectedThreadId || '')
         ? 'Resident inbox'
         : 'Inbox'
 
-  const readingSubtitle =
-    selectedThreadId === MANAGER_INBOX_AXIS
+  const readingSubtitle = adminFullInbox
+    ? ''
+    : selectedThreadId === MANAGER_INBOX_AXIS
       ? 'Axis support'
       : managerInboxParseResidentThreadId(selectedThreadId)
         ? 'Leasing thread'
@@ -547,26 +677,25 @@ export default function ManagerInboxPage({ manager, allowedPropertyNames }) {
 
   const listEmptyMessage =
     sectionFilter === 'trash' && inboxSections.trash.length === 0
-      ? 'Nothing removed.'
+      ? 'Empty'
       : inboxActiveTotal === 0 && sectionFilter !== 'trash'
-        ? 'No conversations yet.'
+        ? 'Empty'
         : threadSearch.trim()
-          ? 'Nothing matches your search.'
+          ? 'No matches'
           : sectionFilter === 'unread'
-            ? 'No unread conversations.'
+            ? 'Empty'
             : sectionFilter === 'open'
-              ? 'No conversations here yet.'
-              : 'Nothing for this filter.'
+              ? 'Empty'
+              : 'Empty'
 
   const composerPlaceholder =
-    selectedThreadId === MANAGER_INBOX_AXIS ? 'Message Axis…' : 'Write a reply…'
+    adminFullInbox || selectedThreadId !== MANAGER_INBOX_AXIS ? 'Write a reply…' : 'Message Axis…'
 
   return (
     <div className="mb-8">
       <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <h2 className="text-xl font-bold tracking-tight text-slate-900">Inbox</h2>
-          <p className="mt-0.5 text-sm text-slate-500">Message Axis and resident leasing threads in one place.</p>
         </div>
         <button
           type="button"
@@ -577,7 +706,7 @@ export default function ManagerInboxPage({ manager, allowedPropertyNames }) {
         </button>
       </div>
 
-      <div className="flex max-h-[min(82vh,780px)] min-h-[420px] flex-col overflow-hidden rounded-2xl border border-slate-200 bg-slate-50/80 shadow-sm md:flex-row">
+      <div className="flex min-h-[min(420px,calc(100dvh-10rem))] max-h-[calc(100dvh-10rem)] flex-col overflow-hidden rounded-2xl border border-slate-200 bg-slate-50/80 shadow-sm md:flex-row">
         <ConversationList
           loading={loading}
           errorMessage={loadError}
@@ -654,9 +783,7 @@ export default function ManagerInboxPage({ manager, allowedPropertyNames }) {
                   </div>
                 ) : null}
               </div>
-            ) : (
-              <p className="text-sm text-slate-500">Inbox</p>
-            )}
+            ) : null}
           </header>
 
           <div className="min-h-0 flex-1 overflow-y-auto bg-slate-50/40">
@@ -666,7 +793,6 @@ export default function ManagerInboxPage({ manager, allowedPropertyNames }) {
               selectedThreadId={selectedThreadId}
               isAxisThread={selectedThreadId === MANAGER_INBOX_AXIS}
               formatTime={fmtDateTime}
-              emptyHint="Send a reply below."
             />
           </div>
 

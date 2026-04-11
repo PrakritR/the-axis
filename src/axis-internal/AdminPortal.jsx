@@ -1,17 +1,26 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import toast from 'react-hot-toast'
-import PortalInternalInbox from '../components/PortalInternalInbox'
+import ManagerInboxPage from '../components/manager-inbox/ManagerInboxPage'
 import PortalShell, { StatCard, StatusPill, DataTable } from '../components/PortalShell'
 import {
   adminApproveProperty,
-  adminPatchInquiryLeadStatus,
-  adminPublishLeaseDraft,
   adminRejectProperty,
   adminRequestPropertyEdits,
   adminSetManagerActive,
   isAdminPortalAirtableConfigured,
   loadAdminPortalDataset,
 } from '../lib/adminPortalAirtable.js'
+import { authenticateAdminPortal } from '../lib/adminPortalSignIn'
+import {
+  markDeveloperPortalActive,
+  clearDeveloperPortalFlags,
+  seedDeveloperManagerSession,
+} from '../lib/developerPortal'
+import { ApplicationDetailPanel } from '../lib/applicationDetailPanel.jsx'
+import { PropertyDetailPanel } from '../lib/propertyDetailPanel.jsx'
+import { AXIS_ADMIN_SESSION_KEY } from './adminSessionConstants'
+
+export { AXIS_ADMIN_SESSION_KEY } from './adminSessionConstants'
 
 const PROPERTY_STATUS_LABEL = {
   pending: 'Pending approval',
@@ -22,46 +31,13 @@ const PROPERTY_STATUS_LABEL = {
   inactive: 'Inactive',
 }
 
-const LEASE_PIPELINE_LABEL = {
-  draft: 'Draft generated',
-  under_review: 'Under review',
-  manager_ok: 'Approved by manager',
-  admin_review: 'Awaiting Axis admin',
-  admin_ok: 'Approved by admin',
-  sent_resident: 'Sent to resident',
-  signed: 'Signed',
-  archived: 'Archived',
-}
-
-const LEAD_STATUS_LABEL = {
-  new: 'New lead',
-  contacted: 'Contacted',
-  follow_up: 'Follow-up needed',
-  qualified: 'Qualified',
-  onboarded: 'Onboarded',
-  closed: 'Closed',
-}
-import { authenticateAdminPortal } from '../lib/adminPortalSignIn'
-import {
-  markDeveloperPortalActive,
-  clearDeveloperPortalFlags,
-  seedDeveloperManagerSession,
-  seedInternalStaffManagerSession,
-} from '../lib/developerPortal'
-import { AXIS_ADMIN_SESSION_KEY } from './adminSessionConstants'
-
-export { AXIS_ADMIN_SESSION_KEY } from './adminSessionConstants'
-
 const NAV_BASE = [
   { id: 'dashboard', label: 'Dashboard' },
   { id: 'approvals', label: 'Property approvals' },
-  { id: 'properties', label: 'All properties' },
-  { id: 'leads', label: 'Management leads' },
-  { id: 'accounts', label: 'Management accounts' },
+  { id: 'properties', label: 'Properties' },
+  { id: 'accounts', label: 'Managers' },
   { id: 'applications', label: 'Applications' },
-  { id: 'leases', label: 'Lease approval' },
   { id: 'messages', label: 'Inbox' },
-  { id: 'settings', label: 'Settings' },
 ]
 
 const APPROVER_ONLY_NAV = [
@@ -69,9 +45,15 @@ const APPROVER_ONLY_NAV = [
   { id: 'approvals', label: 'Property approvals' },
 ]
 
-/** Dashboard handoff: open /manager with full property scope (CEO stub or internal staff preview). */
-function showManagerHandoffDashboard(role) {
-  return role === 'ceo' || role === 'internal_exec' || role === 'internal_swe'
+/** SWE: inbox + dashboard only (no approvals, properties list, managers, or applications). */
+const SWE_NAV = [
+  { id: 'dashboard', label: 'Dashboard' },
+  { id: 'messages', label: 'Inbox' },
+]
+
+/** CEO-only: seed session and open manager/resident portals from admin. Exec/SWE use admin data here only. */
+function showCeoPortalHandoff(role) {
+  return role === 'ceo'
 }
 
 function showOwnerPortalJumps(role) {
@@ -87,13 +69,6 @@ function propertyTone(st) {
   if (st === 'changes_requested') return 'violet'
   if (st === 'rejected') return 'red'
   return 'slate'
-}
-
-function leadTone(st) {
-  if (st === 'new') return 'amber'
-  if (st === 'qualified' || st === 'onboarded') return 'green'
-  if (st === 'closed') return 'slate'
-  return 'blue'
 }
 
 function AdminLoginView({ onAuthenticated }) {
@@ -189,11 +164,10 @@ export default function AdminPortal() {
   })
   const [tab, setTab] = useState('dashboard')
   const [properties, setProperties] = useState(() => [])
-  const [leads, setLeads] = useState(() => [])
   const [accounts, setAccounts] = useState(() => [])
   const [applications, setApplications] = useState(() => [])
-  const [leasePipeline, setLeasePipeline] = useState(() => [])
   const [selectedApprovalId, setSelectedApprovalId] = useState(null)
+  const [selectedApplicationId, setSelectedApplicationId] = useState(null)
   const [dataLoading, setDataLoading] = useState(false)
   const [approvalBusy, setApprovalBusy] = useState(false)
   const airtableConfigWarned = useRef(false)
@@ -201,7 +175,7 @@ export default function AdminPortal() {
   const user = session
 
   useEffect(() => {
-    if (session && showManagerHandoffDashboard(session.role)) markDeveloperPortalActive()
+    if (session?.role === 'ceo') markDeveloperPortalActive()
   }, [session])
 
   const refreshPortalData = useCallback(async () => {
@@ -211,10 +185,8 @@ export default function AdminPortal() {
     try {
       const next = await loadAdminPortalDataset()
       setProperties(next.properties)
-      setLeads(next.leads)
       setAccounts(next.accounts)
       setApplications(next.applications)
-      setLeasePipeline(next.leasePipeline)
     } catch (e) {
       toast.error(e?.message || 'Could not load Airtable data.')
     } finally {
@@ -237,9 +209,7 @@ export default function AdminPortal() {
   function persistSession(u) {
     setSession(u)
     sessionStorage.setItem(AXIS_ADMIN_SESSION_KEY, JSON.stringify(u))
-    if (u && showManagerHandoffDashboard(u.role)) {
-      markDeveloperPortalActive()
-    }
+    if (u?.role === 'ceo') markDeveloperPortalActive()
   }
 
   function handleSignOut() {
@@ -253,29 +223,26 @@ export default function AdminPortal() {
     if (session.role === 'internal_approver' && tab !== 'dashboard' && tab !== 'approvals') {
       setTab('dashboard')
     }
+    if (session.role === 'internal_swe' && tab !== 'dashboard' && tab !== 'messages') {
+      setTab('dashboard')
+    }
   }, [session, tab])
+
+  useEffect(() => {
+    if (tab !== 'applications') setSelectedApplicationId(null)
+  }, [tab])
 
   const navItems = useMemo(() => {
     if (!session) return NAV_BASE
     if (session.role === 'internal_approver') return APPROVER_ONLY_NAV
-    if (session.role === 'internal_swe') return NAV_BASE.filter((n) => n.id !== 'approvals')
+    if (session.role === 'internal_swe') return SWE_NAV
     return NAV_BASE
   }, [session])
 
   const pendingApprovals = useMemo(() => properties.filter((p) => p.status === 'pending' || p.status === 'changes_requested'), [properties])
-  const liveCount = useMemo(() => properties.filter((p) => p.status === 'live').length, [properties])
-  const newLeads = useMemo(() => leads.filter((l) => l.status === 'new').length, [leads])
   const pendingApps = useMemo(
     () => applications.filter((a) => a.approvalPending).length,
     [applications],
-  )
-  const leasesNeedAdmin = useMemo(
-    () => leasePipeline.filter((l) => l.status === 'admin_review').length,
-    [leasePipeline],
-  )
-  const leasesSent = useMemo(
-    () => leasePipeline.filter((l) => l.status === 'sent_resident').length,
-    [leasePipeline],
   )
 
   const ownerLabel = (ownerId) => accounts.find((a) => a.id === ownerId)?.businessName || accounts.find((a) => a.id === ownerId)?.name || ownerId
@@ -285,6 +252,7 @@ export default function AdminPortal() {
   }
 
   const approval = properties.find((p) => p.id === selectedApprovalId)
+  const selectedApplication = applications.find((a) => a.id === selectedApplicationId)
 
   return (
     <PortalShell
@@ -312,7 +280,7 @@ export default function AdminPortal() {
             : user.role === 'internal_exec'
               ? `${user.airtableRole || 'Executive'} · full access`
               : user.role === 'internal_swe'
-                ? `${user.airtableRole || 'SWE'} · no property / tour approvals`
+                ? `${user.airtableRole || 'SWE'} · inbox only`
                 : user.role === 'internal_approver'
                   ? 'Property approvals only'
                   : user.role || 'Admin'
@@ -335,27 +303,14 @@ export default function AdminPortal() {
           {dataLoading ? (
             <p className="text-sm text-slate-500">Syncing data from Airtable…</p>
           ) : null}
-          {showManagerHandoffDashboard(user.role) ? (
+          {showCeoPortalHandoff(user.role) ? (
             <div className="rounded-[24px] border border-violet-300/60 bg-[linear-gradient(135deg,#f5f3ff_0%,#ffffff_100%)] p-5 shadow-sm">
-              <h2 className="text-sm font-black text-violet-950">Internal portal access</h2>
-              <p className="mt-1 text-xs text-violet-900/80">
-                {user.role === 'internal_swe'
-                  ? 'Open the manager and resident portals with full property scope for review. SWE accounts cannot approve manager-submitted properties in admin or approve/decline tour requests in the manager calendar.'
-                  : 'Open the manager portal with every approved property in scope (this tab), plus the resident hub. Use your Admin Profile or env CEO credentials at /admin.'}
-              </p>
+              <h2 className="text-sm font-black text-violet-950">Open manager / resident portals</h2>
               <div className="mt-4 flex flex-wrap gap-2">
                 <button
                   type="button"
                   onClick={() => {
-                    if (user.role === 'internal_exec' || user.role === 'internal_swe') {
-                      seedInternalStaffManagerSession({
-                        email: user.email,
-                        name: user.name,
-                        staffRole: user.airtableRole || '',
-                      })
-                    } else {
-                      seedDeveloperManagerSession()
-                    }
+                    seedDeveloperManagerSession()
                     window.location.assign('/manager')
                   }}
                   className="rounded-xl bg-violet-600 px-4 py-2 text-xs font-semibold text-white shadow-sm transition-opacity hover:opacity-90"
@@ -376,9 +331,6 @@ export default function AdminPortal() {
           {showOwnerPortalJumps(user.role) ? (
             <div className="rounded-[24px] border border-[#2563eb]/25 bg-[linear-gradient(135deg,#eff6ff_0%,#ffffff_100%)] p-5 shadow-sm">
               <h2 className="text-sm font-black text-slate-900">Jump to other portals</h2>
-              <p className="mt-1 text-xs text-slate-600">
-                Resident and manager links go to their normal entry points (real sign-in).
-              </p>
               <div className="mt-4 flex flex-wrap gap-2">
                 <a
                   href="/portal"
@@ -400,26 +352,20 @@ export default function AdminPortal() {
             </div>
           ) : null}
           <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-            {user.role !== 'internal_swe' ? (
+            {user.role === 'internal_swe' ? (
+              <StatCard label="Inbox" value="Open" onClick={() => setTab('messages')} />
+            ) : user.role === 'internal_approver' ? (
               <StatCard label="Property approvals queue" value={pendingApprovals.length} onClick={() => setTab('approvals')} />
-            ) : null}
-            {user.role === 'internal_approver' ? null : (
+            ) : (
               <>
-                <StatCard label="New management leads" value={newLeads} onClick={() => setTab('leads')} />
-                <StatCard label="Live properties" value={liveCount} onClick={() => setTab('properties')} />
+                <StatCard label="Property approvals queue" value={pendingApprovals.length} onClick={() => setTab('approvals')} />
+                <StatCard label="Properties" value={properties.length} onClick={() => setTab('properties')} />
                 <StatCard label="Pending applications" value={pendingApps} onClick={() => setTab('applications')} />
-                <StatCard label="Leases awaiting admin" value={leasesNeedAdmin} onClick={() => setTab('leases')} />
-                <StatCard label="Sent for signature" value={leasesSent} onClick={() => setTab('leases')} />
-                <StatCard label="Management accounts" value={accounts.length} onClick={() => setTab('accounts')} />
-                <StatCard label="Inbox" value="Open" hint="All portal threads" onClick={() => setTab('messages')} />
+                <StatCard label="Managers" value={accounts.length} onClick={() => setTab('accounts')} />
+                <StatCard label="Inbox" value="Open" onClick={() => setTab('messages')} />
               </>
             )}
           </div>
-          {user.role === 'internal_approver' ? (
-            <p className="text-sm text-slate-600">
-              Use <strong>Property approvals</strong> in the sidebar to review houses submitted by managers. Other internal areas are not available for this role.
-            </p>
-          ) : null}
         </div>
       )}
 
@@ -446,6 +392,7 @@ export default function AdminPortal() {
                 <button type="button" className="text-sm text-slate-500" onClick={() => setSelectedApprovalId(null)}>Close</button>
               </div>
               <p className="text-sm text-slate-600">{approval.description}</p>
+              <PropertyDetailPanel property={approval} ownerLabel={ownerLabel(approval.ownerId)} />
               <div className="flex flex-wrap gap-2">
                 <button
                   type="button"
@@ -521,7 +468,7 @@ export default function AdminPortal() {
 
       {tab === 'properties' && (
         <div className="space-y-6">
-          <h1 className="text-2xl font-black">All properties</h1>
+          <h1 className="text-2xl font-black">Properties</h1>
           <DataTable
             empty="No properties."
             columns={[
@@ -532,51 +479,12 @@ export default function AdminPortal() {
             ]}
             rows={properties.map((p) => ({ key: p.id, data: p }))}
           />
-          <p className="text-xs text-slate-500">Publish/unpublish, archive, and deep links to applications/leases will map to Airtable views.</p>
-        </div>
-      )}
-
-      {tab === 'leads' && (
-        <div className="space-y-6">
-          <h1 className="text-2xl font-black">Management leads</h1>
-          <DataTable
-            empty="No leads."
-            columns={[
-              { key: 'name', label: 'Lead', render: (d) => <><div className="font-semibold">{d.name}</div><div className="text-xs text-slate-500">{d.email}</div></> },
-              { key: 'src', label: 'Source', render: (d) => d.source },
-              { key: 'st', label: 'Status', render: (d) => <StatusPill tone={leadTone(d.status)}>{LEAD_STATUS_LABEL[d.status] || d.status}</StatusPill> },
-              { key: 'notes', label: 'Notes', render: (d) => <span className="line-clamp-2 text-xs">{d.notes}</span> },
-              { key: 'act', label: '', render: (d) => (
-                <select
-                  className="rounded-lg border border-slate-200 text-xs"
-                  value={d.status}
-                  onChange={async (e) => {
-                    const v = e.target.value
-                    setLeads((ls) => ls.map((x) => (x.id === d.id ? { ...x, status: v } : x)))
-                    try {
-                      await adminPatchInquiryLeadStatus(d.id, v)
-                      toast.success('Lead status saved')
-                    } catch (err) {
-                      toast.error(err?.message || 'Could not save (add a single-line field "Lead Status" to Inquiries).')
-                      await refreshPortalData()
-                    }
-                  }}
-                >
-                  {Object.entries(LEAD_STATUS_LABEL).map(([k, lab]) => (
-                    <option key={k} value={k}>{lab}</option>
-                  ))}
-                </select>
-              ) },
-            ]}
-            rows={leads.map((l) => ({ key: l.id, data: l }))}
-          />
-          <p className="text-xs text-slate-500">Convert to Management account will create credentials + onboarding (integration stub).</p>
         </div>
       )}
 
       {tab === 'accounts' && (
         <div className="space-y-6">
-          <h1 className="text-2xl font-black">Management accounts</h1>
+          <h1 className="text-2xl font-black">Managers</h1>
           <DataTable
             empty="No accounts."
             columns={[
@@ -611,7 +519,7 @@ export default function AdminPortal() {
 
       {tab === 'applications' && (
         <div className="space-y-6">
-          <h1 className="text-2xl font-black">All applications</h1>
+          <h1 className="text-2xl font-black">Applications</h1>
           <DataTable
             empty="No applications."
             columns={[
@@ -619,74 +527,38 @@ export default function AdminPortal() {
               { key: 'p', label: 'Property', render: (d) => d.propertyName },
               { key: 'o', label: 'Partner', render: (d) => ownerLabel(d.ownerId) },
               { key: 's', label: 'Status', render: (d) => <StatusPill tone="blue">{d.status}</StatusPill> },
-              { key: 'act', label: '', render: () => (
-                <span className="text-xs text-slate-400">→ Lease</span>
-              ) },
+              {
+                key: 'act',
+                label: '',
+                render: (d) => (
+                  <button
+                    type="button"
+                    className="text-sm font-semibold text-[#2563eb] hover:underline"
+                    onClick={() => setSelectedApplicationId(selectedApplicationId === d.id ? null : d.id)}
+                  >
+                    {selectedApplicationId === d.id ? 'Hide details' : 'Details'}
+                  </button>
+                ),
+              },
             ]}
             rows={applications.map((a) => ({ key: a.id, data: a }))}
           />
-          <p className="text-xs text-slate-500">Final approve/reject and handoff to lease generation connect to existing Applications / Lease Drafts tables.</p>
-        </div>
-      )}
-
-      {tab === 'leases' && (
-        <div className="space-y-6">
-          <h1 className="text-2xl font-black">Lease approval center</h1>
-          <DataTable
-            empty="No leases."
-            columns={[
-              { key: 'r', label: 'Resident', render: (d) => d.residentName },
-              { key: 'p', label: 'Property', render: (d) => d.propertyName },
-              { key: 's', label: 'Status', render: (d) => <StatusPill tone={d.status === 'admin_review' ? 'amber' : 'green'}>{LEASE_PIPELINE_LABEL[d.status] || d.status}</StatusPill> },
-              { key: 'act', label: '', render: (d) => (
-                d.status === 'admin_review' ? (
-                  <button
-                    type="button"
-                    className="text-sm font-semibold text-emerald-700"
-                    onClick={async () => {
-                      try {
-                        await adminPublishLeaseDraft(d.id, user?.name || user?.email || 'Axis admin')
-                        await refreshPortalData()
-                        toast.success('Lease published to resident portal')
-                      } catch (err) {
-                        toast.error(err?.message || 'Publish failed')
-                      }
-                    }}
-                  >
-                    Publish to portal
-                  </button>
-                ) : '—'
-              ) },
-            ]}
-            rows={leasePipeline.map((l) => ({ key: l.id, data: l }))}
-          />
+          {selectedApplication ? (
+            <ApplicationDetailPanel
+              application={selectedApplication}
+              partnerLabel={ownerLabel(selectedApplication.ownerId)}
+              onClose={() => setSelectedApplicationId(null)}
+            />
+          ) : null}
         </div>
       )}
 
       {tab === 'messages' && (
-        <div className="space-y-4">
-          <div>
-            <h1 className="text-2xl font-black text-slate-900">Inbox</h1>
-            <p className="mt-1 text-sm text-slate-500">
-              Same <strong>Messages</strong> threads as resident and manager portals: partners, site managers, public inquiries, and resident house inboxes (Thread Key + internal channel).
-            </p>
-          </div>
-          <div className="min-h-[min(70vh,640px)] overflow-hidden rounded-[24px] border border-slate-200 bg-white shadow-sm">
-            <PortalInternalInbox variant="admin" userEmail={user.email} userDisplayName={user.name} />
-          </div>
-        </div>
-      )}
-
-      {tab === 'settings' && (
-        <div className="max-w-2xl space-y-6">
-          <h1 className="text-2xl font-black">Settings</h1>
-          <div className="rounded-[24px] border border-slate-200 bg-white p-6 space-y-4 text-sm text-slate-600">
-            <p>Placeholder controls for application rules, lease templates, approval workflow flags, notifications, and role permissions.</p>
-            <p className="text-xs text-slate-500 border border-slate-100 rounded-xl px-3 py-2 bg-slate-50">
-              Additional controls can be wired to Airtable or your backend when ready.
-            </p>
-          </div>
-        </div>
+        <ManagerInboxPage
+          adminFullInbox
+          manager={{ email: user.email || '', name: user.name || user.email || 'Admin' }}
+          allowedPropertyNames={[]}
+        />
       )}
     </PortalShell>
   )

@@ -127,7 +127,7 @@ export default async function handler(req, res) {
     await patchDraftSigned(draft.id)
     await logAuditEvent({
       leaseDraftId: draft.id,
-      notes: `SignForge webhook ${event} for envelope ${envelopeId}`,
+      notes: `Resident completed e-sign (envelope ${envelopeId}). Lease draft is Signed — managers see it in the lease queue.`,
     })
 
     return res.status(200).json({ ok: true, leaseDraftId: draft.id })

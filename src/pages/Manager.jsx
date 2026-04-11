@@ -5,7 +5,7 @@
 // approving AI-generated lease drafts before they are visible to residents.
 //
 // Workflow enforced by this page:
-//   Draft Generated → Under Review → (Changes Needed ↔ Under Review) → Approved → Published
+//   Draft Generated → Under Review → (Changes Needed ↔ Under Review) → Published (+ SignForge) → Signed
 //
 // Residents see only "Published" or "Signed" leases in their portal.
 // Every action (open, edit, approve, reject, publish) is written to Audit Log.
@@ -47,6 +47,7 @@ import {
   portalAuthInputCls,
 } from '../components/PortalAuthUI'
 import PortalShell from '../components/PortalShell'
+import { ApplicationDetailPanel, applicationViewModelFromAirtableRow } from '../lib/applicationDetailPanel.jsx'
 
 // ─── Session ──────────────────────────────────────────────────────────────────
 export const MANAGER_SESSION_KEY = 'axis_manager'
@@ -3781,20 +3782,22 @@ function ManagerPaymentsPanel({ allowedPropertyNames }) {
     [rowsForSelectedMonth],
   )
 
-  const totalExpected = useMemo(
-    () => paymentRows.reduce((sum, row) => sum + paymentAmountDue(row), 0),
-    [paymentRows],
-  )
   const totalCollected = useMemo(
     () => paymentRows.reduce((sum, row) => sum + paymentAmountPaid(row), 0),
     [paymentRows],
   )
-  const totalOutstanding = useMemo(
-    () => paymentRows.reduce((sum, row) => sum + paymentBalanceDue(row), 0),
+  const overdueRentAmount = useMemo(
+    () =>
+      paymentRows
+        .filter((row) => row.__computedStatus === 'overdue')
+        .reduce((sum, row) => sum + paymentBalanceDue(row), 0),
     [paymentRows],
   )
-  const overdueResidents = useMemo(
-    () => new Set(paymentRows.filter((row) => row.__computedStatus === 'overdue').map((row) => paymentResidentLabel(row))).size,
+  const pendingRentAmount = useMemo(
+    () =>
+      paymentRows
+        .filter((row) => ['unpaid', 'due_soon', 'partial'].includes(row.__computedStatus))
+        .reduce((sum, row) => sum + paymentBalanceDue(row), 0),
     [paymentRows],
   )
 
@@ -3928,11 +3931,30 @@ function ManagerPaymentsPanel({ allowedPropertyNames }) {
         </div>
       ) : null}
 
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <PortalOpsMetric label="Expected this month" value={money(totalExpected)} hint={formatYmLong(selectedYm)} tone="axis" />
-        <PortalOpsMetric label="Collected" value={money(totalCollected)} hint="Recorded as paid." tone="emerald" />
-        <PortalOpsMetric label="Outstanding" value={money(totalOutstanding)} hint="Still not fully paid." tone="amber" />
-        <PortalOpsMetric label="Overdue residents" value={overdueResidents} hint="Residents with past-due rent." tone="red" />
+      <div className="rounded-[28px] border border-slate-200 bg-[linear-gradient(135deg,#ffffff_0%,#f8fbff_100%)] p-6 sm:p-7">
+        <div className="text-center text-[11px] font-bold uppercase tracking-[0.2em] text-slate-400">
+          {formatYmLong(selectedYm)}
+        </div>
+        <div className="mt-5 grid gap-4 sm:grid-cols-3">
+          <PortalOpsMetric
+            label="Overdue rent"
+            value={money(overdueRentAmount)}
+            hint="Past due, not paid"
+            tone="red"
+          />
+          <PortalOpsMetric
+            label="Paid rent"
+            value={money(totalCollected)}
+            hint="Marked paid this month"
+            tone="emerald"
+          />
+          <PortalOpsMetric
+            label="Pending rent"
+            value={money(pendingRentAmount)}
+            hint="Not yet due or awaiting payment"
+            tone="amber"
+          />
+        </div>
       </div>
 
       <div className="grid gap-6 xl:grid-cols-[minmax(0,1.2fr)_minmax(360px,0.8fr)]">
@@ -4136,6 +4158,7 @@ function sortApplicationsList(rows, sortKey, sortDir) {
 
 // ─── ApplicationsPanel ────────────────────────────────────────────────────────
 function ApplicationsPanel({ allowedPropertyNames, manager }) {
+  const [detailAppId, setDetailAppId] = useState(null)
   const [scopedRows, setScopedRows] = useState([])
   const [loading, setLoading] = useState(true)
   const [propertyFilter, setPropertyFilter] = useState('')
@@ -4203,7 +4226,14 @@ function ApplicationsPanel({ allowedPropertyNames, manager }) {
         setScopedRows(prev => prev.map((a) => (
           a.id === recordId ? { ...a, Approved: true, 'Approved At': data.application?.['Approved At'] || a['Approved At'] } : a
         )))
-        toast.success(data.message || 'Application approved and lease draft generated.')
+        if (Array.isArray(data.residentRecordsUpdated) && data.residentRecordsUpdated.length > 0) {
+          toast.success(
+            (data.message || 'Application approved.') +
+              ` Resident portal access updated (${data.residentRecordsUpdated.length} profile${data.residentRecordsUpdated.length === 1 ? '' : 's'}).`,
+          )
+        } else {
+          toast.success(data.message || 'Application approved and lease draft generated.')
+        }
       } else {
         const updated = await patchApplication(recordId, { Approved: approved })
         setScopedRows(prev => prev.map(a => a.id === recordId ? { ...a, Approved: updated.Approved } : a))
@@ -4361,7 +4391,14 @@ function ApplicationsPanel({ allowedPropertyNames, manager }) {
                         <div className="mt-1 font-mono text-xs text-slate-400">APP-{String(app['Application ID'])}</div>
                       )}
                     </div>
-                    <div className="flex shrink-0 gap-2">
+                    <div className="flex shrink-0 flex-wrap gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setDetailAppId((id) => (id === app.id ? null : app.id))}
+                        className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
+                      >
+                        {detailAppId === app.id ? 'Hide details' : 'Details'}
+                      </button>
                       <button
                         onClick={() => handleDecision(app.id, true)}
                         disabled={!!busy || app.Approved === true}
@@ -4381,6 +4418,17 @@ function ApplicationsPanel({ allowedPropertyNames, manager }) {
                 )
               })}
             </div>
+            {detailAppId ? (
+              <div className="border-t border-slate-100 px-4 py-5 sm:px-6">
+                {(() => {
+                  const row = scopedRows.find((a) => a.id === detailAppId)
+                  const vm = row ? applicationViewModelFromAirtableRow(row) : null
+                  return vm ? (
+                    <ApplicationDetailPanel application={vm} partnerLabel="—" onClose={() => setDetailAppId(null)} />
+                  ) : null
+                })()}
+              </div>
+            ) : null}
           </>
         )}
       </div>
@@ -4903,7 +4951,7 @@ function LeaseEditor({ draftId, manager, onBack }) {
     }
   }
 
-  // ── Approve ───────────────────────────────────────────────────────────────
+  // ── Approve → publish to portal → SignForge e-sign email (one step) ───────
   async function handleApprove() {
     setActionLoading('approve')
     try {
@@ -4911,9 +4959,10 @@ function LeaseEditor({ draftId, manager, onBack }) {
       const updated = await patchLeaseDraft(draftId, {
         'Manager Edited Content': editorContent,
         'Manager Notes': managerNotes,
-        'Status': 'Approved',
+        'Status': 'Published',
         'Approved By': manager.name,
         'Approved At': now,
+        'Published At': now,
         'Updated At': now,
       })
       setDraft(updated)
@@ -4924,8 +4973,43 @@ function LeaseEditor({ draftId, manager, onBack }) {
         performedByRole: manager.role,
         notes: `Approved by ${manager.name}`,
       })
+      await logAudit({
+        leaseDraftId: draftId,
+        actionType: 'Published',
+        performedBy: manager.name,
+        performedByRole: manager.role,
+        notes: `Published to resident portal by ${manager.name}`,
+      })
       await refreshAudit()
-      toast.success('Lease approved — ready to publish')
+
+      const sfRes = await fetch('/api/portal?action=signforge-send-lease', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          leaseDraftId: draftId,
+          performedBy: manager.name,
+          performedByRole: manager.role,
+        }),
+      })
+      const sfData = await readJsonResponse(sfRes)
+      if (sfRes.ok) {
+        if (sfData.draft) {
+          setDraft(sfData.draft)
+        } else {
+          setDraft(await fetchLeaseDraft(draftId))
+        }
+        await refreshAudit()
+        toast.success('Lease approved and sent to the resident for e-signature.')
+      } else if (sfRes.status === 501) {
+        toast.success(
+          'Lease approved and published. Add SIGNFORGE_API_KEY to your server environment to email the lease for signature.',
+        )
+      } else {
+        toast.error(
+          sfData.error ||
+            'Lease is published, but SignForge could not send. Use “Send for e-sign” in the header to retry.',
+        )
+      }
     } catch (err) {
       toast.error('Approval failed: ' + err.message)
     } finally {
@@ -5089,7 +5173,7 @@ function LeaseEditor({ draftId, manager, onBack }) {
                 disabled={!!actionLoading}
                 className="rounded-xl bg-green-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-green-700 disabled:opacity-50"
               >
-                {actionLoading === 'approve' ? 'Approving…' : 'Approve'}
+                {actionLoading === 'approve' ? 'Sending…' : 'Approve & send to resident'}
               </button>
             )}
             {canPublish && (
@@ -5311,33 +5395,29 @@ function LeaseEditor({ draftId, manager, onBack }) {
           {/* Context-aware hints */}
           {canApprove && (
             <div className="rounded-[24px] border border-slate-200 bg-slate-50 p-5">
-              <div className="text-sm font-semibold text-slate-700">Ready to approve?</div>
+              <div className="text-sm font-semibold text-slate-700">Ready to send?</div>
               <p className="mt-1.5 text-sm text-slate-500">
-                Save your edits, then click <strong>Approve</strong>. After approval you can publish to the resident portal.
+                Save your edits, then click <strong>Approve &amp; send to resident</strong>. That publishes the lease to the portal and emails the SignForge signing link (when <code className="rounded bg-slate-200 px-1 text-[11px]">SIGNFORGE_API_KEY</code> is set).
               </p>
             </div>
           )}
           {canPublish && (
             <div className="rounded-[24px] border border-axis/20 bg-axis/5 p-5">
-              <div className="text-sm font-semibold text-axis">Approved — ready to publish</div>
+              <div className="text-sm font-semibold text-axis">Approved — publish manually</div>
               <p className="mt-1.5 text-sm text-axis/80">
-                Click <strong>Publish to portal</strong> above to make this lease visible to the resident.
+                This draft was left in <strong>Approved</strong> (older flow). Use <strong>Publish to portal</strong>, then <strong>Send for e-sign</strong> if needed.
               </p>
             </div>
           )}
           {status === 'Published' && (
             <div className="rounded-[24px] border border-violet-200 bg-violet-50/80 p-5">
-              <div className="text-sm font-semibold text-violet-900">E-sign (Puppeteer + SignForge)</div>
+              <div className="text-sm font-semibold text-violet-900">E-sign (SignForge)</div>
               <p className="mt-1.5 text-sm text-violet-800/90">
-                The server renders this lease to PDF with{' '}
-                <a className="underline font-medium" href="https://pptr.dev/api/puppeteer.puppeteernode" target="_blank" rel="noreferrer">
-                  Puppeteer
-                </a>{' '}
-                and sends it through{' '}
+                New leases are emailed for signature when you approve. If sending failed or this lease predates that flow, use <strong>Send for e-sign</strong> in the header (
                 <a className="underline font-medium" href="https://signforge.io/dashboard" target="_blank" rel="noreferrer">
                   SignForge
-                </a>{' '}
-                (<code className="rounded bg-violet-100 px-1 text-[11px]">SIGNFORGE_API_KEY</code>). Use <strong>Send for e-sign</strong> in the header.
+                </a>
+                , <code className="rounded bg-violet-100 px-1 text-[11px]">SIGNFORGE_API_KEY</code>).
               </p>
             </div>
           )}
@@ -5364,7 +5444,7 @@ function LeaseEditor({ draftId, manager, onBack }) {
             )}
             {canApprove && (
               <button onClick={handleApprove} disabled={!!actionLoading} className="w-full rounded-2xl bg-green-600 py-3 text-sm font-semibold text-white transition hover:bg-green-700 disabled:opacity-50">
-                {actionLoading === 'approve' ? 'Approving…' : 'Approve lease'}
+                {actionLoading === 'approve' ? 'Sending…' : 'Approve & send to resident'}
               </button>
             )}
             {canPublish && (

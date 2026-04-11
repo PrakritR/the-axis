@@ -10,34 +10,20 @@ function cn(...v) {
 export default function ConversationThread({
   messages,
   loading,
-  emptyHint,
   selectedThreadId,
   isAxisThread,
   formatTime,
 }) {
   if (!selectedThreadId) {
-    return (
-      <div className="flex min-h-[280px] flex-1 flex-col items-center justify-center px-6 text-center">
-        <p className="max-w-sm text-sm text-slate-500">Select a conversation to view messages</p>
-      </div>
-    )
+    return <div className="min-h-[280px] flex-1" aria-hidden />
   }
 
   if (loading) {
-    return (
-      <div className="flex flex-1 items-center justify-center py-20 text-sm text-slate-500">
-        Loading messages…
-      </div>
-    )
+    return <div className="min-h-[200px] flex-1" aria-busy="true" />
   }
 
   if (!messages.length) {
-    return (
-      <div className="flex min-h-[240px] flex-1 flex-col items-center justify-center px-6 text-center">
-        <p className="text-sm font-medium text-slate-700">No messages yet</p>
-        <p className="mt-2 max-w-xs text-xs leading-relaxed text-slate-500">{emptyHint}</p>
-      </div>
-    )
+    return <div className="min-h-[240px] flex-1" aria-hidden />
   }
 
   return (

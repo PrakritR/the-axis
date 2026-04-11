@@ -313,9 +313,7 @@ export default function PortalInternalInbox({ variant, userEmail, userDisplayNam
               />
             )
           })}
-          {threadGroups.length === 0 && !loading ? (
-            <p className="px-4 py-4 text-xs text-slate-500">No threads yet. Open one by email above or wait for inbound messages.</p>
-          ) : null}
+          {threadGroups.length === 0 && !loading ? <div className="px-4 py-8" aria-hidden /> : null}
         </div>
       </>
     ) : (

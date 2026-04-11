@@ -2,6 +2,7 @@
  * GET/POST /api/portal?action=<name>
  * Manager auth, billing, lease tools, and invite email.
  */
+import applicationCreateLeaseDraft from './handlers/application-create-lease-draft.js'
 import generateLeaseDraft from './handlers/generate-lease-draft.js'
 import managerAuth from './handlers/manager-auth.js'
 import managerApproveApplication from './handlers/manager-approve-application.js'
@@ -18,6 +19,7 @@ import signforgeEnvelopeStatus from './handlers/signforge-envelope-status.js'
 import workOrderAiSuggest from './handlers/work-order-ai-suggest.js'
 
 const handlers = {
+  'application-create-lease-draft': applicationCreateLeaseDraft,
   'manager-auth': managerAuth,
   'manager-approve-application': managerApproveApplication,
   'manager-create-account': managerCreateAccount,

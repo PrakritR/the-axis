@@ -13,6 +13,16 @@ const TONE_STYLES = {
   emerald: 'border-emerald-200 bg-emerald-50 text-emerald-700',
 }
 
+/** Card shell for metrics (border matches tone). */
+const TONE_CARD_BORDER = {
+  slate: 'border-slate-200',
+  blue: 'border-blue-200',
+  axis: 'border-axis/25',
+  amber: 'border-amber-200',
+  red: 'border-red-200',
+  emerald: 'border-emerald-200',
+}
+
 export function PortalOpsCard({ title, description, action, children, className = '' }) {
   return (
     <section className={classNames('rounded-[28px] border border-slate-200 bg-white shadow-soft', className)}>
@@ -45,9 +55,20 @@ export function PortalOpsStatusBadge({ tone = 'slate', children, className = '' 
 }
 
 export function PortalOpsMetric({ label, value, hint, tone = 'slate' }) {
+  const borderCls = TONE_CARD_BORDER[tone] || TONE_CARD_BORDER.slate
+  const labelTone =
+    tone === 'emerald'
+      ? 'text-emerald-800'
+      : tone === 'red'
+        ? 'text-red-800'
+        : tone === 'amber'
+          ? 'text-amber-800'
+          : tone === 'axis'
+            ? 'text-axis'
+            : 'text-slate-400'
   return (
-    <div className="rounded-[24px] border border-slate-200 bg-white p-5 shadow-sm">
-      <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">{label}</div>
+    <div className={classNames('rounded-[24px] border bg-white p-5 shadow-sm', borderCls)}>
+      <div className={classNames('text-[11px] font-bold uppercase tracking-[0.18em]', labelTone)}>{label}</div>
       <div
         className={classNames(
           'mt-3 text-3xl font-black tracking-tight',

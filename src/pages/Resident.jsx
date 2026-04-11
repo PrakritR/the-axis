@@ -182,6 +182,23 @@ function isApprovalGranted(value) {
   return ['true', '1', 'yes', 'approved'].includes(normalized)
 }
 
+function residentApplicationUnlocked(resident) {
+  return (
+    isApprovalGranted(resident?.['Application Approval']) || isApprovalGranted(resident?.Approved)
+  )
+}
+
+function ResidentPendingApprovalGate() {
+  return (
+    <div className="rounded-[28px] border border-amber-200 bg-amber-50/60 px-6 py-12 text-center shadow-soft">
+      <p className="text-base font-semibold text-amber-950">Waiting for manager approval</p>
+      <p className="mx-auto mt-2 max-w-lg text-sm text-amber-900/90">
+        You&apos;re signed in. Your rental application is still being reviewed. When a manager approves it in Axis, this section will unlock. You can update your profile anytime from the sidebar.
+      </p>
+    </div>
+  )
+}
+
 function formatMoney(value) {
   return `$${Number(value || 0).toLocaleString()}`
 }
@@ -234,6 +251,93 @@ function getPaymentKind(payment) {
     .filter(Boolean).join(' ').toLowerCase()
   if (/(fee|fine|damage|late fee|late charge|cleaning|lockout)/.test(raw)) return 'fee'
   return 'rent'
+}
+
+function residentAmountDue(payment) {
+  const direct = Number(payment?.Amount ?? payment?.['Amount Due'] ?? payment?.Total ?? 0)
+  return Number.isFinite(direct) ? direct : 0
+}
+
+function residentAmountPaid(payment) {
+  const explicit = Number(payment?.['Amount Paid'] ?? payment?.['Paid Amount'] ?? payment?.Paid ?? payment?.['Collected Amount'])
+  if (Number.isFinite(explicit) && explicit >= 0) return explicit
+  const rawStatus = String(payment?.Status || '').trim().toLowerCase()
+  return rawStatus === 'paid' ? residentAmountDue(payment) : 0
+}
+
+function residentBalance(payment) {
+  const explicit = Number(payment?.Balance ?? payment?.['Balance Due'] ?? payment?.Outstanding)
+  if (Number.isFinite(explicit)) return Math.max(0, explicit)
+  return Math.max(0, residentAmountDue(payment) - residentAmountPaid(payment))
+}
+
+function residentPaymentLineStatus(payment) {
+  const balance = residentBalance(payment)
+  const due = parseDisplayDate(payment?.['Due Date'])
+  const today = new Date()
+  today.setHours(0, 0, 0, 0)
+  if (balance <= 0) return 'Paid'
+  if (balance < residentAmountDue(payment)) return 'Partial'
+  if (due) {
+    const diffDays = Math.ceil((due.getTime() - today.getTime()) / 86400000)
+    if (diffDays < 0) return 'Overdue'
+    if (diffDays <= 5) return 'Due Soon'
+  }
+  return 'Unpaid'
+}
+
+/** Rent-only snapshot for dashboard + summaries (aligned with Payments tab logic). */
+function buildResidentRentSnapshot(payments, resident) {
+  const sortedPayments = [...payments].sort(
+    (a, b) => new Date(a['Due Date'] || a.created_at || 0) - new Date(b['Due Date'] || b.created_at || 0),
+  )
+  const rentPayments = sortedPayments.filter((p) => getPaymentKind(p) === 'rent')
+  const today = new Date()
+  today.setHours(0, 0, 0, 0)
+  let unpaidTotal = 0
+  let overdueTotal = 0
+  let paidTotal = 0
+  for (const p of rentPayments) {
+    if (residentPaymentLineStatus(p) === 'Paid') {
+      const rec = residentAmountPaid(p)
+      paidTotal += rec > 0 ? rec : residentAmountDue(p)
+      continue
+    }
+    const bal = residentBalance(p)
+    if (bal <= 0) continue
+    unpaidTotal += bal
+    const due = parseDisplayDate(p['Due Date'])
+    if (due && !Number.isNaN(due.getTime()) && due < today) {
+      overdueTotal += bal
+    }
+  }
+  const unpaidRent = rentPayments.filter((p) => residentBalance(p) > 0)
+  const currentDuePayment = unpaidRent[0] || null
+  const fallbackRent = getRoomMonthlyRent(resident?.House, resident?.['Unit Number'])
+  const nextDue = currentDuePayment
+    ? {
+        balance: residentBalance(currentDuePayment),
+        dueDate: currentDuePayment['Due Date'],
+        month: currentDuePayment.Month,
+        status: residentPaymentLineStatus(currentDuePayment),
+      }
+    : fallbackRent > 0
+      ? {
+          balance: fallbackRent,
+          dueDate: resident?.['Next Rent Due'] || '',
+          month: 'Current rent',
+          status: 'Unpaid',
+        }
+      : null
+  return { unpaidTotal, overdueTotal, paidTotal, nextDue, rentPayments }
+}
+
+function dashboardPaymentStatusTone(status) {
+  if (status === 'Paid') return 'emerald'
+  if (status === 'Partial') return 'axis'
+  if (status === 'Due Soon') return 'amber'
+  if (status === 'Overdue') return 'red'
+  return 'slate'
 }
 
 // ─── Shared UI ────────────────────────────────────────────────────────────────
@@ -303,13 +407,6 @@ export function ResidentAuthForm({ onLogin, footer = null, variant = 'default' }
         setSignInError('Invalid email or password. Contact Axis if you need help.')
         return
       }
-      const approved =
-        isApprovalGranted(resident['Application Approval']) ||
-        isApprovalGranted(resident.Approved)
-      if (!approved) {
-        setSignInError('Your application is still under review. You\'ll be able to log in once a manager approves it. Contact Axis if you have questions.')
-        return
-      }
       const leaseEnd = resident['Lease End Date']
       if (leaseEnd && new Date(leaseEnd) < new Date(new Date().toDateString())) {
         setSignInError('Your lease has ended. Contact Axis to discuss renewal.')
@@ -368,7 +465,7 @@ export function ResidentAuthForm({ onLogin, footer = null, variant = 'default' }
         }
         await updateResident(existing.id, patch)
         setPostCreateMessage(
-          'Account saved. Sign in below once a manager has approved your application.',
+          'Account saved. Sign in below — your dashboard will show a short notice until a manager approves your application.',
         )
         setSignInForm((c) => ({ ...c, email: activateForm.email.trim(), password: '' }))
         setActivateForm((c) => ({ ...c, password: '' }))
@@ -391,7 +488,7 @@ export function ResidentAuthForm({ onLogin, footer = null, variant = 'default' }
         ...(app['Application ID'] != null ? { 'Application ID': app['Application ID'] } : {}),
       })
       setPostCreateMessage(
-        'Account created. Sign in below once a manager has approved your application.',
+        'Account created. Sign in below — you can use the portal while you wait; full features unlock after manager approval.',
       )
       setSignInForm((c) => ({ ...c, email: activateForm.email.trim(), password: '' }))
       setActivateForm({ applicationId: '', email: '', password: '' })
@@ -973,7 +1070,7 @@ function ProfilePanel({ resident, onUpdated }) {
 
 // ─── Payments ─────────────────────────────────────────────────────────────────
 
-function PaymentsPanel({ resident, onResidentUpdated, highlightCategory }) {
+function PaymentsPanel({ resident, onResidentUpdated, highlightCategory, onPaymentsDataUpdated }) {
   const [payments, setPayments] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -1062,6 +1159,30 @@ function PaymentsPanel({ resident, onResidentUpdated, highlightCategory }) {
     [feePayments],
   )
 
+  /** All rent periods — not limited to a single month (manager view is month-scoped). */
+  const rentSummaryAllTime = useMemo(() => {
+    const today = new Date()
+    today.setHours(0, 0, 0, 0)
+    let unpaidTotal = 0
+    let overdueTotal = 0
+    let paidTotal = 0
+    for (const p of rentPayments) {
+      if (paymentStatusForRecord(p) === 'Paid') {
+        const rec = amountPaidForRecord(p)
+        paidTotal += rec > 0 ? rec : amountDueForRecord(p)
+        continue
+      }
+      const bal = balanceForRecord(p)
+      if (bal <= 0) continue
+      unpaidTotal += bal
+      const due = parseDisplayDate(p?.['Due Date'])
+      if (due && !Number.isNaN(due.getTime()) && due < today) {
+        overdueTotal += bal
+      }
+    }
+    return { unpaidTotal, overdueTotal, paidTotal }
+  }, [rentPayments, paymentStatusForRecord, balanceForRecord, amountPaidForRecord, amountDueForRecord])
+
   async function launchCheckout({ amount, items, description, category, paymentRecordId }) {
     setActionError('')
     setActionLoading(category)
@@ -1088,6 +1209,7 @@ function PaymentsPanel({ resident, onResidentUpdated, highlightCategory }) {
     try {
       const refreshed = await getPaymentsForResident(resident)
       setPayments(refreshed)
+      onPaymentsDataUpdated?.(refreshed)
       onResidentUpdated?.()
     } catch (err) {
       setActionError(err.message || 'Payment completed, but refreshing the balance failed.')
@@ -1106,6 +1228,32 @@ function PaymentsPanel({ resident, onResidentUpdated, highlightCategory }) {
               Payment history could not be loaded right now, but checkout is still available below.
             </div>
           ) : null}
+
+          <div className="mb-6 rounded-[28px] border border-slate-200 bg-[linear-gradient(135deg,#ffffff_0%,#f8fbff_100%)] p-6 sm:p-7">
+            <div className="text-center text-[11px] font-bold uppercase tracking-[0.2em] text-slate-400">
+              Your rent summary
+            </div>
+            <div className="mt-5 grid gap-4 sm:grid-cols-3">
+              <PortalOpsMetric
+                label="Unpaid"
+                value={formatMoney(rentSummaryAllTime.unpaidTotal)}
+                hint="Total balance still owed on rent"
+                tone="axis"
+              />
+              <PortalOpsMetric
+                label="Overdue"
+                value={formatMoney(rentSummaryAllTime.overdueTotal)}
+                hint="Past due, not paid"
+                tone="red"
+              />
+              <PortalOpsMetric
+                label="Paid"
+                value={formatMoney(rentSummaryAllTime.paidTotal)}
+                hint="Recorded rent payments to date"
+                tone="emerald"
+              />
+            </div>
+          </div>
 
           <div className="rounded-[28px] border border-slate-200 bg-[linear-gradient(135deg,#ffffff_0%,#f8fbff_100%)] p-6 sm:p-7">
             <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
@@ -1486,35 +1634,282 @@ function LeasingPanel({ resident, onOpenPayments }) {
 
 function ResidentInboxPanel({ resident }) {
   return (
-    <div className="space-y-6">
-      <SectionCard
-        title="Inbox"
-        description="Message your house team here. Your home and room are attached automatically — you don’t need to pick a topic."
-      >
-        <div className="min-h-[380px]">
-          <PortalInternalInbox
-            variant="resident"
-            resident={resident}
-            userEmail={resident.Email}
-            userDisplayName={resident.Name}
-          />
-        </div>
-      </SectionCard>
+    <SectionCard
+      title="Inbox"
+      description="Message your house team here. Your home and room are attached automatically — you don’t need to pick a topic."
+    >
+      <div className="min-h-[380px]">
+        <PortalInternalInbox
+          variant="resident"
+          resident={resident}
+          userEmail={resident.Email}
+          userDisplayName={resident.Name}
+        />
+      </div>
+    </SectionCard>
+  )
+}
 
-      <div className="rounded-[24px] border border-slate-200 bg-white px-5 py-4 text-sm leading-6 text-slate-600 shadow-soft sm:px-6">
-        <span className="font-semibold text-slate-800">Tours:</span>{' '}
-        <Link
-          to={HOUSING_CONTACT_SCHEDULE}
-          className="font-semibold text-axis underline decoration-axis/30 underline-offset-2 transition hover:decoration-axis"
-        >
-          Schedule a tour
-        </Link>
-        {' '}on the contact page (in person or virtual).
+// ─── Resident dashboard (home) ───────────────────────────────────────────────
+
+function ResidentDashboardHome({
+  resident,
+  visibleWorkOrders,
+  payments,
+  approvedLease,
+  onNavigate,
+  setPaymentFocus,
+  pendingApplicationApproval,
+}) {
+  const snapshot = useMemo(() => buildResidentRentSnapshot(payments, resident), [payments, resident])
+  const openWoCount = useMemo(
+    () => visibleWorkOrders.filter((r) => isWorkOrderOpen(r)).length,
+    [visibleWorkOrders],
+  )
+  const scheduledWoCount = useMemo(
+    () => visibleWorkOrders.filter((r) => residentWorkOrderStatusLabel(r) === 'Scheduled').length,
+    [visibleWorkOrders],
+  )
+  const recentWorkOrders = useMemo(() => {
+    return [...visibleWorkOrders]
+      .sort(
+        (a, b) =>
+          new Date(b['Date Submitted'] || b.created_at || 0) - new Date(a['Date Submitted'] || a.created_at || 0),
+      )
+      .slice(0, 4)
+  }, [visibleWorkOrders])
+
+  const leaseStatus = approvedLease?.Status ? String(approvedLease.Status).trim() : ''
+  const nextStatus = snapshot.nextDue?.status || 'Paid'
+  const nextTone = dashboardPaymentStatusTone(nextStatus)
+
+  function goPayments(focus = '') {
+    setPaymentFocus(focus)
+    onNavigate('payments')
+  }
+
+  return (
+    <div className="space-y-8">
+      <div className="rounded-[28px] border border-slate-200 bg-[linear-gradient(135deg,#ffffff_0%,#f8fbff_100%)] p-6 sm:p-8">
+        {pendingApplicationApproval ? (
+          <>
+            <p className="text-sm font-semibold text-amber-900">Application under review</p>
+            <p className="mt-2 text-sm leading-7 text-slate-600">
+              You&apos;re signed in. A property manager still needs to approve your application before rent checkout, maintenance requests, leasing tasks, and inbox messaging are available. Your profile stays open so you can keep contact details current.
+            </p>
+          </>
+        ) : (
+          <>
+            <p className="text-sm leading-7 text-slate-600">
+              Here&apos;s a quick view of rent, maintenance, and leasing. Use the sidebar anytime to open a full section.
+            </p>
+            <div className="mt-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+              <PortalOpsMetric
+                label="Next rent due"
+                value={snapshot.nextDue ? formatMoney(snapshot.nextDue.balance) : '$0'}
+                hint={
+                  snapshot.nextDue?.dueDate
+                    ? `Due ${formatDate(snapshot.nextDue.dueDate)} · ${snapshot.nextDue.month || 'Rent'}`
+                    : snapshot.nextDue
+                      ? String(snapshot.nextDue.month || 'Rent')
+                      : 'No rent line items yet'
+                }
+                tone={snapshot.nextDue ? nextTone : 'slate'}
+              />
+              <PortalOpsMetric
+                label="Unpaid rent"
+                value={formatMoney(snapshot.unpaidTotal)}
+                hint="Total balance still owed"
+                tone={snapshot.unpaidTotal > 0 ? 'axis' : 'slate'}
+              />
+              <PortalOpsMetric
+                label="Overdue"
+                value={formatMoney(snapshot.overdueTotal)}
+                hint="Past due, not paid"
+                tone={snapshot.overdueTotal > 0 ? 'red' : 'slate'}
+              />
+              <PortalOpsMetric
+                label="Open work orders"
+                value={openWoCount}
+                hint={scheduledWoCount > 0 ? `${scheduledWoCount} scheduled` : 'Nothing in progress'}
+                tone={openWoCount > 0 ? 'amber' : 'emerald'}
+              />
+            </div>
+          </>
+        )}
       </div>
 
-      <div className="rounded-[18px] border border-slate-100 bg-slate-50/70 px-4 py-3 text-sm leading-6 text-slate-600">
-        <span className="font-semibold text-slate-800">Maintenance &amp; rent:</span>{' '}
-        use <strong>Work Orders</strong> and <strong>Payments</strong> in this portal.
+      <div className="grid gap-6 lg:grid-cols-12">
+        <div className="space-y-6 lg:col-span-7">
+          <PortalOpsCard
+            title="Shortcuts"
+            description={pendingApplicationApproval ? 'Available after your application is approved.' : 'Jump to the most common tasks.'}
+          >
+            {pendingApplicationApproval ? (
+              <p className="text-sm text-slate-600">
+                Use the sidebar to open a section — you&apos;ll see a short notice on each tab until a manager approves your application.
+              </p>
+            ) : (
+            <div className="grid gap-3 sm:grid-cols-2">
+              <button
+                type="button"
+                onClick={() => goPayments('')}
+                className="flex flex-col items-start rounded-2xl border border-slate-200 bg-slate-50/80 px-5 py-4 text-left transition hover:border-axis/40 hover:bg-white"
+              >
+                <span className="text-sm font-black text-slate-900">Pay rent</span>
+                <span className="mt-1 text-xs text-slate-500">Balances, history, and checkout</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => onNavigate('workorders')}
+                className="flex flex-col items-start rounded-2xl border border-slate-200 bg-slate-50/80 px-5 py-4 text-left transition hover:border-axis/40 hover:bg-white"
+              >
+                <span className="text-sm font-black text-slate-900">Work orders</span>
+                <span className="mt-1 text-xs text-slate-500">Submit or track maintenance</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => onNavigate('inbox')}
+                className="flex flex-col items-start rounded-2xl border border-slate-200 bg-slate-50/80 px-5 py-4 text-left transition hover:border-axis/40 hover:bg-white"
+              >
+                <span className="text-sm font-black text-slate-900">Inbox</span>
+                <span className="mt-1 text-xs text-slate-500">Message your house team</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => onNavigate('leasing')}
+                className="flex flex-col items-start rounded-2xl border border-slate-200 bg-slate-50/80 px-5 py-4 text-left transition hover:border-axis/40 hover:bg-white"
+              >
+                <span className="text-sm font-black text-slate-900">Leasing</span>
+                <span className="mt-1 text-xs text-slate-500">Lease, deposit, and signing</span>
+              </button>
+            </div>
+            )}
+          </PortalOpsCard>
+
+          <PortalOpsCard title="Recent maintenance" description="Latest requests tied to your unit.">
+            {pendingApplicationApproval ? (
+              <PortalOpsEmptyState
+                icon="🛠"
+                title="Maintenance after approval"
+                description="Once your application is approved, you can submit and track work orders from the Work Orders tab."
+                action={
+                  <button
+                    type="button"
+                    onClick={() => onNavigate('workorders')}
+                    className="rounded-full border border-slate-200 px-5 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
+                  >
+                    Work Orders
+                  </button>
+                }
+              />
+            ) : recentWorkOrders.length === 0 ? (
+              <PortalOpsEmptyState
+                icon="🛠"
+                title="No work orders yet"
+                description="Submit one from Work Orders when something needs attention."
+                action={
+                  <button
+                    type="button"
+                    onClick={() => onNavigate('workorders')}
+                    className="rounded-full bg-axis px-5 py-2.5 text-sm font-semibold text-white transition hover:brightness-105"
+                  >
+                    Open Work Orders
+                  </button>
+                }
+              />
+            ) : (
+              <div className="space-y-3">
+                {recentWorkOrders.map((w) => (
+                  <button
+                    key={w.id}
+                    type="button"
+                    onClick={() => onNavigate('workorders')}
+                    className="flex w-full flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-200 px-4 py-3 text-left transition hover:border-axis/30 hover:bg-slate-50/80"
+                  >
+                    <div className="min-w-0">
+                      <div className="truncate text-sm font-bold text-slate-900">{w.Title || 'Work order'}</div>
+                      <div className="mt-0.5 text-xs text-slate-500">
+                        {w.Category || 'General'} · {formatDate(w['Date Submitted'] || w.created_at)}
+                      </div>
+                    </div>
+                    <PortalOpsStatusBadge tone={residentWorkOrderStatusTone(w)}>
+                      {residentWorkOrderStatusLabel(w)}
+                    </PortalOpsStatusBadge>
+                  </button>
+                ))}
+              </div>
+            )}
+          </PortalOpsCard>
+        </div>
+
+        <div className="space-y-6 lg:col-span-5">
+          <div className="rounded-[28px] border border-slate-200 bg-white p-6 shadow-soft">
+            <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">Your home</div>
+            <div className="mt-2 text-lg font-black text-slate-900">
+              {[resident.House, normalizeUnitLabel(resident['Unit Number'] || '')].filter(Boolean).join(' · ') || 'Not assigned'}
+            </div>
+            <div className="mt-3 text-sm text-slate-500">{getLeaseTermLabel(resident)}</div>
+            <div className="mt-4 flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={() => onNavigate('profile')}
+                className="rounded-full border border-slate-200 px-4 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-50"
+              >
+                Profile
+              </button>
+              <Link
+                to={HOUSING_CONTACT_SCHEDULE}
+                className="rounded-full border border-slate-200 px-4 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-50"
+              >
+                Schedule tour
+              </Link>
+            </div>
+          </div>
+
+          <PortalOpsCard
+            title="Lease document"
+            description="Published or signed lease from your manager."
+          >
+            {leaseStatus ? (
+              <div className="space-y-3">
+                <PortalOpsStatusBadge tone={leaseStatus === 'Signed' ? 'emerald' : 'axis'}>{leaseStatus}</PortalOpsStatusBadge>
+                <p className="text-sm text-slate-600">
+                  Open the Leasing tab to read the full document or complete next steps.
+                </p>
+                <button
+                  type="button"
+                  onClick={() => onNavigate('leasing')}
+                  className="rounded-full bg-slate-900 px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-slate-800"
+                >
+                  Go to Leasing
+                </button>
+              </div>
+            ) : (
+              <PortalOpsEmptyState
+                icon="📄"
+                title="No published lease yet"
+                description="When your manager publishes your lease, it will show in Leasing."
+                action={
+                  <button
+                    type="button"
+                    onClick={() => onNavigate('leasing')}
+                    className="rounded-full bg-axis px-5 py-2.5 text-sm font-semibold text-white transition hover:brightness-105"
+                  >
+                    Leasing
+                  </button>
+                }
+              />
+            )}
+          </PortalOpsCard>
+
+          <div className="rounded-[24px] border border-dashed border-slate-200 bg-slate-50/70 px-5 py-4 text-sm text-slate-600">
+            <span className="font-semibold text-slate-800">Need help?</span>{' '}
+            <Link to={HOUSING_CONTACT_MESSAGE} className="font-semibold text-axis underline decoration-axis/30 underline-offset-2">
+              Message Axis
+            </Link>
+          </div>
+        </div>
       </div>
     </div>
   )
@@ -1523,9 +1918,11 @@ function ResidentInboxPanel({ resident }) {
 // ─── Dashboard ────────────────────────────────────────────────────────────────
 
 function Dashboard({ resident, onResidentUpdated, onSignOut }) {
-  const [tab, setTab] = useState('workorders')
+  const [tab, setTab] = useState('dashboard')
   const [paymentFocus, setPaymentFocus] = useState('')
   const [requests, setRequests] = useState([])
+  const [payments, setPayments] = useState([])
+  const [approvedLease, setApprovedLease] = useState(null)
   const [loading, setLoading] = useState(true)
 
   const visibleWorkOrders = useMemo(
@@ -1541,8 +1938,14 @@ function Dashboard({ resident, onResidentUpdated, onSignOut }) {
   const loadData = useCallback(async () => {
     setLoading(true)
     try {
-      const nextRequests = await getWorkOrdersForResident(resident).catch(() => [])
+      const [nextRequests, nextPayments, lease] = await Promise.all([
+        getWorkOrdersForResident(resident).catch(() => []),
+        getPaymentsForResident(resident).catch(() => []),
+        getApprovedLeaseForResident(resident.id).catch(() => null),
+      ])
       setRequests(nextRequests)
+      setPayments(nextPayments)
+      setApprovedLease(lease)
     } finally {
       setLoading(false)
     }
@@ -1552,7 +1955,10 @@ function Dashboard({ resident, onResidentUpdated, onSignOut }) {
     loadData()
   }, [loadData])
 
+  const applicationUnlocked = residentApplicationUnlocked(resident)
+
   const TABS = [
+    ['dashboard', 'Dashboard'],
     ['workorders', 'Work Orders'],
     ['leasing', 'Leasing'],
     ['payments', 'Payments'],
@@ -1574,15 +1980,24 @@ function Dashboard({ resident, onResidentUpdated, onSignOut }) {
       <div className="mx-auto w-full max-w-[1600px]">
         <div className="mb-8">
           <h1 className="text-4xl font-black tracking-tight text-slate-900">
-            Welcome back, {resident.Name || 'Resident'}
+            {tab === 'dashboard' ? `Hi, ${resident.Name || 'Resident'}` : `Welcome back, ${resident.Name || 'Resident'}`}
           </h1>
           <div className="mt-3 flex flex-wrap gap-4 text-sm text-slate-500">
             <span>{getLeaseTermLabel(resident)}</span>
-            {openRequestCount > 0 ? (
+            {applicationUnlocked && tab !== 'dashboard' && openRequestCount > 0 ? (
               <span className="font-semibold text-sky-600">{openRequestCount} open work order{openRequestCount === 1 ? '' : 's'}</span>
             ) : null}
           </div>
         </div>
+
+        {!applicationUnlocked ? (
+          <div className="mb-6 rounded-2xl border border-amber-200 bg-amber-50 px-5 py-4 text-sm text-amber-950 shadow-sm">
+            <p className="font-semibold">Waiting for manager approval</p>
+            <p className="mt-1 text-amber-900/90">
+              Your account is active. A property manager still needs to approve your rental application before work orders, payments, leasing, and inbox are fully available. Open Profile anytime to update your contact details.
+            </p>
+          </div>
+        ) : null}
 
         {loading ? (
           <div className="rounded-[28px] border border-slate-200 bg-white px-6 py-16 text-center text-sm text-slate-400 shadow-soft">
@@ -1590,21 +2005,51 @@ function Dashboard({ resident, onResidentUpdated, onSignOut }) {
           </div>
         ) : null}
 
-        {!loading && tab === 'workorders' ? (
-          <WorkOrdersPanel
+        {!loading && tab === 'dashboard' ? (
+          <ResidentDashboardHome
             resident={resident}
-            requests={visibleWorkOrders}
-            onRequestCreated={loadData}
-            onWorkOrderUpdated={loadData}
+            visibleWorkOrders={visibleWorkOrders}
+            payments={payments}
+            approvedLease={approvedLease}
+            onNavigate={setTab}
+            setPaymentFocus={setPaymentFocus}
+            pendingApplicationApproval={!applicationUnlocked}
           />
         ) : null}
+        {!loading && tab === 'workorders' ? (
+          applicationUnlocked ? (
+            <WorkOrdersPanel
+              resident={resident}
+              requests={visibleWorkOrders}
+              onRequestCreated={loadData}
+              onWorkOrderUpdated={loadData}
+            />
+          ) : (
+            <ResidentPendingApprovalGate />
+          )
+        ) : null}
         {!loading && tab === 'leasing' ? (
-          <LeasingPanel resident={resident} onOpenPayments={(focus = '') => { setPaymentFocus(focus); setTab('payments') }} />
+          applicationUnlocked ? (
+            <LeasingPanel resident={resident} onOpenPayments={(focus = '') => { setPaymentFocus(focus); setTab('payments') }} />
+          ) : (
+            <ResidentPendingApprovalGate />
+          )
         ) : null}
         {!loading && tab === 'payments' ? (
-          <PaymentsPanel resident={resident} onResidentUpdated={onResidentUpdated} highlightCategory={paymentFocus} />
+          applicationUnlocked ? (
+            <PaymentsPanel
+              resident={resident}
+              onResidentUpdated={onResidentUpdated}
+              highlightCategory={paymentFocus}
+              onPaymentsDataUpdated={setPayments}
+            />
+          ) : (
+            <ResidentPendingApprovalGate />
+          )
         ) : null}
-        {!loading && tab === 'inbox' ? <ResidentInboxPanel resident={resident} /> : null}
+        {!loading && tab === 'inbox' ? (
+          applicationUnlocked ? <ResidentInboxPanel resident={resident} /> : <ResidentPendingApprovalGate />
+        ) : null}
         {!loading && tab === 'profile' ? (
           <ProfilePanel resident={resident} onUpdated={onResidentUpdated} />
         ) : null}
@@ -1627,13 +2072,6 @@ export default function Resident() {
     getResidentById(storedId)
       .then((r) => {
         if (!mounted || !r) return
-        const approved =
-          isApprovalGranted(r['Application Approval']) ||
-          isApprovalGranted(r.Approved)
-        if (!approved) {
-          sessionStorage.removeItem(SESSION_KEY)
-          return
-        }
         const leaseEnd = r['Lease End Date']
         if (leaseEnd && new Date(leaseEnd) < new Date(new Date().toDateString())) {
           sessionStorage.removeItem(SESSION_KEY)

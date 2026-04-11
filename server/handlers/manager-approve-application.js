@@ -1,9 +1,16 @@
 import { createLeaseDraftFromApplication } from './generate-lease-draft.js'
 
 const AIRTABLE_TOKEN = process.env.AIRTABLE_TOKEN || process.env.VITE_AIRTABLE_TOKEN
+/** Prefer explicit apps base; otherwise same base as Lease Drafts / portal (manager list uses CORE base). */
+const CORE_BASE_ID =
+  process.env.VITE_AIRTABLE_BASE_ID || process.env.AIRTABLE_BASE_ID || 'appol57LKtMKaQ75T'
 const APPS_BASE_ID =
-  process.env.VITE_AIRTABLE_APPLICATIONS_BASE_ID || process.env.AIRTABLE_APPLICATIONS_BASE_ID || 'appNBX2inqfJMyqYV'
+  process.env.VITE_AIRTABLE_APPLICATIONS_BASE_ID ||
+  process.env.AIRTABLE_APPLICATIONS_BASE_ID ||
+  CORE_BASE_ID
 const APPS_AIRTABLE_BASE_URL = `https://api.airtable.com/v0/${APPS_BASE_ID}`
+const CORE_AIRTABLE_BASE_URL = `https://api.airtable.com/v0/${CORE_BASE_ID}`
+const RESIDENT_PROFILE_TABLE = 'Resident Profile'
 
 function airtableHeaders() {
   return {
@@ -58,6 +65,81 @@ async function approveApplication(recordId) {
   return mapRecord(data)
 }
 
+function escapeFormulaValue(s) {
+  return String(s || '').replace(/\\/g, '\\\\').replace(/"/g, '\\"')
+}
+
+async function listResidentsMatchingApplication(applicationRecordId, signerEmail) {
+  const enc = encodeURIComponent(RESIDENT_PROFILE_TABLE)
+  const byId = new Map()
+
+  const run = async (formula) => {
+    const url = `${CORE_AIRTABLE_BASE_URL}/${enc}?filterByFormula=${encodeURIComponent(formula)}&maxRecords=25`
+    const data = await airtableGet(url)
+    for (const rec of data.records || []) {
+      byId.set(rec.id, mapRecord(rec))
+    }
+  }
+
+  const email = String(signerEmail || '').trim().toLowerCase()
+  if (email) {
+    await run(`LOWER({Email}) = "${escapeFormulaValue(email)}"`)
+  }
+
+  const appId = String(applicationRecordId || '').trim()
+  if (appId.startsWith('rec')) {
+    try {
+      await run(`FIND("${escapeFormulaValue(appId)}", ARRAYJOIN({Applications})) > 0`)
+    } catch (err) {
+      console.warn(
+        '[manager-approve-application] Applications-linked resident lookup skipped (field may not exist)',
+        err?.message || err,
+      )
+    }
+  }
+
+  return [...byId.values()]
+}
+
+async function patchResidentRecord(recordId, fields) {
+  const enc = encodeURIComponent(RESIDENT_PROFILE_TABLE)
+  return airtablePatch(`${CORE_AIRTABLE_BASE_URL}/${enc}/${recordId}`, fields)
+}
+
+/**
+ * Resident portal checks Approved / Application Approval — keep in sync when an application is approved.
+ */
+async function markMatchingResidentsApproved(application) {
+  const appId = application?.id
+  const email = application?.['Signer Email']
+  let rows = []
+  try {
+    rows = await listResidentsMatchingApplication(appId, email)
+  } catch (err) {
+    console.warn('[manager-approve-application] could not list residents', err)
+    return { updatedIds: [], error: String(err?.message || err) }
+  }
+
+  const updatedIds = []
+  for (const r of rows) {
+    try {
+      await patchResidentRecord(r.id, {
+        Approved: true,
+        'Application Approval': 'Approved',
+      })
+      updatedIds.push(r.id)
+    } catch (firstErr) {
+      try {
+        await patchResidentRecord(r.id, { Approved: true })
+        updatedIds.push(r.id)
+      } catch (err) {
+        console.warn('[manager-approve-application] resident patch failed', r.id, firstErr, err)
+      }
+    }
+  }
+  return { updatedIds }
+}
+
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*')
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS')
@@ -83,6 +165,7 @@ export default async function handler(req, res) {
   try {
     const existing = await getApplication(recordId)
     const approvedApplication = existing.Approved === true ? existing : await approveApplication(recordId)
+    const residentSync = await markMatchingResidentsApproved(approvedApplication)
     const { draft, created } = await createLeaseDraftFromApplication({
       application: approvedApplication,
       generatedBy: managerName,
@@ -93,6 +176,7 @@ export default async function handler(req, res) {
       application: approvedApplication,
       draft,
       createdLeaseDraft: created,
+      residentRecordsUpdated: residentSync.updatedIds,
       message: created
         ? 'Application approved and lease draft generated.'
         : 'Application approved. Existing lease draft reused.',

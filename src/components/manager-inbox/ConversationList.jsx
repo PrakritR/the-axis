@@ -93,9 +93,9 @@ export default function ConversationList({
           </div>
         ) : null}
         {loading ? (
-          <div className="py-16 text-center text-sm text-slate-500">Loading conversations…</div>
+          <div className="min-h-[12rem]" aria-busy="true" />
         ) : rows.length === 0 ? (
-          <div className="px-4 py-16 text-center text-sm leading-relaxed text-slate-500">{emptyMessage}</div>
+          <div className="min-h-[12rem]" aria-label={emptyMessage} />
         ) : (
           <ul className="divide-y divide-slate-100">
             {rows.map((row) => (

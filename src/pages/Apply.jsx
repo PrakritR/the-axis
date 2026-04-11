@@ -1535,6 +1535,13 @@ export default function Apply() {
         window.sessionStorage.setItem(APPLICATION_SUBMISSION_STORAGE_KEY, JSON.stringify(summary))
         window.localStorage.removeItem(APPLICATION_DRAFT_STORAGE_KEY)
       }
+      if (applicationType === 'signer' && savedRecord?.id) {
+        void fetch('/api/portal?action=application-create-lease-draft', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ applicationRecordId: savedRecord.id }),
+        }).catch((e) => console.warn('[apply] lease draft queue failed:', e))
+      }
       setSubmitted(true)
     } catch (submissionError) {
       console.error('Application submission failed:', submissionError)

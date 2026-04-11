@@ -7,7 +7,7 @@ import React from 'react'
 export default function GmailStyleInboxLayout({ left, right, className = '' }) {
   return (
     <div
-      className={`flex max-h-[min(82vh,760px)] min-h-[380px] flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm lg:flex-row ${className}`}
+      className={`flex min-h-[min(380px,calc(100dvh-10rem))] max-h-[calc(100dvh-10rem)] flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm lg:flex-row ${className}`}
     >
       <div className="flex max-h-[min(42vh,340px)] min-h-0 w-full flex-col overflow-hidden border-b border-slate-200 lg:max-h-none lg:w-[min(100%,380px)] lg:shrink-0 lg:border-b-0 lg:border-r lg:border-slate-200">
         {left}

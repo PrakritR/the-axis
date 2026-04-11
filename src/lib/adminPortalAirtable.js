@@ -15,22 +15,6 @@ const TABLES = {
   properties: 'Properties',
   managers: 'Manager Profile',
   applications: 'Applications',
-  leaseDrafts: 'Lease Drafts',
-  inquiries: 'Inquiries',
-}
-
-const LEAD_STATUS_KEYS = new Set(['new', 'contacted', 'follow_up', 'qualified', 'onboarded', 'closed'])
-
-/** Human labels (AdminPortal) → stored keys */
-const LEAD_LABEL_TO_KEY = {
-  'new lead': 'new',
-  new: 'new',
-  contacted: 'contacted',
-  'follow-up needed': 'follow_up',
-  follow_up: 'follow_up',
-  qualified: 'qualified',
-  onboarded: 'onboarded',
-  closed: 'closed',
 }
 
 function headers() {
@@ -126,40 +110,7 @@ function propertyAdminStatus(raw) {
   return 'pending'
 }
 
-function normalizeLeadStatus(raw) {
-  const r = String(raw || '')
-    .trim()
-    .toLowerCase()
-    .replace(/\s+/g, '_')
-  if (LEAD_STATUS_KEYS.has(r)) return r
-  const spaced = String(raw || '')
-    .trim()
-    .toLowerCase()
-  if (LEAD_LABEL_TO_KEY[spaced]) return LEAD_LABEL_TO_KEY[spaced]
-  if (LEAD_LABEL_TO_KEY[r]) return LEAD_LABEL_TO_KEY[r]
-  return 'new'
-}
-
-function leaseDraftAdminPipelineStatus(statusRaw) {
-  const s = String(statusRaw || '').trim()
-  switch (s) {
-    case 'Draft Generated':
-      return 'draft'
-    case 'Under Review':
-    case 'Changes Needed':
-      return 'under_review'
-    case 'Approved':
-      return 'admin_review'
-    case 'Published':
-      return 'sent_resident'
-    case 'Signed':
-      return 'signed'
-    default:
-      return 'under_review'
-  }
-}
-
-function applicationDisplayStatus(app) {
+export function applicationDisplayStatus(app) {
   if (app.Approved === true) return 'Approved'
   if (app.Approved === false) return 'Rejected'
   return 'Under review'
@@ -212,18 +163,17 @@ function ownerIdForApplication(app, propertyRows, emailToManagerId) {
 }
 
 /**
- * @returns {Promise<{ properties: object[], leads: object[], accounts: object[], applications: object[], leasePipeline: object[] }>}
+ * @returns {Promise<{ properties: object[], accounts: object[], applications: object[] }>}
  */
 export async function loadAdminPortalDataset() {
   if (!isAdminPortalAirtableConfigured()) {
-    return { properties: [], leads: [], accounts: [], applications: [], leasePipeline: [] }
+    return { properties: [], accounts: [], applications: [] }
   }
 
-  const [propertyRows, managerRows, applicationRows, leaseRows] = await Promise.all([
+  const [propertyRows, managerRows, applicationRows] = await Promise.all([
     listAllRecords(TABLES.properties),
     listAllRecords(TABLES.managers),
     listAllRecords(TABLES.applications),
-    listAllRecords(TABLES.leaseDrafts),
   ])
 
   let roomRows = []
@@ -231,13 +181,6 @@ export async function loadAdminPortalDataset() {
     roomRows = await listAllRecords(getAirtableRoomsTableName())
   } catch {
     roomRows = []
-  }
-
-  let inquiryRows = []
-  try {
-    inquiryRows = await listAllRecords(TABLES.inquiries)
-  } catch {
-    inquiryRows = []
   }
 
   const emailToManagerId = buildEmailToManagerId(managerRows)
@@ -285,19 +228,6 @@ export async function loadAdminPortalDataset() {
     }
   })
 
-  const leads = inquiryRows.map((raw) => {
-    const status = normalizeLeadStatus(raw['Lead Status'] || raw.Status || 'new')
-    return {
-      id: raw.id,
-      _airtable: raw,
-      name: String(raw['Full Name'] || raw.Name || '—').trim(),
-      email: String(raw.Email || '').trim(),
-      source: String(raw['Inquiry Type'] || raw.Source || 'Inquiry').trim() || 'Inquiry',
-      notes: String(raw['Message Summary'] || raw.Notes || '').trim(),
-      status,
-    }
-  })
-
   const applications = applicationRows.map((raw) => ({
     id: raw.id,
     _airtable: raw,
@@ -308,15 +238,7 @@ export async function loadAdminPortalDataset() {
     approvalPending: raw.Approved !== true && raw.Approved !== false,
   }))
 
-  const leasePipeline = leaseRows.map((raw) => ({
-    id: raw.id,
-    _airtable: raw,
-    residentName: String(raw['Resident Name'] || '—').trim(),
-    propertyName: String(raw.Property || '—').trim(),
-    status: leaseDraftAdminPipelineStatus(raw.Status),
-  }))
-
-  return { properties, leads, accounts, applications, leasePipeline }
+  return { properties, accounts, applications }
 }
 
 export async function adminPatchProperty(recordId, fields) {
@@ -348,15 +270,6 @@ export async function adminRequestPropertyEdits(recordId) {
   })
 }
 
-export async function adminPatchInquiryLeadStatus(recordId, statusKey) {
-  const enc = encodeURIComponent(TABLES.inquiries)
-  const data = await requestJson(`${BASE_URL}/${enc}/${recordId}`, {
-    method: 'PATCH',
-    body: JSON.stringify({ fields: { 'Lead Status': statusKey }, typecast: true }),
-  })
-  return mapRecord(data)
-}
-
 export async function adminSetManagerActive(recordId, active) {
   const enc = encodeURIComponent(TABLES.managers)
   const data = await requestJson(`${BASE_URL}/${enc}/${recordId}`, {
@@ -366,38 +279,3 @@ export async function adminSetManagerActive(recordId, active) {
   return mapRecord(data)
 }
 
-export async function adminPublishLeaseDraft(recordId, performedBy = 'Axis admin') {
-  const enc = encodeURIComponent(TABLES.leaseDrafts)
-  const now = new Date().toISOString()
-  const data = await requestJson(`${BASE_URL}/${enc}/${recordId}`, {
-    method: 'PATCH',
-    body: JSON.stringify({
-      fields: {
-        Status: 'Published',
-        'Published At': now,
-      },
-      typecast: true,
-    }),
-  })
-  const mapped = mapRecord(data)
-  try {
-    const logEnc = encodeURIComponent('Audit Log')
-    await requestJson(`${BASE_URL}/${logEnc}`, {
-      method: 'POST',
-      body: JSON.stringify({
-        fields: {
-          'Lease Draft ID': recordId,
-          'Action Type': 'Published',
-          'Performed By': performedBy,
-          'Performed By Role': 'admin',
-          Timestamp: now,
-          Notes: 'Published from admin portal',
-        },
-        typecast: true,
-      }),
-    })
-  } catch {
-    /* audit optional */
-  }
-  return mapped
-}
