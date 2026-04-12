@@ -4192,14 +4192,6 @@ function WorkOrdersTabPanel({ allowedPropertyNames }) {
         </div>
       ) : null}
 
-      {!scopeLower.size ? (
-        <PortalOpsEmptyState
-          icon="🏠"
-          title="No linked houses yet"
-          description="Work orders will appear here after a property is linked to this manager account."
-        />
-      ) : null}
-
       <div className="mb-4 inline-flex flex-wrap gap-1 rounded-2xl border border-slate-200 bg-slate-50 p-1">
         {[
           ['all', 'All', list.length],
@@ -4509,7 +4501,7 @@ function ManagerPaymentsPanel({ allowedPropertyNames }) {
   return (
     <div className="mb-10">
       <div className="mb-5 flex flex-wrap items-center gap-3">
-        <h2 className="mr-auto text-xl font-black text-slate-900">Rent &amp; payments</h2>
+        <h2 className="mr-auto text-xl font-black text-slate-900">Payments</h2>
         <select
           value={selectedYm}
           onChange={(e) => setSelectedYm(e.target.value)}
@@ -4705,7 +4697,6 @@ function ManagerPaymentsPanel({ allowedPropertyNames }) {
             <PortalOpsEmptyState
               icon="💳"
               title="Select a resident payment"
-              description="Choose a row to review balance, history, and extra charges."
             />
           )
         )}
