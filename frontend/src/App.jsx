@@ -191,7 +191,7 @@ function AppInner() {
             <SiteHeader />
           </div>
           {standaloneToaster}
-          <main className="min-h-0 w-full flex-1" style={{ paddingTop: portalChromeInset.insetPx }}>
+          <main className="min-h-0 w-full flex-1" style={{ paddingTop: portalChromeInset.insetPx, '--portal-inset': `${portalChromeInset.insetPx ?? 0}px` }}>
             {standaloneRoutes}
           </main>
           <Chatbot />
@@ -238,7 +238,7 @@ function AppInner() {
         />
         <main
           className={`flex-1 min-h-0 w-full ${showMainMobileDock ? 'pb-[calc(5rem+env(safe-area-inset-bottom))] md:pb-0' : ''}`}
-          style={{ paddingTop: marketingChromeInset.insetPx }}
+          style={{ paddingTop: marketingChromeInset.insetPx, '--portal-inset': `${marketingChromeInset.insetPx ?? 0}px` }}
         >
           <Suspense fallback={<PageFallback />}>
             <AnimatePresence mode="wait">

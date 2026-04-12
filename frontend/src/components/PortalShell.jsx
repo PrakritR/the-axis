@@ -2,7 +2,7 @@ import React from 'react'
 
 function PortalShellFooter({ brandTitle, brandSubtitle }) {
   return (
-    <footer className="border-t border-slate-200 bg-white/95">
+    <footer className="shrink-0 border-t border-slate-200 bg-white/95">
       <div className="mx-auto flex w-full max-w-[1600px] flex-col gap-3 px-4 py-5 text-sm text-slate-500 sm:px-6 lg:px-8 lg:flex-row lg:items-center lg:justify-between">
         <div>
           <div className="font-semibold text-slate-800">{brandSubtitle}</div>
@@ -19,12 +19,17 @@ function PortalShellFooter({ brandTitle, brandSubtitle }) {
 }
 
 /**
- * Shared chrome: vertical sidebar + main content for Manager, Resident, and Admin portals.
- * Desktop layout uses CSS Grid (not flex + order) so the sidebar column stays physically left
- * even with `dir="ltr"` fixes, hidden `aside` on small breakpoints, or RTL document settings.
+ * Shared chrome for Manager, Resident, and Admin portals.
  *
- * @param {'left' | 'right'} [sidebarPosition='left'] — desktop sidebar edge (when desktopNav is 'sidebar')
- * @param {'sidebar' | 'none'} [desktopNav='sidebar'] — 'none' hides the desktop aside
+ * Desktop: sidebar + main content each scroll independently inside a
+ * fixed-height container that fills the available viewport (below any
+ * site header). Name / billing / sign-out in the sidebar footer are
+ * always visible — no page-level scrolling required.
+ *
+ * Mobile: sticky tab-pill bar at top, content scrolls below it.
+ *
+ * @param {'left' | 'right'} [sidebarPosition='left']
+ * @param {'sidebar' | 'none'} [desktopNav='sidebar']
  */
 export default function PortalShell({
   brandTitle,
@@ -41,16 +46,22 @@ export default function PortalShell({
   children,
 }) {
   const isRight = sidebarPosition === 'right'
-  const asideBorder = isRight ? 'border-l border-slate-200' : 'border-r border-slate-200'
   const showDesktopSidebar = desktopNav === 'sidebar'
 
-  const asideGrid = isRight ? 'lg:col-start-2 lg:row-start-1' : 'lg:col-start-1 lg:row-start-1'
-  const mainGrid = isRight ? 'lg:col-start-1 lg:row-start-1' : 'lg:col-start-2 lg:row-start-1'
+  // Height of the portal area = full viewport minus the fixed site header.
+  // --portal-inset is set on the parent <main> in App.jsx.
+  const shellHeight = 'calc(100dvh - var(--portal-inset, 0px))'
 
+  // ─── No-sidebar variant (admin SWE view etc.) ───────────────────────────────
   if (!showDesktopSidebar) {
     return (
-      <div className="flex min-h-dvh flex-col bg-slate-50 text-slate-900" dir="ltr">
-        <header className="sticky top-0 z-20 shrink-0 border-b border-slate-200 bg-white/95 backdrop-blur">
+      <div
+        className="flex flex-col bg-slate-50 text-slate-900 overflow-hidden"
+        style={{ height: shellHeight }}
+        dir="ltr"
+      >
+        {/* Sticky top bar */}
+        <header className="shrink-0 border-b border-slate-200 bg-white/95 backdrop-blur">
           <div className="flex items-center justify-between gap-3 px-4 py-3">
             <div className="min-w-0">
               <div className="text-[10px] font-bold uppercase tracking-wider text-[#2f76ff]">{brandTitle}</div>
@@ -85,28 +96,37 @@ export default function PortalShell({
           </div>
         </header>
 
-        <main className="min-h-0 min-w-0 flex-1">
-          {children}
-        </main>
-        <PortalShellFooter brandTitle={brandTitle} brandSubtitle={brandSubtitle} />
+        {/* Scrollable content */}
+        <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
+          <main className="min-h-0 flex-1">
+            {children}
+          </main>
+          <PortalShellFooter brandTitle={brandTitle} brandSubtitle={brandSubtitle} />
+        </div>
       </div>
     )
   }
 
+  // ─── Sidebar variant ────────────────────────────────────────────────────────
+  const sidebarBorder = isRight ? 'border-l border-slate-200' : 'border-r border-slate-200'
+
   return (
     <div
-      className={`grid min-h-dvh w-full max-w-full grid-cols-1 bg-slate-50 text-slate-900 ${
-        isRight ? 'lg:grid-cols-[minmax(0,1fr)_14rem]' : 'lg:grid-cols-[14rem_minmax(0,1fr)]'
-      }`}
+      className="flex overflow-hidden bg-slate-50 text-slate-900"
+      style={{ height: shellHeight, flexDirection: isRight ? 'row-reverse' : 'row' }}
       dir="ltr"
     >
+      {/* ── Desktop sidebar (hidden on mobile) ── */}
       <aside
-        className={`hidden w-full shrink-0 self-start bg-white lg:sticky lg:top-0 lg:flex lg:h-dvh lg:flex-col ${asideBorder} ${asideGrid}`}
+        className={`hidden lg:flex h-full w-56 shrink-0 flex-col bg-white ${sidebarBorder}`}
       >
+        {/* Brand */}
         <div className="shrink-0 border-b border-slate-100 px-4 py-4">
           <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-[#2f76ff]">{brandTitle}</div>
           <div className="mt-1 text-sm font-black text-slate-900">{brandSubtitle}</div>
         </div>
+
+        {/* Nav — scrolls independently */}
         <nav className="min-h-0 flex-1 space-y-0.5 overflow-y-auto overflow-x-hidden p-2 [scrollbar-gutter:stable]">
           {navItems.map((item) => (
             <button
@@ -123,9 +143,11 @@ export default function PortalShell({
             </button>
           ))}
         </nav>
+
+        {/* Footer — always visible, never scrolls away */}
         <div className="shrink-0 border-t border-slate-100 p-3">
-          <div className="text-xs font-semibold text-slate-800">{userLabel}</div>
-          {userMeta ? <div className="mt-0.5 text-[11px] text-slate-500">{userMeta}</div> : null}
+          <div className="text-xs font-semibold text-slate-800 truncate">{userLabel}</div>
+          {userMeta ? <div className="mt-0.5 text-[11px] text-slate-500 truncate">{userMeta}</div> : null}
           {sidebarFooterExtra ? <div className="mt-3">{sidebarFooterExtra}</div> : null}
           <button
             type="button"
@@ -137,8 +159,10 @@ export default function PortalShell({
         </div>
       </aside>
 
-      <div className={`flex min-h-dvh min-w-0 flex-col ${mainGrid}`}>
-        <header className="sticky top-0 z-20 shrink-0 border-b border-slate-200 bg-white/95 backdrop-blur lg:hidden">
+      {/* ── Main content column ── */}
+      <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
+        {/* Mobile tab bar (hidden on desktop) */}
+        <header className="shrink-0 border-b border-slate-200 bg-white/95 backdrop-blur lg:hidden">
           <div className="flex items-center justify-between gap-3 px-4 py-3">
             <div className="min-w-0">
               <div className="text-[10px] font-bold uppercase tracking-wider text-[#2f76ff]">{brandTitle}</div>
@@ -154,7 +178,7 @@ export default function PortalShell({
               </button>
             </div>
           </div>
-          <div className="flex gap-1 overflow-x-auto px-2 pb-2 scrollbar-none lg:hidden">
+          <div className="flex gap-1 overflow-x-auto px-2 pb-2 scrollbar-none">
             {navItems.map((item) => (
               <button
                 key={item.id}
@@ -172,10 +196,13 @@ export default function PortalShell({
           </div>
         </header>
 
-        <main className="min-h-0 flex-1 px-4 py-6 sm:px-6 lg:px-8">
-          {children}
-        </main>
-        <PortalShellFooter brandTitle={brandTitle} brandSubtitle={brandSubtitle} />
+        {/* Page content — scrolls independently from sidebar */}
+        <div className="min-h-0 flex-1 overflow-y-auto">
+          <main className="px-4 py-6 sm:px-6 lg:px-8">
+            {children}
+          </main>
+          <PortalShellFooter brandTitle={brandTitle} brandSubtitle={brandSubtitle} />
+        </div>
       </div>
     </div>
   )
