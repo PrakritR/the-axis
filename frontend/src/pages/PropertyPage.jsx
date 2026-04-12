@@ -4,6 +4,8 @@ import { usePropertyListingChrome } from '../contexts/PropertyListingChromeConte
 import MapView from '../components/Map'
 import PropertyGallery from '../components/PropertyGallery'
 import { properties } from '../data/properties'
+import { fetchPropertyRecordById } from '../lib/airtable'
+import { mapAirtableRecordToPropertyPage, marketingSlugForAirtablePropertyId } from '../lib/airtablePublicListings'
 import { Seo, buildPropertySchema } from '../lib/seo'
 import { getStartingRent } from '../lib/pricing'
 import Modal from '../components/Modal'
@@ -518,7 +520,46 @@ export default function PropertyPage(){
   const { slug } = useParams()
   const { hash } = useLocation()
   const listingChrome = usePropertyListingChrome()
-  const p = properties.find(x=>x.slug===slug)
+  const pStatic = properties.find((x) => x.slug === slug)
+  const [pDynamic, setPDynamic] = useState(null)
+  const [dynamicLoading, setDynamicLoading] = useState(false)
+
+  useEffect(() => {
+    if (pStatic) {
+      setPDynamic(null)
+      return undefined
+    }
+    const rid = String(slug || '').startsWith('axis-') ? String(slug).slice('axis-'.length) : ''
+    if (!/^rec[a-zA-Z0-9]{14,}$/.test(rid)) {
+      setPDynamic(null)
+      return undefined
+    }
+    let cancelled = false
+    setDynamicLoading(true)
+    fetchPropertyRecordById(rid)
+      .then((rec) => {
+        if (cancelled || !rec) {
+          if (!cancelled) setPDynamic(null)
+          return
+        }
+        const approved = rec.Approved === true || rec.Approved === 1
+        const expected = marketingSlugForAirtablePropertyId(rec.id)
+        if (!approved || expected !== slug) {
+          setPDynamic(null)
+          return
+        }
+        setPDynamic(mapAirtableRecordToPropertyPage(rec))
+      })
+      .catch(() => {
+        if (!cancelled) setPDynamic(null)
+      })
+      .finally(() => {
+        if (!cancelled) setDynamicLoading(false)
+      })
+    return () => { cancelled = true }
+  }, [slug, pStatic])
+
+  const p = pStatic || pDynamic
 
   const [showAllPhotos, setShowAllPhotos] = useState(false)
   const [modalPlan, setModalPlan] = useState(null)
@@ -543,6 +584,7 @@ export default function PropertyPage(){
     if (!p) return []
     const plans = buildRoomPlanDisplay(p)
     const sharedVideos = getSharedSpaceVideos(p.videos || [])
+    const hasSharedList = (p.sharedSpacesList || []).length > 0
     const rentTotalsNav = buildRentTotals(p)
     const packages = p.leasingPackages || []
     const hasLeasing =
@@ -551,7 +593,7 @@ export default function PropertyPage(){
       (p.leaseTerms && p.leaseTerms.length > 0)
     return [
       ...(plans.length > 0 ? [['floor-plans', 'Floor Plans']] : []),
-      ...(sharedVideos.length > 0 ? [['shared-spaces', 'Shared Spaces']] : []),
+      ...(sharedVideos.length > 0 || hasSharedList ? [['shared-spaces', 'Shared Spaces']] : []),
       ['policies', 'Lease basics'],
       ['amenities', 'Amenities'],
       ...(hasLeasing ? [['leasing', 'Bundles & leasing']] : []),
@@ -776,6 +818,10 @@ export default function PropertyPage(){
     }
   }, [p, sectionScrollOrder, updateActiveTabFromScrollPosition])
 
+  if (!pStatic && dynamicLoading) {
+    return <div className="container mx-auto px-6 py-16 text-center text-sm text-slate-600">Loading listing…</div>
+  }
+
   if (!p) {
     return <div className="container mx-auto px-6 py-12">Property not found</div>
   }
@@ -823,6 +869,7 @@ export default function PropertyPage(){
   const fullHousePromo =
     rentTotals.totalHouseRent > 0 ? computeFullHousePromoPrice(rentTotals.totalHouseRent) : null
   const sharedSpaceVideos = getSharedSpaceVideos(p.videos || [])
+  const sharedSpacesList = p.sharedSpacesList || []
   const leasingPackages = p.leasingPackages || []
 
   return (
@@ -902,24 +949,32 @@ export default function PropertyPage(){
             </section>
           )}
 
-          {sharedSpaceVideos.length > 0 ? (
+          {sharedSpacesList.length > 0 || sharedSpaceVideos.length > 0 ? (
             <section id="shared-spaces" ref={(node) => { sectionRefs.current['shared-spaces'] = node }} className="mt-14 scroll-mt-32 md:scroll-mt-44">
               <div className="flex items-end justify-between gap-4">
                 <div>
                   <h2 className="font-editorial text-3xl font-black leading-tight text-slate-900 sm:text-4xl">Shared spaces</h2>
-                  <p className="mt-2 text-base text-slate-600">Kitchen and living area</p>
+                  <p className="mt-2 text-base text-slate-600">Common areas everyone in the house can use</p>
                 </div>
                 <div className="shrink-0 text-sm text-slate-500">
-                  {sharedSpaceVideos.length} shared spaces
+                  {sharedSpacesList.length + sharedSpaceVideos.length} shared spaces
                 </div>
               </div>
               <div className="mt-8 overflow-hidden rounded-[18px] border border-slate-200 bg-white">
                 <div className="hidden sm:grid grid-cols-12 gap-3 border-b border-slate-100 bg-slate-50 px-6 py-3 text-xs font-bold uppercase tracking-[0.14em] text-slate-400">
                   <div className="col-span-4">Space</div>
-                  <div className="col-span-6" />
-                  <div className="col-span-2 text-right"></div>
+                  <div className="col-span-8">Details</div>
                 </div>
                 <div className="divide-y divide-slate-100 px-4 sm:px-6">
+                  {sharedSpacesList.map((row) => (
+                    <div key={row.title} className="grid grid-cols-1 items-start gap-2 py-4 sm:grid-cols-12 sm:gap-3">
+                      <div className="sm:col-span-4">
+                        <div className="font-semibold text-slate-900">{row.title}</div>
+                        <div className="mt-0.5 text-xs text-slate-500">Shared area</div>
+                      </div>
+                      <div className="sm:col-span-8 text-sm text-slate-600">{row.description || '—'}</div>
+                    </div>
+                  ))}
                   {sharedSpaceVideos.map((video) => {
                     const meta = getSharedSpaceDetailMeta(video)
                     return (

@@ -1370,7 +1370,7 @@ function AvailabilityEditorPanel({
   selectedPropertyId,
   onSelectProperty,
 }) {
-  const disabled = availSaving || isManagerInternalPreview(manager)
+  const disabled = availSaving || isManagerInternalPreview(manager) || !selectedPropertyId
 
   return (
     <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm lg:sticky lg:top-6">
@@ -1395,6 +1395,12 @@ function AvailabilityEditorPanel({
           {manager.__axisDeveloper
             ? 'Developer preview: availability edits are disabled'
             : 'Internal preview: availability edits are disabled (no linked manager profile)'}
+        </div>
+      ) : null}
+
+      {!selectedPropertyId ? (
+        <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+          Select a property to add availability blocks.
         </div>
       ) : null}
 
@@ -2310,12 +2316,10 @@ function HouseManagementPanel({ manager, onPropertiesChange }) {
     securityDeposit: '',
     utilitiesFee: '',
     applicationFee: '',
-    siteManagerEmail: '',
-    propertyLabel: '',
     address: '',
   })
   const addInputCls =
-    'w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm transition focus:border-[#2563eb] focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#2563eb]/20'
+    'w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm transition focus:border-[#2563eb] focus:outline-none focus:ring-2 focus:ring-[#2563eb]/20'
 
   const loadProperties = useCallback(async () => {
     setLoading(true)
@@ -2394,10 +2398,8 @@ function HouseManagementPanel({ manager, onPropertiesChange }) {
       if (uf !== undefined) patch['Utilities Fee'] = uf
       const af = optionalPropertyCurrency(tourForm.applicationFee)
       if (af !== undefined) patch['Application Fee'] = af
-      const sme = String(tourForm.siteManagerEmail || '').trim()
+      const sme = String(manager?.email || property['Site Manager Email'] || '').trim()
       if (sme) patch['Site Manager Email'] = sme
-      const propLabel = String(tourForm.propertyLabel || '').trim()
-      patch.Property = propLabel || String(property.Name || '').trim()
       const addr = String(tourForm.address || '').trim()
       if (addr) patch.Address = addr
       const updated = await updatePropertyAdmin(property.id, patch)
@@ -2929,26 +2931,6 @@ function HouseManagementPanel({ manager, onPropertiesChange }) {
                       />
                     </div>
                     <div>
-                      <label className="mb-1 block text-xs font-semibold text-slate-600">Property label</label>
-                      <input
-                        type="text"
-                        value={tourForm.propertyLabel}
-                        onChange={(e) => setTourForm((current) => ({ ...current, propertyLabel: e.target.value }))}
-                        placeholder={'Airtable "Property" field'}
-                        className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900"
-                      />
-                    </div>
-                    <div>
-                      <label className="mb-1 block text-xs font-semibold text-slate-600">Site manager email</label>
-                      <input
-                        type="email"
-                        value={tourForm.siteManagerEmail}
-                        onChange={(e) => setTourForm((current) => ({ ...current, siteManagerEmail: e.target.value }))}
-                        placeholder="For tours & public routing"
-                        className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900"
-                      />
-                    </div>
-                    <div>
                       <label className="mb-1 block text-xs font-semibold text-slate-600">Utilities fee ($/mo)</label>
                       <input
                         type="number"
@@ -2991,8 +2973,6 @@ function HouseManagementPanel({ manager, onPropertiesChange }) {
                             securityDeposit: '',
                             utilitiesFee: '',
                             applicationFee: '',
-                            siteManagerEmail: '',
-                            propertyLabel: '',
                             address: '',
                           })
                         }}
@@ -3019,10 +2999,6 @@ function HouseManagementPanel({ manager, onPropertiesChange }) {
                         securityDeposit: String(property['Security Deposit'] ?? ''),
                         utilitiesFee: String(property['Utilities Fee'] ?? ''),
                         applicationFee: String(property['Application Fee'] ?? ''),
-                        siteManagerEmail: String(
-                          property['Site Manager Email'] || extractNoteValue(property.Notes, 'Site Manager Email') || '',
-                        ),
-                        propertyLabel: String(property.Property ?? ''),
                         address: String(property.Address ?? ''),
                       })
                     }}
@@ -5535,7 +5511,7 @@ function CalendarTabPanel({ manager, allowedPropertyNames }) {
       ])
       setSchedulingRows(sched)
       setProperties(props)
-      const assigned = props.filter((p) => propertyAssignedToManager(p, manager) && isPropertyRecordApproved(p))
+      const assigned = props.filter((p) => propertyAssignedToManager(p, manager))
       const byProperty = {}
       assigned.forEach((property) => {
         const text = extractNoteValue(property.Notes, 'Tour Availability') || ''
@@ -5572,7 +5548,7 @@ function CalendarTabPanel({ manager, allowedPropertyNames }) {
   )
 
   const assignedProperties = useMemo(
-    () => properties.filter((p) => propertyAssignedToManager(p, manager) && isPropertyRecordApproved(p)),
+    () => properties.filter((p) => propertyAssignedToManager(p, manager)),
     [properties, manager],
   )
 

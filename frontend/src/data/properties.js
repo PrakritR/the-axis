@@ -28,6 +28,13 @@ function asset(path) {
 const assets = (...paths) => paths.map(asset)
 
 const SHARED_TAGS = ['Shared Housing', 'Seattle', 'Shared Living']
+
+/** Shown on listing pages under Shared spaces (Living area, Kitchen, Laundry). */
+const SHARED_SPACE_SECTION_DEFAULT = [
+  { title: 'Living area', description: 'Shared lounge and everyday common space for the household.' },
+  { title: 'Kitchen', description: 'Full shared kitchen for cooking, storage, and shared meals.' },
+  { title: 'Laundry', description: 'Shared laundry for residents (layout varies by floor).' },
+]
 const SHARED_COMMUNITY_AMENITIES = [
   'Walkable Location',
   'In-Unit Laundry (Washer & Dryer)',
@@ -130,6 +137,7 @@ export const properties = [
     videos: [],
     location: { lat: 47.6633083, lng: -122.3196714 },
     tags: SHARED_TAGS,
+    sharedSpacesList: SHARED_SPACE_SECTION_DEFAULT,
     floorPlans: [
       {
         title: 'First Floor - Room 10',
@@ -261,6 +269,7 @@ export const properties = [
     videos: [],
     location: { lat: 47.6633083, lng: -122.3196714 },
     tags: SHARED_TAGS,
+    sharedSpacesList: SHARED_SPACE_SECTION_DEFAULT,
     floorPlans: [
       {
         title: 'First Floor',
@@ -380,6 +389,7 @@ export const properties = [
     videos: [],
     location: { lat: 47.6681351, lng: -122.3144917 },
     tags: ['Shared Housing', 'Shared Living', 'Seattle'],
+    sharedSpacesList: SHARED_SPACE_SECTION_DEFAULT,
     floorPlans: [
       {
         title: '2-Bedroom Share',

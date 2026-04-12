@@ -52,7 +52,7 @@ export default function PropertyCard({ p }) {
       className="group flex flex-col overflow-hidden rounded-[28px] border border-white/90 bg-white/88 shadow-[0_24px_60px_rgba(37,99,235,0.10)] backdrop-blur transition-shadow hover:shadow-[0_30px_70px_rgba(37,99,235,0.15)]"
     >
       <div className="relative aspect-[5/4] w-full overflow-hidden sm:aspect-[16/10]">
-        <Carousel images={p.images.slice(0, 6)} height="100%" altPrefix={p.name} className="h-full">
+        <Carousel images={(p.images || []).slice(0, 6)} height="100%" altPrefix={p.name} className="h-full">
           <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/75 via-black/20 to-transparent" />
           <div className="absolute left-3 top-3 pointer-events-none">
             <span className="rounded-full border border-white/80 bg-white/90 px-3 py-1 text-[10px] font-bold uppercase tracking-wider text-slate-800 shadow-sm backdrop-blur-sm">

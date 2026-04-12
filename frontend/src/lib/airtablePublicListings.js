@@ -38,13 +38,13 @@ export function mapAirtableRecordToPropertyPage(rec) {
   const base = mapAirtableRecordToHomeProperty(rec)
   const { userText, meta } = parseAxisListingMetaBlock(String(rec['Other Info'] || ''))
   const leasing = meta?.leasing || {}
-  const fullHouse = String(leasing.fullHousePrice || '').replace(/[^\d.]/g, '')
-  const promo = String(leasing.promoPrice || '').replace(/[^\d.]/g, '')
+  const fh = parseFloat(String(leasing.fullHousePrice || '').replace(/[^\d.]/g, ''))
+  const pr = parseFloat(String(leasing.promoPrice || '').replace(/[^\d.]/g, ''))
   const rentHint =
-    fullHouse && promo
-      ? `$${Number(promo).toLocaleString('en-US')}–$${Number(fullHouse).toLocaleString('en-US')}/month`
-      : fullHouse
-        ? `$${Number(fullHouse).toLocaleString('en-US')}/month`
+    Number.isFinite(fh) && fh > 0 && Number.isFinite(pr) && pr > 0
+      ? `$${Math.min(fh, pr).toLocaleString('en-US')}–$${Math.max(fh, pr).toLocaleString('en-US')}/month`
+      : Number.isFinite(fh) && fh > 0
+        ? `$${fh.toLocaleString('en-US')}/month`
         : base.rent
   const leasingPackages = (leasing.bundles || [])
     .map((b) => {
