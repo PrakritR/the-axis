@@ -20,6 +20,24 @@ function extractNoteValue(notes, label) {
   return match ? match[1].trim() : ''
 }
 
+/**
+ * Extracts a potentially multi-line block value from a Notes field.
+ * Stops at the next "Label: ..." line so multi-line availability is captured fully.
+ * e.g. "Tour Availability: Mon: 540-720\nTue: 600-840\nWed: 480-660"
+ */
+function extractMultilineNoteValue(notes, label) {
+  const escaped = String(label || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  const startRe = new RegExp(`(?:^|\\n)${escaped}:\\s*`, 'i')
+  const s = String(notes || '')
+  const startMatch = s.match(startRe)
+  if (!startMatch) return ''
+  const after = s.slice(startMatch.index + startMatch[0].length)
+  // Stop at the next line that looks like another "Key: value" label
+  const stopMatch = after.match(/\n[A-Za-z][A-Za-z ]*:/)
+  const block = stopMatch ? after.slice(0, stopMatch.index) : after
+  return block.trim()
+}
+
 /** Same rules as Manager.jsx `isPropertyRecordApproved` — only approved/live houses appear in public tour & message pickers. */
 function isPropertyRecordApprovedForTour(fields) {
   const p = fields || {}
@@ -47,13 +65,17 @@ function buildRoomsByPropertyId(roomRecords) {
 
 function mapProperty(record, roomsByPropertyId) {
   const fields = record.fields || {}
+
+  // Rooms: prefer linked Rooms table records, then generate from Room Count field
   const airtableRooms = (roomsByPropertyId.get(record.id) || []).sort((a, b) => {
     const na = parseInt(String(a).replace(/\D/g, ''), 10) || 0
     const nb = parseInt(String(b).replace(/\D/g, ''), 10) || 0
     return na !== nb ? na - nb : a.localeCompare(b)
   })
-  const fallbackRooms = FALLBACK_PROPERTIES.find((p) => p.name === fields.Name || p.name === fields.Property)?.rooms || []
-  const rooms = airtableRooms.length ? airtableRooms : fallbackRooms
+  const roomCount = parseInt(String(fields['Room Count'] || ''), 10) || 0
+  const countRooms = roomCount > 0 ? Array.from({ length: roomCount }, (_, i) => `Room ${i + 1}`) : []
+  const rooms = airtableRooms.length ? airtableRooms : countRooms
+
   const managerEmailRaw =
     (typeof fields['Site Manager Email'] === 'string' && fields['Site Manager Email'].trim()) ||
     extractNoteValue(fields.Notes, 'Site Manager Email') ||
@@ -64,16 +86,22 @@ function mapProperty(record, roomsByPropertyId) {
     applicationFee = Math.max(0, Math.min(9999, Math.round(appFeeRaw)))
   }
 
+  // Property name: “Property Name” is the current Airtable field; fall back to “Name” for older bases
+  const name = String(fields['Property Name'] || fields.Name || fields.Property || '').trim() || 'Untitled house'
+
+  // Tour availability is a multi-line block stored by the manager's calendar (e.g. “Mon: 540-720\nTue: 600-840”)
+  const availability = extractMultilineNoteValue(fields.Notes, 'Tour Availability')
+
   return {
     id: record.id,
-    name: fields.Name || fields.Property || 'Untitled house',
-    address: fields.Address || '',
+    name,
+    address: String(fields.Address || '').trim(),
     rooms,
     ...(applicationFee !== undefined ? { applicationFee } : {}),
     manager: extractNoteValue(fields.Notes, 'Tour Manager'),
     /** Used to route public “Message Axis” form to the correct Manager portal thread (must be an email). */
     managerEmail: managerEmailRaw.trim(),
-    availability: extractNoteValue(fields.Notes, 'Tour Availability'),
+    availability,
     notes: extractNoteValue(fields.Notes, 'Tour Notes'),
   }
 }

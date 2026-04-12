@@ -123,7 +123,7 @@ function MonthCalendar({ selectableSet, selectedDate, onSelectDate }) {
   const keyFor = (day) => formatYMD(new Date(year, month, day))
 
   if (!selectableSet?.size) {
-    return <p className="text-sm text-slate-400 italic">No open slots loaded. Submit your request and we will coordinate a time</p>
+    return <p className="text-sm text-slate-400 italic">No open tour slots set for this property yet. Use the &quot;Send message&quot; tab to contact us directly.</p>
   }
 
   return (
@@ -236,14 +236,9 @@ function HousingScheduler() {
   const [submitError, setSubmitError] = useState('')
 
   const selectedProperty = properties.find(p => p.id === property)
+  // Only use manager-set availability — never fill in hardcoded defaults for specific properties
   const daySlotMap = selectedProperty
-    ? (() => {
-        const parsed = parseTourCalendar(selectedProperty.availability)
-        return Object.keys(DEFAULT_CALENDAR).reduce((acc, day) => {
-          acc[day] = parsed[day]?.length ? parsed[day] : DEFAULT_CALENDAR[day]
-          return acc
-        }, {})
-      })()
+    ? parseTourCalendar(selectedProperty.availability)
     : DEFAULT_CALENDAR
   const availableDates = getUpcomingDates(daySlotMap)
   const selectableSet = useMemo(() => new Set(availableDates.map((d) => d.date)), [availableDates])
