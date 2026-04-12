@@ -4950,7 +4950,6 @@ function ApplicationsPanel({ allowedPropertyNames, manager }) {
           <div className="px-6 py-16 text-center">
             <div className="mb-3 text-4xl" aria-hidden>📋</div>
             <div className="text-sm font-semibold text-slate-700">No applications yet</div>
-            <p className="mt-1 text-sm text-slate-500">Applications submitted via the Apply page will appear here.</p>
           </div>
         ) : filteredRows.length === 0 ? (
           <div className="px-6 py-16 text-center">
