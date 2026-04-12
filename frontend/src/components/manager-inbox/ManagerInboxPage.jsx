@@ -1427,7 +1427,6 @@ export default function ManagerInboxPage({
 
           {!composeOpen && !selectedThreadId ? (
             <div className="flex flex-1 flex-col items-center justify-center gap-3 px-6 text-center">
-              <p className="max-w-xs text-sm text-slate-500">Select a conversation or start a new one.</p>
               <button
                 type="button"
                 onClick={() => {
