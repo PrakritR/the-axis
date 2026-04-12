@@ -172,6 +172,15 @@ const MARKETING_PROPERTY_OPTIONS = properties
   })
   .sort((a, b) => a.name.localeCompare(b.name))
 
+/** Property must appear in the live tour API list to allow application submission. */
+function propertyNameAllowedForApplication(propertyName, livePropertyOptions) {
+  const name = String(propertyName || '').trim()
+  if (!name) return false
+  if (!Array.isArray(livePropertyOptions) || livePropertyOptions.length === 0) return false
+  const pool = livePropertyOptions
+  return pool.some((p) => p.name === name)
+}
+
 // ---------------------------------------------------------------------------
 // Field validators — each returns an error string or '' if valid
 // ---------------------------------------------------------------------------
@@ -1329,6 +1338,16 @@ export default function Apply() {
 
         if (!signer.consent) {
           throw new Error('The signer must consent to the credit and background check before submitting.')
+        }
+
+        if (!Array.isArray(propertyOptions) || propertyOptions.length === 0) {
+          throw new Error('Live property availability could not be verified. Refresh and try again, or contact Axis leasing.')
+        }
+
+        if (!propertyNameAllowedForApplication(signer.propertyName, propertyOptions)) {
+          throw new Error(
+            'This property is not accepting online applications (it may be unlisted). Choose a home from the list or contact Axis.',
+          )
         }
 
         const isDuplicate = await checkDuplicateApplication(signer.email)

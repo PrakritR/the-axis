@@ -881,12 +881,29 @@ export async function getPropertyByName(propertyName) {
 export function propertyListingVisibleForMarketing(rec) {
   if (!rec || typeof rec !== 'object') return false
   if (!(rec.Approved === true || rec.Approved === 1)) return false
+  const approval = String(rec['Approval Status'] || '').trim().toLowerCase()
+  if (
+    approval === 'changes requested' ||
+    approval === 'changes_requested' ||
+    approval === 'rejected' ||
+    approval === 'unlisted' ||
+    approval === 'inactive'
+  ) {
+    return false
+  }
   const listed = rec.Listed
   if (listed === false || listed === 0) return false
   const axis = String(rec['Axis Admin Listing Status'] || rec['Admin Listing Status'] || '')
     .trim()
     .toLowerCase()
   if (axis === 'unlisted' || axis === 'inactive') return false
+  if (
+    axis === 'changes requested' ||
+    axis === 'changes_requested' ||
+    axis === 'rejected'
+  ) {
+    return false
+  }
   return true
 }
 

@@ -2508,10 +2508,10 @@ function HouseManagementPanel({ manager, onPropertiesChange }) {
   const propertySections = useMemo(
     () => [
       {
-        key: 'updates_needed',
-        label: 'Updates needed',
+        key: 'request_change',
+        label: 'Request change',
         hint:
-          'Axis requested changes. These homes are off the public site until you edit and resubmit for approval.',
+          'Axis asked for updates. Edit each listing below, then save and submit for approval — it returns to pending review and stays off the public site until Axis approves again.',
         rows: changesRequestedAssigned,
         actions: 'edits_requested',
         cardClass: 'rounded-2xl border border-amber-300/90 bg-amber-50/80 px-4 py-4',
@@ -2594,7 +2594,10 @@ function HouseManagementPanel({ manager, onPropertiesChange }) {
         onPropertiesChange?.(next)
         return next
       })
-      toast.success('Property saved — pending admin approval')
+      toast.success('Submitted — pending admin approval')
+      if (propertyNeedsAdminEditRequest(property)) {
+        setPropertiesSection('pending')
+      }
       setEditingPropertyId(null)
     } catch (err) {
       toast.error('Could not save property: ' + err.message)
@@ -2919,7 +2922,7 @@ function HouseManagementPanel({ manager, onPropertiesChange }) {
             <div className="inline-flex flex-wrap gap-1 rounded-2xl border border-slate-200 bg-slate-50 p-1">
               {[
                 ['pending', 'Pending', pendingAssigned.length],
-                ['updates_needed', 'Updates needed', changesRequestedAssigned.length],
+                ['request_change', 'Request change', changesRequestedAssigned.length],
                 ['listed', 'Listed', listedAssigned.length],
                 ['unlisted', 'Unlisted', unlistedAssigned.length],
                 ['rejected', 'Rejected', rejectedAssigned.length],
@@ -2952,7 +2955,7 @@ function HouseManagementPanel({ manager, onPropertiesChange }) {
                   <div className="text-sm font-semibold text-slate-900">{propertyRecordName(property) || 'Untitled house'}</div>
                   <div className="flex items-center gap-2">
                     <span className="rounded-full bg-amber-200/90 px-3 py-1 text-[11px] font-bold uppercase tracking-[0.12em] text-amber-950">
-                      {propertyNeedsAdminEditRequest(property) ? 'Updates requested' : 'Pending review'}
+                      Pending review
                     </span>
                     <button
                       type="button"
@@ -2976,15 +2979,6 @@ function HouseManagementPanel({ manager, onPropertiesChange }) {
                     </button>
                   </div>
                 </div>
-                {propertyNeedsAdminEditRequest(property) && property[PROPERTY_EDIT_REQUEST_FIELD] ? (
-                  <div className="mt-3 rounded-xl border border-violet-200 bg-violet-50 px-3 py-2 text-sm text-violet-950">
-                    <div className="text-[11px] font-bold uppercase tracking-[0.12em] text-violet-800">Axis — changes requested</div>
-                    <p className="mt-1 whitespace-pre-wrap">{property[PROPERTY_EDIT_REQUEST_FIELD]}</p>
-                    <p className="mt-2 text-xs text-violet-900/85">
-                      After Axis marks your submission for edits, open <strong>Updates needed</strong> to edit the full listing when it appears there.
-                    </p>
-                  </div>
-                ) : null}
                 <div className="mt-1 text-sm text-slate-600">{property.Address || 'Address not set'}</div>
               </div>
             )) : null}
@@ -3023,12 +3017,12 @@ function HouseManagementPanel({ manager, onPropertiesChange }) {
               </div>
             )) : null}
 
-            {activeSection && ['listed', 'unlisted', 'updates_needed'].includes(propertiesSection) ? (
+            {activeSection && ['listed', 'unlisted', 'request_change'].includes(propertiesSection) ? (
               <React.Fragment key={activeSection.key}>
                 <div className="text-[11px] font-bold uppercase tracking-[0.14em] text-slate-500">{activeSection.label}</div>
                 {activeSection.hint ? <p className="mt-1 text-xs text-slate-500">{activeSection.hint}</p> : null}
-                {activeSection.rows.length === 0 && propertiesSection === 'updates_needed' ? (
-                  <p className="mt-2 text-sm text-slate-500">No properties need updates right now.</p>
+                {activeSection.rows.length === 0 && propertiesSection === 'request_change' ? (
+                  <p className="mt-2 text-sm text-slate-500">No request-change items right now.</p>
                 ) : null}
                 {activeSection.rows.map((property) => (
               <div key={property.id} className={activeSection.cardClass}>

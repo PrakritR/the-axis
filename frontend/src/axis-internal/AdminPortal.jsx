@@ -5,6 +5,7 @@ import Modal from '../components/Modal'
 import PortalShell, { StatCard, StatusPill, DataTable } from '../components/PortalShell'
 import {
   adminApproveProperty,
+  adminPatchApplication,
   adminRejectApplication,
   adminUnapproveApplication,
   adminRejectProperty,
@@ -52,6 +53,7 @@ const PROPERTY_STATUS_LABEL = {
 const NAV_BASE = [
   { id: 'dashboard', label: 'Dashboard' },
   { id: 'properties', label: 'Properties' },
+  { id: 'applications', label: 'Applications' },
   { id: 'accounts', label: 'Managers' },
   { id: 'messages', label: 'Inbox' },
   { id: 'profile', label: 'Profile' },
@@ -307,7 +309,7 @@ export default function AdminPortal() {
     return NAV_BASE.some((n) => n.id === h) ? h : 'dashboard'
   })
   useEffect(() => { window.location.hash = tab }, [tab])
-  /** Within Properties: pending | approved | unlisted | rejected */
+  /** Within Properties: pending | request_change | approved | unlisted | rejected */
   const [propertiesSection, setPropertiesSection] = useState('pending')
   /** Within Applications: all | pending | approved | rejected */
   const [applicationsFilter, setApplicationsFilter] = useState('all')
@@ -439,7 +441,14 @@ export default function AdminPortal() {
 
   const navItems = useMemo(() => NAV_BASE, [])
 
-  const pendingApprovals = useMemo(() => properties.filter((p) => p.status === 'pending' || p.status === 'changes_requested'), [properties])
+  /** First-time submissions awaiting admin review (not admin “request change” flow). */
+  const pendingReviewProperties = useMemo(() => properties.filter((p) => p.status === 'pending'), [properties])
+  /** Admin asked manager to edit; waiting on manager resubmit → then returns to pending review. */
+  const requestChangeProperties = useMemo(() => properties.filter((p) => p.status === 'changes_requested'), [properties])
+  const propertiesAwaitingAdminAttention = useMemo(
+    () => pendingReviewProperties.length + requestChangeProperties.length,
+    [pendingReviewProperties, requestChangeProperties],
+  )
   const approvedProperties = useMemo(
     () => properties.filter((p) => p.status === 'approved' || p.status === 'live'),
     [properties],
@@ -471,11 +480,36 @@ export default function AdminPortal() {
     return sortedApplications
   }, [sortedApplications, applicationsFilter])
 
-  const searchedPendingApprovals = useMemo(() => {
+  const searchedPendingReview = useMemo(() => {
     const q = propertiesSearch.trim().toLowerCase()
-    if (!q) return pendingApprovals
-    return pendingApprovals.filter((p) => `${p.name} ${p.address}`.toLowerCase().includes(q))
-  }, [pendingApprovals, propertiesSearch])
+    if (!q) return pendingReviewProperties
+    return pendingReviewProperties.filter((p) => `${p.name} ${p.address}`.toLowerCase().includes(q))
+  }, [pendingReviewProperties, propertiesSearch])
+  const searchedRequestChange = useMemo(() => {
+    const q = propertiesSearch.trim().toLowerCase()
+    if (!q) return requestChangeProperties
+    return requestChangeProperties.filter((p) => `${p.name} ${p.address}`.toLowerCase().includes(q))
+  }, [requestChangeProperties, propertiesSearch])
+  /** Rows + empty copy for the two admin review queues (pending vs manager resubmit cycle). */
+  const propertyReviewQueue = useMemo(() => {
+    if (propertiesSection === 'pending') {
+      return {
+        rows: searchedPendingReview,
+        empty: 'No properties awaiting review',
+        queueHint: null,
+      }
+    }
+    if (propertiesSection === 'request_change') {
+      return {
+        rows: searchedRequestChange,
+        empty:
+          'No properties in request change. When a manager edits and resubmits, the home moves to Pending review.',
+        queueHint:
+          'These listings are off the public site. Managers fix them under Request change in the manager portal; when they resubmit, the home appears under Pending review for you to approve again.',
+      }
+    }
+    return { rows: null, empty: '', queueHint: null }
+  }, [propertiesSection, searchedPendingReview, searchedRequestChange])
   const searchedApprovedProperties = useMemo(() => {
     const q = propertiesSearch.trim().toLowerCase()
     if (!q) return approvedProperties
@@ -573,27 +607,32 @@ export default function AdminPortal() {
           ) : null}
 
           {/* Action-needed banner */}
-          {pendingApprovals.length > 0 ? (
+          {propertiesAwaitingAdminAttention > 0 ? (
             <div className="flex flex-wrap items-center gap-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3">
               <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-amber-400 text-xs font-black text-white">
-                {pendingApprovals.length}
+                {propertiesAwaitingAdminAttention}
               </span>
               <div className="min-w-0 flex-1">
                 <p className="text-sm font-bold text-amber-900">Action needed</p>
                 <p className="text-xs text-amber-800">
-                  {`${pendingApprovals.length} propert${pendingApprovals.length === 1 ? 'y' : 'ies'} awaiting review`}
+                  {pendingReviewProperties.length > 0 && requestChangeProperties.length > 0
+                    ? `${pendingReviewProperties.length} pending review · ${requestChangeProperties.length} request change`
+                    : pendingReviewProperties.length > 0
+                      ? `${pendingReviewProperties.length} propert${pendingReviewProperties.length === 1 ? 'y' : 'ies'} pending review`
+                      : `${requestChangeProperties.length} propert${requestChangeProperties.length === 1 ? 'y' : 'ies'} in request change`}
                 </p>
               </div>
               <div className="flex gap-2">
-                {pendingApprovals.length > 0 && (
-                  <button
-                    type="button"
-                    onClick={() => { setTab('properties'); setPropertiesSection('pending') }}
-                    className="rounded-xl bg-amber-500 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-amber-600"
-                  >
-                    Review properties
-                  </button>
-                )}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setTab('properties')
+                    setPropertiesSection(pendingReviewProperties.length > 0 ? 'pending' : 'request_change')
+                  }}
+                  className="rounded-xl bg-amber-500 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-amber-600"
+                >
+                  Review properties
+                </button>
               </div>
             </div>
           ) : null}
@@ -606,8 +645,17 @@ export default function AdminPortal() {
               onClick={() => { setTab('properties'); setPropertiesSection('pending') }}
               className="flex flex-col gap-1 rounded-3xl border border-sky-200/90 bg-sky-50 p-5 text-left transition hover:border-sky-300 hover:bg-sky-100/80 hover:shadow-sm"
             >
-              <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-sky-800">Properties · Pending</span>
-              <span className="text-3xl font-black tabular-nums text-slate-900">{pendingApprovals.length}</span>
+              <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-sky-800">Properties · Pending review</span>
+              <span className="text-3xl font-black tabular-nums text-slate-900">{pendingReviewProperties.length}</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => { setTab('properties'); setPropertiesSection('request_change') }}
+              className="flex flex-col gap-1 rounded-3xl border border-sky-200/90 bg-sky-50 p-5 text-left transition hover:border-sky-300 hover:bg-sky-100/80 hover:shadow-sm"
+            >
+              <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-sky-800">Properties · Request change</span>
+              <span className="text-3xl font-black tabular-nums text-slate-900">{requestChangeProperties.length}</span>
             </button>
 
             {/* Properties approved (listed) */}
@@ -677,11 +725,31 @@ export default function AdminPortal() {
       {tab === 'properties' && (
         <div className="space-y-6">
           <div>
-            <div className="mb-4">
+            <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
               <h1 className="text-2xl font-black text-slate-900">Properties</h1>
+              {dataLoading ? (
+                <span className="inline-flex items-center gap-1.5 rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-500">
+                  <span className="inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-slate-400" />
+                  Syncing…
+                </span>
+              ) : (
+                <button
+                  type="button"
+                  onClick={refreshPortalData}
+                  className="rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 shadow-sm transition hover:bg-slate-50"
+                >
+                  Refresh
+                </button>
+              )}
             </div>
             <div className="inline-flex flex-wrap gap-1 rounded-2xl border border-slate-200 bg-slate-50 p-1">
-              {[['pending', 'Pending', pendingApprovals.length], ['approved', 'Listed', approvedProperties.length], ['unlisted', 'Unlisted', unlistedProperties.length], ['rejected', 'Rejected', rejectedProperties.length]].map(([key, label, count]) => (
+              {[
+                ['pending', 'Pending review', pendingReviewProperties.length],
+                ['request_change', 'Request change', requestChangeProperties.length],
+                ['approved', 'Listed', approvedProperties.length],
+                ['unlisted', 'Unlisted', unlistedProperties.length],
+                ['rejected', 'Rejected', rejectedProperties.length],
+              ].map(([key, label, count]) => (
                 <button
                   key={key}
                   type="button"
@@ -699,10 +767,16 @@ export default function AdminPortal() {
             </div>
           </div>
 
-          {propertiesSection === 'pending' ? (
+          {propertyReviewQueue.rows ? (
             <>
+              {propertyReviewQueue.queueHint ? (
+                <div className="rounded-2xl border border-violet-200 bg-violet-50/90 px-4 py-3 text-sm text-violet-950">
+                  <p className="font-semibold text-violet-900">Request change</p>
+                  <p className="mt-1 text-xs text-violet-900/90">{propertyReviewQueue.queueHint}</p>
+                </div>
+              ) : null}
               <DataTable
-                empty="No properties awaiting review"
+                empty={propertyReviewQueue.empty}
                 columns={[
                   { key: 'n', label: 'Property', render: (d) => <><div className="font-semibold">{d.name}</div><div className="text-xs text-slate-500">{d.address}</div></> },
                   { key: 'o', label: 'Manager', render: (d) => ownerLabel(d.ownerId) },
@@ -712,7 +786,7 @@ export default function AdminPortal() {
                     <button type="button" className="text-sm font-semibold text-[#2563eb]" onClick={() => setSelectedApprovalId(d.id)}>Review</button>
                   ) },
                 ]}
-                rows={searchedPendingApprovals.map((p) => ({ key: p.id, data: p }))}
+                rows={propertyReviewQueue.rows.map((p) => ({ key: p.id, data: p }))}
               />
               {approval ? (
                 <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm space-y-4">
@@ -1053,6 +1127,7 @@ export default function AdminPortal() {
                       toast.success('Edit request sent — property unlisted until the manager resubmits')
                       setRequestEditsModalOpen(false)
                       setSelectedApprovalId(null)
+                      setPropertiesSection('request_change')
                     } catch (e) {
                       toast.error(
                         e?.message ||
@@ -1067,6 +1142,159 @@ export default function AdminPortal() {
                 </button>
               </div>
             </Modal>
+          ) : null}
+        </div>
+      )}
+
+      {tab === 'applications' && (
+        <div className="space-y-6">
+          <div>
+            <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+              <h1 className="text-2xl font-black text-slate-900">Applications</h1>
+              {dataLoading ? (
+                <span className="inline-flex items-center gap-1.5 rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-500">
+                  <span className="inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-slate-400" />
+                  Syncing…
+                </span>
+              ) : (
+                <button
+                  type="button"
+                  onClick={refreshPortalData}
+                  className="rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 shadow-sm transition hover:bg-slate-50"
+                >
+                  Refresh
+                </button>
+              )}
+            </div>
+            <div className="inline-flex flex-wrap gap-1 rounded-2xl border border-slate-200 bg-slate-50 p-1">
+              {[
+                ['all', 'All', applications.length],
+                ['pending', 'Pending', applications.filter((a) => a.approvalPending).length],
+                ['approved', 'Approved', applications.filter((a) => a.approvalState === 'approved').length],
+                ['rejected', 'Rejected', applications.filter((a) => a.approvalState === 'rejected').length],
+              ].map(([key, label, count]) => (
+                <button
+                  key={key}
+                  type="button"
+                  onClick={() => setApplicationsFilter(key)}
+                  className={`rounded-xl px-4 py-2 text-sm font-semibold transition ${
+                    applicationsFilter === key
+                      ? 'bg-white text-slate-900 shadow-sm'
+                      : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  {label}
+                  <span className="ml-1.5 tabular-nums text-slate-500">({count})</span>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <DataTable
+            empty="No applications found"
+            columns={[
+              {
+                key: 'a',
+                label: 'Applicant',
+                render: (d) => (
+                  <>
+                    <div className="font-semibold">{d.applicantName || '—'}</div>
+                    <div className="text-xs text-slate-500">{d.propertyName || '—'}</div>
+                  </>
+                ),
+              },
+              { key: 'm', label: 'Manager', render: (d) => ownerLabel(d.ownerId) },
+              {
+                key: 's',
+                label: 'Status',
+                render: (d) => (
+                  <StatusPill tone={d.approvalState === 'approved' ? 'green' : d.approvalState === 'rejected' ? 'red' : 'amber'}>
+                    {d.status || 'Pending review'}
+                  </StatusPill>
+                ),
+              },
+              {
+                key: 'dt',
+                label: 'Submitted',
+                render: (d) => {
+                  const raw = d?._airtable?.created_at
+                  if (!raw) return '—'
+                  try {
+                    return new Date(raw).toLocaleDateString()
+                  } catch {
+                    return '—'
+                  }
+                },
+              },
+              {
+                key: 'x',
+                label: '',
+                render: (d) => (
+                  <button
+                    type="button"
+                    className="text-sm font-semibold text-[#2563eb]"
+                    onClick={() => setSelectedApplicationId(selectedApplicationId === d.id ? null : d.id)}
+                  >
+                    {selectedApplicationId === d.id ? 'Hide' : 'Review'}
+                  </button>
+                ),
+              },
+            ]}
+            rows={searchedApplications.map((a) => ({ key: a.id, data: a }))}
+          />
+
+          {selectedApplication ? (
+            <ApplicationDetailPanel
+              application={selectedApplication}
+              partnerLabel={ownerLabel(selectedApplication.ownerId)}
+              onClose={() => setSelectedApplicationId(null)}
+              adminReview={canReviewApplicationsFromAdmin() ? {
+                busy: applicationReviewBusy,
+                onApprove: async () => {
+                  if (!selectedApplication?.id) return
+                  setApplicationReviewBusy(true)
+                  try {
+                    await adminPatchApplication(selectedApplication.id, {
+                      Approved: true,
+                      Rejected: false,
+                      'Approved At': new Date().toISOString(),
+                    })
+                    await refreshPortalData()
+                    toast.success('Application approved')
+                  } catch (e) {
+                    toast.error(e?.message || 'Approve failed')
+                  } finally {
+                    setApplicationReviewBusy(false)
+                  }
+                },
+                onReject: async () => {
+                  if (!selectedApplication?.id) return
+                  setApplicationReviewBusy(true)
+                  try {
+                    await adminRejectApplication(selectedApplication.id)
+                    await refreshPortalData()
+                    toast.success('Application rejected')
+                  } catch (e) {
+                    toast.error(e?.message || 'Reject failed')
+                  } finally {
+                    setApplicationReviewBusy(false)
+                  }
+                },
+                onUnapprove: async () => {
+                  if (!selectedApplication?.id) return
+                  setApplicationReviewBusy(true)
+                  try {
+                    await adminUnapproveApplication(selectedApplication.id)
+                    await refreshPortalData()
+                    toast.success('Application moved back to pending')
+                  } catch (e) {
+                    toast.error(e?.message || 'Update failed')
+                  } finally {
+                    setApplicationReviewBusy(false)
+                  }
+                },
+              } : null}
+            />
           ) : null}
         </div>
       )}

@@ -52,6 +52,9 @@ function buildRoomsByPropertyId(roomRecords) {
   return map
 }
 
+/**
+ * Same rules as frontend `propertyListingVisibleForMarketing` — tours, apply dropdown, and public flows.
+ */
 function propertyRecordVisibleForPublic(record) {
   const fields = record?.fields || {}
   const approvedRaw = fields.Approved
@@ -60,23 +63,41 @@ function propertyRecordVisibleForPublic(record) {
     approvedRaw === 1 ||
     approvedRaw === '1' ||
     (typeof approvedRaw === 'string' && approvedRaw.trim().toLowerCase() === 'true')
-  const approvalStatus = String(fields['Approval Status'] || fields.Status || '').trim().toLowerCase()
-  const statusApproved = approvalStatus === 'approved' || approvalStatus === 'live' || approvalStatus === 'published'
-  const listedRaw = fields.Listed
-  const listedOff =
-    listedRaw === false ||
-    listedRaw === 0 ||
-    (typeof listedRaw === 'string' && listedRaw.trim().toLowerCase() === 'false')
-  if (listedOff) return false
+  if (!approvedFlag) return false
 
-  const adminListingStatus = String(fields['Axis Admin Listing Status'] || fields['Admin Listing Status'] || '')
-    .trim()
-    .toLowerCase()
-  if (['unlisted', 'inactive', 'rejected', 'pending', 'changes requested', 'changes_requested'].includes(adminListingStatus)) {
+  const approval = String(fields['Approval Status'] || '').trim().toLowerCase()
+  if (
+    approval === 'changes requested' ||
+    approval === 'changes_requested' ||
+    approval === 'rejected' ||
+    approval === 'unlisted' ||
+    approval === 'inactive'
+  ) {
     return false
   }
 
-  return approvedFlag || statusApproved
+  const listedRaw = fields.Listed
+  if (
+    listedRaw === false ||
+    listedRaw === 0 ||
+    (typeof listedRaw === 'string' && listedRaw.trim().toLowerCase() === 'false')
+  ) {
+    return false
+  }
+
+  const axis = String(fields['Axis Admin Listing Status'] || fields['Admin Listing Status'] || '')
+    .trim()
+    .toLowerCase()
+  if (axis === 'unlisted' || axis === 'inactive') return false
+  if (
+    axis === 'changes requested' ||
+    axis === 'changes_requested' ||
+    axis === 'rejected'
+  ) {
+    return false
+  }
+
+  return true
 }
 
 function mapProperty(record, roomsByPropertyId) {
