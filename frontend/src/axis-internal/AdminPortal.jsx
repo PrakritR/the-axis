@@ -360,8 +360,8 @@ export default function AdminPortal() {
   }, [tab])
 
   useEffect(() => {
-    if (tab !== 'properties' || propertiesSection !== 'pending') setSelectedApprovalId(null)
-  }, [tab, propertiesSection])
+    if (tab !== 'properties') setSelectedApprovalId(null)
+  }, [tab])
 
   const navItems = useMemo(() => NAV_BASE, [])
 
@@ -667,27 +667,60 @@ export default function AdminPortal() {
               ) : null}
             </>
           ) : propertiesSection === 'approved' ? (
-            <DataTable
-              empty="No approved properties."
-              columns={[
-                { key: 'n', label: 'Property', render: (d) => <><div className="font-semibold">{d.name}</div><div className="text-xs text-slate-500">{d.address}</div></> },
-                { key: 'o', label: 'Manager', render: (d) => ownerLabel(d.ownerId) },
-                { key: 's', label: 'Status', render: (d) => <StatusPill tone={propertyTone(d.status)}>{PROPERTY_STATUS_LABEL[d.status] || d.status}</StatusPill> },
-                { key: 'r', label: 'Details', render: (d) => `$${d.rentFrom}` },
-              ]}
-              rows={approvedProperties.map((p) => ({ key: p.id, data: p }))}
-            />
+            <>
+              <DataTable
+                empty="No approved properties."
+                columns={[
+                  { key: 'n', label: 'Property', render: (d) => <><div className="font-semibold">{d.name}</div><div className="text-xs text-slate-500">{d.address}</div></> },
+                  { key: 'o', label: 'Manager', render: (d) => ownerLabel(d.ownerId) },
+                  { key: 's', label: 'Status', render: (d) => <StatusPill tone={propertyTone(d.status)}>{PROPERTY_STATUS_LABEL[d.status] || d.status}</StatusPill> },
+                  { key: 'a', label: '', render: (d) => (
+                    <button type="button" className="text-sm font-semibold text-[#2563eb]" onClick={() => setSelectedApprovalId(selectedApprovalId === d.id ? null : d.id)}>
+                      {selectedApprovalId === d.id ? 'Hide' : 'Details'}
+                    </button>
+                  ) },
+                ]}
+                rows={approvedProperties.map((p) => ({ key: p.id, data: p }))}
+              />
+              {approval && propertiesSection === 'approved' ? (
+                <div className="rounded-[24px] border border-slate-200 bg-white p-6 shadow-sm space-y-4">
+                  <div className="flex justify-between gap-2">
+                    <h2 className="text-lg font-black">{approval.name}</h2>
+                    <button type="button" className="text-sm text-slate-500" onClick={() => setSelectedApprovalId(null)}>Close</button>
+                  </div>
+                  <p className="text-sm text-slate-600">{approval.description}</p>
+                  <PropertyDetailPanel property={approval} ownerLabel={ownerLabel(approval.ownerId)} />
+                </div>
+              ) : null}
+            </>
           ) : (
-            <DataTable
-              empty="No rejected properties."
-              columns={[
-                { key: 'n', label: 'Property', render: (d) => <><div className="font-semibold">{d.name}</div><div className="text-xs text-slate-500">{d.address}</div></> },
-                { key: 'o', label: 'Manager', render: (d) => ownerLabel(d.ownerId) },
-                { key: 's', label: 'Status', render: (d) => <StatusPill tone={propertyTone(d.status)}>{PROPERTY_STATUS_LABEL[d.status] || d.status}</StatusPill> },
-                { key: 'dt', label: 'Submitted', render: (d) => new Date(d.submittedAt).toLocaleDateString() },
-              ]}
-              rows={rejectedProperties.map((p) => ({ key: p.id, data: p }))}
-            />
+            <>
+              <DataTable
+                empty="No rejected properties."
+                columns={[
+                  { key: 'n', label: 'Property', render: (d) => <><div className="font-semibold">{d.name}</div><div className="text-xs text-slate-500">{d.address}</div></> },
+                  { key: 'o', label: 'Manager', render: (d) => ownerLabel(d.ownerId) },
+                  { key: 's', label: 'Status', render: (d) => <StatusPill tone={propertyTone(d.status)}>{PROPERTY_STATUS_LABEL[d.status] || d.status}</StatusPill> },
+                  { key: 'dt', label: 'Submitted', render: (d) => new Date(d.submittedAt).toLocaleDateString() },
+                  { key: 'a', label: '', render: (d) => (
+                    <button type="button" className="text-sm font-semibold text-[#2563eb]" onClick={() => setSelectedApprovalId(selectedApprovalId === d.id ? null : d.id)}>
+                      {selectedApprovalId === d.id ? 'Hide' : 'Details'}
+                    </button>
+                  ) },
+                ]}
+                rows={rejectedProperties.map((p) => ({ key: p.id, data: p }))}
+              />
+              {approval && propertiesSection === 'rejected' ? (
+                <div className="rounded-[24px] border border-slate-200 bg-white p-6 shadow-sm space-y-4">
+                  <div className="flex justify-between gap-2">
+                    <h2 className="text-lg font-black">{approval.name}</h2>
+                    <button type="button" className="text-sm text-slate-500" onClick={() => setSelectedApprovalId(null)}>Close</button>
+                  </div>
+                  <p className="text-sm text-slate-600">{approval.description}</p>
+                  <PropertyDetailPanel property={approval} ownerLabel={ownerLabel(approval.ownerId)} />
+                </div>
+              ) : null}
+            </>
           )}
         </div>
       )}
