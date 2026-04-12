@@ -2,6 +2,8 @@ import { Component, useCallback, useEffect, useMemo, useState } from 'react'
 import { Link, Navigate } from 'react-router-dom'
 import { properties } from '../data/properties'
 import { EmbeddedStripeCheckout } from '../components/EmbeddedStripeCheckout'
+import LeaseHTMLTemplate from '../components/LeaseHTMLTemplate'
+import LeaseSignPanel from '../components/LeaseSignPanel'
 import {
   PortalOpsCard,
   PortalOpsEmptyState,
@@ -1654,33 +1656,75 @@ function LeasingPanel({ resident, payments, onOpenPayments }) {
                   : 'Your lease is being reviewed internally. The full document will appear here once it is sent to you.'}
               </p>
             )}
-            {showLeaseText && leaseBodyAllowed && (
-              <div className="mt-5 overflow-hidden rounded-[20px] border border-slate-200 bg-white">
-                <div className="flex items-center justify-between border-b border-slate-100 bg-slate-50 px-5 py-3">
-                  <span className="text-xs font-semibold text-slate-500">
-                    {resident.House}{resident['Unit Number'] ? ` · ${normalizeUnitLabel(resident['Unit Number'])}` : ''} · {resident.Name}
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const blob = new Blob([leasePreview], { type: 'text/plain' })
-                      const url = URL.createObjectURL(blob)
-                      const a = document.createElement('a')
-                      a.href = url
-                      a.download = `lease-${String(resident.Name || 'document').replace(/\s+/g, '-').toLowerCase()}.txt`
-                      a.click()
-                      URL.revokeObjectURL(url)
-                    }}
-                    className="text-xs font-semibold text-[#2563eb] hover:underline"
-                  >
-                    Download
-                  </button>
+            {showLeaseText && leaseBodyAllowed && (() => {
+              let leaseData = null
+              try {
+                const raw = activeLeaseDraft?.['Lease JSON']
+                leaseData = raw ? JSON.parse(raw) : null
+              } catch { /* use null */ }
+
+              const isSigned = leaseStatus === 'Signed'
+              const isPublished = leaseStatus === 'Published'
+              const signedBy = isSigned ? (activeLeaseDraft?.['Signature Text'] || '') : undefined
+              const signedAt = isSigned ? (activeLeaseDraft?.['Signed At'] || '') : undefined
+
+              return (
+                <div className="mt-5">
+                  <div className="mb-3 flex justify-end">
+                    <button
+                      type="button"
+                      onClick={() => window.print()}
+                      className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 transition hover:bg-slate-50"
+                    >
+                      Print / Download PDF
+                    </button>
+                  </div>
+
+                  {leaseData ? (
+                    <LeaseHTMLTemplate
+                      leaseData={leaseData}
+                      signedBy={signedBy}
+                      signedAt={signedAt}
+                    />
+                  ) : (
+                    <div className="overflow-hidden rounded-[20px] border border-slate-200 bg-white">
+                      <div className="max-h-[500px] overflow-y-auto p-6">
+                        <pre className="whitespace-pre-wrap font-mono text-sm leading-7 text-slate-800">{leasePreview}</pre>
+                      </div>
+                    </div>
+                  )}
+
+                  {isPublished && leaseData ? (
+                    <LeaseSignPanel
+                      leaseDraftId={activeLeaseDraft.id}
+                      tenantName={leaseData.tenantName || resident.Name}
+                      onSigned={(sig) => {
+                        setLeaseDrafts((prev) =>
+                          prev.map((d) =>
+                            d.id === activeLeaseDraft.id
+                              ? { ...d, Status: 'Signed', 'Signature Text': sig, 'Signed At': new Date().toISOString() }
+                              : d
+                          )
+                        )
+                      }}
+                    />
+                  ) : null}
+
+                  {isSigned ? (
+                    <div className="mt-4 rounded-2xl border border-emerald-200 bg-emerald-50/60 px-5 py-3 text-center">
+                      <p className="text-sm font-semibold text-emerald-800">
+                        Lease signed — {signedBy}
+                      </p>
+                      {signedAt ? (
+                        <p className="mt-0.5 text-xs text-emerald-700">
+                          {new Date(signedAt).toLocaleString()}
+                        </p>
+                      ) : null}
+                    </div>
+                  ) : null}
                 </div>
-                <div className="max-h-[500px] overflow-y-auto p-6">
-                  <pre className="whitespace-pre-wrap font-mono text-sm leading-7 text-slate-800">{leasePreview}</pre>
-                </div>
-              </div>
-            )}
+              )
+            })()}
           </div>
         )}
 

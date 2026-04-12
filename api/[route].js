@@ -11,6 +11,9 @@ import formsGateway from '../backend/server/forms-gateway.js'
 import portalGateway from '../backend/server/portal-gateway.js'
 import adminPortalAuth from '../backend/server/handlers/admin-portal-auth.js'
 import generateLeaseDraft from '../backend/server/handlers/generate-lease-draft.js'
+import generateLeaseFromTemplate from '../backend/server/handlers/generate-lease-from-template.js'
+import sendLeaseToResident from '../backend/server/handlers/send-lease-to-resident.js'
+import signLeaseDraft from '../backend/server/handlers/sign-lease-draft.js'
 import managerAuth from '../backend/server/handlers/manager-auth.js'
 import managerApproveApplication from '../backend/server/handlers/manager-approve-application.js'
 import managerBillingPortal from '../backend/server/handlers/manager-billing-portal.js'
@@ -34,6 +37,9 @@ const routes = {
   tour,
   'software-team-meetings': softwareTeamMeetings,
   'generate-lease-draft': generateLeaseDraft,
+  'generate-lease-from-template': generateLeaseFromTemplate,
+  'send-lease-to-resident': sendLeaseToResident,
+  'sign-lease-draft': signLeaseDraft,
   'manager-auth': managerAuth,
   'manager-approve-application': managerApproveApplication,
   'manager-billing-portal': managerBillingPortal,

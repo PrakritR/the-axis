@@ -1,4 +1,4 @@
-import { createLeaseDraftFromApplication } from './generate-lease-draft.js'
+import { generateLeaseFromTemplate } from './generate-lease-from-template.js'
 
 const AIRTABLE_TOKEN = process.env.AIRTABLE_TOKEN || process.env.VITE_AIRTABLE_TOKEN
 /** Prefer explicit apps base; otherwise same base as Lease Drafts / portal (manager list uses CORE base). */
@@ -172,10 +172,9 @@ export default async function handler(req, res) {
     const existing = await getApplication(recordId)
     const approvedApplication = existing.Approved === true ? existing : await approveApplication(recordId)
     const residentSync = await markMatchingResidentsApproved(approvedApplication)
-    const { draft, created } = await createLeaseDraftFromApplication({
-      application: approvedApplication,
+    const { draft, created } = await generateLeaseFromTemplate({
+      applicationRecordId: recordId,
       generatedBy: managerName,
-      generatedByRole: managerRole,
     })
 
     return res.status(200).json({

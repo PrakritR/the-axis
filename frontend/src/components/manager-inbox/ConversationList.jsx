@@ -1,10 +1,15 @@
 import React from 'react'
 import ConversationListItem from './ConversationListItem'
-import { PortalOpsFilterCards } from '../PortalOpsUI'
+
+const STATUS_TABS = [
+  ['all', 'All'],
+  ['unread', 'Unread'],
+  ['trash', 'Trash'],
+]
 
 /**
- * Left column: search, status filter cards (All / Unread / Trash), optional
- * channel filter (Manager / Admin), and the conversation list.
+ * Left column: search, status pills (All / Unread / Trash), optional channel
+ * filter pills (e.g. Both / Admin / Residents), and the conversation list.
  */
 export default function ConversationList({
   loading,
@@ -37,36 +42,26 @@ export default function ConversationList({
           className="w-full rounded-xl border border-slate-200 bg-slate-50/80 px-3 py-2 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-[#2563eb] focus:bg-white focus:ring-2 focus:ring-[#2563eb]/15"
         />
 
-        <PortalOpsFilterCards
-          variant="compact"
-          value={filter}
-          onChange={onFilterChange}
-          columnsClassName="grid grid-cols-3 gap-1.5"
-          aria-label="Inbox sections"
-          items={[
-            {
-              id: 'all',
-              label: 'All',
-              value: String(counts.all ?? 0),
-              hint: 'Threads',
-              tone: 'slate',
-            },
-            {
-              id: 'unread',
-              label: 'Unread',
-              value: String(counts.unread ?? 0),
-              hint: 'Needs attention',
-              tone: 'axis',
-            },
-            {
-              id: 'trash',
-              label: 'Trash',
-              value: String(counts.trash ?? 0),
-              hint: 'Archived',
-              tone: 'slate',
-            },
-          ]}
-        />
+        <div className="flex items-center gap-1.5">
+          {STATUS_TABS.map(([id, label]) => {
+            const count = counts[id] ?? 0
+            const active = filter === id
+            return (
+              <button
+                key={id}
+                type="button"
+                onClick={() => onFilterChange(id)}
+                className={`rounded-full px-3 py-1 text-[11px] font-semibold transition ${
+                  active
+                    ? 'bg-[#2563eb] text-white shadow-sm'
+                    : 'border border-slate-200 bg-white text-slate-600 hover:bg-slate-50'
+                }`}
+              >
+                {label} <span className={active ? 'text-white/80' : 'text-slate-400'}>{count}</span>
+              </button>
+            )
+          })}
+        </div>
 
         {hasChannelFilter ? (
           <div className="flex items-center gap-1.5 border-t border-slate-100 pt-2">
