@@ -141,7 +141,7 @@ function threadSearchHaystack(sorted, subjectKey, participantLabel, subjectLine)
 function adminRecipientLabelForThreadId(threadId) {
   const t = String(threadId || '')
   if (t.startsWith('internal:mgmt-admin:')) {
-    return `Partner · ${t.slice('internal:mgmt-admin:'.length)}`
+    return `Manager · ${t.slice('internal:mgmt-admin:'.length)}`
   }
   if (t.startsWith('internal:site-manager:')) {
     return `Site manager · ${t.slice('internal:site-manager:'.length)}`
@@ -195,7 +195,7 @@ function managerComposerToLabel(selectedThreadId, adminFullInbox) {
 function adminPortalThreadTitle(threadKey) {
   const t = String(threadKey)
   if (t.startsWith('internal:mgmt-admin:')) {
-    return `Partner · ${t.slice('internal:mgmt-admin:'.length)}`
+    return `Manager · ${t.slice('internal:mgmt-admin:'.length)}`
   }
   if (t.startsWith('internal:site-manager:')) {
     return `Site manager · ${t.slice('internal:site-manager:'.length)}`
@@ -234,7 +234,7 @@ function inboxParticipantsLine(selectedThreadId, adminFullInbox) {
   if (adminFullInbox) {
     if (t.startsWith('internal:resident-leasing:')) return 'Resident ↔ Manager / House team'
     if (t.startsWith('internal:resident-admin:')) return 'Resident ↔ Admin'
-    if (t.startsWith('internal:mgmt-admin:')) return 'Partner ↔ Admin'
+    if (t.startsWith('internal:mgmt-admin:')) return 'Manager ↔ Admin'
     if (t.startsWith('internal:site-manager:')) return 'Site manager ↔ Admin'
     if (t.startsWith('internal:admin-public:')) return 'Public ↔ Admin'
     return 'Portal thread'
