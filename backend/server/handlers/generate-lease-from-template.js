@@ -5,8 +5,9 @@
  * leaseTemplate buildLease() logic (no AI / Claude). Saves to
  * "Lease Drafts" table with status "Draft Generated".
  *
- * Body: { applicationRecordId, overrides?: { rent, deposit, utilityFee, adminFee } }
+ * Body: { applicationRecordId, overrides?, managerRecordId? }
  */
+import { resolveManagerTenant, canEnforceTenant } from '../middleware/resolveManagerTenant.js'
 
 const AIRTABLE_TOKEN = process.env.AIRTABLE_TOKEN || process.env.VITE_AIRTABLE_TOKEN
 const CORE_BASE_ID =
@@ -192,7 +193,7 @@ function buildLeaseData(app, propertyRecord, overrides = {}) {
 
 // ─── Exported helper (used by manager-approve-application.js) ─────────────────
 
-export async function generateLeaseFromTemplate({ applicationRecordId, overrides = {}, generatedBy = 'Manager' }) {
+export async function generateLeaseFromTemplate({ applicationRecordId, overrides = {}, generatedBy = 'Manager', ownerId = '' }) {
   const recordId = normalizeRecordId(applicationRecordId)
   if (!recordId) throw new Error('applicationRecordId is required')
 
@@ -201,6 +202,9 @@ export async function generateLeaseFromTemplate({ applicationRecordId, overrides
   if (existing) return { draft: existing, created: false }
 
   const app = await getApplication(recordId)
+  // Inherit Owner ID from the application if caller didn't provide one
+  const resolvedOwnerId = ownerId || String(app['Owner ID'] || '').trim()
+
   const propertyRecord = await getPropertyByName(app['Property Name'])
   const leaseData = buildLeaseData(app, propertyRecord, overrides)
 
@@ -224,6 +228,7 @@ export async function generateLeaseFromTemplate({ applicationRecordId, overrides
     'Updated At': now,
     'Application Record ID': recordId,
     'Manager Notes': '',
+    ...(resolvedOwnerId ? { 'Owner ID': resolvedOwnerId } : {}),
   })
 
   return { draft: { id: record.id, ...record.fields }, created: true }
@@ -242,11 +247,30 @@ export default async function handler(req, res) {
 
   const { applicationRecordId, overrides = {}, managerName } = req.body || {}
 
+  let tenant = null
   try {
+    tenant = await resolveManagerTenant(req)
+  } catch (tenantErr) {
+    return res.status(403).json({ error: tenantErr.message })
+  }
+
+  try {
+    // If tenant is set, fetch the application first to run the ownership guard
+    if (tenant) {
+      const normalId = normalizeRecordId(applicationRecordId)
+      if (normalId) {
+        const app = await getApplication(normalId).catch(() => null)
+        if (app && canEnforceTenant(tenant, app)) {
+          return res.status(403).json({ error: 'Access denied: this application belongs to a different manager.' })
+        }
+      }
+    }
+
     const { draft, created } = await generateLeaseFromTemplate({
       applicationRecordId,
       overrides,
       generatedBy: managerName || 'Manager',
+      ownerId: tenant?.ownerId || '',
     })
     return res.status(200).json({
       draft,

@@ -178,13 +178,14 @@ export default async function handler(req, res) {
 
     return res.status(200).json({
       manager: {
-        id: manager.id,
+        id: manager.id,                                    // Airtable rec ID — used as Owner ID
         managerId: derivedManagerId,
         name: manager.Name || '',
         email: manager.Email || '',
         phone: String(manager['Phone Number'] || '').trim(),
         planType: manager.tier || '',
-        role: 'Manager',
+        role: String(manager.Role || manager.role || 'Manager').trim(),  // 'admin' | 'Manager'
+        ownerId: manager.id,                               // explicit alias for clarity
       },
     })
   } catch (err) {

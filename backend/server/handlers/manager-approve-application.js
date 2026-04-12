@@ -1,4 +1,5 @@
 import { generateLeaseFromTemplate } from './generate-lease-from-template.js'
+import { resolveManagerTenant, canEnforceTenant } from '../middleware/resolveManagerTenant.js'
 
 const AIRTABLE_TOKEN = process.env.AIRTABLE_TOKEN || process.env.VITE_AIRTABLE_TOKEN
 /** Prefer explicit apps base; otherwise same base as Lease Drafts / portal (manager list uses CORE base). */
@@ -122,7 +123,7 @@ async function patchResidentRecord(recordId, fields) {
 /**
  * Resident portal checks Approved / Application Approval — keep in sync when an application is approved.
  */
-async function markMatchingResidentsApproved(application) {
+async function markMatchingResidentsApproved(application, ownerId) {
   const appId = application?.id
   const email = application?.['Signer Email']
   let rows = []
@@ -136,10 +137,15 @@ async function markMatchingResidentsApproved(application) {
   const updatedIds = []
   for (const r of rows) {
     try {
-      await patchResidentRecord(r.id, {
+      const fields = {
         Approved: true,
         'Application Approval': 'Approved',
-      })
+      }
+      // Propagate Owner ID if we have one and the resident doesn't yet
+      if (ownerId && !String(r['Owner ID'] || '').trim()) {
+        fields['Owner ID'] = ownerId
+      }
+      await patchResidentRecord(r.id, fields)
       updatedIds.push(r.id)
     } catch (firstErr) {
       try {
@@ -175,10 +181,25 @@ export default async function handler(req, res) {
     return res.status(400).json({ error: 'applicationRecordId is required.' })
   }
 
+  // Resolve tenant — optional (graceful degradation if managerRecordId not sent)
+  let tenant = null
+  try {
+    tenant = await resolveManagerTenant(req)
+  } catch (tenantErr) {
+    return res.status(403).json({ error: tenantErr.message })
+  }
+
   try {
     const existing = await getApplication(recordId)
+
+    // Tenant guard — reject if the application belongs to a different owner
+    if (canEnforceTenant(tenant, existing)) {
+      return res.status(403).json({ error: 'Access denied: this application belongs to a different manager.' })
+    }
+
     const approvedApplication = existing.Approved === true ? existing : await approveApplication(recordId)
-    const residentSync = await markMatchingResidentsApproved(approvedApplication)
+    const ownerId = tenant?.ownerId || String(approvedApplication['Owner ID'] || '').trim()
+    const residentSync = await markMatchingResidentsApproved(approvedApplication, ownerId)
 
     // Generate lease draft from template (no AI). Skips gracefully if it fails.
     let draft = null
@@ -187,6 +208,7 @@ export default async function handler(req, res) {
       const result = await generateLeaseFromTemplate({
         applicationRecordId: recordId,
         generatedBy: managerName,
+        ownerId,
       })
       draft = result.draft
       created = result.created

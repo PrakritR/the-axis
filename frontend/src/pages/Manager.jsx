@@ -229,11 +229,23 @@ function managerLinkArray(val) {
   return []
 }
 
-/** Property must be assigned to this manager (email, linked Manager record, or Manager ID). */
+/**
+ * Property must be assigned to this manager.
+ *
+ * Primary check: canonical Owner ID field (set during back-fill).
+ * Fallback: legacy email / linked-record / Manager ID checks so records
+ * that haven't been back-filled yet still work during migration.
+ */
 function propertyAssignedToManager(p, manager) {
+  const recId = String(manager?.id || '').trim()
+
+  // ── Primary: Owner ID field (post-migration) ──────────────────────────────
+  const ownerId = String(p['Owner ID'] || '').trim()
+  if (ownerId && recId && ownerId === recId) return true
+
+  // ── Fallback: legacy checks (pre-migration records) ───────────────────────
   const email = String(manager?.email || '').trim().toLowerCase()
   const mid = String(manager?.managerId || '').trim()
-  const recId = String(manager?.id || '').trim()
   const emails = [
     String(p['Manager Email'] || '').trim().toLowerCase(),
     String(p['Site Manager Email'] || '').trim().toLowerCase(),
@@ -5703,6 +5715,7 @@ function ApplicationsPanel({ allowedPropertyNames, manager }) {
             applicationRecordId: recordId,
             managerName: manager?.name || manager?.email || 'Axis Manager',
             managerRole: manager?.role || 'Manager',
+            managerRecordId: manager?.id || '',
           }),
         })
         const data = await readJsonResponse(res)
