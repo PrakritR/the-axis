@@ -66,6 +66,15 @@ function propertyRecordVisibleForPublic(record) {
   if (!approvedFlag) return false
 
   const approval = String(fields['Approval Status'] || '').trim().toLowerCase()
+  const status = String(fields.Status || '').trim().toLowerCase()
+  const approvedByStatus =
+    approval === 'approved' ||
+    approval === 'active' ||
+    approval === 'live' ||
+    status === 'approved' ||
+    status === 'active' ||
+    status === 'live'
+  if (!approvedFlag && !approvedByStatus) return false
   if (
     approval === 'changes requested' ||
     approval === 'changes_requested' ||
@@ -123,8 +132,9 @@ function mapProperty(record, roomsByPropertyId) {
     applicationFee = Math.max(0, Math.min(9999, Math.round(appFeeRaw)))
   }
 
-  // Property name: “Property Name” is the current Airtable field; fall back to “Name” for older bases
-  const name = String(fields['Property Name'] || fields.Name || fields.Property || '').trim() || 'Untitled house'
+  // Property name: use explicit property title fields only.
+  const name = String(fields['Property Name'] || fields.Name || '').trim()
+  if (!name) return null
 
   // Tour availability is a multi-line block stored by the manager's calendar (e.g. “Mon: 540-720\nTue: 600-840”)
   const availability = extractMultilineNoteValue(fields.Notes, 'Tour Availability')
@@ -168,7 +178,9 @@ export default async function handler(req, res) {
       const roomsByPropertyId = buildRoomsByPropertyId(roomsData.records || [])
       const allRecords = propData.records || []
       const approvedRecords = allRecords.filter(propertyRecordVisibleForPublic)
-      const properties = approvedRecords.map((r) => mapProperty(r, roomsByPropertyId))
+      const properties = approvedRecords
+        .map((r) => mapProperty(r, roomsByPropertyId))
+        .filter(Boolean)
       if (properties.length) return res.status(200).json({ properties })
       // Empty table or no approved listings yet.
       return res.status(200).json({ properties: [] })
