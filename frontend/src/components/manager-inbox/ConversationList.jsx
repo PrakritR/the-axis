@@ -1,7 +1,7 @@
 import React from 'react'
 import ConversationListItem from './ConversationListItem'
 
-const TAB_IDS = [
+const BASE_TABS = [
   ['all', 'All'],
   ['unread', 'Unread'],
   ['trash', 'Trash'],
@@ -9,6 +9,8 @@ const TAB_IDS = [
 
 /**
  * Left column: search, All / Unread / Trash tabs with counts, conversation list.
+ * When `channelTabs` is provided, an extra row of channel-filter pills is rendered
+ * (e.g. All / Manager / Admin) so residents can narrow by recipient.
  */
 export default function ConversationList({
   loading,
@@ -23,6 +25,9 @@ export default function ConversationList({
   onSelect,
   emptyMessage,
   onTrashThread,
+  channelTabs,
+  channelFilter,
+  onChannelFilterChange,
 }) {
   return (
     <div className="flex min-h-0 w-full flex-col border-b border-slate-200 bg-white md:max-w-[420px] md:border-b-0 md:border-r">
@@ -40,7 +45,7 @@ export default function ConversationList({
         />
 
         <div className="flex flex-wrap gap-2">
-          {TAB_IDS.map(([id, label]) => {
+          {BASE_TABS.map(([id, label]) => {
             const count = counts[id] ?? 0
             const active = filter === id
             return (
@@ -60,6 +65,31 @@ export default function ConversationList({
             )
           })}
         </div>
+
+        {channelTabs && channelTabs.length > 0 && onChannelFilterChange ? (
+          <div className="flex flex-wrap gap-1.5">
+            {channelTabs.map(([id, label, count]) => {
+              const active = channelFilter === id
+              return (
+                <button
+                  key={id}
+                  type="button"
+                  onClick={() => onChannelFilterChange(id)}
+                  className={`rounded-full px-3 py-1 text-[11px] font-semibold transition ${
+                    active
+                      ? 'bg-slate-900 text-white shadow-sm'
+                      : 'border border-slate-200 bg-white text-slate-500 hover:bg-slate-50'
+                  }`}
+                >
+                  {label}
+                  {count != null ? (
+                    <span className={`ml-1 ${active ? 'text-white/70' : 'text-slate-400'}`}>({count})</span>
+                  ) : null}
+                </button>
+              )
+            })}
+          </div>
+        ) : null}
       </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto">

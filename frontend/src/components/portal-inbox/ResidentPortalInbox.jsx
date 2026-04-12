@@ -150,6 +150,7 @@ export default function ResidentPortalInbox({ resident }) {
   const [inboxStateMap, setInboxStateMap] = useState(() => new Map())
   const [inboxStateBackend, setInboxStateBackend] = useState('pending')
   const [sectionFilter, setSectionFilter] = useState('all')
+  const [channelFilter, setChannelFilter] = useState('all')
   const [threadSearch, setThreadSearch] = useState('')
 
   const refreshInboxThreadState = useCallback(async () => {
@@ -288,9 +289,11 @@ export default function ResidentPortalInbox({ resident }) {
     if (sectionFilter === 'all') rows = rows.filter((r) => r.section !== 'trash')
     else if (sectionFilter === 'unread') rows = rows.filter((r) => r.section === 'unopened')
     else if (sectionFilter === 'trash') rows = rows.filter((r) => r.section === 'trash')
+    if (channelFilter === 'manager') rows = rows.filter((r) => r.id === UI_LEASING)
+    else if (channelFilter === 'admin') rows = rows.filter((r) => r.id === UI_ADMIN)
     if (!q) return rows
     return rows.filter((r) => (r.searchText || '').includes(q))
-  }, [threadRowsWithMeta, sectionFilter, threadSearch])
+  }, [threadRowsWithMeta, sectionFilter, channelFilter, threadSearch])
 
   const touchThreadRead = useCallback(
     async (stateKey) => {
@@ -520,6 +523,17 @@ export default function ResidentPortalInbox({ resident }) {
     )
   }
 
+  const channelTabs = useMemo(() => {
+    const nonTrashed = threadRowsWithMeta.filter((r) => r.section !== 'trash')
+    const mgrCount = nonTrashed.filter((r) => r.id === UI_LEASING).length
+    const admCount = nonTrashed.filter((r) => r.id === UI_ADMIN).length
+    return [
+      ['all', 'All', mgrCount + admCount],
+      ['manager', 'Manager', mgrCount],
+      ['admin', 'Admin', admCount],
+    ]
+  }, [threadRowsWithMeta])
+
   const listEmptyMessage =
     sectionFilter === 'trash' && inboxSections.trash.length === 0
       ? 'Nothing in trash'
@@ -529,7 +543,9 @@ export default function ResidentPortalInbox({ resident }) {
           ? 'No matches'
           : sectionFilter === 'unread'
             ? 'No unread'
-            : 'No conversations'
+            : channelFilter !== 'all'
+              ? `No ${channelFilter === 'manager' ? 'manager' : 'admin'} conversations`
+              : 'No conversations'
 
   return (
     <div className="mb-8">
@@ -580,6 +596,9 @@ export default function ResidentPortalInbox({ resident }) {
           }}
           emptyMessage={listEmptyMessage}
           onTrashThread={(stateKey, trashed = true) => moveThreadTrash(stateKey, trashed)}
+          channelTabs={channelTabs}
+          channelFilter={channelFilter}
+          onChannelFilterChange={setChannelFilter}
         />
 
         <div className="flex min-h-[min(50vh,440px)] min-w-0 flex-1 flex-col overflow-hidden bg-white md:min-h-0">
