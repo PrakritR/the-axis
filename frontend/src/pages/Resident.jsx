@@ -1583,7 +1583,7 @@ function LeasingPanel({ resident, payments, onOpenPayments }) {
   }
 
   return (
-    <SectionCard title="Leasing" description="Your current lease details and signing options.">
+    <SectionCard title="Lease" description="Your current lease details and signing options.">
       <div className="space-y-5">
         <div className="rounded-[24px] border border-slate-200 bg-[linear-gradient(135deg,#ffffff_0%,#f8fafc_100%)] p-6">
           <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
@@ -2017,7 +2017,7 @@ function Dashboard({ resident, onResidentUpdated, onSignOut }) {
 
   const TABS = [
     ['dashboard', 'Dashboard'],
-    ['leasing', 'Leasing'],
+    ['leasing', 'Lease'],
     ['payments', 'Payments'],
     ['workorders', 'Work Orders'],
     ['inbox', 'Inbox'],
