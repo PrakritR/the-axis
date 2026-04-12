@@ -406,35 +406,177 @@ export default function AdminPortal() {
     >
       <div className="mx-auto w-full max-w-[1600px]">
       {tab === 'dashboard' && (
-        <div className="space-y-8">
-          <h1 className="text-2xl font-black text-slate-900">Admin dashboard</h1>
-          {dataLoading ? (
-            <p className="text-sm text-slate-500">Syncing data…</p>
+        <div className="space-y-6">
+          {/* Header */}
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">Admin portal</p>
+              <h1 className="text-2xl font-black text-slate-900">
+                {user?.name ? `Welcome back, ${user.name.split(' ')[0]}` : 'Dashboard'}
+              </h1>
+            </div>
+            {dataLoading ? (
+              <span className="inline-flex items-center gap-1.5 rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-500">
+                <span className="inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-slate-400" />
+                Syncing…
+              </span>
+            ) : (
+              <button
+                type="button"
+                onClick={refreshPortalData}
+                className="rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 shadow-sm transition hover:bg-slate-50"
+              >
+                Refresh
+              </button>
+            )}
+          </div>
+
+          {/* Action-needed banner */}
+          {pendingApprovals.length > 0 || pendingApps > 0 ? (
+            <div className="flex flex-wrap items-center gap-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3">
+              <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-amber-400 text-xs font-black text-white">
+                {pendingApprovals.length + pendingApps}
+              </span>
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-bold text-amber-900">Action needed</p>
+                <p className="text-xs text-amber-800">
+                  {[
+                    pendingApprovals.length > 0 && `${pendingApprovals.length} propert${pendingApprovals.length === 1 ? 'y' : 'ies'} awaiting review`,
+                    pendingApps > 0 && `${pendingApps} application${pendingApps === 1 ? '' : 's'} pending`,
+                  ].filter(Boolean).join(' · ')}
+                </p>
+              </div>
+              <div className="flex gap-2">
+                {pendingApprovals.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => { setTab('properties'); setPropertiesSection('pending') }}
+                    className="rounded-xl bg-amber-500 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-amber-600"
+                  >
+                    Review properties
+                  </button>
+                )}
+                {pendingApps > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => { setTab('applications'); setApplicationsFilter('pending') }}
+                    className="rounded-xl border border-amber-300 bg-white px-3 py-1.5 text-xs font-semibold text-amber-800 transition hover:bg-amber-50"
+                  >
+                    Review applications
+                  </button>
+                )}
+              </div>
+            </div>
           ) : null}
+
+          {/* Metrics grid */}
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+            {/* Properties pending */}
+            <button
+              type="button"
+              onClick={() => { setTab('properties'); setPropertiesSection('pending') }}
+              className="group flex flex-col gap-1 rounded-[20px] border border-amber-200 bg-amber-50 p-5 text-left transition hover:border-amber-300 hover:shadow-sm"
+            >
+              <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-amber-600">Properties</span>
+              <span className="text-3xl font-black tabular-nums text-amber-700">{pendingApprovals.length}</span>
+              <span className="text-sm font-semibold text-amber-800">Pending review</span>
+              <span className="mt-1 text-xs text-amber-600 opacity-0 transition group-hover:opacity-100">View queue →</span>
+            </button>
+
+            {/* Properties approved */}
+            <button
+              type="button"
+              onClick={() => { setTab('properties'); setPropertiesSection('approved') }}
+              className="group flex flex-col gap-1 rounded-[20px] border border-emerald-200 bg-emerald-50 p-5 text-left transition hover:border-emerald-300 hover:shadow-sm"
+            >
+              <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-emerald-600">Properties</span>
+              <span className="text-3xl font-black tabular-nums text-emerald-700">{approvedProperties.length}</span>
+              <span className="text-sm font-semibold text-emerald-800">Approved / live</span>
+              <span className="mt-1 text-xs text-emerald-600 opacity-0 transition group-hover:opacity-100">View all →</span>
+            </button>
+
+            {/* Properties total */}
+            <button
+              type="button"
+              onClick={() => setTab('properties')}
+              className="group flex flex-col gap-1 rounded-[20px] border border-slate-200 bg-white p-5 text-left shadow-sm transition hover:border-slate-300 hover:shadow"
+            >
+              <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-slate-400">Properties</span>
+              <span className="text-3xl font-black tabular-nums text-slate-800">{properties.length}</span>
+              <span className="text-sm font-semibold text-slate-600">Total</span>
+              <span className="mt-1 text-xs text-slate-400 opacity-0 transition group-hover:opacity-100">View all →</span>
+            </button>
+
+            {/* Applications pending */}
+            <button
+              type="button"
+              onClick={() => { setTab('applications'); setApplicationsFilter('pending') }}
+              className="group flex flex-col gap-1 rounded-[20px] border border-violet-200 bg-violet-50 p-5 text-left transition hover:border-violet-300 hover:shadow-sm"
+            >
+              <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-violet-600">Applications</span>
+              <span className="text-3xl font-black tabular-nums text-violet-700">{pendingApps}</span>
+              <span className="text-sm font-semibold text-violet-800">Pending review</span>
+              <span className="mt-1 text-xs text-violet-600 opacity-0 transition group-hover:opacity-100">Review →</span>
+            </button>
+
+            {/* Applications total */}
+            <button
+              type="button"
+              onClick={() => { setTab('applications'); setApplicationsFilter('all') }}
+              className="group flex flex-col gap-1 rounded-[20px] border border-slate-200 bg-white p-5 text-left shadow-sm transition hover:border-slate-300 hover:shadow"
+            >
+              <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-slate-400">Applications</span>
+              <span className="text-3xl font-black tabular-nums text-slate-800">{applications.length}</span>
+              <span className="text-sm font-semibold text-slate-600">Total</span>
+              <span className="mt-1 text-xs text-slate-400 opacity-0 transition group-hover:opacity-100">View all →</span>
+            </button>
+
+            {/* Managers */}
+            <button
+              type="button"
+              onClick={() => setTab('accounts')}
+              className="group flex flex-col gap-1 rounded-[20px] border border-blue-200 bg-blue-50 p-5 text-left transition hover:border-blue-300 hover:shadow-sm"
+            >
+              <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-blue-600">Team</span>
+              <span className="text-3xl font-black tabular-nums text-blue-700">{accounts.filter((a) => a.enabled).length}</span>
+              <span className="text-sm font-semibold text-blue-800">
+                Active managers
+                {accounts.length > 0 ? (
+                  <span className="ml-1.5 font-normal text-blue-600">of {accounts.length}</span>
+                ) : null}
+              </span>
+              <span className="mt-1 text-xs text-blue-600 opacity-0 transition group-hover:opacity-100">Manage →</span>
+            </button>
+
+            {/* Residents */}
+            <button
+              type="button"
+              onClick={() => setTab('messages')}
+              className="group flex flex-col gap-1 rounded-[20px] border border-slate-200 bg-white p-5 text-left shadow-sm transition hover:border-slate-300 hover:shadow"
+            >
+              <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-slate-400">Residents</span>
+              <span className="text-3xl font-black tabular-nums text-slate-800">{residents.length}</span>
+              <span className="text-sm font-semibold text-slate-600">In system</span>
+              <span className="mt-1 text-xs text-slate-400 opacity-0 transition group-hover:opacity-100">Open inbox →</span>
+            </button>
+
+            {/* Inbox quick link */}
+            <button
+              type="button"
+              onClick={() => setTab('messages')}
+              className="group flex flex-col gap-1 rounded-[20px] border border-slate-200 bg-white p-5 text-left shadow-sm transition hover:border-slate-300 hover:shadow"
+            >
+              <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-slate-400">Messages</span>
+              <span className="text-3xl font-black text-slate-800">Inbox</span>
+              <span className="text-sm font-semibold text-slate-600">View all conversations</span>
+              <span className="mt-1 text-xs text-slate-400 opacity-0 transition group-hover:opacity-100">Open →</span>
+            </button>
+          </div>
+
+          {/* Portal handoff */}
           {isAdminPortalAirtableConfigured() ? (
             <PortalHandoffCard accounts={accounts} residents={residents} user={user} />
           ) : null}
-          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-            <StatCard
-              label="Property approvals queue"
-              value={pendingApprovals.length}
-              onClick={() => {
-                setTab('properties')
-                setPropertiesSection('pending')
-              }}
-            />
-            <StatCard
-              label="All properties"
-              value={properties.length}
-              onClick={() => {
-                setTab('properties')
-                setPropertiesSection('approved')
-              }}
-            />
-            <StatCard label="Pending applications" value={pendingApps} onClick={() => setTab('applications')} />
-            <StatCard label="Managers" value={accounts.length} onClick={() => setTab('accounts')} />
-            <StatCard label="Inbox" value="Open" onClick={() => setTab('messages')} />
-          </div>
         </div>
       )}
 
