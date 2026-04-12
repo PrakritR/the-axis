@@ -1392,25 +1392,32 @@ function AvailabilityEditorPanel({
   selectedPropertyId,
   onSelectProperty,
 }) {
+  const hasApprovedPick = Array.isArray(propertyOptions) && propertyOptions.length > 0
   const disabled = availSaving || isManagerInternalPreview(manager) || !selectedPropertyId
 
   return (
     <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm lg:sticky lg:top-6">
       <h2 className="text-xl font-black text-slate-900">Availability editor</h2>
-      {propertyOptions?.length ? (
-        <label className="mt-4 block text-xs font-semibold text-slate-700">
-          Property
+      <label className="mt-4 block text-xs font-semibold text-slate-700">
+        Property <span className="font-normal text-slate-400">(approved only)</span>
+        <div className={`${MANAGER_PILL_SELECT_WRAP_CLS} mt-1.5 max-w-full`}>
           <select
             value={selectedPropertyId}
             onChange={(e) => onSelectProperty(e.target.value)}
-            className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900"
+            disabled={!hasApprovedPick}
+            className={MANAGER_PILL_SELECT_CLS}
           >
-            {propertyOptions.map((option) => (
-              <option key={option.id} value={option.id}>{option.label}</option>
-            ))}
+            {!hasApprovedPick ? (
+              <option value="">No approved properties</option>
+            ) : (
+              propertyOptions.map((option) => (
+                <option key={option.id} value={option.id}>{option.label}</option>
+              ))
+            )}
           </select>
-        </label>
-      ) : null}
+          {MANAGER_PILL_SELECT_CHEVRON}
+        </div>
+      </label>
 
       {isManagerInternalPreview(manager) ? (
         <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950">
@@ -1420,7 +1427,11 @@ function AvailabilityEditorPanel({
         </div>
       ) : null}
 
-      {!selectedPropertyId ? (
+      {!hasApprovedPick ? (
+        <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+          Approve a property under Properties to edit weekly availability and schedule tours from the calendar.
+        </div>
+      ) : !selectedPropertyId ? (
         <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
           Select a property to add availability blocks.
         </div>
@@ -1457,10 +1468,18 @@ function AvailabilityEditorPanel({
         <button
           type="button"
           onClick={onClearDay}
-          disabled={availSaving || isManagerInternalPreview(manager)}
+          disabled={availSaving || isManagerInternalPreview(manager) || !hasApprovedPick}
           className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 font-semibold text-red-700 hover:bg-red-100 disabled:opacity-40"
         >
           Clear day
+        </button>
+        <button
+          type="button"
+          onClick={onOpenMeet}
+          disabled={availSaving || isManagerInternalPreview(manager) || !hasApprovedPick}
+          className="rounded-full border border-slate-200 bg-white px-4 py-2 font-semibold text-slate-700 transition hover:bg-slate-50 disabled:opacity-40"
+        >
+          Quick schedule
         </button>
       </div>
 
@@ -1468,7 +1487,7 @@ function AvailabilityEditorPanel({
         <button
           type="button"
           onClick={onSave}
-          disabled={availSaving || isManagerInternalPreview(manager)}
+          disabled={availSaving || isManagerInternalPreview(manager) || !hasApprovedPick}
           className="w-full rounded-2xl bg-[linear-gradient(180deg,#2f76ff_0%,#2450eb_100%)] px-4 py-3 text-sm font-semibold text-white shadow-[0_12px_28px_rgba(37,99,235,0.22)] disabled:opacity-50"
         >
           {availSaving ? 'Saving…' : 'Save availability'}
@@ -1478,7 +1497,7 @@ function AvailabilityEditorPanel({
   )
 }
 
-function LetUsMeetModal({ open, initialDateKey, manager, onClose, onCreated }) {
+function LetUsMeetModal({ open, initialDateKey, manager, onClose, onCreated, approvedPropertyNames = [] }) {
   const [date, setDate] = useState(initialDateKey)
   const [itemType, setItemType] = useState('Meeting')
   const [property, setProperty] = useState('')
@@ -1487,6 +1506,8 @@ function LetUsMeetModal({ open, initialDateKey, manager, onClose, onCreated }) {
   const [notes, setNotes] = useState('')
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
+
+  const canScheduleTours = Array.isArray(approvedPropertyNames) && approvedPropertyNames.length > 0
 
   useEffect(() => {
     if (!open) return
@@ -1500,6 +1521,11 @@ function LetUsMeetModal({ open, initialDateKey, manager, onClose, onCreated }) {
     setError('')
   }, [open, initialDateKey])
 
+  useEffect(() => {
+    if (!open) return
+    if (itemType === 'Tour' && !canScheduleTours) setItemType('Meeting')
+  }, [open, itemType, canScheduleTours])
+
   if (!open) return null
 
   async function handleSave() {
@@ -1509,6 +1535,16 @@ function LetUsMeetModal({ open, initialDateKey, manager, onClose, onCreated }) {
     if (!date || startMinutes == null || endMinutes == null || endMinutes <= startMinutes) {
       setError('Choose a valid date and time range.')
       return
+    }
+    if (itemType === 'Tour') {
+      if (!canScheduleTours) {
+        setError('You need at least one approved property before scheduling a tour.')
+        return
+      }
+      if (!String(property || '').trim()) {
+        setError('Select a property for this tour.')
+        return
+      }
     }
 
     setSaving(true)
@@ -1550,12 +1586,18 @@ function LetUsMeetModal({ open, initialDateKey, manager, onClose, onCreated }) {
       <div className="mt-6 grid gap-4 sm:grid-cols-2">
         <div>
           <label className="mb-1.5 block text-xs font-semibold text-slate-700">Type</label>
-          <select value={itemType} onChange={(e) => setItemType(e.target.value)} className={portalAuthInputCls}>
-            <option value="Meeting">Meeting</option>
-            <option value="Tour">Tour</option>
-            <option value="Work Order">Work Order</option>
-            <option value="Issue">Issue</option>
-          </select>
+          <div className={MANAGER_PILL_SELECT_WRAP_CLS}>
+            <select value={itemType} onChange={(e) => setItemType(e.target.value)} className={MANAGER_PILL_SELECT_CLS}>
+              <option value="Meeting">Meeting</option>
+              {canScheduleTours ? <option value="Tour">Tour</option> : null}
+              <option value="Work Order">Work Order</option>
+              <option value="Issue">Issue</option>
+            </select>
+            {MANAGER_PILL_SELECT_CHEVRON}
+          </div>
+          {!canScheduleTours ? (
+            <p className="mt-1.5 text-xs text-slate-500">Tours require an approved property under Properties first.</p>
+          ) : null}
         </div>
         <div>
           <label className="mb-1.5 block text-xs font-semibold text-slate-700">Date</label>
@@ -1563,13 +1605,26 @@ function LetUsMeetModal({ open, initialDateKey, manager, onClose, onCreated }) {
         </div>
         <div className="sm:col-span-2">
           <label className="mb-1.5 block text-xs font-semibold text-slate-700">Property</label>
-          <input
-            type="text"
-            value={property}
-            onChange={(e) => setProperty(e.target.value)}
-            placeholder="Optional property"
-            className={portalAuthInputCls}
-          />
+          <div className={MANAGER_PILL_SELECT_WRAP_CLS + ' max-w-full sm:max-w-md'}>
+            <select
+              value={property}
+              onChange={(e) => setProperty(e.target.value)}
+              disabled={!canScheduleTours}
+              className={MANAGER_PILL_SELECT_CLS}
+            >
+              {!canScheduleTours ? (
+                <option value="">No approved properties</option>
+              ) : (
+                <>
+                  <option value="">{itemType === 'Tour' ? 'Select property…' : 'Optional — select property'}</option>
+                  {approvedPropertyNames.map((name) => (
+                    <option key={name} value={name}>{name}</option>
+                  ))}
+                </>
+              )}
+            </select>
+            {MANAGER_PILL_SELECT_CHEVRON}
+          </div>
         </div>
         <div className="grid grid-cols-2 gap-3">
           <div>
@@ -1597,7 +1652,14 @@ function LetUsMeetModal({ open, initialDateKey, manager, onClose, onCreated }) {
         <button type="button" onClick={onClose} className="rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-semibold text-slate-600 hover:bg-slate-50">
           Cancel
         </button>
-        <PortalPrimaryButton type="button" onClick={handleSave} disabled={saving}>
+        <PortalPrimaryButton
+          type="button"
+          onClick={handleSave}
+          disabled={
+            saving ||
+            (itemType === 'Tour' && canScheduleTours && !String(property || '').trim())
+          }
+        >
           {saving ? 'Saving…' : 'Save'}
         </PortalPrimaryButton>
       </div>
@@ -5690,23 +5752,25 @@ function ApplicationsPanel({ allowedPropertyNames, manager }) {
   return (
     <div className="mb-10">
       <div className="mb-5 flex flex-wrap items-center gap-3">
-        <h2 className="mr-auto text-2xl font-black text-slate-900">Applications</h2>
-        <select
-          value={propertyFilter}
-          onChange={e => setPropertyFilter(e.target.value)}
-          className="rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition focus:border-[#2563eb] focus:outline-none focus:ring-2 focus:ring-[#2563eb]/20"
-        >
-          <option value="">All your properties</option>
-          {filterOptions.map((p) => (
-            <option key={p} value={p}>{p}</option>
-          ))}
-        </select>
-        <button
-          onClick={load}
-          className="rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-600 transition hover:bg-slate-50"
-        >
-          Refresh
-        </button>
+        <h2 className="mr-auto w-full text-2xl font-black text-slate-900 sm:w-auto">Applications</h2>
+        <div className="flex w-full min-w-0 flex-wrap items-center gap-2 sm:ml-auto sm:w-auto sm:flex-nowrap">
+          <div className={MANAGER_PILL_SELECT_WRAP_CLS}>
+            <select
+              value={propertyFilter}
+              onChange={e => setPropertyFilter(e.target.value)}
+              className={MANAGER_PILL_SELECT_CLS}
+            >
+              <option value="">All your properties</option>
+              {filterOptions.map((p) => (
+                <option key={p} value={p}>{p}</option>
+              ))}
+            </select>
+            {MANAGER_PILL_SELECT_CHEVRON}
+          </div>
+          <button type="button" onClick={load} className={MANAGER_PILL_REFRESH_CLS}>
+            Refresh
+          </button>
+        </div>
       </div>
 
       <div className="mb-4 inline-flex flex-wrap gap-1 rounded-2xl border border-slate-200 bg-slate-50 p-1">
@@ -5922,16 +5986,16 @@ function CalendarTabPanel({ manager, allowedPropertyNames }) {
       ])
       setSchedulingRows(sched)
       setProperties(props)
-      const assigned = props.filter((p) => propertyAssignedToManager(p, manager))
+      const approvedAssigned = props.filter((p) => propertyAssignedToManager(p, manager) && isPropertyRecordApproved(p))
       const byProperty = {}
-      assigned.forEach((property) => {
+      approvedAssigned.forEach((property) => {
         const text = extractNoteValue(property.Notes, 'Tour Availability') || ''
         byProperty[property.id] = text ? weeklyFreeArraysFromTourText(text) : emptyWeeklyFreeArrays()
       })
       setWeeklyFreeByProperty(byProperty)
       setSelectedPropertyId((current) => {
-        if (assigned.some((p) => p.id === current)) return current
-        return assigned[0]?.id || ''
+        if (approvedAssigned.some((p) => p.id === current)) return current
+        return approvedAssigned[0]?.id || ''
       })
     } catch (err) {
       console.error('[CalendarTabPanel] load error', err)
@@ -5958,14 +6022,14 @@ function CalendarTabPanel({ manager, allowedPropertyNames }) {
     [bookedByDate, selectedDateKey],
   )
 
-  const assignedProperties = useMemo(
-    () => properties.filter((p) => propertyAssignedToManager(p, manager)),
+  const approvedAssignedProperties = useMemo(
+    () => properties.filter((p) => propertyAssignedToManager(p, manager) && isPropertyRecordApproved(p)),
     [properties, manager],
   )
 
   const selectedProperty = useMemo(
-    () => assignedProperties.find((p) => p.id === selectedPropertyId) || null,
-    [assignedProperties, selectedPropertyId],
+    () => approvedAssignedProperties.find((p) => p.id === selectedPropertyId) || null,
+    [approvedAssignedProperties, selectedPropertyId],
   )
 
   const selectedWeeklyFree = useMemo(
@@ -6044,27 +6108,34 @@ function CalendarTabPanel({ manager, allowedPropertyNames }) {
   return (
     <div className="mb-10">
       <div className="mb-5 flex flex-wrap items-center gap-3">
-        <h2 className="mr-auto text-2xl font-black text-slate-900">Calendar</h2>
-        <select
-          value={selectedPropertyId}
-          onChange={(e) => setSelectedPropertyId(e.target.value)}
-          className="rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition focus:border-[#2563eb] focus:outline-none focus:ring-2 focus:ring-[#2563eb]/20"
-        >
-          {assignedProperties.length ? (
-            assignedProperties.map((p) => (
-              <option key={p.id} value={p.id}>{propertyRecordName(p) || 'Property'}</option>
-            ))
-          ) : (
-            <option value="">No assigned properties</option>
-          )}
-        </select>
-        <button
-          onClick={load}
-          disabled={loading}
-          className="rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-600 transition hover:bg-slate-50 disabled:opacity-50"
-        >
-          {loading ? 'Loading…' : 'Refresh'}
-        </button>
+        <h2 className="mr-auto w-full text-2xl font-black text-slate-900 sm:w-auto">Calendar</h2>
+        <div className="flex w-full min-w-0 flex-wrap items-center gap-2 sm:ml-auto sm:w-auto sm:flex-nowrap">
+          <div className={MANAGER_PILL_SELECT_WRAP_CLS}>
+            <select
+              value={selectedPropertyId}
+              onChange={(e) => setSelectedPropertyId(e.target.value)}
+              disabled={!approvedAssignedProperties.length}
+              className={MANAGER_PILL_SELECT_CLS}
+            >
+              {approvedAssignedProperties.length ? (
+                approvedAssignedProperties.map((p) => (
+                  <option key={p.id} value={p.id}>{propertyRecordName(p) || 'Property'}</option>
+                ))
+              ) : (
+                <option value="">No approved properties</option>
+              )}
+            </select>
+            {MANAGER_PILL_SELECT_CHEVRON}
+          </div>
+          <button
+            type="button"
+            onClick={load}
+            disabled={loading}
+            className={MANAGER_PILL_REFRESH_CLS}
+          >
+            {loading ? 'Loading…' : 'Refresh'}
+          </button>
+        </div>
       </div>
 
       <div className="mb-5">
@@ -6105,7 +6176,7 @@ function CalendarTabPanel({ manager, allowedPropertyNames }) {
           scheduledItems={scheduledItemsForSelectedDay}
           availSaving={availSaving}
           manager={manager}
-          propertyOptions={assignedProperties.map((p) => ({ id: p.id, label: propertyRecordName(p) || 'Property' }))}
+          propertyOptions={approvedAssignedProperties.map((p) => ({ id: p.id, label: propertyRecordName(p) || 'Property' }))}
           selectedPropertyId={selectedPropertyId}
           onSelectProperty={setSelectedPropertyId}
         />
@@ -6115,6 +6186,7 @@ function CalendarTabPanel({ manager, allowedPropertyNames }) {
         open={meetOpen}
         initialDateKey={selectedDateKey}
         manager={manager}
+        approvedPropertyNames={allowedPropertyNames || []}
         onClose={() => setMeetOpen(false)}
         onCreated={load}
       />
@@ -6147,7 +6219,7 @@ function ManagerDashboard({ manager: managerProp, onOpenDraft, onSignOut, onMana
   const [drafts, setDrafts] = useState([])
   const [loading, setLoading] = useState(true)
   const [showGenerateModal, setShowGenerateModal] = useState(false)
-  const [filters, setFilters] = useState({ status: '', property: '', resident: '' })
+  const [filters, setFilters] = useState({ status: '', property: '' })
   const [propertyRecords, setPropertyRecords] = useState([])
   const [billingLoading, setBillingLoading] = useState(false)
   const [overviewStats, setOverviewStats] = useState(null)
@@ -6160,6 +6232,11 @@ function ManagerDashboard({ manager: managerProp, onOpenDraft, onSignOut, onMana
   const scopedPropertyOptions = useMemo(
     () => Array.from(managerScope.assignedNames || managerScope.approvedNames).sort(),
     [managerScope.assignedNames, managerScope.approvedNames],
+  )
+  /** Calendar / tour scheduling: Axis-approved houses only */
+  const approvedScopedPropertyOptions = useMemo(
+    () => Array.from(managerScope.approvedNames).sort(),
+    [managerScope.approvedNames],
   )
   const approvedNamesLower = useMemo(
     () => new Set([...managerScope.approvedNames].map((n) => String(n).trim().toLowerCase()).filter(Boolean)),
@@ -6409,7 +6486,7 @@ function ManagerDashboard({ manager: managerProp, onOpenDraft, onSignOut, onMana
         ) : dashView === 'workorders' ? (
           <WorkOrdersTabPanel manager={manager} allowedPropertyNames={scopedPropertyOptions} />
         ) : dashView === 'calendar' ? (
-          <CalendarTabPanel manager={manager} allowedPropertyNames={scopedPropertyOptions} />
+          <CalendarTabPanel manager={manager} allowedPropertyNames={approvedScopedPropertyOptions} />
         ) : dashView === 'inbox' ? (
           <ManagerInboxPage manager={manager} allowedPropertyNames={scopedPropertyOptions} />
         ) : dashView === 'dashboard' ? (
@@ -6434,37 +6511,27 @@ function ManagerDashboard({ manager: managerProp, onOpenDraft, onSignOut, onMana
           </div>
         ) : null}
         <div className="mb-5 flex flex-wrap items-center gap-3">
-          <h2 className="mr-auto text-2xl font-black text-slate-900">Leases</h2>
+          <h2 className="mr-auto w-full text-2xl font-black text-slate-900 sm:w-auto">Leases</h2>
 
-          {/* Property filter */}
-          <select
-            value={filters.property}
-            onChange={e => setFilters(f => ({ ...f, property: e.target.value }))}
-            className="rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition focus:border-[#2563eb] focus:outline-none focus:ring-2 focus:ring-[#2563eb]/20"
-          >
-            <option value="">All your properties</option>
-            {scopedPropertyOptions.map((p) => (
-              <option key={p} value={p}>{p}</option>
-            ))}
-          </select>
+          <div className="flex w-full min-w-0 flex-wrap items-center gap-2 sm:ml-auto sm:w-auto sm:flex-nowrap">
+            <div className={MANAGER_PILL_SELECT_WRAP_CLS}>
+              <select
+                value={filters.property}
+                onChange={e => setFilters(f => ({ ...f, property: e.target.value }))}
+                className={MANAGER_PILL_SELECT_CLS}
+              >
+                <option value="">All your properties</option>
+                {scopedPropertyOptions.map((p) => (
+                  <option key={p} value={p}>{p}</option>
+                ))}
+              </select>
+              {MANAGER_PILL_SELECT_CHEVRON}
+            </div>
 
-          <select
-            value={filters.resident}
-            onChange={e => setFilters(f => ({ ...f, resident: e.target.value }))}
-            className="rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition focus:border-[#2563eb] focus:outline-none focus:ring-2 focus:ring-[#2563eb]/20"
-          >
-            <option value="">All applications</option>
-            {[...new Set(drafts.map((d) => String(d['Resident Name'] || '').trim()).filter(Boolean))].sort().map((name) => (
-              <option key={name} value={name}>{name}</option>
-            ))}
-          </select>
-
-          <button
-            onClick={loadDrafts}
-            className="rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-600 transition hover:bg-slate-50"
-          >
-            Refresh
-          </button>
+            <button type="button" onClick={loadDrafts} className={MANAGER_PILL_REFRESH_CLS}>
+              Refresh
+            </button>
+          </div>
         </div>
 
         <div className="mb-4 inline-flex flex-wrap gap-1 rounded-2xl border border-slate-200 bg-slate-50 p-1">
