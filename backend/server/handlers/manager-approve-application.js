@@ -172,11 +172,21 @@ export default async function handler(req, res) {
     const existing = await getApplication(recordId)
     const approvedApplication = existing.Approved === true ? existing : await approveApplication(recordId)
     const residentSync = await markMatchingResidentsApproved(approvedApplication)
-    const { draft, created } = await createLeaseDraftFromApplication({
-      application: approvedApplication,
-      generatedBy: managerName,
-      generatedByRole: managerRole,
-    })
+
+    // Lease draft generation requires ANTHROPIC_API_KEY — skip gracefully if not configured.
+    let draft = null
+    let created = false
+    try {
+      const result = await createLeaseDraftFromApplication({
+        application: approvedApplication,
+        generatedBy: managerName,
+        generatedByRole: managerRole,
+      })
+      draft = result.draft
+      created = result.created
+    } catch (draftErr) {
+      console.warn('[manager-approve-application] Lease draft skipped:', draftErr?.message || draftErr)
+    }
 
     return res.status(200).json({
       application: approvedApplication,
@@ -185,7 +195,7 @@ export default async function handler(req, res) {
       residentRecordsUpdated: residentSync.updatedIds,
       message: created
         ? 'Application approved and lease draft generated.'
-        : 'Application approved. Existing lease draft reused.',
+        : 'Application approved.',
     })
   } catch (err) {
     console.error('[manager-approve-application]', err)
