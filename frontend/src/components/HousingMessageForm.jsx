@@ -182,7 +182,7 @@ export function PropertyRoomPicker({
           <option value="">{roomRequired ? 'Select a property…' : 'No specific property'}</option>
           {displayProperties.map((prop) => (
             <option key={prop.id} value={prop.id}>
-              {prop.name} — {prop.address}
+                {prop.name}
             </option>
           ))}
         </select>
@@ -191,7 +191,6 @@ export function PropertyRoomPicker({
         ) : null}
         {p ? (
           <p className="mt-2 text-xs font-medium text-[#2563eb]">
-            {p.manager ? `Manager: ${p.manager}` : 'Manager assigned after inquiry'}
           </p>
         ) : null}
       </div>

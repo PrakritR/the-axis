@@ -311,7 +311,7 @@ export default function AdminPortal() {
   const [applicationReviewBusy, setApplicationReviewBusy] = useState(false)
   const [managerTableSort, setManagerTableSort] = useState('house_asc')
   const [applicationsTableSort, setApplicationsTableSort] = useState('house_asc')
-  const [unreadThreadCount, setUnreadThreadCount] = useState(0)
+  const [unopenedThreadCount, setUnopenedThreadCount] = useState(0)
   const [propertiesSearch, setPropertiesSearch] = useState('')
   const [managersSearch, setManagersSearch] = useState('')
   const [applicationsSearch, setApplicationsSearch] = useState('')
@@ -367,17 +367,16 @@ export default function AdminPortal() {
     setSession(null)
   }
 
-  // Fetch unread inbox thread count for the dashboard badge
+  // Unopened threads for dashboard badge
   useEffect(() => {
     if (!session?.email || !portalInboxAirtableConfigured()) return
     let cancelled = false
-    async function fetchUnread() {
+    async function fetchUnopenedCount() {
       try {
         const [msgs, stateMap] = await Promise.all([
           getAllPortalInternalThreadMessages(),
           fetchInboxThreadStateMap(session.email),
         ])
-        // Group latest message timestamp by thread key
         const latestByThread = new Map()
         for (const m of msgs) {
           const tk = portalInboxThreadKeyFromRecord(m)
@@ -387,18 +386,17 @@ export default function AdminPortal() {
           const prev = latestByThread.get(tk)
           if (!prev || ts > prev) latestByThread.set(tk, ts)
         }
-        // Count threads where latest message is newer than lastReadAt
-        let unread = 0
+        let unopened = 0
         for (const [tk, latest] of latestByThread) {
           const state = stateMap.get(tk)
-          if (!state?.lastReadAt || latest > state.lastReadAt) unread++
+          if (!state?.lastReadAt || latest > state.lastReadAt) unopened++
         }
-        if (!cancelled) setUnreadThreadCount(unread)
+        if (!cancelled) setUnopenedThreadCount(unopened)
       } catch {
         // non-fatal — badge just stays at 0
       }
     }
-    fetchUnread()
+    fetchUnopenedCount()
     return () => { cancelled = true }
   }, [session])
 
@@ -625,9 +623,13 @@ export default function AdminPortal() {
             >
               <div className="flex items-center gap-3">
                 <span className="text-[10px] font-bold uppercase tracking-[0.18em] text-sky-900">Inbox</span>
-                {unreadThreadCount > 0 ? (
-                  <span className="flex h-5 min-w-[1.25rem] items-center justify-center rounded-full bg-red-500 px-1.5 text-[10px] font-black text-white tabular-nums">
-                    {unreadThreadCount}
+                {unopenedThreadCount > 0 ? (
+                  <span
+                    className="flex h-5 min-w-[1.25rem] items-center justify-center rounded-full bg-red-500 px-1.5 text-[10px] font-black text-white tabular-nums"
+                    title="Unopened conversations"
+                    aria-label={`${unopenedThreadCount} unopened conversation${unopenedThreadCount === 1 ? '' : 's'}`}
+                  >
+                    {unopenedThreadCount}
                   </span>
                 ) : null}
               </div>

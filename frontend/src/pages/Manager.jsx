@@ -5407,7 +5407,7 @@ function ManagerDashboard({ manager: managerProp, onOpenDraft, onSignOut, onMana
     }
   }, [dashView, managerScope.approvedNames, approvedNamesLower])
 
-  // Unopened = latest message newer than last opened (lastReadAt), for dashboard badge
+  // Unopened threads for dashboard badge (same rule as inbox: never opened, or new messages since last open)
   useEffect(() => {
     const email = String(manager?.email || '').trim()
     if (!email || !portalInboxAirtableConfigured()) return
@@ -5428,10 +5428,11 @@ function ManagerDashboard({ manager: managerProp, onOpenDraft, onSignOut, onMana
           if (!prev || ts > prev) latestByThread.set(tk, ts)
         }
         let unopened = 0
-        for (const [, latest] of latestByThread) {
-          const tk = latestByThread
-          // iterate properly - bug fix: loop was wrong in thought - keep original loop
+        for (const [tk, latest] of latestByThread) {
+          const state = stateMap.get(tk)
+          if (!state?.lastReadAt || latest > state.lastReadAt) unopened++
         }
+        if (!cancelled) setInboxUnopenedCount(unopened)
       } catch {
         // non-fatal
       }
@@ -5567,7 +5568,7 @@ function ManagerDashboard({ manager: managerProp, onOpenDraft, onSignOut, onMana
             statsLoading={overviewStatsLoading}
             dataWarnings={overviewDataWarnings}
             onNavigate={setDashView}
-            inboxUnreadCount={inboxUnreadCount}
+            inboxUnopenedCount={inboxUnopenedCount}
           />
         ) : (
         <>

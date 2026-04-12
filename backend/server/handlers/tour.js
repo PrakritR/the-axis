@@ -20,9 +20,29 @@ function extractNoteValue(notes, label) {
   return match ? match[1].trim() : ''
 }
 
-function mapProperty(record) {
+function buildRoomsByPropertyId(roomRecords) {
+  const map = new Map()
+  for (const r of roomRecords) {
+    const roomName = String(r.fields?.Name || r.fields?.['Room Number'] || '').trim()
+    if (!roomName) continue
+    const links = Array.isArray(r.fields?.Property) ? r.fields.Property : r.fields?.Property ? [r.fields.Property] : []
+    for (const pid of links) {
+      if (!map.has(pid)) map.set(pid, [])
+      map.get(pid).push(roomName)
+    }
+  }
+  return map
+}
+
+function mapProperty(record, roomsByPropertyId) {
   const fields = record.fields || {}
-  const rooms = FALLBACK_PROPERTIES.find((p) => p.name === fields.Name || p.name === fields.Property)?.rooms || []
+  const airtableRooms = (roomsByPropertyId.get(record.id) || []).sort((a, b) => {
+    const na = parseInt(String(a).replace(/\D/g, ''), 10) || 0
+    const nb = parseInt(String(b).replace(/\D/g, ''), 10) || 0
+    return na !== nb ? na - nb : a.localeCompare(b)
+  })
+  const fallbackRooms = FALLBACK_PROPERTIES.find((p) => p.name === fields.Name || p.name === fields.Property)?.rooms || []
+  const rooms = airtableRooms.length ? airtableRooms : fallbackRooms
   const managerEmailRaw =
     (typeof fields['Site Manager Email'] === 'string' && fields['Site Manager Email'].trim()) ||
     extractNoteValue(fields.Notes, 'Site Manager Email') ||
@@ -60,12 +80,19 @@ export default async function handler(req, res) {
     }
     if (!AIRTABLE_TOKEN) return res.status(200).json(fallback)
     try {
-      const r = await fetch(`https://api.airtable.com/v0/${AIRTABLE_BASE_ID}/Properties?sort%5B0%5D%5Bfield%5D=Name`, {
-        headers: { Authorization: `Bearer ${AIRTABLE_TOKEN}` },
-      })
-      if (!r.ok) return res.status(200).json(fallback)
-      const data = await r.json()
-      const properties = (data.records || []).map(mapProperty)
+      const roomsTable = process.env.VITE_AIRTABLE_ROOMS_TABLE || 'Rooms'
+      const [propRes, roomsRes] = await Promise.all([
+        fetch(`https://api.airtable.com/v0/${AIRTABLE_BASE_ID}/Properties?sort%5B0%5D%5Bfield%5D=Name`, {
+          headers: { Authorization: `Bearer ${AIRTABLE_TOKEN}` },
+        }),
+        fetch(`https://api.airtable.com/v0/${AIRTABLE_BASE_ID}/${encodeURIComponent(roomsTable)}?fields%5B%5D=Name&fields%5B%5D=Property`, {
+          headers: { Authorization: `Bearer ${AIRTABLE_TOKEN}` },
+        }),
+      ])
+      if (!propRes.ok) return res.status(200).json(fallback)
+      const [propData, roomsData] = await Promise.all([propRes.json(), roomsRes.ok ? roomsRes.json() : Promise.resolve({ records: [] })])
+      const roomsByPropertyId = buildRoomsByPropertyId(roomsData.records || [])
+      const properties = (propData.records || []).map((r) => mapProperty(r, roomsByPropertyId))
       return res.status(200).json({ properties: properties.length ? properties : fallback.properties })
     } catch {
       return res.status(200).json(fallback)

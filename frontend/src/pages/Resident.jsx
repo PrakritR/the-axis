@@ -17,7 +17,7 @@ import {
   PortalSegmentedControl,
   portalAuthInputCls,
 } from '../components/PortalAuthUI'
-import PortalShell from '../components/PortalShell'
+import PortalShell, { DataTable, StatusPill } from '../components/PortalShell'
 import { HOUSING_CONTACT_MESSAGE, HOUSING_CONTACT_SCHEDULE } from '../lib/housingSite'
 import {
   airtableReady,
@@ -27,7 +27,6 @@ import {
   getApprovedLeaseForResident,
   getLeaseDraftsForResident,
   getPaymentsForResident,
-  getPropertyByName,
   getResidentByEmail,
   getResidentById,
   appendWorkOrderUpdateFromResident,
@@ -248,6 +247,123 @@ function getPaymentKind(payment) {
     .filter(Boolean).join(' ').toLowerCase()
   if (/(fee|fine|damage|late fee|late charge|cleaning|lockout)/.test(raw)) return 'fee'
   return 'rent'
+}
+
+/** Finer bucket for resident UI (deposit / move-in rent vs recurring rent vs fees). */
+function classifyResidentPaymentLine(payment) {
+  if (!payment || typeof payment !== 'object') return 'rent'
+  const raw = [payment.Type, payment.Category, payment.Kind, payment['Line Item Type'], payment.Month, payment.Notes]
+    .filter(Boolean).join(' ').toLowerCase()
+  if (/(security deposit|sec\.?\s*deposit|tenant deposit|initial deposit)/i.test(raw) && !/return/i.test(raw)) return 'deposit'
+  if (/(^|\s)(first month|1st month|first months|move-?in rent)/i.test(raw)) return 'first_rent'
+  return getPaymentKind(payment) === 'fee' ? 'fee' : 'rent'
+}
+
+function statusPillToneForResidentPayment(status) {
+  if (status === 'Paid') return 'green'
+  if (status === 'Overdue') return 'red'
+  if (status === 'Due Soon') return 'amber'
+  if (status === 'Partial') return 'axis'
+  return 'blue'
+}
+
+function ResidentMoveInPaymentCard({ title, row, selected, onSelectDetails }) {
+  if (!row) return null
+  const status = row.statusLabel
+  const tone = statusPillToneForResidentPayment(status)
+  return (
+    <div
+      className={classNames(
+        'rounded-[24px] border bg-white p-5 shadow-sm transition',
+        selected ? 'border-[#2563eb]/40 ring-2 ring-[#2563eb]/15' : 'border-slate-200',
+      )}
+    >
+      <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">{title}</div>
+      <div className="mt-2 text-2xl font-black tracking-tight text-slate-900">{formatMoney(row.displayAmount)}</div>
+      <div className="mt-1 text-sm text-slate-600">
+        {row.dueDateLabel ? <>Due {row.dueDateLabel}</> : <span className="text-slate-400">No due date on file</span>}
+      </div>
+      <div className="mt-3 flex flex-wrap items-center gap-2">
+        <StatusPill tone={tone}>{status}</StatusPill>
+      </div>
+      <button
+        type="button"
+        onClick={() => onSelectDetails(row.id)}
+        className={classNames(
+          'mt-4 w-full rounded-xl border px-4 py-2.5 text-sm font-semibold transition sm:w-auto',
+          selected
+            ? 'border-[#2563eb] bg-[#2563eb]/10 text-[#2563eb]'
+            : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50',
+        )}
+      >
+        {selected ? 'Hide details' : 'Details'}
+      </button>
+    </div>
+  )
+}
+
+function ResidentPaymentDetailPanel({ row, onClose, onPayNow, payLoadingKey }) {
+  if (!row) return null
+  const tone = statusPillToneForResidentPayment(row.statusLabel)
+  const canPay = row.balance > 0
+  const payKey = row.payCategory || 'rent'
+  const busy = payLoadingKey === payKey && Boolean(payLoadingKey)
+
+  return (
+    <div className="space-y-5 rounded-[24px] border border-slate-200 bg-white p-6 shadow-sm">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0">
+          <h2 className="text-lg font-black text-slate-900">{row.title}</h2>
+          <p className="mt-1 text-sm text-slate-600">{row.subtitle}</p>
+          <div className="mt-2 flex flex-wrap items-center gap-2">
+            <StatusPill tone={tone}>{row.statusLabel}</StatusPill>
+            {row.statusHint ? (
+              <span className="text-xs font-medium text-amber-700">{row.statusHint}</span>
+            ) : null}
+          </div>
+        </div>
+        <button
+          type="button"
+          className="shrink-0 text-sm font-semibold text-slate-500 hover:text-slate-800"
+          onClick={onClose}
+        >
+          Close
+        </button>
+      </div>
+
+      {canPay ? (
+        <div className="flex flex-wrap gap-2 border-t border-slate-100 pt-4">
+          <button
+            type="button"
+            disabled={busy}
+            onClick={onPayNow}
+            className="rounded-xl bg-emerald-600 px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-emerald-700 disabled:opacity-50"
+          >
+            {busy ? 'Opening…' : 'Pay now'}
+          </button>
+        </div>
+      ) : null}
+
+      <dl className="space-y-0 border-t border-slate-100 pt-4">
+        {row.metaRows.map(({ label, value }) => (
+          <div
+            key={label}
+            className="grid gap-1 border-b border-slate-100 py-2.5 last:border-b-0 sm:grid-cols-[minmax(0,200px)_1fr] sm:gap-4"
+          >
+            <dt className="text-xs font-semibold uppercase tracking-wide text-slate-500">{label}</dt>
+            <dd className="text-sm text-slate-900">{value}</dd>
+          </div>
+        ))}
+      </dl>
+
+      {row.recordedAt ? (
+        <div className="border-t border-slate-100 pt-4">
+          <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Recorded</div>
+          <div className="mt-1 text-sm text-slate-800">{row.recordedAt}</div>
+        </div>
+      ) : null}
+    </div>
+  )
 }
 
 function residentAmountDue(payment) {
@@ -1052,81 +1168,142 @@ function ProfilePanel({ resident, onUpdated }) {
     }
   }
 
-  const inputCls = 'w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm outline-none transition focus:border-slate-900 focus:ring-2 focus:ring-slate-900/10'
-  const readCls = 'rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900'
+  const inputCls =
+    'w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm transition focus:border-[#2563eb] focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#2563eb]/20'
+  const readonlyCls = `${inputCls} cursor-default bg-slate-100 text-slate-500`
+
+  function handleCancelEdit() {
+    setName(resident.Name || '')
+    setEmail(resident.Email || '')
+    setPhone(resident.Phone || '')
+    setIsEditing(false)
+    setMessage('')
+    setSaveError('')
+  }
 
   return (
-    <SectionCard
-      title="Profile"
-      action={
-        <button type="button"
-          onClick={() => {
-            if (isEditing) { setName(resident.Name || ''); setEmail(resident.Email || ''); setPhone(resident.Phone || '') }
-            setIsEditing((v) => !v)
-            setMessage('')
-            setSaveError('')
-          }}
-          className="rounded-full border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 transition hover:border-slate-500">
-          {isEditing ? 'Cancel' : 'Edit'}
-        </button>
-      }
-    >
-      {/* Locked lease info as plain text */}
-      <div className="mb-6 grid gap-3 sm:grid-cols-2">
-        <div className="rounded-2xl bg-slate-50 px-4 py-3">
-          <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">Property</div>
-          <div className="mt-1 text-sm font-semibold text-slate-900">{resident.House || '—'}</div>
-        </div>
-        <div className="rounded-2xl bg-slate-50 px-4 py-3">
-          <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">Unit</div>
-          <div className="mt-1 text-sm font-semibold text-slate-900">{normalizeUnitLabel(resident['Unit Number'] || '') || '—'}</div>
-        </div>
-        <div className="rounded-2xl bg-slate-50 px-4 py-3">
-          <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">Lease Type</div>
-          <div className="mt-1 text-sm font-semibold text-slate-900">{getLeaseTermLabel(resident)}</div>
-        </div>
-        <div className="rounded-2xl bg-slate-50 px-4 py-3">
-          <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">Lease Dates</div>
-          <div className="mt-1 text-sm font-semibold text-slate-900">
-            {resident['Lease Start Date'] ? formatDate(resident['Lease Start Date']) : '—'}
-            {' → '}
-            {resident['Lease End Date'] ? formatDate(resident['Lease End Date']) : 'Ongoing'}
-          </div>
-        </div>
-      </div>
-
-      {/* Editable contact fields */}
-      <form onSubmit={handleSubmit} className="grid gap-4 sm:grid-cols-2">
-        <div>
-          <label className="mb-2 block text-sm font-semibold text-slate-700">Full Name</label>
-          {isEditing
-            ? <input type="text" required value={name} onChange={(e) => setName(e.target.value)} className={inputCls} />
-            : <div className={readCls}>{name || '—'}</div>}
-        </div>
-        <div>
-          <label className="mb-2 block text-sm font-semibold text-slate-700">Email</label>
-          {isEditing
-            ? <input type="email" required value={email} onChange={(e) => setEmail(e.target.value)} className={inputCls} />
-            : <div className={readCls}>{email || '—'}</div>}
-        </div>
-        <div>
-          <label className="mb-2 block text-sm font-semibold text-slate-700">Phone</label>
-          {isEditing
-            ? <input required value={phone} onChange={(e) => setPhone(e.target.value)} className={inputCls} />
-            : <div className={readCls}>{phone || '—'}</div>}
-        </div>
-        {message ? <div className="sm:col-span-2 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">{message}</div> : null}
-        {saveError ? <div className="sm:col-span-2 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{saveError}</div> : null}
-        {isEditing ? (
-          <div className="sm:col-span-2">
-            <button type="submit" disabled={saving}
-              className="rounded-full bg-slate-900 px-6 py-3 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:opacity-50">
-              {saving ? 'Saving...' : 'Save'}
+    <div className="mx-auto max-w-4xl space-y-6">
+      <section className="rounded-[28px] border border-slate-200 bg-white p-6">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+          <h2 className="mt-2 text-2xl font-black text-slate-900">Profile</h2>
+          {!isEditing ? (
+            <button
+              type="button"
+              onClick={() => {
+                setIsEditing(true)
+                setMessage('')
+                setSaveError('')
+              }}
+              className="shrink-0 rounded-2xl border border-slate-200 bg-white px-5 py-2.5 text-sm font-semibold text-slate-800 transition hover:border-[#2563eb]/40 hover:bg-slate-50"
+            >
+              Edit info
             </button>
+          ) : null}
+        </div>
+
+        {!isEditing ? (
+          <div className="mt-6 grid gap-5 sm:grid-cols-2">
+            <div>
+              <p className="mb-1.5 text-sm font-semibold text-slate-700">Full name</p>
+              <div className={readonlyCls}>{name || '—'}</div>
+            </div>
+            <div>
+              <p className="mb-1.5 text-sm font-semibold text-slate-700">Email</p>
+              <div className={readonlyCls}>{email || '—'}</div>
+            </div>
+            <div>
+              <p className="mb-1.5 text-sm font-semibold text-slate-700">Phone</p>
+              <div className={readonlyCls}>{phone || '—'}</div>
+            </div>
           </div>
-        ) : null}
-      </form>
-    </SectionCard>
+        ) : (
+          <form onSubmit={handleSubmit} className="mt-6 grid gap-5 sm:grid-cols-2">
+            <div>
+              <label className="mb-1.5 block text-sm font-semibold text-slate-700">Full name</label>
+              <input
+                type="text"
+                required
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                placeholder="Your name"
+                className={inputCls}
+              />
+            </div>
+            <div>
+              <label className="mb-1.5 block text-sm font-semibold text-slate-700">Email</label>
+              <input
+                type="email"
+                required
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                className={inputCls}
+              />
+            </div>
+            <div>
+              <label className="mb-1.5 block text-sm font-semibold text-slate-700">Phone</label>
+              <input
+                type="tel"
+                required
+                value={phone}
+                onChange={(e) => setPhone(e.target.value)}
+                placeholder="+1 (206) 555-0100"
+                className={inputCls}
+              />
+            </div>
+            {message ? (
+              <div className="sm:col-span-2 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">{message}</div>
+            ) : null}
+            {saveError ? (
+              <div className="sm:col-span-2 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{saveError}</div>
+            ) : null}
+            <div className="flex flex-wrap gap-3 sm:col-span-2">
+              <button
+                type="submit"
+                disabled={saving || (!name.trim() && !phone.trim())}
+                className="rounded-2xl bg-[#2563eb] px-6 py-3 text-sm font-semibold text-white transition hover:brightness-110 disabled:opacity-50"
+              >
+                {saving ? 'Saving…' : 'Save changes'}
+              </button>
+              <button
+                type="button"
+                onClick={handleCancelEdit}
+                disabled={saving}
+                className="rounded-2xl border border-slate-200 bg-white px-6 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:opacity-50"
+              >
+                Cancel
+              </button>
+            </div>
+          </form>
+        )}
+      </section>
+
+      <section className="rounded-[28px] border border-slate-200 bg-white p-6">
+        <h2 className="text-lg font-black text-slate-900">Your home & lease</h2>
+        <p className="mt-1 text-sm text-slate-500">Assigned by your property manager — contact them to change unit or lease dates.</p>
+        <div className="mt-6 grid gap-3 sm:grid-cols-2">
+          <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4">
+            <div className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-400">Property</div>
+            <div className="mt-2 text-sm font-semibold text-slate-900">{resident.House || '—'}</div>
+          </div>
+          <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4">
+            <div className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-400">Unit</div>
+            <div className="mt-2 text-sm font-semibold text-slate-900">{normalizeUnitLabel(resident['Unit Number'] || '') || '—'}</div>
+          </div>
+          <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4">
+            <div className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-400">Lease type</div>
+            <div className="mt-2 text-sm font-semibold text-slate-900">{getLeaseTermLabel(resident)}</div>
+          </div>
+          <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4">
+            <div className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-400">Lease dates</div>
+            <div className="mt-2 text-sm font-semibold text-slate-900">
+              {resident['Lease Start Date'] ? formatDate(resident['Lease Start Date']) : '—'}
+              {' → '}
+              {resident['Lease End Date'] ? formatDate(resident['Lease End Date']) : 'Ongoing'}
+            </div>
+          </div>
+        </div>
+      </section>
+    </div>
   )
 }
 
@@ -1140,17 +1317,30 @@ function PaymentsPanel({ resident, onResidentUpdated, highlightCategory, onPayme
   const [actionLoading, setActionLoading] = useState('')
   const [embeddedCheckout, setEmbeddedCheckout] = useState(null)
   const [payFilter, setPayFilter] = useState('all')
+  const [paySearch, setPaySearch] = useState('')
+  const [payDetailId, setPayDetailId] = useState(null)
+  const [payTableSort, setPayTableSort] = useState('due_asc')
 
   useEffect(() => {
     if (highlightCategory === 'extension') setPayFilter('fees')
   }, [highlightCategory])
 
   useEffect(() => {
-    getPaymentsForResident(resident)
+    setPayDetailId(null)
+  }, [payFilter])
+
+  const loadPayments = useCallback(() => {
+    setLoading(true)
+    setError('')
+    return getPaymentsForResident(resident)
       .then(setPayments)
       .catch((err) => setError(err.message))
       .finally(() => setLoading(false))
   }, [resident])
+
+  useEffect(() => {
+    loadPayments()
+  }, [loadPayments])
 
   const amountDueForRecord = useCallback((payment) => {
     const direct = Number(payment?.Amount ?? payment?.['Amount Due'] ?? payment?.Total ?? 0)
@@ -1213,10 +1403,6 @@ function PaymentsPanel({ resident, onResidentUpdated, highlightCategory, onPayme
     Month: 'Current rent',
     'Due Date': resident['Next Rent Due'] || '',
   } : null)
-  const upcomingPayments = useMemo(
-    () => unpaidRentPayments.filter((payment) => payment !== currentDuePayment),
-    [currentDuePayment, unpaidRentPayments],
-  )
   const paymentHistory = useMemo(
     () => [...rentPayments].filter((payment) => paymentStatusForRecord(payment) === 'Paid').sort((a, b) => new Date(b['Paid Date'] || b['Due Date'] || 0) - new Date(a['Paid Date'] || a['Due Date'] || 0)),
     [paymentStatusForRecord, rentPayments],
@@ -1226,29 +1412,266 @@ function PaymentsPanel({ resident, onResidentUpdated, highlightCategory, onPayme
     [feePayments],
   )
 
-  /** All rent periods — not limited to a single month (manager view is month-scoped). */
-  const rentSummaryAllTime = useMemo(() => {
-    const today = new Date()
-    today.setHours(0, 0, 0, 0)
-    let unpaidTotal = 0
-    let overdueTotal = 0
-    let paidTotal = 0
-    for (const p of rentPayments) {
-      if (paymentStatusForRecord(p) === 'Paid') {
-        const rec = amountPaidForRecord(p)
-        paidTotal += rec > 0 ? rec : amountDueForRecord(p)
-        continue
+  const paySearchLower = paySearch.trim().toLowerCase()
+
+  const firstMonthRentPaid = useMemo(
+    () => rentPayments.some((p) => paymentStatusForRecord(p) === 'Paid'),
+    [rentPayments, paymentStatusForRecord],
+  )
+
+  const expectedDepositAmount = useMemo(() => {
+    const raw =
+      resident['Security Deposit Amount'] ??
+      resident['Security Deposit'] ??
+      getStaticSecurityDeposit(resident.House)
+    if (raw == null || raw === '') return 0
+    if (typeof raw === 'number' && Number.isFinite(raw) && raw > 0) return raw
+    const n = parseInt(String(raw).replace(/[^0-9]/g, ''), 10)
+    return Number.isFinite(n) && n > 0 ? n : 0
+  }, [resident.House, resident['Security Deposit'], resident['Security Deposit Amount']])
+
+  const depositPaymentRecord = useMemo(
+    () => sortedPayments.find((p) => classifyResidentPaymentLine(p) === 'deposit') || null,
+    [sortedPayments],
+  )
+
+  const firstRentPaymentRecord = useMemo(
+    () => sortedPayments.find((p) => classifyResidentPaymentLine(p) === 'first_rent') || null,
+    [sortedPayments],
+  )
+
+  const tableSourcePayments = useMemo(() => {
+    return sortedPayments.filter((p) => {
+      if (depositPaymentRecord && p.id === depositPaymentRecord.id) return false
+      if (firstRentPaymentRecord && p.id === firstRentPaymentRecord.id) return false
+      return true
+    })
+  }, [sortedPayments, depositPaymentRecord, firstRentPaymentRecord])
+
+  const buildRowFromPayment = useCallback(
+    (payment, overrides = {}) => {
+      const lineKind = classifyResidentPaymentLine(payment)
+      const dueRaw = payment?.['Due Date']
+      const dueDateLabel = dueRaw ? formatDate(dueRaw) : ''
+      const bal = balanceForRecord(payment)
+      const due = amountDueForRecord(payment)
+      const paid = amountPaidForRecord(payment)
+      const status = paymentStatusForRecord(payment)
+      const title = payment.Month || payment.Type || (lineKind === 'fee' ? 'Fee or extra' : 'Rent')
+      const subtitle = [resident.House, normalizeUnitLabel(resident['Unit Number'] || '')].filter(Boolean).join(' · ') || 'Your home'
+      let recordedAt = null
+      if (payment?.created_at) {
+        try {
+          recordedAt = new Date(payment.created_at).toLocaleString()
+        } catch {
+          recordedAt = String(payment.created_at)
+        }
       }
-      const bal = balanceForRecord(p)
-      if (bal <= 0) continue
-      unpaidTotal += bal
-      const due = parseDisplayDate(p?.['Due Date'])
-      if (due && !Number.isNaN(due.getTime()) && due < today) {
-        overdueTotal += bal
+      const payCategory = lineKind === 'fee' ? 'fee' : lineKind === 'deposit' ? 'deposit' : 'rent'
+      const typeLabel =
+        lineKind === 'fee' ? 'Fee or extra' : lineKind === 'deposit' ? 'Security deposit' : lineKind === 'first_rent' ? 'First month rent' : 'Rent'
+      const metaRows = [
+        { label: 'Type', value: typeLabel },
+        { label: 'Due date', value: dueDateLabel || '—' },
+        { label: 'Amount due', value: formatMoney(due) },
+        { label: 'Amount paid', value: formatMoney(paid) },
+        { label: 'Balance', value: formatMoney(bal) },
+      ]
+      if (payment.Notes) metaRows.push({ label: 'Notes', value: String(payment.Notes) })
+      const payDescription = overrides.payDescription || `${title} — ${subtitle}`
+      return {
+        id: payment.id,
+        title,
+        subtitle,
+        dueDateLabel,
+        displayAmount: bal > 0 ? bal : due,
+        balance: bal,
+        statusLabel: status,
+        statusHint:
+          status === 'Overdue'
+            ? 'This balance is past due — pay as soon as you can.'
+            : status === 'Due Soon'
+              ? 'Due within the next few days.'
+              : '',
+        metaRows,
+        recordedAt,
+        payCategory,
+        paymentRecordId: payment.id,
+        sortDue: parseDisplayDate(dueRaw)?.getTime() ?? 0,
+        sortAmount: due,
+        payDescription,
+        ...overrides,
+      }
+    },
+    [resident, amountDueForRecord, amountPaidForRecord, balanceForRecord, paymentStatusForRecord],
+  )
+
+  const depositRow = useMemo(() => {
+    if (depositPaymentRecord) {
+      return buildRowFromPayment(depositPaymentRecord, {
+        title: 'Initial security deposit',
+        payDescription: `Security deposit — ${resident.House || 'your home'}`,
+      })
+    }
+    if (expectedDepositAmount <= 0) return null
+    const moveIn = resident['Lease Start Date'] ? formatDate(resident['Lease Start Date']) : ''
+    return {
+      id: 'synth-security-deposit',
+      title: 'Initial security deposit',
+      subtitle: [resident.House, normalizeUnitLabel(resident['Unit Number'] || '')].filter(Boolean).join(' · ') || 'Your home',
+      dueDateLabel: moveIn,
+      displayAmount: expectedDepositAmount,
+      balance: expectedDepositAmount,
+      statusLabel: 'Unpaid',
+      statusHint: 'Typically due at or before move-in unless your lease says otherwise.',
+      metaRows: [
+        { label: 'Type', value: 'Security deposit' },
+        { label: 'Due date', value: moveIn || '—' },
+        { label: 'Amount due', value: formatMoney(expectedDepositAmount) },
+        { label: 'Amount paid', value: formatMoney(0) },
+        { label: 'Balance', value: formatMoney(expectedDepositAmount) },
+      ],
+      recordedAt: null,
+      payCategory: 'deposit',
+      paymentRecordId: undefined,
+      sortDue: parseDisplayDate(resident['Lease Start Date'])?.getTime() ?? 0,
+      sortAmount: expectedDepositAmount,
+      payDescription: `Security deposit — ${resident.House || 'your home'}`,
+    }
+  }, [
+    buildRowFromPayment,
+    depositPaymentRecord,
+    expectedDepositAmount,
+    resident.House,
+    resident['Lease Start Date'],
+    resident['Unit Number'],
+  ])
+
+  const firstMonthRow = useMemo(() => {
+    if (firstRentPaymentRecord) {
+      return buildRowFromPayment(firstRentPaymentRecord, {
+        title: 'First month rent',
+        payDescription: `First month rent — ${resident.House || 'your home'}`,
+      })
+    }
+    if (fallbackRentAmount <= 0) return null
+    const subtitle = [resident.House, normalizeUnitLabel(resident['Unit Number'] || '')].filter(Boolean).join(' · ') || 'Your home'
+    if (firstMonthRentPaid) {
+      const paidRent = [...rentPayments]
+        .filter((p) => paymentStatusForRecord(p) === 'Paid')
+        .sort(
+          (a, b) =>
+            new Date(b['Paid Date'] || b['Due Date'] || 0) - new Date(a['Paid Date'] || a['Due Date'] || 0),
+        )[0]
+      const amt = paidRent ? amountDueForRecord(paidRent) : fallbackRentAmount
+      const pd = paidRent?.['Paid Date'] ? formatDate(paidRent['Paid Date']) : ''
+      let recordedAt = null
+      if (paidRent?.created_at) {
+        try {
+          recordedAt = new Date(paidRent.created_at).toLocaleString()
+        } catch {
+          recordedAt = String(paidRent.created_at)
+        }
+      }
+      return {
+        id: 'synth-first-month-paid',
+        title: 'First month rent',
+        subtitle,
+        dueDateLabel: paidRent?.['Due Date'] ? formatDate(paidRent['Due Date']) : '',
+        displayAmount: amt,
+        balance: 0,
+        statusLabel: 'Paid',
+        statusHint: '',
+        metaRows: [
+          { label: 'Type', value: 'First month rent' },
+          { label: 'Due date', value: paidRent?.['Due Date'] ? formatDate(paidRent['Due Date']) : '—' },
+          { label: 'Paid on', value: pd || '—' },
+          { label: 'Amount', value: formatMoney(amt) },
+          { label: 'Balance', value: formatMoney(0) },
+        ],
+        recordedAt,
+        payCategory: 'rent',
+        paymentRecordId: paidRent?.id,
+        sortDue: parseDisplayDate(paidRent?.['Due Date'])?.getTime() ?? 0,
+        sortAmount: amt,
+        payDescription: `First month rent — ${resident.House || 'your home'}`,
       }
     }
-    return { unpaidTotal, overdueTotal, paidTotal }
-  }, [rentPayments, paymentStatusForRecord, balanceForRecord, amountPaidForRecord, amountDueForRecord])
+    return {
+      id: 'synth-first-month-unpaid',
+      title: 'First month rent',
+      subtitle,
+      dueDateLabel: resident['Lease Start Date'] ? formatDate(resident['Lease Start Date']) : '',
+      displayAmount: fallbackRentAmount,
+      balance: fallbackRentAmount,
+      statusLabel: 'Unpaid',
+      statusHint: 'Pay when you are ready to satisfy your move-in rent.',
+      metaRows: [
+        { label: 'Type', value: 'First month rent' },
+        { label: 'Due date', value: resident['Lease Start Date'] ? formatDate(resident['Lease Start Date']) : '—' },
+        { label: 'Amount due', value: formatMoney(fallbackRentAmount) },
+        { label: 'Amount paid', value: formatMoney(0) },
+        { label: 'Balance', value: formatMoney(fallbackRentAmount) },
+      ],
+      recordedAt: null,
+      payCategory: 'rent',
+      paymentRecordId: undefined,
+      sortDue: parseDisplayDate(resident['Lease Start Date'])?.getTime() ?? 0,
+      sortAmount: fallbackRentAmount,
+      payDescription: `First month rent — ${resident.House || 'your home'}`,
+    }
+  }, [
+    buildRowFromPayment,
+    firstMonthRentPaid,
+    firstRentPaymentRecord,
+    fallbackRentAmount,
+    paymentStatusForRecord,
+    rentPayments,
+    amountDueForRecord,
+    resident.House,
+    resident['Lease Start Date'],
+    resident['Unit Number'],
+  ])
+
+  const baseTableVMs = useMemo(() => {
+    const filtered = tableSourcePayments.filter((p) => {
+      if (payFilter === 'fees') return getPaymentKind(p) === 'fee'
+      if (payFilter === 'paid') return getPaymentKind(p) === 'rent' && paymentStatusForRecord(p) === 'Paid'
+      if (payFilter === 'pending') return getPaymentKind(p) === 'rent' && balanceForRecord(p) > 0
+      return true
+    })
+    return filtered.map((p) => buildRowFromPayment(p))
+  }, [tableSourcePayments, payFilter, paymentStatusForRecord, balanceForRecord, buildRowFromPayment])
+
+  const filteredTableVMs = useMemo(() => {
+    if (!paySearchLower) return baseTableVMs
+    return baseTableVMs.filter((row) => {
+      const blob = [row.title, row.subtitle, row.statusLabel, formatMoney(row.balance), row.dueDateLabel, row.payDescription]
+        .join(' ')
+        .toLowerCase()
+      return blob.includes(paySearchLower)
+    })
+  }, [baseTableVMs, paySearchLower])
+
+  const sortedTableVMs = useMemo(() => {
+    const arr = [...filteredTableVMs]
+    arr.sort((a, b) => {
+      if (payTableSort === 'due_desc') return b.sortDue - a.sortDue
+      if (payTableSort === 'amount_desc') return b.sortAmount - a.sortAmount
+      if (payTableSort === 'amount_asc') return a.sortAmount - b.sortAmount
+      return a.sortDue - b.sortDue
+    })
+    return arr
+  }, [filteredTableVMs, payTableSort])
+
+  const detailRow = useMemo(() => {
+    if (!payDetailId) return null
+    if (depositRow && depositRow.id === payDetailId) return depositRow
+    if (firstMonthRow && firstMonthRow.id === payDetailId) return firstMonthRow
+    return sortedTableVMs.find((r) => r.id === payDetailId) || baseTableVMs.find((r) => r.id === payDetailId) || null
+  }, [payDetailId, depositRow, firstMonthRow, sortedTableVMs, baseTableVMs])
+
+  const effectiveCurrentDueDate = effectiveCurrentDue?.['Due Date']
 
   async function launchCheckout({ amount, items, description, category, paymentRecordId }) {
     setActionError('')
@@ -1292,7 +1715,70 @@ function PaymentsPanel({ resident, onResidentUpdated, highlightCategory, onPayme
     <div className="mb-10">
       <div className="mb-5 flex flex-wrap items-center gap-3">
         <h2 className="mr-auto text-2xl font-black text-slate-900">Payments</h2>
+        <div className="relative">
+          <svg
+            className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400"
+            fill="none"
+            viewBox="0 0 24 24"
+            stroke="currentColor"
+            strokeWidth={2}
+            aria-hidden
+          >
+            <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+          </svg>
+          <input
+            value={paySearch}
+            onChange={(e) => setPaySearch(e.target.value)}
+            placeholder="Search payments…"
+            autoComplete="off"
+            className="rounded-2xl border border-slate-200 bg-white py-2.5 pl-10 pr-4 text-sm transition focus:border-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-900/10"
+          />
+        </div>
+        <label className="flex flex-wrap items-center gap-2 text-sm text-slate-600">
+          <span className="font-semibold text-slate-800">Sort</span>
+          <select
+            value={payTableSort}
+            onChange={(e) => setPayTableSort(e.target.value)}
+            className="rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition focus:border-[#2563eb] focus:outline-none focus:ring-2 focus:ring-[#2563eb]/20"
+          >
+            <option value="due_asc">Due date (soonest)</option>
+            <option value="due_desc">Due date (latest)</option>
+            <option value="amount_desc">Amount (high → low)</option>
+            <option value="amount_asc">Amount (low → high)</option>
+          </select>
+        </label>
+        <button
+          type="button"
+          onClick={() => loadPayments()}
+          disabled={loading}
+          className="rounded-full border border-slate-200 bg-white px-5 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:opacity-50"
+        >
+          {loading ? 'Refreshing…' : 'Refresh'}
+        </button>
       </div>
+
+      <div className="mb-4 inline-flex flex-wrap gap-1 rounded-2xl border border-slate-200 bg-slate-50 p-1">
+        {[
+          ['all', 'All activity', sortedPayments.length],
+          ['pending', 'Due or upcoming', unpaidRentPayments.length],
+          ['paid', 'Paid rent', paymentHistory.length],
+          ['fees', 'Fees & extras', feeChargeRows.length],
+        ].map(([key, label, count]) => (
+          <button
+            key={key}
+            type="button"
+            onClick={() => setPayFilter(key)}
+            className={classNames(
+              'rounded-xl px-4 py-2 text-sm font-semibold transition',
+              payFilter === key ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-600 hover:text-slate-900',
+            )}
+          >
+            {label}
+            <span className="ml-1.5 tabular-nums text-slate-500">({count})</span>
+          </button>
+        ))}
+      </div>
+
       {loading ? <p className="text-sm text-slate-400">Loading payments...</p> : null}
       {!loading && (
         <>
@@ -1305,12 +1791,19 @@ function PaymentsPanel({ resident, onResidentUpdated, highlightCategory, onPayme
           <div className="rounded-[28px] border border-slate-200 bg-[linear-gradient(135deg,#ffffff_0%,#f8fbff_100%)] p-6 sm:p-7">
             <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
               <div>
-                <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">Rent Due</div>
+                <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">Rent due</div>
                 <div className="mt-3 text-4xl font-black tracking-tight text-slate-900">
                   {effectiveCurrentDue ? formatMoney(currentDuePayment ? currentAmountDue : effectiveCurrentDue.Amount) : '$0'}
                 </div>
-                <div className="mt-2 text-sm leading-6 text-slate-500">
-                  {effectiveCurrentDue?.['Due Date'] ? `Due Date: ${formatDate(effectiveCurrentDue['Due Date'])}` : 'No rent currently due'}
+                {effectiveCurrentDueDate ? (
+                  <div className="mt-2 text-lg font-bold text-slate-900">
+                    Due {formatDate(effectiveCurrentDueDate)}
+                  </div>
+                ) : (
+                  <div className="mt-2 text-lg font-semibold text-slate-500">No due date on file</div>
+                )}
+                <div className="mt-1 text-sm leading-6 text-slate-500">
+                  {effectiveCurrentDue ? 'This is your current rent balance on record.' : 'No rent charge is on file right now.'}
                 </div>
                 <div className="mt-3">
                   <PortalOpsStatusBadge tone={paymentToneForStatus(currentStatus)}>
@@ -1330,7 +1823,7 @@ function PaymentsPanel({ resident, onResidentUpdated, highlightCategory, onPayme
                   })}
                   className="rounded-full bg-axis px-6 py-3 text-sm font-semibold text-white transition hover:brightness-105 disabled:cursor-not-allowed disabled:opacity-50"
                 >
-                  {actionLoading === 'rent' ? 'Opening...' : 'Pay Now'}
+                  {actionLoading === 'rent' ? 'Opening...' : 'Pay now'}
                 </button>
               </div>
             </div>
@@ -1340,122 +1833,91 @@ function PaymentsPanel({ resident, onResidentUpdated, highlightCategory, onPayme
             <div className="mt-4 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{actionError}</div>
           ) : null}
 
-          <div className="mt-6 inline-flex flex-wrap gap-1 rounded-2xl border border-slate-200 bg-slate-50 p-1">
-            {[
-              ['all', 'All activity', sortedPayments.length],
-              ['pending', 'Due or upcoming', unpaidRentPayments.length],
-              ['paid', 'Paid rent', paymentHistory.length],
-              ['fees', 'Fees & extras', feeChargeRows.length],
-            ].map(([key, label, count]) => (
-              <button
-                key={key}
-                type="button"
-                onClick={() => setPayFilter(key)}
-                className={classNames(
-                  'rounded-xl px-4 py-2 text-sm font-semibold transition',
-                  payFilter === key ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-600 hover:text-slate-900',
-                )}
-              >
-                {label}
-                <span className="ml-1.5 tabular-nums text-slate-500">({count})</span>
-              </button>
-            ))}
-          </div>
-
-          <div className="mt-6 grid gap-6 xl:grid-cols-[minmax(0,1.2fr)_minmax(0,0.8fr)]">
-            <div className="space-y-6">
-              {(payFilter === 'all' || payFilter === 'pending') ? (
-              <PortalOpsCard title="Upcoming Payments" description="Upcoming rent that still needs payment.">
-                {upcomingPayments.length === 0 ? (
-                  <PortalOpsEmptyState
-                    icon="📅"
-                    title="No upcoming payments"
-                    description="Nothing else is scheduled after your current due amount."
-                  />
-                ) : (
-                  <div className="space-y-3">
-                    {upcomingPayments.map((payment) => {
-                      const status = paymentStatusForRecord(payment)
-                      return (
-                        <div key={payment.id} className="flex flex-wrap items-center justify-between gap-3 rounded-[24px] border border-slate-200 px-4 py-4">
-                          <div>
-                            <div className="text-sm font-bold text-slate-900">{payment.Month || 'Rent payment'}</div>
-                            <div className="mt-1 text-sm text-slate-500">Due {formatDate(payment['Due Date'])}</div>
-                          </div>
-                          <div className="flex items-center gap-3">
-                            <div className="text-sm font-bold text-slate-900">{formatMoney(balanceForRecord(payment))}</div>
-                            <PortalOpsStatusBadge tone={paymentToneForStatus(status)}>{status}</PortalOpsStatusBadge>
-                          </div>
-                        </div>
-                      )
-                    })}
-                  </div>
-                )}
-              </PortalOpsCard>
+          {payFilter !== 'fees' ? (
+            <div className="mt-6 grid gap-4 sm:grid-cols-2">
+              {depositRow ? (
+                <ResidentMoveInPaymentCard
+                  title="Initial security deposit"
+                  row={depositRow}
+                  selected={payDetailId === depositRow.id}
+                  onSelectDetails={(id) => setPayDetailId((cur) => (cur === id ? null : id))}
+                />
               ) : null}
-
-              {(payFilter === 'all' || payFilter === 'paid') ? (
-              <PortalOpsCard title="Past Payments" description="Your recent paid rent history.">
-                {paymentHistory.length === 0 ? (
-                  <PortalOpsEmptyState icon="🧾" title="No past payments yet" description="Paid rent will show up here once the first charge is settled." />
-                ) : (
-                  <div className="space-y-3">
-                    {paymentHistory.map((payment) => (
-                      <div key={payment.id} className="flex flex-wrap items-center justify-between gap-3 rounded-[24px] border border-slate-200 px-4 py-4">
-                        <div>
-                          <div className="text-sm font-bold text-slate-900">{payment.Month || 'Rent payment'}</div>
-                          <div className="mt-1 text-sm text-slate-500">
-                            {payment['Paid Date'] ? `Paid ${formatDate(payment['Paid Date'])}` : `Due ${formatDate(payment['Due Date'])}`}
-                          </div>
-                        </div>
-                        <div className="flex items-center gap-3">
-                          <div className="text-sm font-bold text-slate-900">{formatMoney(amountDueForRecord(payment))}</div>
-                          <PortalOpsStatusBadge tone="emerald">Paid</PortalOpsStatusBadge>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </PortalOpsCard>
+              {firstMonthRow ? (
+                <ResidentMoveInPaymentCard
+                  title="First month rent"
+                  row={firstMonthRow}
+                  selected={payDetailId === firstMonthRow.id}
+                  onSelectDetails={(id) => setPayDetailId((cur) => (cur === id ? null : id))}
+                />
               ) : null}
             </div>
+          ) : null}
 
-            {(payFilter === 'all' || payFilter === 'fees') && feeChargeRows.length > 0 ? (
-              <PortalOpsCard title="Fines & Extra Charges" description="Fees, fines, or other non-rent charges.">
-                <div className="space-y-3">
-                  {feeChargeRows.map((payment) => {
-                    const status = paymentStatusForRecord(payment)
-                    return (
-                      <div
-                        key={payment.id}
-                        className={classNames(
-                          'rounded-[24px] border px-4 py-4',
-                          highlightCategory === 'extension' ? 'border-axis/40 bg-axis/5' : 'border-slate-200',
-                        )}
-                      >
-                        <div className="flex flex-wrap items-center justify-between gap-3">
-                          <div>
-                            <div className="text-sm font-bold text-slate-900">{payment.Month || payment.Type || 'Extra charge'}</div>
-                            <div className="mt-1 text-sm text-slate-500">
-                              {payment['Due Date'] ? `Due ${formatDate(payment['Due Date'])}` : 'Extra charge'}
-                            </div>
-                            {payment.Notes ? <div className="mt-1 text-xs text-slate-400">{payment.Notes}</div> : null}
-                          </div>
-                          <div className="flex items-center gap-3">
-                            <div className="text-sm font-bold text-slate-900">{formatMoney(balanceForRecord(payment) || amountDueForRecord(payment))}</div>
-                            <PortalOpsStatusBadge tone={paymentToneForStatus(status)}>{status}</PortalOpsStatusBadge>
-                          </div>
-                        </div>
-                      </div>
-                    )
+          <div className="mt-6 space-y-4">
+            <DataTable
+              empty={
+                payFilter === 'fees' && feeChargeRows.length === 0
+                  ? 'No fees or extras right now.'
+                  : payFilter === 'paid' && paymentHistory.length === 0
+                    ? 'No paid rent history yet.'
+                    : payFilter === 'pending' && unpaidRentPayments.length === 0
+                      ? 'Nothing due or upcoming.'
+                      : paySearchLower
+                        ? 'No payments match your search.'
+                        : 'No payment rows to show.'
+              }
+              columns={[
+                {
+                  key: 'd',
+                  label: 'Description',
+                  render: (row) => <span className="font-semibold text-slate-900">{row.title}</span>,
+                },
+                {
+                  key: 'due',
+                  label: 'Due date',
+                  render: (row) => <span className="text-slate-600">{row.dueDateLabel || '—'}</span>,
+                },
+                {
+                  key: 'amt',
+                  label: 'Amount',
+                  render: (row) => (
+                    <span className="font-semibold text-slate-900">{formatMoney(row.balance > 0 ? row.balance : row.displayAmount)}</span>
+                  ),
+                },
+                {
+                  key: 'st',
+                  label: 'Status',
+                  render: (row) => <StatusPill tone={statusPillToneForResidentPayment(row.statusLabel)}>{row.statusLabel}</StatusPill>,
+                },
+                {
+                  key: 'act',
+                  label: '',
+                  render: (row) => (
+                    <button
+                      type="button"
+                      className="text-sm font-semibold text-[#2563eb] hover:underline"
+                      onClick={() => setPayDetailId((id) => (id === row.id ? null : row.id))}
+                    >
+                      {payDetailId === row.id ? 'Hide details' : 'Details'}
+                    </button>
+                  ),
+                },
+              ]}
+              rows={sortedTableVMs.map((row) => ({ key: row.id, data: row }))}
+            />
+            {payDetailId && detailRow ? (
+              <ResidentPaymentDetailPanel
+                row={detailRow}
+                onClose={() => setPayDetailId(null)}
+                onPayNow={() =>
+                  launchCheckout({
+                    amount: detailRow.balance,
+                    description: detailRow.payDescription,
+                    category: detailRow.payCategory,
+                    paymentRecordId: detailRow.paymentRecordId,
                   })}
-                </div>
-              </PortalOpsCard>
-            ) : payFilter === 'fees' && feeChargeRows.length === 0 ? (
-              <PortalOpsEmptyState
-                icon="🧾"
-                title="No fees or extras"
-                description="You do not have any non-rent charges right now."
+                payLoadingKey={actionLoading}
               />
             ) : null}
           </div>
@@ -1496,9 +1958,6 @@ function LeasingPanel({ resident, payments, onOpenPayments }) {
   const leaseSigningUrl = resolveLeaseSigningUrl(resident)
   const moveInLabel = resident['Lease Start Date'] ? formatDate(resident['Lease Start Date']) : '—'
   const moveOutLabel = resident['Lease End Date'] ? formatDate(resident['Lease End Date']) : (isMonthToMonth ? 'No fixed end date' : '—')
-  const leaseDepositPaid = Boolean(resident['Security Deposit Paid'] || resident['Deposit Paid'])
-  const signedLeaseNote = String(resident['Security Deposit Paid Date'] || resident['Deposit Paid Date'] || '').trim()
-
   // First month rent: check if any paid rent payment exists
   const firstMonthRentPaid = useMemo(() => {
     const list = Array.isArray(payments) ? payments : []
@@ -1508,49 +1967,35 @@ function LeasingPanel({ resident, payments, onOpenPayments }) {
   const [leaseDrafts, setLeaseDrafts] = useState([])
   const [leaseLoading, setLeaseLoading] = useState(true)
   const [showLeaseText, setShowLeaseText] = useState(false)
-  const [houseDeposit, setHouseDeposit] = useState(0)
-  const [depositLoading, setDepositLoading] = useState(true)
-  const [depositError, setDepositError] = useState('')
-  const [depositCheckoutLoading, setDepositCheckoutLoading] = useState(false)
-  const [depositPaidState, setDepositPaidState] = useState(leaseDepositPaid)
-  const [depositCheckout, setDepositCheckout] = useState(null)
+  const [leaseTab, setLeaseTab] = useState('all')
+  const [leaseSearch, setLeaseSearch] = useState('')
 
-  useEffect(() => {
-    let cancelled = false
+  const loadLeaseDrafts = useCallback(async () => {
     setLeaseLoading(true)
-    getLeaseDraftsForResident(resident.id)
-      .then((drafts) => {
-        if (cancelled) return
-        setLeaseDrafts(drafts)
-      })
-      .catch(() => { if (!cancelled) setLeaseDrafts([]) })
-      .finally(() => { if (!cancelled) setLeaseLoading(false) })
-    return () => { cancelled = true }
+    try {
+      const drafts = await getLeaseDraftsForResident(resident.id)
+      setLeaseDrafts(drafts)
+    } catch {
+      setLeaseDrafts([])
+    } finally {
+      setLeaseLoading(false)
+    }
   }, [resident.id])
 
   useEffect(() => {
-    let cancelled = false
-    async function loadDeposit() {
-      setDepositLoading(true)
-      setDepositError('')
-      try {
-        const property = await getPropertyByName(resident.House)
-        const depositText = property?.['Security Deposit'] || property?.securityDeposit || getStaticSecurityDeposit(resident.House) || resident['Security Deposit']
-        const amount = parseInt(String(depositText || '').replace(/[^0-9]/g, ''), 10)
-        if (!cancelled) setHouseDeposit(Number.isFinite(amount) && amount > 0 ? amount : 0)
-      } catch {
-        // silently ignore — getPropertyByName returns null on error; static fallback handles deposit
-      } finally {
-        if (!cancelled) setDepositLoading(false)
-      }
-    }
-    loadDeposit()
-    return () => { cancelled = true }
-  }, [resident.House, resident['Security Deposit']])
+    loadLeaseDrafts()
+  }, [loadLeaseDrafts])
 
-  useEffect(() => {
-    setDepositPaidState(leaseDepositPaid)
-  }, [leaseDepositPaid])
+  const depositPreviewLabel = useMemo(() => {
+    const raw =
+      resident['Security Deposit Amount'] ??
+      resident['Security Deposit'] ??
+      getStaticSecurityDeposit(resident.House)
+    if (raw == null || raw === '') return '—'
+    if (typeof raw === 'number' && Number.isFinite(raw) && raw > 0) return formatMoney(raw)
+    const n = parseInt(String(raw).replace(/[^0-9]/g, ''), 10)
+    return Number.isFinite(n) && n > 0 ? formatMoney(n) : '—'
+  }, [resident.House, resident['Security Deposit'], resident['Security Deposit Amount']])
 
   const activeLeaseDraft = useMemo(() => pickBestLeaseDraft(leaseDrafts), [leaseDrafts])
   const leaseStatus = activeLeaseDraft?.Status ? String(activeLeaseDraft.Status).trim() : ''
@@ -1565,33 +2010,94 @@ function LeasingPanel({ resident, payments, onOpenPayments }) {
         ? 'Your lease is being drafted. Full terms will appear here once your manager publishes your lease.'
         : 'Your lease is being reviewed internally. The full document will appear here once it is sent to you.'
     }
-    return leaseContent || `Axis Resident Lease\n\nProperty: ${resident.House || '—'}\nUnit: ${resident['Unit Number'] || '—'}\nTerm: ${leaseTermLabel}\nMove-in: ${moveInLabel}\nMove-out: ${moveOutLabel}\nSecurity Deposit: ${houseDeposit ? formatMoney(houseDeposit) : '—'}\n\nYour final document will appear here for review and signature.`
-  }, [activeLeaseDraft, leaseBodyAllowed, leaseStatus, leaseContent, resident.House, resident['Unit Number'], leaseTermLabel, moveInLabel, moveOutLabel, houseDeposit])
+    return leaseContent || `Axis Resident Lease\n\nProperty: ${resident.House || '—'}\nUnit: ${resident['Unit Number'] || '—'}\nTerm: ${leaseTermLabel}\nMove-in: ${moveInLabel}\nMove-out: ${moveOutLabel}\nSecurity Deposit: ${depositPreviewLabel}\n\nYour final document will appear here for review and signature.`
+  }, [activeLeaseDraft, leaseBodyAllowed, leaseStatus, leaseContent, resident.House, resident['Unit Number'], leaseTermLabel, moveInLabel, moveOutLabel, depositPreviewLabel])
 
-  // Both deposit AND first month rent must be paid before signing is allowed
-  const signingUnlocked = depositPaidState && firstMonthRentPaid
+  const signingUnlocked = firstMonthRentPaid
 
-  async function handleDepositPaid() {
-    setDepositCheckoutLoading(true)
-    try {
-      const today = new Date().toISOString().slice(0, 10)
-      await updateResident(resident.id, {
-        'Security Deposit Paid': true,
-        'Security Deposit Paid Date': today,
-        'Security Deposit Amount': houseDeposit || resident['Security Deposit Amount'] || null,
-      })
-      setDepositPaidState(true)
-    } catch (err) {
-      setDepositError(parseErrorMessage(err))
-    } finally {
-      setDepositCheckoutLoading(false)
-      setDepositCheckout(null)
-    }
-  }
+  const leaseSearchLower = leaseSearch.trim().toLowerCase()
+  const matchLeaseBlob = (blob) => !leaseSearchLower || String(blob || '').toLowerCase().includes(leaseSearchLower)
+  const hasLeaseDraft = Boolean(activeLeaseDraft)
+  const showSummary =
+    (leaseTab === 'all' || leaseTab === 'summary') &&
+    matchLeaseBlob(
+      `${leaseTermLabel} ${moveInLabel} ${moveOutLabel} current lease ${resident.House || ''} month-to-month`,
+    )
+  const showDocument =
+    (leaseTab === 'all' || leaseTab === 'document') &&
+    matchLeaseBlob(`${leaseStatus} lease document draft published signed`)
+  const showSigning =
+    (leaseTab === 'all' || leaseTab === 'signing') &&
+    matchLeaseBlob(`first month rent sign lease review paid unpaid`)
+
+  const leaseHasVisibleSection = showSummary || showDocument || showSigning
+  const docTabCount = hasLeaseDraft ? 1 : 0
+  const allTabCount = 1 + docTabCount + 2
 
   return (
-    <SectionCard title="Lease" description="Your current lease details and signing options.">
+    <div className="mb-10">
+      <div className="mb-5 flex flex-wrap items-center gap-3">
+        <h2 className="mr-auto text-2xl font-black text-slate-900">Lease</h2>
+        <div className="relative">
+          <svg
+            className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400"
+            fill="none"
+            viewBox="0 0 24 24"
+            stroke="currentColor"
+            strokeWidth={2}
+            aria-hidden
+          >
+            <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+          </svg>
+          <input
+            value={leaseSearch}
+            onChange={(e) => setLeaseSearch(e.target.value)}
+            placeholder="Search lease…"
+            autoComplete="off"
+            className="rounded-2xl border border-slate-200 bg-white py-2.5 pl-10 pr-4 text-sm transition focus:border-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-900/10"
+          />
+        </div>
+        <button
+          type="button"
+          onClick={() => onOpenPayments()}
+          className="rounded-full bg-axis px-5 py-3 text-sm font-semibold text-white transition hover:brightness-105"
+        >
+          Pay rent
+        </button>
+        <button
+          type="button"
+          onClick={() => loadLeaseDrafts()}
+          disabled={leaseLoading}
+          className="rounded-full border border-slate-200 bg-white px-5 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:opacity-50"
+        >
+          {leaseLoading ? 'Refreshing…' : 'Refresh'}
+        </button>
+      </div>
+
+      <div className="mb-4 inline-flex flex-wrap gap-1 rounded-2xl border border-slate-200 bg-slate-50 p-1">
+        {[
+          ['all', 'All', allTabCount],
+          ['summary', 'Lease details', 1],
+          ['document', 'Document', docTabCount],
+          ['signing', 'Signing', 2],
+        ].map(([key, label, count]) => (
+          <button
+            key={key}
+            type="button"
+            onClick={() => setLeaseTab(key)}
+            className={classNames(
+              'rounded-xl px-4 py-2 text-sm font-semibold transition',
+              leaseTab === key ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-600 hover:text-slate-900',
+            )}
+          >
+            {label}
+            <span className="ml-1.5 tabular-nums text-slate-500">({count})</span>
+          </button>
+        ))}
+      </div>
+
       <div className="space-y-5">
+        {showSummary ? (
         <div className="rounded-[24px] border border-slate-200 bg-[linear-gradient(135deg,#ffffff_0%,#f8fafc_100%)] p-6">
           <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
             <div>
@@ -1615,9 +2121,11 @@ function LeasingPanel({ resident, payments, onOpenPayments }) {
             </div>
           </div>
         </div>
+        ) : null}
 
         {/* Lease document card — no sort dropdown; auto-shows the best available draft */}
-        {leaseLoading ? (
+        {showDocument ? (
+        leaseLoading ? (
           <div className="rounded-[24px] border border-slate-200 bg-white p-6 text-sm text-slate-400">Loading lease…</div>
         ) : !activeLeaseDraft ? (
           <div className="rounded-[24px] border border-slate-200 bg-slate-50 p-6 text-center">
@@ -1684,110 +2192,72 @@ function LeasingPanel({ resident, payments, onOpenPayments }) {
               </div>
             )}
           </div>
-        )}
+        )
+        ) : null}
 
-        {/* Security Deposit */}
-        <div className="rounded-[24px] border border-slate-200 bg-white p-5">
-          <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">Security Deposit</div>
-          <div className="mt-2 flex flex-wrap items-center gap-3">
-            <h3 className="text-xl font-black text-slate-900">
-              {depositLoading ? 'Loading…' : (houseDeposit ? formatMoney(houseDeposit) : 'Not set')}
-            </h3>
-            {depositPaidState ? (
-              <span className="rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700">
-                Paid{signedLeaseNote ? ` · ${formatDate(signedLeaseNote)}` : ''}
-              </span>
-            ) : null}
-          </div>
-          {!depositPaidState && (
-            <div className="mt-4">
-              <button
-                type="button"
-                onClick={() => {
-                  if (!houseDeposit) return
-                  setDepositCheckout({
-                    title: 'Security deposit',
-                    request: {
-                      residentId: resident.id,
-                      residentName: resident.Name,
-                      residentEmail: resident.Email,
-                      propertyName: resident.House,
-                      unitNumber: resident['Unit Number'],
-                      amount: houseDeposit,
-                      description: 'Security deposit payment',
-                      category: 'security_deposit',
-                    },
-                  })
-                }}
-                disabled={depositLoading || !houseDeposit || depositCheckoutLoading}
-                className="rounded-full bg-[linear-gradient(180deg,#2f76ff_0%,#2450eb_100%)] px-5 py-3 text-sm font-semibold text-white transition hover:brightness-105 disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                Pay security deposit
-              </button>
+        {/* First Month Rent + Lease Signing */}
+        {showSigning ? (
+          <>
+            <div className="rounded-[24px] border border-slate-200 bg-white p-5">
+              <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">First Month Rent</div>
+              <div className="mt-2 flex flex-wrap items-center gap-3">
+                {firstMonthRentPaid ? (
+                  <span className="rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700">Paid</span>
+                ) : (
+                  <span className="rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-700">Unpaid</span>
+                )}
+              </div>
+              {!firstMonthRentPaid && (
+                <p className="mt-2 text-sm text-slate-500">
+                  Pay your first month&apos;s rent from the{' '}
+                  <button type="button" onClick={() => onOpenPayments()} className="font-semibold text-[#2563eb] underline">Payments</button>{' '}
+                  tab. Lease signing unlocks once first month rent is paid.
+                </p>
+              )}
             </div>
-          )}
-        </div>
 
-        {/* First Month Rent */}
-        <div className="rounded-[24px] border border-slate-200 bg-white p-5">
-          <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">First Month Rent</div>
-          <div className="mt-2 flex flex-wrap items-center gap-3">
-            {firstMonthRentPaid ? (
-              <span className="rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700">Paid</span>
-            ) : (
-              <span className="rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-700">Unpaid</span>
-            )}
+            <div className="rounded-[24px] border border-slate-200 bg-white p-5">
+              <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">Lease Signing</div>
+              <h3 className="mt-2 text-xl font-black text-slate-900">Review & Sign</h3>
+              <p className="mt-3 text-sm leading-6 text-slate-500">
+                {signingUnlocked
+                  ? 'Your first month rent is paid. Signing is unlocked.'
+                  : 'Pay first month rent to unlock signing.'}
+              </p>
+              <div className="mt-4 flex flex-wrap gap-3">
+                {signingUnlocked && leaseSigningUrl ? (
+                  <button
+                    type="button"
+                    onClick={() => { window.location.href = leaseSigningUrl }}
+                    className="rounded-full bg-[linear-gradient(180deg,#2f76ff_0%,#2450eb_100%)] px-5 py-3 text-sm font-semibold text-white transition hover:brightness-105"
+                  >
+                    Sign lease
+                  </button>
+                ) : signingUnlocked ? (
+                  <p className="text-sm text-slate-400">Your manager will send a signing link once the lease is ready.</p>
+                ) : (
+                  <button
+                    type="button"
+                    disabled
+                    className="rounded-full border border-slate-200 bg-slate-50 px-5 py-3 text-sm font-semibold text-slate-400 cursor-not-allowed"
+                  >
+                    Signing locked
+                  </button>
+                )}
+              </div>
+            </div>
+          </>
+        ) : null}
+
+        {!leaseHasVisibleSection ? (
+          <div className="rounded-[24px] border border-slate-200 bg-slate-50 px-6 py-10 text-center text-sm text-slate-500">
+            {leaseSearch.trim()
+              ? `No sections match “${leaseSearch.trim()}”. Try another search or pick a different tab.`
+              : 'Nothing to show for this tab.'}
           </div>
-          {!firstMonthRentPaid && (
-            <p className="mt-2 text-sm text-slate-500">
-              Pay your first month's rent from the{' '}
-              <button type="button" onClick={() => onOpenPayments()} className="font-semibold text-[#2563eb] underline">Payments</button>{' '}
-              tab. Lease signing unlocks once both the deposit and first month rent are paid.
-            </p>
-          )}
-        </div>
-
-        {/* Lease Signing */}
-        <div className="rounded-[24px] border border-slate-200 bg-white p-5">
-          <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">Lease Signing</div>
-          <h3 className="mt-2 text-xl font-black text-slate-900">Review & Sign</h3>
-          <p className="mt-3 text-sm leading-6 text-slate-500">
-            {signingUnlocked
-              ? 'Your security deposit and first month rent are both paid. Signing is unlocked.'
-              : 'Pay the security deposit and first month rent to unlock signing.'}
-          </p>
-          <div className="mt-4 flex flex-wrap gap-3">
-            {signingUnlocked && leaseSigningUrl ? (
-              <button
-                type="button"
-                onClick={() => { window.location.href = leaseSigningUrl }}
-                className="rounded-full bg-[linear-gradient(180deg,#2f76ff_0%,#2450eb_100%)] px-5 py-3 text-sm font-semibold text-white transition hover:brightness-105"
-              >
-                Sign lease
-              </button>
-            ) : signingUnlocked ? (
-              <p className="text-sm text-slate-400">Your manager will send a signing link once the lease is ready.</p>
-            ) : (
-              <button
-                type="button"
-                disabled
-                className="rounded-full border border-slate-200 bg-slate-50 px-5 py-3 text-sm font-semibold text-slate-400 cursor-not-allowed"
-              >
-                Signing locked
-              </button>
-            )}
-          </div>
-        </div>
-
-        <EmbeddedStripeCheckout
-          open={Boolean(depositCheckout)}
-          title={depositCheckout?.title || 'Security deposit'}
-          checkoutRequest={depositCheckout?.request}
-          onClose={() => setDepositCheckout(null)}
-          onComplete={handleDepositPaid}
-        />
+        ) : null}
       </div>
-    </SectionCard>
+    </div>
   )
 }
 
@@ -1809,7 +2279,7 @@ function ResidentDashboardHome({
   onNavigate,
   setPaymentFocus,
   pendingApplicationApproval,
-  inboxUnreadCount,
+  inboxUnopenedCount,
 }) {
   const snapshot = useMemo(() => buildResidentRentSnapshot(payments, resident), [payments, resident])
   const openWoCount = useMemo(
@@ -1822,10 +2292,10 @@ function ResidentDashboardHome({
 
   return (
     <div className="space-y-6">
-      {/* Header */}
       <div>
-        <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">Resident portal</p>
-        <h2 className="text-2xl font-black text-slate-900">Welcome back, {firstName}</h2>
+        <h2 className="text-2xl font-black uppercase tracking-[0.08em] text-slate-900">
+          {`Welcome ${firstName}`}
+        </h2>
       </div>
 
       {/* Pending approval banner */}
@@ -1838,101 +2308,87 @@ function ResidentDashboardHome({
         </div>
       ) : null}
 
-      {/* Metric cards */}
+      {/* Metric cards — same light blue system as manager portal dashboard */}
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        {/* Next rent due */}
         <button
           type="button"
           onClick={() => { setPaymentFocus(''); onNavigate('payments') }}
-          className="flex flex-col gap-1 rounded-[20px] border border-slate-200 bg-white p-5 text-left shadow-sm transition hover:border-slate-300 hover:shadow"
+          className="flex flex-col gap-1 rounded-[20px] border border-blue-100 bg-blue-50 p-5 text-left transition hover:border-blue-200 hover:shadow-sm"
         >
-          <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-slate-400">Payments · Next due</span>
-          <span className={`text-3xl font-black tabular-nums ${snapshot.overdueTotal > 0 ? 'text-red-700' : 'text-slate-800'}`}>
+          <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-blue-600">Payments · Next due</span>
+          <span className="text-3xl font-black tabular-nums text-blue-700">
             {snapshot.nextDue ? formatMoney(snapshot.nextDue.balance) : '—'}
           </span>
         </button>
 
-        {/* Overdue */}
         <button
           type="button"
           onClick={() => { setPaymentFocus('overdue'); onNavigate('payments') }}
-          className={`flex flex-col gap-1 rounded-[20px] border p-5 text-left transition hover:shadow-sm ${
-            snapshot.overdueTotal > 0
-              ? 'border-red-200 bg-red-50 hover:border-red-300'
-              : 'border-slate-200 bg-white shadow-sm hover:border-slate-300'
-          }`}
+          className="flex flex-col gap-1 rounded-[20px] border border-blue-100 bg-blue-50 p-5 text-left transition hover:border-blue-200 hover:shadow-sm"
         >
-          <span className={`text-[10px] font-bold uppercase tracking-[0.14em] ${snapshot.overdueTotal > 0 ? 'text-red-600' : 'text-slate-400'}`}>
-            Payments · Overdue
-          </span>
-          <span className={`text-3xl font-black tabular-nums ${snapshot.overdueTotal > 0 ? 'text-red-700' : 'text-slate-800'}`}>
-            {formatMoney(snapshot.overdueTotal)}
-          </span>
+          <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-blue-600">Payments · Overdue</span>
+          <span className="text-3xl font-black tabular-nums text-blue-700">{formatMoney(snapshot.overdueTotal)}</span>
         </button>
 
-        {/* Open work orders */}
         <button
           type="button"
           onClick={() => onNavigate('workorders')}
-          className={`flex flex-col gap-1 rounded-[20px] border p-5 text-left transition hover:shadow-sm ${
-            openWoCount > 0
-              ? 'border-amber-200 bg-amber-50 hover:border-amber-300'
-              : 'border-slate-200 bg-white shadow-sm hover:border-slate-300'
-          }`}
+          className="flex flex-col gap-1 rounded-[20px] border border-blue-100 bg-blue-50 p-5 text-left transition hover:border-blue-200 hover:shadow-sm"
         >
-          <span className={`text-[10px] font-bold uppercase tracking-[0.14em] ${openWoCount > 0 ? 'text-amber-600' : 'text-slate-400'}`}>
-            Work Orders · Open
-          </span>
-          <span className={`text-3xl font-black tabular-nums ${openWoCount > 0 ? 'text-amber-700' : 'text-slate-800'}`}>
-            {openWoCount}
-          </span>
+          <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-blue-600">Work Orders · Open</span>
+          <span className="text-3xl font-black tabular-nums text-blue-700">{openWoCount}</span>
         </button>
 
-        {/* Lease */}
         <button
           type="button"
           onClick={() => onNavigate('leasing')}
           className={`flex flex-col gap-1 rounded-[20px] border p-5 text-left transition hover:shadow-sm ${
             leaseStatus === 'Signed'
               ? 'border-emerald-200 bg-emerald-50 hover:border-emerald-300'
-              : leaseStatus
-                ? 'border-blue-200 bg-blue-50 hover:border-blue-300'
-                : 'border-slate-200 bg-white shadow-sm hover:border-slate-300'
+              : 'border-blue-100 bg-blue-50 hover:border-blue-200'
           }`}
         >
-          <span className={`text-[10px] font-bold uppercase tracking-[0.14em] ${leaseStatus === 'Signed' ? 'text-emerald-600' : leaseStatus ? 'text-blue-600' : 'text-slate-400'}`}>
+          <span
+            className={`text-[10px] font-bold uppercase tracking-[0.14em] ${
+              leaseStatus === 'Signed' ? 'text-emerald-600' : 'text-blue-600'
+            }`}
+          >
             Lease
           </span>
-          <span className={`text-3xl font-black ${leaseStatus === 'Signed' ? 'text-emerald-700' : leaseStatus ? 'text-blue-700' : 'text-slate-800'}`}>
+          <span
+            className={`text-3xl font-black ${leaseStatus === 'Signed' ? 'text-emerald-700' : 'text-blue-700'}`}
+          >
             {leaseStatus || 'None'}
           </span>
         </button>
 
-        {/* Inbox full-width */}
         <button
           type="button"
           onClick={() => onNavigate('inbox')}
-          className="col-span-full flex items-center justify-between rounded-[20px] border border-black bg-black px-6 py-5 text-left transition hover:bg-neutral-950"
+          className="col-span-full flex items-center justify-between rounded-[20px] border border-blue-100 bg-blue-50 px-6 py-5 text-left transition hover:border-blue-200 hover:shadow-sm"
         >
           <div className="flex items-center gap-3">
-            <span className="text-[10px] font-bold uppercase tracking-[0.18em] text-[#2563eb]">Inbox</span>
-            {(inboxUnreadCount ?? 0) > 0 ? (
-              <span className="flex h-5 min-w-[1.25rem] items-center justify-center rounded-full bg-red-500 px-1.5 text-[10px] font-black text-white tabular-nums">
-                {inboxUnreadCount}
+            <span className="text-[10px] font-bold uppercase tracking-[0.18em] text-blue-600">Inbox</span>
+            {(inboxUnopenedCount ?? 0) > 0 ? (
+              <span
+                className="flex h-5 min-w-[1.25rem] items-center justify-center rounded-full bg-blue-600 px-1.5 text-[10px] font-black text-white tabular-nums"
+                title="Unopened conversations"
+                aria-label={`${inboxUnopenedCount} unopened conversation${inboxUnopenedCount === 1 ? '' : 's'}`}
+              >
+                {inboxUnopenedCount}
               </span>
             ) : null}
           </div>
-          <span className="text-lg font-black text-[#2563eb]">Open messages →</span>
+          <span className="text-lg font-black text-blue-700">Open messages →</span>
         </button>
       </div>
 
-      {/* Your home info */}
       {homeLabel ? (
-        <div className="rounded-[20px] border border-slate-200 bg-white p-5 shadow-sm">
-          <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-slate-400">Your home</p>
+        <div className="rounded-[20px] border border-blue-100 bg-blue-50 p-5 transition hover:border-blue-200">
+          <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-blue-600">Your home</p>
           <p className="mt-1 text-lg font-black text-slate-900">{homeLabel}</p>
           {getLeaseTermLabel(resident) ? (
-            <p className="mt-1 text-sm text-slate-500">{getLeaseTermLabel(resident)}</p>
+            <p className="mt-1 text-sm text-blue-800/80">{getLeaseTermLabel(resident)}</p>
           ) : null}
         </div>
       ) : null}
@@ -1955,7 +2411,7 @@ function Dashboard({ resident, onResidentUpdated, onSignOut }) {
   const [payments, setPayments] = useState([])
   const [approvedLease, setApprovedLease] = useState(null)
   const [loading, setLoading] = useState(true)
-  const [inboxUnreadCount, setInboxUnreadCount] = useState(0)
+  const [inboxUnopenedCount, setInboxUnopenedCount] = useState(0)
 
   const visibleWorkOrders = useMemo(
     () => requests.filter((r) => !isWorkOrderHiddenFromResidentList(r)),
@@ -1991,7 +2447,7 @@ function Dashboard({ resident, onResidentUpdated, onSignOut }) {
     const email = String(resident?.Email || '').trim()
     if (!email || !portalInboxAirtableConfigured()) return
     let cancelled = false
-    async function fetchUnread() {
+    async function fetchUnopenedCount() {
       try {
         const [msgs, stateMap] = await Promise.all([
           getAllPortalInternalThreadMessages(),
@@ -2006,17 +2462,17 @@ function Dashboard({ resident, onResidentUpdated, onSignOut }) {
           const prev = latestByThread.get(tk)
           if (!prev || ts > prev) latestByThread.set(tk, ts)
         }
-        let unread = 0
+        let unopened = 0
         for (const [tk, latest] of latestByThread) {
           const state = stateMap.get(tk)
-          if (!state?.lastReadAt || latest > state.lastReadAt) unread++
+          if (!state?.lastReadAt || latest > state.lastReadAt) unopened++
         }
-        if (!cancelled) setInboxUnreadCount(unread)
+        if (!cancelled) setInboxUnopenedCount(unopened)
       } catch {
         // non-fatal
       }
     }
-    fetchUnread()
+    fetchUnopenedCount()
     return () => { cancelled = true }
   }, [resident])
 
@@ -2058,7 +2514,7 @@ function Dashboard({ resident, onResidentUpdated, onSignOut }) {
             onNavigate={setTab}
             setPaymentFocus={setPaymentFocus}
             pendingApplicationApproval={!applicationUnlocked}
-            inboxUnreadCount={inboxUnreadCount}
+            inboxUnopenedCount={inboxUnopenedCount}
           />
         ) : null}
         {!loading && tab === 'workorders' ? (

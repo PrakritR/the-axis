@@ -586,7 +586,6 @@ export default function Contact() {
             <div>
               <div className="mb-6 border-b border-slate-100 pb-5">
                 <h2 className="text-3xl font-black tracking-tight text-slate-900">Connect with Axis Team</h2>
-                <p className="mt-2 text-sm text-slate-500">Send us a message and we&apos;ll get back within two business days.</p>
               </div>
               <SoftwareMessageForm />
             </div>
