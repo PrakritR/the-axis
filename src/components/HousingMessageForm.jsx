@@ -418,7 +418,7 @@ export function HousingMessageForm({ variant = 'marketing', prefill = null, form
           ) : (
             <>
               For rent, payments, maintenance, or portal login issues, use the{' '}
-              <Link to="/resident" className="font-semibold text-axis underline decoration-axis/30 underline-offset-2 hover:decoration-axis">
+              <Link to="/portal" className="font-semibold text-axis underline decoration-axis/30 underline-offset-2 hover:decoration-axis">
                 resident portal
               </Link>
               . These topics are for leasing questions, the area around our homes, and availability.

@@ -287,78 +287,6 @@ function validateState(value) {
   return ''
 }
 
-// Run all signer-form validations, returns { fieldKey: errorMessage } object
-function validateSignerForm(signer) {
-  const errors = {}
-  const add = (key, msg) => { if (msg && !errors[key]) errors[key] = msg }
-
-  add('fullName', validateFullName(signer.fullName))
-  add('dateOfBirth', validateDOB(signer.dateOfBirth))
-  if (!signer.ssn?.trim()) add('ssn', 'Social Security number is required')
-  else add('ssn', validateSSN(signer.ssn))
-  if (signer.license) add('license', validateDriversLicense(signer.license))
-  if (!signer.phone?.trim()) add('phone', 'Phone number is required')
-  else add('phone', validatePhone(signer.phone))
-  if (!signer.hasCosigner) add('hasCosigner', 'Please select Yes or No')
-  if (!signer.reference1Name?.trim()) add('reference1Name', 'At least one reference name is required')
-  if (!signer.reference1Phone?.trim()) {
-    add('reference1Phone', 'At least one reference phone number is required')
-  } else {
-    add('reference1Phone', validatePhone(signer.reference1Phone))
-  }
-  if (signer.currentLandlordPhone) add('currentLandlordPhone', validatePhone(signer.currentLandlordPhone))
-  if (signer.previousLandlordPhone) add('previousLandlordPhone', validatePhone(signer.previousLandlordPhone))
-  if (signer.supervisorPhone) add('supervisorPhone', validatePhone(signer.supervisorPhone))
-  if (signer.reference2Phone) add('reference2Phone', validatePhone(signer.reference2Phone))
-  if (!signer.email?.trim()) add('email', 'Email is required')
-  else add('email', validateEmail(signer.email))
-  if (signer.currentZip) add('currentZip', validateZip(signer.currentZip))
-  if (signer.previousZip) add('previousZip', validateZip(signer.previousZip))
-  if (signer.currentState) add('currentState', validateState(signer.currentState))
-  if (signer.previousState) add('previousState', validateState(signer.previousState))
-  if (signer.monthlyIncome) add('monthlyIncome', validateIncome(signer.monthlyIncome))
-  if (signer.annualIncome) add('annualIncome', validateIncome(signer.annualIncome))
-
-  if (signer.leaseStartDate && signer.leaseEndDate) {
-    if (new Date(signer.leaseEndDate) <= new Date(signer.leaseStartDate)) {
-      add('leaseEndDate', 'Lease End Date must be after Lease Start Date')
-    }
-  }
-  if (signer.leaseStartDate) {
-    const today = new Date(); today.setHours(0, 0, 0, 0)
-    if (new Date(signer.leaseStartDate) < today) add('leaseStartDate', 'Lease Start Date cannot be in the past')
-  }
-  if (signer.propertyName && signer.roomNumber && signer.leaseStartDate) {
-    const prop = PROPERTY_OPTIONS.find((p) => p.name === signer.propertyName)
-    const roomData = prop?.rooms.find((r) => r.name === signer.roomNumber)
-    if (roomData && !isRoomAvailableForRange(roomData.available, signer.leaseStartDate, signer.leaseEndDate)) {
-      const label = getRoomAvailabilityLabel(roomData.available)
-      add(signer.leaseEndDate ? 'leaseEndDate' : 'leaseStartDate', `Room ${signer.roomNumber} is not available for these dates. ${label}`)
-    }
-  }
-
-  return errors
-}
-
-function validateCosignerForm(cosigner) {
-  const errors = {}
-  const add = (key, msg) => { if (msg && !errors[key]) errors[key] = msg }
-
-  add('fullName', validateFullName(cosigner.fullName))
-  add('dateOfBirth', validateDOB(cosigner.dateOfBirth))
-  if (cosigner.ssn) add('ssn', validateSSN(cosigner.ssn))
-  if (cosigner.license) add('license', validateDriversLicense(cosigner.license))
-  add('phone', validatePhone(cosigner.phone))
-  add('email', validateEmail(cosigner.email))
-  if (cosigner.zip) add('zip', validateZip(cosigner.zip))
-  if (cosigner.state) add('state', validateState(cosigner.state))
-  if (cosigner.supervisorPhone) add('supervisorPhone', validatePhone(cosigner.supervisorPhone))
-  if (cosigner.monthlyIncome) add('monthlyIncome', validateIncome(cosigner.monthlyIncome))
-  if (cosigner.annualIncome) add('annualIncome', validateIncome(cosigner.annualIncome))
-
-  return errors
-}
-
 // ---------------------------------------------------------------------------
 // Auto-formatting helpers
 // ---------------------------------------------------------------------------
@@ -1145,8 +1073,6 @@ export default function Apply() {
   const [submitted, setSubmitted] = useState(Boolean(storedSubmission))
   const [submittedRecord, setSubmittedRecord] = useState(storedSubmission?.submittedRecord || null)
   const [submissionSummary, setSubmissionSummary] = useState(storedSubmission)
-  const [paymentLoading, setPaymentLoading] = useState(false)
-  const [paymentError, setPaymentError] = useState('')
   const [error, setError] = useState('')
   const [fieldErrors, setFieldErrors] = useState({})
   const [roomConflictWarning, setRoomConflictWarning] = useState(false)
@@ -1609,53 +1535,9 @@ export default function Apply() {
     await handleSubmit({ preventDefault: () => {} }, { promoOverride: true })
   }
 
-  async function handleApplicationFeeCheckout() {
-    const effectiveType = submissionSummary?.applicationType || applicationType
-    const applicantName = effectiveType === 'signer' ? signer.fullName : cosigner.fullName
-    const applicantEmail = submissionSummary?.email || (effectiveType === 'signer' ? signer.email : cosigner.email)
-    const propertyName = submissionSummary?.propertyName || (effectiveType === 'signer' ? signer.propertyName : '')
-    const unitNumber = submissionSummary?.roomNumber || (effectiveType === 'signer' ? signer.roomNumber : '')
-    const recordId = submissionSummary?.submittedRecord?.id || submittedRecord?.id || ''
-    const amount = getApplicationFeeDollars(propertyName, applicationFeeOverrides)
-    if (amount <= 0) {
-      setPaymentError('No application fee is configured for this property.')
-      return
-    }
-
-    setPaymentLoading(true)
-    setPaymentError('')
-    try {
-      const response = await fetch('/api/stripe', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          residentId: recordId,
-          residentName: applicantName,
-          residentEmail: applicantEmail,
-          propertyName,
-          unitNumber,
-          amount,
-          description: `Application fee — ${propertyName || 'Axis housing'}`,
-          category: 'application_fee',
-          paymentRecordId: recordId,
-          successPath: '/apply?payment=fee_success',
-          cancelPath: '/apply?payment=fee_cancelled',
-        }),
-      })
-      const data = await readJsonResponse(response)
-      if (!response.ok) throw new Error(data.error || 'Unable to start application fee payment.')
-      window.location.href = data.url
-    } catch (err) {
-      setPaymentError(err.message || 'Unable to start application fee payment.')
-    } finally {
-      setPaymentLoading(false)
-    }
-  }
-
   async function handleLeaseSign() {
     const sig = leaseSignatureInput.trim()
     if (!sig) { setLeaseSigningError('Please type your full legal name to sign.'); return }
-    const firstName = submissionSummary?.firstName || signer.fullName.split(' ')[0]
     if (sig.split(/\s+/).length < 2) { setLeaseSigningError('Please enter your full legal name (first and last).'); return }
     const recordId = submissionSummary?.submittedRecord?.id || submittedRecord?.id
     if (!recordId) { setLeaseSigningError('Application record not found. Please contact leasing.'); return }
@@ -1850,7 +1732,7 @@ export default function Apply() {
                     </p>
                     <div className="flex flex-col gap-3 sm:flex-row">
                       <a
-                        href={`/resident?appId=${encodeURIComponent(fullAppId)}`}
+                        href={`/portal?appId=${encodeURIComponent(fullAppId)}`}
                         className="inline-block rounded-full bg-axis px-6 py-3 text-center text-sm font-semibold text-white transition hover:opacity-90"
                       >
                         Create Resident Account
@@ -1969,7 +1851,7 @@ export default function Apply() {
 
           <div className="mt-10 flex flex-col gap-3">
             {allDone && (
-              <a href="/resident" className="inline-block w-full rounded-full bg-axis px-6 py-3 text-center text-sm font-semibold text-white hover:opacity-90 transition">
+              <a href="/portal" className="inline-block w-full rounded-full bg-axis px-6 py-3 text-center text-sm font-semibold text-white hover:opacity-90 transition">
                 Go to Resident Portal
               </a>
             )}
