@@ -1075,14 +1075,19 @@ export default function AdminPortal() {
                       onUnapprove: async () => {
                         const id = selectedApplication.id
                         if (!id) return
+                        const wasRejected = selectedApplication.approvalState === 'rejected'
                         setApplicationReviewBusy(true)
                         try {
                           await adminUnapproveApplication(id)
                           await refreshPortalData()
-                          toast.success('Approval removed. Application is now pending review.')
+                          toast.success(
+                            wasRejected
+                              ? 'Rejection removed. Application is now pending review.'
+                              : 'Approval removed. Application is now pending review.',
+                          )
                           setSelectedApplicationId(null)
                         } catch (e) {
-                          toast.error(e?.message || 'Could not remove approval')
+                          toast.error(e?.message || (wasRejected ? 'Could not remove rejection' : 'Could not remove approval'))
                         } finally {
                           setApplicationReviewBusy(false)
                         }

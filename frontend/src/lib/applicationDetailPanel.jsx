@@ -221,7 +221,7 @@ export function ApplicationDetailPanel({ application, partnerLabel, onClose, adm
             Reject
           </button>
         </div>
-      ) : adminReview && resolvedApprovalState === 'approved' && adminReview.onUnapprove ? (
+      ) : adminReview && (resolvedApprovalState === 'approved' || resolvedApprovalState === 'rejected') && adminReview.onUnapprove ? (
         <div className="flex flex-wrap gap-2 border-t border-slate-100 pt-4">
           <button
             type="button"
@@ -229,7 +229,7 @@ export function ApplicationDetailPanel({ application, partnerLabel, onClose, adm
             className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-2 text-sm font-semibold text-amber-800 disabled:opacity-50"
             onClick={adminReview.onUnapprove}
           >
-            Remove approval
+            {resolvedApprovalState === 'rejected' ? 'Remove rejection' : 'Remove approval'}
           </button>
         </div>
       ) : null}
