@@ -21,6 +21,13 @@ import {
   mergeSubjectIntoMessageIfNeeded,
   threadSearchHaystack,
 } from '../../lib/portalInboxThreadUtils.js'
+import {
+  PORTAL_TAB_HEADER_ROW_CLS,
+  PORTAL_TAB_H2_CLS,
+  PORTAL_TAB_TOOLBAR_CLS,
+  PORTAL_TAB_REFRESH_CLS,
+  PORTAL_TAB_PRIMARY_CLS,
+} from '../../lib/portalTabHeader.js'
 import ConversationList from '../manager-inbox/ConversationList'
 import ConversationThread from '../manager-inbox/ConversationThread'
 import MessageComposer from '../manager-inbox/MessageComposer'
@@ -529,9 +536,9 @@ export default function ResidentPortalInbox({ resident }) {
 
   return (
     <div>
-      <div className="mb-3 flex items-center justify-between gap-3">
-        <h2 className="text-lg font-bold tracking-tight text-slate-900">Inbox</h2>
-        <div className="flex gap-2">
+      <div className={PORTAL_TAB_HEADER_ROW_CLS}>
+        <h2 className={PORTAL_TAB_H2_CLS}>Inbox</h2>
+        <div className={PORTAL_TAB_TOOLBAR_CLS}>
           <button
             type="button"
             onClick={() => {
@@ -539,15 +546,11 @@ export default function ResidentPortalInbox({ resident }) {
               setSelectedThreadId(null)
               setThread([])
             }}
-            className="rounded-full bg-[#2563eb] px-3.5 py-1.5 text-xs font-semibold text-white shadow-sm hover:bg-[#1d4ed8]"
+            className={PORTAL_TAB_PRIMARY_CLS}
           >
             New message
           </button>
-          <button
-            type="button"
-            onClick={() => loadAll()}
-            className="rounded-full border border-slate-200 bg-white px-3.5 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-50"
-          >
+          <button type="button" onClick={() => loadAll()} className={PORTAL_TAB_REFRESH_CLS}>
             Refresh
           </button>
         </div>

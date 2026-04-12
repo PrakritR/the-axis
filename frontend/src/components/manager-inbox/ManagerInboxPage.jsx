@@ -34,6 +34,16 @@ import {
   residentLeasingThreadVisibleToManager,
   extractResidentScopeTextFromMessageBody,
 } from '../../lib/portalInboxResidentScope.js'
+import {
+  PORTAL_TAB_HEADER_ROW_CLS,
+  PORTAL_TAB_H2_CLS,
+  PORTAL_TAB_TOOLBAR_CLS,
+  PORTAL_TAB_SELECT_WRAP_CLS,
+  PORTAL_TAB_SELECT_CLS,
+  PORTAL_TAB_SELECT_CHEVRON_CLS,
+  PORTAL_TAB_REFRESH_CLS,
+  PORTAL_TAB_PRIMARY_CLS,
+} from '../../lib/portalTabHeader.js'
 import ConversationList from './ConversationList'
 import ConversationThread from './ConversationThread'
 import MessageComposer from './MessageComposer'
@@ -1121,9 +1131,9 @@ export default function ManagerInboxPage({
 
   return (
     <div>
-      <div className="mb-3 flex items-center justify-between gap-3">
-        <h2 className="text-lg font-bold tracking-tight text-slate-900">Inbox</h2>
-        <div className="flex gap-2">
+      <div className={PORTAL_TAB_HEADER_ROW_CLS}>
+        <h2 className={PORTAL_TAB_H2_CLS}>Inbox</h2>
+        <div className={PORTAL_TAB_TOOLBAR_CLS}>
           <button
             type="button"
             onClick={() => {
@@ -1131,25 +1141,26 @@ export default function ManagerInboxPage({
               setSelectedThreadId(null)
               setThread([])
             }}
-            className="rounded-full bg-[#2563eb] px-3.5 py-1.5 text-xs font-semibold text-white shadow-sm hover:bg-[#1d4ed8]"
+            className={PORTAL_TAB_PRIMARY_CLS}
           >
             New message
           </button>
-          <select
-            value={channelFilter}
-            onChange={(e) => setChannelFilter(e.target.value)}
-            className="rounded-full border border-slate-200 bg-white px-3.5 py-1.5 text-xs font-semibold text-slate-600 outline-none transition focus:border-[#2563eb] focus:ring-2 focus:ring-[#2563eb]/20"
-            aria-label="Channel filter"
-          >
-            {channelSelectOptions.map(([value, label]) => (
-              <option key={value} value={value}>{label}</option>
-            ))}
-          </select>
-          <button
-            type="button"
-            onClick={() => loadAll()}
-            className="rounded-full border border-slate-200 bg-white px-3.5 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-50"
-          >
+          <div className={PORTAL_TAB_SELECT_WRAP_CLS}>
+            <select
+              value={channelFilter}
+              onChange={(e) => setChannelFilter(e.target.value)}
+              className={PORTAL_TAB_SELECT_CLS}
+              aria-label="Channel filter"
+            >
+              {channelSelectOptions.map(([value, label]) => (
+                <option key={value} value={value}>{label}</option>
+              ))}
+            </select>
+            <span className={PORTAL_TAB_SELECT_CHEVRON_CLS} aria-hidden>
+              ▾
+            </span>
+          </div>
+          <button type="button" onClick={() => loadAll()} className={PORTAL_TAB_REFRESH_CLS}>
             Refresh
           </button>
         </div>

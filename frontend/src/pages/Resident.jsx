@@ -903,11 +903,6 @@ function WorkOrdersPanel({ resident, requests: requestsProp, onRequestCreated, o
     <div className="mb-10">
       <div className="mb-5 flex flex-wrap items-center gap-3">
         <h2 className="mr-auto text-2xl font-black text-slate-900">Work Orders</h2>
-        {onRefresh ? (
-          <button type="button" onClick={() => handleRefresh()} disabled={refreshing} className={RP_HEADER_BTN_SECONDARY}>
-            {refreshing ? 'Refreshing…' : 'Refresh'}
-          </button>
-        ) : null}
         <button
           type="button"
           onClick={() => {
@@ -919,6 +914,11 @@ function WorkOrdersPanel({ resident, requests: requestsProp, onRequestCreated, o
         >
           {showForm ? 'Close form' : 'Create new work order'}
         </button>
+        {onRefresh ? (
+          <button type="button" onClick={() => handleRefresh()} disabled={refreshing} className={RP_HEADER_BTN_SECONDARY}>
+            {refreshing ? 'Refreshing…' : 'Refresh'}
+          </button>
+        ) : null}
       </div>
 
       <div className="mb-4 inline-flex flex-wrap gap-1 rounded-2xl border border-slate-200 bg-slate-50 p-1">

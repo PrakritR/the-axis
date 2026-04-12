@@ -7,6 +7,7 @@ import {
   adminRejectApplication,
   adminUnapproveApplication,
   adminRejectProperty,
+  adminUnrejectProperty,
   adminRequestPropertyEdits,
   adminSetManagerActive,
   adminDeleteProperty,
@@ -942,9 +943,33 @@ export default function AdminPortal() {
               />
               {approval && propertiesSection === 'rejected' ? (
                 <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm space-y-4">
-                  <div className="flex justify-between gap-2">
+                  <div className="flex items-start justify-between gap-2">
                     <h2 className="text-lg font-black">{approval.name}</h2>
-                    <button type="button" className="text-sm text-slate-500" onClick={() => setSelectedApprovalId(null)}>Close</button>
+                    <div className="flex flex-wrap items-center justify-end gap-2">
+                      <button
+                        type="button"
+                        disabled={approvalBusy}
+                        className="rounded-xl border border-amber-300 bg-amber-50 px-3 py-1.5 text-xs font-semibold text-amber-900 disabled:opacity-50"
+                        onClick={async () => {
+                          if (!approval?.id) return
+                          setApprovalBusy(true)
+                          try {
+                            await adminUnrejectProperty(approval.id)
+                            await refreshPortalData()
+                            toast.success('Property moved back to pending review')
+                            setPropertiesSection('pending')
+                            setSelectedApprovalId(null)
+                          } catch (e) {
+                            toast.error(e?.message || 'Could not move property back to pending')
+                          } finally {
+                            setApprovalBusy(false)
+                          }
+                        }}
+                      >
+                        Unreject (move to pending)
+                      </button>
+                      <button type="button" className="text-sm text-slate-500" onClick={() => setSelectedApprovalId(null)}>Close</button>
+                    </div>
                   </div>
                   <p className="text-sm text-slate-600">{approval.description}</p>
                   <PropertyDetailPanel property={approval} ownerLabel={ownerLabel(approval.ownerId)} />

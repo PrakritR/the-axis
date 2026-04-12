@@ -342,6 +342,14 @@ export async function adminRejectProperty(recordId) {
   })
 }
 
+/** Move a rejected property back to pending review. */
+export async function adminUnrejectProperty(recordId) {
+  return adminPatchProperty(recordId, {
+    Approved: false,
+    'Approval Status': 'Pending',
+  })
+}
+
 export async function adminRequestPropertyEdits(recordId) {
   return adminPatchProperty(recordId, {
     'Approval Status': 'Changes Requested',
