@@ -44,12 +44,19 @@ import {
   emptyRoomRow,
   emptyBathroomRow,
   emptyKitchenRow,
+  emptyLaundryRow,
   emptySharedSpaceRow,
   clampInt,
   MAX_ROOM_SLOTS,
   MAX_BATHROOM_SLOTS,
   MAX_KITCHEN_SLOTS,
   MAX_SHARED_SPACE_SLOTS,
+  MAX_LAUNDRY_SLOTS,
+  AMENITY_OPTIONS,
+  PET_OPTIONS,
+  PROPERTY_TYPE_OPTIONS,
+  FURNISHED_OPTIONS,
+  SHARED_SPACE_TYPE_OPTIONS,
 } from '../lib/managerPropertyFormAirtableMap.js'
 import {
   consolidateManagerDashboardWarnings,
@@ -2234,8 +2241,7 @@ function HouseManagementPanel({ manager, onPropertiesChange }) {
     name: '',
     address: '',
     propertyType: '',
-    description: '',
-    amenities: '',
+    amenities: [],
     pets: '',
     bathroomAccess: '',
   })
@@ -2243,20 +2249,16 @@ function HouseManagementPanel({ manager, onPropertiesChange }) {
   const [addRoomCount, setAddRoomCount] = useState(1)
   const [addBathroomCount, setAddBathroomCount] = useState(1)
   const [addKitchenCount, setAddKitchenCount] = useState(1)
-  const [addRooms, setAddRooms] = useState(() => [emptyRoomRow(1)])
+  const [addRooms, setAddRooms] = useState(() => [emptyRoomRow()])
   const [addBathrooms, setAddBathrooms] = useState(() => [emptyBathroomRow()])
   const [addKitchens, setAddKitchens] = useState(() => [emptyKitchenRow()])
-  const [addFees, setAddFees] = useState({
-    utilitiesFee: '',
-    securityDeposit: '',
-    applicationFee: '',
-  })
+  const [addApplicationFee, setAddApplicationFee] = useState('')
   const [addLaundry, setAddLaundry] = useState({
     enabled: false,
-    type: '',
-    description: '',
+    rows: [],
     roomsSharing: '',
   })
+  const [addStep, setAddStep] = useState(0)
   const [addParking, setAddParking] = useState({
     enabled: false,
     type: '',
@@ -2303,7 +2305,7 @@ function HouseManagementPanel({ manager, onPropertiesChange }) {
     const n = clampInt(addRoomCount, 1, MAX_ROOM_SLOTS)
     setAddRooms((prev) => {
       const next = [...prev]
-      while (next.length < n) next.push(emptyRoomRow(next.length + 1))
+      while (next.length < n) next.push(emptyRoomRow())
       return next.slice(0, n)
     })
   }, [addRoomCount])
@@ -2466,14 +2468,15 @@ function HouseManagementPanel({ manager, onPropertiesChange }) {
     setAddBathroomCount(1)
     setAddKitchenCount(1)
     setAddSharedSpaceCount(0)
-    setAddRooms([emptyRoomRow(1)])
+    setAddRooms([emptyRoomRow()])
     setAddBathrooms([emptyBathroomRow()])
     setAddKitchens([emptyKitchenRow()])
     setAddSharedSpaces([])
     setAddOtherInfo('')
-    setAddFees({ utilitiesFee: '', securityDeposit: '', applicationFee: '' })
-    setAddLaundry({ enabled: false, type: '', description: '', roomsSharing: '' })
+    setAddApplicationFee('')
+    setAddLaundry({ enabled: false, rows: [], roomsSharing: '' })
     setAddParking({ enabled: false, type: '', fee: '' })
+    setAddStep(0)
     setAddImages((prev) => {
       prev.forEach((img) => URL.revokeObjectURL(img.preview))
       return []
@@ -2493,37 +2496,24 @@ function HouseManagementPanel({ manager, onPropertiesChange }) {
     const rc = clampInt(addRoomCount, 1, MAX_ROOM_SLOTS)
     const bc = clampInt(addBathroomCount, 0, MAX_BATHROOM_SLOTS)
     const kc = clampInt(addKitchenCount, 0, MAX_KITCHEN_SLOTS)
-    if (!addRooms.slice(0, rc).some((r) => String(r.name || '').trim())) {
-      toast.error('Give each room a name or number before submitting')
-      return
-    }
+    const sc = clampInt(addSharedSpaceCount, 0, MAX_SHARED_SPACE_SLOTS)
     setAddSaving(true)
     try {
-      const photoCaptionLines = addImages
-        .map((img, i) => {
-          const c = String(img.caption || '').trim()
-          return c ? `Image ${i + 1}: ${c}` : ''
-        })
-        .filter(Boolean)
-
-      const sc = clampInt(addSharedSpaceCount, 0, MAX_SHARED_SPACE_SLOTS)
       const fields = serializeManagerAddPropertyToAirtableFields({
         basics: addBasics,
         roomCount: rc,
         bathroomCount: bc,
         kitchenCount: kc,
         sharedSpaceCount: sc,
-        fees: addFees,
         laundry: addLaundry,
         parking: addParking,
         rooms: addRooms,
         bathrooms: addBathrooms,
         kitchens: addKitchens,
         sharedSpaces: addSharedSpaces,
+        applicationFee: addApplicationFee,
         otherInfo: addOtherInfo,
-        managerEmail: manager?.email,
         managerRecordId: manager?.id,
-        photoCaptionLines,
       })
 
       const created = await createPropertyAdmin(fields)
@@ -2537,30 +2527,6 @@ function HouseManagementPanel({ manager, onPropertiesChange }) {
           }
         }
       }
-
-      const roomNotesParts = (r) => {
-        const parts = []
-        if (r.furnished) parts.push('Furnished: yes')
-        if (String(r.utilitiesDescription || '').trim()) parts.push(`Utilities: ${String(r.utilitiesDescription).trim()}`)
-        if (String(r.utilitiesCost || '').trim()) parts.push(`Utilities cost: ${String(r.utilitiesCost).trim()}`)
-        if (String(r.notes || '').trim()) parts.push(String(r.notes).trim())
-        return parts.length ? parts.join(' · ') : undefined
-      }
-
-      await Promise.allSettled(
-        addRooms
-          .slice(0, rc)
-          .filter((r) => String(r.name || '').trim())
-          .map((r) =>
-            createRoomRecord({
-              propertyId: created.id,
-              name: String(r.name).trim(),
-              rent: r.rent !== '' && r.rent != null ? r.rent : undefined,
-              status: String(r.availability || '').trim() || undefined,
-              notes: roomNotesParts(r),
-            }),
-          ),
-      )
 
       setProperties((current) => {
         const next = [...current, created]
@@ -2576,6 +2542,51 @@ function HouseManagementPanel({ manager, onPropertiesChange }) {
     } finally {
       setAddSaving(false)
     }
+  }
+
+  // ── Wizard helpers (defined before return so they close over state) ─────────
+  const WIZARD_STEPS = ['Basics', 'Counts', 'Rooms', 'Bathrooms', 'Kitchens', 'Shared Spaces', 'Laundry & Parking', 'Review']
+  const wizardRc = clampInt(addRoomCount, 1, MAX_ROOM_SLOTS)
+  const wizardBc = clampInt(addBathroomCount, 0, MAX_BATHROOM_SLOTS)
+  const wizardKc = clampInt(addKitchenCount, 0, MAX_KITCHEN_SLOTS)
+  const wizardSc = clampInt(addSharedSpaceCount, 0, MAX_SHARED_SPACE_SLOTS)
+  const wizardRoomOptions = Array.from({ length: wizardRc }, (_, i) => `Room ${i + 1}`)
+
+  function wizUpdateRoom(idx, patch) {
+    setAddRooms((prev) => { const next = [...prev]; next[idx] = { ...next[idx], ...patch }; return next })
+  }
+  function wizUpdateBathroom(idx, patch) {
+    setAddBathrooms((prev) => { const next = [...prev]; next[idx] = { ...next[idx], ...patch }; return next })
+  }
+  function wizUpdateKitchen(idx, patch) {
+    setAddKitchens((prev) => { const next = [...prev]; next[idx] = { ...next[idx], ...patch }; return next })
+  }
+  function wizUpdateSharedSpace(idx, patch) {
+    setAddSharedSpaces((prev) => { const next = [...prev]; next[idx] = { ...next[idx], ...patch }; return next })
+  }
+  function wizUpdateLaundryRow(idx, patch) {
+    setAddLaundry((l) => {
+      const rows = [...(l.rows || [])]
+      rows[idx] = { ...rows[idx], ...patch }
+      return { ...l, rows }
+    })
+  }
+  function wizAddLaundryRow() {
+    setAddLaundry((l) => ({ ...l, rows: [...(l.rows || []), emptyLaundryRow()] }))
+  }
+  function wizRemoveLaundryRow(idx) {
+    setAddLaundry((l) => ({ ...l, rows: (l.rows || []).filter((_, i) => i !== idx) }))
+  }
+  function wizCanAdvance() {
+    if (addStep === 0) return !!(addBasics.name.trim() && addBasics.address.trim())
+    return true
+  }
+  function wizHandleNext(e) {
+    e.preventDefault()
+    if (addStep < WIZARD_STEPS.length - 1) setAddStep((s) => s + 1)
+  }
+  function wizHandleBack() {
+    if (addStep > 0) setAddStep((s) => s - 1)
   }
 
   return (
@@ -2837,689 +2848,449 @@ function HouseManagementPanel({ manager, onPropertiesChange }) {
               }
             }}
           >
-            <div className="pr-8">
-              <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-[#2563eb]">New property</div>
-              <h3 className="mt-2 text-2xl font-black text-slate-900">Add property</h3>
-              <p className="mt-2 text-sm text-slate-500">Submit details for review. It will appear in your list as pending until approved</p>
-            </div>
-            <form onSubmit={handleAddPropertySubmit} className="mt-6 max-h-[min(78vh,720px)] space-y-8 overflow-y-auto pr-1">
+            <form onSubmit={addStep === WIZARD_STEPS.length - 1 ? handleAddPropertySubmit : wizHandleNext}>
+                  {/* Header */}
+                  <div className="pr-8">
+                    <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-[#2563eb]">New property · Step {addStep + 1} of {WIZARD_STEPS.length}</div>
+                    <h3 className="mt-1 text-2xl font-black text-slate-900">{WIZARD_STEPS[addStep]}</h3>
+                  </div>
 
-              {/* 1. Property basics */}
-              <div className="space-y-4">
-                <div className="text-[11px] font-bold uppercase tracking-[0.14em] text-slate-400">Property basics</div>
-                <div>
-                  <label className="mb-1.5 block text-xs font-semibold text-slate-700">Property name *</label>
-                  <input
-                    className={addInputCls}
-                    value={addBasics.name}
-                    onChange={(e) => setAddBasics((b) => ({ ...b, name: e.target.value }))}
-                    placeholder="e.g. Maple Co-op"
-                    required
-                  />
-                </div>
-                <div>
-                  <label className="mb-1.5 block text-xs font-semibold text-slate-700">Address *</label>
-                  <input
-                    className={addInputCls}
-                    value={addBasics.address}
-                    onChange={(e) => setAddBasics((b) => ({ ...b, address: e.target.value }))}
-                    placeholder="Street, city, state"
-                    required
-                  />
-                </div>
-                <div>
-                  <label className="mb-1.5 block text-xs font-semibold text-slate-700">Property type</label>
-                  <select
-                    className={addInputCls}
-                    value={addBasics.propertyType}
-                    onChange={(e) => setAddBasics((b) => ({ ...b, propertyType: e.target.value }))}
-                  >
-                    <option value="">Select…</option>
-                    {['House', 'Apartment', 'Townhome', 'Studio', 'Other'].map((t) => (
-                      <option key={t} value={t}>{t}</option>
-                    ))}
-                  </select>
-                </div>
-                <div>
-                  <label className="mb-1.5 block text-xs font-semibold text-slate-700">Description</label>
-                  <textarea
-                    className={`${addInputCls} min-h-[88px] resize-y`}
-                    value={addBasics.description}
-                    onChange={(e) => setAddBasics((b) => ({ ...b, description: e.target.value }))}
-                    placeholder="Highlights, house rules, neighborhood…"
-                    rows={3}
-                  />
-                </div>
-              </div>
-
-              {/* 2. Counts */}
-              <div className="space-y-4">
-                <div className="text-[11px] font-bold uppercase tracking-[0.14em] text-slate-400">Counts &amp; setup</div>
-                <p className="text-xs text-slate-500">
-                  These numbers control how many detail blocks appear below. Max {MAX_ROOM_SLOTS} rooms, {MAX_BATHROOM_SLOTS} bathrooms, {MAX_KITCHEN_SLOTS} kitchens, {MAX_SHARED_SPACE_SLOTS} shared spaces.
-                </p>
-                <div className="grid gap-4 sm:grid-cols-2">
-                  <div>
-                    <label className="mb-1.5 block text-xs font-semibold text-slate-700">Room count *</label>
-                    <input
-                      className={addInputCls}
-                      type="number"
-                      min={1}
-                      max={MAX_ROOM_SLOTS}
-                      value={addRoomCount}
-                      onChange={(e) => setAddRoomCount(e.target.value)}
-                      required
-                    />
-                  </div>
-                  <div>
-                    <label className="mb-1.5 block text-xs font-semibold text-slate-700">Bathroom count</label>
-                    <input
-                      className={addInputCls}
-                      type="number"
-                      min={0}
-                      max={MAX_BATHROOM_SLOTS}
-                      value={addBathroomCount}
-                      onChange={(e) => setAddBathroomCount(e.target.value)}
-                    />
-                  </div>
-                  <div>
-                    <label className="mb-1.5 block text-xs font-semibold text-slate-700">Kitchen count</label>
-                    <input
-                      className={addInputCls}
-                      type="number"
-                      min={0}
-                      max={MAX_KITCHEN_SLOTS}
-                      value={addKitchenCount}
-                      onChange={(e) => setAddKitchenCount(e.target.value)}
-                    />
-                  </div>
-                  <div>
-                    <label className="mb-1.5 block text-xs font-semibold text-slate-700">Shared spaces (common areas)</label>
-                    <input
-                      className={addInputCls}
-                      type="number"
-                      min={0}
-                      max={MAX_SHARED_SPACE_SLOTS}
-                      value={addSharedSpaceCount}
-                      onChange={(e) => setAddSharedSpaceCount(e.target.value)}
-                    />
-                  </div>
-                </div>
-              </div>
-
-              {/* 3. Fees */}
-              <div className="space-y-3">
-                <div className="text-[11px] font-bold uppercase tracking-[0.14em] text-slate-400">Fees</div>
-                <p className="text-xs text-slate-500">
-                  Utilities and security deposit default to <strong>$0</strong> if left blank. Application fee is optional; leave blank to use the default ($50) once the listing is live.
-                </p>
-                <div className="grid gap-4 sm:grid-cols-3">
-                  <div>
-                    <label className="mb-1.5 block text-xs font-semibold text-slate-700">Utilities ($/mo)</label>
-                    <input
-                      className={addInputCls}
-                      type="number"
-                      min="0"
-                      step="1"
-                      value={addFees.utilitiesFee}
-                      onChange={(e) => setAddFees((f) => ({ ...f, utilitiesFee: e.target.value }))}
-                    />
-                  </div>
-                  <div>
-                    <label className="mb-1.5 block text-xs font-semibold text-slate-700">Security deposit ($)</label>
-                    <input
-                      className={addInputCls}
-                      type="number"
-                      min="0"
-                      step="1"
-                      value={addFees.securityDeposit}
-                      onChange={(e) => setAddFees((f) => ({ ...f, securityDeposit: e.target.value }))}
-                    />
-                  </div>
-                  <div>
-                    <label className="mb-1.5 block text-xs font-semibold text-slate-700">Application fee ($)</label>
-                    <input
-                      className={addInputCls}
-                      type="number"
-                      min="0"
-                      step="1"
-                      value={addFees.applicationFee}
-                      onChange={(e) => setAddFees((f) => ({ ...f, applicationFee: e.target.value }))}
-                    />
-                  </div>
-                </div>
-              </div>
-
-              {/* 4. Amenities / pets / parking / laundry */}
-              <div className="space-y-4">
-                <div className="text-[11px] font-bold uppercase tracking-[0.14em] text-slate-400">Amenities, pets, parking &amp; laundry</div>
-                <div className="grid gap-4 sm:grid-cols-2">
-                  <div className="sm:col-span-2">
-                    <label className="mb-1.5 block text-xs font-semibold text-slate-700">Amenities</label>
-                    <textarea
-                      className={`${addInputCls} min-h-[72px] resize-y`}
-                      value={addBasics.amenities}
-                      onChange={(e) => setAddBasics((b) => ({ ...b, amenities: e.target.value }))}
-                      placeholder="Wi‑Fi, common areas, cleaning, etc."
-                      rows={2}
-                    />
-                  </div>
-                  <div className="sm:col-span-2">
-                    <label className="mb-1.5 block text-xs font-semibold text-slate-700">Pets</label>
-                    <input
-                      className={addInputCls}
-                      value={addBasics.pets}
-                      onChange={(e) => setAddBasics((b) => ({ ...b, pets: e.target.value }))}
-                      placeholder="e.g. Cats OK, no dogs, or no pets"
-                    />
-                  </div>
-                  <label className="flex cursor-pointer items-center gap-2 text-sm font-medium text-slate-700">
-                    <input
-                      type="checkbox"
-                      checked={addParking.enabled}
-                      onChange={(e) => setAddParking((p) => ({ ...p, enabled: e.target.checked }))}
-                      className="h-4 w-4 rounded border-slate-300 text-[#2563eb]"
-                    />
-                    Parking available
-                  </label>
-                  <label className="flex cursor-pointer items-center gap-2 text-sm font-medium text-slate-700">
-                    <input
-                      type="checkbox"
-                      checked={addLaundry.enabled}
-                      onChange={(e) => setAddLaundry((l) => ({ ...l, enabled: e.target.checked }))}
-                      className="h-4 w-4 rounded border-slate-300 text-[#2563eb]"
-                    />
-                    Laundry on site
-                  </label>
-                  {addParking.enabled ? (
-                    <>
-                      <div>
-                        <label className="mb-1.5 block text-xs font-semibold text-slate-700">Parking type</label>
-                        <input
-                          className={addInputCls}
-                          value={addParking.type}
-                          onChange={(e) => setAddParking((p) => ({ ...p, type: e.target.value }))}
-                          placeholder="e.g. Street, garage, assigned spot"
-                        />
-                      </div>
-                      <div>
-                        <label className="mb-1.5 block text-xs font-semibold text-slate-700">Parking fee ($/mo)</label>
-                        <input
-                          className={addInputCls}
-                          type="number"
-                          min="0"
-                          step="1"
-                          value={addParking.fee}
-                          onChange={(e) => setAddParking((p) => ({ ...p, fee: e.target.value }))}
-                        />
-                      </div>
-                    </>
-                  ) : null}
-                  {addLaundry.enabled ? (
-                    <>
-                      <div>
-                        <label className="mb-1.5 block text-xs font-semibold text-slate-700">Laundry type</label>
-                        <input
-                          className={addInputCls}
-                          value={addLaundry.type}
-                          onChange={(e) => setAddLaundry((l) => ({ ...l, type: e.target.value }))}
-                          placeholder="e.g. In-unit, shared W/D in basement"
-                        />
-                      </div>
-                      <div>
-                        <label className="mb-1.5 block text-xs font-semibold text-slate-700">Rooms sharing laundry</label>
-                        <input
-                          className={addInputCls}
-                          value={addLaundry.roomsSharing}
-                          onChange={(e) => setAddLaundry((l) => ({ ...l, roomsSharing: e.target.value }))}
-                          placeholder="e.g. All rooms, or Room 1-4"
-                        />
-                      </div>
-                      <div className="sm:col-span-2">
-                        <label className="mb-1.5 block text-xs font-semibold text-slate-700">Laundry details</label>
-                        <textarea
-                          className={`${addInputCls} min-h-[64px]`}
-                          value={addLaundry.description}
-                          onChange={(e) => setAddLaundry((l) => ({ ...l, description: e.target.value }))}
-                          placeholder="Access, coins, schedule…"
-                          rows={2}
-                        />
-                      </div>
-                    </>
-                  ) : null}
-                </div>
-                <div>
-                  <label className="mb-1.5 block text-xs font-semibold text-slate-700">Bathroom access (summary)</label>
-                  <textarea
-                    className={`${addInputCls} min-h-[64px] resize-y`}
-                    value={addBasics.bathroomAccess}
-                    onChange={(e) => setAddBasics((b) => ({ ...b, bathroomAccess: e.target.value }))}
-                    placeholder="Optional overview. Use bathroom sections below for each bath."
-                    rows={2}
-                  />
-                </div>
-              </div>
-
-              {/* 5. Rooms */}
-              <div className="space-y-3">
-                <div className="text-[11px] font-bold uppercase tracking-[0.14em] text-slate-400">Rooms</div>
-                <div className="space-y-4">
-                  {addRooms.map((room, idx) => (
-                    <div key={`room-${idx}`} className="rounded-2xl border border-slate-200 bg-slate-50/70 p-4">
-                      <div className="mb-3 text-xs font-black text-slate-800">Room {idx + 1}</div>
-                      <div className="grid gap-3 sm:grid-cols-2">
-                        <div>
-                          <label className="mb-1 block text-[11px] font-semibold text-slate-600">Name / number *</label>
-                          <input
-                            className={addInputCls}
-                            value={room.name}
-                            onChange={(e) => {
-                              const v = e.target.value
-                              setAddRooms((prev) => {
-                                const next = [...prev]
-                                next[idx] = { ...next[idx], name: v }
-                                return next
-                              })
-                            }}
-                            placeholder="e.g. Room 3"
-                          />
-                        </div>
-                        <div>
-                          <label className="mb-1 block text-[11px] font-semibold text-slate-600">Monthly rent ($)</label>
-                          <input
-                            className={addInputCls}
-                            type="number"
-                            min="0"
-                            step="1"
-                            value={room.rent}
-                            onChange={(e) => {
-                              const v = e.target.value
-                              setAddRooms((prev) => {
-                                const next = [...prev]
-                                next[idx] = { ...next[idx], rent: v }
-                                return next
-                              })
-                            }}
-                          />
-                        </div>
-                        <div>
-                          <label className="mb-1 block text-[11px] font-semibold text-slate-600">Availability date / status</label>
-                          <input
-                            className={addInputCls}
-                            value={room.availability}
-                            onChange={(e) => {
-                              const v = e.target.value
-                              setAddRooms((prev) => {
-                                const next = [...prev]
-                                next[idx] = { ...next[idx], availability: v }
-                                return next
-                              })
-                            }}
-                            placeholder="e.g. Available March 1, or Occupied"
-                          />
-                        </div>
-                        <label className="flex items-center gap-2 pt-6 text-sm text-slate-700">
-                          <input
-                            type="checkbox"
-                            checked={!!room.furnished}
-                            onChange={(e) => {
-                              const v = e.target.checked
-                              setAddRooms((prev) => {
-                                const next = [...prev]
-                                next[idx] = { ...next[idx], furnished: v }
-                                return next
-                              })
-                            }}
-                            className="h-4 w-4 rounded border-slate-300 text-[#2563eb]"
-                          />
-                          Furnished
-                        </label>
-                        <div className="sm:col-span-2">
-                          <label className="mb-1 block text-[11px] font-semibold text-slate-600">Utilities (description)</label>
-                          <input
-                            className={addInputCls}
-                            value={room.utilitiesDescription}
-                            onChange={(e) => {
-                              const v = e.target.value
-                              setAddRooms((prev) => {
-                                const next = [...prev]
-                                next[idx] = { ...next[idx], utilitiesDescription: v }
-                                return next
-                              })
-                            }}
-                            placeholder="What’s included for this room, if different from house default"
-                          />
-                        </div>
-                        <div>
-                          <label className="mb-1 block text-[11px] font-semibold text-slate-600">Utilities cost ($/mo)</label>
-                          <input
-                            className={addInputCls}
-                            type="number"
-                            min="0"
-                            step="1"
-                            value={room.utilitiesCost}
-                            onChange={(e) => {
-                              const v = e.target.value
-                              setAddRooms((prev) => {
-                                const next = [...prev]
-                                next[idx] = { ...next[idx], utilitiesCost: v }
-                                return next
-                              })
-                            }}
-                          />
-                        </div>
-                        <div className="sm:col-span-2">
-                          <label className="mb-1 block text-[11px] font-semibold text-slate-600">Notes</label>
-                          <input
-                            className={addInputCls}
-                            value={room.notes}
-                            onChange={(e) => {
-                              const v = e.target.value
-                              setAddRooms((prev) => {
-                                const next = [...prev]
-                                next[idx] = { ...next[idx], notes: v }
-                                return next
-                              })
-                            }}
-                            placeholder="Quick notes for this room"
-                          />
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              {/* 6. Bathrooms */}
-              {addBathrooms.length > 0 ? (
-                <div className="space-y-3">
-                  <div className="text-[11px] font-bold uppercase tracking-[0.14em] text-slate-400">Bathrooms</div>
-                  <div className="space-y-4">
-                    {addBathrooms.map((bath, idx) => (
-                      <div key={`bath-${idx}`} className="rounded-2xl border border-slate-200 bg-white p-4">
-                        <div className="mb-3 text-xs font-black text-slate-800">Bathroom {idx + 1}</div>
-                        <div className="grid gap-3 sm:grid-cols-2">
-                          <div className="sm:col-span-2">
-                            <label className="mb-1 block text-[11px] font-semibold text-slate-600">Description</label>
-                            <textarea
-                              className={`${addInputCls} min-h-[64px]`}
-                              value={bath.description}
-                              onChange={(e) => {
-                                const v = e.target.value
-                                setAddBathrooms((prev) => {
-                                  const next = [...prev]
-                                  next[idx] = { ...next[idx], description: v }
-                                  return next
-                                })
-                              }}
-                              placeholder="Full bath, half bath, floor, condition…"
-                              rows={2}
-                            />
-                          </div>
-                          <div className="sm:col-span-2">
-                            <label className="mb-1 block text-[11px] font-semibold text-slate-600">Rooms sharing this bathroom</label>
-                            <input
-                              className={addInputCls}
-                              value={bath.roomsSharing}
-                              onChange={(e) => {
-                                const v = e.target.value
-                                setAddBathrooms((prev) => {
-                                  const next = [...prev]
-                                  next[idx] = { ...next[idx], roomsSharing: v }
-                                  return next
-                                })
-                              }}
-                              placeholder="e.g. Room 1, Room 2"
-                            />
-                          </div>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              ) : null}
-
-              {/* 7. Kitchens */}
-              {addKitchens.length > 0 ? (
-                <div className="space-y-3">
-                  <div className="text-[11px] font-bold uppercase tracking-[0.14em] text-slate-400">Kitchens</div>
-                  <div className="space-y-4">
-                    {addKitchens.map((kit, idx) => (
-                      <div key={`kit-${idx}`} className="rounded-2xl border border-slate-200 bg-white p-4">
-                        <div className="mb-3 text-xs font-black text-slate-800">Kitchen {idx + 1}</div>
-                        <div className="grid gap-3 sm:grid-cols-2">
-                          <div className="sm:col-span-2">
-                            <label className="mb-1 block text-[11px] font-semibold text-slate-600">Description</label>
-                            <textarea
-                              className={`${addInputCls} min-h-[64px]`}
-                              value={kit.description}
-                              onChange={(e) => {
-                                const v = e.target.value
-                                setAddKitchens((prev) => {
-                                  const next = [...prev]
-                                  next[idx] = { ...next[idx], description: v }
-                                  return next
-                                })
-                              }}
-                              placeholder="Galley, shared, appliances…"
-                              rows={2}
-                            />
-                          </div>
-                          <div className="sm:col-span-2">
-                            <label className="mb-1 block text-[11px] font-semibold text-slate-600">Rooms sharing this kitchen</label>
-                            <input
-                              className={addInputCls}
-                              value={kit.roomsSharing}
-                              onChange={(e) => {
-                                const v = e.target.value
-                                setAddKitchens((prev) => {
-                                  const next = [...prev]
-                                  next[idx] = { ...next[idx], roomsSharing: v }
-                                  return next
-                                })
-                              }}
-                              placeholder="e.g. All second-floor rooms"
-                            />
-                          </div>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              ) : null}
-
-              {/* 8. Shared Spaces */}
-              {addSharedSpaces.length > 0 ? (
-                <div className="space-y-3">
-                  <div className="text-[11px] font-bold uppercase tracking-[0.14em] text-slate-400">Shared Spaces</div>
-                  <p className="text-xs text-slate-500">Common areas shared by multiple rooms — living rooms, lounges, study areas, laundry, patios, etc.</p>
-                  <div className="space-y-4">
-                    {addSharedSpaces.map((space, idx) => {
-                      const roomOptions = Array.from({ length: clampInt(addRoomCount, 1, MAX_ROOM_SLOTS) }, (_, i) => `Room ${i + 1}`)
-                      const spaceTypeOptions = ['Living Room', 'Dining Room', 'Lounge', 'Study Area', 'Laundry', 'Backyard', 'Patio', 'Storage', 'Hallway', 'Other']
-                      return (
-                        <div key={`shared-${idx}`} className="rounded-2xl border border-slate-200 bg-white p-4">
-                          <div className="mb-3 text-xs font-black text-slate-800">Shared Space {idx + 1}</div>
-                          <div className="grid gap-3 sm:grid-cols-2">
-                            <div>
-                              <label className="mb-1 block text-[11px] font-semibold text-slate-600">Name</label>
-                              <input
-                                className={addInputCls}
-                                value={space.name}
-                                onChange={(e) => {
-                                  const v = e.target.value
-                                  setAddSharedSpaces((prev) => { const next = [...prev]; next[idx] = { ...next[idx], name: v }; return next })
-                                }}
-                                placeholder="e.g. Main Living Room"
-                              />
-                            </div>
-                            <div>
-                              <label className="mb-1 block text-[11px] font-semibold text-slate-600">Type</label>
-                              <select
-                                className={addInputCls}
-                                value={space.type}
-                                onChange={(e) => {
-                                  const v = e.target.value
-                                  setAddSharedSpaces((prev) => { const next = [...prev]; next[idx] = { ...next[idx], type: v }; return next })
-                                }}
-                              >
-                                <option value="">Select type…</option>
-                                {spaceTypeOptions.map((t) => <option key={t} value={t}>{t}</option>)}
-                              </select>
-                            </div>
-                            <div className="sm:col-span-2">
-                              <label className="mb-1.5 block text-[11px] font-semibold text-slate-600">Rooms with access</label>
-                              <div className="grid grid-cols-4 gap-1.5 sm:grid-cols-5">
-                                {roomOptions.map((r) => (
-                                  <label key={r} className="flex cursor-pointer items-center gap-1.5 rounded-lg border border-slate-200 bg-slate-50 px-2 py-1.5 text-[11px] font-medium text-slate-700 hover:bg-slate-100">
-                                    <input
-                                      type="checkbox"
-                                      className="h-3.5 w-3.5 rounded border-slate-300 text-[#2563eb]"
-                                      checked={Array.isArray(space.access) && space.access.includes(r)}
-                                      onChange={(e) => {
-                                        const checked = e.target.checked
-                                        setAddSharedSpaces((prev) => {
-                                          const next = [...prev]
-                                          const cur = Array.isArray(next[idx].access) ? [...next[idx].access] : []
-                                          next[idx] = { ...next[idx], access: checked ? [...cur, r] : cur.filter((x) => x !== r) }
-                                          return next
-                                        })
-                                      }}
-                                    />
-                                    {r}
-                                  </label>
-                                ))}
-                              </div>
-                            </div>
-                          </div>
-                        </div>
-                      )
+                  {/* Step progress dots */}
+                  <div className="mt-4 flex gap-1.5">
+                    {WIZARD_STEPS.map((_, i) => {
+                      const dotCls = i < addStep ? ‘bg-[#2563eb]’ : i === addStep ? ‘bg-[#2563eb]/60’ : ‘bg-slate-200’
+                      return <div key={i} className={`h-1.5 flex-1 rounded-full transition-colors ${dotCls}`} />
                     })}
                   </div>
-                </div>
-              ) : null}
 
-              {/* 9. Other / Additional Info */}
-              <div className="space-y-2">
-                <div className="text-[11px] font-bold uppercase tracking-[0.14em] text-slate-400">Other &amp; additional info</div>
-                <p className="text-xs text-slate-500">
-                  Anything not captured above — house rules, move-in process, lease terms, access details, utilities breakdown, neighbourhood notes, or anything you'd like us to know.
-                </p>
-                <textarea
-                  className={`${addInputCls} min-h-[96px] resize-y`}
-                  value={addOtherInfo}
-                  onChange={(e) => setAddOtherInfo(e.target.value)}
-                  placeholder="e.g. Tenant handles their own internet. Move-in requires 1-month notice. Shared cleaner visits Fridays…"
-                  rows={4}
-                />
-              </div>
+                  {/* Step content */}
+                  <div className="mt-6 max-h-[min(70vh,640px)] space-y-5 overflow-y-auto pr-1">
 
-              {/* 10. Photos */}
-              <div>
-                <div className="mb-2 text-[11px] font-bold uppercase tracking-[0.14em] text-slate-400">Photos</div>
-                <div
-                  ref={addDropRef}
-                  onDrop={handleAddImageDrop}
-                  onDragOver={handleAddImageDragOver}
-                  onDragLeave={handleAddImageDragLeave}
-                  onClick={() => addImageInputRef.current?.click()}
-                  className="flex cursor-pointer flex-col items-center justify-center rounded-2xl border-2 border-dashed border-slate-200 bg-slate-50/60 px-6 py-8 text-center transition hover:border-[#2563eb] hover:bg-blue-50/30"
-                >
-                  <div className="text-sm font-semibold text-slate-500">Drag &amp; drop images here, or <span className="text-[#2563eb]">click to upload</span></div>
-                  <div className="mt-1 text-xs text-slate-400">JPG, PNG, WEBP. Reorder with arrows; optional note per image</div>
-                  <input
-                    ref={addImageInputRef}
-                    type="file"
-                    accept="image/*"
-                    multiple
-                    className="hidden"
-                    onChange={(e) => addImageFiles(e.target.files)}
-                  />
-                </div>
-                {addImages.length > 0 ? (
-                  <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-3">
-                    {addImages.map((img, idx) => (
-                      <div key={img.id} className="relative overflow-hidden rounded-2xl border border-slate-200 bg-white">
-                        <img src={img.preview} alt="" className="h-32 w-full object-cover" />
-                        <div className="absolute left-1.5 top-1.5 flex gap-1">
-                          <button
-                            type="button"
-                            disabled={idx === 0}
-                            onClick={(e) => { e.stopPropagation(); moveAddImage(idx, -1) }}
-                            className="rounded-md bg-white/90 px-1.5 py-0.5 text-[10px] font-bold text-slate-700 shadow disabled:opacity-30"
-                          >
-                            ↑
-                          </button>
-                          <button
-                            type="button"
-                            disabled={idx >= addImages.length - 1}
-                            onClick={(e) => { e.stopPropagation(); moveAddImage(idx, 1) }}
-                            className="rounded-md bg-white/90 px-1.5 py-0.5 text-[10px] font-bold text-slate-700 shadow disabled:opacity-30"
-                          >
-                            ↓
-                          </button>
-                        </div>
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation()
-                            URL.revokeObjectURL(img.preview)
-                            setAddImages((prev) => prev.filter((i) => i.id !== img.id))
-                          }}
-                          className="absolute right-1.5 top-1.5 rounded-full bg-white/90 px-2 py-0.5 text-[10px] font-bold text-red-600 shadow hover:bg-red-50"
-                        >
-                          ✕
-                        </button>
-                        <div className="p-2">
+                    {/* Step 0: Basics */}
+                    {addStep === 0 && (
+                      <div className="space-y-4">
+                        <div>
+                          <label className="mb-1.5 block text-xs font-semibold text-slate-700">Property name *</label>
                           <input
-                            className="w-full rounded-lg border border-slate-200 bg-slate-50 px-2 py-1 text-[11px] text-slate-600 placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-[#2563eb]/40"
-                            placeholder="Note (optional)"
-                            value={img.caption}
-                            onChange={(e) =>
-                              setAddImages((prev) =>
-                                prev.map((i) => (i.id === img.id ? { ...i, caption: e.target.value } : i)),
-                              )
-                            }
+                            className={addInputCls}
+                            value={addBasics.name}
+                            onChange={(e) => setAddBasics((b) => ({ ...b, name: e.target.value }))}
+                            placeholder="e.g. Maple Co-op"
+                            required
+                          />
+                        </div>
+                        <div>
+                          <label className="mb-1.5 block text-xs font-semibold text-slate-700">Address *</label>
+                          <input
+                            className={addInputCls}
+                            value={addBasics.address}
+                            onChange={(e) => setAddBasics((b) => ({ ...b, address: e.target.value }))}
+                            placeholder="Street, city, state"
+                            required
+                          />
+                        </div>
+                        <div>
+                          <label className="mb-1.5 block text-xs font-semibold text-slate-700">Property type</label>
+                          <select
+                            className={addInputCls}
+                            value={addBasics.propertyType}
+                            onChange={(e) => setAddBasics((b) => ({ ...b, propertyType: e.target.value }))}
+                          >
+                            <option value="">Select…</option>
+                            {PROPERTY_TYPE_OPTIONS.map((t) => <option key={t} value={t}>{t}</option>)}
+                          </select>
+                        </div>
+                        <div>
+                          <label className="mb-1.5 block text-xs font-semibold text-slate-700">Amenities</label>
+                          <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-3">
+                            {AMENITY_OPTIONS.map((a) => (
+                              <label key={a} className={`flex cursor-pointer items-center gap-2 rounded-xl border px-3 py-2 text-xs font-medium transition ${Array.isArray(addBasics.amenities) && addBasics.amenities.includes(a) ? ‘border-[#2563eb] bg-[#2563eb]/5 text-[#2563eb]’ : ‘border-slate-200 bg-slate-50 text-slate-700 hover:bg-slate-100’}`}>
+                                <input
+                                  type="checkbox"
+                                  className="sr-only"
+                                  checked={Array.isArray(addBasics.amenities) && addBasics.amenities.includes(a)}
+                                  onChange={(e) => {
+                                    const checked = e.target.checked
+                                    setAddBasics((b) => {
+                                      const cur = Array.isArray(b.amenities) ? b.amenities : []
+                                      return { ...b, amenities: checked ? [...cur, a] : cur.filter((x) => x !== a) }
+                                    })
+                                  }}
+                                />
+                                {a}
+                              </label>
+                            ))}
+                          </div>
+                        </div>
+                        <div>
+                          <label className="mb-1.5 block text-xs font-semibold text-slate-700">Pets</label>
+                          <select
+                            className={addInputCls}
+                            value={addBasics.pets}
+                            onChange={(e) => setAddBasics((b) => ({ ...b, pets: e.target.value }))}
+                          >
+                            <option value="">Select…</option>
+                            {PET_OPTIONS.map((p) => <option key={p} value={p}>{p}</option>)}
+                          </select>
+                        </div>
+                        <div>
+                          <label className="mb-1.5 block text-xs font-semibold text-slate-700">Bathroom access summary</label>
+                          <textarea
+                            className={`${addInputCls} min-h-[64px] resize-y`}
+                            value={addBasics.bathroomAccess}
+                            onChange={(e) => setAddBasics((b) => ({ ...b, bathroomAccess: e.target.value }))}
+                            placeholder="General overview of bathroom access — details per bathroom on the Bathrooms step."
+                            rows={2}
+                          />
+                        </div>
+                        <div>
+                          <label className="mb-1.5 block text-xs font-semibold text-slate-700">Application fee ($)</label>
+                          <input
+                            className={addInputCls}
+                            type="number"
+                            min="0"
+                            step="1"
+                            value={addApplicationFee}
+                            onChange={(e) => setAddApplicationFee(e.target.value)}
+                            placeholder="Optional"
                           />
                         </div>
                       </div>
-                    ))}
+                    )}
+
+                    {/* Step 1: Counts */}
+                    {addStep === 1 && (
+                      <div className="space-y-4">
+                        <p className="text-xs text-slate-500">
+                          Set counts to control how many detail sections appear on the following steps. Max {MAX_ROOM_SLOTS} rooms, {MAX_BATHROOM_SLOTS} bathrooms, {MAX_KITCHEN_SLOTS} kitchens, {MAX_SHARED_SPACE_SLOTS} shared spaces.
+                        </p>
+                        <div className="grid gap-4 sm:grid-cols-2">
+                          <div>
+                            <label className="mb-1.5 block text-xs font-semibold text-slate-700">Room count *</label>
+                            <input className={addInputCls} type="number" min={1} max={MAX_ROOM_SLOTS} value={addRoomCount} onChange={(e) => setAddRoomCount(e.target.value)} required />
+                          </div>
+                          <div>
+                            <label className="mb-1.5 block text-xs font-semibold text-slate-700">Bathroom count</label>
+                            <input className={addInputCls} type="number" min={0} max={MAX_BATHROOM_SLOTS} value={addBathroomCount} onChange={(e) => setAddBathroomCount(e.target.value)} />
+                          </div>
+                          <div>
+                            <label className="mb-1.5 block text-xs font-semibold text-slate-700">Kitchen count</label>
+                            <input className={addInputCls} type="number" min={0} max={MAX_KITCHEN_SLOTS} value={addKitchenCount} onChange={(e) => setAddKitchenCount(e.target.value)} />
+                          </div>
+                          <div>
+                            <label className="mb-1.5 block text-xs font-semibold text-slate-700">Shared spaces</label>
+                            <input className={addInputCls} type="number" min={0} max={MAX_SHARED_SPACE_SLOTS} value={addSharedSpaceCount} onChange={(e) => setAddSharedSpaceCount(e.target.value)} />
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Step 2: Rooms */}
+                    {addStep === 2 && (
+                      <div className="space-y-4">
+                        {addRooms.map((room, idx) => (
+                          <div key={`room-${idx}`} className="rounded-2xl border border-slate-200 bg-slate-50/70 p-4">
+                            <div className="mb-3 text-xs font-black text-slate-800">Room {idx + 1}</div>
+                            <div className="grid gap-3 sm:grid-cols-2">
+                              <div>
+                                <label className="mb-1 block text-[11px] font-semibold text-slate-600">Monthly rent ($)</label>
+                                <input className={addInputCls} type="number" min="0" step="1" value={room.rent} onChange={(e) => wizUpdateRoom(idx, { rent: e.target.value })} />
+                              </div>
+                              <div>
+                                <label className="mb-1 block text-[11px] font-semibold text-slate-600">Availability date</label>
+                                <input className={addInputCls} type="date" value={room.availability} onChange={(e) => wizUpdateRoom(idx, { availability: e.target.value })} />
+                              </div>
+                              <div>
+                                <label className="mb-1 block text-[11px] font-semibold text-slate-600">Furnished</label>
+                                <select className={addInputCls} value={room.furnished} onChange={(e) => wizUpdateRoom(idx, { furnished: e.target.value })}>
+                                  <option value="">Select…</option>
+                                  {FURNISHED_OPTIONS.map((f) => <option key={f} value={f}>{f}</option>)}
+                                </select>
+                              </div>
+                              <div>
+                                <label className="mb-1 block text-[11px] font-semibold text-slate-600">Utilities cost ($/mo)</label>
+                                <input className={addInputCls} type="number" min="0" step="1" value={room.utilitiesCost} onChange={(e) => wizUpdateRoom(idx, { utilitiesCost: e.target.value })} />
+                              </div>
+                              {idx === 0 && (
+                                <div className="sm:col-span-2">
+                                  <label className="mb-1 block text-[11px] font-semibold text-slate-600">Utilities description <span className="text-slate-400">(applies to Room 1 only)</span></label>
+                                  <textarea className={`${addInputCls} min-h-[56px]`} value={room.utilities} onChange={(e) => wizUpdateRoom(idx, { utilities: e.target.value })} placeholder="What’s included, e.g. water + gas included, tenant pays electric" rows={2} />
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    {/* Step 3: Bathrooms */}
+                    {addStep === 3 && (
+                      wizardBc === 0 ? (
+                        <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 px-6 py-8 text-center text-sm text-slate-500">
+                          No bathrooms configured. Go back to Counts to add bathrooms.
+                        </div>
+                      ) : (
+                        <div className="space-y-4">
+                          {addBathrooms.map((bath, idx) => (
+                            <div key={`bath-${idx}`} className="rounded-2xl border border-slate-200 bg-white p-4">
+                              <div className="mb-3 text-xs font-black text-slate-800">Bathroom {idx + 1}</div>
+                              <div className="space-y-3">
+                                <div>
+                                  <label className="mb-1 block text-[11px] font-semibold text-slate-600">Description</label>
+                                  <textarea className={`${addInputCls} min-h-[64px]`} value={bath.description} onChange={(e) => wizUpdateBathroom(idx, { description: e.target.value })} placeholder="Full bath, half bath, floor, condition…" rows={2} />
+                                </div>
+                                {idx < 5 && (
+                                  <div>
+                                    <label className="mb-1 block text-[11px] font-semibold text-slate-600">Rooms sharing this bathroom</label>
+                                    <input className={addInputCls} value={bath.roomsSharing} onChange={(e) => wizUpdateBathroom(idx, { roomsSharing: e.target.value })} placeholder="e.g. Room 1, Room 2" />
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )
+                    )}
+
+                    {/* Step 4: Kitchens */}
+                    {addStep === 4 && (
+                      wizardKc === 0 ? (
+                        <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 px-6 py-8 text-center text-sm text-slate-500">
+                          No kitchens configured. Go back to Counts to add kitchens.
+                        </div>
+                      ) : (
+                        <div className="space-y-4">
+                          {addKitchens.map((kit, idx) => (
+                            <div key={`kit-${idx}`} className="rounded-2xl border border-slate-200 bg-white p-4">
+                              <div className="mb-3 text-xs font-black text-slate-800">Kitchen {idx + 1}</div>
+                              <div className="space-y-3">
+                                <div>
+                                  <label className="mb-1 block text-[11px] font-semibold text-slate-600">Description</label>
+                                  <textarea className={`${addInputCls} min-h-[64px]`} value={kit.description} onChange={(e) => wizUpdateKitchen(idx, { description: e.target.value })} placeholder="Galley, shared, appliances…" rows={2} />
+                                </div>
+                                <div>
+                                  <label className="mb-1 block text-[11px] font-semibold text-slate-600">Rooms sharing this kitchen</label>
+                                  <input className={addInputCls} value={kit.roomsSharing} onChange={(e) => wizUpdateKitchen(idx, { roomsSharing: e.target.value })} placeholder="e.g. All second-floor rooms" />
+                                </div>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )
+                    )}
+
+                    {/* Step 5: Shared Spaces */}
+                    {addStep === 5 && (
+                      wizardSc === 0 ? (
+                        <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 px-6 py-8 text-center text-sm text-slate-500">
+                          No shared spaces configured. Go back to Counts to add shared spaces.
+                        </div>
+                      ) : (
+                        <div className="space-y-4">
+                          <p className="text-xs text-slate-500">Common areas — living rooms, lounges, study areas, patios, etc.</p>
+                          {addSharedSpaces.map((space, idx) => (
+                            <div key={`shared-${idx}`} className="rounded-2xl border border-slate-200 bg-white p-4">
+                              <div className="mb-3 text-xs font-black text-slate-800">Shared Space {idx + 1}</div>
+                              <div className="grid gap-3 sm:grid-cols-2">
+                                <div>
+                                  <label className="mb-1 block text-[11px] font-semibold text-slate-600">Name</label>
+                                  <input className={addInputCls} value={space.name} onChange={(e) => wizUpdateSharedSpace(idx, { name: e.target.value })} placeholder="e.g. Main Living Room" />
+                                </div>
+                                <div>
+                                  <label className="mb-1 block text-[11px] font-semibold text-slate-600">Type</label>
+                                  <select className={addInputCls} value={space.type} onChange={(e) => wizUpdateSharedSpace(idx, { type: e.target.value })}>
+                                    <option value="">Select type…</option>
+                                    {SHARED_SPACE_TYPE_OPTIONS.map((t) => <option key={t} value={t}>{t}</option>)}
+                                  </select>
+                                </div>
+                                <div className="sm:col-span-2">
+                                  <label className="mb-1.5 block text-[11px] font-semibold text-slate-600">Rooms with access</label>
+                                  <div className="grid grid-cols-4 gap-1.5 sm:grid-cols-5">
+                                    {wizardRoomOptions.map((r) => (
+                                      <label key={r} className={`flex cursor-pointer items-center gap-1.5 rounded-lg border px-2 py-1.5 text-[11px] font-medium transition ${Array.isArray(space.access) && space.access.includes(r) ? ‘border-[#2563eb] bg-[#2563eb]/5 text-[#2563eb]’ : ‘border-slate-200 bg-slate-50 text-slate-700 hover:bg-slate-100’}`}>
+                                        <input
+                                          type="checkbox"
+                                          className="sr-only"
+                                          checked={Array.isArray(space.access) && space.access.includes(r)}
+                                          onChange={(e) => {
+                                            const checked = e.target.checked
+                                            wizUpdateSharedSpace(idx, {
+                                              access: checked
+                                                ? [...(Array.isArray(space.access) ? space.access : []), r]
+                                                : (Array.isArray(space.access) ? space.access : []).filter((x) => x !== r),
+                                            })
+                                          }}
+                                        />
+                                        {r}
+                                      </label>
+                                    ))}
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )
+                    )}
+
+                    {/* Step 6: Laundry & Parking */}
+                    {addStep === 6 && (
+                      <div className="space-y-5">
+                        {/* Laundry */}
+                        <div className="space-y-3">
+                          <div className="text-[11px] font-bold uppercase tracking-[0.14em] text-slate-400">Laundry</div>
+                          <label className="flex cursor-pointer items-center gap-2 text-sm font-medium text-slate-700">
+                            <input
+                              type="checkbox"
+                              checked={addLaundry.enabled}
+                              onChange={(e) => setAddLaundry((l) => ({ ...l, enabled: e.target.checked }))}
+                              className="h-4 w-4 rounded border-slate-300 text-[#2563eb]"
+                            />
+                            Laundry on site
+                          </label>
+                          {addLaundry.enabled && (
+                            <div className="space-y-3">
+                              <div>
+                                <label className="mb-1 block text-[11px] font-semibold text-slate-600">General rooms sharing laundry</label>
+                                <input className={addInputCls} value={addLaundry.roomsSharing} onChange={(e) => setAddLaundry((l) => ({ ...l, roomsSharing: e.target.value }))} placeholder="e.g. All rooms, or Room 1–4" />
+                              </div>
+                              <div className="text-[11px] font-semibold text-slate-500">Laundry locations (up to {MAX_LAUNDRY_SLOTS})</div>
+                              {(addLaundry.rows || []).map((row, idx) => (
+                                <div key={`laundry-${idx}`} className="flex items-start gap-2 rounded-xl border border-slate-200 bg-slate-50 p-3">
+                                  <div className="flex-1 grid gap-2 sm:grid-cols-2">
+                                    <div>
+                                      <label className="mb-1 block text-[11px] font-semibold text-slate-600">Type</label>
+                                      <input className={addInputCls} value={row.type} onChange={(e) => wizUpdateLaundryRow(idx, { type: e.target.value })} placeholder="e.g. In-unit W/D, Shared washer" />
+                                    </div>
+                                    <div>
+                                      <label className="mb-1 block text-[11px] font-semibold text-slate-600">Rooms sharing</label>
+                                      <input className={addInputCls} value={row.roomsSharing} onChange={(e) => wizUpdateLaundryRow(idx, { roomsSharing: e.target.value })} placeholder="e.g. Room 1, Room 2" />
+                                    </div>
+                                  </div>
+                                  <button type="button" onClick={() => wizRemoveLaundryRow(idx)} className="mt-6 rounded-lg border border-red-200 px-2 py-1 text-[11px] font-bold text-red-500 hover:bg-red-50">✕</button>
+                                </div>
+                              ))}
+                              {(addLaundry.rows || []).length < MAX_LAUNDRY_SLOTS && (
+                                <button type="button" onClick={wizAddLaundryRow} className="rounded-xl border border-dashed border-slate-300 px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-50">
+                                  + Add laundry location
+                                </button>
+                              )}
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Parking */}
+                        <div className="space-y-3">
+                          <div className="text-[11px] font-bold uppercase tracking-[0.14em] text-slate-400">Parking</div>
+                          <label className="flex cursor-pointer items-center gap-2 text-sm font-medium text-slate-700">
+                            <input
+                              type="checkbox"
+                              checked={addParking.enabled}
+                              onChange={(e) => setAddParking((p) => ({ ...p, enabled: e.target.checked }))}
+                              className="h-4 w-4 rounded border-slate-300 text-[#2563eb]"
+                            />
+                            Parking available
+                          </label>
+                          {addParking.enabled && (
+                            <div className="grid gap-3 sm:grid-cols-2">
+                              <div>
+                                <label className="mb-1.5 block text-xs font-semibold text-slate-700">Parking type</label>
+                                <input className={addInputCls} value={addParking.type} onChange={(e) => setAddParking((p) => ({ ...p, type: e.target.value }))} placeholder="e.g. Street, garage, assigned spot" />
+                              </div>
+                              <div>
+                                <label className="mb-1.5 block text-xs font-semibold text-slate-700">Parking fee ($/mo)</label>
+                                <input className={addInputCls} type="number" min="0" step="1" value={addParking.fee} onChange={(e) => setAddParking((p) => ({ ...p, fee: e.target.value }))} />
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Step 7: Review */}
+                    {addStep === 7 && (
+                      <div className="space-y-5">
+                        <div>
+                          <label className="mb-1.5 block text-xs font-semibold text-slate-700">Other / additional info</label>
+                          <p className="mb-2 text-xs text-slate-500">House rules, move-in process, lease terms, access details, utilities breakdown, neighbourhood notes — anything else you’d like us to know.</p>
+                          <textarea
+                            className={`${addInputCls} min-h-[96px] resize-y`}
+                            value={addOtherInfo}
+                            onChange={(e) => setAddOtherInfo(e.target.value)}
+                            placeholder="e.g. Tenant handles their own internet. Move-in requires 1-month notice. Shared cleaner visits Fridays…"
+                            rows={4}
+                          />
+                        </div>
+
+                        {/* Photos */}
+                        <div>
+                          <div className="mb-2 text-[11px] font-bold uppercase tracking-[0.14em] text-slate-400">Photos</div>
+                          <div
+                            ref={addDropRef}
+                            onDrop={handleAddImageDrop}
+                            onDragOver={handleAddImageDragOver}
+                            onDragLeave={handleAddImageDragLeave}
+                            onClick={() => addImageInputRef.current?.click()}
+                            className="flex cursor-pointer flex-col items-center justify-center rounded-2xl border-2 border-dashed border-slate-200 bg-slate-50/60 px-6 py-8 text-center transition hover:border-[#2563eb] hover:bg-blue-50/30"
+                          >
+                            <div className="text-sm font-semibold text-slate-500">Drag &amp; drop images, or <span className="text-[#2563eb]">click to upload</span></div>
+                            <div className="mt-1 text-xs text-slate-400">JPG, PNG, WEBP · optional note per image</div>
+                            <input ref={addImageInputRef} type="file" accept="image/*" multiple className="hidden" onChange={(e) => addImageFiles(e.target.files)} />
+                          </div>
+                          {addImages.length > 0 && (
+                            <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-3">
+                              {addImages.map((img, idx) => (
+                                <div key={img.id} className="relative overflow-hidden rounded-2xl border border-slate-200 bg-white">
+                                  <img src={img.preview} alt="" className="h-32 w-full object-cover" />
+                                  <div className="absolute left-1.5 top-1.5 flex gap-1">
+                                    <button type="button" disabled={idx === 0} onClick={(e) => { e.stopPropagation(); moveAddImage(idx, -1) }} className="rounded-md bg-white/90 px-1.5 py-0.5 text-[10px] font-bold text-slate-700 shadow disabled:opacity-30">↑</button>
+                                    <button type="button" disabled={idx >= addImages.length - 1} onClick={(e) => { e.stopPropagation(); moveAddImage(idx, 1) }} className="rounded-md bg-white/90 px-1.5 py-0.5 text-[10px] font-bold text-slate-700 shadow disabled:opacity-30">↓</button>
+                                  </div>
+                                  <button type="button" onClick={(e) => { e.stopPropagation(); URL.revokeObjectURL(img.preview); setAddImages((prev) => prev.filter((i) => i.id !== img.id)) }} className="absolute right-1.5 top-1.5 rounded-full bg-white/90 px-2 py-0.5 text-[10px] font-bold text-red-600 shadow hover:bg-red-50">✕</button>
+                                  <div className="p-2">
+                                    <input className="w-full rounded-lg border border-slate-200 bg-slate-50 px-2 py-1 text-[11px] text-slate-600 placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-[#2563eb]/40" placeholder="Note (optional)" value={img.caption} onChange={(e) => setAddImages((prev) => prev.map((i) => (i.id === img.id ? { ...i, caption: e.target.value } : i)))} />
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Summary */}
+                        <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+                          <div className="text-[11px] font-bold uppercase tracking-[0.14em] text-slate-400">Summary</div>
+                          <ul className="mt-2 space-y-1 text-xs text-slate-700">
+                            <li><span className="font-semibold">{addBasics.name.trim() || ‘Untitled’}</span> · {addBasics.address.trim() || ‘—‘}</li>
+                            <li>{wizardRc} room(s) · {wizardBc} bathroom(s) · {wizardKc} kitchen(s) · {wizardSc} shared space(s)</li>
+                            {addLaundry.enabled && <li>Laundry on site{(addLaundry.rows || []).length ? ` · ${(addLaundry.rows || []).length} location(s)` : ‘’}</li>}
+                            {addParking.enabled && <li>Parking available{addParking.type ? ` · ${addParking.type}` : ‘’}</li>}
+                            <li className="text-slate-500">Will appear as pending until approved by Axis.</li>
+                          </ul>
+                        </div>
+                      </div>
+                    )}
                   </div>
-                ) : null}
-              </div>
 
-              {/* Ready to submit */}
-              <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
-                <div className="text-[11px] font-bold uppercase tracking-[0.14em] text-slate-400">Ready to submit</div>
-                <ul className="mt-2 list-inside list-disc space-y-1 text-xs">
-                  <li><span className="font-semibold">{addBasics.name.trim() || 'Untitled'}</span> · {addBasics.address.trim() || '—'}</li>
-                  <li>
-                    {clampInt(addRoomCount, 1, MAX_ROOM_SLOTS)} room(s),&nbsp;
-                    {clampInt(addBathroomCount, 0, MAX_BATHROOM_SLOTS)} bathroom(s),&nbsp;
-                    {clampInt(addKitchenCount, 0, MAX_KITCHEN_SLOTS)} kitchen(s),&nbsp;
-                    {clampInt(addSharedSpaceCount, 0, MAX_SHARED_SPACE_SLOTS)} shared space(s)
-                  </li>
-                  <li>Pending review after submit — you can edit listing details once live from this portal.</li>
-                </ul>
-              </div>
-
-              <div className="flex justify-end gap-3 pt-2">
-                <button
-                  type="button"
-                  disabled={addSaving}
-                  onClick={() => { if (!addSaving) setAddOpen(false) }}
-                  className="rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-semibold text-slate-600 hover:bg-slate-50 disabled:opacity-50"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={addSaving}
-                  className="rounded-xl bg-[#2563eb] px-5 py-2.5 text-sm font-semibold text-white hover:brightness-110 disabled:opacity-50"
-                >
-                  {addSaving ? 'Submitting…' : 'Submit for review'}
-                </button>
-              </div>
+                  {/* Navigation */}
+                  <div className="mt-6 flex items-center justify-between gap-3">
+                    <button
+                      type="button"
+                      disabled={addSaving}
+                      onClick={addStep === 0 ? () => { if (!addSaving) { resetAddPropertyForm(); setAddOpen(false) } } : wizHandleBack}
+                      className="rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-semibold text-slate-600 hover:bg-slate-50 disabled:opacity-50"
+                    >
+                      {addStep === 0 ? ‘Cancel’ : ‘Back’}
+                    </button>
+                    <button
+                      type="submit"
+                      disabled={addSaving || !wizCanAdvance()}
+                      className="rounded-xl bg-[#2563eb] px-5 py-2.5 text-sm font-semibold text-white hover:brightness-110 disabled:opacity-50"
+                    >
+                      {addStep === totalSteps - 1
+                        ? (addSaving ? ‘Submitting…’ : ‘Submit for review’)
+                        : ‘Next’}
+                    </button>
+                  </div>
             </form>
           </Modal>
         ) : null}
@@ -4514,6 +4285,41 @@ function ManagerPaymentsPanel({ allowedPropertyNames }) {
     load()
   }, [load])
 
+  const payPropertyChoices = useMemo(() => {
+    const map = new Map()
+    for (const row of rentRows) {
+      const display = String(paymentPropertyLabel(row) || '').trim()
+      if (!display) continue
+      const value = display.toLowerCase()
+      if (!map.has(value)) map.set(value, display)
+    }
+    return [...map.entries()]
+      .sort((a, b) => a[1].localeCompare(b[1], undefined, { sensitivity: 'base' }))
+      .map(([value, display]) => ({ value, display }))
+  }, [rentRows])
+
+  const payResidentChoices = useMemo(() => {
+    const rows = payPropertyFilter
+      ? rentRows.filter((r) => String(paymentPropertyLabel(r) || '').trim().toLowerCase() === payPropertyFilter)
+      : rentRows
+    const map = new Map()
+    for (const row of rows) {
+      const display = String(paymentResidentLabel(row) || '').trim()
+      if (!display) continue
+      const value = display.toLowerCase()
+      if (!map.has(value)) map.set(value, display)
+    }
+    return [...map.entries()]
+      .sort((a, b) => a[1].localeCompare(b[1], undefined, { sensitivity: 'base' }))
+      .map(([value, display]) => ({ value, display }))
+  }, [rentRows, payPropertyFilter])
+
+  useEffect(() => {
+    if (!payResidentFilter) return
+    const ok = payResidentChoices.some((c) => c.value === payResidentFilter)
+    if (!ok) setPayResidentFilter('')
+  }, [payResidentFilter, payResidentChoices])
+
   const paymentRows = useMemo(
     () => {
       let filtered = rentRows
@@ -4713,6 +4519,41 @@ function ManagerPaymentsPanel({ allowedPropertyNames }) {
               Payments are read from workspace <code className="rounded bg-white/80 px-1.5 py-0.5 text-xs">{AIRTABLE_PAYMENTS_BASE_ID}</code>.
             </li>
           </ul>
+        </div>
+      ) : null}
+
+      {!paymentsLoadError && !loading && rentRows.length > 0 ? (
+        <div className="mb-4 flex flex-wrap items-end gap-4">
+          <label className="flex min-w-[200px] flex-1 flex-col gap-1.5 sm:max-w-xs">
+            <span className="text-[11px] font-bold uppercase tracking-[0.14em] text-slate-400">Property</span>
+            <select
+              value={payPropertyFilter}
+              onChange={(e) => setPayPropertyFilter(e.target.value)}
+              className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-medium text-slate-900 outline-none transition focus:border-axis focus:ring-2 focus:ring-axis/20"
+            >
+              <option value="">All properties</option>
+              {payPropertyChoices.map(({ value, display }) => (
+                <option key={value} value={value}>
+                  {display}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="flex min-w-[200px] flex-1 flex-col gap-1.5 sm:max-w-xs">
+            <span className="text-[11px] font-bold uppercase tracking-[0.14em] text-slate-400">Resident</span>
+            <select
+              value={payResidentFilter}
+              onChange={(e) => setPayResidentFilter(e.target.value)}
+              className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-medium text-slate-900 outline-none transition focus:border-axis focus:ring-2 focus:ring-axis/20"
+            >
+              <option value="">All residents</option>
+              {payResidentChoices.map(({ value, display }) => (
+                <option key={value} value={value}>
+                  {display}
+                </option>
+              ))}
+            </select>
+          </label>
         </div>
       ) : null}
 

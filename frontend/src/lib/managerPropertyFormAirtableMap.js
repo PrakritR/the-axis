@@ -1,107 +1,101 @@
 /**
- * Central Airtable field names + serializer for Manager Portal "Add property".
- * Properties table: flat Room N / Bathroom N / Kitchen N / Shared Space N columns + counts + amenities.
+ * Airtable field map for Manager Portal "Add Property".
+ * Field names match the live Properties table EXACTLY — do not change without
+ * updating the Airtable base first.
  */
 
+// ─── Slot limits ────────────────────────────────────────────────────────────────
 export const MAX_ROOM_SLOTS = 20
 export const MAX_BATHROOM_SLOTS = 10
 export const MAX_KITCHEN_SLOTS = 3
 export const MAX_SHARED_SPACE_SLOTS = 3
+export const MAX_LAUNDRY_SLOTS = 5
+// Rooms Sharing Bathroom only exists for bathrooms 1–5 in Airtable
+export const MAX_BATHROOM_SHARING_SLOTS = 5
 
+// ─── Static field names ──────────────────────────────────────────────────────────
 export const PROPERTY_AIR = {
-  name: 'Name',
-  address: 'Address',
-  housingType: 'Housing Type',
-  roomCount: 'Room Count',
-  bathroomCount: 'Bathroom Count',
-  kitchenCount: 'Kitchen Count',
-  description: 'Description',
-  amenities: 'Amenities',
-  pets: 'Pets',
-  laundry: 'Laundry',
-  laundryType: 'Laundry Type',
-  laundryDescription: 'Laundry Description',
-  roomsSharingLaundry: 'Rooms Sharing Laundry',
-  parking: 'Parking',
-  parkingType: 'Parking Type',
-  parkingFee: 'Parking Fee',
-  bathroomAccess: 'Bathroom Access',
-  utilitiesFee: 'Utilities Fee',
-  securityDeposit: 'Security Deposit',
-  applicationFee: 'Application Fee',
-  notes: 'Notes',
-  managerEmail: 'Manager Email',
-  managerLink: 'Manager',
-  approved: 'Approved',
-  status: 'Status',
-  sharedSpaceCount: 'Number of Shared Spaces',
-  otherInfo: 'Other Info',
+  propertyName:       'Property Name',      // primary field (was "Name" — wrong)
+  address:            'Address',
+  roomCount:          'Room Count',
+  propertyType:       'Property Type',      // Single select (was "Housing Type")
+  bathroomCount:      'Bathroom Count',
+  bathroomAccess:     'Bathroom Access',    // Long text
+  kitchenCount:       'Kitchen Count',
+  amenities:          'Amenities',          // Multiple select → send as string[]
+  managerProfile:     'Manager Profile',    // Linked record (was "Manager")
+  pets:               'Pets',              // Single select
+  applicationFee:     'Application Fee',
+  laundry:            'Laundry',            // Checkbox
+  parking:            'Parking',            // Checkbox
+  roomsSharingLaundry:'Rooms Sharing Laundry',
+  parkingType:        'Parking Type',
+  parkingFee:         'Parking Fee',
+  approved:           'Approved',           // Checkbox
+  approvalStatus:     'Approval Status',    // Single line text
+  otherInfo:          'Other Info',         // Long text
+  sharedSpaceCount:   'Number of Shared Spaces',
 }
 
+// ─── Dynamic room fields (1–20) ──────────────────────────────────────────────────
 /** @param {number} n 1-based */
-export function roomNameField(n) {
-  return `Room ${n} Name`
-}
-export function roomRentField(n) {
-  return `Room ${n} Rent`
-}
-export function roomAvailabilityField(n) {
-  return `Room ${n} Availability`
-}
-export function roomFurnishedField(n) {
-  return `Room ${n} Furnished`
-}
-export function roomUtilitiesDescriptionField(n) {
-  return `Room ${n} Utilities Description`
-}
-export function roomUtilitiesCostField(n) {
-  return `Room ${n} Utilities Cost`
-}
-export function roomNotesField(n) {
-  return `Room ${n} Notes`
-}
+export const roomRentField        = (n) => `Room ${n} Rent`
+export const roomAvailabilityField = (n) => `Room ${n} Availability`   // Date
+export const roomFurnishedField    = (n) => `Room ${n} Furnished`       // Single select: Yes/No/Partial
+export const roomUtilitiesCostField= (n) => `Room ${n} Utilities Cost`
+/** Only Room 1 has a "Utilities" long-text field */
+export const ROOM_1_UTILITIES_FIELD = 'Room 1 Utilities'
 
-export function bathroomDescriptionField(n) {
-  return `Bathroom ${n}`
-}
-export function bathroomRoomsSharingField(n) {
-  return `Rooms Sharing Bathroom ${n}`
-}
+// ─── Dynamic bathroom fields ─────────────────────────────────────────────────────
+export const bathroomDescriptionField = (n) => `Bathroom ${n}`             // Long text, 1–10
+/** Only bathrooms 1–5 have a "Rooms Sharing" field in Airtable */
+export const bathroomRoomsSharingField = (n) => `Rooms Sharing Bathroom ${n}` // 1–5 only
 
-export function kitchenDescriptionField(n) {
-  return `Kitchen ${n}`
-}
-export function kitchenRoomsSharingField(n) {
-  return `Rooms Sharing Kitchen ${n}`
-}
+// ─── Dynamic kitchen fields ──────────────────────────────────────────────────────
+export const kitchenDescriptionField  = (n) => `Kitchen ${n}`
+export const kitchenRoomsSharingField = (n) => `Rooms Sharing Kitchen ${n}`
 
-/** @param {number} n 1-based */
-export function sharedSpaceNameField(n) {
-  return `Shared Space ${n} Name`
-}
-export function sharedSpaceTypeField(n) {
-  return `Shared Space ${n} Type`
-}
-export function sharedSpaceAccessField(n) {
-  return `Access to Shared Space ${n}`
-}
+// ─── Dynamic laundry fields (up to 5 laundry locations) ─────────────────────────
+export const laundryTypeField         = (n) => `Laundry ${n} Type`
+export const laundryRoomsSharingField = (n) => `Rooms Sharing Laundry ${n}`
 
+// ─── Dynamic shared space fields ─────────────────────────────────────────────────
+export const sharedSpaceNameField   = (n) => `Shared Space ${n} Name`
+export const sharedSpaceTypeField   = (n) => `Shared Space ${n} Type`
+export const sharedSpaceAccessField = (n) => `Access to Shared Space ${n}` // Multiple select
+
+// ─── Amenity options for the form (Multiple select) ──────────────────────────────
+export const AMENITY_OPTIONS = [
+  'Wi-Fi', 'Parking', 'Laundry', 'Air Conditioning', 'Heating', 'Dishwasher',
+  'Gym', 'Pool', 'Backyard', 'Balcony', 'Elevator', 'Storage', 'Bike Storage',
+  'EV Charging', 'Furnished Common Areas', 'Cleaning Service', 'Security System',
+  'Pet-Friendly', 'Rooftop', 'Game Room', 'Study Room',
+]
+
+// ─── Pet options (Single select) ─────────────────────────────────────────────────
+export const PET_OPTIONS = ['Allowed', 'Not Allowed', 'Case by Case', 'Cats Only', 'Small Dogs OK']
+
+// ─── Furnished options (Single select) ──────────────────────────────────────────
+export const FURNISHED_OPTIONS = ['Yes', 'No', 'Partial']
+
+// ─── Property type options (Single select) ───────────────────────────────────────
+export const PROPERTY_TYPE_OPTIONS = ['House', 'Apartment', 'Townhome', 'Studio', 'Condo', 'Other']
+
+// ─── Shared space type options ────────────────────────────────────────────────────
+export const SHARED_SPACE_TYPE_OPTIONS = [
+  'Living Room', 'Dining Room', 'Lounge', 'Study Area',
+  'Laundry', 'Backyard', 'Patio', 'Storage', 'Hallway', 'Other',
+]
+
+// ─── Helpers ────────────────────────────────────────────────────────────────────
 export function clampInt(v, min, max) {
   const n = Math.floor(Number(v))
   if (!Number.isFinite(n)) return min
   return Math.min(max, Math.max(min, n))
 }
 
-export function emptyRoomRow(index1) {
-  return {
-    name: `Room ${index1}`,
-    rent: '',
-    availability: '',
-    furnished: false,
-    utilitiesDescription: '',
-    utilitiesCost: '',
-    notes: '',
-  }
+export function emptyRoomRow() {
+  return { rent: '', availability: '', furnished: '', utilitiesCost: '', utilities: '' }
 }
 
 export function emptyBathroomRow() {
@@ -112,11 +106,15 @@ export function emptyKitchenRow() {
   return { description: '', roomsSharing: '' }
 }
 
+export function emptyLaundryRow() {
+  return { type: '', roomsSharing: '' }
+}
+
 export function emptySharedSpaceRow() {
   return { name: '', type: '', access: [] }
 }
 
-function optionalNumber(raw) {
+function optionalCurrency(raw) {
   const s = String(raw ?? '').trim()
   if (!s) return undefined
   const n = Number(s)
@@ -124,48 +122,37 @@ function optionalNumber(raw) {
   return n
 }
 
-function optionalCurrency(raw) {
-  const n = optionalNumber(raw)
-  return n
+function toIsoDate(raw) {
+  const s = String(raw ?? '').trim()
+  if (!s) return undefined
+  // already ISO
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s
+  const d = new Date(s)
+  if (Number.isNaN(d.getTime())) return undefined
+  return d.toISOString().slice(0, 10)
 }
 
 /**
- * @param {object} params
- * @param {object} params.basics — name, address, propertyType, description, amenities, pets, bathroomAccess
- * @param {number} params.roomCount
- * @param {number} params.bathroomCount
- * @param {number} params.kitchenCount
- * @param {number} params.sharedSpaceCount
- * @param {object} params.fees — utilitiesFee, securityDeposit, applicationFee (strings)
- * @param {object} params.laundry — enabled, type, description, roomsSharing
- * @param {object} params.parking — enabled, type, fee
- * @param {Array} params.rooms — rows from form
- * @param {Array} params.bathrooms
- * @param {Array} params.kitchens
- * @param {Array} params.sharedSpaces — rows { name, type, access[] }
- * @param {string} params.otherInfo
- * @param {string} params.managerEmail
- * @param {string} [params.managerRecordId]
- * @param {string[]} [params.photoCaptionLines] appended into Notes
+ * Build the flat fields object to POST to Airtable Properties table.
+ * Only sends fields that have a non-empty value to avoid UNKNOWN_FIELD_NAME errors
+ * and to keep the record clean.
  */
 export function serializeManagerAddPropertyToAirtableFields(params) {
   const {
-    basics,
+    basics,          // { name, address, propertyType, amenities[], pets, bathroomAccess }
     roomCount,
     bathroomCount,
     kitchenCount,
     sharedSpaceCount = 0,
-    fees,
-    laundry,
-    parking,
-    rooms,
-    bathrooms,
-    kitchens,
-    sharedSpaces = [],
+    parking,         // { enabled, type, fee }
+    laundry,         // { enabled, rows: [{ type, roomsSharing }] }
+    rooms,           // [{ rent, availability, furnished, utilitiesCost, utilities }]
+    bathrooms,       // [{ description, roomsSharing }]
+    kitchens,        // [{ description, roomsSharing }]
+    sharedSpaces = [],// [{ name, type, access[] }]
+    applicationFee = '',
     otherInfo = '',
-    managerEmail,
     managerRecordId,
-    photoCaptionLines = [],
   } = params
 
   const rc = clampInt(roomCount, 1, MAX_ROOM_SLOTS)
@@ -175,97 +162,86 @@ export function serializeManagerAddPropertyToAirtableFields(params) {
 
   const fields = {}
 
+  // ── Core ──────────────────────────────────────────────────────────────────────
   const name = String(basics.name || '').trim()
+  if (name) fields[PROPERTY_AIR.propertyName] = name
+
   const address = String(basics.address || '').trim()
-  fields[PROPERTY_AIR.name] = name
-  fields[PROPERTY_AIR.address] = address
-
-  fields[PROPERTY_AIR.approved] = false
-  fields[PROPERTY_AIR.status] = 'pending_review'
-  fields[PROPERTY_AIR.managerEmail] = String(managerEmail || '').trim()
-
-  if (managerRecordId) {
-    fields[PROPERTY_AIR.managerLink] = [managerRecordId]
-  }
-
-  const ht = String(basics.propertyType || '').trim()
-  if (ht) fields[PROPERTY_AIR.housingType] = ht
+  if (address) fields[PROPERTY_AIR.address] = address
 
   fields[PROPERTY_AIR.roomCount] = rc
   fields[PROPERTY_AIR.bathroomCount] = bc
   fields[PROPERTY_AIR.kitchenCount] = kc
   fields[PROPERTY_AIR.sharedSpaceCount] = sc
 
-  const desc = String(basics.description || '').trim()
-  if (desc) fields[PROPERTY_AIR.description] = desc
+  const pt = String(basics.propertyType || '').trim()
+  if (pt) fields[PROPERTY_AIR.propertyType] = pt
 
-  const am = String(basics.amenities || '').trim()
-  if (am) fields[PROPERTY_AIR.amenities] = am
+  // Amenities: Multiple select → send as string[]
+  const amenitiesArr = Array.isArray(basics.amenities)
+    ? basics.amenities.filter(Boolean)
+    : String(basics.amenities || '').split(',').map((s) => s.trim()).filter(Boolean)
+  if (amenitiesArr.length) fields[PROPERTY_AIR.amenities] = amenitiesArr
 
   const pets = String(basics.pets || '').trim()
   if (pets) fields[PROPERTY_AIR.pets] = pets
 
-  // Blank utilities / security deposit → $0 on the record. Blank application fee → omit field (Apply uses $50 default when live).
-  const uf = optionalCurrency(fees.utilitiesFee) ?? 0
-  const sd = optionalCurrency(fees.securityDeposit) ?? 0
-  fields[PROPERTY_AIR.utilitiesFee] = uf
-  fields[PROPERTY_AIR.securityDeposit] = sd
-
-  const af = optionalCurrency(fees.applicationFee)
-  if (af !== undefined) fields[PROPERTY_AIR.applicationFee] = af
-
-  if (laundry?.enabled) {
-    fields[PROPERTY_AIR.laundry] = true
-    const lt = String(laundry.type || '').trim()
-    if (lt) fields[PROPERTY_AIR.laundryType] = lt
-    const ld = String(laundry.description || '').trim()
-    if (ld) fields[PROPERTY_AIR.laundryDescription] = ld
-    const lr = String(laundry.roomsSharing || '').trim()
-    if (lr) fields[PROPERTY_AIR.roomsSharingLaundry] = lr
-  }
-
-  if (parking?.enabled) {
-    fields[PROPERTY_AIR.parking] = true
-    const pt = String(parking.type || '').trim()
-    if (pt) fields[PROPERTY_AIR.parkingType] = pt
-    const pf = optionalCurrency(parking.fee)
-    if (pf !== undefined) fields[PROPERTY_AIR.parkingFee] = pf
-  }
-
   const ba = String(basics.bathroomAccess || '').trim()
   if (ba) fields[PROPERTY_AIR.bathroomAccess] = ba
 
+  // Approval state
+  fields[PROPERTY_AIR.approved] = false
+  fields[PROPERTY_AIR.approvalStatus] = 'Pending Review'
+
+  // Manager link
+  if (managerRecordId) {
+    fields[PROPERTY_AIR.managerProfile] = [managerRecordId]
+  }
+
+  // Application fee
+  const af = optionalCurrency(applicationFee)
+  if (af !== undefined) fields[PROPERTY_AIR.applicationFee] = af
+
+  // Other info
+  const oi = String(otherInfo || '').trim()
+  if (oi) fields[PROPERTY_AIR.otherInfo] = oi
+
+  // ── Rooms ─────────────────────────────────────────────────────────────────────
   for (let i = 1; i <= rc; i++) {
-    const row = rooms[i - 1] || emptyRoomRow(i)
-    const rname = String(row.name || '').trim()
-    if (rname) fields[roomNameField(i)] = rname
+    const row = rooms[i - 1] || emptyRoomRow()
 
     const rent = optionalCurrency(row.rent)
     if (rent !== undefined) fields[roomRentField(i)] = rent
 
-    const avail = String(row.availability || '').trim()
+    const avail = toIsoDate(row.availability)
     if (avail) fields[roomAvailabilityField(i)] = avail
 
-    if (row.furnished === true) fields[roomFurnishedField(i)] = true
-
-    const ud = String(row.utilitiesDescription || '').trim()
-    if (ud) fields[roomUtilitiesDescriptionField(i)] = ud
+    const furn = String(row.furnished || '').trim()
+    if (furn) fields[roomFurnishedField(i)] = furn
 
     const uc = optionalCurrency(row.utilitiesCost)
     if (uc !== undefined) fields[roomUtilitiesCostField(i)] = uc
 
-    const rn = String(row.notes || '').trim()
-    if (rn) fields[roomNotesField(i)] = rn
+    // Only Room 1 has the Utilities (long text) field
+    if (i === 1) {
+      const u1 = String(row.utilities || '').trim()
+      if (u1) fields[ROOM_1_UTILITIES_FIELD] = u1
+    }
   }
 
+  // ── Bathrooms ─────────────────────────────────────────────────────────────────
   for (let i = 1; i <= bc; i++) {
     const row = bathrooms[i - 1] || emptyBathroomRow()
     const d = String(row.description || '').trim()
     if (d) fields[bathroomDescriptionField(i)] = d
-    const rs = String(row.roomsSharing || '').trim()
-    if (rs) fields[bathroomRoomsSharingField(i)] = rs
+    // Rooms Sharing Bathroom only exists for 1–5
+    if (i <= MAX_BATHROOM_SHARING_SLOTS) {
+      const rs = String(row.roomsSharing || '').trim()
+      if (rs) fields[bathroomRoomsSharingField(i)] = rs
+    }
   }
 
+  // ── Kitchens ──────────────────────────────────────────────────────────────────
   for (let i = 1; i <= kc; i++) {
     const row = kitchens[i - 1] || emptyKitchenRow()
     const d = String(row.description || '').trim()
@@ -274,6 +250,33 @@ export function serializeManagerAddPropertyToAirtableFields(params) {
     if (rs) fields[kitchenRoomsSharingField(i)] = rs
   }
 
+  // ── Laundry ───────────────────────────────────────────────────────────────────
+  if (laundry?.enabled) {
+    fields[PROPERTY_AIR.laundry] = true
+    const rows = Array.isArray(laundry.rows) ? laundry.rows : []
+    // General "Rooms Sharing Laundry" field
+    const generalSharing = String(laundry.roomsSharing || '').trim()
+    if (generalSharing) fields[PROPERTY_AIR.roomsSharingLaundry] = generalSharing
+    // Per-location laundry fields (up to 5)
+    rows.slice(0, MAX_LAUNDRY_SLOTS).forEach((row, idx) => {
+      const n = idx + 1
+      const lt = String(row.type || '').trim()
+      if (lt) fields[laundryTypeField(n)] = lt
+      const rs = String(row.roomsSharing || '').trim()
+      if (rs) fields[laundryRoomsSharingField(n)] = rs
+    })
+  }
+
+  // ── Parking ───────────────────────────────────────────────────────────────────
+  if (parking?.enabled) {
+    fields[PROPERTY_AIR.parking] = true
+    const pt = String(parking.type || '').trim()
+    if (pt) fields[PROPERTY_AIR.parkingType] = pt
+    const pf = optionalCurrency(parking.fee)
+    if (pf !== undefined) fields[PROPERTY_AIR.parkingFee] = pf
+  }
+
+  // ── Shared spaces ─────────────────────────────────────────────────────────────
   for (let i = 1; i <= sc; i++) {
     const row = sharedSpaces[i - 1] || emptySharedSpaceRow()
     const sn = String(row.name || '').trim()
@@ -283,16 +286,6 @@ export function serializeManagerAddPropertyToAirtableFields(params) {
     const acc = Array.isArray(row.access) ? row.access.filter(Boolean) : []
     if (acc.length) fields[sharedSpaceAccessField(i)] = acc
   }
-
-  const oi = String(otherInfo || '').trim()
-  if (oi) fields[PROPERTY_AIR.otherInfo] = oi
-
-  const noteParts = [`Submitted by: ${String(managerEmail || '').trim()}`]
-  if (photoCaptionLines.length) {
-    noteParts.push('Photo notes:')
-    photoCaptionLines.forEach((line) => noteParts.push(line))
-  }
-  fields[PROPERTY_AIR.notes] = noteParts.join('\n')
 
   return fields
 }
