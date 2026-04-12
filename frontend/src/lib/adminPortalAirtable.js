@@ -360,6 +360,11 @@ export async function adminRejectApplication(recordId) {
   return adminPatchApplication(recordId, { Approved: false })
 }
 
+/** Remove approval — resets the application back to pending review. */
+export async function adminUnapproveApplication(recordId) {
+  return adminPatchApplication(recordId, { Approved: null, 'Approved At': null })
+}
+
 /** Load all resident profiles for CEO/admin portal handoff. */
 export async function loadResidentsForAdmin() {
   if (!isAdminPortalAirtableConfigured()) return []

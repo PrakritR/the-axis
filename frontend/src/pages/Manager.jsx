@@ -4742,6 +4742,7 @@ function ApplicationsPanel({ allowedPropertyNames, manager }) {
   const [scopedRows, setScopedRows] = useState([])
   const [loading, setLoading] = useState(true)
   const [propertyFilter, setPropertyFilter] = useState('')
+  const [statusFilter, setStatusFilter] = useState('pending')
   const [sortKey, setSortKey] = useState('submitted')
   const [sortDir, setSortDir] = useState('desc')
   const [approving, setApproving] = useState({}) // recordId -> 'approving' | 'rejecting'
@@ -4766,10 +4767,17 @@ function ApplicationsPanel({ allowedPropertyNames, manager }) {
 
   useEffect(() => { load() }, [load])
 
-  const filteredRows = useMemo(() => {
+  const propertyFilteredRows = useMemo(() => {
     if (!propertyFilter.trim()) return scopedRows
     return scopedRows.filter((a) => String(a['Property Name'] || '').trim() === propertyFilter.trim())
   }, [scopedRows, propertyFilter])
+
+  const filteredRows = useMemo(() => {
+    if (statusFilter === 'pending') return propertyFilteredRows.filter((a) => a.Approved !== true && a.Approved !== false)
+    if (statusFilter === 'approved') return propertyFilteredRows.filter((a) => a.Approved === true)
+    if (statusFilter === 'rejected') return propertyFilteredRows.filter((a) => a.Approved === false)
+    return propertyFilteredRows
+  }, [propertyFilteredRows, statusFilter])
 
   const applications = useMemo(
     () => sortApplicationsList(filteredRows, sortKey, sortDir),
@@ -4856,6 +4864,28 @@ function ApplicationsPanel({ allowedPropertyNames, manager }) {
         </button>
       </div>
 
+      <div className="mb-4 inline-flex flex-wrap gap-1 rounded-2xl border border-slate-200 bg-slate-50 p-1">
+        {[
+          ['pending', 'Pending', propertyFilteredRows.filter((a) => a.Approved !== true && a.Approved !== false).length],
+          ['approved', 'Approved', propertyFilteredRows.filter((a) => a.Approved === true).length],
+          ['rejected', 'Rejected', propertyFilteredRows.filter((a) => a.Approved === false).length],
+          ['all', 'All', propertyFilteredRows.length],
+        ].map(([key, label, count]) => (
+          <button
+            key={key}
+            type="button"
+            onClick={() => { setStatusFilter(key); setDetailAppId(null) }}
+            className={classNames(
+              'rounded-xl px-4 py-2 text-sm font-semibold transition',
+              statusFilter === key ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-600 hover:text-slate-900',
+            )}
+          >
+            {label}
+            <span className="ml-1.5 tabular-nums text-slate-500">({count})</span>
+          </button>
+        ))}
+      </div>
+
       {loadError ? (
         <div
           role="alert"
@@ -4884,8 +4914,10 @@ function ApplicationsPanel({ allowedPropertyNames, manager }) {
         ) : filteredRows.length === 0 ? (
           <div className="px-6 py-16 text-center">
             <div className="mb-3 text-4xl" aria-hidden>🏠</div>
-            <div className="text-sm font-semibold text-slate-700">No applications for this property</div>
-            <p className="mt-1 text-sm text-slate-500">Choose &quot;All your properties&quot; or another house to see more.</p>
+            <div className="text-sm font-semibold text-slate-700">No {statusFilter !== 'all' ? statusFilter + ' ' : ''}applications</div>
+            <p className="mt-1 text-sm text-slate-500">
+              {statusFilter !== 'all' ? 'Try switching to a different filter tab.' : 'Choose "All your properties" or another house to see more.'}
+            </p>
           </div>
         ) : (
           <>

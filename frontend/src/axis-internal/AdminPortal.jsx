@@ -5,6 +5,7 @@ import PortalShell, { StatCard, StatusPill, DataTable } from '../components/Port
 import {
   adminApproveProperty,
   adminRejectApplication,
+  adminUnapproveApplication,
   adminRejectProperty,
   adminRequestPropertyEdits,
   adminSetManagerActive,
@@ -283,8 +284,10 @@ export default function AdminPortal() {
     }
   })
   const [tab, setTab] = useState('dashboard')
-  /** Within Properties: approval queue vs full directory */
-  const [propertiesSection, setPropertiesSection] = useState('queue')
+  /** Within Properties: pending | approved | rejected */
+  const [propertiesSection, setPropertiesSection] = useState('pending')
+  /** Within Applications: all | pending | approved | rejected */
+  const [applicationsFilter, setApplicationsFilter] = useState('pending')
   const [properties, setProperties] = useState(() => [])
   const [accounts, setAccounts] = useState(() => [])
   const [applications, setApplications] = useState(() => [])
@@ -355,16 +358,24 @@ export default function AdminPortal() {
   }, [tab])
 
   useEffect(() => {
-    if (tab !== 'properties' || propertiesSection !== 'queue') setSelectedApprovalId(null)
+    if (tab !== 'properties' || propertiesSection !== 'pending') setSelectedApprovalId(null)
   }, [tab, propertiesSection])
 
   const navItems = useMemo(() => NAV_BASE, [])
 
   const pendingApprovals = useMemo(() => properties.filter((p) => p.status === 'pending' || p.status === 'changes_requested'), [properties])
+  const approvedProperties = useMemo(() => properties.filter((p) => p.status === 'approved' || p.status === 'live'), [properties])
+  const rejectedProperties = useMemo(() => properties.filter((p) => p.status === 'rejected'), [properties])
   const pendingApps = useMemo(
     () => applications.filter((a) => a.approvalPending).length,
     [applications],
   )
+  const filteredApplications = useMemo(() => {
+    if (applicationsFilter === 'pending') return sortedApplications.filter((a) => a.approvalPending)
+    if (applicationsFilter === 'approved') return sortedApplications.filter((a) => !a.approvalPending && a._airtable?.Approved === true)
+    if (applicationsFilter === 'rejected') return sortedApplications.filter((a) => !a.approvalPending && a._airtable?.Approved === false)
+    return sortedApplications
+  }, [sortedApplications, applicationsFilter])
 
   const sortedAccounts = useMemo(
     () => sortAccountsByMode(accounts, managerTableSort),
@@ -412,7 +423,7 @@ export default function AdminPortal() {
               value={pendingApprovals.length}
               onClick={() => {
                 setTab('properties')
-                setPropertiesSection('queue')
+                setPropertiesSection('pending')
               }}
             />
             <StatCard
@@ -420,7 +431,7 @@ export default function AdminPortal() {
               value={properties.length}
               onClick={() => {
                 setTab('properties')
-                setPropertiesSection('directory')
+                setPropertiesSection('approved')
               }}
             />
             <StatCard label="Pending applications" value={pendingApps} onClick={() => setTab('applications')} />
@@ -434,46 +445,35 @@ export default function AdminPortal() {
         <div className="space-y-6">
           <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
             <div>
-              <h1 className="text-2xl font-black text-slate-900">
-                {propertiesSection === 'queue' ? 'Property approvals' : 'All properties'}
-              </h1>
+              <h1 className="text-2xl font-black text-slate-900">Properties</h1>
               <p className="mt-1 text-sm text-slate-500">
-                {propertiesSection === 'queue'
+                {propertiesSection === 'pending'
                   ? 'Review submissions and approve, request edits, or reject.'
-                  : 'Directory of every property in the system.'}
+                  : propertiesSection === 'approved'
+                    ? 'All approved and live properties.'
+                    : 'All rejected properties.'}
               </p>
             </div>
             <div className="inline-flex flex-wrap gap-1 rounded-2xl border border-slate-200 bg-slate-50 p-1">
-              <button
-                type="button"
-                onClick={() => setPropertiesSection('queue')}
-                className={`rounded-xl px-4 py-2 text-sm font-semibold transition ${
-                  propertiesSection === 'queue'
-                    ? 'bg-white text-slate-900 shadow-sm'
-                    : 'text-slate-600 hover:text-slate-900'
-                }`}
-              >
-                Approvals queue
-                {pendingApprovals.length > 0 ? (
-                  <span className="ml-1.5 tabular-nums text-slate-500">({pendingApprovals.length})</span>
-                ) : null}
-              </button>
-              <button
-                type="button"
-                onClick={() => setPropertiesSection('directory')}
-                className={`rounded-xl px-4 py-2 text-sm font-semibold transition ${
-                  propertiesSection === 'directory'
-                    ? 'bg-white text-slate-900 shadow-sm'
-                    : 'text-slate-600 hover:text-slate-900'
-                }`}
-              >
-                All properties
-                <span className="ml-1.5 tabular-nums text-slate-500">({properties.length})</span>
-              </button>
+              {[['pending', 'Pending', pendingApprovals.length], ['approved', 'Approved', approvedProperties.length], ['rejected', 'Rejected', rejectedProperties.length]].map(([key, label, count]) => (
+                <button
+                  key={key}
+                  type="button"
+                  onClick={() => setPropertiesSection(key)}
+                  className={`rounded-xl px-4 py-2 text-sm font-semibold transition ${
+                    propertiesSection === key
+                      ? 'bg-white text-slate-900 shadow-sm'
+                      : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  {label}
+                  <span className="ml-1.5 tabular-nums text-slate-500">({count})</span>
+                </button>
+              ))}
             </div>
           </div>
 
-          {propertiesSection === 'queue' ? (
+          {propertiesSection === 'pending' ? (
             <>
               <DataTable
                 empty="No properties awaiting review."
@@ -567,16 +567,27 @@ export default function AdminPortal() {
                 </div>
               ) : null}
             </>
-          ) : (
+          ) : propertiesSection === 'approved' ? (
             <DataTable
-              empty="No properties."
+              empty="No approved properties."
               columns={[
-                { key: 'n', label: 'Property', render: (d) => d.name },
+                { key: 'n', label: 'Property', render: (d) => <><div className="font-semibold">{d.name}</div><div className="text-xs text-slate-500">{d.address}</div></> },
                 { key: 'o', label: 'Partner', render: (d) => ownerLabel(d.ownerId) },
                 { key: 's', label: 'Status', render: (d) => <StatusPill tone={propertyTone(d.status)}>{PROPERTY_STATUS_LABEL[d.status] || d.status}</StatusPill> },
                 { key: 'r', label: 'From', render: (d) => `$${d.rentFrom}` },
               ]}
-              rows={properties.map((p) => ({ key: p.id, data: p }))}
+              rows={approvedProperties.map((p) => ({ key: p.id, data: p }))}
+            />
+          ) : (
+            <DataTable
+              empty="No rejected properties."
+              columns={[
+                { key: 'n', label: 'Property', render: (d) => <><div className="font-semibold">{d.name}</div><div className="text-xs text-slate-500">{d.address}</div></> },
+                { key: 'o', label: 'Partner', render: (d) => ownerLabel(d.ownerId) },
+                { key: 's', label: 'Status', render: (d) => <StatusPill tone={propertyTone(d.status)}>{PROPERTY_STATUS_LABEL[d.status] || d.status}</StatusPill> },
+                { key: 'dt', label: 'Submitted', render: (d) => new Date(d.submittedAt).toLocaleDateString() },
+              ]}
+              rows={rejectedProperties.map((p) => ({ key: p.id, data: p }))}
             />
           )}
         </div>
@@ -634,23 +645,42 @@ export default function AdminPortal() {
 
       {tab === 'applications' && (
         <div className="space-y-6">
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
             <h1 className="text-2xl font-black">Applications</h1>
-            <label className="flex flex-wrap items-center gap-2 text-sm text-slate-600">
-              <span className="font-semibold text-slate-800">Sort by</span>
-              <select
-                className={adminSelectCls}
-                value={applicationsTableSort}
-                onChange={(e) => setApplicationsTableSort(e.target.value)}
-              >
-                <option value="house_asc">House (A–Z)</option>
-                <option value="house_desc">House (Z–A)</option>
-                <option value="applicant_asc">Applicant (A–Z)</option>
-              </select>
-            </label>
+            <div className="flex flex-wrap items-center gap-3">
+              <div className="inline-flex flex-wrap gap-1 rounded-2xl border border-slate-200 bg-slate-50 p-1">
+                {[['pending', 'Pending', applications.filter((a) => a.approvalPending).length], ['approved', 'Approved', applications.filter((a) => !a.approvalPending && a._airtable?.Approved === true).length], ['rejected', 'Rejected', applications.filter((a) => !a.approvalPending && a._airtable?.Approved === false).length], ['all', 'All', applications.length]].map(([key, label, count]) => (
+                  <button
+                    key={key}
+                    type="button"
+                    onClick={() => { setApplicationsFilter(key); setSelectedApplicationId(null) }}
+                    className={`rounded-xl px-4 py-2 text-sm font-semibold transition ${
+                      applicationsFilter === key
+                        ? 'bg-white text-slate-900 shadow-sm'
+                        : 'text-slate-600 hover:text-slate-900'
+                    }`}
+                  >
+                    {label}
+                    <span className="ml-1.5 tabular-nums text-slate-500">({count})</span>
+                  </button>
+                ))}
+              </div>
+              <label className="flex flex-wrap items-center gap-2 text-sm text-slate-600">
+                <span className="font-semibold text-slate-800">Sort</span>
+                <select
+                  className={adminSelectCls}
+                  value={applicationsTableSort}
+                  onChange={(e) => setApplicationsTableSort(e.target.value)}
+                >
+                  <option value="house_asc">House (A–Z)</option>
+                  <option value="house_desc">House (Z–A)</option>
+                  <option value="applicant_asc">Applicant (A–Z)</option>
+                </select>
+              </label>
+            </div>
           </div>
           <DataTable
-            empty="No applications."
+            empty={`No ${applicationsFilter === 'all' ? '' : applicationsFilter + ' '}applications.`}
             columns={[
               { key: 'p', label: 'House / property', render: (d) => d.propertyName },
               { key: 'a', label: 'Applicant', render: (d) => d.applicantName },
@@ -670,7 +700,7 @@ export default function AdminPortal() {
                 ),
               },
             ]}
-            rows={sortedApplications.map((a) => ({ key: a.id, data: a }))}
+            rows={filteredApplications.map((a) => ({ key: a.id, data: a }))}
           />
           {selectedApplication ? (
             <ApplicationDetailPanel
@@ -678,7 +708,7 @@ export default function AdminPortal() {
               partnerLabel={ownerLabel(selectedApplication.ownerId)}
               onClose={() => setSelectedApplicationId(null)}
               adminReview={
-                selectedApplication.approvalPending && canReviewApplicationsFromAdmin()
+                canReviewApplicationsFromAdmin()
                   ? {
                       busy: applicationReviewBusy,
                       onApprove: async () => {
@@ -725,6 +755,21 @@ export default function AdminPortal() {
                           setSelectedApplicationId(null)
                         } catch (e) {
                           toast.error(e?.message || 'Reject failed')
+                        } finally {
+                          setApplicationReviewBusy(false)
+                        }
+                      },
+                      onUnapprove: async () => {
+                        const id = selectedApplication.id
+                        if (!id) return
+                        setApplicationReviewBusy(true)
+                        try {
+                          await adminUnapproveApplication(id)
+                          await refreshPortalData()
+                          toast.success('Approval removed. Application is now pending review.')
+                          setSelectedApplicationId(null)
+                        } catch (e) {
+                          toast.error(e?.message || 'Could not remove approval')
                         } finally {
                           setApplicationReviewBusy(false)
                         }
