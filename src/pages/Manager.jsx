@@ -159,10 +159,11 @@ function propertyRecordName(p) {
 
 /** House visible in manager portal lists once Axis marks it approved / live. */
 function isPropertyRecordApproved(p) {
+  const s = String(p.Status || '').trim().toLowerCase()
+  if (s === 'pending_review' || s === 'pending review') return false
   if (p.Approved === true || p.Approved === 1) return true
   const a = String(p['Approval Status'] || '').trim().toLowerCase()
   if (a === 'approved') return true
-  const s = String(p.Status || '').trim().toLowerCase()
   return s === 'approved' || s === 'live' || s === 'active'
 }
 
@@ -437,22 +438,19 @@ function paymentRoomLabel(record) {
   return formatPaymentRoomTitle(record)
 }
 
+/** Simplified manager-facing status: Open | In Progress | Completed */
 function managerWorkOrderStatusLabel(record) {
-  if (!record) return 'Submitted'
-  const resolved = workOrderIsResolvedRecord(record)
+  if (!record) return 'Open'
+  if (workOrderIsResolvedRecord(record)) return 'Completed'
   const raw = String(record.Status || '').trim().toLowerCase()
-  if (resolved) return raw === 'closed' ? 'Closed' : 'Completed'
-  if (raw.includes('schedule')) return 'Scheduled'
-  if (raw.includes('progress')) return 'In Progress'
-  if (raw.includes('review')) return 'In Review'
-  return 'Submitted'
+  if (raw.includes('progress') || raw.includes('schedule')) return 'In Progress'
+  return 'Open'
 }
 
 function managerWorkOrderStatusTone(record) {
   const label = managerWorkOrderStatusLabel(record)
-  if (label === 'Completed' || label === 'Closed') return 'emerald'
-  if (label === 'Scheduled') return 'axis'
-  if (label === 'In Progress' || label === 'In Review') return 'amber'
+  if (label === 'Completed') return 'emerald'
+  if (label === 'In Progress') return 'axis'
   return 'slate'
 }
 
@@ -516,12 +514,14 @@ function updateTourAvailabilityLines(currentAvailability, day, slot) {
   return nextLines.filter(Boolean).join('\n')
 }
 
-const TOUR_GRID_START_HOUR = 8
+/** Full day, 12:00 AM – 11:59 PM (exclusive end at midnight next day). */
+const TOUR_GRID_START_HOUR = 0
 const TOUR_GRID_END_HOUR = 24
 const TOUR_GRID_STEP_MIN = 30
 const TOUR_GRID_START_MIN = TOUR_GRID_START_HOUR * 60
 const TOUR_GRID_END_MIN = TOUR_GRID_END_HOUR * 60
 const TOUR_GRID_HALF_COUNT = Math.round((TOUR_GRID_END_MIN - TOUR_GRID_START_MIN) / TOUR_GRID_STEP_MIN)
+const TIMELINE_HEIGHT_PX = 960
 
 const CAL_DOW_TO_ABBR = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
 
@@ -574,8 +574,20 @@ function weeklyFreeArraysFromTourText(text) {
   const o = {}
   for (const d of TOUR_DAYS) {
     const set = new Set()
-    for (const slot of cal[d] || []) {
-      const range = slotRangeMinutes(slot)
+    for (const token of cal[d] || []) {
+      const trimmed = String(token).trim()
+      const pair = trimmed.match(/^(\d+)-(\d+)$/)
+      if (pair) {
+        const start = Number(pair[1])
+        const end = Number(pair[2])
+        if (Number.isFinite(start) && Number.isFinite(end) && end > start) {
+          for (const idx of halfHourIndicesOverlappingRange(start, end)) {
+            set.add(idx)
+          }
+        }
+        continue
+      }
+      const range = slotRangeMinutes(trimmed)
       if (!range) continue
       for (const idx of halfHourIndicesOverlappingRange(range.start, range.end)) {
         set.add(idx)
@@ -612,15 +624,10 @@ function buildTourNotesText(existingNotes, metadata) {
 function encodeTourAvailabilityFromWeeklyFree(weeklyArrays) {
   const lines = []
   for (const day of TOUR_DAYS) {
-    const set = new Set(weeklyArrays[day] || [])
-    const picked = []
-    for (const slot of TOUR_SLOTS) {
-      const range = slotRangeMinutes(slot)
-      if (!range) continue
-      const idxs = halfHourIndicesOverlappingRange(range.start, range.end)
-      if (idxs.some((i) => set.has(i))) picked.push(slot)
-    }
-    if (picked.length) lines.push(`${day}: ${picked.join(', ')}`)
+    const ranges = timeRangesFromWeeklyFree(weeklyArrays, day)
+    if (!ranges.length) continue
+    const parts = ranges.map((r) => `${Math.round(r.start)}-${Math.round(r.end)}`)
+    lines.push(`${day}: ${parts.join(', ')}`)
   }
   return lines.join('\n')
 }
@@ -631,18 +638,6 @@ function formatHalfHourIndexLabel(idx) {
   const m = minTotal % 60
   const d = new Date(2000, 0, 1, h, m)
   return d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })
-}
-
-function freeTourSlotCountForWeekday(weeklyArrays, dayAbbr) {
-  const set = new Set(weeklyArrays[dayAbbr] || [])
-  let n = 0
-  for (const slot of TOUR_SLOTS) {
-    const range = slotRangeMinutes(slot)
-    if (!range) continue
-    const idxs = halfHourIndicesOverlappingRange(range.start, range.end)
-    if (idxs.some((i) => set.has(i))) n += 1
-  }
-  return n
 }
 
 function cloneWeeklyArrays(src) {
