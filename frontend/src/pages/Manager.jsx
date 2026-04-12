@@ -79,6 +79,7 @@ import {
 import PortalShell from '../components/PortalShell'
 import Modal from '../components/Modal'
 import { ApplicationDetailPanel, applicationViewModelFromAirtableRow } from '../lib/applicationDetailPanel.jsx'
+import ManagerApplicationLease from '../components/ManagerApplicationLease.jsx'
 import {
   PortalOpsCard,
   PortalOpsEmptyState,
@@ -5853,7 +5854,15 @@ function ApplicationsPanel({ allowedPropertyNames, manager }) {
                   const row = scopedRows.find((a) => a.id === detailAppId)
                   const vm = row ? applicationViewModelFromAirtableRow(row) : null
                   return vm ? (
-                    <ApplicationDetailPanel application={vm} partnerLabel="—" onClose={() => setDetailAppId(null)} />
+                    <>
+                      <ApplicationDetailPanel application={vm} partnerLabel="—" onClose={() => setDetailAppId(null)} />
+                      {row?.Approved === true ? (
+                        <ManagerApplicationLease
+                          applicationId={detailAppId}
+                          managerName={manager?.name || manager?.email || 'Manager'}
+                        />
+                      ) : null}
+                    </>
                   ) : null
                 })()}
               </div>

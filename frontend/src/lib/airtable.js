@@ -1357,3 +1357,37 @@ export async function getLeaseDraftsForResident(residentRecordId) {
   })
   return allRecords
 }
+
+// ---------------------------------------------------------------------------
+// Lease Drafts — manager / resident actions
+// ---------------------------------------------------------------------------
+
+/**
+ * Publish a lease draft (manager sends to resident).
+ * Sets Status → "Published" and records Sent At timestamp.
+ */
+export async function publishLeaseDraft(leaseDraftId) {
+  const res = await fetch('/api/send-lease-to-resident', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ leaseDraftId }),
+  })
+  const data = await res.json()
+  if (!res.ok) throw new Error(data.error || 'Could not send lease.')
+  return data.draft
+}
+
+/**
+ * Generate a lease draft from the resident's application using the
+ * structured template (no AI). Returns the created or existing draft.
+ */
+export async function generateLeaseFromApplication(applicationRecordId, overrides = {}) {
+  const res = await fetch('/api/generate-lease-from-template', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ applicationRecordId, overrides }),
+  })
+  const data = await res.json()
+  if (!res.ok) throw new Error(data.error || 'Could not generate lease.')
+  return { draft: data.draft, created: data.created }
+}

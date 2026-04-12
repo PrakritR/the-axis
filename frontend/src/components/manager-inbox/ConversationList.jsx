@@ -1,9 +1,15 @@
 import React from 'react'
 import ConversationListItem from './ConversationListItem'
 
+const STATUS_TABS = [
+  ['all', 'All'],
+  ['unread', 'Unread'],
+  ['trash', 'Trash'],
+]
+
 /**
- * Left column: search, status filter (All / Unopened / Opened / Trash), optional
- * channel filter (Manager / Admin), and the conversation list.
+ * Left column: search, status pills (All / Unread / Trash), optional channel
+ * filter pills (e.g. Both / Admin / Residents), and the conversation list.
  */
 export default function ConversationList({
   loading,
@@ -36,26 +42,25 @@ export default function ConversationList({
           className="w-full rounded-2xl border border-slate-200 bg-slate-50/80 px-3.5 py-2.5 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-[#2563eb] focus:bg-white focus:ring-2 focus:ring-[#2563eb]/15"
         />
 
-        <div className="grid grid-cols-2 gap-1 rounded-2xl border border-slate-200 bg-slate-50 p-1 min-[380px]:grid-cols-4">
-          {[
-            ['all', 'All', counts.all ?? 0],
-            ['unopened', 'Unopened', counts.unopened ?? 0],
-            ['opened', 'Opened', counts.opened ?? 0],
-            ['trash', 'Trash', counts.trash ?? 0],
-          ].map(([key, label, count]) => (
-            <button
-              key={key}
-              type="button"
-              onClick={() => onFilterChange(key)}
-              className={[
-                'rounded-xl px-2 py-2.5 text-center text-xs font-semibold leading-tight transition sm:px-2.5',
-                filter === key ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-600 hover:text-slate-900',
-              ].join(' ')}
-            >
-              <span className="block">{label}</span>
-              <span className="mt-0.5 block tabular-nums text-[11px] font-semibold text-slate-400 sm:text-xs">({count})</span>
-            </button>
-          ))}
+        <div className="flex items-center gap-1.5">
+          {STATUS_TABS.map(([id, label]) => {
+            const count = counts[id] ?? 0
+            const active = filter === id
+            return (
+              <button
+                key={id}
+                type="button"
+                onClick={() => onFilterChange(id)}
+                className={`rounded-full px-3 py-1 text-[11px] font-semibold transition ${
+                  active
+                    ? 'bg-[#2563eb] text-white shadow-sm'
+                    : 'border border-slate-200 bg-white text-slate-600 hover:bg-slate-50'
+                }`}
+              >
+                {label} <span className={active ? 'text-white/80' : 'text-slate-400'}>{count}</span>
+              </button>
+            )
+          })}
         </div>
 
         {hasChannelFilter ? (
