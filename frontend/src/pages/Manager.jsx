@@ -60,6 +60,9 @@ import {
   SHARED_SPACE_TYPE_OPTIONS,
   BATHROOM_TYPE_OPTIONS,
   KITCHEN_TYPE_OPTIONS,
+  PROPERTIES_LEASING_META_KEYS,
+  PROPERTIES_LEASING_PACKAGE_KEYS,
+  PROPERTY_AIR,
 } from '../lib/managerPropertyFormAirtableMap.js'
 import {
   consolidateManagerDashboardWarnings,
@@ -3889,22 +3892,33 @@ function HouseManagementPanel({ manager, onPropertiesChange }) {
                       <div className="space-y-5">
                         <div className="rounded-2xl border border-slate-200 bg-slate-50/80 p-4">
                           <div className="text-[11px] font-bold uppercase tracking-[0.14em] text-slate-400">Full property pricing</div>
-                          <p className="mt-1 text-xs text-slate-500">Optional overrides for marketing the whole house (stored with your listing metadata).</p>
+                          <p className="mt-1 text-xs text-slate-500">
+                            Stored in Properties <span className="font-mono text-slate-600">{PROPERTY_AIR.otherInfo}</span> (embedded JSON) as{' '}
+                            <span className="font-mono text-slate-600">{PROPERTIES_LEASING_META_KEYS.fullHousePrice}</span> and{' '}
+                            <span className="font-mono text-slate-600">{PROPERTIES_LEASING_META_KEYS.promotionalFullHousePrice}</span>.
+                            Set <span className="font-mono">VITE_AIRTABLE_WRITE_LEASING_COLUMNS=true</span> to also write native columns with the same names.
+                          </p>
                           <div className="mt-3 grid gap-3 sm:grid-cols-2">
                             <div>
-                              <label className="mb-1 block text-[11px] font-semibold text-slate-600">Full house price ($/mo)</label>
+                              <label className="mb-1 block text-[11px] font-semibold text-slate-600">{PROPERTIES_LEASING_META_KEYS.fullHousePrice} ($/mo)</label>
                               <input className={addInputCls} value={addLeasing.fullHousePrice} onChange={(e) => setAddLeasing((L) => ({ ...L, fullHousePrice: e.target.value }))} placeholder="e.g. 6200" />
                             </div>
                             <div>
-                              <label className="mb-1 block text-[11px] font-semibold text-slate-600">Promo / discounted total ($/mo)</label>
+                              <label className="mb-1 block text-[11px] font-semibold text-slate-600">{PROPERTIES_LEASING_META_KEYS.promotionalFullHousePrice} ($/mo)</label>
                               <input className={addInputCls} value={addLeasing.promoPrice} onChange={(e) => setAddLeasing((L) => ({ ...L, promoPrice: e.target.value }))} placeholder="Optional" />
                             </div>
                           </div>
                         </div>
 
                         <div className="rounded-2xl border border-slate-200 bg-white p-4">
-                          <div className="text-[11px] font-bold uppercase tracking-[0.14em] text-slate-400">Grouped packages</div>
-                          <p className="mt-1 text-xs text-slate-500">Floor packages, wing rentals, or other bundles.</p>
+                          <div className="text-[11px] font-bold uppercase tracking-[0.14em] text-slate-400">{PROPERTIES_LEASING_META_KEYS.leasingPackages}</div>
+                          <p className="mt-1 text-xs text-slate-500">
+                            Each row maps to Properties fields{' '}
+                            <span className="font-mono text-slate-600">{PROPERTIES_LEASING_PACKAGE_KEYS.bundleName}</span>,{' '}
+                            <span className="font-mono text-slate-600">{PROPERTIES_LEASING_PACKAGE_KEYS.bundleMonthlyRent}</span>,{' '}
+                            <span className="font-mono text-slate-600">{PROPERTIES_LEASING_PACKAGE_KEYS.bundleRoomsIncluded}</span> inside{' '}
+                            <span className="font-mono text-slate-600">{PROPERTY_AIR.otherInfo}</span>.
+                          </p>
                           <div className="mt-3 space-y-3">
                             {(addLeasing.bundles || []).map((b, bidx) => (
                               <div key={`bundle-${bidx}`} className="rounded-xl border border-slate-100 bg-slate-50/90 p-3">
@@ -3915,15 +3929,15 @@ function HouseManagementPanel({ manager, onPropertiesChange }) {
                                 </div>
                                 <div className="grid gap-2 sm:grid-cols-2">
                                   <div className="sm:col-span-2">
-                                    <label className="mb-1 block text-[11px] font-semibold text-slate-600">Bundle name</label>
+                                    <label className="mb-1 block text-[11px] font-semibold text-slate-600">{PROPERTIES_LEASING_PACKAGE_KEYS.bundleName}</label>
                                     <input className={addInputCls} value={b.name} onChange={(e) => wizUpdateLeasingBundle(bidx, { name: e.target.value })} placeholder="e.g. Second floor rental" />
                                   </div>
                                   <div>
-                                    <label className="mb-1 block text-[11px] font-semibold text-slate-600">Price ($/mo)</label>
+                                    <label className="mb-1 block text-[11px] font-semibold text-slate-600">{PROPERTIES_LEASING_PACKAGE_KEYS.bundleMonthlyRent} ($/mo)</label>
                                     <input className={addInputCls} value={b.price} onChange={(e) => wizUpdateLeasingBundle(bidx, { price: e.target.value })} placeholder="e.g. 3100" />
                                   </div>
                                   <div className="sm:col-span-2">
-                                    <label className="mb-1.5 block text-[11px] font-semibold text-slate-600">Rooms included</label>
+                                    <label className="mb-1.5 block text-[11px] font-semibold text-slate-600">{PROPERTIES_LEASING_PACKAGE_KEYS.bundleRoomsIncluded}</label>
                                     <div className="flex flex-wrap gap-1.5">
                                       {wizardRoomOptions.map((r) => {
                                         const set = new Set(Array.isArray(b.rooms) ? b.rooms : [])
@@ -3959,8 +3973,8 @@ function HouseManagementPanel({ manager, onPropertiesChange }) {
                         </div>
 
                         <div>
-                          <label className="mb-1.5 block text-xs font-semibold text-slate-700">Lease length info</label>
-                          <p className="mb-2 text-xs text-slate-500">Shown to applicants; edit the default text if needed.</p>
+                          <label className="mb-1.5 block text-xs font-semibold text-slate-700">{PROPERTIES_LEASING_META_KEYS.leaseLengthInformation}</label>
+                          <p className="mb-2 text-xs text-slate-500">Shown to applicants; saved as this field name in {PROPERTY_AIR.otherInfo}.</p>
                           <textarea className={`${addInputCls} min-h-[88px]`} value={addLeasing.leaseLengthInfo} onChange={(e) => setAddLeasing((L) => ({ ...L, leaseLengthInfo: e.target.value }))} rows={3} />
                         </div>
                       </div>

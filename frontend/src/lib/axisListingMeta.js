@@ -2,6 +2,9 @@
  * Embedded JSON block inside Properties "Other Info" for fields not yet modeled
  * as dedicated Airtable columns (room extras, move-in totals, leasing bundles, etc.).
  * Safe to extend with version bumps.
+ *
+ * `meta.leasing` uses Properties-style field names — see PROPERTIES_LEASING_META_KEYS
+ * and PROPERTIES_LEASING_PACKAGE_KEYS in managerPropertyFormAirtableMap.js.
  */
 
 export const AXIS_LISTING_META_START = '---AXIS_LISTING_META_JSON---'
