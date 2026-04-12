@@ -3458,7 +3458,6 @@ function ManagerProfilePanel({ manager, onManagerUpdate, approvedPropertyCount =
     <div className="mx-auto max-w-4xl space-y-6">
       {/* Personal info */}
       <section className="rounded-[28px] border border-slate-200 bg-white p-6">
-        <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-[#2563eb]">Account</div>
         <h2 className="mt-2 text-2xl font-black text-slate-900">Manager profile</h2>
         <form onSubmit={handleSaveProfile} className="mt-6 grid gap-5 sm:grid-cols-2">
           <div>
@@ -3508,8 +3507,7 @@ function ManagerProfilePanel({ manager, onManagerUpdate, approvedPropertyCount =
 
       {/* Plan & subscription summary */}
       <section className="rounded-[28px] border border-slate-200 bg-white p-6">
-        <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">Subscription</div>
-        <h2 className="mt-2 text-xl font-black text-slate-900">Plan</h2>
+        <h2 className="mt-2 text-xl font-black text-slate-900">Subscription</h2>
         <div className="mt-4 grid gap-3 sm:grid-cols-3">
           {[
             { label: 'Role', value: manager.role || 'Manager' },
@@ -3887,7 +3885,6 @@ function ManagerDashboardHomePanel({
     <div className="space-y-6">
       {/* Header */}
       <div>
-        <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">Manager portal</p>
         <h2 className="text-2xl font-black text-slate-900">
           {firstName ? `Welcome, ${firstName}` : 'Dashboard'}
         </h2>
