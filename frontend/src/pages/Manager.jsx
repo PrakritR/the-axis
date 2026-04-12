@@ -34,6 +34,7 @@ import {
   AIRTABLE_PAYMENTS_BASE_ID,
   createRoomRecord,
   uploadPropertyImage,
+  propertyListingVisibleForMarketing,
   getAllPortalInternalThreadMessages,
   fetchInboxThreadStateMap,
   portalInboxAirtableConfigured,
@@ -2364,6 +2365,7 @@ function HouseManagementPanel({ manager, onPropertiesChange }) {
   const [editingPropertyId, setEditingPropertyId] = useState(null)
   const [detailsPropertyId, setDetailsPropertyId] = useState(null)
   const [deletingPropertyId, setDeletingPropertyId] = useState(null)
+  const [listingBusyPropertyId, setListingBusyPropertyId] = useState(null)
   const [addOpen, setAddOpen] = useState(false)
   const [addSaving, setAddSaving] = useState(false)
   const emptyAddBasics = () => ({
@@ -2460,6 +2462,28 @@ function HouseManagementPanel({ manager, onPropertiesChange }) {
     () => properties.filter((p) => propertyAssignedToManager(p, manager) && !isPropertyRecordApproved(p)),
     [properties, manager],
   )
+  const propertySections = useMemo(() => {
+    const listed = approvedAssigned.filter((p) => propertyListingVisibleForMarketing(p))
+    const unlisted = approvedAssigned.filter((p) => !propertyListingVisibleForMarketing(p))
+    return [
+      {
+        key: 'listed',
+        label: 'Listed on public site',
+        hint: null,
+        rows: listed,
+        marketingListed: true,
+        cardClass: 'rounded-2xl border border-slate-100 bg-slate-50 px-4 py-4',
+      },
+      {
+        key: 'unlisted',
+        label: 'Unlisted',
+        hint: 'Approved but hidden from the Axis public site and marketing pages.',
+        rows: unlisted,
+        marketingListed: false,
+        cardClass: 'rounded-2xl border border-violet-200/80 bg-violet-50/50 px-4 py-4',
+      },
+    ].filter((s) => s.rows.length > 0)
+  }, [approvedAssigned])
 
   async function handleSaveTourHours(property) {
     setSaving(true)
@@ -2821,7 +2845,7 @@ function HouseManagementPanel({ manager, onPropertiesChange }) {
 
         {loading ? (
           <div className="mt-5 rounded-2xl border border-slate-100 bg-slate-50 px-4 py-5 text-sm text-slate-500">Loading houses…</div>
-        ) : approvedAssigned.length === 0 && pendingAssigned.length === 0 ? (
+        ) : propertySections.length === 0 && pendingAssigned.length === 0 ? (
           <div className="mt-5 rounded-2xl border border-dashed border-slate-200 bg-slate-50/80 px-6 py-10 text-center">
             <div className="mb-3 text-4xl" aria-hidden>🏠</div>
             <p className="text-sm font-semibold text-slate-800">No properties on your account yet</p>
@@ -2867,30 +2891,98 @@ function HouseManagementPanel({ manager, onPropertiesChange }) {
                 <div className="mt-1 text-sm text-slate-600">{property.Address || 'Address not set'}</div>
               </div>
             ))}
-            {approvedAssigned.map((property) => (
-              <div key={property.id} className="rounded-2xl border border-slate-100 bg-slate-50 px-4 py-4">
+            {propertySections.map((section) => (
+              <React.Fragment key={section.key}>
+                <div className="text-[11px] font-bold uppercase tracking-[0.14em] text-slate-500">{section.label}</div>
+                {section.hint ? <p className="mt-1 text-xs text-slate-500">{section.hint}</p> : null}
+                {section.rows.map((property) => (
+              <div key={property.id} className={section.cardClass}>
                 <div className="flex items-start justify-between gap-2">
                   <div className="text-sm font-semibold text-slate-900">{propertyRecordName(property) || 'Untitled house'}</div>
-                  <button
-                    type="button"
-                    disabled={deletingPropertyId === property.id || isManagerInternalPreview(manager)}
-                    onClick={async () => {
-                      if (!window.confirm(`Delete "${propertyRecordName(property) || 'this property'}"? This cannot be undone.`)) return
-                      setDeletingPropertyId(property.id)
-                      try {
-                        await deletePropertyAdmin(property.id)
-                        toast.success('Property deleted')
-                        await loadProperties()
-                      } catch (err) {
-                        toast.error(err.message || 'Delete failed')
-                      } finally {
-                        setDeletingPropertyId(null)
-                      }
-                    }}
-                    className="shrink-0 rounded-xl border border-red-200 bg-red-50 px-2.5 py-1 text-[11px] font-semibold text-red-700 hover:bg-red-100 disabled:opacity-40"
-                  >
-                    {deletingPropertyId === property.id ? 'Deleting…' : 'Delete'}
-                  </button>
+                  <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
+                    {section.marketingListed ? (
+                      <button
+                        type="button"
+                        disabled={
+                          listingBusyPropertyId === property.id ||
+                          deletingPropertyId === property.id ||
+                          isManagerInternalPreview(manager)
+                        }
+                        onClick={async () => {
+                          if (
+                            !window.confirm(
+                              `Unlist "${propertyRecordName(property) || 'this property'}" from the public site? It stays in your portal.`,
+                            )
+                          ) {
+                            return
+                          }
+                          setListingBusyPropertyId(property.id)
+                          try {
+                            await updatePropertyAdmin(property.id, { Listed: false })
+                            toast.success('Property unlisted')
+                            await loadProperties()
+                          } catch (err) {
+                            toast.error(
+                              err.message ||
+                                'Unlist failed — add a "Listed" checkbox on the Properties table in Airtable.',
+                            )
+                          } finally {
+                            setListingBusyPropertyId(null)
+                          }
+                        }}
+                        className="rounded-xl border border-slate-300 bg-white px-2.5 py-1 text-[11px] font-semibold text-slate-800 hover:bg-slate-100 disabled:opacity-40"
+                      >
+                        {listingBusyPropertyId === property.id ? 'Saving…' : 'Unlist'}
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        disabled={
+                          listingBusyPropertyId === property.id ||
+                          deletingPropertyId === property.id ||
+                          isManagerInternalPreview(manager)
+                        }
+                        onClick={async () => {
+                          setListingBusyPropertyId(property.id)
+                          try {
+                            await updatePropertyAdmin(property.id, { Listed: true })
+                            toast.success('Property listed on the site again')
+                            await loadProperties()
+                          } catch (err) {
+                            toast.error(
+                              err.message ||
+                                'Relist failed — add a "Listed" checkbox on the Properties table in Airtable.',
+                            )
+                          } finally {
+                            setListingBusyPropertyId(null)
+                          }
+                        }}
+                        className="rounded-xl border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-[11px] font-semibold text-emerald-800 hover:bg-emerald-100 disabled:opacity-40"
+                      >
+                        {listingBusyPropertyId === property.id ? 'Saving…' : 'Relist'}
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      disabled={deletingPropertyId === property.id || isManagerInternalPreview(manager)}
+                      onClick={async () => {
+                        if (!window.confirm(`Delete "${propertyRecordName(property) || 'this property'}"? This cannot be undone.`)) return
+                        setDeletingPropertyId(property.id)
+                        try {
+                          await deletePropertyAdmin(property.id)
+                          toast.success('Property deleted')
+                          await loadProperties()
+                        } catch (err) {
+                          toast.error(err.message || 'Delete failed')
+                        } finally {
+                          setDeletingPropertyId(null)
+                        }
+                      }}
+                      className="rounded-xl border border-red-200 bg-red-50 px-2.5 py-1 text-[11px] font-semibold text-red-700 hover:bg-red-100 disabled:opacity-40"
+                    >
+                      {deletingPropertyId === property.id ? 'Deleting…' : 'Delete'}
+                    </button>
+                  </div>
                 </div>
                 <div className="mt-1 text-sm text-slate-500">{property.Address || 'Address not set'}</div>
                 <div className="mt-2 flex flex-wrap gap-3 text-xs text-slate-500">
@@ -3323,6 +3415,8 @@ function HouseManagementPanel({ manager, onPropertiesChange }) {
                   </>
                 )}
               </div>
+                ))}
+              </React.Fragment>
             ))}
           </div>
         )}

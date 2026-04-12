@@ -10,6 +10,8 @@ import {
   adminRequestPropertyEdits,
   adminSetManagerActive,
   adminDeleteProperty,
+  adminUnlistProperty,
+  adminRelistProperty,
   isAdminPortalAirtableConfigured,
   loadAdminPortalDataset,
   loadResidentsForAdmin,
@@ -42,6 +44,7 @@ const PROPERTY_STATUS_LABEL = {
   rejected: 'Rejected',
   live: 'Live',
   inactive: 'Inactive',
+  unlisted: 'Unlisted',
 }
 
 const NAV_BASE = [
@@ -112,6 +115,7 @@ function propertyTone(st) {
   if (st === 'pending') return 'amber'
   if (st === 'changes_requested') return 'violet'
   if (st === 'rejected') return 'red'
+  if (st === 'unlisted') return 'violet'
   return 'slate'
 }
 
@@ -301,7 +305,7 @@ export default function AdminPortal() {
     return NAV_BASE.some((n) => n.id === h) ? h : 'dashboard'
   })
   useEffect(() => { window.location.hash = tab }, [tab])
-  /** Within Properties: pending | approved | rejected */
+  /** Within Properties: pending | approved | unlisted | rejected */
   const [propertiesSection, setPropertiesSection] = useState('pending')
   /** Within Applications: all | pending | approved | rejected */
   const [applicationsFilter, setApplicationsFilter] = useState('all')
@@ -417,10 +421,18 @@ export default function AdminPortal() {
     if (tab !== 'properties') setSelectedApprovalId(null)
   }, [tab])
 
+  useEffect(() => {
+    setSelectedApprovalId(null)
+  }, [propertiesSection])
+
   const navItems = useMemo(() => NAV_BASE, [])
 
   const pendingApprovals = useMemo(() => properties.filter((p) => p.status === 'pending' || p.status === 'changes_requested'), [properties])
-  const approvedProperties = useMemo(() => properties.filter((p) => p.status === 'approved' || p.status === 'live'), [properties])
+  const approvedProperties = useMemo(
+    () => properties.filter((p) => p.status === 'approved' || p.status === 'live'),
+    [properties],
+  )
+  const unlistedProperties = useMemo(() => properties.filter((p) => p.status === 'unlisted'), [properties])
   const rejectedProperties = useMemo(() => properties.filter((p) => p.status === 'rejected'), [properties])
   const pendingApps = useMemo(
     () => applications.filter((a) => a.approvalPending).length,
@@ -457,6 +469,11 @@ export default function AdminPortal() {
     if (!q) return approvedProperties
     return approvedProperties.filter((p) => `${p.name} ${p.address}`.toLowerCase().includes(q))
   }, [approvedProperties, propertiesSearch])
+  const searchedUnlistedProperties = useMemo(() => {
+    const q = propertiesSearch.trim().toLowerCase()
+    if (!q) return unlistedProperties
+    return unlistedProperties.filter((p) => `${p.name} ${p.address}`.toLowerCase().includes(q))
+  }, [unlistedProperties, propertiesSearch])
   const searchedRejectedProperties = useMemo(() => {
     const q = propertiesSearch.trim().toLowerCase()
     if (!q) return rejectedProperties
@@ -581,14 +598,24 @@ export default function AdminPortal() {
               <span className="text-3xl font-black tabular-nums text-slate-900">{pendingApprovals.length}</span>
             </button>
 
-            {/* Properties approved */}
+            {/* Properties approved (listed) */}
             <button
               type="button"
               onClick={() => { setTab('properties'); setPropertiesSection('approved') }}
               className="flex flex-col gap-1 rounded-3xl border border-sky-200/90 bg-sky-50 p-5 text-left transition hover:border-sky-300 hover:bg-sky-100/80 hover:shadow-sm"
             >
-              <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-sky-800">Properties · Approved</span>
+              <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-sky-800">Properties · Listed</span>
               <span className="text-3xl font-black tabular-nums text-slate-900">{approvedProperties.length}</span>
+            </button>
+
+            {/* Properties unlisted */}
+            <button
+              type="button"
+              onClick={() => { setTab('properties'); setPropertiesSection('unlisted') }}
+              className="flex flex-col gap-1 rounded-3xl border border-sky-200/90 bg-sky-50 p-5 text-left transition hover:border-sky-300 hover:bg-sky-100/80 hover:shadow-sm"
+            >
+              <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-sky-800">Properties · Unlisted</span>
+              <span className="text-3xl font-black tabular-nums text-slate-900">{unlistedProperties.length}</span>
             </button>
 
             {/* Subscribed managers */}
@@ -642,7 +669,7 @@ export default function AdminPortal() {
               <h1 className="text-2xl font-black text-slate-900">Properties</h1>
             </div>
             <div className="inline-flex flex-wrap gap-1 rounded-2xl border border-slate-200 bg-slate-50 p-1">
-              {[['pending', 'Pending', pendingApprovals.length], ['approved', 'Approved', approvedProperties.length], ['rejected', 'Rejected', rejectedProperties.length]].map(([key, label, count]) => (
+              {[['pending', 'Pending', pendingApprovals.length], ['approved', 'Listed', approvedProperties.length], ['unlisted', 'Unlisted', unlistedProperties.length], ['rejected', 'Rejected', rejectedProperties.length]].map(([key, label, count]) => (
                 <button
                   key={key}
                   type="button"
@@ -757,7 +784,7 @@ export default function AdminPortal() {
           ) : propertiesSection === 'approved' ? (
             <>
               <DataTable
-                empty="No approved properties"
+                empty="No listed properties"
                 columns={[
                   { key: 'n', label: 'Property', render: (d) => <><div className="font-semibold">{d.name}</div><div className="text-xs text-slate-500">{d.address}</div></> },
                   { key: 'o', label: 'Manager', render: (d) => ownerLabel(d.ownerId) },
@@ -774,7 +801,28 @@ export default function AdminPortal() {
                 <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm space-y-4">
                   <div className="flex items-start justify-between gap-2">
                     <h2 className="text-lg font-black">{approval.name}</h2>
-                    <div className="flex items-center gap-2">
+                    <div className="flex flex-wrap items-center justify-end gap-2">
+                      <button
+                        type="button"
+                        disabled={approvalBusy}
+                        onClick={async () => {
+                          if (!window.confirm(`Unlist "${approval.name}"? It will stay in the portal but hide from the public site.`)) return
+                          setApprovalBusy(true)
+                          try {
+                            await adminUnlistProperty(approval.id)
+                            toast.success('Property unlisted')
+                            setSelectedApprovalId(null)
+                            await refreshPortalData()
+                          } catch (err) {
+                            toast.error(err.message || 'Unlist failed (add a "Listed" checkbox on Properties if missing).')
+                          } finally {
+                            setApprovalBusy(false)
+                          }
+                        }}
+                        className="rounded-xl border border-slate-300 bg-slate-50 px-3 py-1.5 text-xs font-semibold text-slate-800 hover:bg-slate-100 disabled:opacity-50"
+                      >
+                        Unlist
+                      </button>
                       <button
                         type="button"
                         disabled={approvalBusy}
@@ -794,11 +842,82 @@ export default function AdminPortal() {
                         }}
                         className="rounded-xl border border-red-200 bg-red-50 px-3 py-1.5 text-xs font-semibold text-red-700 hover:bg-red-100 disabled:opacity-50"
                       >
-                        {approvalBusy ? 'Deleting…' : 'Delete property'}
+                        {approvalBusy ? 'Working…' : 'Delete property'}
                       </button>
                       <button type="button" className="text-sm text-slate-500" onClick={() => setSelectedApprovalId(null)}>Close</button>
                     </div>
                   </div>
+                  <p className="text-sm text-slate-600">{approval.description}</p>
+                  <PropertyDetailPanel property={approval} ownerLabel={ownerLabel(approval.ownerId)} />
+                </div>
+              ) : null}
+            </>
+          ) : propertiesSection === 'unlisted' ? (
+            <>
+              <DataTable
+                empty="No unlisted properties"
+                columns={[
+                  { key: 'n', label: 'Property', render: (d) => <><div className="font-semibold">{d.name}</div><div className="text-xs text-slate-500">{d.address}</div></> },
+                  { key: 'o', label: 'Manager', render: (d) => ownerLabel(d.ownerId) },
+                  { key: 's', label: 'Status', render: (d) => <StatusPill tone={propertyTone(d.status)}>{PROPERTY_STATUS_LABEL[d.status] || d.status}</StatusPill> },
+                  { key: 'a', label: '', render: (d) => (
+                    <button type="button" className="text-sm font-semibold text-[#2563eb]" onClick={() => setSelectedApprovalId(selectedApprovalId === d.id ? null : d.id)}>
+                      {selectedApprovalId === d.id ? 'Hide' : 'Details'}
+                    </button>
+                  ) },
+                ]}
+                rows={searchedUnlistedProperties.map((p) => ({ key: p.id, data: p }))}
+              />
+              {approval && propertiesSection === 'unlisted' ? (
+                <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm space-y-4">
+                  <div className="flex items-start justify-between gap-2">
+                    <h2 className="text-lg font-black">{approval.name}</h2>
+                    <div className="flex flex-wrap items-center justify-end gap-2">
+                      <button
+                        type="button"
+                        disabled={approvalBusy}
+                        onClick={async () => {
+                          setApprovalBusy(true)
+                          try {
+                            await adminRelistProperty(approval.id)
+                            toast.success('Property listed again')
+                            setSelectedApprovalId(null)
+                            await refreshPortalData()
+                          } catch (err) {
+                            toast.error(err.message || 'Relist failed (add a "Listed" checkbox on Properties if missing).')
+                          } finally {
+                            setApprovalBusy(false)
+                          }
+                        }}
+                        className="rounded-xl bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-700 disabled:opacity-50"
+                      >
+                        Relist
+                      </button>
+                      <button
+                        type="button"
+                        disabled={approvalBusy}
+                        onClick={async () => {
+                          if (!window.confirm(`Permanently delete "${approval.name}"? This cannot be undone.`)) return
+                          setApprovalBusy(true)
+                          try {
+                            await adminDeleteProperty(approval.id)
+                            toast.success('Property deleted')
+                            setSelectedApprovalId(null)
+                            await refreshPortalData()
+                          } catch (err) {
+                            toast.error(err.message || 'Delete failed')
+                          } finally {
+                            setApprovalBusy(false)
+                          }
+                        }}
+                        className="rounded-xl border border-red-200 bg-red-50 px-3 py-1.5 text-xs font-semibold text-red-700 hover:bg-red-100 disabled:opacity-50"
+                      >
+                        {approvalBusy ? 'Working…' : 'Delete property'}
+                      </button>
+                      <button type="button" className="text-sm text-slate-500" onClick={() => setSelectedApprovalId(null)}>Close</button>
+                    </div>
+                  </div>
+                  <p className="text-sm text-slate-600">Hidden from the public marketing site; still approved in Axis.</p>
                   <p className="text-sm text-slate-600">{approval.description}</p>
                   <PropertyDetailPanel property={approval} ownerLabel={ownerLabel(approval.ownerId)} />
                 </div>

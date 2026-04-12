@@ -61,6 +61,8 @@ export const PROPERTY_AIR = {
   sharedSpaceCount:   'Number of Shared Spaces',
   /** Optional: add these columns to Properties in Airtable, or remove writes below if missing. */
   securityDeposit:    'Security Deposit',
+  /** Checkbox: when cleared (false), property stays approved but hides from public marketing / tour lists. */
+  listed:             'Listed',
   /** Leasing / bundling — optional native Properties columns (see VITE_AIRTABLE_WRITE_LEASING_COLUMNS). */
   fullHousePrice: PROPERTIES_LEASING_META_KEYS.fullHousePrice,
   promotionalFullHousePrice: PROPERTIES_LEASING_META_KEYS.promotionalFullHousePrice,

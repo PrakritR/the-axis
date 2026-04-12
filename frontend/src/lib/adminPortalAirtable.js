@@ -152,10 +152,14 @@ function isPropertyRecordApproved(p) {
  * UI status for admin property lists / approvals queue.
  */
 function propertyAdminStatus(raw) {
+  if (raw.Listed === false || raw.Listed === 0) return 'unlisted'
+
   const override = String(raw['Axis Admin Listing Status'] || raw['Admin Listing Status'] || '')
     .trim()
     .toLowerCase()
-  const allowed = new Set(['pending', 'changes_requested', 'rejected', 'live', 'inactive'])
+  if (override === 'inactive' || override === 'unlisted') return 'unlisted'
+
+  const allowed = new Set(['pending', 'changes_requested', 'rejected', 'live'])
   if (override && allowed.has(override)) return override
 
   const a = String(raw['Approval Status'] || '').trim().toLowerCase()
@@ -342,6 +346,16 @@ export async function adminRequestPropertyEdits(recordId) {
   return adminPatchProperty(recordId, {
     'Approval Status': 'Changes Requested',
   })
+}
+
+/** Hide from marketing while keeping the row (requires `Listed` checkbox on Properties, or use Axis Admin Listing Status in Airtable). */
+export async function adminUnlistProperty(recordId) {
+  return adminPatchProperty(recordId, { Listed: false })
+}
+
+/** Show on marketing again after unlist. */
+export async function adminRelistProperty(recordId) {
+  return adminPatchProperty(recordId, { Listed: true })
 }
 
 export async function adminDeleteProperty(recordId) {

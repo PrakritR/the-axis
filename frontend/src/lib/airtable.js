@@ -874,6 +874,22 @@ export async function getPropertyByName(propertyName) {
   }
 }
 
+/**
+ * True when a property should appear on the public site (carousel, axis-rec slug pages).
+ * Requires Approved; excludes unlisted (Listed = false or admin listing status unlisted/inactive).
+ */
+export function propertyListingVisibleForMarketing(rec) {
+  if (!rec || typeof rec !== 'object') return false
+  if (!(rec.Approved === true || rec.Approved === 1)) return false
+  const listed = rec.Listed
+  if (listed === false || listed === 0) return false
+  const axis = String(rec['Axis Admin Listing Status'] || rec['Admin Listing Status'] || '')
+    .trim()
+    .toLowerCase()
+  if (axis === 'unlisted' || axis === 'inactive') return false
+  return true
+}
+
 /** Approved properties for the public Rent with Axis carousel (requires Airtable token + Approved checkbox). */
 export async function fetchApprovedPropertiesForMarketing() {
   if (!API_KEY) return []
@@ -884,7 +900,9 @@ export async function fetchApprovedPropertiesForMarketing() {
         pageSize: 100,
       }),
     )
-    return (data.records || []).map(mapRecord)
+    return (data.records || [])
+      .map(mapRecord)
+      .filter(propertyListingVisibleForMarketing)
   } catch {
     return []
   }

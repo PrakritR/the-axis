@@ -4,7 +4,7 @@ import { usePropertyListingChrome } from '../contexts/PropertyListingChromeConte
 import MapView from '../components/Map'
 import PropertyGallery from '../components/PropertyGallery'
 import { properties } from '../data/properties'
-import { fetchPropertyRecordById } from '../lib/airtable'
+import { fetchPropertyRecordById, propertyListingVisibleForMarketing } from '../lib/airtable'
 import { mapAirtableRecordToPropertyPage, marketingSlugForAirtablePropertyId } from '../lib/airtablePublicListings'
 import { Seo, buildPropertySchema } from '../lib/seo'
 import { getStartingRent } from '../lib/pricing'
@@ -542,9 +542,8 @@ export default function PropertyPage(){
           if (!cancelled) setPDynamic(null)
           return
         }
-        const approved = rec.Approved === true || rec.Approved === 1
         const expected = marketingSlugForAirtablePropertyId(rec.id)
-        if (!approved || expected !== slug) {
+        if (!propertyListingVisibleForMarketing(rec) || expected !== slug) {
           setPDynamic(null)
           return
         }
