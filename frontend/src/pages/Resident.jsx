@@ -1802,257 +1802,133 @@ function ResidentDashboardHome({
   onNavigate,
   setPaymentFocus,
   pendingApplicationApproval,
+  inboxUnreadCount,
 }) {
   const snapshot = useMemo(() => buildResidentRentSnapshot(payments, resident), [payments, resident])
   const openWoCount = useMemo(
     () => visibleWorkOrders.filter((r) => isWorkOrderOpen(r)).length,
     [visibleWorkOrders],
   )
-  const scheduledWoCount = useMemo(
-    () => visibleWorkOrders.filter((r) => residentWorkOrderStatusLabel(r) === 'Scheduled').length,
-    [visibleWorkOrders],
-  )
-  const recentWorkOrders = useMemo(() => {
-    return [...visibleWorkOrders]
-      .sort(
-        (a, b) =>
-          new Date(b['Date Submitted'] || b.created_at || 0) - new Date(a['Date Submitted'] || a.created_at || 0),
-      )
-      .slice(0, 4)
-  }, [visibleWorkOrders])
-
-  const leaseStatus = approvedLease?.Status ? String(approvedLease.Status).trim() : ''
-  const nextStatus = snapshot.nextDue?.status || 'Paid'
-  const nextTone = dashboardPaymentStatusTone(nextStatus)
-
-  function goPayments(focus = '') {
-    setPaymentFocus(focus)
-    onNavigate('payments')
-  }
+  const leaseStatus = approvedLease?.Status ? String(approvedLease.Status).trim() : null
+  const firstName = String(resident?.Name || '').split(' ')[0] || 'Resident'
+  const homeLabel = [resident.House, normalizeUnitLabel(resident['Unit Number'] || '')].filter(Boolean).join(' · ') || null
 
   return (
-    <div className="space-y-8">
-      <div className="rounded-[28px] border border-slate-200 bg-[linear-gradient(135deg,#ffffff_0%,#f8fbff_100%)] p-6 sm:p-8">
-        {pendingApplicationApproval ? (
-          <>
-            <p className="text-sm font-semibold text-amber-900">Application under review</p>
-            <p className="mt-2 text-sm leading-7 text-slate-600">
-              You&apos;re signed in. A property manager still needs to approve your application before rent checkout, maintenance requests, leasing tasks, and inbox messaging are available. Your profile stays open so you can keep contact details current.
-            </p>
-          </>
-        ) : (
-          <>
-            <p className="text-sm leading-7 text-slate-600">
-              Here&apos;s a quick view of rent, maintenance, and leasing. Use the sidebar anytime to open a full section.
-            </p>
-            <div className="mt-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-              <PortalOpsMetric
-                label="Next rent due"
-                value={snapshot.nextDue ? formatMoney(snapshot.nextDue.balance) : '$0'}
-                hint={
-                  snapshot.nextDue?.dueDate
-                    ? `Due ${formatDate(snapshot.nextDue.dueDate)} · ${snapshot.nextDue.month || 'Rent'}`
-                    : snapshot.nextDue
-                      ? String(snapshot.nextDue.month || 'Rent')
-                      : 'No rent line items yet'
-                }
-                tone={snapshot.nextDue ? nextTone : 'slate'}
-              />
-              <PortalOpsMetric
-                label="Unpaid rent"
-                value={formatMoney(snapshot.unpaidTotal)}
-                hint="Total balance still owed"
-                tone={snapshot.unpaidTotal > 0 ? 'axis' : 'slate'}
-              />
-              <PortalOpsMetric
-                label="Overdue"
-                value={formatMoney(snapshot.overdueTotal)}
-                hint="Past due, not paid"
-                tone={snapshot.overdueTotal > 0 ? 'red' : 'slate'}
-              />
-              <PortalOpsMetric
-                label="Open work orders"
-                value={openWoCount}
-                hint={scheduledWoCount > 0 ? `${scheduledWoCount} scheduled` : 'Nothing in progress'}
-                tone={openWoCount > 0 ? 'amber' : 'emerald'}
-              />
-            </div>
-          </>
-        )}
+    <div className="space-y-6">
+      {/* Header */}
+      <div>
+        <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">Resident portal</p>
+        <h2 className="text-2xl font-black text-slate-900">Welcome back, {firstName}</h2>
       </div>
 
-      <div className="grid gap-6 lg:grid-cols-12">
-        <div className="space-y-6 lg:col-span-7">
-          <PortalOpsCard
-            title="Shortcuts"
-            description={pendingApplicationApproval ? 'Available after your application is approved.' : 'Jump to the most common tasks.'}
-          >
-            {pendingApplicationApproval ? (
-              <p className="text-sm text-slate-600">
-                Use the sidebar to open a section — you&apos;ll see a short notice on each tab until a manager approves your application.
-              </p>
-            ) : (
-            <div className="grid gap-3 sm:grid-cols-2">
-              <button
-                type="button"
-                onClick={() => goPayments('')}
-                className="flex flex-col items-start rounded-2xl border border-slate-200 bg-slate-50/80 px-5 py-4 text-left transition hover:border-axis/40 hover:bg-white"
-              >
-                <span className="text-sm font-black text-slate-900">Pay rent</span>
-                <span className="mt-1 text-xs text-slate-500">Balances, history, and checkout</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => onNavigate('workorders')}
-                className="flex flex-col items-start rounded-2xl border border-slate-200 bg-slate-50/80 px-5 py-4 text-left transition hover:border-axis/40 hover:bg-white"
-              >
-                <span className="text-sm font-black text-slate-900">Work orders</span>
-                <span className="mt-1 text-xs text-slate-500">Submit or track maintenance</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => onNavigate('inbox')}
-                className="flex flex-col items-start rounded-2xl border border-slate-200 bg-slate-50/80 px-5 py-4 text-left transition hover:border-axis/40 hover:bg-white"
-              >
-                <span className="text-sm font-black text-slate-900">Inbox</span>
-                <span className="mt-1 text-xs text-slate-500">Message your house team</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => onNavigate('leasing')}
-                className="flex flex-col items-start rounded-2xl border border-slate-200 bg-slate-50/80 px-5 py-4 text-left transition hover:border-axis/40 hover:bg-white"
-              >
-                <span className="text-sm font-black text-slate-900">Leasing</span>
-                <span className="mt-1 text-xs text-slate-500">Lease, deposit, and signing</span>
-              </button>
-            </div>
-            )}
-          </PortalOpsCard>
-
-          <PortalOpsCard title="Recent maintenance" description="Latest requests tied to your unit.">
-            {pendingApplicationApproval ? (
-              <PortalOpsEmptyState
-                icon="🛠"
-                title="Maintenance after approval"
-                description="Once your application is approved, you can submit and track work orders from the Work Orders tab."
-                action={
-                  <button
-                    type="button"
-                    onClick={() => onNavigate('workorders')}
-                    className="rounded-full border border-slate-200 px-5 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
-                  >
-                    Work Orders
-                  </button>
-                }
-              />
-            ) : recentWorkOrders.length === 0 ? (
-              <PortalOpsEmptyState
-                icon="🛠"
-                title="No work orders yet"
-                description="Submit one from Work Orders when something needs attention."
-                action={
-                  <button
-                    type="button"
-                    onClick={() => onNavigate('workorders')}
-                    className="rounded-full bg-axis px-5 py-2.5 text-sm font-semibold text-white transition hover:brightness-105"
-                  >
-                    Open Work Orders
-                  </button>
-                }
-              />
-            ) : (
-              <div className="space-y-3">
-                {recentWorkOrders.map((w) => (
-                  <button
-                    key={w.id}
-                    type="button"
-                    onClick={() => onNavigate('workorders')}
-                    className="flex w-full flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-200 px-4 py-3 text-left transition hover:border-axis/30 hover:bg-slate-50/80"
-                  >
-                    <div className="min-w-0">
-                      <div className="truncate text-sm font-bold text-slate-900">{w.Title || 'Work order'}</div>
-                      <div className="mt-0.5 text-xs text-slate-500">
-                        {w.Category || 'General'} · {formatDate(w['Date Submitted'] || w.created_at)}
-                      </div>
-                    </div>
-                    <PortalOpsStatusBadge tone={residentWorkOrderStatusTone(w)}>
-                      {residentWorkOrderStatusLabel(w)}
-                    </PortalOpsStatusBadge>
-                  </button>
-                ))}
-              </div>
-            )}
-          </PortalOpsCard>
+      {/* Pending approval banner */}
+      {pendingApplicationApproval ? (
+        <div className="rounded-2xl border border-amber-200 bg-amber-50 px-5 py-4 text-sm text-amber-950">
+          <p className="font-semibold">Application under review</p>
+          <p className="mt-1 text-amber-900/90">
+            A property manager still needs to approve your application before work orders, payments, leasing, and inbox are available.
+          </p>
         </div>
+      ) : null}
 
-        <div className="space-y-6 lg:col-span-5">
-          <div className="rounded-[28px] border border-slate-200 bg-white p-6 shadow-soft">
-            <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">Your home</div>
-            <div className="mt-2 text-lg font-black text-slate-900">
-              {[resident.House, normalizeUnitLabel(resident['Unit Number'] || '')].filter(Boolean).join(' · ') || 'Not assigned'}
-            </div>
-            <div className="mt-3 text-sm text-slate-500">{getLeaseTermLabel(resident)}</div>
-            <div className="mt-4 flex flex-wrap gap-2">
-              <button
-                type="button"
-                onClick={() => onNavigate('profile')}
-                className="rounded-full border border-slate-200 px-4 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-50"
-              >
-                Profile
-              </button>
-              <Link
-                to={HOUSING_CONTACT_SCHEDULE}
-                className="rounded-full border border-slate-200 px-4 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-50"
-              >
-                Schedule tour
-              </Link>
-            </div>
+      {/* Metric cards */}
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        {/* Next rent due */}
+        <button
+          type="button"
+          onClick={() => { setPaymentFocus(''); onNavigate('payments') }}
+          className="flex flex-col gap-1 rounded-[20px] border border-slate-200 bg-white p-5 text-left shadow-sm transition hover:border-slate-300 hover:shadow"
+        >
+          <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-slate-400">Payments · Next due</span>
+          <span className={`text-3xl font-black tabular-nums ${snapshot.overdueTotal > 0 ? 'text-red-700' : 'text-slate-800'}`}>
+            {snapshot.nextDue ? formatMoney(snapshot.nextDue.balance) : '—'}
+          </span>
+        </button>
+
+        {/* Overdue */}
+        <button
+          type="button"
+          onClick={() => { setPaymentFocus('overdue'); onNavigate('payments') }}
+          className={`flex flex-col gap-1 rounded-[20px] border p-5 text-left transition hover:shadow-sm ${
+            snapshot.overdueTotal > 0
+              ? 'border-red-200 bg-red-50 hover:border-red-300'
+              : 'border-slate-200 bg-white shadow-sm hover:border-slate-300'
+          }`}
+        >
+          <span className={`text-[10px] font-bold uppercase tracking-[0.14em] ${snapshot.overdueTotal > 0 ? 'text-red-600' : 'text-slate-400'}`}>
+            Payments · Overdue
+          </span>
+          <span className={`text-3xl font-black tabular-nums ${snapshot.overdueTotal > 0 ? 'text-red-700' : 'text-slate-800'}`}>
+            {formatMoney(snapshot.overdueTotal)}
+          </span>
+        </button>
+
+        {/* Open work orders */}
+        <button
+          type="button"
+          onClick={() => onNavigate('workorders')}
+          className={`flex flex-col gap-1 rounded-[20px] border p-5 text-left transition hover:shadow-sm ${
+            openWoCount > 0
+              ? 'border-amber-200 bg-amber-50 hover:border-amber-300'
+              : 'border-slate-200 bg-white shadow-sm hover:border-slate-300'
+          }`}
+        >
+          <span className={`text-[10px] font-bold uppercase tracking-[0.14em] ${openWoCount > 0 ? 'text-amber-600' : 'text-slate-400'}`}>
+            Work Orders · Open
+          </span>
+          <span className={`text-3xl font-black tabular-nums ${openWoCount > 0 ? 'text-amber-700' : 'text-slate-800'}`}>
+            {openWoCount}
+          </span>
+        </button>
+
+        {/* Lease */}
+        <button
+          type="button"
+          onClick={() => onNavigate('leasing')}
+          className={`flex flex-col gap-1 rounded-[20px] border p-5 text-left transition hover:shadow-sm ${
+            leaseStatus === 'Signed'
+              ? 'border-emerald-200 bg-emerald-50 hover:border-emerald-300'
+              : leaseStatus
+                ? 'border-blue-200 bg-blue-50 hover:border-blue-300'
+                : 'border-slate-200 bg-white shadow-sm hover:border-slate-300'
+          }`}
+        >
+          <span className={`text-[10px] font-bold uppercase tracking-[0.14em] ${leaseStatus === 'Signed' ? 'text-emerald-600' : leaseStatus ? 'text-blue-600' : 'text-slate-400'}`}>
+            Lease
+          </span>
+          <span className={`text-3xl font-black ${leaseStatus === 'Signed' ? 'text-emerald-700' : leaseStatus ? 'text-blue-700' : 'text-slate-800'}`}>
+            {leaseStatus || 'None'}
+          </span>
+        </button>
+
+        {/* Inbox full-width */}
+        <button
+          type="button"
+          onClick={() => onNavigate('inbox')}
+          className="col-span-full flex items-center justify-between rounded-[20px] border border-slate-800 bg-slate-900 px-6 py-5 text-left transition hover:bg-slate-800"
+        >
+          <div className="flex items-center gap-3">
+            <span className="text-[10px] font-bold uppercase tracking-[0.18em] text-slate-400">Inbox</span>
+            {(inboxUnreadCount ?? 0) > 0 ? (
+              <span className="flex h-5 min-w-[1.25rem] items-center justify-center rounded-full bg-red-500 px-1.5 text-[10px] font-black text-white tabular-nums">
+                {inboxUnreadCount}
+              </span>
+            ) : null}
           </div>
-
-          <PortalOpsCard
-            title="Lease document"
-            description="Published or signed lease from your manager."
-          >
-            {leaseStatus ? (
-              <div className="space-y-3">
-                <PortalOpsStatusBadge tone={leaseStatus === 'Signed' ? 'emerald' : 'axis'}>{leaseStatus}</PortalOpsStatusBadge>
-                <p className="text-sm text-slate-600">
-                  Open the Leasing tab to read the full document or complete next steps.
-                </p>
-                <button
-                  type="button"
-                  onClick={() => onNavigate('leasing')}
-                  className="rounded-full bg-slate-900 px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-slate-800"
-                >
-                  Go to Leasing
-                </button>
-              </div>
-            ) : (
-              <PortalOpsEmptyState
-                icon="📄"
-                title="No published lease yet"
-                description="When your manager publishes your lease, it will show in Leasing."
-                action={
-                  <button
-                    type="button"
-                    onClick={() => onNavigate('leasing')}
-                    className="rounded-full bg-axis px-5 py-2.5 text-sm font-semibold text-white transition hover:brightness-105"
-                  >
-                    Leasing
-                  </button>
-                }
-              />
-            )}
-          </PortalOpsCard>
-
-          <div className="rounded-[24px] border border-dashed border-slate-200 bg-slate-50/70 px-5 py-4 text-sm text-slate-600">
-            <span className="font-semibold text-slate-800">Need help?</span>{' '}
-            <Link to={HOUSING_CONTACT_MESSAGE} className="font-semibold text-axis underline decoration-axis/30 underline-offset-2">
-              Message Axis
-            </Link>
-          </div>
-        </div>
+          <span className="text-lg font-black text-white">Open messages →</span>
+        </button>
       </div>
+
+      {/* Your home info */}
+      {homeLabel ? (
+        <div className="rounded-[20px] border border-slate-200 bg-white p-5 shadow-sm">
+          <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-slate-400">Your home</p>
+          <p className="mt-1 text-lg font-black text-slate-900">{homeLabel}</p>
+          {getLeaseTermLabel(resident) ? (
+            <p className="mt-1 text-sm text-slate-500">{getLeaseTermLabel(resident)}</p>
+          ) : null}
+        </div>
+      ) : null}
     </div>
   )
 }
