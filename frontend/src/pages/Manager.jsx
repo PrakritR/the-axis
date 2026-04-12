@@ -32,6 +32,10 @@ import {
   AIRTABLE_PAYMENTS_BASE_ID,
   createRoomRecord,
   uploadPropertyImage,
+  getAllPortalInternalThreadMessages,
+  fetchInboxThreadStateMap,
+  portalInboxAirtableConfigured,
+  portalInboxThreadKeyFromRecord,
 } from '../lib/airtable'
 import {
   serializeManagerAddPropertyToAirtableFields,
@@ -3862,112 +3866,99 @@ function toggleStandardTourSlotInWeekly(weeklyFree, dayAbbr, slot) {
 const LEASE_STATUSES_NEEDING_ACTION = new Set(['Draft Generated', 'Under Review', 'Changes Needed', 'Approved'])
 
 function ManagerDashboardHomePanel({
+  manager,
   approvedHouseCount,
   stats,
   statsLoading,
   dataWarnings,
   onNavigate,
+  inboxUnreadCount,
 }) {
   const displayDataWarnings = useMemo(
     () => consolidateManagerDashboardWarnings(dataWarnings || []),
     [dataWarnings],
   )
   const s = stats || {}
-  const pendingApps = statsLoading ? null : s.pendingApps ?? 0
-  const leasePending = statsLoading ? null : s.leasePending ?? 0
-  const rentOverdue = statsLoading ? null : s.rentOverdue ?? 0
-  const openWo = statsLoading ? null : s.openWo ?? 0
+  const pendingApps = statsLoading ? '—' : s.pendingApps ?? 0
+  const leasePending = statsLoading ? '—' : s.leasePending ?? 0
+  const rentOverdue = statsLoading ? '—' : s.rentOverdue ?? 0
+  const openWo = statsLoading ? '—' : s.openWo ?? 0
 
-  const tasks = [
-    {
-      key: 'apps',
-      label: 'Applications pending review',
-      count: pendingApps,
-      tab: 'applications',
-      show: (pendingApps ?? 0) > 0,
-    },
-    {
-      key: 'leases',
-      label: 'Leases needing your action',
-      sub: 'Draft, review, changes, or approved — not yet with the resident',
-      count: leasePending,
-      tab: 'leases',
-      show: (leasePending ?? 0) > 0,
-    },
-    {
-      key: 'rent',
-      label: 'Rent overdue',
-      count: rentOverdue,
-      tab: 'payments',
-      show: (rentOverdue ?? 0) > 0,
-    },
-    {
-      key: 'wo',
-      label: 'Open work orders',
-      count: openWo,
-      tab: 'workorders',
-      show: (openWo ?? 0) > 0,
-    },
-  ]
-
-  const visibleTasks = tasks.filter((t) => t.show)
+  const firstName = String(manager?.name || '').split(' ')[0] || null
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-6">
+      {/* Header */}
       <div>
-        <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-[#2563eb]">Home</div>
-        <h2 className="mt-2 text-2xl font-black text-slate-900">Dashboard</h2>
+        <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">Manager portal</p>
+        <h2 className="text-2xl font-black text-slate-900">
+          {firstName ? `Welcome back, ${firstName}` : 'Dashboard'}
+        </h2>
       </div>
 
       {displayDataWarnings?.length ? (
-        <div
-          role="status"
-          className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950"
-        >
-          <div className="font-semibold text-amber-900">Some dashboard data could not load</div>
+        <div role="status" className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950">
+          <div className="font-semibold text-amber-900">Some data could not load</div>
           <ul className="mt-2 list-inside list-disc space-y-1 text-amber-900/90">
-            {displayDataWarnings.map((w, i) => (
-              <li key={i}>{w}</li>
-            ))}
+            {displayDataWarnings.map((w, i) => <li key={i}>{w}</li>)}
           </ul>
         </div>
       ) : null}
 
-      <div className="rounded-[24px] border border-slate-200 bg-white p-6 shadow-sm">
-        <h3 className="text-lg font-black text-slate-900">Priority tasks</h3>
-        <p className="mt-1 text-sm text-slate-500">Anything listed here needs attention soon.</p>
-        {statsLoading ? (
-          <p className="mt-6 text-sm text-slate-500">Loading…</p>
-        ) : (approvedHouseCount ?? 0) === 0 ? (
-          <p className="mt-6 text-sm text-slate-600">
-            You don&apos;t have any houses in your portfolio yet. Once properties are linked to your account, applications, leases, and rent will show here.
-          </p>
-        ) : visibleTasks.length === 0 ? (
-          <p className="mt-6 text-sm text-emerald-800 bg-emerald-50 border border-emerald-100 rounded-2xl px-4 py-3">
-            Nothing urgent right now — you&apos;re caught up on applications, lease queue, overdue rent, and work orders for your houses.
-          </p>
-        ) : (
-          <ul className="mt-5 divide-y divide-slate-100">
-            {visibleTasks.map((t) => (
-              <li key={t.key}>
-                <button
-                  type="button"
-                  onClick={() => onNavigate(t.tab)}
-                  className="flex w-full items-center justify-between gap-4 py-4 text-left transition hover:bg-slate-50/80"
-                >
-                  <div>
-                    <div className="font-semibold text-slate-900">{t.label}</div>
-                    {t.sub ? <div className="mt-0.5 text-xs text-slate-500">{t.sub}</div> : null}
-                  </div>
-                  <div className="flex shrink-0 items-center gap-2">
-                    <span className="rounded-full bg-[#2563eb]/10 px-3 py-1 text-sm font-black text-[#2563eb]">{t.count}</span>
-                    <span className="text-sm font-semibold text-[#2563eb]">Open →</span>
-                  </div>
-                </button>
-              </li>
-            ))}
-          </ul>
-        )}
+      {/* Metric cards */}
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <button
+          type="button"
+          onClick={() => onNavigate('applications')}
+          className="flex flex-col gap-1 rounded-[20px] border border-violet-200 bg-violet-50 p-5 text-left transition hover:border-violet-300 hover:shadow-sm"
+        >
+          <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-violet-600">Applications · Pending</span>
+          <span className="text-3xl font-black tabular-nums text-violet-700">{pendingApps}</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => onNavigate('leases')}
+          className="flex flex-col gap-1 rounded-[20px] border border-amber-200 bg-amber-50 p-5 text-left transition hover:border-amber-300 hover:shadow-sm"
+        >
+          <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-amber-600">Leases · Action needed</span>
+          <span className="text-3xl font-black tabular-nums text-amber-700">{leasePending}</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => onNavigate('payments')}
+          className="flex flex-col gap-1 rounded-[20px] border border-red-200 bg-red-50 p-5 text-left transition hover:border-red-300 hover:shadow-sm"
+        >
+          <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-red-600">Payments · Overdue</span>
+          <span className="text-3xl font-black tabular-nums text-red-700">{rentOverdue}</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => onNavigate('workorders')}
+          className="flex flex-col gap-1 rounded-[20px] border border-blue-200 bg-blue-50 p-5 text-left transition hover:border-blue-300 hover:shadow-sm"
+        >
+          <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-blue-600">Work Orders · Open</span>
+          <span className="text-3xl font-black tabular-nums text-blue-700">{openWo}</span>
+        </button>
+
+        {/* Inbox — full-width spanning all columns */}
+        <button
+          type="button"
+          onClick={() => onNavigate('inbox')}
+          className="col-span-full flex items-center justify-between rounded-[20px] border border-slate-800 bg-slate-900 px-6 py-5 text-left transition hover:bg-slate-800"
+        >
+          <div className="flex items-center gap-3">
+            <span className="text-[10px] font-bold uppercase tracking-[0.18em] text-slate-400">Inbox</span>
+            {(inboxUnreadCount ?? 0) > 0 ? (
+              <span className="flex h-5 min-w-[1.25rem] items-center justify-center rounded-full bg-red-500 px-1.5 text-[10px] font-black text-white tabular-nums">
+                {inboxUnreadCount}
+              </span>
+            ) : null}
+          </div>
+          <span className="text-lg font-black text-white">Open messages →</span>
+        </button>
       </div>
     </div>
   )
@@ -5070,6 +5061,7 @@ function ManagerDashboard({ manager: managerProp, onOpenDraft, onSignOut, onMana
   const [overviewStatsLoading, setOverviewStatsLoading] = useState(false)
   const [overviewDataWarnings, setOverviewDataWarnings] = useState([])
   const [leasesLoadError, setLeasesLoadError] = useState('')
+  const [inboxUnreadCount, setInboxUnreadCount] = useState(0)
 
   const managerScope = useMemo(() => computeManagerScope(propertyRecords, manager), [propertyRecords, manager])
   const scopedPropertyOptions = useMemo(
@@ -5177,6 +5169,40 @@ function ManagerDashboard({ manager: managerProp, onOpenDraft, onSignOut, onMana
       cancelled = true
     }
   }, [dashView, managerScope.approvedNames, approvedNamesLower])
+
+  // Fetch unread inbox thread count for the dashboard badge
+  useEffect(() => {
+    const email = String(manager?.email || '').trim()
+    if (!email || !portalInboxAirtableConfigured()) return
+    let cancelled = false
+    async function fetchUnread() {
+      try {
+        const [msgs, stateMap] = await Promise.all([
+          getAllPortalInternalThreadMessages(),
+          fetchInboxThreadStateMap(email),
+        ])
+        const latestByThread = new Map()
+        for (const m of msgs) {
+          const tk = portalInboxThreadKeyFromRecord(m)
+          if (!tk) continue
+          const ts = m.Timestamp ? new Date(m.Timestamp) : null
+          if (!ts) continue
+          const prev = latestByThread.get(tk)
+          if (!prev || ts > prev) latestByThread.set(tk, ts)
+        }
+        let unread = 0
+        for (const [tk, latest] of latestByThread) {
+          const state = stateMap.get(tk)
+          if (!state?.lastReadAt || latest > state.lastReadAt) unread++
+        }
+        if (!cancelled) setInboxUnreadCount(unread)
+      } catch {
+        // non-fatal
+      }
+    }
+    fetchUnread()
+    return () => { cancelled = true }
+  }, [manager])
 
   const handlePropertiesChange = useCallback((records) => {
     const nextRecords = Array.isArray(records) ? records : []
@@ -5302,11 +5328,13 @@ function ManagerDashboard({ manager: managerProp, onOpenDraft, onSignOut, onMana
           <ManagerInboxPage manager={manager} allowedPropertyNames={scopedPropertyOptions} />
         ) : dashView === 'dashboard' ? (
           <ManagerDashboardHomePanel
+            manager={manager}
             approvedHouseCount={managerScope.approvedNames.size}
             stats={overviewStats}
             statsLoading={overviewStatsLoading}
             dataWarnings={overviewDataWarnings}
             onNavigate={setDashView}
+            inboxUnreadCount={inboxUnreadCount}
           />
         ) : (
         <>
