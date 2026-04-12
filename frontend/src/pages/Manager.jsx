@@ -5318,7 +5318,7 @@ function ManagerDashboard({ manager: managerProp, onOpenDraft, onSignOut, onMana
       tone: card.id === 'draft_ready' ? 'amber' : card.id === 'signed' ? 'emerald' : 'axis',
     }))
     return [
-      { id: 'all', label: 'All leases', value: String(total), hint: 'Every stage', tone: 'slate' },
+      { id: 'all', label: 'Lease', value: String(total), hint: 'Every stage', tone: 'slate' },
       ...flow,
     ]
   }, [drafts])
