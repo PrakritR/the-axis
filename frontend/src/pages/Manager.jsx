@@ -2252,6 +2252,7 @@ function HouseManagementPanel({ manager, onPropertiesChange }) {
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [editingPropertyId, setEditingPropertyId] = useState(null)
+  const [detailsPropertyId, setDetailsPropertyId] = useState(null)
   const [deletingPropertyId, setDeletingPropertyId] = useState(null)
   const [addOpen, setAddOpen] = useState(false)
   const [addSaving, setAddSaving] = useState(false)
@@ -2706,20 +2707,174 @@ function HouseManagementPanel({ manager, onPropertiesChange }) {
                   </button>
                 </div>
                 <div className="mt-1 text-sm text-slate-500">{property.Address || 'Address not set'}</div>
-                <div className="mt-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-400">
-                  Utilities fee {property['Utilities Fee'] ? `$${property['Utilities Fee']}` : 'not set'}
+                <div className="mt-2 flex flex-wrap gap-3 text-xs text-slate-500">
+                  {property['Property Type'] ? <span className="rounded-full border border-slate-200 bg-white px-2.5 py-0.5 font-semibold">{property['Property Type']}</span> : null}
+                  {property['Room Count'] ? <span>{property['Room Count']} rooms</span> : null}
+                  {property['Bathroom Count'] ? <span>{property['Bathroom Count']} bath</span> : null}
+                  {property['Application Fee'] ? <span>App fee ${property['Application Fee']}</span> : null}
                 </div>
-                <div className="mt-1 text-xs font-semibold uppercase tracking-[0.14em] text-slate-400">
-                  Security deposit {property['Security Deposit'] ? `$${property['Security Deposit']}` : 'not set'}
-                </div>
-                <div className="mt-2 text-xs text-slate-500">
-                  {extractNoteValue(property.Notes, 'Tour Manager') || 'No manager assigned'} · {extractNoteValue(property.Notes, 'Tour Availability') || 'No tour hours set'}
-                </div>
+
+                {detailsPropertyId === property.id ? (
+                  <div className="mt-4 space-y-5 border-t border-slate-200 pt-4">
+                    {/* Rooms */}
+                    {Number(property['Room Count']) > 0 ? (
+                      <div>
+                        <div className="mb-2 text-[11px] font-bold uppercase tracking-[0.14em] text-slate-400">Rooms</div>
+                        <div className="space-y-1.5">
+                          {Array.from({ length: Number(property['Room Count']) }, (_, i) => {
+                            const n = i + 1
+                            const rent = property[`Room ${n} for Rent`] ?? property[`Room ${n} Rent`]
+                            const avail = property[`Room ${n} Availability`]
+                            const furn = property[`Room ${n} Furnished`]
+                            const uc = property[`Room ${n} Utilities Cost`]
+                            return (
+                              <div key={n} className="flex flex-wrap gap-x-4 gap-y-0.5 rounded-xl border border-slate-100 bg-white px-3 py-2 text-xs">
+                                <span className="font-semibold text-slate-700">Room {n}</span>
+                                {rent != null && rent !== '' ? <span>Rent: ${rent}</span> : null}
+                                {avail ? <span>Available: {avail}</span> : null}
+                                {furn ? <span>Furnished: {furn}</span> : null}
+                                {uc != null && uc !== '' ? <span>Utils: ${uc}/mo</span> : null}
+                              </div>
+                            )
+                          })}
+                        </div>
+                      </div>
+                    ) : null}
+
+                    {/* Bathrooms */}
+                    {Number(property['Bathroom Count']) > 0 ? (
+                      <div>
+                        <div className="mb-2 text-[11px] font-bold uppercase tracking-[0.14em] text-slate-400">Bathrooms</div>
+                        <div className="space-y-1.5">
+                          {Array.from({ length: Number(property['Bathroom Count']) }, (_, i) => {
+                            const n = i + 1
+                            const desc = property[`Bathroom ${n}`]
+                            const sharing = property[`Rooms Sharing Bathroom ${n}`]
+                            return (
+                              <div key={n} className="flex flex-wrap gap-x-4 gap-y-0.5 rounded-xl border border-slate-100 bg-white px-3 py-2 text-xs">
+                                <span className="font-semibold text-slate-700">Bath {n}</span>
+                                {desc ? <span>{desc}</span> : null}
+                                {sharing ? <span>Rooms sharing: {sharing}</span> : null}
+                              </div>
+                            )
+                          })}
+                        </div>
+                      </div>
+                    ) : null}
+
+                    {/* Kitchens */}
+                    {Number(property['Kitchen Count']) > 0 ? (
+                      <div>
+                        <div className="mb-2 text-[11px] font-bold uppercase tracking-[0.14em] text-slate-400">Kitchens</div>
+                        <div className="space-y-1.5">
+                          {Array.from({ length: Number(property['Kitchen Count']) }, (_, i) => {
+                            const n = i + 1
+                            const desc = property[`Kitchen ${n}`]
+                            const sharing = property[`Rooms Sharing Kitchen ${n}`]
+                            return (
+                              <div key={n} className="flex flex-wrap gap-x-4 gap-y-0.5 rounded-xl border border-slate-100 bg-white px-3 py-2 text-xs">
+                                <span className="font-semibold text-slate-700">Kitchen {n}</span>
+                                {desc ? <span>{desc}</span> : null}
+                                {sharing ? <span>Rooms sharing: {sharing}</span> : null}
+                              </div>
+                            )
+                          })}
+                        </div>
+                      </div>
+                    ) : null}
+
+                    {/* Shared Spaces */}
+                    {Number(property['Number of Shared Spaces']) > 0 ? (
+                      <div>
+                        <div className="mb-2 text-[11px] font-bold uppercase tracking-[0.14em] text-slate-400">Shared Spaces</div>
+                        <div className="space-y-1.5">
+                          {Array.from({ length: Number(property['Number of Shared Spaces']) }, (_, i) => {
+                            const n = i + 1
+                            const name = property[`Shared Space ${n} Name`]
+                            const type = property[`Shared Space ${n} Type`]
+                            const access = property[`Access to Shared Space ${n}`]
+                            const accessStr = Array.isArray(access) ? access.join(', ') : access
+                            return (
+                              <div key={n} className="flex flex-wrap gap-x-4 gap-y-0.5 rounded-xl border border-slate-100 bg-white px-3 py-2 text-xs">
+                                <span className="font-semibold text-slate-700">{name || `Space ${n}`}</span>
+                                {type ? <span>{type}</span> : null}
+                                {accessStr ? <span>Access: {accessStr}</span> : null}
+                              </div>
+                            )
+                          })}
+                        </div>
+                      </div>
+                    ) : null}
+
+                    {/* Laundry & Parking */}
+                    <div className="flex flex-wrap gap-4">
+                      {property.Laundry ? (
+                        <div>
+                          <div className="mb-1 text-[11px] font-bold uppercase tracking-[0.14em] text-slate-400">Laundry</div>
+                          <div className="text-xs text-slate-600">
+                            {property['Rooms Sharing Laundry'] ? `Rooms sharing: ${property['Rooms Sharing Laundry']}` : 'Available'}
+                          </div>
+                        </div>
+                      ) : null}
+                      {property.Parking ? (
+                        <div>
+                          <div className="mb-1 text-[11px] font-bold uppercase tracking-[0.14em] text-slate-400">Parking</div>
+                          <div className="text-xs text-slate-600">
+                            {[property['Parking Type'], property['Parking Fee'] ? `$${property['Parking Fee']}/mo` : null].filter(Boolean).join(' · ') || 'Available'}
+                          </div>
+                        </div>
+                      ) : null}
+                    </div>
+
+                    {/* Amenities & Pets */}
+                    {(property.Amenities?.length || property.Pets) ? (
+                      <div className="flex flex-wrap gap-4">
+                        {property.Amenities?.length ? (
+                          <div className="flex-1">
+                            <div className="mb-2 text-[11px] font-bold uppercase tracking-[0.14em] text-slate-400">Amenities</div>
+                            <div className="flex flex-wrap gap-1.5">
+                              {(Array.isArray(property.Amenities) ? property.Amenities : [property.Amenities]).map((a) => (
+                                <span key={a} className="rounded-full border border-slate-200 bg-white px-2.5 py-0.5 text-[11px] font-semibold text-slate-600">{a}</span>
+                              ))}
+                            </div>
+                          </div>
+                        ) : null}
+                        {property.Pets ? (
+                          <div>
+                            <div className="mb-1 text-[11px] font-bold uppercase tracking-[0.14em] text-slate-400">Pets</div>
+                            <div className="text-xs text-slate-600">{property.Pets}</div>
+                          </div>
+                        ) : null}
+                      </div>
+                    ) : null}
+
+                    {/* Fees */}
+                    <div className="flex flex-wrap gap-4 text-xs">
+                      {property['Application Fee'] ? <div><span className="font-semibold text-slate-500">Application fee</span> <span className="text-slate-700">${property['Application Fee']}</span></div> : null}
+                      {property['Security Deposit'] ? <div><span className="font-semibold text-slate-500">Security deposit</span> <span className="text-slate-700">${property['Security Deposit']}</span></div> : null}
+                      {property['Utilities Fee'] ? <div><span className="font-semibold text-slate-500">Utilities</span> <span className="text-slate-700">${property['Utilities Fee']}/mo</span></div> : null}
+                    </div>
+
+                    {/* Other Info */}
+                    {property['Other Info'] ? (
+                      <div>
+                        <div className="mb-1 text-[11px] font-bold uppercase tracking-[0.14em] text-slate-400">Other info</div>
+                        <div className="text-xs text-slate-600 whitespace-pre-line">{property['Other Info']}</div>
+                      </div>
+                    ) : null}
+
+                    <button
+                      type="button"
+                      onClick={() => setDetailsPropertyId(null)}
+                      className="text-xs font-semibold text-slate-400 hover:text-slate-700"
+                    >
+                      Hide details
+                    </button>
+                  </div>
+                ) : null}
+
                 {editingPropertyId === property.id ? (
                   <div className="mt-4 grid gap-3 sm:grid-cols-2">
-                    <div className="sm:col-span-2">
-                      <div className="mb-2 text-[11px] font-bold uppercase tracking-[0.14em] text-slate-400">Listing (Airtable)</div>
-                    </div>
                     <div className="sm:col-span-2">
                       <label className="mb-1 block text-xs font-semibold text-slate-600">Address</label>
                       <input
@@ -2872,7 +3027,7 @@ function HouseManagementPanel({ manager, onPropertiesChange }) {
                       </button>
                     </div>
                   </div>
-                ) : (
+                ) : (<>
                   <button
                     type="button"
                     onClick={() => {
@@ -2895,6 +3050,14 @@ function HouseManagementPanel({ manager, onPropertiesChange }) {
                   >
                     Edit listing &amp; tours
                   </button>
+                  <button
+                    type="button"
+                    onClick={() => setDetailsPropertyId(detailsPropertyId === property.id ? null : property.id)}
+                    className="mt-3 ml-2 rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-700"
+                  >
+                    {detailsPropertyId === property.id ? "Hide details" : "Details"}
+                  </button>
+                  </>
                 )}
               </div>
             ))}

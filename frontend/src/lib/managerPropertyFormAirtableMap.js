@@ -8,7 +8,7 @@
 export const MAX_ROOM_SLOTS = 20
 export const MAX_BATHROOM_SLOTS = 10
 export const MAX_KITCHEN_SLOTS = 3
-export const MAX_SHARED_SPACE_SLOTS = 3
+export const MAX_SHARED_SPACE_SLOTS = 13
 export const MAX_LAUNDRY_SLOTS = 5
 // Rooms Sharing Bathroom only exists for bathrooms 1–5 in Airtable
 export const MAX_BATHROOM_SHARING_SLOTS = 5
@@ -89,7 +89,7 @@ export const PROPERTY_TYPE_OPTIONS = ['House', 'Apartment', 'Townhome', 'Studio'
 // ─── Shared space type options ────────────────────────────────────────────────────
 export const SHARED_SPACE_TYPE_OPTIONS = [
   'Living Room', 'Dining Room', 'Lounge', 'Study Area',
-  'Laundry', 'Backyard', 'Patio', 'Storage', 'Hallway', 'Other',
+  'Kitchen', 'Laundry', 'Backyard', 'Patio', 'Storage', 'Hallway', 'Other',
 ]
 
 // ─── Helpers ────────────────────────────────────────────────────────────────────
