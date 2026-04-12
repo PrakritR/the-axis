@@ -305,3 +305,29 @@ export async function adminRejectApplication(recordId) {
   return adminPatchApplication(recordId, { Approved: false })
 }
 
+/** Load all resident profiles for CEO/admin portal handoff. */
+export async function loadResidentsForAdmin() {
+  if (!isAdminPortalAirtableConfigured()) return []
+  const enc = encodeURIComponent('Resident Profile')
+  const out = []
+  let offset = null
+  do {
+    const url = new URL(`${BASE_URL}/${enc}`)
+    url.searchParams.set('fields[]', 'Name')
+    url.searchParams.set('fields[]', 'Email')
+    url.searchParams.set('fields[]', 'House')
+    url.searchParams.set('fields[]', 'Unit Number')
+    url.searchParams.set('fields[]', 'Application Approval')
+    url.searchParams.set('fields[]', 'Approved')
+    if (offset) url.searchParams.set('offset', offset)
+    const data = await requestJson(url.toString())
+    for (const r of data.records || []) {
+      out.push(mapRecord(r))
+    }
+    offset = data.offset || null
+  } while (offset)
+  return out.sort((a, b) =>
+    String(a.Name || '').localeCompare(String(b.Name || ''), undefined, { sensitivity: 'base' }),
+  )
+}
+

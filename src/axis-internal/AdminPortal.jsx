@@ -10,6 +10,7 @@ import {
   adminSetManagerActive,
   isAdminPortalAirtableConfigured,
   loadAdminPortalDataset,
+  loadResidentsForAdmin,
 } from '../lib/adminPortalAirtable.js'
 import { readJsonResponse } from '../lib/readJsonResponse'
 import { authenticateAdminPortal } from '../lib/adminPortalSignIn'
@@ -129,6 +130,106 @@ function propertyTone(st) {
   return 'slate'
 }
 
+function PortalHandoffCard({ accounts, residents, user }) {
+  const [selectedManagerId, setSelectedManagerId] = useState('')
+  const [selectedResidentId, setSelectedResidentId] = useState('')
+
+  function openManagerPortal() {
+    const manager = accounts.find((a) => a.id === selectedManagerId)
+    if (!manager) return
+    sessionStorage.setItem('axis_manager', JSON.stringify({
+      id: manager.id,
+      email: manager.email,
+      name: manager.name,
+    }))
+    window.location.assign('/manager')
+  }
+
+  function openResidentPortal() {
+    const resident = residents.find((r) => r.id === selectedResidentId)
+    if (!resident) return
+    sessionStorage.setItem('axis_resident', resident.id)
+    window.location.assign('/resident')
+  }
+
+  const activeManagers = accounts.filter((a) => a.enabled)
+  const sortedManagers = [...activeManagers].sort((a, b) =>
+    String(a.name || '').localeCompare(String(b.name || ''), undefined, { sensitivity: 'base' }),
+  )
+  const sortedResidents = [...residents].sort((a, b) =>
+    String(a.Name || '').localeCompare(String(b.Name || ''), undefined, { sensitivity: 'base' }),
+  )
+
+  return (
+    <div className="rounded-[24px] border border-violet-300/60 bg-[linear-gradient(135deg,#f5f3ff_0%,#ffffff_100%)] p-5 shadow-sm">
+      <h2 className="text-sm font-black text-violet-950">Open portals as a specific account</h2>
+      <p className="mt-1 text-xs text-violet-900/80">
+        Select a real manager or resident profile to jump directly into their portal session.
+      </p>
+      <div className="mt-4 grid gap-4 sm:grid-cols-2">
+        <div>
+          <div className="mb-2 text-[11px] font-bold uppercase tracking-[0.14em] text-violet-700">Manager portal</div>
+          <div className="flex gap-2">
+            <select
+              value={selectedManagerId}
+              onChange={(e) => setSelectedManagerId(e.target.value)}
+              className="min-w-0 flex-1 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 outline-none focus:border-violet-400 focus:ring-1 focus:ring-violet-400/30"
+            >
+              <option value="">— choose manager —</option>
+              {sortedManagers.map((m) => (
+                <option key={m.id} value={m.id}>
+                  {m.name}{m.managedHousesLabel && m.managedHousesLabel !== '—' ? ` · ${m.managedHousesLabel}` : ''}
+                </option>
+              ))}
+              {sortedManagers.length === 0 ? (
+                <option disabled value="">No active managers found</option>
+              ) : null}
+            </select>
+            <button
+              type="button"
+              disabled={!selectedManagerId}
+              onClick={openManagerPortal}
+              className="rounded-xl bg-violet-600 px-3 py-2 text-xs font-semibold text-white transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              Open
+            </button>
+          </div>
+        </div>
+        <div>
+          <div className="mb-2 text-[11px] font-bold uppercase tracking-[0.14em] text-violet-700">Resident portal</div>
+          <div className="flex gap-2">
+            <select
+              value={selectedResidentId}
+              onChange={(e) => setSelectedResidentId(e.target.value)}
+              className="min-w-0 flex-1 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 outline-none focus:border-violet-400 focus:ring-1 focus:ring-violet-400/30"
+            >
+              <option value="">— choose resident —</option>
+              {sortedResidents.map((r) => (
+                <option key={r.id} value={r.id}>
+                  {r.Name || r.Email || r.id}
+                  {r.House ? ` · ${r.House}` : ''}
+                  {r['Unit Number'] ? ` ${r['Unit Number']}` : ''}
+                </option>
+              ))}
+              {sortedResidents.length === 0 ? (
+                <option disabled value="">Loading residents…</option>
+              ) : null}
+            </select>
+            <button
+              type="button"
+              disabled={!selectedResidentId}
+              onClick={openResidentPortal}
+              className="rounded-xl bg-violet-600 px-3 py-2 text-xs font-semibold text-white transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              Open
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function AdminLoginView({ onAuthenticated }) {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -223,6 +324,7 @@ export default function AdminPortal() {
   const [applications, setApplications] = useState(() => [])
   const [selectedApprovalId, setSelectedApprovalId] = useState(null)
   const [selectedApplicationId, setSelectedApplicationId] = useState(null)
+  const [residents, setResidents] = useState([])
   const [dataLoading, setDataLoading] = useState(false)
   const [approvalBusy, setApprovalBusy] = useState(false)
   const [applicationReviewBusy, setApplicationReviewBusy] = useState(false)
@@ -241,10 +343,14 @@ export default function AdminPortal() {
     if (!isAdminPortalAirtableConfigured()) return
     setDataLoading(true)
     try {
-      const next = await loadAdminPortalDataset()
+      const [next, residentList] = await Promise.all([
+        loadAdminPortalDataset(),
+        showInternalPortalHandoff(session?.role) ? loadResidentsForAdmin().catch(() => []) : Promise.resolve([]),
+      ])
       setProperties(next.properties)
       setAccounts(next.accounts)
       setApplications(next.applications)
+      setResidents(residentList)
     } catch (e) {
       toast.error(e?.message || 'Could not load data.')
     } finally {
@@ -379,38 +485,7 @@ export default function AdminPortal() {
             <p className="text-sm text-slate-500">Syncing data…</p>
           ) : null}
           {showInternalPortalHandoff(user.role) ? (
-            <div className="rounded-[24px] border border-violet-300/60 bg-[linear-gradient(135deg,#f5f3ff_0%,#ffffff_100%)] p-5 shadow-sm">
-              <h2 className="text-sm font-black text-violet-950">Open test portals</h2>
-              <p className="mt-2 text-xs text-violet-900/80">
-                Use the shared test records in your workspace to verify manager, resident, and admin flows end-to-end.
-              </p>
-              <div className="mt-4 flex flex-wrap gap-2">
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (user.role === 'ceo') {
-                      seedDeveloperManagerSession()
-                    } else {
-                      seedInternalStaffManagerSession({
-                        email: user.email,
-                        name: user.name,
-                        staffRole: user.airtableRole || user.role,
-                      })
-                    }
-                    window.location.assign('/manager')
-                  }}
-                  className="rounded-xl bg-violet-600 px-4 py-2 text-xs font-semibold text-white shadow-sm transition-opacity hover:opacity-90"
-                >
-                  Open manager test portal
-                </button>
-                <a
-                  href="/portal?portal=resident"
-                  className="inline-flex items-center rounded-xl border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-50"
-                >
-                  Open resident test login
-                </a>
-              </div>
-            </div>
+            <PortalHandoffCard accounts={accounts} residents={residents} user={user} />
           ) : null}
           <div
             className={

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { Component, useCallback, useEffect, useMemo, useState } from 'react'
 import { Link, Navigate } from 'react-router-dom'
 import { properties } from '../data/properties'
 import { EmbeddedStripeCheckout } from '../components/EmbeddedStripeCheckout'
@@ -340,6 +340,39 @@ function SectionCard({ title, description, children, action }) {
       <div className="px-5 py-5 sm:px-7 sm:py-6">{children}</div>
     </div>
   )
+}
+
+class PanelErrorBoundary extends Component {
+  constructor(props) {
+    super(props)
+    this.state = { hasError: false, error: null }
+  }
+  static getDerivedStateFromError(error) {
+    return { hasError: true, error }
+  }
+  componentDidCatch(error, info) {
+    console.error('[ResidentPortal] Panel error:', error, info)
+  }
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="rounded-[28px] border border-red-200 bg-red-50 px-6 py-10 text-center">
+          <p className="text-sm font-semibold text-red-800">This section hit an error</p>
+          <p className="mt-1 text-xs text-red-700">
+            {this.state.error?.message || 'An unexpected error occurred. Try refreshing.'}
+          </p>
+          <button
+            type="button"
+            onClick={() => this.setState({ hasError: false, error: null })}
+            className="mt-4 rounded-full border border-red-300 bg-white px-5 py-2 text-xs font-semibold text-red-800 transition hover:bg-red-50"
+          >
+            Retry
+          </button>
+        </div>
+      )
+    }
+    return this.props.children
+  }
 }
 
 function SetupRequired() {
@@ -2051,12 +2084,14 @@ function Dashboard({ resident, onResidentUpdated, onSignOut }) {
         ) : null}
         {!loading && tab === 'workorders' ? (
           applicationUnlocked ? (
-            <WorkOrdersPanel
-              resident={resident}
-              requests={visibleWorkOrders}
-              onRequestCreated={loadData}
-              onWorkOrderUpdated={loadData}
-            />
+            <PanelErrorBoundary>
+              <WorkOrdersPanel
+                resident={resident}
+                requests={visibleWorkOrders}
+                onRequestCreated={loadData}
+                onWorkOrderUpdated={loadData}
+              />
+            </PanelErrorBoundary>
           ) : (
             <ResidentPendingApprovalGate />
           )
@@ -2070,12 +2105,14 @@ function Dashboard({ resident, onResidentUpdated, onSignOut }) {
         ) : null}
         {!loading && tab === 'payments' ? (
           applicationUnlocked ? (
-            <PaymentsPanel
-              resident={resident}
-              onResidentUpdated={onResidentUpdated}
-              highlightCategory={paymentFocus}
-              onPaymentsDataUpdated={setPayments}
-            />
+            <PanelErrorBoundary>
+              <PaymentsPanel
+                resident={resident}
+                onResidentUpdated={onResidentUpdated}
+                highlightCategory={paymentFocus}
+                onPaymentsDataUpdated={setPayments}
+              />
+            </PanelErrorBoundary>
           ) : (
             <ResidentPendingApprovalGate />
           )

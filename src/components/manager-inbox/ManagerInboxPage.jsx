@@ -2,7 +2,9 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import toast from 'react-hot-toast'
 import {
   getAllMessages,
+  getAllApplications,
   getAllPortalInternalThreadMessages,
+  getResidentByEmail,
   sendMessage,
   getMessagesByThreadKey,
   siteManagerThreadKey,
@@ -62,6 +64,13 @@ function fmtDateTime(val) {
     return String(val)
   }
 }
+
+function managerApplicationInScope(app, approvedNamesLowerSet) {
+  const propertyName = String(app?.['Property Name'] || '').trim().toLowerCase()
+  if (!propertyName || !approvedNamesLowerSet?.size) return false
+  return approvedNamesLowerSet.has(propertyName)
+}
+
 
 const MANAGER_INBOX_AXIS = 'inbox:axis'
 
@@ -268,6 +277,8 @@ export default function ManagerInboxPage({ manager, allowedPropertyNames, adminF
   const [composeSubjectCustom, setComposeSubjectCustom] = useState('')
   const [composeBody, setComposeBody] = useState('')
   const [composeSending, setComposeSending] = useState(false)
+  const [scopedResidentApplications, setScopedResidentApplications] = useState([])
+  const [residentComposeLoading, setResidentComposeLoading] = useState(false)
   const [inboxStateMap, setInboxStateMap] = useState(() => new Map())
   const [inboxStateBackend, setInboxStateBackend] = useState('pending')
   const [sectionFilter, setSectionFilter] = useState('all')
@@ -380,6 +391,66 @@ export default function ManagerInboxPage({ manager, allowedPropertyNames, adminF
   useEffect(() => {
     loadAll()
   }, [loadAll])
+
+  useEffect(() => {
+    if (adminFullInbox || inboxScopeLower.size === 0) {
+      setScopedResidentApplications([])
+      setResidentComposeLoading(false)
+      return
+    }
+
+    let cancelled = false
+    async function loadScopedResidents() {
+      setResidentComposeLoading(true)
+      try {
+        const applications = await getAllApplications()
+        const scopedApplications = applications.filter((app) => managerApplicationInScope(app, inboxScopeLower))
+
+        const latestAppByEmail = new Map()
+        for (const app of scopedApplications) {
+          const email = String(app?.['Signer Email'] || '').trim().toLowerCase()
+          if (!email) continue
+          if (!latestAppByEmail.has(email)) latestAppByEmail.set(email, app)
+        }
+
+        const residentLookups = await Promise.all(
+          [...latestAppByEmail.entries()].map(async ([email, app]) => {
+            try {
+              const resident = await getResidentByEmail(email)
+              if (!resident?.id) return null
+              return { resident, application: app }
+            } catch {
+              return null
+            }
+          }),
+        )
+
+        if (cancelled) return
+
+        const byResidentId = new Map()
+        for (const match of residentLookups) {
+          if (!match?.resident?.id) continue
+          if (!byResidentId.has(match.resident.id)) {
+            byResidentId.set(match.resident.id, match)
+          }
+        }
+
+        setScopedResidentApplications([...byResidentId.values()])
+      } catch (err) {
+        if (!cancelled) {
+          setScopedResidentApplications([])
+          toast.error('Resident list failed to load: ' + formatDataLoadError(err))
+        }
+      } finally {
+        if (!cancelled) setResidentComposeLoading(false)
+      }
+    }
+
+    loadScopedResidents()
+    return () => {
+      cancelled = true
+    }
+  }, [adminFullInbox, inboxScopeLower])
 
   useEffect(() => {
     setReplySubjectPreset('')
@@ -869,17 +940,39 @@ export default function ManagerInboxPage({ manager, allowedPropertyNames, adminF
     [thread, subjectFieldName, selectedThreadId],
   )
 
-  const residentComposeOptions = useMemo(
-    () =>
-      threadRows
-        .map((r) => {
-          const rid = managerInboxParseResidentThreadId(r.id)
-          if (!rid) return null
-          return { id: rid, label: r.participantLabel || 'Resident' }
-        })
-        .filter(Boolean),
-    [threadRows],
-  )
+  const residentThreadLabels = useMemo(() => {
+    const labelMap = new Map()
+    for (const row of threadRows) {
+      const rid = managerInboxParseResidentThreadId(row.id)
+      if (!rid) continue
+      labelMap.set(rid, row.participantLabel || 'Resident')
+    }
+    return labelMap
+  }, [threadRows])
+
+  const residentComposeOptions = useMemo(() => {
+    return scopedResidentApplications
+      .map(({ resident, application }) => {
+        const id = String(resident?.id || '').trim()
+        if (!id) return null
+        const name =
+          String(resident?.Name || '').trim() ||
+          String(application?.['Signer Full Name'] || '').trim() ||
+          residentThreadLabels.get(id) ||
+          'Resident'
+        const email =
+          String(resident?.Email || '').trim() ||
+          String(application?.['Signer Email'] || '').trim()
+        const propertyName = String(application?.['Property Name'] || resident?.House || '').trim()
+        return {
+          id,
+          label: [name, propertyName].filter(Boolean).join(' · '),
+          detail: email,
+        }
+      })
+      .filter(Boolean)
+      .sort((a, b) => a.label.localeCompare(b.label))
+  }, [residentThreadLabels, scopedResidentApplications])
 
   const selectedRowMeta = useMemo(
     () => visibleThreadRows.find((r) => r.id === selectedThreadId),
@@ -1022,9 +1115,7 @@ export default function ManagerInboxPage({ manager, allowedPropertyNames, adminF
                       ) : (
                         <>
                           <option value="resident">Resident</option>
-                          <option value="admin">Axis admin</option>
-                          <option value="site">Site manager</option>
-                          <option value="partner">Partner / management</option>
+                          <option value="admin">Admin</option>
                         </>
                       )}
                     </select>
@@ -1033,7 +1124,7 @@ export default function ManagerInboxPage({ manager, allowedPropertyNames, adminF
                     <div className="space-y-2">
                       {residentComposeOptions.length ? (
                         <label className="block text-xs font-semibold text-slate-700">
-                          Resident in your inbox
+                          Resident
                           <select
                             value={
                               residentComposeOptions.some((o) => o.id === composeResidentRecordId)
@@ -1046,22 +1137,18 @@ export default function ManagerInboxPage({ manager, allowedPropertyNames, adminF
                             <option value="">Select…</option>
                             {residentComposeOptions.map((o) => (
                               <option key={o.id} value={o.id}>
-                                {o.label}
+                                {o.detail ? `${o.label} · ${o.detail}` : o.label}
                               </option>
                             ))}
                           </select>
                         </label>
-                      ) : null}
-                      <label className="block text-xs font-semibold text-slate-700">
-                        Resident record ID
-                        <input
-                          type="text"
-                          value={composeResidentRecordId}
-                          onChange={(e) => setComposeResidentRecordId(e.target.value)}
-                          placeholder="recXXXXXXXXXXXXXX"
-                          className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 font-mono text-sm text-slate-900"
-                        />
-                      </label>
+                      ) : residentComposeLoading ? (
+                        <p className="text-xs text-slate-500">Loading residents…</p>
+                      ) : (
+                        <p className="text-xs text-slate-500">
+                          No residents found for your properties yet.
+                        </p>
+                      )}
                     </div>
                   ) : null}
                   {(composeKind === 'site' || composeKind === 'partner') ? (
