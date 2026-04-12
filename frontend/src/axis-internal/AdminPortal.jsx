@@ -24,6 +24,12 @@ import {
 import { ApplicationDetailPanel } from '../lib/applicationDetailPanel.jsx'
 import { PropertyDetailPanel } from '../lib/propertyDetailPanel.jsx'
 import { AXIS_ADMIN_SESSION_KEY } from './adminSessionConstants'
+import {
+  getAllPortalInternalThreadMessages,
+  fetchInboxThreadStateMap,
+  portalInboxAirtableConfigured,
+  portalInboxThreadKeyFromRecord,
+} from '../lib/airtable.js'
 
 export { AXIS_ADMIN_SESSION_KEY } from './adminSessionConstants'
 
@@ -303,6 +309,7 @@ export default function AdminPortal() {
   const [applicationReviewBusy, setApplicationReviewBusy] = useState(false)
   const [managerTableSort, setManagerTableSort] = useState('house_asc')
   const [applicationsTableSort, setApplicationsTableSort] = useState('house_asc')
+  const [unreadThreadCount, setUnreadThreadCount] = useState(0)
   const airtableConfigWarned = useRef(false)
 
   const user = session
@@ -354,6 +361,41 @@ export default function AdminPortal() {
     clearDeveloperPortalFlags()
     setSession(null)
   }
+
+  // Fetch unread inbox thread count for the dashboard badge
+  useEffect(() => {
+    if (!session?.email || !portalInboxAirtableConfigured()) return
+    let cancelled = false
+    async function fetchUnread() {
+      try {
+        const [msgs, stateMap] = await Promise.all([
+          getAllPortalInternalThreadMessages(),
+          fetchInboxThreadStateMap(session.email),
+        ])
+        // Group latest message timestamp by thread key
+        const latestByThread = new Map()
+        for (const m of msgs) {
+          const tk = portalInboxThreadKeyFromRecord(m)
+          if (!tk) continue
+          const ts = m.Timestamp ? new Date(m.Timestamp) : null
+          if (!ts) continue
+          const prev = latestByThread.get(tk)
+          if (!prev || ts > prev) latestByThread.set(tk, ts)
+        }
+        // Count threads where latest message is newer than lastReadAt
+        let unread = 0
+        for (const [tk, latest] of latestByThread) {
+          const state = stateMap.get(tk)
+          if (!state?.lastReadAt || latest > state.lastReadAt) unread++
+        }
+        if (!cancelled) setUnreadThreadCount(unread)
+      } catch {
+        // non-fatal — badge just stays at 0
+      }
+    }
+    fetchUnread()
+    return () => { cancelled = true }
+  }, [session])
 
   useEffect(() => {
     if (tab !== 'applications') setSelectedApplicationId(null)
@@ -440,6 +482,11 @@ export default function AdminPortal() {
               </button>
             )}
           </div>
+
+          {/* Portal handoff — top */}
+          {isAdminPortalAirtableConfigured() ? (
+            <PortalHandoffCard accounts={accounts} residents={residents} user={user} />
+          ) : null}
 
           {/* Action-needed banner */}
           {pendingApprovals.length > 0 || pendingApps > 0 ? (
@@ -547,15 +594,17 @@ export default function AdminPortal() {
               onClick={() => setTab('messages')}
               className="col-span-full flex items-center justify-between rounded-[20px] border border-slate-800 bg-slate-900 px-6 py-5 text-left transition hover:bg-slate-800"
             >
-              <span className="text-[10px] font-bold uppercase tracking-[0.18em] text-slate-400">Inbox</span>
+              <div className="flex items-center gap-3">
+                <span className="text-[10px] font-bold uppercase tracking-[0.18em] text-slate-400">Inbox</span>
+                {unreadThreadCount > 0 ? (
+                  <span className="flex h-5 min-w-[1.25rem] items-center justify-center rounded-full bg-red-500 px-1.5 text-[10px] font-black text-white tabular-nums">
+                    {unreadThreadCount}
+                  </span>
+                ) : null}
+              </div>
               <span className="text-lg font-black text-white">Open messages →</span>
             </button>
           </div>
-
-          {/* Portal handoff */}
-          {isAdminPortalAirtableConfigured() ? (
-            <PortalHandoffCard accounts={accounts} residents={residents} user={user} />
-          ) : null}
         </div>
       )}
 
