@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react'
+import React from 'react'
 
 function cn(...v) {
   return v.filter(Boolean).join(' ')
@@ -17,32 +17,16 @@ export default function ConversationThread({
   hideInlineSubject = false,
   mapMessageBody = null,
 }) {
-  const bottomRef = useRef(null)
-
-  useEffect(() => {
-    if (bottomRef.current) {
-      bottomRef.current.scrollIntoView({ behavior: 'smooth', block: 'end' })
-    }
-  }, [messages.length])
-
   if (!selectedThreadId) {
-    return <div className="flex-1" aria-hidden />
+    return <div className="min-h-[280px] flex-1" aria-hidden />
   }
 
   if (loading) {
-    return (
-      <div className="flex flex-1 items-center justify-center text-sm text-slate-400" aria-busy="true">
-        Loading…
-      </div>
-    )
+    return <div className="min-h-[200px] flex-1" aria-busy="true" />
   }
 
   if (!messages.length) {
-    return (
-      <div className="flex flex-1 items-center justify-center text-sm text-slate-400">
-        No messages yet
-      </div>
-    )
+    return <div className="min-h-[240px] flex-1" aria-hidden />
   }
 
   return (
@@ -88,7 +72,6 @@ export default function ConversationThread({
           </div>
         )
       })}
-      <div ref={bottomRef} />
     </div>
   )
 }
