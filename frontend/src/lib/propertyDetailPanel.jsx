@@ -1,6 +1,7 @@
 import React from 'react'
 import { StatusPill } from '../components/PortalShell'
 import { formatApplicationDetailValue } from './applicationDetailPanel.jsx'
+import { PROPERTY_EDIT_REQUEST_FIELD } from './managerPropertyFormAirtableMap.js'
 
 const MAX_ROOMS = 20
 const MAX_BATHROOMS = 10
@@ -63,6 +64,7 @@ export const PROPERTY_FIELD_GROUPS = [
       ['Approval Status', 'Approval status'],
       ['Status', 'Status'],
       ['Axis Admin Listing Status', 'Admin listing status'],
+      [PROPERTY_EDIT_REQUEST_FIELD, 'Edit request notes (manager)'],
     ],
   },
   {

@@ -64,6 +64,7 @@ import {
   PROPERTIES_LEASING_META_KEYS,
   PROPERTIES_LEASING_PACKAGE_KEYS,
   PROPERTY_AIR,
+  PROPERTY_EDIT_REQUEST_FIELD,
 } from '../lib/managerPropertyFormAirtableMap.js'
 import {
   consolidateManagerDashboardWarnings,
@@ -222,6 +223,18 @@ function isPropertyRecordApproved(p) {
   const a = String(p['Approval Status'] || '').trim().toLowerCase()
   if (a === 'approved') return true
   return s === 'approved' || s === 'live' || s === 'active'
+}
+
+function isPropertyRecordRejected(p) {
+  const a = String(p?.['Approval Status'] || '').trim().toLowerCase()
+  const s = String(p?.Status || '').trim().toLowerCase()
+  return a === 'rejected' || s === 'rejected'
+}
+
+/** Admin used “Request edits” — manager must update and resubmit (listing stays off the public site). */
+function propertyNeedsAdminEditRequest(p) {
+  const a = String(p?.['Approval Status'] || '').trim().toLowerCase()
+  return a === 'changes requested' || a === 'changes_requested'
 }
 
 function managerLinkArray(val) {
@@ -2368,6 +2381,7 @@ function HouseManagementPanel({ manager, onPropertiesChange }) {
   const [listingBusyPropertyId, setListingBusyPropertyId] = useState(null)
   const [addOpen, setAddOpen] = useState(false)
   const [addSaving, setAddSaving] = useState(false)
+  const [propertiesSection, setPropertiesSection] = useState('pending')
   const emptyAddBasics = () => ({
     name: '',
     address: '',
@@ -2459,19 +2473,55 @@ function HouseManagementPanel({ manager, onPropertiesChange }) {
     () => properties.filter((p) => propertyAssignedToManager(p, manager) && isPropertyRecordApproved(p)),
     [properties, manager],
   )
-  const pendingAssigned = useMemo(
-    () => properties.filter((p) => propertyAssignedToManager(p, manager) && !isPropertyRecordApproved(p)),
+  const rejectedAssigned = useMemo(
+    () => properties.filter((p) => propertyAssignedToManager(p, manager) && isPropertyRecordRejected(p)),
     [properties, manager],
   )
-  const propertySections = useMemo(() => {
-    const listed = approvedAssigned.filter((p) => propertyListingVisibleForMarketing(p))
-    const unlisted = approvedAssigned.filter((p) => !propertyListingVisibleForMarketing(p))
-    return [
+  const pendingAssigned = useMemo(
+    () =>
+      properties.filter(
+        (p) =>
+          propertyAssignedToManager(p, manager) &&
+          !isPropertyRecordApproved(p) &&
+          !isPropertyRecordRejected(p),
+      ),
+    [properties, manager],
+  )
+  const changesRequestedAssigned = useMemo(
+    () => approvedAssigned.filter((p) => propertyNeedsAdminEditRequest(p)),
+    [approvedAssigned],
+  )
+  const listedAssigned = useMemo(
+    () =>
+      approvedAssigned.filter(
+        (p) => propertyListingVisibleForMarketing(p) && !propertyNeedsAdminEditRequest(p),
+      ),
+    [approvedAssigned],
+  )
+  const unlistedAssigned = useMemo(
+    () =>
+      approvedAssigned.filter(
+        (p) => !propertyListingVisibleForMarketing(p) && !propertyNeedsAdminEditRequest(p),
+      ),
+    [approvedAssigned],
+  )
+  const propertySections = useMemo(
+    () => [
+      {
+        key: 'updates_needed',
+        label: 'Updates needed',
+        hint:
+          'Axis requested changes. These homes are off the public site until you edit and resubmit for approval.',
+        rows: changesRequestedAssigned,
+        actions: 'edits_requested',
+        cardClass: 'rounded-2xl border border-amber-300/90 bg-amber-50/80 px-4 py-4',
+      },
       {
         key: 'listed',
         label: 'Listed on public site',
         hint: null,
-        rows: listed,
+        rows: listedAssigned,
+        actions: 'listing',
         marketingListed: true,
         cardClass: 'rounded-2xl border border-slate-100 bg-slate-50 px-4 py-4',
       },
@@ -2479,12 +2529,24 @@ function HouseManagementPanel({ manager, onPropertiesChange }) {
         key: 'unlisted',
         label: 'Unlisted',
         hint: 'Approved but hidden from the Axis public site and marketing pages.',
-        rows: unlisted,
+        rows: unlistedAssigned,
+        actions: 'listing',
         marketingListed: false,
         cardClass: 'rounded-2xl border border-violet-200/80 bg-violet-50/50 px-4 py-4',
       },
-    ].filter((s) => s.rows.length > 0)
-  }, [approvedAssigned])
+    ],
+    [changesRequestedAssigned, listedAssigned, unlistedAssigned],
+  )
+  const managedPropertyCount =
+    pendingAssigned.length +
+    changesRequestedAssigned.length +
+    listedAssigned.length +
+    unlistedAssigned.length +
+    rejectedAssigned.length
+  const activeSection = useMemo(
+    () => propertySections.find((s) => s.key === propertiesSection) || null,
+    [propertySections, propertiesSection],
+  )
 
   async function handleSaveTourHours(property) {
     setSaving(true)
@@ -2525,6 +2587,7 @@ function HouseManagementPanel({ manager, onPropertiesChange }) {
       // Reset approval — editing requires re-approval by admin
       patch['Approved'] = false
       patch['Approval Status'] = 'Pending'
+      patch[PROPERTY_EDIT_REQUEST_FIELD] = ''
       const updated = await updatePropertyAdmin(property.id, patch)
       setProperties((current) => {
         const next = current.map((item) => (item.id === property.id ? updated : item))
@@ -2846,26 +2909,93 @@ function HouseManagementPanel({ manager, onPropertiesChange }) {
 
         {loading ? (
           <div className="mt-5 rounded-2xl border border-slate-100 bg-slate-50 px-4 py-5 text-sm text-slate-500">Loading houses…</div>
-        ) : propertySections.length === 0 && pendingAssigned.length === 0 ? (
+        ) : managedPropertyCount === 0 ? (
           <div className="mt-5 rounded-2xl border border-dashed border-slate-200 bg-slate-50/80 px-6 py-10 text-center">
             <div className="mb-3 text-4xl" aria-hidden>🏠</div>
             <p className="text-sm font-semibold text-slate-800">No properties on your account yet</p>
           </div>
         ) : (
           <div className="mt-5 space-y-3">
-            {pendingAssigned.length ? (
+            <div className="inline-flex flex-wrap gap-1 rounded-2xl border border-slate-200 bg-slate-50 p-1">
+              {[
+                ['pending', 'Pending', pendingAssigned.length],
+                ['updates_needed', 'Updates needed', changesRequestedAssigned.length],
+                ['listed', 'Listed', listedAssigned.length],
+                ['unlisted', 'Unlisted', unlistedAssigned.length],
+                ['rejected', 'Rejected', rejectedAssigned.length],
+              ].map(([key, label, count]) => (
+                <button
+                  key={key}
+                  type="button"
+                  onClick={() => setPropertiesSection(key)}
+                  className={`rounded-xl px-4 py-2 text-sm font-semibold transition ${
+                    propertiesSection === key
+                      ? 'bg-white text-slate-900 shadow-sm'
+                      : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  {label}
+                  <span className="ml-1.5 tabular-nums text-slate-500">({count})</span>
+                </button>
+              ))}
+            </div>
+
+            {propertiesSection === 'pending' && pendingAssigned.length ? (
               <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950">
                 <span className="font-semibold">{pendingAssigned.length} pending</span>
                 <span className="text-amber-900/90"> Visible only in your portal until approved.</span>
               </div>
             ) : null}
-            {pendingAssigned.map((property) => (
+            {propertiesSection === 'pending' ? pendingAssigned.map((property) => (
               <div key={property.id} className="rounded-2xl border border-amber-200/80 bg-amber-50/50 px-4 py-4">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <div className="text-sm font-semibold text-slate-900">{propertyRecordName(property) || 'Untitled house'}</div>
                   <div className="flex items-center gap-2">
                     <span className="rounded-full bg-amber-200/90 px-3 py-1 text-[11px] font-bold uppercase tracking-[0.12em] text-amber-950">
-                      Pending review
+                      {propertyNeedsAdminEditRequest(property) ? 'Updates requested' : 'Pending review'}
+                    </span>
+                    <button
+                      type="button"
+                      disabled={deletingPropertyId === property.id || isManagerInternalPreview(manager)}
+                      onClick={async () => {
+                        if (!window.confirm(`Delete "${propertyRecordName(property) || 'this property'}"? This cannot be undone.`)) return
+                        setDeletingPropertyId(property.id)
+                        try {
+                          await deletePropertyAdmin(property.id)
+                          toast.success('Property deleted')
+                          await loadProperties()
+                        } catch (err) {
+                          toast.error(err.message || 'Delete failed')
+                        } finally {
+                          setDeletingPropertyId(null)
+                        }
+                      }}
+                      className="rounded-xl border border-red-200 bg-red-50 px-2.5 py-1 text-[11px] font-semibold text-red-700 hover:bg-red-100 disabled:opacity-40"
+                    >
+                      {deletingPropertyId === property.id ? 'Deleting…' : 'Delete'}
+                    </button>
+                  </div>
+                </div>
+                {propertyNeedsAdminEditRequest(property) && property[PROPERTY_EDIT_REQUEST_FIELD] ? (
+                  <div className="mt-3 rounded-xl border border-violet-200 bg-violet-50 px-3 py-2 text-sm text-violet-950">
+                    <div className="text-[11px] font-bold uppercase tracking-[0.12em] text-violet-800">Axis — changes requested</div>
+                    <p className="mt-1 whitespace-pre-wrap">{property[PROPERTY_EDIT_REQUEST_FIELD]}</p>
+                    <p className="mt-2 text-xs text-violet-900/85">
+                      After Axis marks your submission for edits, open <strong>Updates needed</strong> to edit the full listing when it appears there.
+                    </p>
+                  </div>
+                ) : null}
+                <div className="mt-1 text-sm text-slate-600">{property.Address || 'Address not set'}</div>
+              </div>
+            )) : null}
+
+            {propertiesSection === 'rejected' ? rejectedAssigned.map((property) => (
+              <div key={property.id} className="rounded-2xl border border-red-200/80 bg-red-50/50 px-4 py-4">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="text-sm font-semibold text-slate-900">{propertyRecordName(property) || 'Untitled house'}</div>
+                  <div className="flex items-center gap-2">
+                    <span className="rounded-full bg-red-200/90 px-3 py-1 text-[11px] font-bold uppercase tracking-[0.12em] text-red-950">
+                      Rejected
                     </span>
                     <button
                       type="button"
@@ -2891,17 +3021,30 @@ function HouseManagementPanel({ manager, onPropertiesChange }) {
                 </div>
                 <div className="mt-1 text-sm text-slate-600">{property.Address || 'Address not set'}</div>
               </div>
-            ))}
-            {propertySections.map((section) => (
-              <React.Fragment key={section.key}>
-                <div className="text-[11px] font-bold uppercase tracking-[0.14em] text-slate-500">{section.label}</div>
-                {section.hint ? <p className="mt-1 text-xs text-slate-500">{section.hint}</p> : null}
-                {section.rows.map((property) => (
-              <div key={property.id} className={section.cardClass}>
+            )) : null}
+
+            {activeSection && ['listed', 'unlisted', 'updates_needed'].includes(propertiesSection) ? (
+              <React.Fragment key={activeSection.key}>
+                <div className="text-[11px] font-bold uppercase tracking-[0.14em] text-slate-500">{activeSection.label}</div>
+                {activeSection.hint ? <p className="mt-1 text-xs text-slate-500">{activeSection.hint}</p> : null}
+                {activeSection.rows.length === 0 && propertiesSection === 'updates_needed' ? (
+                  <p className="mt-2 text-sm text-slate-500">No properties need updates right now.</p>
+                ) : null}
+                {activeSection.rows.map((property) => (
+              <div key={property.id} className={activeSection.cardClass}>
+                {activeSection.actions === 'edits_requested' && property[PROPERTY_EDIT_REQUEST_FIELD] ? (
+                  <div className="mb-3 rounded-xl border border-violet-200 bg-violet-50 px-3 py-2 text-sm text-violet-950">
+                    <div className="text-[11px] font-bold uppercase tracking-[0.14em] text-violet-800">From Axis — please update</div>
+                    <p className="mt-1 whitespace-pre-wrap">{property[PROPERTY_EDIT_REQUEST_FIELD]}</p>
+                    <p className="mt-2 text-xs text-violet-900/85">
+                      Use <strong>Edit listing</strong> below, then <strong>Save &amp; submit for approval</strong>. Your home stays off the public site until Axis approves again.
+                    </p>
+                  </div>
+                ) : null}
                 <div className="flex items-start justify-between gap-2">
                   <div className="text-sm font-semibold text-slate-900">{propertyRecordName(property) || 'Untitled house'}</div>
                   <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
-                    {section.marketingListed ? (
+                    {activeSection.actions === 'listing' && activeSection.marketingListed ? (
                       <button
                         type="button"
                         disabled={
@@ -2935,7 +3078,7 @@ function HouseManagementPanel({ manager, onPropertiesChange }) {
                       >
                         {listingBusyPropertyId === property.id ? 'Saving…' : 'Unlist'}
                       </button>
-                    ) : (
+                    ) : activeSection.actions === 'listing' ? (
                       <button
                         type="button"
                         disabled={
@@ -2962,7 +3105,7 @@ function HouseManagementPanel({ manager, onPropertiesChange }) {
                       >
                         {listingBusyPropertyId === property.id ? 'Saving…' : 'Relist'}
                       </button>
-                    )}
+                    ) : null}
                     <button
                       type="button"
                       disabled={deletingPropertyId === property.id || isManagerInternalPreview(manager)}
@@ -3418,7 +3561,7 @@ function HouseManagementPanel({ manager, onPropertiesChange }) {
               </div>
                 ))}
               </React.Fragment>
-            ))}
+            ) : null}
           </div>
         )}
 

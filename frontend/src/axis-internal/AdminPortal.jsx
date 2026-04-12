@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import toast from 'react-hot-toast'
 import ManagerInboxPage from '../components/manager-inbox/ManagerInboxPage'
+import Modal from '../components/Modal'
 import PortalShell, { StatCard, StatusPill, DataTable } from '../components/PortalShell'
 import {
   adminApproveProperty,
@@ -329,6 +330,8 @@ export default function AdminPortal() {
   const [managersSearch, setManagersSearch] = useState('')
   const [applicationsManagerFilter, setApplicationsManagerFilter] = useState('')
   const [applicationsHouseFilter, setApplicationsHouseFilter] = useState('')
+  const [requestEditsModalOpen, setRequestEditsModalOpen] = useState(false)
+  const [requestEditsNotes, setRequestEditsNotes] = useState('')
   const airtableConfigWarned = useRef(false)
 
   const user = session
@@ -421,6 +424,14 @@ export default function AdminPortal() {
   useEffect(() => {
     if (tab !== 'properties') setSelectedApprovalId(null)
   }, [tab])
+
+  useEffect(() => {
+    if (tab !== 'properties') setRequestEditsModalOpen(false)
+  }, [tab])
+
+  useEffect(() => {
+    if (!selectedApprovalId) setRequestEditsModalOpen(false)
+  }, [selectedApprovalId])
 
   useEffect(() => {
     setSelectedApprovalId(null)
@@ -711,6 +722,12 @@ export default function AdminPortal() {
                   </div>
                   <p className="text-sm text-slate-600">{approval.description}</p>
                   <PropertyDetailPanel property={approval} ownerLabel={ownerLabel(approval.ownerId)} />
+                  {approval.editRequestNotes ? (
+                    <div className="rounded-2xl border border-violet-200 bg-violet-50/90 px-4 py-3 text-sm text-violet-950">
+                      <div className="text-[11px] font-bold uppercase tracking-[0.14em] text-violet-800">Current notes for manager</div>
+                      <p className="mt-2 whitespace-pre-wrap">{approval.editRequestNotes}</p>
+                    </div>
+                  ) : null}
                   <div className="flex flex-wrap gap-2">
                     <button
                       type="button"
@@ -737,18 +754,10 @@ export default function AdminPortal() {
                       type="button"
                       disabled={approvalBusy}
                       className="rounded-xl border border-amber-300 bg-amber-50 px-4 py-2 text-sm font-semibold text-amber-900 disabled:opacity-50"
-                      onClick={async () => {
+                      onClick={() => {
                         if (!approval?.id) return
-                        setApprovalBusy(true)
-                        try {
-                          await adminRequestPropertyEdits(approval.id)
-                          await refreshPortalData()
-                          toast.success('Marked as changes requested')
-                        } catch (e) {
-                          toast.error(e?.message || 'Update failed (add single-line field "Approval Status" if missing).')
-                        } finally {
-                          setApprovalBusy(false)
-                        }
+                        setRequestEditsNotes(String(approval.editRequestNotes || ''))
+                        setRequestEditsModalOpen(true)
                       }}
                     >
                       Request edits
@@ -827,6 +836,18 @@ export default function AdminPortal() {
                       <button
                         type="button"
                         disabled={approvalBusy}
+                        onClick={() => {
+                          if (!approval?.id) return
+                          setRequestEditsNotes(String(approval.editRequestNotes || ''))
+                          setRequestEditsModalOpen(true)
+                        }}
+                        className="rounded-xl border border-amber-300 bg-amber-50 px-3 py-1.5 text-xs font-semibold text-amber-900 hover:bg-amber-100 disabled:opacity-50"
+                      >
+                        Request edits
+                      </button>
+                      <button
+                        type="button"
+                        disabled={approvalBusy}
                         onClick={async () => {
                           if (!window.confirm(`Permanently delete "${approval.name}"? This cannot be undone.`)) return
                           setApprovalBusy(true)
@@ -893,6 +914,18 @@ export default function AdminPortal() {
                         className="rounded-xl bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-700 disabled:opacity-50"
                       >
                         Relist
+                      </button>
+                      <button
+                        type="button"
+                        disabled={approvalBusy}
+                        onClick={() => {
+                          if (!approval?.id) return
+                          setRequestEditsNotes(String(approval.editRequestNotes || ''))
+                          setRequestEditsModalOpen(true)
+                        }}
+                        className="rounded-xl border border-amber-300 bg-amber-50 px-3 py-1.5 text-xs font-semibold text-amber-900 hover:bg-amber-100 disabled:opacity-50"
+                      >
+                        Request edits
                       </button>
                       <button
                         type="button"
@@ -977,6 +1010,64 @@ export default function AdminPortal() {
               ) : null}
             </>
           )}
+          {requestEditsModalOpen && approval ? (
+            <Modal
+              onClose={() => {
+                if (!approvalBusy) setRequestEditsModalOpen(false)
+              }}
+            >
+              <h3 className="pr-10 text-lg font-black text-slate-900">Request edits from manager</h3>
+              <p className="mt-2 text-sm text-slate-600">
+                The listing will be unlisted until the manager updates and resubmits. Describe what they should change (required).
+              </p>
+              <label className="mt-4 block text-sm font-semibold text-slate-800" htmlFor="axis-admin-edit-request-notes">
+                Notes for manager <span className="text-red-600">*</span>
+              </label>
+              <textarea
+                id="axis-admin-edit-request-notes"
+                className="mt-1 w-full rounded-2xl border border-slate-200 px-3 py-2 text-sm text-slate-900"
+                rows={6}
+                value={requestEditsNotes}
+                onChange={(e) => setRequestEditsNotes(e.target.value)}
+                placeholder="e.g. Update room 2 rent, add parking fee, and fix the address spelling."
+              />
+              <div className="mt-5 flex flex-wrap justify-end gap-2">
+                <button
+                  type="button"
+                  disabled={approvalBusy}
+                  className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+                  onClick={() => setRequestEditsModalOpen(false)}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  disabled={approvalBusy || !requestEditsNotes.trim()}
+                  className="rounded-xl bg-amber-600 px-4 py-2 text-sm font-semibold text-white hover:bg-amber-700 disabled:opacity-50"
+                  onClick={async () => {
+                    if (!approval?.id) return
+                    setApprovalBusy(true)
+                    try {
+                      await adminRequestPropertyEdits(approval.id, requestEditsNotes)
+                      await refreshPortalData()
+                      toast.success('Edit request sent — property unlisted until the manager resubmits')
+                      setRequestEditsModalOpen(false)
+                      setSelectedApprovalId(null)
+                    } catch (e) {
+                      toast.error(
+                        e?.message ||
+                          'Update failed. Add long-text field "Admin Edit Request" (or set VITE_AIRTABLE_PROPERTY_EDIT_REQUEST_FIELD) on Properties.',
+                      )
+                    } finally {
+                      setApprovalBusy(false)
+                    }
+                  }}
+                >
+                  {approvalBusy ? 'Saving…' : 'Send to manager'}
+                </button>
+              </div>
+            </Modal>
+          ) : null}
         </div>
       )}
 

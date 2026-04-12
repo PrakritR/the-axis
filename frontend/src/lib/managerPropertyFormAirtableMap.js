@@ -63,11 +63,21 @@ export const PROPERTY_AIR = {
   securityDeposit:    'Security Deposit',
   /** Checkbox: when cleared (false), property stays approved but hides from public marketing / tour lists. */
   listed:             'Listed',
+  /**
+   * Long text — admin “request edits” notes shown to the manager. Add this column to Properties in Airtable.
+   * Override with VITE_AIRTABLE_PROPERTY_EDIT_REQUEST_FIELD if your base uses a different name.
+   */
+  adminEditRequest:   'Admin Edit Request',
   /** Leasing / bundling — optional native Properties columns (see VITE_AIRTABLE_WRITE_LEASING_COLUMNS). */
   fullHousePrice: PROPERTIES_LEASING_META_KEYS.fullHousePrice,
   promotionalFullHousePrice: PROPERTIES_LEASING_META_KEYS.promotionalFullHousePrice,
   leaseLengthInformation: PROPERTIES_LEASING_META_KEYS.leaseLengthInformation,
 }
+
+/** Airtable long-text field for manager-visible edit-request notes (same as PROPERTY_AIR.adminEditRequest by default). */
+export const PROPERTY_EDIT_REQUEST_FIELD =
+  String(import.meta.env.VITE_AIRTABLE_PROPERTY_EDIT_REQUEST_FIELD || PROPERTY_AIR.adminEditRequest).trim() ||
+  'Admin Edit Request'
 
 // ─── Dynamic room fields (1–20) ──────────────────────────────────────────────────
 /** @param {number} n 1-based */

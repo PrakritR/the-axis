@@ -11,6 +11,7 @@ import {
   applicationDisplayLabelFromApprovalState,
   applicationRejectedFieldName,
 } from './applicationApprovalState.js'
+import { PROPERTY_EDIT_REQUEST_FIELD } from './managerPropertyFormAirtableMap.js'
 
 const BASE_ID = import.meta.env.VITE_AIRTABLE_BASE_ID || 'appol57LKtMKaQ75T'
 const API_KEY = import.meta.env.VITE_AIRTABLE_TOKEN
@@ -152,28 +153,30 @@ function isPropertyRecordApproved(p) {
  * UI status for admin property lists / approvals queue.
  */
 function propertyAdminStatus(raw) {
-  if (raw.Listed === false || raw.Listed === 0) return 'unlisted'
-
-  const override = String(raw['Axis Admin Listing Status'] || raw['Admin Listing Status'] || '')
-    .trim()
-    .toLowerCase()
-  if (override === 'inactive' || override === 'unlisted') return 'unlisted'
-
-  const allowed = new Set(['pending', 'changes_requested', 'rejected', 'live'])
-  if (override && allowed.has(override)) return override
-
   const a = String(raw['Approval Status'] || '').trim().toLowerCase()
   const s = String(raw.Status || '').trim().toLowerCase()
-  if (a === 'unlisted' || a === 'inactive' || s === 'unlisted' || s === 'inactive') return 'unlisted'
-  if (a === 'rejected' || s === 'rejected') return 'rejected'
-  if (
+  const axis = String(raw['Axis Admin Listing Status'] || raw['Admin Listing Status'] || '')
+    .trim()
+    .toLowerCase()
+
+  const changesRequested =
     a === 'changes requested' ||
     a === 'changes_requested' ||
-    s === 'changes_requested' ||
-    s === 'changes requested'
-  ) {
-    return 'changes_requested'
-  }
+    s === 'changes requested' ||
+    s === 'changes_requested'
+
+  if (a === 'rejected' || s === 'rejected') return 'rejected'
+  /** Manager must address admin notes — wins over “unlisted” from Listed checkbox alone. */
+  if (changesRequested) return 'changes_requested'
+
+  if (a === 'unlisted' || a === 'inactive' || s === 'unlisted' || s === 'inactive') return 'unlisted'
+  if (axis === 'inactive' || axis === 'unlisted') return 'unlisted'
+
+  if (raw.Listed === false || raw.Listed === 0) return 'unlisted'
+
+  const allowed = new Set(['pending', 'changes_requested', 'rejected', 'live'])
+  if (axis && allowed.has(axis)) return axis
+
   if (isPropertyRecordApproved(raw)) return 'live'
   return 'pending'
 }
@@ -268,6 +271,7 @@ export async function loadAdminPortalDataset() {
       rentFrom: minRent.get(raw.id) ?? 0,
       adminNotesInternal: String(raw['Internal Notes'] || raw['Admin Notes'] || '').trim(),
       adminNotesVisible: String(raw['Axis Partner Notes'] || raw['Partner Notes'] || '').trim(),
+      editRequestNotes: String(raw[PROPERTY_EDIT_REQUEST_FIELD] || '').trim(),
     }
   })
 
@@ -333,6 +337,8 @@ export async function adminApproveProperty(recordId) {
   return adminPatchProperty(recordId, {
     Approved: true,
     'Approval Status': 'Approved',
+    Listed: true,
+    [PROPERTY_EDIT_REQUEST_FIELD]: '',
   })
 }
 
@@ -351,9 +357,19 @@ export async function adminUnrejectProperty(recordId) {
   })
 }
 
-export async function adminRequestPropertyEdits(recordId) {
+/**
+ * Unlist from marketing, set Changes Requested, and store manager-facing notes.
+ * @param {string} managerNotes Required — explain what the manager should fix.
+ */
+export async function adminRequestPropertyEdits(recordId, managerNotes) {
+  const notes = String(managerNotes || '').trim()
+  if (!notes) throw new Error('Add notes for the manager before requesting edits.')
   return adminPatchProperty(recordId, {
+    /** Lets the manager use the full property editor while fixing issues; still off the public site until Listed + re-approval. */
+    Approved: true,
     'Approval Status': 'Changes Requested',
+    Listed: false,
+    [PROPERTY_EDIT_REQUEST_FIELD]: notes,
   })
 }
 
