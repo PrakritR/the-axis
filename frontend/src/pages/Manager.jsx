@@ -2668,7 +2668,7 @@ function HouseManagementPanel({ manager, onPropertiesChange }) {
         onPropertiesChange?.(next)
         return next
       })
-      toast.success('Property submitted; pending review')
+      toast.success('Property added and published to the website.')
       resetAddPropertyForm()
       setAddOpen(false)
     } catch (err) {

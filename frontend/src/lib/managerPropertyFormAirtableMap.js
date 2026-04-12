@@ -323,13 +323,14 @@ export function serializeManagerAddPropertyToAirtableFields(params) {
   const pets = String(basics.pets || '').trim()
   if (pets) fields[PROPERTY_AIR.pets] = pets
 
-  // Approval state
-  fields[PROPERTY_AIR.approved] = false
-  fields[PROPERTY_AIR.approvalStatus] = 'Pending Review'
+  // Approval state — auto-approve so the listing goes live on the home page immediately
+  fields[PROPERTY_AIR.approved] = true
+  fields[PROPERTY_AIR.approvalStatus] = 'Active'
 
-  // Manager link
+  // Manager link + canonical Owner ID for multi-tenant scoping
   if (managerRecordId) {
     fields[PROPERTY_AIR.managerProfile] = [managerRecordId]
+    fields['Owner ID'] = managerRecordId
   }
 
   // Application fee
