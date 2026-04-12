@@ -464,7 +464,7 @@ export default function AdminPortal() {
             <div>
               <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">Admin portal</p>
               <h1 className="text-2xl font-black text-slate-900">
-                {user?.name ? `Welcome back, ${user.name.split(' ')[0]}` : 'Dashboard'}
+                {user?.name ? `Welcome, ${user.name.split(' ')[0]}` : 'Dashboard'}
               </h1>
             </div>
             {dataLoading ? (

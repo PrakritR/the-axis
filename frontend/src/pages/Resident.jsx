@@ -35,6 +35,10 @@ import {
   loginResident,
   stripWorkOrderPortalSubmitterLine,
   updateResident,
+  getAllPortalInternalThreadMessages,
+  fetchInboxThreadStateMap,
+  portalInboxAirtableConfigured,
+  portalInboxThreadKeyFromRecord,
 } from '../lib/airtable'
 
 const SESSION_KEY = 'axis_resident'
@@ -801,7 +805,6 @@ function WorkOrdersPanel({ resident, requests: requestsProp, onRequestCreated, o
           ['all', 'All', requests.length],
           ['open', 'Open', woBucketCounts.open],
           ['scheduled', 'Scheduled', woBucketCounts.scheduled],
-          ['in_progress', 'In progress', woBucketCounts.in_progress],
           ['completed', 'Completed', woBucketCounts.completed],
         ].map(([key, label, count]) => (
           <button
@@ -2069,6 +2072,7 @@ function Dashboard({ resident, onResidentUpdated, onSignOut }) {
   const [payments, setPayments] = useState([])
   const [approvedLease, setApprovedLease] = useState(null)
   const [loading, setLoading] = useState(true)
+  const [inboxUnreadCount, setInboxUnreadCount] = useState(0)
 
   const visibleWorkOrders = useMemo(
     () => requests.filter((r) => !isWorkOrderHiddenFromResidentList(r)),
@@ -2100,6 +2104,39 @@ function Dashboard({ resident, onResidentUpdated, onSignOut }) {
     loadData()
   }, [loadData])
 
+  useEffect(() => {
+    const email = String(resident?.Email || '').trim()
+    if (!email || !portalInboxAirtableConfigured()) return
+    let cancelled = false
+    async function fetchUnread() {
+      try {
+        const [msgs, stateMap] = await Promise.all([
+          getAllPortalInternalThreadMessages(),
+          fetchInboxThreadStateMap(email),
+        ])
+        const latestByThread = new Map()
+        for (const m of msgs) {
+          const tk = portalInboxThreadKeyFromRecord(m)
+          if (!tk) continue
+          const ts = m.Timestamp ? new Date(m.Timestamp) : null
+          if (!ts) continue
+          const prev = latestByThread.get(tk)
+          if (!prev || ts > prev) latestByThread.set(tk, ts)
+        }
+        let unread = 0
+        for (const [tk, latest] of latestByThread) {
+          const state = stateMap.get(tk)
+          if (!state?.lastReadAt || latest > state.lastReadAt) unread++
+        }
+        if (!cancelled) setInboxUnreadCount(unread)
+      } catch {
+        // non-fatal
+      }
+    }
+    fetchUnread()
+    return () => { cancelled = true }
+  }, [resident])
+
   const applicationUnlocked = residentApplicationUnlocked(resident)
 
   const TABS = [
@@ -2124,27 +2161,6 @@ function Dashboard({ resident, onResidentUpdated, onSignOut }) {
       onSignOut={onSignOut}
     >
       <div className="mx-auto w-full max-w-[1600px]">
-        <div className="mb-8">
-          <h1 className="text-4xl font-black tracking-tight text-slate-900">
-            {tab === 'dashboard' ? `Hi, ${resident.Name || 'Resident'}` : `Welcome back, ${resident.Name || 'Resident'}`}
-          </h1>
-          <div className="mt-3 flex flex-wrap gap-4 text-sm text-slate-500">
-            <span>{getLeaseTermLabel(resident)}</span>
-            {applicationUnlocked && tab !== 'dashboard' && openRequestCount > 0 ? (
-              <span className="font-semibold text-sky-600">{openRequestCount} open work order{openRequestCount === 1 ? '' : 's'}</span>
-            ) : null}
-          </div>
-        </div>
-
-        {!applicationUnlocked ? (
-          <div className="mb-6 rounded-2xl border border-amber-200 bg-amber-50 px-5 py-4 text-sm text-amber-950 shadow-sm">
-            <p className="font-semibold">Waiting for manager approval</p>
-            <p className="mt-1 text-amber-900/90">
-              Your account is active. A property manager still needs to approve your rental application before work orders, payments, leasing, and inbox are fully available. Open Profile anytime to update your contact details.
-            </p>
-          </div>
-        ) : null}
-
         {loading ? (
           <div className="rounded-[28px] border border-slate-200 bg-white px-6 py-16 text-center text-sm text-slate-400 shadow-soft">
             Loading...
@@ -2160,6 +2176,7 @@ function Dashboard({ resident, onResidentUpdated, onSignOut }) {
             onNavigate={setTab}
             setPaymentFocus={setPaymentFocus}
             pendingApplicationApproval={!applicationUnlocked}
+            inboxUnreadCount={inboxUnreadCount}
           />
         ) : null}
         {!loading && tab === 'workorders' ? (
