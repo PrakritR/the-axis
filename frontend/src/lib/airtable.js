@@ -42,6 +42,15 @@ const WORK_ORDER_SUBMITTER_EMAIL_FIELD = String(
   import.meta.env.VITE_AIRTABLE_WORK_ORDER_SUBMITTER_EMAIL_FIELD || '',
 ).trim()
 
+/**
+ * Work Orders table: linked record field → Resident Profile ({@link TABLES.residents}).
+ * Must match the linked-field name in Airtable exactly (this base uses "Resident profile", not "Resident").
+ */
+const WORK_ORDER_RESIDENT_PROFILE_LINK_FIELD = (() => {
+  const raw = String(import.meta.env.VITE_AIRTABLE_WORK_ORDER_RESIDENT_LINK_FIELD ?? '').trim()
+  return raw || 'Resident profile'
+})()
+
 const TABLES = {
   workOrders: 'Work Orders',
   messages: 'Messages',
@@ -471,14 +480,14 @@ function workOrderPortalSubmitterDescriptionTag(email) {
 }
 
 export async function getWorkOrdersForResident(resident) {
-  // Work Orders "Resident" is a linked record field storing the Resident record ID.
-  // "Resident Email" is a lookup (array) field — avoid LOWER() on it.
+  const woResidentField = WORK_ORDER_RESIDENT_PROFILE_LINK_FIELD
+  // Linked field stores Resident Profile record IDs. "Resident Email" is typically a lookup from that link.
   const residentId = escapeFormulaValue(resident.id)
   const emailRaw = String(resident.Email || '').trim().toLowerCase()
   const residentEmail = escapeFormulaValue(emailRaw)
   const portalTag = emailRaw ? escapeFormulaValue(`portal_submitter_email:${emailRaw}`) : ''
 
-  const parts = [`FIND("${residentId}", ARRAYJOIN({Resident})) > 0`]
+  const parts = [`FIND("${residentId}", ARRAYJOIN({${woResidentField}})) > 0`]
   if (residentEmail) {
     parts.push(`FIND("${residentEmail}", LOWER(ARRAYJOIN({Resident Email}))) > 0`)
   }
@@ -573,7 +582,7 @@ export async function createWorkOrder({
     Priority: airtablePriority,
     Status: 'Submitted',
     'Preferred Entry Time': preferredEntry,
-    Resident: [residentLinkId],
+    [WORK_ORDER_RESIDENT_PROFILE_LINK_FIELD]: [residentLinkId],
     ...(usePlaceholderResident ? {} : workOrderApplicationFieldsFromResident(resident)),
   }
   if (usePlaceholderResident && WORK_ORDER_SUBMITTER_EMAIL_FIELD && String(resident?.Email || '').trim()) {

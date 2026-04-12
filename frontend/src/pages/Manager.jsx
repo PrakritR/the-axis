@@ -457,7 +457,13 @@ function paymentStatusTone(status) {
 }
 
 function paymentResidentLabel(record) {
-  return String(record?.['Resident Name'] || record?.Resident || record?.Name || '').trim() || 'Resident not set'
+  return String(
+    record?.['Resident Name'] ||
+      record?.Name ||
+      record?.['Resident profile'] ||
+      record?.Resident ||
+      '',
+  ).trim() || 'Resident not set'
 }
 
 function paymentRoomLabel(record) {

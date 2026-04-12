@@ -21,29 +21,41 @@ export default function ConversationListItem({
         selected ? 'bg-[#2563eb]/[0.07] ring-1 ring-inset ring-[#2563eb]/20' : 'bg-white hover:bg-slate-50'
       }`}
     >
-      <button type="button" onClick={onClick} className="flex w-full flex-col gap-0.5 px-4 py-3.5 text-left">
-        <div className="flex items-start justify-between gap-2">
+      <button
+        type="button"
+        onClick={onClick}
+        className="flex w-full min-w-0 flex-col gap-1.5 px-4 py-3.5 pr-14 text-left leading-normal"
+      >
+        <div className="flex min-w-0 items-start justify-between gap-2">
           <span
-            className={`min-w-0 flex-1 truncate text-sm ${
+            className={`min-w-0 flex-1 truncate text-sm leading-snug ${
               unopened ? 'font-semibold text-slate-900' : 'font-medium text-slate-800'
             }`}
           >
             {participantLabel || 'Conversation'}
           </span>
-          <div className="flex shrink-0 items-center gap-1.5">
+          <div className="flex shrink-0 flex-col items-end gap-0.5 sm:flex-row sm:items-center sm:gap-1.5">
             {unopened ? (
-              <span className="h-2 w-2 rounded-full bg-[#2563eb]" title="Unopened" aria-hidden />
+              <span className="h-2 w-2 shrink-0 rounded-full bg-[#2563eb]" title="Unopened" aria-hidden />
             ) : null}
-            {time ? <span className="text-[11px] tabular-nums text-slate-400">{time}</span> : null}
+            {time ? (
+              <span className="max-w-[7.5rem] text-right text-[11px] tabular-nums leading-snug text-slate-400 sm:max-w-none">
+                {time}
+              </span>
+            ) : null}
           </div>
         </div>
         {subjectLine ? (
-          <span className={`truncate text-sm ${unopened ? 'font-bold text-slate-900' : 'font-semibold text-slate-800'}`}>
+          <span
+            className={`block min-w-0 truncate text-sm leading-snug ${
+              unopened ? 'font-bold text-slate-900' : 'font-semibold text-slate-800'
+            }`}
+          >
             {subjectLine}
           </span>
         ) : null}
         {preview ? (
-          <span className="line-clamp-1 text-xs leading-snug text-slate-500">{preview}</span>
+          <span className="line-clamp-1 min-w-0 text-xs leading-snug text-slate-500">{preview}</span>
         ) : null}
       </button>
       {onTrash || onRestore ? (

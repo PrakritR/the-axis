@@ -196,8 +196,8 @@ Create table `Work Orders`
 `Priority` -> single select
 `Status` -> single select
 `Preferred Entry Time` -> single line text
-`Resident` -> link to `Resident Profile`
-`Resident Email` -> lookup from `Resident Profile`
+`Resident profile` -> link to `Resident Profile` (exact name; code default — override with `VITE_AIRTABLE_WORK_ORDER_RESIDENT_LINK_FIELD` if yours differs)
+`Resident Email` -> lookup from `Resident profile` / Resident Profile
 `Application ID` -> number
 `Application` -> link to `Applications`
 `Property` -> single line text

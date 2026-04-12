@@ -36,7 +36,7 @@ export default function ConversationList({
           className="w-full rounded-xl border border-slate-200 bg-slate-50/80 px-3 py-2 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-[#2563eb] focus:bg-white focus:ring-2 focus:ring-[#2563eb]/15"
         />
 
-        <div className="flex flex-wrap gap-1 rounded-2xl border border-slate-200 bg-slate-50 p-1">
+        <div className="grid grid-cols-2 gap-1.5 rounded-2xl border border-slate-200 bg-slate-50 p-1.5 min-[380px]:grid-cols-4">
           {[
             ['all', 'All', counts.all ?? 0],
             ['unopened', 'Unopened', counts.unopened ?? 0],
@@ -47,12 +47,12 @@ export default function ConversationList({
               key={key}
               type="button"
               onClick={() => onFilterChange(key)}
-              className={`min-w-0 flex-1 rounded-xl px-1.5 py-1.5 text-xs font-semibold transition sm:px-2 sm:text-sm ${
+              className={`rounded-xl px-2 py-2 text-center text-xs font-semibold leading-tight transition sm:px-2.5 sm:text-sm ${
                 filter === key ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-600 hover:text-slate-900'
               }`}
             >
-              {label}
-              <span className="ml-0.5 tabular-nums text-slate-500 sm:ml-1">({count})</span>
+              <span className="block">{label}</span>
+              <span className="mt-0.5 block tabular-nums text-[11px] font-semibold text-slate-500 sm:text-xs">({count})</span>
             </button>
           ))}
         </div>

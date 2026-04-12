@@ -93,7 +93,7 @@ Create these tables (names must match unless you change code).
 
 - `Title`, `Description`, `Category`, `Priority`, `Status` (e.g. `Submitted`)
 - `Preferred Entry Time`
-- `Resident` — link to Resident Profile
+- `Resident profile` — link to Resident Profile (default in code; env `VITE_AIRTABLE_WORK_ORDER_RESIDENT_LINK_FIELD` if your field name differs)
 - `Application ID` / Application link fields from `workOrderApplicationFieldsFromResident`
 - `Photo` — attachment (upload API)
 - `Date Submitted` / created time — sorting
