@@ -1,4 +1,5 @@
 import { parseAxisListingMetaBlock } from './axisListingMeta.js'
+import { normalizeLeasingFromMeta } from './managerPropertyFormAirtableMap.js'
 
 /** URL slug for an approved Airtable property (stable, unique). */
 export function marketingSlugForAirtablePropertyId(recordId) {
@@ -37,7 +38,7 @@ export function mapAirtableRecordToHomeProperty(rec) {
 export function mapAirtableRecordToPropertyPage(rec) {
   const base = mapAirtableRecordToHomeProperty(rec)
   const { userText, meta } = parseAxisListingMetaBlock(String(rec['Other Info'] || ''))
-  const leasing = meta?.leasing || {}
+  const leasing = normalizeLeasingFromMeta(meta?.leasing)
   const fh = parseFloat(String(leasing.fullHousePrice || '').replace(/[^\d.]/g, ''))
   const pr = parseFloat(String(leasing.promoPrice || '').replace(/[^\d.]/g, ''))
   const rentHint =
@@ -50,7 +51,7 @@ export function mapAirtableRecordToPropertyPage(rec) {
     .map((b) => {
       const title = String(b.name || '').trim() || 'Package'
       const rooms = Array.isArray(b.rooms) ? b.rooms : []
-      let n = String(b.price || '').replace(/\$/g, '').replace(/,/g, '').trim()
+      const n = String(b.price || '').replace(/\$/g, '').replace(/,/g, '').trim()
       const totalRent = n && !Number.isNaN(Number(n)) ? `$${Number(n).toLocaleString('en-US')}/month` : String(b.price || '').trim()
       return { title, rooms, totalRent, details: '' }
     })

@@ -15,6 +15,28 @@ export const MAX_LAUNDRY_SLOTS = 5
 // Rooms Sharing Bathroom only exists for bathrooms 1–5 in Airtable
 export const MAX_BATHROOM_SHARING_SLOTS = 5
 
+/**
+ * Properties table — keys under axisMeta.leasing in Other Info JSON.
+ * Use these exact strings so data matches Airtable field names (and optional native columns).
+ */
+export const PROPERTIES_LEASING_META_KEYS = {
+  fullHousePrice: 'Full House Price',
+  promotionalFullHousePrice: 'Promotional Full House Price',
+  leaseLengthInformation: 'Lease Length Information',
+  /** Array of bundle rows; each row uses PROPERTIES_LEASING_PACKAGE_KEYS. */
+  leasingPackages: 'Leasing Packages',
+}
+
+/**
+ * Properties-oriented keys for each object inside `Leasing Packages` (bundling).
+ */
+export const PROPERTIES_LEASING_PACKAGE_KEYS = {
+  bundleName: 'Bundle Name',
+  bundleMonthlyRent: 'Bundle Monthly Rent',
+  /** string[] e.g. ["Room 1","Room 2"] — same labels as wizard chips */
+  bundleRoomsIncluded: 'Bundle Rooms Included',
+}
+
 // ─── Static field names ──────────────────────────────────────────────────────────
 export const PROPERTY_AIR = {
   propertyName:       'Property Name',      // primary field (was "Name" — wrong)
@@ -39,6 +61,10 @@ export const PROPERTY_AIR = {
   sharedSpaceCount:   'Number of Shared Spaces',
   /** Optional: add these columns to Properties in Airtable, or remove writes below if missing. */
   securityDeposit:    'Security Deposit',
+  /** Leasing / bundling — optional native Properties columns (see VITE_AIRTABLE_WRITE_LEASING_COLUMNS). */
+  fullHousePrice: PROPERTIES_LEASING_META_KEYS.fullHousePrice,
+  promotionalFullHousePrice: PROPERTIES_LEASING_META_KEYS.promotionalFullHousePrice,
+  leaseLengthInformation: PROPERTIES_LEASING_META_KEYS.leaseLengthInformation,
 }
 
 // ─── Dynamic room fields (1–20) ──────────────────────────────────────────────────
@@ -184,6 +210,36 @@ function toIsoDate(raw) {
 }
 
 /**
+ * Read `leasing` from parsed axis meta (Other Info JSON).
+ * Supports current Properties field names and legacy camelCase keys.
+ * @returns {{ fullHousePrice: string, promoPrice: string, leaseLengthInfo: string, bundles: { name: string, price: string, rooms: string[] }[] }}
+ */
+export function normalizeLeasingFromMeta(leasing) {
+  const L = leasing && typeof leasing === 'object' ? leasing : {}
+  const MK = PROPERTIES_LEASING_META_KEYS
+  const PK = PROPERTIES_LEASING_PACKAGE_KEYS
+  const pick = (airKey, legacy) => String(L[airKey] ?? L[legacy] ?? '').trim()
+  const rawPackages = L[MK.leasingPackages] ?? L.bundles ?? []
+  const arr = Array.isArray(rawPackages) ? rawPackages : []
+  const bundles = arr
+    .map((row) => {
+      const r = row && typeof row === 'object' ? row : {}
+      const name = String(r[PK.bundleName] ?? r.name ?? '').trim()
+      const price = String(r[PK.bundleMonthlyRent] ?? r.price ?? '').trim()
+      const ri = r[PK.bundleRoomsIncluded] ?? r.rooms
+      const rooms = Array.isArray(ri) ? ri.filter(Boolean) : []
+      return { name, price, rooms }
+    })
+    .filter((b) => b.name || b.price || b.rooms.length)
+  return {
+    fullHousePrice: pick(MK.fullHousePrice, 'fullHousePrice'),
+    promoPrice: pick(MK.promotionalFullHousePrice, 'promoPrice'),
+    leaseLengthInfo: pick(MK.leaseLengthInformation, 'leaseLengthInfo'),
+    bundles,
+  }
+}
+
+/**
  * Build the flat fields object to POST to Airtable Properties table.
  * Only sends fields that have a non-empty value to avoid UNKNOWN_FIELD_NAME errors
  * and to keep the record clean.
@@ -203,7 +259,7 @@ export function serializeManagerAddPropertyToAirtableFields(params) {
     applicationFee = '',
     otherInfo = '',
     managerRecordId,
-    leasing = null,   // { fullHousePrice, promoPrice, leaseLengthInfo, bundles: [{ name, price, rooms[] }] }
+    leasing = null,   // wizard shape; serialized to meta using PROPERTIES_LEASING_* keys
   } = params
 
   const rc = clampInt(roomCount, 1, MAX_ROOM_SLOTS)
@@ -217,6 +273,14 @@ export function serializeManagerAddPropertyToAirtableFields(params) {
       : '',
   ).toLowerCase()
   const writeRoomColumns = writeRoomColumnsEnv === '1' || writeRoomColumnsEnv === 'true' || writeRoomColumnsEnv === 'yes'
+
+  const writeLeasingColumnsEnv = String(
+    typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.VITE_AIRTABLE_WRITE_LEASING_COLUMNS
+      ? import.meta.env.VITE_AIRTABLE_WRITE_LEASING_COLUMNS
+      : '',
+  ).toLowerCase()
+  const writeLeasingColumns =
+    writeLeasingColumnsEnv === '1' || writeLeasingColumnsEnv === 'true' || writeLeasingColumnsEnv === 'yes'
 
   let sharedTrimmed = (sharedSpaces || []).slice(0, MAX_SHARED_SPACE_SLOTS)
   while (sharedTrimmed.length > 0 && !sharedSpaceRowHasContent(sharedTrimmed[sharedTrimmed.length - 1])) {
@@ -318,6 +382,8 @@ export function serializeManagerAddPropertyToAirtableFields(params) {
   }
 
   const leasingObj = leasing && typeof leasing === 'object' ? leasing : {}
+  const MK = PROPERTIES_LEASING_META_KEYS
+  const PK = PROPERTIES_LEASING_PACKAGE_KEYS
   const bundles = Array.isArray(leasingObj.bundles)
     ? leasingObj.bundles
         .map((b) => ({
@@ -328,6 +394,12 @@ export function serializeManagerAddPropertyToAirtableFields(params) {
         .filter((b) => b.name || b.price || b.rooms.length)
     : []
 
+  const leasingPackagesForMeta = bundles.map((b) => ({
+    [PK.bundleName]: b.name,
+    [PK.bundleMonthlyRent]: b.price,
+    [PK.bundleRoomsIncluded]: b.rooms,
+  }))
+
   const axisMeta = {
     roomsDetail,
     financials: {
@@ -335,15 +407,24 @@ export function serializeManagerAddPropertyToAirtableFields(params) {
       moveInCharges: optionalCurrency(basics.moveInCharges) ?? 0,
     },
     leasing: {
-      fullHousePrice: String(leasingObj.fullHousePrice || '').trim(),
-      promoPrice: String(leasingObj.promoPrice || '').trim(),
-      leaseLengthInfo: String(leasingObj.leaseLengthInfo || '').trim(),
-      bundles,
+      [MK.fullHousePrice]: String(leasingObj.fullHousePrice || '').trim(),
+      [MK.promotionalFullHousePrice]: String(leasingObj.promoPrice || '').trim(),
+      [MK.leaseLengthInformation]: String(leasingObj.leaseLengthInfo || '').trim(),
+      [MK.leasingPackages]: leasingPackagesForMeta,
     },
   }
 
   const mergedOtherInfo = mergeAxisListingMetaIntoOtherInfo(otherInfo, axisMeta)
   if (mergedOtherInfo) fields[PROPERTY_AIR.otherInfo] = mergedOtherInfo
+
+  if (writeLeasingColumns) {
+    const fhp = optionalCurrency(leasingObj.fullHousePrice)
+    if (fhp !== undefined) fields[PROPERTY_AIR.fullHousePrice] = fhp
+    const pfp = optionalCurrency(leasingObj.promoPrice)
+    if (pfp !== undefined) fields[PROPERTY_AIR.promotionalFullHousePrice] = pfp
+    const lli = String(leasingObj.leaseLengthInfo || '').trim()
+    if (lli) fields[PROPERTY_AIR.leaseLengthInformation] = lli
+  }
 
   // ── Bathrooms ─────────────────────────────────────────────────────────────────
   for (let i = 1; i <= bc; i++) {
