@@ -1,5 +1,7 @@
 /**
  * Single Vercel Serverless Function for all /api/<route> calls (Hobby: max 12 functions).
+ * Lives under repo-root `api/` so Vercel discovers it. Local dev can load via `backend/api/[route].js` re-export.
+ *
  * Uses one dynamic segment so /api/manager-lookup?manager_id=… keeps query params.
  *
  * Preferred entry points: /api/forms?action=…, /api/portal?action=… (see gateways).
