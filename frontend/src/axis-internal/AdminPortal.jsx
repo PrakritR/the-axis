@@ -283,11 +283,18 @@ export default function AdminPortal() {
       return null
     }
   })
-  const [tab, setTab] = useState('dashboard')
+  const [tab, setTab] = useState(() => {
+    const h = window.location.hash.slice(1)
+    return NAV_BASE.some((n) => n.id === h) ? h : 'dashboard'
+  })
+  useEffect(() => { window.location.hash = tab }, [tab])
   /** Within Properties: pending | approved | rejected */
   const [propertiesSection, setPropertiesSection] = useState('pending')
   /** Within Applications: all | pending | approved | rejected */
   const [applicationsFilter, setApplicationsFilter] = useState('pending')
+  const [managersFilter, setManagersFilter] = useState('current')
+  const [selectedManagerAccountId, setSelectedManagerAccountId] = useState(null)
+  const [managerActionBusy, setManagerActionBusy] = useState(false)
   const [properties, setProperties] = useState(() => [])
   const [accounts, setAccounts] = useState(() => [])
   const [applications, setApplications] = useState(() => [])
@@ -371,6 +378,12 @@ export default function AdminPortal() {
   const sortedAccounts = useMemo(
     () => sortAccountsByMode(accounts, managerTableSort),
     [accounts, managerTableSort],
+  )
+  const filteredAccounts = useMemo(
+    () => managersFilter === 'current'
+      ? sortedAccounts.filter((a) => a.enabled !== false)
+      : sortedAccounts.filter((a) => a.enabled === false),
+    [sortedAccounts, managersFilter],
   )
   const sortedApplications = useMemo(
     () => sortApplicationsByMode(applications, applicationsTableSort),
@@ -723,55 +736,132 @@ export default function AdminPortal() {
         </div>
       )}
 
-      {tab === 'accounts' && (
-        <div className="space-y-6">
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <h1 className="text-2xl font-black">Managers</h1>
-            <label className="flex flex-wrap items-center gap-2 text-sm text-slate-600">
-              <span className="font-semibold text-slate-800">Sort by</span>
-              <select
-                className={adminSelectCls}
-                value={managerTableSort}
-                onChange={(e) => setManagerTableSort(e.target.value)}
-              >
-                <option value="house_asc">House (A–Z)</option>
-                <option value="house_desc">House (Z–A)</option>
-                <option value="account_asc">Account (A–Z)</option>
-              </select>
-            </label>
-          </div>
-          <DataTable
-            empty="No accounts."
-            columns={[
-              { key: 'n', label: 'Account', render: (d) => <><div className="font-semibold">{d.businessName || d.name}</div><div className="text-xs text-slate-500">{d.email}</div></> },
-              { key: 'h', label: 'House / property', render: (d) => <span className="text-slate-700">{d.managedHousesLabel || '—'}</span> },
-              { key: 'v', label: 'Verification', render: (d) => <StatusPill tone={d.verificationStatus === 'verified' ? 'green' : 'amber'}>{d.verificationStatus}</StatusPill> },
-              { key: 'p', label: 'Properties', render: (d) => d.propertyCount },
-              { key: 'en', label: 'Enabled', render: (d) => (
-                <button
-                  type="button"
-                  className="text-xs font-semibold text-[#2563eb]"
-                  onClick={async () => {
-                    const next = !d.enabled
-                    setAccounts((ac) => ac.map((x) => (x.id === d.id ? { ...x, enabled: next } : x)))
-                    try {
-                      await adminSetManagerActive(d.id, next)
-                      toast.success(next ? 'Manager activated' : 'Manager deactivated')
-                      await refreshPortalData()
-                    } catch (err) {
-                      toast.error(err?.message || 'Could not update manager')
-                      await refreshPortalData()
-                    }
-                  }}
-                >
-                  {d.enabled !== false ? 'Disable' : 'Enable'}
-                </button>
-              ) },
-            ]}
-            rows={sortedAccounts.map((a) => ({ key: a.id, data: a }))}
-          />
-        </div>
-      )}
+      {tab === 'accounts' && ((
+        () => {
+          const selectedManagerAccount = accounts.find((a) => a.id === selectedManagerAccountId) ?? null
+          return (
+            <div className="space-y-6">
+              <div>
+                <div className="mb-4 flex flex-wrap items-center gap-3">
+                  <h1 className="mr-auto text-2xl font-black">Managers</h1>
+                  <label className="flex flex-wrap items-center gap-2 text-sm text-slate-600">
+                    <span className="font-semibold text-slate-800">Sort by</span>
+                    <select
+                      className={adminSelectCls}
+                      value={managerTableSort}
+                      onChange={(e) => setManagerTableSort(e.target.value)}
+                    >
+                      <option value="house_asc">House (A–Z)</option>
+                      <option value="house_desc">House (Z–A)</option>
+                      <option value="account_asc">Account (A–Z)</option>
+                    </select>
+                  </label>
+                </div>
+                <div className="inline-flex flex-wrap gap-1 rounded-2xl border border-slate-200 bg-slate-50 p-1">
+                  {[['current', 'Current subscribers', accounts.filter((a) => a.enabled !== false).length], ['past', 'Past subscribers', accounts.filter((a) => a.enabled === false).length]].map(([key, label, count]) => (
+                    <button
+                      key={key}
+                      type="button"
+                      onClick={() => { setManagersFilter(key); setSelectedManagerAccountId(null) }}
+                      className={`rounded-xl px-4 py-2 text-sm font-semibold transition ${
+                        managersFilter === key
+                          ? 'bg-white text-slate-900 shadow-sm'
+                          : 'text-slate-600 hover:text-slate-900'
+                      }`}
+                    >
+                      {label}
+                      <span className="ml-1.5 tabular-nums text-slate-500">({count})</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <DataTable
+                empty={`No ${managersFilter === 'current' ? 'active' : 'past'} managers.`}
+                columns={[
+                  { key: 'n', label: 'Account', render: (d) => <><div className="font-semibold">{d.businessName || d.name}</div><div className="text-xs text-slate-500">{d.email}</div></> },
+                  { key: 'h', label: 'House / property', render: (d) => <span className="text-slate-700">{d.managedHousesLabel || '—'}</span> },
+                  { key: 'v', label: 'Verification', render: (d) => <StatusPill tone={d.verificationStatus === 'verified' ? 'green' : 'amber'}>{d.verificationStatus}</StatusPill> },
+                  { key: 'p', label: 'Properties', render: (d) => d.propertyCount },
+                  { key: 'act', label: '', render: (d) => (
+                    <button
+                      type="button"
+                      className="text-sm font-semibold text-[#2563eb] hover:underline"
+                      onClick={() => setSelectedManagerAccountId(selectedManagerAccountId === d.id ? null : d.id)}
+                    >
+                      {selectedManagerAccountId === d.id ? 'Hide details' : 'Details'}
+                    </button>
+                  ) },
+                ]}
+                rows={filteredAccounts.map((a) => ({ key: a.id, data: a }))}
+              />
+              {selectedManagerAccount ? (
+                <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+                  <div className="mb-5 flex items-start justify-between gap-4">
+                    <div>
+                      <h2 className="text-lg font-black text-slate-900">{selectedManagerAccount.businessName || selectedManagerAccount.name}</h2>
+                      <p className="mt-0.5 text-sm text-slate-500">{selectedManagerAccount.email}</p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setSelectedManagerAccountId(null)}
+                      className="rounded-lg p-1 text-slate-400 hover:text-slate-600"
+                      aria-label="Close"
+                    >
+                      <svg className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" /></svg>
+                    </button>
+                  </div>
+                  <dl className="grid gap-3 sm:grid-cols-2">
+                    <div>
+                      <dt className="text-xs font-semibold uppercase tracking-wide text-slate-500">House / property</dt>
+                      <dd className="mt-1 text-sm text-slate-800">{selectedManagerAccount.managedHousesLabel || '—'}</dd>
+                    </div>
+                    <div>
+                      <dt className="text-xs font-semibold uppercase tracking-wide text-slate-500">Properties</dt>
+                      <dd className="mt-1 text-sm text-slate-800">{selectedManagerAccount.propertyCount}</dd>
+                    </div>
+                    <div>
+                      <dt className="text-xs font-semibold uppercase tracking-wide text-slate-500">Verification</dt>
+                      <dd className="mt-1"><StatusPill tone={selectedManagerAccount.verificationStatus === 'verified' ? 'green' : 'amber'}>{selectedManagerAccount.verificationStatus}</StatusPill></dd>
+                    </div>
+                    <div>
+                      <dt className="text-xs font-semibold uppercase tracking-wide text-slate-500">Status</dt>
+                      <dd className="mt-1"><StatusPill tone={selectedManagerAccount.enabled !== false ? 'green' : 'red'}>{selectedManagerAccount.enabled !== false ? 'Active' : 'Disabled'}</StatusPill></dd>
+                    </div>
+                  </dl>
+                  <div className="mt-6 border-t border-slate-100 pt-5">
+                    <button
+                      type="button"
+                      disabled={managerActionBusy}
+                      className={`rounded-2xl px-5 py-2.5 text-sm font-semibold transition disabled:opacity-50 ${
+                        selectedManagerAccount.enabled !== false
+                          ? 'bg-red-50 text-red-700 hover:bg-red-100'
+                          : 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100'
+                      }`}
+                      onClick={async () => {
+                        const next = selectedManagerAccount.enabled === false
+                        setManagerActionBusy(true)
+                        setAccounts((ac) => ac.map((x) => (x.id === selectedManagerAccount.id ? { ...x, enabled: next } : x)))
+                        try {
+                          await adminSetManagerActive(selectedManagerAccount.id, next)
+                          toast.success(next ? 'Manager account enabled' : 'Manager account disabled')
+                          await refreshPortalData()
+                        } catch (err) {
+                          toast.error(err?.message || 'Could not update manager')
+                          await refreshPortalData()
+                        } finally {
+                          setManagerActionBusy(false)
+                        }
+                      }}
+                    >
+                      {managerActionBusy ? 'Saving…' : selectedManagerAccount.enabled !== false ? 'Disable account' : 'Enable account'}
+                    </button>
+                  </div>
+                </div>
+              ) : null}
+            </div>
+          )
+        }
+      )())}
 
       {tab === 'applications' && (
         <div className="space-y-6">
