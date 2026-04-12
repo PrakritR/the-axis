@@ -40,11 +40,7 @@ function AdminPortalAuthForm({ onSuccess }) {
       const result = await authenticateAdminPortal(identifier, password)
       if (result.ok) {
         sessionStorage.setItem(AXIS_ADMIN_SESSION_KEY, JSON.stringify(result.user))
-        if (
-          result.user.role === 'ceo' ||
-          result.user.role === 'internal_exec' ||
-          result.user.role === 'internal_swe'
-        ) {
+        if (result.user.role === 'admin') {
           markDeveloperPortalActive()
         }
         onSuccess()

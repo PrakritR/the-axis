@@ -41,36 +41,18 @@ export async function authenticateAdminPortal(identifier, password) {
   }
 
   try {
-    const rCeo = await fetch('/api/admin-portal-auth', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: 'ceo-login', email: em, password: pw }),
-    })
-    const dataCeo = await rCeo.json().catch(() => ({}))
-    if (rCeo.ok && dataCeo.ok && dataCeo.user?.role === 'ceo') {
-      return { ok: true, user: dataCeo.user }
-    }
-  } catch {
-    /* fall through */
-  }
-
-  try {
     const r = await fetch('/api/admin-portal-auth', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: 'owner-login', email: em, password: pw }),
+      body: JSON.stringify({ action: 'admin-login', email: em, password: pw }),
     })
     const data = await r.json().catch(() => ({}))
-    if (r.ok && data.ok && data.user?.role === 'owner') {
+    if (r.ok && data.ok && data.user?.role === 'admin') {
       return { ok: true, user: data.user }
     }
   } catch {
     /* fall through */
   }
 
-  return {
-    ok: false,
-    error:
-      'Invalid email or password.',
-  }
+  return { ok: false, error: 'Invalid email or password.' }
 }

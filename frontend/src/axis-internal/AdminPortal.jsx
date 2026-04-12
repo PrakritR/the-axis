@@ -304,7 +304,7 @@ export default function AdminPortal() {
   const user = session
 
   useEffect(() => {
-    if (session?.role === 'ceo') markDeveloperPortalActive()
+    if (session) markDeveloperPortalActive()
   }, [session])
 
   const refreshPortalData = useCallback(async () => {
@@ -342,9 +342,7 @@ export default function AdminPortal() {
   function persistSession(u) {
     setSession(u)
     sessionStorage.setItem(AXIS_ADMIN_SESSION_KEY, JSON.stringify(u))
-    if (u?.role === 'ceo' || u?.role === 'internal_exec' || u?.role === 'internal_swe') {
-      markDeveloperPortalActive()
-    }
+    if (u) markDeveloperPortalActive()
   }
 
   function handleSignOut() {

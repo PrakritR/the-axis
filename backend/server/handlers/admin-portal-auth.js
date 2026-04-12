@@ -1,22 +1,17 @@
 /**
  * POST /api/admin-portal-auth
  * Body:
- *   { action: "owner-login", email, password }
- *   { action: "ceo-login", email, password }
- *   { action: "admin-profile-login", email, password }
+ *   { action: "admin-profile-login", email, password }  — Airtable Admin Profile table lookup
+ *   { action: "admin-login", email, password }           — env-var based admin credential
  *
  * Admin Profile: table name from AIRTABLE_ADMIN_PROFILE_TABLE (default "Admin Profile").
- * Expected fields: Email, Password, Role, Name, Admin ID (optional). Role values: CEO, CTO, CFO, SWE, Admin.
+ * Expected fields: Email, Password, Name, Admin ID (optional).
  *
- * Site owner credentials must be set server-side only (never VITE_*):
- *   SITE_OWNER_EMAIL
- *   SITE_OWNER_PASSWORD
- *
- * CEO (full internal, email sign-in): server-only
- *   AXIS_CEO_EMAIL (default: prakritramachandran@gmail.com)
- *   AXIS_CEO_PASSWORD (default: Welcone56$ for local — set in Vercel for prod)
- *   AXIS_CEO_NAME (default: Prakrit)
- * Also accepts alternate password Welcome56$ (common typo of Welcone56$).
+ * Env-var admin (server-only, never VITE_*):
+ *   AXIS_ADMIN_EMAIL    (fallback: AXIS_CEO_EMAIL, default: prakritramachandran@gmail.com)
+ *   AXIS_ADMIN_PASSWORD (fallback: AXIS_CEO_PASSWORD, default: Welcone56$)
+ *   AXIS_ADMIN_NAME     (fallback: AXIS_CEO_NAME, default: Prakrit)
+ * Also accepts alternate password Welcome56$.
  */
 
 const AIRTABLE_TOKEN = process.env.AIRTABLE_TOKEN || process.env.VITE_AIRTABLE_TOKEN
@@ -36,13 +31,9 @@ function escapeFormulaValue(value) {
 }
 
 function mapAppRoleFromAirtableRole(raw) {
-  const r = String(raw || '')
-    .trim()
-    .toLowerCase()
-  if (r === 'ceo' || r === 'cto' || r === 'cfo') return 'internal_exec'
-  if (r === 'swe') return 'internal_swe'
-  if (r === 'admin') return 'internal_approver'
-  return null
+  const r = String(raw || '').trim().toLowerCase()
+  if (!r) return null
+  return 'admin'
 }
 
 export default async function handler(req, res) {
@@ -97,70 +88,41 @@ export default async function handler(req, res) {
     }
     const name = String(fields.Name || '').trim() || email
     const adminId = String(fields['Admin ID'] || fields['AdminID'] || record.id || '').trim()
-    const airtableRole = String(fields.Role || '').trim()
     return res.status(200).json({
       ok: true,
       user: {
         id: adminId || record.id,
-        role: appRole,
+        role: 'admin',
         email,
         name,
-        airtableRole,
       },
     })
   }
 
-  if (action === 'ceo-login') {
+  if (action === 'admin-login') {
     const email = String(body.email || '').trim().toLowerCase()
     const password = String(body.password || '')
-    const ceoEmail = String(process.env.AXIS_CEO_EMAIL || 'prakritramachandran@gmail.com').trim().toLowerCase()
-    const ceoPass = String(process.env.AXIS_CEO_PASSWORD || 'Welcone56$')
-    const ceoName = String(process.env.AXIS_CEO_NAME || 'Prakrit').trim() || 'Prakrit'
-    const altCeoPass = 'Welcome56$'
+    const adminEmail = String(process.env.AXIS_ADMIN_EMAIL || process.env.AXIS_CEO_EMAIL || 'prakritramachandran@gmail.com').trim().toLowerCase()
+    const adminPass = String(process.env.AXIS_ADMIN_PASSWORD || process.env.AXIS_CEO_PASSWORD || 'Welcone56$')
+    const adminName = String(process.env.AXIS_ADMIN_NAME || process.env.AXIS_CEO_NAME || 'Prakrit').trim() || 'Prakrit'
+    const altPass = 'Welcome56$'
     if (!email || !password) {
       return res.status(400).json({ error: 'Email and password required' })
     }
-    const passOk = password === ceoPass || password === altCeoPass
-    if (email === ceoEmail && passOk) {
+    const passOk = password === adminPass || password === altPass
+    if (email === adminEmail && passOk) {
       return res.status(200).json({
         ok: true,
         user: {
-          id: 'axis_ceo',
-          role: 'ceo',
-          email: ceoEmail,
-          name: ceoName,
+          id: 'axis_admin',
+          role: 'admin',
+          email: adminEmail,
+          name: adminName,
         },
       })
     }
     return res.status(401).json({ error: 'Invalid email or password' })
   }
 
-  if (action !== 'owner-login') {
-    return res.status(400).json({ error: 'Unknown action' })
-  }
-
-  const email = String(body.email || '').trim().toLowerCase()
-  const password = String(body.password || '')
-  const ownerEmail = String(process.env.SITE_OWNER_EMAIL || '').trim().toLowerCase()
-  const ownerPassword = process.env.SITE_OWNER_PASSWORD || ''
-
-  if (!ownerEmail || !ownerPassword) {
-    return res.status(503).json({
-      error: 'Internal sign-in is not fully configured on the server.',
-    })
-  }
-
-  if (email === ownerEmail && password === ownerPassword) {
-    return res.status(200).json({
-      ok: true,
-      user: {
-        id: 'site_owner',
-        role: 'owner',
-        email,
-        name: 'Site owner',
-      },
-    })
-  }
-
-  return res.status(401).json({ error: 'Invalid email or password' })
+  return res.status(400).json({ error: 'Unknown action' })
 }
