@@ -3,9 +3,8 @@ import ConversationListItem from './ConversationListItem'
 import { PortalOpsFilterCards } from '../PortalOpsUI'
 
 /**
- * Left column: search, filter cards (All / Unread / Trash), optional channel pills, conversation list.
- * When `channelTabs` is provided, an extra row of channel-filter pills is rendered
- * (e.g. All / Manager / Admin) so residents can narrow by recipient.
+ * Left column: search, status filter cards (All / Unread / Trash), optional
+ * channel filter (Manager / Admin), and the conversation list.
  */
 export default function ConversationList({
   loading,
@@ -24,26 +23,25 @@ export default function ConversationList({
   channelFilter,
   onChannelFilterChange,
 }) {
+  const hasChannelFilter = channelTabs && channelTabs.length > 1 && onChannelFilterChange
+
   return (
-    <div className="flex min-h-0 w-full flex-col border-b border-slate-200 bg-white md:max-w-[420px] md:border-b-0 md:border-r">
-      <div className="shrink-0 space-y-3 border-b border-slate-100 p-4">
-        <div className="flex items-center justify-between gap-2">
-          <h3 className="text-xs font-bold uppercase tracking-[0.16em] text-slate-400">Search</h3>
-        </div>
+    <div className="flex min-h-0 w-full shrink-0 flex-col border-b border-slate-200 bg-white md:w-[320px] md:max-w-[320px] md:border-b-0 md:border-r">
+      <div className="shrink-0 space-y-2.5 border-b border-slate-100 px-3.5 py-3">
         <input
           type="search"
           value={searchQuery}
           onChange={(e) => onSearchChange(e.target.value)}
-          placeholder="Search subject, people, or message text…"
+          placeholder="Search…"
           autoComplete="off"
-          className="w-full rounded-xl border border-slate-200 bg-slate-50/80 px-3.5 py-2.5 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-[#2563eb] focus:bg-white focus:ring-2 focus:ring-[#2563eb]/15"
+          className="w-full rounded-xl border border-slate-200 bg-slate-50/80 px-3 py-2 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-[#2563eb] focus:bg-white focus:ring-2 focus:ring-[#2563eb]/15"
         />
 
         <PortalOpsFilterCards
           variant="compact"
           value={filter}
           onChange={onFilterChange}
-          columnsClassName="grid grid-cols-3 gap-2"
+          columnsClassName="grid grid-cols-3 gap-1.5"
           aria-label="Inbox sections"
           items={[
             {
@@ -70,25 +68,23 @@ export default function ConversationList({
           ]}
         />
 
-        {channelTabs && channelTabs.length > 0 && onChannelFilterChange ? (
-          <div className="flex flex-wrap gap-1.5">
-            {channelTabs.map(([id, label, count]) => {
+        {hasChannelFilter ? (
+          <div className="flex items-center gap-1.5 border-t border-slate-100 pt-2">
+            <span className="mr-1 text-[10px] font-bold uppercase tracking-wider text-slate-400">Show</span>
+            {channelTabs.map(([id, label]) => {
               const active = channelFilter === id
               return (
                 <button
                   key={id}
                   type="button"
                   onClick={() => onChannelFilterChange(id)}
-                  className={`rounded-full px-3 py-1 text-[11px] font-semibold transition ${
+                  className={`rounded-full px-2.5 py-0.5 text-[11px] font-semibold transition ${
                     active
-                      ? 'bg-slate-900 text-white shadow-sm'
-                      : 'border border-slate-200 bg-white text-slate-500 hover:bg-slate-50'
+                      ? 'bg-slate-800 text-white'
+                      : 'text-slate-500 hover:bg-slate-100 hover:text-slate-700'
                   }`}
                 >
                   {label}
-                  {count != null ? (
-                    <span className={`ml-1 ${active ? 'text-white/70' : 'text-slate-400'}`}>({count})</span>
-                  ) : null}
                 </button>
               )
             })}
@@ -98,16 +94,16 @@ export default function ConversationList({
 
       <div className="min-h-0 flex-1 overflow-y-auto">
         {errorMessage ? (
-          <div className="m-4 rounded-xl border border-amber-200 bg-amber-50 px-3 py-3 text-sm text-amber-950">
+          <div className="m-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2.5 text-xs text-amber-950">
             {errorMessage}
           </div>
         ) : null}
         {loading ? (
-          <div className="flex min-h-[14rem] items-center justify-center text-sm text-slate-400" aria-busy="true">
+          <div className="flex h-full min-h-[6rem] items-center justify-center text-sm text-slate-400" aria-busy="true">
             Loading…
           </div>
         ) : rows.length === 0 ? (
-          <div className="flex min-h-[14rem] flex-col items-center justify-center px-4 text-center text-sm text-slate-500">
+          <div className="flex h-full min-h-[6rem] flex-col items-center justify-center px-4 text-center text-sm text-slate-500">
             {emptyMessage}
           </div>
         ) : (

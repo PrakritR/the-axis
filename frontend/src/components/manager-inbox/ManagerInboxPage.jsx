@@ -1081,12 +1081,10 @@ export default function ManagerInboxPage({
   }, [selectedThreadId, adminFullInbox])
 
   return (
-    <div className="mb-8">
-      <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-        <div>
-          <h2 className="text-xl font-bold tracking-tight text-slate-900">Inbox</h2>
-        </div>
-        <div className="flex flex-wrap gap-2">
+    <div>
+      <div className="mb-3 flex items-center justify-between gap-3">
+        <h2 className="text-lg font-bold tracking-tight text-slate-900">Inbox</h2>
+        <div className="flex gap-2">
           <button
             type="button"
             onClick={() => {
@@ -1094,21 +1092,21 @@ export default function ManagerInboxPage({
               setSelectedThreadId(null)
               setThread([])
             }}
-            className="rounded-full bg-[linear-gradient(180deg,#2f76ff_0%,#2450eb_100%)] px-4 py-2 text-xs font-semibold text-white shadow-sm hover:opacity-95"
+            className="rounded-full bg-[#2563eb] px-3.5 py-1.5 text-xs font-semibold text-white shadow-sm hover:bg-[#1d4ed8]"
           >
             New message
           </button>
           <button
             type="button"
             onClick={() => loadAll()}
-            className="rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-50"
+            className="rounded-full border border-slate-200 bg-white px-3.5 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-50"
           >
             Refresh
           </button>
         </div>
       </div>
 
-      <div className="flex min-h-[min(420px,calc(100dvh-10rem))] max-h-[calc(100dvh-10rem)] flex-col overflow-hidden rounded-2xl border border-slate-200 bg-slate-50/80 shadow-sm md:flex-row">
+      <div className="flex h-[min(560px,calc(100dvh-10rem))] flex-col overflow-hidden rounded-2xl border border-slate-200 bg-slate-50/80 shadow-sm md:flex-row">
         <ConversationList
           loading={loading}
           errorMessage={loadError}
@@ -1131,12 +1129,12 @@ export default function ManagerInboxPage({
           onTrashThread={(stateKey, trashed = true) => moveThreadTrash(stateKey, trashed)}
         />
 
-        <div className="flex min-h-[min(50vh,440px)] min-w-0 flex-1 flex-col overflow-hidden bg-white md:min-h-0">
-          <header className="shrink-0 border-b border-slate-100 px-4 py-4 md:px-6">
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-white">
+          <header className="shrink-0 border-b border-slate-100 px-4 py-3 md:px-5">
             {composeOpen ? (
-              <div className="rounded-2xl border border-indigo-200 bg-indigo-50/60 p-4">
-                <div className="flex items-start justify-between gap-2">
-                  <h4 className="text-sm font-black text-slate-900">New message</h4>
+              <div className="rounded-xl border border-indigo-200 bg-indigo-50/60 p-3">
+                <div className="flex items-center justify-between gap-2">
+                  <h4 className="text-sm font-bold text-slate-900">New message</h4>
                   <button
                     type="button"
                     onClick={() => setComposeOpen(false)}
@@ -1145,7 +1143,7 @@ export default function ManagerInboxPage({
                     Cancel
                   </button>
                 </div>
-                <form onSubmit={handleComposeSend} className="mt-4 space-y-3">
+                <form onSubmit={handleComposeSend} className="mt-3 space-y-2.5">
                   <label className="block text-xs font-semibold text-slate-700">
                     To
                     <select
@@ -1392,15 +1390,15 @@ export default function ManagerInboxPage({
           </header>
 
           {!composeOpen && !selectedThreadId ? (
-            <div className="flex min-h-[220px] flex-1 flex-col items-center justify-center gap-4 px-6 py-10 text-center">
-              <p className="max-w-sm text-sm text-slate-600">Select a conversation to view messages, or start a new one.</p>
+            <div className="flex flex-1 flex-col items-center justify-center gap-3 px-6 text-center">
+              <p className="max-w-xs text-sm text-slate-500">Select a conversation or start a new one.</p>
               <button
                 type="button"
                 onClick={() => {
                   setComposeOpen(true)
                   setThread([])
                 }}
-                className="rounded-full bg-[#2563eb] px-5 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-[#1d4ed8]"
+                className="rounded-full bg-[#2563eb] px-5 py-2 text-sm font-semibold text-white shadow-sm hover:bg-[#1d4ed8]"
               >
                 New message
               </button>
