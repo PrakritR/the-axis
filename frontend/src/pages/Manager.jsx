@@ -5072,6 +5072,191 @@ function ApplicationsPanel({ allowedPropertyNames, manager }) {
   )
 }
 
+// ─── CalendarTabPanel ─────────────────────────────────────────────────────────
+function CalendarTabPanel({ manager, allowedPropertyNames }) {
+  const [view, setView] = useState('month')
+  const [anchorDate, setAnchorDate] = useState(() => new Date())
+  const [selectedDateKey, setSelectedDateKey] = useState(() => dateKeyFromDate(new Date()))
+  const [schedulingRows, setSchedulingRows] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [properties, setProperties] = useState([])
+  const [weeklyFree, setWeeklyFree] = useState(emptyWeeklyFreeArrays)
+  const [availSaving, setAvailSaving] = useState(false)
+  const [meetOpen, setMeetOpen] = useState(false)
+
+  const load = useCallback(async () => {
+    setLoading(true)
+    try {
+      const [sched, props] = await Promise.all([
+        fetchSchedulingForManagerScope({ managerEmail: manager?.email, propertyNames: allowedPropertyNames || [] }),
+        fetchPropertiesAdmin(),
+      ])
+      setSchedulingRows(sched)
+      setProperties(props)
+      const assigned = props.filter((p) => propertyAssignedToManager(p, manager) && isPropertyRecordApproved(p))
+      if (assigned.length) {
+        const text = extractNoteValue(assigned[0].Notes, 'Tour Availability') || ''
+        if (text) setWeeklyFree(weeklyFreeArraysFromTourText(text))
+      }
+    } catch (err) {
+      console.error('[CalendarTabPanel] load error', err)
+    } finally {
+      setLoading(false)
+    }
+  }, [manager, allowedPropertyNames])
+
+  useEffect(() => { load() }, [load])
+
+  const bookedByDate = useMemo(() => {
+    const m = new Map()
+    for (const r of schedulingRows) {
+      const d = String(r['Preferred Date'] || '').trim().slice(0, 10)
+      if (!d) continue
+      if (!m.has(d)) m.set(d, [])
+      m.get(d).push(r)
+    }
+    return m
+  }, [schedulingRows])
+
+  const scheduledItemsForSelectedDay = useMemo(
+    () => bookedByDate.get(selectedDateKey) || [],
+    [bookedByDate, selectedDateKey],
+  )
+
+  const toolbarLabel = useMemo(() => {
+    if (view === 'day') return anchorDate.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })
+    if (view === 'week') return formatWeekRangeLabel(startOfWeekSunday(anchorDate))
+    return anchorDate.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
+  }, [view, anchorDate])
+
+  function handlePrev() {
+    setAnchorDate((d) => {
+      const x = new Date(d)
+      if (view === 'day') x.setDate(x.getDate() - 1)
+      else if (view === 'week') x.setDate(x.getDate() - 7)
+      else x.setMonth(x.getMonth() - 1)
+      return x
+    })
+  }
+
+  function handleNext() {
+    setAnchorDate((d) => {
+      const x = new Date(d)
+      if (view === 'day') x.setDate(x.getDate() + 1)
+      else if (view === 'week') x.setDate(x.getDate() + 7)
+      else x.setMonth(x.getMonth() + 1)
+      return x
+    })
+  }
+
+  function handleToday() {
+    const t = new Date()
+    setAnchorDate(t)
+    setSelectedDateKey(dateKeyFromDate(t))
+  }
+
+  function handleSelectDate(key) {
+    setSelectedDateKey(key)
+    setAnchorDate(dateFromCalendarKey(key))
+  }
+
+  async function handleSaveAvailability() {
+    setAvailSaving(true)
+    try {
+      const assigned = properties.filter((p) => propertyAssignedToManager(p, manager) && isPropertyRecordApproved(p))
+      const encoded = encodeTourAvailabilityFromWeeklyFree(weeklyFree)
+      await Promise.all(
+        assigned.map((p) =>
+          updatePropertyAdmin(p.id, {
+            Notes: buildTourNotesText(p.Notes, { manager: manager?.name || '', availability: encoded }),
+          }),
+        ),
+      )
+      toast.success('Availability saved')
+    } catch (err) {
+      toast.error(err.message || 'Could not save availability')
+    } finally {
+      setAvailSaving(false)
+    }
+  }
+
+  function handleApplyWeekday() {
+    const abbr = weekdayAbbrFromDateKey(selectedDateKey)
+    const next = cloneWeeklyArrays(weeklyFree)
+    for (const d of TOUR_DAYS) {
+      next[d] = [...(weeklyFree[abbr] || [])]
+    }
+    setWeeklyFree(next)
+  }
+
+  function handleClearDay() {
+    const abbr = weekdayAbbrFromDateKey(selectedDateKey)
+    const next = cloneWeeklyArrays(weeklyFree)
+    next[abbr] = []
+    setWeeklyFree(next)
+  }
+
+  return (
+    <div className="mb-10">
+      <div className="mb-5 flex flex-wrap items-center gap-3">
+        <h2 className="mr-auto text-2xl font-black text-slate-900">Calendar</h2>
+        <button
+          onClick={load}
+          disabled={loading}
+          className="rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-600 transition hover:bg-slate-50 disabled:opacity-50"
+        >
+          {loading ? 'Loading…' : 'Refresh'}
+        </button>
+      </div>
+
+      <div className="mb-5">
+        <CalendarToolbar
+          view={view}
+          label={toolbarLabel}
+          onViewChange={setView}
+          onPrev={handlePrev}
+          onNext={handleNext}
+          onToday={handleToday}
+        />
+      </div>
+
+      <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_360px]">
+        <AvailabilityCalendar
+          view={view}
+          anchorDate={anchorDate}
+          selectedDateKey={selectedDateKey}
+          onSelectDate={handleSelectDate}
+          weeklyFree={weeklyFree}
+          bookedByDate={bookedByDate}
+        />
+        <AvailabilityEditorPanel
+          selectedDateKey={selectedDateKey}
+          ranges={timeRangesFromWeeklyFree(weeklyFree, weekdayAbbrFromDateKey(selectedDateKey))}
+          onRangesChange={(ranges) => {
+            const abbr = weekdayAbbrFromDateKey(selectedDateKey)
+            setWeeklyFree((prev) => weeklyFreeWithDayRanges(prev, abbr, ranges))
+          }}
+          onOpenMeet={() => setMeetOpen(true)}
+          onSave={handleSaveAvailability}
+          onApplyWeekday={handleApplyWeekday}
+          onClearDay={handleClearDay}
+          scheduledItems={scheduledItemsForSelectedDay}
+          availSaving={availSaving}
+          manager={manager}
+        />
+      </div>
+
+      <LetUsMeetModal
+        open={meetOpen}
+        initialDateKey={selectedDateKey}
+        manager={manager}
+        onClose={() => setMeetOpen(false)}
+        onCreated={load}
+      />
+    </div>
+  )
+}
+
 // ─── ManagerDashboard ─────────────────────────────────────────────────────────
 const MANAGER_DASH_TABS = [
   ['dashboard', 'Dashboard'],
@@ -5080,6 +5265,7 @@ const MANAGER_DASH_TABS = [
   ['properties', 'Properties'],
   ['payments', 'Payments'],
   ['workorders', 'Work orders'],
+  ['calendar', 'Calendar'],
   ['inbox', 'Inbox'],
   ['profile', 'Profile'],
 ]
@@ -5365,6 +5551,8 @@ function ManagerDashboard({ manager: managerProp, onOpenDraft, onSignOut, onMana
           <ManagerPaymentsPanel allowedPropertyNames={scopedPropertyOptions} />
         ) : dashView === 'workorders' ? (
           <WorkOrdersTabPanel manager={manager} allowedPropertyNames={scopedPropertyOptions} />
+        ) : dashView === 'calendar' ? (
+          <CalendarTabPanel manager={manager} allowedPropertyNames={scopedPropertyOptions} />
         ) : dashView === 'inbox' ? (
           <ManagerInboxPage manager={manager} allowedPropertyNames={scopedPropertyOptions} />
         ) : dashView === 'dashboard' ? (
