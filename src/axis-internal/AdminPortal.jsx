@@ -115,7 +115,7 @@ const SWE_ONLY_NAV = [
 
 /** Internal staff can open portal test flows from the admin console. */
 function showInternalPortalHandoff(role) {
-  return role === 'ceo' || role === 'internal_exec' || role === 'internal_swe'
+  return role === 'ceo' || role === 'internal_exec'
 }
 
 /** Resident / manager hub links (not shown to SWE — they use Open test portals instead). */

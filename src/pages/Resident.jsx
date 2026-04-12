@@ -248,6 +248,7 @@ function resolveLeaseSigningUrl(resident) {
 }
 
 function getPaymentKind(payment) {
+  if (!payment || typeof payment !== 'object') return 'rent'
   const raw = [payment.Type, payment.Category, payment.Kind, payment['Line Item Type'], payment.Month, payment.Notes]
     .filter(Boolean).join(' ').toLowerCase()
   if (/(fee|fine|damage|late fee|late charge|cleaning|lockout)/.test(raw)) return 'fee'
@@ -289,7 +290,8 @@ function residentPaymentLineStatus(payment) {
 
 /** Rent-only snapshot for dashboard + summaries (aligned with Payments tab logic). */
 function buildResidentRentSnapshot(payments, resident) {
-  const sortedPayments = [...payments].sort(
+  const list = Array.isArray(payments) ? payments : []
+  const sortedPayments = [...list].sort(
     (a, b) => new Date(a['Due Date'] || a.created_at || 0) - new Date(b['Due Date'] || b.created_at || 0),
   )
   const rentPayments = sortedPayments.filter((p) => getPaymentKind(p) === 'rent')
@@ -675,7 +677,8 @@ function WorkOrderNotesComposer({ workOrder, residentEmail, onUpdated, embedded 
   )
 }
 
-function WorkOrdersPanel({ resident, requests, onRequestCreated, onWorkOrderUpdated }) {
+function WorkOrdersPanel({ resident, requests: requestsProp, onRequestCreated, onWorkOrderUpdated }) {
+  const requests = Array.isArray(requestsProp) ? requestsProp : []
   const [showForm, setShowForm] = useState(false)
   const [selectedId, setSelectedId] = useState(null)
   const [form, setForm] = useState({
@@ -1209,9 +1212,12 @@ function PaymentsPanel({ resident, onResidentUpdated, highlightCategory, onPayme
     setLoading(true)
     try {
       const refreshed = await getPaymentsForResident(resident)
-      setPayments(refreshed)
-      onPaymentsDataUpdated?.(refreshed)
-      onResidentUpdated?.()
+      const rows = Array.isArray(refreshed) ? refreshed : []
+      setPayments(rows)
+      onPaymentsDataUpdated?.(rows)
+      // Parent passes `setResident` — must receive a record, not `undefined`, or the whole portal crashes.
+      const nextResident = await getResidentById(resident.id)
+      if (nextResident) onResidentUpdated?.(nextResident)
     } catch (err) {
       setActionError(err.message || 'Payment completed, but refreshing the balance failed.')
     } finally {
@@ -1420,6 +1426,7 @@ function residentLeaseStageMatchesDraft(stageId, statusRaw) {
 }
 
 function inferDefaultResidentLeaseStage(drafts) {
+  if (!Array.isArray(drafts)) return 'sent'
   const statuses = new Set(drafts.map((d) => String(d.Status || '').trim()))
   if (statuses.has('Signed')) return 'signed'
   if (statuses.has('Published')) return 'sent'

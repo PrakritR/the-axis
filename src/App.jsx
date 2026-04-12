@@ -123,6 +123,7 @@ function AppInner() {
   const isAdminPortalRoute = location.pathname === '/admin' || location.pathname.startsWith('/admin/')
   const isSignLeaseRoute = location.pathname.startsWith('/sign/')
   const isAxisTeamRoute = location.pathname === '/axis-team'
+  const isResidentRoute = location.pathname === '/resident' || location.pathname.startsWith('/resident/')
   const isStandaloneRoute =
     isManagerRoute ||
     isAdminPortalRoute ||
@@ -257,7 +258,7 @@ function AppInner() {
             </AnimatePresence>
           </Suspense>
         </main>
-        {!isPortalHub ? <Footer /> : null}
+        {!isPortalHub && !isResidentRoute ? <Footer /> : null}
         <Chatbot />
       </div>
     </PropertyListingChromeContext.Provider>

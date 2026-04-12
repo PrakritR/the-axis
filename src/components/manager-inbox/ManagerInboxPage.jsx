@@ -685,7 +685,7 @@ export default function ManagerInboxPage({ manager, allowedPropertyNames, adminF
     } else if (composeKind === 'resident') {
       const id = composeResidentRecordId.trim()
       if (!/^rec[a-zA-Z0-9]{14,}$/.test(id)) {
-        toast.error('Select a resident or enter their Airtable record ID (rec…).')
+        toast.error('Select a resident from the list to start a conversation.')
         return
       }
       threadKey = residentLeasingThreadKey(id)

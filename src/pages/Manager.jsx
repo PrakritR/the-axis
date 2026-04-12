@@ -2184,11 +2184,18 @@ function HouseManagementPanel({ manager, onPropertiesChange }) {
   const [addSaving, setAddSaving] = useState(false)
   const [addForm, setAddForm] = useState({
     name: '',
+    propertyLabel: '',
     address: '',
     rooms: '',
     rentPerRoom: '',
+    utilitiesFee: '',
+    securityDeposit: '',
+    applicationFee: '',
     description: '',
     imageUrls: '',
+    tourManager: '',
+    tourAvailability: '',
+    tourNotes: '',
   })
   const [tourForm, setTourForm] = useState({
     manager: '',
@@ -2220,6 +2227,14 @@ function HouseManagementPanel({ manager, onPropertiesChange }) {
     const escaped = String(label || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
     const match = String(notes || '').match(new RegExp(`(?:^|\\n)${escaped}:\\s*(.+?)(?:\\n|$)`, 'i'))
     return match ? match[1].trim() : ''
+  }
+
+  function optionalPropertyCurrency(raw) {
+    const s = String(raw ?? '').trim()
+    if (!s) return undefined
+    const n = Number(s)
+    if (!Number.isFinite(n) || n < 0) return undefined
+    return n
   }
 
   function buildTourNotes(existingNotes, metadata) {
@@ -2289,19 +2304,32 @@ function HouseManagementPanel({ manager, onPropertiesChange }) {
     }
     setAddSaving(true)
     try {
+      const tourBlock = buildTourNotes('', {
+        manager: addForm.tourManager.trim(),
+        availability: addForm.tourAvailability.trim(),
+        notes: addForm.tourNotes.trim(),
+      })
       const noteParts = []
       if (addForm.description.trim()) noteParts.push(`Description: ${addForm.description.trim()}`)
       noteParts.push(`Rooms: ${addForm.rooms.trim() || '—'}`)
       noteParts.push(`Rent per room: ${addForm.rentPerRoom.trim() || '—'}`)
       if (addForm.imageUrls.trim()) noteParts.push(`Image URLs:\n${addForm.imageUrls.trim()}`)
       noteParts.push(`Submitted by: ${String(manager?.email || '').trim()}`)
+      const tailNotes = noteParts.join('\n')
       const fields = {
         Name: addForm.name.trim(),
         Address: addForm.address.trim(),
         Status: 'pending_review',
         'Manager Email': String(manager?.email || '').trim(),
-        Notes: noteParts.join('\n'),
+        Notes: [tourBlock, tailNotes].filter(Boolean).join('\n'),
       }
+      if (addForm.propertyLabel.trim()) fields.Property = addForm.propertyLabel.trim()
+      const utilitiesFee = optionalPropertyCurrency(addForm.utilitiesFee)
+      if (utilitiesFee !== undefined) fields['Utilities Fee'] = utilitiesFee
+      const securityDeposit = optionalPropertyCurrency(addForm.securityDeposit)
+      if (securityDeposit !== undefined) fields['Security Deposit'] = securityDeposit
+      const applicationFee = optionalPropertyCurrency(addForm.applicationFee)
+      if (applicationFee !== undefined) fields['Application Fee'] = applicationFee
       if (manager?.id) fields.Manager = [manager.id]
       const created = await createPropertyAdmin(fields)
       setProperties((current) => {
@@ -2310,7 +2338,21 @@ function HouseManagementPanel({ manager, onPropertiesChange }) {
         return next
       })
       toast.success('Property submitted — pending review')
-      setAddForm({ name: '', address: '', rooms: '', rentPerRoom: '', description: '', imageUrls: '' })
+      setAddForm({
+        name: '',
+        propertyLabel: '',
+        address: '',
+        rooms: '',
+        rentPerRoom: '',
+        utilitiesFee: '',
+        securityDeposit: '',
+        applicationFee: '',
+        description: '',
+        imageUrls: '',
+        tourManager: '',
+        tourAvailability: '',
+        tourNotes: '',
+      })
       setAddOpen(false)
     } catch (err) {
       console.error('[HouseManagementPanel] create property failed', err)
@@ -2532,6 +2574,15 @@ function HouseManagementPanel({ manager, onPropertiesChange }) {
                   required
                 />
               </div>
+              <div>
+                <label className="mb-1.5 block text-xs font-semibold text-slate-700">Property label (optional)</label>
+                <input
+                  className={addInputCls}
+                  value={addForm.propertyLabel}
+                  onChange={(e) => setAddForm((f) => ({ ...f, propertyLabel: e.target.value }))}
+                  placeholder="Short label if different from name — saved to Airtable “Property”"
+                />
+              </div>
               <div className="grid gap-4 sm:grid-cols-2">
                 <div>
                   <label className="mb-1.5 block text-xs font-semibold text-slate-700">Number of rooms</label>
@@ -2558,6 +2609,47 @@ function HouseManagementPanel({ manager, onPropertiesChange }) {
                 </div>
               </div>
               <div>
+                <div className="mb-2 text-[11px] font-bold uppercase tracking-[0.14em] text-slate-400">Airtable fees (optional)</div>
+                <div className="grid gap-4 sm:grid-cols-3">
+                  <div>
+                    <label className="mb-1.5 block text-xs font-semibold text-slate-700">Utilities fee ($/mo)</label>
+                    <input
+                      className={addInputCls}
+                      type="number"
+                      min="0"
+                      step="1"
+                      value={addForm.utilitiesFee}
+                      onChange={(e) => setAddForm((f) => ({ ...f, utilitiesFee: e.target.value }))}
+                      placeholder="e.g. 175"
+                    />
+                  </div>
+                  <div>
+                    <label className="mb-1.5 block text-xs font-semibold text-slate-700">Security deposit ($)</label>
+                    <input
+                      className={addInputCls}
+                      type="number"
+                      min="0"
+                      step="1"
+                      value={addForm.securityDeposit}
+                      onChange={(e) => setAddForm((f) => ({ ...f, securityDeposit: e.target.value }))}
+                      placeholder="e.g. 600"
+                    />
+                  </div>
+                  <div>
+                    <label className="mb-1.5 block text-xs font-semibold text-slate-700">Application fee ($)</label>
+                    <input
+                      className={addInputCls}
+                      type="number"
+                      min="0"
+                      step="1"
+                      value={addForm.applicationFee}
+                      onChange={(e) => setAddForm((f) => ({ ...f, applicationFee: e.target.value }))}
+                      placeholder="e.g. 50"
+                    />
+                  </div>
+                </div>
+              </div>
+              <div>
                 <label className="mb-1.5 block text-xs font-semibold text-slate-700">Description</label>
                 <textarea
                   className={`${addInputCls} min-h-[100px] resize-y`}
@@ -2576,6 +2668,39 @@ function HouseManagementPanel({ manager, onPropertiesChange }) {
                   placeholder={'One image URL per line (https://…)\nAirtable can attach from URLs in Notes for now.'}
                   rows={3}
                 />
+              </div>
+              <div>
+                <div className="mb-2 text-[11px] font-bold uppercase tracking-[0.14em] text-slate-400">Tours (optional, stored in Notes)</div>
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <div>
+                    <label className="mb-1.5 block text-xs font-semibold text-slate-700">Tour manager</label>
+                    <input
+                      className={addInputCls}
+                      value={addForm.tourManager}
+                      onChange={(e) => setAddForm((f) => ({ ...f, tourManager: e.target.value }))}
+                      placeholder="Who runs tours"
+                    />
+                  </div>
+                  <div className="sm:col-span-2">
+                    <label className="mb-1.5 block text-xs font-semibold text-slate-700">Tour availability</label>
+                    <textarea
+                      className={`${addInputCls} min-h-[72px] resize-y`}
+                      value={addForm.tourAvailability}
+                      onChange={(e) => setAddForm((f) => ({ ...f, tourAvailability: e.target.value }))}
+                      placeholder={'e.g. Mon: 9:00 AM, 1:30 PM\nTue: 10:30 AM'}
+                      rows={3}
+                    />
+                  </div>
+                  <div className="sm:col-span-2">
+                    <label className="mb-1.5 block text-xs font-semibold text-slate-700">Tour notes</label>
+                    <input
+                      className={addInputCls}
+                      value={addForm.tourNotes}
+                      onChange={(e) => setAddForm((f) => ({ ...f, tourNotes: e.target.value }))}
+                      placeholder="Scheduling notes for Axis / applicants"
+                    />
+                  </div>
+                </div>
               </div>
               <div className="flex justify-end gap-3 pt-2">
                 <button
@@ -4851,10 +4976,6 @@ function ManagerDashboard({ manager: managerProp, onOpenDraft, onSignOut, onMana
           )}
         </div>
 
-        {/* Attribution footer */}
-        <p className="mt-6 text-center text-xs text-slate-400">
-          Axis Manager Portal · Leases, applications, properties, payments, work orders, inbox · {new Date().getFullYear()}
-        </p>
       </>
       )}
         </div>
