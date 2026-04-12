@@ -1050,7 +1050,7 @@ function ProfilePanel({ resident, onUpdated }) {
 
   return (
     <SectionCard
-      title="My Profile"
+      title="Profile"
       action={
         <button type="button"
           onClick={() => {

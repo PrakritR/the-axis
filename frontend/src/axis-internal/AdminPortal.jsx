@@ -463,7 +463,6 @@ export default function AdminPortal() {
           {/* Header */}
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
-              <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">Admin portal</p>
               <h1 className="text-2xl font-black text-slate-900">
                 {user?.name ? `Welcome, ${user.name.split(' ')[0]}` : 'Dashboard'}
               </h1>
