@@ -4876,7 +4876,6 @@ function ApplicationsPanel({ allowedPropertyNames, manager }) {
       } else {
         const updated = await patchApplication(recordId, {
           Approved: approved,
-          'Approval Status': approved ? 'Approved' : 'Rejected',
         })
         setScopedRows((prev) =>
           prev.map((a) => (a.id === recordId ? { ...a, ...updated } : a)),
