@@ -2857,10 +2857,15 @@ function HouseManagementPanel({ manager, onPropertiesChange }) {
 
                   {/* Step progress dots */}
                   <div className="mt-4 flex gap-1.5">
-                    {WIZARD_STEPS.map((_, i) => {
-                      const dotCls = i < addStep ? ‘bg-[#2563eb]’ : i === addStep ? ‘bg-[#2563eb]/60’ : ‘bg-slate-200’
-                      return <div key={i} className={`h-1.5 flex-1 rounded-full transition-colors ${dotCls}`} />
-                    })}
+                    {WIZARD_STEPS.map((_, i) => (
+                      <div
+                        key={i}
+                        className={[
+                          "h-1.5 flex-1 rounded-full transition-colors",
+                          i < addStep ? "bg-[#2563eb]" : i === addStep ? "bg-[#2563eb]/60" : "bg-slate-200",
+                        ].join(" ")}
+                      />
+                    ))}
                   </div>
 
                   {/* Step content */}
@@ -2904,7 +2909,12 @@ function HouseManagementPanel({ manager, onPropertiesChange }) {
                           <label className="mb-1.5 block text-xs font-semibold text-slate-700">Amenities</label>
                           <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-3">
                             {AMENITY_OPTIONS.map((a) => (
-                              <label key={a} className={`flex cursor-pointer items-center gap-2 rounded-xl border px-3 py-2 text-xs font-medium transition ${Array.isArray(addBasics.amenities) && addBasics.amenities.includes(a) ? ‘border-[#2563eb] bg-[#2563eb]/5 text-[#2563eb]’ : ‘border-slate-200 bg-slate-50 text-slate-700 hover:bg-slate-100’}`}>
+                              <label key={a} className={[
+                                "flex cursor-pointer items-center gap-2 rounded-xl border px-3 py-2 text-xs font-medium transition",
+                                Array.isArray(addBasics.amenities) && addBasics.amenities.includes(a)
+                                  ? "border-[#2563eb] bg-[#2563eb]/5 text-[#2563eb]"
+                                  : "border-slate-200 bg-slate-50 text-slate-700 hover:bg-slate-100",
+                              ].join(" ")}>
                                 <input
                                   type="checkbox"
                                   className="sr-only"
@@ -3107,7 +3117,12 @@ function HouseManagementPanel({ manager, onPropertiesChange }) {
                                   <label className="mb-1.5 block text-[11px] font-semibold text-slate-600">Rooms with access</label>
                                   <div className="grid grid-cols-4 gap-1.5 sm:grid-cols-5">
                                     {wizardRoomOptions.map((r) => (
-                                      <label key={r} className={`flex cursor-pointer items-center gap-1.5 rounded-lg border px-2 py-1.5 text-[11px] font-medium transition ${Array.isArray(space.access) && space.access.includes(r) ? ‘border-[#2563eb] bg-[#2563eb]/5 text-[#2563eb]’ : ‘border-slate-200 bg-slate-50 text-slate-700 hover:bg-slate-100’}`}>
+                                      <label key={r} className={[
+                                        "flex cursor-pointer items-center gap-1.5 rounded-lg border px-2 py-1.5 text-[11px] font-medium transition",
+                                        Array.isArray(space.access) && space.access.includes(r)
+                                          ? "border-[#2563eb] bg-[#2563eb]/5 text-[#2563eb]"
+                                          : "border-slate-200 bg-slate-50 text-slate-700 hover:bg-slate-100",
+                                      ].join(" ")}>
                                         <input
                                           type="checkbox"
                                           className="sr-only"
@@ -3260,10 +3275,10 @@ function HouseManagementPanel({ manager, onPropertiesChange }) {
                         <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
                           <div className="text-[11px] font-bold uppercase tracking-[0.14em] text-slate-400">Summary</div>
                           <ul className="mt-2 space-y-1 text-xs text-slate-700">
-                            <li><span className="font-semibold">{addBasics.name.trim() || ‘Untitled’}</span> · {addBasics.address.trim() || ‘—‘}</li>
+                            <li><span className="font-semibold">{addBasics.name.trim() || "Untitled"}</span> · {addBasics.address.trim() || "—"}</li>
                             <li>{wizardRc} room(s) · {wizardBc} bathroom(s) · {wizardKc} kitchen(s) · {wizardSc} shared space(s)</li>
-                            {addLaundry.enabled && <li>Laundry on site{(addLaundry.rows || []).length ? ` · ${(addLaundry.rows || []).length} location(s)` : ‘’}</li>}
-                            {addParking.enabled && <li>Parking available{addParking.type ? ` · ${addParking.type}` : ‘’}</li>}
+                            {addLaundry.enabled && <li>Laundry on site{(addLaundry.rows || []).length ? " · " + (addLaundry.rows || []).length + " location(s)" : ""}</li>}
+                            {addParking.enabled && <li>Parking available{addParking.type ? " · " + addParking.type : ""}</li>}
                             <li className="text-slate-500">Will appear as pending until approved by Axis.</li>
                           </ul>
                         </div>
@@ -3279,16 +3294,16 @@ function HouseManagementPanel({ manager, onPropertiesChange }) {
                       onClick={addStep === 0 ? () => { if (!addSaving) { resetAddPropertyForm(); setAddOpen(false) } } : wizHandleBack}
                       className="rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-semibold text-slate-600 hover:bg-slate-50 disabled:opacity-50"
                     >
-                      {addStep === 0 ? ‘Cancel’ : ‘Back’}
+                      {addStep === 0 ? "Cancel" : "Back"}
                     </button>
                     <button
                       type="submit"
                       disabled={addSaving || !wizCanAdvance()}
                       className="rounded-xl bg-[#2563eb] px-5 py-2.5 text-sm font-semibold text-white hover:brightness-110 disabled:opacity-50"
                     >
-                      {addStep === totalSteps - 1
-                        ? (addSaving ? ‘Submitting…’ : ‘Submit for review’)
-                        : ‘Next’}
+                      {addStep === WIZARD_STEPS.length - 1
+                        ? (addSaving ? "Submitting…" : "Submit for review")
+                        : "Next"}
                     </button>
                   </div>
             </form>
