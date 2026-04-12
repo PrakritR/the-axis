@@ -841,7 +841,7 @@ export async function updatePaymentRecord(recordId, fields) {
 export async function getPropertyByName(propertyName) {
   if (!propertyName) return null
   try {
-    const formula = `{Name} = "${escapeFormulaValue(propertyName)}"`
+    const formula = `{Property Name} = "${escapeFormulaValue(propertyName)}"`
     const data = await request(buildUrl(TABLES.properties, {
       filterByFormula: formula,
       maxRecords: 1,
