@@ -30,6 +30,8 @@ import {
   getAllPaymentsRecords,
   updatePaymentRecord,
   AIRTABLE_PAYMENTS_BASE_ID,
+  createRoomRecord,
+  uploadPropertyImage,
 } from '../lib/airtable'
 import {
   consolidateManagerDashboardWarnings,
@@ -2189,22 +2191,21 @@ function HouseManagementPanel({ manager, onPropertiesChange }) {
   const [editingPropertyId, setEditingPropertyId] = useState(null)
   const [addOpen, setAddOpen] = useState(false)
   const [addSaving, setAddSaving] = useState(false)
-  const [addForm, setAddForm] = useState({
+  const emptyAddForm = () => ({
     name: '',
-    propertyLabel: '',
     address: '',
-    rooms: '',
-    rentPerRoom: '',
+    bathrooms: '',
+    housingType: '',
     utilitiesFee: '',
     securityDeposit: '',
     applicationFee: '',
-    siteManagerEmail: '',
     description: '',
-    imageUrls: '',
-    tourManager: '',
-    tourAvailability: '',
-    tourNotes: '',
   })
+  const [addForm, setAddForm] = useState(emptyAddForm)
+  const [addRooms, setAddRooms] = useState([{ id: Date.now(), name: 'Room 1', rent: '', status: '', notes: '' }])
+  const [addImages, setAddImages] = useState([]) // [{ id, file, preview, caption }]
+  const addImageInputRef = useRef(null)
+  const addDropRef = useRef(null)
   const [tourForm, setTourForm] = useState({
     manager: '',
     availability: '',
@@ -2321,6 +2322,34 @@ function HouseManagementPanel({ manager, onPropertiesChange }) {
     }
   }
 
+  function addImageFiles(files) {
+    const valid = Array.from(files).filter((f) => f.type.startsWith('image/'))
+    if (!valid.length) return
+    const entries = valid.map((file) => ({
+      id: `${Date.now()}-${Math.random()}`,
+      file,
+      preview: URL.createObjectURL(file),
+      caption: '',
+    }))
+    setAddImages((prev) => [...prev, ...entries])
+  }
+
+  function handleAddImageDrop(e) {
+    e.preventDefault()
+    e.stopPropagation()
+    addDropRef.current?.classList.remove('border-[#2563eb]', 'bg-blue-50/40')
+    addImageFiles(e.dataTransfer.files)
+  }
+
+  function handleAddImageDragOver(e) {
+    e.preventDefault()
+    addDropRef.current?.classList.add('border-[#2563eb]', 'bg-blue-50/40')
+  }
+
+  function handleAddImageDragLeave() {
+    addDropRef.current?.classList.remove('border-[#2563eb]', 'bg-blue-50/40')
+  }
+
   async function handleAddPropertySubmit(e) {
     e.preventDefault()
     if (isManagerInternalPreview(manager)) {
@@ -2331,67 +2360,80 @@ function HouseManagementPanel({ manager, onPropertiesChange }) {
       toast.error('Property name and address are required.')
       return
     }
+    if (!addRooms.length || !addRooms.some((r) => r.name.trim())) {
+      toast.error('Add at least one room before submitting.')
+      return
+    }
     setAddSaving(true)
     try {
-      const tourBlock = buildTourNotes('', {
-        manager: addForm.tourManager.trim(),
-        availability: addForm.tourAvailability.trim(),
-        notes: addForm.tourNotes.trim(),
-        siteManagerEmail: addForm.siteManagerEmail.trim(),
-      })
       const noteParts = []
       if (addForm.description.trim()) noteParts.push(`Description: ${addForm.description.trim()}`)
-      noteParts.push(`Rooms: ${addForm.rooms.trim() || '—'}`)
-      noteParts.push(`Rent per room: ${addForm.rentPerRoom.trim() || '—'}`)
-      if (addForm.imageUrls.trim()) noteParts.push(`Image URLs:\n${addForm.imageUrls.trim()}`)
       noteParts.push(`Submitted by: ${String(manager?.email || '').trim()}`)
-      const tailNotes = noteParts.join('\n')
-      const propertyLabelFinal = addForm.propertyLabel.trim() || addForm.name.trim()
       const utilitiesFee = optionalPropertyCurrency(addForm.utilitiesFee) ?? 0
       const securityDeposit = optionalPropertyCurrency(addForm.securityDeposit) ?? 0
       const applicationFee = optionalPropertyCurrency(addForm.applicationFee)
-      const siteMgr = addForm.siteManagerEmail.trim()
       const fields = {
         Name: addForm.name.trim(),
         Address: addForm.address.trim(),
-        Property: propertyLabelFinal,
+        Property: addForm.name.trim(),
         Approved: false,
         Status: 'pending_review',
         'Manager Email': String(manager?.email || '').trim(),
-        Notes: [tourBlock, tailNotes].filter(Boolean).join('\n'),
+        Notes: noteParts.join('\n'),
         'Utilities Fee': utilitiesFee,
         'Security Deposit': securityDeposit,
       }
+      if (addForm.bathrooms !== '') {
+        const b = Number(addForm.bathrooms)
+        if (Number.isFinite(b) && b >= 0) fields['Bathrooms'] = b
+      }
+      if (addForm.housingType) fields['Housing Type'] = addForm.housingType
       if (applicationFee !== undefined) fields['Application Fee'] = applicationFee
-      if (siteMgr) fields['Site Manager Email'] = siteMgr
       if (manager?.id) fields.Manager = [manager.id]
+
       const created = await createPropertyAdmin(fields)
+
+      // Upload images sequentially (Airtable content API is rate-sensitive)
+      if (addImages.length) {
+        for (const img of addImages) {
+          try {
+            await uploadPropertyImage(created.id, img.file)
+          } catch {
+            // Non-fatal: property is created, images may need re-upload
+          }
+        }
+      }
+
+      // Create room records linked to the new property
+      await Promise.allSettled(
+        addRooms
+          .filter((r) => r.name.trim())
+          .map((r) =>
+            createRoomRecord({
+              propertyId: created.id,
+              name: r.name.trim(),
+              rent: r.rent !== '' ? r.rent : undefined,
+              status: r.status || undefined,
+              notes: r.notes || undefined,
+            }),
+          ),
+      )
+
       setProperties((current) => {
         const next = [...current, created]
         onPropertiesChange?.(next)
         return next
       })
       toast.success('Property submitted — pending review')
-      setAddForm({
-        name: '',
-        propertyLabel: '',
-        address: '',
-        rooms: '',
-        rentPerRoom: '',
-        utilitiesFee: '',
-        securityDeposit: '',
-        applicationFee: '',
-        description: '',
-        imageUrls: '',
-        tourManager: '',
-        tourAvailability: '',
-        tourNotes: '',
-        siteManagerEmail: '',
-      })
+      // Clean up image preview URLs
+      addImages.forEach((img) => URL.revokeObjectURL(img.preview))
+      setAddForm(emptyAddForm())
+      setAddRooms([{ id: Date.now(), name: 'Room 1', rent: '', status: '', notes: '' }])
+      setAddImages([])
       setAddOpen(false)
     } catch (err) {
       console.error('[HouseManagementPanel] create property failed', err)
-      toast.error(err.message || 'Could not save property. Check Airtable field names (Status, Manager Email).')
+      toast.error(err.message || 'Could not save property.')
     } finally {
       setAddSaving(false)
     }
@@ -2658,186 +2700,292 @@ function HouseManagementPanel({ manager, onPropertiesChange }) {
 
         {addOpen ? (
           <Modal onClose={() => { if (!addSaving) setAddOpen(false) }}>
-            <div className="pr-8">
-              <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-[#2563eb]">New property</div>
-              <h3 className="mt-2 text-2xl font-black text-slate-900">Add property</h3>
-              <p className="mt-2 text-sm text-slate-500">Submit details for review. It will appear in your list as pending until approved.</p>
+            <div className=”pr-8”>
+              <div className=”text-[11px] font-bold uppercase tracking-[0.18em] text-[#2563eb]”>New property</div>
+              <h3 className=”mt-2 text-2xl font-black text-slate-900”>Add property</h3>
+              <p className=”mt-2 text-sm text-slate-500”>Submit details for review. It will appear in your list as pending until approved.</p>
             </div>
-            <form onSubmit={handleAddPropertySubmit} className="mt-6 space-y-4">
+            <form onSubmit={handleAddPropertySubmit} className=”mt-6 space-y-5”>
+
+              {/* ── Basic info ── */}
               <div>
-                <label className="mb-1.5 block text-xs font-semibold text-slate-700">Property name *</label>
+                <label className=”mb-1.5 block text-xs font-semibold text-slate-700”>Property name *</label>
                 <input
                   className={addInputCls}
                   value={addForm.name}
                   onChange={(e) => setAddForm((f) => ({ ...f, name: e.target.value }))}
-                  placeholder="e.g. Maple Co-op"
+                  placeholder=”e.g. Maple Co-op”
                   required
                 />
               </div>
               <div>
-                <label className="mb-1.5 block text-xs font-semibold text-slate-700">Address *</label>
+                <label className=”mb-1.5 block text-xs font-semibold text-slate-700”>Address *</label>
                 <input
                   className={addInputCls}
                   value={addForm.address}
                   onChange={(e) => setAddForm((f) => ({ ...f, address: e.target.value }))}
-                  placeholder="Street, city, state"
+                  placeholder=”Street, city, state”
                   required
                 />
               </div>
-              <div>
-                <label className="mb-1.5 block text-xs font-semibold text-slate-700">Property label (optional)</label>
-                <input
-                  className={addInputCls}
-                  value={addForm.propertyLabel}
-                  onChange={(e) => setAddForm((f) => ({ ...f, propertyLabel: e.target.value }))}
-                  placeholder="Short label if different from name — saved to Airtable “Property”"
-                />
-              </div>
-              <div className="grid gap-4 sm:grid-cols-2">
+              <div className=”grid gap-4 sm:grid-cols-2”>
                 <div>
-                  <label className="mb-1.5 block text-xs font-semibold text-slate-700">Number of rooms</label>
-                  <input
+                  <label className=”mb-1.5 block text-xs font-semibold text-slate-700”>Housing type</label>
+                  <select
                     className={addInputCls}
-                    type="number"
-                    min="0"
-                    value={addForm.rooms}
-                    onChange={(e) => setAddForm((f) => ({ ...f, rooms: e.target.value }))}
-                    placeholder="e.g. 4"
-                  />
+                    value={addForm.housingType}
+                    onChange={(e) => setAddForm((f) => ({ ...f, housingType: e.target.value }))}
+                  >
+                    <option value=””>Select type…</option>
+                    {['House', 'Apartment', 'Townhome', 'Studio', 'Other'].map((t) => (
+                      <option key={t} value={t}>{t}</option>
+                    ))}
+                  </select>
                 </div>
                 <div>
-                  <label className="mb-1.5 block text-xs font-semibold text-slate-700">Rent per room ($)</label>
+                  <label className=”mb-1.5 block text-xs font-semibold text-slate-700”>Bathrooms</label>
                   <input
                     className={addInputCls}
-                    type="number"
-                    min="0"
-                    step="1"
-                    value={addForm.rentPerRoom}
-                    onChange={(e) => setAddForm((f) => ({ ...f, rentPerRoom: e.target.value }))}
-                    placeholder="e.g. 750"
+                    type=”number”
+                    min=”0”
+                    step=”0.5”
+                    value={addForm.bathrooms}
+                    onChange={(e) => setAddForm((f) => ({ ...f, bathrooms: e.target.value }))}
+                    placeholder=”e.g. 2”
                   />
                 </div>
               </div>
+
+              {/* ── Fees ── */}
               <div>
-                <label className="mb-1.5 block text-xs font-semibold text-slate-700">Site manager email (optional)</label>
-                <input
-                  className={addInputCls}
-                  type="email"
-                  value={addForm.siteManagerEmail}
-                  onChange={(e) => setAddForm((f) => ({ ...f, siteManagerEmail: e.target.value }))}
-                  placeholder="If different from your login — used for public tour routing"
-                />
-              </div>
-              <div>
-                <div className="mb-2 text-[11px] font-bold uppercase tracking-[0.14em] text-slate-400">Airtable fees</div>
-                <p className="mb-3 text-xs text-slate-500">
-                  Utilities and security deposit default to <strong>$0</strong> if left blank. Application fee is optional — leave blank to use the Apply page default ($50) once the listing is live.
+                <div className=”mb-2 text-[11px] font-bold uppercase tracking-[0.14em] text-slate-400”>Fees</div>
+                <p className=”mb-3 text-xs text-slate-500”>
+                  Utilities and security deposit default to <strong>$0</strong> if left blank. Application fee is optional — leave blank to use the default ($50) once the listing is live.
                 </p>
-                <div className="grid gap-4 sm:grid-cols-3">
+                <div className=”grid gap-4 sm:grid-cols-3”>
                   <div>
-                    <label className="mb-1.5 block text-xs font-semibold text-slate-700">Utilities fee ($/mo)</label>
+                    <label className=”mb-1.5 block text-xs font-semibold text-slate-700”>Utilities ($/mo)</label>
                     <input
                       className={addInputCls}
-                      type="number"
-                      min="0"
-                      step="1"
+                      type=”number”
+                      min=”0”
+                      step=”1”
                       value={addForm.utilitiesFee}
                       onChange={(e) => setAddForm((f) => ({ ...f, utilitiesFee: e.target.value }))}
-                      placeholder="e.g. 175"
+                      placeholder=”e.g. 175”
                     />
                   </div>
                   <div>
-                    <label className="mb-1.5 block text-xs font-semibold text-slate-700">Security deposit ($)</label>
+                    <label className=”mb-1.5 block text-xs font-semibold text-slate-700”>Security deposit ($)</label>
                     <input
                       className={addInputCls}
-                      type="number"
-                      min="0"
-                      step="1"
+                      type=”number”
+                      min=”0”
+                      step=”1”
                       value={addForm.securityDeposit}
                       onChange={(e) => setAddForm((f) => ({ ...f, securityDeposit: e.target.value }))}
-                      placeholder="e.g. 600"
+                      placeholder=”e.g. 600”
                     />
                   </div>
                   <div>
-                    <label className="mb-1.5 block text-xs font-semibold text-slate-700">Application fee ($)</label>
+                    <label className=”mb-1.5 block text-xs font-semibold text-slate-700”>Application fee ($)</label>
                     <input
                       className={addInputCls}
-                      type="number"
-                      min="0"
-                      step="1"
+                      type=”number”
+                      min=”0”
+                      step=”1”
                       value={addForm.applicationFee}
                       onChange={(e) => setAddForm((f) => ({ ...f, applicationFee: e.target.value }))}
-                      placeholder="e.g. 50"
+                      placeholder=”e.g. 50”
                     />
                   </div>
                 </div>
               </div>
+
+              {/* ── Description ── */}
               <div>
-                <label className="mb-1.5 block text-xs font-semibold text-slate-700">Description</label>
+                <label className=”mb-1.5 block text-xs font-semibold text-slate-700”>Description</label>
                 <textarea
-                  className={`${addInputCls} min-h-[100px] resize-y`}
+                  className={`${addInputCls} min-h-[90px] resize-y`}
                   value={addForm.description}
                   onChange={(e) => setAddForm((f) => ({ ...f, description: e.target.value }))}
-                  placeholder="Highlights, house rules, etc."
-                  rows={4}
-                />
-              </div>
-              <div>
-                <label className="mb-1.5 block text-xs font-semibold text-slate-700">Image URLs (optional)</label>
-                <textarea
-                  className={`${addInputCls} min-h-[80px] resize-y font-mono text-xs`}
-                  value={addForm.imageUrls}
-                  onChange={(e) => setAddForm((f) => ({ ...f, imageUrls: e.target.value }))}
-                  placeholder={'One image URL per line (https://…)\nAirtable can attach from URLs in Notes for now.'}
+                  placeholder=”Highlights, house rules, neighbourhood, etc.”
                   rows={3}
                 />
               </div>
+
+              {/* ── Rooms ── */}
               <div>
-                <div className="mb-2 text-[11px] font-bold uppercase tracking-[0.14em] text-slate-400">Tours (optional, stored in Notes)</div>
-                <div className="grid gap-4 sm:grid-cols-2">
-                  <div>
-                    <label className="mb-1.5 block text-xs font-semibold text-slate-700">Tour manager</label>
-                    <input
-                      className={addInputCls}
-                      value={addForm.tourManager}
-                      onChange={(e) => setAddForm((f) => ({ ...f, tourManager: e.target.value }))}
-                      placeholder="Who runs tours"
-                    />
-                  </div>
-                  <div className="sm:col-span-2">
-                    <label className="mb-1.5 block text-xs font-semibold text-slate-700">Tour availability</label>
-                    <textarea
-                      className={`${addInputCls} min-h-[72px] resize-y`}
-                      value={addForm.tourAvailability}
-                      onChange={(e) => setAddForm((f) => ({ ...f, tourAvailability: e.target.value }))}
-                      placeholder={'e.g. Mon: 9:00 AM, 1:30 PM\nTue: 10:30 AM'}
-                      rows={3}
-                    />
-                  </div>
-                  <div className="sm:col-span-2">
-                    <label className="mb-1.5 block text-xs font-semibold text-slate-700">Tour notes</label>
-                    <input
-                      className={addInputCls}
-                      value={addForm.tourNotes}
-                      onChange={(e) => setAddForm((f) => ({ ...f, tourNotes: e.target.value }))}
-                      placeholder="Scheduling notes for Axis / applicants"
-                    />
-                  </div>
+                <div className=”mb-2 flex items-center justify-between”>
+                  <div className=”text-[11px] font-bold uppercase tracking-[0.14em] text-slate-400”>Rooms *</div>
+                  <button
+                    type=”button”
+                    onClick={() =>
+                      setAddRooms((prev) => [
+                        ...prev,
+                        { id: Date.now(), name: `Room ${prev.length + 1}`, rent: '', status: '', notes: '' },
+                      ])
+                    }
+                    className=”rounded-full border border-slate-200 px-3 py-1 text-[11px] font-bold text-[#2563eb] hover:bg-blue-50”
+                  >
+                    + Add room
+                  </button>
+                </div>
+                <div className=”space-y-3”>
+                  {addRooms.map((room, idx) => (
+                    <div key={room.id} className=”rounded-2xl border border-slate-200 bg-slate-50/60 p-4”>
+                      <div className=”mb-3 flex items-center justify-between”>
+                        <span className=”text-xs font-bold text-slate-600”>Room {idx + 1}</span>
+                        {addRooms.length > 1 && (
+                          <button
+                            type=”button”
+                            onClick={() => setAddRooms((prev) => prev.filter((r) => r.id !== room.id))}
+                            className=”text-[11px] font-semibold text-red-500 hover:text-red-700”
+                          >
+                            Remove
+                          </button>
+                        )}
+                      </div>
+                      <div className=”grid gap-3 sm:grid-cols-2”>
+                        <div>
+                          <label className=”mb-1 block text-[11px] font-semibold text-slate-500”>Room name / number</label>
+                          <input
+                            className={addInputCls}
+                            value={room.name}
+                            onChange={(e) =>
+                              setAddRooms((prev) =>
+                                prev.map((r) => (r.id === room.id ? { ...r, name: e.target.value } : r)),
+                              )
+                            }
+                            placeholder=”e.g. Room 1, Master, Suite A”
+                          />
+                        </div>
+                        <div>
+                          <label className=”mb-1 block text-[11px] font-semibold text-slate-500”>Monthly rent ($)</label>
+                          <input
+                            className={addInputCls}
+                            type=”number”
+                            min=”0”
+                            step=”1”
+                            value={room.rent}
+                            onChange={(e) =>
+                              setAddRooms((prev) =>
+                                prev.map((r) => (r.id === room.id ? { ...r, rent: e.target.value } : r)),
+                              )
+                            }
+                            placeholder=”e.g. 800”
+                          />
+                        </div>
+                        <div>
+                          <label className=”mb-1 block text-[11px] font-semibold text-slate-500”>Availability status</label>
+                          <select
+                            className={addInputCls}
+                            value={room.status}
+                            onChange={(e) =>
+                              setAddRooms((prev) =>
+                                prev.map((r) => (r.id === room.id ? { ...r, status: e.target.value } : r)),
+                              )
+                            }
+                          >
+                            <option value=””>Not set</option>
+                            <option value=”Available”>Available</option>
+                            <option value=”Occupied”>Occupied</option>
+                            <option value=”Coming soon”>Coming soon</option>
+                          </select>
+                        </div>
+                        <div>
+                          <label className=”mb-1 block text-[11px] font-semibold text-slate-500”>Notes</label>
+                          <input
+                            className={addInputCls}
+                            value={room.notes}
+                            onChange={(e) =>
+                              setAddRooms((prev) =>
+                                prev.map((r) => (r.id === room.id ? { ...r, notes: e.target.value } : r)),
+                              )
+                            }
+                            placeholder=”e.g. Bigger closet, top floor…”
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  ))}
                 </div>
               </div>
-              <div className="flex justify-end gap-3 pt-2">
+
+              {/* ── Photos ── */}
+              <div>
+                <div className=”mb-2 text-[11px] font-bold uppercase tracking-[0.14em] text-slate-400”>Photos</div>
+                {/* Dropzone */}
+                <div
+                  ref={addDropRef}
+                  onDrop={handleAddImageDrop}
+                  onDragOver={handleAddImageDragOver}
+                  onDragLeave={handleAddImageDragLeave}
+                  onClick={() => addImageInputRef.current?.click()}
+                  className=”flex cursor-pointer flex-col items-center justify-center rounded-2xl border-2 border-dashed border-slate-200 bg-slate-50/60 px-6 py-8 text-center transition hover:border-[#2563eb] hover:bg-blue-50/30”
+                >
+                  <div className=”text-sm font-semibold text-slate-500”>Drag &amp; drop images here, or <span className=”text-[#2563eb]”>click to upload</span></div>
+                  <div className=”mt-1 text-xs text-slate-400”>JPG, PNG, WEBP — multiple allowed</div>
+                  <input
+                    ref={addImageInputRef}
+                    type=”file”
+                    accept=”image/*”
+                    multiple
+                    className=”hidden”
+                    onChange={(e) => addImageFiles(e.target.files)}
+                  />
+                </div>
+                {/* Preview grid */}
+                {addImages.length > 0 && (
+                  <div className=”mt-3 grid grid-cols-2 gap-3 sm:grid-cols-3”>
+                    {addImages.map((img, idx) => (
+                      <div key={img.id} className=”relative rounded-2xl border border-slate-200 bg-white overflow-hidden”>
+                        <img
+                          src={img.preview}
+                          alt={`Preview ${idx + 1}`}
+                          className=”h-32 w-full object-cover”
+                        />
+                        <button
+                          type=”button”
+                          onClick={() => {
+                            URL.revokeObjectURL(img.preview)
+                            setAddImages((prev) => prev.filter((i) => i.id !== img.id))
+                          }}
+                          className=”absolute right-1.5 top-1.5 rounded-full bg-white/90 px-2 py-0.5 text-[10px] font-bold text-red-600 shadow hover:bg-red-50”
+                        >
+                          ✕
+                        </button>
+                        <div className=”p-2”>
+                          <input
+                            className=”w-full rounded-lg border border-slate-200 bg-slate-50 px-2 py-1 text-[11px] text-slate-600 placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-[#2563eb]/40”
+                            placeholder=”Caption (optional)”
+                            value={img.caption}
+                            onChange={(e) =>
+                              setAddImages((prev) =>
+                                prev.map((i) => (i.id === img.id ? { ...i, caption: e.target.value } : i)),
+                              )
+                            }
+                          />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              <div className=”flex justify-end gap-3 pt-2”>
                 <button
-                  type="button"
+                  type=”button”
                   disabled={addSaving}
                   onClick={() => { if (!addSaving) setAddOpen(false) }}
-                  className="rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-semibold text-slate-600 hover:bg-slate-50 disabled:opacity-50"
+                  className=”rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-semibold text-slate-600 hover:bg-slate-50 disabled:opacity-50”
                 >
                   Cancel
                 </button>
                 <button
-                  type="submit"
+                  type=”submit”
                   disabled={addSaving}
-                  className="rounded-xl bg-[#2563eb] px-5 py-2.5 text-sm font-semibold text-white hover:brightness-110 disabled:opacity-50"
+                  className=”rounded-xl bg-[#2563eb] px-5 py-2.5 text-sm font-semibold text-white hover:brightness-110 disabled:opacity-50”
                 >
                   {addSaving ? 'Submitting…' : 'Submit for review'}
                 </button>

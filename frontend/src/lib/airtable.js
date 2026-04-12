@@ -864,6 +864,51 @@ export function getAirtableRoomsTableName() {
   return t || TABLES.rooms
 }
 
+/**
+ * Create a room record linked to a property.
+ * Fields: Name, Property (linked record array), Rent, Status, Notes.
+ */
+export async function createRoomRecord({ propertyId, name, rent, status, notes }) {
+  const fields = {}
+  if (name) fields['Name'] = String(name).trim()
+  if (propertyId) fields['Property'] = [propertyId]
+  if (rent != null && rent !== '') fields['Rent'] = Number(rent)
+  if (status) fields['Status'] = String(status).trim()
+  if (notes) fields['Notes'] = String(notes).trim()
+  const data = await request(`${BASE_URL}/${encodeURIComponent(getAirtableRoomsTableName())}`, {
+    method: 'POST',
+    body: JSON.stringify({ fields, typecast: true }),
+  })
+  return mapRecord(data)
+}
+
+/**
+ * Upload a file as an attachment to a property record's Photos/Images field.
+ * Uses Airtable's content upload API.
+ */
+export async function uploadPropertyImage(propertyId, file) {
+  const formData = new FormData()
+  formData.append('file', file, file.name)
+  formData.append('filename', file.name)
+  formData.append('contentType', file.type || 'application/octet-stream')
+  const response = await fetch(
+    `https://content.airtable.com/v0/${BASE_ID}/${encodeURIComponent(TABLES.properties)}/${propertyId}/${encodeURIComponent('Photos')}/uploadAttachment`,
+    {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${API_KEY}` },
+      body: formData,
+    },
+  )
+  if (!response.ok) {
+    const body = await response.text()
+    if (responseBodyIndicatesAirtablePermissionDenied(body)) {
+      throw new Error(airtablePermissionDeniedMessage(response.url))
+    }
+    throw new Error(body)
+  }
+  return response.json()
+}
+
 // ---------------------------------------------------------------------------
 // Documents
 // ---------------------------------------------------------------------------
