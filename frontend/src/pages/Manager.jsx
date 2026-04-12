@@ -1689,6 +1689,23 @@ async function createPropertyAdmin(fields) {
   return mapRecord(data)
 }
 
+async function deletePropertyAdmin(recordId) {
+  const res = await fetch(`${CORE_AIRTABLE_BASE_URL}/Properties/${recordId}`, {
+    method: 'DELETE',
+    headers: {
+      Authorization: `Bearer ${AIRTABLE_TOKEN}`,
+      'Content-Type': 'application/json',
+    },
+  })
+  if (!res.ok) {
+    const body = await res.text().catch(() => '')
+    let msg = `Delete failed: ${res.status}`
+    try { msg = JSON.parse(body)?.error?.message || msg } catch { /* ignore */ }
+    throw new Error(msg)
+  }
+  return res.json()
+}
+
 async function fetchManagerRecordById(recordId) {
   const id = String(recordId || '').trim()
   if (!id) throw new Error('Missing manager record id.')
@@ -2235,6 +2252,7 @@ function HouseManagementPanel({ manager, onPropertiesChange }) {
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [editingPropertyId, setEditingPropertyId] = useState(null)
+  const [deletingPropertyId, setDeletingPropertyId] = useState(null)
   const [addOpen, setAddOpen] = useState(false)
   const [addSaving, setAddSaving] = useState(false)
   const emptyAddBasics = () => ({
@@ -2632,17 +2650,61 @@ function HouseManagementPanel({ manager, onPropertiesChange }) {
             {pendingAssigned.map((property) => (
               <div key={property.id} className="rounded-2xl border border-amber-200/80 bg-amber-50/50 px-4 py-4">
                 <div className="flex flex-wrap items-center justify-between gap-2">
-                  <div className="text-sm font-semibold text-slate-900">{property.Name || property.Property || 'Untitled house'}</div>
-                  <span className="rounded-full bg-amber-200/90 px-3 py-1 text-[11px] font-bold uppercase tracking-[0.12em] text-amber-950">
-                    Pending review
-                  </span>
+                  <div className="text-sm font-semibold text-slate-900">{propertyRecordName(property) || 'Untitled house'}</div>
+                  <div className="flex items-center gap-2">
+                    <span className="rounded-full bg-amber-200/90 px-3 py-1 text-[11px] font-bold uppercase tracking-[0.12em] text-amber-950">
+                      Pending review
+                    </span>
+                    <button
+                      type="button"
+                      disabled={deletingPropertyId === property.id || isManagerInternalPreview(manager)}
+                      onClick={async () => {
+                        if (!window.confirm(`Delete "${propertyRecordName(property) || 'this property'}"? This cannot be undone.`)) return
+                        setDeletingPropertyId(property.id)
+                        try {
+                          await deletePropertyAdmin(property.id)
+                          toast.success('Property deleted')
+                          await loadProperties()
+                        } catch (err) {
+                          toast.error(err.message || 'Delete failed')
+                        } finally {
+                          setDeletingPropertyId(null)
+                        }
+                      }}
+                      className="rounded-xl border border-red-200 bg-red-50 px-2.5 py-1 text-[11px] font-semibold text-red-700 hover:bg-red-100 disabled:opacity-40"
+                    >
+                      {deletingPropertyId === property.id ? 'Deleting…' : 'Delete'}
+                    </button>
+                  </div>
                 </div>
                 <div className="mt-1 text-sm text-slate-600">{property.Address || 'Address not set'}</div>
               </div>
             ))}
             {approvedAssigned.map((property) => (
               <div key={property.id} className="rounded-2xl border border-slate-100 bg-slate-50 px-4 py-4">
-                <div className="text-sm font-semibold text-slate-900">{property.Name || property.Property || 'Untitled house'}</div>
+                <div className="flex items-start justify-between gap-2">
+                  <div className="text-sm font-semibold text-slate-900">{propertyRecordName(property) || 'Untitled house'}</div>
+                  <button
+                    type="button"
+                    disabled={deletingPropertyId === property.id || isManagerInternalPreview(manager)}
+                    onClick={async () => {
+                      if (!window.confirm(`Delete "${propertyRecordName(property) || 'this property'}"? This cannot be undone.`)) return
+                      setDeletingPropertyId(property.id)
+                      try {
+                        await deletePropertyAdmin(property.id)
+                        toast.success('Property deleted')
+                        await loadProperties()
+                      } catch (err) {
+                        toast.error(err.message || 'Delete failed')
+                      } finally {
+                        setDeletingPropertyId(null)
+                      }
+                    }}
+                    className="shrink-0 rounded-xl border border-red-200 bg-red-50 px-2.5 py-1 text-[11px] font-semibold text-red-700 hover:bg-red-100 disabled:opacity-40"
+                  >
+                    {deletingPropertyId === property.id ? 'Deleting…' : 'Delete'}
+                  </button>
+                </div>
                 <div className="mt-1 text-sm text-slate-500">{property.Address || 'Address not set'}</div>
                 <div className="mt-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-400">
                   Utilities fee {property['Utilities Fee'] ? `$${property['Utilities Fee']}` : 'not set'}
