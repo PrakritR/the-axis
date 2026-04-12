@@ -2027,7 +2027,6 @@ function Dashboard({ resident, onResidentUpdated, onSignOut }) {
   return (
     <PortalShell
       brandTitle="Axis"
-      brandSubtitle="Resident portal"
       desktopNav="sidebar"
       navItems={TABS.map(([id, label]) => ({ id, label }))}
       activeId={tab}

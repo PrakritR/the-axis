@@ -295,7 +295,7 @@ export default function AdminPortal() {
   /** Within Properties: pending | approved | rejected */
   const [propertiesSection, setPropertiesSection] = useState('pending')
   /** Within Applications: all | pending | approved | rejected */
-  const [applicationsFilter, setApplicationsFilter] = useState('pending')
+  const [applicationsFilter, setApplicationsFilter] = useState('all')
   const [managersFilter, setManagersFilter] = useState('current')
   const [selectedManagerAccountId, setSelectedManagerAccountId] = useState(null)
   const [managerActionBusy, setManagerActionBusy] = useState(false)
@@ -448,7 +448,6 @@ export default function AdminPortal() {
   return (
     <PortalShell
       brandTitle="Axis"
-      brandSubtitle="Admin portal"
       desktopNav="sidebar"
       navItems={navItems}
       activeId={tab}
@@ -930,7 +929,7 @@ export default function AdminPortal() {
               </label>
             </div>
             <div className="inline-flex flex-wrap gap-1 rounded-2xl border border-slate-200 bg-slate-50 p-1">
-              {[['pending', 'Pending', applications.filter((a) => a.approvalPending).length], ['approved', 'Approved', applications.filter((a) => !a.approvalPending && a._airtable?.Approved === true).length], ['rejected', 'Rejected', applications.filter((a) => !a.approvalPending && a._airtable?.Approved === false).length], ['all', 'All', applications.length]].map(([key, label, count]) => (
+              {[['all', 'All', applications.length], ['pending', 'Pending', applications.filter((a) => a.approvalPending).length], ['approved', 'Approved', applications.filter((a) => !a.approvalPending && a._airtable?.Approved === true).length], ['rejected', 'Rejected', applications.filter((a) => !a.approvalPending && a._airtable?.Approved === false).length]].map(([key, label, count]) => (
                 <button
                   key={key}
                   type="button"

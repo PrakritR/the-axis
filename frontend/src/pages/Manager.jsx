@@ -4716,7 +4716,7 @@ function ApplicationsPanel({ allowedPropertyNames, manager }) {
   const [scopedRows, setScopedRows] = useState([])
   const [loading, setLoading] = useState(true)
   const [propertyFilter, setPropertyFilter] = useState('')
-  const [statusFilter, setStatusFilter] = useState('pending')
+  const [statusFilter, setStatusFilter] = useState('all')
   const [sortKey, setSortKey] = useState('submitted')
   const [sortDir, setSortDir] = useState('desc')
   const [approving, setApproving] = useState({}) // recordId -> 'approving' | 'rejecting'
@@ -4840,10 +4840,10 @@ function ApplicationsPanel({ allowedPropertyNames, manager }) {
 
       <div className="mb-4 inline-flex flex-wrap gap-1 rounded-2xl border border-slate-200 bg-slate-50 p-1">
         {[
+          ['all', 'All', propertyFilteredRows.length],
           ['pending', 'Pending', propertyFilteredRows.filter((a) => a.Approved !== true && a.Approved !== false).length],
           ['approved', 'Approved', propertyFilteredRows.filter((a) => a.Approved === true).length],
           ['rejected', 'Rejected', propertyFilteredRows.filter((a) => a.Approved === false).length],
-          ['all', 'All', propertyFilteredRows.length],
         ].map(([key, label, count]) => (
           <button
             key={key}
@@ -5280,7 +5280,6 @@ function ManagerDashboard({ manager: managerProp, onOpenDraft, onSignOut, onMana
     <>
       <PortalShell
         brandTitle="Axis"
-        brandSubtitle="Manager portal"
         desktopNav="sidebar"
         navItems={MANAGER_NAV_ITEMS}
         activeId={dashView}
