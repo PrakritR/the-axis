@@ -1155,7 +1155,7 @@ export default function ManagerInboxPage({
         </div>
       </div>
 
-      <div className="flex h-[min(560px,calc(100dvh-10rem))] flex-col overflow-hidden rounded-2xl border border-slate-200 bg-slate-50/80 shadow-sm md:flex-row">
+      <div className="flex h-[min(560px,calc(100dvh-10rem))] flex-col overflow-hidden rounded-3xl border border-slate-200 bg-slate-50/80 shadow-sm md:flex-row">
         <ConversationList
           loading={loading}
           errorMessage={loadError}

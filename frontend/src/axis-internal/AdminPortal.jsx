@@ -314,7 +314,8 @@ export default function AdminPortal() {
   const [unopenedThreadCount, setUnopenedThreadCount] = useState(0)
   const [propertiesSearch, setPropertiesSearch] = useState('')
   const [managersSearch, setManagersSearch] = useState('')
-  const [applicationsSearch, setApplicationsSearch] = useState('')
+  const [applicationsManagerFilter, setApplicationsManagerFilter] = useState('')
+  const [applicationsHouseFilter, setApplicationsHouseFilter] = useState('')
   const airtableConfigWarned = useRef(false)
 
   const user = session
@@ -459,10 +460,11 @@ export default function AdminPortal() {
     return filteredAccounts.filter((a) => `${a.businessName || ''} ${a.name || ''} ${a.email || ''} ${a.managedHousesLabel || ''}`.toLowerCase().includes(q))
   }, [filteredAccounts, managersSearch])
   const searchedApplications = useMemo(() => {
-    const q = applicationsSearch.trim().toLowerCase()
-    if (!q) return filteredApplications
-    return filteredApplications.filter((a) => `${a.propertyName || ''} ${a.applicantName || ''}`.toLowerCase().includes(q))
-  }, [filteredApplications, applicationsSearch])
+    let result = filteredApplications
+    if (applicationsManagerFilter) result = result.filter((a) => a.ownerId === applicationsManagerFilter)
+    if (applicationsHouseFilter) result = result.filter((a) => a.propertyName === applicationsHouseFilter)
+    return result
+  }, [filteredApplications, applicationsManagerFilter, applicationsHouseFilter])
 
   const ownerLabel = (ownerId) => accounts.find((a) => a.id === ownerId)?.businessName || accounts.find((a) => a.id === ownerId)?.name || ownerId
 
@@ -957,10 +959,35 @@ export default function AdminPortal() {
           <div>
             <div className="mb-4 flex flex-wrap items-center gap-3">
               <h1 className="mr-auto text-2xl font-black">Applications</h1>
-              <div className="relative">
-                <svg className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
-                <input value={applicationsSearch} onChange={(e) => setApplicationsSearch(e.target.value)} placeholder="Search applications…" className="rounded-2xl border border-slate-200 bg-white py-2.5 pl-10 pr-4 text-sm transition focus:border-[#2563eb] focus:outline-none focus:ring-2 focus:ring-[#2563eb]/20" />
-              </div>
+              <select
+                value={applicationsManagerFilter}
+                onChange={(e) => { setApplicationsManagerFilter(e.target.value); setSelectedApplicationId(null) }}
+                className="rounded-2xl border border-slate-200 bg-white px-3 py-2.5 text-sm font-medium text-slate-700 outline-none transition focus:border-[#2563eb] focus:ring-2 focus:ring-[#2563eb]/20"
+                aria-label="Filter by manager"
+              >
+                <option value="">All managers</option>
+                {Array.from(new Set(applications.map((a) => a.ownerId).filter(Boolean))).map((id) => (
+                  <option key={id} value={id}>{ownerLabel(id)}</option>
+                ))}
+              </select>
+              <select
+                value={applicationsHouseFilter}
+                onChange={(e) => { setApplicationsHouseFilter(e.target.value); setSelectedApplicationId(null) }}
+                className="rounded-2xl border border-slate-200 bg-white px-3 py-2.5 text-sm font-medium text-slate-700 outline-none transition focus:border-[#2563eb] focus:ring-2 focus:ring-[#2563eb]/20"
+                aria-label="Filter by house"
+              >
+                <option value="">All houses</option>
+                {Array.from(new Set(applications.map((a) => a.propertyName).filter(Boolean))).sort().map((name) => (
+                  <option key={name} value={name}>{name}</option>
+                ))}
+              </select>
+              <button
+                type="button"
+                onClick={() => refreshPortalData()}
+                className="rounded-2xl border border-slate-200 bg-white px-3.5 py-2.5 text-sm font-semibold text-slate-600 hover:bg-slate-50"
+              >
+                Refresh
+              </button>
               <label className="flex flex-wrap items-center gap-2 text-sm text-slate-600">
                 <span className="font-semibold text-slate-800">Sort</span>
                 <select
