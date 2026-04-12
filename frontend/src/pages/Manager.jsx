@@ -4326,7 +4326,6 @@ function WorkOrdersTabPanel({ allowedPropertyNames }) {
             <PortalOpsEmptyState
               icon="🧰"
               title="Select a work order"
-              description="Choose a request from the table to update status, scheduling, and resident notes."
             />
           )
         )}
