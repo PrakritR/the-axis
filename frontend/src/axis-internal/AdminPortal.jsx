@@ -9,6 +9,7 @@ import {
   adminRejectProperty,
   adminRequestPropertyEdits,
   adminSetManagerActive,
+  adminDeleteProperty,
   isAdminPortalAirtableConfigured,
   loadAdminPortalDataset,
   loadResidentsForAdmin,
@@ -782,9 +783,32 @@ export default function AdminPortal() {
               />
               {approval && propertiesSection === 'approved' ? (
                 <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm space-y-4">
-                  <div className="flex justify-between gap-2">
+                  <div className="flex items-start justify-between gap-2">
                     <h2 className="text-lg font-black">{approval.name}</h2>
-                    <button type="button" className="text-sm text-slate-500" onClick={() => setSelectedApprovalId(null)}>Close</button>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        disabled={approvalBusy}
+                        onClick={async () => {
+                          if (!window.confirm(`Permanently delete "${approval.name}"? This cannot be undone.`)) return
+                          setApprovalBusy(true)
+                          try {
+                            await adminDeleteProperty(approval.id)
+                            toast.success('Property deleted')
+                            setSelectedApprovalId(null)
+                            await refreshPortalData()
+                          } catch (err) {
+                            toast.error(err.message || 'Delete failed')
+                          } finally {
+                            setApprovalBusy(false)
+                          }
+                        }}
+                        className="rounded-xl border border-red-200 bg-red-50 px-3 py-1.5 text-xs font-semibold text-red-700 hover:bg-red-100 disabled:opacity-50"
+                      >
+                        {approvalBusy ? 'Deleting…' : 'Delete property'}
+                      </button>
+                      <button type="button" className="text-sm text-slate-500" onClick={() => setSelectedApprovalId(null)}>Close</button>
+                    </div>
                   </div>
                   <p className="text-sm text-slate-600">{approval.description}</p>
                   <PropertyDetailPanel property={approval} ownerLabel={ownerLabel(approval.ownerId)} />

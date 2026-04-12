@@ -344,6 +344,23 @@ export async function adminRequestPropertyEdits(recordId) {
   })
 }
 
+export async function adminDeleteProperty(recordId) {
+  const enc = encodeURIComponent(TABLES.properties)
+  const res = await fetch(`${BASE_URL}/${enc}/${recordId}`, {
+    method: 'DELETE',
+    headers: {
+      Authorization: `Bearer ${API_KEY}`,
+      'Content-Type': 'application/json',
+    },
+  })
+  if (!res.ok) {
+    const body = await res.text().catch(() => '')
+    if (responseBodyIndicatesAirtablePermissionDenied(body)) throw new Error(airtablePermissionDeniedMessage)
+    throw new Error(`Airtable DELETE failed: ${res.status}`)
+  }
+  return await res.json()
+}
+
 export async function adminSetManagerActive(recordId, active) {
   const enc = encodeURIComponent(TABLES.managers)
   const data = await requestJson(`${BASE_URL}/${enc}/${recordId}`, {
