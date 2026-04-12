@@ -4313,14 +4313,7 @@ function WorkOrdersTabPanel({ allowedPropertyNames }) {
               </button>
             </form>
           </PortalOpsCard>
-        ) : (
-          !listLoading && (
-            <PortalOpsEmptyState
-              icon="🧰"
-              title="Select a work order"
-            />
-          )
-        )}
+        ) : null}
       </div>
     </div>
   )
@@ -4683,14 +4676,7 @@ function ManagerPaymentsPanel({ allowedPropertyNames }) {
               )}
             </div>
           </PortalOpsCard>
-        ) : (
-          !loading && (
-            <PortalOpsEmptyState
-              icon="💳"
-              title="Select a resident payment"
-            />
-          )
-        )}
+        ) : null}
       </div>
     </div>
   )
