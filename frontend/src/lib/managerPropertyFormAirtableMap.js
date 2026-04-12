@@ -20,7 +20,6 @@ export const PROPERTY_AIR = {
   roomCount:          'Room Count',
   propertyType:       'Property Type',      // Single select (was "Housing Type")
   bathroomCount:      'Bathroom Count',
-  bathroomAccess:     'Bathroom Access',    // Long text
   kitchenCount:       'Kitchen Count',
   amenities:          'Amenities',          // Multiple select → send as string[]
   managerProfile:     'Manager Profile',    // Linked record (was "Manager")
@@ -139,7 +138,7 @@ function toIsoDate(raw) {
  */
 export function serializeManagerAddPropertyToAirtableFields(params) {
   const {
-    basics,          // { name, address, propertyType, amenities[], pets, bathroomAccess }
+    basics,          // { name, address, propertyType, amenities[], amenitiesOther?, pets }
     roomCount,
     bathroomCount,
     kitchenCount,
@@ -177,17 +176,21 @@ export function serializeManagerAddPropertyToAirtableFields(params) {
   const pt = String(basics.propertyType || '').trim()
   if (pt) fields[PROPERTY_AIR.propertyType] = pt
 
-  // Amenities: Multiple select → send as string[]
+  // Amenities: Multiple select → send as string[] (preset checkboxes + comma/semicolon-separated "Other")
   const amenitiesArr = Array.isArray(basics.amenities)
     ? basics.amenities.filter(Boolean)
     : String(basics.amenities || '').split(',').map((s) => s.trim()).filter(Boolean)
+  const otherAmenityParts = String(basics.amenitiesOther || '')
+    .split(/[,;]/)
+    .map((s) => s.trim())
+    .filter(Boolean)
+  for (const p of otherAmenityParts) {
+    if (!amenitiesArr.includes(p)) amenitiesArr.push(p)
+  }
   if (amenitiesArr.length) fields[PROPERTY_AIR.amenities] = amenitiesArr
 
   const pets = String(basics.pets || '').trim()
   if (pets) fields[PROPERTY_AIR.pets] = pets
-
-  const ba = String(basics.bathroomAccess || '').trim()
-  if (ba) fields[PROPERTY_AIR.bathroomAccess] = ba
 
   // Approval state
   fields[PROPERTY_AIR.approved] = false

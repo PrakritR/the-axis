@@ -2242,8 +2242,8 @@ function HouseManagementPanel({ manager, onPropertiesChange }) {
     address: '',
     propertyType: '',
     amenities: [],
+    amenitiesOther: '',
     pets: '',
-    bathroomAccess: '',
   })
   const [addBasics, setAddBasics] = useState(emptyAddBasics)
   const [addRoomCount, setAddRoomCount] = useState(1)
@@ -2931,6 +2931,13 @@ function HouseManagementPanel({ manager, onPropertiesChange }) {
                               </label>
                             ))}
                           </div>
+                          <label className="mt-2.5 mb-1 block text-[11px] font-semibold text-slate-600">Other amenities</label>
+                          <input
+                            className={addInputCls}
+                            value={addBasics.amenitiesOther}
+                            onChange={(e) => setAddBasics((b) => ({ ...b, amenitiesOther: e.target.value }))}
+                            placeholder="Type extras, separated by commas (e.g. Hot tub, Guest parking)"
+                          />
                         </div>
                         <div>
                           <label className="mb-1.5 block text-xs font-semibold text-slate-700">Pets</label>
@@ -2942,16 +2949,6 @@ function HouseManagementPanel({ manager, onPropertiesChange }) {
                             <option value="">Select…</option>
                             {PET_OPTIONS.map((p) => <option key={p} value={p}>{p}</option>)}
                           </select>
-                        </div>
-                        <div>
-                          <label className="mb-1.5 block text-xs font-semibold text-slate-700">Bathroom access summary</label>
-                          <textarea
-                            className={`${addInputCls} min-h-[64px] resize-y`}
-                            value={addBasics.bathroomAccess}
-                            onChange={(e) => setAddBasics((b) => ({ ...b, bathroomAccess: e.target.value }))}
-                            placeholder="General overview of bathroom access — details per bathroom on the Bathrooms step."
-                            rows={2}
-                          />
                         </div>
                         <div>
                           <label className="mb-1.5 block text-xs font-semibold text-slate-700">Application fee ($)</label>
@@ -3269,18 +3266,6 @@ function HouseManagementPanel({ manager, onPropertiesChange }) {
                               ))}
                             </div>
                           )}
-                        </div>
-
-                        {/* Summary */}
-                        <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
-                          <div className="text-[11px] font-bold uppercase tracking-[0.14em] text-slate-400">Summary</div>
-                          <ul className="mt-2 space-y-1 text-xs text-slate-700">
-                            <li><span className="font-semibold">{addBasics.name.trim() || "Untitled"}</span> · {addBasics.address.trim() || "—"}</li>
-                            <li>{wizardRc} room(s) · {wizardBc} bathroom(s) · {wizardKc} kitchen(s) · {wizardSc} shared space(s)</li>
-                            {addLaundry.enabled && <li>Laundry on site{(addLaundry.rows || []).length ? " · " + (addLaundry.rows || []).length + " location(s)" : ""}</li>}
-                            {addParking.enabled && <li>Parking available{addParking.type ? " · " + addParking.type : ""}</li>}
-                            <li className="text-slate-500">Will appear as pending until approved by Axis.</li>
-                          </ul>
                         </div>
                       </div>
                     )}
