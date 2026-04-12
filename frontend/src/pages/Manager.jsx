@@ -4120,9 +4120,6 @@ function WorkOrdersTabPanel({ allowedPropertyNames }) {
     <div className="mb-10 space-y-5">
       <div>
         <h2 className="text-xl font-black text-slate-900">Work orders</h2>
-        <p className="mt-1 max-w-2xl text-sm text-slate-500">
-          Track open maintenance requests, update residents, and keep scheduling simple.
-        </p>
       </div>
 
       {listError ? (
@@ -5324,23 +5321,8 @@ function ManagerDashboard({ manager: managerProp, onOpenDraft, onSignOut, onMana
             <p className="mt-1 text-red-900/90">{leasesLoadError}</p>
           </div>
         ) : null}
-        <h2 className="mb-4 text-xl font-black text-slate-900">Lease workflow</h2>
-
-        <div className="mb-8">
-          <PortalOpsFilterCards
-            value={leaseFilterCardId}
-            onChange={setLeaseFilterCardId}
-            columnsClassName="grid gap-3 sm:grid-cols-2 lg:grid-cols-4"
-            aria-label="Filter lease queue by stage"
-            items={leaseFilterItems}
-          />
-        </div>
-
-        {/* Toolbar — search & property only (stage filters are the cards above) */}
         <div className="mb-5 flex flex-wrap items-center gap-3">
-          <div className="mr-auto text-sm font-semibold text-slate-500">
-            Queue
-          </div>
+          <h2 className="mr-auto text-xl font-black text-slate-900">Leases</h2>
 
           {/* Resident search */}
           <div className="relative">
@@ -5368,6 +5350,29 @@ function ManagerDashboard({ manager: managerProp, onOpenDraft, onSignOut, onMana
             ))}
           </select>
 
+          <button
+            onClick={loadDrafts}
+            className="rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-600 transition hover:bg-slate-50"
+          >
+            Refresh
+          </button>
+        </div>
+
+        <div className="mb-4 inline-flex flex-wrap gap-1 rounded-2xl border border-slate-200 bg-slate-50 p-1">
+          {leaseFilterItems.map(({ id, label, value }) => (
+            <button
+              key={id}
+              type="button"
+              onClick={() => { setLeaseFilterCardId(id) }}
+              className={classNames(
+                'rounded-xl px-4 py-2 text-sm font-semibold transition',
+                leaseFilterCardId === id ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-600 hover:text-slate-900',
+              )}
+            >
+              {label}
+              <span className="ml-1.5 tabular-nums text-slate-500">({value})</span>
+            </button>
+          ))}
         </div>
 
         {/* Drafts table */}

@@ -368,13 +368,6 @@ export default function AdminPortal() {
     () => applications.filter((a) => a.approvalPending).length,
     [applications],
   )
-  const filteredApplications = useMemo(() => {
-    if (applicationsFilter === 'pending') return sortedApplications.filter((a) => a.approvalPending)
-    if (applicationsFilter === 'approved') return sortedApplications.filter((a) => !a.approvalPending && a._airtable?.Approved === true)
-    if (applicationsFilter === 'rejected') return sortedApplications.filter((a) => !a.approvalPending && a._airtable?.Approved === false)
-    return sortedApplications
-  }, [sortedApplications, applicationsFilter])
-
   const sortedAccounts = useMemo(
     () => sortAccountsByMode(accounts, managerTableSort),
     [accounts, managerTableSort],
@@ -383,6 +376,12 @@ export default function AdminPortal() {
     () => sortApplicationsByMode(applications, applicationsTableSort),
     [applications, applicationsTableSort],
   )
+  const filteredApplications = useMemo(() => {
+    if (applicationsFilter === 'pending') return sortedApplications.filter((a) => a.approvalPending)
+    if (applicationsFilter === 'approved') return sortedApplications.filter((a) => !a.approvalPending && a._airtable?.Approved === true)
+    if (applicationsFilter === 'rejected') return sortedApplications.filter((a) => !a.approvalPending && a._airtable?.Approved === false)
+    return sortedApplications
+  }, [sortedApplications, applicationsFilter])
 
   const ownerLabel = (ownerId) => accounts.find((a) => a.id === ownerId)?.businessName || accounts.find((a) => a.id === ownerId)?.name || ownerId
 
