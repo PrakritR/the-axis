@@ -55,6 +55,15 @@ function AxisIcon() {
   )
 }
 
+function LoginIcon() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden>
+      <circle cx="12" cy="8" r="4" stroke="currentColor" strokeWidth="1.8" />
+      <path d="M4 20c0-4 3.6-7 8-7s8 3 8 7" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+    </svg>
+  )
+}
+
 function ChevronDown({ className }) {
   return (
     <svg className={className} width="12" height="12" viewBox="0 0 24 24" fill="none" aria-hidden>
@@ -193,6 +202,7 @@ export default function SiteHeader() {
     { label: 'Rent', to: '/', icon: <HomeIcon />, isActive: isHome, ariaLabel: 'Rent with Axis' },
     { label: 'Apply', to: '/apply', icon: <ApplyIcon />, isActive: isApply },
     { label: 'Partner', to: '/owners/about', icon: <AxisIcon />, isActive: partnerParentActive, ariaLabel: 'Partner with Axis' },
+    { label: 'Login', to: '/portal', icon: <LoginIcon />, isActive: isPortal, ariaLabel: 'Resident login' },
   ]
 
   useEffect(() => {
@@ -310,7 +320,9 @@ export default function SiteHeader() {
               </svg>
             )}
           </button>
-          <PortalNavLink onClick={scrollToTop} isActive={isPortal} />
+          <span className="hidden md:contents">
+            <PortalNavLink onClick={scrollToTop} isActive={isPortal} />
+          </span>
         </div>
       </div>
 
@@ -397,6 +409,19 @@ export default function SiteHeader() {
               >
                 Contact
               </Link>
+              <div className="my-1 h-px bg-slate-100" />
+              <Link
+                to="/portal"
+                onClick={() => {
+                  closeMobileMenu()
+                  scrollToTop()
+                }}
+                className={`rounded-xl px-3 py-2.5 text-sm font-semibold transition hover:bg-slate-50 ${
+                  isPortal ? 'text-[#2563eb]' : 'text-slate-600'
+                }`}
+              >
+                Resident login
+              </Link>
             </nav>
           </motion.div>
         )}
@@ -406,7 +431,7 @@ export default function SiteHeader() {
         <div className="pointer-events-none fixed inset-x-3 bottom-[calc(0.75rem+env(safe-area-inset-bottom))] z-40 md:hidden">
           <nav
             aria-label="Mobile primary navigation"
-            className="pointer-events-auto grid grid-cols-3 gap-0.5 rounded-[22px] border border-white/90 bg-white/86 p-1.5 shadow-[0_20px_50px_rgba(37,99,235,0.12),0_0_0_1px_rgba(255,255,255,0.6)] backdrop-blur-2xl backdrop-saturate-150 sm:gap-1 sm:p-2"
+            className="pointer-events-auto grid grid-cols-4 gap-0.5 rounded-[22px] border border-white/90 bg-white/86 p-1.5 shadow-[0_20px_50px_rgba(37,99,235,0.12),0_0_0_1px_rgba(255,255,255,0.6)] backdrop-blur-2xl backdrop-saturate-150 sm:gap-1 sm:p-2"
           >
             {mobileDockLinks.map((item) => (
               <Link

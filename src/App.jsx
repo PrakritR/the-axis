@@ -1,4 +1,4 @@
-import React, { Suspense, lazy, useEffect, useLayoutEffect, useMemo, Component } from 'react'
+import { Suspense, lazy, useEffect, useLayoutEffect, useMemo, Component } from 'react'
 import { Routes, Route, useLocation, Navigate } from 'react-router-dom'
 import { AnimatePresence, motion } from 'framer-motion'
 import { Toaster } from 'react-hot-toast'
@@ -137,7 +137,8 @@ function AppInner() {
   /** Promo + header: main site, plus manager & admin portals (not sign lease, axis-team, or /portal hub). */
   const showPromoBanner = !isPortalHub && (!isStandaloneRoute || isPortalWithSiteChrome)
   const showMainMobileDock =
-    !isOwnersRoute && ['/', '/apply', '/contact'].includes(location.pathname)
+    !isPortalHub &&
+    (isOwnersRoute || ['/', '/apply', '/contact'].includes(location.pathname))
 
   const isPropertyDetail = /^\/properties\/[^/]+/.test(location.pathname)
   const marketingChromeInset = useSiteChromeInset(!isStandaloneRoute)
