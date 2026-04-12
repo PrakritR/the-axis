@@ -64,7 +64,6 @@ export default function PortalShell({
         <header className="shrink-0 border-b border-slate-200 bg-white/95 backdrop-blur">
           <div className="flex items-center justify-between gap-3 px-4 py-3">
             <div className="min-w-0">
-              <div className="text-[10px] font-bold uppercase tracking-wider text-[#2f76ff]">{brandTitle}</div>
               <div className="text-sm font-black">{brandSubtitle}</div>
             </div>
             <div className="flex shrink-0 items-center gap-2">
@@ -122,8 +121,7 @@ export default function PortalShell({
       >
         {/* Brand */}
         <div className="shrink-0 border-b border-slate-100 px-4 py-4">
-          <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-[#2f76ff]">{brandTitle}</div>
-          <div className="mt-1 text-sm font-black text-slate-900">{brandSubtitle}</div>
+          <div className="text-sm font-black text-slate-900">{brandSubtitle}</div>
         </div>
 
         {/* Nav — scrolls independently */}
@@ -165,7 +163,6 @@ export default function PortalShell({
         <header className="shrink-0 border-b border-slate-200 bg-white/95 backdrop-blur lg:hidden">
           <div className="flex items-center justify-between gap-3 px-4 py-3">
             <div className="min-w-0">
-              <div className="text-[10px] font-bold uppercase tracking-wider text-[#2f76ff]">{brandTitle}</div>
               <div className="text-sm font-black">{brandSubtitle}</div>
             </div>
             <div className="flex shrink-0 items-center gap-2">
