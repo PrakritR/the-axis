@@ -146,7 +146,7 @@ function PortalHandoffCard({ accounts, residents, user }) {
   )
 
   return (
-    <div className="rounded-[24px] border border-sky-200/90 bg-[linear-gradient(135deg,#f0f9ff_0%,#ffffff_100%)] p-5 shadow-sm">
+    <div className="rounded-3xl border border-sky-200/90 bg-[linear-gradient(135deg,#f0f9ff_0%,#ffffff_100%)] p-5 shadow-sm">
       <h2 className="text-sm font-black text-slate-900">Open portals as a specific account</h2>
       <div className="mt-4 grid gap-4 sm:grid-cols-2">
         <div>
@@ -237,7 +237,7 @@ function AdminLoginView({ onAuthenticated }) {
 
   return (
     <div className="flex min-h-screen flex-col items-center justify-center bg-slate-900 px-6 py-12">
-      <div className="w-full max-w-md rounded-[28px] border border-slate-700 bg-slate-800 p-8 shadow-xl">
+      <div className="w-full max-w-md rounded-3xl border border-slate-700 bg-slate-800 p-8 shadow-xl">
         <div className="text-[11px] font-bold uppercase tracking-[0.2em] text-sky-400">Axis Admin</div>
         <h1 className="mt-2 text-2xl font-black text-white">Admin portal</h1>
 
@@ -559,7 +559,7 @@ export default function AdminPortal() {
             <button
               type="button"
               onClick={() => { setTab('properties'); setPropertiesSection('pending') }}
-              className="flex flex-col gap-1 rounded-[20px] border border-sky-200/90 bg-sky-50 p-5 text-left transition hover:border-sky-300 hover:bg-sky-100/80 hover:shadow-sm"
+              className="flex flex-col gap-1 rounded-3xl border border-sky-200/90 bg-sky-50 p-5 text-left transition hover:border-sky-300 hover:bg-sky-100/80 hover:shadow-sm"
             >
               <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-sky-800">Properties · Pending</span>
               <span className="text-3xl font-black tabular-nums text-slate-900">{pendingApprovals.length}</span>
@@ -569,7 +569,7 @@ export default function AdminPortal() {
             <button
               type="button"
               onClick={() => { setTab('properties'); setPropertiesSection('approved') }}
-              className="flex flex-col gap-1 rounded-[20px] border border-sky-200/90 bg-sky-50 p-5 text-left transition hover:border-sky-300 hover:bg-sky-100/80 hover:shadow-sm"
+              className="flex flex-col gap-1 rounded-3xl border border-sky-200/90 bg-sky-50 p-5 text-left transition hover:border-sky-300 hover:bg-sky-100/80 hover:shadow-sm"
             >
               <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-sky-800">Properties · Approved</span>
               <span className="text-3xl font-black tabular-nums text-slate-900">{approvedProperties.length}</span>
@@ -579,7 +579,7 @@ export default function AdminPortal() {
             <button
               type="button"
               onClick={() => { setTab('applications'); setApplicationsFilter('pending') }}
-              className="flex flex-col gap-1 rounded-[20px] border border-sky-200/90 bg-sky-50 p-5 text-left transition hover:border-sky-300 hover:bg-sky-100/80 hover:shadow-sm"
+              className="flex flex-col gap-1 rounded-3xl border border-sky-200/90 bg-sky-50 p-5 text-left transition hover:border-sky-300 hover:bg-sky-100/80 hover:shadow-sm"
             >
               <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-sky-800">Applications · Pending</span>
               <span className="text-3xl font-black tabular-nums text-slate-900">{pendingApps}</span>
@@ -589,7 +589,7 @@ export default function AdminPortal() {
             <button
               type="button"
               onClick={() => { setTab('applications'); setApplicationsFilter('approved') }}
-              className="flex flex-col gap-1 rounded-[20px] border border-sky-200/90 bg-sky-50 p-5 text-left transition hover:border-sky-300 hover:bg-sky-100/80 hover:shadow-sm"
+              className="flex flex-col gap-1 rounded-3xl border border-sky-200/90 bg-sky-50 p-5 text-left transition hover:border-sky-300 hover:bg-sky-100/80 hover:shadow-sm"
             >
               <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-sky-800">Applications · Approved</span>
               <span className="text-3xl font-black tabular-nums text-slate-900">{applications.filter((a) => a.approvalState === 'approved').length}</span>
@@ -599,7 +599,7 @@ export default function AdminPortal() {
             <button
               type="button"
               onClick={() => setTab('accounts')}
-              className="flex flex-col gap-1 rounded-[20px] border border-sky-200/90 bg-sky-50 p-5 text-left transition hover:border-sky-300 hover:bg-sky-100/80 hover:shadow-sm"
+              className="flex flex-col gap-1 rounded-3xl border border-sky-200/90 bg-sky-50 p-5 text-left transition hover:border-sky-300 hover:bg-sky-100/80 hover:shadow-sm"
             >
               <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-sky-800">Managers · Subscribed</span>
               <span className="text-3xl font-black tabular-nums text-slate-900">{accounts.filter((a) => a.enabled).length}</span>
@@ -609,7 +609,7 @@ export default function AdminPortal() {
             <button
               type="button"
               onClick={() => setTab('messages')}
-              className="flex flex-col gap-1 rounded-[20px] border border-sky-200/90 bg-sky-50 p-5 text-left transition hover:border-sky-300 hover:bg-sky-100/80 hover:shadow-sm"
+              className="flex flex-col gap-1 rounded-3xl border border-sky-200/90 bg-sky-50 p-5 text-left transition hover:border-sky-300 hover:bg-sky-100/80 hover:shadow-sm"
             >
               <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-sky-800">Residents</span>
               <span className="text-3xl font-black tabular-nums text-slate-900">{residents.length}</span>
@@ -619,7 +619,7 @@ export default function AdminPortal() {
             <button
               type="button"
               onClick={() => setTab('messages')}
-              className="col-span-full flex items-center justify-between rounded-[20px] border border-sky-300/90 bg-gradient-to-r from-sky-100 to-sky-50 px-6 py-5 text-left transition hover:border-sky-400 hover:from-sky-200/70 hover:to-sky-100/90 hover:shadow-sm"
+              className="col-span-full flex items-center justify-between rounded-3xl border border-sky-300/90 bg-gradient-to-r from-sky-100 to-sky-50 px-6 py-5 text-left transition hover:border-sky-400 hover:from-sky-200/70 hover:to-sky-100/90 hover:shadow-sm"
             >
               <div className="flex items-center gap-3">
                 <span className="text-[10px] font-bold uppercase tracking-[0.18em] text-sky-900">Inbox</span>
@@ -684,7 +684,7 @@ export default function AdminPortal() {
                 rows={searchedPendingApprovals.map((p) => ({ key: p.id, data: p }))}
               />
               {approval ? (
-                <div className="rounded-[24px] border border-slate-200 bg-white p-6 shadow-sm space-y-4">
+                <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm space-y-4">
                   <div className="flex justify-between gap-2">
                     <h2 className="text-lg font-black">{approval.name}</h2>
                     <button type="button" className="text-sm text-slate-500" onClick={() => setSelectedApprovalId(null)}>Close</button>
@@ -779,7 +779,7 @@ export default function AdminPortal() {
                 rows={searchedApprovedProperties.map((p) => ({ key: p.id, data: p }))}
               />
               {approval && propertiesSection === 'approved' ? (
-                <div className="rounded-[24px] border border-slate-200 bg-white p-6 shadow-sm space-y-4">
+                <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm space-y-4">
                   <div className="flex justify-between gap-2">
                     <h2 className="text-lg font-black">{approval.name}</h2>
                     <button type="button" className="text-sm text-slate-500" onClick={() => setSelectedApprovalId(null)}>Close</button>
@@ -807,7 +807,7 @@ export default function AdminPortal() {
                 rows={searchedRejectedProperties.map((p) => ({ key: p.id, data: p }))}
               />
               {approval && propertiesSection === 'rejected' ? (
-                <div className="rounded-[24px] border border-slate-200 bg-white p-6 shadow-sm space-y-4">
+                <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm space-y-4">
                   <div className="flex justify-between gap-2">
                     <h2 className="text-lg font-black">{approval.name}</h2>
                     <button type="button" className="text-sm text-slate-500" onClick={() => setSelectedApprovalId(null)}>Close</button>

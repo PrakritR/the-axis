@@ -71,7 +71,7 @@ export default function PortalShell({
               <button
                 type="button"
                 onClick={onSignOut}
-                className="rounded-lg border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-600"
+                className="rounded-xl border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-600"
               >
                 Sign out
               </button>
@@ -169,9 +169,9 @@ export default function PortalShell({
               <button
                 type="button"
                 onClick={onSignOut}
-                className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-600"
+                className="rounded-xl border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-600"
               >
-                Out
+                Sign out
               </button>
             </div>
           </div>
@@ -212,7 +212,7 @@ export function StatCard({ label, value, hint, onClick }) {
     <Comp
       type={onClick ? 'button' : undefined}
       onClick={onClick}
-      className={`rounded-[20px] border border-slate-200 bg-white p-5 text-left shadow-sm ${
+      className={`rounded-3xl border border-slate-200 bg-white p-5 text-left shadow-sm ${
         onClick ? 'cursor-pointer transition hover:border-[#2563eb]/30 hover:shadow' : ''
       }`}
     >
@@ -243,13 +243,13 @@ export function StatusPill({ children, tone = 'slate' }) {
 export function DataTable({ columns, rows, empty }) {
   if (!rows.length) {
     return (
-      <div className="rounded-[24px] border border-dashed border-slate-200 bg-slate-50/80 px-6 py-16 text-center text-sm text-slate-500">
+      <div className="rounded-3xl border border-dashed border-slate-200 bg-slate-50/80 px-6 py-16 text-center text-sm text-slate-500">
         {empty}
       </div>
     )
   }
   return (
-    <div className="overflow-x-auto rounded-[24px] border border-slate-200 bg-white shadow-sm">
+    <div className="overflow-x-auto rounded-3xl border border-slate-200 bg-white shadow-sm">
       <table className="w-full min-w-[640px] text-sm">
         <thead>
           <tr className="border-b border-slate-200 bg-slate-50">

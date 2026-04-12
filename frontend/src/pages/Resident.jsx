@@ -197,7 +197,7 @@ function residentApplicationUnlocked(resident) {
 
 function ResidentPendingApprovalGate() {
   return (
-    <div className="rounded-[28px] border border-amber-200 bg-amber-50/60 px-6 py-12 text-center shadow-soft">
+    <div className="rounded-3xl border border-amber-200 bg-amber-50/60 px-6 py-12 text-center shadow-soft">
       <p className="text-base font-semibold text-amber-950">Waiting for manager approval</p>
       <p className="mx-auto mt-2 max-w-lg text-sm text-amber-900/90">
         You&apos;re signed in. Your rental application is still being reviewed. When a manager approves it in Axis, this section will unlock. You can update your profile anytime from the sidebar.
@@ -298,7 +298,7 @@ function ResidentPaymentDetailPanel({ row, onClose, onPayNow, payLoadingKey }) {
   const busy = payLoadingKey === payKey && Boolean(payLoadingKey)
 
   return (
-    <div className="space-y-5 rounded-[24px] border border-slate-200 bg-white p-6 shadow-sm">
+    <div className="space-y-5 rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
           <h2 className="text-lg font-black text-slate-900">{row.title}</h2>
@@ -446,7 +446,7 @@ function dashboardPaymentStatusTone(status) {
 
 function SectionCard({ title, description, children, action }) {
   return (
-    <div className="rounded-[28px] border border-slate-200 bg-white shadow-soft">
+    <div className="rounded-3xl border border-slate-200 bg-white shadow-soft">
       <div className="flex flex-wrap items-start justify-between gap-4 border-b border-slate-200 px-5 py-4 sm:px-7">
         <div>
           <h2 className="text-2xl font-black text-slate-900">{title}</h2>
@@ -473,7 +473,7 @@ class PanelErrorBoundary extends Component {
   render() {
     if (this.state.hasError) {
       return (
-        <div className="rounded-[28px] border border-red-200 bg-red-50 px-6 py-10 text-center">
+        <div className="rounded-3xl border border-red-200 bg-red-50 px-6 py-10 text-center">
           <p className="text-sm font-semibold text-red-800">This section hit an error</p>
           <p className="mt-1 text-xs text-red-700">
             {this.state.error?.message || 'An unexpected error occurred. Try refreshing.'}
@@ -495,7 +495,7 @@ class PanelErrorBoundary extends Component {
 function SetupRequired() {
   return (
     <div className="flex min-h-screen items-center justify-center bg-[linear-gradient(180deg,#f8fafc_0%,#ffffff_100%)] px-4">
-      <div className="w-full max-w-xl rounded-[28px] border border-slate-200 bg-white p-8 text-center shadow-soft">
+      <div className="w-full max-w-xl rounded-3xl border border-slate-200 bg-white p-8 text-center shadow-soft">
         <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-amber-50">
           <svg className="h-6 w-6 text-amber-500" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z" />
@@ -759,7 +759,7 @@ function WorkOrderNotesComposer({ workOrder, residentEmail, onUpdated, embedded 
 
   const wrap = embedded
     ? 'flex min-h-0 flex-1 flex-col overflow-hidden border-t border-slate-200 bg-slate-50/80'
-    : 'mt-4 rounded-[24px] border border-slate-200 bg-slate-50 p-4'
+    : 'mt-4 rounded-3xl border border-slate-200 bg-slate-50 p-4'
   const scroll = embedded ? 'min-h-0 flex-1 space-y-3 overflow-y-auto px-4 py-4' : 'space-y-3'
   const formWrap = classNames('flex gap-2', embedded ? 'shrink-0 border-t border-slate-200 bg-white px-4 py-3' : 'mt-4')
   const updateText = String(workOrder.Update || workOrder['Latest Update'] || '').trim()
@@ -990,7 +990,7 @@ function WorkOrdersPanel({ resident, requests: requestsProp, onRequestCreated, o
             </div>
             <div className="sm:col-span-2">
               <label className="mb-2 block text-sm font-semibold text-slate-700">Photo (optional)</label>
-              <label className="flex min-h-[120px] cursor-pointer flex-col items-center justify-center rounded-[24px] border border-dashed border-slate-300 bg-slate-50 px-4 py-5 text-center transition hover:border-axis">
+              <label className="flex min-h-[120px] cursor-pointer flex-col items-center justify-center rounded-3xl border border-dashed border-slate-300 bg-slate-50 px-4 py-5 text-center transition hover:border-axis">
                 <span className="text-sm font-semibold text-slate-700">{photo ? photo.name : 'Upload photo'}</span>
                 <span className="mt-1 text-xs text-slate-400">JPG, PNG, or HEIC · max 10 MB</span>
                 <input type="file" accept="image/*" onChange={(e) => setPhoto(e.target.files?.[0] || null)} className="hidden" />
@@ -1028,7 +1028,7 @@ function WorkOrdersPanel({ resident, requests: requestsProp, onRequestCreated, o
           </div>
         ) : (
           <div className="mt-6 grid gap-6 xl:grid-cols-[360px_minmax(0,1fr)]">
-            <div className="overflow-hidden rounded-[24px] border border-slate-200 bg-white">
+            <div className="overflow-hidden rounded-3xl border border-slate-200 bg-white">
               <div className="border-b border-slate-100 px-5 py-4">
                 <h3 className="text-sm font-black text-slate-900">My Work Orders</h3>
               </div>
@@ -1081,7 +1081,7 @@ function WorkOrdersPanel({ resident, requests: requestsProp, onRequestCreated, o
                   ) : null}
                 </div>
 
-                <div className="mt-5 rounded-[24px] border border-slate-200 bg-slate-50 px-5 py-4">
+                <div className="mt-5 rounded-3xl border border-slate-200 bg-slate-50 px-5 py-4">
                   <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">Issue details</div>
                   <p className="mt-2 whitespace-pre-wrap text-sm leading-7 text-slate-700">
                     {stripWorkOrderPortalSubmitterLine(selectedRequest.Description) || 'No description added'}
@@ -1091,7 +1091,7 @@ function WorkOrdersPanel({ resident, requests: requestsProp, onRequestCreated, o
                 {selectedRequest['Resolution Summary'] || selectedRequest['Management Notes'] ? (
                   <div className="mt-5 grid gap-4 lg:grid-cols-2">
                     {selectedRequest['Resolution Summary'] ? (
-                      <div className="rounded-[24px] border border-emerald-200 bg-emerald-50 px-5 py-4">
+                      <div className="rounded-3xl border border-emerald-200 bg-emerald-50 px-5 py-4">
                         <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-emerald-700">Completion note</div>
                         <p className="mt-2 whitespace-pre-wrap text-sm leading-7 text-emerald-900">
                           {selectedRequest['Resolution Summary']}
@@ -1099,7 +1099,7 @@ function WorkOrdersPanel({ resident, requests: requestsProp, onRequestCreated, o
                       </div>
                     ) : null}
                     {selectedRequest['Management Notes'] && !selectedRequest['Resolution Summary'] ? (
-                      <div className="rounded-[24px] border border-slate-200 bg-white px-5 py-4">
+                      <div className="rounded-3xl border border-slate-200 bg-white px-5 py-4">
                         <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">Team notes</div>
                         <p className="mt-2 whitespace-pre-wrap text-sm leading-7 text-slate-700">
                           {selectedRequest['Management Notes']}
@@ -1109,7 +1109,7 @@ function WorkOrdersPanel({ resident, requests: requestsProp, onRequestCreated, o
                   </div>
                 ) : null}
 
-                <div className="mt-5 overflow-hidden rounded-[24px] border border-slate-200">
+                <div className="mt-5 overflow-hidden rounded-3xl border border-slate-200">
                   <div className="border-b border-slate-200 bg-white px-5 py-4">
                     <div className="text-sm font-black text-slate-900">Notes to the team</div>
                     <div className="mt-1 text-xs text-slate-400">Appends to the work order update log (no separate message thread)</div>
@@ -1179,7 +1179,7 @@ function ProfilePanel({ resident, onUpdated }) {
 
   return (
     <div className="mx-auto max-w-4xl space-y-6">
-      <section className="rounded-[28px] border border-slate-200 bg-white p-6">
+      <section className="rounded-3xl border border-slate-200 bg-white p-6">
         <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
           <h2 className="mt-2 text-2xl font-black text-slate-900">Profile</h2>
           {!isEditing ? (
@@ -1273,7 +1273,7 @@ function ProfilePanel({ resident, onUpdated }) {
         )}
       </section>
 
-      <section className="rounded-[28px] border border-slate-200 bg-white p-6">
+      <section className="rounded-3xl border border-slate-200 bg-white p-6">
         <h2 className="text-lg font-black text-slate-900">Your home & lease</h2>
         <div className="mt-6 grid gap-3 sm:grid-cols-2">
           <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4">
@@ -1780,7 +1780,7 @@ function PaymentsPanel({ resident, onResidentUpdated, highlightCategory, onPayme
             </div>
           ) : null}
 
-          <div className="rounded-[28px] border border-slate-200 bg-[linear-gradient(135deg,#ffffff_0%,#f8fbff_100%)] p-6 sm:p-7">
+          <div className="rounded-3xl border border-slate-200 bg-[linear-gradient(135deg,#ffffff_0%,#f8fbff_100%)] p-6 sm:p-7">
             <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
               <div>
                 <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">Rent due</div>
@@ -2024,7 +2024,7 @@ function LeasingPanel({ resident, payments, onOpenPayments }) {
         </button>
       </div>
 
-      <div className="space-y-5 rounded-[24px] border border-slate-200 bg-white p-6 shadow-sm">
+      <div className="space-y-5 rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
         <div className="flex flex-wrap items-start justify-between gap-3 border-b border-slate-100 pb-4">
           <div>
             <h3 className="text-lg font-black text-slate-900">Lease</h3>
@@ -2248,7 +2248,7 @@ function ResidentDashboardHome({
           type="button"
           onClick={() => { setPaymentFocus(hasOverdueRent ? 'overdue' : ''); onNavigate('payments') }}
           className={classNames(
-            'flex flex-col gap-1 rounded-[20px] border p-5 text-left transition hover:shadow-sm',
+            'flex flex-col gap-1 rounded-3xl border p-5 text-left transition hover:shadow-sm',
             hasOverdueRent
               ? 'border-red-100 bg-red-50 hover:border-red-200'
               : 'border-blue-100 bg-blue-50 hover:border-blue-200',
@@ -2263,7 +2263,7 @@ function ResidentDashboardHome({
         </button>
 
         {homeLabel ? (
-          <div className="rounded-[20px] border border-blue-100 bg-blue-50 p-5">
+          <div className="rounded-3xl border border-blue-100 bg-blue-50 p-5">
             <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-blue-600">Your home</p>
             <p className="mt-1 text-lg font-black text-slate-900">{homeLabel}</p>
           </div>
@@ -2272,14 +2272,14 @@ function ResidentDashboardHome({
         <button
           type="button"
           onClick={() => onNavigate('workorders')}
-          className="flex flex-col gap-1 rounded-[20px] border border-blue-100 bg-blue-50 p-5 text-left transition hover:border-blue-200 hover:shadow-sm"
+          className="flex flex-col gap-1 rounded-3xl border border-blue-100 bg-blue-50 p-5 text-left transition hover:border-blue-200 hover:shadow-sm"
         >
           <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-blue-600">Work Orders</span>
           <span className="text-3xl font-black tabular-nums text-blue-700">{workOrderCardValue}</span>
         </button>
 
         <div
-          className={`flex flex-col gap-2 rounded-[20px] border p-5 text-left transition hover:shadow-sm ${
+          className={`flex flex-col gap-2 rounded-3xl border p-5 text-left transition hover:shadow-sm ${
             leaseNeedsSigning
               ? 'border-amber-200 bg-amber-50 hover:border-amber-300'
               : leaseStatus === 'Signed'
@@ -2348,7 +2348,7 @@ function ResidentDashboardHome({
         <button
           type="button"
           onClick={() => onNavigate('inbox')}
-          className="col-span-full flex items-center justify-between rounded-[20px] border border-blue-100 bg-blue-50 px-6 py-5 text-left transition hover:border-blue-200 hover:shadow-sm"
+          className="col-span-full flex items-center justify-between rounded-3xl border border-blue-100 bg-blue-50 px-6 py-5 text-left transition hover:border-blue-200 hover:shadow-sm"
         >
           <div className="flex items-center gap-3">
             <span className="text-[10px] font-bold uppercase tracking-[0.18em] text-blue-600">Inbox</span>
@@ -2479,7 +2479,7 @@ function Dashboard({ resident, onResidentUpdated, onSignOut }) {
     >
       <div className="mx-auto w-full max-w-[1600px]">
         {loading ? (
-          <div className="rounded-[28px] border border-slate-200 bg-white px-6 py-16 text-center text-sm text-slate-400 shadow-soft">
+          <div className="rounded-3xl border border-slate-200 bg-white px-6 py-16 text-center text-sm text-slate-400 shadow-soft">
             Loading...
           </div>
         ) : null}

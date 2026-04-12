@@ -25,7 +25,7 @@ const TONE_CARD_BORDER = {
 
 export function PortalOpsCard({ title, description, action, children, className = '' }) {
   return (
-    <section className={classNames('rounded-[28px] border border-slate-200 bg-white shadow-soft', className)}>
+    <section className={classNames('rounded-3xl border border-slate-200 bg-white shadow-soft', className)}>
       {(title || description || action) ? (
         <div className="flex flex-wrap items-start justify-between gap-4 border-b border-slate-200 px-5 py-4 sm:px-7">
           <div>
@@ -67,8 +67,8 @@ export function PortalOpsMetric({ label, value, hint, tone = 'slate' }) {
             ? 'text-axis'
             : 'text-slate-400'
   return (
-    <div className={classNames('rounded-[24px] border bg-white p-5 shadow-sm', borderCls)}>
-      <div className={classNames('text-[11px] font-bold uppercase tracking-[0.18em]', labelTone)}>{label}</div>
+    <div className={classNames('rounded-3xl border bg-white p-5 shadow-sm', borderCls)}>
+      <div className={classNames('text-[11px] font-bold uppercase tracking-[0.14em]', labelTone)}>{label}</div>
       <div
         className={classNames(
           'mt-3 text-3xl font-black tracking-tight',
@@ -92,7 +92,7 @@ export function PortalOpsMetric({ label, value, hint, tone = 'slate' }) {
 
 export function PortalOpsEmptyState({ title, description, action = null, icon = null }) {
   return (
-    <div className="flex flex-col items-center gap-4 rounded-[24px] border border-dashed border-slate-200 bg-slate-50/70 px-6 py-12 text-center">
+    <div className="flex flex-col items-center gap-4 rounded-3xl border border-dashed border-slate-200 bg-slate-50/70 px-6 py-12 text-center">
       {icon ? (
         <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-white text-2xl shadow-sm">
           {icon}
@@ -162,7 +162,7 @@ export function PortalOpsFilterCards({
             aria-selected={active}
             onClick={() => onChange(item.id)}
             className={classNames(
-              'rounded-[24px] border text-left transition focus:outline-none focus-visible:ring-2 focus-visible:ring-[#2563eb]/35 focus-visible:ring-offset-2',
+              'rounded-3xl border text-left transition focus:outline-none focus-visible:ring-2 focus-visible:ring-[#2563eb]/35 focus-visible:ring-offset-2',
               isCompact ? 'px-3 py-3 sm:px-4 sm:py-3.5' : 'p-5',
               active
                 ? 'border-[#2563eb]/45 bg-[#2563eb]/[0.07] shadow-[0_0_0_2px_rgba(37,99,235,0.12)]'
@@ -171,7 +171,7 @@ export function PortalOpsFilterCards({
           >
             <div
               className={classNames(
-                'font-bold uppercase tracking-[0.18em]',
+                'font-bold uppercase tracking-[0.14em]',
                 isCompact ? 'text-[10px]' : 'text-[11px]',
                 labelTone,
               )}

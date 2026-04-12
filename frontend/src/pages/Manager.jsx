@@ -1212,7 +1212,7 @@ function AvailabilityCalendar({ view, anchorDate, selectedDateKey, onSelectDate,
         type="button"
         onClick={() => onSelectDate(dateKey)}
         className={classNames(
-          'min-h-[154px] rounded-[24px] border p-4 text-left transition',
+          'min-h-[154px] rounded-3xl border p-4 text-left transition',
           selected ? 'border-[#2563eb] bg-[#2563eb]/5 ring-2 ring-[#2563eb]/20' : 'border-slate-200 bg-slate-50/70 hover:bg-white',
           dateKey === todayKey ? 'ring-1 ring-slate-300' : '',
         )}
@@ -1252,8 +1252,8 @@ function AvailabilityCalendar({ view, anchorDate, selectedDateKey, onSelectDate,
     )
     const totalHours = TOUR_GRID_END_HOUR - TOUR_GRID_START_HOUR
     return (
-      <div className="rounded-[28px] border border-slate-200 bg-white p-5 shadow-sm">
-        <div className="rounded-[28px] border border-slate-200 bg-slate-50/70 p-4">
+      <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+        <div className="rounded-3xl border border-slate-200 bg-slate-50/70 p-4">
           <div className="grid grid-cols-[52px_minmax(0,1fr)] gap-2">
             <div className="relative" style={{ height: TIMELINE_HEIGHT_PX }}>
               {timelineHours.map((hour) => {
@@ -1265,7 +1265,7 @@ function AvailabilityCalendar({ view, anchorDate, selectedDateKey, onSelectDate,
                 )
               })}
             </div>
-            <div className="relative overflow-hidden rounded-[24px] border border-slate-200 bg-white" style={{ height: TIMELINE_HEIGHT_PX }}>
+            <div className="relative overflow-hidden rounded-3xl border border-slate-200 bg-white" style={{ height: TIMELINE_HEIGHT_PX }}>
               {Array.from({ length: totalHours + 1 }, (_, h) => (
                 <div
                   key={`line-${h}`}
@@ -1331,7 +1331,7 @@ function AvailabilityCalendar({ view, anchorDate, selectedDateKey, onSelectDate,
   for (let day = 1; day <= daysInMonth; day += 1) cells.push(day)
 
   return (
-    <div className="rounded-[28px] border border-slate-200 bg-white p-4 shadow-sm">
+    <div className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm">
       <div className="grid grid-cols-7 gap-2 px-1 pb-3 text-center text-[11px] font-bold uppercase tracking-[0.14em] text-slate-400">
         {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((day) => (
           <div key={day}>{day}</div>
@@ -1365,7 +1365,7 @@ function AvailabilityEditorPanel({
   const disabled = availSaving || isManagerInternalPreview(manager)
 
   return (
-    <div className="rounded-[28px] border border-slate-200 bg-white p-6 shadow-sm lg:sticky lg:top-6">
+    <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm lg:sticky lg:top-6">
       <h2 className="text-xl font-black text-slate-900">Availability editor</h2>
       {propertyOptions?.length ? (
         <label className="mt-4 block text-xs font-semibold text-slate-700">
@@ -2590,7 +2590,7 @@ function HouseManagementPanel({ manager, onPropertiesChange }) {
   }
 
   return (
-    <div className="rounded-[24px] border border-slate-200 bg-white p-6">
+    <div className="rounded-3xl border border-slate-200 bg-white p-6">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <h3 className="text-2xl font-black text-slate-900">Properties</h3>
@@ -3383,7 +3383,7 @@ function ManagerProfilePanel({ manager, onManagerUpdate }) {
   return (
     <div className="mx-auto max-w-4xl space-y-6">
       {/* Personal info */}
-      <section className="rounded-[28px] border border-slate-200 bg-white p-6">
+      <section className="rounded-3xl border border-slate-200 bg-white p-6">
         <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
           <h2 className="mt-2 text-2xl font-black text-slate-900">Profile</h2>
           {!editing ? (
@@ -3474,11 +3474,11 @@ function ManagerProfilePanel({ manager, onManagerUpdate }) {
 
       {/* Approved property cards on profile */}
       {propsLoading ? (
-        <section className="rounded-[28px] border border-slate-200 bg-white p-6">
+        <section className="rounded-3xl border border-slate-200 bg-white p-6">
           <div className="text-sm text-slate-500">Loading properties…</div>
         </section>
       ) : approvedForProfile.length > 0 ? (
-        <section className="rounded-[28px] border border-slate-200 bg-white p-6">
+        <section className="rounded-3xl border border-slate-200 bg-white p-6">
           <div className="grid gap-3 sm:grid-cols-2">
             {approvedForProfile.map((p) => (
               <div key={p.id} className="flex gap-4 rounded-2xl border border-slate-200 bg-slate-50 px-5 py-4">
@@ -3561,7 +3561,7 @@ function GenerateDraftModal({ manager, propertyOptions, onClose, onGenerated }) 
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
-      <div className="w-full max-w-2xl rounded-[28px] bg-white shadow-2xl">
+      <div className="w-full max-w-2xl rounded-3xl bg-white shadow-2xl">
         {/* Header */}
         <div className="flex items-start justify-between border-b border-slate-200 px-8 py-5">
           <div>
@@ -3855,7 +3855,7 @@ function ManagerDashboardHomePanel({
         <button
           type="button"
           onClick={() => onNavigate('leases')}
-          className="flex flex-col gap-1 rounded-[20px] border border-blue-100 bg-blue-50 p-5 text-left transition hover:border-blue-200 hover:shadow-sm"
+          className="flex flex-col gap-1 rounded-3xl border border-blue-100 bg-blue-50 p-5 text-left transition hover:border-blue-200 hover:shadow-sm"
         >
           <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-blue-600">Leases · Action needed</span>
           <span className="text-3xl font-black tabular-nums text-blue-700">{leasePending}</span>
@@ -3864,7 +3864,7 @@ function ManagerDashboardHomePanel({
         <button
           type="button"
           onClick={() => onNavigate('applications')}
-          className="flex flex-col gap-1 rounded-[20px] border border-blue-100 bg-blue-50 p-5 text-left transition hover:border-blue-200 hover:shadow-sm"
+          className="flex flex-col gap-1 rounded-3xl border border-blue-100 bg-blue-50 p-5 text-left transition hover:border-blue-200 hover:shadow-sm"
         >
           <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-blue-600">Applications · Pending</span>
           <span className="text-3xl font-black tabular-nums text-blue-700">{pendingApps}</span>
@@ -3873,7 +3873,7 @@ function ManagerDashboardHomePanel({
         <button
           type="button"
           onClick={() => onNavigate('properties')}
-          className="flex flex-col gap-1 rounded-[20px] border border-blue-100 bg-blue-50 p-5 text-left transition hover:border-blue-200 hover:shadow-sm"
+          className="flex flex-col gap-1 rounded-3xl border border-blue-100 bg-blue-50 p-5 text-left transition hover:border-blue-200 hover:shadow-sm"
         >
           <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-blue-600">Properties · Approved</span>
           <span className="text-3xl font-black tabular-nums text-blue-700">{approvedHouseCount}</span>
@@ -3882,7 +3882,7 @@ function ManagerDashboardHomePanel({
         <button
           type="button"
           onClick={() => onNavigate('payments')}
-          className="flex flex-col gap-1 rounded-[20px] border border-blue-100 bg-blue-50 p-5 text-left transition hover:border-blue-200 hover:shadow-sm"
+          className="flex flex-col gap-1 rounded-3xl border border-blue-100 bg-blue-50 p-5 text-left transition hover:border-blue-200 hover:shadow-sm"
         >
           <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-blue-600">Payments · Overdue</span>
           <span className="text-3xl font-black tabular-nums text-blue-700">{rentOverdue}</span>
@@ -3891,7 +3891,7 @@ function ManagerDashboardHomePanel({
         <button
           type="button"
           onClick={() => onNavigate('workorders')}
-          className="flex flex-col gap-1 rounded-[20px] border border-blue-100 bg-blue-50 p-5 text-left transition hover:border-blue-200 hover:shadow-sm"
+          className="flex flex-col gap-1 rounded-3xl border border-blue-100 bg-blue-50 p-5 text-left transition hover:border-blue-200 hover:shadow-sm"
         >
           <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-blue-600">Work Orders · Open</span>
           <span className="text-3xl font-black tabular-nums text-blue-700">{openWo}</span>
@@ -3900,7 +3900,7 @@ function ManagerDashboardHomePanel({
         <button
           type="button"
           onClick={() => onNavigate('calendar')}
-          className="flex flex-col gap-1 rounded-[20px] border border-blue-100 bg-blue-50 p-5 text-left transition hover:border-blue-200 hover:shadow-sm"
+          className="flex flex-col gap-1 rounded-3xl border border-blue-100 bg-blue-50 p-5 text-left transition hover:border-blue-200 hover:shadow-sm"
         >
           <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-blue-600">Calendar · Events</span>
           <span className="text-3xl font-black tabular-nums text-blue-700">{upcomingEvents}</span>
@@ -3910,7 +3910,7 @@ function ManagerDashboardHomePanel({
         <button
           type="button"
           onClick={() => onNavigate('inbox')}
-          className="col-span-full flex items-center justify-between rounded-[20px] border border-blue-100 bg-blue-50 px-6 py-5 text-left transition hover:border-blue-200 hover:shadow-sm"
+          className="col-span-full flex items-center justify-between rounded-3xl border border-blue-100 bg-blue-50 px-6 py-5 text-left transition hover:border-blue-200 hover:shadow-sm"
         >
           <div className="flex items-center gap-3">
             <span className="text-[10px] font-bold uppercase tracking-[0.18em] text-blue-600">Inbox</span>
@@ -4131,7 +4131,7 @@ function WorkOrdersTabPanel({ allowedPropertyNames }) {
       </div>
 
       <div className={classNames('grid gap-6', record ? 'xl:grid-cols-[minmax(0,1.15fr)_minmax(360px,0.85fr)]' : '')}>
-        <div className="overflow-hidden rounded-[24px] border border-slate-200 bg-white shadow-sm">
+        <div className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm">
           {listLoading ? (
             <div className="px-6 py-16 text-center text-sm text-slate-500">Loading work orders…</div>
           ) : filteredList.length === 0 ? (
@@ -4199,7 +4199,7 @@ function WorkOrdersTabPanel({ allowedPropertyNames }) {
               </PortalOpsStatusBadge>
             </div>
 
-            <div className="rounded-[24px] border border-slate-200 bg-slate-50 px-5 py-4">
+            <div className="rounded-3xl border border-slate-200 bg-slate-50 px-5 py-4">
               <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">Issue details</div>
               <p className="mt-2 whitespace-pre-wrap text-sm leading-7 text-slate-700">{safePortalText(record.Description, 'No description provided')}</p>
             </div>
@@ -4595,7 +4595,7 @@ function ManagerPaymentsPanel({ allowedPropertyNames }) {
       </div>
 
       <div className={classNames('grid gap-6', selectedId ? 'xl:grid-cols-[minmax(0,1.2fr)_minmax(360px,0.8fr)]' : '')}>
-        <div className="overflow-hidden rounded-[24px] border border-slate-200 bg-white">
+        <div className="overflow-hidden rounded-3xl border border-slate-200 bg-white">
           {loading ? (
             <div className="px-6 py-16 text-center text-sm text-slate-500">Loading payments…</div>
           ) : rentRows.length === 0 ? (
@@ -4681,7 +4681,7 @@ function ManagerPaymentsPanel({ allowedPropertyNames }) {
                 {residentDetailRows.filter((row) => getPaymentKind(row) === 'rent').slice(0, 6).map((row) => {
                   const computed = paymentComputedStatus(row)
                   return (
-                    <div key={row.id} className="flex flex-wrap items-center justify-between gap-3 rounded-[24px] border border-slate-200 px-4 py-4">
+                    <div key={row.id} className="flex flex-wrap items-center justify-between gap-3 rounded-3xl border border-slate-200 px-4 py-4">
                       <div>
                         <div className="text-sm font-bold text-slate-900">{row.Month || 'Rent payment'}</div>
                         <div className="mt-1 text-sm text-slate-500">Due {fmtDate(row['Due Date'])}</div>
@@ -4705,7 +4705,7 @@ function ManagerPaymentsPanel({ allowedPropertyNames }) {
               ) : (
                 <div className="mt-3 space-y-3">
                   {extraChargeRows.map((row) => (
-                    <div key={row.id} className="flex flex-wrap items-center justify-between gap-3 rounded-[24px] border border-slate-200 px-4 py-4">
+                    <div key={row.id} className="flex flex-wrap items-center justify-between gap-3 rounded-3xl border border-slate-200 px-4 py-4">
                       <div>
                         <div className="text-sm font-bold text-slate-900">{row.Month || row.Type || 'Extra charge'}</div>
                         <div className="mt-1 text-sm text-slate-500">{row.Notes || 'Additional charge'}</div>
@@ -4722,7 +4722,7 @@ function ManagerPaymentsPanel({ allowedPropertyNames }) {
               )}
             </div>
 
-            <form onSubmit={submitFine} className="mt-6 rounded-[24px] border border-dashed border-slate-200 bg-slate-50/80 p-4">
+            <form onSubmit={submitFine} className="mt-6 rounded-3xl border border-dashed border-slate-200 bg-slate-50/80 p-4">
               <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">Add fine / extra charge</div>
               <p className="mt-2 text-xs text-slate-500">
                 Creates an unpaid fee line linked to this resident. Residents see it on Payments → Fees and extras.
@@ -5026,7 +5026,7 @@ function ApplicationsPanel({ allowedPropertyNames, manager }) {
         </div>
       ) : null}
 
-      <div className="overflow-hidden rounded-[24px] border border-slate-200 bg-white">
+      <div className="overflow-hidden rounded-3xl border border-slate-200 bg-white">
         {loading ? (
           <div className="px-6 py-16 text-center text-sm text-slate-500">Loading applications…</div>
         ) : loadError ? (
@@ -5762,7 +5762,7 @@ function ManagerDashboard({ manager: managerProp, onOpenDraft, onSignOut, onMana
         </div>
 
         {/* Drafts table */}
-        <div className="overflow-hidden rounded-[24px] border border-slate-200 bg-white">
+        <div className="overflow-hidden rounded-3xl border border-slate-200 bg-white">
           {loading ? (
             <div className="px-6 py-16 text-center text-sm text-slate-500">Loading lease queue…</div>
           ) : drafts.length === 0 ? (
@@ -6238,7 +6238,7 @@ function LeaseEditor({ draftId, manager, onBack }) {
 
           {/* ── Editor tab ── */}
           {activeTab === 'editor' && (
-            <div className="overflow-hidden rounded-[24px] border border-slate-200 bg-white">
+            <div className="overflow-hidden rounded-3xl border border-slate-200 bg-white">
               {canEdit ? (
                 <>
                   <div className="flex items-center justify-between border-b border-slate-100 bg-slate-50 px-5 py-2.5">
@@ -6276,7 +6276,7 @@ function LeaseEditor({ draftId, manager, onBack }) {
 
           {/* ── Original AI Draft tab (read-only reference) ── */}
           {activeTab === 'original' && (
-            <div className="overflow-hidden rounded-[24px] border border-amber-200 bg-white">
+            <div className="overflow-hidden rounded-3xl border border-amber-200 bg-white">
               <div className="border-b border-amber-200 bg-amber-50 px-5 py-2.5">
                 <span className="text-xs font-semibold text-amber-700">
                   Read-only · original AI-generated draft · not shown to residents
@@ -6292,7 +6292,7 @@ function LeaseEditor({ draftId, manager, onBack }) {
 
           {/* ── Audit Log tab ── */}
           {activeTab === 'audit' && (
-            <div className="overflow-hidden rounded-[24px] border border-slate-200 bg-white">
+            <div className="overflow-hidden rounded-3xl border border-slate-200 bg-white">
               <div className="border-b border-slate-200 px-6 py-4">
                 <h3 className="font-black text-slate-900">Audit Trail</h3>
                 <p className="mt-0.5 text-sm text-slate-500">
@@ -6331,7 +6331,7 @@ function LeaseEditor({ draftId, manager, onBack }) {
         {/* Sidebar */}
         <div className="hidden w-72 shrink-0 space-y-4 lg:block">
           {/* Lease details card */}
-          <div className="rounded-[24px] border border-slate-200 bg-white p-5">
+          <div className="rounded-3xl border border-slate-200 bg-white p-5">
             <div className="mb-4 text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">Lease Details</div>
             <div className="space-y-3">
               <DetailRow label="Resident" value={draft?.['Resident Name']} />
@@ -6361,7 +6361,7 @@ function LeaseEditor({ draftId, manager, onBack }) {
 
           {/* Approval info — shown once approved */}
           {(draft?.['Approved By'] || draft?.['Approved At'] || draft?.['Published At']) && (
-            <div className="rounded-[24px] border border-green-200 bg-green-50 p-5">
+            <div className="rounded-3xl border border-green-200 bg-green-50 p-5">
               <div className="mb-3 text-[11px] font-bold uppercase tracking-[0.18em] text-green-600">Approval Record</div>
               <div className="space-y-2">
                 {draft?.['Approved By']  && <DetailRow label="Approved by" value={draft['Approved By']} />}
@@ -6372,7 +6372,7 @@ function LeaseEditor({ draftId, manager, onBack }) {
           )}
 
           {/* Internal notes */}
-          <div className="rounded-[24px] border border-slate-200 bg-white p-5">
+          <div className="rounded-3xl border border-slate-200 bg-white p-5">
             <div className="mb-1 text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">Internal Notes</div>
             <p className="mb-3 text-xs text-slate-500">Visible to managers only — not shown to residents</p>
             <textarea
@@ -6396,7 +6396,7 @@ function LeaseEditor({ draftId, manager, onBack }) {
 
           {/* Context-aware hints */}
           {canApprove && (
-            <div className="rounded-[24px] border border-slate-200 bg-slate-50 p-5">
+            <div className="rounded-3xl border border-slate-200 bg-slate-50 p-5">
               <div className="text-sm font-semibold text-slate-700">Ready to send?</div>
               <p className="mt-1.5 text-sm text-slate-500">
                 Save your edits, then click <strong>Send to resident</strong>. That makes the lease visible in the resident portal and emails the signing link when SignForge is configured.
@@ -6404,7 +6404,7 @@ function LeaseEditor({ draftId, manager, onBack }) {
             </div>
           )}
           {canPublish && (
-            <div className="rounded-[24px] border border-axis/20 bg-axis/5 p-5">
+            <div className="rounded-3xl border border-axis/20 bg-axis/5 p-5">
               <div className="text-sm font-semibold text-axis">Legacy lease waiting to send</div>
               <p className="mt-1.5 text-sm text-axis/80">
                 This lease is in an older intermediate state. Use <strong>Send to resident</strong>, then resend the signing link if needed.
@@ -6412,7 +6412,7 @@ function LeaseEditor({ draftId, manager, onBack }) {
             </div>
           )}
           {status === 'Published' && (
-            <div className="rounded-[24px] border border-violet-200 bg-violet-50/80 p-5">
+            <div className="rounded-3xl border border-violet-200 bg-violet-50/80 p-5">
               <div className="text-sm font-semibold text-violet-900">E-sign (SignForge)</div>
               <p className="mt-1.5 text-sm text-violet-800/90">
                 New leases are emailed for signature when you send them to the resident. If sending failed or this lease predates that flow, use <strong>Resend signing link</strong> in the header (
@@ -6424,7 +6424,7 @@ function LeaseEditor({ draftId, manager, onBack }) {
             </div>
           )}
           {['Published', 'Signed'].includes(status) && (
-            <div className="rounded-[24px] border border-slate-200 bg-slate-50 p-5">
+            <div className="rounded-3xl border border-slate-200 bg-slate-50 p-5">
               <div className="text-sm font-semibold text-slate-700">Read-only</div>
               <p className="mt-1.5 text-sm text-slate-500">
                 This lease has been {status?.toLowerCase()} and can no longer be edited.
