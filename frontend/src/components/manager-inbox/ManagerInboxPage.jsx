@@ -1444,16 +1444,7 @@ export default function ManagerInboxPage({
 
           {!composeOpen && !selectedThreadId ? (
             <div className="flex flex-1 flex-col items-center justify-center gap-3 px-6 text-center">
-              <button
-                type="button"
-                onClick={() => {
-                  setComposeOpen(true)
-                  setThread([])
-                }}
-                className="rounded-full bg-[#2563eb] px-5 py-2 text-sm font-semibold text-white shadow-sm hover:bg-[#1d4ed8]"
-              >
-                New message
-              </button>
+              <p className="max-w-xs text-sm text-slate-500">Select a conversation from the list to view messages.</p>
             </div>
           ) : null}
 
