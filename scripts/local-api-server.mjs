@@ -6,7 +6,7 @@ import http from 'http'
 import { readFileSync, existsSync } from 'fs'
 import path from 'path'
 import { URL, fileURLToPath } from 'url'
-import apiHandler from '../api/[route].js'
+import apiHandler from '../backend/api/[route].js'
 
 function loadEnvFile() {
   const envPath = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', '.env')

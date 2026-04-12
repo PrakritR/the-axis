@@ -4,12 +4,16 @@
   "buildCommand": "npm run build",
   "outputDirectory": "dist",
   "functions": {
-    "api/[route].js": {
+    "backend/api/[route].js": {
       "maxDuration": 60,
       "memory": 1024
     }
   },
   "rewrites": [
+    {
+      "source": "/api/:path*",
+      "destination": "/backend/api/:path*"
+    },
     {
       "source": "/((?!api/).*)",
       "destination": "/index.html"

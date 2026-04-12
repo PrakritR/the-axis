@@ -15,10 +15,14 @@ const pollFlag = envPoll(process.env.VITE_USE_POLLING ?? '')
 const useWatchPolling = pollFlag ?? true
 
 export default defineConfig({
+  root: './frontend',
   base: '/',
   plugins: [react()],
   optimizeDeps: {
     exclude: ['leaflet', 'react-leaflet'],
+  },
+  build: {
+    outDir: '../dist',
   },
   server: {
     port: 5174,
