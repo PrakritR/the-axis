@@ -121,6 +121,7 @@ async function request(url, options = {}) {
 
   if (!response.ok) {
     const body = await response.text()
+    console.error('[Airtable]', response.status, String(url).split('?')[0], body.slice(0, 500))
     if (responseBodyIndicatesAirtablePermissionDenied(body)) {
       throw new Error(airtablePermissionDeniedMessage(url))
     }
@@ -961,7 +962,7 @@ export async function getAllWorkOrders() {
   const allRecords = []
   let offset = null
   do {
-    const params = { sort: [{ field: 'Date Submitted', direction: 'desc' }] }
+    const params = {}
     if (offset) params.offset = offset
     const data = await request(buildUrl(TABLES.workOrders, params))
     ;(data.records || []).forEach((r) => allRecords.push(mapRecord(r)))

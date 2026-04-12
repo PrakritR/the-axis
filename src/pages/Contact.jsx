@@ -13,6 +13,7 @@ import {
 } from '../components/HousingMessageForm'
 
 // Parses "Mon: 9:00 AM, 10:30 AM; Tue: 3:00 PM" → { Mon: ['9:00 AM', '10:30 AM'], Tue: ['3:00 PM'] }
+// Also supports manager-portal minute ranges: "Mon: 540-720" → display labels for booking UI.
 function parseTourCalendar(raw) {
   const result = {}
   String(raw || '')
@@ -26,6 +27,21 @@ function parseTourCalendar(raw) {
       result[day] = m[2].split(',').map((s) => s.trim()).filter(Boolean)
     })
   return result
+}
+
+function formatTourSlotDisplayLabel(token) {
+  const t = String(token || '').trim()
+  const pair = t.match(/^(\d+)-(\d+)$/)
+  if (pair) {
+    const start = Number(pair[1])
+    const end = Number(pair[2])
+    if (Number.isFinite(start) && Number.isFinite(end) && end > start) {
+      const a = new Date(2000, 0, 1, Math.floor(start / 60), start % 60)
+      const b = new Date(2000, 0, 1, Math.floor(end / 60), end % 60)
+      return `${a.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })} – ${b.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })}`
+    }
+  }
+  return t
 }
 
 function formatYMD(d) {
@@ -45,7 +61,8 @@ function getUpcomingDates(daySlotMap, daysAhead = 28) {
     const d = new Date(today)
     d.setDate(today.getDate() + i)
     const dayName = DAY_ABBR[d.getDay()]
-    const slots = daySlotMap[dayName] || []
+    const rawSlots = daySlotMap[dayName] || []
+    const slots = rawSlots.map(formatTourSlotDisplayLabel)
     if (slots.length) {
       dates.push({
         date: formatYMD(d),

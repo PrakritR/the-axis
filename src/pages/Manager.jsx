@@ -690,15 +690,20 @@ function weekdayAbbrFromDateKey(key) {
 }
 
 function inputValueFromMinutes(minutes) {
-  const h = Math.floor(minutes / 60)
-  const m = minutes % 60
+  const cap = Math.min(Math.max(0, minutes), 24 * 60)
+  const safe = Math.min(cap, 23 * 60 + 59)
+  const h = Math.floor(safe / 60)
+  const m = safe % 60
   return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`
 }
 
-function minutesFromInputValue(value) {
+function minutesFromInputValue(value, opts = {}) {
   const m = String(value || '').match(/^(\d{2}):(\d{2})$/)
   if (!m) return null
-  return Number(m[1]) * 60 + Number(m[2])
+  const hh = Number(m[1])
+  const mm = Number(m[2])
+  if (opts.treat2359AsEndOfDay && hh === 23 && mm === 59) return 24 * 60
+  return hh * 60 + mm
 }
 
 function displayTimeFromMinutes(minutes) {
@@ -777,9 +782,198 @@ function weeklyFreeWithDayRanges(weeklyArrays, dayAbbr, ranges) {
 function addDefaultTimeRange(ranges) {
   const normalized = normalizeTimeRanges(ranges)
   const last = normalized[normalized.length - 1]
-  const start = last ? Math.min(last.end + TOUR_GRID_STEP_MIN, 18 * 60) : 10 * 60
+  const start = last ? Math.min(last.end + TOUR_GRID_STEP_MIN, 22 * 60) : 10 * 60
   const end = Math.min(start + 120, TOUR_GRID_END_MIN)
   return [...normalized, { start, end }]
+}
+
+function snapMinutesToGrid(minutes) {
+  const s = Math.round(minutes / TOUR_GRID_STEP_MIN) * TOUR_GRID_STEP_MIN
+  return Math.max(TOUR_GRID_START_MIN, Math.min(TOUR_GRID_END_MIN, s))
+}
+
+/** Click-drag on a vertical day column to add availability (green blocks). */
+function DayAvailabilityTimeline({ ranges, onRangesChange, disabled }) {
+  const trackRef = useRef(null)
+  const rangesRef = useRef(ranges)
+  const [draft, setDraft] = useState(null)
+  const [selectedIdx, setSelectedIdx] = useState(null)
+
+  useEffect(() => {
+    rangesRef.current = ranges
+  }, [ranges])
+
+  useEffect(() => {
+    if (selectedIdx != null && selectedIdx >= ranges.length) setSelectedIdx(null)
+  }, [ranges, selectedIdx])
+
+  function minutesFromEvent(clientY) {
+    const el = trackRef.current
+    if (!el) return TOUR_GRID_START_MIN
+    const rect = el.getBoundingClientRect()
+    const t = (clientY - rect.top) / Math.max(rect.height, 1)
+    const raw = TOUR_GRID_START_MIN + t * (TOUR_GRID_END_MIN - TOUR_GRID_START_MIN)
+    return snapMinutesToGrid(raw)
+  }
+
+  function onTrackMouseDown(e) {
+    if (disabled || e.button !== 0) return
+    if (e.target.closest('[data-availability-block]')) return
+    setSelectedIdx(null)
+    const start = minutesFromEvent(e.clientY)
+    setDraft({ start, cur: start })
+
+    function onMove(ev) {
+      setDraft({ start, cur: minutesFromEvent(ev.clientY) })
+    }
+    function onUp(ev) {
+      const endMin = minutesFromEvent(ev.clientY)
+      const lo = Math.min(start, endMin)
+      const hi = Math.max(start, endMin)
+      if (hi - lo >= TOUR_GRID_STEP_MIN) {
+        onRangesChange(normalizeTimeRanges([...rangesRef.current, { start: lo, end: hi }]))
+      }
+      setDraft(null)
+      window.removeEventListener('mousemove', onMove)
+      window.removeEventListener('mouseup', onUp)
+    }
+    window.addEventListener('mousemove', onMove)
+    window.addEventListener('mouseup', onUp)
+  }
+
+  const previewRange =
+    draft && Math.abs(draft.cur - draft.start) >= TOUR_GRID_STEP_MIN
+      ? { start: Math.min(draft.start, draft.cur), end: Math.max(draft.start, draft.cur) }
+      : null
+
+  return (
+    <div>
+      <p className="mb-3 text-xs text-slate-500">
+        Drag on the timeline to add a free block. Click a block to edit times or remove it.
+      </p>
+      <div className="grid grid-cols-[52px_minmax(0,1fr)] gap-2">
+        <div className="relative" style={{ height: TIMELINE_HEIGHT_PX }}>
+          {Array.from({ length: 25 }, (_, i) => {
+            const hour = i
+            if (hour > 23) return null
+            const top = (hour / 24) * TIMELINE_HEIGHT_PX
+            return (
+              <div
+                key={hour}
+                className="absolute right-1 -translate-y-1/2 text-[10px] font-semibold tabular-nums text-slate-400"
+                style={{ top }}
+              >
+                {displayTimeFromMinutes(hour * 60)}
+              </div>
+            )
+          })}
+        </div>
+        <div
+          ref={trackRef}
+          role="application"
+          aria-label="Availability timeline, drag to add time ranges"
+          onMouseDown={onTrackMouseDown}
+          className={classNames(
+            'relative rounded-2xl border border-slate-200 bg-white',
+            disabled ? 'cursor-not-allowed opacity-50' : 'cursor-crosshair',
+          )}
+          style={{ height: TIMELINE_HEIGHT_PX }}
+        >
+          {Array.from({ length: 24 }, (_, h) => (
+            <div
+              key={h}
+              className="pointer-events-none absolute left-0 right-0 border-t border-slate-100"
+              style={{ top: `${(h / 24) * 100}%` }}
+            />
+          ))}
+          {ranges.map((range, idx) => (
+            <button
+              key={`${range.start}-${range.end}-${idx}`}
+              type="button"
+              data-availability-block
+              onClick={(e) => {
+                e.stopPropagation()
+                setSelectedIdx(selectedIdx === idx ? null : idx)
+              }}
+              className={classNames(
+                'absolute left-2 right-2 rounded-xl border px-2 py-1.5 text-left text-xs font-semibold shadow-sm transition',
+                selectedIdx === idx
+                  ? 'z-20 border-emerald-600 bg-emerald-200/95 text-emerald-950 ring-2 ring-emerald-500/40'
+                  : 'z-10 border-emerald-300 bg-emerald-100/95 text-emerald-900 hover:bg-emerald-200/80',
+              )}
+              style={timelineBlockStyle(range.start, range.end)}
+            >
+              {formatTimeRangeLabel(range)}
+            </button>
+          ))}
+          {previewRange ? (
+            <div
+              className="pointer-events-none absolute left-2 right-2 z-[5] rounded-xl border border-dashed border-emerald-500/60 bg-emerald-200/40"
+              style={timelineBlockStyle(previewRange.start, previewRange.end)}
+            />
+          ) : null}
+        </div>
+      </div>
+
+      {selectedIdx != null && ranges[selectedIdx] ? (
+        <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 p-4">
+          <div className="text-xs font-bold uppercase tracking-[0.14em] text-slate-500">Edit block</div>
+          <div className="mt-3 grid gap-3 sm:grid-cols-[1fr_auto_1fr] sm:items-end">
+            <div>
+              <label className="mb-1 block text-[11px] font-semibold text-slate-600">Start</label>
+              <input
+                type="time"
+                step={1800}
+                value={inputValueFromMinutes(ranges[selectedIdx].start)}
+                disabled={disabled}
+                onChange={(e) => {
+                  const m = minutesFromInputValue(e.target.value)
+                  if (m == null) return
+                  const next = [...ranges]
+                  const cur = next[selectedIdx]
+                  const end = Math.max(cur.end, m + TOUR_GRID_STEP_MIN)
+                  next[selectedIdx] = { start: m, end: end }
+                  onRangesChange(normalizeTimeRanges(next))
+                }}
+                className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm"
+              />
+            </div>
+            <span className="hidden text-center text-sm font-semibold text-slate-400 sm:block">to</span>
+            <div>
+              <label className="mb-1 block text-[11px] font-semibold text-slate-600">End</label>
+              <input
+                type="time"
+                step={1800}
+                value={inputValueFromMinutes(ranges[selectedIdx].end)}
+                disabled={disabled}
+                onChange={(e) => {
+                  const m = minutesFromInputValue(e.target.value, { treat2359AsEndOfDay: true })
+                  if (m == null) return
+                  const next = [...ranges]
+                  const cur = next[selectedIdx]
+                  if (m <= cur.start) return
+                  next[selectedIdx] = { start: cur.start, end: m }
+                  onRangesChange(normalizeTimeRanges(next))
+                }}
+                className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm"
+              />
+            </div>
+          </div>
+          <button
+            type="button"
+            disabled={disabled}
+            onClick={() => {
+              onRangesChange(ranges.filter((_, i) => i !== selectedIdx))
+              setSelectedIdx(null)
+            }}
+            className="mt-3 rounded-xl border border-red-200 bg-red-50 px-4 py-2 text-sm font-semibold text-red-700 hover:bg-red-100 disabled:opacity-40"
+          >
+            Remove block
+          </button>
+        </div>
+      ) : null}
+    </div>
+  )
 }
 
 function bookingBadgeTone(row) {
@@ -952,7 +1146,7 @@ function AvailabilityCalendar({ view, anchorDate, selectedDateKey, onSelectDate,
             <div className="mt-1 text-lg font-black text-slate-900">{dateLabel}</div>
           </div>
           <span className="rounded-full bg-white px-2 py-1 text-[10px] font-bold text-slate-500 ring-1 ring-slate-200">
-            {ranges.length ? `${ranges.length} range${ranges.length === 1 ? '' : 's'}` : 'Off'}
+            {ranges.length ? `${ranges.length} block${ranges.length === 1 ? '' : 's'}` : 'No hours'}
           </span>
         </div>
         <div className="mt-3 space-y-1">
@@ -979,7 +1173,7 @@ function AvailabilityCalendar({ view, anchorDate, selectedDateKey, onSelectDate,
     const dateKey = dateKeyFromDate(anchorDate)
     const ranges = dayRanges(dateKey)
     const dayBookings = bookings(dateKey)
-    const hourMarkers = Array.from({ length: TOUR_GRID_END_HOUR - TOUR_GRID_START_HOUR + 1 }, (_, idx) => TOUR_GRID_START_HOUR + idx)
+    const hourMarkers = Array.from({ length: 25 }, (_, idx) => idx)
     return (
       <div className="rounded-[28px] border border-slate-200 bg-white p-5 shadow-sm">
         <div className="text-[11px] font-bold uppercase tracking-[0.16em] text-slate-400">
@@ -992,7 +1186,7 @@ function AvailabilityCalendar({ view, anchorDate, selectedDateKey, onSelectDate,
           <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
             <div>
               <div className="text-sm font-bold text-slate-900">Day preview</div>
-              <div className="mt-1 text-xs text-slate-500">Full schedule from 8:00 AM to 12:00 AM, with availability and booked items in one view.</div>
+              <div className="mt-1 text-xs text-slate-500">24-hour view: green blocks are your weekly availability for this weekday; colored items are scheduled.</div>
             </div>
             <div className="flex flex-wrap gap-2 text-xs font-semibold">
               <span className="rounded-full bg-emerald-50 px-3 py-1.5 text-emerald-800 ring-1 ring-emerald-100">Available</span>
@@ -1001,23 +1195,24 @@ function AvailabilityCalendar({ view, anchorDate, selectedDateKey, onSelectDate,
               <span className="rounded-full bg-amber-50 px-3 py-1.5 text-amber-800 ring-1 ring-amber-100">Work order</span>
             </div>
           </div>
-          <div className="grid grid-cols-[72px_minmax(0,1fr)] gap-3">
-            <div className="relative h-[720px]">
-              {hourMarkers.map((hour, idx) => {
-                const top = `${(idx / (hourMarkers.length - 1)) * 100}%`
+          <div className="grid grid-cols-[52px_minmax(0,1fr)] gap-2">
+            <div className="relative" style={{ height: TIMELINE_HEIGHT_PX }}>
+              {hourMarkers.map((hour) => {
+                if (hour > 23) return null
+                const top = `${(hour / 24) * 100}%`
                 return (
-                  <div key={hour} className="absolute left-0 right-0 -translate-y-1/2 text-xs font-semibold text-slate-400" style={{ top }}>
+                  <div key={hour} className="absolute left-0 right-0 -translate-y-1/2 text-[10px] font-semibold tabular-nums text-slate-400" style={{ top }}>
                     {displayTimeFromMinutes(hour * 60)}
                   </div>
                 )
               })}
             </div>
-            <div className="relative h-[720px] overflow-hidden rounded-[24px] border border-slate-200 bg-white">
-              {hourMarkers.slice(0, -1).map((hour, idx) => (
+            <div className="relative overflow-hidden rounded-[24px] border border-slate-200 bg-white" style={{ height: TIMELINE_HEIGHT_PX }}>
+              {Array.from({ length: 24 }, (_, h) => (
                 <div
-                  key={`line-${hour}`}
+                  key={`line-${h}`}
                   className="absolute left-0 right-0 border-t border-dashed border-slate-200"
-                  style={{ top: `${(idx / (hourMarkers.length - 1)) * 100}%` }}
+                  style={{ top: `${(h / 24) * 100}%` }}
                 />
               ))}
               {ranges.map((range) => (
@@ -1098,11 +1293,7 @@ function AvailabilityCalendar({ view, anchorDate, selectedDateKey, onSelectDate,
 function AvailabilityEditorPanel({
   selectedDateKey,
   ranges,
-  isAvailable,
-  setIsAvailable,
-  onAddRange,
-  onChangeRange,
-  onRemoveRange,
+  onRangesChange,
   onOpenMeet,
   onSave,
   onApplyWeekday,
@@ -1113,6 +1304,7 @@ function AvailabilityEditorPanel({
 }) {
   const selectedDate = dateFromCalendarKey(selectedDateKey)
   const weekday = weekdayAbbrFromDateKey(selectedDateKey)
+  const disabled = availSaving || isManagerInternalPreview(manager)
 
   return (
     <div className="rounded-[28px] border border-slate-200 bg-white p-6 shadow-sm lg:sticky lg:top-6">
@@ -1121,7 +1313,7 @@ function AvailabilityEditorPanel({
         {selectedDate.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}
       </h2>
       <p className="mt-2 text-sm text-slate-500">
-        Edit tour hours for this day. Saving updates your recurring {weekday} schedule.
+        Set free blocks for this weekday (repeats every {weekday}). Saves to your manager profile and linked properties.
       </p>
 
       {isManagerInternalPreview(manager) ? (
@@ -1132,48 +1324,9 @@ function AvailabilityEditorPanel({
         </div>
       ) : null}
 
-      <div className="mt-6 flex rounded-2xl border border-slate-200 bg-slate-50 p-1">
-        <button
-          type="button"
-          onClick={() => setIsAvailable(true)}
-          className={classNames(
-            'flex-1 rounded-xl px-4 py-3 text-sm font-semibold transition',
-            isAvailable ? 'bg-[linear-gradient(180deg,#2f76ff_0%,#2450eb_100%)] text-white shadow-[0_8px_18px_rgba(37,99,235,0.25)]' : 'text-slate-500 hover:bg-white',
-          )}
-        >
-          Available
-        </button>
-        <button
-          type="button"
-          onClick={() => setIsAvailable(false)}
-          className={classNames(
-            'flex-1 rounded-xl px-4 py-3 text-sm font-semibold transition',
-            !isAvailable ? 'bg-slate-900 text-white shadow-[0_8px_18px_rgba(15,23,42,0.16)]' : 'text-slate-500 hover:bg-white',
-          )}
-        >
-          Not available
-        </button>
-      </div>
-
       <div className="mt-6">
-        <div className="mb-3 flex items-center justify-between gap-3">
-          <div className="text-sm font-bold text-slate-900">Time ranges</div>
-          <button
-            type="button"
-            disabled={!isAvailable}
-            onClick={onAddRange}
-            className="rounded-xl border border-slate-200 px-3 py-2 text-sm font-semibold text-[#2563eb] hover:bg-slate-50 disabled:opacity-40"
-          >
-            + Add time range
-          </button>
-        </div>
-        {isAvailable ? (
-          <TimeRangeList ranges={ranges} onChangeRange={onChangeRange} onRemoveRange={onRemoveRange} />
-        ) : (
-          <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 px-4 py-6 text-sm text-slate-500">
-            This day is marked unavailable.
-          </div>
-        )}
+        <div className="mb-2 text-sm font-bold text-slate-900">Weekly hours for {weekday}</div>
+        <DayAvailabilityTimeline ranges={ranges} onRangesChange={onRangesChange} disabled={disabled} />
       </div>
 
       <div className="mt-6">
@@ -1468,6 +1621,14 @@ async function fetchPropertiesAdmin() {
 async function updatePropertyAdmin(recordId, fields) {
   const data = await atRequest(`${CORE_AIRTABLE_BASE_URL}/Properties/${recordId}`, {
     method: 'PATCH',
+    body: JSON.stringify({ fields, typecast: true }),
+  })
+  return mapRecord(data)
+}
+
+async function createPropertyAdmin(fields) {
+  const data = await atRequest(`${CORE_AIRTABLE_BASE_URL}/Properties`, {
+    method: 'POST',
     body: JSON.stringify({ fields, typecast: true }),
   })
   return mapRecord(data)
@@ -2019,12 +2180,24 @@ function HouseManagementPanel({ manager, onPropertiesChange }) {
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [editingPropertyId, setEditingPropertyId] = useState(null)
+  const [addOpen, setAddOpen] = useState(false)
+  const [addSaving, setAddSaving] = useState(false)
+  const [addForm, setAddForm] = useState({
+    name: '',
+    address: '',
+    rooms: '',
+    rentPerRoom: '',
+    description: '',
+    imageUrls: '',
+  })
   const [tourForm, setTourForm] = useState({
     manager: '',
     availability: '',
     notes: '',
     securityDeposit: '',
   })
+  const addInputCls =
+    'w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm transition focus:border-[#2563eb] focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#2563eb]/20'
 
   const loadProperties = useCallback(async () => {
     setLoading(true)
@@ -2104,36 +2277,109 @@ function HouseManagementPanel({ manager, onPropertiesChange }) {
     }
   }
 
+  async function handleAddPropertySubmit(e) {
+    e.preventDefault()
+    if (isManagerInternalPreview(manager)) {
+      toast.error('Adding properties is disabled in preview mode.')
+      return
+    }
+    if (!addForm.name.trim() || !addForm.address.trim()) {
+      toast.error('Property name and address are required.')
+      return
+    }
+    setAddSaving(true)
+    try {
+      const noteParts = []
+      if (addForm.description.trim()) noteParts.push(`Description: ${addForm.description.trim()}`)
+      noteParts.push(`Rooms: ${addForm.rooms.trim() || '—'}`)
+      noteParts.push(`Rent per room: ${addForm.rentPerRoom.trim() || '—'}`)
+      if (addForm.imageUrls.trim()) noteParts.push(`Image URLs:\n${addForm.imageUrls.trim()}`)
+      noteParts.push(`Submitted by: ${String(manager?.email || '').trim()}`)
+      const fields = {
+        Name: addForm.name.trim(),
+        Address: addForm.address.trim(),
+        Status: 'pending_review',
+        'Manager Email': String(manager?.email || '').trim(),
+        Notes: noteParts.join('\n'),
+      }
+      if (manager?.id) fields.Manager = [manager.id]
+      const created = await createPropertyAdmin(fields)
+      setProperties((current) => {
+        const next = [...current, created]
+        onPropertiesChange?.(next)
+        return next
+      })
+      toast.success('Property submitted — pending review')
+      setAddForm({ name: '', address: '', rooms: '', rentPerRoom: '', description: '', imageUrls: '' })
+      setAddOpen(false)
+    } catch (err) {
+      console.error('[HouseManagementPanel] create property failed', err)
+      toast.error(err.message || 'Could not save property. Check Airtable field names (Status, Manager Email).')
+    } finally {
+      setAddSaving(false)
+    }
+  }
+
   return (
     <div className="rounded-[24px] border border-slate-200 bg-white p-6">
-        <div className="flex items-center justify-between gap-3">
+        <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
-            <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">Current Houses</div>
-            <h3 className="mt-2 text-xl font-black text-slate-900">Operations property list</h3>
+            <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">Properties</div>
+            <h3 className="mt-2 text-xl font-black text-slate-900">Your houses</h3>
           </div>
-          <button
-            type="button"
-            onClick={loadProperties}
-            className="rounded-2xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-600 transition hover:bg-slate-50"
-          >
-            Refresh
-          </button>
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={() => setAddOpen(true)}
+              disabled={isManagerInternalPreview(manager)}
+              className="rounded-2xl bg-[#2563eb] px-4 py-2 text-sm font-semibold text-white transition hover:brightness-110 disabled:opacity-40"
+            >
+              + Add property
+            </button>
+            <button
+              type="button"
+              onClick={loadProperties}
+              className="rounded-2xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-600 transition hover:bg-slate-50"
+            >
+              Refresh
+            </button>
+          </div>
         </div>
 
         {loading ? (
           <div className="mt-5 rounded-2xl border border-slate-100 bg-slate-50 px-4 py-5 text-sm text-slate-500">Loading houses…</div>
         ) : approvedAssigned.length === 0 && pendingAssigned.length === 0 ? (
-          <div className="mt-5 rounded-2xl border border-slate-100 bg-slate-50 px-4 py-5 text-sm text-slate-500">
-            No houses linked yet. Contact Axis.
+          <div className="mt-5 rounded-2xl border border-dashed border-slate-200 bg-slate-50/80 px-6 py-10 text-center">
+            <p className="text-sm font-semibold text-slate-800">No properties on your account yet</p>
+            <p className="mt-2 text-sm text-slate-500">Add a listing to submit it for review. You’ll see it here with a &quot;Pending review&quot; label until it’s approved.</p>
+            <button
+              type="button"
+              onClick={() => setAddOpen(true)}
+              disabled={isManagerInternalPreview(manager)}
+              className="mt-5 rounded-2xl bg-[#2563eb] px-5 py-2.5 text-sm font-semibold text-white transition hover:brightness-110 disabled:opacity-40"
+            >
+              + Add property
+            </button>
           </div>
         ) : (
           <div className="mt-5 space-y-3">
             {pendingAssigned.length ? (
               <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950">
-                <span className="font-semibold">{pendingAssigned.length} house{pendingAssigned.length === 1 ? '' : 's'} awaiting approval</span>
-                <span className="text-amber-900/90"> — not shown below until approved.</span>
+                <span className="font-semibold">{pendingAssigned.length} pending</span>
+                <span className="text-amber-900/90"> — visible only in your portal until approved.</span>
               </div>
             ) : null}
+            {pendingAssigned.map((property) => (
+              <div key={property.id} className="rounded-2xl border border-amber-200/80 bg-amber-50/50 px-4 py-4">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="text-sm font-semibold text-slate-900">{property.Name || property.Property || 'Untitled house'}</div>
+                  <span className="rounded-full bg-amber-200/90 px-3 py-1 text-[11px] font-bold uppercase tracking-[0.12em] text-amber-950">
+                    Pending review
+                  </span>
+                </div>
+                <div className="mt-1 text-sm text-slate-600">{property.Address || 'Address not set'}</div>
+              </div>
+            ))}
             {approvedAssigned.map((property) => (
               <div key={property.id} className="rounded-2xl border border-slate-100 bg-slate-50 px-4 py-4">
                 <div className="text-sm font-semibold text-slate-900">{property.Name || property.Property || 'Untitled house'}</div>
@@ -2257,6 +2503,100 @@ function HouseManagementPanel({ manager, onPropertiesChange }) {
             ))}
           </div>
         )}
+
+        {addOpen ? (
+          <Modal onClose={() => { if (!addSaving) setAddOpen(false) }}>
+            <div className="pr-8">
+              <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-[#2563eb]">New property</div>
+              <h3 className="mt-2 text-2xl font-black text-slate-900">Add property</h3>
+              <p className="mt-2 text-sm text-slate-500">Submit details for review. It will appear in your list as pending until approved.</p>
+            </div>
+            <form onSubmit={handleAddPropertySubmit} className="mt-6 space-y-4">
+              <div>
+                <label className="mb-1.5 block text-xs font-semibold text-slate-700">Property name *</label>
+                <input
+                  className={addInputCls}
+                  value={addForm.name}
+                  onChange={(e) => setAddForm((f) => ({ ...f, name: e.target.value }))}
+                  placeholder="e.g. Maple Co-op"
+                  required
+                />
+              </div>
+              <div>
+                <label className="mb-1.5 block text-xs font-semibold text-slate-700">Address *</label>
+                <input
+                  className={addInputCls}
+                  value={addForm.address}
+                  onChange={(e) => setAddForm((f) => ({ ...f, address: e.target.value }))}
+                  placeholder="Street, city, state"
+                  required
+                />
+              </div>
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div>
+                  <label className="mb-1.5 block text-xs font-semibold text-slate-700">Number of rooms</label>
+                  <input
+                    className={addInputCls}
+                    type="number"
+                    min="0"
+                    value={addForm.rooms}
+                    onChange={(e) => setAddForm((f) => ({ ...f, rooms: e.target.value }))}
+                    placeholder="e.g. 4"
+                  />
+                </div>
+                <div>
+                  <label className="mb-1.5 block text-xs font-semibold text-slate-700">Rent per room ($)</label>
+                  <input
+                    className={addInputCls}
+                    type="number"
+                    min="0"
+                    step="1"
+                    value={addForm.rentPerRoom}
+                    onChange={(e) => setAddForm((f) => ({ ...f, rentPerRoom: e.target.value }))}
+                    placeholder="e.g. 750"
+                  />
+                </div>
+              </div>
+              <div>
+                <label className="mb-1.5 block text-xs font-semibold text-slate-700">Description</label>
+                <textarea
+                  className={`${addInputCls} min-h-[100px] resize-y`}
+                  value={addForm.description}
+                  onChange={(e) => setAddForm((f) => ({ ...f, description: e.target.value }))}
+                  placeholder="Highlights, house rules, etc."
+                  rows={4}
+                />
+              </div>
+              <div>
+                <label className="mb-1.5 block text-xs font-semibold text-slate-700">Image URLs (optional)</label>
+                <textarea
+                  className={`${addInputCls} min-h-[80px] resize-y font-mono text-xs`}
+                  value={addForm.imageUrls}
+                  onChange={(e) => setAddForm((f) => ({ ...f, imageUrls: e.target.value }))}
+                  placeholder={'One image URL per line (https://…)\nAirtable can attach from URLs in Notes for now.'}
+                  rows={3}
+                />
+              </div>
+              <div className="flex justify-end gap-3 pt-2">
+                <button
+                  type="button"
+                  disabled={addSaving}
+                  onClick={() => { if (!addSaving) setAddOpen(false) }}
+                  className="rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-semibold text-slate-600 hover:bg-slate-50 disabled:opacity-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={addSaving}
+                  className="rounded-xl bg-[#2563eb] px-5 py-2.5 text-sm font-semibold text-white hover:brightness-110 disabled:opacity-50"
+                >
+                  {addSaving ? 'Submitting…' : 'Submit for review'}
+                </button>
+              </div>
+            </form>
+          </Modal>
+        ) : null}
     </div>
   )
 }
@@ -2401,7 +2741,7 @@ function ManagerProfilePanel({ manager, onManagerUpdate, approvedPropertyCount =
           <div className="mt-5 text-sm text-slate-500">Loading properties…</div>
         ) : approvedForProfile.length === 0 ? (
           <div className="mt-5 rounded-2xl border border-slate-100 bg-slate-50 p-6 text-center text-sm text-slate-500">
-            No properties yet. Contact Axis to link your manager email to properties.
+            No approved properties yet. Add a listing under <strong>Properties</strong> in the sidebar, or wait for pending submissions to be approved.
           </div>
         ) : (
           <div className="mt-5 grid gap-3 sm:grid-cols-2">
@@ -2626,8 +2966,7 @@ function GenerateDraftModal({ manager, propertyOptions, onClose, onGenerated }) 
 }
 
 // ─── Work orders (manager) ───────────────────────────────────────────────────
-const WORK_ORDER_STATUSES = ['Submitted', 'In Progress', 'Resolved']
-const WORK_ORDER_PRIORITIES = ['Routine', 'Low', 'Normal', 'High', 'Urgent', 'Emergency', 'Critical']
+const WORK_ORDER_UI_STATUSES = ['Open', 'In Progress', 'Completed']
 
 function normalizeWorkOrderRecordId(raw) {
   const s = String(raw || '').trim()
@@ -3042,29 +3381,9 @@ function ManagerCalendarPanel({ manager, scopedPropertyNames = [] }) {
         <AvailabilityEditorPanel
           selectedDateKey={selectedDateKey}
           ranges={selectedRanges}
-          isAvailable={selectedRanges.length > 0}
-          setIsAvailable={(next) => {
-            if (!next) {
-              setWeeklyFree((prev) => weeklyFreeWithDayRanges(prev, selectedWeekday, []))
-              return
-            }
-            if (selectedRanges.length === 0) {
-              setWeeklyFree((prev) => weeklyFreeWithDayRanges(prev, selectedWeekday, addDefaultTimeRange([])))
-            }
-          }}
-          onAddRange={() =>
-            setWeeklyFree((prev) =>
-              weeklyFreeWithDayRanges(prev, selectedWeekday, addDefaultTimeRange(selectedRanges)),
-            )
+          onRangesChange={(nextRanges) =>
+            setWeeklyFree((prev) => weeklyFreeWithDayRanges(prev, selectedWeekday, nextRanges))
           }
-          onChangeRange={(idx, nextRange) => {
-            const nextRanges = selectedRanges.map((range, index) => (index === idx ? nextRange : range))
-            setWeeklyFree((prev) => weeklyFreeWithDayRanges(prev, selectedWeekday, nextRanges))
-          }}
-          onRemoveRange={(idx) => {
-            const nextRanges = selectedRanges.filter((_, index) => index !== idx)
-            setWeeklyFree((prev) => weeklyFreeWithDayRanges(prev, selectedWeekday, nextRanges))
-          }}
           onOpenMeet={() => setMeetOpen(true)}
           onSave={handleSaveWeeklyAvailability}
           onApplyWeekday={handleSaveWeeklyAvailability}
@@ -3117,15 +3436,12 @@ function WorkOrdersTabPanel({ allowedPropertyNames }) {
   const [list, setList] = useState([])
   const [listLoading, setListLoading] = useState(true)
   const [listError, setListError] = useState('')
-  const [quickFilter, setQuickFilter] = useState('open')
+  const [quickFilter, setQuickFilter] = useState('all')
   const [search, setSearch] = useState('')
   const [record, setRecord] = useState(null)
   const [loadError, setLoadError] = useState('')
   const [saving, setSaving] = useState(false)
-  const [status, setStatus] = useState('Submitted')
-  const [priority, setPriority] = useState('Normal')
-  const [assignedTo, setAssignedTo] = useState('')
-  const [scheduledAt, setScheduledAt] = useState('')
+  const [status, setStatus] = useState('Open')
   const [managementNotes, setManagementNotes] = useState('')
   const [residentUpdate, setResidentUpdate] = useState('')
   const [resolutionSummary, setResolutionSummary] = useState('')
@@ -3133,18 +3449,8 @@ function WorkOrdersTabPanel({ allowedPropertyNames }) {
   const fieldCls =
     'w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none transition focus:border-[#2563eb] focus:ring-2 focus:ring-[#2563eb]/20'
 
-  const priorityOptions = useMemo(() => {
-    const p = safePortalText(record?.Priority, '')
-    if (p && !WORK_ORDER_PRIORITIES.includes(p)) return [p, ...WORK_ORDER_PRIORITIES]
-    return WORK_ORDER_PRIORITIES
-  }, [record?.Priority])
-
   function applyRecordToForm(nextRecord) {
-    const meta = parseWorkOrderMetaBlock(nextRecord?.['Management Notes'])
     setStatus(managerWorkOrderStatusLabel(nextRecord))
-    setPriority(safePortalText(nextRecord?.Priority, 'Normal') || 'Normal')
-    setAssignedTo(meta['assigned to'] || '')
-    setScheduledAt(meta.scheduled || '')
     setManagementNotes(workOrderPlainNotes(nextRecord?.['Management Notes']))
     setResidentUpdate(safePortalText(nextRecord?.Update, ''))
     setResolutionSummary(safePortalText(nextRecord?.['Resolution Summary'], ''))
@@ -3163,10 +3469,10 @@ function WorkOrdersTabPanel({ allowedPropertyNames }) {
       const all = await getAllWorkOrders()
       setList(all.filter((row) => workOrderInScope(row, scopeLower)))
     } catch (err) {
+      console.error('[WorkOrdersTabPanel] getAllWorkOrders failed', err)
       setList([])
-      const msg = formatDataLoadError(err)
-      setListError(msg)
-      if (!isAirtablePermissionErrorMessage(err?.message)) toast.error('Work orders failed to load: ' + msg)
+      setListError('Unable to load work orders. Please try again.')
+      if (!isAirtablePermissionErrorMessage(err?.message)) toast.error('Unable to load work orders. Please try again.')
     } finally {
       setListLoading(false)
     }
@@ -3178,10 +3484,9 @@ function WorkOrdersTabPanel({ allowedPropertyNames }) {
 
   const filteredList = useMemo(() => {
     let rows = list
-    if (quickFilter === 'open') rows = rows.filter((row) => !['Completed', 'Closed'].includes(managerWorkOrderStatusLabel(row)))
-    if (quickFilter === 'urgent') rows = rows.filter((row) => ['urgent', 'emergency', 'critical'].includes(String(row.Priority || '').trim().toLowerCase()))
-    if (quickFilter === 'scheduled') rows = rows.filter((row) => managerWorkOrderStatusLabel(row) === 'Scheduled')
-    if (quickFilter === 'completed') rows = rows.filter((row) => ['Completed', 'Closed'].includes(managerWorkOrderStatusLabel(row)))
+    if (quickFilter === 'open') rows = rows.filter((row) => managerWorkOrderStatusLabel(row) === 'Open')
+    if (quickFilter === 'in_progress') rows = rows.filter((row) => managerWorkOrderStatusLabel(row) === 'In Progress')
+    if (quickFilter === 'completed') rows = rows.filter((row) => managerWorkOrderStatusLabel(row) === 'Completed')
     const q = search.trim().toLowerCase()
     if (q) {
       rows = rows.filter((row) => {
@@ -3192,10 +3497,9 @@ function WorkOrdersTabPanel({ allowedPropertyNames }) {
     return [...rows].sort((a, b) => new Date(b['Date Submitted'] || b.created_at || 0) - new Date(a['Date Submitted'] || a.created_at || 0))
   }, [list, quickFilter, search])
 
-  const openCount = useMemo(() => list.filter((row) => !['Completed', 'Closed'].includes(managerWorkOrderStatusLabel(row))).length, [list])
-  const urgentCount = useMemo(() => list.filter((row) => ['urgent', 'emergency', 'critical'].includes(String(row.Priority || '').trim().toLowerCase())).length, [list])
-  const scheduledCount = useMemo(() => list.filter((row) => managerWorkOrderStatusLabel(row) === 'Scheduled').length, [list])
-  const completedCount = useMemo(() => list.filter((row) => ['Completed', 'Closed'].includes(managerWorkOrderStatusLabel(row))).length, [list])
+  const openCount = useMemo(() => list.filter((row) => managerWorkOrderStatusLabel(row) === 'Open').length, [list])
+  const inProgressCount = useMemo(() => list.filter((row) => managerWorkOrderStatusLabel(row) === 'In Progress').length, [list])
+  const completedCount = useMemo(() => list.filter((row) => managerWorkOrderStatusLabel(row) === 'Completed').length, [list])
 
   useEffect(() => {
     if (filteredList.length === 0) {
@@ -3234,13 +3538,13 @@ function WorkOrdersTabPanel({ allowedPropertyNames }) {
     if (!record?.id) return
     setSaving(true)
     try {
-      const resolved = status === 'Completed' || status === 'Closed'
+      const resolved = status === 'Completed'
+      const meta = parseWorkOrderMetaBlock(record?.['Management Notes'])
       const fields = {
-        Status: resolved ? 'Resolved' : status,
-        Priority: priority,
+        Status: resolved ? 'Completed' : status,
         'Management Notes': mergeWorkOrderMetaBlock(managementNotes, {
-          'assigned to': assignedTo,
-          scheduled: scheduledAt,
+          'assigned to': meta['assigned to'] || '',
+          scheduled: meta.scheduled || '',
         }),
         Update: residentUpdate || '',
         'Resolution Summary': resolutionSummary || '',
@@ -3274,7 +3578,7 @@ function WorkOrdersTabPanel({ allowedPropertyNames }) {
 
       {listError ? (
         <div role="alert" className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-4 text-sm text-amber-950">
-          <div className="font-semibold text-amber-900">Could not load work orders</div>
+          <div className="font-semibold text-amber-900">Unable to load work orders</div>
           <p className="mt-2 text-amber-900/90">{listError}</p>
         </div>
       ) : null}
@@ -3287,11 +3591,10 @@ function WorkOrdersTabPanel({ allowedPropertyNames }) {
         />
       ) : null}
 
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <PortalOpsMetric label="Open" value={openCount} hint="Needs review or action." tone="amber" />
-        <PortalOpsMetric label="Urgent" value={urgentCount} hint="High-priority requests." tone="red" />
-        <PortalOpsMetric label="Scheduled" value={scheduledCount} hint="A visit time is set." tone="axis" />
-        <PortalOpsMetric label="Completed" value={completedCount} hint="Finished requests." tone="emerald" />
+      <div className="grid gap-4 sm:grid-cols-3">
+        <PortalOpsMetric label="Open" value={openCount} hint="New or not started." tone="slate" />
+        <PortalOpsMetric label="In progress" value={inProgressCount} hint="Actively being handled." tone="axis" />
+        <PortalOpsMetric label="Completed" value={completedCount} hint="Resolved." tone="emerald" />
       </div>
 
       <PortalOpsFilterPills
@@ -3300,8 +3603,7 @@ function WorkOrdersTabPanel({ allowedPropertyNames }) {
         items={[
           { id: 'all', label: 'All', count: list.length },
           { id: 'open', label: 'Open', count: openCount },
-          { id: 'urgent', label: 'Urgent', count: urgentCount },
-          { id: 'scheduled', label: 'Scheduled', count: scheduledCount },
+          { id: 'in_progress', label: 'In progress', count: inProgressCount },
           { id: 'completed', label: 'Completed', count: completedCount },
         ]}
       />
@@ -3326,12 +3628,9 @@ function WorkOrdersTabPanel({ allowedPropertyNames }) {
               <table className="min-w-full text-left">
                 <thead className="border-b border-slate-200 bg-slate-50">
                   <tr>
-                    <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-[0.14em] text-slate-400">Property</th>
-                    <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-[0.14em] text-slate-400">Room</th>
-                    <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-[0.14em] text-slate-400">Resident</th>
                     <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-[0.14em] text-slate-400">Title</th>
-                    <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-[0.14em] text-slate-400">Priority</th>
-                    <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-[0.14em] text-slate-400">Submitted</th>
+                    <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-[0.14em] text-slate-400">Description</th>
+                    <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-[0.14em] text-slate-400">Property</th>
                     <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-[0.14em] text-slate-400">Status</th>
                   </tr>
                 </thead>
@@ -3342,15 +3641,11 @@ function WorkOrdersTabPanel({ allowedPropertyNames }) {
                       onClick={() => setRecord(row)}
                       className={classNames('cursor-pointer transition hover:bg-slate-50', record?.id === row.id ? 'bg-axis/5' : '')}
                     >
-                      <td className="px-4 py-4 text-sm font-semibold text-slate-900">{workOrderPropertyLabel(row) || 'House not set'}</td>
-                      <td className="px-4 py-4 text-sm text-slate-600">{row['Room Number'] || row.Room || '—'}</td>
-                      <td className="px-4 py-4 text-sm text-slate-600">{paymentResidentLabel(row)}</td>
-                      <td className="px-4 py-4">
-                        <div className="text-sm font-semibold text-slate-900">{safePortalText(row.Title, 'Untitled request')}</div>
-                        <div className="mt-1 text-xs text-slate-400">{safePortalText(row.Category, 'General Maintenance')}</div>
+                      <td className="px-4 py-4 text-sm font-semibold text-slate-900">{safePortalText(row.Title, 'Untitled request')}</td>
+                      <td className="max-w-xs px-4 py-4 text-sm text-slate-600">
+                        <span className="line-clamp-2">{safePortalText(row.Description, '—')}</span>
                       </td>
-                      <td className="px-4 py-4 text-sm text-slate-600">{safePortalText(row.Priority, 'Normal')}</td>
-                      <td className="px-4 py-4 text-sm text-slate-600">{fmtDate(row['Date Submitted'] || row.created_at)}</td>
+                      <td className="px-4 py-4 text-sm text-slate-600">{workOrderPropertyLabel(row) || '—'}</td>
                       <td className="px-4 py-4">
                         <PortalOpsStatusBadge tone={managerWorkOrderStatusTone(row)}>
                           {managerWorkOrderStatusLabel(row)}
@@ -3386,9 +3681,6 @@ function WorkOrdersTabPanel({ allowedPropertyNames }) {
               <PortalOpsStatusBadge tone={managerWorkOrderStatusTone(record)}>
                 {managerWorkOrderStatusLabel(record)}
               </PortalOpsStatusBadge>
-              <PortalOpsStatusBadge tone={['urgent', 'emergency', 'critical'].includes(safePortalText(record.Priority, '').trim().toLowerCase()) ? 'red' : 'slate'}>
-                {safePortalText(record.Priority, 'Normal')}
-              </PortalOpsStatusBadge>
             </div>
 
             <div className="rounded-[24px] border border-slate-200 bg-slate-50 px-5 py-4">
@@ -3397,31 +3689,13 @@ function WorkOrdersTabPanel({ allowedPropertyNames }) {
             </div>
 
             <form onSubmit={handleSave} className="mt-5 space-y-4">
-              <div className="grid gap-4 sm:grid-cols-2">
-                <div>
-                  <label className="mb-2 block text-xs font-semibold uppercase tracking-[0.14em] text-slate-400">Status</label>
-                  <select value={status} onChange={(e) => setStatus(e.target.value)} className={fieldCls}>
-                    {['Submitted', 'In Review', 'Scheduled', 'In Progress', 'Completed', 'Closed'].map((option) => (
-                      <option key={option} value={option}>{option}</option>
-                    ))}
-                  </select>
-                </div>
-                <div>
-                  <label className="mb-2 block text-xs font-semibold uppercase tracking-[0.14em] text-slate-400">Priority</label>
-                  <select value={priority} onChange={(e) => setPriority(e.target.value)} className={fieldCls}>
-                    {priorityOptions.map((option) => (
-                      <option key={option} value={option}>{option}</option>
-                    ))}
-                  </select>
-                </div>
-                <div>
-                  <label className="mb-2 block text-xs font-semibold uppercase tracking-[0.14em] text-slate-400">Assign vendor / person</label>
-                  <input value={assignedTo} onChange={(e) => setAssignedTo(e.target.value)} className={fieldCls} placeholder="Axis maintenance team" />
-                </div>
-                <div>
-                  <label className="mb-2 block text-xs font-semibold uppercase tracking-[0.14em] text-slate-400">Scheduled date / time</label>
-                  <input value={scheduledAt} onChange={(e) => setScheduledAt(e.target.value)} className={fieldCls} placeholder="Apr 18, 10:00 AM" />
-                </div>
+              <div>
+                <label className="mb-2 block text-xs font-semibold uppercase tracking-[0.14em] text-slate-400">Status</label>
+                <select value={status} onChange={(e) => setStatus(e.target.value)} className={fieldCls}>
+                  {WORK_ORDER_UI_STATUSES.map((option) => (
+                    <option key={option} value={option}>{option}</option>
+                  ))}
+                </select>
               </div>
 
               <div>
@@ -3490,12 +3764,12 @@ function ManagerPaymentsPanel({ allowedPropertyNames }) {
       )
       setRows(scoped)
     } catch (err) {
-      const msg = formatDataLoadError(err)
-      setPaymentsLoadError(msg)
+      console.error('[ManagerPaymentsPanel] getAllPaymentsRecords failed', err)
+      setPaymentsLoadError('Unable to load payments. Please try again.')
       setRows([])
       const isPerm = isAirtablePermissionErrorMessage(err?.message)
       if (!isPerm) {
-        toast.error('Could not load payments: ' + msg)
+        toast.error('Unable to load payments. Please try again.')
       }
     } finally {
       setLoading(false)
@@ -3652,7 +3926,7 @@ function ManagerPaymentsPanel({ allowedPropertyNames }) {
           role="alert"
           className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-4 text-sm text-amber-950"
         >
-          <div className="font-semibold text-amber-900">Payments could not load</div>
+          <div className="font-semibold text-amber-900">Unable to load payments</div>
           <p className="mt-2 text-amber-900/90">{paymentsLoadError}</p>
           <ul className="mt-3 list-disc space-y-1 pl-5 text-amber-900/85">
             <li>
@@ -4294,7 +4568,7 @@ function ManagerDashboard({ manager: managerProp, onOpenDraft, onSignOut, onMana
         const pendingApps = apps.filter((a) => a.Approved !== true && a.Approved !== false).length
         const leasePending = dr.filter((d) => LEASE_STATUSES_NEEDING_ACTION.has(String(d.Status || '').trim())).length
         const rentOverdue = rentRows.filter((p) => isPaymentOverdueRecord(p)).length
-        const openWo = wo.filter((w) => w.Resolved !== true && w.Resolved !== 1 && w.Status !== 'Resolved').length
+        const openWo = wo.filter((w) => !workOrderIsResolvedRecord(w)).length
 
         setOverviewStats({
           pendingApps,
