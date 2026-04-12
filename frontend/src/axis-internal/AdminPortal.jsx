@@ -440,17 +440,8 @@ export default function AdminPortal() {
 
       {tab === 'properties' && (
         <div className="space-y-6">
-          <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-            <div>
-              <h1 className="text-2xl font-black text-slate-900">Properties</h1>
-              <p className="mt-1 text-sm text-slate-500">
-                {propertiesSection === 'pending'
-                  ? 'Review submissions and approve, request edits, or reject.'
-                  : propertiesSection === 'approved'
-                    ? 'All approved and live properties.'
-                    : 'All rejected properties.'}
-              </p>
-            </div>
+          <div>
+            <h1 className="mb-4 text-2xl font-black text-slate-900">Properties</h1>
             <div className="inline-flex flex-wrap gap-1 rounded-2xl border border-slate-200 bg-slate-50 p-1">
               {[['pending', 'Pending', pendingApprovals.length], ['approved', 'Approved', approvedProperties.length], ['rejected', 'Rejected', rejectedProperties.length]].map(([key, label, count]) => (
                 <button
@@ -642,26 +633,9 @@ export default function AdminPortal() {
 
       {tab === 'applications' && (
         <div className="space-y-6">
-          <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-            <h1 className="text-2xl font-black">Applications</h1>
-            <div className="flex flex-wrap items-center gap-3">
-              <div className="inline-flex flex-wrap gap-1 rounded-2xl border border-slate-200 bg-slate-50 p-1">
-                {[['pending', 'Pending', applications.filter((a) => a.approvalPending).length], ['approved', 'Approved', applications.filter((a) => !a.approvalPending && a._airtable?.Approved === true).length], ['rejected', 'Rejected', applications.filter((a) => !a.approvalPending && a._airtable?.Approved === false).length], ['all', 'All', applications.length]].map(([key, label, count]) => (
-                  <button
-                    key={key}
-                    type="button"
-                    onClick={() => { setApplicationsFilter(key); setSelectedApplicationId(null) }}
-                    className={`rounded-xl px-4 py-2 text-sm font-semibold transition ${
-                      applicationsFilter === key
-                        ? 'bg-white text-slate-900 shadow-sm'
-                        : 'text-slate-600 hover:text-slate-900'
-                    }`}
-                  >
-                    {label}
-                    <span className="ml-1.5 tabular-nums text-slate-500">({count})</span>
-                  </button>
-                ))}
-              </div>
+          <div>
+            <div className="mb-4 flex flex-wrap items-center gap-3">
+              <h1 className="mr-auto text-2xl font-black">Applications</h1>
               <label className="flex flex-wrap items-center gap-2 text-sm text-slate-600">
                 <span className="font-semibold text-slate-800">Sort</span>
                 <select
@@ -674,6 +648,23 @@ export default function AdminPortal() {
                   <option value="applicant_asc">Applicant (A–Z)</option>
                 </select>
               </label>
+            </div>
+            <div className="inline-flex flex-wrap gap-1 rounded-2xl border border-slate-200 bg-slate-50 p-1">
+              {[['pending', 'Pending', applications.filter((a) => a.approvalPending).length], ['approved', 'Approved', applications.filter((a) => !a.approvalPending && a._airtable?.Approved === true).length], ['rejected', 'Rejected', applications.filter((a) => !a.approvalPending && a._airtable?.Approved === false).length], ['all', 'All', applications.length]].map(([key, label, count]) => (
+                <button
+                  key={key}
+                  type="button"
+                  onClick={() => { setApplicationsFilter(key); setSelectedApplicationId(null) }}
+                  className={`rounded-xl px-4 py-2 text-sm font-semibold transition ${
+                    applicationsFilter === key
+                      ? 'bg-white text-slate-900 shadow-sm'
+                      : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  {label}
+                  <span className="ml-1.5 tabular-nums text-slate-500">({count})</span>
+                </button>
+              ))}
             </div>
           </div>
           <DataTable
