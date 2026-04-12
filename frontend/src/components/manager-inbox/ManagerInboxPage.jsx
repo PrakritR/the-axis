@@ -2,13 +2,12 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import toast from 'react-hot-toast'
 import {
   getAllMessages,
-  getAllApplications,
   getAllPortalInternalThreadMessages,
-  getResidentByEmail,
   sendMessage,
   getMessagesByThreadKey,
   siteManagerThreadKey,
   residentLeasingThreadKey,
+  residentAdminThreadKey,
   parseResidentLeasingThreadKey,
   portalInboxThreadKeyFromRecord,
   PORTAL_INBOX_CHANNEL_INTERNAL,
@@ -21,11 +20,13 @@ import {
   HOUSING_PUBLIC_ADMIN_GENERAL_THREAD,
   managementAdminThreadKey,
 } from '../../lib/airtable'
-import { portalAxisAdminContactEmail } from '../../lib/portalInboxConstants.js'
+import {
+  isAdminPortalAirtableConfigured,
+  loadAdminProfilesForInbox,
+  loadResidentsForManagerPortalInbox,
+} from '../../lib/adminPortalAirtable.js'
 import { notifyPortalMessage } from '../../lib/notifyPortalMessage.js'
-import { resolveInboxSubject } from '../../lib/portalInboxSubjects.js'
 import { threadSubjectFromMessages, threadBodyPreviewFromMessage, mergeSubjectIntoMessageIfNeeded } from '../../lib/portalInboxThreadUtils.js'
-import InboxSubjectPicker from '../portal-inbox/InboxSubjectPicker.jsx'
 import {
   isAirtablePermissionErrorMessage,
 } from '../../lib/airtablePermissionError'
@@ -64,13 +65,6 @@ function fmtDateTime(val) {
     return String(val)
   }
 }
-
-function managerApplicationInScope(app, approvedNamesLowerSet) {
-  const propertyName = String(app?.['Property Name'] || '').trim().toLowerCase()
-  if (!propertyName || !approvedNamesLowerSet?.size) return false
-  return approvedNamesLowerSet.has(propertyName)
-}
-
 
 const MANAGER_INBOX_AXIS = 'inbox:axis'
 
@@ -253,8 +247,16 @@ function inboxParticipantsLine(selectedThreadId, adminFullInbox) {
 /**
  * Manager portal inbox — two-column messaging.
  * @param {boolean} [adminFullInbox] — load all internal portal threads (admin console); same UI as manager inbox.
+ * @param {{ id: string, email: string, label: string }[]} [adminComposeManagers]
+ * @param {{ id: string, email?: string, label: string }[]} [adminComposeResidents]
  */
-export default function ManagerInboxPage({ manager, allowedPropertyNames, adminFullInbox = false }) {
+export default function ManagerInboxPage({
+  manager,
+  allowedPropertyNames,
+  adminFullInbox = false,
+  adminComposeManagers = [],
+  adminComposeResidents = [],
+}) {
   const subjectFieldName = getPortalInboxSubjectFieldName()
   const showSubjectField = Boolean(subjectFieldName)
 
@@ -266,19 +268,22 @@ export default function ManagerInboxPage({ manager, allowedPropertyNames, adminF
   const [thread, setThread] = useState([])
   const [threadLoading, setThreadLoading] = useState(false)
   const [reply, setReply] = useState('')
-  const [replySubjectPreset, setReplySubjectPreset] = useState('')
-  const [replySubjectCustom, setReplySubjectCustom] = useState('')
+  const [replySubject, setReplySubject] = useState('')
   const [sending, setSending] = useState(false)
   const [composeOpen, setComposeOpen] = useState(false)
-  const [composeKind, setComposeKind] = useState('site')
-  const [composeEmail, setComposeEmail] = useState('')
+  const [composeKind, setComposeKind] = useState(() => (adminFullInbox ? 'manager' : 'resident'))
+  const [composeManagerEmail, setComposeManagerEmail] = useState('')
+  const [composeAdminEmail, setComposeAdminEmail] = useState('')
   const [composeResidentRecordId, setComposeResidentRecordId] = useState('')
-  const [composeSubjectPreset, setComposeSubjectPreset] = useState('')
-  const [composeSubjectCustom, setComposeSubjectCustom] = useState('')
+  const [composeSubject, setComposeSubject] = useState('')
   const [composeBody, setComposeBody] = useState('')
   const [composeSending, setComposeSending] = useState(false)
-  const [scopedResidentApplications, setScopedResidentApplications] = useState([])
+  /** Resident Profile rows scoped to this manager’s properties (House matches portal property names). */
+  const [scopedResidents, setScopedResidents] = useState([])
   const [residentComposeLoading, setResidentComposeLoading] = useState(false)
+  /** Admin Profile rows (Email + label) for manager → admin compose */
+  const [adminInboxContacts, setAdminInboxContacts] = useState([])
+  const [adminContactsLoading, setAdminContactsLoading] = useState(false)
   const [inboxStateMap, setInboxStateMap] = useState(() => new Map())
   const [inboxStateBackend, setInboxStateBackend] = useState('pending')
   const [sectionFilter, setSectionFilter] = useState('all')
@@ -394,51 +399,24 @@ export default function ManagerInboxPage({ manager, allowedPropertyNames, adminF
 
   useEffect(() => {
     if (adminFullInbox || inboxScopeLower.size === 0) {
-      setScopedResidentApplications([])
+      setScopedResidents([])
       setResidentComposeLoading(false)
       return
     }
 
     let cancelled = false
     async function loadScopedResidents() {
+      if (!isAdminPortalAirtableConfigured()) {
+        setScopedResidents([])
+        return
+      }
       setResidentComposeLoading(true)
       try {
-        const applications = await getAllApplications()
-        const scopedApplications = applications.filter((app) => managerApplicationInScope(app, inboxScopeLower))
-
-        const latestAppByEmail = new Map()
-        for (const app of scopedApplications) {
-          const email = String(app?.['Signer Email'] || '').trim().toLowerCase()
-          if (!email) continue
-          if (!latestAppByEmail.has(email)) latestAppByEmail.set(email, app)
-        }
-
-        const residentLookups = await Promise.all(
-          [...latestAppByEmail.entries()].map(async ([email, app]) => {
-            try {
-              const resident = await getResidentByEmail(email)
-              if (!resident?.id) return null
-              return { resident, application: app }
-            } catch {
-              return null
-            }
-          }),
-        )
-
-        if (cancelled) return
-
-        const byResidentId = new Map()
-        for (const match of residentLookups) {
-          if (!match?.resident?.id) continue
-          if (!byResidentId.has(match.resident.id)) {
-            byResidentId.set(match.resident.id, match)
-          }
-        }
-
-        setScopedResidentApplications([...byResidentId.values()])
+        const list = await loadResidentsForManagerPortalInbox([...inboxScopeLower])
+        if (!cancelled) setScopedResidents(list)
       } catch (err) {
         if (!cancelled) {
-          setScopedResidentApplications([])
+          setScopedResidents([])
           toast.error('Resident list failed to load: ' + formatDataLoadError(err))
         }
       } finally {
@@ -453,8 +431,35 @@ export default function ManagerInboxPage({ manager, allowedPropertyNames, adminF
   }, [adminFullInbox, inboxScopeLower])
 
   useEffect(() => {
-    setReplySubjectPreset('')
-    setReplySubjectCustom('')
+    if (adminFullInbox) {
+      setAdminInboxContacts([])
+      setAdminContactsLoading(false)
+      return
+    }
+    let cancelled = false
+    async function loadAdmins() {
+      if (!isAdminPortalAirtableConfigured()) {
+        setAdminInboxContacts([])
+        return
+      }
+      setAdminContactsLoading(true)
+      try {
+        const list = await loadAdminProfilesForInbox()
+        if (!cancelled) setAdminInboxContacts(list)
+      } catch {
+        if (!cancelled) setAdminInboxContacts([])
+      } finally {
+        if (!cancelled) setAdminContactsLoading(false)
+      }
+    }
+    loadAdmins()
+    return () => {
+      cancelled = true
+    }
+  }, [adminFullInbox])
+
+  useEffect(() => {
+    setReplySubject('')
   }, [selectedThreadId])
 
   useEffect(() => {
@@ -669,8 +674,23 @@ export default function ManagerInboxPage({ manager, allowedPropertyNames, adminF
 
   useEffect(() => {
     if (!composeOpen) return
-    if (!adminFullInbox) setComposeKind('resident')
-  }, [composeOpen, adminFullInbox])
+    if (adminFullInbox) {
+      setComposeKind('manager')
+    } else {
+      setComposeKind('resident')
+    }
+    setComposeManagerEmail('')
+    setComposeAdminEmail(
+      adminInboxContacts.length === 1 ? adminInboxContacts[0].email : '',
+    )
+    setComposeResidentRecordId('')
+    setComposeSubject('')
+  }, [composeOpen, adminFullInbox, adminInboxContacts])
+
+  useEffect(() => {
+    if (!composeOpen || adminFullInbox || composeKind !== 'admin') return
+    if (adminInboxContacts.length === 1) setComposeAdminEmail(adminInboxContacts[0].email)
+  }, [composeOpen, adminFullInbox, composeKind, adminInboxContacts])
 
   useEffect(() => {
     if (!selectedThreadId) {
@@ -737,38 +757,50 @@ export default function ManagerInboxPage({ manager, allowedPropertyNames, adminF
   async function handleComposeSend(e) {
     e.preventDefault()
     if (!managerEmail || !composeBody.trim()) return
-    if (!composeSubjectPreset) {
-      toast.error('Choose a subject.')
+    const subjResolved = composeSubject.trim()
+    if (!subjResolved) {
+      toast.error('Enter a subject.')
       return
     }
-    if (composeSubjectPreset === 'other' && !composeSubjectCustom.trim()) {
-      toast.error('Enter a custom subject.')
-      return
-    }
-    const subjResolved = resolveInboxSubject(composeSubjectPreset, composeSubjectCustom)
+    const kind = composeKind
     let threadKey = ''
-    if (composeKind === 'website') {
-      threadKey = HOUSING_PUBLIC_ADMIN_GENERAL_THREAD
-    } else if (composeKind === 'admin') {
-      const em = portalAxisAdminContactEmail()
-      threadKey = em.includes('@') ? managementAdminThreadKey(em) : 'internal:mgmt-admin:axis'
-    } else if (composeKind === 'resident') {
+    if (adminFullInbox) {
+      if (kind === 'manager') {
+        const em = composeManagerEmail.trim().toLowerCase()
+        if (!em.includes('@')) {
+          toast.error('Select a manager.')
+          return
+        }
+        threadKey = siteManagerThreadKey(em)
+      } else if (kind === 'resident') {
+        const id = composeResidentRecordId.trim()
+        if (!/^rec[a-zA-Z0-9]{14,}$/.test(id)) {
+          toast.error('Select a resident from the list.')
+          return
+        }
+        threadKey = residentAdminThreadKey(id)
+      } else {
+        return
+      }
+    } else if (kind === 'resident') {
       const id = composeResidentRecordId.trim()
       if (!/^rec[a-zA-Z0-9]{14,}$/.test(id)) {
         toast.error('Select a resident from the list to start a conversation.')
         return
       }
       threadKey = residentLeasingThreadKey(id)
-    } else {
-      const em = composeEmail.trim().toLowerCase()
+    } else if (kind === 'admin') {
+      const em = composeAdminEmail.trim().toLowerCase()
       if (!em.includes('@')) {
-        toast.error('Enter a valid email for the recipient.')
+        toast.error('Select an admin contact.')
         return
       }
-      threadKey =
-        composeKind === 'partner' ? managementAdminThreadKey(em) : siteManagerThreadKey(em)
+      threadKey = managementAdminThreadKey(em)
+    } else {
+      return
     }
     const bodyOut = mergeSubjectIntoMessageIfNeeded(composeBody.trim(), subjResolved, showSubjectField)
+    const ridForSelect = composeResidentRecordId.trim()
     setComposeSending(true)
     try {
       await sendMessage({
@@ -779,27 +811,43 @@ export default function ManagerInboxPage({ manager, allowedPropertyNames, adminF
         channel: PORTAL_INBOX_CHANNEL_INTERNAL,
         subject: showSubjectField ? subjResolved : '',
       })
-      // Notify recipient
-      if (composeKind === 'admin') {
-        notifyPortalMessage({ toAdmins: true, senderName: managerEmail, subject: subjResolved })
-      } else if (composeKind === 'resident') {
-        const re = getResidentEmailFromAllMsgs(allMsgs, composeResidentRecordId.trim(), managerEmail, residentLeasingThreadKey)
-        if (re) notifyPortalMessage({ recipientEmail: re, senderName: managerEmail, subject: subjResolved })
-      } else if (composeKind === 'site' || composeKind === 'partner') {
-        const re = composeEmail.trim()
+      if (adminFullInbox) {
+        if (kind === 'manager' && composeManagerEmail.trim()) {
+          notifyPortalMessage({
+            recipientEmail: composeManagerEmail.trim(),
+            senderName: managerEmail,
+            subject: subjResolved,
+          })
+        } else if (kind === 'resident') {
+          const fromList = adminComposeResidents.find((r) => String(r.id) === ridForSelect)
+          const re = String(fromList?.email || '').trim()
+          if (re.includes('@')) {
+            notifyPortalMessage({ recipientEmail: re, senderName: managerEmail, subject: subjResolved })
+          }
+        }
+      } else if (kind === 'admin') {
+        notifyPortalMessage({
+          recipientEmail: composeAdminEmail.trim(),
+          senderName: managerEmail,
+          subject: subjResolved,
+        })
+      } else if (kind === 'resident') {
+        const re = getResidentEmailFromAllMsgs(allMsgs, ridForSelect, managerEmail, residentLeasingThreadKey)
         if (re) notifyPortalMessage({ recipientEmail: re, senderName: managerEmail, subject: subjResolved })
       }
-      const ridForSelect = composeResidentRecordId.trim()
       setComposeOpen(false)
       setComposeBody('')
-      setComposeSubjectPreset('')
-      setComposeSubjectCustom('')
-      setComposeEmail('')
+      setComposeSubject('')
+      setComposeManagerEmail('')
+      setComposeAdminEmail('')
       setComposeResidentRecordId('')
-      setComposeKind('site')
+      setComposeKind(adminFullInbox ? 'manager' : 'resident')
       await loadAll()
-      const selectionId =
-        composeKind === 'resident' ? managerInboxResidentThreadId(ridForSelect) : threadKey
+      const selectionId = adminFullInbox
+        ? threadKey
+        : kind === 'resident'
+          ? managerInboxResidentThreadId(ridForSelect)
+          : threadKey
       setSelectedThreadId(selectionId)
       const next = await getMessagesByThreadKey(threadKey)
       setThread(
@@ -820,14 +868,7 @@ export default function ManagerInboxPage({ manager, allowedPropertyNames, adminF
   async function handleSendReply(e) {
     e.preventDefault()
     if (!selectedThreadId || !reply.trim() || !managerEmail) return
-    let subjResolved = ''
-    if (showSubjectField && replySubjectPreset) {
-      if (replySubjectPreset === 'other' && !replySubjectCustom.trim()) {
-        toast.error('Enter a custom subject or leave subject as “Same as thread”.')
-        return
-      }
-      subjResolved = resolveInboxSubject(replySubjectPreset, replySubjectCustom)
-    }
+    const subjResolved = showSubjectField ? replySubject.trim() : ''
     const bodyOut = mergeSubjectIntoMessageIfNeeded(reply.trim(), subjResolved, showSubjectField)
     setSending(true)
     try {
@@ -846,8 +887,7 @@ export default function ManagerInboxPage({ manager, allowedPropertyNames, adminF
           subject: subjResolved,
         })
         setReply('')
-        setReplySubjectPreset('')
-        setReplySubjectCustom('')
+        setReplySubject('')
         await loadAll()
         const next = await getMessagesByThreadKey(selectedThreadId)
         setThread(
@@ -889,8 +929,7 @@ export default function ManagerInboxPage({ manager, allowedPropertyNames, adminF
         })
       }
       setReply('')
-      setReplySubjectPreset('')
-      setReplySubjectCustom('')
+      setReplySubject('')
       await loadAll()
       if (selectedThreadId === MANAGER_INBOX_AXIS) {
         const next = await getMessagesByThreadKey(axisThreadKey)
@@ -939,28 +978,50 @@ export default function ManagerInboxPage({ manager, allowedPropertyNames, adminF
   }, [threadRows])
 
   const residentComposeOptions = useMemo(() => {
-    return scopedResidentApplications
-      .map(({ resident, application }) => {
-        const id = String(resident?.id || '').trim()
-        if (!id) return null
-        const name =
-          String(resident?.Name || '').trim() ||
-          String(application?.['Signer Full Name'] || '').trim() ||
-          residentThreadLabels.get(id) ||
-          'Resident'
-        const email =
-          String(resident?.Email || '').trim() ||
-          String(application?.['Signer Email'] || '').trim()
-        const propertyName = String(application?.['Property Name'] || resident?.House || '').trim()
+    return scopedResidents
+      .map((r) => {
+        const id = String(r?.id || '').trim()
+        if (!id || !/^rec[a-zA-Z0-9]{14,}$/.test(id)) return null
+        const name = String(r.Name || '').trim() || residentThreadLabels.get(id) || 'Resident'
+        const email = String(r.Email || '').trim()
+        const house = String(r.House || '').trim()
+        const unit = String(r['Unit Number'] || '').trim()
+        const place = [house, unit].filter(Boolean).join(' ')
         return {
           id,
-          label: [name, propertyName].filter(Boolean).join(' · '),
+          label: [name, place].filter(Boolean).join(' · '),
           detail: email,
         }
       })
       .filter(Boolean)
       .sort((a, b) => a.label.localeCompare(b.label))
-  }, [residentThreadLabels, scopedResidentApplications])
+  }, [residentThreadLabels, scopedResidents])
+
+  const adminManagerComposeOptions = useMemo(() => {
+    return (adminComposeManagers || [])
+      .map((m) => {
+        const email = String(m.email || '').trim().toLowerCase()
+        if (!email.includes('@')) return null
+        return { id: m.id, email, label: m.label || email }
+      })
+      .filter(Boolean)
+      .sort((a, b) => a.label.localeCompare(b.label))
+  }, [adminComposeManagers])
+
+  const adminResidentComposeOptions = useMemo(() => {
+    return (adminComposeResidents || [])
+      .map((r) => {
+        const id = String(r.id || '').trim()
+        if (!id || !/^rec[a-zA-Z0-9]{14,}$/.test(id)) return null
+        return {
+          id,
+          label: r.label || id,
+          detail: String(r.email || '').trim(),
+        }
+      })
+      .filter(Boolean)
+      .sort((a, b) => a.label.localeCompare(b.label))
+  }, [adminComposeResidents])
 
   const selectedRowMeta = useMemo(
     () => visibleThreadRows.find((r) => r.id === selectedThreadId),
@@ -1094,10 +1155,7 @@ export default function ManagerInboxPage({ manager, allowedPropertyNames, adminF
                     >
                       {adminFullInbox ? (
                         <>
-                          <option value="site">Site manager</option>
-                          <option value="partner">Partner / management</option>
-                          <option value="website">Website</option>
-                          <option value="admin">Axis admin</option>
+                          <option value="manager">Manager</option>
                           <option value="resident">Resident</option>
                         </>
                       ) : (
@@ -1108,7 +1166,61 @@ export default function ManagerInboxPage({ manager, allowedPropertyNames, adminF
                       )}
                     </select>
                   </label>
-                  {composeKind === 'resident' ? (
+                  {adminFullInbox && composeKind === 'manager' ? (
+                    <div className="space-y-2">
+                      {adminManagerComposeOptions.length ? (
+                        <label className="block text-xs font-semibold text-slate-700">
+                          Manager
+                          <select
+                            value={
+                              adminManagerComposeOptions.some((o) => o.email === composeManagerEmail)
+                                ? composeManagerEmail
+                                : ''
+                            }
+                            onChange={(e) => setComposeManagerEmail(e.target.value)}
+                            className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900"
+                          >
+                            <option value="">Select…</option>
+                            {adminManagerComposeOptions.map((o) => (
+                              <option key={o.email} value={o.email}>
+                                {o.label}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+                      ) : (
+                        <p className="text-xs text-slate-500">No manager accounts loaded.</p>
+                      )}
+                    </div>
+                  ) : null}
+                  {adminFullInbox && composeKind === 'resident' ? (
+                    <div className="space-y-2">
+                      {adminResidentComposeOptions.length ? (
+                        <label className="block text-xs font-semibold text-slate-700">
+                          Resident
+                          <select
+                            value={
+                              adminResidentComposeOptions.some((o) => o.id === composeResidentRecordId)
+                                ? composeResidentRecordId
+                                : ''
+                            }
+                            onChange={(e) => setComposeResidentRecordId(e.target.value)}
+                            className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900"
+                          >
+                            <option value="">Select…</option>
+                            {adminResidentComposeOptions.map((o) => (
+                              <option key={o.id} value={o.id}>
+                                {o.detail ? `${o.label} · ${o.detail}` : o.label}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+                      ) : (
+                        <p className="text-xs text-slate-500">No resident profiles found.</p>
+                      )}
+                    </div>
+                  ) : null}
+                  {!adminFullInbox && composeKind === 'resident' ? (
                     <div className="space-y-2">
                       {residentComposeOptions.length ? (
                         <label className="block text-xs font-semibold text-slate-700">
@@ -1139,27 +1251,50 @@ export default function ManagerInboxPage({ manager, allowedPropertyNames, adminF
                       )}
                     </div>
                   ) : null}
-                  {(composeKind === 'site' || composeKind === 'partner') ? (
-                    <label className="block text-xs font-semibold text-slate-700">
-                      Recipient email
-                      <input
-                        type="email"
-                        value={composeEmail}
-                        onChange={(e) => setComposeEmail(e.target.value)}
-                        placeholder="name@example.com"
-                        required
-                        className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900"
-                      />
-                    </label>
+                  {!adminFullInbox && composeKind === 'admin' ? (
+                    <div className="space-y-2">
+                      {adminContactsLoading ? (
+                        <p className="text-xs text-slate-500">Loading admin contacts…</p>
+                      ) : adminInboxContacts.length ? (
+                        <label className="block text-xs font-semibold text-slate-700">
+                          Admin
+                          <select
+                            value={
+                              adminInboxContacts.some((c) => c.email === composeAdminEmail)
+                                ? composeAdminEmail
+                                : ''
+                            }
+                            onChange={(e) => setComposeAdminEmail(e.target.value)}
+                            className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900"
+                          >
+                            <option value="">Select…</option>
+                            {adminInboxContacts.map((c) => (
+                              <option key={c.id} value={c.email}>
+                                {c.label}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+                      ) : (
+                        <p className="text-xs text-slate-500">
+                          No admin contacts found. Add people with an email in your Admin Profile table (and ensure they are
+                          not disabled).
+                        </p>
+                      )}
+                    </div>
                   ) : null}
-                  <InboxSubjectPicker
-                    presetId={composeSubjectPreset}
-                    onPresetIdChange={setComposeSubjectPreset}
-                    customSubject={composeSubjectCustom}
-                    onCustomSubjectChange={setComposeSubjectCustom}
-                    disabled={composeSending}
-                    required
-                  />
+                  <label className="block text-xs font-semibold text-slate-700">
+                    Subject
+                    <input
+                      type="text"
+                      value={composeSubject}
+                      onChange={(e) => setComposeSubject(e.target.value)}
+                      required
+                      disabled={composeSending}
+                      placeholder="Brief subject line"
+                      className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900"
+                    />
+                  </label>
                   <label className="block text-xs font-semibold text-slate-700">
                     Message
                     <textarea
@@ -1295,11 +1430,10 @@ export default function ManagerInboxPage({ manager, allowedPropertyNames, adminF
               sending={sending}
               placeholder={composerPlaceholder}
               showSubject={showSubjectField}
-              useSubjectPresets={showSubjectField}
-              subjectPresetId={replySubjectPreset}
-              onSubjectPresetIdChange={setReplySubjectPreset}
-              subjectCustom={replySubjectCustom}
-              onSubjectCustomChange={setReplySubjectCustom}
+              useSubjectPresets={false}
+              subject={replySubject}
+              onSubjectChange={setReplySubject}
+              subjectPlaceholder="Optional — adds a subject line to this reply"
               allowSubjectEmpty
               toLabel={composerToLabel || null}
             />

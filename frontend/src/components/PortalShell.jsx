@@ -5,10 +5,10 @@ function PortalShellFooter({ brandTitle, brandSubtitle }) {
     <footer className="shrink-0 border-t border-slate-200 bg-white/95">
       <div className="mx-auto flex w-full max-w-[1600px] flex-col gap-3 px-4 py-5 text-sm text-slate-500 sm:px-6 lg:px-8 lg:flex-row lg:items-center lg:justify-between">
         <div>
-          <div className="font-semibold text-slate-800">{brandSubtitle}</div>
-          <div className="text-xs text-slate-400">{brandTitle}</div>
+          <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-[#2f76ff]">{brandTitle}</div>
+          <div className="mt-0.5 text-sm font-black text-slate-900">{brandSubtitle}</div>
         </div>
-        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-slate-400">
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-slate-400 lg:justify-end">
           <span>© 2026 Axis</span>
           <span>Seattle, WA</span>
           <span>Portal access and account tools</span>
@@ -21,10 +21,10 @@ function PortalShellFooter({ brandTitle, brandSubtitle }) {
 /**
  * Shared chrome for Manager, Resident, and Admin portals.
  *
- * Desktop: sidebar + main content each scroll independently inside a
- * fixed-height container that fills the available viewport (below any
- * site header). Name / billing / sign-out in the sidebar footer are
- * always visible — no page-level scrolling required.
+ * Desktop: sidebar + main column fill the viewport (below the site header).
+ * The page footer stays at the bottom of the main column when content is
+ * short; only the `<main>` area scrolls when content is tall. Sidebar
+ * user block and sign-out stay visible.
  *
  * Mobile: sticky tab-pill bar at top, content scrolls below it.
  *
@@ -96,9 +96,9 @@ export default function PortalShell({
           </div>
         </header>
 
-        {/* Scrollable content */}
-        <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
-          <main className="min-h-0 flex-1">
+        {/* Main scrolls; footer stays at bottom of viewport when content is short */}
+        <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+          <main className="min-h-0 flex-1 overflow-y-auto">
             {children}
           </main>
           <PortalShellFooter brandTitle={brandTitle} brandSubtitle={brandSubtitle} />
@@ -196,9 +196,9 @@ export default function PortalShell({
           </div>
         </header>
 
-        {/* Page content — scrolls independently from sidebar */}
-        <div className="min-h-0 flex-1 overflow-y-auto">
-          <main className="px-4 py-6 sm:px-6 lg:px-8">
+        {/* Page content scrolls; footer pinned to bottom of column when content is short */}
+        <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+          <main className="min-h-0 flex-1 overflow-y-auto px-4 py-6 sm:px-6 lg:px-8">
             {children}
           </main>
           <PortalShellFooter brandTitle={brandTitle} brandSubtitle={brandSubtitle} />
@@ -245,15 +245,22 @@ export function StatusPill({ children, tone = 'slate' }) {
 
 export function DataTable({ columns, rows, empty }) {
   if (!rows.length) {
-    return <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50/80 py-12 text-center text-sm text-slate-500">{empty}</div>
+    return (
+      <div className="rounded-[24px] border border-dashed border-slate-200 bg-slate-50/80 px-6 py-16 text-center text-sm text-slate-500">
+        {empty}
+      </div>
+    )
   }
   return (
-    <div className="overflow-x-auto rounded-[20px] border border-slate-200 bg-white shadow-sm">
+    <div className="overflow-x-auto rounded-[24px] border border-slate-200 bg-white shadow-sm">
       <table className="w-full min-w-[640px] text-sm">
         <thead>
           <tr className="border-b border-slate-200 bg-slate-50">
             {columns.map((c) => (
-              <th key={c.key} className="px-4 py-3 text-left text-[11px] font-bold uppercase tracking-wide text-slate-400">
+              <th
+                key={c.key}
+                className="px-5 py-3.5 text-left text-[11px] font-bold uppercase tracking-[0.14em] text-slate-400"
+              >
                 {c.label}
               </th>
             ))}
@@ -261,9 +268,9 @@ export function DataTable({ columns, rows, empty }) {
         </thead>
         <tbody className="divide-y divide-slate-100">
           {rows.map((row, i) => (
-            <tr key={row.key ?? i} className="hover:bg-slate-50/80">
+            <tr key={row.key ?? i} className="transition-colors hover:bg-slate-50/80">
               {columns.map((c) => (
-                <td key={c.key} className="px-4 py-3 text-slate-700">
+                <td key={c.key} className="px-5 py-4 text-slate-700">
                   {c.render ? c.render(row.data) : row.data[c.key]}
                 </td>
               ))}

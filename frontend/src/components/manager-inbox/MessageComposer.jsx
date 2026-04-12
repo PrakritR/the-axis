@@ -21,6 +21,7 @@ export default function MessageComposer({
   onSubjectCustomChange,
   allowSubjectEmpty = false,
   subjectRequired = false,
+  subjectPlaceholder = 'Optional subject',
   toLabel = null,
 }) {
   return (
@@ -54,8 +55,9 @@ export default function MessageComposer({
               type="text"
               value={subject}
               onChange={(e) => onSubjectChange?.(e.target.value)}
-              placeholder="Optional subject"
+              placeholder={subjectPlaceholder}
               disabled={disabled}
+              required={subjectRequired}
               className="w-full rounded-xl border border-slate-200 bg-slate-50/50 px-4 py-2.5 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-[#2563eb] focus:bg-white focus:ring-2 focus:ring-[#2563eb]/15 disabled:opacity-50"
             />
           </label>

@@ -34,6 +34,16 @@ import {
   uploadPropertyImage,
 } from '../lib/airtable'
 import {
+  serializeManagerAddPropertyToAirtableFields,
+  emptyRoomRow,
+  emptyBathroomRow,
+  emptyKitchenRow,
+  clampInt,
+  MAX_ROOM_SLOTS,
+  MAX_BATHROOM_SLOTS,
+  MAX_KITCHEN_SLOTS,
+} from '../lib/managerPropertyFormAirtableMap.js'
+import {
   consolidateManagerDashboardWarnings,
   errorFromAirtableApiBody,
   isAirtablePermissionErrorMessage,
@@ -54,7 +64,7 @@ import { ApplicationDetailPanel, applicationViewModelFromAirtableRow } from '../
 import {
   PortalOpsCard,
   PortalOpsEmptyState,
-  PortalOpsFilterPills,
+  PortalOpsFilterCards,
   PortalOpsMetric,
   PortalOpsStatusBadge,
 } from '../components/PortalOpsUI'
@@ -461,6 +471,16 @@ function managerWorkOrderStatusTone(record) {
   if (label === 'Completed') return 'emerald'
   if (label === 'In Progress') return 'axis'
   return 'slate'
+}
+
+/** Bucket for filter cards: separates scheduled vs in-progress work. */
+function managerWorkOrderBucket(record) {
+  if (!record) return 'open'
+  if (workOrderIsResolvedRecord(record)) return 'completed'
+  const raw = String(record.Status || '').trim().toLowerCase()
+  if (raw.includes('schedule')) return 'scheduled'
+  if (raw.includes('progress')) return 'in_progress'
+  return 'open'
 }
 
 function parseWorkOrderMetaBlock(value = '') {
@@ -2191,18 +2211,38 @@ function HouseManagementPanel({ manager, onPropertiesChange }) {
   const [editingPropertyId, setEditingPropertyId] = useState(null)
   const [addOpen, setAddOpen] = useState(false)
   const [addSaving, setAddSaving] = useState(false)
-  const emptyAddForm = () => ({
+  const emptyAddBasics = () => ({
     name: '',
     address: '',
-    bathrooms: '',
-    housingType: '',
+    propertyType: '',
+    description: '',
+    amenities: '',
+    pets: '',
+    bathroomAccess: '',
+  })
+  const [addBasics, setAddBasics] = useState(emptyAddBasics)
+  const [addRoomCount, setAddRoomCount] = useState(1)
+  const [addBathroomCount, setAddBathroomCount] = useState(1)
+  const [addKitchenCount, setAddKitchenCount] = useState(1)
+  const [addRooms, setAddRooms] = useState(() => [emptyRoomRow(1)])
+  const [addBathrooms, setAddBathrooms] = useState(() => [emptyBathroomRow()])
+  const [addKitchens, setAddKitchens] = useState(() => [emptyKitchenRow()])
+  const [addFees, setAddFees] = useState({
     utilitiesFee: '',
     securityDeposit: '',
     applicationFee: '',
-    description: '',
   })
-  const [addForm, setAddForm] = useState(emptyAddForm)
-  const [addRooms, setAddRooms] = useState([{ id: Date.now(), name: 'Room 1', rent: '', status: '', notes: '' }])
+  const [addLaundry, setAddLaundry] = useState({
+    enabled: false,
+    type: '',
+    description: '',
+    roomsSharing: '',
+  })
+  const [addParking, setAddParking] = useState({
+    enabled: false,
+    type: '',
+    fee: '',
+  })
   const [addImages, setAddImages] = useState([]) // [{ id, file, preview, caption }]
   const addImageInputRef = useRef(null)
   const addDropRef = useRef(null)
@@ -2236,6 +2276,33 @@ function HouseManagementPanel({ manager, onPropertiesChange }) {
   useEffect(() => {
     loadProperties()
   }, [loadProperties])
+
+  useEffect(() => {
+    const n = clampInt(addRoomCount, 1, MAX_ROOM_SLOTS)
+    setAddRooms((prev) => {
+      const next = [...prev]
+      while (next.length < n) next.push(emptyRoomRow(next.length + 1))
+      return next.slice(0, n)
+    })
+  }, [addRoomCount])
+
+  useEffect(() => {
+    const n = clampInt(addBathroomCount, 0, MAX_BATHROOM_SLOTS)
+    setAddBathrooms((prev) => {
+      const next = [...prev]
+      while (next.length < n) next.push(emptyBathroomRow())
+      return next.slice(0, n)
+    })
+  }, [addBathroomCount])
+
+  useEffect(() => {
+    const n = clampInt(addKitchenCount, 0, MAX_KITCHEN_SLOTS)
+    setAddKitchens((prev) => {
+      const next = [...prev]
+      while (next.length < n) next.push(emptyKitchenRow())
+      return next.slice(0, n)
+    })
+  }, [addKitchenCount])
 
   function extractNoteValue(notes, label) {
     const escaped = String(label || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
@@ -2350,71 +2417,109 @@ function HouseManagementPanel({ manager, onPropertiesChange }) {
     addDropRef.current?.classList.remove('border-[#2563eb]', 'bg-blue-50/40')
   }
 
+  function moveAddImage(idx, delta) {
+    setAddImages((prev) => {
+      const j = idx + delta
+      if (j < 0 || j >= prev.length) return prev
+      const next = [...prev]
+      const t = next[idx]
+      next[idx] = next[j]
+      next[j] = t
+      return next
+    })
+  }
+
+  function resetAddPropertyForm() {
+    setAddBasics(emptyAddBasics())
+    setAddRoomCount(1)
+    setAddBathroomCount(1)
+    setAddKitchenCount(1)
+    setAddRooms([emptyRoomRow(1)])
+    setAddBathrooms([emptyBathroomRow()])
+    setAddKitchens([emptyKitchenRow()])
+    setAddFees({ utilitiesFee: '', securityDeposit: '', applicationFee: '' })
+    setAddLaundry({ enabled: false, type: '', description: '', roomsSharing: '' })
+    setAddParking({ enabled: false, type: '', fee: '' })
+    setAddImages((prev) => {
+      prev.forEach((img) => URL.revokeObjectURL(img.preview))
+      return []
+    })
+  }
+
   async function handleAddPropertySubmit(e) {
     e.preventDefault()
     if (isManagerInternalPreview(manager)) {
       toast.error('Adding properties is disabled in preview mode.')
       return
     }
-    if (!addForm.name.trim() || !addForm.address.trim()) {
+    if (!addBasics.name.trim() || !addBasics.address.trim()) {
       toast.error('Property name and address are required.')
       return
     }
-    if (!addRooms.length || !addRooms.some((r) => r.name.trim())) {
-      toast.error('Add at least one room before submitting.')
+    const rc = clampInt(addRoomCount, 1, MAX_ROOM_SLOTS)
+    const bc = clampInt(addBathroomCount, 0, MAX_BATHROOM_SLOTS)
+    const kc = clampInt(addKitchenCount, 0, MAX_KITCHEN_SLOTS)
+    if (!addRooms.slice(0, rc).some((r) => String(r.name || '').trim())) {
+      toast.error('Give each room a name or number before submitting.')
       return
     }
     setAddSaving(true)
     try {
-      const noteParts = []
-      if (addForm.description.trim()) noteParts.push(`Description: ${addForm.description.trim()}`)
-      noteParts.push(`Submitted by: ${String(manager?.email || '').trim()}`)
-      const utilitiesFee = optionalPropertyCurrency(addForm.utilitiesFee) ?? 0
-      const securityDeposit = optionalPropertyCurrency(addForm.securityDeposit) ?? 0
-      const applicationFee = optionalPropertyCurrency(addForm.applicationFee)
-      const fields = {
-        Name: addForm.name.trim(),
-        Address: addForm.address.trim(),
-        Property: addForm.name.trim(),
-        Approved: false,
-        Status: 'pending_review',
-        'Manager Email': String(manager?.email || '').trim(),
-        Notes: noteParts.join('\n'),
-        'Utilities Fee': utilitiesFee,
-        'Security Deposit': securityDeposit,
-      }
-      if (addForm.bathrooms !== '') {
-        const b = Number(addForm.bathrooms)
-        if (Number.isFinite(b) && b >= 0) fields['Bathrooms'] = b
-      }
-      if (addForm.housingType) fields['Housing Type'] = addForm.housingType
-      if (applicationFee !== undefined) fields['Application Fee'] = applicationFee
-      if (manager?.id) fields.Manager = [manager.id]
+      const photoCaptionLines = addImages
+        .map((img, i) => {
+          const c = String(img.caption || '').trim()
+          return c ? `Image ${i + 1}: ${c}` : ''
+        })
+        .filter(Boolean)
+
+      const fields = serializeManagerAddPropertyToAirtableFields({
+        basics: addBasics,
+        roomCount: rc,
+        bathroomCount: bc,
+        kitchenCount: kc,
+        fees: addFees,
+        laundry: addLaundry,
+        parking: addParking,
+        rooms: addRooms,
+        bathrooms: addBathrooms,
+        kitchens: addKitchens,
+        managerEmail: manager?.email,
+        managerRecordId: manager?.id,
+        photoCaptionLines,
+      })
 
       const created = await createPropertyAdmin(fields)
 
-      // Upload images sequentially (Airtable content API is rate-sensitive)
       if (addImages.length) {
         for (const img of addImages) {
           try {
             await uploadPropertyImage(created.id, img.file)
           } catch {
-            // Non-fatal: property is created, images may need re-upload
+            /* non-fatal */
           }
         }
       }
 
-      // Create room records linked to the new property
+      const roomNotesParts = (r) => {
+        const parts = []
+        if (r.furnished) parts.push('Furnished: yes')
+        if (String(r.utilitiesDescription || '').trim()) parts.push(`Utilities: ${String(r.utilitiesDescription).trim()}`)
+        if (String(r.utilitiesCost || '').trim()) parts.push(`Utilities cost: ${String(r.utilitiesCost).trim()}`)
+        if (String(r.notes || '').trim()) parts.push(String(r.notes).trim())
+        return parts.length ? parts.join(' · ') : undefined
+      }
+
       await Promise.allSettled(
         addRooms
-          .filter((r) => r.name.trim())
+          .slice(0, rc)
+          .filter((r) => String(r.name || '').trim())
           .map((r) =>
             createRoomRecord({
               propertyId: created.id,
-              name: r.name.trim(),
-              rent: r.rent !== '' ? r.rent : undefined,
-              status: r.status || undefined,
-              notes: r.notes || undefined,
+              name: String(r.name).trim(),
+              rent: r.rent !== '' && r.rent != null ? r.rent : undefined,
+              status: String(r.availability || '').trim() || undefined,
+              notes: roomNotesParts(r),
             }),
           ),
       )
@@ -2425,11 +2530,7 @@ function HouseManagementPanel({ manager, onPropertiesChange }) {
         return next
       })
       toast.success('Property submitted — pending review')
-      // Clean up image preview URLs
-      addImages.forEach((img) => URL.revokeObjectURL(img.preview))
-      setAddForm(emptyAddForm())
-      setAddRooms([{ id: Date.now(), name: 'Room 1', rent: '', status: '', notes: '' }])
-      setAddImages([])
+      resetAddPropertyForm()
       setAddOpen(false)
     } catch (err) {
       console.error('[HouseManagementPanel] create property failed', err)
@@ -2699,67 +2800,117 @@ function HouseManagementPanel({ manager, onPropertiesChange }) {
         )}
 
         {addOpen ? (
-          <Modal onClose={() => { if (!addSaving) setAddOpen(false) }}>
+          <Modal
+            onClose={() => {
+              if (!addSaving) {
+                resetAddPropertyForm()
+                setAddOpen(false)
+              }
+            }}
+          >
             <div className="pr-8">
               <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-[#2563eb]">New property</div>
               <h3 className="mt-2 text-2xl font-black text-slate-900">Add property</h3>
               <p className="mt-2 text-sm text-slate-500">Submit details for review. It will appear in your list as pending until approved.</p>
             </div>
-            <form onSubmit={handleAddPropertySubmit} className="mt-6 space-y-5">
+            <form onSubmit={handleAddPropertySubmit} className="mt-6 max-h-[min(78vh,720px)] space-y-8 overflow-y-auto pr-1">
 
-              {/* ── Basic info ── */}
-              <div>
-                <label className="mb-1.5 block text-xs font-semibold text-slate-700">Property name *</label>
-                <input
-                  className={addInputCls}
-                  value={addForm.name}
-                  onChange={(e) => setAddForm((f) => ({ ...f, name: e.target.value }))}
-                  placeholder="e.g. Maple Co-op"
-                  required
-                />
-              </div>
-              <div>
-                <label className="mb-1.5 block text-xs font-semibold text-slate-700">Address *</label>
-                <input
-                  className={addInputCls}
-                  value={addForm.address}
-                  onChange={(e) => setAddForm((f) => ({ ...f, address: e.target.value }))}
-                  placeholder="Street, city, state"
-                  required
-                />
-              </div>
-              <div className="grid gap-4 sm:grid-cols-2">
+              {/* 1. Property basics */}
+              <div className="space-y-4">
+                <div className="text-[11px] font-bold uppercase tracking-[0.14em] text-slate-400">Property basics</div>
                 <div>
-                  <label className="mb-1.5 block text-xs font-semibold text-slate-700">Housing type</label>
+                  <label className="mb-1.5 block text-xs font-semibold text-slate-700">Property name *</label>
+                  <input
+                    className={addInputCls}
+                    value={addBasics.name}
+                    onChange={(e) => setAddBasics((b) => ({ ...b, name: e.target.value }))}
+                    placeholder="e.g. Maple Co-op"
+                    required
+                  />
+                </div>
+                <div>
+                  <label className="mb-1.5 block text-xs font-semibold text-slate-700">Address *</label>
+                  <input
+                    className={addInputCls}
+                    value={addBasics.address}
+                    onChange={(e) => setAddBasics((b) => ({ ...b, address: e.target.value }))}
+                    placeholder="Street, city, state"
+                    required
+                  />
+                </div>
+                <div>
+                  <label className="mb-1.5 block text-xs font-semibold text-slate-700">Property type</label>
                   <select
                     className={addInputCls}
-                    value={addForm.housingType}
-                    onChange={(e) => setAddForm((f) => ({ ...f, housingType: e.target.value }))}
+                    value={addBasics.propertyType}
+                    onChange={(e) => setAddBasics((b) => ({ ...b, propertyType: e.target.value }))}
                   >
-                    <option value="">Select type…</option>
+                    <option value="">Select…</option>
                     {['House', 'Apartment', 'Townhome', 'Studio', 'Other'].map((t) => (
                       <option key={t} value={t}>{t}</option>
                     ))}
                   </select>
                 </div>
                 <div>
-                  <label className="mb-1.5 block text-xs font-semibold text-slate-700">Bathrooms</label>
-                  <input
-                    className={addInputCls}
-                    type="number"
-                    min="0"
-                    step="0.5"
-                    value={addForm.bathrooms}
-                    onChange={(e) => setAddForm((f) => ({ ...f, bathrooms: e.target.value }))}
-                    placeholder="e.g. 2"
+                  <label className="mb-1.5 block text-xs font-semibold text-slate-700">Description</label>
+                  <textarea
+                    className={`${addInputCls} min-h-[88px] resize-y`}
+                    value={addBasics.description}
+                    onChange={(e) => setAddBasics((b) => ({ ...b, description: e.target.value }))}
+                    placeholder="Highlights, house rules, neighborhood…"
+                    rows={3}
                   />
                 </div>
               </div>
 
-              {/* ── Fees ── */}
-              <div>
-                <div className="mb-2 text-[11px] font-bold uppercase tracking-[0.14em] text-slate-400">Fees</div>
-                <p className="mb-3 text-xs text-slate-500">
+              {/* 2. Counts */}
+              <div className="space-y-4">
+                <div className="text-[11px] font-bold uppercase tracking-[0.14em] text-slate-400">Counts &amp; setup</div>
+                <p className="text-xs text-slate-500">
+                  Enter how many rentable rooms, bathrooms, and kitchens to configure — the form opens that many sections below (max {MAX_ROOM_SLOTS} rooms, {MAX_BATHROOM_SLOTS} bathrooms, {MAX_KITCHEN_SLOTS} kitchens).
+                </p>
+                <div className="grid gap-4 sm:grid-cols-3">
+                  <div>
+                    <label className="mb-1.5 block text-xs font-semibold text-slate-700">Room count *</label>
+                    <input
+                      className={addInputCls}
+                      type="number"
+                      min={1}
+                      max={MAX_ROOM_SLOTS}
+                      value={addRoomCount}
+                      onChange={(e) => setAddRoomCount(e.target.value)}
+                      required
+                    />
+                  </div>
+                  <div>
+                    <label className="mb-1.5 block text-xs font-semibold text-slate-700">Bathroom count</label>
+                    <input
+                      className={addInputCls}
+                      type="number"
+                      min={0}
+                      max={MAX_BATHROOM_SLOTS}
+                      value={addBathroomCount}
+                      onChange={(e) => setAddBathroomCount(e.target.value)}
+                    />
+                  </div>
+                  <div>
+                    <label className="mb-1.5 block text-xs font-semibold text-slate-700">Kitchen count</label>
+                    <input
+                      className={addInputCls}
+                      type="number"
+                      min={0}
+                      max={MAX_KITCHEN_SLOTS}
+                      value={addKitchenCount}
+                      onChange={(e) => setAddKitchenCount(e.target.value)}
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* 3. Fees */}
+              <div className="space-y-3">
+                <div className="text-[11px] font-bold uppercase tracking-[0.14em] text-slate-400">Fees</div>
+                <p className="text-xs text-slate-500">
                   Utilities and security deposit default to <strong>$0</strong> if left blank. Application fee is optional — leave blank to use the default ($50) once the listing is live.
                 </p>
                 <div className="grid gap-4 sm:grid-cols-3">
@@ -2770,9 +2921,8 @@ function HouseManagementPanel({ manager, onPropertiesChange }) {
                       type="number"
                       min="0"
                       step="1"
-                      value={addForm.utilitiesFee}
-                      onChange={(e) => setAddForm((f) => ({ ...f, utilitiesFee: e.target.value }))}
-                      placeholder="e.g. 175"
+                      value={addFees.utilitiesFee}
+                      onChange={(e) => setAddFees((f) => ({ ...f, utilitiesFee: e.target.value }))}
                     />
                   </div>
                   <div>
@@ -2782,9 +2932,8 @@ function HouseManagementPanel({ manager, onPropertiesChange }) {
                       type="number"
                       min="0"
                       step="1"
-                      value={addForm.securityDeposit}
-                      onChange={(e) => setAddForm((f) => ({ ...f, securityDeposit: e.target.value }))}
-                      placeholder="e.g. 600"
+                      value={addFees.securityDeposit}
+                      onChange={(e) => setAddFees((f) => ({ ...f, securityDeposit: e.target.value }))}
                     />
                   </div>
                   <div>
@@ -2794,116 +2943,245 @@ function HouseManagementPanel({ manager, onPropertiesChange }) {
                       type="number"
                       min="0"
                       step="1"
-                      value={addForm.applicationFee}
-                      onChange={(e) => setAddForm((f) => ({ ...f, applicationFee: e.target.value }))}
-                      placeholder="e.g. 50"
+                      value={addFees.applicationFee}
+                      onChange={(e) => setAddFees((f) => ({ ...f, applicationFee: e.target.value }))}
                     />
                   </div>
                 </div>
               </div>
 
-              {/* ── Description ── */}
-              <div>
-                <label className="mb-1.5 block text-xs font-semibold text-slate-700">Description</label>
-                <textarea
-                  className={`${addInputCls} min-h-[90px] resize-y`}
-                  value={addForm.description}
-                  onChange={(e) => setAddForm((f) => ({ ...f, description: e.target.value }))}
-                  placeholder="Highlights, house rules, neighbourhood, etc."
-                  rows={3}
-                />
+              {/* 4. Amenities / pets / parking / laundry */}
+              <div className="space-y-4">
+                <div className="text-[11px] font-bold uppercase tracking-[0.14em] text-slate-400">Amenities, pets, parking &amp; laundry</div>
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <div className="sm:col-span-2">
+                    <label className="mb-1.5 block text-xs font-semibold text-slate-700">Amenities</label>
+                    <textarea
+                      className={`${addInputCls} min-h-[72px] resize-y`}
+                      value={addBasics.amenities}
+                      onChange={(e) => setAddBasics((b) => ({ ...b, amenities: e.target.value }))}
+                      placeholder="Wi‑Fi, common areas, cleaning, etc."
+                      rows={2}
+                    />
+                  </div>
+                  <div className="sm:col-span-2">
+                    <label className="mb-1.5 block text-xs font-semibold text-slate-700">Pets</label>
+                    <input
+                      className={addInputCls}
+                      value={addBasics.pets}
+                      onChange={(e) => setAddBasics((b) => ({ ...b, pets: e.target.value }))}
+                      placeholder="e.g. Cats OK, no dogs, or no pets"
+                    />
+                  </div>
+                  <label className="flex cursor-pointer items-center gap-2 text-sm font-medium text-slate-700">
+                    <input
+                      type="checkbox"
+                      checked={addParking.enabled}
+                      onChange={(e) => setAddParking((p) => ({ ...p, enabled: e.target.checked }))}
+                      className="h-4 w-4 rounded border-slate-300 text-[#2563eb]"
+                    />
+                    Parking available
+                  </label>
+                  <label className="flex cursor-pointer items-center gap-2 text-sm font-medium text-slate-700">
+                    <input
+                      type="checkbox"
+                      checked={addLaundry.enabled}
+                      onChange={(e) => setAddLaundry((l) => ({ ...l, enabled: e.target.checked }))}
+                      className="h-4 w-4 rounded border-slate-300 text-[#2563eb]"
+                    />
+                    Laundry on site
+                  </label>
+                  {addParking.enabled ? (
+                    <>
+                      <div>
+                        <label className="mb-1.5 block text-xs font-semibold text-slate-700">Parking type</label>
+                        <input
+                          className={addInputCls}
+                          value={addParking.type}
+                          onChange={(e) => setAddParking((p) => ({ ...p, type: e.target.value }))}
+                          placeholder="e.g. Street, garage, assigned spot"
+                        />
+                      </div>
+                      <div>
+                        <label className="mb-1.5 block text-xs font-semibold text-slate-700">Parking fee ($/mo)</label>
+                        <input
+                          className={addInputCls}
+                          type="number"
+                          min="0"
+                          step="1"
+                          value={addParking.fee}
+                          onChange={(e) => setAddParking((p) => ({ ...p, fee: e.target.value }))}
+                        />
+                      </div>
+                    </>
+                  ) : null}
+                  {addLaundry.enabled ? (
+                    <>
+                      <div>
+                        <label className="mb-1.5 block text-xs font-semibold text-slate-700">Laundry type</label>
+                        <input
+                          className={addInputCls}
+                          value={addLaundry.type}
+                          onChange={(e) => setAddLaundry((l) => ({ ...l, type: e.target.value }))}
+                          placeholder="e.g. In-unit, shared W/D in basement"
+                        />
+                      </div>
+                      <div>
+                        <label className="mb-1.5 block text-xs font-semibold text-slate-700">Rooms sharing laundry</label>
+                        <input
+                          className={addInputCls}
+                          value={addLaundry.roomsSharing}
+                          onChange={(e) => setAddLaundry((l) => ({ ...l, roomsSharing: e.target.value }))}
+                          placeholder="e.g. All rooms, or Room 1–4"
+                        />
+                      </div>
+                      <div className="sm:col-span-2">
+                        <label className="mb-1.5 block text-xs font-semibold text-slate-700">Laundry details</label>
+                        <textarea
+                          className={`${addInputCls} min-h-[64px]`}
+                          value={addLaundry.description}
+                          onChange={(e) => setAddLaundry((l) => ({ ...l, description: e.target.value }))}
+                          placeholder="Access, coins, schedule…"
+                          rows={2}
+                        />
+                      </div>
+                    </>
+                  ) : null}
+                </div>
+                <div>
+                  <label className="mb-1.5 block text-xs font-semibold text-slate-700">Bathroom access (summary)</label>
+                  <textarea
+                    className={`${addInputCls} min-h-[64px] resize-y`}
+                    value={addBasics.bathroomAccess}
+                    onChange={(e) => setAddBasics((b) => ({ ...b, bathroomAccess: e.target.value }))}
+                    placeholder="Optional overview — use bathroom sections below for each bath."
+                    rows={2}
+                  />
+                </div>
               </div>
 
-              {/* ── Rooms ── */}
-              <div>
-                <div className="mb-2 flex items-center justify-between">
-                  <div className="text-[11px] font-bold uppercase tracking-[0.14em] text-slate-400">Rooms *</div>
-                  <button
-                    type="button"
-                    onClick={() =>
-                      setAddRooms((prev) => [
-                        ...prev,
-                        { id: Date.now(), name: `Room ${prev.length + 1}`, rent: '', status: '', notes: '' },
-                      ])
-                    }
-                    className="rounded-full border border-slate-200 px-3 py-1 text-[11px] font-bold text-[#2563eb] hover:bg-blue-50"
-                  >
-                    + Add room
-                  </button>
-                </div>
-                <div className="space-y-3">
+              {/* 5. Rooms */}
+              <div className="space-y-3">
+                <div className="text-[11px] font-bold uppercase tracking-[0.14em] text-slate-400">Rooms</div>
+                <div className="space-y-4">
                   {addRooms.map((room, idx) => (
-                    <div key={room.id} className="rounded-2xl border border-slate-200 bg-slate-50/60 p-4">
-                      <div className="mb-3 flex items-center justify-between">
-                        <span className="text-xs font-bold text-slate-600">Room {idx + 1}</span>
-                        {addRooms.length > 1 && (
-                          <button
-                            type="button"
-                            onClick={() => setAddRooms((prev) => prev.filter((r) => r.id !== room.id))}
-                            className="text-[11px] font-semibold text-red-500 hover:text-red-700"
-                          >
-                            Remove
-                          </button>
-                        )}
-                      </div>
+                    <div key={`room-${idx}`} className="rounded-2xl border border-slate-200 bg-slate-50/70 p-4">
+                      <div className="mb-3 text-xs font-black text-slate-800">Room {idx + 1}</div>
                       <div className="grid gap-3 sm:grid-cols-2">
                         <div>
-                          <label className="mb-1 block text-[11px] font-semibold text-slate-500">Room name / number</label>
+                          <label className="mb-1 block text-[11px] font-semibold text-slate-600">Name / number *</label>
                           <input
                             className={addInputCls}
                             value={room.name}
-                            onChange={(e) =>
-                              setAddRooms((prev) =>
-                                prev.map((r) => (r.id === room.id ? { ...r, name: e.target.value } : r)),
-                              )
-                            }
-                            placeholder="e.g. Room 1, Master, Suite A"
+                            onChange={(e) => {
+                              const v = e.target.value
+                              setAddRooms((prev) => {
+                                const next = [...prev]
+                                next[idx] = { ...next[idx], name: v }
+                                return next
+                              })
+                            }}
+                            placeholder="e.g. Room 3"
                           />
                         </div>
                         <div>
-                          <label className="mb-1 block text-[11px] font-semibold text-slate-500">Monthly rent ($)</label>
+                          <label className="mb-1 block text-[11px] font-semibold text-slate-600">Monthly rent ($)</label>
                           <input
                             className={addInputCls}
                             type="number"
                             min="0"
                             step="1"
                             value={room.rent}
-                            onChange={(e) =>
-                              setAddRooms((prev) =>
-                                prev.map((r) => (r.id === room.id ? { ...r, rent: e.target.value } : r)),
-                              )
-                            }
-                            placeholder="e.g. 800"
+                            onChange={(e) => {
+                              const v = e.target.value
+                              setAddRooms((prev) => {
+                                const next = [...prev]
+                                next[idx] = { ...next[idx], rent: v }
+                                return next
+                              })
+                            }}
                           />
                         </div>
                         <div>
-                          <label className="mb-1 block text-[11px] font-semibold text-slate-500">Availability status</label>
-                          <select
+                          <label className="mb-1 block text-[11px] font-semibold text-slate-600">Availability date / status</label>
+                          <input
                             className={addInputCls}
-                            value={room.status}
-                            onChange={(e) =>
-                              setAddRooms((prev) =>
-                                prev.map((r) => (r.id === room.id ? { ...r, status: e.target.value } : r)),
-                              )
-                            }
-                          >
-                            <option value="">Not set</option>
-                            <option value="Available">Available</option>
-                            <option value="Occupied">Occupied</option>
-                            <option value="Coming soon">Coming soon</option>
-                          </select>
+                            value={room.availability}
+                            onChange={(e) => {
+                              const v = e.target.value
+                              setAddRooms((prev) => {
+                                const next = [...prev]
+                                next[idx] = { ...next[idx], availability: v }
+                                return next
+                              })
+                            }}
+                            placeholder="e.g. Available March 1, or Occupied"
+                          />
+                        </div>
+                        <label className="flex items-center gap-2 pt-6 text-sm text-slate-700">
+                          <input
+                            type="checkbox"
+                            checked={!!room.furnished}
+                            onChange={(e) => {
+                              const v = e.target.checked
+                              setAddRooms((prev) => {
+                                const next = [...prev]
+                                next[idx] = { ...next[idx], furnished: v }
+                                return next
+                              })
+                            }}
+                            className="h-4 w-4 rounded border-slate-300 text-[#2563eb]"
+                          />
+                          Furnished
+                        </label>
+                        <div className="sm:col-span-2">
+                          <label className="mb-1 block text-[11px] font-semibold text-slate-600">Utilities (description)</label>
+                          <input
+                            className={addInputCls}
+                            value={room.utilitiesDescription}
+                            onChange={(e) => {
+                              const v = e.target.value
+                              setAddRooms((prev) => {
+                                const next = [...prev]
+                                next[idx] = { ...next[idx], utilitiesDescription: v }
+                                return next
+                              })
+                            }}
+                            placeholder="What’s included for this room, if different from house default"
+                          />
                         </div>
                         <div>
-                          <label className="mb-1 block text-[11px] font-semibold text-slate-500">Notes</label>
+                          <label className="mb-1 block text-[11px] font-semibold text-slate-600">Utilities cost ($/mo)</label>
+                          <input
+                            className={addInputCls}
+                            type="number"
+                            min="0"
+                            step="1"
+                            value={room.utilitiesCost}
+                            onChange={(e) => {
+                              const v = e.target.value
+                              setAddRooms((prev) => {
+                                const next = [...prev]
+                                next[idx] = { ...next[idx], utilitiesCost: v }
+                                return next
+                              })
+                            }}
+                          />
+                        </div>
+                        <div className="sm:col-span-2">
+                          <label className="mb-1 block text-[11px] font-semibold text-slate-600">Notes</label>
                           <input
                             className={addInputCls}
                             value={room.notes}
-                            onChange={(e) =>
-                              setAddRooms((prev) =>
-                                prev.map((r) => (r.id === room.id ? { ...r, notes: e.target.value } : r)),
-                              )
-                            }
-                            placeholder="e.g. Bigger closet, top floor…"
+                            onChange={(e) => {
+                              const v = e.target.value
+                              setAddRooms((prev) => {
+                                const next = [...prev]
+                                next[idx] = { ...next[idx], notes: v }
+                                return next
+                              })
+                            }}
+                            placeholder="Quick notes for this room"
                           />
                         </div>
                       </div>
@@ -2912,10 +3190,107 @@ function HouseManagementPanel({ manager, onPropertiesChange }) {
                 </div>
               </div>
 
-              {/* ── Photos ── */}
+              {/* 6. Bathrooms */}
+              {addBathrooms.length > 0 ? (
+                <div className="space-y-3">
+                  <div className="text-[11px] font-bold uppercase tracking-[0.14em] text-slate-400">Bathrooms</div>
+                  <div className="space-y-4">
+                    {addBathrooms.map((bath, idx) => (
+                      <div key={`bath-${idx}`} className="rounded-2xl border border-slate-200 bg-white p-4">
+                        <div className="mb-3 text-xs font-black text-slate-800">Bathroom {idx + 1}</div>
+                        <div className="grid gap-3 sm:grid-cols-2">
+                          <div className="sm:col-span-2">
+                            <label className="mb-1 block text-[11px] font-semibold text-slate-600">Description</label>
+                            <textarea
+                              className={`${addInputCls} min-h-[64px]`}
+                              value={bath.description}
+                              onChange={(e) => {
+                                const v = e.target.value
+                                setAddBathrooms((prev) => {
+                                  const next = [...prev]
+                                  next[idx] = { ...next[idx], description: v }
+                                  return next
+                                })
+                              }}
+                              placeholder="Full bath, half bath, floor, condition…"
+                              rows={2}
+                            />
+                          </div>
+                          <div className="sm:col-span-2">
+                            <label className="mb-1 block text-[11px] font-semibold text-slate-600">Rooms sharing this bathroom</label>
+                            <input
+                              className={addInputCls}
+                              value={bath.roomsSharing}
+                              onChange={(e) => {
+                                const v = e.target.value
+                                setAddBathrooms((prev) => {
+                                  const next = [...prev]
+                                  next[idx] = { ...next[idx], roomsSharing: v }
+                                  return next
+                                })
+                              }}
+                              placeholder="e.g. Room 1, Room 2"
+                            />
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
+
+              {/* 7. Kitchens */}
+              {addKitchens.length > 0 ? (
+                <div className="space-y-3">
+                  <div className="text-[11px] font-bold uppercase tracking-[0.14em] text-slate-400">Kitchens</div>
+                  <div className="space-y-4">
+                    {addKitchens.map((kit, idx) => (
+                      <div key={`kit-${idx}`} className="rounded-2xl border border-slate-200 bg-white p-4">
+                        <div className="mb-3 text-xs font-black text-slate-800">Kitchen {idx + 1}</div>
+                        <div className="grid gap-3 sm:grid-cols-2">
+                          <div className="sm:col-span-2">
+                            <label className="mb-1 block text-[11px] font-semibold text-slate-600">Description</label>
+                            <textarea
+                              className={`${addInputCls} min-h-[64px]`}
+                              value={kit.description}
+                              onChange={(e) => {
+                                const v = e.target.value
+                                setAddKitchens((prev) => {
+                                  const next = [...prev]
+                                  next[idx] = { ...next[idx], description: v }
+                                  return next
+                                })
+                              }}
+                              placeholder="Galley, shared, appliances…"
+                              rows={2}
+                            />
+                          </div>
+                          <div className="sm:col-span-2">
+                            <label className="mb-1 block text-[11px] font-semibold text-slate-600">Rooms sharing this kitchen</label>
+                            <input
+                              className={addInputCls}
+                              value={kit.roomsSharing}
+                              onChange={(e) => {
+                                const v = e.target.value
+                                setAddKitchens((prev) => {
+                                  const next = [...prev]
+                                  next[idx] = { ...next[idx], roomsSharing: v }
+                                  return next
+                                })
+                              }}
+                              placeholder="e.g. All second-floor rooms"
+                            />
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
+
+              {/* 8. Photos */}
               <div>
                 <div className="mb-2 text-[11px] font-bold uppercase tracking-[0.14em] text-slate-400">Photos</div>
-                {/* Dropzone */}
                 <div
                   ref={addDropRef}
                   onDrop={handleAddImageDrop}
@@ -2925,7 +3300,7 @@ function HouseManagementPanel({ manager, onPropertiesChange }) {
                   className="flex cursor-pointer flex-col items-center justify-center rounded-2xl border-2 border-dashed border-slate-200 bg-slate-50/60 px-6 py-8 text-center transition hover:border-[#2563eb] hover:bg-blue-50/30"
                 >
                   <div className="text-sm font-semibold text-slate-500">Drag &amp; drop images here, or <span className="text-[#2563eb]">click to upload</span></div>
-                  <div className="mt-1 text-xs text-slate-400">JPG, PNG, WEBP — multiple allowed</div>
+                  <div className="mt-1 text-xs text-slate-400">JPG, PNG, WEBP — reorder with arrows; add an optional note per image</div>
                   <input
                     ref={addImageInputRef}
                     type="file"
@@ -2935,19 +3310,33 @@ function HouseManagementPanel({ manager, onPropertiesChange }) {
                     onChange={(e) => addImageFiles(e.target.files)}
                   />
                 </div>
-                {/* Preview grid */}
-                {addImages.length > 0 && (
+                {addImages.length > 0 ? (
                   <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-3">
                     {addImages.map((img, idx) => (
-                      <div key={img.id} className="relative rounded-2xl border border-slate-200 bg-white overflow-hidden">
-                        <img
-                          src={img.preview}
-                          alt={`Preview ${idx + 1}`}
-                          className="h-32 w-full object-cover"
-                        />
+                      <div key={img.id} className="relative overflow-hidden rounded-2xl border border-slate-200 bg-white">
+                        <img src={img.preview} alt="" className="h-32 w-full object-cover" />
+                        <div className="absolute left-1.5 top-1.5 flex gap-1">
+                          <button
+                            type="button"
+                            disabled={idx === 0}
+                            onClick={(e) => { e.stopPropagation(); moveAddImage(idx, -1) }}
+                            className="rounded-md bg-white/90 px-1.5 py-0.5 text-[10px] font-bold text-slate-700 shadow disabled:opacity-30"
+                          >
+                            ↑
+                          </button>
+                          <button
+                            type="button"
+                            disabled={idx >= addImages.length - 1}
+                            onClick={(e) => { e.stopPropagation(); moveAddImage(idx, 1) }}
+                            className="rounded-md bg-white/90 px-1.5 py-0.5 text-[10px] font-bold text-slate-700 shadow disabled:opacity-30"
+                          >
+                            ↓
+                          </button>
+                        </div>
                         <button
                           type="button"
-                          onClick={() => {
+                          onClick={(e) => {
+                            e.stopPropagation()
                             URL.revokeObjectURL(img.preview)
                             setAddImages((prev) => prev.filter((i) => i.id !== img.id))
                           }}
@@ -2958,7 +3347,7 @@ function HouseManagementPanel({ manager, onPropertiesChange }) {
                         <div className="p-2">
                           <input
                             className="w-full rounded-lg border border-slate-200 bg-slate-50 px-2 py-1 text-[11px] text-slate-600 placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-[#2563eb]/40"
-                            placeholder="Caption (optional)"
+                            placeholder="Note (optional)"
                             value={img.caption}
                             onChange={(e) =>
                               setAddImages((prev) =>
@@ -2970,7 +3359,17 @@ function HouseManagementPanel({ manager, onPropertiesChange }) {
                       </div>
                     ))}
                   </div>
-                )}
+                ) : null}
+              </div>
+
+              {/* 9. Review */}
+              <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
+                <div className="text-[11px] font-bold uppercase tracking-[0.14em] text-slate-400">Ready to submit</div>
+                <ul className="mt-2 list-inside list-disc space-y-1 text-xs">
+                  <li><span className="font-semibold">{addBasics.name.trim() || 'Untitled'}</span> · {addBasics.address.trim() || '—'}</li>
+                  <li>{clampInt(addRoomCount, 1, MAX_ROOM_SLOTS)} room section(s), {clampInt(addBathroomCount, 0, MAX_BATHROOM_SLOTS)} bathroom(s), {clampInt(addKitchenCount, 0, MAX_KITCHEN_SLOTS)} kitchen(s)</li>
+                  <li>Pending review after submit — you can edit listing details once live from this portal.</li>
+                </ul>
               </div>
 
               <div className="flex justify-end gap-3 pt-2">
@@ -3125,22 +3524,14 @@ function ManagerProfilePanel({ manager, onManagerUpdate, approvedPropertyCount =
         </div>
       </section>
 
-      {/* Managed property addresses */}
-      <section className="rounded-[28px] border border-slate-200 bg-white p-6">
-        <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-[#2563eb]">Properties</div>
-        <h2 className="mt-2 text-xl font-black text-slate-900">Properties on your account</h2>
-        <p className="mt-2 text-sm leading-6 text-slate-500">
-          Add or edit houses under <strong>Properties</strong> in the dashboard.
-        </p>
-
-        {propsLoading ? (
-          <div className="mt-5 text-sm text-slate-500">Loading properties…</div>
-        ) : approvedForProfile.length === 0 ? (
-          <div className="mt-5 rounded-2xl border border-slate-100 bg-slate-50 p-6 text-center text-sm text-slate-500">
-            No approved properties yet. Add a listing under <strong>Properties</strong> in the sidebar, or wait for pending submissions to be approved.
-          </div>
-        ) : (
-          <div className="mt-5 grid gap-3 sm:grid-cols-2">
+      {/* Approved property cards on profile */}
+      {propsLoading ? (
+        <section className="rounded-[28px] border border-slate-200 bg-white p-6">
+          <div className="text-sm text-slate-500">Loading properties…</div>
+        </section>
+      ) : approvedForProfile.length > 0 ? (
+        <section className="rounded-[28px] border border-slate-200 bg-white p-6">
+          <div className="grid gap-3 sm:grid-cols-2">
             {approvedForProfile.map((p) => (
               <div key={p.id} className="flex gap-4 rounded-2xl border border-slate-200 bg-slate-50 px-5 py-4">
                 <div className="mt-0.5 flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl bg-[#2563eb]/10">
@@ -3167,8 +3558,8 @@ function ManagerProfilePanel({ manager, onManagerUpdate, approvedPropertyCount =
               </div>
             ))}
           </div>
-        )}
-      </section>
+        </section>
+      ) : null}
     </div>
   )
 }
@@ -3527,9 +3918,6 @@ function ManagerDashboardHomePanel({
       <div>
         <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-[#2563eb]">Home</div>
         <h2 className="mt-2 text-2xl font-black text-slate-900">Dashboard</h2>
-        <p className="mt-2 max-w-2xl text-sm text-slate-500">
-          Tasks for your portfolio ({approvedHouseCount || 0} {approvedHouseCount === 1 ? 'house' : 'houses'}). Use the sidebar for full lists.
-        </p>
       </div>
 
       {displayDataWarnings?.length ? (
@@ -3640,11 +4028,18 @@ function WorkOrdersTabPanel({ allowedPropertyNames }) {
     loadList()
   }, [loadList])
 
+  const woBucketCounts = useMemo(() => {
+    const counts = { open: 0, scheduled: 0, in_progress: 0, completed: 0 }
+    for (const row of list) {
+      const b = managerWorkOrderBucket(row)
+      if (counts[b] !== undefined) counts[b] += 1
+    }
+    return counts
+  }, [list])
+
   const filteredList = useMemo(() => {
     let rows = list
-    if (quickFilter === 'open') rows = rows.filter((row) => managerWorkOrderStatusLabel(row) === 'Open')
-    if (quickFilter === 'in_progress') rows = rows.filter((row) => managerWorkOrderStatusLabel(row) === 'In Progress')
-    if (quickFilter === 'completed') rows = rows.filter((row) => managerWorkOrderStatusLabel(row) === 'Completed')
+    if (quickFilter !== 'all') rows = rows.filter((row) => managerWorkOrderBucket(row) === quickFilter)
     const q = search.trim().toLowerCase()
     if (q) {
       rows = rows.filter((row) => {
@@ -3654,10 +4049,6 @@ function WorkOrdersTabPanel({ allowedPropertyNames }) {
     }
     return [...rows].sort((a, b) => new Date(b['Date Submitted'] || b.created_at || 0) - new Date(a['Date Submitted'] || a.created_at || 0))
   }, [list, quickFilter, search])
-
-  const openCount = useMemo(() => list.filter((row) => managerWorkOrderStatusLabel(row) === 'Open').length, [list])
-  const inProgressCount = useMemo(() => list.filter((row) => managerWorkOrderStatusLabel(row) === 'In Progress').length, [list])
-  const completedCount = useMemo(() => list.filter((row) => managerWorkOrderStatusLabel(row) === 'Completed').length, [list])
 
   useEffect(() => {
     if (filteredList.length === 0) {
@@ -3749,20 +4140,16 @@ function WorkOrdersTabPanel({ allowedPropertyNames }) {
         />
       ) : null}
 
-      <div className="grid gap-4 sm:grid-cols-3">
-        <PortalOpsMetric label="Open" value={openCount} hint="New or not started." tone="slate" />
-        <PortalOpsMetric label="In progress" value={inProgressCount} hint="Actively being handled." tone="axis" />
-        <PortalOpsMetric label="Completed" value={completedCount} hint="Resolved." tone="emerald" />
-      </div>
-
-      <PortalOpsFilterPills
+      <PortalOpsFilterCards
         value={quickFilter}
         onChange={setQuickFilter}
+        columnsClassName="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5"
         items={[
-          { id: 'all', label: 'All', count: list.length },
-          { id: 'open', label: 'Open', count: openCount },
-          { id: 'in_progress', label: 'In progress', count: inProgressCount },
-          { id: 'completed', label: 'Completed', count: completedCount },
+          { id: 'all', label: 'All', value: String(list.length), hint: 'Every request', tone: 'slate' },
+          { id: 'open', label: 'Open', value: String(woBucketCounts.open), hint: 'New or not started', tone: 'slate' },
+          { id: 'scheduled', label: 'Scheduled', value: String(woBucketCounts.scheduled), hint: 'Visit time set', tone: 'axis' },
+          { id: 'in_progress', label: 'In progress', value: String(woBucketCounts.in_progress), hint: 'Being handled', tone: 'amber' },
+          { id: 'completed', label: 'Completed', value: String(woBucketCounts.completed), hint: 'Resolved', tone: 'emerald' },
         ]}
       />
 
@@ -3982,9 +4369,26 @@ function ManagerPaymentsPanel({ allowedPropertyNames }) {
     [paymentRows],
   )
 
+  const overdueLineCount = useMemo(
+    () => paymentRows.filter((row) => row.__computedStatus === 'overdue').length,
+    [paymentRows],
+  )
+  const paidLineCount = useMemo(
+    () => paymentRows.filter((row) => row.__computedStatus === 'paid').length,
+    [paymentRows],
+  )
+  const pendingLineCount = useMemo(
+    () => paymentRows.filter((row) => ['unpaid', 'due_soon', 'partial'].includes(row.__computedStatus)).length,
+    [paymentRows],
+  )
+
   const filteredForList = useMemo(() => {
     let list = paymentRows
-    if (filter !== 'all') list = list.filter((row) => row.__computedStatus === filter)
+    if (filter === 'pending') {
+      list = list.filter((row) => ['unpaid', 'due_soon', 'partial'].includes(row.__computedStatus))
+    } else if (filter !== 'all') {
+      list = list.filter((row) => row.__computedStatus === filter)
+    }
     return [...list].sort((a, b) => {
       const propertyCmp = String(paymentPropertyLabel(a)).localeCompare(String(paymentPropertyLabel(b)), undefined, { sensitivity: 'base' })
       if (propertyCmp !== 0) return propertyCmp
@@ -4067,18 +4471,6 @@ function ManagerPaymentsPanel({ allowedPropertyNames }) {
         </div>
       </div>
 
-      <PortalOpsFilterPills
-        value={filter}
-        onChange={setFilter}
-        items={[
-          { id: 'all', label: 'All', count: paymentRows.length },
-          { id: 'paid', label: 'Paid', count: paymentRows.filter((row) => row.__computedStatus === 'paid').length },
-          { id: 'due_soon', label: 'Due Soon', count: paymentRows.filter((row) => row.__computedStatus === 'due_soon').length },
-          { id: 'overdue', label: 'Overdue', count: paymentRows.filter((row) => row.__computedStatus === 'overdue').length },
-          { id: 'partial', label: 'Partial', count: paymentRows.filter((row) => row.__computedStatus === 'partial').length },
-        ]}
-      />
-
       {paymentsLoadError ? (
         <div
           role="alert"
@@ -4106,24 +4498,41 @@ function ManagerPaymentsPanel({ allowedPropertyNames }) {
         <div className="text-center text-[11px] font-bold uppercase tracking-[0.2em] text-slate-400">
           {formatYmLong(selectedYm)}
         </div>
-        <div className="mt-5 grid gap-4 sm:grid-cols-3">
-          <PortalOpsMetric
-            label="Overdue rent"
-            value={money(overdueRentAmount)}
-            hint="Past due, not paid"
-            tone="red"
-          />
-          <PortalOpsMetric
-            label="Paid rent"
-            value={money(totalCollected)}
-            hint="Marked paid this month"
-            tone="emerald"
-          />
-          <PortalOpsMetric
-            label="Pending rent"
-            value={money(pendingRentAmount)}
-            hint="Not yet due or awaiting payment"
-            tone="amber"
+        <div className="mt-5">
+          <PortalOpsFilterCards
+            value={filter}
+            onChange={setFilter}
+            columnsClassName="grid gap-3 sm:grid-cols-2 lg:grid-cols-4"
+            items={[
+              {
+                id: 'all',
+                label: 'All rent',
+                value: String(paymentRows.length),
+                hint: 'Every row this month',
+                tone: 'slate',
+              },
+              {
+                id: 'overdue',
+                label: 'Overdue rent',
+                value: money(overdueRentAmount),
+                hint: overdueLineCount ? `${overdueLineCount} line${overdueLineCount === 1 ? '' : 's'}` : 'None overdue',
+                tone: 'red',
+              },
+              {
+                id: 'paid',
+                label: 'Paid rent',
+                value: money(totalCollected),
+                hint: `${paidLineCount} paid`,
+                tone: 'emerald',
+              },
+              {
+                id: 'pending',
+                label: 'Pending rent',
+                value: money(pendingRentAmount),
+                hint: `${pendingLineCount} not fully paid`,
+                tone: 'amber',
+              },
+            ]}
           />
         </div>
       </div>
@@ -4759,22 +5168,39 @@ function ManagerDashboard({ manager: managerProp, onOpenDraft, onSignOut, onMana
     return () => { cancelled = true }
   }, [handlePropertiesChange])
 
-  // Per-status counts shown in the stat cards above the table
-  const statusCounts = useMemo(() => {
-    const c = {}
-    ALL_STATUSES.forEach(s => { c[s] = 0 })
-    drafts.forEach(d => { if (c[d.Status] !== undefined) c[d.Status]++ })
-    return c
+  const leaseFilterCardId = useMemo(() => {
+    const s = filters.status
+    if (!s) return 'all'
+    if (s === '__draft_ready__') return 'draft_ready'
+    if (s === '__sent_to_resident__') return 'sent_to_resident'
+    if (s === '__signed__') return 'signed'
+    return 'all'
+  }, [filters.status])
+
+  const leaseFilterItems = useMemo(() => {
+    const total = drafts.length
+    const flow = LEASE_FLOW_CARDS.map((card) => ({
+      id: card.id,
+      label: card.label,
+      value: String(drafts.filter((d) => card.match(String(d.Status || '').trim())).length),
+      hint: 'In queue',
+      tone: card.id === 'draft_ready' ? 'amber' : card.id === 'signed' ? 'emerald' : 'axis',
+    }))
+    return [
+      { id: 'all', label: 'All leases', value: String(total), hint: 'Every stage', tone: 'slate' },
+      ...flow,
+    ]
   }, [drafts])
 
-  const leaseFlowCounts = useMemo(
-    () =>
-      LEASE_FLOW_CARDS.map((card) => ({
-        ...card,
-        count: drafts.filter((draft) => card.match(String(draft.Status || '').trim())).length,
-      })),
-    [drafts],
-  )
+  function setLeaseFilterCardId(cardId) {
+    const map = {
+      all: '',
+      draft_ready: '__draft_ready__',
+      sent_to_resident: '__sent_to_resident__',
+      signed: '__signed__',
+    }
+    setFilters((f) => ({ ...f, status: map[cardId] ?? '' }))
+  }
 
   function handleGenerated(newDraft) {
     setDrafts(prev => [{ id: newDraft.id, ...newDraft }, ...prev])
@@ -4866,33 +5292,19 @@ function ManagerDashboard({ manager: managerProp, onOpenDraft, onSignOut, onMana
             <p className="mt-1 text-red-900/90">{leasesLoadError}</p>
           </div>
         ) : null}
-        <div className="mb-4">
-          <h2 className="text-xl font-black text-slate-900">Lease workflow</h2>
-          <p className="mt-1 text-sm text-slate-500">
-            Applications create draft leases. Sending a lease makes it visible to the resident, and once signed it comes back here automatically.
-          </p>
+        <h2 className="mb-4 text-xl font-black text-slate-900">Lease workflow</h2>
+
+        <div className="mb-8">
+          <PortalOpsFilterCards
+            value={leaseFilterCardId}
+            onChange={setLeaseFilterCardId}
+            columnsClassName="grid gap-3 sm:grid-cols-2 lg:grid-cols-4"
+            aria-label="Filter lease queue by stage"
+            items={leaseFilterItems}
+          />
         </div>
 
-        {/* Simplified flow cards — clicking one filters the queue */}
-        <div className="mb-8 grid grid-cols-1 gap-3 sm:grid-cols-3">
-          {leaseFlowCounts.map((card) => {
-            const active = filters.status === card.id
-            return (
-              <button
-                key={card.id}
-                onClick={() => setFilters((f) => ({ ...f, status: active ? '' : card.id }))}
-                className={`rounded-2xl border p-5 text-left transition ${active ? card.cls : 'border-slate-200 bg-white hover:border-slate-300'}`}
-              >
-                <div className={`text-3xl font-black ${active ? '' : 'text-slate-900'}`}>
-                  {card.count}
-                </div>
-                <div className="mt-1 text-sm font-semibold leading-tight">{card.label}</div>
-              </button>
-            )
-          })}
-        </div>
-
-        {/* Toolbar */}
+        {/* Toolbar — search & property only (stage filters are the cards above) */}
         <div className="mb-5 flex flex-wrap items-center gap-3">
           <div className="mr-auto text-sm font-semibold text-slate-500">
             Queue
@@ -4911,20 +5323,6 @@ function ManagerDashboard({ manager: managerProp, onOpenDraft, onSignOut, onMana
               className="rounded-2xl border border-slate-200 bg-white py-2.5 pl-10 pr-4 text-sm transition focus:border-[#2563eb] focus:outline-none focus:ring-2 focus:ring-[#2563eb]/20"
             />
           </div>
-
-          {/* Status filter */}
-          <select
-            value={filters.status}
-            onChange={e => setFilters(f => ({ ...f, status: e.target.value }))}
-            className="rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition focus:border-[#2563eb] focus:outline-none focus:ring-2 focus:ring-[#2563eb]/20"
-          >
-            <option value="">All lease stages</option>
-            <option value="__draft_ready__">Draft ready</option>
-            <option value="Under Review">Manager reviewing</option>
-            <option value="Changes Needed">Needs changes</option>
-            <option value="__sent_to_resident__">Sent to resident</option>
-            <option value="__signed__">Signed</option>
-          </select>
 
           {/* Property filter */}
           <select

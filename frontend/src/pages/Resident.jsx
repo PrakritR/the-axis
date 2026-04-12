@@ -5,6 +5,7 @@ import { EmbeddedStripeCheckout } from '../components/EmbeddedStripeCheckout'
 import {
   PortalOpsCard,
   PortalOpsEmptyState,
+  PortalOpsFilterCards,
   PortalOpsMetric,
   PortalOpsStatusBadge,
 } from '../components/PortalOpsUI'
@@ -115,6 +116,15 @@ function residentWorkOrderStatusTone(record) {
   if (label === 'Scheduled') return 'axis'
   if (label === 'In Progress' || label === 'In Review') return 'amber'
   return 'slate'
+}
+
+function residentWorkOrderFilterBucket(record) {
+  if (!record) return 'open'
+  if (isWorkOrderResolved(record)) return 'completed'
+  const L = residentWorkOrderStatusLabel(record)
+  if (L === 'Scheduled') return 'scheduled'
+  if (L === 'In Progress') return 'in_progress'
+  return 'open'
 }
 
 function parseWorkOrderSchedule(record) {
@@ -694,6 +704,7 @@ function WorkOrderNotesComposer({ workOrder, residentEmail, onUpdated, embedded 
 
 function WorkOrdersPanel({ resident, requests: requestsProp, onRequestCreated, onWorkOrderUpdated }) {
   const requests = Array.isArray(requestsProp) ? requestsProp : []
+  const [woFilter, setWoFilter] = useState('all')
   const [showForm, setShowForm] = useState(false)
   const [selectedId, setSelectedId] = useState(null)
   const [form, setForm] = useState({
@@ -707,17 +718,33 @@ function WorkOrdersPanel({ resident, requests: requestsProp, onRequestCreated, o
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
 
+  const woBucketCounts = useMemo(() => {
+    const c = { open: 0, scheduled: 0, in_progress: 0, completed: 0 }
+    for (const r of requests) {
+      const b = residentWorkOrderFilterBucket(r)
+      if (c[b] !== undefined) c[b] += 1
+    }
+    return c
+  }, [requests])
+
+  const filteredRequests = useMemo(() => {
+    if (woFilter === 'all') return requests
+    return requests.filter((r) => residentWorkOrderFilterBucket(r) === woFilter)
+  }, [requests, woFilter])
+
   useEffect(() => {
-    if (requests.length === 0) {
+    if (filteredRequests.length === 0) {
       setSelectedId(null)
       return
     }
-    setSelectedId((current) => (current && requests.some((r) => r.id === current) ? current : requests[0].id))
-  }, [requests])
+    setSelectedId((current) =>
+      current && filteredRequests.some((r) => r.id === current) ? current : filteredRequests[0].id,
+    )
+  }, [filteredRequests])
 
   const selectedRequest = useMemo(
-    () => (selectedId ? requests.find((r) => r.id === selectedId) : null),
-    [requests, selectedId]
+    () => (selectedId ? filteredRequests.find((r) => r.id === selectedId) : null),
+    [filteredRequests, selectedId],
   )
 
   const fieldCls = 'w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm outline-none transition focus:border-slate-900 focus:ring-2 focus:ring-slate-900/10'
@@ -772,26 +799,18 @@ function WorkOrdersPanel({ resident, requests: requestsProp, onRequestCreated, o
           </button>
         }
       >
-        <div className="grid gap-4 lg:grid-cols-3">
-          <PortalOpsMetric
-            label="Open requests"
-            value={requests.filter((item) => isWorkOrderOpen(item)).length}
-            hint="Still waiting on review, scheduling, or repair."
-            tone="amber"
-          />
-          <PortalOpsMetric
-            label="Scheduled"
-            value={requests.filter((item) => residentWorkOrderStatusLabel(item) === 'Scheduled').length}
-            hint="A visit time has been added."
-            tone="axis"
-          />
-          <PortalOpsMetric
-            label="Completed"
-            value={requests.filter((item) => residentWorkOrderStatusLabel(item) === 'Completed' || residentWorkOrderStatusLabel(item) === 'Closed').length}
-            hint="Resolved and visible here for a few days."
-            tone="emerald"
-          />
-        </div>
+        <PortalOpsFilterCards
+          value={woFilter}
+          onChange={setWoFilter}
+          columnsClassName="grid gap-3 sm:grid-cols-2 lg:grid-cols-5"
+          items={[
+            { id: 'all', label: 'All', value: String(requests.length), hint: 'Every request', tone: 'slate' },
+            { id: 'open', label: 'Open', value: String(woBucketCounts.open), hint: 'Submitted / in review', tone: 'slate' },
+            { id: 'scheduled', label: 'Scheduled', value: String(woBucketCounts.scheduled), hint: 'Visit set', tone: 'axis' },
+            { id: 'in_progress', label: 'In progress', value: String(woBucketCounts.in_progress), hint: 'Work underway', tone: 'amber' },
+            { id: 'completed', label: 'Completed', value: String(woBucketCounts.completed), hint: 'Resolved', tone: 'emerald' },
+          ]}
+        />
 
         {showForm ? (
           <form onSubmit={handleSubmit} className="mt-6 grid gap-4 border-t border-slate-100 pt-6 sm:grid-cols-2">
@@ -870,6 +889,14 @@ function WorkOrdersPanel({ resident, requests: requestsProp, onRequestCreated, o
               description="When you submit a maintenance request, it will appear here with status updates."
             />
           </div>
+        ) : filteredRequests.length === 0 ? (
+          <div className="mt-6">
+            <PortalOpsEmptyState
+              icon="🔍"
+              title="Nothing in this view"
+              description="Try another filter above — your requests may be in a different stage."
+            />
+          </div>
         ) : (
           <div className="mt-6 grid gap-6 xl:grid-cols-[360px_minmax(0,1fr)]">
             <div className="overflow-hidden rounded-[24px] border border-slate-200 bg-white">
@@ -877,7 +904,7 @@ function WorkOrdersPanel({ resident, requests: requestsProp, onRequestCreated, o
                 <h3 className="text-sm font-black text-slate-900">My Work Orders</h3>
               </div>
               <div className="divide-y divide-slate-100">
-                {requests.map((request) => (
+                {filteredRequests.map((request) => (
                   <button
                     key={request.id}
                     type="button"
@@ -1096,6 +1123,11 @@ function PaymentsPanel({ resident, onResidentUpdated, highlightCategory, onPayme
   const [actionError, setActionError] = useState('')
   const [actionLoading, setActionLoading] = useState('')
   const [embeddedCheckout, setEmbeddedCheckout] = useState(null)
+  const [payFilter, setPayFilter] = useState('all')
+
+  useEffect(() => {
+    if (highlightCategory === 'extension') setPayFilter('fees')
+  }, [highlightCategory])
 
   useEffect(() => {
     getPaymentsForResident(resident)
@@ -1289,8 +1321,48 @@ function PaymentsPanel({ resident, onResidentUpdated, highlightCategory, onPayme
             <div className="mt-4 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{actionError}</div>
           ) : null}
 
+          <div className="mt-6">
+            <PortalOpsFilterCards
+              value={payFilter}
+              onChange={setPayFilter}
+              columnsClassName="grid gap-3 sm:grid-cols-2 lg:grid-cols-4"
+              aria-label="Filter payment sections"
+              items={[
+                {
+                  id: 'all',
+                  label: 'All activity',
+                  value: String(sortedPayments.length),
+                  hint: 'Rent & fees',
+                  tone: 'slate',
+                },
+                {
+                  id: 'pending',
+                  label: 'Due or upcoming',
+                  value: String(unpaidRentPayments.length),
+                  hint: 'Needs payment',
+                  tone: 'amber',
+                },
+                {
+                  id: 'paid',
+                  label: 'Paid rent',
+                  value: String(paymentHistory.length),
+                  hint: 'Settled',
+                  tone: 'emerald',
+                },
+                {
+                  id: 'fees',
+                  label: 'Fees & extras',
+                  value: String(feeChargeRows.length),
+                  hint: 'Non-rent',
+                  tone: 'axis',
+                },
+              ]}
+            />
+          </div>
+
           <div className="mt-6 grid gap-6 xl:grid-cols-[minmax(0,1.2fr)_minmax(0,0.8fr)]">
             <div className="space-y-6">
+              {(payFilter === 'all' || payFilter === 'pending') ? (
               <PortalOpsCard title="Upcoming Payments" description="Upcoming rent that still needs payment.">
                 {upcomingPayments.length === 0 ? (
                   <PortalOpsEmptyState
@@ -1318,7 +1390,9 @@ function PaymentsPanel({ resident, onResidentUpdated, highlightCategory, onPayme
                   </div>
                 )}
               </PortalOpsCard>
+              ) : null}
 
+              {(payFilter === 'all' || payFilter === 'paid') ? (
               <PortalOpsCard title="Past Payments" description="Your recent paid rent history.">
                 {paymentHistory.length === 0 ? (
                   <PortalOpsEmptyState icon="🧾" title="No past payments yet" description="Paid rent will show up here once the first charge is settled." />
@@ -1341,9 +1415,10 @@ function PaymentsPanel({ resident, onResidentUpdated, highlightCategory, onPayme
                   </div>
                 )}
               </PortalOpsCard>
+              ) : null}
             </div>
 
-            {feeChargeRows.length > 0 ? (
+            {(payFilter === 'all' || payFilter === 'fees') && feeChargeRows.length > 0 ? (
               <PortalOpsCard title="Fines & Extra Charges" description="Fees, fines, or other non-rent charges.">
                 <div className="space-y-3">
                   {feeChargeRows.map((payment) => {
@@ -1374,6 +1449,12 @@ function PaymentsPanel({ resident, onResidentUpdated, highlightCategory, onPayme
                   })}
                 </div>
               </PortalOpsCard>
+            ) : payFilter === 'fees' && feeChargeRows.length === 0 ? (
+              <PortalOpsEmptyState
+                icon="🧾"
+                title="No fees or extras"
+                description="You do not have any non-rent charges right now."
+              />
             ) : null}
           </div>
 
@@ -2036,6 +2117,7 @@ function Dashboard({ resident, onResidentUpdated, onSignOut }) {
     <PortalShell
       brandTitle="Axis"
       brandSubtitle="Resident portal"
+      desktopNav="sidebar"
       navItems={TABS.map(([id, label]) => ({ id, label }))}
       activeId={tab}
       onNavigate={setTab}

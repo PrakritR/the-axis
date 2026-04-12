@@ -37,32 +37,19 @@ const PROPERTY_STATUS_LABEL = {
 
 const NAV_BASE = [
   { id: 'dashboard', label: 'Dashboard' },
-  { id: 'approvals', label: 'Property approvals' },
   { id: 'properties', label: 'Properties' },
   { id: 'accounts', label: 'Managers' },
   { id: 'applications', label: 'Applications' },
   { id: 'messages', label: 'Inbox' },
 ]
 
-/** Property approvals + applications (read-only) + inbox. */
-const APPROVER_NAV = [
-  { id: 'dashboard', label: 'Dashboard' },
-  { id: 'approvals', label: 'Property approvals' },
-  { id: 'applications', label: 'Applications' },
-  { id: 'messages', label: 'Inbox' },
-]
-
-/** Property Admin role may view applications only — no approve/reject. */
-function canReviewApplicationsFromAdmin(role) {
-  return role === 'ceo' || role === 'owner' || role === 'internal_exec'
+/** All signed-in admin users can review applications from this UI. */
+function canReviewApplicationsFromAdmin() {
+  return true
 }
 
 function adminApplicationActorMeta(user) {
-  if (user.role === 'ceo') return { name: user.name || user.email || 'CEO', role: 'CEO' }
-  if (user.role === 'owner') return { name: user.name || user.email || 'Site owner', role: 'Site owner' }
-  if (user.role === 'internal_exec')
-    return { name: user.name || user.email || 'Executive', role: user.airtableRole || 'Executive' }
-  return { name: user.name || user.email || 'Axis Admin', role: 'Axis Admin' }
+  return { name: user.name || user.email || 'Admin', role: 'Admin' }
 }
 
 const adminSelectCls =
@@ -106,17 +93,6 @@ function sortApplicationsByMode(list, mode) {
     copy.sort((a, b) => app(a).localeCompare(app(b)) || prop(a).localeCompare(prop(b)))
   }
   return copy
-}
-
-/** SWE: inbox + test portal shortcuts only — no property/manager operational nav. */
-const SWE_ONLY_NAV = [
-  { id: 'dashboard', label: 'Dashboard' },
-  { id: 'messages', label: 'Inbox' },
-]
-
-/** Internal staff can open portal test flows from the admin console. */
-function showInternalPortalHandoff(role) {
-  return role === 'ceo' || role === 'internal_exec'
 }
 
 const loginInputCls =
@@ -244,19 +220,7 @@ function AdminLoginView({ onAuthenticated }) {
       const result = await authenticateAdminPortal(email, password)
       if (result.ok) {
         onAuthenticated(result.user)
-        if (result.user.role === 'ceo') {
-          toast.success('Signed in as CEO')
-        } else if (result.user.role === 'internal_exec') {
-          toast.success('Signed in (executive)')
-        } else if (result.user.role === 'internal_swe') {
-          toast.success('Signed in (engineering)')
-        } else if (result.user.role === 'internal_approver') {
-          toast.success('Signed in (approvals)')
-        } else if (result.user.role === 'owner') {
-          toast.success('Signed in as site owner')
-        } else {
-          toast.success('Signed in')
-        }
+        toast.success('Signed in')
         return
       }
       setErr(result.error || 'Sign-in failed.')
@@ -269,7 +233,7 @@ function AdminLoginView({ onAuthenticated }) {
     <div className="flex min-h-screen flex-col items-center justify-center bg-slate-900 px-6 py-12">
       <div className="w-full max-w-md rounded-[28px] border border-slate-700 bg-slate-800 p-8 shadow-xl">
         <div className="text-[11px] font-bold uppercase tracking-[0.2em] text-sky-400">Axis Admin</div>
-        <h1 className="mt-2 text-2xl font-black text-white">Internal portal</h1>
+        <h1 className="mt-2 text-2xl font-black text-white">Admin portal</h1>
 
         <form onSubmit={handleSignIn} className="mt-6 space-y-4">
           <label className="block text-sm font-semibold text-slate-300">
@@ -319,6 +283,8 @@ export default function AdminPortal() {
     }
   })
   const [tab, setTab] = useState('dashboard')
+  /** Within Properties: approval queue vs full directory */
+  const [propertiesSection, setPropertiesSection] = useState('queue')
   const [properties, setProperties] = useState(() => [])
   const [accounts, setAccounts] = useState(() => [])
   const [applications, setApplications] = useState(() => [])
@@ -345,7 +311,7 @@ export default function AdminPortal() {
     try {
       const [next, residentList] = await Promise.all([
         loadAdminPortalDataset(),
-        showInternalPortalHandoff(session?.role) ? loadResidentsForAdmin().catch(() => []) : Promise.resolve([]),
+        loadResidentsForAdmin().catch(() => []),
       ])
       setProperties(next.properties)
       setAccounts(next.accounts)
@@ -385,31 +351,14 @@ export default function AdminPortal() {
   }
 
   useEffect(() => {
-    if (!session) return
-    if (
-      session.role === 'internal_approver' &&
-      tab !== 'dashboard' &&
-      tab !== 'approvals' &&
-      tab !== 'applications' &&
-      tab !== 'messages'
-    ) {
-      setTab('dashboard')
-    }
-    if (session.role === 'internal_swe' && tab !== 'dashboard' && tab !== 'messages') {
-      setTab('dashboard')
-    }
-  }, [session, tab])
-
-  useEffect(() => {
     if (tab !== 'applications') setSelectedApplicationId(null)
   }, [tab])
 
-  const navItems = useMemo(() => {
-    if (!session) return NAV_BASE
-    if (session.role === 'internal_approver') return APPROVER_NAV
-    if (session.role === 'internal_swe') return SWE_ONLY_NAV
-    return NAV_BASE
-  }, [session])
+  useEffect(() => {
+    if (tab !== 'properties' || propertiesSection !== 'queue') setSelectedApprovalId(null)
+  }, [tab, propertiesSection])
+
+  const navItems = useMemo(() => NAV_BASE, [])
 
   const pendingApprovals = useMemo(() => properties.filter((p) => p.status === 'pending' || p.status === 'changes_requested'), [properties])
   const pendingApps = useMemo(
@@ -437,194 +386,199 @@ export default function AdminPortal() {
 
   return (
     <PortalShell
-      brandTitle="Axis internal"
-      brandSubtitle={
-        user.role === 'ceo'
-          ? 'CEO'
-          : user.role === 'internal_exec'
-            ? 'Executive'
-            : user.role === 'internal_swe'
-              ? 'Engineering'
-              : user.role === 'internal_approver'
-                ? 'Approvals'
-                : 'Admin portal'
-      }
+      brandTitle="Axis"
+      brandSubtitle="Admin portal"
+      desktopNav="sidebar"
       navItems={navItems}
       activeId={tab}
       onNavigate={setTab}
       userLabel={user.name}
-      userMeta={
-        user.role === 'owner'
-          ? 'Site owner'
-          : user.role === 'ceo'
-            ? 'CEO · full access'
-            : user.role === 'internal_exec'
-              ? `${user.airtableRole || 'Executive'} · full access`
-              : user.role === 'internal_swe'
-                ? `${user.airtableRole || 'SWE'} · full test access`
-                : user.role === 'internal_approver'
-                  ? 'Approvals · applications · inbox'
-                  : user.role || 'Admin'
-      }
+      userMeta="Full access"
       onSignOut={handleSignOut}
     >
+      <div className="mx-auto w-full max-w-[1600px]">
       {tab === 'dashboard' && (
         <div className="space-y-8">
-          <h1 className="text-2xl font-black text-slate-900">
-            {user.role === 'ceo'
-              ? 'CEO dashboard'
-              : user.role === 'internal_exec'
-                ? 'Executive dashboard'
-                : user.role === 'internal_swe'
-                  ? 'Engineering dashboard'
-                  : user.role === 'internal_approver'
-                    ? 'Approvals dashboard'
-                    : 'Admin dashboard'}
-          </h1>
+          <h1 className="text-2xl font-black text-slate-900">Admin dashboard</h1>
           {dataLoading ? (
             <p className="text-sm text-slate-500">Syncing data…</p>
           ) : null}
-          {showInternalPortalHandoff(user.role) ? (
+          {isAdminPortalAirtableConfigured() ? (
             <PortalHandoffCard accounts={accounts} residents={residents} user={user} />
           ) : null}
-          <div
-            className={
-              user.role === 'internal_swe'
-                ? 'grid max-w-sm gap-3'
-                : 'grid gap-3 sm:grid-cols-2 xl:grid-cols-4'
-            }
-          >
-            {user.role === 'internal_swe' ? (
-              <StatCard label="Inbox" value="Open" onClick={() => setTab('messages')} />
-            ) : user.role === 'internal_approver' ? (
-              <>
-                <StatCard label="Property approvals queue" value={pendingApprovals.length} onClick={() => setTab('approvals')} />
-                <StatCard label="Pending applications" value={pendingApps} onClick={() => setTab('applications')} />
-                <StatCard label="Inbox" value="Open" onClick={() => setTab('messages')} />
-              </>
-            ) : (
-              <>
-                <StatCard label="Property approvals queue" value={pendingApprovals.length} onClick={() => setTab('approvals')} />
-                <StatCard label="Properties" value={properties.length} onClick={() => setTab('properties')} />
-                <StatCard label="Pending applications" value={pendingApps} onClick={() => setTab('applications')} />
-                <StatCard label="Managers" value={accounts.length} onClick={() => setTab('accounts')} />
-                <StatCard label="Inbox" value="Open" onClick={() => setTab('messages')} />
-              </>
-            )}
+          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+            <StatCard
+              label="Property approvals queue"
+              value={pendingApprovals.length}
+              onClick={() => {
+                setTab('properties')
+                setPropertiesSection('queue')
+              }}
+            />
+            <StatCard
+              label="All properties"
+              value={properties.length}
+              onClick={() => {
+                setTab('properties')
+                setPropertiesSection('directory')
+              }}
+            />
+            <StatCard label="Pending applications" value={pendingApps} onClick={() => setTab('applications')} />
+            <StatCard label="Managers" value={accounts.length} onClick={() => setTab('accounts')} />
+            <StatCard label="Inbox" value="Open" onClick={() => setTab('messages')} />
           </div>
-        </div>
-      )}
-
-      {tab === 'approvals' && (
-        <div className="space-y-6">
-          <h1 className="text-2xl font-black">Property approvals</h1>
-          <DataTable
-            empty="No properties awaiting review."
-            columns={[
-              { key: 'n', label: 'Property', render: (d) => <><div className="font-semibold">{d.name}</div><div className="text-xs text-slate-500">{d.address}</div></> },
-              { key: 'o', label: 'Owner / partner', render: (d) => ownerLabel(d.ownerId) },
-              { key: 's', label: 'Status', render: (d) => <StatusPill tone={propertyTone(d.status)}>{PROPERTY_STATUS_LABEL[d.status] || d.status}</StatusPill> },
-              { key: 'dt', label: 'Submitted', render: (d) => new Date(d.submittedAt).toLocaleDateString() },
-              { key: 'a', label: '', render: (d) => (
-                <button type="button" className="text-sm font-semibold text-[#2563eb]" onClick={() => setSelectedApprovalId(d.id)}>Review</button>
-              ) },
-            ]}
-            rows={pendingApprovals.map((p) => ({ key: p.id, data: p }))}
-          />
-          {approval ? (
-            <div className="rounded-[24px] border border-slate-200 bg-white p-6 shadow-sm space-y-4">
-              <div className="flex justify-between gap-2">
-                <h2 className="text-lg font-black">{approval.name}</h2>
-                <button type="button" className="text-sm text-slate-500" onClick={() => setSelectedApprovalId(null)}>Close</button>
-              </div>
-              <p className="text-sm text-slate-600">{approval.description}</p>
-              <PropertyDetailPanel property={approval} ownerLabel={ownerLabel(approval.ownerId)} />
-              <div className="flex flex-wrap gap-2">
-                <button
-                  type="button"
-                  disabled={approvalBusy}
-                  className="rounded-xl bg-emerald-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
-                  onClick={async () => {
-                    if (!approval?.id) return
-                    setApprovalBusy(true)
-                    try {
-                      await adminApproveProperty(approval.id)
-                      await refreshPortalData()
-                      toast.success('Property approved')
-                      setSelectedApprovalId(null)
-                    } catch (e) {
-                      toast.error(e?.message || 'Approve failed')
-                    } finally {
-                      setApprovalBusy(false)
-                    }
-                  }}
-                >
-                  Approve
-                </button>
-                <button
-                  type="button"
-                  disabled={approvalBusy}
-                  className="rounded-xl border border-amber-300 bg-amber-50 px-4 py-2 text-sm font-semibold text-amber-900 disabled:opacity-50"
-                  onClick={async () => {
-                    if (!approval?.id) return
-                    setApprovalBusy(true)
-                    try {
-                      await adminRequestPropertyEdits(approval.id)
-                      await refreshPortalData()
-                      toast.success('Marked as changes requested')
-                    } catch (e) {
-                      toast.error(e?.message || 'Update failed (add single-line field "Approval Status" if missing).')
-                    } finally {
-                      setApprovalBusy(false)
-                    }
-                  }}
-                >
-                  Request edits
-                </button>
-                <button
-                  type="button"
-                  disabled={approvalBusy}
-                  className="rounded-xl border border-red-200 bg-red-50 px-4 py-2 text-sm font-semibold text-red-800 disabled:opacity-50"
-                  onClick={async () => {
-                    if (!approval?.id) return
-                    setApprovalBusy(true)
-                    try {
-                      await adminRejectProperty(approval.id)
-                      await refreshPortalData()
-                      toast.success('Property rejected')
-                      setSelectedApprovalId(null)
-                    } catch (e) {
-                      toast.error(e?.message || 'Reject failed')
-                    } finally {
-                      setApprovalBusy(false)
-                    }
-                  }}
-                >
-                  Reject
-                </button>
-              </div>
-              <label className="block text-sm">
-                <span className="font-semibold text-slate-700">Internal notes (admin only)</span>
-                <textarea className="mt-1 w-full rounded-2xl border border-slate-200 px-3 py-2 text-sm" rows={2} defaultValue={approval.adminNotesInternal} readOnly />
-              </label>
-            </div>
-          ) : null}
         </div>
       )}
 
       {tab === 'properties' && (
         <div className="space-y-6">
-          <h1 className="text-2xl font-black">Properties</h1>
-          <DataTable
-            empty="No properties."
-            columns={[
-              { key: 'n', label: 'Property', render: (d) => d.name },
-              { key: 'o', label: 'Partner', render: (d) => ownerLabel(d.ownerId) },
-              { key: 's', label: 'Status', render: (d) => <StatusPill tone={propertyTone(d.status)}>{PROPERTY_STATUS_LABEL[d.status] || d.status}</StatusPill> },
-              { key: 'r', label: 'From', render: (d) => `$${d.rentFrom}` },
-            ]}
-            rows={properties.map((p) => ({ key: p.id, data: p }))}
-          />
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+            <div>
+              <h1 className="text-2xl font-black text-slate-900">
+                {propertiesSection === 'queue' ? 'Property approvals' : 'All properties'}
+              </h1>
+              <p className="mt-1 text-sm text-slate-500">
+                {propertiesSection === 'queue'
+                  ? 'Review submissions and approve, request edits, or reject.'
+                  : 'Directory of every property in the system.'}
+              </p>
+            </div>
+            <div className="inline-flex flex-wrap gap-1 rounded-2xl border border-slate-200 bg-slate-50 p-1">
+              <button
+                type="button"
+                onClick={() => setPropertiesSection('queue')}
+                className={`rounded-xl px-4 py-2 text-sm font-semibold transition ${
+                  propertiesSection === 'queue'
+                    ? 'bg-white text-slate-900 shadow-sm'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                Approvals queue
+                {pendingApprovals.length > 0 ? (
+                  <span className="ml-1.5 tabular-nums text-slate-500">({pendingApprovals.length})</span>
+                ) : null}
+              </button>
+              <button
+                type="button"
+                onClick={() => setPropertiesSection('directory')}
+                className={`rounded-xl px-4 py-2 text-sm font-semibold transition ${
+                  propertiesSection === 'directory'
+                    ? 'bg-white text-slate-900 shadow-sm'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                All properties
+                <span className="ml-1.5 tabular-nums text-slate-500">({properties.length})</span>
+              </button>
+            </div>
+          </div>
+
+          {propertiesSection === 'queue' ? (
+            <>
+              <DataTable
+                empty="No properties awaiting review."
+                columns={[
+                  { key: 'n', label: 'Property', render: (d) => <><div className="font-semibold">{d.name}</div><div className="text-xs text-slate-500">{d.address}</div></> },
+                  { key: 'o', label: 'Owner / partner', render: (d) => ownerLabel(d.ownerId) },
+                  { key: 's', label: 'Status', render: (d) => <StatusPill tone={propertyTone(d.status)}>{PROPERTY_STATUS_LABEL[d.status] || d.status}</StatusPill> },
+                  { key: 'dt', label: 'Submitted', render: (d) => new Date(d.submittedAt).toLocaleDateString() },
+                  { key: 'a', label: '', render: (d) => (
+                    <button type="button" className="text-sm font-semibold text-[#2563eb]" onClick={() => setSelectedApprovalId(d.id)}>Review</button>
+                  ) },
+                ]}
+                rows={pendingApprovals.map((p) => ({ key: p.id, data: p }))}
+              />
+              {approval ? (
+                <div className="rounded-[24px] border border-slate-200 bg-white p-6 shadow-sm space-y-4">
+                  <div className="flex justify-between gap-2">
+                    <h2 className="text-lg font-black">{approval.name}</h2>
+                    <button type="button" className="text-sm text-slate-500" onClick={() => setSelectedApprovalId(null)}>Close</button>
+                  </div>
+                  <p className="text-sm text-slate-600">{approval.description}</p>
+                  <PropertyDetailPanel property={approval} ownerLabel={ownerLabel(approval.ownerId)} />
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      disabled={approvalBusy}
+                      className="rounded-xl bg-emerald-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
+                      onClick={async () => {
+                        if (!approval?.id) return
+                        setApprovalBusy(true)
+                        try {
+                          await adminApproveProperty(approval.id)
+                          await refreshPortalData()
+                          toast.success('Property approved')
+                          setSelectedApprovalId(null)
+                        } catch (e) {
+                          toast.error(e?.message || 'Approve failed')
+                        } finally {
+                          setApprovalBusy(false)
+                        }
+                      }}
+                    >
+                      Approve
+                    </button>
+                    <button
+                      type="button"
+                      disabled={approvalBusy}
+                      className="rounded-xl border border-amber-300 bg-amber-50 px-4 py-2 text-sm font-semibold text-amber-900 disabled:opacity-50"
+                      onClick={async () => {
+                        if (!approval?.id) return
+                        setApprovalBusy(true)
+                        try {
+                          await adminRequestPropertyEdits(approval.id)
+                          await refreshPortalData()
+                          toast.success('Marked as changes requested')
+                        } catch (e) {
+                          toast.error(e?.message || 'Update failed (add single-line field "Approval Status" if missing).')
+                        } finally {
+                          setApprovalBusy(false)
+                        }
+                      }}
+                    >
+                      Request edits
+                    </button>
+                    <button
+                      type="button"
+                      disabled={approvalBusy}
+                      className="rounded-xl border border-red-200 bg-red-50 px-4 py-2 text-sm font-semibold text-red-800 disabled:opacity-50"
+                      onClick={async () => {
+                        if (!approval?.id) return
+                        setApprovalBusy(true)
+                        try {
+                          await adminRejectProperty(approval.id)
+                          await refreshPortalData()
+                          toast.success('Property rejected')
+                          setSelectedApprovalId(null)
+                        } catch (e) {
+                          toast.error(e?.message || 'Reject failed')
+                        } finally {
+                          setApprovalBusy(false)
+                        }
+                      }}
+                    >
+                      Reject
+                    </button>
+                  </div>
+                  <label className="block text-sm">
+                    <span className="font-semibold text-slate-700">Internal notes (admin only)</span>
+                    <textarea className="mt-1 w-full rounded-2xl border border-slate-200 px-3 py-2 text-sm" rows={2} defaultValue={approval.adminNotesInternal} readOnly />
+                  </label>
+                </div>
+              ) : null}
+            </>
+          ) : (
+            <DataTable
+              empty="No properties."
+              columns={[
+                { key: 'n', label: 'Property', render: (d) => d.name },
+                { key: 'o', label: 'Partner', render: (d) => ownerLabel(d.ownerId) },
+                { key: 's', label: 'Status', render: (d) => <StatusPill tone={propertyTone(d.status)}>{PROPERTY_STATUS_LABEL[d.status] || d.status}</StatusPill> },
+                { key: 'r', label: 'From', render: (d) => `$${d.rentFrom}` },
+              ]}
+              rows={properties.map((p) => ({ key: p.id, data: p }))}
+            />
+          )}
         </div>
       )}
 
@@ -724,7 +678,7 @@ export default function AdminPortal() {
               partnerLabel={ownerLabel(selectedApplication.ownerId)}
               onClose={() => setSelectedApplicationId(null)}
               adminReview={
-                selectedApplication.approvalPending && canReviewApplicationsFromAdmin(user.role)
+                selectedApplication.approvalPending && canReviewApplicationsFromAdmin()
                   ? {
                       busy: applicationReviewBusy,
                       onApprove: async () => {
@@ -788,8 +742,23 @@ export default function AdminPortal() {
           adminFullInbox
           manager={{ email: user.email || '', name: user.name || user.email || 'Admin' }}
           allowedPropertyNames={[]}
+          adminComposeManagers={accounts
+            .filter((a) => String(a.email || '').includes('@'))
+            .map((a) => ({
+              id: a.id,
+              email: String(a.email).trim().toLowerCase(),
+              label: `${a.businessName || a.name || 'Manager'} · ${a.email}`,
+            }))}
+          adminComposeResidents={residents
+            .filter((r) => r.id && String(r.id).startsWith('rec'))
+            .map((r) => ({
+              id: r.id,
+              email: String(r.Email || '').trim(),
+              label: [r.Name, r.House].filter(Boolean).join(' · ') || String(r.Email || r.id),
+            }))}
         />
       )}
+      </div>
     </PortalShell>
   )
 }

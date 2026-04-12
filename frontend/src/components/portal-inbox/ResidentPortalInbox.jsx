@@ -14,7 +14,6 @@ import {
   getPortalInboxSubjectFieldName,
 } from '../../lib/airtable'
 import { isAirtablePermissionErrorMessage } from '../../lib/airtablePermissionError'
-import { resolveInboxSubject } from '../../lib/portalInboxSubjects.js'
 import { notifyPortalMessage } from '../../lib/notifyPortalMessage.js'
 import {
   threadSubjectFromMessages,
@@ -25,7 +24,6 @@ import {
 import ConversationList from '../manager-inbox/ConversationList'
 import ConversationThread from '../manager-inbox/ConversationThread'
 import MessageComposer from '../manager-inbox/MessageComposer'
-import InboxSubjectPicker from './InboxSubjectPicker.jsx'
 import { displayMessageForResidentPortal } from '../PortalInboxThreadView.jsx'
 
 const UI_LEASING = 'ui:leasing'
@@ -136,14 +134,12 @@ export default function ResidentPortalInbox({ resident }) {
   const [thread, setThread] = useState([])
   const [threadLoading, setThreadLoading] = useState(false)
   const [reply, setReply] = useState('')
-  const [replySubjectPreset, setReplySubjectPreset] = useState('')
-  const [replySubjectCustom, setReplySubjectCustom] = useState('')
+  const [replySubject, setReplySubject] = useState('')
   const [sending, setSending] = useState(false)
 
   const [composeOpen, setComposeOpen] = useState(false)
   const [composeTo, setComposeTo] = useState('manager')
-  const [composeSubjectPreset, setComposeSubjectPreset] = useState('')
-  const [composeSubjectCustom, setComposeSubjectCustom] = useState('')
+  const [composeSubject, setComposeSubject] = useState('')
   const [composeBody, setComposeBody] = useState('')
   const [composeSending, setComposeSending] = useState(false)
 
@@ -368,8 +364,7 @@ export default function ResidentPortalInbox({ resident }) {
   }, [selectedStateKey])
 
   useEffect(() => {
-    setReplySubjectPreset('')
-    setReplySubjectCustom('')
+    setReplySubject('')
   }, [selectedThreadId])
 
   useEffect(() => {
@@ -426,15 +421,11 @@ export default function ResidentPortalInbox({ resident }) {
   async function handleComposeSend(e) {
     e.preventDefault()
     if (!email || !composeBody.trim()) return
-    if (!composeSubjectPreset) {
-      toast.error('Choose a subject.')
+    const subjResolved = composeSubject.trim()
+    if (!subjResolved) {
+      toast.error('Enter a subject.')
       return
     }
-    if (composeSubjectPreset === 'other' && !composeSubjectCustom.trim()) {
-      toast.error('Enter a custom subject.')
-      return
-    }
-    const subjResolved = resolveInboxSubject(composeSubjectPreset, composeSubjectCustom)
     const threadKey = composeTo === 'admin' ? adminKey : leasingKey
     const bodyOut = mergeSubjectIntoMessageIfNeeded(composeBody.trim(), subjResolved, showSubjectField)
     setComposeSending(true)
@@ -454,8 +445,7 @@ export default function ResidentPortalInbox({ resident }) {
       })
       setComposeOpen(false)
       setComposeBody('')
-      setComposeSubjectPreset('')
-      setComposeSubjectCustom('')
+      setComposeSubject('')
       setComposeTo('manager')
       await loadAll()
       setSelectedThreadId(composeTo === 'admin' ? UI_ADMIN : UI_LEASING)
@@ -470,14 +460,7 @@ export default function ResidentPortalInbox({ resident }) {
   async function handleSendReply(e) {
     e.preventDefault()
     if (!selectedThreadId || !reply.trim() || !email) return
-    let subjResolved = ''
-    if (showSubjectField && replySubjectPreset) {
-      if (replySubjectPreset === 'other' && !replySubjectCustom.trim()) {
-        toast.error('Enter a custom subject or leave subject as “Same as thread”.')
-        return
-      }
-      subjResolved = resolveInboxSubject(replySubjectPreset, replySubjectCustom)
-    }
+    const subjResolved = showSubjectField ? replySubject.trim() : ''
     const bodyOut = mergeSubjectIntoMessageIfNeeded(reply.trim(), subjResolved, showSubjectField)
     const threadKey = selectedThreadId === UI_LEASING ? leasingKey : adminKey
     setSending(true)
@@ -496,8 +479,7 @@ export default function ResidentPortalInbox({ resident }) {
         subject: subjResolved,
       })
       setReply('')
-      setReplySubjectPreset('')
-      setReplySubjectCustom('')
+      setReplySubject('')
       await loadAll()
       const next = await getMessagesByThreadKey(threadKey)
       setThread(
@@ -627,14 +609,18 @@ export default function ResidentPortalInbox({ resident }) {
                       <option value="admin">Axis Admin</option>
                     </select>
                   </label>
-                  <InboxSubjectPicker
-                    presetId={composeSubjectPreset}
-                    onPresetIdChange={setComposeSubjectPreset}
-                    customSubject={composeSubjectCustom}
-                    onCustomSubjectChange={setComposeSubjectCustom}
-                    disabled={composeSending}
-                    required
-                  />
+                  <label className="block text-xs font-semibold text-slate-700">
+                    Subject
+                    <input
+                      type="text"
+                      value={composeSubject}
+                      onChange={(e) => setComposeSubject(e.target.value)}
+                      required
+                      disabled={composeSending}
+                      placeholder="Brief subject line"
+                      className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm"
+                    />
+                  </label>
                   <label className="block text-xs font-semibold text-slate-700">
                     Message
                     <textarea
@@ -732,11 +718,10 @@ export default function ResidentPortalInbox({ resident }) {
               sending={sending}
               placeholder="Write your reply…"
               showSubject={showSubjectField}
-              useSubjectPresets={showSubjectField}
-              subjectPresetId={replySubjectPreset}
-              onSubjectPresetIdChange={setReplySubjectPreset}
-              subjectCustom={replySubjectCustom}
-              onSubjectCustomChange={setReplySubjectCustom}
+              useSubjectPresets={false}
+              subject={replySubject}
+              onSubjectChange={setReplySubject}
+              subjectPlaceholder="Optional — adds a subject line to this reply"
               allowSubjectEmpty
               toLabel={participantsLine(selectedThreadId)}
             />

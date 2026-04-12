@@ -20,6 +20,20 @@ const TABLES = {
   applications: APPLICATIONS_TABLE,
 }
 
+const ADMIN_PROFILE_TABLE_NAME =
+  String(import.meta.env.VITE_AIRTABLE_ADMIN_PROFILE_TABLE || 'Admin Profile').trim() || 'Admin Profile'
+
+const RESIDENT_PROFILE_TABLE = 'Resident Profile'
+
+const RESIDENT_PROFILE_LIST_FIELDS = [
+  'Name',
+  'Email',
+  'House',
+  'Unit Number',
+  'Application Approval',
+  'Approved',
+]
+
 function headers() {
   return {
     Authorization: `Bearer ${API_KEY}`,
@@ -74,6 +88,47 @@ async function listAllRecords(tableName) {
     offset = data.offset || null
   } while (offset)
   return out
+}
+
+/** Paginated list with explicit fields (avoids returning sensitive columns e.g. Password). */
+async function listTableRecordsWithFields(tableName, fieldNames) {
+  const enc = encodeURIComponent(tableName)
+  const out = []
+  let offset = null
+  do {
+    const url = new URL(`${BASE_URL}/${enc}`)
+    for (const f of fieldNames) {
+      url.searchParams.append('fields[]', f)
+    }
+    if (offset) url.searchParams.set('offset', offset)
+    const data = await requestJson(url.toString())
+    for (const r of data.records || []) {
+      out.push(mapRecord(r))
+    }
+    offset = data.offset || null
+  } while (offset)
+  return out
+}
+
+async function fetchResidentProfileRecords() {
+  return listTableRecordsWithFields(RESIDENT_PROFILE_TABLE, RESIDENT_PROFILE_LIST_FIELDS)
+}
+
+function residentHouseMatchesScope(houseField, allowedNamesLower) {
+  if (!allowedNamesLower?.size) return false
+  if (houseField == null) return false
+  if (Array.isArray(houseField)) {
+    if (houseField.length && String(houseField[0]).trim().startsWith('rec')) return false
+    const text = houseField
+      .map((x) => String(x || '').trim())
+      .filter(Boolean)
+      .join(' · ')
+      .trim()
+      .toLowerCase()
+    return Boolean(text && allowedNamesLower.has(text))
+  }
+  const text = String(houseField).trim().toLowerCase()
+  return Boolean(text && allowedNamesLower.has(text))
 }
 
 function propertyRecordName(p) {
@@ -308,26 +363,63 @@ export async function adminRejectApplication(recordId) {
 /** Load all resident profiles for CEO/admin portal handoff. */
 export async function loadResidentsForAdmin() {
   if (!isAdminPortalAirtableConfigured()) return []
-  const enc = encodeURIComponent('Resident Profile')
-  const out = []
-  let offset = null
-  do {
-    const url = new URL(`${BASE_URL}/${enc}`)
-    url.searchParams.set('fields[]', 'Name')
-    url.searchParams.set('fields[]', 'Email')
-    url.searchParams.set('fields[]', 'House')
-    url.searchParams.set('fields[]', 'Unit Number')
-    url.searchParams.set('fields[]', 'Application Approval')
-    url.searchParams.set('fields[]', 'Approved')
-    if (offset) url.searchParams.set('offset', offset)
-    const data = await requestJson(url.toString())
-    for (const r of data.records || []) {
-      out.push(mapRecord(r))
-    }
-    offset = data.offset || null
-  } while (offset)
+  const out = await fetchResidentProfileRecords()
   return out.sort((a, b) =>
     String(a.Name || '').localeCompare(String(b.Name || ''), undefined, { sensitivity: 'base' }),
   )
+}
+
+/**
+ * Resident Profile rows whose House matches the manager’s property names (from portal scope).
+ * @param {string[]} allowedPropertyNames — display names from Properties / manager session
+ */
+export async function loadResidentsForManagerPortalInbox(allowedPropertyNames) {
+  if (!isAdminPortalAirtableConfigured()) return []
+  const allowed = new Set(
+    (allowedPropertyNames || []).map((n) => String(n).trim().toLowerCase()).filter(Boolean),
+  )
+  if (!allowed.size) return []
+  const rows = await fetchResidentProfileRecords()
+  const filtered = rows.filter((r) => residentHouseMatchesScope(r.House, allowed))
+  return filtered.sort((a, b) =>
+    String(a.Name || '').localeCompare(String(b.Name || ''), undefined, { sensitivity: 'base' }),
+  )
+}
+
+/**
+ * Admin Profile contacts for manager → admin inbox (email + display label; excludes disabled rows when Enabled is set).
+ * Does not request Password field from Airtable.
+ */
+export async function loadAdminProfilesForInbox() {
+  if (!isAdminPortalAirtableConfigured()) return []
+  try {
+    const rows = await listTableRecordsWithFields(ADMIN_PROFILE_TABLE_NAME, [
+      'Email',
+      'Name',
+      'Role',
+      'Enabled',
+    ])
+    const out = []
+    for (const r of rows) {
+      const email = String(r.Email || '').trim().toLowerCase()
+      if (!email.includes('@')) continue
+      const en = r.Enabled
+      if (
+        en === false ||
+        en === 0 ||
+        ['false', 'no', 'inactive', 'disabled'].includes(String(en).trim().toLowerCase())
+      ) {
+        continue
+      }
+      const name = String(r.Name || '').trim()
+      const role = String(r.Role || '').trim()
+      const label = [name || email, role].filter(Boolean).join(' · ') || email
+      out.push({ id: r.id, email, label })
+    }
+    out.sort((a, b) => a.label.localeCompare(b.label, undefined, { sensitivity: 'base' }))
+    return out
+  } catch {
+    return []
+  }
 }
 

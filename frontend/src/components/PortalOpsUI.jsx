@@ -107,28 +107,95 @@ export function PortalOpsEmptyState({ title, description, action = null, icon = 
   )
 }
 
-export function PortalOpsFilterPills({ items, value, onChange }) {
+/**
+ * Primary portal pattern: summary cards that double as filters (manager payments, work orders, leasing, inbox, etc.).
+ * Selected card gets a stronger border + ring; list content below reflects the selection.
+ */
+export function PortalOpsFilterCards({
+  items,
+  value,
+  onChange,
+  className = '',
+  columnsClassName = 'grid gap-3 sm:grid-cols-2 lg:grid-cols-4',
+  variant = 'default',
+  'aria-label': ariaLabel = 'Filter by status',
+}) {
+  const isCompact = variant === 'compact'
   return (
-    <div className="flex flex-wrap gap-2">
+    <div className={classNames(columnsClassName, className)} role="tablist" aria-label={ariaLabel}>
       {items.map((item) => {
         const active = item.id === value
+        const tone = item.tone || 'slate'
+        const valueTone =
+          tone === 'emerald'
+            ? 'text-emerald-700'
+            : tone === 'red'
+              ? 'text-red-700'
+              : tone === 'amber'
+                ? 'text-amber-700'
+                : tone === 'axis'
+                  ? 'text-axis'
+                  : 'text-slate-900'
+        const labelTone =
+          tone === 'emerald'
+            ? active
+              ? 'text-emerald-800'
+              : 'text-emerald-700/80'
+            : tone === 'red'
+              ? active
+                ? 'text-red-800'
+                : 'text-red-700/80'
+              : tone === 'amber'
+                ? active
+                  ? 'text-amber-800'
+                  : 'text-amber-700/80'
+                : tone === 'axis'
+                  ? active
+                    ? 'text-axis'
+                    : 'text-slate-500'
+                  : 'text-slate-500'
         return (
           <button
             key={item.id}
             type="button"
+            role="tab"
+            aria-selected={active}
             onClick={() => onChange(item.id)}
             className={classNames(
-              'rounded-full px-4 py-2 text-xs font-semibold transition',
+              'rounded-[24px] border text-left transition focus:outline-none focus-visible:ring-2 focus-visible:ring-[#2563eb]/35 focus-visible:ring-offset-2',
+              isCompact ? 'px-3 py-3 sm:px-4 sm:py-3.5' : 'p-5',
               active
-                ? 'bg-axis text-white shadow-[0_8px_20px_rgba(37,99,235,0.18)]'
-                : 'border border-slate-200 bg-white text-slate-600 hover:bg-slate-50',
+                ? 'border-[#2563eb]/45 bg-[#2563eb]/[0.07] shadow-[0_0_0_2px_rgba(37,99,235,0.12)]'
+                : 'border-slate-200 bg-white shadow-sm hover:border-slate-300 hover:bg-slate-50/90',
             )}
           >
-            {item.label}
-            {item.count != null ? <span className="ml-1.5 opacity-75">({item.count})</span> : null}
+            <div
+              className={classNames(
+                'font-bold uppercase tracking-[0.18em]',
+                isCompact ? 'text-[10px]' : 'text-[11px]',
+                labelTone,
+              )}
+            >
+              {item.label}
+            </div>
+            <div
+              className={classNames(
+                'mt-2 font-black tracking-tight',
+                isCompact ? 'text-lg' : 'text-2xl sm:text-3xl',
+                active ? valueTone : 'text-slate-900',
+              )}
+            >
+              {item.value}
+            </div>
+            {item.hint ? (
+              <div className={classNames('mt-1.5 text-slate-500', isCompact ? 'text-[11px] leading-snug' : 'text-sm')}>
+                {item.hint}
+              </div>
+            ) : null}
           </button>
         )
       })}
     </div>
   )
 }
+

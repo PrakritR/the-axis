@@ -1,14 +1,9 @@
 import React from 'react'
 import ConversationListItem from './ConversationListItem'
-
-const BASE_TABS = [
-  ['all', 'All'],
-  ['unread', 'Unread'],
-  ['trash', 'Trash'],
-]
+import { PortalOpsFilterCards } from '../PortalOpsUI'
 
 /**
- * Left column: search, All / Unread / Trash tabs with counts, conversation list.
+ * Left column: search, filter cards (All / Unread / Trash), optional channel pills, conversation list.
  * When `channelTabs` is provided, an extra row of channel-filter pills is rendered
  * (e.g. All / Manager / Admin) so residents can narrow by recipient.
  */
@@ -44,27 +39,36 @@ export default function ConversationList({
           className="w-full rounded-xl border border-slate-200 bg-slate-50/80 px-3.5 py-2.5 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-[#2563eb] focus:bg-white focus:ring-2 focus:ring-[#2563eb]/15"
         />
 
-        <div className="flex flex-wrap gap-2">
-          {BASE_TABS.map(([id, label]) => {
-            const count = counts[id] ?? 0
-            const active = filter === id
-            return (
-              <button
-                key={id}
-                type="button"
-                onClick={() => onFilterChange(id)}
-                className={`rounded-full px-3.5 py-1.5 text-xs font-semibold transition ${
-                  active
-                    ? 'bg-[#2563eb] text-white shadow-sm'
-                    : 'border border-slate-200 bg-white text-slate-600 hover:bg-slate-50'
-                }`}
-              >
-                {label}{' '}
-                <span className={active ? 'text-white/85' : 'text-slate-400'}>({count})</span>
-              </button>
-            )
-          })}
-        </div>
+        <PortalOpsFilterCards
+          variant="compact"
+          value={filter}
+          onChange={onFilterChange}
+          columnsClassName="grid grid-cols-3 gap-2"
+          aria-label="Inbox sections"
+          items={[
+            {
+              id: 'all',
+              label: 'All',
+              value: String(counts.all ?? 0),
+              hint: 'Threads',
+              tone: 'slate',
+            },
+            {
+              id: 'unread',
+              label: 'Unread',
+              value: String(counts.unread ?? 0),
+              hint: 'Needs attention',
+              tone: 'axis',
+            },
+            {
+              id: 'trash',
+              label: 'Trash',
+              value: String(counts.trash ?? 0),
+              hint: 'Archived',
+              tone: 'slate',
+            },
+          ]}
+        />
 
         {channelTabs && channelTabs.length > 0 && onChannelFilterChange ? (
           <div className="flex flex-wrap gap-1.5">
