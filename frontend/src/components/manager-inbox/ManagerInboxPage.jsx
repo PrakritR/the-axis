@@ -751,11 +751,7 @@ export default function ManagerInboxPage({ manager, allowedPropertyNames, adminF
       threadKey = HOUSING_PUBLIC_ADMIN_GENERAL_THREAD
     } else if (composeKind === 'admin') {
       const em = portalAxisAdminContactEmail()
-      if (!em.includes('@')) {
-        toast.error('Set VITE_PORTAL_AXIS_ADMIN_EMAIL in your environment to message admin.')
-        return
-      }
-      threadKey = managementAdminThreadKey(em)
+      threadKey = em.includes('@') ? managementAdminThreadKey(em) : 'internal:mgmt-admin:axis'
     } else if (composeKind === 'resident') {
       const id = composeResidentRecordId.trim()
       if (!/^rec[a-zA-Z0-9]{14,}$/.test(id)) {
