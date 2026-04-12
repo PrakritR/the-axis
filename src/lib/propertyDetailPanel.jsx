@@ -23,6 +23,14 @@ export const PROPERTY_FIELD_GROUPS = [
     ],
   },
   {
+    title: 'Fees',
+    fields: [
+      ['Utilities Fee', 'Utilities fee'],
+      ['Security Deposit', 'Security deposit'],
+      ['Application Fee', 'Application fee'],
+    ],
+  },
+  {
     title: 'Management',
     fields: [
       ['Manager Email', 'Manager email'],

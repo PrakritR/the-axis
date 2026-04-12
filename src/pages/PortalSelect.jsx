@@ -1,6 +1,5 @@
 import { useEffect, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
-import Footer from '../components/Footer'
 import {
   PortalAuthCard,
   PortalAuthPage,
@@ -148,7 +147,6 @@ export default function PortalSelect() {
           </div>
         </PortalAuthCard>
       </PortalAuthPage>
-      <Footer />
     </>
   )
 }

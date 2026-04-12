@@ -118,11 +118,6 @@ function showInternalPortalHandoff(role) {
   return role === 'ceo' || role === 'internal_exec'
 }
 
-/** Resident / manager hub links (not shown to SWE — they use Open test portals instead). */
-function showOwnerPortalJumps(role) {
-  return role === 'owner' || role === 'ceo' || role === 'internal_exec'
-}
-
 const loginInputCls =
   'mt-1 w-full rounded-xl border border-slate-600 bg-slate-900/40 px-3 py-2.5 text-sm text-white placeholder:text-slate-500 outline-none focus:border-sky-400 focus:ring-1 focus:ring-sky-500/40'
 
@@ -413,29 +408,6 @@ export default function AdminPortal() {
                   className="inline-flex items-center rounded-xl border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-50"
                 >
                   Open resident test login
-                </a>
-              </div>
-            </div>
-          ) : null}
-          {showOwnerPortalJumps(user.role) ? (
-            <div className="rounded-[24px] border border-[#2563eb]/25 bg-[linear-gradient(135deg,#eff6ff_0%,#ffffff_100%)] p-5 shadow-sm">
-              <h2 className="text-sm font-black text-slate-900">Jump to other portals</h2>
-              <div className="mt-4 flex flex-wrap gap-2">
-                <a
-                  href="/portal"
-                  target="_blank"
-                  rel="noreferrer"
-                  className="inline-flex items-center rounded-xl border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-50"
-                >
-                  Resident hub
-                </a>
-                <a
-                  href="/manager"
-                  target="_blank"
-                  rel="noreferrer"
-                  className="inline-flex items-center rounded-xl bg-[linear-gradient(180deg,#2f76ff_0%,#2450eb_100%)] px-4 py-2 text-xs font-semibold text-white shadow-sm transition-opacity hover:opacity-90"
-                >
-                  Manager portal
                 </a>
               </div>
             </div>

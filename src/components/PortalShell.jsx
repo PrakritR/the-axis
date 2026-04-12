@@ -1,5 +1,4 @@
 import React from 'react'
-import Footer from './Footer'
 
 /**
  * Shared chrome: vertical sidebar + main content for Manager, Resident, and Admin portals.
@@ -70,7 +69,6 @@ export default function PortalShell({
 
         <main className="min-h-0 min-w-0 flex-1 overflow-y-auto overscroll-y-contain">
           {children}
-          <Footer />
         </main>
       </div>
     )
@@ -157,7 +155,6 @@ export default function PortalShell({
 
         <main className="min-h-0 flex-1 overflow-y-auto overscroll-y-contain px-4 py-6 sm:px-6 lg:px-8">
           {children}
-          <Footer />
         </main>
       </div>
     </div>

@@ -206,6 +206,29 @@ export default function ResidentPortalInbox({ resident }) {
     loadAll()
   }, [loadAll])
 
+  // Auto-select the first (most recent) thread after initial load
+  const hasAutoSelectedRef = useRef(false)
+  useEffect(() => {
+    if (loading) return
+    if (hasAutoSelectedRef.current) return
+    if (selectedThreadId) return
+    // Pick thread with most recent message, default to leasing thread
+    const mostRecent =
+      (leasingMsgs.length > 0 || adminMsgs.length > 0)
+        ? (leasingMsgs.length > 0 && adminMsgs.length === 0
+            ? UI_LEASING
+            : adminMsgs.length > 0 && leasingMsgs.length === 0
+              ? UI_ADMIN
+              : (() => {
+                  const lTime = Math.max(...leasingMsgs.map((m) => new Date(m?.Timestamp || m?.created_at || 0).getTime()), 0)
+                  const aTime = Math.max(...adminMsgs.map((m) => new Date(m?.Timestamp || m?.created_at || 0).getTime()), 0)
+                  return lTime >= aTime ? UI_LEASING : UI_ADMIN
+                })())
+        : UI_LEASING
+    hasAutoSelectedRef.current = true
+    setSelectedThreadId(mostRecent)
+  }, [loading, selectedThreadId, leasingMsgs, adminMsgs])
+
   const msgTime = (m) => new Date(m?.Timestamp || m?.created_at || 0).getTime()
 
   const threadRows = useMemo(() => {

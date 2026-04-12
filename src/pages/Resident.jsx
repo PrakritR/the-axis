@@ -753,7 +753,7 @@ function WorkOrdersPanel({ resident, requests: requestsProp, onRequestCreated, o
             }}
             className="rounded-full bg-axis px-5 py-3 text-sm font-semibold text-white transition hover:brightness-105"
           >
-            {showForm ? 'Close form' : 'Submit Work Order'}
+            {showForm ? 'Close form' : 'Create new work order'}
           </button>
         }
       >
@@ -1232,35 +1232,9 @@ function PaymentsPanel({ resident, onResidentUpdated, highlightCategory, onPayme
         <>
           {error ? (
             <div className="mb-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
-              Payment history could not be loaded right now, but checkout is still available below.
+              Payment history could not be loaded right now. Try refreshing.
             </div>
           ) : null}
-
-          <div className="mb-6 rounded-[28px] border border-slate-200 bg-[linear-gradient(135deg,#ffffff_0%,#f8fbff_100%)] p-6 sm:p-7">
-            <div className="text-center text-[11px] font-bold uppercase tracking-[0.2em] text-slate-400">
-              Your rent summary
-            </div>
-            <div className="mt-5 grid gap-4 sm:grid-cols-3">
-              <PortalOpsMetric
-                label="Unpaid"
-                value={formatMoney(rentSummaryAllTime.unpaidTotal)}
-                hint="Total balance still owed on rent"
-                tone="axis"
-              />
-              <PortalOpsMetric
-                label="Overdue"
-                value={formatMoney(rentSummaryAllTime.overdueTotal)}
-                hint="Past due, not paid"
-                tone="red"
-              />
-              <PortalOpsMetric
-                label="Paid"
-                value={formatMoney(rentSummaryAllTime.paidTotal)}
-                hint="Recorded rent payments to date"
-                tone="emerald"
-              />
-            </div>
-          </div>
 
           <div className="rounded-[28px] border border-slate-200 bg-[linear-gradient(135deg,#ffffff_0%,#f8fbff_100%)] p-6 sm:p-7">
             <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
@@ -1354,14 +1328,8 @@ function PaymentsPanel({ resident, onResidentUpdated, highlightCategory, onPayme
               </PortalOpsCard>
             </div>
 
-            <PortalOpsCard title="Fines & Extra Charges" description="Fees, fines, or other non-rent charges are listed separately here.">
-              {feeChargeRows.length === 0 ? (
-                <PortalOpsEmptyState
-                  icon="✅"
-                  title="No extra charges"
-                  description="There are no fines or additional charges on your account right now."
-                />
-              ) : (
+            {feeChargeRows.length > 0 ? (
+              <PortalOpsCard title="Fines & Extra Charges" description="Fees, fines, or other non-rent charges.">
                 <div className="space-y-3">
                   {feeChargeRows.map((payment) => {
                     const status = paymentStatusForRecord(payment)
@@ -1390,8 +1358,8 @@ function PaymentsPanel({ resident, onResidentUpdated, highlightCategory, onPayme
                     )
                   })}
                 </div>
-              )}
-            </PortalOpsCard>
+              </PortalOpsCard>
+            ) : null}
           </div>
 
           <EmbeddedStripeCheckout
@@ -1409,44 +1377,22 @@ function PaymentsPanel({ resident, onResidentUpdated, highlightCategory, onPayme
 
 // ─── Leasing ──────────────────────────────────────────────────────────────────
 
-const RESIDENT_LEASING_STAGE_OPTIONS = [
-  { id: 'draft', label: 'Draft' },
-  { id: 'ready', label: 'Ready' },
-  { id: 'sent', label: 'Sent to resident' },
-  { id: 'signed', label: 'Signed' },
-]
-
-function residentLeaseStageMatchesDraft(stageId, statusRaw) {
-  const s = String(statusRaw || '').trim()
-  if (stageId === 'draft') return s === 'Draft Generated'
-  if (stageId === 'ready') return ['Under Review', 'Changes Needed', 'Approved'].includes(s)
-  if (stageId === 'sent') return s === 'Published'
-  if (stageId === 'signed') return s === 'Signed'
-  return false
-}
-
-function inferDefaultResidentLeaseStage(drafts) {
-  if (!Array.isArray(drafts)) return 'sent'
-  const statuses = new Set(drafts.map((d) => String(d.Status || '').trim()))
-  if (statuses.has('Signed')) return 'signed'
-  if (statuses.has('Published')) return 'sent'
-  if (['Under Review', 'Changes Needed', 'Approved'].some((x) => statuses.has(x))) return 'ready'
-  if (statuses.has('Draft Generated')) return 'draft'
-  return 'sent'
-}
-
-function pickResidentLeaseDraftForStage(drafts, stageId) {
-  const matches = drafts.filter((d) => residentLeaseStageMatchesDraft(stageId, d.Status))
-  matches.sort((a, b) => {
-    const pb = new Date(b['Published At'] || 0).getTime()
-    const pa = new Date(a['Published At'] || 0).getTime()
-    if (pb !== pa) return pb - pa
-    return new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime()
+/** Pick the best available lease draft: Signed > Published > any (newest first). */
+function pickBestLeaseDraft(drafts) {
+  if (!Array.isArray(drafts) || drafts.length === 0) return null
+  const sorted = [...drafts].sort((a, b) => {
+    const pb = new Date(b['Published At'] || b.created_at || 0).getTime()
+    const pa = new Date(a['Published At'] || a.created_at || 0).getTime()
+    return pb - pa
   })
-  return matches[0] || null
+  return (
+    sorted.find((d) => String(d.Status || '').trim() === 'Signed') ||
+    sorted.find((d) => String(d.Status || '').trim() === 'Published') ||
+    sorted[0]
+  )
 }
 
-function LeasingPanel({ resident, onOpenPayments }) {
+function LeasingPanel({ resident, payments, onOpenPayments }) {
   const leaseTermLabel = getLeaseTermLabel(resident)
   const isMonthToMonth = leaseTermLabel.toLowerCase().includes('month-to-month')
   const leaseSigningUrl = resolveLeaseSigningUrl(resident)
@@ -1455,8 +1401,13 @@ function LeasingPanel({ resident, onOpenPayments }) {
   const leaseDepositPaid = Boolean(resident['Security Deposit Paid'] || resident['Deposit Paid'])
   const signedLeaseNote = String(resident['Security Deposit Paid Date'] || resident['Deposit Paid Date'] || '').trim()
 
+  // First month rent: check if any paid rent payment exists
+  const firstMonthRentPaid = useMemo(() => {
+    const list = Array.isArray(payments) ? payments : []
+    return list.some((p) => getPaymentKind(p) === 'rent' && residentPaymentLineStatus(p) === 'Paid')
+  }, [payments])
+
   const [leaseDrafts, setLeaseDrafts] = useState([])
-  const [leaseStage, setLeaseStage] = useState('sent')
   const [leaseLoading, setLeaseLoading] = useState(true)
   const [showLeaseText, setShowLeaseText] = useState(false)
   const [houseDeposit, setHouseDeposit] = useState(0)
@@ -1473,14 +1424,8 @@ function LeasingPanel({ resident, onOpenPayments }) {
       .then((drafts) => {
         if (cancelled) return
         setLeaseDrafts(drafts)
-        setLeaseStage(inferDefaultResidentLeaseStage(drafts))
       })
-      .catch(() => {
-        if (!cancelled) {
-          setLeaseDrafts([])
-          setLeaseStage('sent')
-        }
-      })
+      .catch(() => { if (!cancelled) setLeaseDrafts([]) })
       .finally(() => { if (!cancelled) setLeaseLoading(false) })
     return () => { cancelled = true }
   }, [resident.id])
@@ -1495,13 +1440,12 @@ function LeasingPanel({ resident, onOpenPayments }) {
         const depositText = property?.['Security Deposit'] || property?.securityDeposit || getStaticSecurityDeposit(resident.House) || resident['Security Deposit']
         const amount = parseInt(String(depositText || '').replace(/[^0-9]/g, ''), 10)
         if (!cancelled) setHouseDeposit(Number.isFinite(amount) && amount > 0 ? amount : 0)
-      } catch (err) {
-        if (!cancelled) setDepositError(err.message || 'Could not load the deposit amount.')
+      } catch {
+        // silently ignore — deposit amount is not critical
       } finally {
         if (!cancelled) setDepositLoading(false)
       }
     }
-
     loadDeposit()
     return () => { cancelled = true }
   }, [resident.House, resident['Security Deposit']])
@@ -1510,41 +1454,24 @@ function LeasingPanel({ resident, onOpenPayments }) {
     setDepositPaidState(leaseDepositPaid)
   }, [leaseDepositPaid])
 
-  const activeLeaseDraft = useMemo(
-    () => pickResidentLeaseDraftForStage(leaseDrafts, leaseStage),
-    [leaseDrafts, leaseStage],
-  )
-  const leaseBodyAllowed = leaseStage === 'sent' || leaseStage === 'signed'
+  const activeLeaseDraft = useMemo(() => pickBestLeaseDraft(leaseDrafts), [leaseDrafts])
+  const leaseStatus = activeLeaseDraft?.Status ? String(activeLeaseDraft.Status).trim() : ''
+  const leaseBodyAllowed = leaseStatus === 'Published' || leaseStatus === 'Signed'
   const leaseContent = leaseBodyAllowed
     ? (activeLeaseDraft?.['Manager Edited Content'] || activeLeaseDraft?.['AI Draft Content'] || '')
     : ''
-  const leaseStatus = activeLeaseDraft?.Status
   const leasePreview = useMemo(() => {
-    if (leaseStage === 'draft') {
-      if (activeLeaseDraft) {
-        return 'Your lease is being drafted. Final terms will appear here once your manager prepares your lease.'
-      }
-      return 'Nothing is in the Draft stage yet. When your manager starts a lease draft, it will show here.'
+    if (!activeLeaseDraft) return ''
+    if (!leaseBodyAllowed) {
+      return leaseStatus === 'Draft Generated'
+        ? 'Your lease is being drafted. Full terms will appear here once your manager publishes your lease.'
+        : 'Your lease is being reviewed internally. The full document will appear here once it is sent to you.'
     }
-    if (leaseStage === 'ready') {
-      if (activeLeaseDraft) {
-        return 'Your lease is being reviewed internally. You’ll see the full document when it’s sent to you.'
-      }
-      return 'Nothing is in the Ready stage yet.'
-    }
-    if (leaseContent) return leaseContent
-    return `Axis Resident Lease\n\nProperty: ${resident.House || '—'}\nUnit: ${resident['Unit Number'] || '—'}\nTerm: ${leaseTermLabel}\nMove-in: ${moveInLabel}\nMove-out: ${moveOutLabel}\nSecurity Deposit: ${houseDeposit ? formatMoney(houseDeposit) : '—'}\n\nThis is a placeholder lease document for now. Your final document will appear here for review and signature.`
-  }, [
-    leaseStage,
-    activeLeaseDraft,
-    leaseContent,
-    resident.House,
-    resident['Unit Number'],
-    leaseTermLabel,
-    moveInLabel,
-    moveOutLabel,
-    houseDeposit,
-  ])
+    return leaseContent || `Axis Resident Lease\n\nProperty: ${resident.House || '—'}\nUnit: ${resident['Unit Number'] || '—'}\nTerm: ${leaseTermLabel}\nMove-in: ${moveInLabel}\nMove-out: ${moveOutLabel}\nSecurity Deposit: ${houseDeposit ? formatMoney(houseDeposit) : '—'}\n\nYour final document will appear here for review and signature.`
+  }, [activeLeaseDraft, leaseBodyAllowed, leaseStatus, leaseContent, resident.House, resident['Unit Number'], leaseTermLabel, moveInLabel, moveOutLabel, houseDeposit])
+
+  // Both deposit AND first month rent must be paid before signing is allowed
+  const signingUnlocked = depositPaidState && firstMonthRentPaid
 
   async function handleDepositPaid() {
     setDepositCheckoutLoading(true)
@@ -1591,50 +1518,52 @@ function LeasingPanel({ resident, onOpenPayments }) {
           </div>
         </div>
 
-        <div className="rounded-[24px] border border-[#2563eb]/20 bg-[linear-gradient(135deg,#eff6ff_0%,#ffffff_100%)] p-5">
-          <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-            <div className="min-w-0 flex-1">
-              <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-[#2563eb]">Lease Document</div>
-              <h3 className="mt-2 text-xl font-black text-slate-900">
-                {leaseLoading ? 'Loading…' : 'Lease document'}
-              </h3>
-              {leaseStatus && !leaseLoading ? (
-                <p className="mt-1 text-xs font-semibold text-slate-500">Status in Axis: {leaseStatus}</p>
-              ) : null}
-            </div>
-            <div className="flex w-full flex-col gap-3 sm:flex-row sm:items-end sm:justify-end lg:w-auto lg:shrink-0">
-              <div className="w-full sm:min-w-[220px]">
-                <label htmlFor="resident-lease-stage" className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-500">
-                  Sort by stage
-                </label>
-                <select
-                  id="resident-lease-stage"
-                  value={leaseStage}
-                  onChange={(e) => setLeaseStage(e.target.value)}
-                  disabled={leaseLoading}
-                  className="mt-2 w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-800 shadow-sm disabled:cursor-not-allowed disabled:opacity-60"
-                >
-                  {RESIDENT_LEASING_STAGE_OPTIONS.map((o) => (
-                    <option key={o.id} value={o.id}>{o.label}</option>
-                  ))}
-                </select>
+        {/* Lease document card — no sort dropdown; auto-shows the best available draft */}
+        {leaseLoading ? (
+          <div className="rounded-[24px] border border-slate-200 bg-white p-6 text-sm text-slate-400">Loading lease…</div>
+        ) : !activeLeaseDraft ? (
+          <div className="rounded-[24px] border border-slate-200 bg-slate-50 p-6 text-center">
+            <p className="text-sm font-semibold text-slate-700">Your lease has not been generated yet.</p>
+            <p className="mt-1 text-sm text-slate-500">Your manager will prepare a lease document once your application is approved.</p>
+          </div>
+        ) : (
+          <div className="rounded-[24px] border border-[#2563eb]/20 bg-[linear-gradient(135deg,#eff6ff_0%,#ffffff_100%)] p-5">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div className="min-w-0 flex-1">
+                <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-[#2563eb]">Lease Document</div>
+                <div className="mt-2 flex flex-wrap items-center gap-2">
+                  <span className={`inline-flex rounded-full border px-2.5 py-0.5 text-[11px] font-bold ${
+                    leaseStatus === 'Signed' ? 'border-emerald-200 bg-emerald-50 text-emerald-800' :
+                    leaseStatus === 'Published' ? 'border-blue-200 bg-blue-50 text-blue-800' :
+                    'border-slate-200 bg-slate-100 text-slate-600'
+                  }`}>
+                    {leaseStatus || 'Pending'}
+                  </span>
+                </div>
               </div>
               <button
                 type="button"
                 onClick={() => setShowLeaseText((v) => !v)}
-                className="shrink-0 rounded-full bg-[linear-gradient(180deg,#2f76ff_0%,#2450eb_100%)] px-5 py-2.5 text-sm font-semibold text-white transition hover:brightness-105"
+                disabled={!leaseBodyAllowed}
+                title={leaseBodyAllowed ? '' : 'Available once your manager publishes the lease'}
+                className="shrink-0 rounded-full bg-[linear-gradient(180deg,#2f76ff_0%,#2450eb_100%)] px-5 py-2.5 text-sm font-semibold text-white transition hover:brightness-105 disabled:cursor-not-allowed disabled:opacity-40"
               >
                 {showLeaseText ? 'Hide' : 'View lease'}
               </button>
             </div>
-          </div>
-          {showLeaseText && (
-            <div className="mt-5 overflow-hidden rounded-[20px] border border-slate-200 bg-white">
-              <div className="flex items-center justify-between border-b border-slate-100 bg-slate-50 px-5 py-3">
-                <span className="text-xs font-semibold text-slate-500">
-                  {resident.House}{resident['Unit Number'] ? ` · ${normalizeUnitLabel(resident['Unit Number'])}` : ''} · {resident.Name}
-                </span>
-                {leaseBodyAllowed ? (
+            {!leaseBodyAllowed && (
+              <p className="mt-3 text-sm text-slate-500">
+                {leaseStatus === 'Draft Generated'
+                  ? 'Your lease is being drafted — the full document will appear here once your manager publishes it.'
+                  : 'Your lease is being reviewed internally. The full document will appear here once it is sent to you.'}
+              </p>
+            )}
+            {showLeaseText && leaseBodyAllowed && (
+              <div className="mt-5 overflow-hidden rounded-[20px] border border-slate-200 bg-white">
+                <div className="flex items-center justify-between border-b border-slate-100 bg-slate-50 px-5 py-3">
+                  <span className="text-xs font-semibold text-slate-500">
+                    {resident.House}{resident['Unit Number'] ? ` · ${normalizeUnitLabel(resident['Unit Number'])}` : ''} · {resident.Name}
+                  </span>
                   <button
                     type="button"
                     onClick={() => {
@@ -1650,84 +1579,105 @@ function LeasingPanel({ resident, onOpenPayments }) {
                   >
                     Download
                   </button>
-                ) : (
-                  <span className="text-xs text-slate-400">Download available when sent for review</span>
-                )}
+                </div>
+                <div className="max-h-[500px] overflow-y-auto p-6">
+                  <pre className="whitespace-pre-wrap font-mono text-sm leading-7 text-slate-800">{leasePreview}</pre>
+                </div>
               </div>
-              <div className="max-h-[500px] overflow-y-auto p-6">
-                <pre className="whitespace-pre-wrap font-mono text-sm leading-7 text-slate-800">{leasePreview}</pre>
-              </div>
+            )}
+          </div>
+        )}
+
+        {/* Security Deposit */}
+        <div className="rounded-[24px] border border-slate-200 bg-white p-5">
+          <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">Security Deposit</div>
+          <div className="mt-2 flex flex-wrap items-center gap-3">
+            <h3 className="text-xl font-black text-slate-900">
+              {depositLoading ? 'Loading…' : (houseDeposit ? formatMoney(houseDeposit) : 'Not set')}
+            </h3>
+            {depositPaidState ? (
+              <span className="rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700">
+                Paid{signedLeaseNote ? ` · ${formatDate(signedLeaseNote)}` : ''}
+              </span>
+            ) : null}
+          </div>
+          {!depositPaidState && (
+            <div className="mt-4">
+              <button
+                type="button"
+                onClick={() => {
+                  if (!houseDeposit) return
+                  setDepositCheckout({
+                    title: 'Security deposit',
+                    request: {
+                      residentId: resident.id,
+                      residentName: resident.Name,
+                      residentEmail: resident.Email,
+                      propertyName: resident.House,
+                      unitNumber: resident['Unit Number'],
+                      amount: houseDeposit,
+                      description: 'Security deposit payment',
+                      category: 'security_deposit',
+                    },
+                  })
+                }}
+                disabled={depositLoading || !houseDeposit || depositCheckoutLoading}
+                className="rounded-full bg-[linear-gradient(180deg,#2f76ff_0%,#2450eb_100%)] px-5 py-3 text-sm font-semibold text-white transition hover:brightness-105 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                Pay security deposit
+              </button>
             </div>
           )}
         </div>
 
-        {depositError ? (
-          <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{depositError}</div>
-        ) : null}
-
+        {/* First Month Rent */}
         <div className="rounded-[24px] border border-slate-200 bg-white p-5">
-          <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">Security Deposit</div>
-          <h3 className="mt-2 text-xl font-black text-slate-900">
-            {depositLoading ? 'Loading…' : (houseDeposit ? formatMoney(houseDeposit) : 'Not set')}
-          </h3>
-          <p className="mt-3 text-sm leading-6 text-slate-500">
-            Pay the security deposit first. Once it’s marked paid, lease signing unlocks automatically.
-          </p>
-          <div className="mt-4 flex flex-wrap gap-3">
-            <button
-              type="button"
-              onClick={() => {
-                if (!houseDeposit) return
-                setDepositCheckout({
-                  title: 'Security deposit',
-                  request: {
-                    residentId: resident.id,
-                    residentName: resident.Name,
-                    residentEmail: resident.Email,
-                    propertyName: resident.House,
-                    unitNumber: resident['Unit Number'],
-                    amount: houseDeposit,
-                    description: 'Security deposit payment',
-                    category: 'security_deposit',
-                  },
-                })
-              }}
-              disabled={depositLoading || !houseDeposit || depositPaidState || depositCheckoutLoading}
-              className="rounded-full bg-[linear-gradient(180deg,#2f76ff_0%,#2450eb_100%)] px-5 py-3 text-sm font-semibold text-white transition hover:brightness-105 disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              {depositPaidState ? 'Deposit paid' : 'Pay deposit'}
-            </button>
-            {depositPaidState ? (
-              <div className="rounded-full border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-700">
-                Paid{signedLeaseNote ? ` · ${formatDate(signedLeaseNote)}` : ''}
-              </div>
-            ) : null}
+          <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">First Month Rent</div>
+          <div className="mt-2 flex flex-wrap items-center gap-3">
+            {firstMonthRentPaid ? (
+              <span className="rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700">Paid</span>
+            ) : (
+              <span className="rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-700">Unpaid</span>
+            )}
           </div>
+          {!firstMonthRentPaid && (
+            <p className="mt-2 text-sm text-slate-500">
+              Pay your first month's rent from the{' '}
+              <button type="button" onClick={() => onOpenPayments()} className="font-semibold text-[#2563eb] underline">Payments</button>{' '}
+              tab. Lease signing unlocks once both the deposit and first month rent are paid.
+            </p>
+          )}
         </div>
 
+        {/* Lease Signing */}
         <div className="rounded-[24px] border border-slate-200 bg-white p-5">
           <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">Lease Signing</div>
           <h3 className="mt-2 text-xl font-black text-slate-900">Review & Sign</h3>
           <p className="mt-3 text-sm leading-6 text-slate-500">
-            {depositPaidState
-              ? 'Your deposit is paid, so lease signing is unlocked.'
-              : 'Pay the security deposit first. Signing stays locked until the deposit is marked paid.'}
+            {signingUnlocked
+              ? 'Your security deposit and first month rent are both paid. Signing is unlocked.'
+              : 'Pay the security deposit and first month rent to unlock signing.'}
           </p>
           <div className="mt-4 flex flex-wrap gap-3">
-            {depositPaidState && leaseSigningUrl ? (
-              <button type="button" onClick={() => { window.location.href = leaseSigningUrl }}
-                className="rounded-full border border-slate-300 px-5 py-3 text-sm font-semibold text-slate-700 transition hover:border-slate-500">
-                Open DocuSign
+            {signingUnlocked && leaseSigningUrl ? (
+              <button
+                type="button"
+                onClick={() => { window.location.href = leaseSigningUrl }}
+                className="rounded-full bg-[linear-gradient(180deg,#2f76ff_0%,#2450eb_100%)] px-5 py-3 text-sm font-semibold text-white transition hover:brightness-105"
+              >
+                Sign lease
               </button>
+            ) : signingUnlocked ? (
+              <p className="text-sm text-slate-400">Your manager will send a signing link once the lease is ready.</p>
             ) : (
-              <div className="text-sm text-slate-400">
-                {depositPaidState ? 'Signing link will appear here once prepared.' : 'Deposit required before signing.'}
-              </div>
+              <button
+                type="button"
+                disabled
+                className="rounded-full border border-slate-200 bg-slate-50 px-5 py-3 text-sm font-semibold text-slate-400 cursor-not-allowed"
+              >
+                Signing locked
+              </button>
             )}
-            <button type="button" onClick={() => onOpenPayments('extension')}
-              className="rounded-full bg-slate-900 px-5 py-3 text-sm font-semibold text-white transition hover:bg-slate-800">
-              Payments
-            </button>
           </div>
         </div>
 
@@ -2138,7 +2088,7 @@ function Dashboard({ resident, onResidentUpdated, onSignOut }) {
         ) : null}
         {!loading && tab === 'leasing' ? (
           applicationUnlocked ? (
-            <LeasingPanel resident={resident} onOpenPayments={(focus = '') => { setPaymentFocus(focus); setTab('payments') }} />
+            <LeasingPanel resident={resident} payments={payments} onOpenPayments={(focus = '') => { setPaymentFocus(focus); setTab('payments') }} />
           ) : (
             <ResidentPendingApprovalGate />
           )

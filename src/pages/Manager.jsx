@@ -2305,10 +2305,10 @@ function HouseManagementPanel({ manager, onPropertiesChange }) {
         onPropertiesChange?.(next)
         return next
       })
-      toast.success('Tour hours saved')
+      toast.success('Property saved')
       setEditingPropertyId(null)
     } catch (err) {
-      toast.error('Could not save tour hours: ' + err.message)
+      toast.error('Could not save property: ' + err.message)
     } finally {
       setSaving(false)
     }
@@ -2465,6 +2465,64 @@ function HouseManagementPanel({ manager, onPropertiesChange }) {
                 </div>
                 {editingPropertyId === property.id ? (
                   <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                    <div className="sm:col-span-2">
+                      <div className="mb-2 text-[11px] font-bold uppercase tracking-[0.14em] text-slate-400">Listing (Airtable)</div>
+                    </div>
+                    <div className="sm:col-span-2">
+                      <label className="mb-1 block text-xs font-semibold text-slate-600">Address</label>
+                      <input
+                        type="text"
+                        value={tourForm.address}
+                        onChange={(e) => setTourForm((current) => ({ ...current, address: e.target.value }))}
+                        placeholder="Full address"
+                        className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900"
+                      />
+                    </div>
+                    <div>
+                      <label className="mb-1 block text-xs font-semibold text-slate-600">Property label</label>
+                      <input
+                        type="text"
+                        value={tourForm.propertyLabel}
+                        onChange={(e) => setTourForm((current) => ({ ...current, propertyLabel: e.target.value }))}
+                        placeholder="Airtable “Property” field"
+                        className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900"
+                      />
+                    </div>
+                    <div>
+                      <label className="mb-1 block text-xs font-semibold text-slate-600">Site manager email</label>
+                      <input
+                        type="email"
+                        value={tourForm.siteManagerEmail}
+                        onChange={(e) => setTourForm((current) => ({ ...current, siteManagerEmail: e.target.value }))}
+                        placeholder="For tours & public routing"
+                        className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900"
+                      />
+                    </div>
+                    <div>
+                      <label className="mb-1 block text-xs font-semibold text-slate-600">Utilities fee ($/mo)</label>
+                      <input
+                        type="number"
+                        min="0"
+                        step="1"
+                        value={tourForm.utilitiesFee}
+                        onChange={(e) => setTourForm((current) => ({ ...current, utilitiesFee: e.target.value }))}
+                        className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900"
+                      />
+                    </div>
+                    <div>
+                      <label className="mb-1 block text-xs font-semibold text-slate-600">Application fee ($)</label>
+                      <input
+                        type="number"
+                        min="0"
+                        step="1"
+                        value={tourForm.applicationFee}
+                        onChange={(e) => setTourForm((current) => ({ ...current, applicationFee: e.target.value }))}
+                        className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900"
+                      />
+                    </div>
+                    <div className="sm:col-span-2">
+                      <div className="mb-2 text-[11px] font-bold uppercase tracking-[0.14em] text-slate-400">Tours</div>
+                    </div>
                     <div>
                       <label className="mb-1 block text-xs font-semibold text-slate-600">Tour manager</label>
                       <input
@@ -2536,7 +2594,17 @@ function HouseManagementPanel({ manager, onPropertiesChange }) {
                         type="button"
                         onClick={() => {
                           setEditingPropertyId(null)
-                          setTourForm({ manager: '', availability: '', notes: '', securityDeposit: '' })
+                          setTourForm({
+                            manager: '',
+                            availability: '',
+                            notes: '',
+                            securityDeposit: '',
+                            utilitiesFee: '',
+                            applicationFee: '',
+                            siteManagerEmail: '',
+                            propertyLabel: '',
+                            address: '',
+                          })
                         }}
                         className="rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700"
                       >
@@ -2548,7 +2616,7 @@ function HouseManagementPanel({ manager, onPropertiesChange }) {
                         className="rounded-2xl bg-[#2563eb] px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-50"
                         disabled={saving}
                       >
-                        Save tour hours
+                        Save property
                       </button>
                     </div>
                   </div>
@@ -2561,12 +2629,19 @@ function HouseManagementPanel({ manager, onPropertiesChange }) {
                         manager: extractNoteValue(property.Notes, 'Tour Manager'),
                         availability: extractNoteValue(property.Notes, 'Tour Availability'),
                         notes: extractNoteValue(property.Notes, 'Tour Notes'),
-                        securityDeposit: String(property['Security Deposit'] || ''),
+                        securityDeposit: String(property['Security Deposit'] ?? ''),
+                        utilitiesFee: String(property['Utilities Fee'] ?? ''),
+                        applicationFee: String(property['Application Fee'] ?? ''),
+                        siteManagerEmail: String(
+                          property['Site Manager Email'] || extractNoteValue(property.Notes, 'Site Manager Email') || '',
+                        ),
+                        propertyLabel: String(property.Property ?? ''),
+                        address: String(property.Address ?? ''),
                       })
                     }}
                     className="mt-3 rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-700"
                   >
-                    Edit tour hours
+                    Edit listing &amp; tours
                   </button>
                 )}
               </div>
@@ -2637,7 +2712,20 @@ function HouseManagementPanel({ manager, onPropertiesChange }) {
                 </div>
               </div>
               <div>
-                <div className="mb-2 text-[11px] font-bold uppercase tracking-[0.14em] text-slate-400">Airtable fees (optional)</div>
+                <label className="mb-1.5 block text-xs font-semibold text-slate-700">Site manager email (optional)</label>
+                <input
+                  className={addInputCls}
+                  type="email"
+                  value={addForm.siteManagerEmail}
+                  onChange={(e) => setAddForm((f) => ({ ...f, siteManagerEmail: e.target.value }))}
+                  placeholder="If different from your login — used for public tour routing"
+                />
+              </div>
+              <div>
+                <div className="mb-2 text-[11px] font-bold uppercase tracking-[0.14em] text-slate-400">Airtable fees</div>
+                <p className="mb-3 text-xs text-slate-500">
+                  Utilities and security deposit default to <strong>$0</strong> if left blank. Application fee is optional — leave blank to use the Apply page default ($50) once the listing is live.
+                </p>
                 <div className="grid gap-4 sm:grid-cols-3">
                   <div>
                     <label className="mb-1.5 block text-xs font-semibold text-slate-700">Utilities fee ($/mo)</label>
