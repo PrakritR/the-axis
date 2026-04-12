@@ -784,18 +784,14 @@ export default function ManagerInboxPage({ manager, allowedPropertyNames, adminF
         subject: showSubjectField ? subjResolved : '',
       })
       // Notify recipient
-      {
-        let recipientEmail = ''
-        if (composeKind === 'admin') {
-          recipientEmail = portalAxisAdminContactEmail()
-        } else if (composeKind === 'resident') {
-          recipientEmail = getResidentEmailFromAllMsgs(allMsgs, composeResidentRecordId.trim(), managerEmail, residentLeasingThreadKey)
-        } else if (composeKind === 'site' || composeKind === 'partner') {
-          recipientEmail = composeEmail.trim()
-        }
-        if (recipientEmail) {
-          notifyPortalMessage({ recipientEmail, senderName: managerEmail, subject: subjResolved })
-        }
+      if (composeKind === 'admin') {
+        notifyPortalMessage({ toAdmins: true, senderName: managerEmail, subject: subjResolved })
+      } else if (composeKind === 'resident') {
+        const re = getResidentEmailFromAllMsgs(allMsgs, composeResidentRecordId.trim(), managerEmail, residentLeasingThreadKey)
+        if (re) notifyPortalMessage({ recipientEmail: re, senderName: managerEmail, subject: subjResolved })
+      } else if (composeKind === 'site' || composeKind === 'partner') {
+        const re = composeEmail.trim()
+        if (re) notifyPortalMessage({ recipientEmail: re, senderName: managerEmail, subject: subjResolved })
       }
       const ridForSelect = composeResidentRecordId.trim()
       setComposeOpen(false)
@@ -878,11 +874,7 @@ export default function ManagerInboxPage({ manager, allowedPropertyNames, adminF
           channel: PORTAL_INBOX_CHANNEL_INTERNAL,
           subject: showSubjectField ? subjResolved : '',
         })
-        notifyPortalMessage({
-          recipientEmail: portalAxisAdminContactEmail(),
-          senderName: managerEmail,
-          subject: subjResolved,
-        })
+        notifyPortalMessage({ toAdmins: true, senderName: managerEmail, subject: subjResolved })
       } else {
         const resId = managerInboxParseResidentThreadId(selectedThreadId)
         if (!resId) return

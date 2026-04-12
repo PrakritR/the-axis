@@ -446,7 +446,7 @@ export default function ResidentPortalInbox({ resident }) {
         subject: showSubjectField ? subjResolved : '',
       })
       notifyPortalMessage({
-        recipientEmail: portalAxisAdminContactEmail(),
+        toAdmins: true,
         senderName: resident.Name || email,
         subject: subjResolved,
       })
@@ -489,7 +489,7 @@ export default function ResidentPortalInbox({ resident }) {
         subject: showSubjectField ? subjResolved : '',
       })
       notifyPortalMessage({
-        recipientEmail: portalAxisAdminContactEmail(),
+        toAdmins: true,
         senderName: resident.Name || email,
         subject: subjResolved,
       })
