@@ -191,7 +191,7 @@ const TOUR_DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
 const TOUR_SLOTS = ['9:00 AM', '10:30 AM', '12:00 PM', '1:30 PM', '3:00 PM', '4:30 PM', '6:00 PM']
 
 function propertyRecordName(p) {
-  return String(p?.Name || p?.Property || '').trim()
+  return String(p?.['Property Name'] || p?.Name || p?.Property || '').trim()
 }
 
 /** House visible in manager portal lists once Axis marks it approved / live. */
@@ -220,7 +220,7 @@ function propertyAssignedToManager(p, manager) {
     String(p['Site Manager Email'] || '').trim().toLowerCase(),
   ].filter(Boolean)
   if (email && emails.length && emails.includes(email)) return true
-  for (const k of ['Manager', 'Site Manager', 'Property Manager']) {
+  for (const k of ['Manager Profile', 'Manager', 'Site Manager', 'Property Manager']) {
     const links = managerLinkArray(p[k])
     if (recId && links.includes(recId)) return true
   }
@@ -937,7 +937,7 @@ function DayAvailabilityTimeline({ ranges, onRangesChange, disabled }) {
           aria-label="Availability timeline, drag to add time ranges"
           onMouseDown={onTrackMouseDown}
           className={classNames(
-            'relative rounded-2xl border border-slate-200 bg-white',
+            'relative rounded-2xl border border-slate-200 bg-white select-none',
             disabled ? 'cursor-not-allowed opacity-50' : 'cursor-crosshair',
           )}
           style={{ height: TIMELINE_HEIGHT_PX }}

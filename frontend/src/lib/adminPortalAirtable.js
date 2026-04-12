@@ -137,7 +137,7 @@ function residentHouseMatchesScope(houseField, allowedNamesLower) {
 }
 
 function propertyRecordName(p) {
-  return String(p?.Name || p?.Property || '').trim()
+  return String(p?.['Property Name'] || p?.Name || p?.Property || '').trim()
 }
 
 function isPropertyRecordApproved(p) {

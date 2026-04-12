@@ -88,7 +88,7 @@ async function findExistingDraftByApplicationRecordId(applicationRecordId) {
 async function findPropertyByName(propertyName) {
   const name = String(propertyName || '').trim()
   if (!name) return null
-  const formula = encodeURIComponent(`{Name} = "${escapeFormulaValue(name)}"`)
+  const formula = encodeURIComponent(`{Property Name} = "${escapeFormulaValue(name)}"`)
   const url = `${AIRTABLE_BASE_URL}/Properties?filterByFormula=${formula}&maxRecords=1`
   const data = await airtableGet(url)
   const rec = data.records?.[0]
