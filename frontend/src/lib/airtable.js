@@ -26,7 +26,7 @@ const MESSAGE_CHANNEL_FIELD =
 const MESSAGE_SUBJECT_FIELD = (() => {
   const raw = import.meta.env.VITE_AIRTABLE_MESSAGE_SUBJECT_FIELD
   if (raw === 'none' || raw === false) return ''
-  if (raw === undefined || raw === null) return 'Subject'
+  if (raw === undefined || raw === null) return 'MESSAGE_SUBJECT_FIELD'
   const s = String(raw).trim()
   return s || ''
 })()
