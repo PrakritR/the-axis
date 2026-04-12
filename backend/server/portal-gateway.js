@@ -13,6 +13,7 @@ import managerLookup from './handlers/manager-lookup.js'
 import managerStartFreeTier from './handlers/manager-start-free-tier.js'
 import managerSubscriptionComplete from './handlers/manager-subscription-complete.js'
 import managerUpdateProfile from './handlers/manager-update-profile.js'
+import adminUpdateProfile from './handlers/admin-update-profile.js'
 import sendLeaseInvite from './handlers/send-lease-invite.js'
 import signforgeSendLease from './handlers/signforge-send-lease.js'
 import signforgeEnvelopeStatus from './handlers/signforge-envelope-status.js'
@@ -29,6 +30,7 @@ const handlers = {
   'manager-create-subscription-session': managerCreateSubscriptionSession,
   'manager-billing-portal': managerBillingPortal,
   'manager-update-profile': managerUpdateProfile,
+  'admin-update-profile': adminUpdateProfile,
   'generate-lease-draft': generateLeaseDraft,
   'send-lease-invite': sendLeaseInvite,
   'signforge-send-lease': signforgeSendLease,

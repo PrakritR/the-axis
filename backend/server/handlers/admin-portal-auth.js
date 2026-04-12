@@ -30,12 +30,6 @@ function escapeFormulaValue(value) {
   return String(value || '').replace(/"/g, '\\"')
 }
 
-function mapAppRoleFromAirtableRole(raw) {
-  const r = String(raw || '').trim().toLowerCase()
-  if (!r) return null
-  return 'admin'
-}
-
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*')
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS')
@@ -80,21 +74,19 @@ export default async function handler(req, res) {
     if (!record || storedPw !== password) {
       return res.status(401).json({ error: 'Invalid email or password' })
     }
-    const appRole = mapAppRoleFromAirtableRole(fields.Role)
-    if (!appRole) {
-      return res.status(403).json({
-        error: 'This account is not authorized for internal sign-in.',
-      })
-    }
+    const appRole = 'admin'
     const name = String(fields.Name || '').trim() || email
     const adminId = String(fields['Admin ID'] || fields['AdminID'] || record.id || '').trim()
+    const phone = String(fields['Phone Number'] != null ? fields['Phone Number'] : fields.Phone || '').trim()
     return res.status(200).json({
       ok: true,
       user: {
         id: adminId || record.id,
-        role: 'admin',
+        role: appRole,
         email,
         name,
+        phone: phone || undefined,
+        airtableRecordId: record.id,
       },
     })
   }

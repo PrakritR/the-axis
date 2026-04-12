@@ -345,7 +345,7 @@ function SectionCard({ title, description, children, action }) {
     <div className="rounded-[28px] border border-slate-200 bg-white shadow-soft">
       <div className="flex flex-wrap items-start justify-between gap-4 border-b border-slate-200 px-5 py-4 sm:px-7">
         <div>
-          <h2 className="text-xl font-black text-slate-900 sm:text-2xl">{title}</h2>
+          <h2 className="text-2xl font-black text-slate-900">{title}</h2>
           {description ? <p className="mt-1 text-sm text-slate-500">{description}</p> : null}
         </div>
         {action}
@@ -786,7 +786,7 @@ function WorkOrdersPanel({ resident, requests: requestsProp, onRequestCreated, o
   return (
     <div className="mb-10">
       <div className="mb-5 flex flex-wrap items-center gap-3">
-        <h2 className="mr-auto text-xl font-black text-slate-900">Work Orders</h2>
+        <h2 className="mr-auto text-2xl font-black text-slate-900">Work Orders</h2>
         <button
           type="button"
           onClick={() => {
@@ -1284,7 +1284,7 @@ function PaymentsPanel({ resident, onResidentUpdated, highlightCategory, onPayme
   return (
     <div className="mb-10">
       <div className="mb-5 flex flex-wrap items-center gap-3">
-        <h2 className="mr-auto text-xl font-black text-slate-900">Payments</h2>
+        <h2 className="mr-auto text-2xl font-black text-slate-900">Payments</h2>
       </div>
       {loading ? <p className="text-sm text-slate-400">Loading payments...</p> : null}
       {!loading && (

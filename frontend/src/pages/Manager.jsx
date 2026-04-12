@@ -2547,7 +2547,7 @@ function HouseManagementPanel({ manager, onPropertiesChange }) {
     <div className="rounded-[24px] border border-slate-200 bg-white p-6">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
-            <h3 className="text-xl font-black text-slate-900">Properties</h3>
+            <h3 className="text-2xl font-black text-slate-900">Properties</h3>
           </div>
           <div className="flex flex-wrap gap-2">
             <button
@@ -3401,6 +3401,7 @@ function HouseManagementPanel({ manager, onPropertiesChange }) {
 // ─── ManagerProfilePanel ──────────────────────────────────────────────────────
 // Profile view: editable personal info + managed property addresses list
 function ManagerProfilePanel({ manager, onManagerUpdate, approvedPropertyCount = 0 }) {
+  const [editing, setEditing] = useState(false)
   const [form, setForm] = useState({ name: manager.name || '', phone: manager.phone || '' })
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState('')
@@ -3420,6 +3421,16 @@ function ManagerProfilePanel({ manager, onManagerUpdate, approvedPropertyCount =
       .catch(() => setProperties([]))
       .finally(() => setPropsLoading(false))
   }, [])
+
+  useEffect(() => {
+    setForm({ name: manager.name || '', phone: manager.phone || '' })
+  }, [manager.name, manager.phone])
+
+  function handleCancelEdit() {
+    setForm({ name: manager.name || '', phone: manager.phone || '' })
+    setSaveError('')
+    setEditing(false)
+  }
 
   async function handleSaveProfile(event) {
     event.preventDefault()
@@ -3443,6 +3454,7 @@ function ManagerProfilePanel({ manager, onManagerUpdate, approvedPropertyCount =
       if (!res.ok) throw new Error(data.error || 'Could not save profile.')
       toast.success('Profile saved')
       onManagerUpdate({ ...manager, name: form.name.trim(), phone: form.phone.trim() })
+      setEditing(false)
     } catch (err) {
       setSaveError(err.message || 'Could not save profile.')
     } finally {
@@ -3457,56 +3469,97 @@ function ManagerProfilePanel({ manager, onManagerUpdate, approvedPropertyCount =
     <div className="mx-auto max-w-4xl space-y-6">
       {/* Personal info */}
       <section className="rounded-[28px] border border-slate-200 bg-white p-6">
-        <h2 className="mt-2 text-2xl font-black text-slate-900">Profile</h2>
-        <form onSubmit={handleSaveProfile} className="mt-6 grid gap-5 sm:grid-cols-2">
-          <div>
-            <label className="mb-1.5 block text-sm font-semibold text-slate-700">Full name</label>
-            <input
-              type="text"
-              value={form.name}
-              onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
-              placeholder="Your name"
-              className={inputCls}
-            />
-          </div>
-          <div>
-            <label className="mb-1.5 block text-sm font-semibold text-slate-700">Email</label>
-            <div className={readonlyCls}>{manager.email || '—'}</div>
-          </div>
-          <div>
-            <label className="mb-1.5 block text-sm font-semibold text-slate-700">Phone</label>
-            <input
-              type="tel"
-              value={form.phone}
-              onChange={(e) => setForm((f) => ({ ...f, phone: e.target.value }))}
-              placeholder="+1 (206) 555-0100"
-              className={inputCls}
-            />
-          </div>
-          <div>
-            <label className="mb-1.5 block text-sm font-semibold text-slate-700">Manager ID</label>
-            <div className={`${readonlyCls} font-mono`}>{manager.managerId || '—'}</div>
-          </div>
-          {saveError ? (
-            <div className="sm:col-span-2">
-              <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{saveError}</div>
-            </div>
-          ) : null}
-          <div className="sm:col-span-2">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+          <h2 className="mt-2 text-2xl font-black text-slate-900">Profile</h2>
+          {!editing ? (
             <button
-              type="submit"
-              disabled={saving || (!form.name.trim() && !form.phone.trim())}
-              className="rounded-2xl bg-[#2563eb] px-6 py-3 text-sm font-semibold text-white transition hover:brightness-110 disabled:opacity-50"
+              type="button"
+              onClick={() => setEditing(true)}
+              className="shrink-0 rounded-2xl border border-slate-200 bg-white px-5 py-2.5 text-sm font-semibold text-slate-800 transition hover:border-[#2563eb]/40 hover:bg-slate-50"
             >
-              {saving ? 'Saving…' : 'Save profile'}
+              Edit info
             </button>
+          ) : null}
+        </div>
+
+        {!editing ? (
+          <div className="mt-6 grid gap-5 sm:grid-cols-2">
+            <div>
+              <p className="mb-1.5 text-sm font-semibold text-slate-700">Full name</p>
+              <div className={readonlyCls}>{manager.name || '—'}</div>
+            </div>
+            <div>
+              <p className="mb-1.5 text-sm font-semibold text-slate-700">Email</p>
+              <div className={readonlyCls}>{manager.email || '—'}</div>
+            </div>
+            <div>
+              <p className="mb-1.5 text-sm font-semibold text-slate-700">Phone</p>
+              <div className={readonlyCls}>{manager.phone || '—'}</div>
+            </div>
+            <div>
+              <p className="mb-1.5 text-sm font-semibold text-slate-700">Manager ID</p>
+              <div className={`${readonlyCls} font-mono`}>{manager.managerId || '—'}</div>
+            </div>
           </div>
-        </form>
+        ) : (
+          <form onSubmit={handleSaveProfile} className="mt-6 grid gap-5 sm:grid-cols-2">
+            <div>
+              <label className="mb-1.5 block text-sm font-semibold text-slate-700">Full name</label>
+              <input
+                type="text"
+                value={form.name}
+                onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
+                placeholder="Your name"
+                className={inputCls}
+              />
+            </div>
+            <div>
+              <label className="mb-1.5 block text-sm font-semibold text-slate-700">Email</label>
+              <div className={readonlyCls}>{manager.email || '—'}</div>
+            </div>
+            <div>
+              <label className="mb-1.5 block text-sm font-semibold text-slate-700">Phone</label>
+              <input
+                type="tel"
+                value={form.phone}
+                onChange={(e) => setForm((f) => ({ ...f, phone: e.target.value }))}
+                placeholder="+1 (206) 555-0100"
+                className={inputCls}
+              />
+            </div>
+            <div>
+              <label className="mb-1.5 block text-sm font-semibold text-slate-700">Manager ID</label>
+              <div className={`${readonlyCls} font-mono`}>{manager.managerId || '—'}</div>
+            </div>
+            {saveError ? (
+              <div className="sm:col-span-2">
+                <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{saveError}</div>
+              </div>
+            ) : null}
+            <div className="flex flex-wrap gap-3 sm:col-span-2">
+              <button
+                type="submit"
+                disabled={saving || (!form.name.trim() && !form.phone.trim())}
+                className="rounded-2xl bg-[#2563eb] px-6 py-3 text-sm font-semibold text-white transition hover:brightness-110 disabled:opacity-50"
+              >
+                {saving ? 'Saving…' : 'Save changes'}
+              </button>
+              <button
+                type="button"
+                onClick={handleCancelEdit}
+                disabled={saving}
+                className="rounded-2xl border border-slate-200 bg-white px-6 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:opacity-50"
+              >
+                Cancel
+              </button>
+            </div>
+          </form>
+        )}
       </section>
 
       {/* Plan & subscription summary */}
       <section className="rounded-[28px] border border-slate-200 bg-white p-6">
-        <h2 className="mt-2 text-xl font-black text-slate-900">Subscription</h2>
+        <h2 className="mt-2 text-2xl font-black text-slate-900">Subscription</h2>
         <div className="mt-4 grid gap-3 sm:grid-cols-3">
           {[
             { label: 'Role', value: manager.role || 'Manager' },
@@ -4102,7 +4155,7 @@ function WorkOrdersTabPanel({ allowedPropertyNames }) {
   return (
     <div className="mb-10">
       <div className="mb-5 flex flex-wrap items-center gap-3">
-        <h2 className="mr-auto text-xl font-black text-slate-900">Work orders</h2>
+        <h2 className="mr-auto text-2xl font-black text-slate-900">Work orders</h2>
         <div className="relative">
           <svg className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
             <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
@@ -4819,7 +4872,7 @@ function ApplicationsPanel({ allowedPropertyNames, manager }) {
   return (
     <div className="mb-10">
       <div className="mb-5 flex flex-wrap items-center gap-3">
-        <h2 className="mr-auto text-xl font-black text-slate-900">Applications</h2>
+        <h2 className="mr-auto text-2xl font-black text-slate-900">Applications</h2>
         <select
           value={propertyFilter}
           onChange={e => setPropertyFilter(e.target.value)}

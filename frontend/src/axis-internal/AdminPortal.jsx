@@ -24,6 +24,7 @@ import {
 import { ApplicationDetailPanel } from '../lib/applicationDetailPanel.jsx'
 import { PropertyDetailPanel } from '../lib/propertyDetailPanel.jsx'
 import { AXIS_ADMIN_SESSION_KEY } from './adminSessionConstants'
+import AdminProfilePanel from './AdminProfilePanel.jsx'
 import {
   getAllPortalInternalThreadMessages,
   fetchInboxThreadStateMap,
@@ -1072,32 +1073,22 @@ export default function AdminPortal() {
       )}
 
       {tab === 'profile' && (
-        <div className="space-y-6">
-          <h1 className="text-2xl font-black text-slate-900">Profile</h1>
-          <div className="rounded-[24px] border border-slate-200 bg-white p-6 shadow-sm space-y-4">
-            <div>
-              <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-slate-400">Name</p>
-              <p className="mt-1 text-base font-semibold text-slate-900">{user.name || '—'}</p>
-            </div>
-            <div>
-              <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-slate-400">Email</p>
-              <p className="mt-1 text-base font-semibold text-slate-900">{user.email || '—'}</p>
-            </div>
-            <div>
-              <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-slate-400">Role</p>
-              <p className="mt-1 text-base font-semibold text-slate-900">Full access</p>
-            </div>
-            <div className="border-t border-slate-100 pt-4">
-              <button
-                type="button"
-                onClick={handleSignOut}
-                className="rounded-xl border border-red-200 bg-red-50 px-4 py-2 text-sm font-semibold text-red-800 transition hover:bg-red-100"
-              >
-                Sign out
-              </button>
-            </div>
-          </div>
-        </div>
+        <AdminProfilePanel
+          user={user}
+          onSignOut={handleSignOut}
+          onUserUpdate={(partial) => {
+            setSession((prev) => {
+              if (!prev) return prev
+              const next = { ...prev, ...partial }
+              try {
+                sessionStorage.setItem(AXIS_ADMIN_SESSION_KEY, JSON.stringify(next))
+              } catch {
+                /* ignore */
+              }
+              return next
+            })
+          }}
+        />
       )}
       </div>
     </PortalShell>
