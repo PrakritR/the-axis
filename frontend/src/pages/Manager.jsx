@@ -3565,7 +3565,7 @@ function ManagerProfilePanel({ manager, onManagerUpdate, approvedPropertyCount =
           {[
             { label: 'Role', value: manager.role || 'Manager' },
             { label: 'Manager ID', value: manager.managerId || '—' },
-            { label: 'Houses', value: propsLoading ? '…' : `${approvedPropertyCount} assigned` },
+            { label: 'Houses', value: propsLoading ? '…' : `${approvedPropertyCount}` },
           ].map(({ label, value }) => (
             <div key={label} className="rounded-2xl border border-slate-100 bg-slate-50 px-4 py-4">
               <div className="text-[11px] font-bold uppercase tracking-[0.14em] text-slate-400">{label}</div>
