@@ -146,16 +146,16 @@ function PortalHandoffCard({ accounts, residents, user }) {
   )
 
   return (
-    <div className="rounded-[24px] border border-violet-300/60 bg-[linear-gradient(135deg,#f5f3ff_0%,#ffffff_100%)] p-5 shadow-sm">
-      <h2 className="text-sm font-black text-violet-950">Open portals as a specific account</h2>
+    <div className="rounded-[24px] border border-sky-200/90 bg-[linear-gradient(135deg,#f0f9ff_0%,#ffffff_100%)] p-5 shadow-sm">
+      <h2 className="text-sm font-black text-slate-900">Open portals as a specific account</h2>
       <div className="mt-4 grid gap-4 sm:grid-cols-2">
         <div>
-          <div className="mb-2 text-[11px] font-bold uppercase tracking-[0.14em] text-violet-700">Manager portal</div>
+          <div className="mb-2 text-[11px] font-bold uppercase tracking-[0.14em] text-sky-800">Manager portal</div>
           <div className="flex gap-2">
             <select
               value={selectedManagerId}
               onChange={(e) => setSelectedManagerId(e.target.value)}
-              className="min-w-0 flex-1 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 outline-none focus:border-violet-400 focus:ring-1 focus:ring-violet-400/30"
+              className="min-w-0 flex-1 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 outline-none focus:border-sky-400 focus:ring-1 focus:ring-sky-400/30"
             >
               <option value="">— choose manager —</option>
               {sortedManagers.map((m) => (
@@ -171,19 +171,19 @@ function PortalHandoffCard({ accounts, residents, user }) {
               type="button"
               disabled={!selectedManagerId}
               onClick={openManagerPortal}
-              className="rounded-xl bg-violet-600 px-3 py-2 text-xs font-semibold text-white transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
+              className="rounded-xl bg-[#2563eb] px-3 py-2 text-xs font-semibold text-white shadow-sm transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-40"
             >
               Open
             </button>
           </div>
         </div>
         <div>
-          <div className="mb-2 text-[11px] font-bold uppercase tracking-[0.14em] text-violet-700">Resident portal</div>
+          <div className="mb-2 text-[11px] font-bold uppercase tracking-[0.14em] text-sky-800">Resident portal</div>
           <div className="flex gap-2">
             <select
               value={selectedResidentId}
               onChange={(e) => setSelectedResidentId(e.target.value)}
-              className="min-w-0 flex-1 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 outline-none focus:border-violet-400 focus:ring-1 focus:ring-violet-400/30"
+              className="min-w-0 flex-1 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 outline-none focus:border-sky-400 focus:ring-1 focus:ring-sky-400/30"
             >
               <option value="">— choose resident —</option>
               {sortedResidents.map((r) => (
@@ -201,7 +201,7 @@ function PortalHandoffCard({ accounts, residents, user }) {
               type="button"
               disabled={!selectedResidentId}
               onClick={openResidentPortal}
-              className="rounded-xl bg-violet-600 px-3 py-2 text-xs font-semibold text-white transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
+              className="rounded-xl bg-[#2563eb] px-3 py-2 text-xs font-semibold text-white shadow-sm transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-40"
             >
               Open
             </button>
@@ -432,8 +432,8 @@ export default function AdminPortal() {
   )
   const filteredApplications = useMemo(() => {
     if (applicationsFilter === 'pending') return sortedApplications.filter((a) => a.approvalPending)
-    if (applicationsFilter === 'approved') return sortedApplications.filter((a) => !a.approvalPending && a._airtable?.Approved === true)
-    if (applicationsFilter === 'rejected') return sortedApplications.filter((a) => !a.approvalPending && a._airtable?.Approved === false)
+    if (applicationsFilter === 'approved') return sortedApplications.filter((a) => a.approvalState === 'approved')
+    if (applicationsFilter === 'rejected') return sortedApplications.filter((a) => a.approvalState === 'rejected')
     return sortedApplications
   }, [sortedApplications, applicationsFilter])
 
@@ -526,83 +526,83 @@ export default function AdminPortal() {
             </div>
           ) : null}
 
-          {/* Metrics grid */}
+          {/* Metrics grid — unified light blue tint */}
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
             {/* Properties pending */}
             <button
               type="button"
               onClick={() => { setTab('properties'); setPropertiesSection('pending') }}
-              className="flex flex-col gap-1 rounded-[20px] border border-amber-200 bg-amber-50 p-5 text-left transition hover:border-amber-300 hover:shadow-sm"
+              className="flex flex-col gap-1 rounded-[20px] border border-sky-200/90 bg-sky-50 p-5 text-left transition hover:border-sky-300 hover:bg-sky-100/80 hover:shadow-sm"
             >
-              <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-amber-600">Properties · Pending</span>
-              <span className="text-3xl font-black tabular-nums text-amber-700">{pendingApprovals.length}</span>
+              <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-sky-800">Properties · Pending</span>
+              <span className="text-3xl font-black tabular-nums text-slate-900">{pendingApprovals.length}</span>
             </button>
 
             {/* Properties approved */}
             <button
               type="button"
               onClick={() => { setTab('properties'); setPropertiesSection('approved') }}
-              className="flex flex-col gap-1 rounded-[20px] border border-emerald-200 bg-emerald-50 p-5 text-left transition hover:border-emerald-300 hover:shadow-sm"
+              className="flex flex-col gap-1 rounded-[20px] border border-sky-200/90 bg-sky-50 p-5 text-left transition hover:border-sky-300 hover:bg-sky-100/80 hover:shadow-sm"
             >
-              <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-emerald-600">Properties · Approved</span>
-              <span className="text-3xl font-black tabular-nums text-emerald-700">{approvedProperties.length}</span>
+              <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-sky-800">Properties · Approved</span>
+              <span className="text-3xl font-black tabular-nums text-slate-900">{approvedProperties.length}</span>
             </button>
 
             {/* Applications pending */}
             <button
               type="button"
               onClick={() => { setTab('applications'); setApplicationsFilter('pending') }}
-              className="flex flex-col gap-1 rounded-[20px] border border-violet-200 bg-violet-50 p-5 text-left transition hover:border-violet-300 hover:shadow-sm"
+              className="flex flex-col gap-1 rounded-[20px] border border-sky-200/90 bg-sky-50 p-5 text-left transition hover:border-sky-300 hover:bg-sky-100/80 hover:shadow-sm"
             >
-              <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-violet-600">Applications · Pending</span>
-              <span className="text-3xl font-black tabular-nums text-violet-700">{pendingApps}</span>
+              <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-sky-800">Applications · Pending</span>
+              <span className="text-3xl font-black tabular-nums text-slate-900">{pendingApps}</span>
             </button>
 
             {/* Applications approved */}
             <button
               type="button"
               onClick={() => { setTab('applications'); setApplicationsFilter('approved') }}
-              className="flex flex-col gap-1 rounded-[20px] border border-emerald-200 bg-emerald-50 p-5 text-left transition hover:border-emerald-300 hover:shadow-sm"
+              className="flex flex-col gap-1 rounded-[20px] border border-sky-200/90 bg-sky-50 p-5 text-left transition hover:border-sky-300 hover:bg-sky-100/80 hover:shadow-sm"
             >
-              <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-emerald-600">Applications · Approved</span>
-              <span className="text-3xl font-black tabular-nums text-emerald-700">{applications.filter((a) => !a.approvalPending && a._airtable?.Approved === true).length}</span>
+              <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-sky-800">Applications · Approved</span>
+              <span className="text-3xl font-black tabular-nums text-slate-900">{applications.filter((a) => a.approvalState === 'approved').length}</span>
             </button>
 
             {/* Subscribed managers */}
             <button
               type="button"
               onClick={() => setTab('accounts')}
-              className="flex flex-col gap-1 rounded-[20px] border border-blue-200 bg-blue-50 p-5 text-left transition hover:border-blue-300 hover:shadow-sm"
+              className="flex flex-col gap-1 rounded-[20px] border border-sky-200/90 bg-sky-50 p-5 text-left transition hover:border-sky-300 hover:bg-sky-100/80 hover:shadow-sm"
             >
-              <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-blue-600">Managers · Subscribed</span>
-              <span className="text-3xl font-black tabular-nums text-blue-700">{accounts.filter((a) => a.enabled).length}</span>
+              <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-sky-800">Managers · Subscribed</span>
+              <span className="text-3xl font-black tabular-nums text-slate-900">{accounts.filter((a) => a.enabled).length}</span>
             </button>
 
             {/* Residents */}
             <button
               type="button"
               onClick={() => setTab('messages')}
-              className="flex flex-col gap-1 rounded-[20px] border border-slate-200 bg-white p-5 text-left shadow-sm transition hover:border-slate-300 hover:shadow"
+              className="flex flex-col gap-1 rounded-[20px] border border-sky-200/90 bg-sky-50 p-5 text-left transition hover:border-sky-300 hover:bg-sky-100/80 hover:shadow-sm"
             >
-              <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-slate-400">Residents</span>
-              <span className="text-3xl font-black tabular-nums text-slate-800">{residents.length}</span>
+              <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-sky-800">Residents</span>
+              <span className="text-3xl font-black tabular-nums text-slate-900">{residents.length}</span>
             </button>
 
             {/* Inbox — full-width row spanning all 3 columns */}
             <button
               type="button"
               onClick={() => setTab('messages')}
-              className="col-span-full flex items-center justify-between rounded-[20px] border border-slate-800 bg-slate-900 px-6 py-5 text-left transition hover:bg-slate-800"
+              className="col-span-full flex items-center justify-between rounded-[20px] border border-sky-300/90 bg-gradient-to-r from-sky-100 to-sky-50 px-6 py-5 text-left transition hover:border-sky-400 hover:from-sky-200/70 hover:to-sky-100/90 hover:shadow-sm"
             >
               <div className="flex items-center gap-3">
-                <span className="text-[10px] font-bold uppercase tracking-[0.18em] text-slate-400">Inbox</span>
+                <span className="text-[10px] font-bold uppercase tracking-[0.18em] text-sky-900">Inbox</span>
                 {unreadThreadCount > 0 ? (
                   <span className="flex h-5 min-w-[1.25rem] items-center justify-center rounded-full bg-red-500 px-1.5 text-[10px] font-black text-white tabular-nums">
                     {unreadThreadCount}
                   </span>
                 ) : null}
               </div>
-              <span className="text-lg font-black text-white">Open messages →</span>
+              <span className="text-lg font-black text-slate-900">Open messages →</span>
             </button>
           </div>
         </div>
@@ -930,7 +930,7 @@ export default function AdminPortal() {
               </label>
             </div>
             <div className="inline-flex flex-wrap gap-1 rounded-2xl border border-slate-200 bg-slate-50 p-1">
-              {[['all', 'All', applications.length], ['pending', 'Pending', applications.filter((a) => a.approvalPending).length], ['approved', 'Approved', applications.filter((a) => !a.approvalPending && a._airtable?.Approved === true).length], ['rejected', 'Rejected', applications.filter((a) => !a.approvalPending && a._airtable?.Approved === false).length]].map(([key, label, count]) => (
+              {[['all', 'All', applications.length], ['pending', 'Pending', applications.filter((a) => a.approvalPending).length], ['approved', 'Approved', applications.filter((a) => a.approvalState === 'approved').length], ['rejected', 'Rejected', applications.filter((a) => a.approvalState === 'rejected').length]].map(([key, label, count]) => (
                 <button
                   key={key}
                   type="button"

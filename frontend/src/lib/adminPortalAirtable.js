@@ -6,6 +6,10 @@ import {
   responseBodyIndicatesAirtablePermissionDenied,
 } from './airtablePermissionError.js'
 import { getAirtableRoomsTableName } from './airtable.js'
+import {
+  deriveApplicationApprovalState,
+  applicationDisplayLabelFromApprovalState,
+} from './applicationApprovalState.js'
 
 const BASE_ID = import.meta.env.VITE_AIRTABLE_BASE_ID || 'appol57LKtMKaQ75T'
 const API_KEY = import.meta.env.VITE_AIRTABLE_TOKEN
@@ -168,10 +172,8 @@ function propertyAdminStatus(raw) {
   return 'pending'
 }
 
-export function applicationDisplayStatus(app) {
-  if (app.Approved === true) return 'Approved'
-  if (app.Approved === false) return 'Rejected'
-  return 'Under review'
+export function applicationDisplayStatus(raw) {
+  return applicationDisplayLabelFromApprovalState(deriveApplicationApprovalState(raw))
 }
 
 function roomRentFieldName() {
@@ -295,15 +297,19 @@ export async function loadAdminPortalDataset() {
     }
   })
 
-  const applications = applicationRows.map((raw) => ({
-    id: raw.id,
-    _airtable: raw,
-    applicantName: String(raw['Signer Full Name'] || raw['Applicant Name'] || '—').trim(),
-    propertyName: String(raw['Property Name'] || '—').trim(),
-    ownerId: ownerIdForApplication(raw, propertyRows, emailToManagerId),
-    status: applicationDisplayStatus(raw),
-    approvalPending: raw.Approved !== true && raw.Approved !== false,
-  }))
+  const applications = applicationRows.map((raw) => {
+    const approvalState = deriveApplicationApprovalState(raw)
+    return {
+      id: raw.id,
+      _airtable: raw,
+      applicantName: String(raw['Signer Full Name'] || raw['Applicant Name'] || '—').trim(),
+      propertyName: String(raw['Property Name'] || '—').trim(),
+      ownerId: ownerIdForApplication(raw, propertyRows, emailToManagerId),
+      approvalState,
+      status: applicationDisplayLabelFromApprovalState(approvalState),
+      approvalPending: approvalState === 'pending',
+    }
+  })
 
   return { properties, accounts, applications }
 }
@@ -355,9 +361,9 @@ export async function adminPatchApplication(recordId, fields) {
   return mapRecord(data)
 }
 
-/** Reject rental application (same field semantics as manager portal). */
+/** Reject rental application (checkbox + status so filters match Airtable). */
 export async function adminRejectApplication(recordId) {
-  return adminPatchApplication(recordId, { Approved: false })
+  return adminPatchApplication(recordId, { Approved: false, 'Approval Status': 'Rejected' })
 }
 
 /** Remove approval — resets the application back to pending review. */

@@ -57,8 +57,7 @@ export default function ConversationList({
         </div>
 
         {hasChannelFilter ? (
-          <div className="flex items-center gap-1.5 border-t border-slate-100 pt-2">
-            <span className="mr-1 text-[10px] font-bold uppercase tracking-wider text-slate-400">Show</span>
+          <div className="flex flex-wrap items-center gap-1.5 border-t border-slate-100 pt-2">
             {channelTabs.map(([id, label]) => {
               const active = channelFilter === id
               return (

@@ -71,6 +71,7 @@ import {
   PortalOpsMetric,
   PortalOpsStatusBadge,
 } from '../components/PortalOpsUI'
+import { deriveApplicationApprovalState } from '../lib/applicationApprovalState.js'
 
 // ─── Session ──────────────────────────────────────────────────────────────────
 export const MANAGER_SESSION_KEY = 'axis_manager'
@@ -3914,7 +3915,7 @@ const LEASE_STATUSES_NEEDING_ACTION = new Set(['Draft Generated', 'Under Review'
 
 function ManagerDashboardHomePanel({
   manager,
-  approvedHouseCount,
+  approvedHouseCount = 0,
   stats,
   statsLoading,
   dataWarnings,
@@ -3951,17 +3952,8 @@ function ManagerDashboardHomePanel({
         </div>
       ) : null}
 
-      {/* Metric cards */}
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        <button
-          type="button"
-          onClick={() => onNavigate('applications')}
-          className="flex flex-col gap-1 rounded-[20px] border border-violet-200 bg-violet-50 p-5 text-left transition hover:border-violet-300 hover:shadow-sm"
-        >
-          <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-violet-600">Applications · Pending</span>
-          <span className="text-3xl font-black tabular-nums text-violet-700">{pendingApps}</span>
-        </button>
-
+      {/* Metric cards — same order as sidebar: Leases, Applications, Properties, Payments, Work orders, Inbox */}
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
         <button
           type="button"
           onClick={() => onNavigate('leases')}
@@ -3969,6 +3961,24 @@ function ManagerDashboardHomePanel({
         >
           <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-amber-600">Leases · Action needed</span>
           <span className="text-3xl font-black tabular-nums text-amber-700">{leasePending}</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => onNavigate('applications')}
+          className="flex flex-col gap-1 rounded-[20px] border border-blue-200 bg-blue-50 p-5 text-left transition hover:border-blue-300 hover:shadow-sm"
+        >
+          <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-blue-600">Applications · Pending</span>
+          <span className="text-3xl font-black tabular-nums text-blue-700">{pendingApps}</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => onNavigate('properties')}
+          className="flex flex-col gap-1 rounded-[20px] border border-emerald-200 bg-emerald-50 p-5 text-left transition hover:border-emerald-300 hover:shadow-sm"
+        >
+          <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-emerald-600">Properties · Approved</span>
+          <span className="text-3xl font-black tabular-nums text-emerald-700">{approvedHouseCount}</span>
         </button>
 
         <button
@@ -3993,17 +4003,17 @@ function ManagerDashboardHomePanel({
         <button
           type="button"
           onClick={() => onNavigate('inbox')}
-          className="col-span-full flex items-center justify-between rounded-[20px] border border-slate-800 bg-slate-900 px-6 py-5 text-left transition hover:bg-slate-800"
+          className="col-span-full flex items-center justify-between rounded-[20px] border border-black bg-black px-6 py-5 text-left transition hover:bg-neutral-950"
         >
           <div className="flex items-center gap-3">
-            <span className="text-[10px] font-bold uppercase tracking-[0.18em] text-slate-400">Inbox</span>
+            <span className="text-[10px] font-bold uppercase tracking-[0.18em] text-[#2563eb]">Inbox</span>
             {(inboxUnreadCount ?? 0) > 0 ? (
               <span className="flex h-5 min-w-[1.25rem] items-center justify-center rounded-full bg-red-500 px-1.5 text-[10px] font-black text-white tabular-nums">
                 {inboxUnreadCount}
               </span>
             ) : null}
           </div>
-          <span className="text-lg font-black text-white">Open messages →</span>
+          <span className="text-lg font-black text-[#2563eb]">Open messages →</span>
         </button>
       </div>
     </div>
@@ -4713,8 +4723,9 @@ const APPLICATION_SORT_OPTIONS = [
 ]
 
 function applicationStatusSortRank(app) {
-  if (app.Approved !== true && app.Approved !== false) return 0
-  if (app.Approved === true) return 1
+  const st = deriveApplicationApprovalState(app)
+  if (st === 'pending') return 0
+  if (st === 'approved') return 1
   return 2
 }
 
@@ -4800,9 +4811,9 @@ function ApplicationsPanel({ allowedPropertyNames, manager }) {
   }, [scopedRows, propertyFilter])
 
   const filteredRows = useMemo(() => {
-    if (statusFilter === 'pending') return propertyFilteredRows.filter((a) => a.Approved !== true && a.Approved !== false)
-    if (statusFilter === 'approved') return propertyFilteredRows.filter((a) => a.Approved === true)
-    if (statusFilter === 'rejected') return propertyFilteredRows.filter((a) => a.Approved === false)
+    if (statusFilter === 'pending') return propertyFilteredRows.filter((a) => deriveApplicationApprovalState(a) === 'pending')
+    if (statusFilter === 'approved') return propertyFilteredRows.filter((a) => deriveApplicationApprovalState(a) === 'approved')
+    if (statusFilter === 'rejected') return propertyFilteredRows.filter((a) => deriveApplicationApprovalState(a) === 'rejected')
     return propertyFilteredRows
   }, [propertyFilteredRows, statusFilter])
 
@@ -4838,9 +4849,18 @@ function ApplicationsPanel({ allowedPropertyNames, manager }) {
         })
         const data = await readJsonResponse(res)
         if (!res.ok) throw new Error(data.error || 'Could not approve application')
-        setScopedRows(prev => prev.map((a) => (
-          a.id === recordId ? { ...a, Approved: true, 'Approved At': data.application?.['Approved At'] || a['Approved At'] } : a
-        )))
+        setScopedRows((prev) =>
+          prev.map((a) =>
+            a.id === recordId
+              ? {
+                  ...a,
+                  Approved: true,
+                  'Approved At': data.application?.['Approved At'] || a['Approved At'],
+                  'Approval Status': data.application?.['Approval Status'] || 'Approved',
+                }
+              : a,
+          ),
+        )
         if (Array.isArray(data.residentRecordsUpdated) && data.residentRecordsUpdated.length > 0) {
           toast.success(
             (data.message || 'Application approved.') +
@@ -4850,8 +4870,13 @@ function ApplicationsPanel({ allowedPropertyNames, manager }) {
           toast.success(data.message || 'Application approved and lease draft generated.')
         }
       } else {
-        const updated = await patchApplication(recordId, { Approved: approved })
-        setScopedRows(prev => prev.map(a => a.id === recordId ? { ...a, Approved: updated.Approved } : a))
+        const updated = await patchApplication(recordId, {
+          Approved: approved,
+          'Approval Status': approved ? 'Approved' : 'Rejected',
+        })
+        setScopedRows((prev) =>
+          prev.map((a) => (a.id === recordId ? { ...a, ...updated } : a)),
+        )
         toast.success('Application rejected.')
       }
     } catch (err) {
@@ -4862,8 +4887,9 @@ function ApplicationsPanel({ allowedPropertyNames, manager }) {
   }
 
   const statusLabel = (app) => {
-    if (app.Approved === true) return { label: 'Approved', cls: 'border-emerald-200 bg-emerald-50 text-emerald-700' }
-    if (app.Approved === false) return { label: 'Rejected', cls: 'border-red-200 bg-red-50 text-red-700' }
+    const st = deriveApplicationApprovalState(app)
+    if (st === 'approved') return { label: 'Approved', cls: 'border-emerald-200 bg-emerald-50 text-emerald-700' }
+    if (st === 'rejected') return { label: 'Rejected', cls: 'border-red-200 bg-red-50 text-red-700' }
     return { label: 'Pending review', cls: 'border-amber-200 bg-amber-50 text-amber-700' }
   }
 
@@ -4894,9 +4920,9 @@ function ApplicationsPanel({ allowedPropertyNames, manager }) {
       <div className="mb-4 inline-flex flex-wrap gap-1 rounded-2xl border border-slate-200 bg-slate-50 p-1">
         {[
           ['all', 'All', propertyFilteredRows.length],
-          ['pending', 'Pending', propertyFilteredRows.filter((a) => a.Approved !== true && a.Approved !== false).length],
-          ['approved', 'Approved', propertyFilteredRows.filter((a) => a.Approved === true).length],
-          ['rejected', 'Rejected', propertyFilteredRows.filter((a) => a.Approved === false).length],
+          ['pending', 'Pending', propertyFilteredRows.filter((a) => deriveApplicationApprovalState(a) === 'pending').length],
+          ['approved', 'Approved', propertyFilteredRows.filter((a) => deriveApplicationApprovalState(a) === 'approved').length],
+          ['rejected', 'Rejected', propertyFilteredRows.filter((a) => deriveApplicationApprovalState(a) === 'rejected').length],
         ].map(([key, label, count]) => (
           <button
             key={key}
@@ -5040,14 +5066,14 @@ function ApplicationsPanel({ allowedPropertyNames, manager }) {
                       </button>
                       <button
                         onClick={() => handleDecision(app.id, true)}
-                        disabled={!!busy || app.Approved === true}
+                        disabled={!!busy || deriveApplicationApprovalState(app) === 'approved'}
                         className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-2 text-sm font-semibold text-emerald-700 transition hover:bg-emerald-100 disabled:opacity-40"
                       >
                         {busy === 'approving' ? 'Approving…' : 'Approve'}
                       </button>
                       <button
                         onClick={() => handleDecision(app.id, false)}
-                        disabled={!!busy || app.Approved === false}
+                        disabled={!!busy || deriveApplicationApprovalState(app) === 'rejected'}
                         className="rounded-xl border border-red-200 bg-red-50 px-4 py-2 text-sm font-semibold text-red-700 transition hover:bg-red-100 disabled:opacity-40"
                       >
                         {busy === 'rejecting' ? 'Rejecting…' : 'Reject'}
@@ -5195,7 +5221,7 @@ function ManagerDashboard({ manager: managerProp, onOpenDraft, onSignOut, onMana
             ? payRaw.filter((p) => paymentInScope(p, approvedNamesLower) && isRentPaymentRecord(p))
             : []
 
-        const pendingApps = apps.filter((a) => a.Approved !== true && a.Approved !== false).length
+        const pendingApps = apps.filter((a) => deriveApplicationApprovalState(a) === 'pending').length
         const leasePending = dr.filter((d) => LEASE_STATUSES_NEEDING_ACTION.has(String(d.Status || '').trim())).length
         const rentOverdue = rentRows.filter((p) => isPaymentOverdueRecord(p)).length
         const openWo = wo.filter((w) => !workOrderIsResolvedRecord(w)).length

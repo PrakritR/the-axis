@@ -1,5 +1,9 @@
 import React from 'react'
 import { StatusPill } from '../components/PortalShell'
+import {
+  deriveApplicationApprovalState,
+  applicationDisplayLabelFromApprovalState,
+} from './applicationApprovalState.js'
 
 export function formatApplicationDetailValue(val) {
   if (val === null || val === undefined) return null
@@ -122,13 +126,15 @@ export const APPLICATION_FIELD_GROUPS = [
 
 export function applicationViewModelFromAirtableRow(row) {
   if (!row?.id) return null
+  const approvalState = deriveApplicationApprovalState(row)
   return {
     id: row.id,
     _airtable: row,
     applicantName: String(row['Signer Full Name'] || '—').trim(),
     propertyName: String(row['Property Name'] || '—').trim(),
-    status: row.Approved === true ? 'Approved' : row.Approved === false ? 'Rejected' : 'Under review',
-    approvalPending: row.Approved !== true && row.Approved !== false,
+    approvalState,
+    status: applicationDisplayLabelFromApprovalState(approvalState),
+    approvalPending: approvalState === 'pending',
   }
 }
 
@@ -138,6 +144,8 @@ export function applicationViewModelFromAirtableRow(row) {
 export function ApplicationDetailPanel({ application, partnerLabel, onClose, adminReview = null }) {
   const raw = application?._airtable
   if (!raw) return null
+
+  const resolvedApprovalState = application.approvalState ?? deriveApplicationApprovalState(raw)
 
   const shownKeys = new Set(['id', 'created_at'])
   const sections = []
@@ -181,7 +189,7 @@ export function ApplicationDetailPanel({ application, partnerLabel, onClose, adm
           </p>
           <div className="mt-2 flex flex-wrap items-center gap-2">
             <StatusPill tone="blue">{application.status}</StatusPill>
-            {application.approvalPending ? (
+            {resolvedApprovalState === 'pending' ? (
               <span className="text-xs font-medium text-amber-700">
                 {adminReview ? 'Pending review (manager or admin)' : 'Pending manager review'}
               </span>
@@ -193,7 +201,7 @@ export function ApplicationDetailPanel({ application, partnerLabel, onClose, adm
         </button>
       </div>
 
-      {adminReview && application.approvalPending ? (
+      {adminReview && resolvedApprovalState === 'pending' ? (
         <div className="flex flex-wrap gap-2 border-t border-slate-100 pt-4">
           <button
             type="button"
@@ -212,7 +220,7 @@ export function ApplicationDetailPanel({ application, partnerLabel, onClose, adm
             Reject
           </button>
         </div>
-      ) : adminReview && !application.approvalPending && adminReview.onUnapprove ? (
+      ) : adminReview && resolvedApprovalState === 'approved' && adminReview.onUnapprove ? (
         <div className="flex flex-wrap gap-2 border-t border-slate-100 pt-4">
           <button
             type="button"

@@ -1905,17 +1905,17 @@ function ResidentDashboardHome({
         <button
           type="button"
           onClick={() => onNavigate('inbox')}
-          className="col-span-full flex items-center justify-between rounded-[20px] border border-slate-800 bg-slate-900 px-6 py-5 text-left transition hover:bg-slate-800"
+          className="col-span-full flex items-center justify-between rounded-[20px] border border-black bg-black px-6 py-5 text-left transition hover:bg-neutral-950"
         >
           <div className="flex items-center gap-3">
-            <span className="text-[10px] font-bold uppercase tracking-[0.18em] text-slate-400">Inbox</span>
+            <span className="text-[10px] font-bold uppercase tracking-[0.18em] text-[#2563eb]">Inbox</span>
             {(inboxUnreadCount ?? 0) > 0 ? (
               <span className="flex h-5 min-w-[1.25rem] items-center justify-center rounded-full bg-red-500 px-1.5 text-[10px] font-black text-white tabular-nums">
                 {inboxUnreadCount}
               </span>
             ) : null}
           </div>
-          <span className="text-lg font-black text-white">Open messages →</span>
+          <span className="text-lg font-black text-[#2563eb]">Open messages →</span>
         </button>
       </div>
 
