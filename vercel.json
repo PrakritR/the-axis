@@ -3,13 +3,11 @@
   "framework": "vite",
   "buildCommand": "npm run build",
   "outputDirectory": "dist",
-  "functions": {
-    "api/*.js": {
-      "maxDuration": 60,
-      "memory": 1024
-    }
-  },
   "rewrites": [
+    {
+      "source": "/api/:path*",
+      "destination": "/api/[route]?route=:path*"
+    },
     {
       "source": "/((?!api/).*)",
       "destination": "/index.html"
