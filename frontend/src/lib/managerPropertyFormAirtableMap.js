@@ -248,7 +248,7 @@ export function normalizeLeasingFromMeta(leasing) {
  */
 export function serializeManagerAddPropertyToAirtableFields(params) {
   const {
-    basics,          // { name, address, propertyType, amenities[], amenitiesOther?, pets, securityDeposit, moveInCharges }
+    basics,          // { name, address, propertyType, propertyTypeOther?, amenities[], amenitiesOther?, pets, securityDeposit, moveInCharges }
     roomCount,
     bathroomCount,
     kitchenCount,
@@ -304,7 +304,9 @@ export function serializeManagerAddPropertyToAirtableFields(params) {
   fields[PROPERTY_AIR.kitchenCount] = kc
   fields[PROPERTY_AIR.sharedSpaceCount] = sc
 
-  const pt = String(basics.propertyType || '').trim()
+  const ptRaw = String(basics.propertyType || '').trim()
+  const ptOther = String(basics.propertyTypeOther || '').trim()
+  const pt = ptRaw === 'Other' && ptOther ? ptOther : ptRaw
   if (pt) fields[PROPERTY_AIR.propertyType] = pt
 
   // Amenities: Multiple select → send as string[] (preset checkboxes + comma/semicolon-separated "Other")
@@ -404,6 +406,7 @@ export function serializeManagerAddPropertyToAirtableFields(params) {
   }))
 
   const axisMeta = {
+    propertyTypeOther: ptRaw === 'Other' ? ptOther : '',
     roomsDetail,
     financials: {
       securityDeposit: optionalCurrency(basics.securityDeposit) ?? 0,
