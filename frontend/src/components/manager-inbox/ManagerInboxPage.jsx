@@ -593,23 +593,24 @@ export default function ManagerInboxPage({
     let rows = threadRowsWithMeta
     if (sectionFilter === 'all') rows = rows.filter((row) => row.section !== 'trash')
     else if (sectionFilter === 'unread') rows = rows.filter((row) => row.section === 'unopened')
+    else if (sectionFilter === 'sent') rows = rows.filter((row) => row.section === 'opened')
     else if (sectionFilter === 'trash') rows = rows.filter((row) => row.section === 'trash')
 
     if (adminFullInbox) {
-      if (channelFilter === 'residents') {
+      if (channelFilter === 'resident') {
         rows = rows.filter((r) => {
           const t = String(r.id)
           return t.startsWith('internal:resident-leasing:') || t.startsWith('internal:resident-admin:')
         })
-      } else if (channelFilter === 'managers') {
+      } else if (channelFilter === 'admin') {
         rows = rows.filter((r) => {
           const t = String(r.id)
           return t.startsWith('internal:mgmt-admin:') || t.startsWith('internal:site-manager:')
         })
       }
     } else {
-      if (channelFilter === 'axis') rows = rows.filter((r) => r.id === MANAGER_INBOX_AXIS)
-      else if (channelFilter === 'residents') rows = rows.filter((r) => r.id !== MANAGER_INBOX_AXIS)
+      if (channelFilter === 'admin') rows = rows.filter((r) => r.id === MANAGER_INBOX_AXIS)
+      else if (channelFilter === 'resident') rows = rows.filter((r) => r.id !== MANAGER_INBOX_AXIS)
     }
 
     if (!q) return rows
@@ -1080,17 +1081,20 @@ export default function ManagerInboxPage({
   const headerSubject =
     activeThreadSubject || selectedRowMeta?.subjectLine || readingTitle
 
-  const channelTabs = adminFullInbox
+  const channelSelectOptions = adminFullInbox
     ? [
         ['all', 'All'],
-        ['residents', 'Residents'],
-        ['managers', 'Managers'],
+        ['resident', 'Resident'],
+        ['admin', 'Admin'],
       ]
     : [
-        ['all', 'Both'],
-        ['axis', 'Admin'],
-        ['residents', 'Residents'],
+        ['all', 'All'],
+        ['admin', 'Admin'],
+        ['resident', 'Resident'],
       ]
+
+  const channelLabel =
+    channelSelectOptions.find(([value]) => value === channelFilter)?.[1]?.toLowerCase() || 'all'
 
   const listEmptyMessage =
     sectionFilter === 'trash' && inboxSections.trash.length === 0
@@ -1101,8 +1105,10 @@ export default function ManagerInboxPage({
           ? 'No matches for your search'
           : sectionFilter === 'unread'
             ? 'No unread conversations'
+            : sectionFilter === 'sent'
+              ? 'No sent conversations'
             : channelFilter !== 'all'
-              ? `No ${channelFilter} conversations`
+              ? `No ${channelLabel} conversations`
               : 'No conversations'
 
   const composerPlaceholder =
@@ -1136,6 +1142,16 @@ export default function ManagerInboxPage({
           >
             Refresh
           </button>
+          <select
+            value={channelFilter}
+            onChange={(e) => setChannelFilter(e.target.value)}
+            className="rounded-full border border-slate-200 bg-white px-3.5 py-1.5 text-xs font-semibold text-slate-600 outline-none transition focus:border-[#2563eb] focus:ring-2 focus:ring-[#2563eb]/20"
+            aria-label="Channel filter"
+          >
+            {channelSelectOptions.map(([value, label]) => (
+              <option key={value} value={value}>{label}</option>
+            ))}
+          </select>
         </div>
       </div>
 
@@ -1150,6 +1166,7 @@ export default function ManagerInboxPage({
           counts={{
             all: inboxActiveTotal,
             unread: inboxSections.unopened.length,
+            sent: inboxSections.opened.length,
             trash: inboxSections.trash.length,
           }}
           rows={visibleThreadRows}
@@ -1160,7 +1177,7 @@ export default function ManagerInboxPage({
           }}
           emptyMessage={listEmptyMessage}
           onTrashThread={(stateKey, trashed = true) => moveThreadTrash(stateKey, trashed)}
-          channelTabs={channelTabs}
+          channelTabs={[]}
           channelFilter={channelFilter}
           onChannelFilterChange={setChannelFilter}
         />
@@ -1389,7 +1406,7 @@ export default function ManagerInboxPage({
                         aria-label="More actions"
                         aria-expanded={threadMenuOpen}
                       >
-                        <span className="block px-0.5 text-lg leading-none">⋯</span>
+                        <span className="block px-0.5 text-lg leading-none">X</span>
                       </button>
                       {threadMenuOpen ? (
                         <div className="absolute right-0 z-20 mt-1 min-w-[11rem] rounded-xl border border-slate-200 bg-white py-1 shadow-lg">

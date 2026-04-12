@@ -2,7 +2,7 @@ import React from 'react'
 import ConversationListItem from './ConversationListItem'
 
 /**
- * Left column: search, status filter cards (All / Unread / Trash), optional
+ * Left column: search, status filter cards (All / Unread / Sent / Trash), optional
  * channel filter (Manager / Admin), and the conversation list.
  */
 export default function ConversationList({
@@ -40,6 +40,7 @@ export default function ConversationList({
           {[
             ['all', 'All', counts.all ?? 0],
             ['unread', 'Unread', counts.unread ?? 0],
+            ['sent', 'Sent', counts.sent ?? 0],
             ['trash', 'Trash', counts.trash ?? 0],
           ].map(([key, label, count]) => (
             <button

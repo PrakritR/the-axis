@@ -547,14 +547,14 @@ function updateTourAvailabilityLines(currentAvailability, day, slot) {
   return nextLines.filter(Boolean).join('\n')
 }
 
-/** Full day, 12:00 AM – 11:59 PM (exclusive end at midnight next day). */
-const TOUR_GRID_START_HOUR = 0
-const TOUR_GRID_END_HOUR = 24
+/** Availability editor window: 6:00 AM – 8:00 PM. */
+const TOUR_GRID_START_HOUR = 6
+const TOUR_GRID_END_HOUR = 20
 const TOUR_GRID_STEP_MIN = 30
 const TOUR_GRID_START_MIN = TOUR_GRID_START_HOUR * 60
 const TOUR_GRID_END_MIN = TOUR_GRID_END_HOUR * 60
 const TOUR_GRID_HALF_COUNT = Math.round((TOUR_GRID_END_MIN - TOUR_GRID_START_MIN) / TOUR_GRID_STEP_MIN)
-const TIMELINE_HEIGHT_PX = 960
+const TIMELINE_HEIGHT_PX = 700
 
 const CAL_DOW_TO_ABBR = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
 
@@ -879,17 +879,18 @@ function DayAvailabilityTimeline({ ranges, onRangesChange, disabled }) {
       ? { start: Math.min(draft.start, draft.cur), end: Math.max(draft.start, draft.cur) }
       : null
 
+  const timelineHours = Array.from(
+    { length: TOUR_GRID_END_HOUR - TOUR_GRID_START_HOUR + 1 },
+    (_, idx) => TOUR_GRID_START_HOUR + idx,
+  )
+  const totalHours = TOUR_GRID_END_HOUR - TOUR_GRID_START_HOUR
+
   return (
     <div>
-      <p className="mb-3 text-xs text-slate-500">
-        Drag on the timeline to add a free block. Click a block to edit times or remove it.
-      </p>
       <div className="grid grid-cols-[52px_minmax(0,1fr)] gap-2">
         <div className="relative" style={{ height: TIMELINE_HEIGHT_PX }}>
-          {Array.from({ length: 25 }, (_, i) => {
-            const hour = i
-            if (hour > 23) return null
-            const top = (hour / 24) * TIMELINE_HEIGHT_PX
+          {timelineHours.map((hour) => {
+            const top = ((hour - TOUR_GRID_START_HOUR) / totalHours) * TIMELINE_HEIGHT_PX
             return (
               <div
                 key={hour}
@@ -912,11 +913,11 @@ function DayAvailabilityTimeline({ ranges, onRangesChange, disabled }) {
           )}
           style={{ height: TIMELINE_HEIGHT_PX }}
         >
-          {Array.from({ length: 24 }, (_, h) => (
+          {Array.from({ length: totalHours + 1 }, (_, h) => (
             <div
               key={h}
               className="pointer-events-none absolute left-0 right-0 border-t border-slate-100"
-              style={{ top: `${(h / 24) * 100}%` }}
+              style={{ top: `${(h / totalHours) * 100}%` }}
             />
           ))}
           {ranges.map((range, idx) => (
@@ -1146,6 +1147,17 @@ function CalendarToolbar({ view, label, onViewChange, onPrev, onNext, onToday })
   )
 }
 
+function CalendarLegend({ className = '' }) {
+  return (
+    <div className={classNames('flex flex-wrap gap-2 text-xs font-semibold', className)}>
+      <span className="rounded-full bg-emerald-50 px-3 py-1.5 text-emerald-800 ring-1 ring-emerald-100">Available</span>
+      <span className="rounded-full bg-sky-50 px-3 py-1.5 text-sky-800 ring-1 ring-sky-100">Tour</span>
+      <span className="rounded-full bg-violet-50 px-3 py-1.5 text-violet-800 ring-1 ring-violet-100">Meeting</span>
+      <span className="rounded-full bg-amber-50 px-3 py-1.5 text-amber-800 ring-1 ring-amber-100">Work order</span>
+    </div>
+  )
+}
+
 function AvailabilityCalendar({ view, anchorDate, selectedDateKey, onSelectDate, weeklyFree, bookedByDate }) {
   const y = anchorDate.getFullYear()
   const m = anchorDate.getMonth()
@@ -1155,7 +1167,10 @@ function AvailabilityCalendar({ view, anchorDate, selectedDateKey, onSelectDate,
   const weekStart = startOfWeekSunday(anchorDate)
   const weekDays = Array.from({ length: 7 }, (_, i) => addDaysDate(weekStart, i))
 
-  const dayRanges = (key) => timeRangesFromWeeklyFree(weeklyFree, weekdayAbbrFromDateKey(key))
+  const dayRanges = (key) => {
+    if (view !== 'day' && key !== selectedDateKey) return []
+    return timeRangesFromWeeklyFree(weeklyFree, weekdayAbbrFromDateKey(key))
+  }
   const bookings = (key) => bookedByDate.get(key) || []
 
   const renderDayCard = (dateKey, dayLabel, dateLabel) => {
@@ -1173,14 +1188,11 @@ function AvailabilityCalendar({ view, anchorDate, selectedDateKey, onSelectDate,
           dateKey === todayKey ? 'ring-1 ring-slate-300' : '',
         )}
       >
-        <div className="flex items-start justify-between gap-2">
+        <div>
           <div>
             <div className="text-[10px] font-bold uppercase tracking-[0.14em] text-slate-400">{dayLabel}</div>
             <div className="mt-1 text-lg font-black text-slate-900">{dateLabel}</div>
           </div>
-          <span className="rounded-full bg-white px-2 py-1 text-[10px] font-bold text-slate-500 ring-1 ring-slate-200">
-            {ranges.length ? `${ranges.length} block${ranges.length === 1 ? '' : 's'}` : 'No hours'}
-          </span>
         </div>
         <div className="mt-3 space-y-1">
           {ranges.slice(0, 2).map((range) => (
@@ -1196,7 +1208,6 @@ function AvailabilityCalendar({ view, anchorDate, selectedDateKey, onSelectDate,
               {bookingLabel(row)}{row['Preferred Time'] ? ` · ${row['Preferred Time']}` : ''}
             </div>
           ))}
-          {!dayBookings.length ? <div className="text-xs text-slate-400">No bookings</div> : null}
         </div>
       </button>
     )
@@ -1206,33 +1217,18 @@ function AvailabilityCalendar({ view, anchorDate, selectedDateKey, onSelectDate,
     const dateKey = dateKeyFromDate(anchorDate)
     const ranges = dayRanges(dateKey)
     const dayBookings = bookings(dateKey)
-    const hourMarkers = Array.from({ length: 25 }, (_, idx) => idx)
+    const timelineHours = Array.from(
+      { length: TOUR_GRID_END_HOUR - TOUR_GRID_START_HOUR + 1 },
+      (_, idx) => TOUR_GRID_START_HOUR + idx,
+    )
+    const totalHours = TOUR_GRID_END_HOUR - TOUR_GRID_START_HOUR
     return (
       <div className="rounded-[28px] border border-slate-200 bg-white p-5 shadow-sm">
-        <div className="text-[11px] font-bold uppercase tracking-[0.16em] text-slate-400">
-          {anchorDate.toLocaleDateString('en-US', { weekday: 'long' })}
-        </div>
-        <div className="mt-1 text-2xl font-black text-slate-900">
-          {anchorDate.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}
-        </div>
-        <div className="mt-5 rounded-[28px] border border-slate-200 bg-slate-50/70 p-4">
-          <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <div className="text-sm font-bold text-slate-900">Day preview</div>
-              <div className="mt-1 text-xs text-slate-500">24-hour view: green blocks are your weekly availability for this weekday; colored items are scheduled.</div>
-            </div>
-            <div className="flex flex-wrap gap-2 text-xs font-semibold">
-              <span className="rounded-full bg-emerald-50 px-3 py-1.5 text-emerald-800 ring-1 ring-emerald-100">Available</span>
-              <span className="rounded-full bg-sky-50 px-3 py-1.5 text-sky-800 ring-1 ring-sky-100">Tour</span>
-              <span className="rounded-full bg-violet-50 px-3 py-1.5 text-violet-800 ring-1 ring-violet-100">Meeting</span>
-              <span className="rounded-full bg-amber-50 px-3 py-1.5 text-amber-800 ring-1 ring-amber-100">Work order</span>
-            </div>
-          </div>
+        <div className="rounded-[28px] border border-slate-200 bg-slate-50/70 p-4">
           <div className="grid grid-cols-[52px_minmax(0,1fr)] gap-2">
             <div className="relative" style={{ height: TIMELINE_HEIGHT_PX }}>
-              {hourMarkers.map((hour) => {
-                if (hour > 23) return null
-                const top = `${(hour / 24) * 100}%`
+              {timelineHours.map((hour) => {
+                const top = `${((hour - TOUR_GRID_START_HOUR) / totalHours) * 100}%`
                 return (
                   <div key={hour} className="absolute left-0 right-0 -translate-y-1/2 text-[10px] font-semibold tabular-nums text-slate-400" style={{ top }}>
                     {displayTimeFromMinutes(hour * 60)}
@@ -1241,11 +1237,11 @@ function AvailabilityCalendar({ view, anchorDate, selectedDateKey, onSelectDate,
               })}
             </div>
             <div className="relative overflow-hidden rounded-[24px] border border-slate-200 bg-white" style={{ height: TIMELINE_HEIGHT_PX }}>
-              {Array.from({ length: 24 }, (_, h) => (
+              {Array.from({ length: totalHours + 1 }, (_, h) => (
                 <div
                   key={`line-${h}`}
                   className="absolute left-0 right-0 border-t border-dashed border-slate-200"
-                  style={{ top: `${(h / 24) * 100}%` }}
+                  style={{ top: `${(h / totalHours) * 100}%` }}
                 />
               ))}
               {ranges.map((range) => (
@@ -1291,12 +1287,14 @@ function AvailabilityCalendar({ view, anchorDate, selectedDateKey, onSelectDate,
 
   if (view === 'week') {
     return (
-      <div className="grid gap-3 lg:grid-cols-7">
-        {weekDays.map((day) => renderDayCard(
-          dateKeyFromDate(day),
-          day.toLocaleDateString('en-US', { weekday: 'short' }),
-          String(day.getDate()),
-        ))}
+      <div className="overflow-x-auto pb-2">
+        <div className="grid min-w-[980px] grid-cols-7 gap-3">
+          {weekDays.map((day) => renderDayCard(
+            dateKeyFromDate(day),
+            day.toLocaleDateString('en-US', { weekday: 'short' }),
+            String(day.getDate()),
+          ))}
+        </div>
       </div>
     )
   }
@@ -1329,25 +1327,37 @@ function AvailabilityEditorPanel({
   onRangesChange,
   onOpenMeet,
   onSave,
-  onApplyWeekday,
   onClearDay,
   scheduledItems,
   availSaving,
   manager,
+  propertyOptions,
+  selectedPropertyId,
+  onSelectProperty,
 }) {
-  const selectedDate = dateFromCalendarKey(selectedDateKey)
-  const weekday = weekdayAbbrFromDateKey(selectedDateKey)
   const disabled = availSaving || isManagerInternalPreview(manager)
 
   return (
     <div className="rounded-[28px] border border-slate-200 bg-white p-6 shadow-sm lg:sticky lg:top-6">
-      <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-[#2563eb]">Tour availability</div>
-      <h2 className="mt-2 text-2xl font-black text-slate-900">
-        {selectedDate.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}
-      </h2>
-      <p className="mt-2 text-sm text-slate-500">
-        Set free blocks for this weekday (repeats every {weekday}). Saves to your manager profile and linked properties.
-      </p>
+      <h2 className="text-xl font-black text-slate-900">Availability editor</h2>
+      {propertyOptions?.length ? (
+        <label className="mt-4 block text-xs font-semibold text-slate-700">
+          Property
+          <select
+            value={selectedPropertyId}
+            onChange={(e) => onSelectProperty(e.target.value)}
+            className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900"
+          >
+            {propertyOptions.map((option) => (
+              <option key={option.id} value={option.id}>{option.label}</option>
+            ))}
+          </select>
+        </label>
+      ) : (
+        <div className="mt-4 rounded-2xl border border-dashed border-slate-200 bg-slate-50 px-4 py-4 text-sm text-slate-500">
+          No assigned properties found.
+        </div>
+      )}
 
       {isManagerInternalPreview(manager) ? (
         <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950">
@@ -1358,7 +1368,6 @@ function AvailabilityEditorPanel({
       ) : null}
 
       <div className="mt-6">
-        <div className="mb-2 text-sm font-bold text-slate-900">Weekly hours for {weekday}</div>
         <DayAvailabilityTimeline ranges={ranges} onRangesChange={onRangesChange} disabled={disabled} />
       </div>
 
@@ -1386,14 +1395,6 @@ function AvailabilityEditorPanel({
       </div>
 
       <div className="mt-6 flex flex-wrap gap-2 text-sm">
-        <button
-          type="button"
-          onClick={onApplyWeekday}
-          disabled={availSaving || isManagerInternalPreview(manager)}
-          className="rounded-xl border border-slate-200 px-3 py-2 font-semibold text-slate-600 hover:bg-slate-50 disabled:opacity-40"
-        >
-          Apply to every {weekday}
-        </button>
         <button
           type="button"
           onClick={onClearDay}
@@ -3556,7 +3557,7 @@ function ManagerProfilePanel({ manager, onManagerUpdate, approvedPropertyCount =
         <div className="mt-4 grid gap-3 sm:grid-cols-3">
           {[
             { label: 'Role', value: manager.role || 'Manager' },
-            { label: 'Manager ID', value: manager.managerId || '—' },
+            { label: 'Plan', value: manager.planType ? `${manager.planType.charAt(0).toUpperCase()}${manager.planType.slice(1)}` : 'Free' },
             { label: 'Houses', value: propsLoading ? '…' : `${approvedPropertyCount}` },
           ].map(({ label, value }) => (
             <div key={label} className="rounded-2xl border border-slate-100 bg-slate-50 px-4 py-4">
@@ -3923,6 +3924,7 @@ function ManagerDashboardHomePanel({
   const leasePending = statsLoading ? '—' : s.leasePending ?? 0
   const rentOverdue = statsLoading ? '—' : s.rentOverdue ?? 0
   const openWo = statsLoading ? '—' : s.openWo ?? 0
+  const upcomingEvents = statsLoading ? '—' : s.upcomingEvents ?? 0
 
   const firstName = String(manager?.name || '').split(' ')[0] || null
 
@@ -3989,6 +3991,15 @@ function ManagerDashboardHomePanel({
         >
           <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-blue-600">Work Orders · Open</span>
           <span className="text-3xl font-black tabular-nums text-blue-700">{openWo}</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => onNavigate('calendar')}
+          className="flex flex-col gap-1 rounded-[20px] border border-blue-100 bg-blue-50 p-5 text-left transition hover:border-blue-200 hover:shadow-sm"
+        >
+          <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-blue-600">Calendar · Events</span>
+          <span className="text-3xl font-black tabular-nums text-blue-700">{upcomingEvents}</span>
         </button>
 
         {/* Inbox — full-width spanning all columns */}
@@ -4861,16 +4872,6 @@ function ApplicationsPanel({ allowedPropertyNames, manager }) {
       <div className="mb-5 flex flex-wrap items-center gap-3">
         <h2 className="mr-auto text-2xl font-black text-slate-900">Applications</h2>
         <select
-          value={applicantSearch}
-          onChange={(e) => setApplicantSearch(e.target.value)}
-          className="rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition focus:border-[#2563eb] focus:outline-none focus:ring-2 focus:ring-[#2563eb]/20"
-        >
-          <option value="">All applicants</option>
-          {[...new Set(scopedRows.map((a) => String(a['Signer Full Name'] || '').trim()).filter(Boolean))].sort().map((n) => (
-            <option key={n} value={n}>{n}</option>
-          ))}
-        </select>
-        <select
           value={propertyFilter}
           onChange={e => setPropertyFilter(e.target.value)}
           className="rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition focus:border-[#2563eb] focus:outline-none focus:ring-2 focus:ring-[#2563eb]/20"
@@ -4878,6 +4879,16 @@ function ApplicationsPanel({ allowedPropertyNames, manager }) {
           <option value="">All your properties</option>
           {filterOptions.map((p) => (
             <option key={p} value={p}>{p}</option>
+          ))}
+        </select>
+        <select
+          value={applicantSearch}
+          onChange={(e) => setApplicantSearch(e.target.value)}
+          className="rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition focus:border-[#2563eb] focus:outline-none focus:ring-2 focus:ring-[#2563eb]/20"
+        >
+          <option value="">All applications</option>
+          {[...new Set(scopedRows.map((a) => String(a['Signer Full Name'] || '').trim()).filter(Boolean))].sort().map((n) => (
+            <option key={n} value={n}>{n}</option>
           ))}
         </select>
         <button
@@ -5080,7 +5091,8 @@ function CalendarTabPanel({ manager, allowedPropertyNames }) {
   const [schedulingRows, setSchedulingRows] = useState([])
   const [loading, setLoading] = useState(true)
   const [properties, setProperties] = useState([])
-  const [weeklyFree, setWeeklyFree] = useState(emptyWeeklyFreeArrays)
+  const [weeklyFreeByProperty, setWeeklyFreeByProperty] = useState({})
+  const [selectedPropertyId, setSelectedPropertyId] = useState('')
   const [availSaving, setAvailSaving] = useState(false)
   const [meetOpen, setMeetOpen] = useState(false)
 
@@ -5094,10 +5106,16 @@ function CalendarTabPanel({ manager, allowedPropertyNames }) {
       setSchedulingRows(sched)
       setProperties(props)
       const assigned = props.filter((p) => propertyAssignedToManager(p, manager) && isPropertyRecordApproved(p))
-      if (assigned.length) {
-        const text = extractNoteValue(assigned[0].Notes, 'Tour Availability') || ''
-        if (text) setWeeklyFree(weeklyFreeArraysFromTourText(text))
-      }
+      const byProperty = {}
+      assigned.forEach((property) => {
+        const text = extractNoteValue(property.Notes, 'Tour Availability') || ''
+        byProperty[property.id] = text ? weeklyFreeArraysFromTourText(text) : emptyWeeklyFreeArrays()
+      })
+      setWeeklyFreeByProperty(byProperty)
+      setSelectedPropertyId((current) => {
+        if (assigned.some((p) => p.id === current)) return current
+        return assigned[0]?.id || ''
+      })
     } catch (err) {
       console.error('[CalendarTabPanel] load error', err)
     } finally {
@@ -5121,6 +5139,21 @@ function CalendarTabPanel({ manager, allowedPropertyNames }) {
   const scheduledItemsForSelectedDay = useMemo(
     () => bookedByDate.get(selectedDateKey) || [],
     [bookedByDate, selectedDateKey],
+  )
+
+  const assignedProperties = useMemo(
+    () => properties.filter((p) => propertyAssignedToManager(p, manager) && isPropertyRecordApproved(p)),
+    [properties, manager],
+  )
+
+  const selectedProperty = useMemo(
+    () => assignedProperties.find((p) => p.id === selectedPropertyId) || null,
+    [assignedProperties, selectedPropertyId],
+  )
+
+  const selectedWeeklyFree = useMemo(
+    () => weeklyFreeByProperty[selectedPropertyId] || emptyWeeklyFreeArrays(),
+    [weeklyFreeByProperty, selectedPropertyId],
   )
 
   const toolbarLabel = useMemo(() => {
@@ -5161,18 +5194,18 @@ function CalendarTabPanel({ manager, allowedPropertyNames }) {
   }
 
   async function handleSaveAvailability() {
+    if (!selectedProperty) {
+      toast.error('Select a property first.')
+      return
+    }
     setAvailSaving(true)
     try {
-      const assigned = properties.filter((p) => propertyAssignedToManager(p, manager) && isPropertyRecordApproved(p))
-      const encoded = encodeTourAvailabilityFromWeeklyFree(weeklyFree)
-      await Promise.all(
-        assigned.map((p) =>
-          updatePropertyAdmin(p.id, {
-            Notes: buildTourNotesText(p.Notes, { manager: manager?.name || '', availability: encoded }),
-          }),
-        ),
-      )
-      toast.success('Availability saved')
+      const encoded = encodeTourAvailabilityFromWeeklyFree(selectedWeeklyFree)
+      const updated = await updatePropertyAdmin(selectedProperty.id, {
+        Notes: buildTourNotesText(selectedProperty.Notes, { manager: manager?.name || '', availability: encoded }),
+      })
+      setProperties((current) => current.map((item) => (item.id === updated.id ? updated : item)))
+      toast.success(`Availability saved for ${propertyRecordName(selectedProperty) || 'property'}`)
     } catch (err) {
       toast.error(err.message || 'Could not save availability')
     } finally {
@@ -5180,26 +5213,34 @@ function CalendarTabPanel({ manager, allowedPropertyNames }) {
     }
   }
 
-  function handleApplyWeekday() {
-    const abbr = weekdayAbbrFromDateKey(selectedDateKey)
-    const next = cloneWeeklyArrays(weeklyFree)
-    for (const d of TOUR_DAYS) {
-      next[d] = [...(weeklyFree[abbr] || [])]
-    }
-    setWeeklyFree(next)
-  }
-
   function handleClearDay() {
+    if (!selectedPropertyId) return
     const abbr = weekdayAbbrFromDateKey(selectedDateKey)
-    const next = cloneWeeklyArrays(weeklyFree)
-    next[abbr] = []
-    setWeeklyFree(next)
+    setWeeklyFreeByProperty((prev) => {
+      const base = prev[selectedPropertyId] || emptyWeeklyFreeArrays()
+      const next = cloneWeeklyArrays(base)
+      next[abbr] = []
+      return { ...prev, [selectedPropertyId]: next }
+    })
   }
 
   return (
     <div className="mb-10">
       <div className="mb-5 flex flex-wrap items-center gap-3">
         <h2 className="mr-auto text-2xl font-black text-slate-900">Calendar</h2>
+        <select
+          value={selectedPropertyId}
+          onChange={(e) => setSelectedPropertyId(e.target.value)}
+          className="rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition focus:border-[#2563eb] focus:outline-none focus:ring-2 focus:ring-[#2563eb]/20"
+        >
+          {assignedProperties.length ? (
+            assignedProperties.map((p) => (
+              <option key={p.id} value={p.id}>{propertyRecordName(p) || 'Property'}</option>
+            ))
+          ) : (
+            <option value="">No assigned properties</option>
+          )}
+        </select>
         <button
           onClick={load}
           disabled={loading}
@@ -5218,6 +5259,7 @@ function CalendarTabPanel({ manager, allowedPropertyNames }) {
           onNext={handleNext}
           onToday={handleToday}
         />
+        <CalendarLegend className="mt-3" />
       </div>
 
       <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_360px]">
@@ -5226,23 +5268,29 @@ function CalendarTabPanel({ manager, allowedPropertyNames }) {
           anchorDate={anchorDate}
           selectedDateKey={selectedDateKey}
           onSelectDate={handleSelectDate}
-          weeklyFree={weeklyFree}
+          weeklyFree={selectedWeeklyFree}
           bookedByDate={bookedByDate}
         />
         <AvailabilityEditorPanel
           selectedDateKey={selectedDateKey}
-          ranges={timeRangesFromWeeklyFree(weeklyFree, weekdayAbbrFromDateKey(selectedDateKey))}
+          ranges={timeRangesFromWeeklyFree(selectedWeeklyFree, weekdayAbbrFromDateKey(selectedDateKey))}
           onRangesChange={(ranges) => {
+            if (!selectedPropertyId) return
             const abbr = weekdayAbbrFromDateKey(selectedDateKey)
-            setWeeklyFree((prev) => weeklyFreeWithDayRanges(prev, abbr, ranges))
+            setWeeklyFreeByProperty((prev) => {
+              const base = prev[selectedPropertyId] || emptyWeeklyFreeArrays()
+              return { ...prev, [selectedPropertyId]: weeklyFreeWithDayRanges(base, abbr, ranges) }
+            })
           }}
           onOpenMeet={() => setMeetOpen(true)}
           onSave={handleSaveAvailability}
-          onApplyWeekday={handleApplyWeekday}
           onClearDay={handleClearDay}
           scheduledItems={scheduledItemsForSelectedDay}
           availSaving={availSaving}
           manager={manager}
+          propertyOptions={assignedProperties.map((p) => ({ id: p.id, label: propertyRecordName(p) || 'Property' }))}
+          selectedPropertyId={selectedPropertyId}
+          onSelectProperty={setSelectedPropertyId}
         />
       </div>
 
@@ -5260,9 +5308,9 @@ function CalendarTabPanel({ manager, allowedPropertyNames }) {
 // ─── ManagerDashboard ─────────────────────────────────────────────────────────
 const MANAGER_DASH_TABS = [
   ['dashboard', 'Dashboard'],
+  ['properties', 'Properties'],
   ['leases', 'Leases'],
   ['applications', 'Applications'],
-  ['properties', 'Properties'],
   ['payments', 'Payments'],
   ['workorders', 'Work orders'],
   ['calendar', 'Calendar'],
@@ -5305,13 +5353,6 @@ function ManagerDashboard({ manager: managerProp, onOpenDraft, onSignOut, onMana
     setManager(updated)
     onManagerUpdate?.(updated)
   }
-
-  // Debounce the resident name search so we don't hammer the records API on every keystroke
-  const [residentInput, setResidentInput] = useState('')
-  useEffect(() => {
-    const t = setTimeout(() => setFilters(f => ({ ...f, resident: residentInput })), 400)
-    return () => clearTimeout(t)
-  }, [residentInput])
 
   const loadDrafts = useCallback(async () => {
     setLoading(true)
@@ -5382,12 +5423,15 @@ function ManagerDashboard({ manager: managerProp, onOpenDraft, onSignOut, onMana
         const leasePending = dr.filter((d) => LEASE_STATUSES_NEEDING_ACTION.has(String(d.Status || '').trim())).length
         const rentOverdue = rentRows.filter((p) => isPaymentOverdueRecord(p)).length
         const openWo = wo.filter((w) => !workOrderIsResolvedRecord(w)).length
+        const todayKey = dateKeyFromDate(new Date())
+        const upcomingEvents = buildCalendarEvents(dr, wo, apps).filter((ev) => ev.date >= todayKey).length
 
         setOverviewStats({
           pendingApps,
           leasePending,
           rentOverdue,
           openWo,
+          upcomingEvents,
         })
       })
       .finally(() => {
@@ -5579,20 +5623,6 @@ function ManagerDashboard({ manager: managerProp, onOpenDraft, onSignOut, onMana
         <div className="mb-5 flex flex-wrap items-center gap-3">
           <h2 className="mr-auto text-2xl font-black text-slate-900">Leases</h2>
 
-          {/* Resident search */}
-          <div className="relative">
-            <svg className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-            </svg>
-            <input
-              type="text"
-              placeholder="Search resident…"
-              value={residentInput}
-              onChange={e => setResidentInput(e.target.value)}
-              className="rounded-2xl border border-slate-200 bg-white py-2.5 pl-10 pr-4 text-sm transition focus:border-[#2563eb] focus:outline-none focus:ring-2 focus:ring-[#2563eb]/20"
-            />
-          </div>
-
           {/* Property filter */}
           <select
             value={filters.property}
@@ -5602,6 +5632,17 @@ function ManagerDashboard({ manager: managerProp, onOpenDraft, onSignOut, onMana
             <option value="">All your properties</option>
             {scopedPropertyOptions.map((p) => (
               <option key={p} value={p}>{p}</option>
+            ))}
+          </select>
+
+          <select
+            value={filters.resident}
+            onChange={e => setFilters(f => ({ ...f, resident: e.target.value }))}
+            className="rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition focus:border-[#2563eb] focus:outline-none focus:ring-2 focus:ring-[#2563eb]/20"
+          >
+            <option value="">All applications</option>
+            {[...new Set(drafts.map((d) => String(d['Resident Name'] || '').trim()).filter(Boolean))].sort().map((name) => (
+              <option key={name} value={name}>{name}</option>
             ))}
           </select>
 

@@ -1,6 +1,7 @@
 /**
  * Map an Applications table row to pending | approved | rejected.
- * Uses text field `Approval Status` as primary. Empty / unknown → pending.
+ * Optional single-line fields `Approval Status` / `Application Status` win when set.
+ * Otherwise uses the `Approved` checkbox: true → approved, false → rejected, unset → pending.
  */
 export function deriveApplicationApprovalState(raw) {
   if (!raw || typeof raw !== 'object') return 'pending'
@@ -12,7 +13,6 @@ export function deriveApplicationApprovalState(raw) {
     return 'rejected'
   }
 
-  // Fallback: honour legacy boolean Approved field if text field is absent
   const a = raw.Approved
   if (a === true || a === 1) return 'approved'
   if (a === false || a === 0) return 'rejected'
