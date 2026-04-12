@@ -622,7 +622,7 @@ export default function AdminPortal() {
                 empty="No properties awaiting review."
                 columns={[
                   { key: 'n', label: 'Property', render: (d) => <><div className="font-semibold">{d.name}</div><div className="text-xs text-slate-500">{d.address}</div></> },
-                  { key: 'o', label: 'Owner / partner', render: (d) => ownerLabel(d.ownerId) },
+                  { key: 'o', label: 'Manager', render: (d) => ownerLabel(d.ownerId) },
                   { key: 's', label: 'Status', render: (d) => <StatusPill tone={propertyTone(d.status)}>{PROPERTY_STATUS_LABEL[d.status] || d.status}</StatusPill> },
                   { key: 'dt', label: 'Submitted', render: (d) => new Date(d.submittedAt).toLocaleDateString() },
                   { key: 'a', label: '', render: (d) => (
@@ -715,9 +715,9 @@ export default function AdminPortal() {
               empty="No approved properties."
               columns={[
                 { key: 'n', label: 'Property', render: (d) => <><div className="font-semibold">{d.name}</div><div className="text-xs text-slate-500">{d.address}</div></> },
-                { key: 'o', label: 'Partner', render: (d) => ownerLabel(d.ownerId) },
+                { key: 'o', label: 'Manager', render: (d) => ownerLabel(d.ownerId) },
                 { key: 's', label: 'Status', render: (d) => <StatusPill tone={propertyTone(d.status)}>{PROPERTY_STATUS_LABEL[d.status] || d.status}</StatusPill> },
-                { key: 'r', label: 'From', render: (d) => `$${d.rentFrom}` },
+                { key: 'r', label: 'Details', render: (d) => `$${d.rentFrom}` },
               ]}
               rows={approvedProperties.map((p) => ({ key: p.id, data: p }))}
             />
@@ -726,7 +726,7 @@ export default function AdminPortal() {
               empty="No rejected properties."
               columns={[
                 { key: 'n', label: 'Property', render: (d) => <><div className="font-semibold">{d.name}</div><div className="text-xs text-slate-500">{d.address}</div></> },
-                { key: 'o', label: 'Partner', render: (d) => ownerLabel(d.ownerId) },
+                { key: 'o', label: 'Manager', render: (d) => ownerLabel(d.ownerId) },
                 { key: 's', label: 'Status', render: (d) => <StatusPill tone={propertyTone(d.status)}>{PROPERTY_STATUS_LABEL[d.status] || d.status}</StatusPill> },
                 { key: 'dt', label: 'Submitted', render: (d) => new Date(d.submittedAt).toLocaleDateString() },
               ]}
