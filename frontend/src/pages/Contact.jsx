@@ -123,7 +123,7 @@ function MonthCalendar({ selectableSet, selectedDate, onSelectDate }) {
   const keyFor = (day) => formatYMD(new Date(year, month, day))
 
   if (!selectableSet?.size) {
-    return <p className="text-sm text-slate-400 italic">No open slots loaded. Submit your request and we will coordinate a time.</p>
+    return <p className="text-sm text-slate-400 italic">No open slots loaded. Submit your request and we will coordinate a time</p>
   }
 
   return (
@@ -226,7 +226,8 @@ function HousingScheduler() {
   const [property, setProperty] = useState(null)
   const [room, setRoom] = useState('')
   const [tourType, setTourType] = useState('in-person')
-  const [properties, setProperties] = useState(DEFAULT_PROPERTIES)
+  const [properties, setProperties] = useState([])
+  const [tourPropertiesLoading, setTourPropertiesLoading] = useState(true)
   const [selectedDate, setSelectedDate] = useState('')
   const [selectedTime, setSelectedTime] = useState('')
   const [form, setFormState] = useState({ name: '', email: '', phone: '', notes: '' })
@@ -260,14 +261,29 @@ function HousingScheduler() {
   useEffect(() => {
     let cancelled = false
     fetch('/api/forms?action=tour')
-      .then(r => r.json())
-      .then(data => {
+      .then((r) => r.json())
+      .then((data) => {
         if (cancelled) return
-        const next = Array.isArray(data?.properties) && data.properties.length ? data.properties : DEFAULT_PROPERTIES
-        setProperties(next.map(p => ({ ...p, rooms: p.rooms || DEFAULT_PROPERTIES.find(f => f.id === p.id)?.rooms || [] })))
+        if (Array.isArray(data?.properties)) {
+          setProperties(
+            data.properties.map((p) => ({
+              ...p,
+              rooms: p.rooms?.length ? p.rooms : DEFAULT_PROPERTIES.find((f) => f.id === p.id)?.rooms || [],
+            })),
+          )
+          return
+        }
+        setProperties(DEFAULT_PROPERTIES)
       })
-      .catch(() => { if (!cancelled) setProperties(DEFAULT_PROPERTIES) })
-    return () => { cancelled = true }
+      .catch(() => {
+        if (!cancelled) setProperties(DEFAULT_PROPERTIES)
+      })
+      .finally(() => {
+        if (!cancelled) setTourPropertiesLoading(false)
+      })
+    return () => {
+      cancelled = true
+    }
   }, [])
 
   async function handleSchedule() {
@@ -300,7 +316,7 @@ function HousingScheduler() {
   if (submitted) return (
     <SuccessCard
       title="Tour request sent!"
-      body={`We'll reach out to ${form.email} to confirm within 1 business day.`}
+      body={`We'll reach out to ${form.email} to confirm within 1 business day`}
       onReset={reset}
     />
   )
@@ -324,17 +340,29 @@ function HousingScheduler() {
 
       {step === 1 && (
         <div className="space-y-6">
-          <PropertyRoomPicker
-            idPrefix="tour-schedule"
-            properties={properties}
-            selectedId={property}
-            onSelectProperty={setProperty}
-            room={room}
-            onSelectRoom={setRoom}
-          />
+          {tourPropertiesLoading ? (
+            <p className="text-sm text-slate-500">Loading properties…</p>
+          ) : properties.length === 0 ? (
+            <p className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+              No homes are open for tours yet. Check back soon, or use the &quot;Send message&quot; tab to reach us.
+            </p>
+          ) : (
+            <PropertyRoomPicker
+              idPrefix="tour-schedule"
+              properties={properties}
+              selectedId={property}
+              onSelectProperty={setProperty}
+              room={room}
+              onSelectRoom={setRoom}
+            />
+          )}
           <div className="flex justify-end gap-3 pt-1">
-            <button type="button" disabled={!step1Ready} onClick={() => step1Ready && setStep(2)}
-              className="rounded-full bg-[linear-gradient(180deg,#2f76ff_0%,#2450eb_100%)] px-6 py-2.5 text-sm font-semibold text-white transition hover:opacity-95 disabled:cursor-not-allowed disabled:opacity-40">
+            <button
+              type="button"
+              disabled={!step1Ready || tourPropertiesLoading || properties.length === 0}
+              onClick={() => step1Ready && setStep(2)}
+              className="rounded-full bg-[linear-gradient(180deg,#2f76ff_0%,#2450eb_100%)] px-6 py-2.5 text-sm font-semibold text-white transition hover:opacity-95 disabled:cursor-not-allowed disabled:opacity-40"
+            >
               Continue
             </button>
           </div>
@@ -459,7 +487,7 @@ function SoftwareMessageForm() {
   }
 
   if (submitted) return (
-    <SuccessCard title="Message sent!" body={`We'll follow up at ${form.email} within 2 business days.`}
+    <SuccessCard title="Message sent!" body={`We'll follow up at ${form.email} within 2 business days`}
       onReset={() => { setSubmitted(false); setFormState({ name: '', email: '', topic: '', message: '' }) }} resetLabel="Send another" />
   )
 
@@ -558,7 +586,7 @@ export default function Contact() {
     <div className="bg-[linear-gradient(180deg,#edf2fb_0%,#eef3fb_48%,#f6f9fe_100%)]">
       <Seo
         title="Contact Axis | Housing Tours and Software Inquiries"
-        description="Book a housing tour or ask about the Axis platform."
+        description="Book a housing tour or ask about the Axis platform"
         pathname={location.pathname.startsWith('/owners/') ? '/owners/contact' : '/contact'}
       />
       <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 sm:py-12">

@@ -1,5 +1,5 @@
 /**
- * GET  /api/tour  → returns available properties for tour scheduling
+ * GET  /api/tour  → returns Properties rows that are approved/live (same rules as manager portal scope)
  * POST /api/tour  → saves a tour or meeting booking to Scheduling table
  */
 
@@ -18,6 +18,17 @@ function extractNoteValue(notes, label) {
   const escaped = String(label || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
   const match = String(notes || '').match(new RegExp(`(?:^|\\n)${escaped}:\\s*(.+?)(?:\\n|$)`, 'i'))
   return match ? match[1].trim() : ''
+}
+
+/** Same rules as Manager.jsx `isPropertyRecordApproved` — only approved/live houses appear in public tour & message pickers. */
+function isPropertyRecordApprovedForTour(fields) {
+  const p = fields || {}
+  const s = String(p.Status || '').trim().toLowerCase()
+  if (s === 'pending_review' || s === 'pending review') return false
+  if (p.Approved === true || p.Approved === 1 || p.Approved === '1') return true
+  const a = String(p['Approval Status'] || '').trim().toLowerCase()
+  if (a === 'approved') return true
+  return s === 'approved' || s === 'live' || s === 'active'
 }
 
 function buildRoomsByPropertyId(roomRecords) {
@@ -92,8 +103,14 @@ export default async function handler(req, res) {
       if (!propRes.ok) return res.status(200).json(fallback)
       const [propData, roomsData] = await Promise.all([propRes.json(), roomsRes.ok ? roomsRes.json() : Promise.resolve({ records: [] })])
       const roomsByPropertyId = buildRoomsByPropertyId(roomsData.records || [])
-      const properties = (propData.records || []).map((r) => mapProperty(r, roomsByPropertyId))
-      return res.status(200).json({ properties: properties.length ? properties : fallback.properties })
+      const allRecords = propData.records || []
+      const approvedRecords = allRecords.filter((r) => isPropertyRecordApprovedForTour(r.fields || {}))
+      const properties = approvedRecords.map((r) => mapProperty(r, roomsByPropertyId))
+      if (properties.length) return res.status(200).json({ properties })
+      // Table empty → keep legacy fallback for empty bases / local dev
+      if (allRecords.length === 0) return res.status(200).json(fallback)
+      // Has rows but none approved yet → empty list (front-end must not substitute hardcoded houses)
+      return res.status(200).json({ properties: [] })
     } catch {
       return res.status(200).json(fallback)
     }

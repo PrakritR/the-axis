@@ -33,7 +33,7 @@ export default function AxisTeam() {
     <div className="min-h-screen bg-[linear-gradient(180deg,#edf2fb_0%,#f6f9fe_100%)] px-4 py-10">
       <div className="mx-auto max-w-3xl">
         <h1 className="text-2xl font-black tracking-tight text-slate-900">Axis software — meetings</h1>
-        <p className="mt-1 text-sm text-slate-500">Internal list from Scheduling (Demo + Software Meeting).</p>
+        <p className="mt-1 text-sm text-slate-500">Internal list from Scheduling (Demo + Software Meeting)</p>
 
         <form onSubmit={load} className="mt-6 flex flex-col gap-3 sm:flex-row sm:items-end">
           <div className="min-w-0 flex-1">
@@ -50,7 +50,7 @@ export default function AxisTeam() {
         {meetings && (
           <ul className="mt-8 space-y-3">
             {meetings.length === 0 ? (
-              <li className="rounded-2xl border border-slate-200 bg-white/90 p-6 text-sm text-slate-500">No rows match.</li>
+              <li className="rounded-2xl border border-slate-200 bg-white/90 p-6 text-sm text-slate-500">No rows match</li>
             ) : (
               meetings.map((m) => (
                 <li key={m.id} className="rounded-2xl border border-slate-200 bg-white/95 p-4 shadow-sm">

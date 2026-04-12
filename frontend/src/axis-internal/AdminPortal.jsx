@@ -490,8 +490,8 @@ export default function AdminPortal() {
           {/* Header */}
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
-              <h1 className="text-2xl font-black text-slate-900">
-                {user?.name ? `Welcome, ${user.name.split(' ')[0]}` : 'Dashboard'}
+              <h1 className="text-2xl font-black uppercase tracking-[0.08em] text-slate-900">
+                {user?.name ? `WELCOME ${user.name.split(' ')[0]}` : 'DASHBOARD'}
               </h1>
             </div>
             {dataLoading ? (
@@ -671,7 +671,7 @@ export default function AdminPortal() {
           {propertiesSection === 'pending' ? (
             <>
               <DataTable
-                empty="No properties awaiting review."
+                empty="No properties awaiting review"
                 columns={[
                   { key: 'n', label: 'Property', render: (d) => <><div className="font-semibold">{d.name}</div><div className="text-xs text-slate-500">{d.address}</div></> },
                   { key: 'o', label: 'Manager', render: (d) => ownerLabel(d.ownerId) },
@@ -765,7 +765,7 @@ export default function AdminPortal() {
           ) : propertiesSection === 'approved' ? (
             <>
               <DataTable
-                empty="No approved properties."
+                empty="No approved properties"
                 columns={[
                   { key: 'n', label: 'Property', render: (d) => <><div className="font-semibold">{d.name}</div><div className="text-xs text-slate-500">{d.address}</div></> },
                   { key: 'o', label: 'Manager', render: (d) => ownerLabel(d.ownerId) },
@@ -792,7 +792,7 @@ export default function AdminPortal() {
           ) : (
             <>
               <DataTable
-                empty="No rejected properties."
+                empty="No rejected properties"
                 columns={[
                   { key: 'n', label: 'Property', render: (d) => <><div className="font-semibold">{d.name}</div><div className="text-xs text-slate-500">{d.address}</div></> },
                   { key: 'o', label: 'Manager', render: (d) => ownerLabel(d.ownerId) },
@@ -865,7 +865,7 @@ export default function AdminPortal() {
                 </div>
               </div>
               <DataTable
-                empty={`No ${managersFilter === 'current' ? 'active' : 'past'} managers.`}
+                empty={`No ${managersFilter === 'current' ? 'active' : 'past'} managers`}
                 columns={[
                   { key: 'n', label: 'Account', render: (d) => <><div className="font-semibold">{d.businessName || d.name}</div><div className="text-xs text-slate-500">{d.email}</div></> },
                   { key: 'h', label: 'House / property', render: (d) => <span className="text-slate-700">{d.managedHousesLabel || '—'}</span> },
@@ -993,7 +993,7 @@ export default function AdminPortal() {
             </div>
           </div>
           <DataTable
-            empty={`No ${applicationsFilter === 'all' ? '' : applicationsFilter + ' '}applications.`}
+            empty={`No ${applicationsFilter === 'all' ? '' : applicationsFilter + ' '}applications`}
             columns={[
               { key: 'p', label: 'House / property', render: (d) => d.propertyName },
               { key: 'a', label: 'Applicant', render: (d) => d.applicantName },
@@ -1044,11 +1044,11 @@ export default function AdminPortal() {
                           await refreshPortalData()
                           if (Array.isArray(data.residentRecordsUpdated) && data.residentRecordsUpdated.length > 0) {
                             toast.success(
-                              (data.message || 'Application approved.') +
-                                ` Resident portal updated (${data.residentRecordsUpdated.length} profile${data.residentRecordsUpdated.length === 1 ? '' : 's'}).`,
+                              (data.message || 'Application approved') +
+                                ` Resident portal updated (${data.residentRecordsUpdated.length} profile${data.residentRecordsUpdated.length === 1 ? '' : 's'})`,
                             )
                           } else {
-                            toast.success(data.message || 'Application approved.')
+                            toast.success(data.message || 'Application approved')
                           }
                           setSelectedApplicationId(null)
                         } catch (e) {
@@ -1064,7 +1064,7 @@ export default function AdminPortal() {
                         try {
                           await adminRejectApplication(id)
                           await refreshPortalData()
-                          toast.success('Application rejected.')
+                          toast.success('Application rejected')
                           setSelectedApplicationId(null)
                         } catch (e) {
                           toast.error(e?.message || 'Reject failed')
@@ -1082,8 +1082,8 @@ export default function AdminPortal() {
                           await refreshPortalData()
                           toast.success(
                             wasRejected
-                              ? 'Rejection removed. Application is now pending review.'
-                              : 'Approval removed. Application is now pending review.',
+                              ? 'Rejection removed. Application is now pending review'
+                              : 'Approval removed. Application is now pending review',
                           )
                           setSelectedApplicationId(null)
                         } catch (e) {
@@ -1125,7 +1125,6 @@ export default function AdminPortal() {
       {tab === 'profile' && (
         <AdminProfilePanel
           user={user}
-          onSignOut={handleSignOut}
           onUserUpdate={(partial) => {
             setSession((prev) => {
               if (!prev) return prev

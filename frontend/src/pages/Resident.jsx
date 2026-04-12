@@ -175,6 +175,14 @@ function classNames(...values) {
   return values.filter(Boolean).join(' ')
 }
 
+/** Consistent header controls across resident tabs (Payments, Work Orders, Lease). */
+const RP_HEADER_BTN_SECONDARY =
+  'rounded-full border border-slate-200 bg-white px-5 py-2.5 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50 disabled:opacity-50'
+const RP_HEADER_BTN_PRIMARY =
+  'rounded-full bg-axis px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:brightness-105 disabled:cursor-not-allowed disabled:opacity-50'
+const RP_HEADER_SELECT =
+  'rounded-full border border-slate-200 bg-white px-4 py-2.5 text-sm font-medium text-slate-800 shadow-sm transition focus:border-[#2563eb] focus:outline-none focus:ring-2 focus:ring-[#2563eb]/20'
+
 function isApprovalGranted(value) {
   if (value === true || value === 1) return true
   const normalized = String(value || '').trim().toLowerCase()
@@ -270,6 +278,7 @@ function classifyResidentPaymentLine(payment) {
     .filter(Boolean).join(' ').toLowerCase()
   if (/(security deposit|sec\.?\s*deposit|tenant deposit|initial deposit)/i.test(raw) && !/return/i.test(raw)) return 'deposit'
   if (/(^|\s)(first month|1st month|first months|move-?in rent)/i.test(raw)) return 'first_rent'
+  if (/(first month.{0,20}util|1st month.{0,20}util|move-?in.{0,20}util)/i.test(raw)) return 'first_utilities'
   return getPaymentKind(payment) === 'fee' ? 'fee' : 'rent'
 }
 
@@ -279,41 +288,6 @@ function statusPillToneForResidentPayment(status) {
   if (status === 'Due Soon') return 'amber'
   if (status === 'Partial') return 'axis'
   return 'blue'
-}
-
-function ResidentMoveInPaymentCard({ title, row, selected, onSelectDetails }) {
-  if (!row) return null
-  const status = row.statusLabel
-  const tone = statusPillToneForResidentPayment(status)
-  return (
-    <div
-      className={classNames(
-        'rounded-[24px] border bg-white p-5 shadow-sm transition',
-        selected ? 'border-[#2563eb]/40 ring-2 ring-[#2563eb]/15' : 'border-slate-200',
-      )}
-    >
-      <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">{title}</div>
-      <div className="mt-2 text-2xl font-black tracking-tight text-slate-900">{formatMoney(row.displayAmount)}</div>
-      <div className="mt-1 text-sm text-slate-600">
-        {row.dueDateLabel ? <>Due {row.dueDateLabel}</> : <span className="text-slate-400">No due date on file</span>}
-      </div>
-      <div className="mt-3 flex flex-wrap items-center gap-2">
-        <StatusPill tone={tone}>{status}</StatusPill>
-      </div>
-      <button
-        type="button"
-        onClick={() => onSelectDetails(row.id)}
-        className={classNames(
-          'mt-4 w-full rounded-xl border px-4 py-2.5 text-sm font-semibold transition sm:w-auto',
-          selected
-            ? 'border-[#2563eb] bg-[#2563eb]/10 text-[#2563eb]'
-            : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50',
-        )}
-      >
-        {selected ? 'Hide details' : 'Details'}
-      </button>
-    </div>
-  )
 }
 
 function ResidentPaymentDetailPanel({ row, onClose, onPayNow, payLoadingKey }) {
@@ -808,7 +782,7 @@ function WorkOrderNotesComposer({ workOrder, residentEmail, onUpdated, embedded 
     <div className={wrap}>
       <div className={scroll}>
         {!updateText ? (
-          <p className="text-sm text-slate-400">No updates yet. Add a note below — your property team sees it on the work order.</p>
+          <p className="text-sm text-slate-400">No updates yet. Add a note below — your property team sees it on the work order</p>
         ) : (
           <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3">
             <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">Update log</div>
@@ -835,10 +809,10 @@ function WorkOrderNotesComposer({ workOrder, residentEmail, onUpdated, embedded 
   )
 }
 
-function WorkOrdersPanel({ resident, requests: requestsProp, onRequestCreated, onWorkOrderUpdated }) {
+function WorkOrdersPanel({ resident, requests: requestsProp, onRequestCreated, onWorkOrderUpdated, onRefresh }) {
   const requests = Array.isArray(requestsProp) ? requestsProp : []
   const [woFilter, setWoFilter] = useState('all')
-  const [woSearch, setWoSearch] = useState('')
+  const [refreshing, setRefreshing] = useState(false)
   const [showForm, setShowForm] = useState(false)
   const [selectedId, setSelectedId] = useState(null)
   const [form, setForm] = useState({
@@ -862,11 +836,18 @@ function WorkOrdersPanel({ resident, requests: requestsProp, onRequestCreated, o
   }, [requests])
 
   const filteredRequests = useMemo(() => {
-    let rows = woFilter === 'all' ? requests : requests.filter((r) => residentWorkOrderFilterBucket(r) === woFilter)
-    const q = woSearch.trim().toLowerCase()
-    if (q) rows = rows.filter((r) => `${r.Title || ''} ${r.Description || ''}`.toLowerCase().includes(q))
-    return rows
-  }, [requests, woFilter, woSearch])
+    return woFilter === 'all' ? requests : requests.filter((r) => residentWorkOrderFilterBucket(r) === woFilter)
+  }, [requests, woFilter])
+
+  async function handleRefresh() {
+    if (!onRefresh) return
+    setRefreshing(true)
+    try {
+      await onRefresh()
+    } finally {
+      setRefreshing(false)
+    }
+  }
 
   useEffect(() => {
     if (filteredRequests.length === 0) {
@@ -906,7 +887,7 @@ function WorkOrdersPanel({ resident, requests: requestsProp, onRequestCreated, o
       })
       setForm({ title: '', category: requestCategories[0], urgency: urgencyOptions[1], description: '' })
       setPhoto(null)
-      setSuccess('Request submitted.')
+      setSuccess('Request submitted')
       setShowForm(false)
       onRequestCreated(created)
     } catch (err) {
@@ -920,10 +901,11 @@ function WorkOrdersPanel({ resident, requests: requestsProp, onRequestCreated, o
     <div className="mb-10">
       <div className="mb-5 flex flex-wrap items-center gap-3">
         <h2 className="mr-auto text-2xl font-black text-slate-900">Work Orders</h2>
-        <div className="relative">
-          <svg className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
-          <input value={woSearch} onChange={(e) => setWoSearch(e.target.value)} placeholder="Search orders…" className="rounded-2xl border border-slate-200 bg-white py-2.5 pl-10 pr-4 text-sm transition focus:border-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-900/10" />
-        </div>
+        {onRefresh ? (
+          <button type="button" onClick={() => handleRefresh()} disabled={refreshing} className={RP_HEADER_BTN_SECONDARY}>
+            {refreshing ? 'Refreshing…' : 'Refresh'}
+          </button>
+        ) : null}
         <button
           type="button"
           onClick={() => {
@@ -931,7 +913,7 @@ function WorkOrdersPanel({ resident, requests: requestsProp, onRequestCreated, o
             setError('')
             setSuccess('')
           }}
-          className="rounded-full bg-axis px-5 py-3 text-sm font-semibold text-white transition hover:brightness-105"
+          className={RP_HEADER_BTN_PRIMARY}
         >
           {showForm ? 'Close form' : 'Create new work order'}
         </button>
@@ -1033,7 +1015,7 @@ function WorkOrdersPanel({ resident, requests: requestsProp, onRequestCreated, o
             <PortalOpsEmptyState
               icon="🛠"
               title="No work orders yet"
-              description="When you submit a maintenance request, it will appear here with status updates."
+              description="When you submit a maintenance request, it will appear here with status updates"
             />
           </div>
         ) : filteredRequests.length === 0 ? (
@@ -1041,7 +1023,7 @@ function WorkOrdersPanel({ resident, requests: requestsProp, onRequestCreated, o
             <PortalOpsEmptyState
               icon="🔍"
               title="Nothing in this view"
-              description="Try another filter above — your requests may be in a different stage."
+              description="Try another filter above — your requests may be in a different stage"
             />
           </div>
         ) : (
@@ -1073,7 +1055,7 @@ function WorkOrdersPanel({ resident, requests: requestsProp, onRequestCreated, o
                       </PortalOpsStatusBadge>
                     </div>
                     <p className="line-clamp-2 text-sm text-slate-500">
-                      {stripWorkOrderPortalSubmitterLine(request.Description) || 'No description added.'}
+                      {stripWorkOrderPortalSubmitterLine(request.Description) || 'No description added'}
                     </p>
                   </button>
                 ))}
@@ -1102,7 +1084,7 @@ function WorkOrdersPanel({ resident, requests: requestsProp, onRequestCreated, o
                 <div className="mt-5 rounded-[24px] border border-slate-200 bg-slate-50 px-5 py-4">
                   <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">Issue details</div>
                   <p className="mt-2 whitespace-pre-wrap text-sm leading-7 text-slate-700">
-                    {stripWorkOrderPortalSubmitterLine(selectedRequest.Description) || 'No description added.'}
+                    {stripWorkOrderPortalSubmitterLine(selectedRequest.Description) || 'No description added'}
                   </p>
                 </div>
 
@@ -1130,7 +1112,7 @@ function WorkOrdersPanel({ resident, requests: requestsProp, onRequestCreated, o
                 <div className="mt-5 overflow-hidden rounded-[24px] border border-slate-200">
                   <div className="border-b border-slate-200 bg-white px-5 py-4">
                     <div className="text-sm font-black text-slate-900">Notes to the team</div>
-                    <div className="mt-1 text-xs text-slate-400">Appends to the work order update log (no separate message thread).</div>
+                    <div className="mt-1 text-xs text-slate-400">Appends to the work order update log (no separate message thread)</div>
                   </div>
                   <WorkOrderNotesComposer
                     workOrder={selectedRequest}
@@ -1173,7 +1155,7 @@ function ProfilePanel({ resident, onUpdated }) {
     try {
       const updated = await updateResident(resident.id, { Name: name, Email: email, Phone: phone })
       onUpdated(updated)
-      setMessage('Profile updated.')
+      setMessage('Profile updated')
       setIsEditing(false)
     } catch (err) {
       setSaveError(err.message || 'Could not save profile. Please try again.')
@@ -1293,7 +1275,6 @@ function ProfilePanel({ resident, onUpdated }) {
 
       <section className="rounded-[28px] border border-slate-200 bg-white p-6">
         <h2 className="text-lg font-black text-slate-900">Your home & lease</h2>
-        <p className="mt-1 text-sm text-slate-500">Assigned by your property manager — contact them to change unit or lease dates.</p>
         <div className="mt-6 grid gap-3 sm:grid-cols-2">
           <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4">
             <div className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-400">Property</div>
@@ -1331,7 +1312,6 @@ function PaymentsPanel({ resident, onResidentUpdated, highlightCategory, onPayme
   const [actionLoading, setActionLoading] = useState('')
   const [embeddedCheckout, setEmbeddedCheckout] = useState(null)
   const [payFilter, setPayFilter] = useState('all')
-  const [paySearch, setPaySearch] = useState('')
   const [payDetailId, setPayDetailId] = useState(null)
   const [payTableSort, setPayTableSort] = useState('due_asc')
 
@@ -1426,8 +1406,6 @@ function PaymentsPanel({ resident, onResidentUpdated, highlightCategory, onPayme
     [feePayments],
   )
 
-  const paySearchLower = paySearch.trim().toLowerCase()
-
   const firstMonthRentPaid = useMemo(
     () => rentPayments.some((p) => paymentStatusForRecord(p) === 'Paid'),
     [rentPayments, paymentStatusForRecord],
@@ -1481,9 +1459,18 @@ function PaymentsPanel({ resident, onResidentUpdated, highlightCategory, onPayme
           recordedAt = String(payment.created_at)
         }
       }
-      const payCategory = lineKind === 'fee' ? 'fee' : lineKind === 'deposit' ? 'deposit' : 'rent'
+      const payCategory =
+        lineKind === 'fee' || lineKind === 'first_utilities' ? 'fee' : lineKind === 'deposit' ? 'deposit' : 'rent'
       const typeLabel =
-        lineKind === 'fee' ? 'Fee or extra' : lineKind === 'deposit' ? 'Security deposit' : lineKind === 'first_rent' ? 'First month rent' : 'Rent'
+        lineKind === 'fee'
+          ? 'Fee or extra'
+          : lineKind === 'deposit'
+            ? 'Security deposit'
+            : lineKind === 'first_rent'
+              ? 'First month rent'
+              : lineKind === 'first_utilities'
+                ? 'Utilities'
+                : 'Rent'
       const metaRows = [
         { label: 'Type', value: typeLabel },
         { label: 'Due date', value: dueDateLabel || '—' },
@@ -1503,9 +1490,9 @@ function PaymentsPanel({ resident, onResidentUpdated, highlightCategory, onPayme
         statusLabel: status,
         statusHint:
           status === 'Overdue'
-            ? 'This balance is past due — pay as soon as you can.'
+            ? 'This balance is past due — pay as soon as you can'
             : status === 'Due Soon'
-              ? 'Due within the next few days.'
+              ? 'Due within the next few days'
               : '',
         metaRows,
         recordedAt,
@@ -1537,7 +1524,7 @@ function PaymentsPanel({ resident, onResidentUpdated, highlightCategory, onPayme
       displayAmount: expectedDepositAmount,
       balance: expectedDepositAmount,
       statusLabel: 'Unpaid',
-      statusHint: 'Typically due at or before move-in unless your lease says otherwise.',
+      statusHint: 'Typically due at or before move-in unless your lease says otherwise',
       metaRows: [
         { label: 'Type', value: 'Security deposit' },
         { label: 'Due date', value: moveIn || '—' },
@@ -1619,7 +1606,7 @@ function PaymentsPanel({ resident, onResidentUpdated, highlightCategory, onPayme
       displayAmount: fallbackRentAmount,
       balance: fallbackRentAmount,
       statusLabel: 'Unpaid',
-      statusHint: 'Pay when you are ready to satisfy your move-in rent.',
+      statusHint: 'Pay when you are ready to satisfy your move-in rent',
       metaRows: [
         { label: 'Type', value: 'First month rent' },
         { label: 'Due date', value: resident['Lease Start Date'] ? formatDate(resident['Lease Start Date']) : '—' },
@@ -1647,43 +1634,62 @@ function PaymentsPanel({ resident, onResidentUpdated, highlightCategory, onPayme
     resident['Unit Number'],
   ])
 
-  const baseTableVMs = useMemo(() => {
-    const filtered = tableSourcePayments.filter((p) => {
+  const recordRowsForCurrentFilter = useMemo(() => {
+    return tableSourcePayments.filter((p) => {
       if (payFilter === 'fees') return getPaymentKind(p) === 'fee'
-      if (payFilter === 'paid') return getPaymentKind(p) === 'rent' && paymentStatusForRecord(p) === 'Paid'
-      if (payFilter === 'pending') return getPaymentKind(p) === 'rent' && balanceForRecord(p) > 0
+      if (payFilter === 'paid') return paymentStatusForRecord(p) === 'Paid'
+      if (payFilter === 'pending') return balanceForRecord(p) > 0
       return true
     })
-    return filtered.map((p) => buildRowFromPayment(p))
-  }, [tableSourcePayments, payFilter, paymentStatusForRecord, balanceForRecord, buildRowFromPayment])
+  }, [tableSourcePayments, payFilter, paymentStatusForRecord, balanceForRecord])
 
-  const filteredTableVMs = useMemo(() => {
-    if (!paySearchLower) return baseTableVMs
-    return baseTableVMs.filter((row) => {
-      const blob = [row.title, row.subtitle, row.statusLabel, formatMoney(row.balance), row.dueDateLabel, row.payDescription]
-        .join(' ')
-        .toLowerCase()
-      return blob.includes(paySearchLower)
-    })
-  }, [baseTableVMs, paySearchLower])
+  const recordVMsForFilter = useMemo(
+    () => recordRowsForCurrentFilter.map((p) => buildRowFromPayment(p)),
+    [recordRowsForCurrentFilter, buildRowFromPayment],
+  )
 
-  const sortedTableVMs = useMemo(() => {
-    const arr = [...filteredTableVMs]
+  const moveInRowsCombined = useMemo(() => [depositRow, firstMonthRow].filter(Boolean), [depositRow, firstMonthRow])
+
+  const unifiedPaymentRows = useMemo(() => {
+    if (payFilter === 'fees') return recordVMsForFilter
+    if (payFilter === 'paid') {
+      const mi = moveInRowsCombined.filter((r) => r.statusLabel === 'Paid')
+      return [...mi, ...recordVMsForFilter]
+    }
+    if (payFilter === 'pending') {
+      const mi = moveInRowsCombined.filter((r) => r.balance > 0)
+      return [...mi, ...recordVMsForFilter]
+    }
+    return [...moveInRowsCombined, ...recordVMsForFilter]
+  }, [payFilter, moveInRowsCombined, recordVMsForFilter])
+
+  const sortedUnifiedPaymentRows = useMemo(() => {
+    const arr = [...unifiedPaymentRows]
+    const moveInRank = (id) => {
+      const s = String(id)
+      if (s === 'synth-security-deposit') return 0
+      if (s.startsWith('synth-first-month')) return 1
+      return 2
+    }
     arr.sort((a, b) => {
+      const mr = moveInRank(a.id) - moveInRank(b.id)
+      if (mr !== 0) return mr
       if (payTableSort === 'due_desc') return b.sortDue - a.sortDue
       if (payTableSort === 'amount_desc') return b.sortAmount - a.sortAmount
       if (payTableSort === 'amount_asc') return a.sortAmount - b.sortAmount
       return a.sortDue - b.sortDue
     })
     return arr
-  }, [filteredTableVMs, payTableSort])
+  }, [unifiedPaymentRows, payTableSort])
 
   const detailRow = useMemo(() => {
     if (!payDetailId) return null
-    if (depositRow && depositRow.id === payDetailId) return depositRow
-    if (firstMonthRow && firstMonthRow.id === payDetailId) return firstMonthRow
-    return sortedTableVMs.find((r) => r.id === payDetailId) || baseTableVMs.find((r) => r.id === payDetailId) || null
-  }, [payDetailId, depositRow, firstMonthRow, sortedTableVMs, baseTableVMs])
+    return (
+      sortedUnifiedPaymentRows.find((r) => r.id === payDetailId) ||
+      unifiedPaymentRows.find((r) => r.id === payDetailId) ||
+      null
+    )
+  }, [payDetailId, sortedUnifiedPaymentRows, unifiedPaymentRows])
 
   const effectiveCurrentDueDate = effectiveCurrentDue?.['Due Date']
 
@@ -1729,44 +1735,16 @@ function PaymentsPanel({ resident, onResidentUpdated, highlightCategory, onPayme
     <div className="mb-10">
       <div className="mb-5 flex flex-wrap items-center gap-3">
         <h2 className="mr-auto text-2xl font-black text-slate-900">Payments</h2>
-        <div className="relative">
-          <svg
-            className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400"
-            fill="none"
-            viewBox="0 0 24 24"
-            stroke="currentColor"
-            strokeWidth={2}
-            aria-hidden
-          >
-            <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-          </svg>
-          <input
-            value={paySearch}
-            onChange={(e) => setPaySearch(e.target.value)}
-            placeholder="Search payments…"
-            autoComplete="off"
-            className="rounded-2xl border border-slate-200 bg-white py-2.5 pl-10 pr-4 text-sm transition focus:border-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-900/10"
-          />
-        </div>
         <label className="flex flex-wrap items-center gap-2 text-sm text-slate-600">
           <span className="font-semibold text-slate-800">Sort</span>
-          <select
-            value={payTableSort}
-            onChange={(e) => setPayTableSort(e.target.value)}
-            className="rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition focus:border-[#2563eb] focus:outline-none focus:ring-2 focus:ring-[#2563eb]/20"
-          >
+          <select value={payTableSort} onChange={(e) => setPayTableSort(e.target.value)} className={RP_HEADER_SELECT}>
             <option value="due_asc">Due date (soonest)</option>
             <option value="due_desc">Due date (latest)</option>
             <option value="amount_desc">Amount (high → low)</option>
             <option value="amount_asc">Amount (low → high)</option>
           </select>
         </label>
-        <button
-          type="button"
-          onClick={() => loadPayments()}
-          disabled={loading}
-          className="rounded-full border border-slate-200 bg-white px-5 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:opacity-50"
-        >
+        <button type="button" onClick={() => loadPayments()} disabled={loading} className={RP_HEADER_BTN_SECONDARY}>
           {loading ? 'Refreshing…' : 'Refresh'}
         </button>
       </div>
@@ -1798,7 +1776,7 @@ function PaymentsPanel({ resident, onResidentUpdated, highlightCategory, onPayme
         <>
           {error ? (
             <div className="mb-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
-              Payment history could not be loaded right now. Try refreshing.
+              Payment history could not be loaded right now. Try refreshing
             </div>
           ) : null}
 
@@ -1817,7 +1795,7 @@ function PaymentsPanel({ resident, onResidentUpdated, highlightCategory, onPayme
                   <div className="mt-2 text-lg font-semibold text-slate-500">No due date on file</div>
                 )}
                 <div className="mt-1 text-sm leading-6 text-slate-500">
-                  {effectiveCurrentDue ? 'This is your current rent balance on record.' : 'No rent charge is on file right now.'}
+                  {effectiveCurrentDue ? 'This is your current rent balance on record' : 'No rent charge is on file right now'}
                 </div>
                 <div className="mt-3">
                   <PortalOpsStatusBadge tone={paymentToneForStatus(currentStatus)}>
@@ -1835,7 +1813,7 @@ function PaymentsPanel({ resident, onResidentUpdated, highlightCategory, onPayme
                     category: 'rent',
                     paymentRecordId: effectiveCurrentDue?.id,
                   })}
-                  className="rounded-full bg-axis px-6 py-3 text-sm font-semibold text-white transition hover:brightness-105 disabled:cursor-not-allowed disabled:opacity-50"
+                  className={classNames(RP_HEADER_BTN_PRIMARY, 'px-6')}
                 >
                   {actionLoading === 'rent' ? 'Opening...' : 'Pay now'}
                 </button>
@@ -1847,39 +1825,18 @@ function PaymentsPanel({ resident, onResidentUpdated, highlightCategory, onPayme
             <div className="mt-4 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{actionError}</div>
           ) : null}
 
-          {payFilter !== 'fees' ? (
-            <div className="mt-6 grid gap-4 sm:grid-cols-2">
-              {depositRow ? (
-                <ResidentMoveInPaymentCard
-                  title="Initial security deposit"
-                  row={depositRow}
-                  selected={payDetailId === depositRow.id}
-                  onSelectDetails={(id) => setPayDetailId((cur) => (cur === id ? null : id))}
-                />
-              ) : null}
-              {firstMonthRow ? (
-                <ResidentMoveInPaymentCard
-                  title="First month rent"
-                  row={firstMonthRow}
-                  selected={payDetailId === firstMonthRow.id}
-                  onSelectDetails={(id) => setPayDetailId((cur) => (cur === id ? null : id))}
-                />
-              ) : null}
-            </div>
-          ) : null}
-
           <div className="mt-6 space-y-4">
             <DataTable
               empty={
                 payFilter === 'fees' && feeChargeRows.length === 0
-                  ? 'No fees or extras right now.'
-                  : payFilter === 'paid' && paymentHistory.length === 0
-                    ? 'No paid rent history yet.'
-                    : payFilter === 'pending' && unpaidRentPayments.length === 0
-                      ? 'Nothing due or upcoming.'
-                      : paySearchLower
-                        ? 'No payments match your search.'
-                        : 'No payment rows to show.'
+                  ? 'No fees or utilities charges right now'
+                  : payFilter === 'paid' && unifiedPaymentRows.length === 0
+                    ? 'No paid items in this view yet'
+                    : payFilter === 'pending' && unifiedPaymentRows.length === 0
+                      ? 'Nothing due right now'
+                      : unifiedPaymentRows.length === 0
+                        ? 'No payment rows to show'
+                        : 'No payment rows to show'
               }
               columns={[
                 {
@@ -1900,9 +1857,11 @@ function PaymentsPanel({ resident, onResidentUpdated, highlightCategory, onPayme
                   ),
                 },
                 {
-                  key: 'st',
-                  label: 'Status',
-                  render: (row) => <StatusPill tone={statusPillToneForResidentPayment(row.statusLabel)}>{row.statusLabel}</StatusPill>,
+                  key: 'pu',
+                  label: 'Paid / Unpaid',
+                  render: (row) => (
+                    <StatusPill tone={statusPillToneForResidentPayment(row.statusLabel)}>{row.statusLabel}</StatusPill>
+                  ),
                 },
                 {
                   key: 'act',
@@ -1918,7 +1877,7 @@ function PaymentsPanel({ resident, onResidentUpdated, highlightCategory, onPayme
                   ),
                 },
               ]}
-              rows={sortedTableVMs.map((row) => ({ key: row.id, data: row }))}
+              rows={sortedUnifiedPaymentRows.map((row) => ({ key: row.id, data: row }))}
             />
             {payDetailId && detailRow ? (
               <ResidentPaymentDetailPanel
@@ -1977,6 +1936,8 @@ function LeasingPanel({ resident, payments, onOpenPayments }) {
   const [leaseLoading, setLeaseLoading] = useState(true)
   const [showLeaseText, setShowLeaseText] = useState(false)
   const [extendByMonths, setExtendByMonths] = useState('3')
+  const [extendMode, setExtendMode] = useState('months')
+  const [extendToDate, setExtendToDate] = useState('')
   const [extendNotice, setExtendNotice] = useState('')
 
   const loadLeaseDrafts = useCallback(async () => {
@@ -2020,6 +1981,13 @@ function LeasingPanel({ resident, payments, onOpenPayments }) {
     return list.some((p) => classifyResidentPaymentLine(p) === 'deposit' && residentPaymentLineStatus(p) === 'Paid')
   }, [payments])
 
+  const firstMonthUtilitiesPaid = useMemo(() => {
+    const list = Array.isArray(payments) ? payments : []
+    return list.some((p) => classifyResidentPaymentLine(p) === 'first_utilities' && residentPaymentLineStatus(p) === 'Paid')
+  }, [payments])
+
+  const canViewFullLease = securityDepositPaid && firstMonthRentPaid
+
   const activeLeaseDraft = useMemo(() => pickBestLeaseDraft(leaseDrafts), [leaseDrafts])
   const leaseStatus = activeLeaseDraft?.Status ? String(activeLeaseDraft.Status).trim() : ''
   const leaseBodyAllowed = leaseStatus === 'Published' || leaseStatus === 'Signed'
@@ -2030,26 +1998,28 @@ function LeasingPanel({ resident, payments, onOpenPayments }) {
     if (!activeLeaseDraft) return ''
     if (!leaseBodyAllowed) {
       return leaseStatus === 'Draft Generated'
-        ? 'Your lease is being drafted. Full terms will appear here once your manager publishes your lease.'
-        : 'Your lease is being reviewed internally. The full document will appear here once it is sent to you.'
+        ? 'Your lease is being drafted. Full terms will appear here once your manager publishes your lease'
+        : 'Your lease is being reviewed internally. The full document will appear here once it is sent to you'
     }
     return leaseContent || `Axis Resident Lease\n\nProperty: ${resident.House || '—'}\nUnit: ${resident['Unit Number'] || '—'}\nTerm: ${leaseTermLabel}\nMove-in: ${moveInLabel}\nMove-out: ${moveOutLabel}\nSecurity Deposit: ${depositPreviewLabel}\n\nPay security deposit and first month rent before signing.`
   }, [activeLeaseDraft, leaseBodyAllowed, leaseStatus, leaseContent, resident.House, resident['Unit Number'], leaseTermLabel, moveInLabel, moveOutLabel, depositPreviewLabel])
 
   function handleRequestExtension() {
-    setExtendNotice(`Extension request prepared for +${extendByMonths} month${extendByMonths === '1' ? '' : 's'}. Please send this in Inbox to your manager.`)
+    if (extendMode === 'date') {
+      if (!extendToDate) return
+      setExtendNotice(`Extension request prepared to ${extendToDate}. Please send this in Inbox to your manager.`)
+    } else {
+      const n = parseInt(extendByMonths, 10)
+      if (!n || n < 1) return
+      setExtendNotice(`Extension request prepared for +${n} month${n === 1 ? '' : 's'}. Please send this in Inbox to your manager.`)
+    }
   }
 
   return (
     <div className="mb-10">
       <div className="mb-5 flex flex-wrap items-center gap-3">
         <h2 className="mr-auto text-2xl font-black text-slate-900">Lease</h2>
-        <button
-          type="button"
-          onClick={() => loadLeaseDrafts()}
-          disabled={leaseLoading}
-          className="rounded-full border border-slate-200 bg-white px-5 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:opacity-50"
-        >
+        <button type="button" onClick={() => loadLeaseDrafts()} disabled={leaseLoading} className={RP_HEADER_BTN_SECONDARY}>
           {leaseLoading ? 'Refreshing…' : 'Refresh'}
         </button>
       </div>
@@ -2083,28 +2053,42 @@ function LeasingPanel({ resident, payments, onOpenPayments }) {
             ['Term', leaseTermLabel],
             ['Move-in', moveInLabel],
             ['Move-out', moveOutLabel],
-            ['Security deposit', depositPreviewLabel],
-            ['First month rent', firstMonthRentPaid ? 'Paid' : 'Unpaid'],
-            ['Security deposit payment', securityDepositPaid ? 'Paid' : 'Unpaid'],
           ].map(([label, value]) => (
-            <div key={label} className="grid gap-1 border-b border-slate-100 py-2.5 last:border-b-0 sm:grid-cols-[minmax(0,220px)_1fr] sm:gap-4">
+            <div key={label} className="grid gap-1 border-b border-slate-100 py-2.5 sm:grid-cols-[minmax(0,220px)_1fr] sm:gap-4">
               <dt className="text-xs font-semibold uppercase tracking-wide text-slate-500">{label}</dt>
               <dd className="text-sm text-slate-900">{value}</dd>
             </div>
           ))}
+          <div className="grid gap-1 border-b border-slate-100 py-2.5 sm:grid-cols-[minmax(0,220px)_1fr] sm:gap-4">
+            <dt className="text-xs font-semibold uppercase tracking-wide text-slate-500">Security deposit</dt>
+            <dd className="text-sm text-slate-900">
+              {depositPreviewLabel}{' '}
+              <span className={securityDepositPaid ? 'text-emerald-600 font-semibold' : 'text-red-500 font-semibold'}>
+                ({securityDepositPaid ? 'Paid' : 'Unpaid'})
+              </span>
+            </dd>
+          </div>
+          <div className="grid gap-1 border-b border-slate-100 py-2.5 sm:grid-cols-[minmax(0,220px)_1fr] sm:gap-4">
+            <dt className="text-xs font-semibold uppercase tracking-wide text-slate-500">First month rent</dt>
+            <dd className={classNames('text-sm font-semibold', firstMonthRentPaid ? 'text-emerald-600' : 'text-red-500')}>{firstMonthRentPaid ? 'Paid' : 'Unpaid'}</dd>
+          </div>
+          <div className="grid gap-1 border-b border-slate-100 py-2.5 last:border-b-0 sm:grid-cols-[minmax(0,220px)_1fr] sm:gap-4">
+            <dt className="text-xs font-semibold uppercase tracking-wide text-slate-500">First month utilities</dt>
+            <dd className={classNames('text-sm font-semibold', firstMonthUtilitiesPaid ? 'text-emerald-600' : 'text-red-500')}>{firstMonthUtilitiesPaid ? 'Paid' : 'Unpaid'}</dd>
+          </div>
         </dl>
 
         <div className="grid gap-3 sm:grid-cols-2">
           <div className={classNames('rounded-2xl border px-4 py-3 text-sm', securityDepositPaid ? 'border-emerald-200 bg-emerald-50 text-emerald-900' : 'border-amber-200 bg-amber-50 text-amber-900')}>
             <div className="font-semibold">Security deposit</div>
-            <div className="mt-1">{securityDepositPaid ? 'Paid' : 'Pay security deposit from Payments tab.'}</div>
+            <div className="mt-1">{securityDepositPaid ? 'Paid' : 'Pay security deposit from Payments tab'}</div>
             {!securityDepositPaid ? (
               <button type="button" onClick={() => onOpenPayments('deposit')} className="mt-2 text-xs font-semibold underline">Go to payments</button>
             ) : null}
           </div>
           <div className={classNames('rounded-2xl border px-4 py-3 text-sm', firstMonthRentPaid ? 'border-emerald-200 bg-emerald-50 text-emerald-900' : 'border-amber-200 bg-amber-50 text-amber-900')}>
             <div className="font-semibold">First month rent</div>
-            <div className="mt-1">{firstMonthRentPaid ? 'Paid' : 'Pay first month rent from Payments tab.'}</div>
+            <div className="mt-1">{firstMonthRentPaid ? 'Paid' : 'Pay first month rent from Payments tab'}</div>
             {!firstMonthRentPaid ? (
               <button type="button" onClick={() => onOpenPayments('rent')} className="mt-2 text-xs font-semibold underline">Go to payments</button>
             ) : null}
@@ -2112,21 +2096,45 @@ function LeasingPanel({ resident, payments, onOpenPayments }) {
         </div>
 
         <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-          <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Extend lease</div>
-          <div className="flex flex-wrap items-center gap-2">
-            <select
-              value={extendByMonths}
-              onChange={(e) => {
-                setExtendByMonths(e.target.value)
-                setExtendNotice('')
-              }}
-              className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 outline-none focus:border-[#2563eb] focus:ring-2 focus:ring-[#2563eb]/20"
+          <div className="mb-3 text-xs font-semibold uppercase tracking-wide text-slate-500">Request lease extension</div>
+          <div className="mb-3 flex gap-1 rounded-xl border border-slate-200 bg-white p-1 w-fit">
+            <button
+              type="button"
+              onClick={() => { setExtendMode('months'); setExtendNotice('') }}
+              className={classNames('rounded-lg px-3 py-1 text-xs font-semibold transition', extendMode === 'months' ? 'bg-slate-900 text-white' : 'text-slate-600 hover:bg-slate-100')}
             >
-              <option value="1">+1 month</option>
-              <option value="3">+3 months</option>
-              <option value="6">+6 months</option>
-              <option value="12">+12 months</option>
-            </select>
+              By months
+            </button>
+            <button
+              type="button"
+              onClick={() => { setExtendMode('date'); setExtendNotice('') }}
+              className={classNames('rounded-lg px-3 py-1 text-xs font-semibold transition', extendMode === 'date' ? 'bg-slate-900 text-white' : 'text-slate-600 hover:bg-slate-100')}
+            >
+              By date
+            </button>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            {extendMode === 'months' ? (
+              <>
+                <input
+                  type="number"
+                  min="1"
+                  max="60"
+                  value={extendByMonths}
+                  onChange={(e) => { setExtendByMonths(e.target.value); setExtendNotice('') }}
+                  className="w-24 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 outline-none focus:border-[#2563eb] focus:ring-2 focus:ring-[#2563eb]/20"
+                  placeholder="Months"
+                />
+                <span className="text-sm text-slate-500">month{extendByMonths === '1' ? '' : 's'}</span>
+              </>
+            ) : (
+              <input
+                type="date"
+                value={extendToDate}
+                onChange={(e) => { setExtendToDate(e.target.value); setExtendNotice('') }}
+                className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 outline-none focus:border-[#2563eb] focus:ring-2 focus:ring-[#2563eb]/20"
+              />
+            )}
             <button
               type="button"
               onClick={handleRequestExtension}
@@ -2139,10 +2147,16 @@ function LeasingPanel({ resident, payments, onOpenPayments }) {
         </div>
 
         <div>
+          {!canViewFullLease && !showLeaseText ? (
+            <p className="mb-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+              Pay security deposit and first month rent to view the full lease.
+            </p>
+          ) : null}
           <button
             type="button"
-            onClick={() => setShowLeaseText((v) => !v)}
-            className="rounded-full bg-slate-900 px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-slate-800"
+            onClick={() => { if (canViewFullLease) setShowLeaseText((v) => !v) }}
+            disabled={!canViewFullLease}
+            className={classNames('rounded-full px-5 py-2.5 text-sm font-semibold transition', canViewFullLease ? 'bg-slate-900 text-white hover:bg-slate-800' : 'cursor-not-allowed bg-slate-200 text-slate-400')}
           >
             {showLeaseText ? 'Hide full lease' : 'View full lease'}
           </button>
@@ -2214,7 +2228,7 @@ function ResidentDashboardHome({
     <div className="space-y-6">
       <div>
         <h2 className="text-2xl font-black uppercase tracking-[0.08em] text-slate-900">
-          {`Welcome ${firstName}`}
+          {`WELCOME ${firstName}`}
         </h2>
       </div>
 
@@ -2399,6 +2413,11 @@ function Dashboard({ resident, onResidentUpdated, onSignOut }) {
     }
   }, [resident])
 
+  const refreshWorkOrdersOnly = useCallback(async () => {
+    const nextRequests = await getWorkOrdersForResident(resident).catch(() => [])
+    setRequests(nextRequests)
+  }, [resident])
+
   useEffect(() => {
     loadData()
   }, [loadData])
@@ -2455,7 +2474,7 @@ function Dashboard({ resident, onResidentUpdated, onSignOut }) {
       activeId={tab}
       onNavigate={setTab}
       userLabel={resident.Name || 'Resident'}
-      userMeta={[homeLabel, resident.Email].filter(Boolean).join(' · ') || undefined}
+      userMeta={`Resident · ${resident.id}`}
       onSignOut={onSignOut}
     >
       <div className="mx-auto w-full max-w-[1600px]">
@@ -2485,6 +2504,7 @@ function Dashboard({ resident, onResidentUpdated, onSignOut }) {
                 requests={visibleWorkOrders}
                 onRequestCreated={loadData}
                 onWorkOrderUpdated={loadData}
+                onRefresh={refreshWorkOrdersOnly}
               />
             </PanelErrorBoundary>
           ) : (

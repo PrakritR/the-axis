@@ -847,6 +847,17 @@ export async function updatePaymentRecord(recordId, fields) {
   return mapRecord(data)
 }
 
+/** Create a Payments row (e.g. manager-posted fine). `fields` must match your Airtable Payments table. */
+export async function createPaymentRecord(fields) {
+  const cleaned = Object.fromEntries(Object.entries(fields || {}).filter(([, v]) => v !== undefined))
+  if (Object.keys(cleaned).length === 0) throw new Error('No fields to create payment.')
+  const data = await request(paymentsTableUrl(), {
+    method: 'POST',
+    body: JSON.stringify({ fields: cleaned, typecast: true }),
+  })
+  return mapRecord(data)
+}
+
 export async function getPropertyByName(propertyName) {
   if (!propertyName) return null
   try {

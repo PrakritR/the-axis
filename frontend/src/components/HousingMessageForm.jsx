@@ -105,7 +105,7 @@ function MessageSentSuccess({ email, onReset }) {
       </div>
       <div>
         <p className="text-lg font-black text-slate-900">Message sent!</p>
-        <p className="mt-1 text-sm text-slate-500">We&apos;ll follow up at {email} within 2 business days.</p>
+        <p className="mt-1 text-sm text-slate-500">We&apos;ll follow up at {email} within 2 business days</p>
       </div>
       <button type="button" onClick={onReset} className="mt-2 text-xs font-semibold text-axis hover:underline">
         Send another
@@ -187,7 +187,7 @@ export function PropertyRoomPicker({
           ))}
         </select>
         {sorted.length > 3 && displayProperties.length === 0 ? (
-          <p className="mt-2 text-sm text-slate-500">No properties match that search.</p>
+          <p className="mt-2 text-sm text-slate-500">No properties match that search</p>
         ) : null}
         {p ? (
           <p className="mt-2 text-xs font-medium text-[#2563eb]">
@@ -226,7 +226,8 @@ export function PropertyRoomPicker({
  */
 export function HousingMessageForm({ variant = 'marketing', prefill = null, formIdPrefix = 'housing-msg' }) {
   const location = useLocation()
-  const [properties, setProperties] = useState(DEFAULT_PROPERTIES)
+  const [properties, setProperties] = useState([])
+  const [propertiesLoading, setPropertiesLoading] = useState(true)
   const [property, setProperty] = useState(null)
   const [room, setRoom] = useState('')
   const [category, setCategory] = useState('')
@@ -255,17 +256,31 @@ export function HousingMessageForm({ variant = 'marketing', prefill = null, form
       .then((r) => r.json())
       .then((data) => {
         if (cancelled) return
-        const next = Array.isArray(data?.properties) && data.properties.length ? data.properties : DEFAULT_PROPERTIES
-        setProperties(
-          next.map((p) => ({
+        const normalize = (list) =>
+          list.map((p) => ({
             ...p,
             managerEmail: p.managerEmail != null ? String(p.managerEmail) : '',
-            rooms: p.rooms || DEFAULT_PROPERTIES.find((f) => f.id === p.id)?.rooms || [],
+            rooms: p.rooms?.length ? p.rooms : DEFAULT_PROPERTIES.find((f) => f.id === p.id)?.rooms || [],
           }))
-        )
+        if (Array.isArray(data?.properties)) {
+          setProperties(normalize(data.properties))
+          return
+        }
+        setProperties(normalize(DEFAULT_PROPERTIES))
       })
       .catch(() => {
-        if (!cancelled) setProperties(DEFAULT_PROPERTIES)
+        if (!cancelled) {
+          setProperties(
+            DEFAULT_PROPERTIES.map((p) => ({
+              ...p,
+              managerEmail: '',
+              rooms: p.rooms || [],
+            })),
+          )
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setPropertiesLoading(false)
       })
     return () => {
       cancelled = true
@@ -471,20 +486,26 @@ export function HousingMessageForm({ variant = 'marketing', prefill = null, form
         <p className="mb-4 text-sm text-slate-500">
           Optional. With many homes on file, search and pick from the list instead of scrolling long pages.
         </p>
-        <PropertyRoomPicker
-          idPrefix={formIdPrefix}
-          properties={properties}
-          selectedId={property}
-          onSelectProperty={setProperty}
-          room={room}
-          onSelectRoom={setRoom}
-          roomRequired={false}
-        />
+        {propertiesLoading ? (
+          <p className="text-sm text-slate-500">Loading properties…</p>
+        ) : properties.length === 0 ? (
+          <p className="text-sm text-slate-500">No live homes are listed yet. You can still send a message without choosing a property</p>
+        ) : (
+          <PropertyRoomPicker
+            idPrefix={formIdPrefix}
+            properties={properties}
+            selectedId={property}
+            onSelectProperty={setProperty}
+            room={room}
+            onSelectRoom={setRoom}
+            roomRequired={false}
+          />
+        )}
       </section>
 
       <section className="rounded-2xl border border-slate-200 bg-white p-5 sm:p-6">
         <h3 className="mb-1 text-lg font-bold tracking-tight text-slate-900">Your contact &amp; message</h3>
-        <p className="mb-4 text-sm text-slate-500">We will reply to the email you provide.</p>
+        <p className="mb-4 text-sm text-slate-500">We will reply to the email you provide</p>
         <div className="space-y-4">
           <div className="grid gap-4 sm:grid-cols-2">
             <div>

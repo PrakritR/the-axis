@@ -38,12 +38,12 @@ const neighborhoodItems = [
 ]
 
 const faqs = [
-  { q: 'What is included in the monthly rent?', a: 'All utilities (water, electricity, gas), high-speed WiFi, and bi-monthly professional cleaning of common areas are included. No surprise bills.' },
-  { q: 'Are rooms furnished?', a: 'Yes — all rooms come fully furnished and include a bed frame and mattress, desk, chair, and closet. Common areas include a sofa, and the kitchen is furnished as well.' },
-  { q: 'What lease terms are available?', a: 'Four options: 3-month, 9-month, 12-month, and month-to-month with an extra $25/month. Start and end dates are flexible so you can choose the window that works for you.' },
-  { q: 'Where are the homes located?', a: 'Axis lists housing in Seattle and shows each house location directly on the listing page so you can decide what works for you.' },
-  { q: 'How do I apply?', a: 'Click "Apply Now" and complete the online application. You\'ll need basic personal information, employment details, and references. We typically respond within 2 business days.' },
-  { q: 'Can I tour before applying?', a: 'Start with the online application. If you need a walkthrough first, email or call us from the contact page and we\'ll help schedule a time.' },
+  { q: 'What is included in the monthly rent?', a: 'All utilities (water, electricity, gas), high-speed WiFi, and bi-monthly professional cleaning of common areas are included. No surprise bills' },
+  { q: 'Are rooms furnished?', a: 'Yes — all rooms come fully furnished and include a bed frame and mattress, desk, chair, and closet. Common areas include a sofa, and the kitchen is furnished as well' },
+  { q: 'What lease terms are available?', a: 'Four options: 3-month, 9-month, 12-month, and month-to-month with an extra $25/month. Start and end dates are flexible so you can choose the window that works for you' },
+  { q: 'Where are the homes located?', a: 'Axis lists housing in Seattle and shows each house location directly on the listing page so you can decide what works for you' },
+  { q: 'How do I apply?', a: 'Click "Apply Now" and complete the online application. You\'ll need basic personal information, employment details, and references. We typically respond within 2 business days' },
+  { q: 'Can I tour before applying?', a: 'Start with the online application. If you need a walkthrough first, email or call us from the contact page and we\'ll help schedule a time' },
 ]
 
 // ── Eyebrow label ─────────────────────────────────────────────────────────────
@@ -403,8 +403,8 @@ function RoomFinder() {
             ) : results.length === 0 ? (
               <motion.div key="no-results" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.2 }}
                 className="mt-8 border-t border-slate-200 pt-8 text-center">
-                <p className="text-sm font-medium text-slate-500">No listings match those filters.</p>
-                <p className="mt-1 text-xs text-slate-400">Try adjusting your dates, raising your budget, or changing the bathroom type.</p>
+                <p className="text-sm font-medium text-slate-500">No listings match those filters</p>
+                <p className="mt-1 text-xs text-slate-400">Try adjusting your dates, raising your budget, or changing the bathroom type</p>
               </motion.div>
             ) : (
               <motion.div key={`${budgetInput}-${bath}-${moveInDate}-${moveOutDate}`} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}

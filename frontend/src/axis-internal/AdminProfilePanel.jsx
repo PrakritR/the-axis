@@ -5,7 +5,7 @@ import { readJsonResponse } from '../lib/readJsonResponse'
 /**
  * Manager-profile-themed admin account view with view / edit modes.
  */
-export default function AdminProfilePanel({ user, onUserUpdate, onSignOut }) {
+export default function AdminProfilePanel({ user, onUserUpdate }) {
   const [editing, setEditing] = useState(false)
   const [form, setForm] = useState({
     name: user?.name || '',
@@ -169,18 +169,6 @@ export default function AdminProfilePanel({ user, onUserUpdate, onSignOut }) {
             </div>
           </form>
         )}
-      </section>
-
-      <section className="rounded-[28px] border border-slate-200 bg-white p-6">
-        <h2 className="mt-2 text-xl font-black text-slate-900">Session</h2>
-        <p className="mt-2 text-sm text-slate-600">Sign out of the admin portal on this device.</p>
-        <button
-          type="button"
-          onClick={onSignOut}
-          className="mt-4 rounded-2xl border border-red-200 bg-red-50 px-5 py-2.5 text-sm font-semibold text-red-800 transition hover:bg-red-100"
-        >
-          Sign out
-        </button>
       </section>
     </div>
   )

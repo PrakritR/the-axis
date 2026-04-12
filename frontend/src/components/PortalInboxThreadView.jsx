@@ -43,7 +43,7 @@ export default function PortalInboxThreadView({
   bubbleOtherLabel = 'Axis',
   getIsOtherAdmin = (m) => Boolean(m['Is Admin']),
   mapMessageBody = (m) => m.Message,
-  emptyHint = 'No messages yet.',
+  emptyHint = 'No messages yet',
   children,
 }) {
   return (

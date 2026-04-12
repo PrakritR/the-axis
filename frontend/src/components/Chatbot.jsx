@@ -516,7 +516,7 @@ export default function Chatbot() {
           background: 'linear-gradient(135deg, #3b82f6 0%, #2563eb 100%)',
           color: 'white',
           boxShadow: '0 4px 20px rgba(37,99,235,0.35)',
-          bottom: 'calc(1.5rem + env(safe-area-inset-bottom))',
+          bottom: 'calc(2.75rem + env(safe-area-inset-bottom))',
           right: 'calc(1.5rem + env(safe-area-inset-right))',
         }}
       >
@@ -538,8 +538,8 @@ export default function Chatbot() {
         className="fixed z-50 flex flex-col rounded-2xl overflow-hidden transition-all duration-300 origin-bottom-right chatbot-panel"
         style={{
           width: 'min(380px, calc(100vw - 2rem))',
-          height: 'min(540px, calc(100dvh - env(safe-area-inset-top) - env(safe-area-inset-bottom) - 8rem))',
-          bottom: 'calc(6rem + env(safe-area-inset-bottom))',
+          height: 'min(540px, calc(100dvh - env(safe-area-inset-top) - env(safe-area-inset-bottom) - 9.5rem))',
+          bottom: 'calc(7.25rem + env(safe-area-inset-bottom))',
           right: 'calc(1.5rem + env(safe-area-inset-right))',
           background: 'white',
           boxShadow: '0 8px 40px rgba(15,23,42,0.18), 0 2px 8px rgba(15,23,42,0.08)',
@@ -574,13 +574,13 @@ export default function Chatbot() {
                 <ChatIcon />
               </div>
               <div>
-                <p className="font-semibold text-slate-800 text-sm mb-1" style={{ fontFamily: 'Manrope, sans-serif' }}>Hi! I&apos;m your Axis assistant.</p>
+                <p className="font-semibold text-slate-800 text-sm mb-1" style={{ fontFamily: 'Manrope, sans-serif' }}>Hi! I&apos;m your Axis assistant</p>
                 <p className="text-slate-500 text-xs leading-relaxed">
                   {location.pathname.startsWith('/apply')
-                    ? 'Ask me to walk through any part of the application — one step at a time.'
+                    ? 'Ask me to walk through any part of the application — one step at a time'
                     : location.pathname.startsWith('/manager')
-                      ? 'Ask about tours, calendar, applications, leases, work orders, or properties.'
-                      : 'Ask about housing, your portal, tours, or how to apply.'}
+                      ? 'Ask about tours, calendar, applications, leases, work orders, or properties'
+                      : 'Ask about housing, your portal, tours, or how to apply'}
                 </p>
               </div>
               <div className="flex flex-col gap-2 w-full">

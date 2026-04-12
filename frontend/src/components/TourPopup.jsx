@@ -8,7 +8,7 @@ function formatPhone(raw) {
   return `(${digits.slice(0, 3)}) ${digits.slice(3, 6)}-${digits.slice(6)}`
 }
 
-const PROPERTIES = [
+const FALLBACK_POPUP_PROPERTIES = [
   { id: '4709a', name: '4709A 8th Ave NE', address: '4709A 8th Ave NE, Seattle, WA', rooms: ['Room 1','Room 2','Room 3','Room 4','Room 5','Room 6','Room 7','Room 8','Room 9','Room 10'] },
   { id: '4709b', name: '4709B 8th Ave NE', address: '4709B 8th Ave NE, Seattle, WA', rooms: ['Room 1','Room 2','Room 3','Room 4','Room 5','Room 6','Room 7','Room 8','Room 9'] },
   { id: '5259',  name: '5259 Brooklyn Ave NE', address: '5259 Brooklyn Ave NE, Seattle, WA', rooms: ['Room 1','Room 2','Room 3','Room 4','Room 5','Room 6','Room 7','Room 8','Room 9'] },
@@ -32,9 +32,39 @@ export default function TourPopup() {
   const [submitting, setSubmitting] = useState(false)
   const [submitted, setSubmitted] = useState(false)
   const [submitError, setSubmitError] = useState('')
+  const [popupProperties, setPopupProperties] = useState([])
+  const [popupPropertiesLoading, setPopupPropertiesLoading] = useState(true)
 
   const onContactPage = location.pathname === '/contact'
-  const selectedProperty = PROPERTIES.find(p => p.id === propertyId)
+  const selectedProperty = popupProperties.find((p) => p.id === propertyId)
+
+  useEffect(() => {
+    let cancelled = false
+    fetch('/api/forms?action=tour')
+      .then((r) => r.json())
+      .then((data) => {
+        if (cancelled) return
+        const mergeRooms = (list) =>
+          list.map((p) => ({
+            ...p,
+            rooms: p.rooms?.length ? p.rooms : FALLBACK_POPUP_PROPERTIES.find((f) => f.id === p.id)?.rooms || [],
+          }))
+        if (Array.isArray(data?.properties)) {
+          setPopupProperties(mergeRooms(data.properties))
+          return
+        }
+        setPopupProperties(mergeRooms(FALLBACK_POPUP_PROPERTIES))
+      })
+      .catch(() => {
+        if (!cancelled) setPopupProperties(FALLBACK_POPUP_PROPERTIES)
+      })
+      .finally(() => {
+        if (!cancelled) setPopupPropertiesLoading(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [])
 
   function reset() {
     setStep(1); setTourType('in-person'); setPropertyId(null); setRoom('')
@@ -159,7 +189,7 @@ export default function TourPopup() {
             </div>
             <div>
               <p className="font-bold text-slate-900">Tour request sent!</p>
-              <p className="mt-1 text-xs text-slate-500">We'll reach out to confirm within 1 business day.</p>
+              <p className="mt-1 text-xs text-slate-500">We'll reach out to confirm within 1 business day</p>
             </div>
             <button onClick={() => { reset(); dismiss() }} className="mt-1 text-xs font-semibold text-[#2563eb] hover:underline">
               Close
@@ -188,19 +218,32 @@ export default function TourPopup() {
           <div>
             <h2 className="text-xl font-bold text-slate-900">Which property?</h2>
             <div className="mt-5 space-y-2.5">
-              {PROPERTIES.map(p => (
-                <button key={p.id} type="button"
-                  onClick={() => { setPropertyId(p.id); setRoom(''); setStep(3) }}
-                  className="group flex w-full items-center justify-between rounded-xl border border-slate-200 px-4 py-3.5 text-left transition-all hover:border-slate-900 hover:shadow-sm">
-                  <div>
-                    <div className="text-sm font-semibold text-slate-900">{p.name}</div>
-                    <div className="text-xs text-slate-400">{p.address}</div>
-                  </div>
-                  <svg className="h-4 w-4 text-slate-300 group-hover:text-slate-900" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
-                  </svg>
-                </button>
-              ))}
+              {popupPropertiesLoading ? (
+                <p className="text-sm text-slate-500">Loading properties…</p>
+              ) : popupProperties.length === 0 ? (
+                <p className="text-sm text-slate-500">No tour homes are available right now. Visit our contact page later or email us</p>
+              ) : (
+                popupProperties.map((p) => (
+                  <button
+                    key={p.id}
+                    type="button"
+                    onClick={() => {
+                      setPropertyId(p.id)
+                      setRoom('')
+                      setStep(3)
+                    }}
+                    className="group flex w-full items-center justify-between rounded-xl border border-slate-200 px-4 py-3.5 text-left transition-all hover:border-slate-900 hover:shadow-sm"
+                  >
+                    <div>
+                      <div className="text-sm font-semibold text-slate-900">{p.name}</div>
+                      <div className="text-xs text-slate-400">{p.address}</div>
+                    </div>
+                    <svg className="h-4 w-4 text-slate-300 group-hover:text-slate-900" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+                    </svg>
+                  </button>
+                ))
+              )}
             </div>
           </div>
         )}
@@ -211,7 +254,7 @@ export default function TourPopup() {
             <h2 className="text-xl font-bold text-slate-900">Which room?</h2>
             <p className="mt-1 text-xs text-slate-400">{selectedProperty.name}</p>
             <div className="mt-4 grid grid-cols-5 gap-2">
-              {selectedProperty.rooms.map(r => (
+              {(selectedProperty.rooms || []).map((r) => (
                 <button key={r} type="button"
                   onClick={() => setRoom(r)}
                   className={`rounded-lg border-2 py-2.5 text-sm font-semibold transition-all ${room === r ? 'border-slate-900 bg-slate-900 text-white' : 'border-slate-200 text-slate-600 hover:border-slate-400'}`}>
@@ -240,7 +283,7 @@ export default function TourPopup() {
         {!submitted && step === 4 && (
           <div>
             <h2 className="text-xl font-bold text-slate-900">Your details</h2>
-            <p className="mt-1 text-xs text-slate-400">We'll confirm your tour within 1 business day.</p>
+            <p className="mt-1 text-xs text-slate-400">We'll confirm your tour within 1 business day</p>
             <div className="mt-4 space-y-3">
               <div>
                 <label className="mb-1 block text-xs font-semibold text-slate-600">Name <span className="text-red-400">*</span></label>

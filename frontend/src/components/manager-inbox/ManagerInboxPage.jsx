@@ -1240,7 +1240,7 @@ export default function ManagerInboxPage({
                           </select>
                         </label>
                       ) : (
-                        <p className="text-xs text-slate-500">No manager accounts loaded.</p>
+                        <p className="text-xs text-slate-500">No manager accounts loaded</p>
                       )}
                     </div>
                   ) : null}
@@ -1267,7 +1267,7 @@ export default function ManagerInboxPage({
                           </select>
                         </label>
                       ) : (
-                        <p className="text-xs text-slate-500">No resident profiles found.</p>
+                        <p className="text-xs text-slate-500">No resident profiles found</p>
                       )}
                     </div>
                   ) : null}
@@ -1297,7 +1297,7 @@ export default function ManagerInboxPage({
                         <p className="text-xs text-slate-500">Loading residents…</p>
                       ) : (
                         <p className="text-xs text-slate-500">
-                          No residents found for your properties yet.
+                          No residents found for your properties yet
                         </p>
                       )}
                     </div>
@@ -1329,7 +1329,7 @@ export default function ManagerInboxPage({
                       ) : (
                         <p className="text-xs text-slate-500">
                           No admin contacts found. Add people with an email in your Admin Profile table (and ensure they are
-                          not disabled).
+                          not disabled)
                         </p>
                       )}
                     </div>
@@ -1376,7 +1376,7 @@ export default function ManagerInboxPage({
                   <p className="mt-1 text-sm text-slate-600">{inboxParticipantsLine(selectedThreadId, adminFullInbox)}</p>
                   {readingSubtitle ? <p className="mt-0.5 text-xs text-slate-400">{readingSubtitle}</p> : null}
                   {selectedInTrash ? (
-                    <p className="mt-2 text-xs font-medium text-amber-800">In trash — restore from the list or menu.</p>
+                    <p className="mt-2 text-xs font-medium text-amber-800">In trash — restore from the list or menu</p>
                   ) : null}
                 </div>
                 {selectedStateKey ? (

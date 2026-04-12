@@ -29,6 +29,8 @@ import {
   getAllWorkOrders,
   getAllPaymentsRecords,
   updatePaymentRecord,
+  createPaymentRecord,
+  getResidentById,
   AIRTABLE_PAYMENTS_BASE_ID,
   createRoomRecord,
   uploadPropertyImage,
@@ -466,6 +468,14 @@ function paymentResidentLabel(record) {
   ).trim() || 'Resident not set'
 }
 
+/** First linked Resident Profile record id from a Payments row, when present. */
+function paymentResidentRecordId(record) {
+  const raw = record?.Resident
+  if (!Array.isArray(raw) || raw.length === 0) return ''
+  const id = String(raw[0]).trim()
+  return /^rec[a-zA-Z0-9]{14,}$/.test(id) ? id : ''
+}
+
 function paymentRoomLabel(record) {
   return formatPaymentRoomTitle(record)
 }
@@ -861,6 +871,7 @@ function DayAvailabilityTimeline({ ranges, onRangesChange, disabled }) {
   function onTrackMouseDown(e) {
     if (disabled || e.button !== 0) return
     if (e.target.closest('[data-availability-block]')) return
+    e.preventDefault()
     setSelectedIdx(null)
     const start = minutesFromEvent(e.clientY)
     setDraft({ start, cur: start })
@@ -1108,7 +1119,7 @@ function TimeRangeList({ ranges, onChangeRange, onRemoveRange, disabled = false 
   if (!ranges.length) {
     return (
       <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 px-4 py-6 text-sm text-slate-500">
-        No hours set for this day.
+        No hours set for this day
       </div>
     )
   }
@@ -1284,7 +1295,7 @@ function AvailabilityCalendar({ view, anchorDate, selectedDateKey, onSelectDate,
               })}
               {!ranges.length && !dayBookings.length ? (
                 <div className="absolute inset-0 flex items-center justify-center px-6 text-center text-sm text-slate-500">
-                  No availability or scheduled items for this date yet.
+                  No availability or scheduled items for this date yet
                 </div>
               ) : null}
             </div>
@@ -1365,8 +1376,8 @@ function AvailabilityEditorPanel({
       {isManagerInternalPreview(manager) ? (
         <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950">
           {manager.__axisDeveloper
-            ? 'Developer preview: availability edits are disabled.'
-            : 'Internal preview: availability edits are disabled (no linked manager profile).'}
+            ? 'Developer preview: availability edits are disabled'
+            : 'Internal preview: availability edits are disabled (no linked manager profile)'}
         </div>
       ) : null}
 
@@ -1489,7 +1500,7 @@ function LetUsMeetModal({ open, initialDateKey, manager, onClose, onCreated }) {
       <div className="pr-8">
         <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-[#2563eb]">Let us meet</div>
         <h3 className="mt-2 text-2xl font-black text-slate-900">Quick schedule item</h3>
-        <p className="mt-2 text-sm text-slate-500">Create a one-off tour, meeting, work order visit, or issue reminder for this day.</p>
+        <p className="mt-2 text-sm text-slate-500">Create a one-off tour, meeting, work order visit, or issue reminder for this day</p>
       </div>
       <div className="mt-6 grid gap-4 sm:grid-cols-2">
         <div>
@@ -2449,18 +2460,18 @@ function HouseManagementPanel({ manager, onPropertiesChange }) {
   async function handleAddPropertySubmit(e) {
     e.preventDefault()
     if (isManagerInternalPreview(manager)) {
-      toast.error('Adding properties is disabled in preview mode.')
+      toast.error('Adding properties is disabled in preview mode')
       return
     }
     if (!addBasics.name.trim() || !addBasics.address.trim()) {
-      toast.error('Property name and address are required.')
+      toast.error('Property name and address are required')
       return
     }
     const rc = clampInt(addRoomCount, 1, MAX_ROOM_SLOTS)
     const bc = clampInt(addBathroomCount, 0, MAX_BATHROOM_SLOTS)
     const kc = clampInt(addKitchenCount, 0, MAX_KITCHEN_SLOTS)
     if (!addRooms.slice(0, rc).some((r) => String(r.name || '').trim())) {
-      toast.error('Give each room a name or number before submitting.')
+      toast.error('Give each room a name or number before submitting')
       return
     }
     setAddSaving(true)
@@ -2534,7 +2545,7 @@ function HouseManagementPanel({ manager, onPropertiesChange }) {
       setAddOpen(false)
     } catch (err) {
       console.error('[HouseManagementPanel] create property failed', err)
-      toast.error(err.message || 'Could not save property.')
+      toast.error(err.message || 'Could not save property')
     } finally {
       setAddSaving(false)
     }
@@ -2802,7 +2813,7 @@ function HouseManagementPanel({ manager, onPropertiesChange }) {
             <div className="pr-8">
               <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-[#2563eb]">New property</div>
               <h3 className="mt-2 text-2xl font-black text-slate-900">Add property</h3>
-              <p className="mt-2 text-sm text-slate-500">Submit details for review. It will appear in your list as pending until approved.</p>
+              <p className="mt-2 text-sm text-slate-500">Submit details for review. It will appear in your list as pending until approved</p>
             </div>
             <form onSubmit={handleAddPropertySubmit} className="mt-6 max-h-[min(78vh,720px)] space-y-8 overflow-y-auto pr-1">
 
@@ -3424,7 +3435,7 @@ function ManagerProfilePanel({ manager, onManagerUpdate }) {
   async function handleSaveProfile(event) {
     event.preventDefault()
     if (isManagerInternalPreview(manager)) {
-      toast.info('Profile save is disabled in preview mode.')
+      toast.info('Profile save is disabled in preview mode')
       return
     }
     setSaving(true)
@@ -3640,7 +3651,7 @@ function GenerateDraftModal({ manager, propertyOptions, onClose, onGenerated }) 
         <div className="flex items-start justify-between border-b border-slate-200 px-8 py-5">
           <div>
             <h2 className="text-xl font-black text-slate-900">Generate lease draft</h2>
-            <p className="mt-0.5 text-sm text-slate-500">Choose the resident and property details, then generate the first lease draft for review.</p>
+            <p className="mt-0.5 text-sm text-slate-500">Choose the resident and property details, then generate the first lease draft for review</p>
           </div>
           <button onClick={onClose} className="mt-0.5 rounded-xl p-2 text-slate-400 transition hover:bg-slate-100 hover:text-slate-700">
             <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -3910,8 +3921,8 @@ function ManagerDashboardHomePanel({
     <div className="space-y-6">
       {/* Header */}
       <div>
-        <h2 className="text-2xl font-black text-slate-900">
-          {firstName ? `Welcome, ${firstName}` : 'Dashboard'}
+        <h2 className="text-2xl font-black uppercase tracking-[0.08em] text-slate-900">
+          {firstName ? `WELCOME ${firstName}` : 'DASHBOARD'}
         </h2>
       </div>
 
@@ -4050,7 +4061,7 @@ function WorkOrdersTabPanel({ allowedPropertyNames }) {
       console.error('[WorkOrdersTabPanel] getAllWorkOrders failed', err)
       setList([])
       setListError('Unable to load work orders. Please try again.')
-      if (!isAirtablePermissionErrorMessage(err?.message)) toast.error('Unable to load work orders. Please try again.')
+      if (!isAirtablePermissionErrorMessage(err?.message)) toast.error('Unable to load work orders. Please try again')
     } finally {
       setListLoading(false)
     }
@@ -4275,7 +4286,7 @@ function WorkOrdersTabPanel({ allowedPropertyNames }) {
 
             <div className="rounded-[24px] border border-slate-200 bg-slate-50 px-5 py-4">
               <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">Issue details</div>
-              <p className="mt-2 whitespace-pre-wrap text-sm leading-7 text-slate-700">{safePortalText(record.Description, 'No description provided.')}</p>
+              <p className="mt-2 whitespace-pre-wrap text-sm leading-7 text-slate-700">{safePortalText(record.Description, 'No description provided')}</p>
             </div>
 
             <form onSubmit={handleSave} className="mt-5 space-y-4">
@@ -4324,7 +4335,8 @@ function ManagerPaymentsPanel({ allowedPropertyNames }) {
     () => new Set((allowedPropertyNames || []).map((n) => String(n).trim().toLowerCase()).filter(Boolean)),
     [allowedPropertyNames],
   )
-  const [rows, setRows] = useState([])
+  const [rentRows, setRentRows] = useState([])
+  const [allScopedRows, setAllScopedRows] = useState([])
   const [loading, setLoading] = useState(true)
   const [filter, setFilter] = useState('all')
   const [busy, setBusy] = useState({})
@@ -4332,27 +4344,37 @@ function ManagerPaymentsPanel({ allowedPropertyNames }) {
   const [selectedId, setSelectedId] = useState('')
   const [payPropertyFilter, setPayPropertyFilter] = useState('')
   const [payResidentFilter, setPayResidentFilter] = useState('')
+  const [fineTitle, setFineTitle] = useState('')
+  const [fineAmount, setFineAmount] = useState('')
+  const [fineDue, setFineDue] = useState('')
+  const [fineNotes, setFineNotes] = useState('')
+  const [fineSaving, setFineSaving] = useState(false)
 
   const load = useCallback(async () => {
     setLoading(true)
     setPaymentsLoadError('')
     try {
       const all = await getAllPaymentsRecords()
-      const scoped = scopeLower.size
-        ? all.filter((p) => paymentInScope(p, scopeLower) && isRentPaymentRecord(p))
-        : []
-      scoped.sort(
+      const scopedAll = scopeLower.size ? all.filter((p) => paymentInScope(p, scopeLower)) : []
+      const rentOnly = scopedAll.filter(isRentPaymentRecord)
+      rentOnly.sort(
         (a, b) =>
           new Date(b['Due Date'] || b.created_at || 0) - new Date(a['Due Date'] || a.created_at || 0),
       )
-      setRows(scoped)
+      const allSorted = [...scopedAll].sort(
+        (a, b) =>
+          new Date(b['Due Date'] || b.created_at || 0) - new Date(a['Due Date'] || a.created_at || 0),
+      )
+      setRentRows(rentOnly)
+      setAllScopedRows(allSorted)
     } catch (err) {
       console.error('[ManagerPaymentsPanel] getAllPaymentsRecords failed', err)
       setPaymentsLoadError('Unable to load payments. Please try again.')
-      setRows([])
+      setRentRows([])
+      setAllScopedRows([])
       const isPerm = isAirtablePermissionErrorMessage(err?.message)
       if (!isPerm) {
-        toast.error('Unable to load payments. Please try again.')
+        toast.error('Unable to load payments. Please try again')
       }
     } finally {
       setLoading(false)
@@ -4365,12 +4387,12 @@ function ManagerPaymentsPanel({ allowedPropertyNames }) {
 
   const paymentRows = useMemo(
     () => {
-      let filtered = rows
+      let filtered = rentRows
       if (payPropertyFilter) filtered = filtered.filter((p) => String(paymentPropertyLabel(p)).trim().toLowerCase() === payPropertyFilter)
       if (payResidentFilter) filtered = filtered.filter((p) => String(paymentResidentLabel(p)).trim().toLowerCase() === payResidentFilter)
       return filtered.map((row) => ({ ...row, __computedStatus: paymentComputedStatus(row) }))
     },
-    [rows, payPropertyFilter, payResidentFilter],
+    [rentRows, payPropertyFilter, payResidentFilter],
   )
 
   const totalCollected = useMemo(
@@ -4434,16 +4456,26 @@ function ManagerPaymentsPanel({ allowedPropertyNames }) {
 
   const residentDetailRows = useMemo(() => {
     if (!selectedRow) return []
+    const rid = paymentResidentRecordId(selectedRow)
+    if (rid) {
+      return allScopedRows
+        .filter((row) => paymentResidentRecordId(row) === rid)
+        .sort((a, b) => new Date(b['Due Date'] || b.created_at || 0) - new Date(a['Due Date'] || a.created_at || 0))
+    }
     const residentName = paymentResidentLabel(selectedRow)
-    return rows
+    return allScopedRows
       .filter((row) => paymentResidentLabel(row) === residentName)
       .sort((a, b) => new Date(b['Due Date'] || b.created_at || 0) - new Date(a['Due Date'] || a.created_at || 0))
-  }, [rows, selectedRow])
+  }, [allScopedRows, selectedRow])
 
   const extraChargeRows = useMemo(
     () => residentDetailRows.filter((row) => getPaymentKind(row) === 'fee'),
     [residentDetailRows],
   )
+
+  function findScopedPaymentById(id) {
+    return allScopedRows.find((row) => row.id === id) || rentRows.find((row) => row.id === id) || null
+  }
 
   async function markPaid(id) {
     setBusy((b) => ({ ...b, [id]: true }))
@@ -4451,7 +4483,7 @@ function ManagerPaymentsPanel({ allowedPropertyNames }) {
       await updatePaymentRecord(id, {
         Status: 'Paid',
         'Paid Date': new Date().toISOString().slice(0, 10),
-        'Amount Paid': paymentAmountDue(rows.find((row) => row.id === id) || {}),
+        'Amount Paid': paymentAmountDue(findScopedPaymentById(id) || {}),
         Balance: 0,
       })
       await load()
@@ -4464,6 +4496,59 @@ function ManagerPaymentsPanel({ allowedPropertyNames }) {
         delete n[id]
         return n
       })
+    }
+  }
+
+  async function submitFine(event) {
+    event.preventDefault()
+    if (!selectedRow) return
+    const residentId = paymentResidentRecordId(selectedRow)
+    if (!residentId) {
+      toast.error('This payment row has no linked resident. Link Resident on the payment in Airtable, then try again')
+      return
+    }
+    const amt = Number(String(fineAmount).replace(/[^0-9.]/g, ''))
+    if (!Number.isFinite(amt) || amt <= 0) {
+      toast.error('Enter a valid amount')
+      return
+    }
+    const title = fineTitle.trim() || 'Fine / extra charge'
+    setFineSaving(true)
+    try {
+      let propertyName = paymentPropertyLabel(selectedRow)
+      let roomNumber = String(selectedRow['Room Number'] ?? selectedRow.Room ?? selectedRow.Unit ?? selectedRow['Unit / Room'] ?? '').trim()
+      if (!propertyName || !roomNumber) {
+        const profile = await getResidentById(residentId).catch(() => null)
+        if (profile) {
+          if (!propertyName) propertyName = String(profile.House || '').trim()
+          if (!roomNumber) roomNumber = String(profile['Unit Number'] || '').trim()
+        }
+      }
+      const fields = {
+        Resident: [residentId],
+        Amount: amt,
+        Balance: amt,
+        Status: 'Unpaid',
+        Type: 'Fine',
+        Category: 'Fee',
+        Month: title,
+        Notes: fineNotes.trim() || undefined,
+        'Due Date': fineDue.trim() || undefined,
+        'Property Name': propertyName || undefined,
+        'Room Number': roomNumber || undefined,
+        'Resident Name': paymentResidentLabel(selectedRow) || undefined,
+      }
+      await createPaymentRecord(fields)
+      toast.success('Fine posted for this resident')
+      setFineTitle('')
+      setFineAmount('')
+      setFineDue('')
+      setFineNotes('')
+      await load()
+    } catch (err) {
+      toast.error(err.message || 'Could not create charge')
+    } finally {
+      setFineSaving(false)
     }
   }
 
@@ -4528,7 +4613,7 @@ function ManagerPaymentsPanel({ allowedPropertyNames }) {
         <div className="overflow-hidden rounded-[24px] border border-slate-200 bg-white">
           {loading ? (
             <div className="px-6 py-16 text-center text-sm text-slate-500">Loading payments…</div>
-          ) : rows.length === 0 ? (
+          ) : rentRows.length === 0 ? (
             <div className="px-6 py-16 text-center">
               <div className="mb-3 text-4xl" aria-hidden>💳</div>
               <div className="text-sm font-semibold text-slate-700">No rent charges to show</div>
@@ -4631,7 +4716,7 @@ function ManagerPaymentsPanel({ allowedPropertyNames }) {
             <div className="mt-5">
               <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">Fines & extra charges</div>
               {extraChargeRows.length === 0 ? (
-                <p className="mt-3 text-sm text-slate-500">No extra charges for this resident.</p>
+                <p className="mt-3 text-sm text-slate-500">No extra charges for this resident</p>
               ) : (
                 <div className="mt-3 space-y-3">
                   {extraChargeRows.map((row) => (
@@ -4651,6 +4736,60 @@ function ManagerPaymentsPanel({ allowedPropertyNames }) {
                 </div>
               )}
             </div>
+
+            <form onSubmit={submitFine} className="mt-6 rounded-[24px] border border-dashed border-slate-200 bg-slate-50/80 p-4">
+              <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">Add fine / extra charge</div>
+              <p className="mt-2 text-xs text-slate-500">
+                Creates an unpaid fee line linked to this resident. Residents see it on Payments → Fees and extras.
+              </p>
+              <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                <label className="block sm:col-span-2">
+                  <span className="mb-1 block text-xs font-semibold text-slate-600">Title</span>
+                  <input
+                    value={fineTitle}
+                    onChange={(e) => setFineTitle(e.target.value)}
+                    placeholder="e.g. Late fee, cleaning charge"
+                    className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-axis focus:ring-2 focus:ring-axis/20"
+                  />
+                </label>
+                <label className="block">
+                  <span className="mb-1 block text-xs font-semibold text-slate-600">Amount (USD)</span>
+                  <input
+                    value={fineAmount}
+                    onChange={(e) => setFineAmount(e.target.value)}
+                    inputMode="decimal"
+                    placeholder="0"
+                    className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-axis focus:ring-2 focus:ring-axis/20"
+                  />
+                </label>
+                <label className="block">
+                  <span className="mb-1 block text-xs font-semibold text-slate-600">Due date (optional)</span>
+                  <input
+                    type="date"
+                    value={fineDue}
+                    onChange={(e) => setFineDue(e.target.value)}
+                    className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-axis focus:ring-2 focus:ring-axis/20"
+                  />
+                </label>
+                <label className="block sm:col-span-2">
+                  <span className="mb-1 block text-xs font-semibold text-slate-600">Notes (optional)</span>
+                  <textarea
+                    value={fineNotes}
+                    onChange={(e) => setFineNotes(e.target.value)}
+                    rows={2}
+                    placeholder="Internal or resident-facing context"
+                    className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-axis focus:ring-2 focus:ring-axis/20"
+                  />
+                </label>
+              </div>
+              <button
+                type="submit"
+                disabled={fineSaving || !paymentResidentRecordId(selectedRow)}
+                className="mt-4 rounded-full bg-axis px-5 py-2.5 text-sm font-semibold text-white transition hover:brightness-105 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {fineSaving ? 'Saving…' : 'Create charge'}
+              </button>
+            </form>
           </PortalOpsCard>
         ) : null}
       </div>
@@ -4803,11 +4942,11 @@ function ApplicationsPanel({ allowedPropertyNames, manager }) {
         )
         if (Array.isArray(data.residentRecordsUpdated) && data.residentRecordsUpdated.length > 0) {
           toast.success(
-            (data.message || 'Application approved.') +
-              ` Resident portal access updated (${data.residentRecordsUpdated.length} profile${data.residentRecordsUpdated.length === 1 ? '' : 's'}).`,
+            (data.message || 'Application approved') +
+              ` Resident portal access updated (${data.residentRecordsUpdated.length} profile${data.residentRecordsUpdated.length === 1 ? '' : 's'})`,
           )
         } else {
-          toast.success(data.message || 'Application approved and lease draft generated.')
+          toast.success(data.message || 'Application approved and lease draft generated')
         }
       } else {
         const rf = applicationRejectedFieldName()
@@ -4820,7 +4959,7 @@ function ApplicationsPanel({ allowedPropertyNames, manager }) {
             return next
           }),
         )
-        toast.success('Application rejected.')
+        toast.success('Application rejected')
       }
     } catch (err) {
       toast.error('Could not update application: ' + err.message)
@@ -4909,20 +5048,19 @@ function ApplicationsPanel({ allowedPropertyNames, manager }) {
           <div className="px-6 py-16 text-center">
             <div className="mb-3 text-4xl" aria-hidden>⚠️</div>
             <div className="text-sm font-semibold text-slate-700">Could not load the list</div>
-            <p className="mt-1 text-sm text-slate-500">Check the message above and try Refresh.</p>
+            <p className="mt-1 text-sm text-slate-500">Check the message above and try Refresh</p>
           </div>
         ) : scopedRows.length === 0 ? (
           <div className="px-6 py-16 text-center">
             <div className="mb-3 text-4xl" aria-hidden>📋</div>
             <div className="text-sm font-semibold text-slate-700">No applications yet</div>
-            <p className="mt-1 text-sm text-slate-500">Applications you receive will appear here</p>
           </div>
         ) : filteredRows.length === 0 ? (
           <div className="px-6 py-16 text-center">
             <div className="mb-3 text-4xl" aria-hidden>🏠</div>
             <div className="text-sm font-semibold text-slate-700">No {statusFilter !== 'all' ? statusFilter + ' ' : ''}applications</div>
             <p className="mt-1 text-sm text-slate-500">
-              {statusFilter !== 'all' ? 'Try switching to a different filter tab.' : 'Choose "All your properties" or another house to see more.'}
+              {statusFilter !== 'all' ? 'Try switching to a different filter tab' : 'Choose "All your properties" or another house to see more'}
             </p>
           </div>
         ) : (
@@ -5166,7 +5304,7 @@ function CalendarTabPanel({ manager, allowedPropertyNames }) {
 
   async function handleSaveAvailability() {
     if (!selectedProperty) {
-      toast.error('Select a property first.')
+      toast.error('Select a property first')
       return
     }
     setAvailSaving(true)
@@ -5506,7 +5644,7 @@ function ManagerDashboard({ manager: managerProp, onOpenDraft, onSignOut, onMana
 
   async function handleBillingPortal() {
     if (isManagerInternalPreview(manager)) {
-      toast.error('Billing is not available in preview mode.')
+      toast.error('Billing is not available in preview mode')
       return
     }
     setBillingLoading(true)
@@ -5520,7 +5658,7 @@ function ManagerDashboard({ manager: managerProp, onOpenDraft, onSignOut, onMana
       if (!res.ok) throw new Error(data.error || 'Could not open billing portal.')
       window.location.href = data.url
     } catch (err) {
-      toast.error(err.message || 'Could not open billing portal.')
+      toast.error(err.message || 'Could not open billing portal')
       setBillingLoading(false)
     }
   }
@@ -5878,15 +6016,15 @@ function LeaseEditor({ draftId, manager, onBack }) {
           setDraft(await fetchLeaseDraft(draftId))
         }
         await refreshAudit()
-        toast.success('Lease sent to the resident for signature.')
+        toast.success('Lease sent to the resident for signature')
       } else if (sfRes.status === 501) {
         toast.success(
-          'Lease approved and published. Add SIGNFORGE_API_KEY to your server environment to email the lease for signature.',
+          'Lease approved and published. Add SIGNFORGE_API_KEY to your server environment to email the lease for signature',
         )
       } else {
         toast.error(
           sfData.error ||
-          'Lease is visible to the resident, but the signing email did not go out. Use "Resend signing link" to retry.',
+          'Lease is visible to the resident, but the signing email did not go out. Use "Resend signing link" to retry',
         )
       }
     } catch (err) {
@@ -5941,7 +6079,7 @@ function LeaseEditor({ draftId, manager, onBack }) {
       if (!res.ok) throw new Error(data.error || 'SignForge send failed')
       if (data.draft) setDraft(data.draft)
       await refreshAudit()
-      toast.success('Lease sent via SignForge — the resident receives a signing link by email.')
+      toast.success('Lease sent via SignForge — the resident receives a signing link by email')
     } catch (err) {
       toast.error(err.message || 'SignForge send failed')
     } finally {
@@ -6161,7 +6299,7 @@ function LeaseEditor({ draftId, manager, onBack }) {
               </div>
               <div className="h-[calc(100vh-310px)] min-h-[480px] overflow-y-auto p-6">
                 <pre className="whitespace-pre-wrap font-mono text-sm leading-7 text-slate-800">
-                  {draft?.['AI Draft Content'] || 'No AI draft content stored.'}
+                  {draft?.['AI Draft Content'] || 'No AI draft content stored'}
                 </pre>
               </div>
             </div>
@@ -6177,7 +6315,7 @@ function LeaseEditor({ draftId, manager, onBack }) {
                 </p>
               </div>
               {auditLog.length === 0 ? (
-                <div className="px-6 py-10 text-center text-sm text-slate-500">No audit entries recorded yet.</div>
+                <div className="px-6 py-10 text-center text-sm text-slate-500">No audit entries recorded yet</div>
               ) : (
                 <div className="divide-y divide-slate-100">
                   {auditLog.map(entry => (
@@ -6251,7 +6389,7 @@ function LeaseEditor({ draftId, manager, onBack }) {
           {/* Internal notes */}
           <div className="rounded-[24px] border border-slate-200 bg-white p-5">
             <div className="mb-1 text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">Internal Notes</div>
-            <p className="mb-3 text-xs text-slate-500">Visible to managers only — not shown to residents.</p>
+            <p className="mb-3 text-xs text-slate-500">Visible to managers only — not shown to residents</p>
             <textarea
               value={managerNotes}
               onChange={e => setManagerNotes(e.target.value)}
