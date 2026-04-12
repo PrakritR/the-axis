@@ -49,6 +49,13 @@ import {
 import PortalShell from '../components/PortalShell'
 import Modal from '../components/Modal'
 import { ApplicationDetailPanel, applicationViewModelFromAirtableRow } from '../lib/applicationDetailPanel.jsx'
+import {
+  PortalOpsCard,
+  PortalOpsEmptyState,
+  PortalOpsFilterPills,
+  PortalOpsMetric,
+  PortalOpsStatusBadge,
+} from '../components/PortalOpsUI'
 
 // ─── Session ──────────────────────────────────────────────────────────────────
 export const MANAGER_SESSION_KEY = 'axis_manager'
