@@ -480,106 +480,65 @@ export default function AdminPortal() {
           ) : null}
 
           {/* Metrics grid */}
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
             {/* Properties pending */}
             <button
               type="button"
               onClick={() => { setTab('properties'); setPropertiesSection('pending') }}
-              className="group flex flex-col gap-1 rounded-[20px] border border-amber-200 bg-amber-50 p-5 text-left transition hover:border-amber-300 hover:shadow-sm"
+              className="flex flex-col gap-1 rounded-[20px] border border-amber-200 bg-amber-50 p-5 text-left transition hover:border-amber-300 hover:shadow-sm"
             >
-              <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-amber-600">Properties</span>
+              <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-amber-600">Properties · Pending</span>
               <span className="text-3xl font-black tabular-nums text-amber-700">{pendingApprovals.length}</span>
-              <span className="text-sm font-semibold text-amber-800">Pending review</span>
-              <span className="mt-1 text-xs text-amber-600 opacity-0 transition group-hover:opacity-100">View queue →</span>
             </button>
 
             {/* Properties approved */}
             <button
               type="button"
               onClick={() => { setTab('properties'); setPropertiesSection('approved') }}
-              className="group flex flex-col gap-1 rounded-[20px] border border-emerald-200 bg-emerald-50 p-5 text-left transition hover:border-emerald-300 hover:shadow-sm"
+              className="flex flex-col gap-1 rounded-[20px] border border-emerald-200 bg-emerald-50 p-5 text-left transition hover:border-emerald-300 hover:shadow-sm"
             >
-              <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-emerald-600">Properties</span>
+              <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-emerald-600">Properties · Approved</span>
               <span className="text-3xl font-black tabular-nums text-emerald-700">{approvedProperties.length}</span>
-              <span className="text-sm font-semibold text-emerald-800">Approved / live</span>
-              <span className="mt-1 text-xs text-emerald-600 opacity-0 transition group-hover:opacity-100">View all →</span>
-            </button>
-
-            {/* Properties total */}
-            <button
-              type="button"
-              onClick={() => setTab('properties')}
-              className="group flex flex-col gap-1 rounded-[20px] border border-slate-200 bg-white p-5 text-left shadow-sm transition hover:border-slate-300 hover:shadow"
-            >
-              <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-slate-400">Properties</span>
-              <span className="text-3xl font-black tabular-nums text-slate-800">{properties.length}</span>
-              <span className="text-sm font-semibold text-slate-600">Total</span>
-              <span className="mt-1 text-xs text-slate-400 opacity-0 transition group-hover:opacity-100">View all →</span>
             </button>
 
             {/* Applications pending */}
             <button
               type="button"
               onClick={() => { setTab('applications'); setApplicationsFilter('pending') }}
-              className="group flex flex-col gap-1 rounded-[20px] border border-violet-200 bg-violet-50 p-5 text-left transition hover:border-violet-300 hover:shadow-sm"
+              className="flex flex-col gap-1 rounded-[20px] border border-violet-200 bg-violet-50 p-5 text-left transition hover:border-violet-300 hover:shadow-sm"
             >
-              <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-violet-600">Applications</span>
+              <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-violet-600">Applications · Pending</span>
               <span className="text-3xl font-black tabular-nums text-violet-700">{pendingApps}</span>
-              <span className="text-sm font-semibold text-violet-800">Pending review</span>
-              <span className="mt-1 text-xs text-violet-600 opacity-0 transition group-hover:opacity-100">Review →</span>
             </button>
 
-            {/* Applications total */}
+            {/* Applications approved */}
             <button
               type="button"
-              onClick={() => { setTab('applications'); setApplicationsFilter('all') }}
-              className="group flex flex-col gap-1 rounded-[20px] border border-slate-200 bg-white p-5 text-left shadow-sm transition hover:border-slate-300 hover:shadow"
+              onClick={() => { setTab('applications'); setApplicationsFilter('approved') }}
+              className="flex flex-col gap-1 rounded-[20px] border border-emerald-200 bg-emerald-50 p-5 text-left transition hover:border-emerald-300 hover:shadow-sm"
             >
-              <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-slate-400">Applications</span>
-              <span className="text-3xl font-black tabular-nums text-slate-800">{applications.length}</span>
-              <span className="text-sm font-semibold text-slate-600">Total</span>
-              <span className="mt-1 text-xs text-slate-400 opacity-0 transition group-hover:opacity-100">View all →</span>
+              <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-emerald-600">Applications · Approved</span>
+              <span className="text-3xl font-black tabular-nums text-emerald-700">{applications.filter((a) => !a.approvalPending && a._airtable?.Approved === true).length}</span>
             </button>
 
-            {/* Managers */}
+            {/* Active managers */}
             <button
               type="button"
               onClick={() => setTab('accounts')}
-              className="group flex flex-col gap-1 rounded-[20px] border border-blue-200 bg-blue-50 p-5 text-left transition hover:border-blue-300 hover:shadow-sm"
+              className="flex flex-col gap-1 rounded-[20px] border border-blue-200 bg-blue-50 p-5 text-left transition hover:border-blue-300 hover:shadow-sm"
             >
-              <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-blue-600">Team</span>
+              <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-blue-600">Managers · Active</span>
               <span className="text-3xl font-black tabular-nums text-blue-700">{accounts.filter((a) => a.enabled).length}</span>
-              <span className="text-sm font-semibold text-blue-800">
-                Active managers
-                {accounts.length > 0 ? (
-                  <span className="ml-1.5 font-normal text-blue-600">of {accounts.length}</span>
-                ) : null}
-              </span>
-              <span className="mt-1 text-xs text-blue-600 opacity-0 transition group-hover:opacity-100">Manage →</span>
             </button>
 
             {/* Residents */}
             <button
               type="button"
               onClick={() => setTab('messages')}
-              className="group flex flex-col gap-1 rounded-[20px] border border-slate-200 bg-white p-5 text-left shadow-sm transition hover:border-slate-300 hover:shadow"
+              className="flex flex-col gap-1 rounded-[20px] border border-slate-200 bg-white p-5 text-left shadow-sm transition hover:border-slate-300 hover:shadow"
             >
               <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-slate-400">Residents</span>
               <span className="text-3xl font-black tabular-nums text-slate-800">{residents.length}</span>
-              <span className="text-sm font-semibold text-slate-600">In system</span>
-              <span className="mt-1 text-xs text-slate-400 opacity-0 transition group-hover:opacity-100">Open inbox →</span>
-            </button>
-
-            {/* Inbox quick link */}
-            <button
-              type="button"
-              onClick={() => setTab('messages')}
-              className="group flex flex-col gap-1 rounded-[20px] border border-slate-200 bg-white p-5 text-left shadow-sm transition hover:border-slate-300 hover:shadow"
-            >
-              <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-slate-400">Messages</span>
-              <span className="text-3xl font-black text-slate-800">Inbox</span>
-              <span className="text-sm font-semibold text-slate-600">View all conversations</span>
-              <span className="mt-1 text-xs text-slate-400 opacity-0 transition group-hover:opacity-100">Open →</span>
             </button>
           </div>
 
