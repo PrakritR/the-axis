@@ -4780,6 +4780,7 @@ function ApplicationsPanel({ allowedPropertyNames, manager }) {
   const [scopedRows, setScopedRows] = useState([])
   const [loading, setLoading] = useState(true)
   const [propertyFilter, setPropertyFilter] = useState('')
+  const [applicantSearch, setApplicantSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState('all')
   const [sortKey, setSortKey] = useState('submitted')
   const [sortDir, setSortDir] = useState('desc')
@@ -4806,9 +4807,12 @@ function ApplicationsPanel({ allowedPropertyNames, manager }) {
   useEffect(() => { load() }, [load])
 
   const propertyFilteredRows = useMemo(() => {
-    if (!propertyFilter.trim()) return scopedRows
-    return scopedRows.filter((a) => String(a['Property Name'] || '').trim() === propertyFilter.trim())
-  }, [scopedRows, propertyFilter])
+    let rows = scopedRows
+    if (propertyFilter.trim()) rows = rows.filter((a) => String(a['Property Name'] || '').trim() === propertyFilter.trim())
+    const q = applicantSearch.trim().toLowerCase()
+    if (q) rows = rows.filter((a) => `${a['Signer Full Name'] || ''} ${a['First Name'] || ''} ${a['Last Name'] || ''} ${a['Email'] || ''} ${a['Property Name'] || ''}`.toLowerCase().includes(q))
+    return rows
+  }, [scopedRows, propertyFilter, applicantSearch])
 
   const filteredRows = useMemo(() => {
     if (statusFilter === 'pending') return propertyFilteredRows.filter((a) => deriveApplicationApprovalState(a) === 'pending')
@@ -4899,6 +4903,10 @@ function ApplicationsPanel({ allowedPropertyNames, manager }) {
     <div className="mb-10">
       <div className="mb-5 flex flex-wrap items-center gap-3">
         <h2 className="mr-auto text-2xl font-black text-slate-900">Applications</h2>
+        <div className="relative">
+          <svg className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
+          <input value={applicantSearch} onChange={(e) => setApplicantSearch(e.target.value)} placeholder="Search applicants…" className="rounded-2xl border border-slate-200 bg-white py-2.5 pl-10 pr-4 text-sm transition focus:border-[#2563eb] focus:outline-none focus:ring-2 focus:ring-[#2563eb]/20" />
+        </div>
         <select
           value={propertyFilter}
           onChange={e => setPropertyFilter(e.target.value)}

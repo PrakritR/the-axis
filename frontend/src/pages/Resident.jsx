@@ -708,6 +708,7 @@ function WorkOrderNotesComposer({ workOrder, residentEmail, onUpdated, embedded 
 function WorkOrdersPanel({ resident, requests: requestsProp, onRequestCreated, onWorkOrderUpdated }) {
   const requests = Array.isArray(requestsProp) ? requestsProp : []
   const [woFilter, setWoFilter] = useState('all')
+  const [woSearch, setWoSearch] = useState('')
   const [showForm, setShowForm] = useState(false)
   const [selectedId, setSelectedId] = useState(null)
   const [form, setForm] = useState({
@@ -731,9 +732,11 @@ function WorkOrdersPanel({ resident, requests: requestsProp, onRequestCreated, o
   }, [requests])
 
   const filteredRequests = useMemo(() => {
-    if (woFilter === 'all') return requests
-    return requests.filter((r) => residentWorkOrderFilterBucket(r) === woFilter)
-  }, [requests, woFilter])
+    let rows = woFilter === 'all' ? requests : requests.filter((r) => residentWorkOrderFilterBucket(r) === woFilter)
+    const q = woSearch.trim().toLowerCase()
+    if (q) rows = rows.filter((r) => `${r.Title || ''} ${r.Description || ''}`.toLowerCase().includes(q))
+    return rows
+  }, [requests, woFilter, woSearch])
 
   useEffect(() => {
     if (filteredRequests.length === 0) {
@@ -787,6 +790,10 @@ function WorkOrdersPanel({ resident, requests: requestsProp, onRequestCreated, o
     <div className="mb-10">
       <div className="mb-5 flex flex-wrap items-center gap-3">
         <h2 className="mr-auto text-2xl font-black text-slate-900">Work Orders</h2>
+        <div className="relative">
+          <svg className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
+          <input value={woSearch} onChange={(e) => setWoSearch(e.target.value)} placeholder="Search orders…" className="rounded-2xl border border-slate-200 bg-white py-2.5 pl-10 pr-4 text-sm transition focus:border-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-900/10" />
+        </div>
         <button
           type="button"
           onClick={() => {

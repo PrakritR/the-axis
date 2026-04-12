@@ -312,6 +312,9 @@ export default function AdminPortal() {
   const [managerTableSort, setManagerTableSort] = useState('house_asc')
   const [applicationsTableSort, setApplicationsTableSort] = useState('house_asc')
   const [unreadThreadCount, setUnreadThreadCount] = useState(0)
+  const [propertiesSearch, setPropertiesSearch] = useState('')
+  const [managersSearch, setManagersSearch] = useState('')
+  const [applicationsSearch, setApplicationsSearch] = useState('')
   const airtableConfigWarned = useRef(false)
 
   const user = session
@@ -436,6 +439,32 @@ export default function AdminPortal() {
     if (applicationsFilter === 'rejected') return sortedApplications.filter((a) => a.approvalState === 'rejected')
     return sortedApplications
   }, [sortedApplications, applicationsFilter])
+
+  const searchedPendingApprovals = useMemo(() => {
+    const q = propertiesSearch.trim().toLowerCase()
+    if (!q) return pendingApprovals
+    return pendingApprovals.filter((p) => `${p.name} ${p.address}`.toLowerCase().includes(q))
+  }, [pendingApprovals, propertiesSearch])
+  const searchedApprovedProperties = useMemo(() => {
+    const q = propertiesSearch.trim().toLowerCase()
+    if (!q) return approvedProperties
+    return approvedProperties.filter((p) => `${p.name} ${p.address}`.toLowerCase().includes(q))
+  }, [approvedProperties, propertiesSearch])
+  const searchedRejectedProperties = useMemo(() => {
+    const q = propertiesSearch.trim().toLowerCase()
+    if (!q) return rejectedProperties
+    return rejectedProperties.filter((p) => `${p.name} ${p.address}`.toLowerCase().includes(q))
+  }, [rejectedProperties, propertiesSearch])
+  const searchedAccounts = useMemo(() => {
+    const q = managersSearch.trim().toLowerCase()
+    if (!q) return filteredAccounts
+    return filteredAccounts.filter((a) => `${a.businessName || ''} ${a.name || ''} ${a.email || ''} ${a.managedHousesLabel || ''}`.toLowerCase().includes(q))
+  }, [filteredAccounts, managersSearch])
+  const searchedApplications = useMemo(() => {
+    const q = applicationsSearch.trim().toLowerCase()
+    if (!q) return filteredApplications
+    return filteredApplications.filter((a) => `${a.propertyName || ''} ${a.applicantName || ''}`.toLowerCase().includes(q))
+  }, [filteredApplications, applicationsSearch])
 
   const ownerLabel = (ownerId) => accounts.find((a) => a.id === ownerId)?.businessName || accounts.find((a) => a.id === ownerId)?.name || ownerId
 
@@ -611,7 +640,13 @@ export default function AdminPortal() {
       {tab === 'properties' && (
         <div className="space-y-6">
           <div>
-            <h1 className="mb-4 text-2xl font-black text-slate-900">Properties</h1>
+            <div className="mb-4 flex flex-wrap items-center gap-3">
+              <h1 className="mr-auto text-2xl font-black text-slate-900">Properties</h1>
+              <div className="relative">
+                <svg className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
+                <input value={propertiesSearch} onChange={(e) => setPropertiesSearch(e.target.value)} placeholder="Search properties…" className="rounded-2xl border border-slate-200 bg-white py-2.5 pl-10 pr-4 text-sm transition focus:border-[#2563eb] focus:outline-none focus:ring-2 focus:ring-[#2563eb]/20" />
+              </div>
+            </div>
             <div className="inline-flex flex-wrap gap-1 rounded-2xl border border-slate-200 bg-slate-50 p-1">
               {[['pending', 'Pending', pendingApprovals.length], ['approved', 'Approved', approvedProperties.length], ['rejected', 'Rejected', rejectedProperties.length]].map(([key, label, count]) => (
                 <button
@@ -644,7 +679,7 @@ export default function AdminPortal() {
                     <button type="button" className="text-sm font-semibold text-[#2563eb]" onClick={() => setSelectedApprovalId(d.id)}>Review</button>
                   ) },
                 ]}
-                rows={pendingApprovals.map((p) => ({ key: p.id, data: p }))}
+                rows={searchedPendingApprovals.map((p) => ({ key: p.id, data: p }))}
               />
               {approval ? (
                 <div className="rounded-[24px] border border-slate-200 bg-white p-6 shadow-sm space-y-4">
@@ -739,7 +774,7 @@ export default function AdminPortal() {
                     </button>
                   ) },
                 ]}
-                rows={approvedProperties.map((p) => ({ key: p.id, data: p }))}
+                rows={searchedApprovedProperties.map((p) => ({ key: p.id, data: p }))}
               />
               {approval && propertiesSection === 'approved' ? (
                 <div className="rounded-[24px] border border-slate-200 bg-white p-6 shadow-sm space-y-4">
@@ -767,7 +802,7 @@ export default function AdminPortal() {
                     </button>
                   ) },
                 ]}
-                rows={rejectedProperties.map((p) => ({ key: p.id, data: p }))}
+                rows={searchedRejectedProperties.map((p) => ({ key: p.id, data: p }))}
               />
               {approval && propertiesSection === 'rejected' ? (
                 <div className="rounded-[24px] border border-slate-200 bg-white p-6 shadow-sm space-y-4">
@@ -792,6 +827,10 @@ export default function AdminPortal() {
               <div>
                 <div className="mb-4 flex flex-wrap items-center gap-3">
                   <h1 className="mr-auto text-2xl font-black">Managers</h1>
+                  <div className="relative">
+                    <svg className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
+                    <input value={managersSearch} onChange={(e) => setManagersSearch(e.target.value)} placeholder="Search managers…" className="rounded-2xl border border-slate-200 bg-white py-2.5 pl-10 pr-4 text-sm transition focus:border-[#2563eb] focus:outline-none focus:ring-2 focus:ring-[#2563eb]/20" />
+                  </div>
                   <label className="flex flex-wrap items-center gap-2 text-sm text-slate-600">
                     <span className="font-semibold text-slate-800">Sort by</span>
                     <select
@@ -840,7 +879,7 @@ export default function AdminPortal() {
                     </button>
                   ) },
                 ]}
-                rows={filteredAccounts.map((a) => ({ key: a.id, data: a }))}
+                rows={searchedAccounts.map((a) => ({ key: a.id, data: a }))}
               />
               {selectedManagerAccount ? (
                 <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
@@ -916,6 +955,10 @@ export default function AdminPortal() {
           <div>
             <div className="mb-4 flex flex-wrap items-center gap-3">
               <h1 className="mr-auto text-2xl font-black">Applications</h1>
+              <div className="relative">
+                <svg className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
+                <input value={applicationsSearch} onChange={(e) => setApplicationsSearch(e.target.value)} placeholder="Search applications…" className="rounded-2xl border border-slate-200 bg-white py-2.5 pl-10 pr-4 text-sm transition focus:border-[#2563eb] focus:outline-none focus:ring-2 focus:ring-[#2563eb]/20" />
+              </div>
               <label className="flex flex-wrap items-center gap-2 text-sm text-slate-600">
                 <span className="font-semibold text-slate-800">Sort</span>
                 <select
@@ -968,7 +1011,7 @@ export default function AdminPortal() {
                 ),
               },
             ]}
-            rows={filteredApplications.map((a) => ({ key: a.id, data: a }))}
+            rows={searchedApplications.map((a) => ({ key: a.id, data: a }))}
           />
           {selectedApplication ? (
             <ApplicationDetailPanel
