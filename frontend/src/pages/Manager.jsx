@@ -2574,15 +2574,6 @@ function HouseManagementPanel({ manager, onPropertiesChange }) {
         ) : approvedAssigned.length === 0 && pendingAssigned.length === 0 ? (
           <div className="mt-5 rounded-2xl border border-dashed border-slate-200 bg-slate-50/80 px-6 py-10 text-center">
             <p className="text-sm font-semibold text-slate-800">No properties on your account yet</p>
-            <p className="mt-2 text-sm text-slate-500">Add a listing to submit it for review. You’ll see it here with a &quot;Pending review&quot; label until it’s approved.</p>
-            <button
-              type="button"
-              onClick={() => setAddOpen(true)}
-              disabled={isManagerInternalPreview(manager)}
-              className="mt-5 rounded-2xl bg-[#2563eb] px-5 py-2.5 text-sm font-semibold text-white transition hover:brightness-110 disabled:opacity-40"
-            >
-              + Add property
-            </button>
           </div>
         ) : (
           <div className="mt-5 space-y-3">
