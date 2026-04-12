@@ -29,6 +29,19 @@ export function threadBodyPreviewFromMessage(m) {
 }
 
 /**
+ * Build a lower-case search haystack from all message bodies + metadata for a thread.
+ */
+export function threadSearchHaystack(messages, subjectFieldName, participantLabel, subjectLine) {
+  const parts = [participantLabel || '', subjectLine || '']
+  for (const m of messages || []) {
+    parts.push(String(m.Message || ''))
+    if (subjectFieldName) parts.push(String(m[subjectFieldName] || ''))
+    parts.push(String(m['Sender Email'] || ''), String(m['Sender Name'] || ''))
+  }
+  return parts.join(' ').toLowerCase()
+}
+
+/**
  * If the Messages table has no Subject field, prepend a subject line so it is still visible in body.
  */
 export function mergeSubjectIntoMessageIfNeeded(message, subject, subjectFieldConfigured) {
