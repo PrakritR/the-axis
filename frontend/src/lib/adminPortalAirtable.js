@@ -164,6 +164,7 @@ function propertyAdminStatus(raw) {
 
   const a = String(raw['Approval Status'] || '').trim().toLowerCase()
   const s = String(raw.Status || '').trim().toLowerCase()
+  if (a === 'unlisted' || a === 'inactive' || s === 'unlisted' || s === 'inactive') return 'unlisted'
   if (a === 'rejected' || s === 'rejected') return 'rejected'
   if (
     a === 'changes requested' ||
@@ -358,12 +359,18 @@ export async function adminRequestPropertyEdits(recordId) {
 
 /** Hide from marketing while keeping the row (requires `Listed` checkbox on Properties, or use Axis Admin Listing Status in Airtable). */
 export async function adminUnlistProperty(recordId) {
-  return adminPatchProperty(recordId, { Listed: false })
+  return adminPatchProperty(recordId, {
+    Listed: false,
+    'Approval Status': 'Unlisted',
+  })
 }
 
 /** Show on marketing again after unlist. */
 export async function adminRelistProperty(recordId) {
-  return adminPatchProperty(recordId, { Listed: true })
+  return adminPatchProperty(recordId, {
+    Listed: true,
+    'Approval Status': 'Approved',
+  })
 }
 
 export async function adminDeleteProperty(recordId) {
