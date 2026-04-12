@@ -1104,7 +1104,7 @@ export default function Apply() {
   const totalSteps = steps.length
   const isLastStep = step === totalSteps - 1
 
-  const [propertyOptions, setPropertyOptions] = useState(MARKETING_PROPERTY_OPTIONS)
+  const [propertyOptions, setPropertyOptions] = useState([])
 
   const selectedProperty = useMemo(
     () => propertyOptions.find((property) => property.name === signer.propertyName),
@@ -1140,7 +1140,7 @@ export default function Apply() {
           })
           .filter(Boolean)
           .sort((a, b) => a.name.localeCompare(b.name))
-        if (liveOptions.length) setPropertyOptions(liveOptions)
+        setPropertyOptions(liveOptions)
 
         const map = {}
         for (const p of data.properties) {

@@ -266,17 +266,11 @@ export function HousingMessageForm({ variant = 'marketing', prefill = null, form
           setProperties(normalize(data.properties))
           return
         }
-        setProperties(normalize(DEFAULT_PROPERTIES))
+        setProperties([])
       })
       .catch(() => {
         if (!cancelled) {
-          setProperties(
-            DEFAULT_PROPERTIES.map((p) => ({
-              ...p,
-              managerEmail: '',
-              rooms: p.rooms || [],
-            })),
-          )
+          setProperties([])
         }
       })
       .finally(() => {

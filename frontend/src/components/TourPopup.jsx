@@ -53,10 +53,10 @@ export default function TourPopup() {
           setPopupProperties(mergeRooms(data.properties))
           return
         }
-        setPopupProperties(mergeRooms(FALLBACK_POPUP_PROPERTIES))
+        setPopupProperties([])
       })
       .catch(() => {
-        if (!cancelled) setPopupProperties(FALLBACK_POPUP_PROPERTIES)
+        if (!cancelled) setPopupProperties([])
       })
       .finally(() => {
         if (!cancelled) setPopupPropertiesLoading(false)

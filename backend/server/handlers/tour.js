@@ -52,6 +52,33 @@ function buildRoomsByPropertyId(roomRecords) {
   return map
 }
 
+function propertyRecordVisibleForPublic(record) {
+  const fields = record?.fields || {}
+  const approvedRaw = fields.Approved
+  const approvedFlag =
+    approvedRaw === true ||
+    approvedRaw === 1 ||
+    approvedRaw === '1' ||
+    (typeof approvedRaw === 'string' && approvedRaw.trim().toLowerCase() === 'true')
+  const approvalStatus = String(fields['Approval Status'] || fields.Status || '').trim().toLowerCase()
+  const statusApproved = approvalStatus === 'approved' || approvalStatus === 'live' || approvalStatus === 'published'
+  const listedRaw = fields.Listed
+  const listedOff =
+    listedRaw === false ||
+    listedRaw === 0 ||
+    (typeof listedRaw === 'string' && listedRaw.trim().toLowerCase() === 'false')
+  if (listedOff) return false
+
+  const adminListingStatus = String(fields['Axis Admin Listing Status'] || fields['Admin Listing Status'] || '')
+    .trim()
+    .toLowerCase()
+  if (['unlisted', 'inactive', 'rejected', 'pending', 'changes requested', 'changes_requested'].includes(adminListingStatus)) {
+    return false
+  }
+
+  return approvedFlag || statusApproved
+}
+
 function mapProperty(record, roomsByPropertyId) {
   const fields = record.fields || {}
 
@@ -103,9 +130,7 @@ export default async function handler(req, res) {
 
   // ── GET: return properties ────────────────────────────────────────────────
   if (req.method === 'GET') {
-    const fallback = {
-      properties: FALLBACK_PROPERTIES.map((p) => ({ ...p, manager: '', managerEmail: '', availability: '', notes: '' })),
-    }
+    const fallback = { properties: [] }
     if (!AIRTABLE_TOKEN) return res.status(200).json(fallback)
     try {
       const roomsTable = process.env.VITE_AIRTABLE_ROOMS_TABLE || 'Rooms'
@@ -121,11 +146,10 @@ export default async function handler(req, res) {
       const [propData, roomsData] = await Promise.all([propRes.json(), roomsRes.ok ? roomsRes.json() : Promise.resolve({ records: [] })])
       const roomsByPropertyId = buildRoomsByPropertyId(roomsData.records || [])
       const allRecords = propData.records || []
-      const properties = allRecords.map((r) => mapProperty(r, roomsByPropertyId))
+      const approvedRecords = allRecords.filter(propertyRecordVisibleForPublic)
+      const properties = approvedRecords.map((r) => mapProperty(r, roomsByPropertyId))
       if (properties.length) return res.status(200).json({ properties })
-      // Table empty → keep legacy fallback for empty bases / local dev
-      if (allRecords.length === 0) return res.status(200).json(fallback)
-      // Has rows but none approved yet → empty list (front-end must not substitute hardcoded houses)
+      // Empty table or no approved listings yet.
       return res.status(200).json({ properties: [] })
     } catch {
       return res.status(200).json(fallback)

@@ -268,10 +268,10 @@ function HousingScheduler() {
           )
           return
         }
-        setProperties(DEFAULT_PROPERTIES)
+        setProperties([])
       })
       .catch(() => {
-        if (!cancelled) setProperties(DEFAULT_PROPERTIES)
+        if (!cancelled) setProperties([])
       })
       .finally(() => {
         if (!cancelled) setTourPropertiesLoading(false)
