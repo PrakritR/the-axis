@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import toast from 'react-hot-toast'
 import {
   getAllMessages,
@@ -20,6 +20,7 @@ import {
   managementAdminThreadKey,
 } from '../../lib/airtable'
 import { portalAxisAdminContactEmail } from '../../lib/portalInboxConstants.js'
+import { notifyPortalMessage } from '../../lib/notifyPortalMessage.js'
 import { resolveInboxSubject } from '../../lib/portalInboxSubjects.js'
 import { threadSubjectFromMessages, threadBodyPreviewFromMessage, mergeSubjectIntoMessageIfNeeded } from '../../lib/portalInboxThreadUtils.js'
 import InboxSubjectPicker from '../portal-inbox/InboxSubjectPicker.jsx'
@@ -47,15 +48,6 @@ function formatDataLoadError(err) {
   return raw.length > 220 ? `${raw.slice(0, 217)}…` : raw
 }
 
-function fmtDate(val) {
-  if (!val) return '—'
-  try {
-    return new Date(val).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
-  } catch {
-    return String(val)
-  }
-}
-
 function fmtDateTime(val) {
   if (!val) return '—'
   try {
@@ -69,16 +61,6 @@ function fmtDateTime(val) {
   } catch {
     return String(val)
   }
-}
-
-function normalizePortalScopeLabel(value) {
-  return String(value || '')
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, ' ')
-    .replace(/\b(avenue|ave|street|st|road|rd|boulevard|blvd|place|pl|drive|dr)\b/g, '')
-    .replace(/\s+/g, ' ')
-    .trim()
 }
 
 const MANAGER_INBOX_AXIS = 'inbox:axis'
@@ -177,6 +159,27 @@ function adminRecipientLabelForThreadId(threadId) {
     return `Resident · Admin (${t.slice('internal:resident-admin:'.length)})`
   }
   return t || 'Thread'
+}
+
+/** Returns the email of the party that is not `myEmail` in a thread, for notification routing. */
+function getOtherPartyEmail(threadMessages, myEmail) {
+  const my = String(myEmail || '').toLowerCase()
+  const m = (threadMessages || []).find(
+    (msg) => String(msg['Sender Email'] || '').toLowerCase() !== my,
+  )
+  return m ? String(m['Sender Email'] || '').trim() : ''
+}
+
+/** Finds a resident's email from all messages by looking for their leasing thread. */
+function getResidentEmailFromAllMsgs(allMsgs, resId, myEmail, threadKeyFn) {
+  const targetKey = threadKeyFn(resId)
+  const my = String(myEmail || '').toLowerCase()
+  const m = (allMsgs || []).find(
+    (msg) =>
+      String(msg['Thread Key'] || msg.thread_key || '').trim() === targetKey &&
+      String(msg['Sender Email'] || '').toLowerCase() !== my,
+  )
+  return m ? String(m['Sender Email'] || '').trim() : ''
 }
 
 function managerComposerToLabel(selectedThreadId, adminFullInbox) {
@@ -709,6 +712,20 @@ export default function ManagerInboxPage({ manager, allowedPropertyNames, adminF
         channel: PORTAL_INBOX_CHANNEL_INTERNAL,
         subject: showSubjectField ? subjResolved : '',
       })
+      // Notify recipient
+      {
+        let recipientEmail = ''
+        if (composeKind === 'admin') {
+          recipientEmail = portalAxisAdminContactEmail()
+        } else if (composeKind === 'resident') {
+          recipientEmail = getResidentEmailFromAllMsgs(allMsgs, composeResidentRecordId.trim(), managerEmail, residentLeasingThreadKey)
+        } else if (composeKind === 'site' || composeKind === 'partner') {
+          recipientEmail = composeEmail.trim()
+        }
+        if (recipientEmail) {
+          notifyPortalMessage({ recipientEmail, senderName: managerEmail, subject: subjResolved })
+        }
+      }
       const ridForSelect = composeResidentRecordId.trim()
       setComposeOpen(false)
       setComposeBody('')
@@ -760,6 +777,11 @@ export default function ManagerInboxPage({ manager, allowedPropertyNames, adminF
           channel: PORTAL_INBOX_CHANNEL_INTERNAL,
           subject: showSubjectField ? subjResolved : '',
         })
+        notifyPortalMessage({
+          recipientEmail: getOtherPartyEmail(thread, managerEmail),
+          senderName: managerEmail,
+          subject: subjResolved,
+        })
         setReply('')
         setReplySubjectPreset('')
         setReplySubjectCustom('')
@@ -785,6 +807,11 @@ export default function ManagerInboxPage({ manager, allowedPropertyNames, adminF
           channel: PORTAL_INBOX_CHANNEL_INTERNAL,
           subject: showSubjectField ? subjResolved : '',
         })
+        notifyPortalMessage({
+          recipientEmail: portalAxisAdminContactEmail(),
+          senderName: managerEmail,
+          subject: subjResolved,
+        })
       } else {
         const resId = managerInboxParseResidentThreadId(selectedThreadId)
         if (!resId) return
@@ -795,6 +822,11 @@ export default function ManagerInboxPage({ manager, allowedPropertyNames, adminF
           threadKey: residentLeasingThreadKey(resId),
           channel: PORTAL_INBOX_CHANNEL_INTERNAL,
           subject: showSubjectField ? subjResolved : '',
+        })
+        notifyPortalMessage({
+          recipientEmail: getOtherPartyEmail(thread, managerEmail),
+          senderName: managerEmail,
+          subject: subjResolved,
         })
       }
       setReply('')

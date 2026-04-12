@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import toast from 'react-hot-toast'
 import {
   getMessagesByThreadKey,
@@ -16,6 +16,7 @@ import {
 import { isAirtablePermissionErrorMessage } from '../../lib/airtablePermissionError'
 import { portalAxisAdminContactEmail } from '../../lib/portalInboxConstants.js'
 import { resolveInboxSubject } from '../../lib/portalInboxSubjects.js'
+import { notifyPortalMessage } from '../../lib/notifyPortalMessage.js'
 import {
   threadSubjectFromMessages,
   threadBodyPreviewFromMessage,
@@ -444,6 +445,11 @@ export default function ResidentPortalInbox({ resident }) {
         channel: PORTAL_INBOX_CHANNEL_INTERNAL,
         subject: showSubjectField ? subjResolved : '',
       })
+      notifyPortalMessage({
+        recipientEmail: portalAxisAdminContactEmail(),
+        senderName: resident.Name || email,
+        subject: subjResolved,
+      })
       setComposeOpen(false)
       setComposeBody('')
       setComposeSubjectPreset('')
@@ -481,6 +487,11 @@ export default function ResidentPortalInbox({ resident }) {
         threadKey,
         channel: PORTAL_INBOX_CHANNEL_INTERNAL,
         subject: showSubjectField ? subjResolved : '',
+      })
+      notifyPortalMessage({
+        recipientEmail: portalAxisAdminContactEmail(),
+        senderName: resident.Name || email,
+        subject: subjResolved,
       })
       setReply('')
       setReplySubjectPreset('')

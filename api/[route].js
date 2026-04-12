@@ -17,6 +17,7 @@ import managerCreateSubscriptionSession from '../server/handlers/manager-create-
 import managerLookup from '../server/handlers/manager-lookup.js'
 import managerStartFreeTier from '../server/handlers/manager-start-free-tier.js'
 import managerSubscriptionComplete from '../server/handlers/manager-subscription-complete.js'
+import notifyMessage from '../server/handlers/notify-message.js'
 import sendLeaseInvite from '../server/handlers/send-lease-invite.js'
 import signforgeWebhook from '../server/handlers/signforge-webhook.js'
 import softwareTeamMeetings from '../server/handlers/software-team-meetings.js'
@@ -39,6 +40,7 @@ const routes = {
   'manager-lookup': managerLookup,
   'manager-start-free-tier': managerStartFreeTier,
   'manager-subscription-complete': managerSubscriptionComplete,
+  'notify-message': notifyMessage,
   'send-lease-invite': sendLeaseInvite,
   'signforge-webhook': signforgeWebhook,
 }
