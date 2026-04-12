@@ -2282,6 +2282,13 @@ function ResidentDashboardHome({
   inboxUnopenedCount,
 }) {
   const snapshot = useMemo(() => buildResidentRentSnapshot(payments, resident), [payments, resident])
+  const hasOverdueRent = snapshot.overdueTotal > 0
+  const paymentCardLabel = hasOverdueRent ? 'Payments · Overdue' : 'Payments · Next due'
+  const paymentCardValue = hasOverdueRent
+    ? formatMoney(snapshot.overdueTotal)
+    : snapshot.nextDue
+      ? formatMoney(snapshot.nextDue.balance)
+      : '—'
   const openWoCount = useMemo(
     () => visibleWorkOrders.filter((r) => isWorkOrderOpen(r)).length,
     [visibleWorkOrders],
@@ -2309,25 +2316,23 @@ function ResidentDashboardHome({
       ) : null}
 
       {/* Metric cards — same light blue system as manager portal dashboard */}
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
         <button
           type="button"
-          onClick={() => { setPaymentFocus(''); onNavigate('payments') }}
-          className="flex flex-col gap-1 rounded-[20px] border border-blue-100 bg-blue-50 p-5 text-left transition hover:border-blue-200 hover:shadow-sm"
+          onClick={() => { setPaymentFocus(hasOverdueRent ? 'overdue' : ''); onNavigate('payments') }}
+          className={classNames(
+            'flex flex-col gap-1 rounded-[20px] border p-5 text-left transition hover:shadow-sm',
+            hasOverdueRent
+              ? 'border-red-100 bg-red-50 hover:border-red-200'
+              : 'border-blue-100 bg-blue-50 hover:border-blue-200',
+          )}
         >
-          <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-blue-600">Payments · Next due</span>
-          <span className="text-3xl font-black tabular-nums text-blue-700">
-            {snapshot.nextDue ? formatMoney(snapshot.nextDue.balance) : '—'}
+          <span className={classNames('text-[10px] font-bold uppercase tracking-[0.14em]', hasOverdueRent ? 'text-red-600' : 'text-blue-600')}>
+            {paymentCardLabel}
           </span>
-        </button>
-
-        <button
-          type="button"
-          onClick={() => { setPaymentFocus('overdue'); onNavigate('payments') }}
-          className="flex flex-col gap-1 rounded-[20px] border border-blue-100 bg-blue-50 p-5 text-left transition hover:border-blue-200 hover:shadow-sm"
-        >
-          <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-blue-600">Payments · Overdue</span>
-          <span className="text-3xl font-black tabular-nums text-blue-700">{formatMoney(snapshot.overdueTotal)}</span>
+          <span className={classNames('text-3xl font-black tabular-nums', hasOverdueRent ? 'text-red-700' : 'text-blue-700')}>
+            {paymentCardValue}
+          </span>
         </button>
 
         <button
