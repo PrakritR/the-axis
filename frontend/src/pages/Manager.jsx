@@ -2573,6 +2573,7 @@ function HouseManagementPanel({ manager, onPropertiesChange }) {
           <div className="mt-5 rounded-2xl border border-slate-100 bg-slate-50 px-4 py-5 text-sm text-slate-500">Loading houses…</div>
         ) : approvedAssigned.length === 0 && pendingAssigned.length === 0 ? (
           <div className="mt-5 rounded-2xl border border-dashed border-slate-200 bg-slate-50/80 px-6 py-10 text-center">
+            <div className="mb-3 text-4xl" aria-hidden>🏠</div>
             <p className="text-sm font-semibold text-slate-800">No properties on your account yet</p>
           </div>
         ) : (
