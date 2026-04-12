@@ -64,7 +64,6 @@ import { ApplicationDetailPanel, applicationViewModelFromAirtableRow } from '../
 import {
   PortalOpsCard,
   PortalOpsEmptyState,
-  PortalOpsFilterCards,
   PortalOpsMetric,
   PortalOpsStatusBadge,
 } from '../components/PortalOpsUI'
@@ -4117,13 +4116,30 @@ function WorkOrdersTabPanel({ allowedPropertyNames }) {
   }
 
   return (
-    <div className="mb-10 space-y-5">
-      <div>
-        <h2 className="text-xl font-black text-slate-900">Work orders</h2>
+    <div className="mb-10">
+      <div className="mb-5 flex flex-wrap items-center gap-3">
+        <h2 className="mr-auto text-xl font-black text-slate-900">Work orders</h2>
+        <div className="relative">
+          <svg className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+          </svg>
+          <input
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search by property, resident, or issue…"
+            className="rounded-2xl border border-slate-200 bg-white py-2.5 pl-10 pr-4 text-sm transition focus:border-[#2563eb] focus:outline-none focus:ring-2 focus:ring-[#2563eb]/20"
+          />
+        </div>
+        <button
+          onClick={loadList}
+          className="rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-600 transition hover:bg-slate-50"
+        >
+          Refresh
+        </button>
       </div>
 
       {listError ? (
-        <div role="alert" className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-4 text-sm text-amber-950">
+        <div role="alert" className="mb-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-4 text-sm text-amber-950">
           <div className="font-semibold text-amber-900">Unable to load work orders</div>
           <p className="mt-2 text-amber-900/90">{listError}</p>
         </div>
@@ -4137,25 +4153,28 @@ function WorkOrdersTabPanel({ allowedPropertyNames }) {
         />
       ) : null}
 
-      <PortalOpsFilterCards
-        value={quickFilter}
-        onChange={setQuickFilter}
-        columnsClassName="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5"
-        items={[
-          { id: 'all', label: 'All', value: String(list.length), hint: 'Every request', tone: 'slate' },
-          { id: 'open', label: 'Open', value: String(woBucketCounts.open), hint: 'New or not started', tone: 'slate' },
-          { id: 'scheduled', label: 'Scheduled', value: String(woBucketCounts.scheduled), hint: 'Visit time set', tone: 'axis' },
-          { id: 'in_progress', label: 'In progress', value: String(woBucketCounts.in_progress), hint: 'Being handled', tone: 'amber' },
-          { id: 'completed', label: 'Completed', value: String(woBucketCounts.completed), hint: 'Resolved', tone: 'emerald' },
-        ]}
-      />
-
-      <input
-        value={search}
-        onChange={(e) => setSearch(e.target.value)}
-        placeholder="Search by property, resident, or issue…"
-        className={fieldCls}
-      />
+      <div className="mb-4 inline-flex flex-wrap gap-1 rounded-2xl border border-slate-200 bg-slate-50 p-1">
+        {[
+          ['all', 'All', list.length],
+          ['open', 'Open', woBucketCounts.open],
+          ['scheduled', 'Scheduled', woBucketCounts.scheduled],
+          ['in_progress', 'In progress', woBucketCounts.in_progress],
+          ['completed', 'Completed', woBucketCounts.completed],
+        ].map(([key, label, count]) => (
+          <button
+            key={key}
+            type="button"
+            onClick={() => setQuickFilter(key)}
+            className={classNames(
+              'rounded-xl px-4 py-2 text-sm font-semibold transition',
+              quickFilter === key ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-600 hover:text-slate-900',
+            )}
+          >
+            {label}
+            <span className="ml-1.5 tabular-nums text-slate-500">({count})</span>
+          </button>
+        ))}
+      </div>
 
       <div className="grid gap-6 xl:grid-cols-[minmax(0,1.15fr)_minmax(360px,0.85fr)]">
         <div className="overflow-hidden rounded-[24px] border border-slate-200 bg-white shadow-sm">
@@ -4442,30 +4461,26 @@ function ManagerPaymentsPanel({ allowedPropertyNames }) {
   }
 
   return (
-    <div className="mb-10 space-y-5">
-      <div className="flex flex-wrap items-end justify-between gap-3">
-        <div>
-          <h2 className="text-xl font-black text-slate-900">Rent &amp; payments</h2>
-          <p className="mt-1 text-sm text-slate-500">
-            Track rent status by house, room, and resident. Keep the month view simple and easy to scan.
-          </p>
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <label className="flex items-center gap-2 text-xs font-semibold text-slate-500">
-            <span className="sr-only">Month</span>
-            <select
-              value={selectedYm}
-              onChange={(e) => setSelectedYm(e.target.value)}
-              className="rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-800 shadow-sm transition focus:border-[#2563eb] focus:outline-none focus:ring-2 focus:ring-[#2563eb]/20"
-            >
-              {monthOptions.map((ym) => (
-                <option key={ym} value={ym}>
-                  {formatYmLong(ym)}
-                </option>
-              ))}
-            </select>
-          </label>
-        </div>
+    <div className="mb-10">
+      <div className="mb-5 flex flex-wrap items-center gap-3">
+        <h2 className="mr-auto text-xl font-black text-slate-900">Rent &amp; payments</h2>
+        <select
+          value={selectedYm}
+          onChange={(e) => setSelectedYm(e.target.value)}
+          className="rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition focus:border-[#2563eb] focus:outline-none focus:ring-2 focus:ring-[#2563eb]/20"
+        >
+          {monthOptions.map((ym) => (
+            <option key={ym} value={ym}>
+              {formatYmLong(ym)}
+            </option>
+          ))}
+        </select>
+        <button
+          onClick={load}
+          className="rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-600 transition hover:bg-slate-50"
+        >
+          Refresh
+        </button>
       </div>
 
       {paymentsLoadError ? (
@@ -4491,47 +4506,26 @@ function ManagerPaymentsPanel({ allowedPropertyNames }) {
         </div>
       ) : null}
 
-      <div className="rounded-[28px] border border-slate-200 bg-[linear-gradient(135deg,#ffffff_0%,#f8fbff_100%)] p-6 sm:p-7">
-        <div className="text-center text-[11px] font-bold uppercase tracking-[0.2em] text-slate-400">
-          {formatYmLong(selectedYm)}
-        </div>
-        <div className="mt-5">
-          <PortalOpsFilterCards
-            value={filter}
-            onChange={setFilter}
-            columnsClassName="grid gap-3 sm:grid-cols-2 lg:grid-cols-4"
-            items={[
-              {
-                id: 'all',
-                label: 'All rent',
-                value: String(paymentRows.length),
-                hint: 'Every row this month',
-                tone: 'slate',
-              },
-              {
-                id: 'overdue',
-                label: 'Overdue rent',
-                value: money(overdueRentAmount),
-                hint: overdueLineCount ? `${overdueLineCount} line${overdueLineCount === 1 ? '' : 's'}` : 'None overdue',
-                tone: 'red',
-              },
-              {
-                id: 'paid',
-                label: 'Paid rent',
-                value: money(totalCollected),
-                hint: `${paidLineCount} paid`,
-                tone: 'emerald',
-              },
-              {
-                id: 'pending',
-                label: 'Pending rent',
-                value: money(pendingRentAmount),
-                hint: `${pendingLineCount} not fully paid`,
-                tone: 'amber',
-              },
-            ]}
-          />
-        </div>
+      <div className="mb-4 inline-flex flex-wrap gap-1 rounded-2xl border border-slate-200 bg-slate-50 p-1">
+        {[
+          ['all', 'All', paymentRows.length],
+          ['overdue', 'Overdue', overdueLineCount],
+          ['paid', 'Paid', paidLineCount],
+          ['pending', 'Pending', pendingLineCount],
+        ].map(([key, label, count]) => (
+          <button
+            key={key}
+            type="button"
+            onClick={() => setFilter(key)}
+            className={classNames(
+              'rounded-xl px-4 py-2 text-sm font-semibold transition',
+              filter === key ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-600 hover:text-slate-900',
+            )}
+          >
+            {label}
+            <span className="ml-1.5 tabular-nums text-slate-500">({count})</span>
+          </button>
+        ))}
       </div>
 
       <div className="grid gap-6 xl:grid-cols-[minmax(0,1.2fr)_minmax(360px,0.8fr)]">

@@ -1,6 +1,5 @@
 import React from 'react'
 import ConversationListItem from './ConversationListItem'
-import { PortalOpsFilterCards } from '../PortalOpsUI'
 
 /**
  * Left column: search, status filter cards (All / Unread / Trash), optional
@@ -37,36 +36,25 @@ export default function ConversationList({
           className="w-full rounded-xl border border-slate-200 bg-slate-50/80 px-3 py-2 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-[#2563eb] focus:bg-white focus:ring-2 focus:ring-[#2563eb]/15"
         />
 
-        <PortalOpsFilterCards
-          variant="compact"
-          value={filter}
-          onChange={onFilterChange}
-          columnsClassName="grid grid-cols-3 gap-1.5"
-          aria-label="Inbox sections"
-          items={[
-            {
-              id: 'all',
-              label: 'All',
-              value: String(counts.all ?? 0),
-              hint: 'Threads',
-              tone: 'slate',
-            },
-            {
-              id: 'unread',
-              label: 'Unread',
-              value: String(counts.unread ?? 0),
-              hint: 'Needs attention',
-              tone: 'axis',
-            },
-            {
-              id: 'trash',
-              label: 'Trash',
-              value: String(counts.trash ?? 0),
-              hint: 'Archived',
-              tone: 'slate',
-            },
-          ]}
-        />
+        <div className="flex gap-1 rounded-2xl border border-slate-200 bg-slate-50 p-1">
+          {[
+            ['all', 'All', counts.all ?? 0],
+            ['unread', 'Unread', counts.unread ?? 0],
+            ['trash', 'Trash', counts.trash ?? 0],
+          ].map(([key, label, count]) => (
+            <button
+              key={key}
+              type="button"
+              onClick={() => onFilterChange(key)}
+              className={`flex-1 rounded-xl px-2 py-1.5 text-sm font-semibold transition ${
+                filter === key ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              {label}
+              <span className="ml-1 tabular-nums text-slate-500">({count})</span>
+            </button>
+          ))}
+        </div>
 
         {hasChannelFilter ? (
           <div className="flex items-center gap-1.5 border-t border-slate-100 pt-2">

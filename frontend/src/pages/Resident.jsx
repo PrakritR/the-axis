@@ -5,7 +5,6 @@ import { EmbeddedStripeCheckout } from '../components/EmbeddedStripeCheckout'
 import {
   PortalOpsCard,
   PortalOpsEmptyState,
-  PortalOpsFilterCards,
   PortalOpsMetric,
   PortalOpsStatusBadge,
 } from '../components/PortalOpsUI'
@@ -781,36 +780,44 @@ function WorkOrdersPanel({ resident, requests: requestsProp, onRequestCreated, o
   }
 
   return (
-    <div className="space-y-6">
-      <PortalOpsCard
-        title="Work Orders"
-        description="Submit a request fast, then track updates and visit times in one place."
-        action={
+    <div className="mb-10">
+      <div className="mb-5 flex flex-wrap items-center gap-3">
+        <h2 className="mr-auto text-xl font-black text-slate-900">Work Orders</h2>
+        <button
+          type="button"
+          onClick={() => {
+            setShowForm((value) => !value)
+            setError('')
+            setSuccess('')
+          }}
+          className="rounded-full bg-axis px-5 py-3 text-sm font-semibold text-white transition hover:brightness-105"
+        >
+          {showForm ? 'Close form' : 'Create new work order'}
+        </button>
+      </div>
+
+      <div className="mb-4 inline-flex flex-wrap gap-1 rounded-2xl border border-slate-200 bg-slate-50 p-1">
+        {[
+          ['all', 'All', requests.length],
+          ['open', 'Open', woBucketCounts.open],
+          ['scheduled', 'Scheduled', woBucketCounts.scheduled],
+          ['in_progress', 'In progress', woBucketCounts.in_progress],
+          ['completed', 'Completed', woBucketCounts.completed],
+        ].map(([key, label, count]) => (
           <button
+            key={key}
             type="button"
-            onClick={() => {
-              setShowForm((value) => !value)
-              setError('')
-              setSuccess('')
-            }}
-            className="rounded-full bg-axis px-5 py-3 text-sm font-semibold text-white transition hover:brightness-105"
+            onClick={() => setWoFilter(key)}
+            className={classNames(
+              'rounded-xl px-4 py-2 text-sm font-semibold transition',
+              woFilter === key ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-600 hover:text-slate-900',
+            )}
           >
-            {showForm ? 'Close form' : 'Create new work order'}
+            {label}
+            <span className="ml-1.5 tabular-nums text-slate-500">({count})</span>
           </button>
-        }
-      >
-        <PortalOpsFilterCards
-          value={woFilter}
-          onChange={setWoFilter}
-          columnsClassName="grid gap-3 sm:grid-cols-2 lg:grid-cols-5"
-          items={[
-            { id: 'all', label: 'All', value: String(requests.length), hint: 'Every request', tone: 'slate' },
-            { id: 'open', label: 'Open', value: String(woBucketCounts.open), hint: 'Submitted / in review', tone: 'slate' },
-            { id: 'scheduled', label: 'Scheduled', value: String(woBucketCounts.scheduled), hint: 'Visit set', tone: 'axis' },
-            { id: 'in_progress', label: 'In progress', value: String(woBucketCounts.in_progress), hint: 'Work underway', tone: 'amber' },
-            { id: 'completed', label: 'Completed', value: String(woBucketCounts.completed), hint: 'Resolved', tone: 'emerald' },
-          ]}
-        />
+        ))}
+      </div>
 
         {showForm ? (
           <form onSubmit={handleSubmit} className="mt-6 grid gap-4 border-t border-slate-100 pt-6 sm:grid-cols-2">
@@ -996,7 +1003,6 @@ function WorkOrdersPanel({ resident, requests: requestsProp, onRequestCreated, o
             ) : null}
           </div>
         )}
-      </PortalOpsCard>
     </div>
   )
 }
@@ -1273,7 +1279,10 @@ function PaymentsPanel({ resident, onResidentUpdated, highlightCategory, onPayme
   }
 
   return (
-    <PortalOpsCard title="Payments" description="See what is due, pay it fast, and review past charges without extra clutter.">
+    <div className="mb-10">
+      <div className="mb-5 flex flex-wrap items-center gap-3">
+        <h2 className="mr-auto text-xl font-black text-slate-900">Payments</h2>
+      </div>
       {loading ? <p className="text-sm text-slate-400">Loading payments...</p> : null}
       {!loading && (
         <>
@@ -1321,43 +1330,26 @@ function PaymentsPanel({ resident, onResidentUpdated, highlightCategory, onPayme
             <div className="mt-4 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{actionError}</div>
           ) : null}
 
-          <div className="mt-6">
-            <PortalOpsFilterCards
-              value={payFilter}
-              onChange={setPayFilter}
-              columnsClassName="grid gap-3 sm:grid-cols-2 lg:grid-cols-4"
-              aria-label="Filter payment sections"
-              items={[
-                {
-                  id: 'all',
-                  label: 'All activity',
-                  value: String(sortedPayments.length),
-                  hint: 'Rent & fees',
-                  tone: 'slate',
-                },
-                {
-                  id: 'pending',
-                  label: 'Due or upcoming',
-                  value: String(unpaidRentPayments.length),
-                  hint: 'Needs payment',
-                  tone: 'amber',
-                },
-                {
-                  id: 'paid',
-                  label: 'Paid rent',
-                  value: String(paymentHistory.length),
-                  hint: 'Settled',
-                  tone: 'emerald',
-                },
-                {
-                  id: 'fees',
-                  label: 'Fees & extras',
-                  value: String(feeChargeRows.length),
-                  hint: 'Non-rent',
-                  tone: 'axis',
-                },
-              ]}
-            />
+          <div className="mt-6 inline-flex flex-wrap gap-1 rounded-2xl border border-slate-200 bg-slate-50 p-1">
+            {[
+              ['all', 'All activity', sortedPayments.length],
+              ['pending', 'Due or upcoming', unpaidRentPayments.length],
+              ['paid', 'Paid rent', paymentHistory.length],
+              ['fees', 'Fees & extras', feeChargeRows.length],
+            ].map(([key, label, count]) => (
+              <button
+                key={key}
+                type="button"
+                onClick={() => setPayFilter(key)}
+                className={classNames(
+                  'rounded-xl px-4 py-2 text-sm font-semibold transition',
+                  payFilter === key ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-600 hover:text-slate-900',
+                )}
+              >
+                {label}
+                <span className="ml-1.5 tabular-nums text-slate-500">({count})</span>
+              </button>
+            ))}
           </div>
 
           <div className="mt-6 grid gap-6 xl:grid-cols-[minmax(0,1.2fr)_minmax(0,0.8fr)]">
@@ -1467,7 +1459,7 @@ function PaymentsPanel({ resident, onResidentUpdated, highlightCategory, onPayme
           />
         </>
       )}
-    </PortalOpsCard>
+    </div>
   )
 }
 
