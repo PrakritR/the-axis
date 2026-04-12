@@ -65,9 +65,8 @@ async function approveApplication(recordId) {
   const now = new Date().toISOString()
   const enc = encodeURIComponent(APPLICATIONS_TABLE)
   const data = await airtablePatch(`${APPS_AIRTABLE_BASE_URL}/${enc}/${recordId}`, {
-    Approved: true,
-    'Approved At': now,
     'Approval Status': 'Approved',
+    'Approved At': now,
   })
   return mapRecord(data)
 }

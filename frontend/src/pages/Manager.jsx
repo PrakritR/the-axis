@@ -3957,16 +3957,16 @@ function ManagerDashboardHomePanel({
         <button
           type="button"
           onClick={() => onNavigate('leases')}
-          className="flex flex-col gap-1 rounded-[20px] border border-amber-200 bg-amber-50 p-5 text-left transition hover:border-amber-300 hover:shadow-sm"
+          className="flex flex-col gap-1 rounded-[20px] border border-blue-100 bg-blue-50 p-5 text-left transition hover:border-blue-200 hover:shadow-sm"
         >
-          <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-amber-600">Leases · Action needed</span>
-          <span className="text-3xl font-black tabular-nums text-amber-700">{leasePending}</span>
+          <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-blue-600">Leases · Action needed</span>
+          <span className="text-3xl font-black tabular-nums text-blue-700">{leasePending}</span>
         </button>
 
         <button
           type="button"
           onClick={() => onNavigate('applications')}
-          className="flex flex-col gap-1 rounded-[20px] border border-blue-200 bg-blue-50 p-5 text-left transition hover:border-blue-300 hover:shadow-sm"
+          className="flex flex-col gap-1 rounded-[20px] border border-blue-100 bg-blue-50 p-5 text-left transition hover:border-blue-200 hover:shadow-sm"
         >
           <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-blue-600">Applications · Pending</span>
           <span className="text-3xl font-black tabular-nums text-blue-700">{pendingApps}</span>
@@ -3975,25 +3975,25 @@ function ManagerDashboardHomePanel({
         <button
           type="button"
           onClick={() => onNavigate('properties')}
-          className="flex flex-col gap-1 rounded-[20px] border border-emerald-200 bg-emerald-50 p-5 text-left transition hover:border-emerald-300 hover:shadow-sm"
+          className="flex flex-col gap-1 rounded-[20px] border border-blue-100 bg-blue-50 p-5 text-left transition hover:border-blue-200 hover:shadow-sm"
         >
-          <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-emerald-600">Properties · Approved</span>
-          <span className="text-3xl font-black tabular-nums text-emerald-700">{approvedHouseCount}</span>
+          <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-blue-600">Properties · Approved</span>
+          <span className="text-3xl font-black tabular-nums text-blue-700">{approvedHouseCount}</span>
         </button>
 
         <button
           type="button"
           onClick={() => onNavigate('payments')}
-          className="flex flex-col gap-1 rounded-[20px] border border-red-200 bg-red-50 p-5 text-left transition hover:border-red-300 hover:shadow-sm"
+          className="flex flex-col gap-1 rounded-[20px] border border-blue-100 bg-blue-50 p-5 text-left transition hover:border-blue-200 hover:shadow-sm"
         >
-          <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-red-600">Payments · Overdue</span>
-          <span className="text-3xl font-black tabular-nums text-red-700">{rentOverdue}</span>
+          <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-blue-600">Payments · Overdue</span>
+          <span className="text-3xl font-black tabular-nums text-blue-700">{rentOverdue}</span>
         </button>
 
         <button
           type="button"
           onClick={() => onNavigate('workorders')}
-          className="flex flex-col gap-1 rounded-[20px] border border-blue-200 bg-blue-50 p-5 text-left transition hover:border-blue-300 hover:shadow-sm"
+          className="flex flex-col gap-1 rounded-[20px] border border-blue-100 bg-blue-50 p-5 text-left transition hover:border-blue-200 hover:shadow-sm"
         >
           <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-blue-600">Work Orders · Open</span>
           <span className="text-3xl font-black tabular-nums text-blue-700">{openWo}</span>
@@ -4875,7 +4875,7 @@ function ApplicationsPanel({ allowedPropertyNames, manager }) {
         }
       } else {
         const updated = await patchApplication(recordId, {
-          Approved: approved,
+          'Approval Status': 'Rejected',
         })
         setScopedRows((prev) =>
           prev.map((a) => (a.id === recordId ? { ...a, ...updated } : a)),

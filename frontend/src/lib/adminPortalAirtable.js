@@ -361,14 +361,14 @@ export async function adminPatchApplication(recordId, fields) {
   return mapRecord(data)
 }
 
-/** Reject rental application (checkbox + status so filters match Airtable). */
+/** Reject rental application — writes Approval Status text field only. */
 export async function adminRejectApplication(recordId) {
-  return adminPatchApplication(recordId, { Approved: false, 'Approval Status': 'Rejected' })
+  return adminPatchApplication(recordId, { 'Approval Status': 'Rejected' })
 }
 
 /** Remove approval — resets the application back to pending review. */
 export async function adminUnapproveApplication(recordId) {
-  return adminPatchApplication(recordId, { Approved: null, 'Approved At': null })
+  return adminPatchApplication(recordId, { 'Approval Status': '' })
 }
 
 /** Load all resident profiles for CEO/admin portal handoff. */
