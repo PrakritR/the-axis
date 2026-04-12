@@ -4,6 +4,8 @@
  * updating the Airtable base first.
  */
 
+import { mergeAxisListingMetaIntoOtherInfo } from './axisListingMeta.js'
+
 // ─── Slot limits ────────────────────────────────────────────────────────────────
 export const MAX_ROOM_SLOTS = 20
 export const MAX_BATHROOM_SLOTS = 10
@@ -35,16 +37,14 @@ export const PROPERTY_AIR = {
   approvalStatus:     'Approval Status',    // Single line text
   otherInfo:          'Other Info',         // Long text
   sharedSpaceCount:   'Number of Shared Spaces',
+  /** Optional: add these columns to Properties in Airtable, or remove writes below if missing. */
+  securityDeposit:    'Security Deposit',
 }
 
 // ─── Dynamic room fields (1–20) ──────────────────────────────────────────────────
-/**
- * @param {number} n 1-based
- * NOTE: Airtable only has "Room N Rent" for rooms 10–20.
- * Rooms 1–9 are missing this field — returns null so the serializer skips them.
- * Add Room 1 Rent … Room 9 Rent to the Airtable Properties table to enable.
- */
-export const roomRentField        = (n) => n >= 10 ? `Room ${n} Rent` : null
+/** @param {number} n 1-based */
+export const roomRentField = (n) =>
+  n >= 1 && n <= MAX_ROOM_SLOTS ? `Room ${n} Rent` : null
 export const roomAvailabilityField = (n) => `Room ${n} Availability`   // Date
 export const roomFurnishedField    = (n) => `Room ${n} Furnished`       // Single select: Yes/No/Partial
 export const roomUtilitiesCostField= (n) => `Room ${n} Utilities Cost`
@@ -89,7 +89,7 @@ export const PROPERTY_TYPE_OPTIONS = ['House', 'Apartment', 'Townhome', 'Studio'
 // ─── Shared space type options ────────────────────────────────────────────────────
 export const SHARED_SPACE_TYPE_OPTIONS = [
   'Living Room', 'Dining Room', 'Lounge', 'Study Area',
-  'Kitchen', 'Laundry', 'Backyard', 'Patio', 'Storage', 'Hallway', 'Other',
+  'Kitchen', 'Laundry', 'Backyard', 'Patio', 'Storage', 'Other',
 ]
 
 // ─── Helpers ────────────────────────────────────────────────────────────────────
@@ -100,7 +100,18 @@ export function clampInt(v, min, max) {
 }
 
 export function emptyRoomRow() {
-  return { rent: '', availability: '', furnished: '', utilitiesCost: '', utilities: '' }
+  return {
+    label: '',
+    rent: '',
+    availability: '',
+    furnished: '',
+    utilitiesCost: '',
+    utilities: '',
+    notes: '',
+    furnitureIncluded: '',
+    additionalFeatures: '',
+    media: [],
+  }
 }
 
 export function emptyBathroomRow() {
@@ -116,7 +127,16 @@ export function emptyLaundryRow() {
 }
 
 export function emptySharedSpaceRow() {
-  return { name: '', type: '', access: [] }
+  return { name: '', type: '', typeOther: '', access: [] }
+}
+
+function sharedSpaceRowHasContent(row) {
+  if (!row || typeof row !== 'object') return false
+  if (String(row.name || '').trim()) return true
+  if (String(row.type || '').trim()) return true
+  if (String(row.typeOther || '').trim()) return true
+  const acc = Array.isArray(row.access) ? row.access.filter(Boolean) : []
+  return acc.length > 0
 }
 
 function optionalCurrency(raw) {
@@ -144,26 +164,31 @@ function toIsoDate(raw) {
  */
 export function serializeManagerAddPropertyToAirtableFields(params) {
   const {
-    basics,          // { name, address, propertyType, amenities[], amenitiesOther?, pets }
+    basics,          // { name, address, propertyType, amenities[], amenitiesOther?, pets, securityDeposit, moveInCharges }
     roomCount,
     bathroomCount,
     kitchenCount,
-    sharedSpaceCount = 0,
     parking,         // { enabled, type, fee }
     laundry,         // { enabled, rows: [{ type, roomsSharing }] }
-    rooms,           // [{ rent, availability, furnished, utilitiesCost, utilities }]
+    rooms,           // room row shape from emptyRoomRow() (media stripped before call)
     bathrooms,       // [{ description, roomsSharing }]
     kitchens,        // [{ description, roomsSharing }]
-    sharedSpaces = [],// [{ name, type, access[] }]
+    sharedSpaces = [],// [{ name, type, typeOther?, access[] }]
     applicationFee = '',
     otherInfo = '',
     managerRecordId,
+    leasing = null,   // { fullHousePrice, promoPrice, leaseLengthInfo, bundles: [{ name, price, rooms[] }] }
   } = params
 
   const rc = clampInt(roomCount, 1, MAX_ROOM_SLOTS)
   const bc = clampInt(bathroomCount, 0, MAX_BATHROOM_SLOTS)
   const kc = clampInt(kitchenCount, 0, MAX_KITCHEN_SLOTS)
-  const sc = clampInt(sharedSpaceCount, 0, MAX_SHARED_SPACE_SLOTS)
+
+  let sharedTrimmed = (sharedSpaces || []).slice(0, MAX_SHARED_SPACE_SLOTS)
+  while (sharedTrimmed.length > 0 && !sharedSpaceRowHasContent(sharedTrimmed[sharedTrimmed.length - 1])) {
+    sharedTrimmed = sharedTrimmed.slice(0, -1)
+  }
+  const sc = sharedTrimmed.length
 
   const fields = {}
 
@@ -211,19 +236,18 @@ export function serializeManagerAddPropertyToAirtableFields(params) {
   const af = optionalCurrency(applicationFee)
   if (af !== undefined) fields[PROPERTY_AIR.applicationFee] = af
 
-  // Other info
-  const oi = String(otherInfo || '').trim()
-  if (oi) fields[PROPERTY_AIR.otherInfo] = oi
+  // Security deposit on the property record (defaults to 0 when blank)
+  fields[PROPERTY_AIR.securityDeposit] = optionalCurrency(basics.securityDeposit) ?? 0
 
   // Bathroom Access (general field — e.g. "Shared", "Private")
   const ba = String(basics.bathroomAccess || '').trim()
   if (ba) fields[PROPERTY_AIR.bathroomAccess] = ba
 
+  const roomsDetail = []
   // ── Rooms ─────────────────────────────────────────────────────────────────────
   for (let i = 1; i <= rc; i++) {
     const row = rooms[i - 1] || emptyRoomRow()
 
-    // roomRentField returns null for rooms 1–9 (field doesn't exist in Airtable yet)
     const rentFieldName = roomRentField(i)
     if (rentFieldName) {
       const rent = optionalCurrency(row.rent)
@@ -244,7 +268,42 @@ export function serializeManagerAddPropertyToAirtableFields(params) {
       const u1 = String(row.utilities || '').trim()
       if (u1) fields[ROOM_1_UTILITIES_FIELD] = u1
     }
+
+    roomsDetail.push({
+      label: String(row.label || '').trim(),
+      notes: String(row.notes || '').trim(),
+      furnitureIncluded: String(row.furnitureIncluded || '').trim(),
+      additionalFeatures: String(row.additionalFeatures || '').trim(),
+    })
   }
+
+  const leasingObj = leasing && typeof leasing === 'object' ? leasing : {}
+  const bundles = Array.isArray(leasingObj.bundles)
+    ? leasingObj.bundles
+        .map((b) => ({
+          name: String(b?.name || '').trim(),
+          price: String(b?.price || '').trim(),
+          rooms: Array.isArray(b?.rooms) ? b.rooms.filter(Boolean) : [],
+        }))
+        .filter((b) => b.name || b.price || b.rooms.length)
+    : []
+
+  const axisMeta = {
+    roomsDetail,
+    financials: {
+      securityDeposit: optionalCurrency(basics.securityDeposit) ?? 0,
+      moveInCharges: optionalCurrency(basics.moveInCharges) ?? 0,
+    },
+    leasing: {
+      fullHousePrice: String(leasingObj.fullHousePrice || '').trim(),
+      promoPrice: String(leasingObj.promoPrice || '').trim(),
+      leaseLengthInfo: String(leasingObj.leaseLengthInfo || '').trim(),
+      bundles,
+    },
+  }
+
+  const mergedOtherInfo = mergeAxisListingMetaIntoOtherInfo(otherInfo, axisMeta)
+  if (mergedOtherInfo) fields[PROPERTY_AIR.otherInfo] = mergedOtherInfo
 
   // ── Bathrooms ─────────────────────────────────────────────────────────────────
   for (let i = 1; i <= bc; i++) {
@@ -295,10 +354,14 @@ export function serializeManagerAddPropertyToAirtableFields(params) {
 
   // ── Shared spaces ─────────────────────────────────────────────────────────────
   for (let i = 1; i <= sc; i++) {
-    const row = sharedSpaces[i - 1] || emptySharedSpaceRow()
+    const row = sharedTrimmed[i - 1] || emptySharedSpaceRow()
     const sn = String(row.name || '').trim()
     if (sn) fields[sharedSpaceNameField(i)] = sn
-    const st = String(row.type || '').trim()
+    let st = String(row.type || '').trim()
+    if (st === 'Other') {
+      const custom = String(row.typeOther || '').trim()
+      st = custom || 'Other'
+    }
     if (st) fields[sharedSpaceTypeField(i)] = st
     const acc = Array.isArray(row.access) ? row.access.filter(Boolean) : []
     if (acc.length) fields[sharedSpaceAccessField(i)] = acc

@@ -853,7 +853,7 @@ function snapMinutesToGrid(minutes) {
   return Math.max(TOUR_GRID_START_MIN, Math.min(TOUR_GRID_END_MIN, s))
 }
 
-/** Click-drag on a vertical day column to add availability (green blocks). */
+/** Drag or tap on a vertical day column to add availability (green blocks). */
 function DayAvailabilityTimeline({ ranges, onRangesChange, disabled }) {
   const trackRef = useRef(null)
   const rangesRef = useRef(ranges)
@@ -877,8 +877,9 @@ function DayAvailabilityTimeline({ ranges, onRangesChange, disabled }) {
     return snapMinutesToGrid(raw)
   }
 
-  function onTrackMouseDown(e) {
-    if (disabled || e.button !== 0) return
+  function onTrackPointerDown(e) {
+    if (disabled) return
+    if (e.pointerType === 'mouse' && e.button !== 0) return
     if (e.target.closest('[data-availability-block]')) return
     e.preventDefault()
     setSelectedIdx(null)
@@ -890,17 +891,24 @@ function DayAvailabilityTimeline({ ranges, onRangesChange, disabled }) {
     }
     function onUp(ev) {
       const endMin = minutesFromEvent(ev.clientY)
-      const lo = Math.min(start, endMin)
-      const hi = Math.max(start, endMin)
+      let lo = Math.min(start, endMin)
+      let hi = Math.max(start, endMin)
+      // Treat tap/click as a request to add one grid slot.
+      if (hi - lo < TOUR_GRID_STEP_MIN) {
+        lo = Math.min(lo, TOUR_GRID_END_MIN - TOUR_GRID_STEP_MIN)
+        hi = lo + TOUR_GRID_STEP_MIN
+      }
       if (hi - lo >= TOUR_GRID_STEP_MIN) {
         onRangesChange(normalizeTimeRanges([...rangesRef.current, { start: lo, end: hi }]))
       }
       setDraft(null)
-      window.removeEventListener('mousemove', onMove)
-      window.removeEventListener('mouseup', onUp)
+      window.removeEventListener('pointermove', onMove)
+      window.removeEventListener('pointerup', onUp)
+      window.removeEventListener('pointercancel', onUp)
     }
-    window.addEventListener('mousemove', onMove)
-    window.addEventListener('mouseup', onUp)
+    window.addEventListener('pointermove', onMove)
+    window.addEventListener('pointerup', onUp)
+    window.addEventListener('pointercancel', onUp)
   }
 
   const previewRange =
@@ -935,9 +943,9 @@ function DayAvailabilityTimeline({ ranges, onRangesChange, disabled }) {
           ref={trackRef}
           role="application"
           aria-label="Availability timeline, drag to add time ranges"
-          onMouseDown={onTrackMouseDown}
+          onPointerDown={onTrackPointerDown}
           className={classNames(
-            'relative rounded-2xl border border-slate-200 bg-white select-none',
+            'relative rounded-2xl border border-slate-200 bg-white select-none touch-none',
             disabled ? 'cursor-not-allowed opacity-50' : 'cursor-crosshair',
           )}
           style={{ height: TIMELINE_HEIGHT_PX }}
@@ -2263,6 +2271,8 @@ function HouseManagementPanel({ manager, onPropertiesChange }) {
     amenities: [],
     amenitiesOther: '',
     pets: '',
+    securityDeposit: '',
+    moveInCharges: '',
   })
   const [addBasics, setAddBasics] = useState(emptyAddBasics)
   const [addRoomCount, setAddRoomCount] = useState(1)
@@ -2283,8 +2293,15 @@ function HouseManagementPanel({ manager, onPropertiesChange }) {
     type: '',
     fee: '',
   })
-  const [addSharedSpaceCount, setAddSharedSpaceCount] = useState(0)
   const [addSharedSpaces, setAddSharedSpaces] = useState([])
+  const defaultLeaseLengthInfo =
+    '3-month, 9-month, 12-month, and month-to-month (+$25/month). Start and end dates are flexible unless noted otherwise.'
+  const [addLeasing, setAddLeasing] = useState({
+    fullHousePrice: '',
+    promoPrice: '',
+    leaseLengthInfo: defaultLeaseLengthInfo,
+    bundles: [],
+  })
   const [addOtherInfo, setAddOtherInfo] = useState('')
   const [addImages, setAddImages] = useState([]) // [{ id, file, preview, caption }]
   const addImageInputRef = useRef(null)
@@ -2346,15 +2363,6 @@ function HouseManagementPanel({ manager, onPropertiesChange }) {
       return next.slice(0, n)
     })
   }, [addKitchenCount])
-
-  useEffect(() => {
-    const n = clampInt(addSharedSpaceCount, 0, MAX_SHARED_SPACE_SLOTS)
-    setAddSharedSpaces((prev) => {
-      const next = [...prev]
-      while (next.length < n) next.push(emptySharedSpaceRow())
-      return next.slice(0, n)
-    })
-  }, [addSharedSpaceCount])
 
   function extractNoteValue(notes, label) {
     const escaped = String(label || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
@@ -2486,11 +2494,16 @@ function HouseManagementPanel({ manager, onPropertiesChange }) {
     setAddRoomCount(1)
     setAddBathroomCount(1)
     setAddKitchenCount(1)
-    setAddSharedSpaceCount(0)
     setAddRooms([emptyRoomRow()])
     setAddBathrooms([emptyBathroomRow()])
     setAddKitchens([emptyKitchenRow()])
     setAddSharedSpaces([])
+    setAddLeasing({
+      fullHousePrice: '',
+      promoPrice: '',
+      leaseLengthInfo: defaultLeaseLengthInfo,
+      bundles: [],
+    })
     setAddOtherInfo('')
     setAddApplicationFee('')
     setAddLaundry({ enabled: false, rows: [], roomsSharing: '' })
@@ -2515,24 +2528,27 @@ function HouseManagementPanel({ manager, onPropertiesChange }) {
     const rc = clampInt(addRoomCount, 1, MAX_ROOM_SLOTS)
     const bc = clampInt(addBathroomCount, 0, MAX_BATHROOM_SLOTS)
     const kc = clampInt(addKitchenCount, 0, MAX_KITCHEN_SLOTS)
-    const sc = clampInt(addSharedSpaceCount, 0, MAX_SHARED_SPACE_SLOTS)
     setAddSaving(true)
     try {
+      const roomsPayload = addRooms.map((row) => {
+        const { media, ...rest } = row
+        return rest
+      })
       const fields = serializeManagerAddPropertyToAirtableFields({
         basics: addBasics,
         roomCount: rc,
         bathroomCount: bc,
         kitchenCount: kc,
-        sharedSpaceCount: sc,
         laundry: addLaundry,
         parking: addParking,
-        rooms: addRooms,
+        rooms: roomsPayload,
         bathrooms: addBathrooms,
         kitchens: addKitchens,
         sharedSpaces: addSharedSpaces,
         applicationFee: addApplicationFee,
         otherInfo: addOtherInfo,
         managerRecordId: manager?.id,
+        leasing: addLeasing,
       })
 
       const created = await createPropertyAdmin(fields)
@@ -2541,6 +2557,19 @@ function HouseManagementPanel({ manager, onPropertiesChange }) {
         for (const img of addImages) {
           try {
             await uploadPropertyImage(created.id, img.file)
+          } catch {
+            /* non-fatal */
+          }
+        }
+      }
+
+      for (let ri = 0; ri < addRooms.length; ri++) {
+        const media = addRooms[ri].media || []
+        for (const item of media) {
+          try {
+            const f = item.file
+            const renamed = new File([f], `axis-r${ri + 1}-${f.name}`, { type: f.type || 'application/octet-stream' })
+            await uploadPropertyImage(created.id, renamed)
           } catch {
             /* non-fatal */
           }
@@ -2564,11 +2593,10 @@ function HouseManagementPanel({ manager, onPropertiesChange }) {
   }
 
   // ── Wizard helpers (defined before return so they close over state) ─────────
-  const WIZARD_STEPS = ['Basics', 'Counts', 'Rooms', 'Bathrooms', 'Kitchens', 'Shared Spaces', 'Laundry & Parking', 'Review']
+  const WIZARD_STEPS = ['Basics', 'Counts', 'Rooms', 'Bathrooms', 'Kitchens', 'Shared Spaces', 'Laundry & Parking', 'Review', 'Pricing & leases']
   const wizardRc = clampInt(addRoomCount, 1, MAX_ROOM_SLOTS)
   const wizardBc = clampInt(addBathroomCount, 0, MAX_BATHROOM_SLOTS)
   const wizardKc = clampInt(addKitchenCount, 0, MAX_KITCHEN_SLOTS)
-  const wizardSc = clampInt(addSharedSpaceCount, 0, MAX_SHARED_SPACE_SLOTS)
   const wizardRoomOptions = Array.from({ length: wizardRc }, (_, i) => `Room ${i + 1}`)
 
   function wizUpdateRoom(idx, patch) {
@@ -2582,6 +2610,55 @@ function HouseManagementPanel({ manager, onPropertiesChange }) {
   }
   function wizUpdateSharedSpace(idx, patch) {
     setAddSharedSpaces((prev) => { const next = [...prev]; next[idx] = { ...next[idx], ...patch }; return next })
+  }
+  function wizAddSharedSpace() {
+    setAddSharedSpaces((prev) => {
+      if (prev.length >= MAX_SHARED_SPACE_SLOTS) return prev
+      return [...prev, emptySharedSpaceRow()]
+    })
+  }
+  function wizRemoveSharedSpace(idx) {
+    setAddSharedSpaces((prev) => prev.filter((_, i) => i !== idx))
+  }
+  function wizAddLeasingBundle() {
+    setAddLeasing((L) => ({
+      ...L,
+      bundles: [...(L.bundles || []), { name: '', price: '', rooms: [] }],
+    }))
+  }
+  function wizUpdateLeasingBundle(idx, patch) {
+    setAddLeasing((L) => {
+      const bundles = [...(L.bundles || [])]
+      bundles[idx] = { ...bundles[idx], ...patch }
+      return { ...L, bundles }
+    })
+  }
+  function wizRemoveLeasingBundle(idx) {
+    setAddLeasing((L) => ({ ...L, bundles: (L.bundles || []).filter((_, i) => i !== idx) }))
+  }
+  function addRoomMediaFiles(roomIdx, fileList) {
+    const valid = Array.from(fileList || []).filter((f) => f.type.startsWith('image/') || f.type.startsWith('video/'))
+    if (!valid.length) return
+    const entries = valid.map((file) => ({
+      id: `${Date.now()}-${Math.random()}`,
+      file,
+      preview: URL.createObjectURL(file),
+    }))
+    setAddRooms((prev) =>
+      prev.map((r, i) => (i === roomIdx ? { ...r, media: [...(r.media || []), ...entries] } : r)),
+    )
+  }
+  function removeRoomMedia(roomIdx, mediaId) {
+    setAddRooms((prev) =>
+      prev.map((r, i) => {
+        if (i !== roomIdx) return r
+        const media = r.media || []
+        const next = media.filter((m) => m.id !== mediaId)
+        const removed = media.find((m) => m.id === mediaId)
+        if (removed?.preview) URL.revokeObjectURL(removed.preview)
+        return { ...r, media: next }
+      }),
+    )
   }
   function wizUpdateLaundryRow(idx, patch) {
     setAddLaundry((l) => {
