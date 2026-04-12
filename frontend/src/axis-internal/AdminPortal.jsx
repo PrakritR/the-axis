@@ -521,13 +521,13 @@ export default function AdminPortal() {
               <span className="text-3xl font-black tabular-nums text-emerald-700">{applications.filter((a) => !a.approvalPending && a._airtable?.Approved === true).length}</span>
             </button>
 
-            {/* Active managers */}
+            {/* Subscribed managers */}
             <button
               type="button"
               onClick={() => setTab('accounts')}
               className="flex flex-col gap-1 rounded-[20px] border border-blue-200 bg-blue-50 p-5 text-left transition hover:border-blue-300 hover:shadow-sm"
             >
-              <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-blue-600">Managers · Active</span>
+              <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-blue-600">Managers · Subscribed</span>
               <span className="text-3xl font-black tabular-nums text-blue-700">{accounts.filter((a) => a.enabled).length}</span>
             </button>
 
@@ -539,6 +539,16 @@ export default function AdminPortal() {
             >
               <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-slate-400">Residents</span>
               <span className="text-3xl font-black tabular-nums text-slate-800">{residents.length}</span>
+            </button>
+
+            {/* Inbox — full-width row spanning all 3 columns */}
+            <button
+              type="button"
+              onClick={() => setTab('messages')}
+              className="col-span-full flex items-center justify-between rounded-[20px] border border-slate-800 bg-slate-900 px-6 py-5 text-left transition hover:bg-slate-800"
+            >
+              <span className="text-[10px] font-bold uppercase tracking-[0.18em] text-slate-400">Inbox</span>
+              <span className="text-lg font-black text-white">Open messages →</span>
             </button>
           </div>
 
