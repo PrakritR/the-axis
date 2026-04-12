@@ -504,14 +504,14 @@ export default function Home() {
   return (
       <div className="bg-transparent">
       <Seo
-        title="Axis | Housing in Seattle"
+        title="hello"
         description="Browse available housing in Seattle with posted pricing, listing details, and online applications."
         pathname="/"
         structuredData={buildWebsiteSchema()}
       />
 
       {/* ── HERO ── */}
-      <Hero heading="Find housing that works for you" />
+      <Hero heading="hello" />
 
       {/* ── ROOM FINDER ── */}
       <RoomFinder />
