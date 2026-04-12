@@ -9,6 +9,7 @@ import { getAirtableRoomsTableName } from './airtable.js'
 import {
   deriveApplicationApprovalState,
   applicationDisplayLabelFromApprovalState,
+  applicationRejectedFieldName,
 } from './applicationApprovalState.js'
 
 const BASE_ID = import.meta.env.VITE_AIRTABLE_BASE_ID || 'appol57LKtMKaQ75T'
@@ -361,14 +362,22 @@ export async function adminPatchApplication(recordId, fields) {
   return mapRecord(data)
 }
 
-/** Reject rental application — uses Approved checkbox (no separate Approval Status field required). */
+/** Reject — sets `Rejected` checkbox (Airtable omits unchecked `Approved`, so rejection must use a checked field). */
 export async function adminRejectApplication(recordId) {
-  return adminPatchApplication(recordId, { Approved: false })
+  const rf = applicationRejectedFieldName()
+  return adminPatchApplication(recordId, {
+    Approved: null,
+    [rf]: true,
+  })
 }
 
-/** Remove approval — clears Approved so the row returns to pending review (requires checkbox field). */
+/** Remove approval — clears both markers so the row returns to pending. */
 export async function adminUnapproveApplication(recordId) {
-  return adminPatchApplication(recordId, { Approved: null })
+  const rf = applicationRejectedFieldName()
+  return adminPatchApplication(recordId, {
+    Approved: null,
+    [rf]: null,
+  })
 }
 
 /** Load all resident profiles for CEO/admin portal handoff. */

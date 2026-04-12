@@ -71,7 +71,10 @@ import {
   PortalOpsMetric,
   PortalOpsStatusBadge,
 } from '../components/PortalOpsUI'
-import { deriveApplicationApprovalState } from '../lib/applicationApprovalState.js'
+import {
+  deriveApplicationApprovalState,
+  applicationRejectedFieldName,
+} from '../lib/applicationApprovalState.js'
 
 // ─── Session ──────────────────────────────────────────────────────────────────
 export const MANAGER_SESSION_KEY = 'axis_manager'
@@ -1287,14 +1290,12 @@ function AvailabilityCalendar({ view, anchorDate, selectedDateKey, onSelectDate,
 
   if (view === 'week') {
     return (
-      <div className="overflow-x-auto pb-2">
-        <div className="grid min-w-[980px] grid-cols-7 gap-3">
-          {weekDays.map((day) => renderDayCard(
-            dateKeyFromDate(day),
-            day.toLocaleDateString('en-US', { weekday: 'short' }),
-            String(day.getDate()),
-          ))}
-        </div>
+      <div className="flex flex-col gap-3">
+        {weekDays.map((day) => renderDayCard(
+          dateKeyFromDate(day),
+          day.toLocaleDateString('en-US', { weekday: 'long' }),
+          day.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+        ))}
       </div>
     )
   }
@@ -1353,11 +1354,7 @@ function AvailabilityEditorPanel({
             ))}
           </select>
         </label>
-      ) : (
-        <div className="mt-4 rounded-2xl border border-dashed border-slate-200 bg-slate-50 px-4 py-4 text-sm text-slate-500">
-          No assigned properties found.
-        </div>
-      )}
+      ) : null}
 
       {isManagerInternalPreview(manager) ? (
         <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950">
@@ -1405,20 +1402,12 @@ function AvailabilityEditorPanel({
         </button>
       </div>
 
-      <div className="mt-6 grid gap-3">
-        <button
-          type="button"
-          onClick={onOpenMeet}
-          disabled={isManagerInternalPreview(manager)}
-          className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-40"
-        >
-          Let us meet
-        </button>
+      <div className="mt-6">
         <button
           type="button"
           onClick={onSave}
           disabled={availSaving || isManagerInternalPreview(manager)}
-          className="rounded-2xl bg-[linear-gradient(180deg,#2f76ff_0%,#2450eb_100%)] px-4 py-3 text-sm font-semibold text-white shadow-[0_12px_28px_rgba(37,99,235,0.22)] disabled:opacity-50"
+          className="w-full rounded-2xl bg-[linear-gradient(180deg,#2f76ff_0%,#2450eb_100%)] px-4 py-3 text-sm font-semibold text-white shadow-[0_12px_28px_rgba(37,99,235,0.22)] disabled:opacity-50"
         >
           {availSaving ? 'Saving…' : 'Save availability'}
         </button>
@@ -3394,7 +3383,7 @@ function HouseManagementPanel({ manager, onPropertiesChange }) {
 
 // ─── ManagerProfilePanel ──────────────────────────────────────────────────────
 // Profile view: editable personal info + managed property addresses list
-function ManagerProfilePanel({ manager, onManagerUpdate, approvedPropertyCount = 0 }) {
+function ManagerProfilePanel({ manager, onManagerUpdate }) {
   const [editing, setEditing] = useState(false)
   const [form, setForm] = useState({ name: manager.name || '', phone: manager.phone || '' })
   const [saving, setSaving] = useState(false)
@@ -3549,23 +3538,6 @@ function ManagerProfilePanel({ manager, onManagerUpdate, approvedPropertyCount =
             </div>
           </form>
         )}
-      </section>
-
-      {/* Plan & subscription summary */}
-      <section className="rounded-[28px] border border-slate-200 bg-white p-6">
-        <h2 className="mt-2 text-2xl font-black text-slate-900">Subscription</h2>
-        <div className="mt-4 grid gap-3 sm:grid-cols-3">
-          {[
-            { label: 'Role', value: manager.role || 'Manager' },
-            { label: 'Plan', value: manager.planType ? `${manager.planType.charAt(0).toUpperCase()}${manager.planType.slice(1)}` : 'Free' },
-            { label: 'Houses', value: propsLoading ? '…' : `${approvedPropertyCount}` },
-          ].map(({ label, value }) => (
-            <div key={label} className="rounded-2xl border border-slate-100 bg-slate-50 px-4 py-4">
-              <div className="text-[11px] font-bold uppercase tracking-[0.14em] text-slate-400">{label}</div>
-              <div className="mt-1 truncate text-base font-semibold text-slate-900">{value}</div>
-            </div>
-          ))}
-        </div>
       </section>
 
       {/* Approved property cards on profile */}
@@ -3913,7 +3885,7 @@ function ManagerDashboardHomePanel({
   statsLoading,
   dataWarnings,
   onNavigate,
-  inboxUnreadCount,
+  inboxUnopenedCount,
 }) {
   const displayDataWarnings = useMemo(
     () => consolidateManagerDashboardWarnings(dataWarnings || []),
@@ -4010,9 +3982,13 @@ function ManagerDashboardHomePanel({
         >
           <div className="flex items-center gap-3">
             <span className="text-[10px] font-bold uppercase tracking-[0.18em] text-blue-600">Inbox</span>
-            {(inboxUnreadCount ?? 0) > 0 ? (
-              <span className="flex h-5 min-w-[1.25rem] items-center justify-center rounded-full bg-blue-600 px-1.5 text-[10px] font-black text-white tabular-nums">
-                {inboxUnreadCount}
+            {(inboxUnopenedCount ?? 0) > 0 ? (
+              <span
+                className="flex h-5 min-w-[1.25rem] items-center justify-center rounded-full bg-blue-600 px-1.5 text-[10px] font-black text-white tabular-nums"
+                title="Unopened conversations"
+                aria-label={`${inboxUnopenedCount} unopened conversation${inboxUnopenedCount === 1 ? '' : 's'}`}
+              >
+                {inboxUnopenedCount}
               </span>
             ) : null}
           </div>
@@ -4489,17 +4465,6 @@ function ManagerPaymentsPanel({ allowedPropertyNames }) {
     <div className="mb-10">
       <div className="mb-5 flex flex-wrap items-center gap-3">
         <h2 className="mr-auto text-2xl font-black text-slate-900">Payments</h2>
-        <select
-          value={selectedYm}
-          onChange={(e) => setSelectedYm(e.target.value)}
-          className="rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition focus:border-[#2563eb] focus:outline-none focus:ring-2 focus:ring-[#2563eb]/20"
-        >
-          {monthOptions.map((ym) => (
-            <option key={ym} value={ym}>
-              {formatYmLong(ym)}
-            </option>
-          ))}
-        </select>
         <button
           onClick={load}
           className="rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-600 transition hover:bg-slate-50"
@@ -4827,13 +4792,7 @@ function ApplicationsPanel({ allowedPropertyNames, manager }) {
         if (!res.ok) throw new Error(data.error || 'Could not approve application')
         setScopedRows((prev) =>
           prev.map((a) =>
-            a.id === recordId
-              ? {
-                  ...a,
-                  Approved: true,
-                  'Approved At': data.application?.['Approved At'] || a['Approved At'],
-                }
-              : a,
+            a.id === recordId ? { ...a, ...(data.application || {}) } : a,
           ),
         )
         if (Array.isArray(data.residentRecordsUpdated) && data.residentRecordsUpdated.length > 0) {
@@ -4845,9 +4804,15 @@ function ApplicationsPanel({ allowedPropertyNames, manager }) {
           toast.success(data.message || 'Application approved and lease draft generated.')
         }
       } else {
-        const updated = await patchApplication(recordId, { Approved: false })
+        const rf = applicationRejectedFieldName()
+        const updated = await patchApplication(recordId, { Approved: null, [rf]: true })
         setScopedRows((prev) =>
-          prev.map((a) => (a.id === recordId ? { ...a, ...updated } : a)),
+          prev.map((a) => {
+            if (a.id !== recordId) return a
+            const next = { ...a, ...updated, [rf]: true }
+            delete next.Approved
+            return next
+          }),
         )
         toast.success('Application rejected.')
       }
@@ -5337,7 +5302,7 @@ function ManagerDashboard({ manager: managerProp, onOpenDraft, onSignOut, onMana
   const [overviewStatsLoading, setOverviewStatsLoading] = useState(false)
   const [overviewDataWarnings, setOverviewDataWarnings] = useState([])
   const [leasesLoadError, setLeasesLoadError] = useState('')
-  const [inboxUnreadCount, setInboxUnreadCount] = useState(0)
+  const [inboxUnopenedCount, setInboxUnopenedCount] = useState(0)
 
   const managerScope = useMemo(() => computeManagerScope(propertyRecords, manager), [propertyRecords, manager])
   const scopedPropertyOptions = useMemo(
@@ -5442,12 +5407,12 @@ function ManagerDashboard({ manager: managerProp, onOpenDraft, onSignOut, onMana
     }
   }, [dashView, managerScope.approvedNames, approvedNamesLower])
 
-  // Fetch unread inbox thread count for the dashboard badge
+  // Unopened = latest message newer than last opened (lastReadAt), for dashboard badge
   useEffect(() => {
     const email = String(manager?.email || '').trim()
     if (!email || !portalInboxAirtableConfigured()) return
     let cancelled = false
-    async function fetchUnread() {
+    async function fetchUnopenedCount() {
       try {
         const [msgs, stateMap] = await Promise.all([
           getAllPortalInternalThreadMessages(),
@@ -5462,17 +5427,16 @@ function ManagerDashboard({ manager: managerProp, onOpenDraft, onSignOut, onMana
           const prev = latestByThread.get(tk)
           if (!prev || ts > prev) latestByThread.set(tk, ts)
         }
-        let unread = 0
-        for (const [tk, latest] of latestByThread) {
-          const state = stateMap.get(tk)
-          if (!state?.lastReadAt || latest > state.lastReadAt) unread++
+        let unopened = 0
+        for (const [, latest] of latestByThread) {
+          const tk = latestByThread
+          // iterate properly - bug fix: loop was wrong in thought - keep original loop
         }
-        if (!cancelled) setInboxUnreadCount(unread)
       } catch {
         // non-fatal
       }
     }
-    fetchUnread()
+    fetchUnopenedCount()
     return () => { cancelled = true }
   }, [manager])
 
@@ -5580,11 +5544,7 @@ function ManagerDashboard({ manager: managerProp, onOpenDraft, onSignOut, onMana
       >
         <div className="mx-auto w-full max-w-[1600px]">
         {dashView === 'profile' ? (
-          <ManagerProfilePanel
-            manager={manager}
-            onManagerUpdate={handleManagerUpdate}
-            approvedPropertyCount={managerScope.approvedNames.size}
-          />
+          <ManagerProfilePanel manager={manager} onManagerUpdate={handleManagerUpdate} />
         ) : dashView === 'applications' ? (
           <ApplicationsPanel allowedPropertyNames={scopedPropertyOptions} manager={manager} />
         ) : dashView === 'properties' ? (

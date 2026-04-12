@@ -1,14 +1,14 @@
 import React from 'react'
 
 /**
- * Inbox row: participant, bold subject, one-line preview, time, unread dot; optional trash/restore.
+ * Inbox row: participant, bold subject, one-line preview, time, unopened marker; optional trash/restore.
  */
 export default function ConversationListItem({
   participantLabel,
   subjectLine,
   preview,
   selected,
-  unread,
+  unopened,
   time,
   onClick,
   onTrash,
@@ -25,20 +25,20 @@ export default function ConversationListItem({
         <div className="flex items-start justify-between gap-2">
           <span
             className={`min-w-0 flex-1 truncate text-sm ${
-              unread ? 'font-semibold text-slate-900' : 'font-medium text-slate-800'
+              unopened ? 'font-semibold text-slate-900' : 'font-medium text-slate-800'
             }`}
           >
             {participantLabel || 'Conversation'}
           </span>
           <div className="flex shrink-0 items-center gap-1.5">
-            {unread ? (
-              <span className="h-2 w-2 rounded-full bg-[#2563eb]" title="Unread" aria-hidden />
+            {unopened ? (
+              <span className="h-2 w-2 rounded-full bg-[#2563eb]" title="Unopened" aria-hidden />
             ) : null}
             {time ? <span className="text-[11px] tabular-nums text-slate-400">{time}</span> : null}
           </div>
         </div>
         {subjectLine ? (
-          <span className={`truncate text-sm ${unread ? 'font-bold text-slate-900' : 'font-semibold text-slate-800'}`}>
+          <span className={`truncate text-sm ${unopened ? 'font-bold text-slate-900' : 'font-semibold text-slate-800'}`}>
             {subjectLine}
           </span>
         ) : null}

@@ -23,6 +23,7 @@ export const APPLICATION_FIELD_GROUPS = [
     title: 'Review',
     fields: [
       ['Approved', 'Approved'],
+      ['Rejected', 'Rejected'],
       ['Approved At', 'Approved at'],
     ],
   },

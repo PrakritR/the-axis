@@ -16,6 +16,12 @@ const APPLICATIONS_TABLE =
   process.env.AIRTABLE_APPLICATIONS_TABLE ||
   'Applications'
 
+const APPLICATION_REJECTED_FIELD = String(
+  process.env.VITE_AIRTABLE_APPLICATION_REJECTED_FIELD ||
+    process.env.AIRTABLE_APPLICATION_REJECTED_FIELD ||
+    'Rejected',
+).trim() || 'Rejected'
+
 function airtableHeaders() {
   return {
     Authorization: `Bearer ${AIRTABLE_TOKEN}`,
@@ -67,6 +73,7 @@ async function approveApplication(recordId) {
   const data = await airtablePatch(`${APPS_AIRTABLE_BASE_URL}/${enc}/${recordId}`, {
     Approved: true,
     'Approved At': now,
+    [APPLICATION_REJECTED_FIELD]: null,
   })
   return mapRecord(data)
 }

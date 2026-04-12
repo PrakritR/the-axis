@@ -260,8 +260,8 @@ export default function ResidentPortalInbox({ resident }) {
     return threadRows.map((row) => {
       const st = inboxStateMap.get(row.stateKey)
       const section = sectionForRow(row.lastMsgTs, st)
-      const unread = section === 'unopened'
-      return { ...row, section, unread }
+      const unopened = section === 'unopened'
+      return { ...row, section, unopened }
     })
   }, [threadRows, inboxStateMap])
 
@@ -283,7 +283,8 @@ export default function ResidentPortalInbox({ resident }) {
     const q = threadSearch.trim().toLowerCase()
     let rows = threadRowsWithMeta
     if (sectionFilter === 'all') rows = rows.filter((r) => r.section !== 'trash')
-    else if (sectionFilter === 'unread') rows = rows.filter((r) => r.section === 'unopened')
+    else if (sectionFilter === 'unopened') rows = rows.filter((r) => r.section === 'unopened')
+    else if (sectionFilter === 'opened') rows = rows.filter((r) => r.section === 'opened')
     else if (sectionFilter === 'trash') rows = rows.filter((r) => r.section === 'trash')
     if (channelFilter === 'manager') rows = rows.filter((r) => r.id === UI_LEASING)
     else if (channelFilter === 'admin') rows = rows.filter((r) => r.id === UI_ADMIN)
@@ -518,11 +519,13 @@ export default function ResidentPortalInbox({ resident }) {
         ? 'No messages yet'
         : threadSearch.trim()
           ? 'No matches'
-          : sectionFilter === 'unread'
-            ? 'No unread'
-            : channelFilter !== 'all'
-              ? `No ${channelFilter === 'manager' ? 'manager' : 'admin'} conversations`
-              : 'No conversations'
+          : sectionFilter === 'unopened'
+            ? 'No unopened conversations'
+            : sectionFilter === 'opened'
+              ? 'No opened conversations'
+              : channelFilter !== 'all'
+                ? `No ${channelFilter === 'manager' ? 'manager' : 'admin'} conversations`
+                : 'No conversations'
 
   return (
     <div>
@@ -560,7 +563,8 @@ export default function ResidentPortalInbox({ resident }) {
           onFilterChange={setSectionFilter}
           counts={{
             all: inboxActiveTotal,
-            unread: inboxSections.unopened.length,
+            unopened: inboxSections.unopened.length,
+            opened: inboxSections.opened.length,
             trash: inboxSections.trash.length,
           }}
           rows={visibleThreadRows}

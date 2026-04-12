@@ -57,6 +57,7 @@ Create table `Applications`
 `Signer Date Signed` -> date
 `Additional Notes` -> long text
 `Approved` -> checkbox
+`Rejected` -> checkbox (portal sets when an application is rejected; Airtable omits unchecked checkboxes in the API, so this is required to show “Rejected” vs “Under review”)
 `Approved At` -> date and time
 `Lease Token` -> single line text
 `Lease JSON` -> long text

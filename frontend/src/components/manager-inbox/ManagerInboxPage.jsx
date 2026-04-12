@@ -569,8 +569,8 @@ export default function ManagerInboxPage({
     return threadRows.map((row) => {
       const st = inboxStateMap.get(row.stateKey)
       const section = managerInboxSectionForRow(row.lastMsgTs, st)
-      const unread = section === 'unopened'
-      return { ...row, section, unread }
+      const unopened = section === 'unopened'
+      return { ...row, section, unopened }
     })
   }, [threadRows, inboxStateMap])
 
@@ -592,8 +592,8 @@ export default function ManagerInboxPage({
     const q = threadSearch.trim().toLowerCase()
     let rows = threadRowsWithMeta
     if (sectionFilter === 'all') rows = rows.filter((row) => row.section !== 'trash')
-    else if (sectionFilter === 'unread') rows = rows.filter((row) => row.section === 'unopened')
-    else if (sectionFilter === 'sent') rows = rows.filter((row) => row.section === 'opened')
+    else if (sectionFilter === 'unopened') rows = rows.filter((row) => row.section === 'unopened')
+    else if (sectionFilter === 'opened') rows = rows.filter((row) => row.section === 'opened')
     else if (sectionFilter === 'trash') rows = rows.filter((row) => row.section === 'trash')
 
     if (adminFullInbox) {
@@ -1103,10 +1103,10 @@ export default function ManagerInboxPage({
         ? 'No conversations yet'
         : threadSearch.trim()
           ? 'No matches for your search'
-          : sectionFilter === 'unread'
-            ? 'No unread conversations'
-            : sectionFilter === 'sent'
-              ? 'No sent conversations'
+          : sectionFilter === 'unopened'
+            ? 'No unopened conversations'
+            : sectionFilter === 'opened'
+              ? 'No opened conversations'
             : channelFilter !== 'all'
               ? `No ${channelLabel} conversations`
               : 'No conversations'
@@ -1165,8 +1165,8 @@ export default function ManagerInboxPage({
           onFilterChange={setSectionFilter}
           counts={{
             all: inboxActiveTotal,
-            unread: inboxSections.unopened.length,
-            sent: inboxSections.opened.length,
+            unopened: inboxSections.unopened.length,
+            opened: inboxSections.opened.length,
             trash: inboxSections.trash.length,
           }}
           rows={visibleThreadRows}

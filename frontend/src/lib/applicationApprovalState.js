@@ -1,10 +1,27 @@
 /**
+ * Checkbox name used to persist rejection. Checked = appears in Airtable API; unchecked is omitted.
+ * (The `Approved` checkbox is also omitted when unchecked, so "rejected" cannot be stored as Approved=false alone.)
+ */
+export function applicationRejectedFieldName() {
+  const s =
+    typeof import.meta !== 'undefined' && import.meta.env?.VITE_AIRTABLE_APPLICATION_REJECTED_FIELD != null
+      ? String(import.meta.env.VITE_AIRTABLE_APPLICATION_REJECTED_FIELD).trim()
+      : ''
+  return s || 'Rejected'
+}
+
+/**
  * Map an Applications table row to pending | approved | rejected.
- * Optional single-line fields `Approval Status` / `Application Status` win when set.
- * Otherwise uses the `Approved` checkbox: true → approved, false → rejected, unset → pending.
+ * Uses optional `Approval Status` / `Application Status` when set.
+ * `Rejected` checkbox (see applicationRejectedFieldName) is the reliable store for rejection.
+ * `Approved` true → approved; explicit false (e.g. optimistic UI) → rejected; both omitted → pending.
  */
 export function deriveApplicationApprovalState(raw) {
   if (!raw || typeof raw !== 'object') return 'pending'
+
+  const rejKey = applicationRejectedFieldName()
+  const rejectedFlag = raw[rejKey]
+  if (rejectedFlag === true || rejectedFlag === 1) return 'rejected'
 
   const status = String(raw['Approval Status'] || raw['Application Status'] || '').trim().toLowerCase()
 
