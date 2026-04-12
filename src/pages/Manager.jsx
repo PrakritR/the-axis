@@ -2191,6 +2191,7 @@ function HouseManagementPanel({ manager, onPropertiesChange }) {
     utilitiesFee: '',
     securityDeposit: '',
     applicationFee: '',
+    siteManagerEmail: '',
     description: '',
     imageUrls: '',
     tourManager: '',
@@ -2202,6 +2203,11 @@ function HouseManagementPanel({ manager, onPropertiesChange }) {
     availability: '',
     notes: '',
     securityDeposit: '',
+    utilitiesFee: '',
+    applicationFee: '',
+    siteManagerEmail: '',
+    propertyLabel: '',
+    address: '',
   })
   const addInputCls =
     'w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm transition focus:border-[#2563eb] focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#2563eb]/20'
@@ -2238,7 +2244,7 @@ function HouseManagementPanel({ manager, onPropertiesChange }) {
   }
 
   function buildTourNotes(existingNotes, metadata) {
-    const labels = ['Tour Manager', 'Tour Availability', 'Tour Notes']
+    const labels = ['Tour Manager', 'Tour Availability', 'Tour Notes', 'Site Manager Email']
     let stripped = String(existingNotes || '').trim()
     labels.forEach((label) => {
       const escaped = label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
@@ -2250,6 +2256,7 @@ function HouseManagementPanel({ manager, onPropertiesChange }) {
     if (metadata.manager) parts.push(`Tour Manager: ${metadata.manager}`)
     if (metadata.availability) parts.push(`Tour Availability: ${metadata.availability}`)
     if (metadata.notes) parts.push(`Tour Notes: ${metadata.notes}`)
+    if (metadata.siteManagerEmail) parts.push(`Site Manager Email: ${metadata.siteManagerEmail}`)
     if (stripped) parts.push(stripped)
     return parts.join('\n')
   }
@@ -2273,11 +2280,26 @@ function HouseManagementPanel({ manager, onPropertiesChange }) {
   async function handleSaveTourHours(property) {
     setSaving(true)
     try {
-      const notes = buildTourNotes(property.Notes, tourForm)
-      const updated = await updatePropertyAdmin(property.id, {
-        Notes: notes,
-        ...(tourForm.securityDeposit ? { 'Security Deposit': Number(tourForm.securityDeposit) } : {}),
+      const notes = buildTourNotes(property.Notes, {
+        manager: tourForm.manager.trim(),
+        availability: tourForm.availability.trim(),
+        notes: tourForm.notes.trim(),
+        siteManagerEmail: tourForm.siteManagerEmail.trim(),
       })
+      const patch = { Notes: notes }
+      const sd = optionalPropertyCurrency(tourForm.securityDeposit)
+      if (sd !== undefined) patch['Security Deposit'] = sd
+      const uf = optionalPropertyCurrency(tourForm.utilitiesFee)
+      if (uf !== undefined) patch['Utilities Fee'] = uf
+      const af = optionalPropertyCurrency(tourForm.applicationFee)
+      if (af !== undefined) patch['Application Fee'] = af
+      const sme = String(tourForm.siteManagerEmail || '').trim()
+      if (sme) patch['Site Manager Email'] = sme
+      const propLabel = String(tourForm.propertyLabel || '').trim()
+      patch.Property = propLabel || String(property.Name || '').trim()
+      const addr = String(tourForm.address || '').trim()
+      if (addr) patch.Address = addr
+      const updated = await updatePropertyAdmin(property.id, patch)
       setProperties((current) => {
         const next = current.map((item) => (item.id === property.id ? updated : item))
         onPropertiesChange?.(next)
@@ -2308,6 +2330,7 @@ function HouseManagementPanel({ manager, onPropertiesChange }) {
         manager: addForm.tourManager.trim(),
         availability: addForm.tourAvailability.trim(),
         notes: addForm.tourNotes.trim(),
+        siteManagerEmail: addForm.siteManagerEmail.trim(),
       })
       const noteParts = []
       if (addForm.description.trim()) noteParts.push(`Description: ${addForm.description.trim()}`)
@@ -2316,20 +2339,24 @@ function HouseManagementPanel({ manager, onPropertiesChange }) {
       if (addForm.imageUrls.trim()) noteParts.push(`Image URLs:\n${addForm.imageUrls.trim()}`)
       noteParts.push(`Submitted by: ${String(manager?.email || '').trim()}`)
       const tailNotes = noteParts.join('\n')
+      const propertyLabelFinal = addForm.propertyLabel.trim() || addForm.name.trim()
+      const utilitiesFee = optionalPropertyCurrency(addForm.utilitiesFee) ?? 0
+      const securityDeposit = optionalPropertyCurrency(addForm.securityDeposit) ?? 0
+      const applicationFee = optionalPropertyCurrency(addForm.applicationFee)
+      const siteMgr = addForm.siteManagerEmail.trim()
       const fields = {
         Name: addForm.name.trim(),
         Address: addForm.address.trim(),
+        Property: propertyLabelFinal,
+        Approved: false,
         Status: 'pending_review',
         'Manager Email': String(manager?.email || '').trim(),
         Notes: [tourBlock, tailNotes].filter(Boolean).join('\n'),
+        'Utilities Fee': utilitiesFee,
+        'Security Deposit': securityDeposit,
       }
-      if (addForm.propertyLabel.trim()) fields.Property = addForm.propertyLabel.trim()
-      const utilitiesFee = optionalPropertyCurrency(addForm.utilitiesFee)
-      if (utilitiesFee !== undefined) fields['Utilities Fee'] = utilitiesFee
-      const securityDeposit = optionalPropertyCurrency(addForm.securityDeposit)
-      if (securityDeposit !== undefined) fields['Security Deposit'] = securityDeposit
-      const applicationFee = optionalPropertyCurrency(addForm.applicationFee)
       if (applicationFee !== undefined) fields['Application Fee'] = applicationFee
+      if (siteMgr) fields['Site Manager Email'] = siteMgr
       if (manager?.id) fields.Manager = [manager.id]
       const created = await createPropertyAdmin(fields)
       setProperties((current) => {
@@ -2352,6 +2379,7 @@ function HouseManagementPanel({ manager, onPropertiesChange }) {
         tourManager: '',
         tourAvailability: '',
         tourNotes: '',
+        siteManagerEmail: '',
       })
       setAddOpen(false)
     } catch (err) {
