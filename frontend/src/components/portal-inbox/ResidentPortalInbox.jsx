@@ -423,6 +423,18 @@ export default function ResidentPortalInbox({ resident }) {
 
   const headerSubject = activeThreadSubject || selectedRowMeta?.subjectLine || 'Inbox'
 
+  function buildOptimisticMessage(body, subject) {
+    return {
+      id: `optimistic-${Date.now()}`,
+      Message: body,
+      'Sender Email': email,
+      'Is Admin': false,
+      Timestamp: new Date().toISOString(),
+      created_at: new Date().toISOString(),
+      ...(subjectFieldName && subject ? { [subjectFieldName]: subject } : {}),
+    }
+  }
+
   async function handleComposeSend(e) {
     e.preventDefault()
     if (!email || !composeBody.trim()) return
@@ -437,6 +449,7 @@ export default function ResidentPortalInbox({ resident }) {
     const subjResolved = resolveInboxSubject(composeSubjectPreset, composeSubjectCustom)
     const threadKey = composeTo === 'admin' ? adminKey : leasingKey
     const bodyOut = mergeSubjectIntoMessageIfNeeded(composeBody.trim(), subjResolved, showSubjectField)
+    const targetThreadId = composeTo === 'admin' ? UI_ADMIN : UI_LEASING
     setComposeSending(true)
     try {
       await sendMessage({
@@ -452,14 +465,21 @@ export default function ResidentPortalInbox({ resident }) {
         senderName: resident.Name || email,
         subject: subjResolved,
       })
+      const optimistic = buildOptimisticMessage(bodyOut, showSubjectField ? subjResolved : '')
+      if (targetThreadId === UI_LEASING) {
+        setLeasingMsgs((prev) => [...prev, optimistic])
+      } else {
+        setAdminMsgs((prev) => [...prev, optimistic])
+      }
+      setThread((prev) => [...prev, optimistic])
       setComposeOpen(false)
       setComposeBody('')
       setComposeSubjectPreset('')
       setComposeSubjectCustom('')
       setComposeTo('manager')
-      await loadAll()
-      setSelectedThreadId(composeTo === 'admin' ? UI_ADMIN : UI_LEASING)
+      setSelectedThreadId(targetThreadId)
       toast.success('Sent')
+      loadAll()
     } catch (err) {
       toast.error(err.message || 'Send failed')
     } finally {
@@ -495,19 +515,28 @@ export default function ResidentPortalInbox({ resident }) {
         senderName: resident.Name || email,
         subject: subjResolved,
       })
+      const optimistic = buildOptimisticMessage(bodyOut, showSubjectField ? subjResolved : '')
+      if (selectedThreadId === UI_LEASING) {
+        setLeasingMsgs((prev) => [...prev, optimistic])
+      } else {
+        setAdminMsgs((prev) => [...prev, optimistic])
+      }
+      setThread((prev) => [...prev, optimistic])
       setReply('')
       setReplySubjectPreset('')
       setReplySubjectCustom('')
-      await loadAll()
-      const next = await getMessagesByThreadKey(threadKey)
-      setThread(
-        [...next].sort(
-          (a, b) =>
-            new Date(a.Timestamp || a.created_at || 0) - new Date(b.Timestamp || b.created_at || 0),
+      toast.success('Sent')
+      if (selectedStateKey) touchThreadRead(selectedStateKey)
+      loadAll().then(() =>
+        getMessagesByThreadKey(threadKey).then((next) =>
+          setThread(
+            [...next].sort(
+              (a, b) =>
+                new Date(a.Timestamp || a.created_at || 0) - new Date(b.Timestamp || b.created_at || 0),
+            ),
+          ),
         ),
       )
-      if (selectedStateKey) await touchThreadRead(selectedStateKey)
-      toast.success('Sent')
     } catch (err) {
       toast.error(err.message || 'Send failed')
     } finally {
@@ -523,16 +552,11 @@ export default function ResidentPortalInbox({ resident }) {
     )
   }
 
-  const channelTabs = useMemo(() => {
-    const nonTrashed = threadRowsWithMeta.filter((r) => r.section !== 'trash')
-    const mgrCount = nonTrashed.filter((r) => r.id === UI_LEASING).length
-    const admCount = nonTrashed.filter((r) => r.id === UI_ADMIN).length
-    return [
-      ['all', 'All', mgrCount + admCount],
-      ['manager', 'Manager', mgrCount],
-      ['admin', 'Admin', admCount],
-    ]
-  }, [threadRowsWithMeta])
+  const channelTabs = useMemo(() => [
+    ['all', 'Both'],
+    ['manager', 'Manager'],
+    ['admin', 'Admin'],
+  ], [])
 
   const listEmptyMessage =
     sectionFilter === 'trash' && inboxSections.trash.length === 0
@@ -548,12 +572,10 @@ export default function ResidentPortalInbox({ resident }) {
               : 'No conversations'
 
   return (
-    <div className="mb-8">
-      <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-        <div>
-          <h2 className="text-xl font-bold tracking-tight text-slate-900">Inbox</h2>
-        </div>
-        <div className="flex flex-wrap gap-2">
+    <div>
+      <div className="mb-3 flex items-center justify-between gap-3">
+        <h2 className="text-lg font-bold tracking-tight text-slate-900">Inbox</h2>
+        <div className="flex gap-2">
           <button
             type="button"
             onClick={() => {
@@ -561,21 +583,21 @@ export default function ResidentPortalInbox({ resident }) {
               setSelectedThreadId(null)
               setThread([])
             }}
-            className="rounded-full bg-[linear-gradient(180deg,#2f76ff_0%,#2450eb_100%)] px-4 py-2 text-xs font-semibold text-white shadow-sm hover:opacity-95"
+            className="rounded-full bg-[#2563eb] px-3.5 py-1.5 text-xs font-semibold text-white shadow-sm hover:bg-[#1d4ed8]"
           >
             New message
           </button>
           <button
             type="button"
             onClick={() => loadAll()}
-            className="rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-50"
+            className="rounded-full border border-slate-200 bg-white px-3.5 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-50"
           >
             Refresh
           </button>
         </div>
       </div>
 
-      <div className="flex min-h-[min(420px,calc(100dvh-10rem))] max-h-[calc(100dvh-10rem)] flex-col overflow-hidden rounded-2xl border border-slate-200 bg-slate-50/80 shadow-sm md:flex-row">
+      <div className="flex h-[min(560px,calc(100dvh-10rem))] flex-col overflow-hidden rounded-2xl border border-slate-200 bg-slate-50/80 shadow-sm md:flex-row">
         <ConversationList
           loading={loading}
           errorMessage={loadError}
@@ -601,12 +623,12 @@ export default function ResidentPortalInbox({ resident }) {
           onChannelFilterChange={setChannelFilter}
         />
 
-        <div className="flex min-h-[min(50vh,440px)] min-w-0 flex-1 flex-col overflow-hidden bg-white md:min-h-0">
-          <header className="shrink-0 border-b border-slate-100 px-4 py-4 md:px-6">
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-white">
+          <header className="shrink-0 border-b border-slate-100 px-4 py-3 md:px-5">
             {composeOpen ? (
-              <div className="rounded-2xl border border-indigo-200 bg-indigo-50/60 p-4">
-                <div className="flex items-start justify-between gap-2">
-                  <h4 className="text-sm font-black text-slate-900">New message</h4>
+              <div className="rounded-xl border border-indigo-200 bg-indigo-50/60 p-3">
+                <div className="flex items-center justify-between gap-2">
+                  <h4 className="text-sm font-bold text-slate-900">New message</h4>
                   <button
                     type="button"
                     onClick={() => setComposeOpen(false)}
@@ -615,7 +637,7 @@ export default function ResidentPortalInbox({ resident }) {
                     Cancel
                   </button>
                 </div>
-                <form onSubmit={handleComposeSend} className="mt-4 space-y-3">
+                <form onSubmit={handleComposeSend} className="mt-3 space-y-2.5">
                   <label className="block text-xs font-semibold text-slate-700">
                     To
                     <select
@@ -693,15 +715,15 @@ export default function ResidentPortalInbox({ resident }) {
           </header>
 
           {!composeOpen && !selectedThreadId ? (
-            <div className="flex min-h-[200px] flex-1 flex-col items-center justify-center gap-4 px-6 py-10 text-center">
-              <p className="max-w-sm text-sm text-slate-600">Select a conversation to view messages, or start a new one.</p>
+            <div className="flex flex-1 flex-col items-center justify-center gap-3 px-6 text-center">
+              <p className="max-w-xs text-sm text-slate-500">Select a conversation or start a new one.</p>
               <button
                 type="button"
                 onClick={() => {
                   setComposeOpen(true)
                   setThread([])
                 }}
-                className="rounded-full bg-[#2563eb] px-5 py-2.5 text-sm font-semibold text-white"
+                className="rounded-full bg-[#2563eb] px-5 py-2 text-sm font-semibold text-white"
               >
                 New message
               </button>
