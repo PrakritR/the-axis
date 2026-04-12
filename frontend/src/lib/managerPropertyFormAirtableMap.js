@@ -20,6 +20,7 @@ export const PROPERTY_AIR = {
   roomCount:          'Room Count',
   propertyType:       'Property Type',      // Single select (was "Housing Type")
   bathroomCount:      'Bathroom Count',
+  bathroomAccess:     'Bathroom Access',
   kitchenCount:       'Kitchen Count',
   amenities:          'Amenities',          // Multiple select → send as string[]
   managerProfile:     'Manager Profile',    // Linked record (was "Manager")
@@ -37,8 +38,13 @@ export const PROPERTY_AIR = {
 }
 
 // ─── Dynamic room fields (1–20) ──────────────────────────────────────────────────
-/** @param {number} n 1-based */
-export const roomRentField        = (n) => `Room ${n} Rent`
+/**
+ * @param {number} n 1-based
+ * NOTE: Airtable only has "Room N Rent" for rooms 10–20.
+ * Rooms 1–9 are missing this field — returns null so the serializer skips them.
+ * Add Room 1 Rent … Room 9 Rent to the Airtable Properties table to enable.
+ */
+export const roomRentField        = (n) => n >= 10 ? `Room ${n} Rent` : null
 export const roomAvailabilityField = (n) => `Room ${n} Availability`   // Date
 export const roomFurnishedField    = (n) => `Room ${n} Furnished`       // Single select: Yes/No/Partial
 export const roomUtilitiesCostField= (n) => `Room ${n} Utilities Cost`
@@ -209,12 +215,20 @@ export function serializeManagerAddPropertyToAirtableFields(params) {
   const oi = String(otherInfo || '').trim()
   if (oi) fields[PROPERTY_AIR.otherInfo] = oi
 
+  // Bathroom Access (general field — e.g. "Shared", "Private")
+  const ba = String(basics.bathroomAccess || '').trim()
+  if (ba) fields[PROPERTY_AIR.bathroomAccess] = ba
+
   // ── Rooms ─────────────────────────────────────────────────────────────────────
   for (let i = 1; i <= rc; i++) {
     const row = rooms[i - 1] || emptyRoomRow()
 
-    const rent = optionalCurrency(row.rent)
-    if (rent !== undefined) fields[roomRentField(i)] = rent
+    // roomRentField returns null for rooms 1–9 (field doesn't exist in Airtable yet)
+    const rentFieldName = roomRentField(i)
+    if (rentFieldName) {
+      const rent = optionalCurrency(row.rent)
+      if (rent !== undefined) fields[rentFieldName] = rent
+    }
 
     const avail = toIsoDate(row.availability)
     if (avail) fields[roomAvailabilityField(i)] = avail
