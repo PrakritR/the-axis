@@ -987,49 +987,8 @@ export default function AdminPortal() {
       {tab === 'applications' && (
         <div className="space-y-6">
           <div>
-            <div className="mb-4 flex flex-wrap items-center gap-3">
-              <h1 className="mr-auto text-2xl font-black">Applications</h1>
-              <select
-                value={applicationsManagerFilter}
-                onChange={(e) => { setApplicationsManagerFilter(e.target.value); setSelectedApplicationId(null) }}
-                className="rounded-2xl border border-slate-200 bg-white px-3 py-2.5 text-sm font-medium text-slate-700 outline-none transition focus:border-[#2563eb] focus:ring-2 focus:ring-[#2563eb]/20"
-                aria-label="Filter by manager"
-              >
-                <option value="">All managers</option>
-                {Array.from(new Set(applications.map((a) => a.ownerId).filter(Boolean))).map((id) => (
-                  <option key={id} value={id}>{ownerLabel(id)}</option>
-                ))}
-              </select>
-              <select
-                value={applicationsHouseFilter}
-                onChange={(e) => { setApplicationsHouseFilter(e.target.value); setSelectedApplicationId(null) }}
-                className="rounded-2xl border border-slate-200 bg-white px-3 py-2.5 text-sm font-medium text-slate-700 outline-none transition focus:border-[#2563eb] focus:ring-2 focus:ring-[#2563eb]/20"
-                aria-label="Filter by house"
-              >
-                <option value="">All houses</option>
-                {applicationHouseOptions.map((name) => (
-                  <option key={name} value={name}>{name}</option>
-                ))}
-              </select>
-              <button
-                type="button"
-                onClick={() => refreshPortalData()}
-                className="rounded-2xl border border-slate-200 bg-white px-3.5 py-2.5 text-sm font-semibold text-slate-600 hover:bg-slate-50"
-              >
-                Refresh
-              </button>
-              <label className="flex flex-wrap items-center gap-2 text-sm text-slate-600">
-                <span className="font-semibold text-slate-800">Sort</span>
-                <select
-                  className={adminSelectCls}
-                  value={applicationsTableSort}
-                  onChange={(e) => setApplicationsTableSort(e.target.value)}
-                >
-                  <option value="house_asc">House (A–Z)</option>
-                  <option value="house_desc">House (Z–A)</option>
-                  <option value="applicant_asc">Applicant (A–Z)</option>
-                </select>
-              </label>
+            <div className="mb-4">
+              <h1 className="text-2xl font-black">Applications</h1>
             </div>
             <div className="inline-flex flex-wrap gap-1 rounded-2xl border border-slate-200 bg-slate-50 p-1">
               {[['all', 'All', applications.length], ['pending', 'Pending', applications.filter((a) => a.approvalPending).length], ['approved', 'Approved', applications.filter((a) => a.approvalState === 'approved').length], ['rejected', 'Rejected', applications.filter((a) => a.approvalState === 'rejected').length]].map(([key, label, count]) => (

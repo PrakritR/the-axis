@@ -98,6 +98,18 @@ import {
 export const MANAGER_SESSION_KEY = 'axis_manager'
 const MANAGER_ONBOARDING_KEY = 'axis_manager_onboarding'
 
+/** Pill toolbar controls — Calendar property picker matches Leases / Applications row */
+const MANAGER_PILL_SELECT_WRAP_CLS = 'relative min-w-0 flex-1 sm:min-w-[220px] sm:flex-none'
+const MANAGER_PILL_SELECT_CLS =
+  'h-[42px] w-full min-w-0 cursor-pointer appearance-none rounded-full border border-slate-200 bg-white py-2.5 pl-4 pr-10 text-sm font-medium text-slate-800 transition focus:border-[#2563eb] focus:outline-none focus:ring-2 focus:ring-[#2563eb]/20 disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-400'
+const MANAGER_PILL_SELECT_CHEVRON = (
+  <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-slate-400" aria-hidden>
+    ▾
+  </span>
+)
+const MANAGER_PILL_REFRESH_CLS =
+  'h-[42px] shrink-0 rounded-full border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-600 transition hover:bg-slate-50 disabled:opacity-50'
+
 // ─── Records API config — split by Airtable base to match the rest of the app ─
 const AIRTABLE_TOKEN = import.meta.env.VITE_AIRTABLE_TOKEN
 const CORE_BASE_ID = import.meta.env.VITE_AIRTABLE_BASE_ID || 'appol57LKtMKaQ75T'
