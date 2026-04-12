@@ -606,8 +606,6 @@ export default function ManagerInboxPage({
           const t = String(r.id)
           return t.startsWith('internal:mgmt-admin:') || t.startsWith('internal:site-manager:')
         })
-      } else if (channelFilter === 'public') {
-        rows = rows.filter((r) => String(r.id).startsWith('internal:admin-public:'))
       }
     } else {
       if (channelFilter === 'axis') rows = rows.filter((r) => r.id === MANAGER_INBOX_AXIS)
@@ -1087,11 +1085,10 @@ export default function ManagerInboxPage({
         ['all', 'All'],
         ['residents', 'Residents'],
         ['managers', 'Managers'],
-        ['public', 'Public'],
       ]
     : [
         ['all', 'Both'],
-        ['axis', 'Axis'],
+        ['axis', 'Admin'],
         ['residents', 'Residents'],
       ]
 
