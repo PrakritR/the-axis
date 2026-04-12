@@ -2547,8 +2547,7 @@ function HouseManagementPanel({ manager, onPropertiesChange }) {
     <div className="rounded-[24px] border border-slate-200 bg-white p-6">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
-            <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">Properties</div>
-            <h3 className="mt-2 text-xl font-black text-slate-900">Your houses</h3>
+            <h3 className="text-xl font-black text-slate-900">Properties</h3>
           </div>
           <div className="flex flex-wrap gap-2">
             <button
@@ -3458,7 +3457,7 @@ function ManagerProfilePanel({ manager, onManagerUpdate, approvedPropertyCount =
     <div className="mx-auto max-w-4xl space-y-6">
       {/* Personal info */}
       <section className="rounded-[28px] border border-slate-200 bg-white p-6">
-        <h2 className="mt-2 text-2xl font-black text-slate-900">Manager profile</h2>
+        <h2 className="mt-2 text-2xl font-black text-slate-900">Profile</h2>
         <form onSubmit={handleSaveProfile} className="mt-6 grid gap-5 sm:grid-cols-2">
           <div>
             <label className="mb-1.5 block text-sm font-semibold text-slate-700">Full name</label>
@@ -4143,7 +4142,6 @@ function WorkOrdersTabPanel({ allowedPropertyNames }) {
           ['all', 'All', list.length],
           ['open', 'Open', woBucketCounts.open],
           ['scheduled', 'Scheduled', woBucketCounts.scheduled],
-          ['in_progress', 'In progress', woBucketCounts.in_progress],
           ['completed', 'Completed', woBucketCounts.completed],
         ].map(([key, label, count]) => (
           <button
