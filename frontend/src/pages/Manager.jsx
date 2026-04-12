@@ -2506,17 +2506,21 @@ function HouseManagementPanel({ manager, onPropertiesChange }) {
         })
         .filter(Boolean)
 
+      const sc = clampInt(addSharedSpaceCount, 0, MAX_SHARED_SPACE_SLOTS)
       const fields = serializeManagerAddPropertyToAirtableFields({
         basics: addBasics,
         roomCount: rc,
         bathroomCount: bc,
         kitchenCount: kc,
+        sharedSpaceCount: sc,
         fees: addFees,
         laundry: addLaundry,
         parking: addParking,
         rooms: addRooms,
         bathrooms: addBathrooms,
         kitchens: addKitchens,
+        sharedSpaces: addSharedSpaces,
+        otherInfo: addOtherInfo,
         managerEmail: manager?.email,
         managerRecordId: manager?.id,
         photoCaptionLines,

@@ -2,15 +2,58 @@ import React from 'react'
 import { StatusPill } from '../components/PortalShell'
 import { formatApplicationDetailValue } from './applicationDetailPanel.jsx'
 
+const MAX_ROOMS = 20
+const MAX_BATHROOMS = 10
+const MAX_KITCHENS = 3
+const MAX_SHARED_SPACES = 3
+
+function roomFields(n) {
+  return [
+    [`Room ${n} Name`, `Room ${n} name`],
+    [`Room ${n} Rent`, `Room ${n} rent`],
+    [`Room ${n} Availability`, `Room ${n} availability`],
+    [`Room ${n} Furnished`, `Room ${n} furnished`],
+    [`Room ${n} Utilities Description`, `Room ${n} utilities`],
+    [`Room ${n} Utilities Cost`, `Room ${n} utilities cost`],
+    [`Room ${n} Notes`, `Room ${n} notes`],
+  ]
+}
+
+function bathroomFields(n) {
+  return [
+    [`Bathroom ${n}`, `Bathroom ${n} description`],
+    [`Rooms Sharing Bathroom ${n}`, `Bathroom ${n} shared by`],
+  ]
+}
+
+function kitchenFields(n) {
+  return [
+    [`Kitchen ${n}`, `Kitchen ${n} description`],
+    [`Rooms Sharing Kitchen ${n}`, `Kitchen ${n} shared by`],
+  ]
+}
+
+function sharedSpaceFields(n) {
+  return [
+    [`Shared Space ${n} Name`, `Shared space ${n} name`],
+    [`Shared Space ${n} Type`, `Shared space ${n} type`],
+    [`Access to Shared Space ${n}`, `Shared space ${n} access`],
+  ]
+}
+
 /** Logical groupings for Properties / House rows in admin review */
 export const PROPERTY_FIELD_GROUPS = [
   {
     title: 'Listing',
     fields: [
-      ['Name', 'Name'],
-      ['Property', 'Property label'],
+      ['Name', 'Property name'],
       ['Address', 'Address'],
-      ['Notes', 'Notes'],
+      ['Housing Type', 'Housing type'],
+      ['Description', 'Description'],
+      ['Amenities', 'Amenities'],
+      ['Pets', 'Pets'],
+      ['Notes', 'Submission notes'],
+      ['Other Info', 'Other / additional info'],
     ],
   },
   {
@@ -28,6 +71,38 @@ export const PROPERTY_FIELD_GROUPS = [
       ['Utilities Fee', 'Utilities fee'],
       ['Security Deposit', 'Security deposit'],
       ['Application Fee', 'Application fee'],
+    ],
+  },
+  {
+    title: 'Counts',
+    fields: [
+      ['Room Count', 'Rooms'],
+      ['Bathroom Count', 'Bathrooms'],
+      ['Kitchen Count', 'Kitchens'],
+      ['Number of Shared Spaces', 'Shared spaces'],
+    ],
+  },
+  {
+    title: 'Bathroom access summary',
+    fields: [
+      ['Bathroom Access', 'Bathroom access overview'],
+    ],
+  },
+  {
+    title: 'Laundry',
+    fields: [
+      ['Laundry', 'Laundry on site'],
+      ['Laundry Type', 'Laundry type'],
+      ['Laundry Description', 'Laundry description'],
+      ['Rooms Sharing Laundry', 'Rooms sharing laundry'],
+    ],
+  },
+  {
+    title: 'Parking',
+    fields: [
+      ['Parking', 'Parking available'],
+      ['Parking Type', 'Parking type'],
+      ['Parking Fee', 'Parking fee'],
     ],
   },
   {
@@ -59,6 +134,7 @@ export function PropertyDetailPanel({ property, ownerLabel, onClose }) {
   const shownKeys = new Set(['id', 'created_at'])
   const sections = []
 
+  // ── Core field groups ──────────────────────────────────────────────────────
   for (const group of PROPERTY_FIELD_GROUPS) {
     const items = []
     for (const [key, label] of group.fields) {
@@ -69,6 +145,80 @@ export function PropertyDetailPanel({ property, ownerLabel, onClose }) {
     if (items.length) sections.push({ title: group.title, items })
   }
 
+  // ── Dynamic room sections ──────────────────────────────────────────────────
+  const roomCount = Number(raw['Room Count']) || 0
+  const roomItems = []
+  for (let n = 1; n <= Math.min(roomCount || MAX_ROOMS, MAX_ROOMS); n++) {
+    const hasAny = roomFields(n).some(([key]) => raw[key] != null && raw[key] !== '' && raw[key] !== false)
+    if (!hasAny) continue
+    for (const [key, label] of roomFields(n)) {
+      shownKeys.add(key)
+      const v = fmt(raw[key])
+      if (v) roomItems.push({ label, value: v })
+    }
+  }
+  // Also mark all possible room keys as shown to avoid "Other fields" duplication
+  for (let n = 1; n <= MAX_ROOMS; n++) {
+    for (const [key] of roomFields(n)) shownKeys.add(key)
+  }
+  if (roomItems.length) sections.push({ title: 'Rooms', items: roomItems })
+
+  // ── Dynamic bathroom sections ──────────────────────────────────────────────
+  const bathroomCount = Number(raw['Bathroom Count']) || 0
+  const bathroomItems = []
+  for (let n = 1; n <= Math.min(bathroomCount || MAX_BATHROOMS, MAX_BATHROOMS); n++) {
+    const hasAny = bathroomFields(n).some(([key]) => raw[key] != null && raw[key] !== '')
+    if (!hasAny) continue
+    for (const [key, label] of bathroomFields(n)) {
+      shownKeys.add(key)
+      const v = fmt(raw[key])
+      if (v) bathroomItems.push({ label, value: v })
+    }
+  }
+  for (let n = 1; n <= MAX_BATHROOMS; n++) {
+    for (const [key] of bathroomFields(n)) shownKeys.add(key)
+  }
+  if (bathroomItems.length) sections.push({ title: 'Bathrooms', items: bathroomItems })
+
+  // ── Dynamic kitchen sections ───────────────────────────────────────────────
+  const kitchenCount = Number(raw['Kitchen Count']) || 0
+  const kitchenItems = []
+  for (let n = 1; n <= Math.min(kitchenCount || MAX_KITCHENS, MAX_KITCHENS); n++) {
+    const hasAny = kitchenFields(n).some(([key]) => raw[key] != null && raw[key] !== '')
+    if (!hasAny) continue
+    for (const [key, label] of kitchenFields(n)) {
+      shownKeys.add(key)
+      const v = fmt(raw[key])
+      if (v) kitchenItems.push({ label, value: v })
+    }
+  }
+  for (let n = 1; n <= MAX_KITCHENS; n++) {
+    for (const [key] of kitchenFields(n)) shownKeys.add(key)
+  }
+  if (kitchenItems.length) sections.push({ title: 'Kitchens', items: kitchenItems })
+
+  // ── Shared spaces ──────────────────────────────────────────────────────────
+  shownKeys.add('Number of Shared Spaces')
+  const spaceCount = Number(raw['Number of Shared Spaces']) || 0
+  const sharedItems = []
+  for (let n = 1; n <= Math.min(spaceCount || MAX_SHARED_SPACES, MAX_SHARED_SPACES); n++) {
+    const hasAny = sharedSpaceFields(n).some(([key]) => {
+      const v = raw[key]
+      return v != null && v !== '' && !(Array.isArray(v) && v.length === 0)
+    })
+    if (!hasAny) continue
+    for (const [key, label] of sharedSpaceFields(n)) {
+      shownKeys.add(key)
+      const v = fmt(raw[key])
+      if (v) sharedItems.push({ label, value: v })
+    }
+  }
+  for (let n = 1; n <= MAX_SHARED_SPACES; n++) {
+    for (const [key] of sharedSpaceFields(n)) shownKeys.add(key)
+  }
+  if (sharedItems.length) sections.push({ title: 'Shared Spaces', items: sharedItems })
+
+  // ── Remaining / unknown fields ─────────────────────────────────────────────
   const otherItems = []
   for (const key of Object.keys(raw).sort((a, b) => a.localeCompare(b))) {
     if (shownKeys.has(key)) continue
@@ -110,13 +260,13 @@ export function PropertyDetailPanel({ property, ownerLabel, onClose }) {
       <dl className="space-y-0 border-t border-slate-200 pt-4">
         {property.address && property.address !== '—' ? (
           <div className="grid gap-1 border-b border-slate-200 py-2 sm:grid-cols-[minmax(0,200px)_1fr] sm:gap-4">
-            <dt className="text-xs font-semibold uppercase tracking-wide text-slate-500">Address (summary)</dt>
+            <dt className="text-xs font-semibold uppercase tracking-wide text-slate-500">Address</dt>
             <dd className="text-sm text-slate-800">{property.address}</dd>
           </div>
         ) : null}
         {submitted ? (
           <div className="grid gap-1 border-b border-slate-200 py-2 sm:grid-cols-[minmax(0,200px)_1fr] sm:gap-4">
-            <dt className="text-xs font-semibold uppercase tracking-wide text-slate-500">Created</dt>
+            <dt className="text-xs font-semibold uppercase tracking-wide text-slate-500">Submitted</dt>
             <dd className="text-sm text-slate-800">{submitted}</dd>
           </div>
         ) : null}
