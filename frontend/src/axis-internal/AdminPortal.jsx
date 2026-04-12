@@ -140,9 +140,6 @@ function PortalHandoffCard({ accounts, residents, user }) {
   return (
     <div className="rounded-[24px] border border-violet-300/60 bg-[linear-gradient(135deg,#f5f3ff_0%,#ffffff_100%)] p-5 shadow-sm">
       <h2 className="text-sm font-black text-violet-950">Open portals as a specific account</h2>
-      <p className="mt-1 text-xs text-violet-900/80">
-        Select a real manager or resident profile to jump directly into their portal session.
-      </p>
       <div className="mt-4 grid gap-4 sm:grid-cols-2">
         <div>
           <div className="mb-2 text-[11px] font-bold uppercase tracking-[0.14em] text-violet-700">Manager portal</div>
