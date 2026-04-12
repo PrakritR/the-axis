@@ -92,6 +92,16 @@ export const SHARED_SPACE_TYPE_OPTIONS = [
   'Kitchen', 'Laundry', 'Backyard', 'Patio', 'Storage', 'Other',
 ]
 
+/** Manager wizard: bathroom card “Type” dropdown (stored with label + notes in Bathroom N). */
+export const BATHROOM_TYPE_OPTIONS = [
+  'Full bath', 'Three-quarter bath', 'Half bath', 'Powder room', 'Shared', 'En suite', 'Other',
+]
+
+/** Manager wizard: kitchen card “Type” dropdown (stored with label + notes in Kitchen N). */
+export const KITCHEN_TYPE_OPTIONS = [
+  'Full kitchen', 'Kitchenette', 'Galley', 'Shared kitchen', 'Eat-in kitchen', 'Other',
+]
+
 // ─── Helpers ────────────────────────────────────────────────────────────────────
 export function clampInt(v, min, max) {
   const n = Math.floor(Number(v))
@@ -115,15 +125,31 @@ export function emptyRoomRow() {
 }
 
 export function emptyBathroomRow() {
-  return { description: '', roomsSharing: '' }
+  return { label: '', kind: '', description: '', access: [] }
 }
 
 export function emptyKitchenRow() {
-  return { description: '', roomsSharing: '' }
+  return { label: '', kind: '', description: '', access: [] }
+}
+
+/** When a room row is removed, renumber `Room N` chip selections on other steps. */
+export function adjustRoomAccessLabels(accessArr, removedZeroBased) {
+  if (!Array.isArray(accessArr)) return []
+  const removedN = removedZeroBased + 1
+  const out = []
+  for (const r of accessArr) {
+    if (typeof r !== 'string') continue
+    const m = /^Room (\d+)$/.exec(r.trim())
+    if (!m) continue
+    const n = parseInt(m[1], 10)
+    if (n === removedN) continue
+    out.push(n > removedN ? `Room ${n - 1}` : r.trim())
+  }
+  return [...new Set(out)]
 }
 
 export function emptyLaundryRow() {
-  return { type: '', roomsSharing: '' }
+  return { type: '', access: [] }
 }
 
 export function emptySharedSpaceRow() {
@@ -169,10 +195,10 @@ export function serializeManagerAddPropertyToAirtableFields(params) {
     bathroomCount,
     kitchenCount,
     parking,         // { enabled, type, fee }
-    laundry,         // { enabled, rows: [{ type, roomsSharing }] }
+    laundry,         // { enabled, generalAccess?, roomsSharing?, rows: [{ type, access[], roomsSharing? }] }
     rooms,           // room row shape from emptyRoomRow() (media stripped before call)
-    bathrooms,       // [{ description, roomsSharing }]
-    kitchens,        // [{ description, roomsSharing }]
+    bathrooms,       // [{ label?, kind?, description?, access[] }]
+    kitchens,        // [{ label?, kind?, description?, access[] }]
     sharedSpaces = [],// [{ name, type, typeOther?, access[] }]
     applicationFee = '',
     otherInfo = '',
@@ -183,6 +209,14 @@ export function serializeManagerAddPropertyToAirtableFields(params) {
   const rc = clampInt(roomCount, 1, MAX_ROOM_SLOTS)
   const bc = clampInt(bathroomCount, 0, MAX_BATHROOM_SLOTS)
   const kc = clampInt(kitchenCount, 0, MAX_KITCHEN_SLOTS)
+
+  /** Native Properties columns like `Room 1 Rent` are not present on every Airtable base; default off. */
+  const writeRoomColumnsEnv = String(
+    typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.VITE_AIRTABLE_WRITE_ROOM_COLUMNS
+      ? import.meta.env.VITE_AIRTABLE_WRITE_ROOM_COLUMNS
+      : '',
+  ).toLowerCase()
+  const writeRoomColumns = writeRoomColumnsEnv === '1' || writeRoomColumnsEnv === 'true' || writeRoomColumnsEnv === 'yes'
 
   let sharedTrimmed = (sharedSpaces || []).slice(0, MAX_SHARED_SPACE_SLOTS)
   while (sharedTrimmed.length > 0 && !sharedSpaceRowHasContent(sharedTrimmed[sharedTrimmed.length - 1])) {
@@ -248,25 +282,26 @@ export function serializeManagerAddPropertyToAirtableFields(params) {
   for (let i = 1; i <= rc; i++) {
     const row = rooms[i - 1] || emptyRoomRow()
 
-    const rentFieldName = roomRentField(i)
-    if (rentFieldName) {
-      const rent = optionalCurrency(row.rent)
-      if (rent !== undefined) fields[rentFieldName] = rent
-    }
+    if (writeRoomColumns) {
+      const rentFieldName = roomRentField(i)
+      if (rentFieldName) {
+        const rent = optionalCurrency(row.rent)
+        if (rent !== undefined) fields[rentFieldName] = rent
+      }
 
-    const avail = toIsoDate(row.availability)
-    if (avail) fields[roomAvailabilityField(i)] = avail
+      const avail = toIsoDate(row.availability)
+      if (avail) fields[roomAvailabilityField(i)] = avail
 
-    const furn = String(row.furnished || '').trim()
-    if (furn) fields[roomFurnishedField(i)] = furn
+      const furn = String(row.furnished || '').trim()
+      if (furn) fields[roomFurnishedField(i)] = furn
 
-    const uc = optionalCurrency(row.utilitiesCost)
-    if (uc !== undefined) fields[roomUtilitiesCostField(i)] = uc
+      const uc = optionalCurrency(row.utilitiesCost)
+      if (uc !== undefined) fields[roomUtilitiesCostField(i)] = uc
 
-    // Only Room 1 has the Utilities (long text) field
-    if (i === 1) {
-      const u1 = String(row.utilities || '').trim()
-      if (u1) fields[ROOM_1_UTILITIES_FIELD] = u1
+      if (i === 1) {
+        const u1 = String(row.utilities || '').trim()
+        if (u1) fields[ROOM_1_UTILITIES_FIELD] = u1
+      }
     }
 
     roomsDetail.push({
@@ -274,6 +309,11 @@ export function serializeManagerAddPropertyToAirtableFields(params) {
       notes: String(row.notes || '').trim(),
       furnitureIncluded: String(row.furnitureIncluded || '').trim(),
       additionalFeatures: String(row.additionalFeatures || '').trim(),
+      rent: String(row.rent ?? '').trim(),
+      availability: String(row.availability || '').trim(),
+      furnished: String(row.furnished || '').trim(),
+      utilitiesCost: String(row.utilitiesCost ?? '').trim(),
+      utilities: String(row.utilities || '').trim(),
     })
   }
 
@@ -308,37 +348,49 @@ export function serializeManagerAddPropertyToAirtableFields(params) {
   // ── Bathrooms ─────────────────────────────────────────────────────────────────
   for (let i = 1; i <= bc; i++) {
     const row = bathrooms[i - 1] || emptyBathroomRow()
-    const d = String(row.description || '').trim()
-    if (d) fields[bathroomDescriptionField(i)] = d
-    // Rooms Sharing Bathroom only exists for 1–5
+    const kind = String(row.kind || '').trim()
+    const label = String(row.label || '').trim()
+    const desc = String(row.description || '').trim()
+    let body = [kind, label, desc].filter(Boolean).join('\n\n')
+    const acc = Array.isArray(row.access) ? row.access.filter(Boolean) : []
+    const rs = acc.length ? acc.join(', ') : String(row.roomsSharing || '').trim()
     if (i <= MAX_BATHROOM_SHARING_SLOTS) {
-      const rs = String(row.roomsSharing || '').trim()
       if (rs) fields[bathroomRoomsSharingField(i)] = rs
+    } else if (rs) {
+      body = body ? `${body}\n\nRooms sharing: ${rs}` : `Rooms sharing: ${rs}`
     }
+    if (body) fields[bathroomDescriptionField(i)] = body
   }
 
   // ── Kitchens ──────────────────────────────────────────────────────────────────
   for (let i = 1; i <= kc; i++) {
     const row = kitchens[i - 1] || emptyKitchenRow()
-    const d = String(row.description || '').trim()
-    if (d) fields[kitchenDescriptionField(i)] = d
-    const rs = String(row.roomsSharing || '').trim()
+    const kind = String(row.kind || '').trim()
+    const label = String(row.label || '').trim()
+    const desc = String(row.description || '').trim()
+    const body = [kind, label, desc].filter(Boolean).join('\n\n')
+    const acc = Array.isArray(row.access) ? row.access.filter(Boolean) : []
+    const rs = acc.length ? acc.join(', ') : String(row.roomsSharing || '').trim()
     if (rs) fields[kitchenRoomsSharingField(i)] = rs
+    if (body) fields[kitchenDescriptionField(i)] = body
   }
 
   // ── Laundry ───────────────────────────────────────────────────────────────────
   if (laundry?.enabled) {
     fields[PROPERTY_AIR.laundry] = true
     const rows = Array.isArray(laundry.rows) ? laundry.rows : []
-    // General "Rooms Sharing Laundry" field
-    const generalSharing = String(laundry.roomsSharing || '').trim()
+    const genAcc = Array.isArray(laundry.generalAccess) ? laundry.generalAccess.filter(Boolean) : []
+    const generalSharing =
+      genAcc.length > 0
+        ? genAcc.join(', ')
+        : String(laundry.roomsSharing || '').trim()
     if (generalSharing) fields[PROPERTY_AIR.roomsSharingLaundry] = generalSharing
-    // Per-location laundry fields (up to 5)
     rows.slice(0, MAX_LAUNDRY_SLOTS).forEach((row, idx) => {
       const n = idx + 1
       const lt = String(row.type || '').trim()
       if (lt) fields[laundryTypeField(n)] = lt
-      const rs = String(row.roomsSharing || '').trim()
+      const acc = Array.isArray(row.access) ? row.access.filter(Boolean) : []
+      const rs = acc.length > 0 ? acc.join(', ') : String(row.roomsSharing || '').trim()
       if (rs) fields[laundryRoomsSharingField(n)] = rs
     })
   }

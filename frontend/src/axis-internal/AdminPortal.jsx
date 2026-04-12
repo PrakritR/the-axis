@@ -116,6 +116,14 @@ function propertyTone(st) {
   return 'slate'
 }
 
+function residentApprovedForProperty(resident) {
+  if (!resident || typeof resident !== 'object') return false
+  const approvedRaw = resident.Approved
+  if (approvedRaw === true || approvedRaw === 1 || approvedRaw === '1') return true
+  const statusRaw = String(resident.Status || resident['Approval Status'] || '').trim().toLowerCase()
+  return statusRaw === 'approved' || statusRaw === 'active' || statusRaw === 'live'
+}
+
 function PortalHandoffCard({ accounts, residents, user }) {
   const [selectedManagerId, setSelectedManagerId] = useState('')
   const [selectedResidentId, setSelectedResidentId] = useState('')
@@ -466,6 +474,24 @@ export default function AdminPortal() {
     if (applicationsHouseFilter) result = result.filter((a) => a.propertyName === applicationsHouseFilter)
     return result
   }, [filteredApplications, applicationsManagerFilter, applicationsHouseFilter])
+
+  const applicationHouseOptions = useMemo(() => {
+    const set = new Set()
+    for (const p of properties) {
+      const name = String(p?.name || '').trim()
+      if (name) set.add(name)
+    }
+    for (const r of residents) {
+      if (!residentApprovedForProperty(r)) continue
+      const house = String(r?.House || r?.['Property Name'] || '').trim()
+      if (house) set.add(house)
+    }
+    for (const a of applications) {
+      const house = String(a?.propertyName || '').trim()
+      if (house) set.add(house)
+    }
+    return [...set].sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }))
+  }, [properties, residents, applications])
 
   const ownerLabel = (ownerId) => accounts.find((a) => a.id === ownerId)?.businessName || accounts.find((a) => a.id === ownerId)?.name || ownerId
 
@@ -1001,7 +1027,7 @@ export default function AdminPortal() {
                 aria-label="Filter by house"
               >
                 <option value="">All houses</option>
-                {Array.from(new Set(applications.map((a) => a.propertyName).filter(Boolean))).sort().map((name) => (
+                {applicationHouseOptions.map((name) => (
                   <option key={name} value={name}>{name}</option>
                 ))}
               </select>

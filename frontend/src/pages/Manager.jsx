@@ -46,6 +46,7 @@ import {
   emptyKitchenRow,
   emptyLaundryRow,
   emptySharedSpaceRow,
+  adjustRoomAccessLabels,
   clampInt,
   MAX_ROOM_SLOTS,
   MAX_BATHROOM_SLOTS,
@@ -57,6 +58,8 @@ import {
   PROPERTY_TYPE_OPTIONS,
   FURNISHED_OPTIONS,
   SHARED_SPACE_TYPE_OPTIONS,
+  BATHROOM_TYPE_OPTIONS,
+  KITCHEN_TYPE_OPTIONS,
 } from '../lib/managerPropertyFormAirtableMap.js'
 import {
   consolidateManagerDashboardWarnings,
@@ -244,26 +247,29 @@ function managerCannotApproveTours(manager) {
 function computeManagerScope(propertyRecords, manager) {
   const list = Array.isArray(propertyRecords) ? propertyRecords : []
   const approvedNames = new Set()
+  const assignedNames = new Set()
   const pendingAssigned = []
   if (isManagerInternalPreview(manager)) {
     for (const p of list) {
-      if (isPropertyRecordApproved(p)) {
-        const n = propertyRecordName(p)
-        if (n) approvedNames.add(n)
+      const n = propertyRecordName(p)
+      if (n) assignedNames.add(n)
+      if (isPropertyRecordApproved(p) && n) {
+        approvedNames.add(n)
       }
     }
-    return { approvedNames, pendingAssigned: [] }
+    return { approvedNames, assignedNames, pendingAssigned: [] }
   }
   for (const p of list) {
     if (!propertyAssignedToManager(p, manager)) continue
+    const n = propertyRecordName(p)
+    if (n) assignedNames.add(n)
     if (isPropertyRecordApproved(p)) {
-      const n = propertyRecordName(p)
       if (n) approvedNames.add(n)
     } else {
       pendingAssigned.push(p)
     }
   }
-  return { approvedNames, pendingAssigned }
+  return { approvedNames, assignedNames, pendingAssigned }
 }
 
 function applicationInScope(app, approvedNamesLowerSet) {
@@ -2281,17 +2287,14 @@ function HouseManagementPanel({ manager, onPropertiesChange }) {
     moveInCharges: '',
   })
   const [addBasics, setAddBasics] = useState(emptyAddBasics)
-  const [addRoomCount, setAddRoomCount] = useState(1)
-  const [addBathroomCount, setAddBathroomCount] = useState(1)
-  const [addKitchenCount, setAddKitchenCount] = useState(1)
   const [addRooms, setAddRooms] = useState(() => [emptyRoomRow()])
-  const [addBathrooms, setAddBathrooms] = useState(() => [emptyBathroomRow()])
-  const [addKitchens, setAddKitchens] = useState(() => [emptyKitchenRow()])
+  const [addBathrooms, setAddBathrooms] = useState(() => [])
+  const [addKitchens, setAddKitchens] = useState(() => [])
   const [addApplicationFee, setAddApplicationFee] = useState('')
   const [addLaundry, setAddLaundry] = useState({
     enabled: false,
     rows: [],
-    roomsSharing: '',
+    generalAccess: [],
   })
   const [addStep, setAddStep] = useState(0)
   const [addParking, setAddParking] = useState({
@@ -2313,10 +2316,17 @@ function HouseManagementPanel({ manager, onPropertiesChange }) {
   const addImageInputRef = useRef(null)
   const addDropRef = useRef(null)
   const [tourForm, setTourForm] = useState({
+    propertyName: '',
+    address: '',
+    propertyType: '',
+    pets: '',
+    amenities: [],
     securityDeposit: '',
     utilitiesFee: '',
     applicationFee: '',
-    address: '',
+    otherInfo: '',
+    roomCount: 1,
+    rooms: [],
   })
   const addInputCls =
     'w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm transition focus:border-[#2563eb] focus:outline-none focus:ring-2 focus:ring-[#2563eb]/20'
@@ -2337,33 +2347,6 @@ function HouseManagementPanel({ manager, onPropertiesChange }) {
   useEffect(() => {
     loadProperties()
   }, [loadProperties])
-
-  useEffect(() => {
-    const n = clampInt(addRoomCount, 1, MAX_ROOM_SLOTS)
-    setAddRooms((prev) => {
-      const next = [...prev]
-      while (next.length < n) next.push(emptyRoomRow())
-      return next.slice(0, n)
-    })
-  }, [addRoomCount])
-
-  useEffect(() => {
-    const n = clampInt(addBathroomCount, 0, MAX_BATHROOM_SLOTS)
-    setAddBathrooms((prev) => {
-      const next = [...prev]
-      while (next.length < n) next.push(emptyBathroomRow())
-      return next.slice(0, n)
-    })
-  }, [addBathroomCount])
-
-  useEffect(() => {
-    const n = clampInt(addKitchenCount, 0, MAX_KITCHEN_SLOTS)
-    setAddKitchens((prev) => {
-      const next = [...prev]
-      while (next.length < n) next.push(emptyKitchenRow())
-      return next.slice(0, n)
-    })
-  }, [addKitchenCount])
 
   function extractNoteValue(notes, label) {
     const escaped = String(label || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
@@ -2392,23 +2375,48 @@ function HouseManagementPanel({ manager, onPropertiesChange }) {
     setSaving(true)
     try {
       const patch = {}
+      // Basic fields
+      const pname = String(tourForm.propertyName || '').trim()
+      if (pname) patch['Property Name'] = pname
+      const addr = String(tourForm.address || '').trim()
+      if (addr) patch.Address = addr
+      if (tourForm.propertyType) patch['Property Type'] = tourForm.propertyType
+      if (tourForm.pets) patch['Pets'] = tourForm.pets
+      if (Array.isArray(tourForm.amenities)) patch['Amenities'] = tourForm.amenities
+      // Fees
       const sd = optionalPropertyCurrency(tourForm.securityDeposit)
       if (sd !== undefined) patch['Security Deposit'] = sd
       const uf = optionalPropertyCurrency(tourForm.utilitiesFee)
       if (uf !== undefined) patch['Utilities Fee'] = uf
       const af = optionalPropertyCurrency(tourForm.applicationFee)
       if (af !== undefined) patch['Application Fee'] = af
+      // Other info
+      patch['Other Info'] = String(tourForm.otherInfo || '')
+      // Auto site manager email
       const sme = String(manager?.email || property['Site Manager Email'] || '').trim()
       if (sme) patch['Site Manager Email'] = sme
-      const addr = String(tourForm.address || '').trim()
-      if (addr) patch.Address = addr
+      // Room count + per-room fields
+      const rc = clampInt(tourForm.roomCount, 1, MAX_ROOM_SLOTS)
+      patch['Room Count'] = rc
+      tourForm.rooms.slice(0, rc).forEach((room, i) => {
+        const n = i + 1
+        const rent = optionalPropertyCurrency(room.rent)
+        if (rent !== undefined) patch[`Room ${n} Rent`] = rent
+        if (room.availability) patch[`Room ${n} Availability`] = room.availability
+        if (room.furnished) patch[`Room ${n} Furnished`] = room.furnished
+        const uc = optionalPropertyCurrency(room.utilitiesCost)
+        if (uc !== undefined) patch[`Room ${n} Utilities Cost`] = uc
+      })
+      // Reset approval — editing requires re-approval by admin
+      patch['Approved'] = false
+      patch['Approval Status'] = 'Pending'
       const updated = await updatePropertyAdmin(property.id, patch)
       setProperties((current) => {
         const next = current.map((item) => (item.id === property.id ? updated : item))
         onPropertiesChange?.(next)
         return next
       })
-      toast.success('Property saved')
+      toast.success('Property saved — pending admin approval')
       setEditingPropertyId(null)
     } catch (err) {
       toast.error('Could not save property: ' + err.message)
@@ -2459,12 +2467,9 @@ function HouseManagementPanel({ manager, onPropertiesChange }) {
 
   function resetAddPropertyForm() {
     setAddBasics(emptyAddBasics())
-    setAddRoomCount(1)
-    setAddBathroomCount(1)
-    setAddKitchenCount(1)
     setAddRooms([emptyRoomRow()])
-    setAddBathrooms([emptyBathroomRow()])
-    setAddKitchens([emptyKitchenRow()])
+    setAddBathrooms([])
+    setAddKitchens([])
     setAddSharedSpaces([])
     setAddLeasing({
       fullHousePrice: '',
@@ -2474,7 +2479,7 @@ function HouseManagementPanel({ manager, onPropertiesChange }) {
     })
     setAddOtherInfo('')
     setAddApplicationFee('')
-    setAddLaundry({ enabled: false, rows: [], roomsSharing: '' })
+    setAddLaundry({ enabled: false, rows: [], generalAccess: [] })
     setAddParking({ enabled: false, type: '', fee: '' })
     setAddStep(0)
     setAddImages((prev) => {
@@ -2493,9 +2498,9 @@ function HouseManagementPanel({ manager, onPropertiesChange }) {
       toast.error('Property name and address are required')
       return
     }
-    const rc = clampInt(addRoomCount, 1, MAX_ROOM_SLOTS)
-    const bc = clampInt(addBathroomCount, 0, MAX_BATHROOM_SLOTS)
-    const kc = clampInt(addKitchenCount, 0, MAX_KITCHEN_SLOTS)
+    const rc = clampInt(addRooms.length, 1, MAX_ROOM_SLOTS)
+    const bc = clampInt(addBathrooms.length, 0, MAX_BATHROOM_SLOTS)
+    const kc = clampInt(addKitchens.length, 0, MAX_KITCHEN_SLOTS)
     setAddSaving(true)
     try {
       const roomsPayload = addRooms.map((row) => {
@@ -2561,10 +2566,8 @@ function HouseManagementPanel({ manager, onPropertiesChange }) {
   }
 
   // ── Wizard helpers (defined before return so they close over state) ─────────
-  const WIZARD_STEPS = ['Basics', 'Counts', 'Rooms', 'Bathrooms', 'Kitchens', 'Shared Spaces', 'Laundry & Parking', 'Review', 'Pricing & leases']
-  const wizardRc = clampInt(addRoomCount, 1, MAX_ROOM_SLOTS)
-  const wizardBc = clampInt(addBathroomCount, 0, MAX_BATHROOM_SLOTS)
-  const wizardKc = clampInt(addKitchenCount, 0, MAX_KITCHEN_SLOTS)
+  const WIZARD_STEPS = ['Basics', 'Rooms', 'Bathrooms', 'Kitchens', 'Shared Spaces', 'Laundry & Parking', 'Review', 'Pricing & leases']
+  const wizardRc = clampInt(addRooms.length, 1, MAX_ROOM_SLOTS)
   const wizardRoomOptions = Array.from({ length: wizardRc }, (_, i) => `Room ${i + 1}`)
 
   function wizUpdateRoom(idx, patch) {
@@ -2587,6 +2590,54 @@ function HouseManagementPanel({ manager, onPropertiesChange }) {
   }
   function wizRemoveSharedSpace(idx) {
     setAddSharedSpaces((prev) => prev.filter((_, i) => i !== idx))
+  }
+  function wizAddRoom() {
+    setAddRooms((prev) => {
+      if (prev.length >= MAX_ROOM_SLOTS) return prev
+      return [...prev, emptyRoomRow()]
+    })
+  }
+  function wizRemoveRoom(idx) {
+    setAddRooms((prev) => {
+      if (prev.length <= 1) return prev
+      return prev.filter((_, i) => i !== idx)
+    })
+    setAddSharedSpaces((prev) => prev.map((s) => ({ ...s, access: adjustRoomAccessLabels(s.access, idx) })))
+    setAddBathrooms((prev) => prev.map((b) => ({ ...b, access: adjustRoomAccessLabels(b.access, idx) })))
+    setAddKitchens((prev) => prev.map((k) => ({ ...k, access: adjustRoomAccessLabels(k.access, idx) })))
+    setAddLeasing((L) => ({
+      ...L,
+      bundles: (L.bundles || []).map((b) => ({
+        ...b,
+        rooms: adjustRoomAccessLabels(Array.isArray(b.rooms) ? b.rooms : [], idx),
+      })),
+    }))
+    setAddLaundry((l) => ({
+      ...l,
+      generalAccess: adjustRoomAccessLabels(Array.isArray(l.generalAccess) ? l.generalAccess : [], idx),
+      rows: (l.rows || []).map((row) => ({
+        ...row,
+        access: adjustRoomAccessLabels(Array.isArray(row.access) ? row.access : [], idx),
+      })),
+    }))
+  }
+  function wizAddBathroom() {
+    setAddBathrooms((prev) => {
+      if (prev.length >= MAX_BATHROOM_SLOTS) return prev
+      return [...prev, emptyBathroomRow()]
+    })
+  }
+  function wizRemoveBathroom(idx) {
+    setAddBathrooms((prev) => prev.filter((_, i) => i !== idx))
+  }
+  function wizAddKitchen() {
+    setAddKitchens((prev) => {
+      if (prev.length >= MAX_KITCHEN_SLOTS) return prev
+      return [...prev, emptyKitchenRow()]
+    })
+  }
+  function wizRemoveKitchen(idx) {
+    setAddKitchens((prev) => prev.filter((_, i) => i !== idx))
   }
   function wizAddLeasingBundle() {
     setAddLeasing((L) => ({
@@ -2919,63 +2970,211 @@ function HouseManagementPanel({ manager, onPropertiesChange }) {
                 ) : null}
 
                 {editingPropertyId === property.id ? (
-                  <div className="mt-4 grid gap-3 sm:grid-cols-2">
-                    <div className="sm:col-span-2">
-                      <label className="mb-1 block text-xs font-semibold text-slate-600">Address</label>
-                      <input
-                        type="text"
-                        value={tourForm.address}
-                        onChange={(e) => setTourForm((current) => ({ ...current, address: e.target.value }))}
-                        placeholder="Full address"
-                        className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900"
-                      />
+                  <div className="mt-4 space-y-5 border-t border-slate-200 pt-4">
+                    <div className="rounded-xl bg-amber-50 border border-amber-200 px-3 py-2 text-xs text-amber-800 font-medium">
+                      Saving changes will reset this property to pending admin approval.
                     </div>
+
+                    {/* Basics */}
                     <div>
-                      <label className="mb-1 block text-xs font-semibold text-slate-600">Utilities fee ($/mo)</label>
-                      <input
-                        type="number"
-                        min="0"
-                        step="1"
-                        value={tourForm.utilitiesFee}
-                        onChange={(e) => setTourForm((current) => ({ ...current, utilitiesFee: e.target.value }))}
-                        className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900"
-                      />
+                      <div className="mb-2 text-[11px] font-bold uppercase tracking-[0.14em] text-slate-400">Basics</div>
+                      <div className="grid gap-3 sm:grid-cols-2">
+                        <div className="sm:col-span-2">
+                          <label className="mb-1 block text-xs font-semibold text-slate-600">Property name</label>
+                          <input
+                            type="text"
+                            value={tourForm.propertyName}
+                            onChange={(e) => setTourForm((f) => ({ ...f, propertyName: e.target.value }))}
+                            className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900"
+                          />
+                        </div>
+                        <div className="sm:col-span-2">
+                          <label className="mb-1 block text-xs font-semibold text-slate-600">Address</label>
+                          <input
+                            type="text"
+                            value={tourForm.address}
+                            onChange={(e) => setTourForm((f) => ({ ...f, address: e.target.value }))}
+                            className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900"
+                          />
+                        </div>
+                        <div>
+                          <label className="mb-1 block text-xs font-semibold text-slate-600">Property type</label>
+                          <select
+                            value={tourForm.propertyType}
+                            onChange={(e) => setTourForm((f) => ({ ...f, propertyType: e.target.value }))}
+                            className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900"
+                          >
+                            <option value="">Select…</option>
+                            {PROPERTY_TYPE_OPTIONS.map((t) => <option key={t} value={t}>{t}</option>)}
+                          </select>
+                        </div>
+                        <div>
+                          <label className="mb-1 block text-xs font-semibold text-slate-600">Pets</label>
+                          <select
+                            value={tourForm.pets}
+                            onChange={(e) => setTourForm((f) => ({ ...f, pets: e.target.value }))}
+                            className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900"
+                          >
+                            <option value="">Select…</option>
+                            {PET_OPTIONS.map((o) => <option key={o} value={o}>{o}</option>)}
+                          </select>
+                        </div>
+                      </div>
                     </div>
+
+                    {/* Fees */}
                     <div>
-                      <label className="mb-1 block text-xs font-semibold text-slate-600">Application fee ($)</label>
-                      <input
-                        type="number"
-                        min="0"
-                        step="1"
-                        value={tourForm.applicationFee}
-                        onChange={(e) => setTourForm((current) => ({ ...current, applicationFee: e.target.value }))}
-                        className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900"
-                      />
+                      <div className="mb-2 text-[11px] font-bold uppercase tracking-[0.14em] text-slate-400">Fees</div>
+                      <div className="grid gap-3 sm:grid-cols-3">
+                        <div>
+                          <label className="mb-1 block text-xs font-semibold text-slate-600">Application fee ($)</label>
+                          <input type="number" min="0" step="1"
+                            value={tourForm.applicationFee}
+                            onChange={(e) => setTourForm((f) => ({ ...f, applicationFee: e.target.value }))}
+                            className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900"
+                          />
+                        </div>
+                        <div>
+                          <label className="mb-1 block text-xs font-semibold text-slate-600">Security deposit ($)</label>
+                          <input type="number" min="0" step="1"
+                            value={tourForm.securityDeposit}
+                            onChange={(e) => setTourForm((f) => ({ ...f, securityDeposit: e.target.value }))}
+                            className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900"
+                          />
+                        </div>
+                        <div>
+                          <label className="mb-1 block text-xs font-semibold text-slate-600">Utilities fee ($/mo)</label>
+                          <input type="number" min="0" step="1"
+                            value={tourForm.utilitiesFee}
+                            onChange={(e) => setTourForm((f) => ({ ...f, utilitiesFee: e.target.value }))}
+                            className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900"
+                          />
+                        </div>
+                      </div>
                     </div>
+
+                    {/* Amenities */}
                     <div>
-                      <label className="mb-1 block text-xs font-semibold text-slate-600">Security deposit</label>
-                      <input
-                        type="number"
-                        min="0"
-                        step="1"
-                        value={tourForm.securityDeposit}
-                        onChange={(e) => setTourForm((current) => ({ ...current, securityDeposit: e.target.value }))}
-                        placeholder="500"
-                        className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900"
+                      <div className="mb-2 text-[11px] font-bold uppercase tracking-[0.14em] text-slate-400">Amenities</div>
+                      <div className="flex flex-wrap gap-2">
+                        {AMENITY_OPTIONS.map((a) => {
+                          const checked = tourForm.amenities.includes(a)
+                          return (
+                            <button
+                              key={a}
+                              type="button"
+                              onClick={() => setTourForm((f) => ({
+                                ...f,
+                                amenities: checked ? f.amenities.filter((x) => x !== a) : [...f.amenities, a],
+                              }))}
+                              className={[
+                                'rounded-full border px-3 py-1 text-xs font-semibold transition',
+                                checked
+                                  ? 'border-[#2563eb] bg-[#2563eb] text-white'
+                                  : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300',
+                              ].join(' ')}
+                            >
+                              {a}
+                            </button>
+                          )
+                        })}
+                      </div>
+                    </div>
+
+                    {/* Rooms */}
+                    <div>
+                      <div className="mb-2 flex items-center gap-3 text-[11px] font-bold uppercase tracking-[0.14em] text-slate-400">
+                        <span>Rooms</span>
+                        <div className="flex items-center gap-1.5">
+                          <button type="button"
+                            onClick={() => setTourForm((f) => {
+                              const next = Math.max(1, f.roomCount - 1)
+                              return { ...f, roomCount: next, rooms: f.rooms.slice(0, next) }
+                            })}
+                            className="flex h-5 w-5 items-center justify-center rounded-full border border-slate-300 text-slate-500 hover:bg-slate-100 text-base leading-none"
+                          >−</button>
+                          <span className="text-slate-700 normal-case font-semibold text-xs">{tourForm.roomCount}</span>
+                          <button type="button"
+                            onClick={() => setTourForm((f) => {
+                              const next = Math.min(MAX_ROOM_SLOTS, f.roomCount + 1)
+                              const rooms = [...f.rooms]
+                              while (rooms.length < next) rooms.push({ rent: '', availability: '', furnished: '', utilitiesCost: '' })
+                              return { ...f, roomCount: next, rooms }
+                            })}
+                            className="flex h-5 w-5 items-center justify-center rounded-full border border-slate-300 text-slate-500 hover:bg-slate-100 text-base leading-none"
+                          >+</button>
+                        </div>
+                      </div>
+                      <div className="space-y-3">
+                        {Array.from({ length: tourForm.roomCount }, (_, i) => {
+                          const room = tourForm.rooms[i] ?? { rent: '', availability: '', furnished: '', utilitiesCost: '' }
+                          const setRoom = (upd) => setTourForm((f) => {
+                            const rooms = [...f.rooms]
+                            while (rooms.length <= i) rooms.push({ rent: '', availability: '', furnished: '', utilitiesCost: '' })
+                            rooms[i] = { ...rooms[i], ...upd }
+                            return { ...f, rooms }
+                          })
+                          return (
+                            <div key={i} className="rounded-xl border border-slate-100 bg-white p-3 grid gap-2 sm:grid-cols-4">
+                              <div className="sm:col-span-4 text-xs font-semibold text-slate-500 mb-1">Room {i + 1}</div>
+                              <div>
+                                <label className="mb-1 block text-[11px] text-slate-500">Rent ($)</label>
+                                <input type="number" min="0" step="1"
+                                  value={room.rent}
+                                  onChange={(e) => setRoom({ rent: e.target.value })}
+                                  className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-900"
+                                />
+                              </div>
+                              <div>
+                                <label className="mb-1 block text-[11px] text-slate-500">Available</label>
+                                <input type="date"
+                                  value={room.availability ? room.availability.slice(0, 10) : ''}
+                                  onChange={(e) => setRoom({ availability: e.target.value })}
+                                  className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-900"
+                                />
+                              </div>
+                              <div>
+                                <label className="mb-1 block text-[11px] text-slate-500">Furnished</label>
+                                <select
+                                  value={room.furnished}
+                                  onChange={(e) => setRoom({ furnished: e.target.value })}
+                                  className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-900"
+                                >
+                                  <option value="">—</option>
+                                  {FURNISHED_OPTIONS.map((o) => <option key={o} value={o}>{o}</option>)}
+                                </select>
+                              </div>
+                              <div>
+                                <label className="mb-1 block text-[11px] text-slate-500">Utils cost ($/mo)</label>
+                                <input type="number" min="0" step="1"
+                                  value={room.utilitiesCost}
+                                  onChange={(e) => setRoom({ utilitiesCost: e.target.value })}
+                                  className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-900"
+                                />
+                              </div>
+                            </div>
+                          )
+                        })}
+                      </div>
+                    </div>
+
+                    {/* Other Info */}
+                    <div>
+                      <div className="mb-2 text-[11px] font-bold uppercase tracking-[0.14em] text-slate-400">Other info</div>
+                      <textarea
+                        rows={3}
+                        value={tourForm.otherInfo}
+                        onChange={(e) => setTourForm((f) => ({ ...f, otherInfo: e.target.value }))}
+                        className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 resize-none"
+                        placeholder="Any additional details…"
                       />
                     </div>
-                    <div className="sm:col-span-2 flex gap-2">
+
+                    {/* Actions */}
+                    <div className="flex gap-2 pt-1">
                       <button
                         type="button"
-                        onClick={() => {
-                          setEditingPropertyId(null)
-                          setTourForm({
-                            securityDeposit: '',
-                            utilitiesFee: '',
-                            applicationFee: '',
-                            address: '',
-                          })
-                        }}
+                        onClick={() => setEditingPropertyId(null)}
                         className="rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700"
                       >
                         Cancel
@@ -2986,7 +3185,7 @@ function HouseManagementPanel({ manager, onPropertiesChange }) {
                         className="rounded-2xl bg-[#2563eb] px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-50"
                         disabled={saving}
                       >
-                        Save property
+                        {saving ? 'Saving…' : 'Save & submit for approval'}
                       </button>
                     </div>
                   </div>
@@ -2994,12 +3193,30 @@ function HouseManagementPanel({ manager, onPropertiesChange }) {
                   <button
                     type="button"
                     onClick={() => {
+                      const rc = clampInt(property['Room Count'] ?? 1, 1, MAX_ROOM_SLOTS)
                       setEditingPropertyId(property.id)
+                      setDetailsPropertyId(null)
                       setTourForm({
+                        propertyName: String(property['Property Name'] ?? property.Name ?? ''),
+                        address: String(property.Address ?? ''),
+                        propertyType: String(property['Property Type'] ?? ''),
+                        pets: String(property.Pets ?? ''),
+                        amenities: Array.isArray(property.Amenities) ? [...property.Amenities] : (property.Amenities ? [property.Amenities] : []),
                         securityDeposit: String(property['Security Deposit'] ?? ''),
                         utilitiesFee: String(property['Utilities Fee'] ?? ''),
                         applicationFee: String(property['Application Fee'] ?? ''),
-                        address: String(property.Address ?? ''),
+                        otherInfo: String(property['Other Info'] ?? ''),
+                        roomCount: rc,
+                        rooms: Array.from({ length: rc }, (_, i) => {
+                          const n = i + 1
+                          const avail = property[`Room ${n} Availability`]
+                          return {
+                            rent: String(property[`Room ${n} Rent`] ?? property[`Room ${n} for Rent`] ?? ''),
+                            availability: avail ? String(avail).slice(0, 10) : '',
+                            furnished: String(property[`Room ${n} Furnished`] ?? ''),
+                            utilitiesCost: String(property[`Room ${n} Utilities Cost`] ?? ''),
+                          }
+                        }),
                       })
                     }}
                     className="mt-3 rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-700"
@@ -3172,39 +3389,26 @@ function HouseManagementPanel({ manager, onPropertiesChange }) {
                       </div>
                     )}
 
-                    {/* Step 1: Counts */}
+                    {/* Step 1: Rooms */}
                     {addStep === 1 && (
                       <div className="space-y-4">
                         <p className="text-xs text-slate-500">
-                          Set counts for rooms, bathrooms, and kitchens. Add shared spaces on the Shared Spaces step (up to {MAX_SHARED_SPACE_SLOTS}).
+                          Add each rentable room. Use + Add room for more (up to {MAX_ROOM_SLOTS}). At least one room is required.
                         </p>
-                        <div className="grid gap-4 sm:grid-cols-2">
-                          <div>
-                            <label className="mb-1.5 block text-xs font-semibold text-slate-700">Room count *</label>
-                            <input className={addInputCls} type="number" min={1} max={MAX_ROOM_SLOTS} value={addRoomCount} onChange={(e) => setAddRoomCount(e.target.value)} required />
-                          </div>
-                          <div>
-                            <label className="mb-1.5 block text-xs font-semibold text-slate-700">Bathroom count</label>
-                            <input className={addInputCls} type="number" min={0} max={MAX_BATHROOM_SLOTS} value={addBathroomCount} onChange={(e) => setAddBathroomCount(e.target.value)} />
-                          </div>
-                          <div>
-                            <label className="mb-1.5 block text-xs font-semibold text-slate-700">Kitchen count</label>
-                            <input className={addInputCls} type="number" min={0} max={MAX_KITCHEN_SLOTS} value={addKitchenCount} onChange={(e) => setAddKitchenCount(e.target.value)} />
-                          </div>
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Step 2: Rooms */}
-                    {addStep === 2 && (
-                      <div className="space-y-4">
                         {addRooms.map((room, idx) => (
-                          <div key={`room-${idx}`} className="rounded-2xl border border-slate-200 bg-slate-50/70 p-4">
-                            <div className="mb-3 text-xs font-black text-slate-800">Room {idx + 1}</div>
+                          <div key={`room-${idx}`} className="rounded-2xl border border-slate-200 bg-white p-4">
+                            <div className="mb-3 flex items-center justify-between gap-2">
+                              <div className="text-xs font-black text-slate-800">Room {idx + 1}</div>
+                              {addRooms.length > 1 ? (
+                                <button type="button" onClick={() => wizRemoveRoom(idx)} className="text-[11px] font-bold text-red-600 hover:text-red-700">
+                                  Remove
+                                </button>
+                              ) : null}
+                            </div>
                             <div className="grid gap-3 sm:grid-cols-2">
-                              <div className="sm:col-span-2">
-                                <label className="mb-1 block text-[11px] font-semibold text-slate-600">Room label (optional)</label>
-                                <input className={addInputCls} value={room.label} onChange={(e) => wizUpdateRoom(idx, { label: e.target.value })} placeholder="e.g. Front bedroom, Room A" />
+                              <div>
+                                <label className="mb-1 block text-[11px] font-semibold text-slate-600">Name (optional)</label>
+                                <input className={addInputCls} value={room.label} onChange={(e) => wizUpdateRoom(idx, { label: e.target.value })} placeholder="e.g. Front bedroom" />
                               </div>
                               <div>
                                 <label className="mb-1 block text-[11px] font-semibold text-slate-600">Monthly rent ($)</label>
@@ -3269,67 +3473,166 @@ function HouseManagementPanel({ manager, onPropertiesChange }) {
                             </div>
                           </div>
                         ))}
+                        {addRooms.length < MAX_ROOM_SLOTS && (
+                          <button type="button" onClick={wizAddRoom} className="w-full rounded-xl border border-dashed border-slate-300 px-4 py-3 text-sm font-semibold text-slate-600 transition hover:bg-slate-50">
+                            + Add room
+                          </button>
+                        )}
                       </div>
                     )}
 
-                    {/* Step 3: Bathrooms */}
-                    {addStep === 3 && (
-                      wizardBc === 0 ? (
-                        <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 px-6 py-8 text-center text-sm text-slate-500">
-                          No bathrooms configured. Go back to Counts to add bathrooms.
-                        </div>
-                      ) : (
-                        <div className="space-y-4">
-                          {addBathrooms.map((bath, idx) => (
+                    {/* Step 2: Bathrooms */}
+                    {addStep === 2 && (
+                      <div className="space-y-4">
+                        <p className="text-xs text-slate-500">
+                          Add each bathroom. Optional name, type, details, and which rooms use it (first five bathrooms also save to dedicated Airtable columns).
+                        </p>
+                        {addBathrooms.length === 0 ? (
+                          <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 px-6 py-8 text-center text-sm text-slate-500">
+                            No bathrooms yet. Add one if this property has shared or en-suite baths.
+                          </div>
+                        ) : (
+                          addBathrooms.map((bath, idx) => (
                             <div key={`bath-${idx}`} className="rounded-2xl border border-slate-200 bg-white p-4">
-                              <div className="mb-3 text-xs font-black text-slate-800">Bathroom {idx + 1}</div>
-                              <div className="space-y-3">
+                              <div className="mb-3 flex items-center justify-between gap-2">
+                                <div className="text-xs font-black text-slate-800">Bathroom {idx + 1}</div>
+                                <button type="button" onClick={() => wizRemoveBathroom(idx)} className="text-[11px] font-bold text-red-600 hover:text-red-700">
+                                  Remove
+                                </button>
+                              </div>
+                              <div className="grid gap-3 sm:grid-cols-2">
                                 <div>
-                                  <label className="mb-1 block text-[11px] font-semibold text-slate-600">Description</label>
-                                  <textarea className={`${addInputCls} min-h-[64px]`} value={bath.description} onChange={(e) => wizUpdateBathroom(idx, { description: e.target.value })} placeholder="Full bath, half bath, floor, condition…" rows={2} />
+                                  <label className="mb-1 block text-[11px] font-semibold text-slate-600">Name (optional)</label>
+                                  <input className={addInputCls} value={bath.label} onChange={(e) => wizUpdateBathroom(idx, { label: e.target.value })} placeholder="e.g. Hall bath, Primary" />
                                 </div>
-                                {idx < 5 && (
-                                  <div>
-                                    <label className="mb-1 block text-[11px] font-semibold text-slate-600">Rooms sharing this bathroom</label>
-                                    <input className={addInputCls} value={bath.roomsSharing} onChange={(e) => wizUpdateBathroom(idx, { roomsSharing: e.target.value })} placeholder="e.g. Room 1, Room 2" />
+                                <div>
+                                  <label className="mb-1 block text-[11px] font-semibold text-slate-600">Type</label>
+                                  <select className={addInputCls} value={bath.kind} onChange={(e) => wizUpdateBathroom(idx, { kind: e.target.value })}>
+                                    <option value="">Select type…</option>
+                                    {BATHROOM_TYPE_OPTIONS.map((t) => <option key={t} value={t}>{t}</option>)}
+                                  </select>
+                                </div>
+                                <div className="sm:col-span-2">
+                                  <label className="mb-1 block text-[11px] font-semibold text-slate-600">Details (optional)</label>
+                                  <textarea className={`${addInputCls} min-h-[64px]`} value={bath.description} onChange={(e) => wizUpdateBathroom(idx, { description: e.target.value })} placeholder="Floor, fixtures, condition, access notes…" rows={2} />
+                                </div>
+                                <div className="sm:col-span-2">
+                                  <label className="mb-1.5 block text-[11px] font-semibold text-slate-600">Room access</label>
+                                  <div className="grid grid-cols-4 gap-1.5 sm:grid-cols-5">
+                                    {wizardRoomOptions.map((r) => (
+                                      <label key={`bath-${idx}-${r}`} className={[
+                                        'flex cursor-pointer items-center gap-1.5 rounded-lg border px-2 py-1.5 text-[11px] font-medium transition',
+                                        Array.isArray(bath.access) && bath.access.includes(r)
+                                          ? 'border-[#2563eb] bg-[#2563eb]/5 text-[#2563eb]'
+                                          : 'border-slate-200 bg-slate-50 text-slate-700 hover:bg-slate-100',
+                                      ].join(' ')}>
+                                        <input
+                                          type="checkbox"
+                                          className="sr-only"
+                                          checked={Array.isArray(bath.access) && bath.access.includes(r)}
+                                          onChange={(e) => {
+                                            const checked = e.target.checked
+                                            wizUpdateBathroom(idx, {
+                                              access: checked
+                                                ? [...(Array.isArray(bath.access) ? bath.access : []), r]
+                                                : (Array.isArray(bath.access) ? bath.access : []).filter((x) => x !== r),
+                                            })
+                                          }}
+                                        />
+                                        {r}
+                                      </label>
+                                    ))}
                                   </div>
-                                )}
+                                </div>
                               </div>
                             </div>
-                          ))}
-                        </div>
-                      )
+                          ))
+                        )}
+                        {addBathrooms.length < MAX_BATHROOM_SLOTS && (
+                          <button type="button" onClick={wizAddBathroom} className="w-full rounded-xl border border-dashed border-slate-300 px-4 py-3 text-sm font-semibold text-slate-600 transition hover:bg-slate-50">
+                            + Add bathroom
+                          </button>
+                        )}
+                      </div>
                     )}
 
-                    {/* Step 4: Kitchens */}
-                    {addStep === 4 && (
-                      wizardKc === 0 ? (
-                        <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 px-6 py-8 text-center text-sm text-slate-500">
-                          No kitchens configured. Go back to Counts to add kitchens.
-                        </div>
-                      ) : (
-                        <div className="space-y-4">
-                          {addKitchens.map((kit, idx) => (
+                    {/* Step 3: Kitchens */}
+                    {addStep === 3 && (
+                      <div className="space-y-4">
+                        <p className="text-xs text-slate-500">
+                          Add each kitchen or kitchenette renters share. Up to {MAX_KITCHEN_SLOTS} locations.
+                        </p>
+                        {addKitchens.length === 0 ? (
+                          <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 px-6 py-8 text-center text-sm text-slate-500">
+                            No kitchens yet. Add one when you are ready.
+                          </div>
+                        ) : (
+                          addKitchens.map((kit, idx) => (
                             <div key={`kit-${idx}`} className="rounded-2xl border border-slate-200 bg-white p-4">
-                              <div className="mb-3 text-xs font-black text-slate-800">Kitchen {idx + 1}</div>
-                              <div className="space-y-3">
+                              <div className="mb-3 flex items-center justify-between gap-2">
+                                <div className="text-xs font-black text-slate-800">Kitchen {idx + 1}</div>
+                                <button type="button" onClick={() => wizRemoveKitchen(idx)} className="text-[11px] font-bold text-red-600 hover:text-red-700">
+                                  Remove
+                                </button>
+                              </div>
+                              <div className="grid gap-3 sm:grid-cols-2">
                                 <div>
-                                  <label className="mb-1 block text-[11px] font-semibold text-slate-600">Description</label>
-                                  <textarea className={`${addInputCls} min-h-[64px]`} value={kit.description} onChange={(e) => wizUpdateKitchen(idx, { description: e.target.value })} placeholder="Galley, shared, appliances…" rows={2} />
+                                  <label className="mb-1 block text-[11px] font-semibold text-slate-600">Name (optional)</label>
+                                  <input className={addInputCls} value={kit.label} onChange={(e) => wizUpdateKitchen(idx, { label: e.target.value })} placeholder="e.g. Main kitchen" />
                                 </div>
                                 <div>
-                                  <label className="mb-1 block text-[11px] font-semibold text-slate-600">Rooms sharing this kitchen</label>
-                                  <input className={addInputCls} value={kit.roomsSharing} onChange={(e) => wizUpdateKitchen(idx, { roomsSharing: e.target.value })} placeholder="e.g. All second-floor rooms" />
+                                  <label className="mb-1 block text-[11px] font-semibold text-slate-600">Type</label>
+                                  <select className={addInputCls} value={kit.kind} onChange={(e) => wizUpdateKitchen(idx, { kind: e.target.value })}>
+                                    <option value="">Select type…</option>
+                                    {KITCHEN_TYPE_OPTIONS.map((t) => <option key={t} value={t}>{t}</option>)}
+                                  </select>
+                                </div>
+                                <div className="sm:col-span-2">
+                                  <label className="mb-1 block text-[11px] font-semibold text-slate-600">Details (optional)</label>
+                                  <textarea className={`${addInputCls} min-h-[64px]`} value={kit.description} onChange={(e) => wizUpdateKitchen(idx, { description: e.target.value })} placeholder="Appliances, shared vs private, condition…" rows={2} />
+                                </div>
+                                <div className="sm:col-span-2">
+                                  <label className="mb-1.5 block text-[11px] font-semibold text-slate-600">Room access</label>
+                                  <div className="grid grid-cols-4 gap-1.5 sm:grid-cols-5">
+                                    {wizardRoomOptions.map((r) => (
+                                      <label key={`kit-${idx}-${r}`} className={[
+                                        'flex cursor-pointer items-center gap-1.5 rounded-lg border px-2 py-1.5 text-[11px] font-medium transition',
+                                        Array.isArray(kit.access) && kit.access.includes(r)
+                                          ? 'border-[#2563eb] bg-[#2563eb]/5 text-[#2563eb]'
+                                          : 'border-slate-200 bg-slate-50 text-slate-700 hover:bg-slate-100',
+                                      ].join(' ')}>
+                                        <input
+                                          type="checkbox"
+                                          className="sr-only"
+                                          checked={Array.isArray(kit.access) && kit.access.includes(r)}
+                                          onChange={(e) => {
+                                            const checked = e.target.checked
+                                            wizUpdateKitchen(idx, {
+                                              access: checked
+                                                ? [...(Array.isArray(kit.access) ? kit.access : []), r]
+                                                : (Array.isArray(kit.access) ? kit.access : []).filter((x) => x !== r),
+                                            })
+                                          }}
+                                        />
+                                        {r}
+                                      </label>
+                                    ))}
+                                  </div>
                                 </div>
                               </div>
                             </div>
-                          ))}
-                        </div>
-                      )
+                          ))
+                        )}
+                        {addKitchens.length < MAX_KITCHEN_SLOTS && (
+                          <button type="button" onClick={wizAddKitchen} className="w-full rounded-xl border border-dashed border-slate-300 px-4 py-3 text-sm font-semibold text-slate-600 transition hover:bg-slate-50">
+                            + Add kitchen
+                          </button>
+                        )}
+                      </div>
                     )}
 
-                    {/* Step 5: Shared Spaces */}
-                    {addStep === 5 && (
+                    {/* Step 4: Shared Spaces */}
+                    {addStep === 4 && (
                       <div className="space-y-4">
                         <p className="text-xs text-slate-500">
                           Add common areas renters share. Use the type list, or choose Other and name it.
@@ -3343,7 +3646,7 @@ function HouseManagementPanel({ manager, onPropertiesChange }) {
                             <div key={`shared-${idx}`} className="rounded-2xl border border-slate-200 bg-white p-4">
                               <div className="mb-3 flex items-center justify-between gap-2">
                                 <div className="text-xs font-black text-slate-800">Shared space {idx + 1}</div>
-                                <button type="button" onClick={() => wizRemoveSharedSpace(idx)} className="rounded-lg border border-red-200 px-2 py-1 text-[11px] font-bold text-red-600 hover:bg-red-50">
+                                <button type="button" onClick={() => wizRemoveSharedSpace(idx)} className="text-[11px] font-bold text-red-600 hover:text-red-700">
                                   Remove
                                 </button>
                               </div>
@@ -3405,8 +3708,8 @@ function HouseManagementPanel({ manager, onPropertiesChange }) {
                       </div>
                     )}
 
-                    {/* Step 6: Laundry & Parking */}
-                    {addStep === 6 && (
+                    {/* Step 5: Laundry & Parking */}
+                    {addStep === 5 && (
                       <div className="space-y-5">
                         {/* Laundry */}
                         <div className="space-y-3">
@@ -3423,20 +3726,70 @@ function HouseManagementPanel({ manager, onPropertiesChange }) {
                           {addLaundry.enabled && (
                             <div className="space-y-3">
                               <div>
-                                <label className="mb-1 block text-[11px] font-semibold text-slate-600">General rooms sharing laundry</label>
-                                <input className={addInputCls} value={addLaundry.roomsSharing} onChange={(e) => setAddLaundry((l) => ({ ...l, roomsSharing: e.target.value }))} placeholder="e.g. All rooms, or Room 1–4" />
+                                <label className="mb-1.5 block text-[11px] font-semibold text-slate-600">General rooms sharing laundry</label>
+                                <div className="grid grid-cols-4 gap-1.5 sm:grid-cols-5">
+                                  {wizardRoomOptions.map((r) => (
+                                    <label key={`laundry-gen-${r}`} className={[
+                                      'flex cursor-pointer items-center gap-1.5 rounded-lg border px-2 py-1.5 text-[11px] font-medium transition',
+                                      Array.isArray(addLaundry.generalAccess) && addLaundry.generalAccess.includes(r)
+                                        ? 'border-[#2563eb] bg-[#2563eb]/5 text-[#2563eb]'
+                                        : 'border-slate-200 bg-slate-50 text-slate-700 hover:bg-slate-100',
+                                    ].join(' ')}>
+                                      <input
+                                        type="checkbox"
+                                        className="sr-only"
+                                        checked={Array.isArray(addLaundry.generalAccess) && addLaundry.generalAccess.includes(r)}
+                                        onChange={(e) => {
+                                          const checked = e.target.checked
+                                          setAddLaundry((l) => {
+                                            const cur = Array.isArray(l.generalAccess) ? l.generalAccess : []
+                                            return {
+                                              ...l,
+                                              generalAccess: checked ? [...cur, r] : cur.filter((x) => x !== r),
+                                            }
+                                          })
+                                        }}
+                                      />
+                                      {r}
+                                    </label>
+                                  ))}
+                                </div>
                               </div>
                               <div className="text-[11px] font-semibold text-slate-500">Laundry locations (up to {MAX_LAUNDRY_SLOTS})</div>
                               {(addLaundry.rows || []).map((row, idx) => (
                                 <div key={`laundry-${idx}`} className="flex items-start gap-2 rounded-xl border border-slate-200 bg-slate-50 p-3">
-                                  <div className="flex-1 grid gap-2 sm:grid-cols-2">
+                                  <div className="flex-1 space-y-3">
                                     <div>
                                       <label className="mb-1 block text-[11px] font-semibold text-slate-600">Type</label>
                                       <input className={addInputCls} value={row.type} onChange={(e) => wizUpdateLaundryRow(idx, { type: e.target.value })} placeholder="e.g. In-unit W/D, Shared washer" />
                                     </div>
                                     <div>
-                                      <label className="mb-1 block text-[11px] font-semibold text-slate-600">Rooms sharing</label>
-                                      <input className={addInputCls} value={row.roomsSharing} onChange={(e) => wizUpdateLaundryRow(idx, { roomsSharing: e.target.value })} placeholder="e.g. Room 1, Room 2" />
+                                      <label className="mb-1.5 block text-[11px] font-semibold text-slate-600">Room access</label>
+                                      <div className="grid grid-cols-4 gap-1.5 sm:grid-cols-5">
+                                        {wizardRoomOptions.map((r) => (
+                                          <label key={`laundry-${idx}-${r}`} className={[
+                                            'flex cursor-pointer items-center gap-1.5 rounded-lg border px-2 py-1.5 text-[11px] font-medium transition',
+                                            Array.isArray(row.access) && row.access.includes(r)
+                                              ? 'border-[#2563eb] bg-[#2563eb]/5 text-[#2563eb]'
+                                              : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-100',
+                                          ].join(' ')}>
+                                            <input
+                                              type="checkbox"
+                                              className="sr-only"
+                                              checked={Array.isArray(row.access) && row.access.includes(r)}
+                                              onChange={(e) => {
+                                                const checked = e.target.checked
+                                                wizUpdateLaundryRow(idx, {
+                                                  access: checked
+                                                    ? [...(Array.isArray(row.access) ? row.access : []), r]
+                                                    : (Array.isArray(row.access) ? row.access : []).filter((x) => x !== r),
+                                                })
+                                              }}
+                                            />
+                                            {r}
+                                          </label>
+                                        ))}
+                                      </div>
                                     </div>
                                   </div>
                                   <button type="button" onClick={() => wizRemoveLaundryRow(idx)} className="mt-6 rounded-lg border border-red-200 px-2 py-1 text-[11px] font-bold text-red-500 hover:bg-red-50">✕</button>
@@ -3479,8 +3832,8 @@ function HouseManagementPanel({ manager, onPropertiesChange }) {
                       </div>
                     )}
 
-                    {/* Step 7: Review */}
-                    {addStep === 7 && (
+                    {/* Step 6: Review */}
+                    {addStep === 6 && (
                       <div className="space-y-5">
                         <div>
                           <label className="mb-1.5 block text-xs font-semibold text-slate-700">Other / additional info</label>
@@ -3530,8 +3883,8 @@ function HouseManagementPanel({ manager, onPropertiesChange }) {
                       </div>
                     )}
 
-                    {/* Step 8: Pricing & leases */}
-                    {addStep === 8 && (
+                    {/* Step 7: Pricing & leases */}
+                    {addStep === 7 && (
                       <div className="space-y-5">
                         <div className="rounded-2xl border border-slate-200 bg-slate-50/80 p-4">
                           <div className="text-[11px] font-bold uppercase tracking-[0.14em] text-slate-400">Full property pricing</div>
@@ -4406,9 +4759,26 @@ function WorkOrdersTabPanel({ allowedPropertyNames }) {
           className="rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition focus:border-[#2563eb] focus:outline-none focus:ring-2 focus:ring-[#2563eb]/20"
         >
           <option value="">All properties</option>
-          {[...new Set(list.map((r) => String(workOrderPropertyLabel(r)).trim()).filter(Boolean))].sort().map((p) => (
-            <option key={p} value={p.toLowerCase()}>{p}</option>
-          ))}
+          {(() => {
+            const map = new Map()
+            for (const name of allowedPropertyNames || []) {
+              const display = String(name || '').trim()
+              if (!display) continue
+              const value = display.toLowerCase()
+              if (!map.has(value)) map.set(value, display)
+            }
+            for (const row of list) {
+              const display = String(workOrderPropertyLabel(row)).trim()
+              if (!display) continue
+              const value = display.toLowerCase()
+              if (!map.has(value)) map.set(value, display)
+            }
+            return [...map.entries()]
+              .sort((a, b) => a[1].localeCompare(b[1], undefined, { sensitivity: 'base' }))
+              .map(([value, display]) => (
+                <option key={value} value={value}>{display}</option>
+              ))
+          })()}
         </select>
         <select
           value={residentFilter}
@@ -4629,6 +4999,12 @@ function ManagerPaymentsPanel({ allowedPropertyNames }) {
 
   const payPropertyChoices = useMemo(() => {
     const map = new Map()
+    for (const name of allowedPropertyNames || []) {
+      const display = String(name || '').trim()
+      if (!display) continue
+      const value = display.toLowerCase()
+      if (!map.has(value)) map.set(value, display)
+    }
     for (const row of rentRows) {
       const display = String(paymentPropertyLabel(row) || '').trim()
       if (!display) continue
@@ -4638,7 +5014,7 @@ function ManagerPaymentsPanel({ allowedPropertyNames }) {
     return [...map.entries()]
       .sort((a, b) => a[1].localeCompare(b[1], undefined, { sensitivity: 'base' }))
       .map(([value, display]) => ({ value, display }))
-  }, [rentRows])
+  }, [rentRows, allowedPropertyNames])
 
   const payResidentChoices = useMemo(() => {
     const rows = payPropertyFilter
@@ -5747,8 +6123,8 @@ function ManagerDashboard({ manager: managerProp, onOpenDraft, onSignOut, onMana
 
   const managerScope = useMemo(() => computeManagerScope(propertyRecords, manager), [propertyRecords, manager])
   const scopedPropertyOptions = useMemo(
-    () => Array.from(managerScope.approvedNames).sort(),
-    [managerScope.approvedNames],
+    () => Array.from(managerScope.assignedNames || managerScope.approvedNames).sort(),
+    [managerScope.assignedNames, managerScope.approvedNames],
   )
   const approvedNamesLower = useMemo(
     () => new Set([...managerScope.approvedNames].map((n) => String(n).trim().toLowerCase()).filter(Boolean)),
