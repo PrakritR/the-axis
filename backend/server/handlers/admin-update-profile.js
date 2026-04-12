@@ -51,9 +51,14 @@ export default async function handler(req, res) {
       return res.status(403).json({ error: 'Email does not match this profile record.' })
     }
 
+    // Detect which phone field name this base actually uses
+    const phoneFieldName = 'Phone Number' in record.fields ? 'Phone Number' : 'Phone'
+    // Detect which name field this base uses
+    const nameFieldName = 'Name' in record.fields ? 'Name' : ('Full Name' in record.fields ? 'Full Name' : 'Name')
+
     const updates = {}
-    if (normalizedName) updates.Name = normalizedName
-    if (normalizedPhone) updates['Phone Number'] = normalizedPhone
+    if (normalizedName) updates[nameFieldName] = normalizedName
+    if (normalizedPhone) updates[phoneFieldName] = normalizedPhone
 
     const patchRes = await fetch(getUrl, {
       method: 'PATCH',
