@@ -2307,9 +2307,6 @@ function HouseManagementPanel({ manager, onPropertiesChange }) {
   const addImageInputRef = useRef(null)
   const addDropRef = useRef(null)
   const [tourForm, setTourForm] = useState({
-    manager: '',
-    availability: '',
-    notes: '',
     securityDeposit: '',
     utilitiesFee: '',
     applicationFee: '',
@@ -2378,31 +2375,6 @@ function HouseManagementPanel({ manager, onPropertiesChange }) {
     return n
   }
 
-  function buildTourNotes(existingNotes, metadata) {
-    const labels = ['Tour Manager', 'Tour Availability', 'Tour Notes', 'Site Manager Email']
-    let stripped = String(existingNotes || '').trim()
-    labels.forEach((label) => {
-      const escaped = label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-      stripped = stripped.replace(new RegExp(`(?:^|\\n)${escaped}:\\s*.+?(?=\\n|$)`, 'gi'), '')
-    })
-    stripped = stripped.replace(/^\n+|\n+$/g, '').trim()
-
-    const parts = []
-    if (metadata.manager) parts.push(`Tour Manager: ${metadata.manager}`)
-    if (metadata.availability) parts.push(`Tour Availability: ${metadata.availability}`)
-    if (metadata.notes) parts.push(`Tour Notes: ${metadata.notes}`)
-    if (metadata.siteManagerEmail) parts.push(`Site Manager Email: ${metadata.siteManagerEmail}`)
-    if (stripped) parts.push(stripped)
-    return parts.join('\n')
-  }
-
-  function updateTourSlot(day, slot) {
-    setTourForm((current) => ({
-      ...current,
-      availability: updateTourAvailabilityLines(current.availability, day, slot),
-    }))
-  }
-
   const approvedAssigned = useMemo(
     () => properties.filter((p) => propertyAssignedToManager(p, manager) && isPropertyRecordApproved(p)),
     [properties, manager],
@@ -2415,13 +2387,7 @@ function HouseManagementPanel({ manager, onPropertiesChange }) {
   async function handleSaveTourHours(property) {
     setSaving(true)
     try {
-      const notes = buildTourNotes(property.Notes, {
-        manager: tourForm.manager.trim(),
-        availability: tourForm.availability.trim(),
-        notes: tourForm.notes.trim(),
-        siteManagerEmail: tourForm.siteManagerEmail.trim(),
-      })
-      const patch = { Notes: notes }
+      const patch = {}
       const sd = optionalPropertyCurrency(tourForm.securityDeposit)
       if (sd !== undefined) patch['Security Deposit'] = sd
       const uf = optionalPropertyCurrency(tourForm.utilitiesFee)
@@ -3004,53 +2970,6 @@ function HouseManagementPanel({ manager, onPropertiesChange }) {
                         className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900"
                       />
                     </div>
-                    <div className="sm:col-span-2">
-                      <div className="mb-2 text-[11px] font-bold uppercase tracking-[0.14em] text-slate-400">Tours</div>
-                    </div>
-                    <div>
-                      <label className="mb-1 block text-xs font-semibold text-slate-600">Tour manager</label>
-                      <input
-                        type="text"
-                        value={tourForm.manager}
-                        onChange={(e) => setTourForm((current) => ({ ...current, manager: e.target.value }))}
-                        placeholder="Manager name"
-                        className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900"
-                      />
-                    </div>
-                    <div className="sm:col-span-2">
-                      <label className="mb-1 block text-xs font-semibold text-slate-600">Tour calendar</label>
-                      <div className="grid gap-2 rounded-2xl border border-slate-200 bg-white p-3">
-                        <div className="grid gap-2 sm:grid-cols-2">
-                          {TOUR_DAYS.map((day) => (
-                            <div key={day} className="rounded-2xl border border-slate-100 bg-slate-50 p-3">
-                              <div className="mb-2 text-[11px] font-bold uppercase tracking-[0.14em] text-slate-400">{day}</div>
-                              <div className="flex flex-wrap gap-2">
-                                {TOUR_SLOTS.map((slot) => {
-                                  const active = String(tourForm.availability || '').includes(`${day}:`) && String(tourForm.availability || '').includes(slot)
-                                  return (
-                                    <button
-                                      key={`${day}-${slot}`}
-                                      type="button"
-                                      onClick={() => updateTourSlot(day, slot)}
-                                      className={`rounded-full border px-2.5 py-1.5 text-[11px] font-semibold transition ${active ? 'border-[#2563eb] bg-[#2563eb] text-white' : 'border-slate-200 bg-white text-slate-700 hover:border-[#2563eb] hover:text-[#2563eb]'}`}
-                                    >
-                                      {slot}
-                                    </button>
-                                  )
-                                })}
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                        <textarea
-                          rows={4}
-                          value={tourForm.availability}
-                          onChange={(e) => setTourForm((current) => ({ ...current, availability: e.target.value }))}
-                          placeholder="Mon: 9:00 AM, 1:30 PM\nTue: 10:30 AM, 3:00 PM"
-                          className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900"
-                        />
-                      </div>
-                    </div>
                     <div>
                       <label className="mb-1 block text-xs font-semibold text-slate-600">Security deposit</label>
                       <input
@@ -3063,25 +2982,12 @@ function HouseManagementPanel({ manager, onPropertiesChange }) {
                         className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900"
                       />
                     </div>
-                    <div className="sm:col-span-2">
-                      <label className="mb-1 block text-xs font-semibold text-slate-600">Notes</label>
-                      <input
-                        type="text"
-                        value={tourForm.notes}
-                        onChange={(e) => setTourForm((current) => ({ ...current, notes: e.target.value }))}
-                        placeholder="Optional scheduling notes"
-                        className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900"
-                      />
-                    </div>
                     <div className="sm:col-span-2 flex gap-2">
                       <button
                         type="button"
                         onClick={() => {
                           setEditingPropertyId(null)
                           setTourForm({
-                            manager: '',
-                            availability: '',
-                            notes: '',
                             securityDeposit: '',
                             utilitiesFee: '',
                             applicationFee: '',
@@ -3110,9 +3016,6 @@ function HouseManagementPanel({ manager, onPropertiesChange }) {
                     onClick={() => {
                       setEditingPropertyId(property.id)
                       setTourForm({
-                        manager: extractNoteValue(property.Notes, 'Tour Manager'),
-                        availability: extractNoteValue(property.Notes, 'Tour Availability'),
-                        notes: extractNoteValue(property.Notes, 'Tour Notes'),
                         securityDeposit: String(property['Security Deposit'] ?? ''),
                         utilitiesFee: String(property['Utilities Fee'] ?? ''),
                         applicationFee: String(property['Application Fee'] ?? ''),
@@ -3125,7 +3028,7 @@ function HouseManagementPanel({ manager, onPropertiesChange }) {
                     }}
                     className="mt-3 rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-700"
                   >
-                    Edit listing &amp; tours
+                    Edit listing
                   </button>
                   <button
                     type="button"
@@ -3264,6 +3167,32 @@ function HouseManagementPanel({ manager, onPropertiesChange }) {
                             placeholder="Optional"
                           />
                         </div>
+                        <div className="grid gap-3 sm:grid-cols-2">
+                          <div>
+                            <label className="mb-1.5 block text-xs font-semibold text-slate-700">Security deposit ($)</label>
+                            <input
+                              className={addInputCls}
+                              type="number"
+                              min="0"
+                              step="1"
+                              value={addBasics.securityDeposit}
+                              onChange={(e) => setAddBasics((b) => ({ ...b, securityDeposit: e.target.value }))}
+                              placeholder="Optional, defaults to 0"
+                            />
+                          </div>
+                          <div>
+                            <label className="mb-1.5 block text-xs font-semibold text-slate-700">Move-in charges ($)</label>
+                            <input
+                              className={addInputCls}
+                              type="number"
+                              min="0"
+                              step="1"
+                              value={addBasics.moveInCharges}
+                              onChange={(e) => setAddBasics((b) => ({ ...b, moveInCharges: e.target.value }))}
+                              placeholder="Cleaning, admin, etc. Optional, defaults to 0"
+                            />
+                          </div>
+                        </div>
                       </div>
                     )}
 
@@ -3271,7 +3200,7 @@ function HouseManagementPanel({ manager, onPropertiesChange }) {
                     {addStep === 1 && (
                       <div className="space-y-4">
                         <p className="text-xs text-slate-500">
-                          Set counts to control how many detail sections appear on the following steps. Max {MAX_ROOM_SLOTS} rooms, {MAX_BATHROOM_SLOTS} bathrooms, {MAX_KITCHEN_SLOTS} kitchens, {MAX_SHARED_SPACE_SLOTS} shared spaces.
+                          Set counts for rooms, bathrooms, and kitchens. Add shared spaces on the Shared Spaces step (up to {MAX_SHARED_SPACE_SLOTS}).
                         </p>
                         <div className="grid gap-4 sm:grid-cols-2">
                           <div>
@@ -3286,10 +3215,6 @@ function HouseManagementPanel({ manager, onPropertiesChange }) {
                             <label className="mb-1.5 block text-xs font-semibold text-slate-700">Kitchen count</label>
                             <input className={addInputCls} type="number" min={0} max={MAX_KITCHEN_SLOTS} value={addKitchenCount} onChange={(e) => setAddKitchenCount(e.target.value)} />
                           </div>
-                          <div>
-                            <label className="mb-1.5 block text-xs font-semibold text-slate-700">Shared spaces</label>
-                            <input className={addInputCls} type="number" min={0} max={MAX_SHARED_SPACE_SLOTS} value={addSharedSpaceCount} onChange={(e) => setAddSharedSpaceCount(e.target.value)} />
-                          </div>
                         </div>
                       </div>
                     )}
@@ -3301,6 +3226,10 @@ function HouseManagementPanel({ manager, onPropertiesChange }) {
                           <div key={`room-${idx}`} className="rounded-2xl border border-slate-200 bg-slate-50/70 p-4">
                             <div className="mb-3 text-xs font-black text-slate-800">Room {idx + 1}</div>
                             <div className="grid gap-3 sm:grid-cols-2">
+                              <div className="sm:col-span-2">
+                                <label className="mb-1 block text-[11px] font-semibold text-slate-600">Room label (optional)</label>
+                                <input className={addInputCls} value={room.label} onChange={(e) => wizUpdateRoom(idx, { label: e.target.value })} placeholder="e.g. Front bedroom, Room A" />
+                              </div>
                               <div>
                                 <label className="mb-1 block text-[11px] font-semibold text-slate-600">Monthly rent ($)</label>
                                 <input className={addInputCls} type="number" min="0" step="1" value={room.rent} onChange={(e) => wizUpdateRoom(idx, { rent: e.target.value })} />
@@ -3320,12 +3249,47 @@ function HouseManagementPanel({ manager, onPropertiesChange }) {
                                 <label className="mb-1 block text-[11px] font-semibold text-slate-600">Utilities cost ($/mo)</label>
                                 <input className={addInputCls} type="number" min="0" step="1" value={room.utilitiesCost} onChange={(e) => wizUpdateRoom(idx, { utilitiesCost: e.target.value })} />
                               </div>
+                              {(room.furnished === 'Yes' || room.furnished === 'Partial') && (
+                                <div className="sm:col-span-2">
+                                  <label className="mb-1 block text-[11px] font-semibold text-slate-600">What furniture is included?</label>
+                                  <input className={addInputCls} value={room.furnitureIncluded} onChange={(e) => wizUpdateRoom(idx, { furnitureIncluded: e.target.value })} placeholder="e.g. Bed, desk, dresser, chair" />
+                                </div>
+                              )}
+                              <div className="sm:col-span-2">
+                                <label className="mb-1 block text-[11px] font-semibold text-slate-600">Additional features (optional)</label>
+                                <input className={addInputCls} value={room.additionalFeatures} onChange={(e) => wizUpdateRoom(idx, { additionalFeatures: e.target.value })} placeholder="e.g. Keypad lock, private balcony, AC" />
+                              </div>
+                              <div className="sm:col-span-2">
+                                <label className="mb-1 block text-[11px] font-semibold text-slate-600">Notes (optional)</label>
+                                <textarea className={`${addInputCls} min-h-[56px]`} value={room.notes} onChange={(e) => wizUpdateRoom(idx, { notes: e.target.value })} placeholder="Anything else about this room" rows={2} />
+                              </div>
                               {idx === 0 && (
                                 <div className="sm:col-span-2">
                                   <label className="mb-1 block text-[11px] font-semibold text-slate-600">Utilities description <span className="text-slate-400">(applies to Room 1 only)</span></label>
                                   <textarea className={`${addInputCls} min-h-[56px]`} value={room.utilities} onChange={(e) => wizUpdateRoom(idx, { utilities: e.target.value })} placeholder="What’s included, e.g. water + gas included, tenant pays electric" rows={2} />
                                 </div>
                               )}
+                              <div className="sm:col-span-2">
+                                <label className="mb-1 block text-[11px] font-semibold text-slate-600">Room photos / videos</label>
+                                <label className="mt-1 flex cursor-pointer flex-col items-center justify-center rounded-2xl border-2 border-dashed border-slate-200 bg-white px-4 py-5 text-center text-xs text-slate-500 transition hover:border-[#2563eb]/50">
+                                  <input type="file" accept="image/*,video/*" multiple className="hidden" onChange={(e) => { addRoomMediaFiles(idx, e.target.files); e.target.value = '' }} />
+                                  Drag and drop or click to add files for this room
+                                </label>
+                                {(room.media || []).length > 0 && (
+                                  <div className="mt-2 flex flex-wrap gap-2">
+                                    {(room.media || []).map((m) => (
+                                      <div key={m.id} className="relative h-20 w-20 overflow-hidden rounded-xl border border-slate-200 bg-slate-100">
+                                        {m.file?.type?.startsWith('video/') ? (
+                                          <div className="flex h-full items-center justify-center text-[10px] font-semibold text-slate-500">Video</div>
+                                        ) : (
+                                          <img src={m.preview} alt="" className="h-full w-full object-cover" />
+                                        )}
+                                        <button type="button" onClick={() => removeRoomMedia(idx, m.id)} className="absolute right-0.5 top-0.5 rounded-full bg-white/90 px-1 text-[10px] font-bold text-red-600 shadow">✕</button>
+                                      </div>
+                                    ))}
+                                  </div>
+                                )}
+                              </div>
                             </div>
                           </div>
                         ))}
@@ -3390,20 +3354,27 @@ function HouseManagementPanel({ manager, onPropertiesChange }) {
 
                     {/* Step 5: Shared Spaces */}
                     {addStep === 5 && (
-                      wizardSc === 0 ? (
-                        <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 px-6 py-8 text-center text-sm text-slate-500">
-                          No shared spaces configured. Go back to Counts to add shared spaces.
-                        </div>
-                      ) : (
-                        <div className="space-y-4">
-                          <p className="text-xs text-slate-500">Common areas — living rooms, lounges, study areas, patios, etc.</p>
-                          {addSharedSpaces.map((space, idx) => (
+                      <div className="space-y-4">
+                        <p className="text-xs text-slate-500">
+                          Add common areas renters share. Use the type list, or choose Other and name it.
+                        </p>
+                        {addSharedSpaces.length === 0 ? (
+                          <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 px-6 py-8 text-center text-sm text-slate-500">
+                            No shared spaces yet. Add one when you are ready (optional).
+                          </div>
+                        ) : (
+                          addSharedSpaces.map((space, idx) => (
                             <div key={`shared-${idx}`} className="rounded-2xl border border-slate-200 bg-white p-4">
-                              <div className="mb-3 text-xs font-black text-slate-800">Shared Space {idx + 1}</div>
+                              <div className="mb-3 flex items-center justify-between gap-2">
+                                <div className="text-xs font-black text-slate-800">Shared space {idx + 1}</div>
+                                <button type="button" onClick={() => wizRemoveSharedSpace(idx)} className="rounded-lg border border-red-200 px-2 py-1 text-[11px] font-bold text-red-600 hover:bg-red-50">
+                                  Remove
+                                </button>
+                              </div>
                               <div className="grid gap-3 sm:grid-cols-2">
                                 <div>
-                                  <label className="mb-1 block text-[11px] font-semibold text-slate-600">Name</label>
-                                  <input className={addInputCls} value={space.name} onChange={(e) => wizUpdateSharedSpace(idx, { name: e.target.value })} placeholder="e.g. Main Living Room" />
+                                  <label className="mb-1 block text-[11px] font-semibold text-slate-600">Name (optional)</label>
+                                  <input className={addInputCls} value={space.name} onChange={(e) => wizUpdateSharedSpace(idx, { name: e.target.value })} placeholder="e.g. Main living room" />
                                 </div>
                                 <div>
                                   <label className="mb-1 block text-[11px] font-semibold text-slate-600">Type</label>
@@ -3412,8 +3383,14 @@ function HouseManagementPanel({ manager, onPropertiesChange }) {
                                     {SHARED_SPACE_TYPE_OPTIONS.map((t) => <option key={t} value={t}>{t}</option>)}
                                   </select>
                                 </div>
+                                {space.type === 'Other' && (
+                                  <div className="sm:col-span-2">
+                                    <label className="mb-1 block text-[11px] font-semibold text-slate-600">Custom shared space name</label>
+                                    <input className={addInputCls} value={space.typeOther} onChange={(e) => wizUpdateSharedSpace(idx, { typeOther: e.target.value })} placeholder="Describe this space" />
+                                  </div>
+                                )}
                                 <div className="sm:col-span-2">
-                                  <label className="mb-1.5 block text-[11px] font-semibold text-slate-600">Rooms with access</label>
+                                  <label className="mb-1.5 block text-[11px] font-semibold text-slate-600">Room access</label>
                                   <div className="grid grid-cols-4 gap-1.5 sm:grid-cols-5">
                                     {wizardRoomOptions.map((r) => (
                                       <label key={r} className={[
@@ -3442,9 +3419,14 @@ function HouseManagementPanel({ manager, onPropertiesChange }) {
                                 </div>
                               </div>
                             </div>
-                          ))}
-                        </div>
-                      )
+                          ))
+                        )}
+                        {addSharedSpaces.length < MAX_SHARED_SPACE_SLOTS && (
+                          <button type="button" onClick={wizAddSharedSpace} className="w-full rounded-xl border border-dashed border-slate-300 px-4 py-3 text-sm font-semibold text-slate-600 transition hover:bg-slate-50">
+                            + Add shared space
+                          </button>
+                        )}
+                      </div>
                     )}
 
                     {/* Step 6: Laundry & Parking */}
@@ -3568,6 +3550,88 @@ function HouseManagementPanel({ manager, onPropertiesChange }) {
                               ))}
                             </div>
                           )}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Step 8: Pricing & leases */}
+                    {addStep === 8 && (
+                      <div className="space-y-5">
+                        <div className="rounded-2xl border border-slate-200 bg-slate-50/80 p-4">
+                          <div className="text-[11px] font-bold uppercase tracking-[0.14em] text-slate-400">Full property pricing</div>
+                          <p className="mt-1 text-xs text-slate-500">Optional overrides for marketing the whole house (stored with your listing metadata).</p>
+                          <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                            <div>
+                              <label className="mb-1 block text-[11px] font-semibold text-slate-600">Full house price ($/mo)</label>
+                              <input className={addInputCls} value={addLeasing.fullHousePrice} onChange={(e) => setAddLeasing((L) => ({ ...L, fullHousePrice: e.target.value }))} placeholder="e.g. 6200" />
+                            </div>
+                            <div>
+                              <label className="mb-1 block text-[11px] font-semibold text-slate-600">Promo / discounted total ($/mo)</label>
+                              <input className={addInputCls} value={addLeasing.promoPrice} onChange={(e) => setAddLeasing((L) => ({ ...L, promoPrice: e.target.value }))} placeholder="Optional" />
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="rounded-2xl border border-slate-200 bg-white p-4">
+                          <div className="text-[11px] font-bold uppercase tracking-[0.14em] text-slate-400">Grouped packages</div>
+                          <p className="mt-1 text-xs text-slate-500">Floor packages, wing rentals, or other bundles.</p>
+                          <div className="mt-3 space-y-3">
+                            {(addLeasing.bundles || []).map((b, bidx) => (
+                              <div key={`bundle-${bidx}`} className="rounded-xl border border-slate-100 bg-slate-50/90 p-3">
+                                <div className="mb-2 flex justify-end">
+                                  <button type="button" onClick={() => wizRemoveLeasingBundle(bidx)} className="text-[11px] font-bold text-red-600 hover:underline">
+                                    Remove
+                                  </button>
+                                </div>
+                                <div className="grid gap-2 sm:grid-cols-2">
+                                  <div className="sm:col-span-2">
+                                    <label className="mb-1 block text-[11px] font-semibold text-slate-600">Bundle name</label>
+                                    <input className={addInputCls} value={b.name} onChange={(e) => wizUpdateLeasingBundle(bidx, { name: e.target.value })} placeholder="e.g. Second floor rental" />
+                                  </div>
+                                  <div>
+                                    <label className="mb-1 block text-[11px] font-semibold text-slate-600">Price ($/mo)</label>
+                                    <input className={addInputCls} value={b.price} onChange={(e) => wizUpdateLeasingBundle(bidx, { price: e.target.value })} placeholder="e.g. 3100" />
+                                  </div>
+                                  <div className="sm:col-span-2">
+                                    <label className="mb-1.5 block text-[11px] font-semibold text-slate-600">Rooms included</label>
+                                    <div className="flex flex-wrap gap-1.5">
+                                      {wizardRoomOptions.map((r) => {
+                                        const set = new Set(Array.isArray(b.rooms) ? b.rooms : [])
+                                        const on = set.has(r)
+                                        return (
+                                          <button
+                                            key={r}
+                                            type="button"
+                                            onClick={() => {
+                                              const next = new Set(Array.isArray(b.rooms) ? b.rooms : [])
+                                              if (next.has(r)) next.delete(r)
+                                              else next.add(r)
+                                              wizUpdateLeasingBundle(bidx, { rooms: [...next] })
+                                            }}
+                                            className={[
+                                              'rounded-lg border px-2.5 py-1 text-[11px] font-semibold transition',
+                                              on ? 'border-[#2563eb] bg-[#2563eb]/10 text-[#2563eb]' : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300',
+                                            ].join(' ')}
+                                          >
+                                            {r}
+                                          </button>
+                                        )
+                                      })}
+                                    </div>
+                                  </div>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                          <button type="button" onClick={wizAddLeasingBundle} className="mt-3 w-full rounded-xl border border-dashed border-slate-300 px-4 py-2.5 text-xs font-semibold text-slate-600 hover:bg-slate-50">
+                            + Add bundle
+                          </button>
+                        </div>
+
+                        <div>
+                          <label className="mb-1.5 block text-xs font-semibold text-slate-700">Lease length info</label>
+                          <p className="mb-2 text-xs text-slate-500">Shown to applicants; edit the default text if needed.</p>
+                          <textarea className={`${addInputCls} min-h-[88px]`} value={addLeasing.leaseLengthInfo} onChange={(e) => setAddLeasing((L) => ({ ...L, leaseLengthInfo: e.target.value }))} rows={3} />
                         </div>
                       </div>
                     )}

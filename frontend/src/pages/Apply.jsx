@@ -150,8 +150,8 @@ function getApplicationFeeDollars(propertyName, serverOverrides = {}) {
   return getApplicationFeeFromMarketing(propertyName)
 }
 
-// Build PROPERTY_OPTIONS with full room availability data
-const PROPERTY_OPTIONS = properties
+// Marketing fallback when API data is unavailable.
+const MARKETING_PROPERTY_OPTIONS = properties
   .map((property) => {
     const allRooms = (property.roomPlans || []).flatMap((plan) => plan.rooms || [])
     const uniqueRooms = []
@@ -847,7 +847,7 @@ const SIGNER_STEPS = [
         if (new Date(s.leaseStartDate) < today) e.leaseStartDate = 'Cannot be in the past'
       }
       if (s.propertyName && s.roomNumber && s.leaseStartDate) {
-        const prop = PROPERTY_OPTIONS.find((p) => p.name === s.propertyName)
+        const prop = MARKETING_PROPERTY_OPTIONS.find((p) => p.name === s.propertyName)
         const room = prop?.rooms.find((r) => r.name === s.roomNumber)
         if (room && !isRoomAvailableForRange(room.available, s.leaseStartDate, isMonthToMonth ? null : s.leaseEndDate)) {
           e[isMonthToMonth ? 'leaseStartDate' : 'leaseEndDate'] = `Room ${s.roomNumber} is not available for these dates — ${getRoomAvailabilityLabel(room.available)}`
@@ -1104,9 +1104,11 @@ export default function Apply() {
   const totalSteps = steps.length
   const isLastStep = step === totalSteps - 1
 
+  const [propertyOptions, setPropertyOptions] = useState(MARKETING_PROPERTY_OPTIONS)
+
   const selectedProperty = useMemo(
-    () => PROPERTY_OPTIONS.find((property) => property.name === signer.propertyName),
-    [signer.propertyName],
+    () => propertyOptions.find((property) => property.name === signer.propertyName),
+    [signer.propertyName, propertyOptions],
   )
 
   /** Property Name → Application Fee (USD) from Airtable Properties, when returned by tour API */
@@ -1118,6 +1120,28 @@ export default function Apply() {
       .then((r) => r.json())
       .then((data) => {
         if (cancelled || !Array.isArray(data?.properties)) return
+        const liveOptions = data.properties
+          .map((property) => {
+            const name = String(property?.name || '').trim()
+            if (!name) return null
+            const rooms = Array.isArray(property?.rooms)
+              ? property.rooms
+                .map((room) => String(room || '').trim())
+                .filter(Boolean)
+                .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }))
+                .map((roomName) => ({ name: roomName, available: 'Available now' }))
+              : []
+            return {
+              id: String(property?.id || name),
+              name,
+              address: String(property?.address || '').trim(),
+              rooms,
+            }
+          })
+          .filter(Boolean)
+          .sort((a, b) => a.name.localeCompare(b.name))
+        if (liveOptions.length) setPropertyOptions(liveOptions)
+
         const map = {}
         for (const p of data.properties) {
           const name = String(p?.name || '').trim()
@@ -1216,7 +1240,7 @@ export default function Apply() {
       const next = { ...prev, [key]: value }
       if (key === 'propertyName') {
         next.roomNumber = ''
-        next.propertyAddress = PROPERTY_OPTIONS.find((property) => property.name === value)?.address || ''
+        next.propertyAddress = propertyOptions.find((property) => property.name === value)?.address || ''
         setRoomConflictWarning(false)
         setRoomConflictAcknowledged(false)
       }
@@ -1955,7 +1979,7 @@ export default function Apply() {
                 <Field label="Property Name" required>
                   <select required className={selectCls} value={signer.propertyName} onChange={(e) => updateSigner('propertyName', e.target.value)}>
                     <option value="" disabled>Select a property…</option>
-                    {PROPERTY_OPTIONS.map((property) => (
+                    {propertyOptions.map((property) => (
                       <option key={property.id} value={property.name}>{property.name}</option>
                     ))}
                   </select>

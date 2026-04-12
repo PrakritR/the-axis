@@ -1,9 +1,11 @@
-import React, { useState, useMemo, useRef } from 'react'
+import React, { useState, useMemo, useRef, useEffect } from 'react'
 import { Link } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import Hero from '../components/Hero'
 import PropertyCard from '../components/PropertyCard'
 import { properties } from '../data/properties'
+import { fetchApprovedPropertiesForMarketing } from '../lib/airtable'
+import { mapAirtableRecordToHomeProperty } from '../lib/airtablePublicListings'
 import { Seo, buildWebsiteSchema } from '../lib/seo'
 import scrollToTop from '../utils/scrollToTop'
 
@@ -427,7 +429,8 @@ function RoomFinder() {
 
 // ── Property Carousel ────────────────────────────────────────────────────────
 
-function PropertyCarousel() {
+function PropertyCarousel({ extraListings = [] }) {
+  const listingList = useMemo(() => [...properties, ...extraListings], [extraListings])
   const trackRef = useRef(null)
   const [canLeft, setCanLeft] = useState(false)
   const [canRight, setCanRight] = useState(true)
@@ -468,7 +471,7 @@ function PropertyCarousel() {
         onScroll={updateArrows}
         className="mx-auto flex max-w-7xl gap-6 overflow-x-auto scroll-smooth px-4 pb-4 sm:px-6 xl:grid xl:grid-cols-3 xl:overflow-visible xl:px-6 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden"
       >
-        {properties.map((p) => (
+        {listingList.map((p) => (
           <div
             key={p.slug}
             data-card
@@ -501,6 +504,21 @@ function PropertyCarousel() {
 // ── Page ─────────────────────────────────────────────────────────────────────
 
 export default function Home() {
+  const [airtableListings, setAirtableListings] = useState([])
+
+  useEffect(() => {
+    let cancelled = false
+    fetchApprovedPropertiesForMarketing()
+      .then((rows) => {
+        if (cancelled) return
+        setAirtableListings(rows.map(mapAirtableRecordToHomeProperty).filter((x) => x.slug))
+      })
+      .catch(() => {
+        if (!cancelled) setAirtableListings([])
+      })
+    return () => { cancelled = true }
+  }, [])
+
   return (
       <div className="bg-transparent">
       <Seo
@@ -518,7 +536,7 @@ export default function Home() {
 
       {/* ── PROPERTIES ── */}
       <section id="properties" className="scroll-mt-20 border-t border-slate-200/25 bg-transparent py-8 sm:py-10">
-        <PropertyCarousel />
+        <PropertyCarousel extraListings={airtableListings} />
       </section>
     </div>
   )

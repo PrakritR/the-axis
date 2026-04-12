@@ -874,6 +874,34 @@ export async function getPropertyByName(propertyName) {
   }
 }
 
+/** Approved properties for the public Rent with Axis carousel (requires Airtable token + Approved checkbox). */
+export async function fetchApprovedPropertiesForMarketing() {
+  if (!API_KEY) return []
+  try {
+    const data = await request(
+      buildUrl(TABLES.properties, {
+        filterByFormula: '{Approved} = TRUE()',
+        pageSize: 100,
+      }),
+    )
+    return (data.records || []).map(mapRecord)
+  } catch {
+    return []
+  }
+}
+
+/** Single Properties row by id (public read when token is present). */
+export async function fetchPropertyRecordById(recordId) {
+  const id = String(recordId || '').trim()
+  if (!API_KEY || !/^rec[a-zA-Z0-9]{14,}$/.test(id)) return null
+  try {
+    const data = await request(`${BASE_URL}/${encodeURIComponent(TABLES.properties)}/${encodeURIComponent(id)}`)
+    return mapRecord(data)
+  } catch {
+    return null
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Rooms (optional — admin portal reads linked rows for min rent per property)
 // ---------------------------------------------------------------------------

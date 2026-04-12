@@ -38,17 +38,6 @@ function extractMultilineNoteValue(notes, label) {
   return block.trim()
 }
 
-/** Same rules as Manager.jsx `isPropertyRecordApproved` — only approved/live houses appear in public tour & message pickers. */
-function isPropertyRecordApprovedForTour(fields) {
-  const p = fields || {}
-  const s = String(p.Status || '').trim().toLowerCase()
-  if (s === 'pending_review' || s === 'pending review') return false
-  if (p.Approved === true || p.Approved === 1 || p.Approved === '1') return true
-  const a = String(p['Approval Status'] || '').trim().toLowerCase()
-  if (a === 'approved') return true
-  return s === 'approved' || s === 'live' || s === 'active'
-}
-
 function buildRoomsByPropertyId(roomRecords) {
   const map = new Map()
   for (const r of roomRecords) {
@@ -121,7 +110,7 @@ export default async function handler(req, res) {
     try {
       const roomsTable = process.env.VITE_AIRTABLE_ROOMS_TABLE || 'Rooms'
       const [propRes, roomsRes] = await Promise.all([
-        fetch(`https://api.airtable.com/v0/${AIRTABLE_BASE_ID}/Properties?sort%5B0%5D%5Bfield%5D=Name`, {
+        fetch(`https://api.airtable.com/v0/${AIRTABLE_BASE_ID}/Properties`, {
           headers: { Authorization: `Bearer ${AIRTABLE_TOKEN}` },
         }),
         fetch(`https://api.airtable.com/v0/${AIRTABLE_BASE_ID}/${encodeURIComponent(roomsTable)}?fields%5B%5D=Name&fields%5B%5D=Property`, {
@@ -132,8 +121,7 @@ export default async function handler(req, res) {
       const [propData, roomsData] = await Promise.all([propRes.json(), roomsRes.ok ? roomsRes.json() : Promise.resolve({ records: [] })])
       const roomsByPropertyId = buildRoomsByPropertyId(roomsData.records || [])
       const allRecords = propData.records || []
-      const approvedRecords = allRecords.filter((r) => isPropertyRecordApprovedForTour(r.fields || {}))
-      const properties = approvedRecords.map((r) => mapProperty(r, roomsByPropertyId))
+      const properties = allRecords.map((r) => mapProperty(r, roomsByPropertyId))
       if (properties.length) return res.status(200).json({ properties })
       // Table empty → keep legacy fallback for empty bases / local dev
       if (allRecords.length === 0) return res.status(200).json(fallback)
