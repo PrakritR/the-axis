@@ -2056,8 +2056,14 @@ function ResidentDashboardHome({
 
 // ─── Dashboard ────────────────────────────────────────────────────────────────
 
+const RESIDENT_TAB_IDS = new Set(['dashboard', 'workorders', 'leasing', 'payments', 'inbox', 'profile'])
+
 function Dashboard({ resident, onResidentUpdated, onSignOut }) {
-  const [tab, setTab] = useState('dashboard')
+  const [tab, setTab] = useState(() => {
+    const h = window.location.hash.slice(1)
+    return RESIDENT_TAB_IDS.has(h) ? h : 'dashboard'
+  })
+  useEffect(() => { window.location.hash = tab }, [tab])
   const [paymentFocus, setPaymentFocus] = useState('')
   const [requests, setRequests] = useState([])
   const [payments, setPayments] = useState([])

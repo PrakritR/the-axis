@@ -5055,7 +5055,11 @@ const MANAGER_NAV_ITEMS = MANAGER_DASH_TABS.map(([id, label]) => ({ id, label })
 
 function ManagerDashboard({ manager: managerProp, onOpenDraft, onSignOut, onManagerUpdate }) {
   const [manager, setManager] = useState(managerProp)
-  const [dashView, setDashView] = useState('dashboard')
+  const [dashView, setDashView] = useState(() => {
+    const h = window.location.hash.slice(1)
+    return MANAGER_DASH_TABS.some(([id]) => id === h) ? h : 'dashboard'
+  })
+  useEffect(() => { window.location.hash = dashView }, [dashView])
   const [drafts, setDrafts] = useState([])
   const [loading, setLoading] = useState(true)
   const [showGenerateModal, setShowGenerateModal] = useState(false)
