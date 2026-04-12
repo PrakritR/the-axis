@@ -14,7 +14,6 @@ import {
   getPortalInboxSubjectFieldName,
 } from '../../lib/airtable'
 import { isAirtablePermissionErrorMessage } from '../../lib/airtablePermissionError'
-import { portalAxisAdminContactEmail } from '../../lib/portalInboxConstants.js'
 import { resolveInboxSubject } from '../../lib/portalInboxSubjects.js'
 import { notifyPortalMessage } from '../../lib/notifyPortalMessage.js'
 import {
@@ -609,12 +608,6 @@ export default function ResidentPortalInbox({ resident }) {
                       <option value="admin">Axis Admin</option>
                     </select>
                   </label>
-                  {composeTo === 'admin' && !portalAxisAdminContactEmail().includes('@') ? (
-                    <p className="text-xs text-amber-800">
-                      Set <code className="rounded bg-amber-100 px-1">VITE_PORTAL_AXIS_ADMIN_EMAIL</code> so admin
-                      can see your thread.
-                    </p>
-                  ) : null}
                   <InboxSubjectPicker
                     presetId={composeSubjectPreset}
                     onPresetIdChange={setComposeSubjectPreset}
