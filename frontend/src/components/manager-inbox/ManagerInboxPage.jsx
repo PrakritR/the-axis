@@ -287,6 +287,7 @@ export default function ManagerInboxPage({
   const [inboxStateMap, setInboxStateMap] = useState(() => new Map())
   const [inboxStateBackend, setInboxStateBackend] = useState('pending')
   const [sectionFilter, setSectionFilter] = useState('all')
+  const [channelFilter, setChannelFilter] = useState('all')
   const [threadSearch, setThreadSearch] = useState('')
   const [threadMenuOpen, setThreadMenuOpen] = useState(false)
   const threadMenuRef = useRef(null)
@@ -593,9 +594,29 @@ export default function ManagerInboxPage({
     if (sectionFilter === 'all') rows = rows.filter((row) => row.section !== 'trash')
     else if (sectionFilter === 'unread') rows = rows.filter((row) => row.section === 'unopened')
     else if (sectionFilter === 'trash') rows = rows.filter((row) => row.section === 'trash')
+
+    if (adminFullInbox) {
+      if (channelFilter === 'residents') {
+        rows = rows.filter((r) => {
+          const t = String(r.id)
+          return t.startsWith('internal:resident-leasing:') || t.startsWith('internal:resident-admin:')
+        })
+      } else if (channelFilter === 'managers') {
+        rows = rows.filter((r) => {
+          const t = String(r.id)
+          return t.startsWith('internal:mgmt-admin:') || t.startsWith('internal:site-manager:')
+        })
+      } else if (channelFilter === 'public') {
+        rows = rows.filter((r) => String(r.id).startsWith('internal:admin-public:'))
+      }
+    } else {
+      if (channelFilter === 'axis') rows = rows.filter((r) => r.id === MANAGER_INBOX_AXIS)
+      else if (channelFilter === 'residents') rows = rows.filter((r) => r.id !== MANAGER_INBOX_AXIS)
+    }
+
     if (!q) return rows
     return rows.filter((row) => (row.searchText || '').includes(q))
-  }, [threadRowsWithMeta, sectionFilter, threadSearch])
+  }, [threadRowsWithMeta, sectionFilter, channelFilter, threadSearch, adminFullInbox])
 
   const touchThreadRead = useCallback(
     async (stateKey) => {
@@ -1061,6 +1082,19 @@ export default function ManagerInboxPage({
   const headerSubject =
     activeThreadSubject || selectedRowMeta?.subjectLine || readingTitle
 
+  const channelTabs = adminFullInbox
+    ? [
+        ['all', 'All'],
+        ['residents', 'Residents'],
+        ['managers', 'Managers'],
+        ['public', 'Public'],
+      ]
+    : [
+        ['all', 'Both'],
+        ['axis', 'Axis'],
+        ['residents', 'Residents'],
+      ]
+
   const listEmptyMessage =
     sectionFilter === 'trash' && inboxSections.trash.length === 0
       ? 'Nothing in trash'
@@ -1070,7 +1104,9 @@ export default function ManagerInboxPage({
           ? 'No matches for your search'
           : sectionFilter === 'unread'
             ? 'No unread conversations'
-            : 'No conversations'
+            : channelFilter !== 'all'
+              ? `No ${channelFilter} conversations`
+              : 'No conversations'
 
   const composerPlaceholder =
     adminFullInbox || selectedThreadId !== MANAGER_INBOX_AXIS ? 'Write a reply…' : 'Message Axis…'
@@ -1127,6 +1163,9 @@ export default function ManagerInboxPage({
           }}
           emptyMessage={listEmptyMessage}
           onTrashThread={(stateKey, trashed = true) => moveThreadTrash(stateKey, trashed)}
+          channelTabs={channelTabs}
+          channelFilter={channelFilter}
+          onChannelFilterChange={setChannelFilter}
         />
 
         <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-white">
