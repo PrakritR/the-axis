@@ -48,7 +48,6 @@ const NAV_BASE = [
   { id: 'dashboard', label: 'Dashboard' },
   { id: 'properties', label: 'Properties' },
   { id: 'accounts', label: 'Managers' },
-  { id: 'applications', label: 'Applications' },
   { id: 'messages', label: 'Inbox' },
   { id: 'profile', label: 'Profile' },
 ]
@@ -545,18 +544,15 @@ export default function AdminPortal() {
           ) : null}
 
           {/* Action-needed banner */}
-          {pendingApprovals.length > 0 || pendingApps > 0 ? (
+          {pendingApprovals.length > 0 ? (
             <div className="flex flex-wrap items-center gap-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3">
               <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-amber-400 text-xs font-black text-white">
-                {pendingApprovals.length + pendingApps}
+                {pendingApprovals.length}
               </span>
               <div className="min-w-0 flex-1">
                 <p className="text-sm font-bold text-amber-900">Action needed</p>
                 <p className="text-xs text-amber-800">
-                  {[
-                    pendingApprovals.length > 0 && `${pendingApprovals.length} propert${pendingApprovals.length === 1 ? 'y' : 'ies'} awaiting review`,
-                    pendingApps > 0 && `${pendingApps} application${pendingApps === 1 ? '' : 's'} pending`,
-                  ].filter(Boolean).join(' · ')}
+                  {`${pendingApprovals.length} propert${pendingApprovals.length === 1 ? 'y' : 'ies'} awaiting review`}
                 </p>
               </div>
               <div className="flex gap-2">
@@ -567,15 +563,6 @@ export default function AdminPortal() {
                     className="rounded-xl bg-amber-500 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-amber-600"
                   >
                     Review properties
-                  </button>
-                )}
-                {pendingApps > 0 && (
-                  <button
-                    type="button"
-                    onClick={() => { setTab('applications'); setApplicationsFilter('pending') }}
-                    className="rounded-xl border border-amber-300 bg-white px-3 py-1.5 text-xs font-semibold text-amber-800 transition hover:bg-amber-50"
-                  >
-                    Review applications
                   </button>
                 )}
               </div>
@@ -602,26 +589,6 @@ export default function AdminPortal() {
             >
               <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-sky-800">Properties · Approved</span>
               <span className="text-3xl font-black tabular-nums text-slate-900">{approvedProperties.length}</span>
-            </button>
-
-            {/* Applications pending */}
-            <button
-              type="button"
-              onClick={() => { setTab('applications'); setApplicationsFilter('pending') }}
-              className="flex flex-col gap-1 rounded-3xl border border-sky-200/90 bg-sky-50 p-5 text-left transition hover:border-sky-300 hover:bg-sky-100/80 hover:shadow-sm"
-            >
-              <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-sky-800">Applications · Pending</span>
-              <span className="text-3xl font-black tabular-nums text-slate-900">{pendingApps}</span>
-            </button>
-
-            {/* Applications approved */}
-            <button
-              type="button"
-              onClick={() => { setTab('applications'); setApplicationsFilter('approved') }}
-              className="flex flex-col gap-1 rounded-3xl border border-sky-200/90 bg-sky-50 p-5 text-left transition hover:border-sky-300 hover:bg-sky-100/80 hover:shadow-sm"
-            >
-              <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-sky-800">Applications · Approved</span>
-              <span className="text-3xl font-black tabular-nums text-slate-900">{applications.filter((a) => a.approvalState === 'approved').length}</span>
             </button>
 
             {/* Subscribed managers */}
@@ -983,138 +950,6 @@ export default function AdminPortal() {
           )
         }
       )())}
-
-      {tab === 'applications' && (
-        <div className="space-y-6">
-          <div>
-            <div className="mb-4">
-              <h1 className="text-2xl font-black">Applications</h1>
-            </div>
-            <div className="inline-flex flex-wrap gap-1 rounded-2xl border border-slate-200 bg-slate-50 p-1">
-              {[['all', 'All', applications.length], ['pending', 'Pending', applications.filter((a) => a.approvalPending).length], ['approved', 'Approved', applications.filter((a) => a.approvalState === 'approved').length], ['rejected', 'Rejected', applications.filter((a) => a.approvalState === 'rejected').length]].map(([key, label, count]) => (
-                <button
-                  key={key}
-                  type="button"
-                  onClick={() => { setApplicationsFilter(key); setSelectedApplicationId(null) }}
-                  className={`rounded-xl px-4 py-2 text-sm font-semibold transition ${
-                    applicationsFilter === key
-                      ? 'bg-white text-slate-900 shadow-sm'
-                      : 'text-slate-600 hover:text-slate-900'
-                  }`}
-                >
-                  {label}
-                  <span className="ml-1.5 tabular-nums text-slate-500">({count})</span>
-                </button>
-              ))}
-            </div>
-          </div>
-          <DataTable
-            empty={`No ${applicationsFilter === 'all' ? '' : applicationsFilter + ' '}applications`}
-            columns={[
-              { key: 'p', label: 'House / property', render: (d) => d.propertyName },
-              { key: 'a', label: 'Applicant', render: (d) => d.applicantName },
-              { key: 'o', label: 'Manager', render: (d) => ownerLabel(d.ownerId) },
-              { key: 's', label: 'Status', render: (d) => <StatusPill tone="blue">{d.status}</StatusPill> },
-              {
-                key: 'act',
-                label: '',
-                render: (d) => (
-                  <button
-                    type="button"
-                    className="text-sm font-semibold text-[#2563eb] hover:underline"
-                    onClick={() => setSelectedApplicationId(selectedApplicationId === d.id ? null : d.id)}
-                  >
-                    {selectedApplicationId === d.id ? 'Hide details' : 'Details'}
-                  </button>
-                ),
-              },
-            ]}
-            rows={searchedApplications.map((a) => ({ key: a.id, data: a }))}
-          />
-          {selectedApplication ? (
-            <ApplicationDetailPanel
-              application={selectedApplication}
-              partnerLabel={ownerLabel(selectedApplication.ownerId)}
-              onClose={() => setSelectedApplicationId(null)}
-              adminReview={
-                canReviewApplicationsFromAdmin()
-                  ? {
-                      busy: applicationReviewBusy,
-                      onApprove: async () => {
-                        const id = selectedApplication.id
-                        if (!id) return
-                        setApplicationReviewBusy(true)
-                        try {
-                          const { name: managerName, role: managerRole } = adminApplicationActorMeta(user)
-                          const res = await fetch('/api/portal?action=manager-approve-application', {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({
-                              applicationRecordId: id,
-                              managerName,
-                              managerRole,
-                            }),
-                          })
-                          const data = await readJsonResponse(res)
-                          if (!res.ok) throw new Error(data.error || 'Could not approve application')
-                          await refreshPortalData()
-                          if (Array.isArray(data.residentRecordsUpdated) && data.residentRecordsUpdated.length > 0) {
-                            toast.success(
-                              (data.message || 'Application approved') +
-                                ` Resident portal updated (${data.residentRecordsUpdated.length} profile${data.residentRecordsUpdated.length === 1 ? '' : 's'})`,
-                            )
-                          } else {
-                            toast.success(data.message || 'Application approved')
-                          }
-                          setSelectedApplicationId(null)
-                        } catch (e) {
-                          toast.error(e?.message || 'Approve failed')
-                        } finally {
-                          setApplicationReviewBusy(false)
-                        }
-                      },
-                      onReject: async () => {
-                        const id = selectedApplication.id
-                        if (!id) return
-                        setApplicationReviewBusy(true)
-                        try {
-                          await adminRejectApplication(id)
-                          await refreshPortalData()
-                          toast.success('Application rejected')
-                          setSelectedApplicationId(null)
-                        } catch (e) {
-                          toast.error(e?.message || 'Reject failed')
-                        } finally {
-                          setApplicationReviewBusy(false)
-                        }
-                      },
-                      onUnapprove: async () => {
-                        const id = selectedApplication.id
-                        if (!id) return
-                        const wasRejected = selectedApplication.approvalState === 'rejected'
-                        setApplicationReviewBusy(true)
-                        try {
-                          await adminUnapproveApplication(id)
-                          await refreshPortalData()
-                          toast.success(
-                            wasRejected
-                              ? 'Rejection removed. Application is now pending review'
-                              : 'Approval removed. Application is now pending review',
-                          )
-                          setSelectedApplicationId(null)
-                        } catch (e) {
-                          toast.error(e?.message || (wasRejected ? 'Could not remove rejection' : 'Could not remove approval'))
-                        } finally {
-                          setApplicationReviewBusy(false)
-                        }
-                      },
-                    }
-                  : null
-              }
-            />
-          ) : null}
-        </div>
-      )}
 
       {tab === 'messages' && (
         <ManagerInboxPage
