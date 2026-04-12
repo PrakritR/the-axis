@@ -840,13 +840,18 @@ export async function updatePaymentRecord(recordId, fields) {
 
 export async function getPropertyByName(propertyName) {
   if (!propertyName) return null
-  const formula = `{Name} = "${escapeFormulaValue(propertyName)}"`
-  const data = await request(buildUrl(TABLES.properties, {
-    filterByFormula: formula,
-    maxRecords: 1,
-  }))
-  const record = data.records?.[0]
-  return record ? mapRecord(record) : null
+  try {
+    const formula = `{Name} = "${escapeFormulaValue(propertyName)}"`
+    const data = await request(buildUrl(TABLES.properties, {
+      filterByFormula: formula,
+      maxRecords: 1,
+    }))
+    const record = data.records?.[0]
+    return record ? mapRecord(record) : null
+  } catch {
+    // Properties table may use a different primary field name — fall back to static data
+    return null
+  }
 }
 
 // ---------------------------------------------------------------------------

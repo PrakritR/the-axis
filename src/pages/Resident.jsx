@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link, Navigate } from 'react-router-dom'
 import { properties } from '../data/properties'
 import { EmbeddedStripeCheckout } from '../components/EmbeddedStripeCheckout'
@@ -10,8 +10,6 @@ import {
 } from '../components/PortalOpsUI'
 import ResidentPortalInbox from '../components/portal-inbox/ResidentPortalInbox'
 import {
-  PortalAuthCard,
-  PortalAuthPage,
   PortalField,
   PortalNotice,
   PortalPasswordInput,
@@ -46,23 +44,6 @@ const urgencyOptions = ['Low', 'Medium', 'Urgent']
 
 function normalizeUnitLabel(value) {
   return String(value || '').replace(/^Unit\s+/i, 'Room ').trim()
-}
-
-function extractRoomNumber(value) {
-  const match = String(value || '').match(/(\d+)/)
-  return match ? Number(match[1]) : Number.MAX_SAFE_INTEGER
-}
-
-function compareRoomLabels(a, b) {
-  const n = extractRoomNumber(a) - extractRoomNumber(b)
-  if (n !== 0) return n
-  return String(a || '').localeCompare(String(b || ''), undefined, { numeric: true, sensitivity: 'base' })
-}
-
-const statusStyles = {
-  Submitted: 'border-slate-200 bg-slate-100 text-slate-700',
-  'In Progress': 'border-sky-200 bg-sky-50 text-sky-700',
-  Resolved: 'border-emerald-200 bg-emerald-50 text-emerald-700',
 }
 
 const WORK_ORDER_RESOLVED_VISIBLE_MS = 7 * 86400000
@@ -147,15 +128,6 @@ function parseWorkOrderSchedule(record) {
   return raw?.[1]?.trim() || ''
 }
 
-const priorityStyles = {
-  Routine: 'border-slate-200 bg-slate-100 text-slate-600',
-  Low: 'border-slate-200 bg-slate-100 text-slate-600',
-  Normal: 'border-slate-200 bg-slate-100 text-slate-600',
-  High: 'border-amber-200 bg-amber-50 text-amber-700',
-  Urgent: 'border-amber-200 bg-amber-50 text-amber-700',
-  Emergency: 'border-red-200 bg-red-50 text-red-700',
-  Critical: 'border-red-200 bg-red-50 text-red-700',
-}
 
 function parseDisplayDate(value) {
   if (!value) return null
@@ -202,6 +174,16 @@ function ResidentPendingApprovalGate() {
 
 function formatMoney(value) {
   return `$${Number(value || 0).toLocaleString()}`
+}
+
+function parseErrorMessage(err) {
+  const raw = err?.message ? String(err.message) : String(err || '')
+  try {
+    const j = JSON.parse(raw)
+    const inner = j?.error?.message || j?.message
+    if (typeof inner === 'string' && inner.trim()) return inner.trim()
+  } catch { /* not JSON */ }
+  return raw || 'An error occurred.'
 }
 
 function getLeaseTermLabel(resident) {
@@ -1441,7 +1423,7 @@ function LeasingPanel({ resident, payments, onOpenPayments }) {
         const amount = parseInt(String(depositText || '').replace(/[^0-9]/g, ''), 10)
         if (!cancelled) setHouseDeposit(Number.isFinite(amount) && amount > 0 ? amount : 0)
       } catch {
-        // silently ignore — deposit amount is not critical
+        // silently ignore — getPropertyByName returns null on error; static fallback handles deposit
       } finally {
         if (!cancelled) setDepositLoading(false)
       }
@@ -1484,7 +1466,7 @@ function LeasingPanel({ resident, payments, onOpenPayments }) {
       })
       setDepositPaidState(true)
     } catch (err) {
-      setDepositError(err.message || 'Could not record the deposit payment.')
+      setDepositError(parseErrorMessage(err))
     } finally {
       setDepositCheckoutLoading(false)
       setDepositCheckout(null)
