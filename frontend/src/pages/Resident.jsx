@@ -1935,7 +1935,7 @@ function ResidentDashboardHome({
 
 // ─── Dashboard ────────────────────────────────────────────────────────────────
 
-const RESIDENT_TAB_IDS = new Set(['dashboard', 'workorders', 'leasing', 'payments', 'inbox', 'profile'])
+const RESIDENT_TAB_IDS = new Set(['dashboard', 'leasing', 'payments', 'workorders', 'inbox', 'profile'])
 
 function Dashboard({ resident, onResidentUpdated, onSignOut }) {
   const [tab, setTab] = useState(() => {
@@ -2017,9 +2017,9 @@ function Dashboard({ resident, onResidentUpdated, onSignOut }) {
 
   const TABS = [
     ['dashboard', 'Dashboard'],
-    ['workorders', 'Work Orders'],
     ['leasing', 'Leasing'],
     ['payments', 'Payments'],
+    ['workorders', 'Work Orders'],
     ['inbox', 'Inbox'],
     ['profile', 'Profile'],
   ]
