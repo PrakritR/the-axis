@@ -26,17 +26,17 @@ export default function ConversationList({
 
   return (
     <div className="flex min-h-0 w-full shrink-0 flex-col border-b border-slate-200 bg-white md:w-[320px] md:max-w-[320px] md:border-b-0 md:border-r">
-      <div className="shrink-0 space-y-2.5 border-b border-slate-100 px-3.5 py-3">
+      <div className="shrink-0 space-y-3 border-b border-slate-100 px-4 py-4">
         <input
           type="search"
           value={searchQuery}
           onChange={(e) => onSearchChange(e.target.value)}
           placeholder="Search…"
           autoComplete="off"
-          className="w-full rounded-xl border border-slate-200 bg-slate-50/80 px-3 py-2 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-[#2563eb] focus:bg-white focus:ring-2 focus:ring-[#2563eb]/15"
+          className="w-full rounded-2xl border border-slate-200 bg-slate-50/80 px-3.5 py-2.5 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-[#2563eb] focus:bg-white focus:ring-2 focus:ring-[#2563eb]/15"
         />
 
-        <div className="grid grid-cols-2 gap-1.5 rounded-2xl border border-slate-200 bg-slate-50 p-1.5 min-[380px]:grid-cols-4">
+        <div className="grid grid-cols-2 gap-1 rounded-2xl border border-slate-200 bg-slate-50 p-1 min-[380px]:grid-cols-4">
           {[
             ['all', 'All', counts.all ?? 0],
             ['unopened', 'Unopened', counts.unopened ?? 0],
@@ -47,12 +47,13 @@ export default function ConversationList({
               key={key}
               type="button"
               onClick={() => onFilterChange(key)}
-              className={`rounded-xl px-2 py-2 text-center text-xs font-semibold leading-tight transition sm:px-2.5 sm:text-sm ${
-                filter === key ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-600 hover:text-slate-900'
-              }`}
+              className={[
+                'rounded-xl px-2 py-2.5 text-center text-xs font-semibold leading-tight transition sm:px-2.5',
+                filter === key ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-600 hover:text-slate-900',
+              ].join(' ')}
             >
               <span className="block">{label}</span>
-              <span className="mt-0.5 block tabular-nums text-[11px] font-semibold text-slate-500 sm:text-xs">({count})</span>
+              <span className="mt-0.5 block tabular-nums text-[11px] font-semibold text-slate-400 sm:text-xs">({count})</span>
             </button>
           ))}
         </div>

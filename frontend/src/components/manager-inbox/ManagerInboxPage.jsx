@@ -1135,13 +1135,6 @@ export default function ManagerInboxPage({
           >
             New message
           </button>
-          <button
-            type="button"
-            onClick={() => loadAll()}
-            className="rounded-full border border-slate-200 bg-white px-3.5 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-50"
-          >
-            Refresh
-          </button>
           <select
             value={channelFilter}
             onChange={(e) => setChannelFilter(e.target.value)}
@@ -1152,6 +1145,13 @@ export default function ManagerInboxPage({
               <option key={value} value={value}>{label}</option>
             ))}
           </select>
+          <button
+            type="button"
+            onClick={() => loadAll()}
+            className="rounded-full border border-slate-200 bg-white px-3.5 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-50"
+          >
+            Refresh
+          </button>
         </div>
       </div>
 

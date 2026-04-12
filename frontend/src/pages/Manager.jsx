@@ -4506,6 +4506,38 @@ function ManagerPaymentsPanel({ allowedPropertyNames }) {
     <div className="mb-10">
       <div className="mb-5 flex flex-wrap items-center gap-3">
         <h2 className="mr-auto text-2xl font-black text-slate-900">Payments</h2>
+        {!paymentsLoadError ? (
+          <>
+            <select
+              value={payPropertyFilter}
+              onChange={(e) => setPayPropertyFilter(e.target.value)}
+              disabled={loading}
+              className="rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition focus:border-[#2563eb] focus:outline-none focus:ring-2 focus:ring-[#2563eb]/20 disabled:opacity-60"
+              aria-label="Filter by property"
+            >
+              <option value="">All properties</option>
+              {payPropertyChoices.map(({ value, display }) => (
+                <option key={value} value={value}>
+                  {display}
+                </option>
+              ))}
+            </select>
+            <select
+              value={payResidentFilter}
+              onChange={(e) => setPayResidentFilter(e.target.value)}
+              disabled={loading}
+              className="rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition focus:border-[#2563eb] focus:outline-none focus:ring-2 focus:ring-[#2563eb]/20 disabled:opacity-60"
+              aria-label="Filter by resident"
+            >
+              <option value="">All residents</option>
+              {payResidentChoices.map(({ value, display }) => (
+                <option key={value} value={value}>
+                  {display}
+                </option>
+              ))}
+            </select>
+          </>
+        ) : null}
         <button
           onClick={load}
           className="rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-600 transition hover:bg-slate-50"
@@ -4534,41 +4566,6 @@ function ManagerPaymentsPanel({ allowedPropertyNames }) {
               Payments are read from workspace <code className="rounded bg-white/80 px-1.5 py-0.5 text-xs">{AIRTABLE_PAYMENTS_BASE_ID}</code>.
             </li>
           </ul>
-        </div>
-      ) : null}
-
-      {!paymentsLoadError && !loading && rentRows.length > 0 ? (
-        <div className="mb-4 flex flex-wrap items-end gap-4">
-          <label className="flex min-w-[200px] flex-1 flex-col gap-1.5 sm:max-w-xs">
-            <span className="text-[11px] font-bold uppercase tracking-[0.14em] text-slate-400">Property</span>
-            <select
-              value={payPropertyFilter}
-              onChange={(e) => setPayPropertyFilter(e.target.value)}
-              className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-medium text-slate-900 outline-none transition focus:border-axis focus:ring-2 focus:ring-axis/20"
-            >
-              <option value="">All properties</option>
-              {payPropertyChoices.map(({ value, display }) => (
-                <option key={value} value={value}>
-                  {display}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="flex min-w-[200px] flex-1 flex-col gap-1.5 sm:max-w-xs">
-            <span className="text-[11px] font-bold uppercase tracking-[0.14em] text-slate-400">Resident</span>
-            <select
-              value={payResidentFilter}
-              onChange={(e) => setPayResidentFilter(e.target.value)}
-              className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-medium text-slate-900 outline-none transition focus:border-axis focus:ring-2 focus:ring-axis/20"
-            >
-              <option value="">All residents</option>
-              {payResidentChoices.map(({ value, display }) => (
-                <option key={value} value={value}>
-                  {display}
-                </option>
-              ))}
-            </select>
-          </label>
         </div>
       ) : null}
 
@@ -4848,7 +4845,6 @@ function ApplicationsPanel({ allowedPropertyNames, manager }) {
   const [scopedRows, setScopedRows] = useState([])
   const [loading, setLoading] = useState(true)
   const [propertyFilter, setPropertyFilter] = useState('')
-  const [applicantSearch, setApplicantSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState('all')
   const [sortKey, setSortKey] = useState('submitted')
   const [sortDir, setSortDir] = useState('desc')
@@ -4877,9 +4873,8 @@ function ApplicationsPanel({ allowedPropertyNames, manager }) {
   const propertyFilteredRows = useMemo(() => {
     let rows = scopedRows
     if (propertyFilter.trim()) rows = rows.filter((a) => String(a['Property Name'] || '').trim() === propertyFilter.trim())
-    if (applicantSearch.trim()) rows = rows.filter((a) => String(a['Signer Full Name'] || '').trim() === applicantSearch.trim())
     return rows
-  }, [scopedRows, propertyFilter, applicantSearch])
+  }, [scopedRows, propertyFilter])
 
   const filteredRows = useMemo(() => {
     if (statusFilter === 'pending') return propertyFilteredRows.filter((a) => deriveApplicationApprovalState(a) === 'pending')
@@ -4974,16 +4969,6 @@ function ApplicationsPanel({ allowedPropertyNames, manager }) {
           <option value="">All your properties</option>
           {filterOptions.map((p) => (
             <option key={p} value={p}>{p}</option>
-          ))}
-        </select>
-        <select
-          value={applicantSearch}
-          onChange={(e) => setApplicantSearch(e.target.value)}
-          className="rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition focus:border-[#2563eb] focus:outline-none focus:ring-2 focus:ring-[#2563eb]/20"
-        >
-          <option value="">All applications</option>
-          {[...new Set(scopedRows.map((a) => String(a['Signer Full Name'] || '').trim()).filter(Boolean))].sort().map((n) => (
-            <option key={n} value={n}>{n}</option>
           ))}
         </select>
         <button
