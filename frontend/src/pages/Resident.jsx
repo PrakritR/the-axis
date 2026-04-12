@@ -1972,17 +1972,12 @@ function LeasingPanel({ resident, payments, onOpenPayments }) {
   const leaseSigningUrl = resolveLeaseSigningUrl(resident)
   const moveInLabel = resident['Lease Start Date'] ? formatDate(resident['Lease Start Date']) : '—'
   const moveOutLabel = resident['Lease End Date'] ? formatDate(resident['Lease End Date']) : (isMonthToMonth ? 'No fixed end date' : '—')
-  // First month rent: check if any paid rent payment exists
-  const firstMonthRentPaid = useMemo(() => {
-    const list = Array.isArray(payments) ? payments : []
-    return list.some((p) => getPaymentKind(p) === 'rent' && residentPaymentLineStatus(p) === 'Paid')
-  }, [payments])
 
   const [leaseDrafts, setLeaseDrafts] = useState([])
   const [leaseLoading, setLeaseLoading] = useState(true)
   const [showLeaseText, setShowLeaseText] = useState(false)
-  const [leaseTab, setLeaseTab] = useState('all')
-  const [leaseSearch, setLeaseSearch] = useState('')
+  const [extendByMonths, setExtendByMonths] = useState('3')
+  const [extendNotice, setExtendNotice] = useState('')
 
   const loadLeaseDrafts = useCallback(async () => {
     setLeaseLoading(true)
@@ -2011,6 +2006,20 @@ function LeasingPanel({ resident, payments, onOpenPayments }) {
     return Number.isFinite(n) && n > 0 ? formatMoney(n) : '—'
   }, [resident.House, resident['Security Deposit'], resident['Security Deposit Amount']])
 
+  const firstMonthRentPaid = useMemo(() => {
+    const list = Array.isArray(payments) ? payments : []
+    const firstMonthLinePaid = list.some(
+      (p) => classifyResidentPaymentLine(p) === 'first_rent' && residentPaymentLineStatus(p) === 'Paid',
+    )
+    if (firstMonthLinePaid) return true
+    return list.some((p) => getPaymentKind(p) === 'rent' && residentPaymentLineStatus(p) === 'Paid')
+  }, [payments])
+
+  const securityDepositPaid = useMemo(() => {
+    const list = Array.isArray(payments) ? payments : []
+    return list.some((p) => classifyResidentPaymentLine(p) === 'deposit' && residentPaymentLineStatus(p) === 'Paid')
+  }, [payments])
+
   const activeLeaseDraft = useMemo(() => pickBestLeaseDraft(leaseDrafts), [leaseDrafts])
   const leaseStatus = activeLeaseDraft?.Status ? String(activeLeaseDraft.Status).trim() : ''
   const leaseBodyAllowed = leaseStatus === 'Published' || leaseStatus === 'Signed'
@@ -2024,60 +2033,17 @@ function LeasingPanel({ resident, payments, onOpenPayments }) {
         ? 'Your lease is being drafted. Full terms will appear here once your manager publishes your lease.'
         : 'Your lease is being reviewed internally. The full document will appear here once it is sent to you.'
     }
-    return leaseContent || `Axis Resident Lease\n\nProperty: ${resident.House || '—'}\nUnit: ${resident['Unit Number'] || '—'}\nTerm: ${leaseTermLabel}\nMove-in: ${moveInLabel}\nMove-out: ${moveOutLabel}\nSecurity Deposit: ${depositPreviewLabel}\n\nYour final document will appear here for review and signature.`
+    return leaseContent || `Axis Resident Lease\n\nProperty: ${resident.House || '—'}\nUnit: ${resident['Unit Number'] || '—'}\nTerm: ${leaseTermLabel}\nMove-in: ${moveInLabel}\nMove-out: ${moveOutLabel}\nSecurity Deposit: ${depositPreviewLabel}\n\nPay security deposit and first month rent before signing.`
   }, [activeLeaseDraft, leaseBodyAllowed, leaseStatus, leaseContent, resident.House, resident['Unit Number'], leaseTermLabel, moveInLabel, moveOutLabel, depositPreviewLabel])
 
-  const signingUnlocked = firstMonthRentPaid
-
-  const leaseSearchLower = leaseSearch.trim().toLowerCase()
-  const matchLeaseBlob = (blob) => !leaseSearchLower || String(blob || '').toLowerCase().includes(leaseSearchLower)
-  const hasLeaseDraft = Boolean(activeLeaseDraft)
-  const showSummary =
-    (leaseTab === 'all' || leaseTab === 'summary') &&
-    matchLeaseBlob(
-      `${leaseTermLabel} ${moveInLabel} ${moveOutLabel} current lease ${resident.House || ''} month-to-month`,
-    )
-  const showDocument =
-    (leaseTab === 'all' || leaseTab === 'document') &&
-    matchLeaseBlob(`${leaseStatus} lease document draft published signed`)
-  const showSigning =
-    (leaseTab === 'all' || leaseTab === 'signing') &&
-    matchLeaseBlob(`first month rent sign lease review paid unpaid`)
-
-  const leaseHasVisibleSection = showSummary || showDocument || showSigning
-  const docTabCount = hasLeaseDraft ? 1 : 0
-  const allTabCount = 1 + docTabCount + 2
+  function handleRequestExtension() {
+    setExtendNotice(`Extension request prepared for +${extendByMonths} month${extendByMonths === '1' ? '' : 's'}. Please send this in Inbox to your manager.`)
+  }
 
   return (
     <div className="mb-10">
       <div className="mb-5 flex flex-wrap items-center gap-3">
         <h2 className="mr-auto text-2xl font-black text-slate-900">Lease</h2>
-        <div className="relative">
-          <svg
-            className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400"
-            fill="none"
-            viewBox="0 0 24 24"
-            stroke="currentColor"
-            strokeWidth={2}
-            aria-hidden
-          >
-            <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-          </svg>
-          <input
-            value={leaseSearch}
-            onChange={(e) => setLeaseSearch(e.target.value)}
-            placeholder="Search lease…"
-            autoComplete="off"
-            className="rounded-2xl border border-slate-200 bg-white py-2.5 pl-10 pr-4 text-sm transition focus:border-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-900/10"
-          />
-        </div>
-        <button
-          type="button"
-          onClick={() => onOpenPayments()}
-          className="rounded-full bg-axis px-5 py-3 text-sm font-semibold text-white transition hover:brightness-105"
-        >
-          Pay rent
-        </button>
         <button
           type="button"
           onClick={() => loadLeaseDrafts()}
@@ -2088,188 +2054,117 @@ function LeasingPanel({ resident, payments, onOpenPayments }) {
         </button>
       </div>
 
-      <div className="mb-4 inline-flex flex-wrap gap-1 rounded-2xl border border-slate-200 bg-slate-50 p-1">
-        {[
-          ['all', 'All', allTabCount],
-          ['summary', 'Lease details', 1],
-          ['document', 'Document', docTabCount],
-          ['signing', 'Signing', 2],
-        ].map(([key, label, count]) => (
-          <button
-            key={key}
-            type="button"
-            onClick={() => setLeaseTab(key)}
-            className={classNames(
-              'rounded-xl px-4 py-2 text-sm font-semibold transition',
-              leaseTab === key ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-600 hover:text-slate-900',
-            )}
-          >
-            {label}
-            <span className="ml-1.5 tabular-nums text-slate-500">({count})</span>
-          </button>
-        ))}
-      </div>
-
-      <div className="space-y-5">
-        {showSummary ? (
-        <div className="rounded-[24px] border border-slate-200 bg-[linear-gradient(135deg,#ffffff_0%,#f8fafc_100%)] p-6">
-          <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
-            <div>
-              <div className="flex flex-wrap items-center gap-2">
-                <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">Current Lease</div>
-                {isMonthToMonth ? (
-                  <span className="rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-700">Month-to-Month</span>
-                ) : null}
-              </div>
-              <div className="mt-3 text-3xl font-black tracking-tight text-slate-900">{leaseTermLabel}</div>
-            </div>
-            <div className="grid min-w-[240px] gap-3 sm:grid-cols-2">
-              <div className="rounded-2xl border border-slate-200 bg-white px-4 py-4">
-                <div className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-400">Move-in</div>
-                <div className="mt-2 text-xl font-black text-slate-900">{moveInLabel}</div>
-              </div>
-              <div className="rounded-2xl border border-slate-200 bg-white px-4 py-4">
-                <div className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-400">Move-out</div>
-                <div className="mt-2 text-xl font-black text-slate-900">{moveOutLabel}</div>
-              </div>
-            </div>
+      <div className="space-y-5 rounded-[24px] border border-slate-200 bg-white p-6 shadow-sm">
+        <div className="flex flex-wrap items-start justify-between gap-3 border-b border-slate-100 pb-4">
+          <div>
+            <h3 className="text-lg font-black text-slate-900">Lease</h3>
+            <p className="mt-1 text-sm text-slate-600">
+              {resident.House || '—'}{resident['Unit Number'] ? ` · ${normalizeUnitLabel(resident['Unit Number'])}` : ''}
+            </p>
           </div>
-        </div>
-        ) : null}
-
-        {/* Lease document card — no sort dropdown; auto-shows the best available draft */}
-        {showDocument ? (
-        leaseLoading ? (
-          <div className="rounded-[24px] border border-slate-200 bg-white p-6 text-sm text-slate-400">Loading lease…</div>
-        ) : !activeLeaseDraft ? (
-          <div className="rounded-[24px] border border-slate-200 bg-slate-50 p-6 text-center">
-            <p className="text-sm font-semibold text-slate-700">Your lease has not been generated yet.</p>
-            <p className="mt-1 text-sm text-slate-500">Your manager will prepare a lease document once your application is approved.</p>
-          </div>
-        ) : (
-          <div className="rounded-[24px] border border-[#2563eb]/20 bg-[linear-gradient(135deg,#eff6ff_0%,#ffffff_100%)] p-5">
-            <div className="flex flex-wrap items-start justify-between gap-3">
-              <div className="min-w-0 flex-1">
-                <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-[#2563eb]">Lease Document</div>
-                <div className="mt-2 flex flex-wrap items-center gap-2">
-                  <span className={`inline-flex rounded-full border px-2.5 py-0.5 text-[11px] font-bold ${
-                    leaseStatus === 'Signed' ? 'border-emerald-200 bg-emerald-50 text-emerald-800' :
-                    leaseStatus === 'Published' ? 'border-blue-200 bg-blue-50 text-blue-800' :
-                    'border-slate-200 bg-slate-100 text-slate-600'
-                  }`}>
-                    {leaseStatus || 'Pending'}
-                  </span>
-                </div>
-              </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <StatusPill tone={leaseStatus === 'Signed' ? 'green' : leaseStatus === 'Published' ? 'blue' : 'amber'}>
+              {leaseStatus || 'Pending'}
+            </StatusPill>
+            {leaseSigningUrl ? (
               <button
                 type="button"
-                onClick={() => setShowLeaseText((v) => !v)}
-                disabled={!leaseBodyAllowed}
-                title={leaseBodyAllowed ? '' : 'Available once your manager publishes the lease'}
-                className="shrink-0 rounded-full bg-[linear-gradient(180deg,#2f76ff_0%,#2450eb_100%)] px-5 py-2.5 text-sm font-semibold text-white transition hover:brightness-105 disabled:cursor-not-allowed disabled:opacity-40"
+                onClick={() => { window.location.href = leaseSigningUrl }}
+                className="rounded-full bg-[linear-gradient(180deg,#2f76ff_0%,#2450eb_100%)] px-4 py-2 text-xs font-semibold text-white transition hover:brightness-105"
               >
-                {showLeaseText ? 'Hide' : 'View lease'}
+                Sign lease
               </button>
+            ) : null}
+          </div>
+        </div>
+
+        <dl className="space-y-0">
+          {[
+            ['Term', leaseTermLabel],
+            ['Move-in', moveInLabel],
+            ['Move-out', moveOutLabel],
+            ['Security deposit', depositPreviewLabel],
+            ['First month rent', firstMonthRentPaid ? 'Paid' : 'Unpaid'],
+            ['Security deposit payment', securityDepositPaid ? 'Paid' : 'Unpaid'],
+          ].map(([label, value]) => (
+            <div key={label} className="grid gap-1 border-b border-slate-100 py-2.5 last:border-b-0 sm:grid-cols-[minmax(0,220px)_1fr] sm:gap-4">
+              <dt className="text-xs font-semibold uppercase tracking-wide text-slate-500">{label}</dt>
+              <dd className="text-sm text-slate-900">{value}</dd>
             </div>
-            {!leaseBodyAllowed && (
-              <p className="mt-3 text-sm text-slate-500">
-                {leaseStatus === 'Draft Generated'
-                  ? 'Your lease is being drafted — the full document will appear here once your manager publishes it.'
-                  : 'Your lease is being reviewed internally. The full document will appear here once it is sent to you.'}
-              </p>
-            )}
-            {showLeaseText && leaseBodyAllowed && (
-              <div className="mt-5 overflow-hidden rounded-[20px] border border-slate-200 bg-white">
-                <div className="flex items-center justify-between border-b border-slate-100 bg-slate-50 px-5 py-3">
-                  <span className="text-xs font-semibold text-slate-500">
-                    {resident.House}{resident['Unit Number'] ? ` · ${normalizeUnitLabel(resident['Unit Number'])}` : ''} · {resident.Name}
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const blob = new Blob([leasePreview], { type: 'text/plain' })
-                      const url = URL.createObjectURL(blob)
-                      const a = document.createElement('a')
-                      a.href = url
-                      a.download = `lease-${String(resident.Name || 'document').replace(/\s+/g, '-').toLowerCase()}.txt`
-                      a.click()
-                      URL.revokeObjectURL(url)
-                    }}
-                    className="text-xs font-semibold text-[#2563eb] hover:underline"
-                  >
-                    Download
-                  </button>
+          ))}
+        </dl>
+
+        <div className="grid gap-3 sm:grid-cols-2">
+          <div className={classNames('rounded-2xl border px-4 py-3 text-sm', securityDepositPaid ? 'border-emerald-200 bg-emerald-50 text-emerald-900' : 'border-amber-200 bg-amber-50 text-amber-900')}>
+            <div className="font-semibold">Security deposit</div>
+            <div className="mt-1">{securityDepositPaid ? 'Paid' : 'Pay security deposit from Payments tab.'}</div>
+            {!securityDepositPaid ? (
+              <button type="button" onClick={() => onOpenPayments('deposit')} className="mt-2 text-xs font-semibold underline">Go to payments</button>
+            ) : null}
+          </div>
+          <div className={classNames('rounded-2xl border px-4 py-3 text-sm', firstMonthRentPaid ? 'border-emerald-200 bg-emerald-50 text-emerald-900' : 'border-amber-200 bg-amber-50 text-amber-900')}>
+            <div className="font-semibold">First month rent</div>
+            <div className="mt-1">{firstMonthRentPaid ? 'Paid' : 'Pay first month rent from Payments tab.'}</div>
+            {!firstMonthRentPaid ? (
+              <button type="button" onClick={() => onOpenPayments('rent')} className="mt-2 text-xs font-semibold underline">Go to payments</button>
+            ) : null}
+          </div>
+        </div>
+
+        <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+          <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Extend lease</div>
+          <div className="flex flex-wrap items-center gap-2">
+            <select
+              value={extendByMonths}
+              onChange={(e) => {
+                setExtendByMonths(e.target.value)
+                setExtendNotice('')
+              }}
+              className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 outline-none focus:border-[#2563eb] focus:ring-2 focus:ring-[#2563eb]/20"
+            >
+              <option value="1">+1 month</option>
+              <option value="3">+3 months</option>
+              <option value="6">+6 months</option>
+              <option value="12">+12 months</option>
+            </select>
+            <button
+              type="button"
+              onClick={handleRequestExtension}
+              className="rounded-full border border-[#2563eb]/40 bg-[#2563eb]/10 px-4 py-2 text-xs font-semibold text-[#2563eb] transition hover:bg-[#2563eb]/15"
+            >
+              Extend
+            </button>
+          </div>
+          {extendNotice ? <p className="mt-2 text-xs text-slate-600">{extendNotice}</p> : null}
+        </div>
+
+        <div>
+          <button
+            type="button"
+            onClick={() => setShowLeaseText((v) => !v)}
+            className="rounded-full bg-slate-900 px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-slate-800"
+          >
+            {showLeaseText ? 'Hide full lease' : 'View full lease'}
+          </button>
+          {showLeaseText ? (
+            leaseLoading ? (
+              <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 p-5 text-sm text-slate-500">Loading lease…</div>
+            ) : !activeLeaseDraft ? (
+              <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 p-5 text-sm text-slate-600">
+                Your lease has not been generated yet.
+              </div>
+            ) : (
+              <div className="mt-4 overflow-hidden rounded-2xl border border-slate-200 bg-white">
+                <div className="border-b border-slate-100 bg-slate-50 px-5 py-3 text-xs font-semibold text-slate-600">
+                  Full lease preview · Pay security deposit and first month rent before signing.
                 </div>
-                <div className="max-h-[500px] overflow-y-auto p-6">
+                <div className="max-h-[540px] overflow-y-auto p-6">
                   <pre className="whitespace-pre-wrap font-mono text-sm leading-7 text-slate-800">{leasePreview}</pre>
                 </div>
               </div>
-            )}
-          </div>
-        )
-        ) : null}
-
-        {/* First Month Rent + Lease Signing */}
-        {showSigning ? (
-          <>
-            <div className="rounded-[24px] border border-slate-200 bg-white p-5">
-              <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">First Month Rent</div>
-              <div className="mt-2 flex flex-wrap items-center gap-3">
-                {firstMonthRentPaid ? (
-                  <span className="rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700">Paid</span>
-                ) : (
-                  <span className="rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-700">Unpaid</span>
-                )}
-              </div>
-              {!firstMonthRentPaid && (
-                <p className="mt-2 text-sm text-slate-500">
-                  Pay your first month&apos;s rent from the{' '}
-                  <button type="button" onClick={() => onOpenPayments()} className="font-semibold text-[#2563eb] underline">Payments</button>{' '}
-                  tab. Lease signing unlocks once first month rent is paid.
-                </p>
-              )}
-            </div>
-
-            <div className="rounded-[24px] border border-slate-200 bg-white p-5">
-              <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">Lease Signing</div>
-              <h3 className="mt-2 text-xl font-black text-slate-900">Review & Sign</h3>
-              <p className="mt-3 text-sm leading-6 text-slate-500">
-                {signingUnlocked
-                  ? 'Your first month rent is paid. Signing is unlocked.'
-                  : 'Pay first month rent to unlock signing.'}
-              </p>
-              <div className="mt-4 flex flex-wrap gap-3">
-                {signingUnlocked && leaseSigningUrl ? (
-                  <button
-                    type="button"
-                    onClick={() => { window.location.href = leaseSigningUrl }}
-                    className="rounded-full bg-[linear-gradient(180deg,#2f76ff_0%,#2450eb_100%)] px-5 py-3 text-sm font-semibold text-white transition hover:brightness-105"
-                  >
-                    Sign lease
-                  </button>
-                ) : signingUnlocked ? (
-                  <p className="text-sm text-slate-400">Your manager will send a signing link once the lease is ready.</p>
-                ) : (
-                  <button
-                    type="button"
-                    disabled
-                    className="rounded-full border border-slate-200 bg-slate-50 px-5 py-3 text-sm font-semibold text-slate-400 cursor-not-allowed"
-                  >
-                    Signing locked
-                  </button>
-                )}
-              </div>
-            </div>
-          </>
-        ) : null}
-
-        {!leaseHasVisibleSection ? (
-          <div className="rounded-[24px] border border-slate-200 bg-slate-50 px-6 py-10 text-center text-sm text-slate-500">
-            {leaseSearch.trim()
-              ? `No sections match “${leaseSearch.trim()}”. Try another search or pick a different tab.`
-              : 'Nothing to show for this tab.'}
-          </div>
-        ) : null}
+            )
+          ) : null}
+        </div>
       </div>
     </div>
   )
