@@ -172,22 +172,6 @@ export default function AdminProfilePanel({ user, onUserUpdate, onSignOut }) {
       </section>
 
       <section className="rounded-[28px] border border-slate-200 bg-white p-6">
-        <h2 className="mt-2 text-xl font-black text-slate-900">Account</h2>
-        <div className="mt-4 grid gap-3 sm:grid-cols-3">
-          {[
-            { label: 'Role', value: 'Admin' },
-            { label: 'Sign-in', value: canSaveToAirtable ? 'Admin Profile' : 'Server account' },
-            { label: 'Record', value: canSaveToAirtable ? 'Linked' : '—' },
-          ].map(({ label, value }) => (
-            <div key={label} className="rounded-2xl border border-slate-100 bg-slate-50 px-4 py-4">
-              <div className="text-[11px] font-bold uppercase tracking-[0.14em] text-slate-400">{label}</div>
-              <div className="mt-1 truncate text-base font-semibold text-slate-900">{value}</div>
-            </div>
-          ))}
-        </div>
-      </section>
-
-      <section className="rounded-[28px] border border-slate-200 bg-white p-6">
         <h2 className="mt-2 text-xl font-black text-slate-900">Session</h2>
         <p className="mt-2 text-sm text-slate-600">Sign out of the admin portal on this device.</p>
         <button

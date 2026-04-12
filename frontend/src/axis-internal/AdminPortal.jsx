@@ -995,7 +995,7 @@ export default function AdminPortal() {
             columns={[
               { key: 'p', label: 'House / property', render: (d) => d.propertyName },
               { key: 'a', label: 'Applicant', render: (d) => d.applicantName },
-              { key: 'o', label: 'Partner', render: (d) => ownerLabel(d.ownerId) },
+              { key: 'o', label: 'Manager', render: (d) => ownerLabel(d.ownerId) },
               { key: 's', label: 'Status', render: (d) => <StatusPill tone="blue">{d.status}</StatusPill> },
               {
                 key: 'act',

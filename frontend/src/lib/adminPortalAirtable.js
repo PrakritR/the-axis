@@ -361,14 +361,14 @@ export async function adminPatchApplication(recordId, fields) {
   return mapRecord(data)
 }
 
-/** Reject rental application — writes Approval Status text field only. */
+/** Reject rental application — uses Approved checkbox (no separate Approval Status field required). */
 export async function adminRejectApplication(recordId) {
-  return adminPatchApplication(recordId, { 'Approval Status': 'Rejected' })
+  return adminPatchApplication(recordId, { Approved: false })
 }
 
-/** Remove approval — resets the application back to pending review. */
+/** Remove approval — clears Approved so the row returns to pending review (requires checkbox field). */
 export async function adminUnapproveApplication(recordId) {
-  return adminPatchApplication(recordId, { 'Approval Status': '' })
+  return adminPatchApplication(recordId, { Approved: null })
 }
 
 /** Load all resident profiles for CEO/admin portal handoff. */

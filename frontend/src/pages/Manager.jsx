@@ -4021,7 +4021,8 @@ function WorkOrdersTabPanel({ allowedPropertyNames }) {
   const [listLoading, setListLoading] = useState(true)
   const [listError, setListError] = useState('')
   const [quickFilter, setQuickFilter] = useState('all')
-  const [search, setSearch] = useState('')
+  const [propertyFilter, setPropertyFilter] = useState('')
+  const [residentFilter, setResidentFilter] = useState('')
   const [record, setRecord] = useState(null)
   const [loadError, setLoadError] = useState('')
   const [saving, setSaving] = useState(false)
@@ -4078,15 +4079,10 @@ function WorkOrdersTabPanel({ allowedPropertyNames }) {
   const filteredList = useMemo(() => {
     let rows = list
     if (quickFilter !== 'all') rows = rows.filter((row) => managerWorkOrderBucket(row) === quickFilter)
-    const q = search.trim().toLowerCase()
-    if (q) {
-      rows = rows.filter((row) => {
-        const haystack = `${workOrderPropertyLabel(row)} ${row['Room Number'] || ''} ${paymentResidentLabel(row)} ${safePortalText(row.Title)} ${safePortalText(row.Description)}`.toLowerCase()
-        return haystack.includes(q)
-      })
-    }
+    if (propertyFilter) rows = rows.filter((row) => String(workOrderPropertyLabel(row)).trim().toLowerCase() === propertyFilter)
+    if (residentFilter) rows = rows.filter((row) => String(paymentResidentLabel(row)).trim().toLowerCase() === residentFilter)
     return [...rows].sort((a, b) => new Date(b['Date Submitted'] || b.created_at || 0) - new Date(a['Date Submitted'] || a.created_at || 0))
-  }, [list, quickFilter, search])
+  }, [list, quickFilter, propertyFilter, residentFilter])
 
   useEffect(() => {
     if (filteredList.length === 0) {
@@ -4158,17 +4154,26 @@ function WorkOrdersTabPanel({ allowedPropertyNames }) {
     <div className="mb-10">
       <div className="mb-5 flex flex-wrap items-center gap-3">
         <h2 className="mr-auto text-2xl font-black text-slate-900">Work orders</h2>
-        <div className="relative">
-          <svg className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-            <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-          </svg>
-          <input
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search by property, resident, or issue…"
-            className="rounded-2xl border border-slate-200 bg-white py-2.5 pl-10 pr-4 text-sm transition focus:border-[#2563eb] focus:outline-none focus:ring-2 focus:ring-[#2563eb]/20"
-          />
-        </div>
+        <select
+          value={propertyFilter}
+          onChange={(e) => setPropertyFilter(e.target.value)}
+          className="rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition focus:border-[#2563eb] focus:outline-none focus:ring-2 focus:ring-[#2563eb]/20"
+        >
+          <option value="">All properties</option>
+          {[...new Set(list.map((r) => String(workOrderPropertyLabel(r)).trim()).filter(Boolean))].sort().map((p) => (
+            <option key={p} value={p.toLowerCase()}>{p}</option>
+          ))}
+        </select>
+        <select
+          value={residentFilter}
+          onChange={(e) => setResidentFilter(e.target.value)}
+          className="rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition focus:border-[#2563eb] focus:outline-none focus:ring-2 focus:ring-[#2563eb]/20"
+        >
+          <option value="">All residents</option>
+          {[...new Set(list.map((r) => String(paymentResidentLabel(r)).trim()).filter(Boolean))].sort().map((r) => (
+            <option key={r} value={r.toLowerCase()}>{r}</option>
+          ))}
+        </select>
         <button
           onClick={loadList}
           className="rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-600 transition hover:bg-slate-50"
@@ -4206,13 +4211,14 @@ function WorkOrdersTabPanel({ allowedPropertyNames }) {
         ))}
       </div>
 
-      <div className="grid gap-6 xl:grid-cols-[minmax(0,1.15fr)_minmax(360px,0.85fr)]">
+      <div className={classNames('grid gap-6', record ? 'xl:grid-cols-[minmax(0,1.15fr)_minmax(360px,0.85fr)]' : '')}>
         <div className="overflow-hidden rounded-[24px] border border-slate-200 bg-white shadow-sm">
           {listLoading ? (
-            <div className="px-6 py-14 text-center text-sm text-slate-500">Loading work orders…</div>
+            <div className="px-6 py-16 text-center text-sm text-slate-500">Loading work orders…</div>
           ) : filteredList.length === 0 ? (
-            <div className="px-6 py-14 text-center text-sm text-slate-500">
-              {list.length === 0 ? 'No work orders for your houses yet.' : 'Nothing matches this filter.'}
+            <div className="px-6 py-16 text-center">
+              <div className="mb-3 text-4xl" aria-hidden>{list.length === 0 ? '🔧' : '🔍'}</div>
+              <div className="text-sm font-semibold text-slate-700">{list.length === 0 ? 'No work orders yet' : 'Nothing matches this filter'}</div>
             </div>
           ) : (
             <div className="overflow-x-auto">
@@ -4330,8 +4336,9 @@ function ManagerPaymentsPanel({ allowedPropertyNames }) {
   const [filter, setFilter] = useState('all')
   const [busy, setBusy] = useState({})
   const [paymentsLoadError, setPaymentsLoadError] = useState('')
-  const [selectedYm, setSelectedYm] = useState(() => currentYm())
   const [selectedId, setSelectedId] = useState('')
+  const [payPropertyFilter, setPayPropertyFilter] = useState('')
+  const [payResidentFilter, setPayResidentFilter] = useState('')
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -4363,29 +4370,14 @@ function ManagerPaymentsPanel({ allowedPropertyNames }) {
     load()
   }, [load])
 
-  const monthOptions = useMemo(() => {
-    const keys = new Set()
-    const d = new Date()
-    for (let i = 0; i < 24; i += 1) {
-      const t = new Date(d.getFullYear(), d.getMonth() - i, 1)
-      keys.add(ymFromDate(t))
-    }
-    rows.forEach((p) => {
-      const k = paymentMonthKeyFromRecord(p)
-      if (k) keys.add(k)
-    })
-    if (selectedYm) keys.add(selectedYm)
-    return [...keys].sort((a, b) => b.localeCompare(a))
-  }, [rows, selectedYm])
-
-  const rowsForSelectedMonth = useMemo(
-    () => rows.filter((p) => paymentMonthKeyFromRecord(p) === selectedYm),
-    [rows, selectedYm],
-  )
-
   const paymentRows = useMemo(
-    () => rowsForSelectedMonth.map((row) => ({ ...row, __computedStatus: paymentComputedStatus(row) })),
-    [rowsForSelectedMonth],
+    () => {
+      let filtered = rows
+      if (payPropertyFilter) filtered = filtered.filter((p) => String(paymentPropertyLabel(p)).trim().toLowerCase() === payPropertyFilter)
+      if (payResidentFilter) filtered = filtered.filter((p) => String(paymentResidentLabel(p)).trim().toLowerCase() === payResidentFilter)
+      return filtered.map((row) => ({ ...row, __computedStatus: paymentComputedStatus(row) }))
+    },
+    [rows, payPropertyFilter, payResidentFilter],
   )
 
   const totalCollected = useMemo(
@@ -4485,7 +4477,7 @@ function ManagerPaymentsPanel({ allowedPropertyNames }) {
   return (
     <div className="mb-10">
       <div className="mb-5 flex flex-wrap items-center gap-3">
-        <h2 className="mr-auto text-xl font-black text-slate-900">Payments</h2>
+        <h2 className="mr-auto text-2xl font-black text-slate-900">Payments</h2>
         <select
           value={selectedYm}
           onChange={(e) => setSelectedYm(e.target.value)}
@@ -4550,18 +4542,20 @@ function ManagerPaymentsPanel({ allowedPropertyNames }) {
         ))}
       </div>
 
-      <div className="grid gap-6 xl:grid-cols-[minmax(0,1.2fr)_minmax(360px,0.8fr)]">
+      <div className={classNames('grid gap-6', selectedId ? 'xl:grid-cols-[minmax(0,1.2fr)_minmax(360px,0.8fr)]' : '')}>
         <div className="overflow-hidden rounded-[24px] border border-slate-200 bg-white">
           {loading ? (
-            <div className="px-6 py-14 text-center text-sm text-slate-500">Loading payments…</div>
+            <div className="px-6 py-16 text-center text-sm text-slate-500">Loading payments…</div>
           ) : rows.length === 0 ? (
-            <div className="px-6 py-14 text-center text-sm text-slate-500">No rent charges to show.</div>
-          ) : rowsForSelectedMonth.length === 0 ? (
-            <div className="px-6 py-14 text-center text-sm text-slate-500">
-              No rent charges for {formatYmLong(selectedYm)}. Try another month above.
+            <div className="px-6 py-16 text-center">
+              <div className="mb-3 text-4xl" aria-hidden>💳</div>
+              <div className="text-sm font-semibold text-slate-700">No rent charges to show</div>
             </div>
           ) : filteredForList.length === 0 ? (
-            <div className="px-6 py-14 text-center text-sm text-slate-500">No rows match this filter for {formatYmLong(selectedYm)}.</div>
+            <div className="px-6 py-16 text-center">
+              <div className="mb-3 text-4xl" aria-hidden>🔍</div>
+              <div className="text-sm font-semibold text-slate-700">Nothing matches this filter</div>
+            </div>
           ) : (
             <div className="overflow-x-auto">
               <table className="min-w-full text-left">
@@ -4777,8 +4771,7 @@ function ApplicationsPanel({ allowedPropertyNames, manager }) {
   const propertyFilteredRows = useMemo(() => {
     let rows = scopedRows
     if (propertyFilter.trim()) rows = rows.filter((a) => String(a['Property Name'] || '').trim() === propertyFilter.trim())
-    const q = applicantSearch.trim().toLowerCase()
-    if (q) rows = rows.filter((a) => `${a['Signer Full Name'] || ''} ${a['First Name'] || ''} ${a['Last Name'] || ''} ${a['Email'] || ''} ${a['Property Name'] || ''}`.toLowerCase().includes(q))
+    if (applicantSearch.trim()) rows = rows.filter((a) => String(a['Signer Full Name'] || '').trim() === applicantSearch.trim())
     return rows
   }, [scopedRows, propertyFilter, applicantSearch])
 
@@ -4828,7 +4821,6 @@ function ApplicationsPanel({ allowedPropertyNames, manager }) {
                   ...a,
                   Approved: true,
                   'Approved At': data.application?.['Approved At'] || a['Approved At'],
-                  'Approval Status': data.application?.['Approval Status'] || 'Approved',
                 }
               : a,
           ),
@@ -4842,9 +4834,7 @@ function ApplicationsPanel({ allowedPropertyNames, manager }) {
           toast.success(data.message || 'Application approved and lease draft generated.')
         }
       } else {
-        const updated = await patchApplication(recordId, {
-          'Approval Status': 'Rejected',
-        })
+        const updated = await patchApplication(recordId, { Approved: false })
         setScopedRows((prev) =>
           prev.map((a) => (a.id === recordId ? { ...a, ...updated } : a)),
         )
@@ -4870,10 +4860,16 @@ function ApplicationsPanel({ allowedPropertyNames, manager }) {
     <div className="mb-10">
       <div className="mb-5 flex flex-wrap items-center gap-3">
         <h2 className="mr-auto text-2xl font-black text-slate-900">Applications</h2>
-        <div className="relative">
-          <svg className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
-          <input value={applicantSearch} onChange={(e) => setApplicantSearch(e.target.value)} placeholder="Search applicants…" className="rounded-2xl border border-slate-200 bg-white py-2.5 pl-10 pr-4 text-sm transition focus:border-[#2563eb] focus:outline-none focus:ring-2 focus:ring-[#2563eb]/20" />
-        </div>
+        <select
+          value={applicantSearch}
+          onChange={(e) => setApplicantSearch(e.target.value)}
+          className="rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition focus:border-[#2563eb] focus:outline-none focus:ring-2 focus:ring-[#2563eb]/20"
+        >
+          <option value="">All applicants</option>
+          {[...new Set(scopedRows.map((a) => String(a['Signer Full Name'] || '').trim()).filter(Boolean))].sort().map((n) => (
+            <option key={n} value={n}>{n}</option>
+          ))}
+        </select>
         <select
           value={propertyFilter}
           onChange={e => setPropertyFilter(e.target.value)}
@@ -4937,6 +4933,7 @@ function ApplicationsPanel({ allowedPropertyNames, manager }) {
           <div className="px-6 py-16 text-center">
             <div className="mb-3 text-4xl" aria-hidden>📋</div>
             <div className="text-sm font-semibold text-slate-700">No applications yet</div>
+            <p className="mt-1 text-sm text-slate-500">Applications you receive will appear here</p>
           </div>
         ) : filteredRows.length === 0 ? (
           <div className="px-6 py-16 text-center">
@@ -5285,7 +5282,7 @@ function ManagerDashboard({ manager: managerProp, onOpenDraft, onSignOut, onMana
       tone: card.id === 'draft_ready' ? 'amber' : card.id === 'signed' ? 'emerald' : 'axis',
     }))
     return [
-      { id: 'all', label: 'Lease', value: String(total), hint: 'Every stage', tone: 'slate' },
+      { id: 'all', label: 'All', value: String(total), hint: 'Every stage', tone: 'slate' },
       ...flow,
     ]
   }, [drafts])
@@ -5392,7 +5389,7 @@ function ManagerDashboard({ manager: managerProp, onOpenDraft, onSignOut, onMana
           </div>
         ) : null}
         <div className="mb-5 flex flex-wrap items-center gap-3">
-          <h2 className="mr-auto text-xl font-black text-slate-900">Leases</h2>
+          <h2 className="mr-auto text-2xl font-black text-slate-900">Leases</h2>
 
           {/* Resident search */}
           <div className="relative">
@@ -5451,8 +5448,8 @@ function ManagerDashboard({ manager: managerProp, onOpenDraft, onSignOut, onMana
             <div className="px-6 py-16 text-center text-sm text-slate-500">Loading lease queue…</div>
           ) : drafts.length === 0 ? (
             <div className="px-6 py-16 text-center">
-              <div className="mb-3 text-4xl">📄</div>
-              <div className="text-sm font-semibold text-slate-700">No drafts found</div>
+              <div className="mb-3 text-4xl" aria-hidden>📄</div>
+              <div className="text-sm font-semibold text-slate-700">No leases yet</div>
             </div>
           ) : (
             <div className="overflow-x-auto">
