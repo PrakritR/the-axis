@@ -522,8 +522,11 @@ export default function ResidentPortalInbox({ resident }) {
             : 'No conversations'
 
   return (
-    <div className="mb-2">
-      <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+    <div className="mb-8">
+      <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <h2 className="text-xl font-bold tracking-tight text-slate-900">Inbox</h2>
+        </div>
         <div className="flex flex-wrap gap-2">
           <button
             type="button"
@@ -546,7 +549,7 @@ export default function ResidentPortalInbox({ resident }) {
         </div>
       </div>
 
-      <div className="flex min-h-[min(420px,calc(100dvh-12rem))] max-h-[calc(100dvh-12rem)] flex-col overflow-hidden rounded-2xl border border-slate-200 bg-slate-50/80 shadow-sm md:flex-row">
+      <div className="flex min-h-[min(420px,calc(100dvh-10rem))] max-h-[calc(100dvh-10rem)] flex-col overflow-hidden rounded-2xl border border-slate-200 bg-slate-50/80 shadow-sm md:flex-row">
         <ConversationList
           loading={loading}
           errorMessage={loadError}
@@ -569,7 +572,7 @@ export default function ResidentPortalInbox({ resident }) {
           onTrashThread={(stateKey, trashed = true) => moveThreadTrash(stateKey, trashed)}
         />
 
-        <div className="flex min-h-[min(50vh,400px)] min-w-0 flex-1 flex-col overflow-hidden bg-white md:min-h-0">
+        <div className="flex min-h-[min(50vh,440px)] min-w-0 flex-1 flex-col overflow-hidden bg-white md:min-h-0">
           <header className="shrink-0 border-b border-slate-100 px-4 py-4 md:px-6">
             {composeOpen ? (
               <div className="rounded-2xl border border-indigo-200 bg-indigo-50/60 p-4">
@@ -585,13 +588,13 @@ export default function ResidentPortalInbox({ resident }) {
                 </div>
                 <form onSubmit={handleComposeSend} className="mt-4 space-y-3">
                   <label className="block text-xs font-semibold text-slate-700">
-                    To (required)
+                    To
                     <select
                       value={composeTo}
                       onChange={(e) => setComposeTo(e.target.value)}
                       className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm"
                     >
-                      <option value="manager">House / Manager (default)</option>
+                      <option value="manager">House / Manager</option>
                       <option value="admin">Axis Admin</option>
                     </select>
                   </label>
@@ -610,7 +613,7 @@ export default function ResidentPortalInbox({ resident }) {
                     required
                   />
                   <label className="block text-xs font-semibold text-slate-700">
-                    Message (required)
+                    Message
                     <textarea
                       value={composeBody}
                       onChange={(e) => setComposeBody(e.target.value)}

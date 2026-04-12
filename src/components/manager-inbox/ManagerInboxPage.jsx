@@ -971,12 +971,9 @@ export default function ManagerInboxPage({ manager, allowedPropertyNames, adminF
                     Cancel
                   </button>
                 </div>
-                <p className="mt-1 text-xs text-slate-600">
-                  Choose a recipient, subject, and message. Recipients are roles or saved contacts — not free-text email in the To field unless you pick a role that asks for an address.
-                </p>
                 <form onSubmit={handleComposeSend} className="mt-4 space-y-3">
                   <label className="block text-xs font-semibold text-slate-700">
-                    To (required)
+                    To
                     <select
                       value={composeKind}
                       onChange={(e) => setComposeKind(e.target.value)}
@@ -984,18 +981,18 @@ export default function ManagerInboxPage({ manager, allowedPropertyNames, adminF
                     >
                       {adminFullInbox ? (
                         <>
-                          <option value="site">Site manager — enter their email</option>
-                          <option value="partner">Partner / management — enter their email</option>
-                          <option value="website">Website — general inquiry thread</option>
-                          <option value="admin">Axis admin (uses VITE_PORTAL_AXIS_ADMIN_EMAIL)</option>
-                          <option value="resident">Resident — leasing thread (record ID)</option>
+                          <option value="site">Site manager</option>
+                          <option value="partner">Partner / management</option>
+                          <option value="website">Website</option>
+                          <option value="admin">Axis admin</option>
+                          <option value="resident">Resident</option>
                         </>
                       ) : (
                         <>
-                          <option value="resident">Resident — leasing thread</option>
-                          <option value="admin">Axis admin (uses VITE_PORTAL_AXIS_ADMIN_EMAIL)</option>
-                          <option value="site">Another site manager — email</option>
-                          <option value="partner">Partner / management — email</option>
+                          <option value="resident">Resident</option>
+                          <option value="admin">Axis admin</option>
+                          <option value="site">Site manager</option>
+                          <option value="partner">Partner / management</option>
                         </>
                       )}
                     </select>
@@ -1024,7 +1021,7 @@ export default function ManagerInboxPage({ manager, allowedPropertyNames, adminF
                         </label>
                       ) : null}
                       <label className="block text-xs font-semibold text-slate-700">
-                        Or resident record ID (rec…)
+                        Resident record ID
                         <input
                           type="text"
                           value={composeResidentRecordId}
@@ -1037,7 +1034,7 @@ export default function ManagerInboxPage({ manager, allowedPropertyNames, adminF
                   ) : null}
                   {(composeKind === 'site' || composeKind === 'partner') ? (
                     <label className="block text-xs font-semibold text-slate-700">
-                      Recipient email (required)
+                      Recipient email
                       <input
                         type="email"
                         value={composeEmail}
@@ -1057,7 +1054,7 @@ export default function ManagerInboxPage({ manager, allowedPropertyNames, adminF
                     required
                   />
                   <label className="block text-xs font-semibold text-slate-700">
-                    Message (required)
+                    Message
                     <textarea
                       value={composeBody}
                       onChange={(e) => setComposeBody(e.target.value)}

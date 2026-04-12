@@ -1679,14 +1679,7 @@ function LeasingPanel({ resident, payments, onOpenPayments }) {
 
 function ResidentInboxPanel({ resident }) {
   return (
-    <SectionCard
-      title="Inbox"
-      description="Email-style threads with your house team and Axis admin — subjects, trash, and read state stay in sync across portals."
-    >
-      <div className="min-h-[380px]">
-        <ResidentPortalInbox resident={resident} />
-      </div>
-    </SectionCard>
+    <ResidentPortalInbox resident={resident} />
   )
 }
 

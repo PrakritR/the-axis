@@ -31,7 +31,7 @@ export default function PortalShell({
 
   if (!showDesktopSidebar) {
     return (
-      <div className="flex h-dvh max-h-dvh min-h-0 flex-col overflow-hidden bg-slate-50 text-slate-900" dir="ltr">
+      <div className="flex min-h-dvh flex-col overflow-hidden bg-slate-50 text-slate-900" dir="ltr">
         <header className="z-20 shrink-0 border-b border-slate-200 bg-white/95 backdrop-blur">
           <div className="flex items-center justify-between gap-3 px-4 py-3">
             <div className="min-w-0">
@@ -76,13 +76,13 @@ export default function PortalShell({
 
   return (
     <div
-      className={`grid h-dvh max-h-dvh min-h-0 w-full max-w-full grid-cols-1 overflow-hidden bg-slate-50 text-slate-900 ${
+      className={`grid min-h-dvh w-full max-w-full grid-cols-1 overflow-hidden bg-slate-50 text-slate-900 ${
         isRight ? 'lg:grid-cols-[minmax(0,1fr)_14rem]' : 'lg:grid-cols-[14rem_minmax(0,1fr)]'
       }`}
       dir="ltr"
     >
       <aside
-        className={`hidden h-full max-h-dvh min-h-0 w-full shrink-0 flex-col overflow-hidden bg-white lg:flex ${asideBorder} ${asideGrid}`}
+        className={`hidden min-h-dvh w-full shrink-0 flex-col overflow-hidden bg-white lg:flex ${asideBorder} ${asideGrid}`}
       >
         <div className="shrink-0 border-b border-slate-100 px-4 py-4">
           <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-[#2f76ff]">{brandTitle}</div>
@@ -118,7 +118,7 @@ export default function PortalShell({
         </div>
       </aside>
 
-      <div className={`flex h-full max-h-dvh min-h-0 min-w-0 flex-col overflow-hidden ${mainGrid}`}>
+      <div className={`flex min-h-dvh min-w-0 flex-col overflow-hidden ${mainGrid}`}>
         <header className="z-20 shrink-0 border-b border-slate-200 bg-white/95 backdrop-blur lg:hidden">
           <div className="flex items-center justify-between gap-3 px-4 py-3">
             <div className="min-w-0">

@@ -12,7 +12,7 @@ export function PortalAuthPage({ children, dense = false }) {
   return (
     <div
       className={cx(
-        'flex min-h-screen items-start justify-center bg-[linear-gradient(180deg,#f7fbff_0%,#eef5ff_48%,#f9fcff_100%)] px-4 pb-12 font-sans',
+        'flex min-h-dvh items-start justify-center bg-[linear-gradient(180deg,#f7fbff_0%,#eef5ff_48%,#f9fcff_100%)] px-4 pb-12 font-sans',
         dense ? 'pt-4 sm:pt-5 lg:pt-7' : 'pt-8 sm:pt-12 lg:pt-16'
       )}
     >
@@ -138,4 +138,3 @@ export function PortalFooterLink({ prefix, linkLabel, to }) {
     </>
   )
 }
-
