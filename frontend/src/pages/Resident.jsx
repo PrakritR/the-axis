@@ -99,24 +99,38 @@ function isWorkOrderOpen(record) {
   return !isWorkOrderResolved(record)
 }
 
+function workOrderHasManagerActivity(record) {
+  if (!record || typeof record !== 'object') return false
+  const activityFields = [
+    record['Management Notes'],
+    record.Update,
+    record['Scheduled Date'],
+    record['Scheduled At'],
+    record['Schedule Date'],
+    record['Scheduled Time'],
+    record['Last Update'],
+    record['Last Updated'],
+  ]
+  return activityFields.some((value) => String(value || '').trim().length > 0)
+}
+
 function residentWorkOrderStatusLabel(record) {
-  if (!record) return 'Submitted'
+  if (!record) return 'Processed'
   if (isWorkOrderResolved(record)) {
-    const raw = String(record.Status || '').trim().toLowerCase()
-    return raw === 'closed' ? 'Closed' : 'Completed'
+    return 'Done'
   }
   const raw = String(record.Status || '').trim().toLowerCase()
-  if (raw.includes('review')) return 'In Review'
-  if (raw.includes('schedule')) return 'Scheduled'
+  if (raw.includes('review')) return 'In Progress'
+  if (raw.includes('schedule')) return 'In Progress'
   if (raw.includes('progress')) return 'In Progress'
-  return 'Submitted'
+  if (workOrderHasManagerActivity(record)) return 'In Progress'
+  return 'Processed'
 }
 
 function residentWorkOrderStatusTone(record) {
   const label = residentWorkOrderStatusLabel(record)
-  if (label === 'Completed' || label === 'Closed') return 'emerald'
-  if (label === 'Scheduled') return 'axis'
-  if (label === 'In Progress' || label === 'In Review') return 'amber'
+  if (label === 'Done') return 'emerald'
+  if (label === 'In Progress') return 'amber'
   return 'slate'
 }
 
@@ -2293,7 +2307,11 @@ function ResidentDashboardHome({
     () => visibleWorkOrders.filter((r) => isWorkOrderOpen(r)).length,
     [visibleWorkOrders],
   )
+  const workOrderCardValue = visibleWorkOrders.length === 0 ? 'None' : openWoCount > 0 ? 'In Progress' : 'Done'
   const leaseStatus = approvedLease?.Status ? String(approvedLease.Status).trim() : null
+  const leaseTermLabel = getLeaseTermLabel(resident)
+  const leaseSigningUrl = resolveLeaseSigningUrl(resident)
+  const leaseNeedsSigning = Boolean(leaseStatus && leaseStatus !== 'Signed')
   const firstName = String(resident?.Name || '').split(' ')[0] || 'Resident'
   const homeLabel = [resident.House, normalizeUnitLabel(resident['Unit Number'] || '')].filter(Boolean).join(' · ') || null
 
@@ -2316,7 +2334,7 @@ function ResidentDashboardHome({
       ) : null}
 
       {/* Metric cards — same light blue system as manager portal dashboard */}
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <button
           type="button"
           onClick={() => { setPaymentFocus(hasOverdueRent ? 'overdue' : ''); onNavigate('payments') }}
@@ -2335,37 +2353,88 @@ function ResidentDashboardHome({
           </span>
         </button>
 
+        {homeLabel ? (
+          <div className="rounded-[20px] border border-blue-100 bg-blue-50 p-5">
+            <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-blue-600">Your home</p>
+            <p className="mt-1 text-lg font-black text-slate-900">{homeLabel}</p>
+          </div>
+        ) : null}
+
         <button
           type="button"
           onClick={() => onNavigate('workorders')}
           className="flex flex-col gap-1 rounded-[20px] border border-blue-100 bg-blue-50 p-5 text-left transition hover:border-blue-200 hover:shadow-sm"
         >
-          <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-blue-600">Work Orders · Open</span>
-          <span className="text-3xl font-black tabular-nums text-blue-700">{openWoCount}</span>
+          <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-blue-600">Work Orders</span>
+          <span className="text-3xl font-black tabular-nums text-blue-700">{workOrderCardValue}</span>
         </button>
 
-        <button
-          type="button"
-          onClick={() => onNavigate('leasing')}
-          className={`flex flex-col gap-1 rounded-[20px] border p-5 text-left transition hover:shadow-sm ${
-            leaseStatus === 'Signed'
-              ? 'border-emerald-200 bg-emerald-50 hover:border-emerald-300'
-              : 'border-blue-100 bg-blue-50 hover:border-blue-200'
+        <div
+          className={`flex flex-col gap-2 rounded-[20px] border p-5 text-left transition hover:shadow-sm ${
+            leaseNeedsSigning
+              ? 'border-amber-200 bg-amber-50 hover:border-amber-300'
+              : leaseStatus === 'Signed'
+                ? 'border-emerald-200 bg-emerald-50 hover:border-emerald-300'
+                : 'border-blue-100 bg-blue-50 hover:border-blue-200'
           }`}
         >
           <span
             className={`text-[10px] font-bold uppercase tracking-[0.14em] ${
-              leaseStatus === 'Signed' ? 'text-emerald-600' : 'text-blue-600'
+              leaseNeedsSigning
+                ? 'text-amber-700'
+                : leaseStatus === 'Signed'
+                  ? 'text-emerald-600'
+                  : 'text-blue-600'
             }`}
           >
             Lease
           </span>
           <span
-            className={`text-3xl font-black ${leaseStatus === 'Signed' ? 'text-emerald-700' : 'text-blue-700'}`}
+            className={`text-3xl font-black ${
+              leaseNeedsSigning
+                ? 'text-amber-800'
+                : leaseStatus === 'Signed'
+                  ? 'text-emerald-700'
+                  : 'text-blue-700'
+            }`}
           >
-            {leaseStatus || 'None'}
+            {leaseNeedsSigning ? 'Sign lease' : leaseStatus === 'Signed' ? 'Lease' : 'None'}
           </span>
-        </button>
+          <p className={`text-sm ${leaseNeedsSigning ? 'text-amber-800/90' : 'text-slate-600'}`}>
+            {leaseStatus === 'Signed' ? leaseTermLabel : leaseStatus || 'No lease on file'}
+          </p>
+          {leaseStatus === 'Signed' ? (
+            <button
+              type="button"
+              onClick={() => onNavigate('leasing')}
+              className="mt-1 inline-flex w-fit rounded-full border border-emerald-300 bg-emerald-100 px-4 py-2 text-xs font-semibold text-emerald-800 transition hover:bg-emerald-200"
+            >
+              Extend
+            </button>
+          ) : leaseNeedsSigning ? (
+            <button
+              type="button"
+              onClick={() => {
+                if (leaseSigningUrl) {
+                  window.location.href = leaseSigningUrl
+                  return
+                }
+                onNavigate('leasing')
+              }}
+              className="mt-1 inline-flex w-fit rounded-full border border-amber-300 bg-amber-100 px-4 py-2 text-xs font-semibold text-amber-900 transition hover:bg-amber-200"
+            >
+              Sign lease
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={() => onNavigate('leasing')}
+              className="mt-1 inline-flex w-fit rounded-full border border-blue-200 bg-blue-100 px-4 py-2 text-xs font-semibold text-blue-800 transition hover:bg-blue-200"
+            >
+              View lease
+            </button>
+          )}
+        </div>
 
         <button
           type="button"
@@ -2388,15 +2457,6 @@ function ResidentDashboardHome({
         </button>
       </div>
 
-      {homeLabel ? (
-        <div className="rounded-[20px] border border-blue-100 bg-blue-50 p-5 transition hover:border-blue-200">
-          <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-blue-600">Your home</p>
-          <p className="mt-1 text-lg font-black text-slate-900">{homeLabel}</p>
-          {getLeaseTermLabel(resident) ? (
-            <p className="mt-1 text-sm text-blue-800/80">{getLeaseTermLabel(resident)}</p>
-          ) : null}
-        </div>
-      ) : null}
     </div>
   )
 }
