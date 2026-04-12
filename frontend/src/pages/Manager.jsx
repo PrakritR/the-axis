@@ -5467,11 +5467,6 @@ function ManagerDashboard({ manager: managerProp, onOpenDraft, onSignOut, onMana
             <div className="px-6 py-16 text-center">
               <div className="mb-3 text-4xl">📄</div>
               <div className="text-sm font-semibold text-slate-700">No drafts found</div>
-              <p className="mt-1 text-sm text-slate-500">
-                {Object.values(filters).some(Boolean)
-                  ? 'Try clearing your filters.'
-                  : 'Approved applications will create draft leases automatically.'}
-              </p>
             </div>
           ) : (
             <div className="overflow-x-auto">
