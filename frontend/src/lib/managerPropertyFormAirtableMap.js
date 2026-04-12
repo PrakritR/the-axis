@@ -1,15 +1,15 @@
 /**
  * Central Airtable field names + serializer for Manager Portal "Add property".
- * Properties table: flat Room N / Bathroom N / Kitchen N columns + counts + amenities.
+ * Properties table: flat Room N / Bathroom N / Kitchen N / Shared Space N columns + counts + amenities.
  */
 
-export const MAX_ROOM_SLOTS = 10
-export const MAX_BATHROOM_SLOTS = 8
-export const MAX_KITCHEN_SLOTS = 4
+export const MAX_ROOM_SLOTS = 20
+export const MAX_BATHROOM_SLOTS = 10
+export const MAX_KITCHEN_SLOTS = 3
+export const MAX_SHARED_SPACE_SLOTS = 3
 
 export const PROPERTY_AIR = {
   name: 'Name',
-  propertyLabel: 'Property',
   address: 'Address',
   housingType: 'Housing Type',
   roomCount: 'Room Count',
@@ -34,6 +34,8 @@ export const PROPERTY_AIR = {
   managerLink: 'Manager',
   approved: 'Approved',
   status: 'Status',
+  sharedSpaceCount: 'Number of Shared Spaces',
+  otherInfo: 'Other Info',
 }
 
 /** @param {number} n 1-based */
@@ -73,6 +75,17 @@ export function kitchenRoomsSharingField(n) {
   return `Rooms Sharing Kitchen ${n}`
 }
 
+/** @param {number} n 1-based */
+export function sharedSpaceNameField(n) {
+  return `Shared Space ${n} Name`
+}
+export function sharedSpaceTypeField(n) {
+  return `Shared Space ${n} Type`
+}
+export function sharedSpaceAccessField(n) {
+  return `Access to Shared Space ${n}`
+}
+
 export function clampInt(v, min, max) {
   const n = Math.floor(Number(v))
   if (!Number.isFinite(n)) return min
@@ -99,6 +112,10 @@ export function emptyKitchenRow() {
   return { description: '', roomsSharing: '' }
 }
 
+export function emptySharedSpaceRow() {
+  return { name: '', type: '', access: [] }
+}
+
 function optionalNumber(raw) {
   const s = String(raw ?? '').trim()
   if (!s) return undefined
@@ -118,12 +135,15 @@ function optionalCurrency(raw) {
  * @param {number} params.roomCount
  * @param {number} params.bathroomCount
  * @param {number} params.kitchenCount
+ * @param {number} params.sharedSpaceCount
  * @param {object} params.fees — utilitiesFee, securityDeposit, applicationFee (strings)
  * @param {object} params.laundry — enabled, type, description, roomsSharing
  * @param {object} params.parking — enabled, type, fee
  * @param {Array} params.rooms — rows from form
  * @param {Array} params.bathrooms
  * @param {Array} params.kitchens
+ * @param {Array} params.sharedSpaces — rows { name, type, access[] }
+ * @param {string} params.otherInfo
  * @param {string} params.managerEmail
  * @param {string} [params.managerRecordId]
  * @param {string[]} [params.photoCaptionLines] appended into Notes
@@ -134,12 +154,15 @@ export function serializeManagerAddPropertyToAirtableFields(params) {
     roomCount,
     bathroomCount,
     kitchenCount,
+    sharedSpaceCount = 0,
     fees,
     laundry,
     parking,
     rooms,
     bathrooms,
     kitchens,
+    sharedSpaces = [],
+    otherInfo = '',
     managerEmail,
     managerRecordId,
     photoCaptionLines = [],
@@ -148,13 +171,13 @@ export function serializeManagerAddPropertyToAirtableFields(params) {
   const rc = clampInt(roomCount, 1, MAX_ROOM_SLOTS)
   const bc = clampInt(bathroomCount, 0, MAX_BATHROOM_SLOTS)
   const kc = clampInt(kitchenCount, 0, MAX_KITCHEN_SLOTS)
+  const sc = clampInt(sharedSpaceCount, 0, MAX_SHARED_SPACE_SLOTS)
 
   const fields = {}
 
   const name = String(basics.name || '').trim()
   const address = String(basics.address || '').trim()
   fields[PROPERTY_AIR.name] = name
-  fields[PROPERTY_AIR.propertyLabel] = name
   fields[PROPERTY_AIR.address] = address
 
   fields[PROPERTY_AIR.approved] = false
@@ -171,6 +194,7 @@ export function serializeManagerAddPropertyToAirtableFields(params) {
   fields[PROPERTY_AIR.roomCount] = rc
   fields[PROPERTY_AIR.bathroomCount] = bc
   fields[PROPERTY_AIR.kitchenCount] = kc
+  fields[PROPERTY_AIR.sharedSpaceCount] = sc
 
   const desc = String(basics.description || '').trim()
   if (desc) fields[PROPERTY_AIR.description] = desc
@@ -181,6 +205,7 @@ export function serializeManagerAddPropertyToAirtableFields(params) {
   const pets = String(basics.pets || '').trim()
   if (pets) fields[PROPERTY_AIR.pets] = pets
 
+  // Blank utilities / security deposit → $0 on the record. Blank application fee → omit field (Apply uses $50 default when live).
   const uf = optionalCurrency(fees.utilitiesFee) ?? 0
   const sd = optionalCurrency(fees.securityDeposit) ?? 0
   fields[PROPERTY_AIR.utilitiesFee] = uf
@@ -248,6 +273,19 @@ export function serializeManagerAddPropertyToAirtableFields(params) {
     const rs = String(row.roomsSharing || '').trim()
     if (rs) fields[kitchenRoomsSharingField(i)] = rs
   }
+
+  for (let i = 1; i <= sc; i++) {
+    const row = sharedSpaces[i - 1] || emptySharedSpaceRow()
+    const sn = String(row.name || '').trim()
+    if (sn) fields[sharedSpaceNameField(i)] = sn
+    const st = String(row.type || '').trim()
+    if (st) fields[sharedSpaceTypeField(i)] = st
+    const acc = Array.isArray(row.access) ? row.access.filter(Boolean) : []
+    if (acc.length) fields[sharedSpaceAccessField(i)] = acc
+  }
+
+  const oi = String(otherInfo || '').trim()
+  if (oi) fields[PROPERTY_AIR.otherInfo] = oi
 
   const noteParts = [`Submitted by: ${String(managerEmail || '').trim()}`]
   if (photoCaptionLines.length) {

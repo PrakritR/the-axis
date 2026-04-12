@@ -44,10 +44,12 @@ import {
   emptyRoomRow,
   emptyBathroomRow,
   emptyKitchenRow,
+  emptySharedSpaceRow,
   clampInt,
   MAX_ROOM_SLOTS,
   MAX_BATHROOM_SLOTS,
   MAX_KITCHEN_SLOTS,
+  MAX_SHARED_SPACE_SLOTS,
 } from '../lib/managerPropertyFormAirtableMap.js'
 import {
   consolidateManagerDashboardWarnings,
@@ -1568,13 +1570,19 @@ async function atRequest(url, options = {}) {
     if (permErr) throw permErr
     try {
       const parsed = JSON.parse(body)
-      if (parsed?.error?.message) {
-        throw new Error(parsed.error.message)
+      // Airtable returns errors in two shapes:
+      //   { error: { type, message } }          — nested object
+      //   { error: "TYPE", message: "..." }     — flat (used by some endpoints)
+      if (parsed?.error?.message) throw new Error(parsed.error.message)
+      if (typeof parsed?.message === 'string') throw new Error(parsed.message)
+    } catch (e) {
+      if (e instanceof SyntaxError) {
+        // body was not JSON — fall through
+      } else {
+        throw e
       }
-    } catch {
-      // fall back to the raw response body below when it is not JSON
     }
-    throw new Error(body)
+    throw new Error(body.slice(0, 400))
   }
   return res.json()
 }
@@ -2254,6 +2262,9 @@ function HouseManagementPanel({ manager, onPropertiesChange }) {
     type: '',
     fee: '',
   })
+  const [addSharedSpaceCount, setAddSharedSpaceCount] = useState(0)
+  const [addSharedSpaces, setAddSharedSpaces] = useState([])
+  const [addOtherInfo, setAddOtherInfo] = useState('')
   const [addImages, setAddImages] = useState([]) // [{ id, file, preview, caption }]
   const addImageInputRef = useRef(null)
   const addDropRef = useRef(null)
@@ -2314,6 +2325,15 @@ function HouseManagementPanel({ manager, onPropertiesChange }) {
       return next.slice(0, n)
     })
   }, [addKitchenCount])
+
+  useEffect(() => {
+    const n = clampInt(addSharedSpaceCount, 0, MAX_SHARED_SPACE_SLOTS)
+    setAddSharedSpaces((prev) => {
+      const next = [...prev]
+      while (next.length < n) next.push(emptySharedSpaceRow())
+      return next.slice(0, n)
+    })
+  }, [addSharedSpaceCount])
 
   function extractNoteValue(notes, label) {
     const escaped = String(label || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
@@ -2445,9 +2465,12 @@ function HouseManagementPanel({ manager, onPropertiesChange }) {
     setAddRoomCount(1)
     setAddBathroomCount(1)
     setAddKitchenCount(1)
+    setAddSharedSpaceCount(0)
     setAddRooms([emptyRoomRow(1)])
     setAddBathrooms([emptyBathroomRow()])
     setAddKitchens([emptyKitchenRow()])
+    setAddSharedSpaces([])
+    setAddOtherInfo('')
     setAddFees({ utilitiesFee: '', securityDeposit: '', applicationFee: '' })
     setAddLaundry({ enabled: false, type: '', description: '', roomsSharing: '' })
     setAddParking({ enabled: false, type: '', fee: '' })
@@ -2540,7 +2563,7 @@ function HouseManagementPanel({ manager, onPropertiesChange }) {
         onPropertiesChange?.(next)
         return next
       })
-      toast.success('Property submitted — pending review')
+      toast.success('Property submitted; pending review')
       resetAddPropertyForm()
       setAddOpen(false)
     } catch (err) {
@@ -2588,7 +2611,7 @@ function HouseManagementPanel({ manager, onPropertiesChange }) {
             {pendingAssigned.length ? (
               <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950">
                 <span className="font-semibold">{pendingAssigned.length} pending</span>
-                <span className="text-amber-900/90"> — visible only in your portal until approved.</span>
+                <span className="text-amber-900/90"> Visible only in your portal until approved.</span>
               </div>
             ) : null}
             {pendingAssigned.map((property) => (
@@ -2869,9 +2892,9 @@ function HouseManagementPanel({ manager, onPropertiesChange }) {
               <div className="space-y-4">
                 <div className="text-[11px] font-bold uppercase tracking-[0.14em] text-slate-400">Counts &amp; setup</div>
                 <p className="text-xs text-slate-500">
-                  Enter how many rentable rooms, bathrooms, and kitchens to configure — the form opens that many sections below (max {MAX_ROOM_SLOTS} rooms, {MAX_BATHROOM_SLOTS} bathrooms, {MAX_KITCHEN_SLOTS} kitchens).
+                  These numbers control how many detail blocks appear below. Max {MAX_ROOM_SLOTS} rooms, {MAX_BATHROOM_SLOTS} bathrooms, {MAX_KITCHEN_SLOTS} kitchens, {MAX_SHARED_SPACE_SLOTS} shared spaces.
                 </p>
-                <div className="grid gap-4 sm:grid-cols-3">
+                <div className="grid gap-4 sm:grid-cols-2">
                   <div>
                     <label className="mb-1.5 block text-xs font-semibold text-slate-700">Room count *</label>
                     <input
@@ -2906,6 +2929,17 @@ function HouseManagementPanel({ manager, onPropertiesChange }) {
                       onChange={(e) => setAddKitchenCount(e.target.value)}
                     />
                   </div>
+                  <div>
+                    <label className="mb-1.5 block text-xs font-semibold text-slate-700">Shared spaces (common areas)</label>
+                    <input
+                      className={addInputCls}
+                      type="number"
+                      min={0}
+                      max={MAX_SHARED_SPACE_SLOTS}
+                      value={addSharedSpaceCount}
+                      onChange={(e) => setAddSharedSpaceCount(e.target.value)}
+                    />
+                  </div>
                 </div>
               </div>
 
@@ -2913,7 +2947,7 @@ function HouseManagementPanel({ manager, onPropertiesChange }) {
               <div className="space-y-3">
                 <div className="text-[11px] font-bold uppercase tracking-[0.14em] text-slate-400">Fees</div>
                 <p className="text-xs text-slate-500">
-                  Utilities and security deposit default to <strong>$0</strong> if left blank. Application fee is optional — leave blank to use the default ($50) once the listing is live.
+                  Utilities and security deposit default to <strong>$0</strong> if left blank. Application fee is optional; leave blank to use the default ($50) once the listing is live.
                 </p>
                 <div className="grid gap-4 sm:grid-cols-3">
                   <div>
@@ -3034,7 +3068,7 @@ function HouseManagementPanel({ manager, onPropertiesChange }) {
                           className={addInputCls}
                           value={addLaundry.roomsSharing}
                           onChange={(e) => setAddLaundry((l) => ({ ...l, roomsSharing: e.target.value }))}
-                          placeholder="e.g. All rooms, or Room 1–4"
+                          placeholder="e.g. All rooms, or Room 1-4"
                         />
                       </div>
                       <div className="sm:col-span-2">
@@ -3056,7 +3090,7 @@ function HouseManagementPanel({ manager, onPropertiesChange }) {
                     className={`${addInputCls} min-h-[64px] resize-y`}
                     value={addBasics.bathroomAccess}
                     onChange={(e) => setAddBasics((b) => ({ ...b, bathroomAccess: e.target.value }))}
-                    placeholder="Optional overview — use bathroom sections below for each bath."
+                    placeholder="Optional overview. Use bathroom sections below for each bath."
                     rows={2}
                   />
                 </div>
@@ -3290,7 +3324,93 @@ function HouseManagementPanel({ manager, onPropertiesChange }) {
                 </div>
               ) : null}
 
-              {/* 8. Photos */}
+              {/* 8. Shared Spaces */}
+              {addSharedSpaces.length > 0 ? (
+                <div className="space-y-3">
+                  <div className="text-[11px] font-bold uppercase tracking-[0.14em] text-slate-400">Shared Spaces</div>
+                  <p className="text-xs text-slate-500">Common areas shared by multiple rooms — living rooms, lounges, study areas, laundry, patios, etc.</p>
+                  <div className="space-y-4">
+                    {addSharedSpaces.map((space, idx) => {
+                      const roomOptions = Array.from({ length: clampInt(addRoomCount, 1, MAX_ROOM_SLOTS) }, (_, i) => `Room ${i + 1}`)
+                      const spaceTypeOptions = ['Living Room', 'Dining Room', 'Lounge', 'Study Area', 'Laundry', 'Backyard', 'Patio', 'Storage', 'Hallway', 'Other']
+                      return (
+                        <div key={`shared-${idx}`} className="rounded-2xl border border-slate-200 bg-white p-4">
+                          <div className="mb-3 text-xs font-black text-slate-800">Shared Space {idx + 1}</div>
+                          <div className="grid gap-3 sm:grid-cols-2">
+                            <div>
+                              <label className="mb-1 block text-[11px] font-semibold text-slate-600">Name</label>
+                              <input
+                                className={addInputCls}
+                                value={space.name}
+                                onChange={(e) => {
+                                  const v = e.target.value
+                                  setAddSharedSpaces((prev) => { const next = [...prev]; next[idx] = { ...next[idx], name: v }; return next })
+                                }}
+                                placeholder="e.g. Main Living Room"
+                              />
+                            </div>
+                            <div>
+                              <label className="mb-1 block text-[11px] font-semibold text-slate-600">Type</label>
+                              <select
+                                className={addInputCls}
+                                value={space.type}
+                                onChange={(e) => {
+                                  const v = e.target.value
+                                  setAddSharedSpaces((prev) => { const next = [...prev]; next[idx] = { ...next[idx], type: v }; return next })
+                                }}
+                              >
+                                <option value="">Select type…</option>
+                                {spaceTypeOptions.map((t) => <option key={t} value={t}>{t}</option>)}
+                              </select>
+                            </div>
+                            <div className="sm:col-span-2">
+                              <label className="mb-1.5 block text-[11px] font-semibold text-slate-600">Rooms with access</label>
+                              <div className="grid grid-cols-4 gap-1.5 sm:grid-cols-5">
+                                {roomOptions.map((r) => (
+                                  <label key={r} className="flex cursor-pointer items-center gap-1.5 rounded-lg border border-slate-200 bg-slate-50 px-2 py-1.5 text-[11px] font-medium text-slate-700 hover:bg-slate-100">
+                                    <input
+                                      type="checkbox"
+                                      className="h-3.5 w-3.5 rounded border-slate-300 text-[#2563eb]"
+                                      checked={Array.isArray(space.access) && space.access.includes(r)}
+                                      onChange={(e) => {
+                                        const checked = e.target.checked
+                                        setAddSharedSpaces((prev) => {
+                                          const next = [...prev]
+                                          const cur = Array.isArray(next[idx].access) ? [...next[idx].access] : []
+                                          next[idx] = { ...next[idx], access: checked ? [...cur, r] : cur.filter((x) => x !== r) }
+                                          return next
+                                        })
+                                      }}
+                                    />
+                                    {r}
+                                  </label>
+                                ))}
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+                </div>
+              ) : null}
+
+              {/* 9. Other / Additional Info */}
+              <div className="space-y-2">
+                <div className="text-[11px] font-bold uppercase tracking-[0.14em] text-slate-400">Other &amp; additional info</div>
+                <p className="text-xs text-slate-500">
+                  Anything not captured above — house rules, move-in process, lease terms, access details, utilities breakdown, neighbourhood notes, or anything you'd like us to know.
+                </p>
+                <textarea
+                  className={`${addInputCls} min-h-[96px] resize-y`}
+                  value={addOtherInfo}
+                  onChange={(e) => setAddOtherInfo(e.target.value)}
+                  placeholder="e.g. Tenant handles their own internet. Move-in requires 1-month notice. Shared cleaner visits Fridays…"
+                  rows={4}
+                />
+              </div>
+
+              {/* 10. Photos */}
               <div>
                 <div className="mb-2 text-[11px] font-bold uppercase tracking-[0.14em] text-slate-400">Photos</div>
                 <div
@@ -3302,7 +3422,7 @@ function HouseManagementPanel({ manager, onPropertiesChange }) {
                   className="flex cursor-pointer flex-col items-center justify-center rounded-2xl border-2 border-dashed border-slate-200 bg-slate-50/60 px-6 py-8 text-center transition hover:border-[#2563eb] hover:bg-blue-50/30"
                 >
                   <div className="text-sm font-semibold text-slate-500">Drag &amp; drop images here, or <span className="text-[#2563eb]">click to upload</span></div>
-                  <div className="mt-1 text-xs text-slate-400">JPG, PNG, WEBP — reorder with arrows; add an optional note per image</div>
+                  <div className="mt-1 text-xs text-slate-400">JPG, PNG, WEBP. Reorder with arrows; optional note per image</div>
                   <input
                     ref={addImageInputRef}
                     type="file"
@@ -3364,12 +3484,17 @@ function HouseManagementPanel({ manager, onPropertiesChange }) {
                 ) : null}
               </div>
 
-              {/* 9. Review */}
+              {/* Ready to submit */}
               <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
                 <div className="text-[11px] font-bold uppercase tracking-[0.14em] text-slate-400">Ready to submit</div>
                 <ul className="mt-2 list-inside list-disc space-y-1 text-xs">
                   <li><span className="font-semibold">{addBasics.name.trim() || 'Untitled'}</span> · {addBasics.address.trim() || '—'}</li>
-                  <li>{clampInt(addRoomCount, 1, MAX_ROOM_SLOTS)} room section(s), {clampInt(addBathroomCount, 0, MAX_BATHROOM_SLOTS)} bathroom(s), {clampInt(addKitchenCount, 0, MAX_KITCHEN_SLOTS)} kitchen(s)</li>
+                  <li>
+                    {clampInt(addRoomCount, 1, MAX_ROOM_SLOTS)} room(s),&nbsp;
+                    {clampInt(addBathroomCount, 0, MAX_BATHROOM_SLOTS)} bathroom(s),&nbsp;
+                    {clampInt(addKitchenCount, 0, MAX_KITCHEN_SLOTS)} kitchen(s),&nbsp;
+                    {clampInt(addSharedSpaceCount, 0, MAX_SHARED_SPACE_SLOTS)} shared space(s)
+                  </li>
                   <li>Pending review after submit — you can edit listing details once live from this portal.</li>
                 </ul>
               </div>
