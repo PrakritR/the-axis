@@ -1,5 +1,23 @@
 import React from 'react'
 
+function PortalShellFooter({ brandTitle, brandSubtitle }) {
+  return (
+    <footer className="border-t border-slate-200 bg-white/95">
+      <div className="mx-auto flex w-full max-w-[1600px] flex-col gap-3 px-4 py-5 text-sm text-slate-500 sm:px-6 lg:px-8 lg:flex-row lg:items-center lg:justify-between">
+        <div>
+          <div className="font-semibold text-slate-800">{brandSubtitle}</div>
+          <div className="text-xs text-slate-400">{brandTitle}</div>
+        </div>
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-slate-400">
+          <span>© 2026 Axis</span>
+          <span>Seattle, WA</span>
+          <span>Portal access and account tools</span>
+        </div>
+      </div>
+    </footer>
+  )
+}
+
 /**
  * Shared chrome: vertical sidebar + main content for Manager, Resident, and Admin portals.
  * Desktop layout uses CSS Grid (not flex + order) so the sidebar column stays physically left
@@ -31,8 +49,8 @@ export default function PortalShell({
 
   if (!showDesktopSidebar) {
     return (
-      <div className="flex min-h-dvh flex-col overflow-hidden bg-slate-50 text-slate-900" dir="ltr">
-        <header className="z-20 shrink-0 border-b border-slate-200 bg-white/95 backdrop-blur">
+      <div className="flex min-h-dvh flex-col bg-slate-50 text-slate-900" dir="ltr">
+        <header className="sticky top-0 z-20 shrink-0 border-b border-slate-200 bg-white/95 backdrop-blur">
           <div className="flex items-center justify-between gap-3 px-4 py-3">
             <div className="min-w-0">
               <div className="text-[10px] font-bold uppercase tracking-wider text-[#2f76ff]">{brandTitle}</div>
@@ -67,22 +85,23 @@ export default function PortalShell({
           </div>
         </header>
 
-        <main className="min-h-0 min-w-0 flex-1 overflow-y-auto overscroll-y-contain">
+        <main className="min-h-0 min-w-0 flex-1">
           {children}
         </main>
+        <PortalShellFooter brandTitle={brandTitle} brandSubtitle={brandSubtitle} />
       </div>
     )
   }
 
   return (
     <div
-      className={`grid min-h-dvh w-full max-w-full grid-cols-1 overflow-hidden bg-slate-50 text-slate-900 ${
+      className={`grid min-h-dvh w-full max-w-full grid-cols-1 bg-slate-50 text-slate-900 ${
         isRight ? 'lg:grid-cols-[minmax(0,1fr)_14rem]' : 'lg:grid-cols-[14rem_minmax(0,1fr)]'
       }`}
       dir="ltr"
     >
       <aside
-        className={`hidden min-h-dvh w-full shrink-0 flex-col overflow-hidden bg-white lg:flex ${asideBorder} ${asideGrid}`}
+        className={`hidden w-full shrink-0 self-start bg-white lg:sticky lg:top-0 lg:flex lg:h-dvh lg:flex-col ${asideBorder} ${asideGrid}`}
       >
         <div className="shrink-0 border-b border-slate-100 px-4 py-4">
           <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-[#2f76ff]">{brandTitle}</div>
@@ -118,8 +137,8 @@ export default function PortalShell({
         </div>
       </aside>
 
-      <div className={`flex min-h-dvh min-w-0 flex-col overflow-hidden ${mainGrid}`}>
-        <header className="z-20 shrink-0 border-b border-slate-200 bg-white/95 backdrop-blur lg:hidden">
+      <div className={`flex min-h-dvh min-w-0 flex-col ${mainGrid}`}>
+        <header className="sticky top-0 z-20 shrink-0 border-b border-slate-200 bg-white/95 backdrop-blur lg:hidden">
           <div className="flex items-center justify-between gap-3 px-4 py-3">
             <div className="min-w-0">
               <div className="text-[10px] font-bold uppercase tracking-wider text-[#2f76ff]">{brandTitle}</div>
@@ -153,9 +172,10 @@ export default function PortalShell({
           </div>
         </header>
 
-        <main className="min-h-0 flex-1 overflow-y-auto overscroll-y-contain px-4 py-6 sm:px-6 lg:px-8">
+        <main className="min-h-0 flex-1 px-4 py-6 sm:px-6 lg:px-8">
           {children}
         </main>
+        <PortalShellFooter brandTitle={brandTitle} brandSubtitle={brandSubtitle} />
       </div>
     </div>
   )
