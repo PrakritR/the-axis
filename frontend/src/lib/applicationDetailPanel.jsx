@@ -4,6 +4,7 @@ import {
   deriveApplicationApprovalState,
   applicationDisplayLabelFromApprovalState,
 } from './applicationApprovalState.js'
+import { parseAxisListingMetaBlock } from './axisListingMeta.js'
 
 export function formatApplicationDetailValue(val) {
   if (val === null || val === undefined) return null
@@ -15,6 +16,82 @@ export function formatApplicationDetailValue(val) {
   if (typeof val === 'number' && Number.isFinite(val)) return String(val)
   const s = String(val).trim()
   return s || null
+}
+
+function parseLabeledLinesBlock(value) {
+  const lines = String(value || '')
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+
+  const items = []
+  for (const line of lines) {
+    const idx = line.indexOf(':')
+    if (idx <= 0) continue
+    const label = line.slice(0, idx).trim()
+    const val = line.slice(idx + 1).trim()
+    if (!label || !val) continue
+    items.push({ label, value: val })
+  }
+  return items.length >= 3 ? items : []
+}
+
+function metaRoomsToItems(meta) {
+  const rooms = Array.isArray(meta?.roomsDetail) ? meta.roomsDetail : []
+  if (!rooms.length) return []
+  const items = []
+  for (const room of rooms) {
+    if (!room || typeof room !== 'object') continue
+    const label = String(room.label || '').trim() || 'Room'
+    const pushIf = (k, v) => {
+      const value = formatApplicationDetailValue(v)
+      if (value) items.push({ label: `${label} ${k}`, value })
+    }
+    pushIf('Rent', room.rent)
+    pushIf('Availability', room.availability)
+    pushIf('Furnished', room.furnished)
+    pushIf('Utilities', room.utilities)
+    pushIf('Utilities Cost', room.utilitiesCost)
+    pushIf('Floor/Notes', room.notes)
+    pushIf('Furniture Included', room.furnitureIncluded)
+    pushIf('Additional Features', room.additionalFeatures)
+  }
+  return items
+}
+
+function metaFinancialItems(meta) {
+  if (!meta?.financials || typeof meta.financials !== 'object') return []
+  const out = []
+  const pushIf = (label, value) => {
+    const v = formatApplicationDetailValue(value)
+    if (v) out.push({ label, value: v })
+  }
+  pushIf('Security Deposit', meta.financials.securityDeposit)
+  pushIf('Move-In Charges', meta.financials.moveInCharges)
+  return out
+}
+
+function metaLeasingItems(meta) {
+  if (!meta?.leasing || typeof meta.leasing !== 'object') return []
+  const out = []
+  const pushIf = (label, value) => {
+    const v = formatApplicationDetailValue(value)
+    if (v) out.push({ label, value: v })
+  }
+  pushIf('Full House Price', meta.leasing['Full House Price'])
+  pushIf('Promotional Full House Price', meta.leasing['Promotional Full House Price'])
+  pushIf('Lease Length Information', meta.leasing['Lease Length Information'])
+  const packages = Array.isArray(meta.leasing['Leasing Packages']) ? meta.leasing['Leasing Packages'] : []
+  for (const pkg of packages) {
+    if (!pkg || typeof pkg !== 'object') continue
+    const name = String(pkg['Bundle Name'] || 'Package').trim()
+    pushIf(`${name} Monthly Rent`, pkg['Bundle Monthly Rent'])
+    const rooms = Array.isArray(pkg['Bundle Rooms Included'])
+      ? pkg['Bundle Rooms Included'].map((r) => String(r).trim()).filter(Boolean).join(', ')
+      : ''
+    if (rooms) out.push({ label: `${name} Rooms Included`, value: rooms })
+  }
+  return out
 }
 
 /** Airtable field → label (aligned with Apply.jsx signer application) */
@@ -162,11 +239,46 @@ export function ApplicationDetailPanel({ application, partnerLabel, onClose, adm
   }
 
   const otherItems = []
+  const parsedExtraSections = []
   for (const key of Object.keys(raw).sort((a, b) => a.localeCompare(b))) {
     if (shownKeys.has(key)) continue
-    const v = formatApplicationDetailValue(raw[key])
+    const rawVal = raw[key]
+
+    if (typeof rawVal === 'string') {
+      const parsedMeta = parseAxisListingMetaBlock(rawVal)
+      if (parsedMeta.meta) {
+        if (parsedMeta.userText) {
+          const parsedLines = parseLabeledLinesBlock(parsedMeta.userText)
+          if (parsedLines.length) {
+            parsedExtraSections.push({ title: `${key} details`, items: parsedLines })
+          } else {
+            otherItems.push({ label: key, value: parsedMeta.userText })
+          }
+        }
+
+        const roomItems = metaRoomsToItems(parsedMeta.meta)
+        if (roomItems.length) parsedExtraSections.push({ title: 'Room details', items: roomItems })
+
+        const finItems = metaFinancialItems(parsedMeta.meta)
+        if (finItems.length) parsedExtraSections.push({ title: 'Financial summary', items: finItems })
+
+        const leasingItems = metaLeasingItems(parsedMeta.meta)
+        if (leasingItems.length) parsedExtraSections.push({ title: 'Leasing options', items: leasingItems })
+
+        continue
+      }
+
+      const parsedLines = parseLabeledLinesBlock(rawVal)
+      if (parsedLines.length) {
+        parsedExtraSections.push({ title: key, items: parsedLines })
+        continue
+      }
+    }
+
+    const v = formatApplicationDetailValue(rawVal)
     if (v) otherItems.push({ label: key, value: v })
   }
+  sections.push(...parsedExtraSections)
   if (otherItems.length) sections.push({ title: 'Other fields', items: otherItems })
 
   const submitted = raw.created_at
