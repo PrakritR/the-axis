@@ -1666,22 +1666,19 @@ export default function AdminPortal() {
       )}
 
       {tab === 'calendar' && (
-        <div>
-          <AdminMeetingAvailabilitySection user={user} />
-          <Suspense
-            fallback={(
-              <div className="rounded-3xl border border-slate-200 bg-white px-6 py-12 text-center text-sm text-slate-500">
-                Loading calendar…
-              </div>
-            )}
-          >
-            <AdminPortalCalendarTab
-              loadAllSchedulingRows
-              manager={{ email: user?.email || '', name: user?.name || user?.email || 'Admin' }}
-              allowedPropertyNames={[]}
-            />
-          </Suspense>
-        </div>
+        <Suspense
+          fallback={(
+            <div className="rounded-3xl border border-slate-200 bg-white px-6 py-12 text-center text-sm text-slate-500">
+              Loading calendar…
+            </div>
+          )}
+        >
+          <AdminPortalCalendarTab
+            loadAllSchedulingRows
+            manager={{ email: user?.email || '', name: user?.name || user?.email || 'Admin' }}
+            allowedPropertyNames={[]}
+          />
+        </Suspense>
       )}
 
       {tab === 'profile' && (

@@ -4940,23 +4940,25 @@ export function CalendarTabPanel({ manager, allowedPropertyNames, loadAllSchedul
       <div className="mb-5 flex flex-wrap items-center gap-3">
         <h2 className="mr-auto w-full text-2xl font-black text-slate-900 sm:w-auto">Calendar</h2>
         <div className="flex w-full min-w-0 flex-wrap items-center gap-2 sm:ml-auto sm:w-auto sm:flex-nowrap">
-          <div className={MANAGER_PILL_SELECT_WRAP_CLS}>
-            <select
-              value={selectedPropertyId}
-              onChange={(e) => setSelectedPropertyId(e.target.value)}
-              disabled={!availabilityOwnerOptions.length}
-              className={MANAGER_PILL_SELECT_CLS}
-            >
-              {availabilityOwnerOptions.length ? (
-                availabilityOwnerOptions.map((option) => (
-                  <option key={option.id} value={option.id}>{option.label}</option>
-                ))
-              ) : (
-                <option value=""></option>
-              )}
-            </select>
-            {MANAGER_PILL_SELECT_CHEVRON}
-          </div>
+          {!loadAllSchedulingRows && (
+            <div className={MANAGER_PILL_SELECT_WRAP_CLS}>
+              <select
+                value={selectedPropertyId}
+                onChange={(e) => setSelectedPropertyId(e.target.value)}
+                disabled={!availabilityOwnerOptions.length}
+                className={MANAGER_PILL_SELECT_CLS}
+              >
+                {availabilityOwnerOptions.length ? (
+                  availabilityOwnerOptions.map((option) => (
+                    <option key={option.id} value={option.id}>{option.label}</option>
+                  ))
+                ) : (
+                  <option value=""></option>
+                )}
+              </select>
+              {MANAGER_PILL_SELECT_CHEVRON}
+            </div>
+          )}
           <button
             type="button"
             onClick={load}
@@ -5033,7 +5035,7 @@ export function CalendarTabPanel({ manager, allowedPropertyNames, loadAllSchedul
         </div>
       </div>
 
-      <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_360px]">
+      <div className={loadAllSchedulingRows ? '' : 'grid gap-6 lg:grid-cols-[minmax(0,1fr)_360px]'}>
         <AvailabilityCalendar
           view={view}
           anchorDate={anchorDate}
@@ -5042,27 +5044,44 @@ export function CalendarTabPanel({ manager, allowedPropertyNames, loadAllSchedul
           weeklyFree={selectedWeeklyFree}
           bookedByDate={bookedByDate}
         />
-        <AvailabilityEditorPanel
-          selectedDateKey={selectedDateKey}
-          ranges={timeRangesFromWeeklyFree(selectedWeeklyFree, weekdayAbbrFromDateKey(selectedDateKey))}
-          onRangesChange={(ranges) => {
-            if (!selectedPropertyId) return
-            const abbr = weekdayAbbrFromDateKey(selectedDateKey)
-            setWeeklyFreeByProperty((prev) => {
-              const base = prev[selectedPropertyId] || emptyWeeklyFreeArrays()
-              return { ...prev, [selectedPropertyId]: weeklyFreeWithDayRanges(base, abbr, ranges) }
-            })
-          }}
-          onOpenMeet={() => setMeetOpen(true)}
-          onSave={handleSaveAvailability}
-          onClearDay={handleClearDay}
-          scheduledItems={scheduledItemsForSelectedDay}
-          availSaving={availSaving}
-          manager={manager}
-          propertyOptions={availabilityOwnerOptions}
-          selectedPropertyId={selectedPropertyId}
-          onSelectProperty={setSelectedPropertyId}
-        />
+        {!loadAllSchedulingRows && (
+          <AvailabilityEditorPanel
+            selectedDateKey={selectedDateKey}
+            ranges={timeRangesFromWeeklyFree(selectedWeeklyFree, weekdayAbbrFromDateKey(selectedDateKey))}
+            onRangesChange={(ranges) => {
+              if (!selectedPropertyId) return
+              const abbr = weekdayAbbrFromDateKey(selectedDateKey)
+              setWeeklyFreeByProperty((prev) => {
+                const base = prev[selectedPropertyId] || emptyWeeklyFreeArrays()
+                return { ...prev, [selectedPropertyId]: weeklyFreeWithDayRanges(base, abbr, ranges) }
+              })
+            }}
+            onOpenMeet={() => setMeetOpen(true)}
+            onSave={handleSaveAvailability}
+            onClearDay={handleClearDay}
+            scheduledItems={scheduledItemsForSelectedDay}
+            availSaving={availSaving}
+            manager={manager}
+            propertyOptions={availabilityOwnerOptions}
+            selectedPropertyId={selectedPropertyId}
+            onSelectProperty={setSelectedPropertyId}
+          />
+        )}
+        {loadAllSchedulingRows && scheduledItemsForSelectedDay.length > 0 && (
+          <div className="mt-6 rounded-3xl border border-slate-200 bg-white p-5">
+            <div className="mb-3 text-sm font-bold text-slate-900">Scheduled for {selectedDateKey}</div>
+            <div className="space-y-2">
+              {scheduledItemsForSelectedDay.map((item) => (
+                <div key={item.id} className={`rounded-2xl border px-3 py-3 text-sm ${bookingBadgeTone(item)}`}>
+                  <div className="font-semibold">{bookingLabel(item)}</div>
+                  <div className="mt-1 text-xs opacity-80">
+                    {[item.Name || 'Guest', item['Preferred Time'], item.Property].filter(Boolean).join(' · ')}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
 
       <LetUsMeetModal
