@@ -1778,8 +1778,16 @@ async function patchLeaseDraft(recordId, fields) {
 }
 
 async function fetchPropertiesAdmin() {
-  const data = await atRequest(`${CORE_AIRTABLE_BASE_URL}/Properties`)
-  return (data.records || []).map(mapRecord)
+  const rows = []
+  let offset = null
+  do {
+    const url = new URL(`${CORE_AIRTABLE_BASE_URL}/Properties`)
+    if (offset) url.searchParams.set('offset', offset)
+    const data = await atRequest(url.toString())
+    for (const record of (data.records || [])) rows.push(mapRecord(record))
+    offset = data.offset || null
+  } while (offset)
+  return rows
 }
 
 async function updatePropertyAdmin(recordId, fields) {
@@ -4729,7 +4737,7 @@ export function CalendarTabPanel({ manager, allowedPropertyNames, loadAllSchedul
       const workOrderRows = workOrdersToCalendarRows(workOrders, allowedLower)
       setSchedulingRows([...sched, ...workOrderRows])
       setProperties(props)
-      const approvedAssigned = props
+      let approvedAssigned = props
         .filter((p) => {
           if (loadAllSchedulingRows) return isPropertyRecordApproved(p)
           return (
@@ -4740,6 +4748,25 @@ export function CalendarTabPanel({ manager, allowedPropertyNames, loadAllSchedul
         .sort((a, b) =>
           propertyRecordName(a).localeCompare(propertyRecordName(b), undefined, { sensitivity: 'base' }),
         )
+
+      // Email-based fallback: if the normal assignment checks found nothing and we have a
+      // manager email, match on the Manager Email / Site Manager Email field directly.
+      // This handles properties that were added before Owner ID back-fill ran.
+      if (approvedAssigned.length === 0 && !loadAllSchedulingRows && manager?.email) {
+        const em = String(manager.email || '').trim().toLowerCase()
+        if (em) {
+          const emailFallback = props
+            .filter((p) => {
+              const me = String(p['Manager Email'] || '').trim().toLowerCase()
+              const sme = String(p['Site Manager Email'] || '').trim().toLowerCase()
+              return (me && me === em) || (sme && sme === em)
+            })
+            .sort((a, b) =>
+              propertyRecordName(a).localeCompare(propertyRecordName(b), undefined, { sensitivity: 'base' }),
+            )
+          if (emailFallback.length > 0) approvedAssigned = emailFallback
+        }
+      }
 
       const byProperty = {}
       approvedAssigned.forEach((property) => {
@@ -4768,14 +4795,29 @@ export function CalendarTabPanel({ manager, allowedPropertyNames, loadAllSchedul
           propertyRecordName(a).localeCompare(propertyRecordName(b), undefined, { sensitivity: 'base' }),
         )
     }
-    return properties
-      .filter((p) => (
-        propertyEligibleForManagerCalendarScheduling(p, manager) ||
-        propertyNameInAllowedScope(p, allowedPropertyNames)
-      ))
-      .sort((a, b) =>
-        propertyRecordName(a).localeCompare(propertyRecordName(b), undefined, { sensitivity: 'base' }),
-      )
+    const primary = properties.filter((p) => (
+      propertyEligibleForManagerCalendarScheduling(p, manager) ||
+      propertyNameInAllowedScope(p, allowedPropertyNames)
+    ))
+    // Email fallback (same logic as load())
+    if (primary.length === 0 && manager?.email) {
+      const em = String(manager.email || '').trim().toLowerCase()
+      if (em) {
+        const fallback = properties.filter((p) => {
+          const me = String(p['Manager Email'] || '').trim().toLowerCase()
+          const sme = String(p['Site Manager Email'] || '').trim().toLowerCase()
+          return (me && me === em) || (sme && sme === em)
+        })
+        if (fallback.length > 0) {
+          return fallback.sort((a, b) =>
+            propertyRecordName(a).localeCompare(propertyRecordName(b), undefined, { sensitivity: 'base' }),
+          )
+        }
+      }
+    }
+    return primary.sort((a, b) =>
+      propertyRecordName(a).localeCompare(propertyRecordName(b), undefined, { sensitivity: 'base' }),
+    )
   }, [properties, manager, loadAllSchedulingRows, allowedPropertyNames])
 
   const selectedProperty = useMemo(
@@ -5801,10 +5843,7 @@ function LeaseEditor({ draftId, manager, onBack, embedded = false }) {
           {leaseDataForPreview ? (
             <div className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm">
               <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 bg-slate-50 px-5 py-3">
-                <div>
-                  <div className="text-[11px] font-bold uppercase tracking-[0.14em] text-slate-500">Formatted lease agreement</div>
-                  <p className="mt-0.5 text-xs text-slate-500">Same layout as the resident portal (built from Lease JSON).</p>
-                </div>
+                <div className="text-[11px] font-bold uppercase tracking-[0.14em] text-slate-500">Formatted lease agreement</div>
                 <button
                   type="button"
                   onClick={() => window.print()}
