@@ -5604,7 +5604,24 @@ function ManagerDashboard({ manager: managerProp, openDraftId, onOpenDraft, onCl
           </div>
         ) : null}
         <div className="mb-5 flex flex-wrap items-center gap-3">
-          <h2 className="mr-auto w-full text-2xl font-black text-slate-900 sm:w-auto">Leases</h2>
+          <div className="mr-auto flex w-full flex-col sm:w-auto">
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              fill="none"
+              viewBox="0 0 24 24"
+              strokeWidth={1.5}
+              stroke="currentColor"
+              className="mb-2 h-9 w-9 shrink-0 text-[#2563eb]"
+              aria-hidden
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m2.25 0H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z"
+              />
+            </svg>
+            <h2 className="text-2xl font-black text-slate-900">Leases</h2>
+          </div>
 
           <div className="flex w-full min-w-0 flex-wrap items-center gap-2 sm:ml-auto sm:w-auto sm:flex-nowrap">
             <div className={MANAGER_PILL_SELECT_WRAP_CLS}>
