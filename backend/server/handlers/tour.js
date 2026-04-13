@@ -39,6 +39,13 @@ function extractMultilineNoteValue(notes, label) {
   return block.trim()
 }
 
+function propertyTourAvailabilityFromFields(fields) {
+  const f = fields || {}
+  const explicit = String(f['Tour Availability'] || f['Calendar Availability'] || '').trim()
+  const fromNotes = extractMultilineNoteValue(f.Notes, 'Tour Availability') || ''
+  return explicit || fromNotes
+}
+
 function normalizeDateKey(value) {
   const match = String(value || '').trim().match(/^(\d{4}-\d{2}-\d{2})/)
   return match ? match[1] : ''
@@ -308,8 +315,8 @@ function mapProperty(record, roomsByPropertyId) {
   const name = pickPropertyName(fields)
   if (!name) return null
 
-  // Tour availability is a multi-line block stored by the manager's calendar (e.g. “Mon: 540-720\nTue: 600-840”)
-  const availability = extractMultilineNoteValue(fields.Notes, 'Tour Availability')
+  // Tour availability: dedicated fields or Notes block (same merge as manager portal calendar).
+  const availability = propertyTourAvailabilityFromFields(fields)
 
   return {
     id: record.id,
@@ -413,7 +420,7 @@ export default async function handler(req, res) {
       if (!propertyRecord) {
         return res.status(409).json({ error: 'This property is not available for tours right now.' })
       }
-      const propertyAvailability = extractMultilineNoteValue(propertyRecord.fields?.Notes, 'Tour Availability')
+      const propertyAvailability = propertyTourAvailabilityFromFields(propertyRecord.fields)
       const allowed = availabilitySlotsForDate(propertyAvailability, preferredDateKey)
       const allowedSet = new Set(allowed.map((slot) => slot.toLowerCase()))
       if (!allowedSet.has(preferredTimeLabel.toLowerCase())) {

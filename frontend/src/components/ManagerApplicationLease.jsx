@@ -1,7 +1,7 @@
 /**
  * ManagerApplicationLease.jsx
  *
- * Shown below the ApplicationDetailPanel when an application is approved.
+ * Rendered in the application detail panel (Lease section) when an application is approved.
  * Handles the full Generate Lease → Preview → Send to Resident workflow.
  *
  * Props:
@@ -33,7 +33,8 @@ export default function ManagerApplicationLease({ applicationId, managerName }) 
   const [loading, setLoading] = useState(true)
   const [generating, setGenerating] = useState(false)
   const [sending, setSending] = useState(false)
-  const [showPreview, setShowPreview] = useState(false)
+  /** Collapse long lease document; expanded by default so the agreement shows in the application view. */
+  const [leaseCollapsed, setLeaseCollapsed] = useState(false)
 
   // Fetch existing lease draft for this application.
   // generate-lease-from-template returns an existing draft if one already exists.
@@ -68,7 +69,7 @@ export default function ManagerApplicationLease({ applicationId, managerName }) 
         setLeaseData(null)
       }
       toast.success(created ? 'Lease draft generated.' : 'Existing lease draft loaded.')
-      setShowPreview(true)
+      setLeaseCollapsed(false)
     } catch (err) {
       toast.error(err.message || 'Could not generate lease draft.')
     } finally {
@@ -104,9 +105,10 @@ export default function ManagerApplicationLease({ applicationId, managerName }) 
   }
 
   return (
-    <div className="mt-4 space-y-3">
+    <div className="space-y-3">
+      <h3 className="text-[11px] font-bold uppercase tracking-[0.14em] text-slate-400">Lease</h3>
       {/* Status bar */}
-      <div className="flex flex-wrap items-center gap-3 rounded-2xl border border-slate-200 bg-white px-5 py-3.5">
+      <div className="flex flex-wrap items-center gap-3 rounded-2xl border border-slate-200 bg-slate-50/80 px-5 py-3.5">
         <div className="flex items-center gap-2">
           <span className="text-sm font-semibold text-slate-700">Lease Draft</span>
           <StatusBadge status={status} />
@@ -140,14 +142,14 @@ export default function ManagerApplicationLease({ applicationId, managerName }) 
             </button>
           ) : null}
 
-          {/* Preview */}
+          {/* Collapse full document */}
           {draft && leaseData ? (
             <button
               type="button"
-              onClick={() => setShowPreview((v) => !v)}
+              onClick={() => setLeaseCollapsed((v) => !v)}
               className="rounded-xl border border-[#2563eb]/25 bg-[#2563eb]/5 px-4 py-2 text-sm font-semibold text-[#2563eb] transition hover:bg-[#2563eb]/10"
             >
-              {showPreview ? 'Hide preview' : 'Preview Lease'}
+              {leaseCollapsed ? 'Show lease document' : 'Hide lease document'}
             </button>
           ) : null}
 
@@ -167,10 +169,10 @@ export default function ManagerApplicationLease({ applicationId, managerName }) 
           {isPublished || isSigned ? (
             <button
               type="button"
-              onClick={() => setShowPreview((v) => !v)}
+              onClick={() => setLeaseCollapsed((v) => !v)}
               className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
             >
-              {showPreview ? 'Hide' : 'View Lease'}
+              {leaseCollapsed ? 'Show lease document' : 'Hide lease document'}
             </button>
           ) : null}
         </div>
@@ -189,9 +191,9 @@ export default function ManagerApplicationLease({ applicationId, managerName }) 
         </div>
       ) : null}
 
-      {/* Lease preview */}
-      {showPreview && leaseData ? (
-        <div className="mt-2">
+      {/* Formatted lease agreement (same view as resident / print) */}
+      {leaseData && !leaseCollapsed ? (
+        <div className="mt-1">
           <div className="mb-2 flex justify-end">
             <button
               type="button"
@@ -201,12 +203,18 @@ export default function ManagerApplicationLease({ applicationId, managerName }) 
               Print / Download PDF
             </button>
           </div>
-          <LeaseHTMLTemplate
-            leaseData={leaseData}
-            signedBy={isSigned ? draft?.['Signature Text'] : undefined}
-            signedAt={isSigned ? draft?.['Signed At'] : undefined}
-          />
+          <div className="max-h-[min(70vh,900px)] overflow-y-auto overflow-x-hidden rounded-2xl border border-slate-200 bg-white shadow-inner">
+            <LeaseHTMLTemplate
+              leaseData={leaseData}
+              signedBy={isSigned ? draft?.['Signature Text'] : undefined}
+              signedAt={isSigned ? draft?.['Signed At'] : undefined}
+            />
+          </div>
         </div>
+      ) : draft && !leaseData ? (
+        <p className="text-sm text-slate-500">
+          Lease draft exists but structured data is missing. Try <strong>Regenerate Lease</strong> to rebuild the document.
+        </p>
       ) : null}
     </div>
   )

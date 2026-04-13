@@ -217,9 +217,9 @@ export function applicationViewModelFromAirtableRow(row) {
 }
 
 /**
- * @param {{ application: { id: string, _airtable: object, applicantName: string, propertyName: string, status: string, approvalPending?: boolean }, partnerLabel?: string, onClose: () => void, adminReview?: { busy: boolean, onApprove: () => void, onReject: () => void, onUnapprove?: () => void } | null }} props
+ * @param {{ application: { id: string, _airtable: object, applicantName: string, propertyName: string, status: string, approvalPending?: boolean }, partnerLabel?: string, onClose: () => void, adminReview?: { busy: boolean, onApprove: () => void, onReject: () => void, onUnapprove?: () => void } | null, afterSections?: React.ReactNode }} props
  */
-export function ApplicationDetailPanel({ application, partnerLabel, onClose, adminReview = null }) {
+export function ApplicationDetailPanel({ application, partnerLabel, onClose, adminReview = null, afterSections = null }) {
   const raw = application?._airtable
   if (!raw) return null
 
@@ -371,6 +371,10 @@ export function ApplicationDetailPanel({ application, partnerLabel, onClose, adm
           </dl>
         </div>
       ))}
+
+      {afterSections ? (
+        <div className="border-t border-slate-200 pt-5">{afterSections}</div>
+      ) : null}
     </div>
   )
 }

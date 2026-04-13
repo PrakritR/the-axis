@@ -22,7 +22,7 @@ import { Link, Navigate, useLocation } from 'react-router-dom'
 import toast from 'react-hot-toast'
 import { HOUSING_CONTACT_MESSAGE } from '../lib/housingSite'
 import { readJsonResponse } from '../lib/readJsonResponse'
-import { eventFromSchedulingRow } from '../lib/calendarEventModel'
+import { CALENDAR_EVENT_TYPES, eventFromSchedulingRow, normalizeEventType } from '../lib/calendarEventModel'
 import ManagerInboxPage from '../components/manager-inbox/ManagerInboxPage'
 import {
   getWorkOrderById,
@@ -739,6 +739,14 @@ function extractMultilineNoteValue(notes, label) {
   return block.trim()
 }
 
+/** Tour grid text: dedicated Airtable fields first, then Notes `Tour Availability:` (matches admin merge pattern). */
+function propertyTourAvailabilityText(property) {
+  if (!property) return ''
+  const explicit = String(property['Tour Availability'] || property['Calendar Availability'] || '').trim()
+  const fromNotes = extractMultilineNoteValue(property.Notes, 'Tour Availability') || ''
+  return explicit || fromNotes
+}
+
 function buildTourNotesText(existingNotes, metadata) {
   const labels = ['Tour Manager', 'Tour Availability', 'Tour Notes']
   let stripped = String(existingNotes || '').trim()
@@ -1395,6 +1403,7 @@ function AvailabilityEditorPanel({
   selectedDateKey,
   ranges,
   onRangesChange,
+  onOpenMeet,
   onSave,
   onClearDay,
   scheduledItems,
@@ -1480,6 +1489,16 @@ function AvailabilityEditorPanel({
       </div>
 
       <div className="mt-6 flex flex-wrap gap-2 text-sm">
+        {typeof onOpenMeet === 'function' ? (
+          <button
+            type="button"
+            onClick={onOpenMeet}
+            disabled={isManagerInternalPreview(manager)}
+            className="rounded-xl border border-[#2563eb]/30 bg-sky-50 px-3 py-2 font-semibold text-sky-900 hover:bg-sky-100 disabled:opacity-40"
+          >
+            Schedule tour or meeting
+          </button>
+        ) : null}
         <button
           type="button"
           onClick={onClearDay}
@@ -1504,7 +1523,7 @@ function AvailabilityEditorPanel({
   )
 }
 
-function LetUsMeetModal({ open, initialDateKey, manager, onClose, onCreated, approvedPropertyNames = [] }) {
+function LetUsMeetModal({ open, initialDateKey, initialPropertyName = '', manager, onClose, onCreated, approvedPropertyNames = [] }) {
   const [date, setDate] = useState(initialDateKey)
   const [itemType, setItemType] = useState('Meeting')
   const [property, setProperty] = useState('')
@@ -1520,13 +1539,19 @@ function LetUsMeetModal({ open, initialDateKey, manager, onClose, onCreated, app
     if (!open) return
     setDate(initialDateKey)
     setItemType('Meeting')
-    setProperty('')
+    const pick = String(initialPropertyName || '').trim()
+    const lower = pick.toLowerCase()
+    const matched =
+      canScheduleTours && pick
+        ? approvedPropertyNames.find((n) => String(n).trim().toLowerCase() === lower)
+        : null
+    setProperty(matched != null ? String(matched).trim() : '')
     setStartTime('10:00')
     setEndTime('11:00')
     setNotes('')
     setSaving(false)
     setError('')
-  }, [open, initialDateKey])
+  }, [open, initialDateKey, initialPropertyName, canScheduleTours, approvedPropertyNames])
 
   useEffect(() => {
     if (!open) return
@@ -2032,6 +2057,50 @@ function workOrdersToCalendarRows(workOrders, allowedPropertyNamesLower) {
     })
   }
   return rows
+}
+
+function schedulingRowsForCalendarView(rows, options) {
+  const {
+    isAdminCalendar,
+    selectedPropertyName,
+    managerEmail,
+    selectedAdminProfileEmail,
+  } = options
+
+  return (rows || []).filter((row) => {
+    if (row._workOrder) {
+      if (isAdminCalendar) return true
+      const prop = String(row.Property || '').trim().toLowerCase()
+      const sel = String(selectedPropertyName || '').trim().toLowerCase()
+      if (!sel || !prop) return false
+      return prop === sel || prop.includes(sel) || sel.includes(prop)
+    }
+
+    const type = normalizeEventType(row.Type)
+    const prop = String(row.Property || '').trim().toLowerCase()
+    const rme = String(row['Manager Email'] || '').trim().toLowerCase()
+    const mem = String(managerEmail || '').trim().toLowerCase()
+    const selProp = String(selectedPropertyName || '').trim().toLowerCase()
+    const selAdmin = String(selectedAdminProfileEmail || '').trim().toLowerCase()
+
+    if (isAdminCalendar) {
+      if (!selAdmin) return false
+      if (type === CALENDAR_EVENT_TYPES.MEETING || type === CALENDAR_EVENT_TYPES.ISSUE) {
+        return rme === selAdmin
+      }
+      if (!rme) return true
+      return rme === selAdmin
+    }
+
+    if (!selProp) return false
+    if (prop) {
+      return prop === selProp || prop.includes(selProp) || selProp.includes(prop)
+    }
+    if (mem && rme === mem && (type === CALENDAR_EVENT_TYPES.MEETING || type === CALENDAR_EVENT_TYPES.ISSUE)) {
+      return true
+    }
+    return false
+  })
 }
 
 async function patchSchedulingRecord(recordId, fields) {
@@ -4642,15 +4711,19 @@ function ApplicationsPanel({ allowedPropertyNames, manager }) {
                   const row = scopedRows.find((a) => a.id === detailAppId)
                   const vm = row ? applicationViewModelFromAirtableRow(row) : null
                   return vm ? (
-                    <>
-                      <ApplicationDetailPanel application={vm} partnerLabel="—" onClose={() => setDetailAppId(null)} />
-                      {row?.Approved === true ? (
-                        <ManagerApplicationLease
-                          applicationId={detailAppId}
-                          managerName={manager?.name || manager?.email || 'Manager'}
-                        />
-                      ) : null}
-                    </>
+                    <ApplicationDetailPanel
+                      application={vm}
+                      partnerLabel="—"
+                      onClose={() => setDetailAppId(null)}
+                      afterSections={
+                        row?.Approved === true ? (
+                          <ManagerApplicationLease
+                            applicationId={detailAppId}
+                            managerName={manager?.name || manager?.email || 'Manager'}
+                          />
+                        ) : null
+                      }
+                    />
                   ) : null
                 })()}
               </div>
@@ -4669,6 +4742,7 @@ export function CalendarTabPanel({ manager, allowedPropertyNames, calendarMode =
   const [anchorDate, setAnchorDate] = useState(() => new Date())
   const [selectedDateKey, setSelectedDateKey] = useState(() => dateKeyFromDate(new Date()))
   const [schedulingRows, setSchedulingRows] = useState([])
+  const [meetOpen, setMeetOpen] = useState(false)
   const [loading, setLoading] = useState(true)
   const [properties, setProperties] = useState([])
   const [calendarProfiles, setCalendarProfiles] = useState([])
@@ -4721,7 +4795,7 @@ export function CalendarTabPanel({ manager, allowedPropertyNames, calendarMode =
         })
       } else {
         approvedAssigned.forEach((property) => {
-          const text = extractMultilineNoteValue(property.Notes, 'Tour Availability') || ''
+          const text = propertyTourAvailabilityText(property) || ''
           byProperty[property.id] = text ? weeklyFreeArraysFromTourText(text) : emptyWeeklyFreeArrays()
         })
       }
@@ -4743,23 +4817,6 @@ export function CalendarTabPanel({ manager, allowedPropertyNames, calendarMode =
   }, [manager, allowedPropertyNames, isAdminCalendar])
 
   useEffect(() => { load() }, [load])
-
-  const bookedByDate = useMemo(() => {
-    const events = (schedulingRows || []).map((row) => eventFromSchedulingRow(row))
-    const m = new Map()
-    for (const ev of events) {
-      const d = String(ev.dateKey || '').trim()
-      if (!d) continue
-      if (!m.has(d)) m.set(d, [])
-      m.get(d).push(ev.source)
-    }
-    return m
-  }, [schedulingRows])
-
-  const scheduledItemsForSelectedDay = useMemo(
-    () => bookedByDate.get(selectedDateKey) || [],
-    [bookedByDate, selectedDateKey],
-  )
 
   const approvedAssignedProperties = useMemo(() => {
     if (isAdminCalendar) {
@@ -4804,6 +4861,45 @@ export function CalendarTabPanel({ manager, allowedPropertyNames, calendarMode =
     [weeklyFreeByProperty, selectedPropertyId],
   )
 
+  const meetModalApprovedPropertyNames = useMemo(
+    () => approvedAssignedProperties.map((p) => propertyRecordName(p)).filter(Boolean),
+    [approvedAssignedProperties],
+  )
+
+  const schedulingRowsForView = useMemo(
+    () =>
+      schedulingRowsForCalendarView(schedulingRows, {
+        isAdminCalendar,
+        selectedPropertyName: !isAdminCalendar ? propertyRecordName(selectedProperty || {}) : '',
+        managerEmail: manager?.email || '',
+        selectedAdminProfileEmail: isAdminCalendar ? selectedCalendarProfile?.email || '' : '',
+      }),
+    [
+      schedulingRows,
+      isAdminCalendar,
+      selectedProperty,
+      selectedCalendarProfile,
+      manager?.email,
+    ],
+  )
+
+  const bookedByDate = useMemo(() => {
+    const events = (schedulingRowsForView || []).map((row) => eventFromSchedulingRow(row))
+    const m = new Map()
+    for (const ev of events) {
+      const d = String(ev.dateKey || '').trim()
+      if (!d) continue
+      if (!m.has(d)) m.set(d, [])
+      m.get(d).push(ev.source)
+    }
+    return m
+  }, [schedulingRowsForView])
+
+  const scheduledItemsForSelectedDay = useMemo(
+    () => bookedByDate.get(selectedDateKey) || [],
+    [bookedByDate, selectedDateKey],
+  )
+
   function handleSelectDate(key) {
     setSelectedDateKey(key)
     setAnchorDate(dateFromCalendarKey(key))
@@ -4845,6 +4941,11 @@ export function CalendarTabPanel({ manager, allowedPropertyNames, calendarMode =
         Notes: buildTourNotesText(selectedProperty.Notes, { manager: manager?.name || '', availability: encoded }),
       })
       setProperties((current) => current.map((item) => (item.id === updated.id ? updated : item)))
+      const mergedText = propertyTourAvailabilityText(updated) || ''
+      setWeeklyFreeByProperty((prev) => ({
+        ...prev,
+        [updated.id]: mergedText ? weeklyFreeArraysFromTourText(mergedText) : emptyWeeklyFreeArrays(),
+      }))
       toast.success(`Availability saved for ${propertyRecordName(selectedProperty) || 'property'}`)
     } catch (err) {
       toast.error(err.message || 'Could not save availability')
@@ -4875,14 +4976,14 @@ export function CalendarTabPanel({ manager, allowedPropertyNames, calendarMode =
       weekCount += bookedByDate.get(dateKeyFromDate(d))?.length || 0
     }
     const monthStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`
-    const monthCount = schedulingRows.filter((r) => String(r['Preferred Date'] || '').trim().slice(0, 7) === monthStr).length
+    const monthCount = schedulingRowsForView.filter((r) => String(r['Preferred Date'] || '').trim().slice(0, 7) === monthStr).length
     return {
       today: bookedByDate.get(todayStr)?.length || 0,
       week: weekCount,
       month: monthCount,
-      total: schedulingRows.length,
+      total: schedulingRowsForView.length,
     }
-  }, [schedulingRows, bookedByDate])
+  }, [schedulingRowsForView, bookedByDate])
 
   return (
     <div className="mb-10">
@@ -5018,6 +5119,18 @@ export function CalendarTabPanel({ manager, allowedPropertyNames, calendarMode =
           calendarMode={calendarMode}
         />
       </div>
+
+      <LetUsMeetModal
+        open={meetOpen}
+        onClose={() => setMeetOpen(false)}
+        initialDateKey={selectedDateKey}
+        initialPropertyName={!isAdminCalendar ? propertyRecordName(selectedProperty || {}) : ''}
+        manager={manager}
+        approvedPropertyNames={meetModalApprovedPropertyNames}
+        onCreated={() => {
+          load()
+        }}
+      />
     </div>
   )
 }
@@ -5771,66 +5884,6 @@ function LeaseEditor({ draftId, manager, onBack, embedded = false }) {
               {status && <StatusBadge status={status} size="lg" />}
             </div>
           </div>
-
-          {/* Action buttons */}
-          <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
-            {canEdit && (
-              <button
-                onClick={handleSave}
-                disabled={saving || !!actionLoading}
-                className="rounded-xl border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:opacity-50 sm:px-4"
-              >
-                {saving ? 'Saving…' : 'Save'}
-              </button>
-            )}
-            {canReject && (
-              <button
-                onClick={handleReject}
-                disabled={!!actionLoading}
-                className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm font-semibold text-red-700 transition hover:bg-red-100 disabled:opacity-50 sm:px-4"
-              >
-                {actionLoading === 'reject' ? 'Updating…' : 'Changes needed'}
-              </button>
-            )}
-            {canApprove && (
-              <button
-                onClick={handleApprove}
-                disabled={!!actionLoading}
-                className="rounded-xl bg-green-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-green-700 disabled:opacity-50"
-              >
-                {actionLoading === 'approve' ? 'Sending…' : 'Send to resident'}
-              </button>
-            )}
-            {canPublish && (
-              <button
-                onClick={handlePublish}
-                disabled={!!actionLoading}
-                className="rounded-xl bg-[#2563eb] px-4 py-2 text-sm font-semibold text-white transition hover:brightness-110 disabled:opacity-50"
-              >
-                {actionLoading === 'publish' ? 'Sending…' : 'Send to resident'}
-              </button>
-            )}
-            {canSignforgeSend && (
-              <button
-                type="button"
-                onClick={handleSignforgeSend}
-                disabled={!!actionLoading}
-                className="rounded-xl border border-violet-200 bg-violet-50 px-4 py-2 text-sm font-semibold text-violet-800 transition hover:bg-violet-100 disabled:opacity-50"
-              >
-                {actionLoading === 'signforge' ? 'Sending…' : 'Resend signing link'}
-              </button>
-            )}
-            {canSignforgeRefresh && (
-              <button
-                type="button"
-                onClick={handleSignforgeRefreshStatus}
-                disabled={!!actionLoading}
-                className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:opacity-50"
-              >
-                {actionLoading === 'signforge-status' ? 'Checking…' : 'Refresh SignForge status'}
-              </button>
-            )}
-          </div>
         </div>
       </header>
 
@@ -5898,33 +5951,79 @@ function LeaseEditor({ draftId, manager, onBack, embedded = false }) {
                 <div className="h-[calc(100vh-360px)] min-h-[420px] overflow-y-auto p-6">
                   <pre className="whitespace-pre-wrap font-mono text-sm leading-7 text-slate-800">{editorContent}</pre>
                 </div>
-                {(canSignforgeSend || canSignforgeRefresh) && (
-                  <div className="flex flex-wrap items-center justify-end gap-2 border-t border-slate-200 bg-slate-50 px-5 py-3">
-                    {canSignforgeSend && (
-                      <button
-                        type="button"
-                        onClick={handleSignforgeSend}
-                        disabled={!!actionLoading}
-                        className="rounded-xl border border-violet-200 bg-violet-50 px-4 py-2 text-sm font-semibold text-violet-800 transition hover:bg-violet-100 disabled:opacity-50"
-                      >
-                        {actionLoading === 'signforge' ? 'Sending…' : 'Resend signing link'}
-                      </button>
-                    )}
-                    {canSignforgeRefresh && (
-                      <button
-                        type="button"
-                        onClick={handleSignforgeRefreshStatus}
-                        disabled={!!actionLoading}
-                        className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:opacity-50"
-                      >
-                        {actionLoading === 'signforge-status' ? 'Checking…' : 'Refresh SignForge status'}
-                      </button>
-                    )}
-                  </div>
-                )}
               </>
             )}
           </div>
+
+          {(canEdit ||
+            canReject ||
+            canApprove ||
+            canPublish ||
+            canSignforgeSend ||
+            canSignforgeRefresh) && (
+            <div className="flex flex-wrap items-center justify-end gap-2 rounded-2xl border border-slate-200 bg-white px-4 py-3 shadow-sm">
+              {canEdit && (
+                <button
+                  type="button"
+                  onClick={handleSave}
+                  disabled={saving || !!actionLoading}
+                  className="rounded-xl border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:opacity-50 sm:px-4"
+                >
+                  {saving ? 'Saving…' : 'Save'}
+                </button>
+              )}
+              {canReject && (
+                <button
+                  type="button"
+                  onClick={handleReject}
+                  disabled={!!actionLoading}
+                  className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm font-semibold text-red-700 transition hover:bg-red-100 disabled:opacity-50 sm:px-4"
+                >
+                  {actionLoading === 'reject' ? 'Updating…' : 'Changes needed'}
+                </button>
+              )}
+              {canApprove && (
+                <button
+                  type="button"
+                  onClick={handleApprove}
+                  disabled={!!actionLoading}
+                  className="rounded-xl bg-green-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-green-700 disabled:opacity-50"
+                >
+                  {actionLoading === 'approve' ? 'Sending…' : 'Send to resident'}
+                </button>
+              )}
+              {canPublish && (
+                <button
+                  type="button"
+                  onClick={handlePublish}
+                  disabled={!!actionLoading}
+                  className="rounded-xl bg-[#2563eb] px-4 py-2 text-sm font-semibold text-white transition hover:brightness-110 disabled:opacity-50"
+                >
+                  {actionLoading === 'publish' ? 'Sending…' : 'Send to resident'}
+                </button>
+              )}
+              {canSignforgeSend && (
+                <button
+                  type="button"
+                  onClick={handleSignforgeSend}
+                  disabled={!!actionLoading}
+                  className="rounded-xl border border-violet-200 bg-violet-50 px-4 py-2 text-sm font-semibold text-violet-800 transition hover:bg-violet-100 disabled:opacity-50"
+                >
+                  {actionLoading === 'signforge' ? 'Sending…' : 'Resend signing link'}
+                </button>
+              )}
+              {canSignforgeRefresh && (
+                <button
+                  type="button"
+                  onClick={handleSignforgeRefreshStatus}
+                  disabled={!!actionLoading}
+                  className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:opacity-50"
+                >
+                  {actionLoading === 'signforge-status' ? 'Checking…' : 'Refresh SignForge status'}
+                </button>
+              )}
+            </div>
+          )}
         </div>
       </div>
     </div>
