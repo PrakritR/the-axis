@@ -42,29 +42,7 @@ import {
   portalInboxThreadKeyFromRecord,
 } from '../lib/airtable'
 import {
-  serializeManagerAddPropertyToAirtableFields,
-  emptyRoomRow,
-  emptyBathroomRow,
-  emptyKitchenRow,
-  emptyLaundryRow,
-  emptySharedSpaceRow,
-  adjustRoomAccessLabels,
-  clampInt,
-  MAX_ROOM_SLOTS,
-  MAX_BATHROOM_SLOTS,
-  MAX_KITCHEN_SLOTS,
-  MAX_SHARED_SPACE_SLOTS,
-  MAX_LAUNDRY_SLOTS,
-  AMENITY_OPTIONS,
-  PET_OPTIONS,
-  PROPERTY_TYPE_OPTIONS,
-  FURNISHED_OPTIONS,
-  SHARED_SPACE_TYPE_OPTIONS,
-  BATHROOM_TYPE_OPTIONS,
-  KITCHEN_TYPE_OPTIONS,
-  PROPERTIES_LEASING_META_KEYS,
-  PROPERTIES_LEASING_PACKAGE_KEYS,
-  PROPERTY_AIR,
+  buildPropertyWizardInitialValues,
   PROPERTY_EDIT_REQUEST_FIELD,
 } from '../lib/managerPropertyFormAirtableMap.js'
 import {
@@ -2590,26 +2568,12 @@ function managerPropertyToDetailPanelModel(p) {
 function HouseManagementPanel({ manager, onPropertiesChange }) {
   const [properties, setProperties] = useState([])
   const [loading, setLoading] = useState(true)
-  const [saving, setSaving] = useState(false)
-  const [editingPropertyId, setEditingPropertyId] = useState(null)
+  const [editWizardProperty, setEditWizardProperty] = useState(null)
   const [detailsPropertyId, setDetailsPropertyId] = useState(null)
   const [deletingPropertyId, setDeletingPropertyId] = useState(null)
   const [listingBusyPropertyId, setListingBusyPropertyId] = useState(null)
   const [addOpen, setAddOpen] = useState(false)
   const [propertiesSection, setPropertiesSection] = useState('pending')
-  const [tourForm, setTourForm] = useState({
-    propertyName: '',
-    address: '',
-    propertyType: '',
-    pets: '',
-    amenities: [],
-    securityDeposit: '',
-    utilitiesFee: '',
-    applicationFee: '',
-    otherInfo: '',
-    roomCount: 1,
-    rooms: [],
-  })
   const loadProperties = useCallback(async () => {
     setLoading(true)
     try {
@@ -2626,20 +2590,6 @@ function HouseManagementPanel({ manager, onPropertiesChange }) {
   useEffect(() => {
     loadProperties()
   }, [loadProperties])
-
-  function extractNoteValue(notes, label) {
-    const escaped = String(label || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-    const match = String(notes || '').match(new RegExp(`(?:^|\\n)${escaped}:\\s*(.+?)(?:\\n|$)`, 'i'))
-    return match ? match[1].trim() : ''
-  }
-
-  function optionalPropertyCurrency(raw) {
-    const s = String(raw ?? '').trim()
-    if (!s) return undefined
-    const n = Number(s)
-    if (!Number.isFinite(n) || n < 0) return undefined
-    return n
-  }
 
   const approvedAssigned = useMemo(
     () => properties.filter((p) => propertyAssignedToManager(p, manager) && isPropertyRecordApproved(p)),
@@ -2710,66 +2660,8 @@ function HouseManagementPanel({ manager, onPropertiesChange }) {
 
   useEffect(() => {
     setDetailsPropertyId(null)
-    setEditingPropertyId(null)
+    setEditWizardProperty(null)
   }, [propertiesSection])
-
-  async function handleSaveTourHours(property) {
-    setSaving(true)
-    try {
-      const patch = {}
-      // Basic fields
-      const pname = String(tourForm.propertyName || '').trim()
-      if (pname) patch['Property Name'] = pname
-      const addr = String(tourForm.address || '').trim()
-      if (addr) patch.Address = addr
-      if (tourForm.propertyType) patch['Property Type'] = tourForm.propertyType
-      if (tourForm.pets) patch['Pets'] = tourForm.pets
-      if (Array.isArray(tourForm.amenities)) patch['Amenities'] = tourForm.amenities
-      // Fees
-      const sd = optionalPropertyCurrency(tourForm.securityDeposit)
-      if (sd !== undefined) patch['Security Deposit'] = sd
-      const uf = optionalPropertyCurrency(tourForm.utilitiesFee)
-      if (uf !== undefined) patch['Utilities Fee'] = uf
-      const af = optionalPropertyCurrency(tourForm.applicationFee)
-      if (af !== undefined) patch['Application Fee'] = af
-      // Other info
-      patch['Other Info'] = String(tourForm.otherInfo || '')
-      // Auto site manager email
-      const sme = String(manager?.email || property['Site Manager Email'] || '').trim()
-      if (sme) patch['Site Manager Email'] = sme
-      // Room count + per-room fields
-      const rc = clampInt(tourForm.roomCount, 1, MAX_ROOM_SLOTS)
-      patch['Room Count'] = rc
-      tourForm.rooms.slice(0, rc).forEach((room, i) => {
-        const n = i + 1
-        const rent = optionalPropertyCurrency(room.rent)
-        if (rent !== undefined) patch[`Room ${n} Rent`] = rent
-        if (room.availability) patch[`Room ${n} Availability`] = room.availability
-        if (room.furnished) patch[`Room ${n} Furnished`] = room.furnished
-        const uc = optionalPropertyCurrency(room.utilitiesCost)
-        if (uc !== undefined) patch[`Room ${n} Utilities Cost`] = uc
-      })
-      // Reset approval — editing requires re-approval by admin
-      patch['Approved'] = false
-      patch['Approval Status'] = 'Pending'
-      patch[PROPERTY_EDIT_REQUEST_FIELD] = ''
-      const updated = await updatePropertyAdmin(property.id, patch)
-      setProperties((current) => {
-        const next = current.map((item) => (item.id === property.id ? updated : item))
-        onPropertiesChange?.(next)
-        return next
-      })
-      toast.success('Submitted — pending admin approval')
-      if (propertyNeedsAdminEditRequest(property)) {
-        setPropertiesSection('pending')
-      }
-      setEditingPropertyId(null)
-    } catch (err) {
-      toast.error('Could not save property: ' + err.message)
-    } finally {
-      setSaving(false)
-    }
-  }
 
   const selectedManagerProperty = useMemo(() => {
     if (!detailsPropertyId) return null
@@ -2777,31 +2669,8 @@ function HouseManagementPanel({ manager, onPropertiesChange }) {
   }, [detailsPropertyId, managerPropertyTabRows])
 
   function beginEditListing(property) {
-    const rc = clampInt(property['Room Count'] ?? 1, 1, MAX_ROOM_SLOTS)
-    setEditingPropertyId(property.id)
     setDetailsPropertyId(property.id)
-    setTourForm({
-      propertyName: String(property['Property Name'] ?? property.Name ?? ''),
-      address: String(property.Address ?? ''),
-      propertyType: String(property['Property Type'] ?? ''),
-      pets: String(property.Pets ?? ''),
-      amenities: Array.isArray(property.Amenities) ? [...property.Amenities] : (property.Amenities ? [property.Amenities] : []),
-      securityDeposit: String(property['Security Deposit'] ?? ''),
-      utilitiesFee: String(property['Utilities Fee'] ?? ''),
-      applicationFee: String(property['Application Fee'] ?? ''),
-      otherInfo: String(property['Other Info'] ?? ''),
-      roomCount: rc,
-      rooms: Array.from({ length: rc }, (_, i) => {
-        const n = i + 1
-        const avail = property[`Room ${n} Availability`]
-        return {
-          rent: String(property[`Room ${n} Rent`] ?? property[`Room ${n} for Rent`] ?? ''),
-          availability: avail ? String(avail).slice(0, 10) : '',
-          furnished: String(property[`Room ${n} Furnished`] ?? ''),
-          utilitiesCost: String(property[`Room ${n} Utilities Cost`] ?? ''),
-        }
-      }),
-    })
+    setEditWizardProperty(property)
   }
 
   return (
@@ -2912,7 +2781,6 @@ function HouseManagementPanel({ manager, onPropertiesChange }) {
                             type="button"
                             className="whitespace-nowrap text-sm font-semibold text-[#2563eb]"
                             onClick={() => {
-                              setEditingPropertyId(null)
                               setDetailsPropertyId(detailsPropertyId === p.id ? null : p.id)
                             }}
                           >
@@ -2999,7 +2867,6 @@ function HouseManagementPanel({ manager, onPropertiesChange }) {
                                 await deletePropertyAdmin(selectedManagerProperty.id)
                                 toast.success('Property deleted')
                                 setDetailsPropertyId(null)
-                                setEditingPropertyId(null)
                                 await loadProperties()
                               } catch (err) {
                                 toast.error(err.message || 'Delete failed')
@@ -3016,239 +2883,17 @@ function HouseManagementPanel({ manager, onPropertiesChange }) {
 
                       <PropertyDetailPanel property={managerPropertyToDetailPanelModel(selectedManagerProperty)} ownerLabel={manager?.email || '—'} />
 
-                      {editingPropertyId === selectedManagerProperty.id ? (
-                        <div className="space-y-5 border-t border-slate-200 pt-4">
-                    <div className="rounded-xl bg-amber-50 border border-amber-200 px-3 py-2 text-xs text-amber-800 font-medium">
-                      Saving changes will reset this property to pending admin approval.
-                    </div>
-
-                    {/* Basics */}
-                    <div>
-                      <div className="mb-2 text-[11px] font-bold uppercase tracking-[0.14em] text-slate-400">Basics</div>
-                      <div className="grid gap-3 sm:grid-cols-2">
-                        <div className="sm:col-span-2">
-                          <label className="mb-1 block text-xs font-semibold text-slate-600">Property name</label>
-                          <input
-                            type="text"
-                            value={tourForm.propertyName}
-                            onChange={(e) => setTourForm((f) => ({ ...f, propertyName: e.target.value }))}
-                            className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900"
-                          />
-                        </div>
-                        <div className="sm:col-span-2">
-                          <label className="mb-1 block text-xs font-semibold text-slate-600">Address</label>
-                          <input
-                            type="text"
-                            value={tourForm.address}
-                            onChange={(e) => setTourForm((f) => ({ ...f, address: e.target.value }))}
-                            className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900"
-                          />
-                        </div>
-                        <div>
-                          <label className="mb-1 block text-xs font-semibold text-slate-600">Property type</label>
-                          <select
-                            value={tourForm.propertyType}
-                            onChange={(e) => setTourForm((f) => ({ ...f, propertyType: e.target.value }))}
-                            className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900"
+                      <div className="flex gap-2 border-t border-slate-200 pt-4">
+                        {propertiesSection !== 'rejected' ? (
+                          <button
+                            type="button"
+                            onClick={() => beginEditListing(selectedManagerProperty)}
+                            className={MANAGER_PROP_TOOLBAR_BTN}
                           >
-                            <option value="">Select…</option>
-                            {PROPERTY_TYPE_OPTIONS.map((t) => <option key={t} value={t}>{t}</option>)}
-                          </select>
-                        </div>
-                        <div>
-                          <label className="mb-1 block text-xs font-semibold text-slate-600">Pets</label>
-                          <select
-                            value={tourForm.pets}
-                            onChange={(e) => setTourForm((f) => ({ ...f, pets: e.target.value }))}
-                            className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900"
-                          >
-                            <option value="">Select…</option>
-                            {PET_OPTIONS.map((o) => <option key={o} value={o}>{o}</option>)}
-                          </select>
-                        </div>
+                            Edit listing
+                          </button>
+                        ) : null}
                       </div>
-                    </div>
-
-                    {/* Fees */}
-                    <div>
-                      <div className="mb-2 text-[11px] font-bold uppercase tracking-[0.14em] text-slate-400">Fees</div>
-                      <div className="grid gap-3 sm:grid-cols-3">
-                        <div>
-                          <label className="mb-1 block text-xs font-semibold text-slate-600">Application fee ($)</label>
-                          <input type="number" min="0" step="1"
-                            value={tourForm.applicationFee}
-                            onChange={(e) => setTourForm((f) => ({ ...f, applicationFee: e.target.value }))}
-                            className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900"
-                          />
-                        </div>
-                        <div>
-                          <label className="mb-1 block text-xs font-semibold text-slate-600">Security deposit ($)</label>
-                          <input type="number" min="0" step="1"
-                            value={tourForm.securityDeposit}
-                            onChange={(e) => setTourForm((f) => ({ ...f, securityDeposit: e.target.value }))}
-                            className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900"
-                          />
-                        </div>
-                        <div>
-                          <label className="mb-1 block text-xs font-semibold text-slate-600">Utilities fee ($/mo)</label>
-                          <input type="number" min="0" step="1"
-                            value={tourForm.utilitiesFee}
-                            onChange={(e) => setTourForm((f) => ({ ...f, utilitiesFee: e.target.value }))}
-                            className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900"
-                          />
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Amenities */}
-                    <div>
-                      <div className="mb-2 text-[11px] font-bold uppercase tracking-[0.14em] text-slate-400">Amenities</div>
-                      <div className="flex flex-wrap gap-2">
-                        {AMENITY_OPTIONS.map((a) => {
-                          const checked = tourForm.amenities.includes(a)
-                          return (
-                            <button
-                              key={a}
-                              type="button"
-                              onClick={() => setTourForm((f) => ({
-                                ...f,
-                                amenities: checked ? f.amenities.filter((x) => x !== a) : [...f.amenities, a],
-                              }))}
-                              className={[
-                                'rounded-full border px-3 py-1 text-xs font-semibold transition',
-                                checked
-                                  ? 'border-[#2563eb] bg-[#2563eb] text-white'
-                                  : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300',
-                              ].join(' ')}
-                            >
-                              {a}
-                            </button>
-                          )
-                        })}
-                      </div>
-                    </div>
-
-                    {/* Rooms */}
-                    <div>
-                      <div className="mb-2 flex items-center gap-3 text-[11px] font-bold uppercase tracking-[0.14em] text-slate-400">
-                        <span>Rooms</span>
-                        <div className="flex items-center gap-1.5">
-                          <button type="button"
-                            onClick={() => setTourForm((f) => {
-                              const next = Math.max(1, f.roomCount - 1)
-                              return { ...f, roomCount: next, rooms: f.rooms.slice(0, next) }
-                            })}
-                            className="flex h-5 w-5 items-center justify-center rounded-full border border-slate-300 text-slate-500 hover:bg-slate-100 text-base leading-none"
-                          >−</button>
-                          <span className="text-slate-700 normal-case font-semibold text-xs">{tourForm.roomCount}</span>
-                          <button type="button"
-                            onClick={() => setTourForm((f) => {
-                              const next = Math.min(MAX_ROOM_SLOTS, f.roomCount + 1)
-                              const rooms = [...f.rooms]
-                              while (rooms.length < next) rooms.push({ rent: '', availability: '', furnished: '', utilitiesCost: '' })
-                              return { ...f, roomCount: next, rooms }
-                            })}
-                            className="flex h-5 w-5 items-center justify-center rounded-full border border-slate-300 text-slate-500 hover:bg-slate-100 text-base leading-none"
-                          >+</button>
-                        </div>
-                      </div>
-                      <div className="space-y-3">
-                        {Array.from({ length: tourForm.roomCount }, (_, i) => {
-                          const room = tourForm.rooms[i] ?? { rent: '', availability: '', furnished: '', utilitiesCost: '' }
-                          const setRoom = (upd) => setTourForm((f) => {
-                            const rooms = [...f.rooms]
-                            while (rooms.length <= i) rooms.push({ rent: '', availability: '', furnished: '', utilitiesCost: '' })
-                            rooms[i] = { ...rooms[i], ...upd }
-                            return { ...f, rooms }
-                          })
-                          return (
-                            <div key={i} className="rounded-xl border border-slate-100 bg-white p-3 grid gap-2 sm:grid-cols-4">
-                              <div className="sm:col-span-4 text-xs font-semibold text-slate-500 mb-1">Room {i + 1}</div>
-                              <div>
-                                <label className="mb-1 block text-[11px] text-slate-500">Rent ($)</label>
-                                <input type="number" min="0" step="1"
-                                  value={room.rent}
-                                  onChange={(e) => setRoom({ rent: e.target.value })}
-                                  className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-900"
-                                />
-                              </div>
-                              <div>
-                                <label className="mb-1 block text-[11px] text-slate-500">Available</label>
-                                <input type="date"
-                                  value={room.availability ? room.availability.slice(0, 10) : ''}
-                                  onChange={(e) => setRoom({ availability: e.target.value })}
-                                  className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-900"
-                                />
-                              </div>
-                              <div>
-                                <label className="mb-1 block text-[11px] text-slate-500">Furnished</label>
-                                <select
-                                  value={room.furnished}
-                                  onChange={(e) => setRoom({ furnished: e.target.value })}
-                                  className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-900"
-                                >
-                                  <option value="">—</option>
-                                  {FURNISHED_OPTIONS.map((o) => <option key={o} value={o}>{o}</option>)}
-                                </select>
-                              </div>
-                              <div>
-                                <label className="mb-1 block text-[11px] text-slate-500">Utils cost ($/mo)</label>
-                                <input type="number" min="0" step="1"
-                                  value={room.utilitiesCost}
-                                  onChange={(e) => setRoom({ utilitiesCost: e.target.value })}
-                                  className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-900"
-                                />
-                              </div>
-                            </div>
-                          )
-                        })}
-                      </div>
-                    </div>
-
-                    {/* Other Info */}
-                    <div>
-                      <div className="mb-2 text-[11px] font-bold uppercase tracking-[0.14em] text-slate-400">Other info</div>
-                      <textarea
-                        rows={3}
-                        value={tourForm.otherInfo}
-                        onChange={(e) => setTourForm((f) => ({ ...f, otherInfo: e.target.value }))}
-                        className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 resize-none"
-                        placeholder="Any additional details…"
-                      />
-                    </div>
-
-                    {/* Actions */}
-                    <div className="flex gap-2 pt-1">
-                      <button
-                        type="button"
-                        onClick={() => setEditingPropertyId(null)}
-                        className="rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700"
-                      >
-                        Cancel
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => handleSaveTourHours(selectedManagerProperty)}
-                        className="rounded-2xl bg-[#2563eb] px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-50"
-                        disabled={saving}
-                      >
-                        {saving ? 'Saving…' : 'Save & submit for approval'}
-                      </button>
-                    </div>
-                        </div>
-                      ) : (
-                        <div className="flex gap-2 border-t border-slate-200 pt-4">
-                          {propertiesSection !== 'rejected' ? (
-                            <button
-                              type="button"
-                              onClick={() => beginEditListing(selectedManagerProperty)}
-                              className={MANAGER_PROP_TOOLBAR_BTN}
-                            >
-                              Edit listing
-                            </button>
-                          ) : null}
-                        </div>
-                      )}
                     </div>
                   ) : null}
                 </div>
@@ -3275,6 +2920,36 @@ function HouseManagementPanel({ manager, onPropertiesChange }) {
               setPropertiesSection('pending')
             }}
             createPropertyAdmin={createPropertyAdmin}
+          />
+        ) : null}
+
+        {editWizardProperty ? (
+          <AddPropertyWizard
+            mode="edit"
+            initialValues={buildPropertyWizardInitialValues(editWizardProperty)}
+            manager={manager}
+            onClose={() => {
+              setEditWizardProperty(null)
+            }}
+            onSubmitProperty={async (fields) => {
+              const patch = {
+                ...fields,
+                Approved: false,
+                'Approval Status': 'Pending',
+                [PROPERTY_EDIT_REQUEST_FIELD]: '',
+              }
+              return updatePropertyAdmin(editWizardProperty.id, patch)
+            }}
+            onCreated={(updated) => {
+              setProperties((current) => {
+                const next = current.map((item) => (item.id === updated.id ? updated : item))
+                onPropertiesChange?.(next)
+                return next
+              })
+              setEditWizardProperty(null)
+              setDetailsPropertyId(updated.id)
+              setPropertiesSection('pending')
+            }}
           />
         ) : null}
     </div>

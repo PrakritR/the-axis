@@ -5,6 +5,7 @@
  */
 
 import { mergeAxisListingMetaIntoOtherInfo } from './axisListingMeta.js'
+import { parseAxisListingMetaBlock } from './axisListingMeta.js'
 
 // ─── Slot limits ────────────────────────────────────────────────────────────────
 export const MAX_ROOM_SLOTS = 20
@@ -152,6 +153,7 @@ export function emptyRoomRow() {
     label: '',
     rent: '',
     availability: '',
+    unavailable: false,
     furnished: '',
     utilitiesCost: '',
     utilities: '',
@@ -219,6 +221,189 @@ function toIsoDate(raw) {
   const d = new Date(s)
   if (Number.isNaN(d.getTime())) return undefined
   return d.toISOString().slice(0, 10)
+}
+
+function boolFromRaw(v) {
+  return v === true || v === 1 || v === '1' || String(v || '').trim().toLowerCase() === 'true'
+}
+
+function normalizeRoomAccessLabel(raw) {
+  const s = String(raw || '').trim()
+  if (!s) return ''
+  const m = /^room\s*(\d+)$/i.exec(s)
+  if (m) return `Room ${m[1]}`
+  return s
+}
+
+function splitRoomAccess(raw) {
+  if (Array.isArray(raw)) {
+    return [...new Set(raw.map(normalizeRoomAccessLabel).filter(Boolean))]
+  }
+  const s = String(raw || '').trim()
+  if (!s) return []
+  return [...new Set(s.split(',').map((part) => normalizeRoomAccessLabel(part)).filter(Boolean))]
+}
+
+function parseBodyTriplet(raw) {
+  const parts = String(raw || '')
+    .split(/\n{2,}/)
+    .map((part) => part.trim())
+    .filter(Boolean)
+  return {
+    kind: parts[0] || '',
+    label: parts[1] || '',
+    description: parts.slice(2).join('\n\n'),
+  }
+}
+
+function stringOrEmpty(v) {
+  return String(v ?? '').trim()
+}
+
+/**
+ * Convert a Properties Airtable record into AddPropertyWizard-compatible initial state.
+ */
+export function buildPropertyWizardInitialValues(property) {
+  const record = property && typeof property === 'object' ? property : {}
+  const { userText, meta } = parseAxisListingMetaBlock(String(record[PROPERTY_AIR.otherInfo] || ''))
+  const leasing = normalizeLeasingFromMeta(meta?.leasing)
+  const roomDetails = Array.isArray(meta?.roomsDetail) ? meta.roomsDetail : []
+
+  const fallbackRoomCount = roomDetails.length > 0 ? roomDetails.length : 1
+  const roomCount = clampInt(record[PROPERTY_AIR.roomCount] ?? fallbackRoomCount, 1, MAX_ROOM_SLOTS)
+  const rooms = Array.from({ length: roomCount }, (_, idx) => {
+    const n = idx + 1
+    const detail = roomDetails[idx] && typeof roomDetails[idx] === 'object' ? roomDetails[idx] : {}
+    const availabilityRaw =
+      detail.availability ??
+      record[roomAvailabilityField(n)] ??
+      ''
+    const unavailable =
+      detail.unavailable === true ||
+      String(availabilityRaw || '').trim().toLowerCase() === 'unavailable'
+    return {
+      ...emptyRoomRow(),
+      label: stringOrEmpty(detail.label),
+      rent: stringOrEmpty(detail.rent || record[roomRentField(n)] || record[`Room ${n} for Rent`]),
+      availability: unavailable ? '' : stringOrEmpty(toIsoDate(availabilityRaw) || availabilityRaw),
+      unavailable,
+      furnished: stringOrEmpty(detail.furnished || record[roomFurnishedField(n)]),
+      utilitiesCost: stringOrEmpty(detail.utilitiesCost || record[roomUtilitiesCostField(n)]),
+      utilities: stringOrEmpty(detail.utilities || (n === 1 ? record[ROOM_1_UTILITIES_FIELD] : '')),
+      notes: stringOrEmpty(detail.notes),
+      furnitureIncluded: stringOrEmpty(detail.furnitureIncluded),
+      additionalFeatures: stringOrEmpty(detail.additionalFeatures),
+      media: [],
+    }
+  })
+
+  const bathrooms = []
+  const bathroomCount = clampInt(record[PROPERTY_AIR.bathroomCount] ?? 0, 0, MAX_BATHROOM_SLOTS)
+  for (let i = 1; i <= bathroomCount; i++) {
+    const desc = String(record[bathroomDescriptionField(i)] || '')
+    const parsed = parseBodyTriplet(desc)
+    const roomsSharing = i <= MAX_BATHROOM_SHARING_SLOTS ? record[bathroomRoomsSharingField(i)] : ''
+    bathrooms.push({
+      ...emptyBathroomRow(),
+      label: parsed.label,
+      kind: parsed.kind,
+      description: parsed.description,
+      access: splitRoomAccess(roomsSharing),
+    })
+  }
+
+  const kitchens = []
+  const kitchenCount = clampInt(record[PROPERTY_AIR.kitchenCount] ?? 0, 0, MAX_KITCHEN_SLOTS)
+  for (let i = 1; i <= kitchenCount; i++) {
+    const desc = String(record[kitchenDescriptionField(i)] || '')
+    const parsed = parseBodyTriplet(desc)
+    kitchens.push({
+      ...emptyKitchenRow(),
+      label: parsed.label,
+      kind: parsed.kind,
+      description: parsed.description,
+      access: splitRoomAccess(record[kitchenRoomsSharingField(i)]),
+    })
+  }
+
+  const sharedSpaces = []
+  const sharedCount = clampInt(record[PROPERTY_AIR.sharedSpaceCount] ?? 0, 0, MAX_SHARED_SPACE_SLOTS)
+  for (let i = 1; i <= sharedCount; i++) {
+    const type = stringOrEmpty(record[sharedSpaceTypeField(i)])
+    sharedSpaces.push({
+      ...emptySharedSpaceRow(),
+      name: stringOrEmpty(record[sharedSpaceNameField(i)]),
+      type: SHARED_SPACE_TYPE_OPTIONS.includes(type) ? type : type ? 'Other' : '',
+      typeOther: SHARED_SPACE_TYPE_OPTIONS.includes(type) ? '' : type,
+      access: splitRoomAccess(record[sharedSpaceAccessField(i)]),
+    })
+  }
+
+  const laundryRows = []
+  for (let i = 1; i <= MAX_LAUNDRY_SLOTS; i++) {
+    const type = stringOrEmpty(record[laundryTypeField(i)])
+    const access = splitRoomAccess(record[laundryRoomsSharingField(i)])
+    if (!type && !access.length) continue
+    laundryRows.push({ type, access })
+  }
+  const laundryEnabled = boolFromRaw(record[PROPERTY_AIR.laundry]) || laundryRows.length > 0
+  const parkingEnabled = boolFromRaw(record[PROPERTY_AIR.parking])
+
+  const rawAmenities = Array.isArray(record[PROPERTY_AIR.amenities])
+    ? record[PROPERTY_AIR.amenities]
+    : stringOrEmpty(record[PROPERTY_AIR.amenities]).split(',').map((part) => part.trim()).filter(Boolean)
+  const amenities = rawAmenities.filter((item) => AMENITY_OPTIONS.includes(item))
+  const amenitiesOther = rawAmenities.filter((item) => !AMENITY_OPTIONS.includes(item)).join(', ')
+
+  const rawPropertyType = stringOrEmpty(record[PROPERTY_AIR.propertyType])
+  const propertyTypeOther = stringOrEmpty(meta?.propertyTypeOther)
+  const propertyType = PROPERTY_TYPE_OPTIONS.includes(rawPropertyType)
+    ? rawPropertyType
+    : rawPropertyType || propertyTypeOther
+      ? 'Other'
+      : ''
+
+  return {
+    basics: {
+      name: stringOrEmpty(record[PROPERTY_AIR.propertyName] || record.Name),
+      address: stringOrEmpty(record[PROPERTY_AIR.address]),
+      propertyType,
+      propertyTypeOther: propertyType === 'Other' ? (propertyTypeOther || rawPropertyType) : '',
+      amenities,
+      amenitiesOther,
+      pets: stringOrEmpty(record[PROPERTY_AIR.pets]),
+      securityDeposit: String(meta?.financials?.securityDeposit ?? record[PROPERTY_AIR.securityDeposit] ?? ''),
+      moveInCharges: String(meta?.financials?.moveInCharges ?? ''),
+    },
+    appFee: String(record[PROPERTY_AIR.applicationFee] ?? ''),
+    rooms,
+    bathrooms,
+    kitchens,
+    sharedSpaces,
+    laundry: {
+      enabled: laundryEnabled,
+      rows: laundryRows,
+      generalAccess: splitRoomAccess(record[PROPERTY_AIR.roomsSharingLaundry]),
+    },
+    parking: {
+      enabled: parkingEnabled,
+      type: stringOrEmpty(record[PROPERTY_AIR.parkingType]),
+      fee: String(record[PROPERTY_AIR.parkingFee] ?? ''),
+    },
+    otherInfo: userText,
+    leasing: {
+      fullHousePrice: String(leasing.fullHousePrice || ''),
+      promoPrice: String(leasing.promoPrice || ''),
+      leaseLengthInfo: String(leasing.leaseLengthInfo || ''),
+      bundles: Array.isArray(leasing.bundles)
+        ? leasing.bundles.map((bundle) => ({
+            name: String(bundle.name || ''),
+            price: String(bundle.price || ''),
+            rooms: Array.isArray(bundle.rooms) ? bundle.rooms.filter(Boolean) : [],
+          }))
+        : [],
+    },
+  }
 }
 
 /**
@@ -390,7 +575,8 @@ export function serializeManagerAddPropertyToAirtableFields(params) {
       furnitureIncluded: String(row.furnitureIncluded || '').trim(),
       additionalFeatures: String(row.additionalFeatures || '').trim(),
       rent: String(row.rent ?? '').trim(),
-      availability: String(row.availability || '').trim(),
+      availability: row.unavailable ? 'Unavailable' : String(row.availability || '').trim(),
+      unavailable: Boolean(row.unavailable),
       furnished: String(row.furnished || '').trim(),
       utilitiesCost: String(row.utilitiesCost ?? '').trim(),
       utilities: String(row.utilities || '').trim(),
@@ -474,16 +660,20 @@ export function serializeManagerAddPropertyToAirtableFields(params) {
   }
 
   // ── Laundry ───────────────────────────────────────────────────────────────────
-  if (laundry?.enabled) {
+  const laundryRows = Array.isArray(laundry?.rows) ? laundry.rows : []
+  const laundryEnabled =
+    Boolean(laundry?.enabled) ||
+    laundryRows.some((row) => String(row?.type || '').trim() || (Array.isArray(row?.access) && row.access.length > 0))
+
+  if (laundryEnabled) {
     fields[PROPERTY_AIR.laundry] = true
-    const rows = Array.isArray(laundry.rows) ? laundry.rows : []
     const genAcc = Array.isArray(laundry.generalAccess) ? laundry.generalAccess.filter(Boolean) : []
     const generalSharing =
       genAcc.length > 0
         ? genAcc.join(', ')
         : String(laundry.roomsSharing || '').trim()
     if (generalSharing) fields[PROPERTY_AIR.roomsSharingLaundry] = generalSharing
-    rows.slice(0, MAX_LAUNDRY_SLOTS).forEach((row, idx) => {
+    laundryRows.slice(0, MAX_LAUNDRY_SLOTS).forEach((row, idx) => {
       const n = idx + 1
       const lt = String(row.type || '').trim()
       if (lt) fields[laundryTypeField(n)] = lt

@@ -97,7 +97,7 @@ function validateRooms(rooms) {
     else if (!Number.isFinite(Number(rentStr)) || Number(rentStr) < 0)
       e[`r${i}_rent`] = 'Enter a valid number (0 or more)'
 
-    if (!room.availability) e[`r${i}_avail`] = 'Availability date is required'
+    if (!room.unavailable && !room.availability) e[`r${i}_avail`] = 'Availability date is required (or mark room unavailable)'
     if (!room.furnished) e[`r${i}_furn`] = 'Furnished status is required'
 
     if ((room.furnished === 'Yes' || room.furnished === 'Partial') && !String(room.furnitureIncluded || '').trim())
@@ -138,12 +138,10 @@ function validateSharedSpaces(spaces) {
 
 function validateLaundryParking(laundry, parking) {
   const e = {}
-  if (laundry?.enabled) {
-    ;(laundry.rows || []).forEach((row, i) => {
-      if (!String(row.type || '').trim())
-        e[`l${i}_type`] = 'Laundry type is required'
-    })
-  }
+  ;(laundry?.rows || []).forEach((row, i) => {
+    if (!String(row.type || '').trim()) e[`l${i}_type`] = 'Laundry type is required'
+    if (!Array.isArray(row.access) || row.access.length === 0) e[`l${i}_access`] = 'Select at least one room'
+  })
   if (parking?.enabled && !String(parking.type || '').trim())
     e.parkingType = 'Parking type is required'
   return e
@@ -207,7 +205,66 @@ function SectionHeading({ children }) {
 }
 
 // ─── Main component ───────────────────────────────────────────────────────────
-export default function AddPropertyWizard({ manager, onClose, onCreated, createPropertyAdmin }) {
+export default function AddPropertyWizard({
+  manager,
+  onClose,
+  onCreated,
+  createPropertyAdmin,
+  initialValues = null,
+  mode = 'create',
+  onSubmitProperty = null,
+}) {
+  const initialState = useMemo(() => {
+    const payload = initialValues
+    const basics = payload?.basics || {}
+    return {
+      basics: {
+        name: String(basics.name || ''),
+        address: String(basics.address || ''),
+        propertyType: String(basics.propertyType || ''),
+        propertyTypeOther: String(basics.propertyTypeOther || ''),
+        amenities: Array.isArray(basics.amenities) ? [...basics.amenities] : [],
+        amenitiesOther: String(basics.amenitiesOther || ''),
+        pets: String(basics.pets || ''),
+        securityDeposit: String(basics.securityDeposit || ''),
+        moveInCharges: String(basics.moveInCharges || ''),
+      },
+      appFee: String(payload?.appFee || ''),
+      rooms:
+        Array.isArray(payload?.rooms) && payload.rooms.length
+          ? payload.rooms.map((row) => ({ ...emptyRoomRow(), ...row, media: [] }))
+          : [emptyRoomRow()],
+      bathrooms: Array.isArray(payload?.bathrooms) ? payload.bathrooms.map((row) => ({ ...emptyBathroomRow(), ...row })) : [],
+      kitchens: Array.isArray(payload?.kitchens) ? payload.kitchens.map((row) => ({ ...emptyKitchenRow(), ...row })) : [],
+      sharedSpaces: Array.isArray(payload?.sharedSpaces) ? payload.sharedSpaces.map((row) => ({ ...emptySharedSpaceRow(), ...row })) : [],
+      laundry: {
+        enabled: Boolean(payload?.laundry?.enabled),
+        rows: Array.isArray(payload?.laundry?.rows) ? payload.laundry.rows.map((row) => ({ ...emptyLaundryRow(), ...row })) : [],
+        generalAccess: Array.isArray(payload?.laundry?.generalAccess) ? [...payload.laundry.generalAccess] : [],
+      },
+      parking: {
+        enabled: Boolean(payload?.parking?.enabled),
+        type: String(payload?.parking?.type || ''),
+        fee: String(payload?.parking?.fee || ''),
+      },
+      otherInfo: String(payload?.otherInfo || ''),
+      leasing: {
+        fullHousePrice: String(payload?.leasing?.fullHousePrice || ''),
+        promoPrice: String(payload?.leasing?.promoPrice || ''),
+        leaseLengthInfo: String(payload?.leasing?.leaseLengthInfo || DEFAULT_LEASE_INFO),
+        bundles: Array.isArray(payload?.leasing?.bundles)
+          ? payload.leasing.bundles.map((row) => ({
+              name: String(row?.name || ''),
+              price: String(row?.price || ''),
+              rooms: Array.isArray(row?.rooms) ? [...row.rooms] : [],
+            }))
+          : [],
+      },
+    }
+  }, [initialValues])
+
+  const wizardMode = mode === 'edit' ? 'edit' : 'create'
+  const submitProperty = typeof onSubmitProperty === 'function' ? onSubmitProperty : null
   // ── Step state ───────────────────────────────────────────────────────────────
   const [step, setStep] = useState(0)
   const [attempted, setAttempted] = useState(false)
@@ -215,22 +272,21 @@ export default function AddPropertyWizard({ manager, onClose, onCreated, createP
   const scrollRef = useRef(null)
 
   // ── Form state ───────────────────────────────────────────────────────────────
-  const [basics, setBasics] = useState({
-    name: '', address: '', propertyType: '', propertyTypeOther: '',
-    amenities: [], amenitiesOther: '', pets: '',
-    securityDeposit: '', moveInCharges: '',
-  })
-  const [appFee, setAppFee] = useState('')
-  const [rooms, setRooms] = useState([emptyRoomRow()])
-  const [bathrooms, setBathrooms] = useState([])
-  const [kitchens, setKitchens] = useState([])
-  const [sharedSpaces, setSharedSpaces] = useState([])
-  const [laundry, setLaundry] = useState({ enabled: false, rows: [], generalAccess: [] })
-  const [parking, setParking] = useState({ enabled: false, type: '', fee: '' })
-  const [otherInfo, setOtherInfo] = useState('')
+  const [basics, setBasics] = useState(initialState.basics)
+  const [appFee, setAppFee] = useState(initialState.appFee)
+  const [rooms, setRooms] = useState(initialState.rooms)
+  const [bathrooms, setBathrooms] = useState(initialState.bathrooms)
+  const [kitchens, setKitchens] = useState(initialState.kitchens)
+  const [sharedSpaces, setSharedSpaces] = useState(initialState.sharedSpaces)
+  const [laundry, setLaundry] = useState(initialState.laundry)
+  const [parking, setParking] = useState(initialState.parking)
+  const [otherInfo, setOtherInfo] = useState(initialState.otherInfo)
   const [images, setImages] = useState([])
   const [leasing, setLeasing] = useState({
-    fullHousePrice: '', promoPrice: '', leaseLengthInfo: DEFAULT_LEASE_INFO, bundles: [],
+    fullHousePrice: initialState.leasing.fullHousePrice,
+    promoPrice: initialState.leasing.promoPrice,
+    leaseLengthInfo: initialState.leasing.leaseLengthInfo,
+    bundles: initialState.leasing.bundles,
   })
   const imageInputRef = useRef(null)
   const dropRef = useRef(null)
@@ -251,15 +307,15 @@ export default function AddPropertyWizard({ manager, onClose, onCreated, createP
   // ── Reset ─────────────────────────────────────────────────────────────────────
   function resetForm() {
     setStep(0); setAttempted(false); setSaving(false)
-    setBasics({ name: '', address: '', propertyType: '', propertyTypeOther: '', amenities: [], amenitiesOther: '', pets: '', securityDeposit: '', moveInCharges: '' })
-    setAppFee('')
-    setRooms([emptyRoomRow()])
-    setBathrooms([]); setKitchens([]); setSharedSpaces([])
-    setLaundry({ enabled: false, rows: [], generalAccess: [] })
-    setParking({ enabled: false, type: '', fee: '' })
-    setOtherInfo('')
+    setBasics(initialState.basics)
+    setAppFee(initialState.appFee)
+    setRooms(initialState.rooms)
+    setBathrooms(initialState.bathrooms); setKitchens(initialState.kitchens); setSharedSpaces(initialState.sharedSpaces)
+    setLaundry(initialState.laundry)
+    setParking(initialState.parking)
+    setOtherInfo(initialState.otherInfo)
     setImages(prev => { prev.forEach(img => URL.revokeObjectURL(img.preview)); return [] })
-    setLeasing({ fullHousePrice: '', promoPrice: '', leaseLengthInfo: DEFAULT_LEASE_INFO, bundles: [] })
+    setLeasing(initialState.leasing)
   }
 
   function handleClose() {
@@ -322,7 +378,9 @@ export default function AddPropertyWizard({ manager, onClose, onCreated, createP
         leasing,
       })
 
-      const created = await createPropertyAdmin(fields)
+      const created = submitProperty
+        ? await submitProperty(fields)
+        : await createPropertyAdmin(fields)
 
       // Property gallery images (non-fatal individually)
       for (const img of images) {
@@ -339,7 +397,7 @@ export default function AddPropertyWizard({ manager, onClose, onCreated, createP
         }
       }
 
-      toast.success('Submitted — pending admin approval')
+      toast.success(wizardMode === 'edit' ? 'Changes submitted — pending admin approval' : 'Submitted — pending admin approval')
       onCreated(created)
       resetForm()
       onClose()
@@ -471,6 +529,23 @@ export default function AddPropertyWizard({ manager, onClose, onCreated, createP
     setLaundry(l => { const rows = [...(l.rows || [])]; rows[idx] = { ...rows[idx], ...patch }; return { ...l, rows } })
   }
   function addLaundryRow() { setLaundry(l => ({ ...l, rows: [...(l.rows || []), emptyLaundryRow()] })) }
+  function duplicateLaundryRow(idx) {
+    setLaundry((l) => {
+      const rows = Array.isArray(l.rows) ? l.rows : []
+      if (rows.length >= MAX_LAUNDRY_SLOTS) return l
+      const src = rows[idx] || emptyLaundryRow()
+      return {
+        ...l,
+        rows: [
+          ...rows,
+          {
+            ...src,
+            access: Array.isArray(src.access) ? [...src.access] : [],
+          },
+        ],
+      }
+    })
+  }
   function removeLaundryRow(idx) { setLaundry(l => ({ ...l, rows: (l.rows || []).filter((_, i) => i !== idx) })) }
 
   // ── Bundle helpers ────────────────────────────────────────────────────────────
@@ -701,7 +776,7 @@ export default function AddPropertyWizard({ manager, onClose, onCreated, createP
     return (
       <div className="space-y-4">
         <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-xs text-slate-600">
-          <strong className="font-semibold text-slate-800">Required per room:</strong> monthly rent, availability date, and furnished status.
+          <strong className="font-semibold text-slate-800">Required per room:</strong> monthly rent, furnished status, and either availability date or "Unavailable".
           Furniture list is also required when furnished is Yes or Partial.
         </div>
         {e._global && (
@@ -760,9 +835,24 @@ export default function AddPropertyWizard({ manager, onClose, onCreated, createP
                   className={ic(`r${idx}_avail`)}
                   type="date"
                   value={room.availability}
-                  onChange={ev => updateRoom(idx, { availability: ev.target.value })}
+                  onChange={ev => updateRoom(idx, { availability: ev.target.value, unavailable: false })}
+                  disabled={Boolean(room.unavailable)}
                 />
                 <FieldError msg={e[`r${idx}_avail`]} />
+                <label className="mt-2 inline-flex cursor-pointer items-center gap-2 text-xs font-semibold text-slate-600">
+                  <input
+                    type="checkbox"
+                    className="h-3.5 w-3.5 rounded border-slate-300 accent-[#2563eb]"
+                    checked={Boolean(room.unavailable)}
+                    onChange={(ev) =>
+                      updateRoom(idx, {
+                        unavailable: ev.target.checked,
+                        availability: ev.target.checked ? '' : room.availability,
+                      })
+                    }
+                  />
+                  Mark room unavailable
+                </label>
               </div>
               <div>
                 <label className={LBL}>Furnished <Req /></label>
@@ -1070,59 +1160,55 @@ export default function AddPropertyWizard({ manager, onClose, onCreated, createP
         {/* Laundry */}
         <div className="rounded-2xl border border-slate-200 bg-white p-4 space-y-4">
           <SectionHeading>Laundry</SectionHeading>
-          <label className="flex cursor-pointer items-center gap-2.5 text-sm font-semibold text-slate-700">
-            <input
-              type="checkbox"
-              checked={laundry.enabled}
-              onChange={ev => setLaundry(l => ({ ...l, enabled: ev.target.checked }))}
-              className="h-4 w-4 rounded border-slate-300 accent-[#2563eb]"
-            />
-            Laundry on site
-          </label>
-          {laundry.enabled && (
-            <div className="space-y-4 border-t border-slate-100 pt-4">
-              <div>
-                <label className={`${LBL} mb-2`}>General room access (all laundry) <span className="font-normal text-slate-400">(optional)</span></label>
-                <RoomChips
-                  access={laundry.generalAccess || []}
-                  onChange={generalAccess => setLaundry(l => ({ ...l, generalAccess }))}
-                />
-              </div>
-              <div className="text-xs font-semibold text-slate-500">Laundry locations (up to {MAX_LAUNDRY_SLOTS})</div>
-              {(laundry.rows || []).map((row, idx) => (
-                <div key={`ld-${idx}`} className="flex items-start gap-3 rounded-xl border border-slate-200 bg-slate-50/80 p-3">
-                  <div className="flex-1 space-y-3">
-                    <div>
-                      <label className={LBL}>Laundry type <Req /></label>
-                      <input
-                        className={ic(`l${idx}_type`)}
-                        value={row.type}
-                        onChange={ev => updateLaundryRow(idx, { type: ev.target.value })}
-                        placeholder="e.g. In-unit W/D, Shared washer in basement"
-                      />
-                      <FieldError msg={e[`l${idx}_type`]} />
-                    </div>
-                    <div>
-                      <label className={`${LBL} mb-2`}>Room access <span className="font-normal text-slate-400">(optional)</span></label>
-                      <RoomChips
-                        access={row.access || []}
-                        onChange={access => updateLaundryRow(idx, { access })}
-                      />
-                    </div>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => removeLaundryRow(idx)}
-                    className="mt-6 shrink-0 rounded-lg border border-red-200 px-2 py-1 text-[11px] font-bold text-red-500 hover:bg-red-50"
-                  >✕</button>
-                </div>
-              ))}
-              {(laundry.rows || []).length < MAX_LAUNDRY_SLOTS && (
-                <button type="button" onClick={addLaundryRow} className="rounded-xl border border-dashed border-slate-300 px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-50">
-                  + Add laundry location
-                </button>
-              )}
+          <p className="text-xs text-slate-500">
+            Add laundry locations and assign which rooms can use each one.
+          </p>
+          {(laundry.rows || []).length === 0 ? (
+            <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 px-6 py-8 text-center text-sm text-slate-500">
+              No laundry locations added. Add one if the property has laundry.
             </div>
+          ) : (
+            (laundry.rows || []).map((row, idx) => (
+              <div key={`ld-${idx}`} className="rounded-2xl border border-slate-200 bg-white p-4 space-y-4">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <div className="flex h-7 w-7 items-center justify-center rounded-full bg-slate-100 text-xs font-black text-slate-600">{idx + 1}</div>
+                    <div className="text-sm font-black text-slate-800">Laundry {idx + 1}</div>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    {(laundry.rows || []).length < MAX_LAUNDRY_SLOTS ? (
+                      <button type="button" onClick={() => duplicateLaundryRow(idx)} className="text-[11px] font-bold text-[#2563eb] hover:text-[#1d4ed8]">Duplicate</button>
+                    ) : null}
+                    <button type="button" onClick={() => removeLaundryRow(idx)} className="text-[11px] font-bold text-red-500 hover:text-red-700">Remove</button>
+                  </div>
+                </div>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <div className="sm:col-span-2">
+                    <label className={LBL}>Laundry type <Req /></label>
+                    <input
+                      className={ic(`l${idx}_type`)}
+                      value={row.type}
+                      onChange={(ev) => updateLaundryRow(idx, { type: ev.target.value })}
+                      placeholder="e.g. In-unit W/D, Shared washer in basement"
+                    />
+                    <FieldError msg={e[`l${idx}_type`]} />
+                  </div>
+                  <div className="sm:col-span-2">
+                    <label className={`${LBL} mb-2`}>Room access <Req /></label>
+                    <RoomChips
+                      access={row.access || []}
+                      onChange={(access) => updateLaundryRow(idx, { access })}
+                    />
+                    <FieldError msg={e[`l${idx}_access`]} />
+                  </div>
+                </div>
+              </div>
+            ))
+          )}
+          {(laundry.rows || []).length < MAX_LAUNDRY_SLOTS && (
+            <button type="button" onClick={addLaundryRow} className="w-full rounded-xl border border-dashed border-slate-300 px-4 py-3 text-sm font-semibold text-slate-600 transition hover:bg-slate-50">
+              + Add laundry
+            </button>
           )}
         </div>
 
@@ -1345,7 +1431,7 @@ export default function AddPropertyWizard({ manager, onClose, onCreated, createP
         {/* Header */}
         <div className="pr-8">
           <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-[#2563eb]">
-            New property · Step {step + 1} of {STEPS.length}
+            {wizardMode === 'edit' ? 'Edit property' : 'New property'} · Step {step + 1} of {STEPS.length}
           </div>
           <h3 className="mt-1 text-2xl font-black text-slate-900">{STEPS[step].label}</h3>
         </div>
@@ -1397,7 +1483,7 @@ export default function AddPropertyWizard({ manager, onClose, onCreated, createP
               className="rounded-xl bg-[#2563eb] px-5 py-2.5 text-sm font-semibold text-white hover:brightness-110 disabled:opacity-50"
             >
               {isLastStep
-                ? saving ? 'Submitting…' : 'Submit for review'
+                ? saving ? 'Submitting…' : wizardMode === 'edit' ? 'Save & submit for review' : 'Submit for review'
                 : 'Next →'}
             </button>
           </div>

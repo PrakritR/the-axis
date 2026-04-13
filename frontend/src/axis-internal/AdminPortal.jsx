@@ -710,6 +710,16 @@ export default function AdminPortal() {
               <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-sky-800">Residents</span>
               <span className="text-3xl font-black tabular-nums text-slate-900">{residents.length}</span>
             </button>
+
+            {/* Inbox */}
+            <button
+              type="button"
+              onClick={() => setTab('messages')}
+              className="flex flex-col gap-1 rounded-3xl border border-sky-200/90 bg-sky-50 p-5 text-left transition hover:border-sky-300 hover:bg-sky-100/80 hover:shadow-sm"
+            >
+              <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-sky-800">Inbox · Unopened</span>
+              <span className="text-3xl font-black tabular-nums text-slate-900">{unopenedThreadCount}</span>
+            </button>
           </div>
         </div>
       )}
