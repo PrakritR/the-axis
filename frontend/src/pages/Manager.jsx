@@ -5473,16 +5473,6 @@ function ManagerDashboard({ manager: managerProp, openDraftId, onOpenDraft, onCl
   )
 }
 
-// ─── Sidebar detail row helper ────────────────────────────────────────────────
-function DetailRow({ label, value }) {
-  return (
-    <div className="flex items-start justify-between gap-2 text-sm">
-      <span className="shrink-0 text-slate-500">{label}</span>
-      <span className="text-right font-semibold text-slate-900 break-all">{value || '—'}</span>
-    </div>
-  )
-}
-
 // ─── LeaseEditor ──────────────────────────────────────────────────────────────
 // Full-screen editor for reviewing, editing, and approving a single lease draft.
 // Three tabs: Edit/View | Original AI Draft | Audit Log
@@ -5495,6 +5485,7 @@ function LeaseEditor({ draftId, manager, onBack, embedded = false }) {
   const [saving, setSaving] = useState(false)
   const [actionLoading, setActionLoading] = useState('') // 'reject' | 'approve' | 'publish' | 'signforge' | 'signforge-status'
   const [activeTab, setActiveTab] = useState('editor')
+  const leaseFileInputRef = useRef(null)
 
   const refreshAudit = useCallback(async () => {
     try { setAuditLog(await fetchAuditLog(draftId)) } catch { /* non-fatal */ }
@@ -5534,6 +5525,27 @@ function LeaseEditor({ draftId, manager, onBack, embedded = false }) {
   }, [draftId, manager, refreshAudit])
 
   useEffect(() => { loadDraft() }, [loadDraft])
+
+  function handleLeaseTextFileSelected(ev) {
+    const input = ev.target
+    const f = input.files?.[0]
+    if (!f) return
+    const name = f.name.toLowerCase()
+    const okType = /^text\//.test(f.type) || name.endsWith('.txt') || name.endsWith('.md')
+    if (!okType) {
+      toast.error('Upload a .txt or .md file, or copy text from Word/PDF into the lease box.')
+      input.value = ''
+      return
+    }
+    const reader = new FileReader()
+    reader.onload = () => {
+      setEditorContent(String(reader.result ?? ''))
+      toast.success('Lease text loaded from file — click Save when ready')
+    }
+    reader.onerror = () => toast.error('Could not read that file')
+    reader.readAsText(f)
+    input.value = ''
+  }
 
   // ── Save edits ────────────────────────────────────────────────────────────
   async function handleSave() {
@@ -5768,7 +5780,7 @@ function LeaseEditor({ draftId, manager, onBack, embedded = false }) {
             <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
             </svg>
-            <span className="hidden sm:inline">Queue</span>
+            <span className="hidden sm:inline">Back</span>
           </button>
 
           {/* Title */}
@@ -5784,12 +5796,12 @@ function LeaseEditor({ draftId, manager, onBack, embedded = false }) {
           </div>
 
           {/* Action buttons */}
-          <div className="flex shrink-0 items-center gap-2">
+          <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
             {canEdit && (
               <button
                 onClick={handleSave}
                 disabled={saving || !!actionLoading}
-                className="hidden rounded-xl border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:opacity-50 sm:block"
+                className="rounded-xl border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:opacity-50 sm:px-4"
               >
                 {saving ? 'Saving…' : 'Save'}
               </button>
@@ -5798,7 +5810,7 @@ function LeaseEditor({ draftId, manager, onBack, embedded = false }) {
               <button
                 onClick={handleReject}
                 disabled={!!actionLoading}
-                className="hidden rounded-xl border border-red-200 bg-red-50 px-4 py-2 text-sm font-semibold text-red-700 transition hover:bg-red-100 disabled:opacity-50 sm:block"
+                className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm font-semibold text-red-700 transition hover:bg-red-100 disabled:opacity-50 sm:px-4"
               >
                 {actionLoading === 'reject' ? 'Updating…' : 'Changes needed'}
               </button>
@@ -5845,12 +5857,52 @@ function LeaseEditor({ draftId, manager, onBack, embedded = false }) {
         </div>
       </header>
 
-      {/* Body */}
-      <div className="mx-auto flex w-full max-w-7xl flex-1 gap-5 px-4 py-5 sm:px-6">
-        {/* Main panel — editor + tabs */}
-        <div className="min-w-0 flex-1">
+      {/* Body — lease-focused column (no sidebar) */}
+      <div className="mx-auto w-full max-w-5xl flex-1 px-4 py-5 sm:px-6">
+        <div className="min-w-0 space-y-4">
+          {canEdit ? (
+            <>
+              <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+                <div className="text-[11px] font-bold uppercase tracking-[0.14em] text-slate-400">Upload your lease</div>
+                <p className="mt-1 text-xs text-slate-500">
+                  Use a plain-text file (.txt or .md). For Word or PDF, copy the text and paste it into the lease editor below.
+                </p>
+                <input
+                  ref={leaseFileInputRef}
+                  type="file"
+                  accept=".txt,.md,text/plain"
+                  className="hidden"
+                  onChange={handleLeaseTextFileSelected}
+                />
+                <button
+                  type="button"
+                  onClick={() => leaseFileInputRef.current?.click()}
+                  disabled={!!actionLoading}
+                  className="mt-3 rounded-xl border border-slate-200 bg-slate-50 px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-100 disabled:opacity-50"
+                >
+                  Choose file…
+                </button>
+              </div>
+              <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+                <label className="mb-1 block text-[11px] font-bold uppercase tracking-[0.14em] text-slate-400">
+                  Changes and instructions
+                </label>
+                <p className="mb-2 text-xs text-slate-500">
+                  Describe edits you need or notes for your team. Saved with the lease (not shown to the resident as lease text).
+                </p>
+                <textarea
+                  value={managerNotes}
+                  onChange={(e) => setManagerNotes(e.target.value)}
+                  rows={4}
+                  placeholder="e.g. Update parking clause, add pet addendum, fix move-out date…"
+                  className="w-full resize-y rounded-2xl border border-slate-200 bg-slate-50 p-3 text-sm text-slate-800 placeholder:text-slate-400 focus:border-[#2563eb] focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#2563eb]/20"
+                />
+              </div>
+            </>
+          ) : null}
+
           {/* Tabs */}
-          <div className="mb-4 flex gap-1 rounded-2xl border border-slate-200 bg-white p-1.5 w-fit">
+          <div className="flex gap-1 rounded-2xl border border-slate-200 bg-white p-1.5 w-fit">
             {[
               { key: 'editor',   label: canEdit ? 'Edit Lease' : 'View Lease' },
               { key: 'original', label: 'Original AI Draft' },
@@ -5889,9 +5941,33 @@ function LeaseEditor({ draftId, manager, onBack, embedded = false }) {
                     value={editorContent}
                     onChange={e => setEditorContent(e.target.value)}
                     spellCheck={false}
-                    className="h-[calc(100vh-310px)] min-h-[480px] w-full resize-none p-6 font-mono text-sm leading-7 text-slate-800 focus:outline-none"
+                    className="h-[calc(100vh-380px)] min-h-[420px] w-full resize-none p-6 font-mono text-sm leading-7 text-slate-800 focus:outline-none"
                     placeholder="Lease content will appear here after generation…"
                   />
+                  {(canApprove || canPublish) && (
+                    <div className="flex flex-wrap items-center justify-end gap-2 border-t border-slate-200 bg-slate-50 px-5 py-3">
+                      {canApprove && (
+                        <button
+                          type="button"
+                          onClick={handleApprove}
+                          disabled={!!actionLoading}
+                          className="rounded-xl bg-green-600 px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-green-700 disabled:opacity-50"
+                        >
+                          {actionLoading === 'approve' ? 'Sending…' : 'Send to resident'}
+                        </button>
+                      )}
+                      {canPublish && (
+                        <button
+                          type="button"
+                          onClick={handlePublish}
+                          disabled={!!actionLoading}
+                          className="rounded-xl bg-[#2563eb] px-5 py-2.5 text-sm font-semibold text-white transition hover:brightness-110 disabled:opacity-50"
+                        >
+                          {actionLoading === 'publish' ? 'Sending…' : 'Send to resident'}
+                        </button>
+                      )}
+                    </div>
+                  )}
                 </>
               ) : (
                 <>
@@ -5900,9 +5976,33 @@ function LeaseEditor({ draftId, manager, onBack, embedded = false }) {
                       Read-only — this lease has been {status?.toLowerCase()}
                     </span>
                   </div>
-                  <div className="h-[calc(100vh-310px)] min-h-[480px] overflow-y-auto p-6">
+                  <div className="h-[calc(100vh-380px)] min-h-[420px] overflow-y-auto p-6">
                     <pre className="whitespace-pre-wrap font-mono text-sm leading-7 text-slate-800">{editorContent}</pre>
                   </div>
+                  {(canSignforgeSend || canSignforgeRefresh) && (
+                    <div className="flex flex-wrap items-center justify-end gap-2 border-t border-slate-200 bg-slate-50 px-5 py-3">
+                      {canSignforgeSend && (
+                        <button
+                          type="button"
+                          onClick={handleSignforgeSend}
+                          disabled={!!actionLoading}
+                          className="rounded-xl border border-violet-200 bg-violet-50 px-4 py-2 text-sm font-semibold text-violet-800 transition hover:bg-violet-100 disabled:opacity-50"
+                        >
+                          {actionLoading === 'signforge' ? 'Sending…' : 'Resend signing link'}
+                        </button>
+                      )}
+                      {canSignforgeRefresh && (
+                        <button
+                          type="button"
+                          onClick={handleSignforgeRefreshStatus}
+                          disabled={!!actionLoading}
+                          className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:opacity-50"
+                        >
+                          {actionLoading === 'signforge-status' ? 'Checking…' : 'Refresh SignForge status'}
+                        </button>
+                      )}
+                    </div>
+                  )}
                 </>
               )}
             </div>
@@ -5960,155 +6060,6 @@ function LeaseEditor({ draftId, manager, onBack, embedded = false }) {
               )}
             </div>
           )}
-        </div>
-
-        {/* Sidebar */}
-        <div className="hidden w-72 shrink-0 space-y-4 lg:block">
-          {/* Lease details card */}
-          <div className="rounded-3xl border border-slate-200 bg-white p-5">
-            <div className="mb-4 text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">Lease Details</div>
-            <div className="space-y-3">
-              <DetailRow label="Resident" value={draft?.['Resident Name']} />
-              <DetailRow label="Email" value={draft?.['Resident Email']} />
-              <DetailRow label="Property" value={draft?.['Property']} />
-              <DetailRow label="Unit" value={draft?.['Unit']} />
-              <DetailRow label="Term" value={draft?.['Lease Term']} />
-              <DetailRow label="Move-in" value={fmtDate(draft?.['Lease Start Date'])} />
-              <DetailRow label="Move-out" value={fmtDate(draft?.['Lease End Date']) || 'Month-to-month'} />
-              {draft?.['Rent Amount'] ? (
-                <DetailRow label="Rent" value={`$${Number(draft['Rent Amount']).toLocaleString()}/mo`} />
-              ) : null}
-              {draft?.['Deposit Amount'] ? (
-                <DetailRow label="Deposit" value={`$${Number(draft['Deposit Amount']).toLocaleString()}`} />
-              ) : null}
-              {draft?.['Utilities Fee'] ? (
-                <DetailRow label="Utilities" value={`$${draft['Utilities Fee']}/mo`} />
-              ) : null}
-              {signforgeEnvelopeId ? (
-                <DetailRow label="SignForge envelope" value={String(signforgeEnvelopeId)} />
-              ) : null}
-              {draft?.['SignForge Sent At'] ? (
-                <DetailRow label="SignForge sent" value={fmtDate(draft['SignForge Sent At'])} />
-              ) : null}
-            </div>
-          </div>
-
-          {/* Approval info — shown once approved */}
-          {(draft?.['Approved By'] || draft?.['Approved At'] || draft?.['Published At']) && (
-            <div className="rounded-3xl border border-green-200 bg-green-50 p-5">
-              <div className="mb-3 text-[11px] font-bold uppercase tracking-[0.18em] text-green-600">Approval Record</div>
-              <div className="space-y-2">
-                {draft?.['Approved By']  && <DetailRow label="Approved by" value={draft['Approved By']} />}
-                {draft?.['Approved At']  && <DetailRow label="Approved"    value={fmtDateTime(draft['Approved At'])} />}
-                {draft?.['Published At'] && <DetailRow label="Published"   value={fmtDateTime(draft['Published At'])} />}
-              </div>
-            </div>
-          )}
-
-          {/* Internal notes */}
-          <div className="rounded-3xl border border-slate-200 bg-white p-5">
-            <div className="mb-1 text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">Internal Notes</div>
-            <p className="mb-3 text-xs text-slate-500">Visible to managers only — not shown to residents</p>
-            <textarea
-              value={managerNotes}
-              onChange={e => setManagerNotes(e.target.value)}
-              disabled={!canEdit}
-              rows={4}
-              placeholder="Revision notes, review comments, instructions…"
-              className="w-full resize-none rounded-2xl border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700 placeholder:text-slate-400 transition focus:border-[#2563eb] focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#2563eb]/20 disabled:opacity-60"
-            />
-            {canEdit && (
-              <button
-                onClick={handleSave}
-                disabled={saving || !!actionLoading}
-                className="mt-3 w-full rounded-2xl border border-slate-200 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:opacity-50"
-              >
-                {saving ? 'Saving…' : 'Save notes'}
-              </button>
-            )}
-          </div>
-
-          {/* Context-aware hints */}
-          {canApprove && (
-            <div className="rounded-3xl border border-slate-200 bg-slate-50 p-5">
-              <div className="text-sm font-semibold text-slate-700">Ready to send?</div>
-              <p className="mt-1.5 text-sm text-slate-500">
-                Save your edits, then click <strong>Send to resident</strong>. That makes the lease visible in the resident portal and emails the signing link when SignForge is configured.
-              </p>
-            </div>
-          )}
-          {canPublish && (
-            <div className="rounded-3xl border border-axis/20 bg-axis/5 p-5">
-              <div className="text-sm font-semibold text-axis">Legacy lease waiting to send</div>
-              <p className="mt-1.5 text-sm text-axis/80">
-                This lease is in an older intermediate state. Use <strong>Send to resident</strong>, then resend the signing link if needed.
-              </p>
-            </div>
-          )}
-          {status === 'Published' && (
-            <div className="rounded-3xl border border-violet-200 bg-violet-50/80 p-5">
-              <div className="text-sm font-semibold text-violet-900">E-sign (SignForge)</div>
-              <p className="mt-1.5 text-sm text-violet-800/90">
-                New leases are emailed for signature when you send them to the resident. If sending failed or this lease predates that flow, use <strong>Resend signing link</strong> in the header (
-                <a className="underline font-medium" href="https://signforge.io/dashboard" target="_blank" rel="noreferrer">
-                  SignForge
-                </a>
-                , <code className="rounded bg-violet-100 px-1 text-[11px]">SIGNFORGE_API_KEY</code>).
-              </p>
-            </div>
-          )}
-          {['Published', 'Signed'].includes(status) && (
-            <div className="rounded-3xl border border-slate-200 bg-slate-50 p-5">
-              <div className="text-sm font-semibold text-slate-700">Read-only</div>
-              <p className="mt-1.5 text-sm text-slate-500">
-                This lease has been {status?.toLowerCase()} and can no longer be edited.
-              </p>
-            </div>
-          )}
-
-          {/* Mobile action buttons (shown in sidebar on smaller screens) */}
-          <div className="block space-y-2 lg:hidden">
-            {canEdit && (
-              <button onClick={handleSave} disabled={saving || !!actionLoading} className="w-full rounded-2xl border border-slate-300 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:opacity-50">
-                {saving ? 'Saving…' : 'Save edits'}
-              </button>
-            )}
-            {canReject && (
-              <button onClick={handleReject} disabled={!!actionLoading} className="w-full rounded-2xl border border-red-200 bg-red-50 py-3 text-sm font-semibold text-red-700 transition hover:bg-red-100 disabled:opacity-50">
-                {actionLoading === 'reject' ? 'Updating…' : 'Changes needed'}
-              </button>
-            )}
-            {canApprove && (
-              <button onClick={handleApprove} disabled={!!actionLoading} className="w-full rounded-2xl bg-green-600 py-3 text-sm font-semibold text-white transition hover:bg-green-700 disabled:opacity-50">
-                {actionLoading === 'approve' ? 'Sending…' : 'Send to resident'}
-              </button>
-            )}
-            {canPublish && (
-              <button onClick={handlePublish} disabled={!!actionLoading} className="w-full rounded-2xl bg-[#2563eb] py-3 text-sm font-semibold text-white transition hover:brightness-110 disabled:opacity-50">
-                {actionLoading === 'publish' ? 'Sending…' : 'Send to resident'}
-              </button>
-            )}
-            {canSignforgeSend && (
-              <button
-                type="button"
-                onClick={handleSignforgeSend}
-                disabled={!!actionLoading}
-                className="w-full rounded-2xl border border-violet-200 bg-violet-50 py-3 text-sm font-semibold text-violet-800 transition hover:bg-violet-100 disabled:opacity-50"
-              >
-                {actionLoading === 'signforge' ? 'Sending…' : 'Resend signing link'}
-              </button>
-            )}
-            {canSignforgeRefresh && (
-              <button
-                type="button"
-                onClick={handleSignforgeRefreshStatus}
-                disabled={!!actionLoading}
-                className="w-full rounded-2xl border border-slate-200 bg-white py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:opacity-50"
-              >
-                {actionLoading === 'signforge-status' ? 'Checking…' : 'Refresh SignForge status'}
-              </button>
-            )}
-          </div>
         </div>
       </div>
     </div>

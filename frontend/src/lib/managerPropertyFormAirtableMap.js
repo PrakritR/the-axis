@@ -195,7 +195,7 @@ export function emptyLaundryRow() {
 }
 
 export function emptySharedSpaceRow() {
-  return { name: '', type: '', typeOther: '', access: [] }
+  return { name: '', type: '', typeOther: '', description: '', access: [] }
 }
 
 export function emptyListingAvailabilityWindow() {
@@ -207,6 +207,7 @@ function sharedSpaceRowHasContent(row) {
   if (String(row.name || '').trim()) return true
   if (String(row.type || '').trim()) return true
   if (String(row.typeOther || '').trim()) return true
+  if (String(row.description || '').trim()) return true
   const acc = Array.isArray(row.access) ? row.access.filter(Boolean) : []
   return acc.length > 0
 }
@@ -346,13 +347,16 @@ export function buildPropertyWizardInitialValues(property) {
 
   const sharedSpaces = []
   const sharedCount = clampInt(record[PROPERTY_AIR.sharedSpaceCount] ?? 0, 0, MAX_SHARED_SPACE_SLOTS)
+  const sharedMetaRows = Array.isArray(meta?.sharedSpacesDetail) ? meta.sharedSpacesDetail : []
   for (let i = 1; i <= sharedCount; i++) {
     const type = stringOrEmpty(record[sharedSpaceTypeField(i)])
+    const metaRow = sharedMetaRows[i - 1] && typeof sharedMetaRows[i - 1] === 'object' ? sharedMetaRows[i - 1] : {}
     sharedSpaces.push({
       ...emptySharedSpaceRow(),
       name: stringOrEmpty(record[sharedSpaceNameField(i)]),
       type: SHARED_SPACE_TYPE_OPTIONS.includes(type) ? type : type ? 'Other' : '',
       typeOther: SHARED_SPACE_TYPE_OPTIONS.includes(type) ? '' : type,
+      description: stringOrEmpty(metaRow.description || metaRow.notes),
       access: splitRoomAccess(record[sharedSpaceAccessField(i)]),
     })
   }
@@ -641,9 +645,15 @@ export function serializeManagerAddPropertyToAirtableFields(params) {
     })
     .filter(Boolean)
 
+  const sharedSpacesDetail = sharedTrimmed.map((row) => {
+    const notes = String(row?.description || '').trim()
+    return notes ? { notes, description: notes } : {}
+  })
+
   const axisMeta = {
     propertyTypeOther: ptRaw === 'Other' ? ptOther : '',
     roomsDetail,
+    sharedSpacesDetail,
     financials: {
       securityDeposit: optionalCurrency(basics.securityDeposit) ?? 0,
       moveInCharges: optionalCurrency(basics.moveInCharges) ?? 0,
