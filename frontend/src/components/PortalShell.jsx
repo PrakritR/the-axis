@@ -250,13 +250,13 @@ export function DataTable({ columns, rows, empty }) {
   }
   return (
     <div className="overflow-x-auto rounded-3xl border border-slate-200 bg-white shadow-sm">
-      <table className="w-full min-w-[640px] text-sm">
+      <table className="w-full min-w-[760px] text-sm">
         <thead>
           <tr className="border-b border-slate-200 bg-slate-50">
             {columns.map((c) => (
               <th
                 key={c.key}
-                className="px-5 py-3.5 text-left text-[11px] font-bold uppercase tracking-[0.14em] text-slate-400"
+                className={`px-5 py-3.5 text-left text-[11px] font-bold uppercase tracking-[0.14em] text-slate-400 ${c.headerClassName || ''}`}
               >
                 {c.label}
               </th>
@@ -267,7 +267,7 @@ export function DataTable({ columns, rows, empty }) {
           {rows.map((row, i) => (
             <tr key={row.key ?? i} className="transition-colors hover:bg-slate-50/80">
               {columns.map((c) => (
-                <td key={c.key} className="px-5 py-4 text-slate-700">
+                <td key={c.key} className={`px-5 py-4 text-slate-700 ${c.cellClassName || ''}`}>
                   {c.render ? c.render(row.data) : row.data[c.key]}
                 </td>
               ))}

@@ -2871,6 +2871,7 @@ function HouseManagementPanel({ manager, onPropertiesChange }) {
                       {
                         key: 'property',
                         label: 'Property',
+                        headerClassName: 'w-[28%]',
                         render: (p) => (
                           <>
                             <div className="font-semibold text-slate-900">{propertyRecordName(p) || 'Untitled house'}</div>
@@ -2881,6 +2882,7 @@ function HouseManagementPanel({ manager, onPropertiesChange }) {
                       {
                         key: 'summary',
                         label: 'Summary',
+                        headerClassName: 'w-[42%]',
                         render: (p) => (
                           <div className="flex flex-wrap gap-1.5">
                             {p['Property Type'] ? <span className="rounded-full border border-slate-200 bg-white px-2.5 py-0.5 text-[11px] font-semibold text-slate-600">{p['Property Type']}</span> : null}
@@ -2893,6 +2895,8 @@ function HouseManagementPanel({ manager, onPropertiesChange }) {
                       {
                         key: 'status',
                         label: 'Status',
+                        headerClassName: 'w-[16%] text-center',
+                        cellClassName: 'text-center',
                         render: () => {
                           const statusPill = managerPropertySectionTableStatus(propertiesSection)
                           return <StatusPill tone={statusPill.tone}>{statusPill.label}</StatusPill>
@@ -2900,11 +2904,13 @@ function HouseManagementPanel({ manager, onPropertiesChange }) {
                       },
                       {
                         key: 'actions',
-                        label: '',
+                        label: 'Action',
+                        headerClassName: 'w-[14%] text-right',
+                        cellClassName: 'text-right',
                         render: (p) => (
                           <button
                             type="button"
-                            className="text-sm font-semibold text-[#2563eb]"
+                            className="whitespace-nowrap text-sm font-semibold text-[#2563eb]"
                             onClick={() => {
                               setEditingPropertyId(null)
                               setDetailsPropertyId(detailsPropertyId === p.id ? null : p.id)
