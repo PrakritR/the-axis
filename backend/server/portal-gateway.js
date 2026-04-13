@@ -25,6 +25,11 @@ import sendLeaseInvite from './handlers/send-lease-invite.js'
 import signforgeSendLease from './handlers/signforge-send-lease.js'
 import signforgeEnvelopeStatus from './handlers/signforge-envelope-status.js'
 import workOrderAiSuggest from './handlers/work-order-ai-suggest.js'
+import leaseSubmitEditRequest from './handlers/lease-submit-edit-request.js'
+import leaseAdminRespond from './handlers/lease-admin-respond.js'
+import leaseManagerReview from './handlers/lease-manager-review.js'
+import leaseAddComment from './handlers/lease-add-comment.js'
+import leaseMarkNotificationsRead from './handlers/lease-mark-notifications-read.js'
 
 const handlers = {
   'application-create-lease-draft': applicationCreateLeaseDraft,
@@ -44,6 +49,11 @@ const handlers = {
   'signforge-send-lease': signforgeSendLease,
   'signforge-envelope-status': signforgeEnvelopeStatus,
   'work-order-ai-suggest': workOrderAiSuggest,
+  'lease-submit-edit-request': leaseSubmitEditRequest,
+  'lease-admin-respond': leaseAdminRespond,
+  'lease-manager-review': leaseManagerReview,
+  'lease-add-comment': leaseAddComment,
+  'lease-mark-notifications-read': leaseMarkNotificationsRead,
 }
 
 // These actions don't require an authenticated manager session
