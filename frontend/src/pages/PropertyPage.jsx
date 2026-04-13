@@ -1112,7 +1112,7 @@ export default function PropertyPage(){
                 </div>
                 <div className="mt-5 flex flex-col gap-3 sm:flex-row">
                   <Link to={`/apply?property=${p.slug}&room=${encodeURIComponent(modalPlan.room.name)}`} onClick={scrollToTop} className="flex-1 rounded-full bg-axis py-3 text-center text-sm font-semibold text-white shadow-soft transition hover:opacity-95">Apply for this room</Link>
-                  <Link to="/contact?section=housing&tab=message" onClick={() => window.scrollTo({ top: 0, left: 0, behavior: 'auto' })} className="flex-1 rounded-full border border-slate-300 py-3 text-center text-sm font-semibold text-slate-700 transition hover:border-axis hover:text-axis">Ask a question</Link>
+                  <Link to={`/contact?section=housing&tab=message&property=${p.slug}&room=${encodeURIComponent(modalPlan.room.name)}`} onClick={() => window.scrollTo({ top: 0, left: 0, behavior: 'auto' })} className="flex-1 rounded-full border border-slate-300 py-3 text-center text-sm font-semibold text-slate-700 transition hover:border-axis hover:text-axis">Ask a question</Link>
                 </div>
               </div>
             </Modal>

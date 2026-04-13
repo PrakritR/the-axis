@@ -409,6 +409,62 @@ function escapeFormulaString(value) {
   return String(value).replace(/\\/g, '\\\\').replace(/'/g, "\\'")
 }
 
+function normalizeRoomKey(value) {
+  return String(value || '')
+    .replace(/^Unit\s+/i, 'Room ')
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, '')
+}
+
+function slugify(value) {
+  return String(value || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+}
+
+function matchPropertyNameFromParam(propertyParam, livePropertyOptions) {
+  const raw = String(propertyParam || '').trim()
+  if (!raw) return ''
+  const lower = raw.toLowerCase()
+  const wantedSlug = slugify(raw)
+
+  const exactLiveName = (livePropertyOptions || []).find((p) => String(p.name || '').toLowerCase() === lower)
+  if (exactLiveName) return exactLiveName.name
+
+  const exactLiveId = (livePropertyOptions || []).find((p) => String(p.id || '').toLowerCase() === lower)
+  if (exactLiveId) return exactLiveId.name
+
+  const byMarketing = properties.find((p) => p.slug === lower || p.name.toLowerCase() === lower)
+  if (byMarketing) {
+    const liveByMarketingName = (livePropertyOptions || []).find((p) => p.name === byMarketing.name)
+    if (liveByMarketingName) return liveByMarketingName.name
+  }
+
+  const slugMatch = (livePropertyOptions || []).find((p) => slugify(p.name) === wantedSlug)
+  if (slugMatch) return slugMatch.name
+
+  return ''
+}
+
+function matchRoomNameFromParam(roomParam, selectedProperty) {
+  const raw = String(roomParam || '').trim()
+  if (!raw || !selectedProperty?.rooms?.length) return ''
+  const wanted = normalizeRoomKey(raw)
+  const exact = selectedProperty.rooms.find((room) => normalizeRoomKey(room.name) === wanted)
+  if (exact) return exact.name
+
+  const num = raw.match(/\d+/)?.[0]
+  if (num) {
+    const byNum = selectedProperty.rooms.find((room) => String(room.name || '').replace(/\D/g, '') === num)
+    if (byNum) return byNum.name
+  }
+
+  return ''
+}
+
 function defaultSigner() {
   return {
     propertyName: '',
@@ -1107,6 +1163,7 @@ export default function Apply() {
   const [prePaymentError, setPrePaymentError] = useState('')
   const [embeddedCheckout, setEmbeddedCheckout] = useState(null)
   const autoSubmitRef = useRef(false)
+  const queryPrefillAppliedRef = useRef(false)
 
   const steps = applicationType === 'cosigner' ? COSIGNER_STEPS : SIGNER_STEPS
   const paymentStatus = typeof window !== 'undefined' ? new URLSearchParams(window.location.search).get('payment') : ''
@@ -1173,6 +1230,40 @@ export default function Apply() {
       cancelled = true
     }
   }, [])
+
+  useEffect(() => {
+    if (queryPrefillAppliedRef.current) return
+    if (applicationType !== 'signer') return
+    if (!propertyOptions.length) return
+    if (signer.propertyName || signer.roomNumber) {
+      queryPrefillAppliedRef.current = true
+      return
+    }
+
+    const params = new URLSearchParams(window.location.search)
+    const propertyParam = params.get('property') || ''
+    const roomParam = params.get('room') || ''
+    if (!propertyParam && !roomParam) {
+      queryPrefillAppliedRef.current = true
+      return
+    }
+
+    const matchedPropertyName = matchPropertyNameFromParam(propertyParam, propertyOptions)
+    if (!matchedPropertyName) {
+      queryPrefillAppliedRef.current = true
+      return
+    }
+
+    const selected = propertyOptions.find((p) => p.name === matchedPropertyName)
+    const matchedRoomName = matchRoomNameFromParam(roomParam, selected)
+    setSigner((prev) => ({
+      ...prev,
+      propertyName: matchedPropertyName,
+      propertyAddress: selected?.address || '',
+      roomNumber: matchedRoomName || '',
+    }))
+    queryPrefillAppliedRef.current = true
+  }, [applicationType, propertyOptions, signer.propertyName, signer.roomNumber])
 
   const signerApplicationFeeUsd = useMemo(
     () => getApplicationFeeDollars(signer.propertyName, applicationFeeOverrides),

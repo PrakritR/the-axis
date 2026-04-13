@@ -66,6 +66,32 @@ function normalizeRoomKey(s) {
     .replace(/\s+/g, '')
 }
 
+function slugify(value) {
+  return String(value || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+}
+
+function matchPropertyParamToId(propertyParam, propsList) {
+  const raw = String(propertyParam || '').trim()
+  if (!raw || !propsList?.length) return null
+  const lower = raw.toLowerCase()
+  const normalizedSlug = slugify(raw)
+
+  const byId = propsList.find((p) => String(p.id || '').trim().toLowerCase() === lower)
+  if (byId) return byId.id
+
+  const byName = propsList.find((p) => String(p.name || '').trim().toLowerCase() === lower)
+  if (byName) return byName.id
+
+  const bySlug = propsList.find((p) => slugify(p.name) === normalizedSlug)
+  if (bySlug) return bySlug.id
+
+  return null
+}
+
 function matchHouseToPropertyId(house, propsList) {
   const h = String(house || '').trim().toLowerCase()
   if (!h || !propsList?.length) return null
@@ -191,6 +217,13 @@ export function PropertyRoomPicker({
         ) : null}
         {p ? (
           <p className="mt-2 text-xs font-medium text-[#2563eb]">
+            {p.address || p.manager ? (
+              <>
+                {p.address || ''}
+                {p.address && p.manager ? ' | ' : ''}
+                {p.manager ? `Manager: ${p.manager}` : ''}
+              </>
+            ) : null}
           </p>
         ) : null}
       </div>
@@ -249,6 +282,22 @@ export function HousingMessageForm({ variant = 'marketing', prefill = null, form
     const id = normalizeHousingMessageCategoryId(raw)
     if (id) setCategory(id)
   }, [location.search, variant])
+
+  useEffect(() => {
+    if (properties.length === 0) return
+    const params = new URLSearchParams(location.search)
+    const propertyParam = params.get('property') || ''
+    const roomParam = params.get('room') || ''
+    if (!propertyParam) return
+
+    const matchedPropertyId = matchPropertyParamToId(propertyParam, properties)
+    if (!matchedPropertyId) return
+
+    setProperty(matchedPropertyId)
+    const prop = properties.find((p) => p.id === matchedPropertyId)
+    const pickedRoom = pickRoomFromUnit(roomParam, prop?.rooms || [])
+    setRoom(pickedRoom || '')
+  }, [location.search, properties])
 
   useEffect(() => {
     let cancelled = false
