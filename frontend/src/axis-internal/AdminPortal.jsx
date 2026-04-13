@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import React, { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import toast from 'react-hot-toast'
 import ManagerInboxPage from '../components/manager-inbox/ManagerInboxPage'
 import Modal from '../components/Modal'
@@ -18,8 +18,6 @@ import {
   isAdminPortalAirtableConfigured,
   loadAdminPortalDataset,
   loadResidentsForAdmin,
-  loadAdminMeetingCalendarProfiles,
-  updateAdminMeetingAvailability,
 } from '../lib/adminPortalAirtable.js'
 import { readJsonResponse } from '../lib/readJsonResponse'
 import { authenticateAdminPortal } from '../lib/adminPortalSignIn'
@@ -42,6 +40,10 @@ import {
 
 export { AXIS_ADMIN_SESSION_KEY } from './adminSessionConstants'
 
+const AdminPortalCalendarTab = lazy(() =>
+  import('../pages/Manager.jsx').then((m) => ({ default: m.CalendarTabPanel })),
+)
+
 const PROPERTY_STATUS_LABEL = {
   pending: 'Pending approval',
   changes_requested: 'Changes requested',
@@ -61,226 +63,33 @@ const NAV_BASE = [
   { id: 'profile', label: 'Profile' },
 ]
 
-const WEEK_DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+function PropertySectionIcon({ sectionKey, active }) {
+  const tone = active
+    ? 'text-[#2563eb] bg-[#2563eb]/10 border-[#2563eb]/20'
+    : 'text-slate-500 bg-slate-100 border-slate-200'
 
-function parseAvailabilityText(raw) {
-  const out = {}
-  String(raw || '')
-    .split(/\n|;/)
-    .map((line) => line.trim())
-    .filter(Boolean)
-    .forEach((line) => {
-      const m = line.match(/^(Mon|Tue|Wed|Thu|Fri|Sat|Sun)\s*[:\-]\s*(.+)$/i)
-      if (!m) return
-      const day = m[1].slice(0, 1).toUpperCase() + m[1].slice(1, 3).toLowerCase()
-      out[day] = m[2]
-        .split(',')
-        .map((s) => s.trim())
-        .filter(Boolean)
-    })
-  return out
-}
-
-function displayClockFromMinutes(totalMinutes) {
-  const h24 = Math.floor(totalMinutes / 60)
-  const mins = Math.max(0, totalMinutes % 60)
-  let h12 = h24 % 12
-  if (h12 === 0) h12 = 12
-  const ap = h24 >= 12 ? 'PM' : 'AM'
-  return `${h12}:${String(mins).padStart(2, '0')} ${ap}`
-}
-
-function normalizeTimeRange(value) {
-  const pair = String(value || '').trim().match(/^(\d+)-(\d+)$/)
-  if (pair) {
-    const start = Number(pair[1])
-    const end = Number(pair[2])
-    if (Number.isFinite(start) && Number.isFinite(end) && end > start) {
-      return `${displayClockFromMinutes(start)} - ${displayClockFromMinutes(end)}`
+  const icon = (() => {
+    if (sectionKey === 'pending') {
+      return <path strokeLinecap="round" strokeLinejoin="round" d="M12 7v5l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
     }
-  }
-  const parts = String(value || '')
-    .split(/\s*[\-–]\s*/)
-    .map((part) => part.trim())
-    .filter(Boolean)
-  if (parts.length !== 2) return String(value || '').trim()
-  return `${parts[0].toUpperCase()} - ${parts[1].toUpperCase()}`
-}
-
-function AdminCalendarPanel({ user }) {
-  const [loading, setLoading] = useState(true)
-  const [admins, setAdmins] = useState([])
-  const [selectedAdminEmail, setSelectedAdminEmail] = useState('')
-  const [availabilityDraft, setAvailabilityDraft] = useState('')
-  const [saving, setSaving] = useState(false)
-
-  const loadCalendar = useCallback(async () => {
-    setLoading(true)
-    try {
-      const [profiles, meetingResp] = await Promise.all([
-        loadAdminMeetingCalendarProfiles(),
-        fetch('/api/forms?action=meeting').then((r) => r.json()).catch(() => ({ admins: [] })),
-      ])
-      const meetingMap = new Map(
-        (Array.isArray(meetingResp?.admins) ? meetingResp.admins : [])
-          .map((row) => [String(row.email || '').trim().toLowerCase(), row.bookedSlotsByDate || {}]),
-      )
-      const merged = profiles.map((profile) => ({
-        ...profile,
-        bookedSlotsByDate: meetingMap.get(profile.email) || {},
-      }))
-      setAdmins(merged)
-      setSelectedAdminEmail((current) => {
-        if (current && merged.some((row) => row.email === current)) return current
-        const mine = String(user?.email || '').trim().toLowerCase()
-        if (mine && merged.some((row) => row.email === mine)) return mine
-        return merged[0]?.email || ''
-      })
-    } finally {
-      setLoading(false)
+    if (sectionKey === 'request_change') {
+      return <path strokeLinecap="round" strokeLinejoin="round" d="M15.232 5.232l3.536 3.536M9 11l6.768-6.768a2.5 2.5 0 113.536 3.536L12.536 14.536a2 2 0 01-.878.513L8 16l.951-3.658A2 2 0 019.464 11.5z" />
     }
-  }, [user?.email])
-
-  useEffect(() => {
-    loadCalendar()
-  }, [loadCalendar])
-
-  const selectedAdmin = useMemo(
-    () => admins.find((row) => row.email === selectedAdminEmail) || null,
-    [admins, selectedAdminEmail],
-  )
-
-  useEffect(() => {
-    setAvailabilityDraft(String(selectedAdmin?.meetingAvailability || '').trim())
-  }, [selectedAdmin?.id, selectedAdmin?.meetingAvailability])
-
-  const canEditSelected = Boolean(
-    selectedAdmin &&
-      user?.airtableRecordId &&
-      String(user.airtableRecordId).trim() === String(selectedAdmin.id || '').trim(),
-  )
-
-  const upcomingBookedRows = useMemo(() => {
-    if (!selectedAdmin?.bookedSlotsByDate) return []
-    return Object.entries(selectedAdmin.bookedSlotsByDate)
-      .flatMap(([dateKey, slots]) =>
-        (slots || []).map((slot) => ({
-          dateKey,
-          slot: normalizeTimeRange(slot),
-        })),
-      )
-      .sort((a, b) => {
-        if (a.dateKey !== b.dateKey) return a.dateKey.localeCompare(b.dateKey)
-        return a.slot.localeCompare(b.slot)
-      })
-  }, [selectedAdmin])
-
-  async function handleSaveAvailability() {
-    if (!selectedAdmin) return
-    if (!canEditSelected) {
-      toast.error('Sign in with this admin profile account to edit its calendar availability.')
-      return
+    if (sectionKey === 'approved') {
+      return <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
     }
-    setSaving(true)
-    try {
-      await updateAdminMeetingAvailability(selectedAdmin.id, availabilityDraft)
-      toast.success('Meeting availability saved')
-      await loadCalendar()
-    } catch (err) {
-      toast.error(err.message || 'Could not save meeting availability')
-    } finally {
-      setSaving(false)
+    if (sectionKey === 'unlisted') {
+      return <path strokeLinecap="round" strokeLinejoin="round" d="M3 3l18 18M10.73 5.08A10.94 10.94 0 0112 5c5.523 0 10 7 10 7a18.1 18.1 0 01-4.28 4.89M9.88 9.88a3 3 0 104.24 4.24M6.1 6.1A18.13 18.13 0 002 12s1.55 2.17 4.1 4.1" />
     }
-  }
-
-  if (loading) {
-    return <div className="rounded-3xl border border-slate-200 bg-white px-6 py-12 text-center text-sm text-slate-500">Loading calendar…</div>
-  }
+    return <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+  })()
 
   return (
-    <div className="space-y-6">
-      <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
-        <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-          <h2 className="text-2xl font-black text-slate-900">Meeting calendar</h2>
-          <button
-            type="button"
-            onClick={loadCalendar}
-            className="rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-50"
-          >
-            Refresh
-          </button>
-        </div>
-
-        <label className="mb-1.5 block text-xs font-semibold text-slate-700">Admin</label>
-        <select
-          value={selectedAdminEmail}
-          onChange={(e) => setSelectedAdminEmail(e.target.value)}
-          className={`${adminSelectCls} w-full max-w-md`}
-        >
-          {admins.map((row) => (
-            <option key={row.email} value={row.email}>{row.name} · {row.email}</option>
-          ))}
-        </select>
-
-        <div className="mt-5 grid gap-6 lg:grid-cols-2">
-          <div>
-            <div className="mb-2 text-sm font-semibold text-slate-800">Weekly meeting availability</div>
-            <p className="mb-2 text-xs text-slate-500">Format: Mon: 9:00 AM - 10:00 AM, 1:30 PM - 2:30 PM</p>
-            <textarea
-              rows={8}
-              value={availabilityDraft}
-              onChange={(e) => setAvailabilityDraft(e.target.value)}
-              className="w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm"
-              placeholder="Mon: 9:00 AM - 10:00 AM\nTue: 1:30 PM - 2:30 PM"
-            />
-            <div className="mt-3 flex items-center gap-3">
-              <button
-                type="button"
-                disabled={saving || !selectedAdmin}
-                onClick={handleSaveAvailability}
-                className="rounded-xl bg-[#2563eb] px-4 py-2 text-sm font-semibold text-white disabled:opacity-40"
-              >
-                {saving ? 'Saving…' : 'Save availability'}
-              </button>
-              {!canEditSelected ? (
-                <span className="text-xs text-amber-700">You can only edit your own admin profile availability.</span>
-              ) : null}
-            </div>
-          </div>
-
-          <div>
-            <div className="mb-2 text-sm font-semibold text-slate-800">Booked meetings</div>
-            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
-              {upcomingBookedRows.length ? (
-                <div className="space-y-2">
-                  {upcomingBookedRows.slice(0, 40).map((row, idx) => (
-                    <div key={`${row.dateKey}-${row.slot}-${idx}`} className="rounded-xl border border-violet-200 bg-violet-50 px-3 py-2 text-sm text-violet-900">
-                      <div className="font-semibold">Meeting</div>
-                      <div className="text-xs opacity-90">
-                        {new Date(`${row.dateKey}T00:00:00`).toLocaleDateString('en-US', {
-                          weekday: 'short',
-                          month: 'short',
-                          day: 'numeric',
-                        })} · {row.slot}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <div className="text-sm text-slate-500">No meetings booked yet.</div>
-              )}
-            </div>
-
-            <div className="mt-4 rounded-2xl border border-slate-200 bg-white px-4 py-3 text-xs text-slate-600">
-              Active days in availability:
-              <span className="ml-2 font-semibold text-slate-800">
-                {Object.keys(parseAvailabilityText(availabilityDraft || '')).filter((day) => WEEK_DAYS.includes(day)).join(', ') || 'None'}
-              </span>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
+    <span className={`mb-2 inline-flex h-9 w-9 items-center justify-center rounded-xl border ${tone}`}>
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="h-4.5 w-4.5">
+        {icon}
+      </svg>
+    </span>
   )
 }
 
@@ -295,6 +104,10 @@ function adminApplicationActorMeta(user) {
 
 const adminSelectCls =
   'rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-800 shadow-sm outline-none focus:border-[#2563eb] focus:ring-2 focus:ring-[#2563eb]/20'
+
+/** Property detail toolbar — plain border, top-right cluster (see Listed tab pattern). */
+const adminPropToolbarBtn =
+  'rounded-xl border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold shadow-sm transition hover:bg-slate-50 disabled:opacity-50'
 
 function sortAccountsByMode(list, mode) {
   const copy = [...list]
@@ -727,10 +540,8 @@ export default function AdminPortal() {
     if (propertiesSection === 'request_change') {
       return {
         rows: searchedRequestChange,
-        empty:
-          'No properties in request change. When a manager edits and resubmits, the home moves to Pending review.',
-        queueHint:
-          'These listings are off the public site. Managers fix them under Request change in the manager portal; when they resubmit, the home appears under Pending review for you to approve again.',
+        empty: 'No properties in request change.',
+        queueHint: null,
       }
     }
     return { rows: null, empty: '', queueHint: null }
@@ -981,6 +792,7 @@ export default function AdminPortal() {
                       : 'border-transparent text-slate-600 hover:border-slate-200 hover:bg-white/70 hover:text-slate-900'
                   }`}
                 >
+                  <PropertySectionIcon sectionKey={key} active={propertiesSection === key} />
                   <div className="text-lg font-black leading-none tabular-nums text-slate-900">{count}</div>
                   <div className="mt-1 text-sm font-semibold">{label}</div>
                 </button>
@@ -990,12 +802,6 @@ export default function AdminPortal() {
 
           {propertyReviewQueue.rows ? (
             <>
-              {propertyReviewQueue.queueHint ? (
-                <div className="rounded-2xl border border-violet-200 bg-violet-50/90 px-4 py-3 text-sm text-violet-950">
-                  <p className="font-semibold text-violet-900">Request change</p>
-                  <p className="mt-1 text-xs text-violet-900/90">{propertyReviewQueue.queueHint}</p>
-                </div>
-              ) : null}
               <DataTable
                 empty={propertyReviewQueue.empty}
                 columns={[
@@ -1004,85 +810,124 @@ export default function AdminPortal() {
                   { key: 's', label: 'Status', render: (d) => <StatusPill tone={propertyTone(d.status)}>{PROPERTY_STATUS_LABEL[d.status] || d.status}</StatusPill> },
                   { key: 'dt', label: 'Submitted', render: (d) => new Date(d.submittedAt).toLocaleDateString() },
                   { key: 'a', label: '', render: (d) => (
-                    <button type="button" className="text-sm font-semibold text-[#2563eb]" onClick={() => setSelectedApprovalId(d.id)}>Review</button>
+                    <button
+                      type="button"
+                      className="text-sm font-semibold text-[#2563eb]"
+                      onClick={() => setSelectedApprovalId(selectedApprovalId === d.id ? null : d.id)}
+                    >
+                      {selectedApprovalId === d.id ? 'Hide' : 'Review'}
+                    </button>
                   ) },
                 ]}
                 rows={propertyReviewQueue.rows.map((p) => ({ key: p.id, data: p }))}
               />
               {approval ? (
                 <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm space-y-4">
-                  <div className="flex justify-between gap-2">
+                  <div className="flex items-start justify-between gap-3">
                     <h2 className="text-lg font-black">{approval.name}</h2>
-                    <button type="button" className="text-sm text-slate-500" onClick={() => setSelectedApprovalId(null)}>Close</button>
+                    <div className="flex flex-wrap items-center justify-end gap-2">
+                      {propertiesSection === 'request_change' ? (
+                        <button
+                          type="button"
+                          disabled={approvalBusy}
+                          onClick={async () => {
+                            if (!window.confirm(`Permanently delete "${approval.name}"? This cannot be undone.`)) return
+                            if (!approval?.id) return
+                            setApprovalBusy(true)
+                            try {
+                              await adminDeleteProperty(approval.id)
+                              toast.success('Property deleted')
+                              setSelectedApprovalId(null)
+                              await refreshPortalData()
+                            } catch (err) {
+                              toast.error(err.message || 'Delete failed')
+                            } finally {
+                              setApprovalBusy(false)
+                            }
+                          }}
+                          className={`${adminPropToolbarBtn} text-red-700`}
+                        >
+                          {approvalBusy ? 'Working…' : 'Delete property'}
+                        </button>
+                      ) : (
+                        <>
+                          <button
+                            type="button"
+                            disabled={approvalBusy}
+                            className={`${adminPropToolbarBtn} text-emerald-700`}
+                            onClick={async () => {
+                              if (!approval?.id) return
+                              setApprovalBusy(true)
+                              try {
+                                await adminApproveProperty(approval.id)
+                                await refreshPortalData()
+                                toast.success('Property approved')
+                                setSelectedApprovalId(null)
+                              } catch (e) {
+                                toast.error(e?.message || 'Approve failed')
+                              } finally {
+                                setApprovalBusy(false)
+                              }
+                            }}
+                          >
+                            Approve
+                          </button>
+                          <button
+                            type="button"
+                            disabled={approvalBusy}
+                            className={`${adminPropToolbarBtn} text-amber-900`}
+                            onClick={() => {
+                              if (!approval?.id) return
+                              setRequestEditsNotes(String(approval.editRequestNotes || ''))
+                              setRequestEditsModalOpen(true)
+                            }}
+                          >
+                            Request edits
+                          </button>
+                          <button
+                            type="button"
+                            disabled={approvalBusy}
+                            className={`${adminPropToolbarBtn} text-red-700`}
+                            onClick={async () => {
+                              if (!approval?.id) return
+                              setApprovalBusy(true)
+                              try {
+                                await adminRejectProperty(approval.id)
+                                await refreshPortalData()
+                                toast.success('Property rejected')
+                                setSelectedApprovalId(null)
+                              } catch (e) {
+                                toast.error(e?.message || 'Reject failed')
+                              } finally {
+                                setApprovalBusy(false)
+                              }
+                            }}
+                          >
+                            Reject
+                          </button>
+                        </>
+                      )}
+                    </div>
                   </div>
                   <p className="text-sm text-slate-600">{approval.description}</p>
                   <PropertyDetailPanel property={approval} ownerLabel={ownerLabel(approval.ownerId)} />
                   {approval.editRequestNotes ? (
-                    <div className="rounded-2xl border border-violet-200 bg-violet-50/90 px-4 py-3 text-sm text-violet-950">
-                      <div className="text-[11px] font-bold uppercase tracking-[0.14em] text-violet-800">Current notes for manager</div>
+                    <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-800">
+                      <div className="text-[11px] font-bold uppercase tracking-[0.14em] text-slate-500">Current notes for manager</div>
                       <p className="mt-2 whitespace-pre-wrap">{approval.editRequestNotes}</p>
                     </div>
                   ) : null}
-                  <div className="flex flex-wrap gap-2">
-                    <button
-                      type="button"
-                      disabled={approvalBusy}
-                      className="rounded-xl bg-emerald-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
-                      onClick={async () => {
-                        if (!approval?.id) return
-                        setApprovalBusy(true)
-                        try {
-                          await adminApproveProperty(approval.id)
-                          await refreshPortalData()
-                          toast.success('Property approved')
-                          setSelectedApprovalId(null)
-                        } catch (e) {
-                          toast.error(e?.message || 'Approve failed')
-                        } finally {
-                          setApprovalBusy(false)
-                        }
-                      }}
-                    >
-                      Approve
-                    </button>
-                    <button
-                      type="button"
-                      disabled={approvalBusy}
-                      className="rounded-xl border border-amber-300 bg-amber-50 px-4 py-2 text-sm font-semibold text-amber-900 disabled:opacity-50"
-                      onClick={() => {
-                        if (!approval?.id) return
-                        setRequestEditsNotes(String(approval.editRequestNotes || ''))
-                        setRequestEditsModalOpen(true)
-                      }}
-                    >
-                      Request edits
-                    </button>
-                    <button
-                      type="button"
-                      disabled={approvalBusy}
-                      className="rounded-xl border border-red-200 bg-red-50 px-4 py-2 text-sm font-semibold text-red-800 disabled:opacity-50"
-                      onClick={async () => {
-                        if (!approval?.id) return
-                        setApprovalBusy(true)
-                        try {
-                          await adminRejectProperty(approval.id)
-                          await refreshPortalData()
-                          toast.success('Property rejected')
-                          setSelectedApprovalId(null)
-                        } catch (e) {
-                          toast.error(e?.message || 'Reject failed')
-                        } finally {
-                          setApprovalBusy(false)
-                        }
-                      }}
-                    >
-                      Reject
-                    </button>
-                  </div>
-                  <label className="block text-sm">
-                    <span className="font-semibold text-slate-700">Internal notes (admin only)</span>
-                    <textarea className="mt-1 w-full rounded-2xl border border-slate-200 px-3 py-2 text-sm" rows={2} defaultValue={approval.adminNotesInternal} readOnly />
-                  </label>
+                  {propertiesSection === 'pending' ? (
+                    <label className="block text-sm">
+                      <span className="font-semibold text-slate-700">Internal notes (admin only)</span>
+                      <textarea
+                        className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 outline-none focus:border-slate-300 focus:ring-1 focus:ring-slate-200"
+                        rows={2}
+                        defaultValue={approval.adminNotesInternal}
+                        readOnly
+                      />
+                    </label>
+                  ) : null}
                 </div>
               ) : null}
             </>
@@ -1124,7 +969,7 @@ export default function AdminPortal() {
                             setApprovalBusy(false)
                           }
                         }}
-                        className="rounded-xl border border-slate-300 bg-slate-50 px-3 py-1.5 text-xs font-semibold text-slate-800 hover:bg-slate-100 disabled:opacity-50"
+                        className={`${adminPropToolbarBtn} text-slate-800`}
                       >
                         Unlist
                       </button>
@@ -1136,7 +981,7 @@ export default function AdminPortal() {
                           setRequestEditsNotes(String(approval.editRequestNotes || ''))
                           setRequestEditsModalOpen(true)
                         }}
-                        className="rounded-xl border border-amber-300 bg-amber-50 px-3 py-1.5 text-xs font-semibold text-amber-900 hover:bg-amber-100 disabled:opacity-50"
+                        className={`${adminPropToolbarBtn} text-amber-900`}
                       >
                         Request edits
                       </button>
@@ -1157,11 +1002,10 @@ export default function AdminPortal() {
                             setApprovalBusy(false)
                           }
                         }}
-                        className="rounded-xl border border-red-200 bg-red-50 px-3 py-1.5 text-xs font-semibold text-red-700 hover:bg-red-100 disabled:opacity-50"
+                        className={`${adminPropToolbarBtn} text-red-700`}
                       >
                         {approvalBusy ? 'Working…' : 'Delete property'}
                       </button>
-                      <button type="button" className="text-sm text-slate-500" onClick={() => setSelectedApprovalId(null)}>Close</button>
                     </div>
                   </div>
                   <p className="text-sm text-slate-600">{approval.description}</p>
@@ -1206,7 +1050,7 @@ export default function AdminPortal() {
                             setApprovalBusy(false)
                           }
                         }}
-                        className="rounded-xl bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-700 disabled:opacity-50"
+                        className={`${adminPropToolbarBtn} text-emerald-700`}
                       >
                         Relist
                       </button>
@@ -1218,7 +1062,7 @@ export default function AdminPortal() {
                           setRequestEditsNotes(String(approval.editRequestNotes || ''))
                           setRequestEditsModalOpen(true)
                         }}
-                        className="rounded-xl border border-amber-300 bg-amber-50 px-3 py-1.5 text-xs font-semibold text-amber-900 hover:bg-amber-100 disabled:opacity-50"
+                        className={`${adminPropToolbarBtn} text-amber-900`}
                       >
                         Request edits
                       </button>
@@ -1239,11 +1083,10 @@ export default function AdminPortal() {
                             setApprovalBusy(false)
                           }
                         }}
-                        className="rounded-xl border border-red-200 bg-red-50 px-3 py-1.5 text-xs font-semibold text-red-700 hover:bg-red-100 disabled:opacity-50"
+                        className={`${adminPropToolbarBtn} text-red-700`}
                       >
                         {approvalBusy ? 'Working…' : 'Delete property'}
                       </button>
-                      <button type="button" className="text-sm text-slate-500" onClick={() => setSelectedApprovalId(null)}>Close</button>
                     </div>
                   </div>
                   <p className="text-sm text-slate-600">Hidden from the public marketing site; still approved in Axis.</p>
@@ -1277,7 +1120,7 @@ export default function AdminPortal() {
                       <button
                         type="button"
                         disabled={approvalBusy}
-                        className="rounded-xl border border-amber-300 bg-amber-50 px-3 py-1.5 text-xs font-semibold text-amber-900 disabled:opacity-50"
+                        className={`${adminPropToolbarBtn} text-amber-900`}
                         onClick={async () => {
                           if (!approval?.id) return
                           setApprovalBusy(true)
@@ -1296,7 +1139,6 @@ export default function AdminPortal() {
                       >
                         Unreject (move to pending)
                       </button>
-                      <button type="button" className="text-sm text-slate-500" onClick={() => setSelectedApprovalId(null)}>Close</button>
                     </div>
                   </div>
                   <p className="text-sm text-slate-600">{approval.description}</p>
@@ -1320,7 +1162,7 @@ export default function AdminPortal() {
               </label>
               <textarea
                 id="axis-admin-edit-request-notes"
-                className="mt-1 w-full rounded-2xl border border-slate-200 px-3 py-2 text-sm text-slate-900"
+                className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 outline-none focus:border-slate-300 focus:ring-1 focus:ring-slate-200"
                 rows={6}
                 value={requestEditsNotes}
                 onChange={(e) => setRequestEditsNotes(e.target.value)}
@@ -1330,7 +1172,7 @@ export default function AdminPortal() {
                 <button
                   type="button"
                   disabled={approvalBusy}
-                  className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+                  className={`${adminPropToolbarBtn} px-4 py-2 text-sm text-slate-700`}
                   onClick={() => setRequestEditsModalOpen(false)}
                 >
                   Cancel
@@ -1338,7 +1180,7 @@ export default function AdminPortal() {
                 <button
                   type="button"
                   disabled={approvalBusy || !requestEditsNotes.trim()}
-                  className="rounded-xl bg-amber-600 px-4 py-2 text-sm font-semibold text-white hover:bg-amber-700 disabled:opacity-50"
+                  className={`${adminPropToolbarBtn} px-4 py-2 text-sm text-amber-900 disabled:opacity-50`}
                   onClick={async () => {
                     if (!approval?.id) return
                     setApprovalBusy(true)
@@ -1505,7 +1347,19 @@ export default function AdminPortal() {
       )}
 
       {tab === 'calendar' && (
-        <AdminCalendarPanel user={user} />
+        <Suspense
+          fallback={(
+            <div className="rounded-3xl border border-slate-200 bg-white px-6 py-12 text-center text-sm text-slate-500">
+              Loading calendar…
+            </div>
+          )}
+        >
+          <AdminPortalCalendarTab
+            calendarMode="admin"
+            manager={{ email: user?.email || '', name: user?.name || user?.email || 'Admin' }}
+            allowedPropertyNames={[]}
+          />
+        </Suspense>
       )}
 
       {tab === 'profile' && (

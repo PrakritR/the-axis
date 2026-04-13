@@ -1135,7 +1135,13 @@ export default function Apply() {
             if (!name) return null
             const rooms = Array.isArray(property?.rooms)
               ? property.rooms
-                .map((room) => String(room || '').trim())
+                .map((room) => {
+                  if (room == null) return ''
+                  if (typeof room === 'object' && room !== null && 'name' in room) {
+                    return String(room.name || '').trim()
+                  }
+                  return String(room || '').trim()
+                })
                 .filter(Boolean)
                 .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }))
                 .map((roomName) => ({ name: roomName, available: 'Available now' }))

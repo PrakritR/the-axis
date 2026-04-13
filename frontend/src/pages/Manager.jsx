@@ -84,6 +84,7 @@ import {
 } from '../components/PortalAuthUI'
 import PortalShell from '../components/PortalShell'
 import Modal from '../components/Modal'
+import AddPropertyWizard from '../components/AddPropertyWizard'
 import { ApplicationDetailPanel, applicationViewModelFromAirtableRow } from '../lib/applicationDetailPanel.jsx'
 import ManagerApplicationLease from '../components/ManagerApplicationLease.jsx'
 import {
@@ -219,18 +220,27 @@ function propertyRecordName(p) {
 /** House visible in manager portal lists once Axis marks it approved / live. */
 function isPropertyRecordApproved(p) {
   const s = String(p.Status || '').trim().toLowerCase()
+  if (s === 'pending_review' || s === 'pending review') return false
+
+  const a = String(p['Approval Status'] || '').trim().toLowerCase()
+  /** Awaiting first admin review — must win over a stray Listed checkbox default in Airtable. */
+  if (a === 'pending') return false
+  if (a === 'rejected') return false
+
+  if (p.Approved === true || p.Approved === 1) return true
+  if (a === 'approved') return true
+  if (s === 'approved' || s === 'live' || s === 'active') return true
+
+  /** Legacy rows: Listed without workflow fields — treat as approved unless explicitly blocked above. */
   const listedRaw = p?.Listed
   const listed =
     listedRaw === true ||
     listedRaw === 1 ||
     listedRaw === '1' ||
     (typeof listedRaw === 'string' && listedRaw.trim().toLowerCase() === 'true')
-  if (listed) return true
-  if (s === 'pending_review' || s === 'pending review') return false
-  if (p.Approved === true || p.Approved === 1) return true
-  const a = String(p['Approval Status'] || '').trim().toLowerCase()
-  if (a === 'approved') return true
-  return s === 'approved' || s === 'live' || s === 'active'
+  if (listed && p.Approved !== false) return true
+
+  return false
 }
 
 function isPropertyRecordRejected(p) {
@@ -280,6 +290,11 @@ function propertyAssignedToManager(p, manager) {
   const pid = String(p['Manager ID'] || '').trim()
   if (mid && pid && pid === mid) return true
   return false
+}
+
+/** Listed + on marketing (same bar as Properties → Listed); calendar availability / tour slots only for these. */
+function propertyEligibleForManagerCalendarScheduling(p, manager) {
+  return propertyAssignedToManager(p, manager) && propertyListingVisibleForMarketing(p)
 }
 
 function isManagerInternalPreview(manager) {
@@ -1224,45 +1239,6 @@ function TimeRangeList({ ranges, onChangeRange, onRemoveRange, disabled = false 
   )
 }
 
-function CalendarToolbar({ view, label, onViewChange, onPrev, onNext, onToday }) {
-  const tabCls = (id) =>
-    classNames(
-      'rounded-xl px-3 py-2 text-sm font-semibold transition',
-      view === id ? 'bg-[linear-gradient(180deg,#2f76ff_0%,#2450eb_100%)] text-white shadow-[0_6px_18px_rgba(37,99,235,0.25)]' : 'text-slate-600 hover:bg-slate-100',
-    )
-
-  return (
-    <div className="flex flex-wrap items-center justify-between gap-3">
-      <div className="flex rounded-2xl border border-slate-200 bg-slate-50 p-1">
-        <button type="button" className={tabCls('day')} onClick={() => onViewChange('day')}>Day</button>
-        <button type="button" className={tabCls('week')} onClick={() => onViewChange('week')}>Week</button>
-        <button type="button" className={tabCls('month')} onClick={() => onViewChange('month')}>Month</button>
-      </div>
-      <div className="flex items-center gap-2">
-        <button type="button" onClick={onToday} className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-[#2563eb] hover:bg-slate-50">
-          Today
-        </button>
-        <div className="flex items-center gap-1 rounded-2xl border border-slate-200 bg-white p-1">
-          <button type="button" onClick={onPrev} className="rounded-xl px-3 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-50">←</button>
-          <div className="min-w-[10rem] px-3 text-center text-sm font-bold text-slate-900">{label}</div>
-          <button type="button" onClick={onNext} className="rounded-xl px-3 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-50">→</button>
-        </div>
-      </div>
-    </div>
-  )
-}
-
-function CalendarLegend({ className = '' }) {
-  return (
-    <div className={classNames('flex flex-wrap gap-2 text-xs font-semibold', className)}>
-      <span className="rounded-full bg-emerald-50 px-3 py-1.5 text-emerald-800 ring-1 ring-emerald-100">Available</span>
-      <span className="rounded-full bg-sky-50 px-3 py-1.5 text-sky-800 ring-1 ring-sky-100">Tour</span>
-      <span className="rounded-full bg-violet-50 px-3 py-1.5 text-violet-800 ring-1 ring-violet-100">Meeting</span>
-      <span className="rounded-full bg-amber-50 px-3 py-1.5 text-amber-800 ring-1 ring-amber-100">Work order</span>
-    </div>
-  )
-}
-
 function AvailabilityCalendar({ view, anchorDate, selectedDateKey, onSelectDate, weeklyFree, bookedByDate }) {
   const y = anchorDate.getFullYear()
   const m = anchorDate.getMonth()
@@ -1445,7 +1421,7 @@ function AvailabilityEditorPanel({
     <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm lg:sticky lg:top-6">
       <h2 className="text-xl font-black text-slate-900">Availability editor</h2>
       <label className="mt-4 block text-xs font-semibold text-slate-700">
-        Property <span className="font-normal text-slate-400">(approved only)</span>
+        Property <span className="font-normal text-slate-400">(listed only)</span>
         <div className={`${MANAGER_PILL_SELECT_WRAP_CLS} mt-1.5 max-w-full`}>
           <select
             value={selectedPropertyId}
@@ -1454,7 +1430,7 @@ function AvailabilityEditorPanel({
             className={MANAGER_PILL_SELECT_CLS}
           >
             {!hasApprovedPick ? (
-              <option value="">No approved properties</option>
+              <option value="">No listed properties</option>
             ) : (
               propertyOptions.map((option) => (
                 <option key={option.id} value={option.id}>{option.label}</option>
@@ -1473,11 +1449,7 @@ function AvailabilityEditorPanel({
         </div>
       ) : null}
 
-      {!hasApprovedPick ? (
-        <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
-          Approve a property under Properties to edit weekly availability and schedule tours from the calendar.
-        </div>
-      ) : !selectedPropertyId ? (
+      {hasApprovedPick && !selectedPropertyId ? (
         <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
           Select a property to add availability blocks.
         </div>
@@ -1584,7 +1556,7 @@ function LetUsMeetModal({ open, initialDateKey, manager, onClose, onCreated, app
     }
     if (itemType === 'Tour') {
       if (!canScheduleTours) {
-        setError('You need at least one approved property before scheduling a tour.')
+        setError('You need at least one listed property before scheduling a tour.')
         return
       }
       if (!String(property || '').trim()) {
@@ -1642,7 +1614,7 @@ function LetUsMeetModal({ open, initialDateKey, manager, onClose, onCreated, app
             {MANAGER_PILL_SELECT_CHEVRON}
           </div>
           {!canScheduleTours ? (
-            <p className="mt-1.5 text-xs text-slate-500">Tours require an approved property under Properties first.</p>
+            <p className="mt-1.5 text-xs text-slate-500">Tours require a listed property (Properties → Listed).</p>
           ) : null}
         </div>
         <div>
@@ -1827,28 +1799,20 @@ async function updatePropertyAdmin(recordId, fields) {
 
 function buildManagerListingPatch(property, listed) {
   const nextListed = listed === true
-  const patch = {}
-  const hasListedField = Object.prototype.hasOwnProperty.call(property || {}, 'Listed')
-  const hasApprovalStatusField = Object.prototype.hasOwnProperty.call(property || {}, 'Approval Status')
-  const hasAxisListingStatusField = Object.prototype.hasOwnProperty.call(
-    property || {},
-    'Axis Admin Listing Status',
-  )
-  const hasAdminListingStatusField = Object.prototype.hasOwnProperty.call(
-    property || {},
-    'Admin Listing Status',
-  )
-
-  if (hasListedField || (!hasAxisListingStatusField && !hasAdminListingStatusField)) {
-    patch.Listed = nextListed
+  /**
+   * Airtable often omits unchecked checkbox fields from GET responses, so
+   * `hasOwnProperty(property, 'Listed')` is false even when the column exists.
+   * Skipping `Listed` on PATCH left the box false and relist appeared to do nothing.
+   * Optional axis columns are still only written when present on the row (unknown-field safe).
+   */
+  const patch = {
+    Listed: nextListed,
+    'Approval Status': nextListed ? 'Approved' : 'Unlisted',
   }
-  if (hasApprovalStatusField) {
-    patch['Approval Status'] = nextListed ? 'Approved' : 'Unlisted'
-  }
-  if (hasAxisListingStatusField) {
+  if (Object.prototype.hasOwnProperty.call(property || {}, 'Axis Admin Listing Status')) {
     patch['Axis Admin Listing Status'] = nextListed ? 'Live' : 'Unlisted'
   }
-  if (hasAdminListingStatusField) {
+  if (Object.prototype.hasOwnProperty.call(property || {}, 'Admin Listing Status')) {
     patch['Admin Listing Status'] = nextListed ? 'Live' : 'Unlisted'
   }
   return patch
@@ -1917,24 +1881,143 @@ async function fetchSchedulingForManagerScope({ managerEmail, propertyNames }) {
   })
 }
 
+/** All Scheduling rows (admin calendar — paginated, no manager/property filter). */
+async function fetchAllSchedulingRows() {
+  const rows = []
+  let offset = null
+  do {
+    const url = new URL(`${CORE_AIRTABLE_BASE_URL}/Scheduling`)
+    url.searchParams.set('sort[0][field]', 'Preferred Date')
+    url.searchParams.set('sort[0][direction]', 'desc')
+    if (offset) url.searchParams.set('offset', offset)
+    const data = await atRequest(url.toString())
+    for (const record of data.records || []) rows.push(mapRecord(record))
+    offset = data.offset || null
+  } while (offset)
+  return rows
+}
+
 function workOrderScheduledMeta(record) {
-  const meta = parseWorkOrderMetaBlock(record?.['Management Notes'] || '')
-  const scheduledRaw = String(
-    record?.['Scheduled Time'] ||
-      record?.['Schedule Time'] ||
-      record?.['Scheduled For'] ||
-      meta.scheduled ||
-      '',
-  ).trim()
-  if (!scheduledRaw) return null
-  const dateMatch = scheduledRaw.match(/(\d{4}-\d{2}-\d{2})/)
-  const date = dateMatch ? dateMatch[1] : ''
-  if (!date) return null
-  let preferredTime = ''
-  const range = scheduledRaw.match(/(\d{1,2}:\d{2}\s*[AP]M)\s*[-–]\s*(\d{1,2}:\d{2}\s*[AP]M)/i)
-  if (range) {
-    preferredTime = `${range[1].toUpperCase()} - ${range[2].toUpperCase()}`
+  const rec = record || {}
+  const meta = parseWorkOrderMetaBlock(rec['Management Notes'] || '')
+
+  const normalizeDateKey = (value) => {
+    const raw = String(value || '').trim()
+    if (!raw) return ''
+    const iso = raw.match(/(\d{4}-\d{2}-\d{2})/)
+    if (iso) return iso[1]
+    const us = raw.match(/(\d{1,2})\/(\d{1,2})\/(\d{2,4})/)
+    if (us) {
+      const month = Number(us[1])
+      const day = Number(us[2])
+      let year = Number(us[3])
+      if (year < 100) year += year >= 70 ? 1900 : 2000
+      if (!Number.isFinite(month) || !Number.isFinite(day) || !Number.isFinite(year)) return ''
+      return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`
+    }
+    const parsed = new Date(raw)
+    if (Number.isNaN(parsed.getTime())) return ''
+    return parsed.toISOString().slice(0, 10)
   }
+
+  const parseClockToMinutes = (value) => {
+    const m = String(value || '')
+      .trim()
+      .toUpperCase()
+      .match(/^(\d{1,2})(?::(\d{2}))?\s*(AM|PM)$/)
+    if (!m) return null
+    let h = Number(m[1]) % 12
+    const min = Number(m[2] || '0')
+    if (!Number.isFinite(h) || !Number.isFinite(min) || min < 0 || min > 59) return null
+    if (m[3] === 'PM') h += 12
+    return h * 60 + min
+  }
+
+  const formatClock = (minutes) => {
+    const total = Number(minutes)
+    if (!Number.isFinite(total)) return ''
+    const h24 = Math.floor(total / 60)
+    const min = total % 60
+    let h12 = h24 % 12
+    if (h12 === 0) h12 = 12
+    const ap = h24 >= 12 ? 'PM' : 'AM'
+    return `${h12}:${String(min).padStart(2, '0')} ${ap}`
+  }
+
+  const normalizeRange = (value) => {
+    const raw = String(value || '').trim()
+    if (!raw) return ''
+    const pair = raw.match(/^(\d+)-(\d+)$/)
+    if (pair) {
+      const start = Number(pair[1])
+      const end = Number(pair[2])
+      if (Number.isFinite(start) && Number.isFinite(end) && end > start) {
+        return `${formatClock(start)} - ${formatClock(end)}`
+      }
+    }
+    const joined = raw.replace(/\s+to\s+/i, ' - ')
+    const parts = joined
+      .split(/\s*[-–]\s*/)
+      .map((part) => part.trim())
+      .filter(Boolean)
+    if (parts.length === 2) {
+      const start = parseClockToMinutes(parts[0])
+      const end = parseClockToMinutes(parts[1])
+      if (Number.isFinite(start) && Number.isFinite(end) && end > start) {
+        return `${formatClock(start)} - ${formatClock(end)}`
+      }
+    }
+    const single = parseClockToMinutes(raw)
+    if (Number.isFinite(single)) {
+      return `${formatClock(single)} - ${formatClock(single + 60)}`
+    }
+    return ''
+  }
+
+  const dateCandidates = [
+    rec['Scheduled Date'],
+    rec['Schedule Date'],
+    rec['Visit Date'],
+    rec['Appointment Date'],
+    rec['Work Date'],
+    rec['Scheduled For'],
+    meta['scheduled date'],
+    meta.date,
+    meta.scheduled,
+  ]
+  const timeCandidates = [
+    rec['Scheduled Time'],
+    rec['Schedule Time'],
+    rec['Visit Time'],
+    rec['Appointment Time'],
+    rec['Time Window'],
+    rec['Scheduled Window'],
+    rec['Scheduled For'],
+    meta['scheduled time'],
+    meta.window,
+    meta.time,
+    meta.scheduled,
+  ]
+
+  let date = ''
+  for (const candidate of dateCandidates) {
+    const key = normalizeDateKey(candidate)
+    if (key) {
+      date = key
+      break
+    }
+  }
+
+  let preferredTime = ''
+  for (const candidate of timeCandidates) {
+    const range = normalizeRange(candidate)
+    if (range) {
+      preferredTime = range
+      break
+    }
+  }
+
+  if (!date) return null
   return { date, preferredTime }
 }
 
@@ -2479,48 +2562,7 @@ function HouseManagementPanel({ manager, onPropertiesChange }) {
   const [deletingPropertyId, setDeletingPropertyId] = useState(null)
   const [listingBusyPropertyId, setListingBusyPropertyId] = useState(null)
   const [addOpen, setAddOpen] = useState(false)
-  const [addSaving, setAddSaving] = useState(false)
   const [propertiesSection, setPropertiesSection] = useState('pending')
-  const emptyAddBasics = () => ({
-    name: '',
-    address: '',
-    propertyType: '',
-    propertyTypeOther: '',
-    amenities: [],
-    amenitiesOther: '',
-    pets: '',
-    securityDeposit: '',
-    moveInCharges: '',
-  })
-  const [addBasics, setAddBasics] = useState(emptyAddBasics)
-  const [addRooms, setAddRooms] = useState(() => [emptyRoomRow()])
-  const [addBathrooms, setAddBathrooms] = useState(() => [])
-  const [addKitchens, setAddKitchens] = useState(() => [])
-  const [addApplicationFee, setAddApplicationFee] = useState('')
-  const [addLaundry, setAddLaundry] = useState({
-    enabled: false,
-    rows: [],
-    generalAccess: [],
-  })
-  const [addStep, setAddStep] = useState(0)
-  const [addParking, setAddParking] = useState({
-    enabled: false,
-    type: '',
-    fee: '',
-  })
-  const [addSharedSpaces, setAddSharedSpaces] = useState([])
-  const defaultLeaseLengthInfo =
-    '3-month, 9-month, 12-month, and month-to-month (+$25/month). Start and end dates are flexible unless noted otherwise.'
-  const [addLeasing, setAddLeasing] = useState({
-    fullHousePrice: '',
-    promoPrice: '',
-    leaseLengthInfo: defaultLeaseLengthInfo,
-    bundles: [],
-  })
-  const [addOtherInfo, setAddOtherInfo] = useState('')
-  const [addImages, setAddImages] = useState([]) // [{ id, file, preview, caption }]
-  const addImageInputRef = useRef(null)
-  const addDropRef = useRef(null)
   const [tourForm, setTourForm] = useState({
     propertyName: '',
     address: '',
@@ -2534,9 +2576,6 @@ function HouseManagementPanel({ manager, onPropertiesChange }) {
     roomCount: 1,
     rooms: [],
   })
-  const addInputCls =
-    'w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm transition focus:border-[#2563eb] focus:outline-none focus:ring-2 focus:ring-[#2563eb]/20'
-
   const loadProperties = useCallback(async () => {
     setLoading(true)
     try {
@@ -2741,285 +2780,6 @@ function HouseManagementPanel({ manager, onPropertiesChange }) {
     }
   }
 
-  function addImageFiles(files) {
-    const valid = Array.from(files).filter((f) => f.type.startsWith('image/'))
-    if (!valid.length) return
-    const entries = valid.map((file) => ({
-      id: `${Date.now()}-${Math.random()}`,
-      file,
-      preview: URL.createObjectURL(file),
-      caption: '',
-    }))
-    setAddImages((prev) => [...prev, ...entries])
-  }
-
-  function handleAddImageDrop(e) {
-    e.preventDefault()
-    e.stopPropagation()
-    addDropRef.current?.classList.remove('border-[#2563eb]', 'bg-blue-50/40')
-    addImageFiles(e.dataTransfer.files)
-  }
-
-  function handleAddImageDragOver(e) {
-    e.preventDefault()
-    addDropRef.current?.classList.add('border-[#2563eb]', 'bg-blue-50/40')
-  }
-
-  function handleAddImageDragLeave() {
-    addDropRef.current?.classList.remove('border-[#2563eb]', 'bg-blue-50/40')
-  }
-
-  function moveAddImage(idx, delta) {
-    setAddImages((prev) => {
-      const j = idx + delta
-      if (j < 0 || j >= prev.length) return prev
-      const next = [...prev]
-      const t = next[idx]
-      next[idx] = next[j]
-      next[j] = t
-      return next
-    })
-  }
-
-  function resetAddPropertyForm() {
-    setAddBasics(emptyAddBasics())
-    setAddRooms([emptyRoomRow()])
-    setAddBathrooms([])
-    setAddKitchens([])
-    setAddSharedSpaces([])
-    setAddLeasing({
-      fullHousePrice: '',
-      promoPrice: '',
-      leaseLengthInfo: defaultLeaseLengthInfo,
-      bundles: [],
-    })
-    setAddOtherInfo('')
-    setAddApplicationFee('')
-    setAddLaundry({ enabled: false, rows: [], generalAccess: [] })
-    setAddParking({ enabled: false, type: '', fee: '' })
-    setAddStep(0)
-    setAddImages((prev) => {
-      prev.forEach((img) => URL.revokeObjectURL(img.preview))
-      return []
-    })
-  }
-
-  async function handleAddPropertySubmit(e) {
-    e.preventDefault()
-    if (isManagerInternalPreview(manager)) {
-      toast.error('Adding properties is disabled in preview mode')
-      return
-    }
-    if (!addBasics.name.trim() || !addBasics.address.trim()) {
-      toast.error('Property name and address are required')
-      return
-    }
-    const rc = clampInt(addRooms.length, 1, MAX_ROOM_SLOTS)
-    const bc = clampInt(addBathrooms.length, 0, MAX_BATHROOM_SLOTS)
-    const kc = clampInt(addKitchens.length, 0, MAX_KITCHEN_SLOTS)
-    setAddSaving(true)
-    try {
-      const roomsPayload = addRooms.map((row) => {
-        const { media, ...rest } = row
-        return rest
-      })
-      const fields = serializeManagerAddPropertyToAirtableFields({
-        basics: addBasics,
-        roomCount: rc,
-        bathroomCount: bc,
-        kitchenCount: kc,
-        laundry: addLaundry,
-        parking: addParking,
-        rooms: roomsPayload,
-        bathrooms: addBathrooms,
-        kitchens: addKitchens,
-        sharedSpaces: addSharedSpaces,
-        applicationFee: addApplicationFee,
-        otherInfo: addOtherInfo,
-        managerRecordId: manager?.id,
-        leasing: addLeasing,
-      })
-
-      const created = await createPropertyAdmin(fields)
-
-      if (addImages.length) {
-        for (const img of addImages) {
-          try {
-            await uploadPropertyImage(created.id, img.file)
-          } catch {
-            /* non-fatal */
-          }
-        }
-      }
-
-      for (let ri = 0; ri < addRooms.length; ri++) {
-        const media = addRooms[ri].media || []
-        for (const item of media) {
-          try {
-            const f = item.file
-            const renamed = new File([f], `axis-r${ri + 1}-${f.name}`, { type: f.type || 'application/octet-stream' })
-            await uploadPropertyImage(created.id, renamed)
-          } catch {
-            /* non-fatal */
-          }
-        }
-      }
-
-      setProperties((current) => {
-        const next = [...current, created]
-        onPropertiesChange?.(next)
-        return next
-      })
-      toast.success('Property added and published to the website.')
-      resetAddPropertyForm()
-      setAddOpen(false)
-    } catch (err) {
-      console.error('[HouseManagementPanel] create property failed', err)
-      toast.error(err.message || 'Could not save property')
-    } finally {
-      setAddSaving(false)
-    }
-  }
-
-  // ── Wizard helpers (defined before return so they close over state) ─────────
-  const WIZARD_STEPS = ['Basics', 'Rooms', 'Bathrooms', 'Kitchens', 'Shared Spaces', 'Laundry & Parking', 'Review', 'Pricing & leases']
-  const wizardRc = clampInt(addRooms.length, 1, MAX_ROOM_SLOTS)
-  const wizardRoomOptions = Array.from({ length: wizardRc }, (_, i) => `Room ${i + 1}`)
-
-  function wizUpdateRoom(idx, patch) {
-    setAddRooms((prev) => { const next = [...prev]; next[idx] = { ...next[idx], ...patch }; return next })
-  }
-  function wizUpdateBathroom(idx, patch) {
-    setAddBathrooms((prev) => { const next = [...prev]; next[idx] = { ...next[idx], ...patch }; return next })
-  }
-  function wizUpdateKitchen(idx, patch) {
-    setAddKitchens((prev) => { const next = [...prev]; next[idx] = { ...next[idx], ...patch }; return next })
-  }
-  function wizUpdateSharedSpace(idx, patch) {
-    setAddSharedSpaces((prev) => { const next = [...prev]; next[idx] = { ...next[idx], ...patch }; return next })
-  }
-  function wizAddSharedSpace() {
-    setAddSharedSpaces((prev) => {
-      if (prev.length >= MAX_SHARED_SPACE_SLOTS) return prev
-      return [...prev, emptySharedSpaceRow()]
-    })
-  }
-  function wizRemoveSharedSpace(idx) {
-    setAddSharedSpaces((prev) => prev.filter((_, i) => i !== idx))
-  }
-  function wizAddRoom() {
-    setAddRooms((prev) => {
-      if (prev.length >= MAX_ROOM_SLOTS) return prev
-      return [...prev, emptyRoomRow()]
-    })
-  }
-  function wizRemoveRoom(idx) {
-    setAddRooms((prev) => {
-      if (prev.length <= 1) return prev
-      return prev.filter((_, i) => i !== idx)
-    })
-    setAddSharedSpaces((prev) => prev.map((s) => ({ ...s, access: adjustRoomAccessLabels(s.access, idx) })))
-    setAddBathrooms((prev) => prev.map((b) => ({ ...b, access: adjustRoomAccessLabels(b.access, idx) })))
-    setAddKitchens((prev) => prev.map((k) => ({ ...k, access: adjustRoomAccessLabels(k.access, idx) })))
-    setAddLeasing((L) => ({
-      ...L,
-      bundles: (L.bundles || []).map((b) => ({
-        ...b,
-        rooms: adjustRoomAccessLabels(Array.isArray(b.rooms) ? b.rooms : [], idx),
-      })),
-    }))
-    setAddLaundry((l) => ({
-      ...l,
-      generalAccess: adjustRoomAccessLabels(Array.isArray(l.generalAccess) ? l.generalAccess : [], idx),
-      rows: (l.rows || []).map((row) => ({
-        ...row,
-        access: adjustRoomAccessLabels(Array.isArray(row.access) ? row.access : [], idx),
-      })),
-    }))
-  }
-  function wizAddBathroom() {
-    setAddBathrooms((prev) => {
-      if (prev.length >= MAX_BATHROOM_SLOTS) return prev
-      return [...prev, emptyBathroomRow()]
-    })
-  }
-  function wizRemoveBathroom(idx) {
-    setAddBathrooms((prev) => prev.filter((_, i) => i !== idx))
-  }
-  function wizAddKitchen() {
-    setAddKitchens((prev) => {
-      if (prev.length >= MAX_KITCHEN_SLOTS) return prev
-      return [...prev, emptyKitchenRow()]
-    })
-  }
-  function wizRemoveKitchen(idx) {
-    setAddKitchens((prev) => prev.filter((_, i) => i !== idx))
-  }
-  function wizAddLeasingBundle() {
-    setAddLeasing((L) => ({
-      ...L,
-      bundles: [...(L.bundles || []), { name: '', price: '', rooms: [] }],
-    }))
-  }
-  function wizUpdateLeasingBundle(idx, patch) {
-    setAddLeasing((L) => {
-      const bundles = [...(L.bundles || [])]
-      bundles[idx] = { ...bundles[idx], ...patch }
-      return { ...L, bundles }
-    })
-  }
-  function wizRemoveLeasingBundle(idx) {
-    setAddLeasing((L) => ({ ...L, bundles: (L.bundles || []).filter((_, i) => i !== idx) }))
-  }
-  function addRoomMediaFiles(roomIdx, fileList) {
-    const valid = Array.from(fileList || []).filter((f) => f.type.startsWith('image/') || f.type.startsWith('video/'))
-    if (!valid.length) return
-    const entries = valid.map((file) => ({
-      id: `${Date.now()}-${Math.random()}`,
-      file,
-      preview: URL.createObjectURL(file),
-    }))
-    setAddRooms((prev) =>
-      prev.map((r, i) => (i === roomIdx ? { ...r, media: [...(r.media || []), ...entries] } : r)),
-    )
-  }
-  function removeRoomMedia(roomIdx, mediaId) {
-    setAddRooms((prev) =>
-      prev.map((r, i) => {
-        if (i !== roomIdx) return r
-        const media = r.media || []
-        const next = media.filter((m) => m.id !== mediaId)
-        const removed = media.find((m) => m.id === mediaId)
-        if (removed?.preview) URL.revokeObjectURL(removed.preview)
-        return { ...r, media: next }
-      }),
-    )
-  }
-  function wizUpdateLaundryRow(idx, patch) {
-    setAddLaundry((l) => {
-      const rows = [...(l.rows || [])]
-      rows[idx] = { ...rows[idx], ...patch }
-      return { ...l, rows }
-    })
-  }
-  function wizAddLaundryRow() {
-    setAddLaundry((l) => ({ ...l, rows: [...(l.rows || []), emptyLaundryRow()] }))
-  }
-  function wizRemoveLaundryRow(idx) {
-    setAddLaundry((l) => ({ ...l, rows: (l.rows || []).filter((_, i) => i !== idx) }))
-  }
-  function wizCanAdvance() {
-    if (addStep === 0) return !!(addBasics.name.trim() && addBasics.address.trim())
-    return true
-  }
-  function wizHandleNext(e) {
-    e.preventDefault()
-    if (addStep < WIZARD_STEPS.length - 1) setAddStep((s) => s + 1)
-  }
-  function wizHandleBack() {
-    if (addStep > 0) setAddStep((s) => s - 1)
-  }
-
   return (
     <div className="rounded-3xl border border-slate-200 bg-white p-6">
         <div className="flex flex-wrap items-center justify-between gap-3">
@@ -3087,11 +2847,8 @@ function HouseManagementPanel({ manager, onPropertiesChange }) {
               <div key={property.id} className={MANAGER_PROPERTY_CARD_SHELL}>
                 {propertiesSection === 'request_change' && property[PROPERTY_EDIT_REQUEST_FIELD] ? (
                   <div className="mb-3 rounded-xl border border-violet-200 bg-violet-50 px-3 py-2 text-sm text-violet-950">
-                    <div className="text-[11px] font-bold uppercase tracking-[0.14em] text-violet-800">From Axis — please update</div>
+                    <div className="text-[11px] font-bold uppercase tracking-[0.14em] text-violet-800">From Axis</div>
                     <p className="mt-1 whitespace-pre-wrap">{property[PROPERTY_EDIT_REQUEST_FIELD]}</p>
-                    <p className="mt-2 text-xs text-violet-900/85">
-                      Use <strong>Edit listing</strong> below, then <strong>Save &amp; submit for approval</strong>. Your home stays off the public site until Axis approves again.
-                    </p>
                   </div>
                 ) : null}
                 <div className="flex flex-col gap-4 xl:min-h-[176px] xl:flex-row xl:justify-between">
@@ -3618,15 +3375,24 @@ function HouseManagementPanel({ manager, onPropertiesChange }) {
         )}
 
         {addOpen ? (
-          <Modal
-            onClose={() => {
-              if (!addSaving) {
-                resetAddPropertyForm()
-                setAddOpen(false)
-              }
+          <AddPropertyWizard
+            manager={manager}
+            onClose={() => setAddOpen(false)}
+            onCreated={(created) => {
+              setProperties((current) => {
+                const next = [...current, created]
+                onPropertiesChange?.(next)
+                return next
+              })
+              setPropertiesSection('pending')
             }}
-          >
-            <form onSubmit={addStep === WIZARD_STEPS.length - 1 ? handleAddPropertySubmit : wizHandleNext}>
+            createPropertyAdmin={createPropertyAdmin}
+          />
+        ) : null}
+        {/* dead code removed */}
+        {false && (
+          <Modal onClose={() => setAddOpen(false)}>
+            <form>
                   {/* Header */}
                   <div className="pr-8">
                     <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-[#2563eb]">New property · Step {addStep + 1} of {WIZARD_STEPS.length}</div>
@@ -4385,34 +4151,18 @@ function HouseManagementPanel({ manager, onPropertiesChange }) {
                   </div>
             </form>
           </Modal>
-        ) : null}
+        )}
     </div>
   )
 }
 
 // ─── ManagerProfilePanel ──────────────────────────────────────────────────────
-// Profile view: editable personal info + managed property addresses list
+// Profile view: editable personal info
 function ManagerProfilePanel({ manager, onManagerUpdate }) {
   const [editing, setEditing] = useState(false)
   const [form, setForm] = useState({ name: manager.name || '', phone: manager.phone || '' })
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState('')
-  const [properties, setProperties] = useState([])
-  const [propsLoading, setPropsLoading] = useState(true)
-
-  const approvedForProfile = useMemo(() => {
-    if (isManagerInternalPreview(manager)) {
-      return properties.filter((p) => isPropertyRecordApproved(p))
-    }
-    return properties.filter((p) => propertyAssignedToManager(p, manager) && isPropertyRecordApproved(p))
-  }, [properties, manager])
-
-  useEffect(() => {
-    fetchPropertiesAdmin()
-      .then(setProperties)
-      .catch(() => setProperties([]))
-      .finally(() => setPropsLoading(false))
-  }, [])
 
   useEffect(() => {
     setForm({ name: manager.name || '', phone: manager.phone || '' })
@@ -4549,42 +4299,6 @@ function ManagerProfilePanel({ manager, onManagerUpdate }) {
         )}
       </section>
 
-      {/* Approved property cards on profile */}
-      {propsLoading ? (
-        <section className="rounded-3xl border border-slate-200 bg-white p-6">
-          <div className="text-sm text-slate-500">Loading properties…</div>
-        </section>
-      ) : approvedForProfile.length > 0 ? (
-        <section className="rounded-3xl border border-slate-200 bg-white p-6">
-          <div className="grid gap-3 sm:grid-cols-2">
-            {approvedForProfile.map((p) => (
-              <div key={p.id} className="flex gap-4 rounded-2xl border border-slate-200 bg-slate-50 px-5 py-4">
-                <div className="mt-0.5 flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl bg-[#2563eb]/10">
-                  <svg className="h-5 w-5 text-[#2563eb]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
-                  </svg>
-                </div>
-                <div className="min-w-0 flex-1">
-                  <div className="text-sm font-black text-slate-900">{p.Name || p.Property || 'Untitled property'}</div>
-                  <div className="mt-0.5 text-sm text-slate-600">{p.Address || <span className="italic text-slate-400">No address set</span>}</div>
-                  <div className="mt-2 flex flex-wrap gap-2">
-                    {p['Utilities Fee'] ? (
-                      <span className="rounded-full bg-blue-100 px-2.5 py-1 text-[11px] font-semibold text-blue-700">
-                        Utilities ${p['Utilities Fee']}/mo
-                      </span>
-                    ) : null}
-                    {p['Security Deposit'] ? (
-                      <span className="rounded-full bg-slate-200 px-2.5 py-1 text-[11px] font-semibold text-slate-600">
-                        Deposit ${p['Security Deposit']}
-                      </span>
-                    ) : null}
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-        </section>
-      ) : null}
     </div>
   )
 }
@@ -6277,8 +5991,9 @@ function ApplicationsPanel({ allowedPropertyNames, manager }) {
 }
 
 // ─── CalendarTabPanel ─────────────────────────────────────────────────────────
-function CalendarTabPanel({ manager, allowedPropertyNames }) {
-  const [view, setView] = useState('month')
+export function CalendarTabPanel({ manager, allowedPropertyNames, calendarMode = 'manager' }) {
+  const isAdminCalendar = calendarMode === 'admin'
+  const view = 'month'
   const [anchorDate, setAnchorDate] = useState(() => new Date())
   const [selectedDateKey, setSelectedDateKey] = useState(() => dateKeyFromDate(new Date()))
   const [schedulingRows, setSchedulingRows] = useState([])
@@ -6293,17 +6008,31 @@ function CalendarTabPanel({ manager, allowedPropertyNames }) {
     setLoading(true)
     try {
       const [sched, props, workOrders] = await Promise.all([
-        fetchSchedulingForManagerScope({ managerEmail: manager?.email, propertyNames: allowedPropertyNames || [] }),
+        isAdminCalendar
+          ? fetchAllSchedulingRows()
+          : fetchSchedulingForManagerScope({ managerEmail: manager?.email, propertyNames: allowedPropertyNames || [] }),
         fetchPropertiesAdmin(),
         getAllWorkOrders().catch(() => []),
       ])
-      const allowedLower = new Set(
-        (allowedPropertyNames || []).map((name) => String(name).trim().toLowerCase()).filter(Boolean),
-      )
+      const allowedLower = isAdminCalendar
+        ? null
+        : new Set(
+            (allowedPropertyNames || []).map((name) => String(name).trim().toLowerCase()).filter(Boolean),
+          )
       const workOrderRows = workOrdersToCalendarRows(workOrders, allowedLower)
       setSchedulingRows([...sched, ...workOrderRows])
       setProperties(props)
-      const approvedAssigned = props.filter((p) => propertyAssignedToManager(p, manager) && isPropertyRecordApproved(p))
+      const approvedAssigned = isAdminCalendar
+        ? props
+            .filter((p) => isPropertyRecordApproved(p))
+            .sort((a, b) =>
+              propertyRecordName(a).localeCompare(propertyRecordName(b), undefined, { sensitivity: 'base' }),
+            )
+        : props
+            .filter((p) => propertyEligibleForManagerCalendarScheduling(p, manager))
+            .sort((a, b) =>
+              propertyRecordName(a).localeCompare(propertyRecordName(b), undefined, { sensitivity: 'base' }),
+            )
       const byProperty = {}
       approvedAssigned.forEach((property) => {
         const text = extractMultilineNoteValue(property.Notes, 'Tour Availability') || ''
@@ -6319,7 +6048,7 @@ function CalendarTabPanel({ manager, allowedPropertyNames }) {
     } finally {
       setLoading(false)
     }
-  }, [manager, allowedPropertyNames])
+  }, [manager, allowedPropertyNames, isAdminCalendar])
 
   useEffect(() => { load() }, [load])
 
@@ -6340,10 +6069,20 @@ function CalendarTabPanel({ manager, allowedPropertyNames }) {
     [bookedByDate, selectedDateKey],
   )
 
-  const approvedAssignedProperties = useMemo(
-    () => properties.filter((p) => propertyAssignedToManager(p, manager) && isPropertyRecordApproved(p)),
-    [properties, manager],
-  )
+  const approvedAssignedProperties = useMemo(() => {
+    if (isAdminCalendar) {
+      return properties
+        .filter((p) => isPropertyRecordApproved(p))
+        .sort((a, b) =>
+          propertyRecordName(a).localeCompare(propertyRecordName(b), undefined, { sensitivity: 'base' }),
+        )
+    }
+    return properties
+      .filter((p) => propertyEligibleForManagerCalendarScheduling(p, manager))
+      .sort((a, b) =>
+        propertyRecordName(a).localeCompare(propertyRecordName(b), undefined, { sensitivity: 'base' }),
+      )
+  }, [properties, manager, isAdminCalendar])
 
   const selectedProperty = useMemo(
     () => approvedAssignedProperties.find((p) => p.id === selectedPropertyId) || null,
@@ -6354,38 +6093,6 @@ function CalendarTabPanel({ manager, allowedPropertyNames }) {
     () => weeklyFreeByProperty[selectedPropertyId] || emptyWeeklyFreeArrays(),
     [weeklyFreeByProperty, selectedPropertyId],
   )
-
-  const toolbarLabel = useMemo(() => {
-    if (view === 'day') return anchorDate.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })
-    if (view === 'week') return formatWeekRangeLabel(startOfWeekSunday(anchorDate))
-    return anchorDate.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
-  }, [view, anchorDate])
-
-  function handlePrev() {
-    setAnchorDate((d) => {
-      const x = new Date(d)
-      if (view === 'day') x.setDate(x.getDate() - 1)
-      else if (view === 'week') x.setDate(x.getDate() - 7)
-      else x.setMonth(x.getMonth() - 1)
-      return x
-    })
-  }
-
-  function handleNext() {
-    setAnchorDate((d) => {
-      const x = new Date(d)
-      if (view === 'day') x.setDate(x.getDate() + 1)
-      else if (view === 'week') x.setDate(x.getDate() + 7)
-      else x.setMonth(x.getMonth() + 1)
-      return x
-    })
-  }
-
-  function handleToday() {
-    const t = new Date()
-    setAnchorDate(t)
-    setSelectedDateKey(dateKeyFromDate(t))
-  }
 
   function handleSelectDate(key) {
     setSelectedDateKey(key)
@@ -6460,7 +6167,7 @@ function CalendarTabPanel({ manager, allowedPropertyNames }) {
                   <option key={p.id} value={p.id}>{propertyRecordName(p) || 'Property'}</option>
                 ))
               ) : (
-                <option value="">No approved properties</option>
+                <option value="">No listed properties</option>
               )}
             </select>
             {MANAGER_PILL_SELECT_CHEVRON}
@@ -6478,39 +6185,19 @@ function CalendarTabPanel({ manager, allowedPropertyNames }) {
 
       <div className="mb-5 grid gap-2 rounded-[28px] border border-slate-200 bg-slate-50 p-2 sm:grid-cols-2 xl:grid-cols-4">
         {([
-          ['day', 'Today', calendarStats.today],
-          ['week', 'This week', calendarStats.week],
-          ['month', 'This month', calendarStats.month],
-          [null, 'Total booked', calendarStats.total],
-        ]).map(([viewKey, label, count]) => (
-          <button
+          ['Today', calendarStats.today],
+          ['This week', calendarStats.week],
+          ['This month', calendarStats.month],
+          ['Total booked', calendarStats.total],
+        ]).map(([label, count]) => (
+          <div
             key={label}
-            type="button"
-            onClick={viewKey ? () => setView(viewKey) : undefined}
-            className={`rounded-2xl border px-4 py-3 text-left transition ${
-              viewKey && view === viewKey
-                ? 'border-[#2563eb]/30 bg-white text-slate-900 shadow-[0_10px_24px_rgba(37,99,235,0.14)]'
-                : viewKey
-                  ? 'border-transparent text-slate-600 hover:border-slate-200 hover:bg-white/70 hover:text-slate-900'
-                  : 'border-transparent cursor-default text-slate-600'
-            }`}
+            className="rounded-2xl border border-transparent px-4 py-3 text-left text-slate-600"
           >
             <div className="text-lg font-black leading-none tabular-nums text-slate-900">{count}</div>
             <div className="mt-1 text-sm font-semibold">{label}</div>
-          </button>
+          </div>
         ))}
-      </div>
-
-      <div className="mb-5">
-        <CalendarToolbar
-          view={view}
-          label={toolbarLabel}
-          onViewChange={setView}
-          onPrev={handlePrev}
-          onNext={handleNext}
-          onToday={handleToday}
-        />
-        <CalendarLegend className="mt-3" />
       </div>
 
       <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_360px]">
@@ -6549,7 +6236,11 @@ function CalendarTabPanel({ manager, allowedPropertyNames }) {
         open={meetOpen}
         initialDateKey={selectedDateKey}
         manager={manager}
-        approvedPropertyNames={allowedPropertyNames || []}
+        approvedPropertyNames={
+          isAdminCalendar
+            ? approvedAssignedProperties.map((p) => propertyRecordName(p)).filter(Boolean)
+            : approvedAssignedProperties.map((p) => propertyRecordName(p)).filter(Boolean)
+        }
         onClose={() => setMeetOpen(false)}
         onCreated={load}
       />

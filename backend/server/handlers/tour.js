@@ -185,15 +185,41 @@ function pickPropertyName(fields = {}) {
 function buildRoomsByPropertyId(roomRecords) {
   const map = new Map()
   for (const r of roomRecords) {
-    const roomName = String(r.fields?.Name || r.fields?.['Room Number'] || '').trim()
+    const f = r.fields || {}
+    const roomName = String(
+      f.Name || f['Room Number'] || f['Room Name'] || f.Title || f.Label || '',
+    ).trim()
     if (!roomName) continue
-    const links = Array.isArray(r.fields?.Property) ? r.fields.Property : r.fields?.Property ? [r.fields.Property] : []
+    const links = Array.isArray(f.Property) ? f.Property : f.Property ? [f.Property] : []
     for (const pid of links) {
       if (!map.has(pid)) map.set(pid, [])
       map.get(pid).push(roomName)
     }
   }
   return map
+}
+
+const AXIS_LISTING_META_START = '---AXIS_LISTING_META_JSON---'
+
+/**
+ * Room labels from manager "Add property" wizard (embedded in Other Info JSON).
+ * Without this, apply/tour room dropdowns stay empty when no linked Rooms rows exist.
+ */
+function roomsFromAxisMetaOtherInfo(otherInfo) {
+  const raw = String(otherInfo || '')
+  const idx = raw.indexOf(AXIS_LISTING_META_START)
+  if (idx === -1) return []
+  try {
+    const meta = JSON.parse(raw.slice(idx + AXIS_LISTING_META_START.length).trim())
+    const details = meta?.roomsDetail
+    if (!Array.isArray(details) || details.length === 0) return []
+    return details.map((row, i) => {
+      const label = String(row?.label || '').trim()
+      return label || `Room ${i + 1}`
+    })
+  } catch {
+    return []
+  }
 }
 
 /**
@@ -256,7 +282,7 @@ function propertyRecordVisibleForPublic(record) {
 function mapProperty(record, roomsByPropertyId) {
   const fields = record.fields || {}
 
-  // Rooms: prefer linked Rooms table records, then generate from Room Count field
+  // Rooms: axis meta (wizard) → linked Rooms table → Room Count placeholders
   const airtableRooms = (roomsByPropertyId.get(record.id) || []).sort((a, b) => {
     const na = parseInt(String(a).replace(/\D/g, ''), 10) || 0
     const nb = parseInt(String(b).replace(/\D/g, ''), 10) || 0
@@ -264,7 +290,9 @@ function mapProperty(record, roomsByPropertyId) {
   })
   const roomCount = parseInt(String(fields['Room Count'] || ''), 10) || 0
   const countRooms = roomCount > 0 ? Array.from({ length: roomCount }, (_, i) => `Room ${i + 1}`) : []
-  const rooms = airtableRooms.length ? airtableRooms : countRooms
+  const metaRooms = roomsFromAxisMetaOtherInfo(fields['Other Info'])
+  const rooms =
+    metaRooms.length > 0 ? metaRooms : airtableRooms.length > 0 ? airtableRooms : countRooms
 
   const managerEmailRaw =
     (typeof fields['Site Manager Email'] === 'string' && fields['Site Manager Email'].trim()) ||
@@ -313,7 +341,7 @@ export default async function handler(req, res) {
         fetch(`https://api.airtable.com/v0/${AIRTABLE_BASE_ID}/Properties`, {
           headers: { Authorization: `Bearer ${AIRTABLE_TOKEN}` },
         }),
-        fetch(`https://api.airtable.com/v0/${AIRTABLE_BASE_ID}/${encodeURIComponent(roomsTable)}?fields%5B%5D=Name&fields%5B%5D=Property`, {
+        fetch(`https://api.airtable.com/v0/${AIRTABLE_BASE_ID}/${encodeURIComponent(roomsTable)}`, {
           headers: { Authorization: `Bearer ${AIRTABLE_TOKEN}` },
         }),
         listSchedulingRows(),

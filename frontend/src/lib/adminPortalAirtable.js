@@ -199,7 +199,14 @@ function propertyAdminStatus(raw) {
   if (a === 'unlisted' || a === 'inactive' || s === 'unlisted' || s === 'inactive') return 'unlisted'
   if (axis === 'inactive' || axis === 'unlisted') return 'unlisted'
 
-  if (raw.Listed === false || raw.Listed === 0) return 'unlisted'
+  /**
+   * Listed=false means “off marketing” for already-approved rows (unlist / pre-go-live).
+   * New manager submissions also POST Listed:false while awaiting review — those must stay
+   * pending, not “Unlisted” (which is for delisted / approved-off-market properties).
+   */
+  if (raw.Listed === false || raw.Listed === 0) {
+    if (isPropertyRecordApproved(raw)) return 'unlisted'
+  }
 
   const allowed = new Set(['pending', 'changes_requested', 'rejected', 'live'])
   if (axis && allowed.has(axis)) return axis

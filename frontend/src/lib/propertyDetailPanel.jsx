@@ -1,12 +1,11 @@
 import React from 'react'
-import { StatusPill } from '../components/PortalShell'
 import { formatApplicationDetailValue } from './applicationDetailPanel.jsx'
 import { PROPERTY_EDIT_REQUEST_FIELD } from './managerPropertyFormAirtableMap.js'
 
 const MAX_ROOMS = 20
 const MAX_BATHROOMS = 10
 const MAX_KITCHENS = 3
-const MAX_SHARED_SPACES = 3
+const MAX_SHARED_SPACES = 13 // matches MAX_SHARED_SPACE_SLOTS in managerPropertyFormAirtableMap.js
 
 function roomFields(n) {
   return [
@@ -126,9 +125,9 @@ export const PROPERTY_FIELD_GROUPS = [
 ]
 
 /**
- * @param {{ property: { id: string, name: string, address?: string, status: string, _airtable: object }, ownerLabel?: string, onClose?: () => void }} props
+ * @param {{ property: { id: string, name: string, address?: string, status: string, _airtable: object }, ownerLabel?: string }} props
  */
-export function PropertyDetailPanel({ property, ownerLabel, onClose }) {
+export function PropertyDetailPanel({ property, ownerLabel }) {
   const raw = property?._airtable
   if (!raw) return null
 
@@ -240,23 +239,14 @@ export function PropertyDetailPanel({ property, ownerLabel, onClose }) {
     : null
 
   return (
-    <div className="rounded-[24px] border border-slate-200 bg-slate-50/40 p-6 shadow-inner space-y-5">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div className="min-w-0">
-          <h3 className="text-base font-black text-slate-900">Full property record</h3>
-          <p className="mt-1 text-sm text-slate-600">
-            {property.name}
-            {ownerLabel && ownerLabel !== '—' ? ` · ${ownerLabel}` : ''}
-          </p>
-          <div className="mt-2">
-            <StatusPill tone="blue">{property.status}</StatusPill>
-          </div>
-        </div>
-        {onClose ? (
-          <button type="button" className="shrink-0 text-sm font-semibold text-slate-500 hover:text-slate-800" onClick={onClose}>
-            Close
-          </button>
-        ) : null}
+    <div className="rounded-[24px] border border-slate-200 bg-white p-6 space-y-5">
+      <div className="min-w-0">
+        <h3 className="text-base font-black text-slate-900">Full property record</h3>
+        <p className="mt-1 text-sm text-slate-600">
+          {property.name}
+          {ownerLabel && ownerLabel !== '—' ? ` · ${ownerLabel}` : ''}
+        </p>
+        <p className="mt-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Status: {property.status}</p>
       </div>
 
       <dl className="space-y-0 border-t border-slate-200 pt-4">
