@@ -431,6 +431,19 @@ export default function AddPropertyWizard({ manager, onClose, onCreated, createP
     setKitchens(prev => { const next = [...prev]; next[idx] = { ...next[idx], ...patch }; return next })
   }
   function addKitchen() { setKitchens(prev => prev.length < MAX_KITCHEN_SLOTS ? [...prev, emptyKitchenRow()] : prev) }
+  function duplicateKitchen(idx) {
+    setKitchens(prev => {
+      if (prev.length >= MAX_KITCHEN_SLOTS) return prev
+      const src = prev[idx] || emptyKitchenRow()
+      return [
+        ...prev,
+        {
+          ...src,
+          access: Array.isArray(src.access) ? [...src.access] : [],
+        },
+      ]
+    })
+  }
   function removeKitchen(idx) { setKitchens(prev => prev.filter((_, i) => i !== idx)) }
 
   // ── Shared space helpers ──────────────────────────────────────────────────────
@@ -948,7 +961,12 @@ export default function AddPropertyWizard({ manager, onClose, onCreated, createP
                 <div className="flex h-7 w-7 items-center justify-center rounded-full bg-slate-100 text-xs font-black text-slate-600">{idx + 1}</div>
                 <div className="text-sm font-black text-slate-800">Kitchen {idx + 1}</div>
               </div>
-              <button type="button" onClick={() => removeKitchen(idx)} className="text-[11px] font-bold text-red-500 hover:text-red-700">Remove</button>
+              <div className="flex items-center gap-3">
+                {kitchens.length < MAX_KITCHEN_SLOTS ? (
+                  <button type="button" onClick={() => duplicateKitchen(idx)} className="text-[11px] font-bold text-[#2563eb] hover:text-[#1d4ed8]">Duplicate</button>
+                ) : null}
+                <button type="button" onClick={() => removeKitchen(idx)} className="text-[11px] font-bold text-red-500 hover:text-red-700">Remove</button>
+              </div>
             </div>
             <div className="grid gap-3 sm:grid-cols-2">
               <div>

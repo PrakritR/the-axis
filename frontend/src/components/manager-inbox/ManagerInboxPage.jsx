@@ -100,16 +100,34 @@ function loadLocalInboxStateMap(email) {
     const bucket = root[em] || {}
     const m = new Map()
     for (const [tk, v] of Object.entries(bucket)) {
+      const hasLastReadAt = Object.prototype.hasOwnProperty.call(v || {}, 'lastReadAt')
+      const hasTrashed = Object.prototype.hasOwnProperty.call(v || {}, 'trashed')
       m.set(tk, {
         id: `local:${tk}`,
-        lastReadAt: v.lastReadAt ? new Date(v.lastReadAt) : null,
-        trashed: Boolean(v.trashed),
+        lastReadAt: hasLastReadAt ? (v.lastReadAt ? new Date(v.lastReadAt) : null) : undefined,
+        trashed: hasTrashed ? Boolean(v.trashed) : undefined,
       })
     }
     return m
   } catch {
     return new Map()
   }
+}
+
+function mergeInboxStateMaps(baseMap, localMap) {
+  const merged = new Map(baseMap || [])
+  for (const [threadKey, localState] of localMap || []) {
+    const current = merged.get(threadKey) || {
+      id: localState?.id || `local:${threadKey}`,
+      lastReadAt: null,
+      trashed: false,
+    }
+    const next = { ...current }
+    if (localState?.lastReadAt !== undefined) next.lastReadAt = localState.lastReadAt
+    if (localState?.trashed !== undefined) next.trashed = Boolean(localState.trashed)
+    merged.set(threadKey, next)
+  }
+  return merged
 }
 
 function saveLocalInboxStatePatch(email, threadKey, patch) {
@@ -320,16 +338,18 @@ export default function ManagerInboxPage({
       setInboxStateBackend('none')
       return
     }
+    const localMap = loadLocalInboxStateMap(managerEmail)
     if (inboxThreadStateAirtableEnabled()) {
       try {
-        setInboxStateMap(await fetchInboxThreadStateMap(managerEmail))
+        const remoteMap = await fetchInboxThreadStateMap(managerEmail)
+        setInboxStateMap(mergeInboxStateMaps(remoteMap, localMap))
         setInboxStateBackend('airtable')
         return
       } catch {
         /* fall back */
       }
     }
-    setInboxStateMap(loadLocalInboxStateMap(managerEmail))
+    setInboxStateMap(localMap)
     setInboxStateBackend('local')
   }, [managerEmail])
 
