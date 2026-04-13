@@ -710,12 +710,14 @@ export default function AdminPortal() {
               <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-sky-800">Residents</span>
               <span className="text-3xl font-black tabular-nums text-slate-900">{residents.length}</span>
             </button>
+          </div>
 
-            {/* Inbox */}
+          {/* Inbox — full width (matches portal handoff strip) */}
+          <div className="rounded-3xl border border-sky-200/90 bg-[linear-gradient(135deg,#f0f9ff_0%,#ffffff_100%)] p-5 shadow-sm">
             <button
               type="button"
               onClick={() => setTab('messages')}
-              className="flex flex-col gap-1 rounded-3xl border border-sky-200/90 bg-sky-50 p-5 text-left transition hover:border-sky-300 hover:bg-sky-100/80 hover:shadow-sm"
+              className="flex w-full flex-col gap-1 rounded-2xl border border-transparent p-0 text-left transition hover:border-sky-300/60 hover:bg-sky-50/60 sm:flex-row sm:items-center sm:justify-between sm:gap-4 sm:px-1 sm:py-0.5"
             >
               <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-sky-800">Inbox · Unopened</span>
               <span className="text-3xl font-black tabular-nums text-slate-900">{unopenedThreadCount}</span>
