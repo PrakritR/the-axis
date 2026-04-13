@@ -35,6 +35,7 @@ import { ApplicationDetailPanel } from '../lib/applicationDetailPanel.jsx'
 import { PropertyDetailPanel } from '../lib/propertyDetailPanel.jsx'
 import { AXIS_ADMIN_SESSION_KEY } from './adminSessionConstants'
 import AdminProfilePanel from './AdminProfilePanel.jsx'
+import AdminLeasingTab from './AdminLeasingTab.jsx'
 import {
   getAllPortalInternalThreadMessages,
   fetchInboxThreadStateMap,
@@ -90,6 +91,7 @@ const NAV_BASE = [
   { id: 'dashboard', label: 'Dashboard' },
   { id: 'properties', label: 'Properties' },
   { id: 'accounts', label: 'Managers' },
+  { id: 'leasing', label: 'Leasing' },
   { id: 'calendar', label: 'Calendar' },
   { id: 'messages', label: 'Inbox' },
   { id: 'profile', label: 'Profile' },
@@ -1656,6 +1658,10 @@ export default function AdminPortal() {
           )
         }
       )())}
+
+      {tab === 'leasing' && (
+        <AdminLeasingTab adminUser={user} accounts={accounts} />
+      )}
 
       {tab === 'messages' && (
         <ManagerInboxPage
