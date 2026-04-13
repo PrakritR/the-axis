@@ -41,6 +41,7 @@ import {
   portalInboxAirtableConfigured,
   portalInboxThreadKeyFromRecord,
 } from '../lib/airtable'
+import { applicationRejectedFieldName } from '../lib/applicationApprovalState.js'
 
 const SESSION_KEY = 'axis_resident'
 
@@ -199,9 +200,24 @@ function residentApplicationUnlocked(resident) {
 }
 
 function isResidentApplicationRejected(resident) {
+  const rejectedKey = applicationRejectedFieldName()
+  const rejectionFlags = [
+    resident?.[rejectedKey],
+    resident?.Rejected,
+    resident?.['Application Rejected'],
+    resident?.['Rejected'],
+  ]
+  const hasRejectedFlag = rejectionFlags.some((value) => {
+    if (value === true || value === 1) return true
+    const normalized = String(value || '').trim().toLowerCase()
+    return ['true', '1', 'yes', 'rejected', 'declined', 'denied'].includes(normalized)
+  })
+  if (hasRejectedFlag) return true
+
   const statusFields = [
     resident?.['Application Status'],
     resident?.['Approval Status'],
+    resident?.['Application Approval'],
     resident?.Status,
     resident?.Decision,
   ]
@@ -2602,8 +2618,6 @@ function Dashboard({ resident, onResidentUpdated, onSignOut }) {
       navItems={TABS.map(([id, label]) => ({ id, label }))}
       activeId={tab}
       onNavigate={handleNavigate}
-      userLabel={resident.Name || 'Resident'}
-      userMeta={`Resident · ${resident.id}`}
       onSignOut={onSignOut}
     >
       <div className="mx-auto w-full max-w-[1600px]">

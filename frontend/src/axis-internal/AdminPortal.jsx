@@ -423,6 +423,7 @@ export default function AdminPortal() {
     sessionStorage.removeItem(AXIS_ADMIN_SESSION_KEY)
     clearDeveloperPortalFlags()
     setSession(null)
+    window.location.replace('/admin')
   }
 
   // Unopened threads for dashboard badge
@@ -608,8 +609,6 @@ export default function AdminPortal() {
       navItems={navItems}
       activeId={tab}
       onNavigate={setTab}
-      userLabel={user.name}
-      userMeta="Full access"
       onSignOut={handleSignOut}
     >
       <div className="mx-auto w-full max-w-[1600px]">

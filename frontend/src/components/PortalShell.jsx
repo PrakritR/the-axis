@@ -11,7 +11,6 @@ function PortalShellFooter({ brandTitle, brandSubtitle }) {
         <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-slate-400 lg:justify-end">
           <span>© 2026 Axis</span>
           <span>Seattle, WA</span>
-          <span>Portal access and account tools</span>
         </div>
       </div>
     </footer>
@@ -24,7 +23,7 @@ function PortalShellFooter({ brandTitle, brandSubtitle }) {
  * Desktop: sidebar + main column fill the viewport (below the site header).
  * The page footer stays at the bottom of the main column when content is
  * short; only the `<main>` area scrolls when content is tall. Sidebar
- * user block and sign-out stay visible.
+ * footer (optional extras + sign-out) stays visible.
  *
  * Mobile: sticky tab-pill bar at top, content scrolls below it.
  *
@@ -37,8 +36,6 @@ export default function PortalShell({
   navItems,
   activeId,
   onNavigate,
-  userLabel,
-  userMeta,
   onSignOut,
   sidebarPosition = 'left',
   sidebarFooterExtra,
@@ -144,13 +141,11 @@ export default function PortalShell({
 
         {/* Footer — always visible, never scrolls away */}
         <div className="shrink-0 border-t border-slate-100 p-3">
-          <div className="text-xs font-semibold text-slate-800 truncate">{userLabel}</div>
-          {userMeta ? <div className="mt-0.5 text-[11px] text-slate-500 truncate">{userMeta}</div> : null}
-          {sidebarFooterExtra ? <div className="mt-3">{sidebarFooterExtra}</div> : null}
+          {sidebarFooterExtra ? <div className="mb-3">{sidebarFooterExtra}</div> : null}
           <button
             type="button"
             onClick={onSignOut}
-            className="mt-2 w-full rounded-xl border border-slate-200 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-50"
+            className="w-full rounded-xl border border-slate-200 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-50"
           >
             Sign out
           </button>

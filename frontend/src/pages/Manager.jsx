@@ -299,7 +299,7 @@ function propertyAssignedToManager(p, manager) {
 
 /** Listed + on marketing (same bar as Properties → Listed); calendar availability / tour slots only for these. */
 function propertyEligibleForManagerCalendarScheduling(p, manager) {
-  return propertyAssignedToManager(p, manager) && propertyListingVisibleForMarketing(p)
+  return propertyAssignedToManager(p, manager)
 }
 
 function isManagerInternalPreview(manager) {
@@ -3766,8 +3766,17 @@ function ManagerDashboardHomePanel({
         </div>
       ) : null}
 
-      {/* Metric cards — same order as sidebar: Leases, Applications, Properties, Payments, Work orders, Inbox */}
+      {/* Metric cards — requested order: Properties, Leases, Applications, Payments, Work orders, Calendar */}
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+        <button
+          type="button"
+          onClick={() => onNavigate('properties')}
+          className="flex flex-col gap-1 rounded-3xl border border-blue-100 bg-blue-50 p-5 text-left transition hover:border-blue-200 hover:shadow-sm"
+        >
+          <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-blue-600">Properties · Approved</span>
+          <span className="text-3xl font-black tabular-nums text-blue-700">{approvedHouseCount}</span>
+        </button>
+
         <button
           type="button"
           onClick={() => onNavigate('leases')}
@@ -3784,15 +3793,6 @@ function ManagerDashboardHomePanel({
         >
           <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-blue-600">Applications · Pending</span>
           <span className="text-3xl font-black tabular-nums text-blue-700">{pendingApps}</span>
-        </button>
-
-        <button
-          type="button"
-          onClick={() => onNavigate('properties')}
-          className="flex flex-col gap-1 rounded-3xl border border-blue-100 bg-blue-50 p-5 text-left transition hover:border-blue-200 hover:shadow-sm"
-        >
-          <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-blue-600">Properties · Approved</span>
-          <span className="text-3xl font-black tabular-nums text-blue-700">{approvedHouseCount}</span>
         </button>
 
         <button
@@ -4720,66 +4720,6 @@ function ManagerPaymentsPanel({ allowedPropertyNames }) {
   )
 }
 
-const APPLICATION_SORT_OPTIONS = [
-  { id: 'submitted', label: 'Submitted' },
-  { id: 'property', label: 'House' },
-  { id: 'room', label: 'Room' },
-  { id: 'name', label: 'Applicant' },
-  { id: 'status', label: 'Status' },
-]
-
-function applicationStatusSortRank(app) {
-  const st = deriveApplicationApprovalState(app)
-  if (st === 'pending') return 0
-  if (st === 'approved') return 1
-  return 2
-}
-
-function compareApplicationRoomNumbers(a, b) {
-  const sa = String(a ?? '').trim()
-  const sb = String(b ?? '').trim()
-  const na = Number.parseInt(sa, 10)
-  const nb = Number.parseInt(sb, 10)
-  if (Number.isFinite(na) && Number.isFinite(nb) && String(na) === sa && String(nb) === sb) return na - nb
-  return sa.localeCompare(sb, undefined, { numeric: true, sensitivity: 'base' })
-}
-
-function sortApplicationsList(rows, sortKey, sortDir) {
-  const mul = sortDir === 'asc' ? 1 : -1
-  return [...rows].sort((a, b) => {
-    let cmp = 0
-    switch (sortKey) {
-      case 'submitted':
-        cmp = new Date(a.created_at || 0).getTime() - new Date(b.created_at || 0).getTime()
-        break
-      case 'property':
-        cmp = String(a['Property Name'] || '').localeCompare(String(b['Property Name'] || ''), undefined, {
-          sensitivity: 'base',
-        })
-        break
-      case 'room':
-        cmp = compareApplicationRoomNumbers(a['Room Number'], b['Room Number'])
-        break
-      case 'name':
-        cmp = String(a['Signer Full Name'] || '').localeCompare(String(b['Signer Full Name'] || ''), undefined, {
-          sensitivity: 'base',
-        })
-        break
-      case 'status':
-        cmp = applicationStatusSortRank(a) - applicationStatusSortRank(b)
-        break
-      default:
-        cmp = 0
-    }
-    if (cmp !== 0) return cmp * mul
-    return (
-      String(a['Signer Full Name'] || '').localeCompare(String(b['Signer Full Name'] || ''), undefined, {
-        sensitivity: 'base',
-      }) * mul
-    )
-  })
-}
-
 // ─── ApplicationsPanel ────────────────────────────────────────────────────────
 function ApplicationsPanel({ allowedPropertyNames, manager }) {
   const [detailAppId, setDetailAppId] = useState(null)
@@ -4787,8 +4727,6 @@ function ApplicationsPanel({ allowedPropertyNames, manager }) {
   const [loading, setLoading] = useState(true)
   const [propertyFilter, setPropertyFilter] = useState('')
   const [statusFilter, setStatusFilter] = useState('all')
-  const [sortKey, setSortKey] = useState('submitted')
-  const [sortDir, setSortDir] = useState('desc')
   const [approving, setApproving] = useState({}) // recordId -> 'approving' | 'rejecting'
 
   const [loadError, setLoadError] = useState('')
@@ -4825,21 +4763,9 @@ function ApplicationsPanel({ allowedPropertyNames, manager }) {
   }, [propertyFilteredRows, statusFilter])
 
   const applications = useMemo(
-    () => sortApplicationsList(filteredRows, sortKey, sortDir),
-    [filteredRows, sortKey, sortDir],
+    () => [...filteredRows].sort((a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime()),
+    [filteredRows],
   )
-
-  const showSortDeck = filteredRows.length >= 5
-
-  function selectSortOption(id) {
-    if (sortKey === id) {
-      setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'))
-      return
-    }
-    setSortKey(id)
-    if (id === 'submitted') setSortDir('desc')
-    else setSortDir('asc')
-  }
 
   async function handleDecision(recordId, approved) {
     setApproving(a => ({ ...a, [recordId]: approved ? 'approving' : 'rejecting' }))
@@ -4980,67 +4906,6 @@ function ApplicationsPanel({ allowedPropertyNames, manager }) {
           </div>
         ) : (
           <>
-            <div
-              className={classNames(
-                'border-b border-slate-100 px-4 py-3 sm:px-6',
-                showSortDeck
-                  ? 'bg-gradient-to-r from-slate-50 via-white to-blue-50/50'
-                  : 'bg-slate-50/60',
-              )}
-            >
-              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
-                  <span
-                    className={classNames(
-                      'shrink-0 font-bold uppercase tracking-[0.14em] text-slate-400',
-                      showSortDeck ? 'text-[11px]' : 'text-[10px]',
-                    )}
-                  >
-                    Sort
-                  </span>
-                  <div
-                    className="flex flex-wrap gap-1.5"
-                    role="toolbar"
-                    aria-label="Sort applications"
-                  >
-                    {APPLICATION_SORT_OPTIONS.map((opt) => {
-                      const active = sortKey === opt.id
-                      return (
-                        <button
-                          key={opt.id}
-                          type="button"
-                          onClick={() => selectSortOption(opt.id)}
-                          className={classNames(
-                            'inline-flex items-center gap-1 rounded-full border font-semibold transition',
-                            showSortDeck ? 'px-3.5 py-2 text-xs' : 'px-2.5 py-1.5 text-[11px]',
-                            active
-                              ? 'border-[#2563eb] bg-[#2563eb] text-white shadow-[0_2px_10px_rgba(37,99,235,0.22)]'
-                              : 'border-slate-200/90 bg-white text-slate-600 hover:border-slate-300 hover:bg-slate-50',
-                          )}
-                          aria-pressed={active}
-                          title={active ? `Click to reverse order (${sortDir === 'asc' ? 'ascending' : 'descending'})` : `Sort by ${opt.label}`}
-                        >
-                          <span>{opt.label}</span>
-                          {active ? (
-                            <span className="tabular-nums opacity-90" aria-hidden>
-                              {sortDir === 'asc' ? '↑' : '↓'}
-                            </span>
-                          ) : null}
-                        </button>
-                      )
-                    })}
-                  </div>
-                </div>
-                {showSortDeck ? (
-                  <div className="flex shrink-0 flex-wrap items-center gap-2 text-xs text-slate-500">
-                    <span className="rounded-full bg-white/90 px-3 py-1.5 font-semibold text-slate-700 shadow-sm ring-1 ring-slate-200/80">
-                      {filteredRows.length} application{filteredRows.length !== 1 ? 's' : ''}
-                    </span>
-                    <span className="hidden text-slate-400 sm:inline">Click again to flip ↑↓</span>
-                  </div>
-                ) : null}
-              </div>
-            </div>
             <div className="divide-y divide-slate-100">
               {applications.map((app) => {
                 const { label, cls } = statusLabel(app)
@@ -5344,7 +5209,7 @@ export function CalendarTabPanel({ manager, allowedPropertyNames, calendarMode =
                   <option key={option.id} value={option.id}>{option.label}</option>
                 ))
               ) : (
-                <option value="">{isAdminCalendar ? 'No enabled admins' : 'No listed properties'}</option>
+                <option value="">{isAdminCalendar ? 'No enabled admins' : 'No assigned properties'}</option>
               )}
             </select>
             {MANAGER_PILL_SELECT_CHEVRON}
@@ -5678,8 +5543,6 @@ function ManagerDashboard({ manager: managerProp, openDraftId, onOpenDraft, onCl
     setDrafts(prev => [{ id: newDraft.id, ...newDraft }, ...prev])
   }
 
-  const canReview = status => ['Draft Generated', 'Under Review', 'Changes Needed'].includes(status)
-
   async function handleBillingPortal() {
     if (isManagerInternalPreview(manager)) {
       toast.error('Billing is not available in preview mode')
@@ -5701,18 +5564,14 @@ function ManagerDashboard({ manager: managerProp, openDraftId, onOpenDraft, onCl
     }
   }
 
-  const managerUserMeta = [manager.role, manager.managerId].filter(Boolean).join(' · ') || undefined
-
   return (
     <>
       <PortalShell
-        brandTitle="Axis"
+        brandTitle="Manager"
         desktopNav="sidebar"
         navItems={MANAGER_NAV_ITEMS}
         activeId={dashView}
         onNavigate={setDashView}
-        userLabel={manager.name}
-        userMeta={managerUserMeta}
         onSignOut={onSignOut}
         sidebarFooterExtra={
           <button
@@ -5815,53 +5674,57 @@ function ManagerDashboard({ manager: managerProp, openDraftId, onOpenDraft, onCl
               <div className="text-sm font-semibold text-slate-700">No leases yet</div>
             </div>
           ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full">
-                <thead>
-                  <tr className="border-b border-slate-200 bg-slate-50">
-                    <th className="px-5 py-3.5 text-left text-[11px] font-bold uppercase tracking-[0.14em] text-slate-400">Resident</th>
-                    <th className="hidden px-5 py-3.5 text-left text-[11px] font-bold uppercase tracking-[0.14em] text-slate-400 sm:table-cell">Property</th>
-                    <th className="hidden px-5 py-3.5 text-left text-[11px] font-bold uppercase tracking-[0.14em] text-slate-400 md:table-cell">Dates</th>
-                    <th className="px-5 py-3.5 text-left text-[11px] font-bold uppercase tracking-[0.14em] text-slate-400">Status</th>
-                    <th className="hidden px-5 py-3.5 text-left text-[11px] font-bold uppercase tracking-[0.14em] text-slate-400 lg:table-cell">Updated</th>
-                    <th className="px-5 py-3.5" />
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {drafts.map(draft => (
-                    <tr key={draft.id} className="transition-colors hover:bg-slate-50">
-                      <td className="px-5 py-4">
+            <div className="space-y-4 p-4 sm:p-5">
+              <DataTable
+                empty="No leases in this view"
+                columns={[
+                  {
+                    key: 'resident',
+                    label: 'Resident',
+                    headerClassName: 'w-[30%]',
+                    render: (draft) => (
+                      <>
                         <div className="font-semibold text-slate-900">{draft['Resident Name'] || '—'}</div>
-                        <div className="text-xs text-slate-500">{draft['Resident Email'] || ''}</div>
-                      </td>
-                      <td className="hidden px-5 py-4 sm:table-cell">
-                        <div className="text-sm font-medium text-slate-900">{draft['Property'] || '—'}</div>
-                        {draft['Unit'] && <div className="text-xs text-slate-500">{draft['Unit']}</div>}
-                      </td>
-                      <td className="hidden px-5 py-4 text-sm text-slate-600 md:table-cell">
-                        <div>{fmtDate(draft['Lease Start Date'])}</div>
-                        {draft['Lease End Date'] && (
-                          <div className="text-slate-400">→ {fmtDate(draft['Lease End Date'])}</div>
-                        )}
-                      </td>
-                      <td className="px-5 py-4">
-                        <StatusBadge status={leaseUiStatusLabel(draft['Status'])} />
-                      </td>
-                      <td className="hidden px-5 py-4 text-sm text-slate-500 lg:table-cell">
-                        {fmtDate(draft['Updated At'] || draft.created_at)}
-                      </td>
-                      <td className="px-5 py-4 text-right">
-                        <button
-                          onClick={() => onOpenDraft(draft.id)}
-                          className="rounded-xl border border-slate-200 px-4 py-1.5 text-sm font-semibold text-slate-700 transition hover:border-[#2563eb] hover:text-[#2563eb]"
-                        >
-                          {canReview(draft['Status']) ? 'Review →' : 'View →'}
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+                        <div className="text-xs text-slate-500">{draft['Resident Email'] || 'No email on file'}</div>
+                      </>
+                    ),
+                  },
+                  {
+                    key: 'property',
+                    label: 'Property',
+                    headerClassName: 'w-[30%]',
+                    render: (draft) => (
+                      <>
+                        <div className="text-sm font-semibold text-slate-900">{draft['Property'] || '—'}</div>
+                        <div className="text-xs text-slate-500">{draft['Unit'] ? `Unit ${draft['Unit']}` : 'Unit not set'}</div>
+                      </>
+                    ),
+                  },
+                  {
+                    key: 'status',
+                    label: 'Status',
+                    headerClassName: 'w-[20%] text-center',
+                    cellClassName: 'text-center',
+                    render: (draft) => <StatusBadge status={leaseUiStatusLabel(draft['Status'])} />,
+                  },
+                  {
+                    key: 'actions',
+                    label: 'Action',
+                    headerClassName: 'w-[20%] text-right',
+                    cellClassName: 'text-right',
+                    render: (draft) => (
+                      <button
+                        type="button"
+                        className="whitespace-nowrap text-sm font-semibold text-[#2563eb]"
+                        onClick={() => onOpenDraft(draft.id)}
+                      >
+                        Details
+                      </button>
+                    ),
+                  },
+                ]}
+                rows={drafts.map((draft) => ({ key: draft.id, data: draft }))}
+              />
             </div>
           )}
         </div>

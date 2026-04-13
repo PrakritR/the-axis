@@ -365,6 +365,19 @@ export default function AddPropertyWizard({ manager, onClose, onCreated, createP
   function addRoom() {
     setRooms(prev => prev.length < MAX_ROOM_SLOTS ? [...prev, emptyRoomRow()] : prev)
   }
+  function duplicateRoom(idx) {
+    setRooms(prev => {
+      if (prev.length >= MAX_ROOM_SLOTS) return prev
+      const src = prev[idx] || emptyRoomRow()
+      return [
+        ...prev,
+        {
+          ...src,
+          media: [],
+        },
+      ]
+    })
+  }
   function removeRoom(idx) {
     setRooms(prev => prev.length <= 1 ? prev : prev.filter((_, i) => i !== idx))
     const fix = arr => adjustRoomAccessLabels(arr, idx)
@@ -398,6 +411,19 @@ export default function AddPropertyWizard({ manager, onClose, onCreated, createP
     setBathrooms(prev => { const next = [...prev]; next[idx] = { ...next[idx], ...patch }; return next })
   }
   function addBath() { setBathrooms(prev => prev.length < MAX_BATHROOM_SLOTS ? [...prev, emptyBathroomRow()] : prev) }
+  function duplicateBath(idx) {
+    setBathrooms(prev => {
+      if (prev.length >= MAX_BATHROOM_SLOTS) return prev
+      const src = prev[idx] || emptyBathroomRow()
+      return [
+        ...prev,
+        {
+          ...src,
+          access: Array.isArray(src.access) ? [...src.access] : [],
+        },
+      ]
+    })
+  }
   function removeBath(idx) { setBathrooms(prev => prev.filter((_, i) => i !== idx)) }
 
   // ── Kitchen helpers ───────────────────────────────────────────────────────────
@@ -412,6 +438,19 @@ export default function AddPropertyWizard({ manager, onClose, onCreated, createP
     setSharedSpaces(prev => { const next = [...prev]; next[idx] = { ...next[idx], ...patch }; return next })
   }
   function addSpace() { setSharedSpaces(prev => prev.length < MAX_SHARED_SPACE_SLOTS ? [...prev, emptySharedSpaceRow()] : prev) }
+  function duplicateSpace(idx) {
+    setSharedSpaces(prev => {
+      if (prev.length >= MAX_SHARED_SPACE_SLOTS) return prev
+      const src = prev[idx] || emptySharedSpaceRow()
+      return [
+        ...prev,
+        {
+          ...src,
+          access: Array.isArray(src.access) ? [...src.access] : [],
+        },
+      ]
+    })
+  }
   function removeSpace(idx) { setSharedSpaces(prev => prev.filter((_, i) => i !== idx)) }
 
   // ── Laundry helpers ───────────────────────────────────────────────────────────
@@ -665,11 +704,18 @@ export default function AddPropertyWizard({ manager, onClose, onCreated, createP
                 </div>
                 <div className="text-sm font-black text-slate-800">Room {idx + 1}</div>
               </div>
-              {rooms.length > 1 && (
-                <button type="button" onClick={() => removeRoom(idx)} className="text-[11px] font-bold text-red-500 hover:text-red-700">
-                  Remove
-                </button>
-              )}
+              <div className="flex items-center gap-3">
+                {rooms.length < MAX_ROOM_SLOTS ? (
+                  <button type="button" onClick={() => duplicateRoom(idx)} className="text-[11px] font-bold text-[#2563eb] hover:text-[#1d4ed8]">
+                    Duplicate
+                  </button>
+                ) : null}
+                {rooms.length > 1 ? (
+                  <button type="button" onClick={() => removeRoom(idx)} className="text-[11px] font-bold text-red-500 hover:text-red-700">
+                    Remove
+                  </button>
+                ) : null}
+              </div>
             </div>
 
             <div className="grid gap-3 sm:grid-cols-2">
@@ -843,7 +889,12 @@ export default function AddPropertyWizard({ manager, onClose, onCreated, createP
                 <div className="flex h-7 w-7 items-center justify-center rounded-full bg-slate-100 text-xs font-black text-slate-600">{idx + 1}</div>
                 <div className="text-sm font-black text-slate-800">Bathroom {idx + 1}</div>
               </div>
-              <button type="button" onClick={() => removeBath(idx)} className="text-[11px] font-bold text-red-500 hover:text-red-700">Remove</button>
+              <div className="flex items-center gap-3">
+                {bathrooms.length < MAX_BATHROOM_SLOTS ? (
+                  <button type="button" onClick={() => duplicateBath(idx)} className="text-[11px] font-bold text-[#2563eb] hover:text-[#1d4ed8]">Duplicate</button>
+                ) : null}
+                <button type="button" onClick={() => removeBath(idx)} className="text-[11px] font-bold text-red-500 hover:text-red-700">Remove</button>
+              </div>
             </div>
             <div className="grid gap-3 sm:grid-cols-2">
               <div>
@@ -951,7 +1002,12 @@ export default function AddPropertyWizard({ manager, onClose, onCreated, createP
                 <div className="flex h-7 w-7 items-center justify-center rounded-full bg-slate-100 text-xs font-black text-slate-600">{idx + 1}</div>
                 <div className="text-sm font-black text-slate-800">Shared space {idx + 1}</div>
               </div>
-              <button type="button" onClick={() => removeSpace(idx)} className="text-[11px] font-bold text-red-500 hover:text-red-700">Remove</button>
+              <div className="flex items-center gap-3">
+                {sharedSpaces.length < MAX_SHARED_SPACE_SLOTS ? (
+                  <button type="button" onClick={() => duplicateSpace(idx)} className="text-[11px] font-bold text-[#2563eb] hover:text-[#1d4ed8]">Duplicate</button>
+                ) : null}
+                <button type="button" onClick={() => removeSpace(idx)} className="text-[11px] font-bold text-red-500 hover:text-red-700">Remove</button>
+              </div>
             </div>
             <div className="grid gap-3 sm:grid-cols-2">
               <div>
