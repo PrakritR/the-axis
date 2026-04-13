@@ -118,16 +118,17 @@ function workOrderHasManagerActivity(record) {
 }
 
 function residentWorkOrderStatusLabel(record) {
-  if (!record) return 'Processed'
+  if (!record) return 'Open'
   if (isWorkOrderResolved(record)) {
     return 'Done'
   }
   const raw = String(record.Status || '').trim().toLowerCase()
+  if (parseWorkOrderSchedule(record)) return 'Scheduled'
+  if (raw.includes('schedule')) return 'Scheduled'
   if (raw.includes('review')) return 'In Progress'
-  if (raw.includes('schedule')) return 'In Progress'
   if (raw.includes('progress')) return 'In Progress'
   if (workOrderHasManagerActivity(record)) return 'In Progress'
-  return 'Processed'
+  return 'Open'
 }
 
 function residentWorkOrderStatusTone(record) {
@@ -142,7 +143,7 @@ function residentWorkOrderFilterBucket(record) {
   if (isWorkOrderResolved(record)) return 'completed'
   const L = residentWorkOrderStatusLabel(record)
   if (L === 'Scheduled') return 'scheduled'
-  if (L === 'In Progress') return 'in_progress'
+  if (L === 'In Progress') return 'scheduled'
   return 'open'
 }
 

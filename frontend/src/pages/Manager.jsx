@@ -604,7 +604,7 @@ function managerWorkOrderBucket(record) {
   if (workOrderIsResolvedRecord(record)) return 'completed'
   const raw = String(record.Status || '').trim().toLowerCase()
   if (raw.includes('schedule')) return 'scheduled'
-  if (raw.includes('progress')) return 'in_progress'
+  if (raw.includes('progress')) return 'scheduled'
   return 'open'
 }
 
@@ -3833,37 +3833,34 @@ function WorkOrdersTabPanel({ allowedPropertyNames, allowedPropertyIds }) {
               <div className="text-sm font-semibold text-slate-700">{list.length === 0 ? 'No work orders yet' : 'Nothing matches this filter'}</div>
             </div>
           ) : (
-            <div className="overflow-x-auto">
-              <table className="min-w-full text-left">
-                <thead className="border-b border-slate-200 bg-slate-50">
-                  <tr>
-                    <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-[0.14em] text-slate-400">Title</th>
-                    <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-[0.14em] text-slate-400">Description</th>
-                    <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-[0.14em] text-slate-400">Property</th>
-                    <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-[0.14em] text-slate-400">Status</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {filteredList.map((row) => (
-                    <tr
-                      key={row.id}
-                      onClick={() => setRecord(row)}
-                      className={classNames('cursor-pointer transition hover:bg-slate-50', record?.id === row.id ? 'bg-axis/5' : '')}
+            <div className="divide-y divide-slate-100">
+              {filteredList.map((row) => (
+                <div key={row.id} className="flex flex-col gap-3 px-6 py-5 sm:flex-row sm:items-center sm:gap-5">
+                  <div className="min-w-0 flex-1">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="truncate font-semibold text-slate-900">{safePortalText(row.Title, 'Untitled request')}</span>
+                      <PortalOpsStatusBadge tone={managerWorkOrderStatusTone(row)}>
+                        {managerWorkOrderStatusLabel(row)}
+                      </PortalOpsStatusBadge>
+                    </div>
+                    <div className="mt-1 flex flex-wrap gap-x-4 gap-y-0.5 text-sm text-slate-500">
+                      <span>{workOrderPropertyLabel(row) || 'House not set'}</span>
+                      <span>{paymentResidentLabel(row)}</span>
+                      <span>{formatDate(row['Date Submitted'] || row.created_at)}</span>
+                    </div>
+                    <p className="mt-1 line-clamp-2 text-sm text-slate-500">{safePortalText(row.Description, '—')}</p>
+                  </div>
+                  <div className="flex shrink-0 flex-wrap gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setRecord((current) => (current?.id === row.id ? null : row))}
+                      className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
                     >
-                      <td className="px-4 py-4 text-sm font-semibold text-slate-900">{safePortalText(row.Title, 'Untitled request')}</td>
-                      <td className="max-w-xs px-4 py-4 text-sm text-slate-600">
-                        <span className="line-clamp-2">{safePortalText(row.Description, '—')}</span>
-                      </td>
-                      <td className="px-4 py-4 text-sm text-slate-600">{workOrderPropertyLabel(row) || '—'}</td>
-                      <td className="px-4 py-4">
-                        <PortalOpsStatusBadge tone={managerWorkOrderStatusTone(row)}>
-                          {managerWorkOrderStatusLabel(row)}
-                        </PortalOpsStatusBadge>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+                      {record?.id === row.id ? 'Hide details' : 'Details'}
+                    </button>
+                  </div>
+                </div>
+              ))}
             </div>
           )}
         </div>
