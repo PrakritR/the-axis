@@ -13,11 +13,19 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react'
 import toast from 'react-hot-toast'
 import LeaseWorkspace from '../components/LeaseWorkspace.jsx'
+import { DataTable } from '../components/PortalShell'
 import { getStatusConfig, fmtTs } from '../lib/leaseWorkflowConstants.js'
 
 const AIRTABLE_TOKEN = import.meta.env.VITE_AIRTABLE_TOKEN
 const CORE_BASE_ID = import.meta.env.VITE_AIRTABLE_BASE_ID || 'appol57LKtMKaQ75T'
+const APPS_BASE_ID = import.meta.env.VITE_AIRTABLE_APPLICATIONS_BASE_ID || CORE_BASE_ID
+const APPLICATIONS_TABLE = (import.meta.env.VITE_AIRTABLE_APPLICATIONS_TABLE || 'Applications').trim() || 'Applications'
 const AT_BASE = `https://api.airtable.com/v0/${CORE_BASE_ID}`
+const APPS_BASE = `https://api.airtable.com/v0/${APPS_BASE_ID}`
+
+function mapRecord(record) {
+  return { id: record.id, ...record.fields, created_at: record.createdTime }
+}
 
 // ─── Data fetching ────────────────────────────────────────────────────────────
 async function fetchLeaseDraftsForManager(ownerId) {
@@ -64,6 +72,44 @@ async function fetchAllLeaseDrafts() {
   return rows
 }
 
+async function fetchApprovedApplicationsForManager(ownerId) {
+  const rows = []
+  let offset = null
+  do {
+    const url = new URL(`${APPS_BASE}/${encodeURIComponent(APPLICATIONS_TABLE)}`)
+    const ownerFormula = ownerId ? `, {Owner ID} = "${String(ownerId).replace(/"/g, '\\"')}"` : ''
+    url.searchParams.set('filterByFormula', `AND({Approved}=TRUE()${ownerFormula})`)
+    url.searchParams.set('sort[0][field]', 'Approved At')
+    url.searchParams.set('sort[0][direction]', 'desc')
+    if (offset) url.searchParams.set('offset', offset)
+    const res = await fetch(url.toString(), { headers: { Authorization: `Bearer ${AIRTABLE_TOKEN}` } })
+    if (!res.ok) {
+      const text = await res.text()
+      throw new Error(text.slice(0, 300))
+    }
+    const data = await res.json()
+    for (const r of (data.records || [])) rows.push(mapRecord(r))
+    offset = data.offset || null
+  } while (offset)
+  return rows
+}
+
+function toSyntheticLeaseDraftFromApplication(app) {
+  return {
+    id: `app-${app.id}`,
+    '__syntheticFromApplication': true,
+    'Application Record ID': app.id,
+    'Status': 'Draft Generated',
+    'Resident Name': app['Signer Full Name'] || app.Name || '—',
+    'Resident Email': app['Signer Email'] || '',
+    'Property': app['Property Name'] || '',
+    'Unit': app['Room Number'] || '',
+    'Lease Term': app['Lease Term'] || '',
+    'Current Version': 1,
+    'Updated At': app['Approved At'] || app.created_at || new Date().toISOString(),
+  }
+}
+
 async function fetchUnreadNotificationCount(recipientRecordId) {
   if (!recipientRecordId) return 0
   try {
@@ -96,15 +142,6 @@ const STATUS_FILTER_ITEMS = [
   { id: 'signed', label: 'Signed', match: (s) => String(s || '').trim() === 'Signed' },
 ]
 
-function managerQueueLabel(status) {
-  const normalized = String(status || '').trim()
-  if (['Draft Generated', 'Under Review', 'Changes Needed', 'Approved', 'Sent Back to Manager'].includes(normalized)) return 'Draft Ready'
-  if (['Submitted to Admin', 'Admin In Review', 'Changes Made', 'Manager Approved', 'Ready for Signature'].includes(normalized)) return 'Admin Review'
-  if (normalized === 'Published') return 'With Resident'
-  if (normalized === 'Signed') return 'Signed'
-  return normalized || 'Draft Ready'
-}
-
 // ─── Sub-components ───────────────────────────────────────────────────────────
 function StatusPill({ status }) {
   const cfg = getStatusConfig(status)
@@ -113,42 +150,6 @@ function StatusPill({ status }) {
       <span className={`h-1.5 w-1.5 rounded-full ${cfg.dot}`} />
       {cfg.short}
     </span>
-  )
-}
-
-function LeasingTableRow({ draft, onOpen }) {
-  const status = draft['Status'] || 'Draft Generated'
-  const cfg = getStatusConfig(status)
-  return (
-    <tr
-      className="cursor-pointer border-b border-slate-100 transition hover:bg-sky-50/70 last:border-0"
-      onClick={() => onOpen(draft)}
-    >
-      <td className="px-4 py-3">
-        <div className="font-semibold text-slate-900">{draft['Resident Name'] || '—'}</div>
-        <div className="text-xs text-slate-500">{draft['Resident Email'] || 'No email'}</div>
-      </td>
-      <td className="px-4 py-3">
-        <div className="text-sm font-medium text-slate-800">{draft['Property'] || '—'}</div>
-        <div className="text-xs text-slate-500">{draft['Unit'] ? `Unit ${draft['Unit']}` : '—'}</div>
-      </td>
-      <td className="px-4 py-3 text-center">
-        <StatusPill status={status} />
-        <div className="mt-1 text-[10px] font-bold uppercase tracking-wide text-slate-400">{managerQueueLabel(status)}</div>
-        {cfg.managerActionNeeded && (
-          <div className="mt-1 text-[10px] font-bold uppercase tracking-wide text-orange-600">Your action</div>
-        )}
-      </td>
-      <td className="px-4 py-3 text-center">
-        <span className="text-sm text-slate-600">{draft['Current Version'] ? `v${draft['Current Version']}` : 'v1'}</span>
-      </td>
-      <td className="px-4 py-3 text-right">
-        <span className="text-xs text-slate-400">{fmtTs(draft['Updated At'] || draft['created_at'])}</span>
-      </td>
-      <td className="px-4 py-3 text-right">
-        <span className="text-sm font-semibold text-[#2563eb]">Open →</span>
-      </td>
-    </tr>
   )
 }
 
@@ -183,7 +184,24 @@ export default function ManagerLeasingTab({ manager, allowedPropertyNames }) {
       const scoped = allowed && allowed.size > 0
         ? sourceRows.filter(d => allowed.has(d['Property']))
         : sourceRows
-      setDrafts(scoped)
+
+      const approvedApps = await fetchApprovedApplicationsForManager(ownerId).catch(() => [])
+      const approvedScoped = allowed && allowed.size > 0
+        ? approvedApps.filter((a) => allowed.has(String(a['Property Name'] || '')))
+        : approvedApps
+      const existingAppIds = new Set(
+        scoped
+          .map((d) => String(d['Application Record ID'] || '').trim())
+          .filter(Boolean),
+      )
+      const syntheticRows = approvedScoped
+        .filter((a) => !existingAppIds.has(String(a.id || '').trim()))
+        .map(toSyntheticLeaseDraftFromApplication)
+
+      const merged = [...syntheticRows, ...scoped].sort(
+        (a, b) => new Date(b['Updated At'] || b.created_at || 0) - new Date(a['Updated At'] || a.created_at || 0),
+      )
+      setDrafts(merged)
     } catch (err) {
       setLoadError(err.message || 'Could not load leases')
       toast.error('Could not load lease records')
@@ -191,6 +209,35 @@ export default function ManagerLeasingTab({ manager, allowedPropertyNames }) {
       setLoading(false)
     }
   }, [ownerId, allowedPropertyNames])
+
+  const openLeaseDetails = useCallback(async (draft) => {
+    if (!draft?.__syntheticFromApplication) {
+      setSelectedDraft(draft)
+      return
+    }
+    try {
+      const appId = String(draft['Application Record ID'] || '').trim()
+      if (!appId) throw new Error('Application record id missing')
+      const res = await fetch('/api/generate-lease-from-template', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          applicationRecordId: appId,
+          managerName: manager?.name || manager?.email || 'Manager',
+        }),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(data.error || 'Could not generate lease draft')
+      if (data?.draft?.id) {
+        setSelectedDraft(data.draft)
+        loadDrafts()
+        return
+      }
+      throw new Error('Draft was not returned by server')
+    } catch (err) {
+      toast.error(err.message || 'Could not open lease details')
+    }
+  }, [manager, loadDrafts])
 
   useEffect(() => {
     loadDrafts()
@@ -318,25 +365,58 @@ export default function ManagerLeasingTab({ manager, allowedPropertyNames }) {
         ) : visibleDrafts.length === 0 ? (
           <div className="px-6 py-16" />
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[600px]">
-              <thead>
-                <tr className="border-b border-slate-100 bg-slate-50/70">
-                  <th className="px-4 py-3 text-left text-[10px] font-bold uppercase tracking-[0.12em] text-slate-400">Tenant</th>
-                  <th className="px-4 py-3 text-left text-[10px] font-bold uppercase tracking-[0.12em] text-slate-400">Property</th>
-                  <th className="px-4 py-3 text-center text-[10px] font-bold uppercase tracking-[0.12em] text-slate-400">Status</th>
-                  <th className="px-4 py-3 text-center text-[10px] font-bold uppercase tracking-[0.12em] text-slate-400">Version</th>
-                  <th className="px-4 py-3 text-right text-[10px] font-bold uppercase tracking-[0.12em] text-slate-400">Updated</th>
-                  <th className="px-4 py-3 text-right text-[10px] font-bold uppercase tracking-[0.12em] text-slate-400"></th>
-                </tr>
-              </thead>
-              <tbody>
-                {visibleDrafts.map(draft => (
-                  <LeasingTableRow key={draft.id} draft={draft} onOpen={setSelectedDraft} />
-                ))}
-              </tbody>
-            </table>
-          </div>
+          <DataTable
+            empty="No leases in this view"
+            columns={[
+              {
+                key: 'property',
+                label: 'Property',
+                headerClassName: 'w-[30%]',
+                render: (draft) => (
+                  <>
+                    <div className="font-semibold text-slate-900">{draft['Property'] || 'Property not set'}</div>
+                    <div className="text-xs text-slate-500">{draft['Resident Name'] || 'Resident not set'}</div>
+                  </>
+                ),
+              },
+              {
+                key: 'summary',
+                label: 'Summary',
+                headerClassName: 'w-[40%]',
+                render: (draft) => (
+                  <div className="flex flex-wrap gap-1.5">
+                    {draft['Unit'] ? <span className="rounded-full border border-slate-200 bg-white px-2.5 py-0.5 text-[11px] font-semibold text-slate-600">Room {draft['Unit']}</span> : null}
+                    {draft['Lease Term'] ? <span className="rounded-full border border-slate-200 bg-white px-2.5 py-0.5 text-[11px] font-semibold text-slate-600">{draft['Lease Term']}</span> : null}
+                    <span className="rounded-full border border-slate-200 bg-white px-2.5 py-0.5 text-[11px] font-semibold text-slate-600">{draft['Current Version'] ? `v${draft['Current Version']}` : 'v1'}</span>
+                    <span className="rounded-full border border-slate-200 bg-white px-2.5 py-0.5 text-[11px] font-semibold text-slate-600">Updated {fmtTs(draft['Updated At'] || draft['created_at'])}</span>
+                  </div>
+                ),
+              },
+              {
+                key: 'status',
+                label: 'Status',
+                headerClassName: 'w-[16%] text-center',
+                cellClassName: 'text-center',
+                render: (draft) => <StatusPill status={draft['Status'] || 'Draft Generated'} />,
+              },
+              {
+                key: 'actions',
+                label: 'Action',
+                headerClassName: 'w-[14%] text-right',
+                cellClassName: 'text-right',
+                render: (draft) => (
+                  <button
+                    type="button"
+                    className="whitespace-nowrap text-sm font-semibold text-[#2563eb]"
+                    onClick={() => openLeaseDetails(draft)}
+                  >
+                    Details
+                  </button>
+                ),
+              },
+            ]}
+            rows={visibleDrafts.map((draft) => ({ key: draft.id, data: draft }))}
+          />
         )}
       </div>
     </div>
