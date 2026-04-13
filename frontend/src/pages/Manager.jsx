@@ -1478,16 +1478,6 @@ function AvailabilityEditorPanel({
       </div>
 
       <div className="mt-6 flex flex-wrap gap-2 text-sm">
-        {typeof onOpenMeet === 'function' ? (
-          <button
-            type="button"
-            onClick={onOpenMeet}
-            disabled={isManagerInternalPreview(manager)}
-            className="rounded-xl border border-[#2563eb]/30 bg-sky-50 px-3 py-2 font-semibold text-sky-900 hover:bg-sky-100 disabled:opacity-40"
-          >
-            Schedule tour or meeting
-          </button>
-        ) : null}
         <button
           type="button"
           onClick={onClearDay}
@@ -5921,16 +5911,6 @@ function LeaseEditor({ draftId, manager, onBack, embedded = false }) {
                   className="rounded-xl border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:opacity-50 sm:px-4"
                 >
                   {saving ? 'Saving…' : 'Save'}
-                </button>
-              )}
-              {canReject && (
-                <button
-                  type="button"
-                  onClick={handleReject}
-                  disabled={!!actionLoading}
-                  className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm font-semibold text-red-700 transition hover:bg-red-100 disabled:opacity-50 sm:px-4"
-                >
-                  {actionLoading === 'reject' ? 'Updating…' : 'Changes needed'}
                 </button>
               )}
               {canApprove && (
