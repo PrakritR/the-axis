@@ -537,6 +537,9 @@ function VideoPlaceholderCard({ label, text }) {
 }
 
 function getSharedSpaceDetailMeta(video) {
+  if (video?.__meta && typeof video.__meta === 'object') {
+    return video.__meta
+  }
   const label = (video?.label || '').toLowerCase()
   if (label.includes('kitchen')) {
     return {
@@ -555,6 +558,38 @@ function getSharedSpaceDetailMeta(video) {
     description: 'This tour helps renters understand the scale of the common area, where people can sit or study, and how the living room connects back to the kitchen and circulation through the townhouse.',
     bullets: ['Shared seating setup', 'Open common-area layout', 'Connection to the kitchen and entry'],
   }
+}
+
+function buildSharedSpaceMetaFromRow(row) {
+  const title = String(row?.title || 'Shared Space').trim()
+  const summary = String(row?.description || 'Shared common area').trim()
+  const access = String(row?.accessLabel || '').trim()
+  const images = Array.isArray(row?.images) ? row.images.length : 0
+  const videos = Array.isArray(row?.videos) ? row.videos.length : 0
+  return {
+    title,
+    rowSummary: summary,
+    summary,
+    description: summary,
+    bullets: [
+      access ? `Access: ${access}` : 'Access: All rooms',
+      images > 0 ? `${images} photo${images === 1 ? '' : 's'} available` : 'Photos coming soon',
+      videos > 0 ? `${videos} video${videos === 1 ? '' : 's'} available` : 'Video coming soon',
+    ],
+  }
+}
+
+function openSharedSpaceFromRow(row, setActiveSharedSpace) {
+  const videos = Array.isArray(row?.videos) ? row.videos : []
+  const firstVideo = videos[0] || null
+  setActiveSharedSpace({
+    ...(firstVideo || {}),
+    src: firstVideo?.src || '',
+    placeholder: !firstVideo || !!firstVideo.placeholder,
+    placeholderText: firstVideo?.placeholderText || `${row?.title || 'Shared space'} video coming soon.`,
+    images: Array.isArray(row?.images) ? row.images : [],
+    __meta: buildSharedSpaceMetaFromRow(row),
+  })
 }
 
 export default function PropertyPage(){
@@ -1018,26 +1053,13 @@ export default function PropertyPage(){
                         {row.accessLabel || 'All rooms'}
                       </div>
                       <div className="sm:col-span-2 sm:text-right">
-                        {Array.isArray(row.images) && row.images.length > 0 ? (
-                          <a
-                            href={row.images[0]}
-                            target="_blank"
-                            rel="noreferrer"
-                            className="inline-flex items-center rounded-full border border-slate-300 px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:border-axis hover:text-axis"
-                          >
-                            Details
-                          </a>
-                        ) : Array.isArray(row.videos) && row.videos.length > 0 ? (
-                          <button
-                            type="button"
-                            onClick={() => setActiveSharedSpace(row.videos[0])}
-                            className="inline-flex items-center rounded-full border border-slate-300 px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:border-axis hover:text-axis"
-                          >
-                            Details
-                          </button>
-                        ) : (
-                          <span className="inline-flex items-center rounded-full border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-400">No media</span>
-                        )}
+                        <button
+                          type="button"
+                          onClick={() => openSharedSpaceFromRow(row, setActiveSharedSpace)}
+                          className="inline-flex items-center rounded-full border border-slate-300 px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:border-axis hover:text-axis"
+                        >
+                          Details
+                        </button>
                       </div>
                     </div>
                   ))}
@@ -1055,7 +1077,7 @@ export default function PropertyPage(){
                         <div className="sm:col-span-2 sm:text-right">
                           <button
                             type="button"
-                            onClick={() => setActiveSharedSpace(video)}
+                            onClick={() => setActiveSharedSpace({ ...video, images: [] })}
                             className="inline-flex items-center rounded-full border border-slate-300 px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:border-axis hover:text-axis"
                           >
                             Details
@@ -1210,6 +1232,20 @@ export default function PropertyPage(){
                     </div>
                   ))}
                 </div>
+                {Array.isArray(activeSharedSpace.images) && activeSharedSpace.images.length > 0 ? (
+                  <div className="mt-4 rounded-[18px] overflow-hidden border border-slate-200">
+                    <img
+                      src={activeSharedSpace.images[0]}
+                      alt={`${getSharedSpaceDetailMeta(activeSharedSpace).title} photo`}
+                      className="h-64 w-full object-cover"
+                    />
+                  </div>
+                ) : (
+                  <div className="mt-4 h-64 overflow-hidden rounded-[18px] border border-slate-200">
+                    <PropertyMediaPlaceholder className="h-full w-full" compact label="Photos coming soon" />
+                  </div>
+                )}
+
                 {activeSharedSpace.src && !activeSharedSpace.placeholder ? (
                   <div className="mt-4 rounded-[18px] overflow-hidden border border-slate-200">
                     <div className="bg-axis px-4 py-2.5 flex items-center gap-2">
