@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+  <url>
+    <loc>http://localhost:5174/</loc>
+    <priority>1.0</priority>
+  </url>
+  <url>
+    <loc>http://localhost:5174/contact</loc>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>http://localhost:5174/apply</loc>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>http://localhost:5174/properties/4709a-8th-ave</loc>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>http://localhost:5174/properties/4709b-8th-ave</loc>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>http://localhost:5174/properties/5259-brooklyn-ave-ne</loc>
+    <priority>0.8</priority>
+  </url>
+</urlset>
