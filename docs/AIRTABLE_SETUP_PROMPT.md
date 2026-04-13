@@ -98,11 +98,14 @@ Add columns on `Properties` as needed (up to 20 rooms):
 
 ### 1.5 `Work Orders`
 
-**Used for:** resident submissions, manager inbox, messaging thread.
+**Used for:** resident submissions, manager inbox, messaging thread, manager calendar (scheduled visit).
+
+**Lifecycle (both portals):** **Open** (create uses `Open`, with **fallback to `Submitted`** if Airtable rejects `Open`) → optional **In Progress** → **Scheduled** when a visit date is set → **Completed** with **`Resolved`** checked. Schedule is stored in **`Management Notes`** as lines like `scheduled date: YYYY-MM-DD` and optional `scheduled time: …`, and in **`Scheduled Date`** (date) **if that column exists** (recommended). See also **`docs/AIRTABLE_BASE_SCHEMA_PROMPT.md`** §3.
 
 **Fields referenced:**
 
-- `Title`, `Description`, `Category`, `Priority`, `Status` (e.g. `Submitted`)
+- `Title`, `Description`, `Category`, `Priority`, `Status` — single select; include at least **`Open`**, **`Submitted`** (legacy), **`In Progress`**, **`Scheduled`**, **`Completed`**
+- **`Scheduled Date`** — date (optional column; app retries PATCH without it if unknown)
 - `Preferred Entry Time`
 - `Resident profile` — link to Resident Profile (default in code; env `VITE_AIRTABLE_WORK_ORDER_RESIDENT_LINK_FIELD` if your field name differs)
 - **Optional:** `Application ID` (number or text) and/or **`Application`** (link to Applications) — the portal copies these from the resident record when creating a work order. If your base **does not** have these columns, the app **omits** them automatically after the first `UNKNOWN_FIELD_NAME` error. To skip the failed attempt and warnings, set `VITE_AIRTABLE_WORK_ORDER_APPLICATION_ID_FIELD=none` and/or `VITE_AIRTABLE_WORK_ORDER_APPLICATION_LINK_FIELD=none`. To use different names, set those env vars to the **exact** Airtable field names.
@@ -347,7 +350,7 @@ Using the repo the-axis, implement or verify Airtable:
 
 1) Use a single base ID: VITE_AIRTABLE_BASE_ID (and AIRTABLE_BASE_ID on the server with the same value).
 
-2) In that base, create/verify: Resident Profile, Manager Profile, Properties, Rooms, Work Orders, Messages (Thread Key + Channel + internal_mgmt_admin), Announcements, Payments, Documents, Packages, Inbox Thread State (optional), Properties + Scheduling (tour), Applications, Co-Signers, Lease Drafts, Audit Log — fields per docs/AIRTABLE_SETUP_PROMPT.md sections 1–2.
+2) In that base, create/verify: Resident Profile, Manager Profile, Properties, Rooms, Work Orders (Status + optional Scheduled Date; see docs/AIRTABLE_BASE_SCHEMA_PROMPT.md), Messages (Thread Key + Channel + internal_mgmt_admin), Announcements, Payments, Documents, Packages, Inbox Thread State (optional), Properties + Scheduling (tour), Applications, Co-Signers, Lease Drafts, Audit Log — fields per docs/AIRTABLE_SETUP_PROMPT.md sections 1–2.
 
 3) List any table in TABLES that still has no API usage (Website Settings) and either add usage or remove from roadmap.
 
@@ -358,8 +361,10 @@ Using the repo the-axis, implement or verify Airtable:
 
 ## 5) File references (for maintainers)
 
+- **Schema layout prompt (tables, links, Work Order lifecycle):** `docs/AIRTABLE_BASE_SCHEMA_PROMPT.md`
 - Core tables and helpers: `src/lib/airtable.js`
 - Manager + lease/audit/properties: `src/pages/Manager.jsx`
+- Work order schedule meta (shared): `src/lib/workOrderShared.js`
 - Apply payloads: `src/pages/Apply.jsx`
 - Tour POST/GET: `server/handlers/tour.js`
 - AI lease create: `server/handlers/generate-lease-draft.js`

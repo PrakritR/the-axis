@@ -77,6 +77,31 @@ async function fetchAdminCalendarEventsCount() {
   return total
 }
 
+async function fetchAdminLeaseChangesNeededCount() {
+  if (!AIRTABLE_TOKEN) return 0
+  let total = 0
+  let offset = null
+  do {
+    const url = new URL(`${CORE_AIRTABLE_BASE_URL}/Lease%20Drafts`)
+    url.searchParams.set('filterByFormula', 'OR({Status}="Submitted to Admin",{Status}="Manager Approved")')
+    if (offset) url.searchParams.set('offset', offset)
+    const res = await fetch(url.toString(), {
+      headers: {
+        Authorization: `Bearer ${AIRTABLE_TOKEN}`,
+      },
+    })
+    const body = await readJsonResponse(res)
+    if (!res.ok) {
+      const msg = body?.error?.message || `Could not load lease drafts (${res.status})`
+      throw new Error(msg)
+    }
+    const rows = Array.isArray(body?.records) ? body.records : []
+    total += rows.length
+    offset = body?.offset || null
+  } while (offset)
+  return total
+}
+
 const PROPERTY_STATUS_LABEL = {
   pending: 'Pending approval',
   changes_requested: 'Changes requested',
@@ -91,7 +116,7 @@ const NAV_BASE = [
   { id: 'dashboard', label: 'Dashboard' },
   { id: 'properties', label: 'Properties' },
   { id: 'accounts', label: 'Managers' },
-  { id: 'leasing', label: 'Leasing' },
+  { id: 'leasing', label: 'Leases' },
   { id: 'calendar', label: 'Calendar' },
   { id: 'messages', label: 'Inbox' },
   { id: 'profile', label: 'Profile' },
@@ -702,6 +727,7 @@ export default function AdminPortal() {
   const [applicationsTableSort, setApplicationsTableSort] = useState('house_asc')
   const [unopenedThreadCount, setUnopenedThreadCount] = useState(0)
   const [calendarEventsCount, setCalendarEventsCount] = useState(0)
+  const [leaseChangesNeededCount, setLeaseChangesNeededCount] = useState(0)
   const [propertiesSearch, setPropertiesSearch] = useState('')
   const [managersSearch, setManagersSearch] = useState('')
   const [applicationsManagerFilter, setApplicationsManagerFilter] = useState('')
@@ -721,16 +747,18 @@ export default function AdminPortal() {
     if (!isAdminPortalAirtableConfigured()) return
     setDataLoading(true)
     try {
-      const [next, residentList, calendarCount] = await Promise.all([
+      const [next, residentList, calendarCount, leaseChangesCount] = await Promise.all([
         loadAdminPortalDataset(),
         loadResidentsForAdmin().catch(() => []),
         fetchAdminCalendarEventsCount().catch(() => 0),
+        fetchAdminLeaseChangesNeededCount().catch(() => 0),
       ])
       setProperties(next.properties)
       setAccounts(next.accounts)
       setApplications(next.applications)
       setResidents(residentList)
       setCalendarEventsCount(calendarCount)
+      setLeaseChangesNeededCount(leaseChangesCount)
     } catch (e) {
       toast.error(e?.message || 'Could not load data.')
     } finally {
@@ -1028,6 +1056,16 @@ export default function AdminPortal() {
               <span className="text-3xl font-black tabular-nums text-slate-900">{accounts.filter((a) => a.enabled).length}</span>
             </button>
 
+            {/* Leases changes needed */}
+            <button
+              type="button"
+              onClick={() => setTab('leasing')}
+              className="flex flex-col gap-1 rounded-3xl border border-sky-200/90 bg-sky-50 p-5 text-left transition hover:border-sky-300 hover:bg-sky-100/80 hover:shadow-sm"
+            >
+              <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-sky-800">Leases · Changes needed</span>
+              <span className="text-3xl font-black tabular-nums text-slate-900">{leaseChangesNeededCount}</span>
+            </button>
+
             {/* Calendar events */}
             <button
               type="button"
@@ -1036,16 +1074,6 @@ export default function AdminPortal() {
             >
               <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-sky-800">Calendar · Events</span>
               <span className="text-3xl font-black tabular-nums text-slate-900">{calendarEventsCount}</span>
-            </button>
-
-            {/* Residents */}
-            <button
-              type="button"
-              onClick={() => setTab('messages')}
-              className="flex flex-col gap-1 rounded-3xl border border-sky-200/90 bg-sky-50 p-5 text-left transition hover:border-sky-300 hover:bg-sky-100/80 hover:shadow-sm"
-            >
-              <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-sky-800">Residents</span>
-              <span className="text-3xl font-black tabular-nums text-slate-900">{residents.length}</span>
             </button>
           </div>
 
