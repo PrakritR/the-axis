@@ -1423,7 +1423,11 @@ function AvailabilityEditorPanel({
             className={MANAGER_PILL_SELECT_CLS}
           >
             {!hasApprovedPick ? (
-              <option value="">{isAdminCalendar ? 'No enabled admins' : 'No assigned properties'}</option>
+              <option value="">
+                {isAdminCalendar
+                  ? 'No admin profiles — add Admin Profile rows (Name + Email) in Airtable'
+                  : 'No assigned properties'}
+              </option>
             ) : (
               propertyOptions.map((option) => (
                 <option key={option.id} value={option.id}>{option.label}</option>
@@ -4708,14 +4712,15 @@ export function CalendarTabPanel({ manager, allowedPropertyNames, calendarMode =
           propertyRecordName(a).localeCompare(propertyRecordName(b), undefined, { sensitivity: 'base' }),
         )
 
-      const enabledAdminProfiles = isAdminCalendar
-        ? (Array.isArray(adminProfiles) ? adminProfiles : []).filter((p) => p.enabled)
+      /** All Admin Profile rows with valid email — do not require Enabled (checkbox often unset/false in Airtable). */
+      const adminCalendarProfiles = isAdminCalendar
+        ? (Array.isArray(adminProfiles) ? adminProfiles : [])
         : []
-      setCalendarProfiles(enabledAdminProfiles)
+      setCalendarProfiles(adminCalendarProfiles)
 
       const byProperty = {}
       if (isAdminCalendar) {
-        enabledAdminProfiles.forEach((profile) => {
+        adminCalendarProfiles.forEach((profile) => {
           const text = String(profile.meetingAvailability || '').trim()
           byProperty[profile.id] = text ? weeklyFreeArraysFromTourText(text) : emptyWeeklyFreeArrays()
         })
@@ -4728,9 +4733,9 @@ export function CalendarTabPanel({ manager, allowedPropertyNames, calendarMode =
       setWeeklyFreeByProperty(byProperty)
       setSelectedPropertyId((current) => {
         if (isAdminCalendar) {
-          if (enabledAdminProfiles.some((p) => p.id === current)) return current
-          const byEmail = enabledAdminProfiles.find((p) => String(p.email || '').toLowerCase() === String(manager?.email || '').toLowerCase())
-          return byEmail?.id || enabledAdminProfiles[0]?.id || ''
+          if (adminCalendarProfiles.some((p) => p.id === current)) return current
+          const byEmail = adminCalendarProfiles.find((p) => String(p.email || '').toLowerCase() === String(manager?.email || '').toLowerCase())
+          return byEmail?.id || adminCalendarProfiles[0]?.id || ''
         }
         if (approvedAssigned.some((p) => p.id === current)) return current
         return approvedAssigned[0]?.id || ''
@@ -4901,7 +4906,11 @@ export function CalendarTabPanel({ manager, allowedPropertyNames, calendarMode =
                   <option key={option.id} value={option.id}>{option.label}</option>
                 ))
               ) : (
-                <option value="">{isAdminCalendar ? 'No enabled admins' : 'No assigned properties'}</option>
+                <option value="">
+                  {isAdminCalendar
+                    ? 'No admin profiles — add Admin Profile rows (Name + Email) in Airtable'
+                    : 'No assigned properties'}
+                </option>
               )}
             </select>
             {MANAGER_PILL_SELECT_CHEVRON}
@@ -5057,10 +5066,10 @@ function ManagerDashboard({ manager: managerProp, openDraftId, onOpenDraft, onCl
     () => Array.from(managerScope.assignedNames || managerScope.approvedNames).sort(),
     [managerScope.assignedNames, managerScope.approvedNames],
   )
-  /** Calendar / tour scheduling: Axis-approved houses only */
-  const approvedScopedPropertyOptions = useMemo(
-    () => Array.from(managerScope.approvedNames).sort(),
-    [managerScope.approvedNames],
+  /** Calendar / tour scheduling: all houses linked to this manager (including pending approval). */
+  const calendarScopedPropertyOptions = useMemo(
+    () => Array.from(managerScope.assignedNames).sort(),
+    [managerScope.assignedNames],
   )
   const approvedNamesLower = useMemo(
     () => new Set([...managerScope.approvedNames].map((n) => String(n).trim().toLowerCase()).filter(Boolean)),
@@ -5308,7 +5317,7 @@ function ManagerDashboard({ manager: managerProp, openDraftId, onOpenDraft, onCl
         ) : dashView === 'workorders' ? (
           <WorkOrdersTabPanel manager={manager} allowedPropertyNames={scopedPropertyOptions} />
         ) : dashView === 'calendar' ? (
-          <CalendarTabPanel manager={manager} allowedPropertyNames={approvedScopedPropertyOptions} />
+          <CalendarTabPanel manager={manager} allowedPropertyNames={calendarScopedPropertyOptions} />
         ) : dashView === 'inbox' ? (
           <ManagerInboxPage manager={manager} allowedPropertyNames={scopedPropertyOptions} />
         ) : dashView === 'dashboard' ? (

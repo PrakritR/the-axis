@@ -15,6 +15,7 @@ import {
   adminDeleteProperty,
   adminUnlistProperty,
   adminRelistProperty,
+  adminSetPropertyInternalNotes,
   isAdminPortalAirtableConfigured,
   loadAdminPortalDataset,
   loadResidentsForAdmin,
@@ -106,6 +107,63 @@ const adminSelectCls =
 /** Property detail toolbar — plain border, top-right cluster (see Listed tab pattern). */
 const adminPropToolbarBtn =
   'rounded-xl border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold shadow-sm transition hover:bg-slate-50 disabled:opacity-50'
+
+function AdminPropertyInternalNotesEditor({ recordId, savedValue, formDisabled, onSaved }) {
+  const [text, setText] = useState(() => String(savedValue ?? ''))
+  const [saving, setSaving] = useState(false)
+
+  useEffect(() => {
+    setText(String(savedValue ?? ''))
+  }, [recordId, savedValue])
+
+  const dirty = String(text).trim() !== String(savedValue ?? '').trim()
+
+  async function handleSave() {
+    if (!recordId || !dirty || saving || formDisabled) return
+    setSaving(true)
+    try {
+      await adminSetPropertyInternalNotes(recordId, text)
+      await onSaved()
+      toast.success('Internal notes saved')
+    } catch (err) {
+      toast.error(
+        err?.message ||
+          'Could not save internal notes. Add an "Internal Notes" long-text field on Properties, or set VITE_AIRTABLE_PROPERTY_INTERNAL_NOTES_FIELD to your column name.',
+      )
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const disabled = Boolean(formDisabled || saving)
+
+  return (
+    <div className="rounded-2xl border border-slate-200 bg-slate-50/80 px-4 py-3">
+      <label className="block text-sm">
+        <span className="font-semibold text-slate-700">Internal notes (admin only)</span>
+        <p className="mt-0.5 text-xs font-normal text-slate-500">
+          For Axis staff only — not shown to managers or residents.
+        </p>
+        <textarea
+          className="mt-2 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 outline-none focus:border-[#2563eb] focus:ring-2 focus:ring-[#2563eb]/15 disabled:opacity-60"
+          rows={3}
+          value={text}
+          onChange={(e) => setText(e.target.value)}
+          disabled={disabled}
+          placeholder="Screening notes, risk flags, follow-ups…"
+        />
+      </label>
+      <button
+        type="button"
+        onClick={handleSave}
+        disabled={!dirty || disabled}
+        className="mt-2 rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+      >
+        {saving ? 'Saving…' : 'Save internal notes'}
+      </button>
+    </div>
+  )
+}
 
 function sortAccountsByMode(list, mode) {
   const copy = [...list]
@@ -888,17 +946,12 @@ export default function AdminPortal() {
                       <p className="mt-2 whitespace-pre-wrap">{approval.editRequestNotes}</p>
                     </div>
                   ) : null}
-                  {propertiesSection === 'pending' ? (
-                    <label className="block text-sm">
-                      <span className="font-semibold text-slate-700">Internal notes (admin only)</span>
-                      <textarea
-                        className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 outline-none focus:border-slate-300 focus:ring-1 focus:ring-slate-200"
-                        rows={2}
-                        defaultValue={approval.adminNotesInternal}
-                        readOnly
-                      />
-                    </label>
-                  ) : null}
+                  <AdminPropertyInternalNotesEditor
+                    recordId={approval.id}
+                    savedValue={approval.adminNotesInternal}
+                    formDisabled={approvalBusy}
+                    onSaved={refreshPortalData}
+                  />
                 </div>
               ) : null}
             </>
@@ -981,6 +1034,12 @@ export default function AdminPortal() {
                   </div>
                   <p className="text-sm text-slate-600">{approval.description}</p>
                   <PropertyDetailPanel property={approval} ownerLabel={ownerLabel(approval.ownerId)} />
+                  <AdminPropertyInternalNotesEditor
+                    recordId={approval.id}
+                    savedValue={approval.adminNotesInternal}
+                    formDisabled={approvalBusy}
+                    onSaved={refreshPortalData}
+                  />
                 </div>
               ) : null}
             </>
@@ -1063,6 +1122,12 @@ export default function AdminPortal() {
                   <p className="text-sm text-slate-600">Hidden from the public marketing site; still approved in Axis.</p>
                   <p className="text-sm text-slate-600">{approval.description}</p>
                   <PropertyDetailPanel property={approval} ownerLabel={ownerLabel(approval.ownerId)} />
+                  <AdminPropertyInternalNotesEditor
+                    recordId={approval.id}
+                    savedValue={approval.adminNotesInternal}
+                    formDisabled={approvalBusy}
+                    onSaved={refreshPortalData}
+                  />
                 </div>
               ) : null}
             </>
@@ -1114,6 +1179,12 @@ export default function AdminPortal() {
                   </div>
                   <p className="text-sm text-slate-600">{approval.description}</p>
                   <PropertyDetailPanel property={approval} ownerLabel={ownerLabel(approval.ownerId)} />
+                  <AdminPropertyInternalNotesEditor
+                    recordId={approval.id}
+                    savedValue={approval.adminNotesInternal}
+                    formDisabled={approvalBusy}
+                    onSaved={refreshPortalData}
+                  />
                 </div>
               ) : null}
             </>

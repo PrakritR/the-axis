@@ -2121,13 +2121,6 @@ function LeasingPanel({ resident, payments, onOpenPayments }) {
     return list.some((p) => classifyResidentPaymentLine(p) === 'deposit' && residentPaymentLineStatus(p) === 'Paid')
   }, [payments])
 
-  const firstMonthUtilitiesPaid = useMemo(() => {
-    const list = Array.isArray(payments) ? payments : []
-    return list.some((p) => classifyResidentPaymentLine(p) === 'first_utilities' && residentPaymentLineStatus(p) === 'Paid')
-  }, [payments])
-
-  const leaseUtilitiesAmount = useMemo(() => getMonthlyUtilitiesAmount(resident.House, resident), [resident])
-
   const moveInPrereqsMet = securityDepositPaid && firstMonthRentPaid
   const canViewFullLease = moveInPrereqsMet
 
@@ -2299,68 +2292,6 @@ function LeasingPanel({ resident, payments, onOpenPayments }) {
             })()}
           </div>
         )}
-
-        <dl className="space-y-0">
-          {[
-            ['Term', leaseTermLabel],
-            ['Move-in', moveInLabel],
-            ['Move-out', moveOutLabel],
-          ].map(([label, value]) => (
-            <div key={label} className="grid gap-1 border-b border-slate-100 py-2.5 sm:grid-cols-[minmax(0,220px)_1fr] sm:gap-4">
-              <dt className="text-xs font-semibold uppercase tracking-wide text-slate-500">{label}</dt>
-              <dd className="text-sm text-slate-900">{value}</dd>
-            </div>
-          ))}
-          <div className="grid gap-1 border-b border-slate-100 py-2.5 sm:grid-cols-[minmax(0,220px)_1fr] sm:gap-4">
-            <dt className="text-xs font-semibold uppercase tracking-wide text-slate-500">Security deposit</dt>
-            <dd className="text-sm text-slate-900">
-              {depositPreviewLabel}{' '}
-              <span className={securityDepositPaid ? 'text-emerald-600 font-semibold' : 'text-red-500 font-semibold'}>
-                ({securityDepositPaid ? 'Paid' : 'Unpaid'})
-              </span>
-            </dd>
-          </div>
-          <div className="grid gap-1 border-b border-slate-100 py-2.5 sm:grid-cols-[minmax(0,220px)_1fr] sm:gap-4">
-            <dt className="text-xs font-semibold uppercase tracking-wide text-slate-500">First month rent</dt>
-            <dd className={classNames('text-sm font-semibold', firstMonthRentPaid ? 'text-emerald-600' : 'text-red-500')}>{firstMonthRentPaid ? 'Paid' : 'Unpaid'}</dd>
-          </div>
-          <div className="grid gap-1 border-b border-slate-100 py-2.5 last:border-b-0 sm:grid-cols-[minmax(0,220px)_1fr] sm:gap-4">
-            <dt className="text-xs font-semibold uppercase tracking-wide text-slate-500">First month utilities</dt>
-            <dd className={classNames('text-sm font-semibold', firstMonthUtilitiesPaid ? 'text-emerald-600' : 'text-red-500')}>{firstMonthUtilitiesPaid ? 'Paid' : 'Unpaid'}</dd>
-          </div>
-        </dl>
-
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-          <div className={classNames('rounded-2xl border px-4 py-3 text-sm', securityDepositPaid ? 'border-emerald-200 bg-emerald-50 text-emerald-900' : 'border-amber-200 bg-amber-50 text-amber-900')}>
-            <div className="font-semibold">Security deposit</div>
-            <div className="mt-1">{securityDepositPaid ? 'Paid' : 'Pay security deposit from Payments tab'}</div>
-            {!securityDepositPaid ? (
-              <button type="button" onClick={() => onOpenPayments('deposit')} className="mt-2 text-xs font-semibold underline">Go to payments</button>
-            ) : null}
-          </div>
-          <div className={classNames('rounded-2xl border px-4 py-3 text-sm', firstMonthRentPaid ? 'border-emerald-200 bg-emerald-50 text-emerald-900' : 'border-amber-200 bg-amber-50 text-amber-900')}>
-            <div className="font-semibold">First month rent</div>
-            <div className="mt-1">{firstMonthRentPaid ? 'Paid' : 'Pay first month rent from Payments tab'}</div>
-            {!firstMonthRentPaid ? (
-              <button type="button" onClick={() => onOpenPayments('rent')} className="mt-2 text-xs font-semibold underline">Go to payments</button>
-            ) : null}
-          </div>
-          {leaseUtilitiesAmount > 0 || firstMonthUtilitiesPaid ? (
-            <div className={classNames('rounded-2xl border px-4 py-3 text-sm', firstMonthUtilitiesPaid ? 'border-emerald-200 bg-emerald-50 text-emerald-900' : 'border-amber-200 bg-amber-50 text-amber-900')}>
-              <div className="font-semibold">First month utilities</div>
-              <div className="mt-1">
-                {firstMonthUtilitiesPaid
-                  ? 'Paid'
-                  : `Pay move-in utilities (${formatMoney(leaseUtilitiesAmount)}) from Payments`}
-              </div>
-              {!firstMonthUtilitiesPaid && leaseUtilitiesAmount > 0 ? (
-                <button type="button" onClick={() => onOpenPayments('utilities')} className="mt-2 text-xs font-semibold underline">
-                  Go to payments
-                </button>
-              ) : null}
-            </div>
-          ) : null}
-        </div>
 
         {canRequestLeaseExtension ? (
           <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">

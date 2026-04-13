@@ -387,6 +387,16 @@ export async function adminPatchProperty(recordId, fields) {
   return mapRecord(data)
 }
 
+/**
+ * Persist CEO/admin-only notes on a Properties row.
+ * Default Airtable field: `Internal Notes`. Override with VITE_AIRTABLE_PROPERTY_INTERNAL_NOTES_FIELD if your base uses another name (e.g. `Admin Notes`).
+ */
+export async function adminSetPropertyInternalNotes(recordId, text) {
+  const envName = String(import.meta.env?.VITE_AIRTABLE_PROPERTY_INTERNAL_NOTES_FIELD || '').trim()
+  const fieldName = envName || 'Internal Notes'
+  return adminPatchProperty(recordId, { [fieldName]: String(text ?? '') })
+}
+
 export async function adminApproveProperty(recordId) {
   return adminPatchProperty(recordId, {
     Approved: true,

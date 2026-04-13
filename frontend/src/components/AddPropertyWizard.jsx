@@ -1291,7 +1291,17 @@ export default function AddPropertyWizard({
                 </div>
               )}
               <div className="sm:col-span-2">
-                <label className={`${LBL} mb-2`}>Room access <span className="font-normal text-slate-400">(optional)</span></label>
+                <div className="mb-2 flex flex-wrap items-end justify-between gap-2">
+                  <label className={`${LBL} mb-0`}>Room access <span className="font-normal text-slate-400">(optional)</span></label>
+                  <button
+                    type="button"
+                    onClick={() => updateSpace(idx, { access: [...roomOptions] })}
+                    disabled={!roomOptions.length}
+                    className="shrink-0 rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-bold text-[#2563eb] transition hover:border-[#2563eb]/40 hover:bg-[#2563eb]/5 disabled:cursor-not-allowed disabled:opacity-40"
+                  >
+                    All rooms
+                  </button>
+                </div>
                 <RoomChips access={space.access} onChange={access => updateSpace(idx, { access })} />
               </div>
             </div>

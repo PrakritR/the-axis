@@ -274,6 +274,8 @@ These are **not** a separate base — they live in `VITE_AIRTABLE_BASE_ID` along
 - `Preferred Date`, `Preferred Time`
 - `Notes`
 
+**Portal calendar UI:** Manager and admin portals read `Scheduling` to show booked tours/meetings on the calendar; availability editing uses other fields (`Properties.Notes` / `Admin Profile.Meeting Availability`). See **`docs/CALENDAR_SYSTEM.md`** for the full picture.
+
 ---
 
 ### 2.3 `Applications`
