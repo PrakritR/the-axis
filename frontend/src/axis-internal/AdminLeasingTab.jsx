@@ -15,7 +15,6 @@ import toast from 'react-hot-toast'
 import LeaseWorkspace from '../components/LeaseWorkspace.jsx'
 import {
   getStatusConfig,
-  WORKFLOW_ACTIVE_STATUSES,
   WORKFLOW_STATUS_LIST,
   fmtTs,
 } from '../lib/leaseWorkflowConstants.js'
@@ -62,11 +61,29 @@ async function fetchAdminUnreadNotificationCount(adminRecordId) {
 
 // ─── Filter definitions ────────────────────────────────────────────────────────
 const ADMIN_STATUS_FILTER_ITEMS = [
-  { id: 'all',           label: 'All Leases',         match: () => true },
-  { id: 'needs_action',  label: 'Admin Action Needed', match: s => getStatusConfig(s).adminActionNeeded },
-  { id: 'in_progress',   label: 'In Progress',         match: s => WORKFLOW_ACTIVE_STATUSES.has(s) },
-  { id: 'finalized',     label: 'Finalized',           match: s => ['Ready for Signature','Published','Signed'].includes(s) },
+  { id: 'all', label: 'All Leases', match: () => true },
+  {
+    id: 'draft_ready',
+    label: 'Draft Ready',
+    match: (s) => ['Draft Generated', 'Under Review', 'Changes Needed', 'Approved', 'Sent Back to Manager'].includes(String(s || '').trim()),
+  },
+  {
+    id: 'admin_review',
+    label: 'Admin Review',
+    match: (s) => ['Submitted to Admin', 'Admin In Review', 'Changes Made', 'Manager Approved', 'Ready for Signature'].includes(String(s || '').trim()),
+  },
+  { id: 'sent', label: 'With Resident', match: (s) => String(s || '').trim() === 'Published' },
+  { id: 'signed', label: 'Signed', match: (s) => String(s || '').trim() === 'Signed' },
 ]
+
+function adminQueueLabel(status) {
+  const normalized = String(status || '').trim()
+  if (['Draft Generated', 'Under Review', 'Changes Needed', 'Approved', 'Sent Back to Manager'].includes(normalized)) return 'Draft Ready'
+  if (['Submitted to Admin', 'Admin In Review', 'Changes Made', 'Manager Approved', 'Ready for Signature'].includes(normalized)) return 'Admin Review'
+  if (normalized === 'Published') return 'With Resident'
+  if (normalized === 'Signed') return 'Signed'
+  return normalized || 'Draft Ready'
+}
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
 function StatusPill({ status }) {
@@ -103,6 +120,7 @@ function AdminLeasingTableRow({ draft, onOpen, managerName }) {
       </td>
       <td className="px-4 py-3 text-center">
         <StatusPill status={status} />
+        <div className="mt-1 text-[10px] font-bold uppercase tracking-wide text-slate-400">{adminQueueLabel(status)}</div>
         {cfg.adminActionNeeded && (
           <div className="mt-1 text-[10px] font-bold uppercase tracking-wide text-blue-600">Action needed</div>
         )}
@@ -239,9 +257,9 @@ export default function AdminLeasingTab({ adminUser, accounts = [] }) {
       {/* Header */}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-black text-slate-900">Leasing</h1>
+          <h1 className="text-2xl font-black text-slate-900">Leases</h1>
           <p className="mt-0.5 text-sm text-slate-500">
-            Review, edit, and respond to lease requests from all managers
+            Review drafts, update leases, and track what is with residents or fully signed
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -271,12 +289,12 @@ export default function AdminLeasingTab({ adminUser, accounts = [] }) {
           <div className="flex-1">
             <p className="text-sm font-bold text-blue-900">Admin action needed</p>
             <p className="text-xs text-blue-800">
-              {actionNeededDrafts.length} lease{actionNeededDrafts.length !== 1 ? 's' : ''} awaiting your review
+              {actionNeededDrafts.length} lease{actionNeededDrafts.length !== 1 ? 's' : ''} waiting on admin
             </p>
           </div>
           <button
             type="button"
-            onClick={() => setStatusFilter('needs_action')}
+            onClick={() => setStatusFilter('admin_review')}
             className="rounded-xl bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-blue-700"
           >
             Review
@@ -417,8 +435,8 @@ export default function AdminLeasingTab({ adminUser, accounts = [] }) {
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
           {[
             { label: 'Total Leases', value: drafts.length, color: 'text-slate-900' },
-            { label: 'Submitted to Admin', value: drafts.filter(d => d['Status'] === 'Submitted to Admin').length, color: 'text-blue-700' },
-            { label: 'Sent Back — Awaiting Manager', value: drafts.filter(d => d['Status'] === 'Sent Back to Manager').length, color: 'text-orange-700' },
+            { label: 'Draft Ready', value: drafts.filter(d => ADMIN_STATUS_FILTER_ITEMS[1].match(d['Status'])).length, color: 'text-amber-700' },
+            { label: 'Admin Review', value: drafts.filter(d => ADMIN_STATUS_FILTER_ITEMS[2].match(d['Status'])).length, color: 'text-blue-700' },
             { label: 'Signed', value: drafts.filter(d => d['Status'] === 'Signed').length, color: 'text-purple-700' },
           ].map(s => (
             <div key={s.label} className="rounded-2xl border border-slate-200 bg-white p-4">

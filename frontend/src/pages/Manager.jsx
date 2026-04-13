@@ -111,7 +111,7 @@ const APPLICATIONS_TABLE_NAME =
 // Each status has a color set used by StatusBadge and the stats row
 const STATUS_CONFIG = {
   'Draft ready':     { bg: 'bg-amber-50',  text: 'text-amber-700',  border: 'border-amber-200',  dot: 'bg-amber-400'  },
-  'Sent to resident':{ bg: 'bg-axis/5',    text: 'text-axis',       border: 'border-axis/20',    dot: 'bg-axis'       },
+  'With resident':   { bg: 'bg-axis/5',    text: 'text-axis',       border: 'border-axis/20',    dot: 'bg-axis'       },
   'Draft Generated': { bg: 'bg-blue-50',   text: 'text-blue-700',   border: 'border-blue-200',   dot: 'bg-blue-400'   },
   'Under Review':    { bg: 'bg-amber-50',  text: 'text-amber-700',  border: 'border-amber-200',  dot: 'bg-amber-400'  },
   'Approved':        { bg: 'bg-green-50',  text: 'text-green-700',  border: 'border-green-200',  dot: 'bg-green-500'  },
@@ -130,7 +130,7 @@ const LEASE_FLOW_CARDS = [
   },
   {
     id: 'sent_to_resident',
-    label: 'Sent to Resident',
+    label: 'With Resident',
     match: (status) => status === 'Published',
     activeStatuses: ['Published'],
     cls: 'border-axis/20 bg-axis/5 text-axis',
@@ -158,7 +158,7 @@ function leaseDraftMatchesQueueFilter(status, filterValue) {
 function leaseUiStatusLabel(status) {
   const normalized = String(status || '').trim()
   if (['Draft Generated', 'Under Review', 'Changes Needed', 'Approved'].includes(normalized)) return 'Draft ready'
-  if (normalized === 'Published') return 'Sent to resident'
+  if (normalized === 'Published') return 'With resident'
   if (normalized === 'Signed') return 'Signed'
   return normalized || 'Draft ready'
 }
@@ -4056,7 +4056,7 @@ function ManagerPaymentsPanel({ allowedPropertyNames }) {
   const [rentRows, setRentRows] = useState([])
   const [allScopedRows, setAllScopedRows] = useState([])
   const [loading, setLoading] = useState(true)
-  const [filter, setFilter] = useState('all')
+  const [filter, setFilter] = useState('pending')
   const [busy, setBusy] = useState({})
   const [paymentsLoadError, setPaymentsLoadError] = useState('')
   const [selectedId, setSelectedId] = useState('')
@@ -4074,16 +4074,11 @@ function ManagerPaymentsPanel({ allowedPropertyNames }) {
     try {
       const all = await getAllPaymentsRecords()
       const scopedAll = scopeLower.size ? all.filter((p) => paymentInScope(p, scopeLower)) : []
-      const rentOnly = scopedAll.filter(isRentPaymentRecord)
-      rentOnly.sort(
-        (a, b) =>
-          new Date(b['Due Date'] || b.created_at || 0) - new Date(a['Due Date'] || a.created_at || 0),
-      )
       const allSorted = [...scopedAll].sort(
         (a, b) =>
           new Date(b['Due Date'] || b.created_at || 0) - new Date(a['Due Date'] || a.created_at || 0),
       )
-      setRentRows(rentOnly)
+      setRentRows(allSorted)
       setAllScopedRows(allSorted)
     } catch (err) {
       console.error('[ManagerPaymentsPanel] getAllPaymentsRecords failed', err)
@@ -4378,13 +4373,12 @@ function ManagerPaymentsPanel({ allowedPropertyNames }) {
         </div>
       ) : null}
 
-      <div className="mb-5 grid gap-2 rounded-[28px] border border-slate-200 bg-slate-50 p-2 sm:grid-cols-2 xl:grid-cols-4">
+      <div className="mb-5 grid gap-2 rounded-[28px] border border-slate-200 bg-slate-50 p-2 sm:grid-cols-3">
         {[
-          ['all', 'All', paymentRows.length],
-          ['overdue', 'Overdue', overdueLineCount],
-          ['paid', 'Paid', paidLineCount],
-          ['pending', 'Pending', pendingLineCount],
-        ].map(([key, label, count]) => (
+          ['pending', 'Pending', pendingLineCount, 'Incl. first month deposit'],
+          ['overdue', 'Overdue', overdueLineCount, 'Past due rent'],
+          ['paid', 'Paid', paidLineCount, 'Incl. application fee'],
+        ].map(([key, label, count, hint]) => (
           <button
             key={key}
             type="button"
@@ -4397,6 +4391,7 @@ function ManagerPaymentsPanel({ allowedPropertyNames }) {
           >
             <div className="text-lg font-black leading-none tabular-nums text-slate-900">{count}</div>
             <div className="mt-1 text-sm font-semibold">{label}</div>
+            <div className="mt-0.5 text-[11px] text-slate-400">{hint}</div>
           </button>
         ))}
       </div>
@@ -4408,7 +4403,7 @@ function ManagerPaymentsPanel({ allowedPropertyNames }) {
           ) : rentRows.length === 0 ? (
             <div className="px-6 py-16 text-center">
               <div className="mb-3 text-4xl" aria-hidden>💳</div>
-              <div className="text-sm font-semibold text-slate-700">No rent charges to show</div>
+              <div className="text-sm font-semibold text-slate-700">No payments to show</div>
             </div>
           ) : filteredForList.length === 0 ? (
             <div className="px-6 py-16 text-center">
@@ -4508,7 +4503,23 @@ function ManagerPaymentsPanel({ allowedPropertyNames }) {
             <div className="mt-5">
               <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">Fines & extra charges</div>
               {extraChargeRows.length === 0 ? (
-                <p className="mt-3 text-sm text-slate-500">No extra charges for this resident</p>
+                <div className="mt-3 flex items-center gap-2 text-sm text-slate-500">
+                  <svg
+                    className="h-5 w-5 shrink-0 text-slate-400"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth={1.5}
+                    viewBox="0 0 24 24"
+                    aria-hidden
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      d="M9 14.25h6m-6 3h6m2.25 3.75H6.75a2.25 2.25 0 0 1-2.25-2.25V5.25A2.25 2.25 0 0 1 6.75 3h10.5A2.25 2.25 0 0 1 19.5 5.25v13.5A2.25 2.25 0 0 1 17.25 21Zm-8.25-12h6a.75.75 0 0 0 .75-.75v-1.5a.75.75 0 0 0-.75-.75h-6a.75.75 0 0 0-.75.75v1.5c0 .414.336.75.75.75Z"
+                    />
+                  </svg>
+                  <span>No fees or utilities charges right now</span>
+                </div>
               ) : (
                 <div className="mt-3 space-y-3">
                   {extraChargeRows.map((row) => (
@@ -5272,7 +5283,6 @@ const MANAGER_DASH_TABS = [
   ['dashboard', 'Dashboard'],
   ['properties', 'Properties'],
   ['leases', 'Leases'],
-  ['leasing', 'Leasing'],
   ['applications', 'Applications'],
   ['payments', 'Payments'],
   ['workorders', 'Work orders'],
@@ -5287,6 +5297,7 @@ function ManagerDashboard({ manager: managerProp, openDraftId, onOpenDraft, onCl
   const [manager, setManager] = useState(managerProp)
   const [dashView, setDashView] = useState(() => {
     const h = window.location.hash.slice(1)
+    if (h === 'leasing') return 'leases'
     return MANAGER_DASH_TABS.some(([id]) => id === h) ? h : 'dashboard'
   })
   useEffect(() => { window.location.hash = dashView }, [dashView])
@@ -5603,7 +5614,7 @@ function ManagerDashboard({ manager: managerProp, openDraftId, onOpenDraft, onCl
           <CalendarTabPanel manager={manager} allowedPropertyNames={calendarScopedPropertyOptions} />
         ) : dashView === 'inbox' ? (
           <ManagerInboxPage manager={manager} allowedPropertyNames={scopedPropertyOptions} />
-        ) : dashView === 'leasing' ? (
+        ) : dashView === 'leases' ? (
           <ManagerLeasingTab manager={manager} allowedPropertyNames={scopedPropertyOptions} />
         ) : dashView === 'dashboard' ? (
           <ManagerDashboardHomePanel

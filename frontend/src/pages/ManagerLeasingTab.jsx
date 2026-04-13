@@ -13,11 +13,7 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react'
 import toast from 'react-hot-toast'
 import LeaseWorkspace from '../components/LeaseWorkspace.jsx'
-import {
-  getStatusConfig,
-  WORKFLOW_ACTIVE_STATUSES,
-  fmtTs,
-} from '../lib/leaseWorkflowConstants.js'
+import { getStatusConfig, fmtTs } from '../lib/leaseWorkflowConstants.js'
 
 const AIRTABLE_TOKEN = import.meta.env.VITE_AIRTABLE_TOKEN
 const CORE_BASE_ID = import.meta.env.VITE_AIRTABLE_BASE_ID || 'appol57LKtMKaQ75T'
@@ -65,11 +61,29 @@ async function fetchUnreadNotificationCount(recipientRecordId) {
 
 // ─── Status filter options ────────────────────────────────────────────────────
 const STATUS_FILTER_ITEMS = [
-  { id: 'all',         label: 'All Leases',     match: () => true },
-  { id: 'action',      label: 'Action Needed',  match: s => ['Sent Back to Manager', 'Draft Generated', 'Under Review'].includes(s) },
-  { id: 'in_progress', label: 'In Progress',    match: s => WORKFLOW_ACTIVE_STATUSES.has(s) },
-  { id: 'signed',      label: 'Signed',         match: s => ['Signed', 'Published'].includes(s) },
+  { id: 'all', label: 'All Leases', match: () => true },
+  {
+    id: 'draft_ready',
+    label: 'Draft Ready',
+    match: (s) => ['Draft Generated', 'Under Review', 'Changes Needed', 'Approved', 'Sent Back to Manager'].includes(String(s || '').trim()),
+  },
+  {
+    id: 'admin_review',
+    label: 'Admin Review',
+    match: (s) => ['Submitted to Admin', 'Admin In Review', 'Changes Made', 'Manager Approved', 'Ready for Signature'].includes(String(s || '').trim()),
+  },
+  { id: 'sent', label: 'With Resident', match: (s) => String(s || '').trim() === 'Published' },
+  { id: 'signed', label: 'Signed', match: (s) => String(s || '').trim() === 'Signed' },
 ]
+
+function managerQueueLabel(status) {
+  const normalized = String(status || '').trim()
+  if (['Draft Generated', 'Under Review', 'Changes Needed', 'Approved', 'Sent Back to Manager'].includes(normalized)) return 'Draft Ready'
+  if (['Submitted to Admin', 'Admin In Review', 'Changes Made', 'Manager Approved', 'Ready for Signature'].includes(normalized)) return 'Admin Review'
+  if (normalized === 'Published') return 'With Resident'
+  if (normalized === 'Signed') return 'Signed'
+  return normalized || 'Draft Ready'
+}
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
 function StatusPill({ status }) {
@@ -100,6 +114,7 @@ function LeasingTableRow({ draft, onOpen }) {
       </td>
       <td className="px-4 py-3 text-center">
         <StatusPill status={status} />
+        <div className="mt-1 text-[10px] font-bold uppercase tracking-wide text-slate-400">{managerQueueLabel(status)}</div>
         {cfg.managerActionNeeded && (
           <div className="mt-1 text-[10px] font-bold uppercase tracking-wide text-orange-600">Your action</div>
         )}
@@ -202,9 +217,9 @@ export default function ManagerLeasingTab({ manager, allowedPropertyNames }) {
       {/* Header */}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-black text-slate-900">Leasing</h1>
+          <h1 className="text-2xl font-black text-slate-900">Leases</h1>
           <p className="mt-0.5 text-sm text-slate-500">
-            Review leases, request changes, and track admin responses
+            Review drafts, coordinate updates with admin, and track leases through signing
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -234,12 +249,12 @@ export default function ManagerLeasingTab({ manager, allowedPropertyNames }) {
           <div className="flex-1">
             <p className="text-sm font-bold text-orange-900">Action needed</p>
             <p className="text-xs text-orange-800">
-              {actionNeededDrafts.length} lease{actionNeededDrafts.length !== 1 ? 's' : ''} waiting for your review
+              {actionNeededDrafts.length} lease{actionNeededDrafts.length !== 1 ? 's' : ''} waiting on you
             </p>
           </div>
           <button
             type="button"
-            onClick={() => setStatusFilter('action')}
+            onClick={() => setStatusFilter('draft_ready')}
             className="rounded-xl bg-orange-500 px-3 py-1.5 text-xs font-semibold text-white hover:bg-orange-600"
           >
             View
@@ -333,10 +348,10 @@ export default function ManagerLeasingTab({ manager, allowedPropertyNames }) {
           <h3 className="text-sm font-bold text-slate-800">How the leasing workflow works</h3>
           <ol className="mt-3 space-y-1.5 text-left text-xs text-slate-600 max-w-sm mx-auto">
             <li className="flex gap-2"><span className="font-bold text-slate-400">1.</span>Leases are generated from the Applications tab after approval.</li>
-            <li className="flex gap-2"><span className="font-bold text-slate-400">2.</span>Open any lease here to review its terms and submit change requests to admin.</li>
-            <li className="flex gap-2"><span className="font-bold text-slate-400">3.</span>Admin reviews your request, updates the lease, and sends it back.</li>
-            <li className="flex gap-2"><span className="font-bold text-slate-400">4.</span>You approve the updated version or ask for more changes — repeat as needed.</li>
-            <li className="flex gap-2"><span className="font-bold text-slate-400">5.</span>Once approved, admin marks it Ready for Signature and sends to the resident.</li>
+            <li className="flex gap-2"><span className="font-bold text-slate-400">2.</span>Draft Ready is where you check lease details and keep the current PDF up to date.</li>
+            <li className="flex gap-2"><span className="font-bold text-slate-400">3.</span>Admin Review means the lease is with admin.</li>
+            <li className="flex gap-2"><span className="font-bold text-slate-400">4.</span>With Resident means the lease has been sent out and is waiting on the resident.</li>
+            <li className="flex gap-2"><span className="font-bold text-slate-400">5.</span>Signed holds completed leases.</li>
           </ol>
         </div>
       )}

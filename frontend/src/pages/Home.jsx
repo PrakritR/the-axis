@@ -140,9 +140,9 @@ function isAvailableForRange(available, startDate, endDate) {
   return false
 }
 
-function buildFinderOptions() {
+function buildFinderOptions(propList = []) {
   const options = []
-  for (const property of properties) {
+  for (const property of propList) {
     for (const plan of (property.roomPlans || [])) {
       const price = parseFinderPrice(plan.priceRange)
       const rooms = plan.rooms || []
@@ -151,7 +151,10 @@ function buildFinderOptions() {
         return a !== 'unavailable' && a !== 'currently unavailable' && a !== 'booked'
       })
       if (available.length === 0) continue
-      const privateBath = rooms.some(r => (r.details || '').toLowerCase().includes('private'))
+      const privateBath = rooms.some(r =>
+        (r.details || '').toLowerCase().includes('private') ||
+        (r.bathroomSetup || '').toLowerCase().includes('private')
+      )
       const shareCount = privateBath ? 'private' : rooms.length
       options.push({
         propertySlug: property.slug,
@@ -235,13 +238,13 @@ function clampYear(dateStr) {
   return `${y.slice(0, 4)}-${m}-${d}`
 }
 
-function RoomFinder() {
+function RoomFinder({ listings = [] }) {
   const [budgetInput, setBudgetInput] = useState('')
   const [bath, setBath] = useState('any')
   const [moveInDate, setMoveInDate] = useState('')
   const [moveOutDate, setMoveOutDate] = useState('')
 
-  const allOptions = useMemo(() => buildFinderOptions(), [])
+  const allOptions = useMemo(() => buildFinderOptions(listings), [listings])
 
   const budget = parseInt(budgetInput, 10) || 0
   const hasFilters = budgetInput !== '' || bath !== 'any' || moveInDate !== ''
@@ -532,7 +535,7 @@ export default function Home() {
       <Hero heading="Find housing that works for you" />
 
       {/* ── ROOM FINDER ── */}
-      <RoomFinder />
+      <RoomFinder listings={airtableListings} />
 
       {/* ── PROPERTIES ── */}
       <section id="properties" className="scroll-mt-20 border-t border-slate-200/25 bg-transparent py-8 sm:py-10">

@@ -28,6 +28,7 @@ import {
   deleteWorkOrderForResident,
   getApplicationById,
   getApprovedLeaseForResident,
+  getCurrentLeaseVersion,
   getLeaseDraftsForResident,
   getPaymentsForResident,
   getResidentByEmail,
@@ -40,6 +41,7 @@ import {
   fetchInboxThreadStateMap,
   portalInboxAirtableConfigured,
   portalInboxThreadKeyFromRecord,
+  submitResidentLeaseChangeRequest,
 } from '../lib/airtable'
 import { applicationRejectedFieldName } from '../lib/applicationApprovalState.js'
 import { workOrderScheduledMeta } from '../lib/workOrderShared.js'
@@ -1945,7 +1947,7 @@ function PaymentsPanel({ resident, onResidentUpdated, highlightCategory, onPayme
                           <path
                             strokeLinecap="round"
                             strokeLinejoin="round"
-                            d="M8.25 6.75h12M8.25 12h12m-12 4.5h12M3.75 6.75h.007v.008H3.75V6.75Zm.375 0a.375.375 0 1 1-.75 0 .375.375 0 0 1 .75 0ZM3.75 12h.007v.008H3.75V12Zm.375 0a.375.375 0 1 1-.75 0 .375.375 0 0 1 .75 0Zm-.375 5.25h.007v.008H3.75v-.008Zm.375 0a.375.375 0 1 1-.75 0 .375.375 0 0 1 .75 0Z"
+                            d="M9 14.25h6m-6 3h6m2.25 3.75H6.75a2.25 2.25 0 0 1-2.25-2.25V5.25A2.25 2.25 0 0 1 6.75 3h10.5A2.25 2.25 0 0 1 19.5 5.25v13.5A2.25 2.25 0 0 1 17.25 21Zm-8.25-12h6a.75.75 0 0 0 .75-.75v-1.5a.75.75 0 0 0-.75-.75h-6a.75.75 0 0 0-.75.75v1.5c0 .414.336.75.75.75Z"
                           />
                         </svg>
                         <span>No fees or utilities charges right now</span>
@@ -2034,8 +2036,13 @@ function PaymentsPanel({ resident, onResidentUpdated, highlightCategory, onPayme
 /** Never surface internal Airtable status "Changes Needed" to residents. */
 function residentLeaseStatusDisplay(raw) {
   const s = String(raw || '').trim()
-  if (s === 'Changes Needed') return 'Under review'
-  return s || 'Pending'
+  if (!s) return 'Pending'
+  if (s === 'Published') return 'Ready to sign'
+  if (s === 'Signed') return 'Signed'
+  if (['Draft Generated', 'Under Review', 'Changes Needed', 'Approved', 'Submitted to Admin', 'Admin In Review', 'Changes Made', 'Sent Back to Manager', 'Manager Approved', 'Ready for Signature'].includes(s)) {
+    return 'Preparing lease'
+  }
+  return s
 }
 
 /** Pick the best available lease draft: Signed > Published > any (newest first). */
@@ -2067,6 +2074,12 @@ function LeasingPanel({ resident, payments, onOpenPayments }) {
   const [extendMode, setExtendMode] = useState('months')
   const [extendToDate, setExtendToDate] = useState('')
   const [extendNotice, setExtendNotice] = useState('')
+  const [currentLeasePdf, setCurrentLeasePdf] = useState(null)
+  const [showLeaseChangeForm, setShowLeaseChangeForm] = useState(false)
+  const [leaseChangeMessage, setLeaseChangeMessage] = useState('')
+  const [leaseChangePdfUrl, setLeaseChangePdfUrl] = useState('')
+  const [leaseChangeFileName, setLeaseChangeFileName] = useState('')
+  const [leaseChangeSubmitting, setLeaseChangeSubmitting] = useState(false)
 
   const loadLeaseDrafts = useCallback(async () => {
     setLeaseLoading(true)
@@ -2110,13 +2123,13 @@ function LeasingPanel({ resident, payments, onOpenPayments }) {
   }, [payments])
 
   const moveInPrereqsMet = securityDepositPaid && firstMonthRentPaid
-  const canViewFullLease = moveInPrereqsMet
 
   const activeLeaseDraft = useMemo(() => pickBestLeaseDraft(leaseDrafts), [leaseDrafts])
   const leaseStatus = activeLeaseDraft?.Status ? String(activeLeaseDraft.Status).trim() : ''
   const leaseIsSigned = leaseStatus === 'Signed'
   /** Extension only after move-in charges are satisfied and the lease is signed. */
   const canRequestLeaseExtension = leaseIsSigned && securityDepositPaid && firstMonthRentPaid
+  const canRequestLeaseChange = moveInPrereqsMet && Boolean(activeLeaseDraft) && (leaseStatus === 'Published' || leaseStatus === 'Signed')
   const leaseBodyAllowed = leaseStatus === 'Published' || leaseStatus === 'Signed'
   const leaseContent = leaseBodyAllowed
     ? (activeLeaseDraft?.['Manager Edited Content'] || activeLeaseDraft?.['AI Draft Content'] || '')
@@ -2126,10 +2139,30 @@ function LeasingPanel({ resident, payments, onOpenPayments }) {
     if (!leaseBodyAllowed) {
       return leaseStatus === 'Draft Generated'
         ? 'Your lease is being drafted. Full terms will appear here once your manager publishes your lease'
-        : 'Your lease is being reviewed internally. The full document will appear here once it is sent to you'
+        : 'Your lease is still being prepared. The full document will appear here once it is sent to you'
     }
     return leaseContent || `Axis Resident Lease\n\nProperty: ${resident.House || '—'}\nUnit: ${resident['Unit Number'] || '—'}\nTerm: ${leaseTermLabel}\nMove-in: ${moveInLabel}\nMove-out: ${moveOutLabel}\nSecurity Deposit: ${depositPreviewLabel}\n\nPay security deposit and first month rent before signing.`
   }, [activeLeaseDraft, leaseBodyAllowed, leaseStatus, leaseContent, resident.House, resident['Unit Number'], leaseTermLabel, moveInLabel, moveOutLabel, depositPreviewLabel])
+
+  useEffect(() => {
+    let cancelled = false
+    if (!activeLeaseDraft?.id) {
+      setCurrentLeasePdf(null)
+      return () => {
+        cancelled = true
+      }
+    }
+    getCurrentLeaseVersion(activeLeaseDraft.id)
+      .then((pdf) => {
+        if (!cancelled) setCurrentLeasePdf(pdf || null)
+      })
+      .catch(() => {
+        if (!cancelled) setCurrentLeasePdf(null)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [activeLeaseDraft?.id])
 
   function handleRequestExtension() {
     if (extendMode === 'date') {
@@ -2139,6 +2172,32 @@ function LeasingPanel({ resident, payments, onOpenPayments }) {
       const n = parseInt(extendByMonths, 10)
       if (!n || n < 1) return
       setExtendNotice(`Extension request prepared for +${n} month${n === 1 ? '' : 's'}. Please send this in Inbox to your manager.`)
+    }
+  }
+
+  async function handleSubmitLeaseChangeRequest(event) {
+    event.preventDefault()
+    const message = leaseChangeMessage.trim()
+    if (!activeLeaseDraft?.id || !message) return
+    setLeaseChangeSubmitting(true)
+    try {
+      await submitResidentLeaseChangeRequest({
+        draft: activeLeaseDraft,
+        resident,
+        message,
+        pdfUrl: leaseChangePdfUrl.trim(),
+        fileName: leaseChangeFileName.trim(),
+      })
+      setLeaseChangeMessage('')
+      setLeaseChangePdfUrl('')
+      setLeaseChangeFileName('')
+      setShowLeaseChangeForm(false)
+      await loadLeaseDrafts()
+      toast.success('Lease change request sent to your manager')
+    } catch (err) {
+      toast.error(err.message || 'Could not send lease change request')
+    } finally {
+      setLeaseChangeSubmitting(false)
     }
   }
 
@@ -2175,7 +2234,7 @@ function LeasingPanel({ resident, payments, onOpenPayments }) {
           <div className="rounded-[24px] border border-slate-200 bg-white p-6 text-sm text-slate-400">Loading lease…</div>
         ) : !moveInPrereqsMet ? null : !activeLeaseDraft ? (
           <div className="rounded-[24px] border border-slate-200 bg-slate-50 px-5 py-5 text-center text-sm text-slate-600">
-            Your manager will publish your lease document here when it is ready.
+            Your manager will post your lease here when it is ready.
           </div>
         ) : (
           <div className="rounded-[24px] border border-[#2563eb]/20 bg-[linear-gradient(135deg,#eff6ff_0%,#ffffff_100%)] p-5">
@@ -2191,24 +2250,93 @@ function LeasingPanel({ resident, payments, onOpenPayments }) {
                     {residentLeaseStatusDisplay(leaseStatus)}
                   </span>
                 </div>
+                {currentLeasePdf?.['File Name'] ? (
+                  <p className="mt-2 text-xs font-medium text-slate-500">Current PDF: {currentLeasePdf['File Name']}</p>
+                ) : null}
               </div>
-              <button
-                type="button"
-                onClick={() => setShowLeaseText((v) => !v)}
-                disabled={!leaseBodyAllowed}
-                title={leaseBodyAllowed ? '' : 'Available once your manager publishes the lease'}
-                className="shrink-0 rounded-full bg-[linear-gradient(180deg,#2f76ff_0%,#2450eb_100%)] px-5 py-2.5 text-sm font-semibold text-white transition hover:brightness-105 disabled:cursor-not-allowed disabled:opacity-40"
-              >
-                {showLeaseText ? 'Hide' : 'View lease'}
-              </button>
+              <div className="flex flex-wrap gap-2">
+                {currentLeasePdf?.['PDF URL'] ? (
+                  <a
+                    href={currentLeasePdf['PDF URL']}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="shrink-0 rounded-full border border-slate-200 bg-white px-5 py-2.5 text-sm font-semibold text-[#2563eb] transition hover:bg-slate-50"
+                  >
+                    Open PDF
+                  </a>
+                ) : null}
+                <button
+                  type="button"
+                  onClick={() => setShowLeaseText((v) => !v)}
+                  disabled={!leaseBodyAllowed}
+                  title={leaseBodyAllowed ? '' : 'Available once your manager publishes the lease'}
+                  className="shrink-0 rounded-full bg-[linear-gradient(180deg,#2f76ff_0%,#2450eb_100%)] px-5 py-2.5 text-sm font-semibold text-white transition hover:brightness-105 disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  {showLeaseText ? 'Hide' : 'View lease'}
+                </button>
+              </div>
             </div>
             {!leaseBodyAllowed && (
               <p className="mt-3 text-sm text-slate-500">
                 {leaseStatus === 'Draft Generated'
-                  ? 'Your lease is being drafted — the full document will appear here once your manager publishes it.'
-                  : 'Your lease is being reviewed internally. The full document will appear here once it is sent to you.'}
+                  ? 'Your lease is being drafted. The full document will appear here once your manager sends it.'
+                  : 'Your lease is still being prepared. The full document will appear here once it is sent to you.'}
               </p>
             )}
+            {currentLeasePdf?.['PDF URL'] ? (
+              <div className="mt-4 overflow-hidden rounded-[20px] border border-slate-200 bg-white shadow-sm">
+                <iframe title="Resident lease PDF" src={currentLeasePdf['PDF URL']} className="h-[420px] w-full bg-white" />
+              </div>
+            ) : null}
+            {canRequestLeaseChange ? (
+              <div className="mt-4 rounded-[20px] border border-slate-200 bg-white/90 p-4 shadow-sm">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div>
+                    <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">Request a Change</div>
+                    <p className="mt-1 text-sm text-slate-500">Send one note to your manager. If you include a new PDF URL, it replaces the PDF shown here.</p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setShowLeaseChangeForm((value) => !value)}
+                    className="rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
+                  >
+                    {showLeaseChangeForm ? 'Hide form' : 'Request change'}
+                  </button>
+                </div>
+                {showLeaseChangeForm ? (
+                  <form onSubmit={handleSubmitLeaseChangeRequest} className="mt-4 space-y-3">
+                    <textarea
+                      value={leaseChangeMessage}
+                      onChange={(event) => setLeaseChangeMessage(event.target.value)}
+                      rows={4}
+                      placeholder="What should change in the lease?"
+                      className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm outline-none focus:border-[#2563eb] focus:ring-2 focus:ring-[#2563eb]/20"
+                    />
+                    <div className="grid gap-3 md:grid-cols-2">
+                      <input
+                        value={leaseChangePdfUrl}
+                        onChange={(event) => setLeaseChangePdfUrl(event.target.value)}
+                        placeholder="Optional new PDF URL"
+                        className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm outline-none focus:border-[#2563eb] focus:ring-2 focus:ring-[#2563eb]/20"
+                      />
+                      <input
+                        value={leaseChangeFileName}
+                        onChange={(event) => setLeaseChangeFileName(event.target.value)}
+                        placeholder="Optional PDF file name"
+                        className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm outline-none focus:border-[#2563eb] focus:ring-2 focus:ring-[#2563eb]/20"
+                      />
+                    </div>
+                    <button
+                      type="submit"
+                      disabled={leaseChangeSubmitting || !leaseChangeMessage.trim()}
+                      className="rounded-full bg-slate-900 px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:opacity-50"
+                    >
+                      {leaseChangeSubmitting ? 'Sending…' : 'Send Request'}
+                    </button>
+                  </form>
+                ) : null}
+              </div>
+            ) : null}
             {showLeaseText && leaseBodyAllowed && (() => {
               let leaseData = null
               try {
@@ -2343,39 +2471,6 @@ function LeasingPanel({ resident, payments, onOpenPayments }) {
           </div>
         )}
 
-        <div>
-          <button
-            type="button"
-            onClick={() => { if (canViewFullLease) setShowLeaseText((v) => !v) }}
-            disabled={!canViewFullLease}
-            className={classNames('rounded-full px-5 py-2.5 text-sm font-semibold transition', canViewFullLease ? 'bg-slate-900 text-white hover:bg-slate-800' : 'cursor-not-allowed bg-slate-200 text-slate-400')}
-          >
-            {showLeaseText ? 'Hide full lease' : 'View full lease'}
-          </button>
-          {showLeaseText ? (
-            leaseLoading ? (
-              <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 p-5 text-sm text-slate-500">Loading lease…</div>
-            ) : !canViewFullLease ? (
-              <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 p-5 text-sm text-amber-900">
-                Full lease text is not available until your security deposit and first month rent are paid. Use Payments to
-                complete them.
-              </div>
-            ) : !activeLeaseDraft ? (
-              <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 p-5 text-sm text-slate-600">
-                Your manager will publish your lease document when it is ready.
-              </div>
-            ) : (
-              <div className="mt-4 overflow-hidden rounded-2xl border border-slate-200 bg-white">
-                <div className="border-b border-slate-100 bg-slate-50 px-5 py-3 text-xs font-semibold text-slate-600">
-                  Full lease preview · Pay security deposit and first month rent before signing.
-                </div>
-                <div className="max-h-[540px] overflow-y-auto p-6">
-                  <pre className="whitespace-pre-wrap font-mono text-sm leading-7 text-slate-800">{leasePreview}</pre>
-                </div>
-              </div>
-            )
-          ) : null}
-        </div>
       </div>
     </div>
   )

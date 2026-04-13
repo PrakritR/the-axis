@@ -431,10 +431,16 @@ function matchPropertyNameFromParam(propertyParam, livePropertyOptions) {
   const lower = raw.toLowerCase()
   const wantedSlug = slugify(raw)
 
+  // Strip 'axis-' prefix used in Airtable property page slugs (e.g. axis-recXXXXXXXXXXXXXX)
+  const withoutAxisPrefix = lower.startsWith('axis-') ? raw.slice(5) : raw
+
   const exactLiveName = (livePropertyOptions || []).find((p) => String(p.name || '').toLowerCase() === lower)
   if (exactLiveName) return exactLiveName.name
 
-  const exactLiveId = (livePropertyOptions || []).find((p) => String(p.id || '').toLowerCase() === lower)
+  const exactLiveId = (livePropertyOptions || []).find((p) => {
+    const lid = String(p.id || '').toLowerCase()
+    return lid === lower || lid === withoutAxisPrefix.toLowerCase()
+  })
   if (exactLiveId) return exactLiveId.name
 
   const byMarketing = properties.find((p) => p.slug === lower || p.name.toLowerCase() === lower)

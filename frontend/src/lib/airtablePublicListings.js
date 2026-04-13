@@ -198,7 +198,7 @@ function buildRoomPlansFromAirtableRecord(rec, meta) {
         : ''
 
     return {
-      title,
+      title: `${roomList.length} room${roomList.length !== 1 ? 's' : ''}`,
       priceRange,
       summary,
       roomsAvailable: roomsAvailable > 0 ? roomsAvailable : roomList.length,
@@ -372,6 +372,7 @@ export function mapAirtableRecordToHomeProperty(rec) {
   const summary = userText.slice(0, 240) || 'Axis-managed shared housing in Seattle.'
   const videos = listingVideosFromRecord(rec, meta)
   const rent = computeListingRentLabel(rec, meta)
+  const roomPlans = buildRoomPlansFromAirtableRecord(rec, meta)
   return {
     slug,
     name,
@@ -384,6 +385,7 @@ export function mapAirtableRecordToHomeProperty(rec) {
     summary,
     images: urls,
     videos,
+    roomPlans,
     location: { lat: 47.65, lng: -122.32 },
     tags: ['Shared Housing', 'Seattle', 'Shared Living'],
     _fromAirtable: true,

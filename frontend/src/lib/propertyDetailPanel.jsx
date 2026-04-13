@@ -1,5 +1,7 @@
 import React from 'react'
 import { formatApplicationDetailValue } from './applicationDetailPanel.jsx'
+import { parseAxisListingMetaBlock } from './axisListingMeta.js'
+import { normalizeLeasingFromMeta } from './managerPropertyFormAirtableMap.js'
 import { PROPERTY_EDIT_REQUEST_FIELD } from './managerPropertyFormAirtableMap.js'
 
 const MAX_ROOMS = 20
@@ -39,6 +41,154 @@ function sharedSpaceFields(n) {
     [`Shared Space ${n} Type`, `Shared space ${n} type`],
     [`Access to Shared Space ${n}`, `Shared space ${n} access`],
   ]
+}
+
+function parseLabeledLinesBlock(value) {
+  const lines = String(value || '')
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+
+  const items = []
+  for (const line of lines) {
+    const idx = line.indexOf(':')
+    if (idx <= 0) continue
+    const label = line.slice(0, idx).trim()
+    const val = line.slice(idx + 1).trim()
+    if (!label || !val) continue
+    items.push({ label, value: val })
+  }
+  return items.length >= 3 ? items : []
+}
+
+function humanizeMetaKey(key) {
+  const s = String(key || '')
+    .replace(/([A-Z])/g, ' $1')
+    .replace(/_/g, ' ')
+    .trim()
+  if (!s) return 'Field'
+  return s.charAt(0).toUpperCase() + s.slice(1)
+}
+
+function metaPropertyListingItems(meta) {
+  const out = []
+  const pushIf = (label, value) => {
+    const v = formatApplicationDetailValue(value)
+    if (v) out.push({ label, value: v })
+  }
+  pushIf('Property type', meta.propertyTypeOther)
+  const bt = Number(meta.bathroomTotalDecimal)
+  if (Number.isFinite(bt) && bt > 0) out.push({ label: 'Total bathrooms', value: String(bt) })
+  const windows = Array.isArray(meta.listingAvailabilityWindows) ? meta.listingAvailabilityWindows : []
+  if (windows.length) {
+    const parts = windows
+      .map((window) => {
+        const start = String(window?.start || '').trim()
+        const end = String(window?.end || '').trim()
+        if (!start) return ''
+        return end ? `${start} - ${end}` : `${start} onward`
+      })
+      .filter(Boolean)
+    if (parts.length) out.push({ label: 'Move-in availability', value: parts.join('; ') })
+  }
+  return out
+}
+
+function metaRoomsToItems(meta) {
+  const rooms = Array.isArray(meta?.roomsDetail) ? meta.roomsDetail : []
+  if (!rooms.length) return []
+  const items = []
+  for (const room of rooms) {
+    if (!room || typeof room !== 'object') continue
+    const label = String(room.label || '').trim() || 'Room'
+    const pushIf = (suffix, value) => {
+      const v = formatApplicationDetailValue(value)
+      if (v) items.push({ label: `${label} ${suffix}`, value: v })
+    }
+    pushIf('Rent', room.rent)
+    pushIf('Availability', room.availability)
+    pushIf('Furnished', room.furnished)
+    pushIf('Utilities', room.utilities)
+    pushIf('Utilities cost', room.utilitiesCost)
+    pushIf('Notes', room.notes)
+    pushIf('Bathroom setup', room.bathroomSetup)
+    pushIf('Furniture included', room.furnitureIncluded)
+    pushIf('Features', room.additionalFeatures)
+    if (room.unavailable === true || room.unavailable === 1) {
+      items.push({ label: `${label} unavailable`, value: 'Yes' })
+    }
+  }
+  return items
+}
+
+function metaFinancialItems(meta) {
+  if (!meta?.financials || typeof meta.financials !== 'object') return []
+  const out = []
+  const pushIf = (label, value) => {
+    const v = formatApplicationDetailValue(value)
+    if (v) out.push({ label, value: v })
+  }
+  pushIf('Security deposit', meta.financials.securityDeposit)
+  pushIf('Move-in charges', meta.financials.moveInCharges)
+  const seen = new Set(['securityDeposit', 'moveInCharges'])
+  for (const [key, value] of Object.entries(meta.financials)) {
+    if (seen.has(key)) continue
+    pushIf(humanizeMetaKey(key), value)
+  }
+  return out
+}
+
+function metaLeasingItems(meta) {
+  if (!meta?.leasing || typeof meta.leasing !== 'object') return []
+  const norm = normalizeLeasingFromMeta(meta.leasing)
+  const out = []
+  const pushIf = (label, value) => {
+    const v = formatApplicationDetailValue(value)
+    if (v) out.push({ label, value: v })
+  }
+  pushIf('Full house price', norm.fullHousePrice)
+  pushIf('Promotional full house price', norm.promoPrice)
+  pushIf('Lease length information', norm.leaseLengthInfo)
+  for (const bundle of norm.bundles) {
+    const name = String(bundle.name || 'Leasing package').trim() || 'Leasing package'
+    pushIf(`${name} monthly rent`, bundle.price)
+    if (bundle.rooms?.length) {
+      out.push({
+        label: `${name} rooms included`,
+        value: bundle.rooms.map((room) => String(room).trim()).filter(Boolean).join(', '),
+      })
+    }
+  }
+  return out
+}
+
+function metaSharedSpacesItems(meta) {
+  const rows = Array.isArray(meta.sharedSpacesDetail) ? meta.sharedSpacesDetail : []
+  const out = []
+  rows.forEach((row, index) => {
+    if (!row || typeof row !== 'object') return
+    const title = String(row.title || row.name || `Shared space ${index + 1}`).trim()
+    const desc = String(row.description || row.notes || '').trim()
+    const imageCount = Array.isArray(row.imageUrls) ? row.imageUrls.filter(Boolean).length : 0
+    const bits = [desc, imageCount ? `${imageCount} photo(s)` : ''].filter(Boolean)
+    if (bits.length) out.push({ label: title, value: bits.join(' · ') })
+  })
+  return out
+}
+
+function metaMediaItems(meta) {
+  const videos = Array.isArray(meta.listingVideos) ? meta.listingVideos : []
+  if (!videos.length) return []
+  const lines = videos
+    .map((video, index) => {
+      const row = video && typeof video === 'object' ? video : {}
+      const label = String(row.label || `Video ${index + 1}`).trim()
+      const url = String(row.url || row.src || '').trim()
+      if (row.placeholder) return `${label}${row.placeholderText ? ` - ${row.placeholderText}` : ' (coming soon)'}`
+      return url ? `${label}: ${url}` : label || null
+    })
+    .filter(Boolean)
+  return lines.length ? [{ label: 'Listing videos', value: lines.join('\n') }] : []
 }
 
 /** Logical groupings for Properties / House rows in admin review */
@@ -134,16 +284,46 @@ export function PropertyDetailPanel({ property, ownerLabel }) {
   const fmt = formatApplicationDetailValue
   const shownKeys = new Set(['id', 'created_at'])
   const sections = []
+  const parsedExtraSections = []
 
   // ── Core field groups ──────────────────────────────────────────────────────
   for (const group of PROPERTY_FIELD_GROUPS) {
     const items = []
     for (const [key, label] of group.fields) {
       shownKeys.add(key)
-      const v = fmt(raw[key])
+      let value = raw[key]
+      if (key === 'Other Info' && typeof value === 'string') {
+        value = parseAxisListingMetaBlock(value).userText
+      }
+      const v = fmt(value)
       if (v) items.push({ label, value: v })
     }
     if (items.length) sections.push({ title: group.title, items })
+  }
+
+  for (const key of Object.keys(raw)) {
+    if (typeof raw[key] !== 'string') continue
+    const parsedMeta = parseAxisListingMetaBlock(raw[key])
+    if (!parsedMeta.meta) continue
+    shownKeys.add(key)
+    if (parsedMeta.userText) {
+      const parsedLines = parseLabeledLinesBlock(parsedMeta.userText)
+      if (parsedLines.length) {
+        parsedExtraSections.push({ title: `${key} notes`, items: parsedLines })
+      }
+    }
+    const propertyItems = metaPropertyListingItems(parsedMeta.meta)
+    if (propertyItems.length) parsedExtraSections.push({ title: 'Listing details', items: propertyItems })
+    const roomItems = metaRoomsToItems(parsedMeta.meta)
+    if (roomItems.length) parsedExtraSections.push({ title: 'Listing rooms', items: roomItems })
+    const financialItems = metaFinancialItems(parsedMeta.meta)
+    if (financialItems.length) parsedExtraSections.push({ title: 'Listing financials', items: financialItems })
+    const leasingItems = metaLeasingItems(parsedMeta.meta)
+    if (leasingItems.length) parsedExtraSections.push({ title: 'Listing leasing', items: leasingItems })
+    const sharedItems = metaSharedSpacesItems(parsedMeta.meta)
+    if (sharedItems.length) parsedExtraSections.push({ title: 'Listing shared spaces', items: sharedItems })
+    const mediaItems = metaMediaItems(parsedMeta.meta)
+    if (mediaItems.length) parsedExtraSections.push({ title: 'Listing media', items: mediaItems })
   }
 
   // ── Dynamic room sections ──────────────────────────────────────────────────
@@ -226,6 +406,7 @@ export function PropertyDetailPanel({ property, ownerLabel }) {
     const v = fmt(raw[key])
     if (v) otherItems.push({ label: key, value: v })
   }
+  sections.push(...parsedExtraSections)
   if (otherItems.length) sections.push({ title: 'Other fields', items: otherItems })
 
   const submitted = raw.created_at

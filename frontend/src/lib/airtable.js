@@ -1702,6 +1702,197 @@ export async function getLeaseDraftsForResident(residentRecordId) {
   return allRecords
 }
 
+export async function getLeaseDraftById(leaseDraftId) {
+  const id = String(leaseDraftId || '').trim()
+  if (!/^rec[a-zA-Z0-9]{14,}$/.test(id)) throw new Error('Invalid lease draft ID.')
+  const data = await request(`${BASE_URL}/${encodeURIComponent('Lease Drafts')}/${id}`)
+  return mapRecord(data)
+}
+
+export async function updateLeaseDraftRecord(leaseDraftId, fields) {
+  const id = String(leaseDraftId || '').trim()
+  if (!/^rec[a-zA-Z0-9]{14,}$/.test(id)) throw new Error('Invalid lease draft ID.')
+  const cleaned = Object.fromEntries(Object.entries(fields || {}).filter(([, value]) => value !== undefined))
+  if (Object.keys(cleaned).length === 0) throw new Error('No lease draft fields to update.')
+  const data = await request(`${BASE_URL}/${encodeURIComponent('Lease Drafts')}/${id}`, {
+    method: 'PATCH',
+    body: JSON.stringify({ fields: cleaned, typecast: true }),
+  })
+  return mapRecord(data)
+}
+
+export async function getLeaseCommentsForDraft(leaseDraftId) {
+  const id = String(leaseDraftId || '').trim()
+  if (!/^rec[a-zA-Z0-9]{14,}$/.test(id)) return []
+  const formula = `{Lease Draft ID} = "${escapeFormulaValue(id)}"`
+  const data = await request(buildUrl('Lease Comments', {
+    filterByFormula: formula,
+    sort: [{ field: 'Timestamp', direction: 'asc' }],
+  }))
+  return (data.records || []).map(mapRecord)
+}
+
+export async function addLeaseCommentRecord({
+  leaseDraftId,
+  authorName,
+  authorRole,
+  authorRecordId = '',
+  message,
+}) {
+  const draftId = String(leaseDraftId || '').trim()
+  const text = String(message || '').trim()
+  if (!/^rec[a-zA-Z0-9]{14,}$/.test(draftId)) throw new Error('Invalid lease draft ID.')
+  if (!text) throw new Error('Comment is required.')
+  const data = await request(`${BASE_URL}/${encodeURIComponent('Lease Comments')}`, {
+    method: 'POST',
+    body: JSON.stringify({
+      fields: {
+        'Lease Draft ID': draftId,
+        'Author Name': String(authorName || 'Unknown').trim() || 'Unknown',
+        'Author Role': String(authorRole || 'Resident').trim() || 'Resident',
+        'Author Record ID': String(authorRecordId || '').trim(),
+        'Message': text,
+        'Timestamp': new Date().toISOString(),
+      },
+      typecast: true,
+    }),
+  })
+  return mapRecord(data)
+}
+
+export async function createLeaseNotification({ recipientRecordId, recipientRole, leaseDraftId, message, actionType = 'comment-added' }) {
+  const recipientId = String(recipientRecordId || '').trim()
+  const draftId = String(leaseDraftId || '').trim()
+  const text = String(message || '').trim()
+  if (!recipientId || !draftId || !text) return null
+  const data = await request(`${BASE_URL}/${encodeURIComponent('Lease Notifications')}`, {
+    method: 'POST',
+    body: JSON.stringify({
+      fields: {
+        'Recipient Record ID': recipientId,
+        'Recipient Role': String(recipientRole || '').trim() || 'manager',
+        'Lease Draft ID': draftId,
+        'Message': text,
+        'Action Type': actionType,
+        'Is Read': false,
+        'Created At': new Date().toISOString(),
+      },
+      typecast: true,
+    }),
+  })
+  return mapRecord(data)
+}
+
+export async function getCurrentLeaseVersion(leaseDraftId) {
+  const id = String(leaseDraftId || '').trim()
+  if (!/^rec[a-zA-Z0-9]{14,}$/.test(id)) return null
+  const formula = `{Lease Draft ID} = "${escapeFormulaValue(id)}"`
+  const data = await request(buildUrl('Lease Versions', {
+    filterByFormula: formula,
+    sort: [{ field: 'Version Number', direction: 'desc' }],
+  }))
+  const rows = (data.records || []).map(mapRecord)
+  return rows.find((row) => Boolean(row['Is Current'])) || rows[0] || null
+}
+
+export async function upsertCurrentLeaseVersion({
+  leaseDraftId,
+  pdfUrl,
+  fileName,
+  notes = '',
+  uploaderName,
+  uploaderRole,
+}) {
+  const draftId = String(leaseDraftId || '').trim()
+  const nextPdfUrl = String(pdfUrl || '').trim()
+  if (!/^rec[a-zA-Z0-9]{14,}$/.test(draftId)) throw new Error('Invalid lease draft ID.')
+  if (!nextPdfUrl) throw new Error('PDF URL is required.')
+
+  const draft = await getLeaseDraftById(draftId)
+  const current = await getCurrentLeaseVersion(draftId)
+  const versionNumber = Number(current?.['Version Number'] || draft?.['Current Version'] || 1) || 1
+  const fields = {
+    'Lease Draft ID': draftId,
+    'Version Number': versionNumber,
+    'PDF URL': nextPdfUrl,
+    'File Name': String(fileName || '').trim() || `lease-v${versionNumber}.pdf`,
+    'Uploader Name': String(uploaderName || '').trim() || 'Axis',
+    'Uploader Role': String(uploaderRole || '').trim() || 'Manager',
+    'Upload Date': new Date().toISOString(),
+    'Notes': String(notes || '').trim(),
+    'Is Current': true,
+  }
+
+  let saved = null
+  if (current?.id) {
+    const data = await request(`${BASE_URL}/${encodeURIComponent('Lease Versions')}/${current.id}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ fields, typecast: true }),
+    })
+    saved = mapRecord(data)
+  } else {
+    const data = await request(`${BASE_URL}/${encodeURIComponent('Lease Versions')}`, {
+      method: 'POST',
+      body: JSON.stringify({ fields, typecast: true }),
+    })
+    saved = mapRecord(data)
+  }
+
+  await updateLeaseDraftRecord(draftId, {
+    'Current Version': versionNumber,
+    'Updated At': new Date().toISOString(),
+  }).catch(() => null)
+
+  return saved
+}
+
+export async function submitResidentLeaseChangeRequest({
+  draft,
+  resident,
+  message,
+  pdfUrl = '',
+  fileName = '',
+}) {
+  const draftId = String(draft?.id || '').trim()
+  const text = String(message || '').trim()
+  if (!/^rec[a-zA-Z0-9]{14,}$/.test(draftId)) throw new Error('Invalid lease draft ID.')
+  if (!text) throw new Error('Please describe the lease change you need.')
+
+  await addLeaseCommentRecord({
+    leaseDraftId: draftId,
+    authorName: resident?.Name || resident?.Email || 'Resident',
+    authorRole: 'Resident',
+    authorRecordId: resident?.id || '',
+    message: text,
+  })
+
+  if (String(pdfUrl || '').trim()) {
+    await upsertCurrentLeaseVersion({
+      leaseDraftId: draftId,
+      pdfUrl,
+      fileName,
+      notes: text,
+      uploaderName: resident?.Name || resident?.Email || 'Resident',
+      uploaderRole: 'Resident',
+    })
+  }
+
+  await updateLeaseDraftRecord(draftId, {
+    Status: 'Changes Needed',
+    'Updated At': new Date().toISOString(),
+  })
+
+  await createLeaseNotification({
+    recipientRecordId: draft?.['Owner ID'] || '',
+    recipientRole: 'manager',
+    leaseDraftId: draftId,
+    message: `${resident?.Name || 'Resident'} requested lease changes`,
+    actionType: 'resident-requested-changes',
+  }).catch(() => null)
+
+  return getLeaseDraftById(draftId)
+}
+
 // ---------------------------------------------------------------------------
 // Lease Drafts — manager / resident actions
 // ---------------------------------------------------------------------------

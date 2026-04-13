@@ -106,7 +106,9 @@ const leaseTerms = ({
   },
 ]
 
-export const properties = [
+export const properties = []
+
+const _REMOVED_PROPERTIES = [
   {
     slug: '4709a-8th-ave',
     name: '4709A 8th Ave',

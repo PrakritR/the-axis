@@ -997,92 +997,113 @@ export default function PropertyPage(){
                   {sharedSpacesList.length + sharedSpaceVideos.length} shared spaces
                 </div>
               </div>
-              <div className="mt-8 overflow-hidden rounded-[18px] border border-slate-200 bg-white">
-                <div className="hidden sm:grid grid-cols-12 gap-3 border-b border-slate-100 bg-slate-50 px-6 py-3 text-xs font-bold uppercase tracking-[0.14em] text-slate-400">
-                  <div className="col-span-4">Space</div>
-                  <div className="col-span-8">Details</div>
-                </div>
-                <div className="divide-y divide-slate-100 px-4 sm:px-6">
-                  {sharedSpacesList.map((row, rowIdx) => (
-                    <div key={`${row.title}-${rowIdx}`} className="grid grid-cols-1 items-start gap-2 py-4 sm:grid-cols-12 sm:gap-3">
-                      <div className="sm:col-span-4">
-                        <div className="font-semibold text-slate-900">{row.title}</div>
-                        <div className="mt-0.5 text-xs text-slate-500">Shared area</div>
-                      </div>
-                      <div className="min-w-0 sm:col-span-8">
-                        <div className="text-sm text-slate-600">{row.description || '—'}</div>
-                        {row.accessLabel ? (
-                          <div className="mt-1.5 text-xs font-semibold text-slate-500">
-                            Access: {row.accessLabel}
-                          </div>
-                        ) : null}
-                        {Array.isArray(row.images) && row.images.length > 0 ? (
-                          <div className="mt-3 flex gap-2 overflow-x-auto pb-1 scrollbar-none">
-                            {row.images.map((src) => (
+              <div className="mt-8 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                {sharedSpacesList.map((row, rowIdx) => (
+                  <div key={`${row.title}-${rowIdx}`} className="overflow-hidden rounded-[18px] border border-slate-200 bg-white">
+                    {/* Image section */}
+                    {Array.isArray(row.images) && row.images.length > 0 ? (
+                      <div className="relative overflow-hidden">
+                        <div className="flex gap-0 overflow-x-auto scrollbar-none">
+                          {row.images.slice(0, 1).map((src) => (
+                            <a
+                              key={src}
+                              href={src}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="relative block h-48 w-full shrink-0 overflow-hidden bg-slate-100"
+                              title="View photo"
+                            >
+                              <img
+                                src={src}
+                                alt={`${row.title} photo`}
+                                className="h-full w-full object-cover transition hover:scale-105"
+                              />
+                              {row.images.length > 1 && (
+                                <div className="absolute bottom-2 right-2 rounded-full bg-black/60 px-2 py-0.5 text-[10px] font-semibold text-white">
+                                  +{row.images.length - 1} more
+                                </div>
+                              )}
+                            </a>
+                          ))}
+                        </div>
+                        {row.images.length > 1 && (
+                          <div className="flex gap-1.5 overflow-x-auto px-3 py-2 scrollbar-none">
+                            {row.images.slice(1).map((src, si) => (
                               <a
-                                key={src}
+                                key={`${src}-${si}`}
                                 href={src}
                                 target="_blank"
                                 rel="noreferrer"
-                                className="relative block h-24 w-36 shrink-0 overflow-hidden rounded-xl border border-slate-200 bg-slate-100"
+                                className="block h-14 w-20 shrink-0 overflow-hidden rounded-lg border border-slate-200 bg-slate-100"
                               >
-                                <img
-                                  src={src}
-                                  alt={`${row.title} photo`}
-                                  className="h-full w-full object-cover transition hover:opacity-95"
-                                />
+                                <img src={src} alt={`${row.title} photo`} className="h-full w-full object-cover transition hover:opacity-90" />
                               </a>
                             ))}
                           </div>
-                        ) : (
-                          <div className="mt-3 h-24 w-full max-w-xs overflow-hidden rounded-xl border border-slate-200">
-                            <PropertyMediaPlaceholder className="h-full w-full" compact label="No photos yet" />
-                          </div>
                         )}
-                        {Array.isArray(row.videos) && row.videos.length > 0 ? (
-                          <div className="mt-3 flex flex-wrap gap-2">
-                            {row.videos.map((video, vi) => (
-                              <button
-                                key={video.src || `${row.title}-v-${vi}`}
-                                type="button"
-                                onClick={() => setActiveSharedSpace(video)}
-                                className="inline-flex items-center gap-2 rounded-full border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-700 transition hover:border-axis hover:text-axis"
-                              >
-                                <svg className="h-3.5 w-3.5 shrink-0" viewBox="0 0 24 24" fill="none" aria-hidden>
-                                  <polygon points="5,3 19,12 5,21" fill="currentColor" />
-                                </svg>
-                                {video.label || 'Video'}
-                              </button>
-                            ))}
+                      </div>
+                    ) : (
+                      <div className="h-48 w-full overflow-hidden bg-slate-100">
+                        <PropertyMediaPlaceholder className="h-full w-full" compact label="Photos coming soon" />
+                      </div>
+                    )}
+                    {/* Info section */}
+                    <div className="px-4 py-4">
+                      <div className="font-semibold text-slate-900">{row.title}</div>
+                      {row.accessLabel && (
+                        <div className="mt-0.5 text-[11px] font-semibold uppercase tracking-[0.12em] text-axis">{row.accessLabel}</div>
+                      )}
+                      <div className="mt-1.5 text-sm leading-5 text-slate-600">{row.description || 'Shared common area'}</div>
+                      {Array.isArray(row.videos) && row.videos.length > 0 ? (
+                        <div className="mt-3 flex flex-wrap gap-2">
+                          {row.videos.map((video, vi) => (
+                            <button
+                              key={video.src || `${row.title}-v-${vi}`}
+                              type="button"
+                              onClick={() => setActiveSharedSpace(video)}
+                              className="inline-flex items-center gap-1.5 rounded-full border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:border-axis hover:text-axis"
+                            >
+                              <svg className="h-3 w-3 shrink-0" viewBox="0 0 24 24" fill="none" aria-hidden><polygon points="5,3 19,12 5,21" fill="currentColor" /></svg>
+                              {video.label || 'Video'}
+                            </button>
+                          ))}
+                        </div>
+                      ) : null}
+                    </div>
+                  </div>
+                ))}
+                {sharedSpaceVideos.map((video) => {
+                  const meta = getSharedSpaceDetailMeta(video)
+                  return (
+                    <div key={video.label} className="overflow-hidden rounded-[18px] border border-slate-200 bg-white">
+                      <div className="h-48 w-full overflow-hidden bg-slate-900">
+                        <button
+                          type="button"
+                          onClick={() => setActiveSharedSpace(video)}
+                          className="relative flex h-full w-full items-center justify-center bg-[linear-gradient(180deg,#0f172a_0%,#020617_100%)] transition hover:opacity-90"
+                          aria-label={`Play ${meta.title}`}
+                        >
+                          <div className="flex h-14 w-14 items-center justify-center rounded-full border border-white/10 bg-white/10">
+                            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden><polygon points="5,3 19,12 5,21" fill="white"/></svg>
                           </div>
-                        ) : null}
+                          <div className="absolute bottom-3 left-3 rounded-full bg-black/60 px-2.5 py-1 text-xs font-semibold text-white">▶ Play tour video</div>
+                        </button>
+                      </div>
+                      <div className="px-4 py-4">
+                        <div className="font-semibold text-slate-900">{meta.title.replace(' Tour', '')}</div>
+                        <div className="mt-1.5 text-sm leading-5 text-slate-600">{meta.rowSummary}</div>
+                        <button
+                          type="button"
+                          onClick={() => setActiveSharedSpace(video)}
+                          className="mt-3 inline-flex items-center gap-1.5 rounded-full border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:border-axis hover:text-axis"
+                        >
+                          <svg className="h-3 w-3 shrink-0" viewBox="0 0 24 24" fill="none" aria-hidden><polygon points="5,3 19,12 5,21" fill="currentColor"/></svg>
+                          Watch tour
+                        </button>
                       </div>
                     </div>
-                  ))}
-                  {sharedSpaceVideos.map((video) => {
-                    const meta = getSharedSpaceDetailMeta(video)
-                    return (
-                      <div key={video.label} className="grid grid-cols-1 items-center gap-2 py-4 sm:grid-cols-12 sm:gap-3">
-                        <div className="sm:col-span-4">
-                          <div className="font-semibold text-slate-900">{meta.title.replace(' Tour', '')}</div>
-                          <div className="mt-0.5 text-xs text-slate-500">Shared common area</div>
-                        </div>
-                        <div className="sm:col-span-6">
-                          <div className="text-sm text-slate-600">{meta.rowSummary}</div>
-                        </div>
-                        <div className="sm:col-span-2 flex justify-end">
-                          <button
-                            type="button"
-                            onClick={() => setActiveSharedSpace(video)}
-                            className="w-full sm:w-auto rounded-full border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-700 transition hover:border-slate-500"
-                          >
-                            Details
-                          </button>
-                        </div>
-                      </div>
-                    )
-                  })}
-                </div>
+                  )
+                })}
               </div>
             </section>
           ) : null}
@@ -1391,13 +1412,11 @@ export default function PropertyPage(){
                 <div className="mt-1 text-sm text-slate-500">per month</div>
               </div>
               <div className="flex flex-col gap-2.5 border-t border-slate-200 p-5">
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (!scrollToId('floor-plans')) scrollToId('overview')
-                  }}
-                  className="w-full rounded-full bg-axis py-3 text-sm font-semibold text-white transition hover:opacity-95"
-                >Check availability</button>
+                <Link
+                  to={`/contact?section=housing`}
+                  onClick={scrollToTop}
+                  className="w-full rounded-full bg-axis py-3 text-center text-sm font-semibold text-white transition hover:opacity-95"
+                >Schedule a tour</Link>
                 <Link
                   to={`/apply?property=${p.slug}`}
                   onClick={scrollToTop}
@@ -1449,11 +1468,11 @@ export default function PropertyPage(){
           <button
             type="button"
             onClick={() => {
-              if (!scrollToId('floor-plans')) scrollToId('overview')
+              window.location.href = '/contact?section=housing'
             }}
             className="shrink-0 rounded-full border border-slate-300/90 bg-white/60 px-4 py-2.5 text-sm font-semibold text-slate-800 shadow-sm backdrop-blur-sm transition active:scale-95"
           >
-            Rooms
+            Schedule a tour
           </button>
           <Link
             to={`/apply?property=${p.slug}`}

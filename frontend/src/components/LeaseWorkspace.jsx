@@ -1,69 +1,13 @@
-/**
- * LeaseWorkspace.jsx
- *
- * Full-detail workspace for a single lease record — shared between Manager and Admin portals.
- * Role-based via `isAdmin` prop. Fetches comments, versions, and audit log from Airtable directly.
- * All write actions go through /api/portal?action=lease-*.
- *
- * Props:
- *   draft       – The Lease Drafts Airtable record (fields directly on object, id at top)
- *   isAdmin     – boolean
- *   manager     – manager session object (used when !isAdmin)
- *   adminUser   – admin session object (used when isAdmin)
- *   onBack      – callback to return to the list
- *   onRefresh   – callback to reload the draft list
- */
-
-import React, { useState, useEffect, useCallback, useRef } from 'react'
+import React, { useCallback, useEffect, useMemo, useState } from 'react'
 import toast from 'react-hot-toast'
 import {
-  getStatusConfig,
-  fmtTs,
-  fmtDollar,
-  parseManagerEditNotes,
-  parseAdminResponseNotes,
-  MANAGER_CAN_SUBMIT_REQUEST,
-  MANAGER_CAN_REVIEW_ADMIN_UPDATE,
-  ADMIN_RESPONSE_STATUSES,
-} from '../lib/leaseWorkflowConstants.js'
-
-const AIRTABLE_TOKEN = import.meta.env.VITE_AIRTABLE_TOKEN
-const CORE_BASE_ID = import.meta.env.VITE_AIRTABLE_BASE_ID || 'appol57LKtMKaQ75T'
-const AT_BASE = `https://api.airtable.com/v0/${CORE_BASE_ID}`
-
-// ─── Airtable helpers ─────────────────────────────────────────────────────────
-async function atFetch(url) {
-  const res = await fetch(url, { headers: { Authorization: `Bearer ${AIRTABLE_TOKEN}` } })
-  if (!res.ok) return null
-  try { return await res.json() } catch { return null }
-}
-
-async function fetchComments(leaseDraftId) {
-  const url = new URL(`${AT_BASE}/Lease%20Comments`)
-  url.searchParams.set('filterByFormula', `{Lease Draft ID} = "${leaseDraftId}"`)
-  url.searchParams.set('sort[0][field]', 'Timestamp')
-  url.searchParams.set('sort[0][direction]', 'asc')
-  const data = await atFetch(url.toString())
-  return (data?.records || []).map(r => ({ id: r.id, ...r.fields }))
-}
-
-async function fetchVersions(leaseDraftId) {
-  const url = new URL(`${AT_BASE}/Lease%20Versions`)
-  url.searchParams.set('filterByFormula', `{Lease Draft ID} = "${leaseDraftId}"`)
-  url.searchParams.set('sort[0][field]', 'Version Number')
-  url.searchParams.set('sort[0][direction]', 'desc')
-  const data = await atFetch(url.toString())
-  return (data?.records || []).map(r => ({ id: r.id, ...r.fields }))
-}
-
-async function fetchAuditLog(leaseDraftId) {
-  const url = new URL(`${AT_BASE}/Audit%20Log`)
-  url.searchParams.set('filterByFormula', `{Lease Draft ID} = "${leaseDraftId}"`)
-  url.searchParams.set('sort[0][field]', 'Timestamp')
-  url.searchParams.set('sort[0][direction]', 'desc')
-  const data = await atFetch(url.toString())
-  return (data?.records || []).map(r => ({ id: r.id, ...r.fields }))
-}
+  getCurrentLeaseVersion,
+  getLeaseCommentsForDraft,
+  getLeaseDraftById,
+  publishLeaseDraft,
+  upsertCurrentLeaseVersion,
+} from '../lib/airtable'
+import { fmtDollar, fmtTs, getStatusConfig } from '../lib/leaseWorkflowConstants.js'
 
 async function callPortalAction(action, body) {
   const res = await fetch(`/api/portal?action=${action}`, {
@@ -76,42 +20,36 @@ async function callPortalAction(action, body) {
   return json
 }
 
-// ─── Sub-components ───────────────────────────────────────────────────────────
+function queueLabel(status) {
+  const normalized = String(status || '').trim()
+  if (['Draft Generated', 'Under Review', 'Changes Needed', 'Approved', 'Sent Back to Manager'].includes(normalized)) return 'Draft Ready'
+  if (['Submitted to Admin', 'Admin In Review', 'Changes Made', 'Manager Approved', 'Ready for Signature'].includes(normalized)) return 'Admin Review'
+  if (normalized === 'Published') return 'With Resident'
+  if (normalized === 'Signed') return 'Signed'
+  return normalized || 'Draft Ready'
+}
+
+function statusIsDraftReady(status) {
+  return ['Draft Generated', 'Under Review', 'Changes Needed', 'Approved', 'Sent Back to Manager'].includes(String(status || '').trim())
+}
+
+function statusIsAdminReview(status) {
+  return ['Submitted to Admin', 'Admin In Review', 'Changes Made', 'Manager Approved', 'Ready for Signature'].includes(String(status || '').trim())
+}
 
 function StatusBadge({ status }) {
   const cfg = getStatusConfig(status)
   return (
     <span className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-semibold ${cfg.bg} ${cfg.text} ${cfg.border}`}>
-      <span className={`inline-block h-1.5 w-1.5 shrink-0 rounded-full ${cfg.dot}`} />
+      <span className={`inline-block h-1.5 w-1.5 rounded-full ${cfg.dot}`} />
       {cfg.label}
     </span>
   )
 }
 
-function SectionTab({ id, label, active, badge, onClick }) {
-  return (
-    <button
-      type="button"
-      onClick={() => onClick(id)}
-      className={`relative whitespace-nowrap px-4 py-2.5 text-sm font-semibold transition ${
-        active
-          ? 'border-b-2 border-[#2563eb] text-[#2563eb]'
-          : 'text-slate-500 hover:text-slate-900'
-      }`}
-    >
-      {label}
-      {badge > 0 && (
-        <span className="ml-1.5 rounded-full bg-[#2563eb]/10 px-1.5 py-0.5 text-[10px] font-bold text-[#2563eb]">
-          {badge}
-        </span>
-      )}
-    </button>
-  )
-}
-
 function FieldRow({ label, value }) {
   return (
-    <div className="flex flex-col gap-0.5 sm:flex-row">
+    <div className="flex flex-col gap-0.5 sm:flex-row sm:gap-4">
       <dt className="w-full shrink-0 text-xs font-semibold uppercase tracking-[0.1em] text-slate-400 sm:w-36">{label}</dt>
       <dd className="text-sm font-medium text-slate-800 sm:flex-1">{value || '—'}</dd>
     </div>
@@ -119,474 +57,175 @@ function FieldRow({ label, value }) {
 }
 
 function CommentBubble({ comment, currentUserRecordId }) {
-  const isMine = comment['Author Record ID'] === currentUserRecordId
-  const role = comment['Author Role'] || 'Unknown'
-  const isAdmin = role === 'Admin'
+  const mine = String(comment['Author Record ID'] || '').trim() === String(currentUserRecordId || '').trim()
+  const role = String(comment['Author Role'] || 'Unknown').trim() || 'Unknown'
+  const roleTone = role === 'Admin' ? 'bg-blue-100 text-blue-700' : role === 'Resident' ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-600'
   return (
-    <div className={`flex gap-2.5 ${isMine ? 'flex-row-reverse' : ''}`}>
-      <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-xs font-bold text-white ${isAdmin ? 'bg-[#2563eb]' : 'bg-slate-500'}`}>
-        {String(comment['Author Name'] || '?')[0].toUpperCase()}
-      </div>
-      <div className={`max-w-[80%] ${isMine ? 'items-end' : 'items-start'} flex flex-col gap-1`}>
-        <div className="flex items-center gap-2">
-          <span className="text-xs font-semibold text-slate-700">{comment['Author Name'] || 'Unknown'}</span>
-          <span className={`rounded px-1.5 py-0.5 text-[10px] font-bold ${isAdmin ? 'bg-[#2563eb]/10 text-[#2563eb]' : 'bg-slate-100 text-slate-500'}`}>
-            {role}
-          </span>
-          <span className="text-[10px] text-slate-400">{fmtTs(comment['Timestamp'])}</span>
+    <div className={`flex gap-3 ${mine ? 'flex-row-reverse' : ''}`}>
+      <div className={`max-w-[85%] rounded-2xl px-4 py-3 ${mine ? 'bg-[#2563eb] text-white' : 'bg-slate-100 text-slate-800'}`}>
+        <div className={`mb-1 flex flex-wrap items-center gap-2 text-[11px] font-semibold ${mine ? 'text-blue-100' : 'text-slate-500'}`}>
+          <span>{comment['Author Name'] || role}</span>
+          <span className={`rounded-full px-2 py-0.5 ${mine ? 'bg-white/15 text-white' : roleTone}`}>{role}</span>
+          <span>{fmtTs(comment['Timestamp'])}</span>
         </div>
-        <div className={`rounded-2xl px-3.5 py-2.5 text-sm ${isMine ? 'bg-[#2563eb] text-white' : 'bg-slate-100 text-slate-800'} whitespace-pre-wrap`}>
-          {comment['Message']}
-        </div>
+        <p className="whitespace-pre-wrap text-sm">{comment['Message']}</p>
       </div>
     </div>
   )
 }
 
-function VersionRow({ version }) {
-  const isCurrent = Boolean(version['Is Current'])
+function PdfCard({ currentPdf, showReplaceForm, pdfUrl, setPdfUrl, pdfFileName, setPdfFileName, savingPdf, onSavePdf }) {
   return (
-    <div className={`flex items-start gap-3 rounded-2xl border p-3.5 ${isCurrent ? 'border-emerald-200 bg-emerald-50' : 'border-slate-200 bg-white'}`}>
-      <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-sm font-black ${isCurrent ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500'}`}>
-        v{version['Version Number'] || '?'}
-      </div>
-      <div className="min-w-0 flex-1">
-        <div className="flex flex-wrap items-center gap-2">
-          <span className="text-sm font-semibold text-slate-900">{version['File Name'] || 'lease.pdf'}</span>
-          {isCurrent && (
-            <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-emerald-700">
-              Current
-            </span>
-          )}
+    <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">Current PDF</div>
+          <h3 className="mt-1 text-base font-black text-slate-900">{currentPdf?.['File Name'] || 'No PDF uploaded yet'}</h3>
+          <p className="mt-1 text-xs text-slate-500">
+            {currentPdf?.['Upload Date']
+              ? `Last updated ${fmtTs(currentPdf['Upload Date'])}`
+              : 'Upload one current PDF and it will replace the file shown here.'}
+          </p>
         </div>
-        <div className="mt-0.5 text-xs text-slate-500">
-          Uploaded by {version['Uploader Name'] || '—'} · {fmtTs(version['Upload Date'])}
-        </div>
-        {version['Notes'] && (
-          <p className="mt-1 text-xs text-slate-600">{version['Notes']}</p>
-        )}
-      </div>
-      <div className="shrink-0">
-        {version['PDF URL'] ? (
+        {currentPdf?.['PDF URL'] ? (
           <a
-            href={version['PDF URL']}
+            href={currentPdf['PDF URL']}
             target="_blank"
-            rel="noopener noreferrer"
-            className="rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-[#2563eb] shadow-sm hover:bg-blue-50"
+            rel="noreferrer"
+            className="rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-[#2563eb] transition hover:bg-slate-50"
           >
-            View PDF
+            Open PDF
           </a>
-        ) : (
-          <span className="text-xs text-slate-400">No PDF URL</span>
-        )}
+        ) : null}
       </div>
-    </div>
-  )
-}
 
-function TimelineEntry({ entry }) {
-  return (
-    <div className="flex gap-3">
-      <div className="mt-1 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-slate-100">
-        <span className="h-2 w-2 rounded-full bg-slate-400" />
-      </div>
-      <div className="min-w-0 flex-1 pb-4">
-        <div className="text-sm font-semibold text-slate-800">{entry['Action Type'] || '—'}</div>
-        <div className="mt-0.5 text-xs text-slate-500">
-          {entry['Performed By'] && <span className="font-medium">{entry['Performed By']}</span>}
-          {entry['Performed By Role'] && <span className="ml-1 text-slate-400">({entry['Performed By Role']})</span>}
-          <span className="ml-2">{fmtTs(entry['Timestamp'])}</span>
+      {currentPdf?.['PDF URL'] ? (
+        <div className="mt-4 overflow-hidden rounded-2xl border border-slate-200 bg-slate-50">
+          <iframe title="Current lease PDF" src={currentPdf['PDF URL']} className="h-[420px] w-full bg-white" />
         </div>
-        {entry['Notes'] && (
-          <p className="mt-1 text-xs text-slate-600 italic">{entry['Notes']}</p>
-        )}
-      </div>
-    </div>
-  )
-}
+      ) : null}
 
-// ─── Modals ───────────────────────────────────────────────────────────────────
-
-function EditRequestModal({ draft, manager, onClose, onSubmitted }) {
-  const leaseJson = (() => { try { return JSON.parse(draft['Lease JSON'] || '{}') } catch { return {} } })()
-  const [fields, setFields] = useState({
-    tenantName: draft['Resident Name'] || leaseJson.tenantName || '',
-    property:   draft['Property'] || leaseJson.propertyName || '',
-    room:       draft['Unit'] || leaseJson.roomNumber || '',
-    leaseStart: leaseJson.leaseStart || '',
-    leaseEnd:   leaseJson.leaseEnd || '',
-    rent:       leaseJson.monthlyRent || '',
-    deposit:    leaseJson.securityDeposit || '',
-    utilities:  leaseJson.utilityFee || '',
-    specialTerms: leaseJson.specialTerms || '',
-  })
-  const [editNotes, setEditNotes] = useState('')
-  const [submitting, setSubmitting] = useState(false)
-
-  const inputCls = 'w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-800 placeholder:text-slate-400 focus:border-[#2563eb] focus:outline-none focus:ring-2 focus:ring-[#2563eb]/20'
-
-  async function handleSubmit(e) {
-    e.preventDefault()
-    if (!editNotes.trim()) { toast.error('Please describe what you need changed.'); return }
-    setSubmitting(true)
-    try {
-      await callPortalAction('lease-submit-edit-request', {
-        leaseDraftId: draft.id,
-        managerRecordId: manager?.id || manager?.airtableRecordId || '',
-        managerName: manager?.name || 'Manager',
-        editNotes: editNotes.trim(),
-        requestedFields: fields,
-      })
-      toast.success('Edit request submitted to admin')
-      onSubmitted()
-      onClose()
-    } catch (err) {
-      toast.error(err.message || 'Failed to submit request')
-    } finally {
-      setSubmitting(false)
-    }
-  }
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4 backdrop-blur-sm">
-      <div className="w-full max-w-2xl rounded-3xl bg-white shadow-2xl">
-        <div className="border-b border-slate-100 px-6 py-4">
-          <h2 className="text-lg font-black text-slate-900">Request Lease Changes</h2>
-          <p className="mt-0.5 text-sm text-slate-500">Describe what needs to change. Admin will review and respond.</p>
-        </div>
-        <form onSubmit={handleSubmit} className="max-h-[70vh] overflow-y-auto">
-          <div className="grid grid-cols-2 gap-3 p-6">
-            <div className="col-span-2">
-              <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">
-                What needs to change? <span className="text-red-500">*</span>
-              </label>
-              <textarea
-                value={editNotes}
-                onChange={e => setEditNotes(e.target.value)}
-                rows={4}
-                className={inputCls + ' resize-none'}
-                placeholder="Describe the changes needed — be specific..."
-                required
+      {showReplaceForm ? (
+        <form
+          onSubmit={(event) => {
+            event.preventDefault()
+            onSavePdf()
+          }}
+          className="mt-4 rounded-2xl border border-dashed border-slate-200 bg-slate-50/80 p-4"
+        >
+          <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">Replace Current PDF</div>
+          <div className="mt-3 grid gap-3 sm:grid-cols-2">
+            <label className="block sm:col-span-2">
+              <span className="mb-1 block text-xs font-semibold text-slate-600">PDF URL</span>
+              <input
+                value={pdfUrl}
+                onChange={(event) => setPdfUrl(event.target.value)}
+                placeholder="https://.../lease.pdf"
+                className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-[#2563eb] focus:ring-2 focus:ring-[#2563eb]/20"
               />
-            </div>
-            <div>
-              <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">Tenant Name</label>
-              <input value={fields.tenantName} onChange={e => setFields(f => ({ ...f, tenantName: e.target.value }))} className={inputCls} placeholder="Full name" />
-            </div>
-            <div>
-              <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">Property</label>
-              <input value={fields.property} onChange={e => setFields(f => ({ ...f, property: e.target.value }))} className={inputCls} placeholder="Property name/address" />
-            </div>
-            <div>
-              <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">Room / Unit</label>
-              <input value={fields.room} onChange={e => setFields(f => ({ ...f, room: e.target.value }))} className={inputCls} placeholder="Room 1" />
-            </div>
-            <div>
-              <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">Monthly Rent ($)</label>
-              <input type="number" value={fields.rent} onChange={e => setFields(f => ({ ...f, rent: e.target.value }))} className={inputCls} placeholder="0.00" min="0" step="0.01" />
-            </div>
-            <div>
-              <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">Lease Start</label>
-              <input type="date" value={fields.leaseStart} onChange={e => setFields(f => ({ ...f, leaseStart: e.target.value }))} className={inputCls} />
-            </div>
-            <div>
-              <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">Lease End</label>
-              <input type="date" value={fields.leaseEnd} onChange={e => setFields(f => ({ ...f, leaseEnd: e.target.value }))} className={inputCls} />
-            </div>
-            <div>
-              <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">Security Deposit ($)</label>
-              <input type="number" value={fields.deposit} onChange={e => setFields(f => ({ ...f, deposit: e.target.value }))} className={inputCls} placeholder="0.00" min="0" step="0.01" />
-            </div>
-            <div>
-              <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">Utilities ($)</label>
-              <input type="number" value={fields.utilities} onChange={e => setFields(f => ({ ...f, utilities: e.target.value }))} className={inputCls} placeholder="0.00" min="0" step="0.01" />
-            </div>
-            <div className="col-span-2">
-              <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">Special Terms</label>
-              <textarea value={fields.specialTerms} onChange={e => setFields(f => ({ ...f, specialTerms: e.target.value }))} rows={2} className={inputCls + ' resize-none'} placeholder="Parking, pets, utilities included, etc." />
-            </div>
-          </div>
-          <div className="flex justify-end gap-2 border-t border-slate-100 px-6 py-4">
-            <button type="button" onClick={onClose} disabled={submitting} className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50">Cancel</button>
-            <button type="submit" disabled={submitting} className="rounded-xl bg-[#2563eb] px-5 py-2 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-50">
-              {submitting ? 'Submitting…' : 'Submit Request'}
-            </button>
-          </div>
-        </form>
-      </div>
-    </div>
-  )
-}
-
-function AdminRespondModal({ draft, adminUser, onClose, onSubmitted }) {
-  const leaseJson = (() => { try { return JSON.parse(draft['Lease JSON'] || '{}') } catch { return {} } })()
-  const [newStatus, setNewStatus] = useState('Sent Back to Manager')
-  const [adminNotes, setAdminNotes] = useState('')
-  const [updatedFields, setUpdatedFields] = useState({
-    residentName: draft['Resident Name'] || leaseJson.tenantName || '',
-    property:     draft['Property'] || leaseJson.propertyName || '',
-    unit:         draft['Unit'] || leaseJson.roomNumber || '',
-    leaseStart:   leaseJson.leaseStart || '',
-    leaseEnd:     leaseJson.leaseEnd || '',
-    rent:         leaseJson.monthlyRent || '',
-    deposit:      leaseJson.securityDeposit || '',
-    utilityFee:   leaseJson.utilityFee || '',
-    specialTerms: leaseJson.specialTerms || '',
-  })
-  const [pdfUrl, setPdfUrl] = useState('')
-  const [pdfFileName, setPdfFileName] = useState('')
-  const [submitting, setSubmitting] = useState(false)
-
-  const inputCls = 'w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-800 placeholder:text-slate-400 focus:border-[#2563eb] focus:outline-none focus:ring-2 focus:ring-[#2563eb]/20'
-  const selectCls = 'w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-800 focus:border-[#2563eb] focus:outline-none focus:ring-2 focus:ring-[#2563eb]/20'
-
-  async function handleSubmit(e) {
-    e.preventDefault()
-    setSubmitting(true)
-    try {
-      const body = {
-        leaseDraftId: draft.id,
-        adminRecordId: adminUser?.airtableRecordId || adminUser?.id || '',
-        adminName: adminUser?.name || 'Admin',
-        newStatus,
-        adminNotes: adminNotes.trim(),
-        updatedFields,
-      }
-      if (pdfUrl.trim()) {
-        body.newVersion = {
-          pdfUrl: pdfUrl.trim(),
-          fileName: pdfFileName.trim() || `lease-v${(Number(draft['Current Version'] || 1) + 1)}.pdf`,
-          notes: adminNotes.trim(),
-        }
-      }
-      await callPortalAction('lease-admin-respond', body)
-      toast.success('Lease updated and manager notified')
-      onSubmitted()
-      onClose()
-    } catch (err) {
-      toast.error(err.message || 'Failed to update lease')
-    } finally {
-      setSubmitting(false)
-    }
-  }
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4 backdrop-blur-sm">
-      <div className="w-full max-w-2xl rounded-3xl bg-white shadow-2xl">
-        <div className="border-b border-slate-100 px-6 py-4">
-          <h2 className="text-lg font-black text-slate-900">Update Lease & Respond</h2>
-          <p className="mt-0.5 text-sm text-slate-500">Make changes, optionally attach a revised PDF, and send back to manager.</p>
-        </div>
-        <form onSubmit={handleSubmit} className="max-h-[70vh] overflow-y-auto">
-          <div className="grid grid-cols-2 gap-3 p-6">
-            <div className="col-span-2">
-              <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">New Status</label>
-              <select value={newStatus} onChange={e => setNewStatus(e.target.value)} className={selectCls}>
-                {ADMIN_RESPONSE_STATUSES.map(s => (
-                  <option key={s.value} value={s.value}>{s.label}</option>
-                ))}
-              </select>
-            </div>
-            <div className="col-span-2">
-              <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">Admin Notes</label>
-              <textarea value={adminNotes} onChange={e => setAdminNotes(e.target.value)} rows={3} className={inputCls + ' resize-none'} placeholder="Explain what was changed and why…" />
-            </div>
-            <div>
-              <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">Resident Name</label>
-              <input value={updatedFields.residentName} onChange={e => setUpdatedFields(f => ({ ...f, residentName: e.target.value }))} className={inputCls} placeholder="Full name" />
-            </div>
-            <div>
-              <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">Property</label>
-              <input value={updatedFields.property} onChange={e => setUpdatedFields(f => ({ ...f, property: e.target.value }))} className={inputCls} placeholder="Property name" />
-            </div>
-            <div>
-              <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">Unit / Room</label>
-              <input value={updatedFields.unit} onChange={e => setUpdatedFields(f => ({ ...f, unit: e.target.value }))} className={inputCls} placeholder="Room 1" />
-            </div>
-            <div>
-              <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">Monthly Rent ($)</label>
-              <input type="number" value={updatedFields.rent} onChange={e => setUpdatedFields(f => ({ ...f, rent: e.target.value }))} className={inputCls} placeholder="0.00" min="0" step="0.01" />
-            </div>
-            <div>
-              <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">Lease Start</label>
-              <input type="date" value={updatedFields.leaseStart} onChange={e => setUpdatedFields(f => ({ ...f, leaseStart: e.target.value }))} className={inputCls} />
-            </div>
-            <div>
-              <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">Lease End</label>
-              <input type="date" value={updatedFields.leaseEnd} onChange={e => setUpdatedFields(f => ({ ...f, leaseEnd: e.target.value }))} className={inputCls} />
-            </div>
-            <div>
-              <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">Security Deposit ($)</label>
-              <input type="number" value={updatedFields.deposit} onChange={e => setUpdatedFields(f => ({ ...f, deposit: e.target.value }))} className={inputCls} placeholder="0.00" min="0" step="0.01" />
-            </div>
-            <div>
-              <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">Utility Fee ($)</label>
-              <input type="number" value={updatedFields.utilityFee} onChange={e => setUpdatedFields(f => ({ ...f, utilityFee: e.target.value }))} className={inputCls} placeholder="0.00" min="0" step="0.01" />
-            </div>
-            <div className="col-span-2">
-              <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">Special Terms</label>
-              <textarea value={updatedFields.specialTerms} onChange={e => setUpdatedFields(f => ({ ...f, specialTerms: e.target.value }))} rows={2} className={inputCls + ' resize-none'} placeholder="Parking, pets, utilities included, etc." />
-            </div>
-            <div className="col-span-2 rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-4">
-              <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Attach Revised PDF (optional)</p>
-              <div className="grid grid-cols-2 gap-2">
-                <input value={pdfUrl} onChange={e => setPdfUrl(e.target.value)} className={inputCls} placeholder="https://drive.google.com/… or direct PDF link" />
-                <input value={pdfFileName} onChange={e => setPdfFileName(e.target.value)} className={inputCls} placeholder="lease-v2.pdf" />
-              </div>
-              <p className="mt-1.5 text-[11px] text-slate-400">Provide a publicly accessible URL. Each upload creates a versioned record in the history.</p>
-            </div>
-          </div>
-          <div className="flex justify-end gap-2 border-t border-slate-100 px-6 py-4">
-            <button type="button" onClick={onClose} disabled={submitting} className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50">Cancel</button>
-            <button type="submit" disabled={submitting} className="rounded-xl bg-[#2563eb] px-5 py-2 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-50">
-              {submitting ? 'Updating…' : 'Update & Send'}
-            </button>
-          </div>
-        </form>
-      </div>
-    </div>
-  )
-}
-
-function ManagerReviewModal({ draft, manager, onClose, onSubmitted }) {
-  const [action, setAction] = useState('approve')
-  const [notes, setNotes] = useState('')
-  const [submitting, setSubmitting] = useState(false)
-
-  const inputCls = 'w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-800 placeholder:text-slate-400 focus:border-[#2563eb] focus:outline-none focus:ring-2 focus:ring-[#2563eb]/20'
-
-  async function handleSubmit(e) {
-    e.preventDefault()
-    if (action === 'request-changes' && !notes.trim()) {
-      toast.error('Please describe what still needs to change.')
-      return
-    }
-    setSubmitting(true)
-    try {
-      await callPortalAction('lease-manager-review', {
-        leaseDraftId: draft.id,
-        managerRecordId: manager?.id || manager?.airtableRecordId || '',
-        managerName: manager?.name || 'Manager',
-        action,
-        notes: notes.trim(),
-      })
-      toast.success(action === 'approve' ? 'Lease approved!' : 'Further changes requested')
-      onSubmitted()
-      onClose()
-    } catch (err) {
-      toast.error(err.message || 'Failed to submit review')
-    } finally {
-      setSubmitting(false)
-    }
-  }
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4 backdrop-blur-sm">
-      <div className="w-full max-w-md rounded-3xl bg-white shadow-2xl">
-        <div className="border-b border-slate-100 px-6 py-4">
-          <h2 className="text-lg font-black text-slate-900">Review Admin Update</h2>
-        </div>
-        <form onSubmit={handleSubmit} className="space-y-4 p-6">
-          <div className="grid grid-cols-2 gap-2">
-            <button
-              type="button"
-              onClick={() => setAction('approve')}
-              className={`rounded-2xl border px-4 py-3 text-sm font-semibold transition ${action === 'approve' ? 'border-green-300 bg-green-50 text-green-700' : 'border-slate-200 text-slate-600 hover:bg-slate-50'}`}
-            >
-              ✓ Approve Lease
-            </button>
-            <button
-              type="button"
-              onClick={() => setAction('request-changes')}
-              className={`rounded-2xl border px-4 py-3 text-sm font-semibold transition ${action === 'request-changes' ? 'border-orange-300 bg-orange-50 text-orange-700' : 'border-slate-200 text-slate-600 hover:bg-slate-50'}`}
-            >
-              ↩ Request More Changes
-            </button>
-          </div>
-          <div>
-            <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">
-              Notes {action === 'request-changes' && <span className="text-red-500">*</span>}
             </label>
-            <textarea
-              value={notes}
-              onChange={e => setNotes(e.target.value)}
-              rows={3}
-              className={inputCls + ' resize-none'}
-              placeholder={action === 'approve' ? 'Optional comment…' : 'Describe what still needs to change…'}
-            />
+            <label className="block sm:col-span-2">
+              <span className="mb-1 block text-xs font-semibold text-slate-600">File name</span>
+              <input
+                value={pdfFileName}
+                onChange={(event) => setPdfFileName(event.target.value)}
+                placeholder="lease.pdf"
+                className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-[#2563eb] focus:ring-2 focus:ring-[#2563eb]/20"
+              />
+            </label>
           </div>
-          <div className="flex justify-end gap-2 pt-2">
-            <button type="button" onClick={onClose} disabled={submitting} className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50">Cancel</button>
-            <button
-              type="submit"
-              disabled={submitting}
-              className={`rounded-xl px-5 py-2 text-sm font-semibold text-white disabled:opacity-50 ${action === 'approve' ? 'bg-green-600 hover:bg-green-700' : 'bg-orange-600 hover:bg-orange-700'}`}
-            >
-              {submitting ? 'Submitting…' : action === 'approve' ? 'Approve' : 'Request Changes'}
-            </button>
-          </div>
+          <button
+            type="submit"
+            disabled={savingPdf || !String(pdfUrl || '').trim()}
+            className="mt-4 rounded-full bg-axis px-5 py-2.5 text-sm font-semibold text-white transition hover:brightness-105 disabled:opacity-50"
+          >
+            {savingPdf ? 'Saving…' : 'Save current PDF'}
+          </button>
         </form>
-      </div>
+      ) : null}
     </div>
   )
 }
-
-// ─── Main LeaseWorkspace ──────────────────────────────────────────────────────
 
 export default function LeaseWorkspace({ draft: initialDraft, isAdmin, manager, adminUser, onBack, onRefresh }) {
   const [draft, setDraft] = useState(initialDraft)
-  const [section, setSection] = useState('details')
   const [comments, setComments] = useState([])
-  const [versions, setVersions] = useState([])
-  const [auditLog, setAuditLog] = useState([])
+  const [currentPdf, setCurrentPdf] = useState(null)
   const [loading, setLoading] = useState(true)
   const [commentText, setCommentText] = useState('')
   const [commentSubmitting, setCommentSubmitting] = useState(false)
-  const [showEditRequestModal, setShowEditRequestModal] = useState(false)
-  const [showAdminRespondModal, setShowAdminRespondModal] = useState(false)
-  const [showManagerReviewModal, setShowManagerReviewModal] = useState(false)
-  const [actionBusy, setActionBusy] = useState(false)
-  const commentsEndRef = useRef(null)
+  const [managerRequestText, setManagerRequestText] = useState('')
+  const [adminReviewText, setAdminReviewText] = useState('')
+  const [pdfUrl, setPdfUrl] = useState('')
+  const [pdfFileName, setPdfFileName] = useState('')
+  const [savingPdf, setSavingPdf] = useState(false)
+  const [actionBusy, setActionBusy] = useState('')
 
   const currentUserRecordId = isAdmin
     ? (adminUser?.airtableRecordId || adminUser?.id || '')
     : (manager?.id || manager?.airtableRecordId || '')
 
-  const status = draft['Status'] || 'Draft Generated'
-  const statusCfg = getStatusConfig(status)
-  const leaseJson = (() => { try { return JSON.parse(draft['Lease JSON'] || '{}') } catch { return {} } })()
-  const managerNotes = parseManagerEditNotes(draft['Manager Edit Notes'])
-  const adminNotes = parseAdminResponseNotes(draft['Admin Response Notes'])
+  const status = String(draft?.Status || 'Draft Generated').trim() || 'Draft Generated'
+  const leaseJson = useMemo(() => {
+    try {
+      return JSON.parse(draft?.['Lease JSON'] || '{}')
+    } catch {
+      return {}
+    }
+  }, [draft])
 
-  const loadData = useCallback(async () => {
+  const canManagerAct = !isAdmin && statusIsDraftReady(status)
+  const canAdminAct = isAdmin && statusIsAdminReview(status)
+
+  const refreshAll = useCallback(async () => {
     setLoading(true)
     try {
-      const [c, v, a] = await Promise.all([
-        fetchComments(draft.id),
-        fetchVersions(draft.id),
-        fetchAuditLog(draft.id),
+      const [nextDraft, nextComments, nextPdf] = await Promise.all([
+        getLeaseDraftById(draft.id),
+        getLeaseCommentsForDraft(draft.id),
+        getCurrentLeaseVersion(draft.id),
       ])
-      setComments(c)
-      setVersions(v)
-      setAuditLog(a)
+      setDraft(nextDraft)
+      setComments(nextComments)
+      setCurrentPdf(nextPdf)
+      if (nextPdf?.['PDF URL']) {
+        setPdfUrl(nextPdf['PDF URL'])
+        setPdfFileName(nextPdf['File Name'] || '')
+      }
     } catch (err) {
-      console.warn('[LeaseWorkspace] loadData error:', err.message)
+      toast.error(err.message || 'Could not load lease details')
     } finally {
       setLoading(false)
     }
   }, [draft.id])
 
-  useEffect(() => { loadData() }, [loadData])
-
   useEffect(() => {
-    if (section === 'comments' && commentsEndRef.current) {
-      commentsEndRef.current.scrollIntoView({ behavior: 'smooth' })
-    }
-  }, [section, comments])
+    refreshAll()
+  }, [refreshAll])
 
-  async function handleAddComment(e) {
-    e.preventDefault()
-    if (!commentText.trim()) return
+  async function handleSavePdf() {
+    setSavingPdf(true)
+    try {
+      await upsertCurrentLeaseVersion({
+        leaseDraftId: draft.id,
+        pdfUrl,
+        fileName: pdfFileName,
+        uploaderName: isAdmin ? (adminUser?.name || 'Admin') : (manager?.name || 'Manager'),
+        uploaderRole: isAdmin ? 'Admin' : 'Manager',
+      })
+      toast.success('Current PDF updated')
+      await refreshAll()
+    } catch (err) {
+      toast.error(err.message || 'Could not save PDF')
+    } finally {
+      setSavingPdf(false)
+    }
+  }
+
+  async function handleAddComment(event) {
+    event.preventDefault()
+    const message = commentText.trim()
+    if (!message) return
     setCommentSubmitting(true)
     try {
       await callPortalAction('lease-add-comment', {
@@ -594,334 +233,292 @@ export default function LeaseWorkspace({ draft: initialDraft, isAdmin, manager, 
         authorName: isAdmin ? (adminUser?.name || 'Admin') : (manager?.name || 'Manager'),
         authorRole: isAdmin ? 'Admin' : 'Manager',
         authorRecordId: currentUserRecordId,
-        message: commentText.trim(),
+        message,
       })
       setCommentText('')
-      await loadData()
+      await refreshAll()
     } catch (err) {
-      toast.error(err.message || 'Failed to send comment')
+      toast.error(err.message || 'Could not add comment')
     } finally {
       setCommentSubmitting(false)
     }
   }
 
-  async function handleAdminSetStatus(newStatus) {
-    setActionBusy(true)
+  async function handleSubmitForAdminReview() {
+    const note = managerRequestText.trim()
+    if (!note) {
+      toast.error('Add a short note for admin.')
+      return
+    }
+    setActionBusy('manager-review')
+    try {
+      await callPortalAction('lease-submit-edit-request', {
+        leaseDraftId: draft.id,
+        managerRecordId: manager?.id || manager?.airtableRecordId || '',
+        managerName: manager?.name || 'Manager',
+        editNotes: note,
+        requestedFields: {},
+      })
+      setManagerRequestText('')
+      toast.success('Sent to admin')
+      onRefresh?.()
+      await refreshAll()
+    } catch (err) {
+      toast.error(err.message || 'Could not send to admin')
+    } finally {
+      setActionBusy('')
+    }
+  }
+
+  async function handleMarkInReview() {
+    setActionBusy('admin-in-review')
     try {
       await callPortalAction('lease-admin-respond', {
         leaseDraftId: draft.id,
         adminRecordId: adminUser?.airtableRecordId || adminUser?.id || '',
         adminName: adminUser?.name || 'Admin',
-        newStatus,
+        newStatus: 'Admin In Review',
         adminNotes: '',
         updatedFields: {},
       })
-      toast.success(`Status updated to "${newStatus}"`)
-      setDraft(d => ({ ...d, Status: newStatus }))
+      toast.success('Review started')
       onRefresh?.()
-      await loadData()
+      await refreshAll()
     } catch (err) {
-      toast.error(err.message || 'Failed to update status')
+      toast.error(err.message || 'Could not mark in review')
     } finally {
-      setActionBusy(false)
+      setActionBusy('')
     }
   }
 
-  function handleActionDone() {
-    onRefresh?.()
-    loadData()
-    // Re-fetch the draft to get updated status
-    fetch(`${AT_BASE}/Lease%20Drafts/${draft.id}`, {
-      headers: { Authorization: `Bearer ${AIRTABLE_TOKEN}` }
-    })
-      .then(r => r.json())
-      .then(data => { if (data?.fields) setDraft({ id: draft.id, ...data.fields }) })
-      .catch(() => {})
+  async function handleSendBackToManager() {
+    setActionBusy('admin-send-back')
+    try {
+      await callPortalAction('lease-admin-respond', {
+        leaseDraftId: draft.id,
+        adminRecordId: adminUser?.airtableRecordId || adminUser?.id || '',
+        adminName: adminUser?.name || 'Admin',
+        newStatus: 'Sent Back to Manager',
+        adminNotes: adminReviewText.trim(),
+        updatedFields: {},
+      })
+      setAdminReviewText('')
+      toast.success('Sent to manager')
+      onRefresh?.()
+      await refreshAll()
+    } catch (err) {
+      toast.error(err.message || 'Could not send to manager')
+    } finally {
+      setActionBusy('')
+    }
   }
 
-  const canManagerSubmitRequest = MANAGER_CAN_SUBMIT_REQUEST.has(status)
-  const canManagerReview = MANAGER_CAN_REVIEW_ADMIN_UPDATE.has(status)
-  const canAdminRespond = ['Submitted to Admin', 'Admin In Review', 'Changes Made'].includes(status)
-  const canAdminFinalize = status === 'Manager Approved'
+  async function handleSendToResident() {
+    setActionBusy('send-resident')
+    try {
+      await publishLeaseDraft(draft.id)
+      toast.success('Lease sent')
+      onRefresh?.()
+      await refreshAll()
+    } catch (err) {
+      toast.error(err.message || 'Could not send to resident')
+    } finally {
+      setActionBusy('')
+    }
+  }
 
-  const cardCls = 'rounded-3xl border border-slate-200 bg-white shadow-sm'
+  const cardCls = 'rounded-3xl border border-slate-200 bg-white p-5 shadow-sm'
 
   return (
     <div className="space-y-5">
-      {/* Header */}
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="flex items-center gap-3">
-          <button type="button" onClick={onBack} className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-500 transition hover:bg-slate-50">
-            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M10.5 19.5 3 12m0 0 7.5-7.5M3 12h18" /></svg>
+          <button
+            type="button"
+            onClick={onBack}
+            className="flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-500 transition hover:bg-slate-50"
+          >
+            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M10.5 19.5 3 12m0 0 7.5-7.5M3 12h18" />
+            </svg>
           </button>
           <div>
-            <div className="flex items-center gap-2">
-              <span className="text-xs font-bold uppercase tracking-widest text-slate-400">Lease</span>
-              <span className="font-mono text-xs text-slate-400">#{draft.id?.slice(-8)}</span>
+            <div className="flex flex-wrap items-center gap-2 text-xs font-bold uppercase tracking-[0.18em] text-slate-400">
+              <span>Lease</span>
+              <span>#{draft.id?.slice(-8)}</span>
             </div>
-            <h1 className="text-xl font-black text-slate-900">
-              {draft['Resident Name'] || leaseJson.tenantName || 'Unnamed Tenant'}
-            </h1>
+            <h1 className="text-xl font-black text-slate-900">{draft['Resident Name'] || 'Unnamed resident'}</h1>
+            <p className="mt-0.5 text-sm text-slate-500">{draft['Property'] || 'Property not set'}{draft['Unit'] ? ` · ${draft['Unit']}` : ''}</p>
           </div>
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <StatusBadge status={status} />
-          {statusCfg.adminActionNeeded && (
-            <span className="rounded-full bg-blue-100 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide text-blue-700">Admin action needed</span>
-          )}
-          {statusCfg.managerActionNeeded && (
-            <span className="rounded-full bg-orange-100 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide text-orange-700">Your action needed</span>
-          )}
+          <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide text-slate-600">{queueLabel(status)}</span>
         </div>
       </div>
 
-      {/* Requested changes banner */}
-      {managerNotes && ['Submitted to Admin', 'Admin In Review'].includes(status) && (
-        <div className="rounded-2xl border border-blue-200 bg-blue-50 p-4">
-          <p className="mb-1 text-xs font-bold uppercase tracking-wide text-blue-700">Manager Edit Request</p>
-          <p className="text-sm text-blue-900 whitespace-pre-wrap">{managerNotes.freeText}</p>
-          {managerNotes.requestedFields && Object.values(managerNotes.requestedFields).some(Boolean) && (
-            <dl className="mt-2 grid grid-cols-2 gap-x-4 gap-y-0.5 sm:grid-cols-3">
-              {Object.entries({
-                'Tenant': managerNotes.requestedFields?.tenantName,
-                'Property': managerNotes.requestedFields?.property,
-                'Room': managerNotes.requestedFields?.room,
-                'Start': managerNotes.requestedFields?.leaseStart,
-                'End': managerNotes.requestedFields?.leaseEnd,
-                'Rent': managerNotes.requestedFields?.rent ? `$${managerNotes.requestedFields.rent}` : '',
-                'Deposit': managerNotes.requestedFields?.deposit ? `$${managerNotes.requestedFields.deposit}` : '',
-                'Utilities': managerNotes.requestedFields?.utilities ? `$${managerNotes.requestedFields.utilities}` : '',
-              }).filter(([, v]) => v).map(([k, v]) => (
-                <React.Fragment key={k}>
-                  <dt className="text-[10px] font-bold uppercase text-blue-500">{k}</dt>
-                  <dd className="text-xs font-medium text-blue-900">{v}</dd>
-                </React.Fragment>
-              ))}
-            </dl>
-          )}
-        </div>
-      )}
+      {loading ? <div className={`${cardCls} text-sm text-slate-500`}>Loading lease…</div> : null}
 
-      {/* Admin response banner */}
-      {adminNotes && status === 'Sent Back to Manager' && (
-        <div className="rounded-2xl border border-orange-200 bg-orange-50 p-4">
-          <p className="mb-1 text-xs font-bold uppercase tracking-wide text-orange-700">Admin Update — Please Review</p>
-          <p className="text-sm text-orange-900 whitespace-pre-wrap">{adminNotes.freeText}</p>
-        </div>
-      )}
-
-      {/* Section tabs */}
-      <div className={cardCls}>
-        <div className="flex overflow-x-auto border-b border-slate-100 px-2">
-          {[
-            { id: 'details', label: 'Lease Details' },
-            { id: 'comments', label: 'Comments', badge: comments.length },
-            { id: 'versions', label: 'PDF Versions', badge: versions.length },
-            { id: 'timeline', label: 'Activity', badge: auditLog.length },
-          ].map(t => (
-            <SectionTab key={t.id} {...t} active={section === t.id} onClick={setSection} />
-          ))}
-        </div>
-
-        <div className="p-5">
-          {/* ── Details ── */}
-          {section === 'details' && (
-            <dl className="grid gap-3 sm:grid-cols-2">
-              <FieldRow label="Tenant" value={draft['Resident Name'] || leaseJson.tenantName} />
+      <div className="grid gap-5 xl:grid-cols-[minmax(0,1.1fr)_minmax(340px,0.9fr)]">
+        <div className="space-y-5">
+          <div className={cardCls}>
+            <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">Lease Details</div>
+            <dl className="mt-4 grid gap-3 sm:grid-cols-2">
+              <FieldRow label="Resident" value={draft['Resident Name'] || leaseJson.tenantName} />
               <FieldRow label="Email" value={draft['Resident Email'] || leaseJson.tenantEmail} />
               <FieldRow label="Property" value={draft['Property'] || leaseJson.propertyName} />
-              <FieldRow label="Unit / Room" value={draft['Unit'] || leaseJson.roomNumber} />
+              <FieldRow label="Unit" value={draft['Unit'] || leaseJson.roomNumber} />
               <FieldRow label="Lease Start" value={leaseJson.leaseStart || leaseJson.leaseStartFmt} />
               <FieldRow label="Lease End" value={leaseJson.leaseEnd || leaseJson.leaseEndFmt} />
               <FieldRow label="Monthly Rent" value={leaseJson.monthlyRent ? fmtDollar(leaseJson.monthlyRent) : null} />
               <FieldRow label="Security Deposit" value={leaseJson.securityDeposit ? fmtDollar(leaseJson.securityDeposit) : null} />
               <FieldRow label="Utility Fee" value={leaseJson.utilityFee ? fmtDollar(leaseJson.utilityFee) : null} />
-              <FieldRow label="Current Version" value={draft['Current Version'] ? `v${draft['Current Version']}` : 'v1'} />
-              <FieldRow label="Status" value={statusCfg.label} />
-              <FieldRow label="Last Updated" value={fmtTs(draft['Updated At'] || draft['created_at'])} />
-              {leaseJson.specialTerms && (
-                <div className="col-span-2">
-                  <FieldRow label="Special Terms" value={leaseJson.specialTerms} />
-                </div>
-              )}
+              <FieldRow label="Last Updated" value={fmtTs(draft['Updated At'] || draft.created_at)} />
             </dl>
-          )}
+            {leaseJson.specialTerms ? (
+              <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
+                <div className="mb-1 text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">Special Terms</div>
+                <p className="whitespace-pre-wrap">{leaseJson.specialTerms}</p>
+              </div>
+            ) : null}
+          </div>
 
-          {/* ── Comments ── */}
-          {section === 'comments' && (
-            <div className="flex flex-col gap-4">
-              {loading ? (
-                <div className="py-8 text-center text-sm text-slate-500">Loading comments…</div>
-              ) : comments.length === 0 ? (
-                <div className="py-10 text-center">
-                  <div className="mb-2 text-3xl" aria-hidden>💬</div>
-                  <p className="text-sm font-semibold text-slate-700">No comments yet</p>
-                  <p className="text-xs text-slate-500">Use the form below to start the conversation</p>
-                </div>
-              ) : (
-                <div className="flex flex-col gap-4">
-                  {comments.map(c => (
-                    <CommentBubble key={c.id} comment={c} currentUserRecordId={currentUserRecordId} />
-                  ))}
-                  <div ref={commentsEndRef} />
-                </div>
-              )}
-              <form onSubmit={handleAddComment} className="mt-2 flex gap-2 border-t border-slate-100 pt-4">
-                <input
-                  value={commentText}
-                  onChange={e => setCommentText(e.target.value)}
-                  placeholder="Add a comment…"
-                  className="flex-1 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm outline-none focus:border-[#2563eb] focus:ring-2 focus:ring-[#2563eb]/20"
-                />
-                <button
-                  type="submit"
-                  disabled={commentSubmitting || !commentText.trim()}
-                  className="rounded-2xl bg-[#2563eb] px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-40 hover:bg-blue-700"
-                >
-                  {commentSubmitting ? '…' : 'Send'}
-                </button>
-              </form>
-            </div>
-          )}
+          <PdfCard
+            currentPdf={currentPdf}
+            showReplaceForm={canManagerAct || canAdminAct}
+            pdfUrl={pdfUrl}
+            setPdfUrl={setPdfUrl}
+            pdfFileName={pdfFileName}
+            setPdfFileName={setPdfFileName}
+            savingPdf={savingPdf}
+            onSavePdf={handleSavePdf}
+          />
 
-          {/* ── PDF Versions ── */}
-          {section === 'versions' && (
-            <div className="flex flex-col gap-3">
-              {loading ? (
-                <div className="py-8 text-center text-sm text-slate-500">Loading versions…</div>
-              ) : versions.length === 0 ? (
-                <div className="py-10 text-center">
-                  <div className="mb-2 text-3xl" aria-hidden>📄</div>
-                  <p className="text-sm font-semibold text-slate-700">No PDF versions yet</p>
-                  {isAdmin ? (
-                    <p className="text-xs text-slate-500">Use "Update Lease" to attach a revised PDF. Each upload creates a versioned record.</p>
-                  ) : (
-                    <p className="text-xs text-slate-500">PDF versions will appear here once admin uploads a revised draft.</p>
-                  )}
-                </div>
-              ) : versions.map(v => <VersionRow key={v.id} version={v} />)}
+          <div className={cardCls}>
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">Comments</div>
+                <h3 className="mt-1 text-base font-black text-slate-900">Messages</h3>
+              </div>
+              <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-600">{comments.length}</span>
             </div>
-          )}
-
-          {/* ── Activity Timeline ── */}
-          {section === 'timeline' && (
-            <div>
-              {loading ? (
-                <div className="py-8 text-center text-sm text-slate-500">Loading activity…</div>
-              ) : auditLog.length === 0 ? (
-                <div className="py-10 text-center">
-                  <div className="mb-2 text-3xl" aria-hidden>📋</div>
-                  <p className="text-sm font-semibold text-slate-700">No activity logged yet</p>
-                </div>
-              ) : (
-                <div className="border-l-2 border-slate-100 pl-4">
-                  {auditLog.map(e => <TimelineEntry key={e.id} entry={e} />)}
-                </div>
-              )}
-            </div>
-          )}
+            {comments.length === 0 ? (
+              <p className="mt-4 text-sm text-slate-500">No comments yet.</p>
+            ) : (
+              <div className="mt-4 space-y-3">
+                {comments.map((comment) => (
+                  <CommentBubble key={comment.id} comment={comment} currentUserRecordId={currentUserRecordId} />
+                ))}
+              </div>
+            )}
+            <form onSubmit={handleAddComment} className="mt-4 flex gap-2 border-t border-slate-100 pt-4">
+              <input
+                value={commentText}
+                onChange={(event) => setCommentText(event.target.value)}
+                placeholder="Add a comment…"
+                className="flex-1 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm outline-none focus:border-[#2563eb] focus:ring-2 focus:ring-[#2563eb]/20"
+              />
+              <button
+                type="submit"
+                disabled={commentSubmitting || !commentText.trim()}
+                className="rounded-2xl bg-[#2563eb] px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-blue-700 disabled:opacity-40"
+              >
+                {commentSubmitting ? 'Sending…' : 'Send'}
+              </button>
+            </form>
+          </div>
         </div>
-      </div>
 
-      {/* Action Buttons */}
-      <div className={`${cardCls} p-5`}>
-        <p className="mb-3 text-xs font-bold uppercase tracking-wide text-slate-400">Actions</p>
-        <div className="flex flex-wrap gap-2">
-          {!isAdmin && (
-            <>
-              {canManagerSubmitRequest && (
-                <button
-                  type="button"
-                  onClick={() => setShowEditRequestModal(true)}
-                  className="rounded-xl bg-[#2563eb] px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700"
-                >
-                  Request Lease Changes
-                </button>
-              )}
-              {canManagerReview && (
-                <button
-                  type="button"
-                  onClick={() => setShowManagerReviewModal(true)}
-                  className="rounded-xl bg-green-600 px-4 py-2 text-sm font-semibold text-white hover:bg-green-700"
-                >
-                  Review Admin Update
-                </button>
-              )}
-            </>
-          )}
-
-          {isAdmin && (
-            <>
-              {canAdminRespond && (
+        <div className="space-y-5">
+          {!isAdmin ? (
+            <div className={cardCls}>
+              <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">Manager Actions</div>
+              <h3 className="mt-1 text-base font-black text-slate-900">Manager Review</h3>
+              <p className="mt-2 text-sm text-slate-500">
+                Keep one current PDF, send notes to admin if needed, and send the lease to the resident when it is ready.
+              </p>
+              {canManagerAct ? (
                 <>
-                  {status === 'Submitted to Admin' && (
+                  <label className="mt-4 block">
+                    <span className="mb-1 block text-xs font-semibold text-slate-600">Note for admin</span>
+                    <textarea
+                      value={managerRequestText}
+                      onChange={(event) => setManagerRequestText(event.target.value)}
+                      rows={4}
+                      placeholder="What does admin need to update?"
+                      className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm outline-none focus:border-[#2563eb] focus:ring-2 focus:ring-[#2563eb]/20"
+                    />
+                  </label>
+                  <div className="mt-4 flex flex-wrap gap-2">
                     <button
                       type="button"
-                      disabled={actionBusy}
-                      onClick={() => handleAdminSetStatus('Admin In Review')}
-                      className="rounded-xl border border-indigo-300 bg-indigo-50 px-4 py-2 text-sm font-semibold text-indigo-700 hover:bg-indigo-100 disabled:opacity-50"
+                      onClick={handleSubmitForAdminReview}
+                      disabled={actionBusy === 'manager-review'}
+                      className="rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:opacity-50"
                     >
-                      Mark In Review
+                      {actionBusy === 'manager-review' ? 'Sending…' : 'Send to Admin'}
                     </button>
-                  )}
-                  <button
-                    type="button"
-                    onClick={() => setShowAdminRespondModal(true)}
-                    className="rounded-xl bg-[#2563eb] px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700"
-                  >
-                    Edit Lease & Send Back
-                  </button>
+                    <button
+                      type="button"
+                      onClick={handleSendToResident}
+                      disabled={actionBusy === 'send-resident'}
+                      className="rounded-full bg-axis px-4 py-2 text-sm font-semibold text-white transition hover:brightness-105 disabled:opacity-50"
+                    >
+                      {actionBusy === 'send-resident' ? 'Sending…' : 'Send Lease'}
+                    </button>
+                  </div>
                 </>
+              ) : (
+                <p className="mt-4 text-sm text-slate-500">This lease is currently in {queueLabel(status).toLowerCase()}.</p>
               )}
-              {canAdminFinalize && (
-                <button
-                  type="button"
-                  disabled={actionBusy}
-                  onClick={() => handleAdminSetStatus('Ready for Signature')}
-                  className="rounded-xl bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-50"
-                >
-                  Mark Ready for Signature
-                </button>
+            </div>
+          ) : (
+            <div className={cardCls}>
+              <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">Admin Actions</div>
+              <h3 className="mt-1 text-base font-black text-slate-900">Admin Review</h3>
+              <p className="mt-2 text-sm text-slate-500">
+                Review the draft, replace the current PDF if needed, and send the update back to the manager.
+              </p>
+              {canAdminAct ? (
+                <>
+                  <label className="mt-4 block">
+                    <span className="mb-1 block text-xs font-semibold text-slate-600">Note for manager</span>
+                    <textarea
+                      value={adminReviewText}
+                      onChange={(event) => setAdminReviewText(event.target.value)}
+                      rows={4}
+                      placeholder="What should the manager know?"
+                      className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm outline-none focus:border-[#2563eb] focus:ring-2 focus:ring-[#2563eb]/20"
+                    />
+                  </label>
+                  <div className="mt-4 flex flex-wrap gap-2">
+                    {status === 'Submitted to Admin' ? (
+                      <button
+                        type="button"
+                        onClick={handleMarkInReview}
+                        disabled={actionBusy === 'admin-in-review'}
+                        className="rounded-full border border-indigo-300 bg-indigo-50 px-4 py-2 text-sm font-semibold text-indigo-700 transition hover:bg-indigo-100 disabled:opacity-50"
+                      >
+                        {actionBusy === 'admin-in-review' ? 'Updating…' : 'Start Review'}
+                      </button>
+                    ) : null}
+                    <button
+                      type="button"
+                      onClick={handleSendBackToManager}
+                      disabled={actionBusy === 'admin-send-back'}
+                      className="rounded-full bg-axis px-4 py-2 text-sm font-semibold text-white transition hover:brightness-105 disabled:opacity-50"
+                    >
+                      {actionBusy === 'admin-send-back' ? 'Sending…' : 'Send to Manager'}
+                    </button>
+                  </div>
+                </>
+              ) : (
+                <p className="mt-4 text-sm text-slate-500">This lease is currently in {queueLabel(status).toLowerCase()}.</p>
               )}
-            </>
+            </div>
           )}
-
-          {/* Always visible: Comments shortcut */}
-          <button
-            type="button"
-            onClick={() => setSection('comments')}
-            className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
-          >
-            View Comments {comments.length > 0 ? `(${comments.length})` : ''}
-          </button>
         </div>
       </div>
-
-      {/* Modals */}
-      {showEditRequestModal && (
-        <EditRequestModal
-          draft={draft}
-          manager={manager}
-          onClose={() => setShowEditRequestModal(false)}
-          onSubmitted={handleActionDone}
-        />
-      )}
-      {showAdminRespondModal && (
-        <AdminRespondModal
-          draft={draft}
-          adminUser={adminUser}
-          onClose={() => setShowAdminRespondModal(false)}
-          onSubmitted={handleActionDone}
-        />
-      )}
-      {showManagerReviewModal && (
-        <ManagerReviewModal
-          draft={draft}
-          manager={manager}
-          onClose={() => setShowManagerReviewModal(false)}
-          onSubmitted={handleActionDone}
-        />
-      )}
     </div>
   )
 }
