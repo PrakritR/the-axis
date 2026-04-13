@@ -4983,7 +4983,7 @@ function ApplicationsPanel({ allowedPropertyNames, manager }) {
 // ─── CalendarTabPanel ─────────────────────────────────────────────────────────
 export function CalendarTabPanel({ manager, allowedPropertyNames, calendarMode = 'manager' }) {
   const isAdminCalendar = calendarMode === 'admin'
-  const view = 'month'
+  const [view, setView] = useState('month')
   const [anchorDate, setAnchorDate] = useState(() => new Date())
   const [selectedDateKey, setSelectedDateKey] = useState(() => dateKeyFromDate(new Date()))
   const [schedulingRows, setSchedulingRows] = useState([])
@@ -5233,8 +5233,14 @@ export function CalendarTabPanel({ manager, allowedPropertyNames, calendarMode =
             const k = dateKeyFromDate(t)
             setSelectedDateKey(k)
             setAnchorDate(t)
+            setView('day')
           }}
-          className="rounded-2xl border border-transparent px-4 py-3 text-left text-slate-600 transition hover:border-slate-200 hover:bg-white"
+          className={classNames(
+            'rounded-2xl border px-4 py-3 text-left transition',
+            view === 'day'
+              ? 'border-[#2563eb]/30 bg-white text-slate-900 shadow-[0_10px_24px_rgba(37,99,235,0.14)]'
+              : 'border-transparent text-slate-600 hover:border-slate-200 hover:bg-white',
+          )}
         >
           <div className="text-lg font-black leading-none tabular-nums text-slate-900">{calendarStats.today}</div>
           <div className="mt-1 text-sm font-semibold">Today</div>
@@ -5246,8 +5252,14 @@ export function CalendarTabPanel({ manager, allowedPropertyNames, calendarMode =
             const k = dateKeyFromDate(d)
             setSelectedDateKey(k)
             setAnchorDate(d)
+            setView('week')
           }}
-          className="rounded-2xl border border-transparent px-4 py-3 text-left text-slate-600 transition hover:border-slate-200 hover:bg-white"
+          className={classNames(
+            'rounded-2xl border px-4 py-3 text-left transition',
+            view === 'week'
+              ? 'border-[#2563eb]/30 bg-white text-slate-900 shadow-[0_10px_24px_rgba(37,99,235,0.14)]'
+              : 'border-transparent text-slate-600 hover:border-slate-200 hover:bg-white',
+          )}
         >
           <div className="text-lg font-black leading-none tabular-nums text-slate-900">{calendarStats.week}</div>
           <div className="mt-1 text-sm font-semibold">This week</div>
@@ -5260,8 +5272,14 @@ export function CalendarTabPanel({ manager, allowedPropertyNames, calendarMode =
             const k = dateKeyFromDate(first)
             setSelectedDateKey(k)
             setAnchorDate(first)
+            setView('month')
           }}
-          className="rounded-2xl border border-transparent px-4 py-3 text-left text-slate-600 transition hover:border-slate-200 hover:bg-white"
+          className={classNames(
+            'rounded-2xl border px-4 py-3 text-left transition',
+            view === 'month'
+              ? 'border-[#2563eb]/30 bg-white text-slate-900 shadow-[0_10px_24px_rgba(37,99,235,0.14)]'
+              : 'border-transparent text-slate-600 hover:border-slate-200 hover:bg-white',
+          )}
         >
           <div className="text-lg font-black leading-none tabular-nums text-slate-900">{calendarStats.month}</div>
           <div className="mt-1 text-sm font-semibold">This month</div>
