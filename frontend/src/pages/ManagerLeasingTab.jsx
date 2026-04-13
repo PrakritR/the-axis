@@ -267,11 +267,6 @@ export default function ManagerLeasingTab({ manager, allowedPropertyNames }) {
     }, {})
   }, [drafts])
 
-  const actionNeededDrafts = useMemo(
-    () => drafts.filter(d => getStatusConfig(d['Status'] || 'Draft Generated').managerActionNeeded),
-    [drafts]
-  )
-
   if (selectedDraft) {
     return (
       <LeaseWorkspace
@@ -308,28 +303,6 @@ export default function ManagerLeasingTab({ manager, allowedPropertyNames }) {
           </button>
         </div>
       </div>
-
-      {/* Action-needed banner */}
-      {actionNeededDrafts.length > 0 && (
-        <div className="flex flex-wrap items-center gap-3 rounded-2xl border border-orange-200 bg-orange-50 px-4 py-3">
-          <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-orange-400 text-xs font-black text-white">
-            {actionNeededDrafts.length}
-          </span>
-          <div className="flex-1">
-            <p className="text-sm font-bold text-orange-900">Action needed</p>
-            <p className="text-xs text-orange-800">
-              {actionNeededDrafts.length} lease{actionNeededDrafts.length !== 1 ? 's' : ''} waiting on you
-            </p>
-          </div>
-          <button
-            type="button"
-            onClick={() => setStatusFilter('draft_ready')}
-            className="rounded-xl bg-orange-500 px-3 py-1.5 text-xs font-semibold text-white hover:bg-orange-600"
-          >
-            View
-          </button>
-        </div>
-      )}
 
       {loadError && (
         <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-900">
