@@ -5,6 +5,7 @@ import {
   applicationDisplayLabelFromApprovalState,
 } from './applicationApprovalState.js'
 import { parseAxisListingMetaBlock } from './axisListingMeta.js'
+import { normalizeLeasingFromMeta } from './managerPropertyFormAirtableMap.js'
 
 export function formatApplicationDetailValue(val) {
   if (val === null || val === undefined) return null
@@ -53,10 +54,23 @@ function metaRoomsToItems(meta) {
     pushIf('Utilities', room.utilities)
     pushIf('Utilities Cost', room.utilitiesCost)
     pushIf('Floor/Notes', room.notes)
+    pushIf('Bathroom setup', room.bathroomSetup)
     pushIf('Furniture Included', room.furnitureIncluded)
     pushIf('Additional Features', room.additionalFeatures)
+    if (room.unavailable === true || room.unavailable === 1) {
+      items.push({ label: `${label} — marked unavailable`, value: 'Yes' })
+    }
   }
   return items
+}
+
+function humanizeMetaKey(k) {
+  const s = String(k || '')
+    .replace(/([A-Z])/g, ' $1')
+    .replace(/_/g, ' ')
+    .trim()
+  if (!s) return 'Field'
+  return s.charAt(0).toUpperCase() + s.slice(1)
 }
 
 function metaFinancialItems(meta) {
@@ -66,32 +80,97 @@ function metaFinancialItems(meta) {
     const v = formatApplicationDetailValue(value)
     if (v) out.push({ label, value: v })
   }
-  pushIf('Security Deposit', meta.financials.securityDeposit)
-  pushIf('Move-In Charges', meta.financials.moveInCharges)
+  pushIf('Security deposit (from listing)', meta.financials.securityDeposit)
+  pushIf('Move-in charges (from listing)', meta.financials.moveInCharges)
+  const seen = new Set(['securityDeposit', 'moveInCharges'])
+  for (const [k, val] of Object.entries(meta.financials)) {
+    if (seen.has(k)) continue
+    pushIf(`${humanizeMetaKey(k)} (listing)`, val)
+  }
   return out
 }
 
 function metaLeasingItems(meta) {
   if (!meta?.leasing || typeof meta.leasing !== 'object') return []
+  const norm = normalizeLeasingFromMeta(meta.leasing)
   const out = []
   const pushIf = (label, value) => {
     const v = formatApplicationDetailValue(value)
     if (v) out.push({ label, value: v })
   }
-  pushIf('Full House Price', meta.leasing['Full House Price'])
-  pushIf('Promotional Full House Price', meta.leasing['Promotional Full House Price'])
-  pushIf('Lease Length Information', meta.leasing['Lease Length Information'])
-  const packages = Array.isArray(meta.leasing['Leasing Packages']) ? meta.leasing['Leasing Packages'] : []
-  for (const pkg of packages) {
-    if (!pkg || typeof pkg !== 'object') continue
-    const name = String(pkg['Bundle Name'] || 'Package').trim()
-    pushIf(`${name} Monthly Rent`, pkg['Bundle Monthly Rent'])
-    const rooms = Array.isArray(pkg['Bundle Rooms Included'])
-      ? pkg['Bundle Rooms Included'].map((r) => String(r).trim()).filter(Boolean).join(', ')
-      : ''
-    if (rooms) out.push({ label: `${name} Rooms Included`, value: rooms })
+  pushIf('Full house price (from listing)', norm.fullHousePrice)
+  pushIf('Promotional full house price (from listing)', norm.promoPrice)
+  pushIf('Lease length information (from listing)', norm.leaseLengthInfo)
+  for (const b of norm.bundles) {
+    const name = String(b.name || 'Leasing package').trim() || 'Leasing package'
+    pushIf(`${name} — monthly rent`, b.price)
+    if (b.rooms?.length) {
+      out.push({
+        label: `${name} — rooms included`,
+        value: b.rooms.map((r) => String(r).trim()).filter(Boolean).join(', '),
+      })
+    }
   }
   return out
+}
+
+function metaPropertyListingItems(meta) {
+  const out = []
+  const pushIf = (label, value) => {
+    const v = formatApplicationDetailValue(value)
+    if (v) out.push({ label, value: v })
+  }
+  pushIf('Property type (from listing)', meta.propertyTypeOther)
+  const bt = Number(meta.bathroomTotalDecimal)
+  if (Number.isFinite(bt) && bt > 0) {
+    out.push({ label: 'Total bathrooms (from listing)', value: String(bt) })
+  }
+  const windows = Array.isArray(meta.listingAvailabilityWindows) ? meta.listingAvailabilityWindows : []
+  if (windows.length) {
+    const parts = windows
+      .map((w) => {
+        const st = String(w?.start || '').trim()
+        const en = String(w?.end || '').trim()
+        if (!st) return ''
+        if (!en) return `${st} onward`
+        return `${st} – ${en}`
+      })
+      .filter(Boolean)
+    if (parts.length) out.push({ label: 'Move-in availability (listing windows)', value: parts.join('; ') })
+  }
+  return out
+}
+
+function metaSharedSpacesListingItems(meta) {
+  const rows = Array.isArray(meta.sharedSpacesDetail) ? meta.sharedSpacesDetail : []
+  const out = []
+  rows.forEach((row, i) => {
+    if (!row || typeof row !== 'object') return
+    const title = String(row.title || row.name || `Shared space ${i + 1}`).trim()
+    const desc = String(row.description || row.notes || '').trim()
+    const imgs = Array.isArray(row.imageUrls) ? row.imageUrls.filter(Boolean).length : 0
+    const bits = [desc, imgs ? `${imgs} photo(s)` : ''].filter(Boolean)
+    if (bits.length) out.push({ label: title, value: bits.join(' · ') })
+  })
+  return out
+}
+
+function metaListingVideosItems(meta) {
+  const vids = Array.isArray(meta.listingVideos) ? meta.listingVideos : []
+  if (!vids.length) return []
+  const lines = vids
+    .map((v, i) => {
+      const o = v && typeof v === 'object' ? v : {}
+      const label = String(o.label || `Video ${i + 1}`).trim()
+      const url = String(o.url || o.src || '').trim()
+      if (o.placeholder) {
+        return `${label}${o.placeholderText ? ` — ${o.placeholderText}` : ' (coming soon)'}`
+      }
+      return url ? `${label}: ${url}` : label || null
+    })
+    .filter(Boolean)
+  if (!lines.length) return []
+  return [{ label: 'Listing video tours', value: lines.join('\n') }]
 }
 
 /** Airtable field → label (aligned with Apply.jsx signer application) */
@@ -250,20 +329,44 @@ export function ApplicationDetailPanel({ application, partnerLabel, onClose, adm
         if (parsedMeta.userText) {
           const parsedLines = parseLabeledLinesBlock(parsedMeta.userText)
           if (parsedLines.length) {
-            parsedExtraSections.push({ title: `${key} details`, items: parsedLines })
+            parsedExtraSections.push({ title: `${key} (notes)`, items: parsedLines })
           } else {
-            otherItems.push({ label: key, value: parsedMeta.userText })
+            parsedExtraSections.push({
+              title: `${key} (notes)`,
+              items: [{ label: 'Free-form text', value: parsedMeta.userText }],
+            })
           }
         }
 
+        const propItems = metaPropertyListingItems(parsedMeta.meta)
+        if (propItems.length) {
+          parsedExtraSections.push({ title: 'Listing — property', items: propItems })
+        }
+
         const roomItems = metaRoomsToItems(parsedMeta.meta)
-        if (roomItems.length) parsedExtraSections.push({ title: 'Room details', items: roomItems })
+        if (roomItems.length) {
+          parsedExtraSections.push({ title: 'Listing — rooms', items: roomItems })
+        }
 
         const finItems = metaFinancialItems(parsedMeta.meta)
-        if (finItems.length) parsedExtraSections.push({ title: 'Financial summary', items: finItems })
+        if (finItems.length) {
+          parsedExtraSections.push({ title: 'Listing — financials', items: finItems })
+        }
 
         const leasingItems = metaLeasingItems(parsedMeta.meta)
-        if (leasingItems.length) parsedExtraSections.push({ title: 'Leasing options', items: leasingItems })
+        if (leasingItems.length) {
+          parsedExtraSections.push({ title: 'Listing — leasing & packages', items: leasingItems })
+        }
+
+        const spaceItems = metaSharedSpacesListingItems(parsedMeta.meta)
+        if (spaceItems.length) {
+          parsedExtraSections.push({ title: 'Listing — shared spaces', items: spaceItems })
+        }
+
+        const vidItems = metaListingVideosItems(parsedMeta.meta)
+        if (vidItems.length) {
+          parsedExtraSections.push({ title: 'Listing — media', items: vidItems })
+        }
 
         continue
       }
@@ -359,9 +462,9 @@ export function ApplicationDetailPanel({ application, partnerLabel, onClose, adm
         <div key={sec.title}>
           <h3 className="mb-2 text-[11px] font-bold uppercase tracking-[0.14em] text-slate-400">{sec.title}</h3>
           <dl className="rounded-2xl border border-slate-100 bg-slate-50/50 px-4">
-            {sec.items.map((row) => (
+            {sec.items.map((row, rowIdx) => (
               <div
-                key={`${sec.title}-${row.label}`}
+                key={`${sec.title}-${rowIdx}-${row.label}`}
                 className="grid gap-1 border-b border-slate-100 py-2.5 last:border-b-0 sm:grid-cols-[minmax(0,200px)_1fr] sm:gap-4"
               >
                 <dt className="text-xs font-semibold text-slate-500">{row.label}</dt>

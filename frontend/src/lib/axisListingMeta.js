@@ -20,16 +20,32 @@ export const AXIS_LISTING_META_START = '---AXIS_LISTING_META_JSON---'
 
 export const AXIS_LISTING_META_VERSION = 1
 
+/** Recognize canonical + legacy delimiters (some bases / older saves used two-dash markers). */
+const AXIS_LISTING_META_MARKERS = ['---AXIS_LISTING_META_JSON---', '--AXIS_LISTING_META_JSON--']
+
+function findAxisListingMetaMarker(raw) {
+  let bestIdx = -1
+  let bestLen = 0
+  for (const m of AXIS_LISTING_META_MARKERS) {
+    const i = raw.indexOf(m)
+    if (i !== -1 && (bestIdx === -1 || i < bestIdx)) {
+      bestIdx = i
+      bestLen = m.length
+    }
+  }
+  return bestIdx === -1 ? null : { idx: bestIdx, len: bestLen }
+}
+
 /**
  * @param {string} text
  * @returns {{ userText: string, meta: object | null }}
  */
 export function parseAxisListingMetaBlock(text) {
   const raw = String(text || '')
-  const idx = raw.indexOf(AXIS_LISTING_META_START)
-  if (idx === -1) return { userText: raw.trim(), meta: null }
-  const userText = raw.slice(0, idx).trim()
-  const jsonPart = raw.slice(idx + AXIS_LISTING_META_START.length).trim()
+  const found = findAxisListingMetaMarker(raw)
+  if (!found) return { userText: raw.trim(), meta: null }
+  const userText = raw.slice(0, found.idx).trim()
+  const jsonPart = raw.slice(found.idx + found.len).trim()
   try {
     const meta = JSON.parse(jsonPart)
     return { userText, meta: meta && typeof meta === 'object' ? meta : null }
@@ -51,4 +67,9 @@ export function mergeAxisListingMetaIntoOtherInfo(userOtherInfo, meta) {
   const payload = { v: AXIS_LISTING_META_VERSION, ...meta }
   const json = JSON.stringify(payload)
   return base ? `${base}\n\n${AXIS_LISTING_META_START}\n${json}` : `${AXIS_LISTING_META_START}\n${json}`
+}
+
+/** Strip any known Axis meta marker + JSON tail (for display-only strings). */
+export function stripAnyAxisListingMeta(text) {
+  return parseAxisListingMetaBlock(text).userText
 }
