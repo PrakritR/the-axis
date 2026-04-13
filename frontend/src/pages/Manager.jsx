@@ -21,6 +21,12 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, Navigate, useLocation } from 'react-router-dom'
 import toast from 'react-hot-toast'
 import { HOUSING_CONTACT_MESSAGE } from '../lib/housingSite'
+import {
+  mergeWorkOrderMetaBlock,
+  parseWorkOrderMetaBlock,
+  workOrderPlainNotes,
+  workOrderScheduledMeta,
+} from '../lib/workOrderShared.js'
 import { readJsonResponse } from '../lib/readJsonResponse'
 import { CALENDAR_EVENT_TYPES, eventFromSchedulingRow, normalizeEventType } from '../lib/calendarEventModel'
 import ManagerInboxPage from '../components/manager-inbox/ManagerInboxPage'
@@ -80,6 +86,7 @@ import {
   deriveApplicationApprovalState,
   applicationRejectedFieldName,
 } from '../lib/applicationApprovalState.js'
+import ManagerLeasingTab from './ManagerLeasingTab.jsx'
 // ─── Session ──────────────────────────────────────────────────────────────────
 export const MANAGER_SESSION_KEY = 'axis_manager'
 const MANAGER_ONBOARDING_KEY = 'axis_manager_onboarding'
@@ -661,72 +668,42 @@ function paymentRoomLabel(record) {
   return formatPaymentRoomTitle(record)
 }
 
-/** Simplified manager-facing status: Open | In Progress | Completed */
+/** Manager-facing status aligned with workflow: Open → Scheduled → Completed (plus In Progress). */
 function managerWorkOrderStatusLabel(record) {
   if (!record) return 'Open'
   if (workOrderIsResolvedRecord(record)) return 'Completed'
+  const visit = workOrderScheduledMeta(record)
   const raw = String(record.Status || '').trim().toLowerCase()
-  if (raw.includes('progress') || raw.includes('schedule')) return 'In Progress'
+  if (visit?.date || raw.includes('schedule')) return 'Scheduled'
+  if (raw.includes('progress') || raw.includes('review')) return 'In Progress'
+  if (raw === 'submitted' || raw === 'open' || raw === '') return 'Open'
   return 'Open'
 }
 
 function managerWorkOrderStatusTone(record) {
   const label = managerWorkOrderStatusLabel(record)
   if (label === 'Completed') return 'emerald'
-  if (label === 'In Progress') return 'axis'
+  if (label === 'Scheduled') return 'axis'
+  if (label === 'In Progress') return 'amber'
   return 'slate'
 }
 
 function managerWorkOrderStatusPillTone(record) {
   const label = managerWorkOrderStatusLabel(record)
   if (label === 'Completed') return 'green'
-  if (label === 'In Progress') return 'axis'
+  if (label === 'Scheduled') return 'axis'
+  if (label === 'In Progress') return 'amber'
   return 'slate'
 }
 
-/** Bucket for filter cards: separates scheduled vs in-progress work. */
+/** Filter cards: open = not yet scheduled; scheduled = visit date set; completed = resolved. */
 function managerWorkOrderBucket(record) {
   if (!record) return 'open'
   if (workOrderIsResolvedRecord(record)) return 'completed'
+  if (workOrderScheduledMeta(record)?.date) return 'scheduled'
   const raw = String(record.Status || '').trim().toLowerCase()
   if (raw.includes('schedule')) return 'scheduled'
-  if (raw.includes('progress')) return 'scheduled'
   return 'open'
-}
-
-function parseWorkOrderMetaBlock(value = '') {
-  const out = {}
-  String(value || '')
-    .split('\n')
-    .map((line) => line.trim())
-    .forEach((line) => {
-      const [key, ...rest] = line.split(':')
-      if (!key || rest.length === 0) return
-      out[key.trim().toLowerCase()] = rest.join(':').trim()
-    })
-  return out
-}
-
-function mergeWorkOrderMetaBlock(baseText = '', meta = {}) {
-  const current = parseWorkOrderMetaBlock(baseText)
-  Object.entries(meta).forEach(([key, value]) => {
-    if (value == null || String(value).trim() === '') delete current[key]
-    else current[key] = String(value).trim()
-  })
-  const otherLines = String(baseText || '')
-    .split('\n')
-    .map((line) => line.trim())
-    .filter((line) => line && !/^[a-z ]+:/i.test(line))
-  const metaLines = Object.entries(current).map(([key, value]) => `${key}: ${value}`)
-  return [...otherLines, ...metaLines].join('\n').trim()
-}
-
-function workOrderPlainNotes(value = '') {
-  return String(value || '')
-    .split('\n')
-    .map((line) => line.trim())
-    .filter((line) => line && !/^[a-z ]+:/i.test(line))
-    .join('\n')
 }
 
 function workOrderIsResolvedRecord(w) {
@@ -2042,136 +2019,12 @@ async function fetchAllSchedulingRows() {
   return rows
 }
 
-function workOrderScheduledMeta(record) {
-  const rec = record || {}
-  const meta = parseWorkOrderMetaBlock(rec['Management Notes'] || '')
-
-  const normalizeDateKey = (value) => {
-    const raw = String(value || '').trim()
-    if (!raw) return ''
-    const iso = raw.match(/(\d{4}-\d{2}-\d{2})/)
-    if (iso) return iso[1]
-    const us = raw.match(/(\d{1,2})\/(\d{1,2})\/(\d{2,4})/)
-    if (us) {
-      const month = Number(us[1])
-      const day = Number(us[2])
-      let year = Number(us[3])
-      if (year < 100) year += year >= 70 ? 1900 : 2000
-      if (!Number.isFinite(month) || !Number.isFinite(day) || !Number.isFinite(year)) return ''
-      return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`
-    }
-    const parsed = new Date(raw)
-    if (Number.isNaN(parsed.getTime())) return ''
-    return parsed.toISOString().slice(0, 10)
-  }
-
-  const parseClockToMinutes = (value) => {
-    const m = String(value || '')
-      .trim()
-      .toUpperCase()
-      .match(/^(\d{1,2})(?::(\d{2}))?\s*(AM|PM)$/)
-    if (!m) return null
-    let h = Number(m[1]) % 12
-    const min = Number(m[2] || '0')
-    if (!Number.isFinite(h) || !Number.isFinite(min) || min < 0 || min > 59) return null
-    if (m[3] === 'PM') h += 12
-    return h * 60 + min
-  }
-
-  const formatClock = (minutes) => {
-    const total = Number(minutes)
-    if (!Number.isFinite(total)) return ''
-    const h24 = Math.floor(total / 60)
-    const min = total % 60
-    let h12 = h24 % 12
-    if (h12 === 0) h12 = 12
-    const ap = h24 >= 12 ? 'PM' : 'AM'
-    return `${h12}:${String(min).padStart(2, '0')} ${ap}`
-  }
-
-  const normalizeRange = (value) => {
-    const raw = String(value || '').trim()
-    if (!raw) return ''
-    const pair = raw.match(/^(\d+)-(\d+)$/)
-    if (pair) {
-      const start = Number(pair[1])
-      const end = Number(pair[2])
-      if (Number.isFinite(start) && Number.isFinite(end) && end > start) {
-        return `${formatClock(start)} - ${formatClock(end)}`
-      }
-    }
-    const joined = raw.replace(/\s+to\s+/i, ' - ')
-    const parts = joined
-      .split(/\s*[-–]\s*/)
-      .map((part) => part.trim())
-      .filter(Boolean)
-    if (parts.length === 2) {
-      const start = parseClockToMinutes(parts[0])
-      const end = parseClockToMinutes(parts[1])
-      if (Number.isFinite(start) && Number.isFinite(end) && end > start) {
-        return `${formatClock(start)} - ${formatClock(end)}`
-      }
-    }
-    const single = parseClockToMinutes(raw)
-    if (Number.isFinite(single)) {
-      return `${formatClock(single)} - ${formatClock(single + 60)}`
-    }
-    return ''
-  }
-
-  const dateCandidates = [
-    rec['Scheduled Date'],
-    rec['Schedule Date'],
-    rec['Visit Date'],
-    rec['Appointment Date'],
-    rec['Work Date'],
-    rec['Scheduled For'],
-    meta['scheduled date'],
-    meta.date,
-    meta.scheduled,
-  ]
-  const timeCandidates = [
-    rec['Scheduled Time'],
-    rec['Schedule Time'],
-    rec['Visit Time'],
-    rec['Appointment Time'],
-    rec['Time Window'],
-    rec['Scheduled Window'],
-    rec['Scheduled For'],
-    meta['scheduled time'],
-    meta.window,
-    meta.time,
-    meta.scheduled,
-  ]
-
-  let date = ''
-  for (const candidate of dateCandidates) {
-    const key = normalizeDateKey(candidate)
-    if (key) {
-      date = key
-      break
-    }
-  }
-
-  let preferredTime = ''
-  for (const candidate of timeCandidates) {
-    const range = normalizeRange(candidate)
-    if (range) {
-      preferredTime = range
-      break
-    }
-  }
-
-  if (!date) return null
-  return { date, preferredTime }
-}
-
 function workOrdersToCalendarRows(workOrders, allowedPropertyNamesLower) {
   const rows = []
   for (const workOrder of workOrders || []) {
     const scheduled = workOrderScheduledMeta(workOrder)
     if (!scheduled) continue
-    const property = String(workOrder.Property || workOrder.House || '').trim()
+    const property = workOrderPropertyLabel(workOrder) || String(workOrder.Property || workOrder.House || '').trim()
     const lowerProperty = property.toLowerCase()
     if (allowedPropertyNamesLower?.size && lowerProperty && !allowedPropertyNamesLower.has(lowerProperty)) {
       continue
@@ -3485,7 +3338,7 @@ function GenerateDraftModal({ manager, propertyOptions, onClose, onGenerated }) 
 }
 
 // ─── Work orders (manager) ───────────────────────────────────────────────────
-const WORK_ORDER_UI_STATUSES = ['Open', 'In Progress', 'Completed']
+const WORK_ORDER_UI_STATUSES = ['Open', 'In Progress', 'Scheduled', 'Completed']
 
 function normalizeWorkOrderRecordId(raw) {
   const s = String(raw || '').trim()
@@ -3529,10 +3382,15 @@ function buildCalendarEvents(drafts, workOrders, applications) {
   }
   for (const w of workOrders || []) {
     const title = safePortalText(w.Title, 'Request').slice(0, 48)
+    const visit = workOrderScheduledMeta(w)
+    if (visit?.date) {
+      const timeSuffix = visit.preferredTime ? ` · ${visit.preferredTime}` : ''
+      events.push({ date: visit.date, label: `WO visit · ${title}${timeSuffix}`, type: 'wo' })
+    }
     const sub = parseCalendarDay(w['Date Submitted'] || w.created_at)
-    if (sub) events.push({ date: sub, label: `Work order · ${title}`, type: 'wo' })
+    if (sub && sub !== visit?.date) events.push({ date: sub, label: `WO submitted · ${title}`, type: 'wo' })
     const lu = parseCalendarDay(w['Last Update'])
-    if (lu && lu !== sub) events.push({ date: lu, label: `WO update · ${title}`, type: 'wo' })
+    if (lu && lu !== sub && lu !== visit?.date) events.push({ date: lu, label: `WO update · ${title}`, type: 'wo' })
   }
   for (const a of applications || []) {
     const nm = a['Signer Full Name'] || 'Applicant'
@@ -3735,6 +3593,8 @@ function WorkOrdersTabPanel({ allowedPropertyNames, allowedPropertyIds }) {
   const [loadError, setLoadError] = useState('')
   const [saving, setSaving] = useState(false)
   const [status, setStatus] = useState('Open')
+  const [scheduledVisitDate, setScheduledVisitDate] = useState('')
+  const [scheduledTimeWindow, setScheduledTimeWindow] = useState('')
   const [managementNotes, setManagementNotes] = useState('')
   const [residentUpdate, setResidentUpdate] = useState('')
   const [resolutionSummary, setResolutionSummary] = useState('')
@@ -3744,6 +3604,12 @@ function WorkOrdersTabPanel({ allowedPropertyNames, allowedPropertyIds }) {
 
   function applyRecordToForm(nextRecord) {
     setStatus(managerWorkOrderStatusLabel(nextRecord))
+    const sm = workOrderScheduledMeta(nextRecord)
+    const meta = parseWorkOrderMetaBlock(nextRecord?.['Management Notes'] || '')
+    setScheduledVisitDate(sm?.date || '')
+    setScheduledTimeWindow(
+      String(meta['scheduled time'] || meta.window || meta.time || sm?.preferredTime || '').trim(),
+    )
     setManagementNotes(workOrderPlainNotes(nextRecord?.['Management Notes']))
     setResidentUpdate(safePortalText(nextRecord?.Update, ''))
     setResolutionSummary(safePortalText(nextRecord?.['Resolution Summary'], ''))
@@ -3892,22 +3758,56 @@ function WorkOrdersTabPanel({ allowedPropertyNames, allowedPropertyIds }) {
   async function handleSave(event) {
     event.preventDefault()
     if (!record?.id) return
+    const resolved = status === 'Completed'
+    const dateStr = resolved ? '' : String(scheduledVisitDate || '').trim()
+    const timeStr = resolved ? '' : String(scheduledTimeWindow || '').trim()
+
+    if (!resolved && status === 'Scheduled' && !dateStr) {
+      toast.error('Choose a scheduled visit date, or set status to Open / In Progress.')
+      return
+    }
+
     setSaving(true)
     try {
-      const resolved = status === 'Completed'
       const meta = parseWorkOrderMetaBlock(record?.['Management Notes'])
+      let nextStatus = resolved ? 'Completed' : status
+      if (!resolved && dateStr) nextStatus = 'Scheduled'
+      if (!resolved && !dateStr && status === 'Scheduled') {
+        toast.error('Choose a scheduled visit date.')
+        setSaving(false)
+        return
+      }
+
       const fields = {
-        Status: resolved ? 'Completed' : status,
+        Status: nextStatus,
         'Management Notes': mergeWorkOrderMetaBlock(managementNotes, {
           'assigned to': meta['assigned to'] || '',
           scheduled: meta.scheduled || '',
+          'scheduled date': dateStr,
+          'scheduled time': timeStr,
         }),
         Update: residentUpdate || '',
         'Resolution Summary': resolutionSummary || '',
         Resolved: resolved,
         'Last Update': new Date().toISOString().slice(0, 10),
       }
-      const nextRecord = await updateWorkOrder(record.id, fields)
+      if (!resolved && dateStr) {
+        fields['Scheduled Date'] = dateStr
+      }
+
+      let nextRecord
+      try {
+        nextRecord = await updateWorkOrder(record.id, fields)
+      } catch (err) {
+        const msg = String(err?.message || '')
+        const m = msg.match(/Unknown field name:\s*"([^"]+)"/i)
+        if (m?.[1] === 'Scheduled Date' && fields['Scheduled Date']) {
+          const { 'Scheduled Date': _sd, ...rest } = fields
+          nextRecord = await updateWorkOrder(record.id, rest)
+        } else {
+          throw err
+        }
+      }
       setRecord(nextRecord)
       applyRecordToForm(nextRecord)
       await loadList()
@@ -3921,6 +3821,8 @@ function WorkOrdersTabPanel({ allowedPropertyNames, allowedPropertyIds }) {
 
   function handleMarkCompleted() {
     setStatus('Completed')
+    setScheduledVisitDate('')
+    setScheduledTimeWindow('')
   }
 
   return (
@@ -4089,6 +3991,35 @@ function WorkOrdersTabPanel({ allowedPropertyNames, allowedPropertyIds }) {
                     <option key={option} value={option}>{option}</option>
                   ))}
                 </select>
+                <p className="mt-1.5 text-xs text-slate-500">
+                  New requests start as Open. Set a visit date below to schedule (appears on your calendar). Mark Completed when the fix is done.
+                </p>
+              </div>
+
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div>
+                  <label className="mb-2 block text-xs font-semibold uppercase tracking-[0.14em] text-slate-400">
+                    Scheduled visit date
+                  </label>
+                  <input
+                    type="date"
+                    value={scheduledVisitDate}
+                    onChange={(e) => setScheduledVisitDate(e.target.value)}
+                    className={fieldCls}
+                  />
+                </div>
+                <div>
+                  <label className="mb-2 block text-xs font-semibold uppercase tracking-[0.14em] text-slate-400">
+                    Time window (optional)
+                  </label>
+                  <input
+                    type="text"
+                    value={scheduledTimeWindow}
+                    onChange={(e) => setScheduledTimeWindow(e.target.value)}
+                    className={fieldCls}
+                    placeholder="e.g. 9:00 AM - 12:00 PM"
+                  />
+                </div>
               </div>
 
               <div>
@@ -5346,6 +5277,7 @@ const MANAGER_DASH_TABS = [
   ['dashboard', 'Dashboard'],
   ['properties', 'Properties'],
   ['leases', 'Leases'],
+  ['leasing', 'Leasing'],
   ['applications', 'Applications'],
   ['payments', 'Payments'],
   ['workorders', 'Work orders'],
@@ -5676,6 +5608,8 @@ function ManagerDashboard({ manager: managerProp, openDraftId, onOpenDraft, onCl
           <CalendarTabPanel manager={manager} allowedPropertyNames={calendarScopedPropertyOptions} />
         ) : dashView === 'inbox' ? (
           <ManagerInboxPage manager={manager} allowedPropertyNames={scopedPropertyOptions} />
+        ) : dashView === 'leasing' ? (
+          <ManagerLeasingTab manager={manager} allowedPropertyNames={scopedPropertyOptions} />
         ) : dashView === 'dashboard' ? (
           <ManagerDashboardHomePanel
             manager={manager}

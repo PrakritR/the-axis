@@ -42,6 +42,7 @@ import {
   portalInboxThreadKeyFromRecord,
 } from '../lib/airtable'
 import { applicationRejectedFieldName } from '../lib/applicationApprovalState.js'
+import { workOrderScheduledMeta } from '../lib/workOrderShared.js'
 
 const SESSION_KEY = 'axis_resident'
 
@@ -73,7 +74,7 @@ function isWorkOrderResolved(record) {
   if (!record) return false
   const resolvedCheckbox = record.Resolved === true || record.Resolved === 1 || record.Resolved === '1'
   const status = String(record.Status || '').trim().toLowerCase()
-  return resolvedCheckbox || status === 'resolved'
+  return resolvedCheckbox || status === 'resolved' || status === 'completed' || status === 'closed'
 }
 
 /** Prefer explicit "Last Update" / "Date Resolved" for the 7-day rule (not submission date). */
@@ -102,38 +103,24 @@ function isWorkOrderOpen(record) {
   return !isWorkOrderResolved(record)
 }
 
-function workOrderHasManagerActivity(record) {
-  if (!record || typeof record !== 'object') return false
-  const activityFields = [
-    record['Management Notes'],
-    record.Update,
-    record['Scheduled Date'],
-    record['Scheduled At'],
-    record['Schedule Date'],
-    record['Scheduled Time'],
-    record['Last Update'],
-    record['Last Updated'],
-  ]
-  return activityFields.some((value) => String(value || '').trim().length > 0)
-}
-
 function residentWorkOrderStatusLabel(record) {
   if (!record) return 'Open'
   if (isWorkOrderResolved(record)) {
     return 'Done'
   }
+  const visit = workOrderScheduledMeta(record)
+  if (visit?.date) return 'Scheduled'
   const raw = String(record.Status || '').trim().toLowerCase()
-  if (parseWorkOrderSchedule(record)) return 'Scheduled'
   if (raw.includes('schedule')) return 'Scheduled'
-  if (raw.includes('review')) return 'In Progress'
-  if (raw.includes('progress')) return 'In Progress'
-  if (workOrderHasManagerActivity(record)) return 'In Progress'
+  if (raw.includes('review') || raw.includes('progress')) return 'In Progress'
+  if (raw === 'submitted' || raw === 'open') return 'Open'
   return 'Open'
 }
 
 function residentWorkOrderStatusTone(record) {
   const label = residentWorkOrderStatusLabel(record)
   if (label === 'Done') return 'emerald'
+  if (label === 'Scheduled') return 'axis'
   if (label === 'In Progress') return 'amber'
   return 'slate'
 }
@@ -149,13 +136,18 @@ function residentWorkOrderStatusPillTone(record) {
 function residentWorkOrderFilterBucket(record) {
   if (!record) return 'open'
   if (isWorkOrderResolved(record)) return 'completed'
-  const L = residentWorkOrderStatusLabel(record)
-  if (L === 'Scheduled') return 'scheduled'
-  if (L === 'In Progress') return 'scheduled'
+  const visit = workOrderScheduledMeta(record)
+  if (visit?.date) return 'scheduled'
+  const raw = String(record.Status || '').trim().toLowerCase()
+  if (raw.includes('schedule')) return 'scheduled'
   return 'open'
 }
 
 function parseWorkOrderSchedule(record) {
+  const sm = workOrderScheduledMeta(record)
+  if (sm?.date) {
+    return sm.preferredTime ? `${sm.date} · ${sm.preferredTime}` : sm.date
+  }
   const explicit =
     record?.['Scheduled Date'] ||
     record?.['Scheduled At'] ||

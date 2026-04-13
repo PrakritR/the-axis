@@ -795,7 +795,7 @@ export async function createWorkOrder({
       Description: normalizedDescription,
       Category: category,
       Priority: airtablePriority,
-      Status: 'Submitted',
+      Status: 'Open',
       'Preferred Entry Time': preferredEntry,
       [linkField]: [residentLinkId],
       ...houseOptionalFields,
@@ -859,6 +859,12 @@ export async function createWorkOrder({
           console.warn(
             `[createWorkOrder] Work Orders table has no field "${unknown}" — omitting and retrying (set VITE_AIRTABLE_WORK_ORDER_APPLICATION_ID_FIELD / _LINK_FIELD or "none" in .env to silence).`,
           )
+          continue
+        }
+
+        if (unknown === 'Status' && fields.Status === 'Open') {
+          fields = { ...fields, Status: 'Submitted' }
+          console.warn('[createWorkOrder] Status "Open" not in Airtable — using "Submitted" (shown as Open in portal).')
           continue
         }
 
