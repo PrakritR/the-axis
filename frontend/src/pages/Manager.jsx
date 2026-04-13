@@ -14,7 +14,7 @@
 //   Unauthenticated /manager → redirects to /portal?portal=manager (shared portal hub)
 //   GenerateDraftModal — form to create a new AI lease draft
 //   ManagerDashboard   — filterable table of all lease drafts
-//   LeaseEditor        — full-screen editor with sidebar, tabs, action buttons
+//   LeaseEditor        — full-screen editor for lease text + header actions (publish / send)
 //   Manager (default)  — root component managing session + view routing
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
@@ -2042,13 +2042,6 @@ async function patchSchedulingRecord(recordId, fields) {
     body: JSON.stringify({ fields, typecast: true }),
   })
   return mapRecord(data)
-}
-
-async function fetchAuditLog(leaseDraftId) {
-  const formula = encodeURIComponent(`{Lease Draft ID} = "${leaseDraftId}"`)
-  const url = `${CORE_AIRTABLE_BASE_URL}/Audit%20Log?filterByFormula=${formula}&sort[0][field]=Timestamp&sort[0][direction]=asc`
-  const data = await atRequest(url)
-  return (data.records || []).map(mapRecord)
 }
 
 // Log an action to the Audit Log table — failures are non-fatal
@@ -5475,28 +5468,20 @@ function ManagerDashboard({ manager: managerProp, openDraftId, onOpenDraft, onCl
 
 // ─── LeaseEditor ──────────────────────────────────────────────────────────────
 // Full-screen editor for reviewing, editing, and approving a single lease draft.
-// Three tabs: Edit/View | Original AI Draft | Audit Log
 function LeaseEditor({ draftId, manager, onBack, embedded = false }) {
   const [draft, setDraft] = useState(null)
-  const [auditLog, setAuditLog] = useState([])
   const [editorContent, setEditorContent] = useState('')
   const [managerNotes, setManagerNotes] = useState('')
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [actionLoading, setActionLoading] = useState('') // 'reject' | 'approve' | 'publish' | 'signforge' | 'signforge-status'
-  const [activeTab, setActiveTab] = useState('editor')
   const leaseFileInputRef = useRef(null)
-
-  const refreshAudit = useCallback(async () => {
-    try { setAuditLog(await fetchAuditLog(draftId)) } catch { /* non-fatal */ }
-  }, [draftId])
 
   const loadDraft = useCallback(async () => {
     setLoading(true)
     try {
-      const [d, log] = await Promise.all([fetchLeaseDraft(draftId), fetchAuditLog(draftId)])
+      const d = await fetchLeaseDraft(draftId)
       setDraft(d)
-      setAuditLog(log)
       // Use manager's edited version if one exists, otherwise fall back to the AI draft
       setEditorContent(d['Manager Edited Content'] || d['AI Draft Content'] || '')
       setManagerNotes(d['Manager Notes'] || '')
@@ -5515,14 +5500,13 @@ function LeaseEditor({ draftId, manager, onBack, embedded = false }) {
           performedByRole: manager.role,
           notes: `Opened for review by ${manager.name}`,
         })
-        await refreshAudit()
       }
     } catch (err) {
       toast.error('Could not load draft: ' + err.message)
     } finally {
       setLoading(false)
     }
-  }, [draftId, manager, refreshAudit])
+  }, [draftId, manager])
 
   useEffect(() => { loadDraft() }, [loadDraft])
 
@@ -5564,7 +5548,6 @@ function LeaseEditor({ draftId, manager, onBack, embedded = false }) {
         performedByRole: manager.role,
         notes: 'Manager saved edits to lease content',
       })
-      await refreshAudit()
       toast.success('Edits saved')
     } catch (err) {
       toast.error('Save failed: ' + err.message)
@@ -5590,7 +5573,6 @@ function LeaseEditor({ draftId, manager, onBack, embedded = false }) {
         performedByRole: manager.role,
         notes: managerNotes ? `Marked "Changes Needed": ${managerNotes}` : 'Marked "Changes Needed"',
       })
-      await refreshAudit()
       toast.success('Marked as "Changes Needed"')
     } catch (err) {
       toast.error('Action failed: ' + err.message)
@@ -5628,7 +5610,6 @@ function LeaseEditor({ draftId, manager, onBack, embedded = false }) {
         performedByRole: manager.role,
         notes: `Published to resident portal by ${manager.name}`,
       })
-      await refreshAudit()
 
       const sfRes = await fetch('/api/portal?action=signforge-send-lease', {
         method: 'POST',
@@ -5646,7 +5627,6 @@ function LeaseEditor({ draftId, manager, onBack, embedded = false }) {
         } else {
           setDraft(await fetchLeaseDraft(draftId))
         }
-        await refreshAudit()
         toast.success('Lease sent to the resident for signature')
       } else if (sfRes.status === 501) {
         toast.success(
@@ -5685,7 +5665,6 @@ function LeaseEditor({ draftId, manager, onBack, embedded = false }) {
         performedByRole: manager.role,
         notes: `Published to resident portal by ${manager.name}`,
       })
-      await refreshAudit()
       toast.success('Lease published to resident portal!')
     } catch (err) {
       toast.error('Publish failed: ' + err.message)
@@ -5709,7 +5688,6 @@ function LeaseEditor({ draftId, manager, onBack, embedded = false }) {
       const data = await readJsonResponse(res)
       if (!res.ok) throw new Error(data.error || 'SignForge send failed')
       if (data.draft) setDraft(data.draft)
-      await refreshAudit()
       toast.success('Lease sent via SignForge — the resident receives a signing link by email')
     } catch (err) {
       toast.error(err.message || 'SignForge send failed')
@@ -5736,7 +5714,6 @@ function LeaseEditor({ draftId, manager, onBack, embedded = false }) {
       const refreshed = await fetchLeaseDraft(draftId)
       setDraft(refreshed)
       setEditorContent(refreshed['Manager Edited Content'] || refreshed['AI Draft Content'] || '')
-      await refreshAudit()
     } catch (err) {
       toast.error(err.message || 'SignForge status check failed')
     } finally {
@@ -5901,165 +5878,53 @@ function LeaseEditor({ draftId, manager, onBack, embedded = false }) {
             </>
           ) : null}
 
-          {/* Tabs */}
-          <div className="flex gap-1 rounded-2xl border border-slate-200 bg-white p-1.5 w-fit">
-            {[
-              { key: 'editor',   label: canEdit ? 'Edit Lease' : 'View Lease' },
-              { key: 'original', label: 'Original AI Draft' },
-              { key: 'audit',    label: `Audit Log (${auditLog.length})` },
-            ].map(tab => (
-              <button
-                key={tab.key}
-                onClick={() => setActiveTab(tab.key)}
-                className={`rounded-xl px-4 py-2 text-sm font-semibold transition ${
-                  activeTab === tab.key
-                    ? 'bg-axis text-white'
-                    : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
-                }`}
-              >
-                {tab.label}
-              </button>
-            ))}
-          </div>
-
-          {/* ── Editor tab ── */}
-          {activeTab === 'editor' && (
-            <div className="overflow-hidden rounded-3xl border border-slate-200 bg-white">
-              {canEdit ? (
-                <>
-                  <div className="flex items-center justify-between border-b border-slate-100 bg-slate-50 px-5 py-2.5">
-                    <span className="text-xs font-semibold text-slate-500">Editing lease document — changes are saved manually</span>
-                    <button
-                      onClick={handleSave}
-                      disabled={saving || !!actionLoading}
-                      className="rounded-xl bg-axis px-4 py-1.5 text-xs font-semibold text-white transition hover:brightness-110 disabled:opacity-50"
-                    >
-                      {saving ? 'Saving…' : 'Save edits'}
-                    </button>
-                  </div>
-                  <textarea
-                    value={editorContent}
-                    onChange={e => setEditorContent(e.target.value)}
-                    spellCheck={false}
-                    className="h-[calc(100vh-380px)] min-h-[420px] w-full resize-none p-6 font-mono text-sm leading-7 text-slate-800 focus:outline-none"
-                    placeholder="Lease content will appear here after generation…"
-                  />
-                  {(canApprove || canPublish) && (
-                    <div className="flex flex-wrap items-center justify-end gap-2 border-t border-slate-200 bg-slate-50 px-5 py-3">
-                      {canApprove && (
-                        <button
-                          type="button"
-                          onClick={handleApprove}
-                          disabled={!!actionLoading}
-                          className="rounded-xl bg-green-600 px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-green-700 disabled:opacity-50"
-                        >
-                          {actionLoading === 'approve' ? 'Sending…' : 'Send to resident'}
-                        </button>
-                      )}
-                      {canPublish && (
-                        <button
-                          type="button"
-                          onClick={handlePublish}
-                          disabled={!!actionLoading}
-                          className="rounded-xl bg-[#2563eb] px-5 py-2.5 text-sm font-semibold text-white transition hover:brightness-110 disabled:opacity-50"
-                        >
-                          {actionLoading === 'publish' ? 'Sending…' : 'Send to resident'}
-                        </button>
-                      )}
-                    </div>
-                  )}
-                </>
-              ) : (
-                <>
-                  <div className="border-b border-slate-100 bg-slate-50 px-5 py-2.5">
-                    <span className="text-xs font-semibold text-slate-500">
-                      Read-only — this lease has been {status?.toLowerCase()}
-                    </span>
-                  </div>
-                  <div className="h-[calc(100vh-380px)] min-h-[420px] overflow-y-auto p-6">
-                    <pre className="whitespace-pre-wrap font-mono text-sm leading-7 text-slate-800">{editorContent}</pre>
-                  </div>
-                  {(canSignforgeSend || canSignforgeRefresh) && (
-                    <div className="flex flex-wrap items-center justify-end gap-2 border-t border-slate-200 bg-slate-50 px-5 py-3">
-                      {canSignforgeSend && (
-                        <button
-                          type="button"
-                          onClick={handleSignforgeSend}
-                          disabled={!!actionLoading}
-                          className="rounded-xl border border-violet-200 bg-violet-50 px-4 py-2 text-sm font-semibold text-violet-800 transition hover:bg-violet-100 disabled:opacity-50"
-                        >
-                          {actionLoading === 'signforge' ? 'Sending…' : 'Resend signing link'}
-                        </button>
-                      )}
-                      {canSignforgeRefresh && (
-                        <button
-                          type="button"
-                          onClick={handleSignforgeRefreshStatus}
-                          disabled={!!actionLoading}
-                          className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:opacity-50"
-                        >
-                          {actionLoading === 'signforge-status' ? 'Checking…' : 'Refresh SignForge status'}
-                        </button>
-                      )}
-                    </div>
-                  )}
-                </>
-              )}
-            </div>
-          )}
-
-          {/* ── Original AI Draft tab (read-only reference) ── */}
-          {activeTab === 'original' && (
-            <div className="overflow-hidden rounded-3xl border border-amber-200 bg-white">
-              <div className="border-b border-amber-200 bg-amber-50 px-5 py-2.5">
-                <span className="text-xs font-semibold text-amber-700">
-                  Read-only · original AI-generated draft · not shown to residents
-                </span>
-              </div>
-              <div className="h-[calc(100vh-310px)] min-h-[480px] overflow-y-auto p-6">
-                <pre className="whitespace-pre-wrap font-mono text-sm leading-7 text-slate-800">
-                  {draft?.['AI Draft Content'] || 'No AI draft content stored'}
-                </pre>
-              </div>
-            </div>
-          )}
-
-          {/* ── Audit Log tab ── */}
-          {activeTab === 'audit' && (
-            <div className="overflow-hidden rounded-3xl border border-slate-200 bg-white">
-              <div className="border-b border-slate-200 px-6 py-4">
-                <h3 className="font-black text-slate-900">Audit Trail</h3>
-                <p className="mt-0.5 text-sm text-slate-500">
-                  Complete history of every action taken on this lease draft.
-                </p>
-              </div>
-              {auditLog.length === 0 ? (
-                <div className="px-6 py-10 text-center text-sm text-slate-500">No audit entries recorded yet</div>
-              ) : (
-                <div className="divide-y divide-slate-100">
-                  {auditLog.map(entry => (
-                    <div key={entry.id} className="flex items-start gap-4 px-6 py-4">
-                      <div className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-slate-100 text-xs font-black text-slate-600">
-                        {(entry['Performed By'] || 'S').charAt(0).toUpperCase()}
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <div className="flex flex-wrap items-center gap-2">
-                          <span className="text-sm font-semibold text-slate-900">{entry['Action Type']}</span>
-                          <span className="text-xs text-slate-500">
-                            by {entry['Performed By']} ({entry['Performed By Role']})
-                          </span>
-                        </div>
-                        {entry['Notes'] && (
-                          <p className="mt-1 text-sm text-slate-600">{entry['Notes']}</p>
-                        )}
-                        <div className="mt-1 text-xs text-slate-400">{fmtDateTime(entry['Timestamp'])}</div>
-                      </div>
-                    </div>
-                  ))}
+          {/* Lease text — single view (what residents see uses Manager Edited Content, else AI draft) */}
+          <div className="overflow-hidden rounded-3xl border border-slate-200 bg-white">
+            {canEdit ? (
+              <textarea
+                value={editorContent}
+                onChange={e => setEditorContent(e.target.value)}
+                spellCheck={false}
+                className="h-[calc(100vh-320px)] min-h-[420px] w-full resize-none p-6 font-mono text-sm leading-7 text-slate-800 focus:outline-none"
+                placeholder="Lease content will appear here after generation…"
+              />
+            ) : (
+              <>
+                <div className="border-b border-slate-100 bg-slate-50 px-5 py-2.5">
+                  <span className="text-xs font-semibold text-slate-500">
+                    Read-only — this lease has been {status?.toLowerCase()}
+                  </span>
                 </div>
-              )}
-            </div>
-          )}
+                <div className="h-[calc(100vh-360px)] min-h-[420px] overflow-y-auto p-6">
+                  <pre className="whitespace-pre-wrap font-mono text-sm leading-7 text-slate-800">{editorContent}</pre>
+                </div>
+                {(canSignforgeSend || canSignforgeRefresh) && (
+                  <div className="flex flex-wrap items-center justify-end gap-2 border-t border-slate-200 bg-slate-50 px-5 py-3">
+                    {canSignforgeSend && (
+                      <button
+                        type="button"
+                        onClick={handleSignforgeSend}
+                        disabled={!!actionLoading}
+                        className="rounded-xl border border-violet-200 bg-violet-50 px-4 py-2 text-sm font-semibold text-violet-800 transition hover:bg-violet-100 disabled:opacity-50"
+                      >
+                        {actionLoading === 'signforge' ? 'Sending…' : 'Resend signing link'}
+                      </button>
+                    )}
+                    {canSignforgeRefresh && (
+                      <button
+                        type="button"
+                        onClick={handleSignforgeRefreshStatus}
+                        disabled={!!actionLoading}
+                        className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:opacity-50"
+                      >
+                        {actionLoading === 'signforge-status' ? 'Checking…' : 'Refresh SignForge status'}
+                      </button>
+                    )}
+                  </div>
+                )}
+              </>
+            )}
+          </div>
         </div>
       </div>
     </div>
