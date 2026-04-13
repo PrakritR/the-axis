@@ -5229,10 +5229,14 @@ function ManagerDashboard({ manager: managerProp, openDraftId, onOpenDraft, onCl
           getAllPortalInternalThreadMessages(),
           fetchInboxThreadStateMap(email),
         ])
+        const managerSiteKey = `internal:site-manager:${email.trim().toLowerCase()}`
         const latestByThread = new Map()
         for (const m of msgs) {
           const tk = portalInboxThreadKeyFromRecord(m)
           if (!tk) continue
+          // Only count this manager's own site-manager thread and resident leasing threads.
+          // Skip site-manager threads belonging to other managers.
+          if (tk.startsWith('internal:site-manager:') && tk !== managerSiteKey) continue
           const ts = m.Timestamp ? new Date(m.Timestamp) : null
           if (!ts) continue
           const prev = latestByThread.get(tk)
@@ -5908,7 +5912,6 @@ function LeaseEditor({ draftId, manager, onBack, embedded = false }) {
             </>
           ) : null}
 
-          {/* Optional plain-text override (resident fallback when Lease JSON is absent) */}
           <div className="overflow-hidden rounded-3xl border border-slate-200 bg-white">
             {canEdit ? (
               <textarea
@@ -5916,11 +5919,7 @@ function LeaseEditor({ draftId, manager, onBack, embedded = false }) {
                 onChange={e => setEditorContent(e.target.value)}
                 spellCheck={false}
                 className="h-[calc(100vh-320px)] min-h-[420px] w-full resize-none p-6 font-mono text-sm leading-7 text-slate-800 focus:outline-none"
-                placeholder={
-                  leaseDataForPreview
-                    ? 'Optional: plain-text override. Residents see the formatted lease above when Lease JSON is present; this field is a fallback.'
-                    : 'Lease content will appear here after generation, or paste plain text for the resident if you are not using Lease JSON…'
-                }
+                placeholder="Paste or type the lease text here…"
               />
             ) : (
               <>

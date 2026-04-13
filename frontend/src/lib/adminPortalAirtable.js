@@ -235,6 +235,12 @@ function buildEmailToManagerId(managerRows) {
   return m
 }
 
+function managerLinkIdsFromPropertyField(val) {
+  if (Array.isArray(val)) return val.map((v) => String(v || '').trim()).filter((id) => id.startsWith('rec'))
+  const one = String(val || '').trim()
+  return one.startsWith('rec') ? [one] : []
+}
+
 function firstLinkedManagerRecordId(prop) {
   for (const key of ['Manager Profile', 'Manager', 'Site Manager', 'Property Manager']) {
     const raw = prop?.[key]
@@ -247,6 +253,34 @@ function firstLinkedManagerRecordId(prop) {
     if (one.startsWith('rec')) return one
   }
   return ''
+}
+
+/**
+ * True when a Properties row is assigned to this manager — same rules as manager portal
+ * (`propertyAssignedToManager` in Manager.jsx): Owner ID, emails, linked Manager Profile, Manager ID text.
+ */
+function propertyRowAssignedToManagerRow(prop, managerRow) {
+  const recId = String(managerRow?.id || '').trim()
+  const ownerId = String(prop['Owner ID'] || '').trim()
+  if (ownerId && recId && ownerId === recId) return true
+
+  const email = String(managerRow?.Email || '').trim().toLowerCase()
+  const propEmails = [
+    String(prop['Manager Email'] || '').trim().toLowerCase(),
+    String(prop['Site Manager Email'] || '').trim().toLowerCase(),
+  ].filter(Boolean)
+  if (email && propEmails.length && propEmails.includes(email)) return true
+
+  for (const k of ['Manager Profile', 'Manager', 'Site Manager', 'Property Manager']) {
+    const links = managerLinkIdsFromPropertyField(prop[k])
+    if (recId && links.includes(recId)) return true
+  }
+
+  const rowMid = String(managerRow?.['Manager ID'] || '').trim().toUpperCase()
+  const propMid = String(prop['Manager ID'] || '').trim().toUpperCase()
+  if (rowMid && propMid && rowMid === propMid) return true
+
+  return false
 }
 
 function ownerIdForProperty(prop, emailToManagerId) {
@@ -319,9 +353,7 @@ export async function loadAdminPortalDataset() {
 
   const accounts = managerRows.map((raw) => {
     const email = String(raw.Email || '').trim().toLowerCase()
-    const linkedProps = propertyRows.filter(
-      (p) => String(p['Manager Email'] || '').trim().toLowerCase() === email,
-    )
+    const linkedProps = propertyRows.filter((p) => propertyRowAssignedToManagerRow(p, raw))
     const propertyCount = linkedProps.length
     const houseNames = linkedProps.map((p) => propertyRecordName(p)).filter(Boolean)
     const houseNamesSorted = [...houseNames].sort((a, b) =>
@@ -557,3 +589,56 @@ export async function loadAdminProfilesForInbox() {
   }
 }
 
+/**
+ * Fetch the admin's own Admin Profile record by Airtable record ID.
+ */
+export async function fetchAdminProfileRecordById(recordId) {
+  if (!isAdminPortalAirtableConfigured()) return null
+  const id = String(recordId || '').trim()
+  if (!id) return null
+  try {
+    const url = `${BASE_URL}/${encodeURIComponent(ADMIN_PROFILE_TABLE_NAME)}/${id}`
+    const data = await requestJson(url)
+    return mapRecord(data)
+  } catch {
+    return null
+  }
+}
+
+/**
+ * Fetch admin profile record by email (used when airtableRecordId is not in session).
+ */
+export async function fetchAdminProfileRecord(email) {
+  if (!isAdminPortalAirtableConfigured()) return null
+  const em = String(email || '').trim().toLowerCase()
+  if (!em) return null
+  try {
+    const formula = encodeURIComponent(`LOWER({Email}) = "${em.replace(/"/g, '\\"')}"`)
+    const url = `${BASE_URL}/${encodeURIComponent(ADMIN_PROFILE_TABLE_NAME)}?filterByFormula=${formula}&maxRecords=1`
+    const data = await requestJson(url)
+    const record = (data.records || [])[0]
+    return record ? mapRecord(record) : null
+  } catch {
+    return null
+  }
+}
+
+/**
+ * Save the admin's meeting availability to their Admin Profile record.
+ * @param {string} recordId - Airtable record ID of the admin
+ * @param {string} availabilityText - Encoded text e.g. "Mon: 540-720\nTue: 600-840"
+ */
+export async function updateAdminMeetingAvailability(recordId, availabilityText) {
+  if (!isAdminPortalAirtableConfigured()) throw new Error('Airtable is not configured.')
+  const id = String(recordId || '').trim()
+  if (!id) throw new Error('Missing admin record ID.')
+  const url = `${BASE_URL}/${encodeURIComponent(ADMIN_PROFILE_TABLE_NAME)}/${id}`
+  const data = await requestJson(url, {
+    method: 'PATCH',
+    body: JSON.stringify({
+      fields: { 'Meeting Availability': availabilityText },
+      typecast: true,
+    }),
+  })
+  return mapRecord(data)
+}

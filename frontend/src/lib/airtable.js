@@ -641,7 +641,10 @@ export async function createWorkOrder({
   photoFile = null,
 }) {
   const usePlaceholderResident = Boolean(WORK_ORDER_RESIDENT_PLACEHOLDER_ID)
-  const residentLinkId = usePlaceholderResident ? WORK_ORDER_RESIDENT_PLACEHOLDER_ID : resident.id
+  const residentLinkId = usePlaceholderResident ? WORK_ORDER_RESIDENT_PLACEHOLDER_ID : resident?.id
+  if (!residentLinkId) {
+    throw new Error('Resident profile ID is missing. Please reload the page and try again.')
+  }
   const airtablePriority = urgency === 'Emergency' ? 'Urgent' : urgency
   let normalizedDescription = urgency === 'Emergency'
     ? `Resident marked this request as Emergency.\n\n${description}`
@@ -663,6 +666,15 @@ export async function createWorkOrder({
     ? { fields: {}, optionalKeys: [] }
     : workOrderApplicationFieldsFromResident(resident)
 
+  // Attach resident's house/property link if available (optional — stripped if field doesn't exist)
+  const houseOptionalFields = {}
+  const houseOptionalKeys = []
+  const houseLink = resident?.House || resident?.Property
+  if (Array.isArray(houseLink) && houseLink.length && String(houseLink[0]).startsWith('rec')) {
+    houseOptionalFields['House'] = [String(houseLink[0])]
+    houseOptionalKeys.push('House')
+  }
+
   let lastError = null
   outer: for (let i = 0; i < linkFieldCandidates.length; i++) {
     const linkField = linkFieldCandidates[i]
@@ -674,8 +686,10 @@ export async function createWorkOrder({
       Status: 'Submitted',
       'Preferred Entry Time': preferredEntry,
       [linkField]: [residentLinkId],
+      ...houseOptionalFields,
       ...appFields,
     }
+    const allOptionalKeys = [...houseOptionalKeys, ...workOrderOptionalApplicationKeys]
     if (usePlaceholderResident && WORK_ORDER_SUBMITTER_EMAIL_FIELD && String(resident?.Email || '').trim()) {
       fields[WORK_ORDER_SUBMITTER_EMAIL_FIELD] = String(resident.Email).trim()
     }
@@ -703,7 +717,7 @@ export async function createWorkOrder({
 
         if (
           unknown &&
-          workOrderOptionalApplicationKeys.includes(unknown) &&
+          allOptionalKeys.includes(unknown) &&
           Object.prototype.hasOwnProperty.call(fields, unknown)
         ) {
           const next = { ...fields }

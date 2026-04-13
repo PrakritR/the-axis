@@ -19,6 +19,9 @@ import {
   isAdminPortalAirtableConfigured,
   loadAdminPortalDataset,
   loadResidentsForAdmin,
+  fetchAdminProfileRecordById,
+  fetchAdminProfileRecord,
+  updateAdminMeetingAvailability,
 } from '../lib/adminPortalAirtable.js'
 import { readJsonResponse } from '../lib/readJsonResponse'
 import { authenticateAdminPortal } from '../lib/adminPortalSignIn'
@@ -107,6 +110,280 @@ const adminSelectCls =
 /** Property detail toolbar — plain border, top-right cluster (see Listed tab pattern). */
 const adminPropToolbarBtn =
   'rounded-xl border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold shadow-sm transition hover:bg-slate-50 disabled:opacity-50'
+
+// ─── Admin Meeting Availability ───────────────────────────────────────────────
+const ADMIN_AVAIL_DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
+
+function parseAdminAvailText(text) {
+  const result = {}
+  for (const d of ADMIN_AVAIL_DAYS) result[d] = []
+  const lines = String(text || '').split('\n')
+  for (const line of lines) {
+    const match = line.match(/^(\w+):\s*(.+)/)
+    if (!match) continue
+    const day = ADMIN_AVAIL_DAYS.find((d) => d.toLowerCase() === match[1].toLowerCase())
+    if (!day) continue
+    for (const part of match[2].split(',').map((s) => s.trim())) {
+      const rm = part.match(/^(\d+)-(\d+)$/)
+      if (!rm) continue
+      const s = parseInt(rm[1], 10)
+      const e = parseInt(rm[2], 10)
+      if (s < e) result[day].push({ start: s, end: e })
+    }
+  }
+  return result
+}
+
+function encodeAdminAvailText(weekly) {
+  const lines = []
+  for (const day of ADMIN_AVAIL_DAYS) {
+    const ranges = (weekly[day] || []).filter((r) => r.start < r.end)
+    if (!ranges.length) continue
+    lines.push(`${day}: ${ranges.map((r) => `${r.start}-${r.end}`).join(', ')}`)
+  }
+  return lines.join('\n')
+}
+
+function adminMinutesToTimeInput(minutes) {
+  const h = Math.floor(minutes / 60)
+  const m = minutes % 60
+  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`
+}
+
+function adminTimeInputToMinutes(value) {
+  const [h, m] = String(value || '').split(':').map(Number)
+  if (!Number.isFinite(h) || !Number.isFinite(m)) return null
+  return h * 60 + m
+}
+
+function adminDisplayTime(minutes) {
+  return new Date(2000, 0, 1, Math.floor(minutes / 60), minutes % 60).toLocaleTimeString('en-US', {
+    hour: 'numeric',
+    minute: '2-digit',
+    hour12: true,
+  })
+}
+
+function AdminMeetingAvailabilitySection({ user }) {
+  const [selectedDay, setSelectedDay] = useState('Mon')
+  const [weekly, setWeekly] = useState(() => {
+    const r = {}
+    for (const d of ADMIN_AVAIL_DAYS) r[d] = []
+    return r
+  })
+  const [profileRecordId, setProfileRecordId] = useState(null)
+  const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
+
+  useEffect(() => {
+    let cancelled = false
+    async function loadProfile() {
+      setLoading(true)
+      try {
+        let profile = null
+        const rid = user?.airtableRecordId
+        if (rid) {
+          profile = await fetchAdminProfileRecordById(rid)
+        }
+        if (!profile && user?.email) {
+          profile = await fetchAdminProfileRecord(user.email)
+        }
+        if (!cancelled && profile) {
+          setProfileRecordId(profile.id)
+          setWeekly(parseAdminAvailText(profile['Meeting Availability'] || ''))
+        }
+      } catch {
+        /* non-fatal */
+      }
+      if (!cancelled) setLoading(false)
+    }
+    loadProfile()
+    return () => { cancelled = true }
+  }, [user?.email, user?.airtableRecordId])
+
+  async function handleSave() {
+    if (!profileRecordId) {
+      toast.error(
+        'Admin profile record not found. Sign in via an Airtable-linked admin account to save availability.',
+      )
+      return
+    }
+    setSaving(true)
+    try {
+      const encoded = encodeAdminAvailText(weekly)
+      await updateAdminMeetingAvailability(profileRecordId, encoded)
+      toast.success('Meeting availability saved!')
+    } catch (err) {
+      toast.error(err?.message || 'Could not save availability. Make sure the Admin Profile table has a "Meeting Availability" field.')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const dayRanges = weekly[selectedDay] || []
+  const disabled = saving || !profileRecordId
+
+  function addRange() {
+    const last = dayRanges[dayRanges.length - 1]
+    const start = last ? Math.min(last.end + 30, 22 * 60) : 9 * 60
+    const end = Math.min(start + 60, 22 * 60)
+    setWeekly((prev) => ({ ...prev, [selectedDay]: [...(prev[selectedDay] || []), { start, end }] }))
+  }
+
+  function removeRange(idx) {
+    setWeekly((prev) => ({
+      ...prev,
+      [selectedDay]: (prev[selectedDay] || []).filter((_, i) => i !== idx),
+    }))
+  }
+
+  function updateRange(idx, partial) {
+    setWeekly((prev) => {
+      const next = [...(prev[selectedDay] || [])]
+      next[idx] = { ...next[idx], ...partial }
+      return { ...prev, [selectedDay]: next }
+    })
+  }
+
+  const totalSlotsAcrossWeek = ADMIN_AVAIL_DAYS.reduce((n, d) => n + (weekly[d]?.length || 0), 0)
+
+  return (
+    <div className="mb-6 rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+      <div className="mb-1 flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h2 className="text-xl font-black text-slate-900">My Meeting Availability</h2>
+          <p className="mt-1 text-sm text-slate-500">
+            Set when you're available for meetings. People will see these slots when booking a meeting with you.
+          </p>
+        </div>
+        {!loading && !profileRecordId && (
+          <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+            Sign in with an Airtable-linked admin account to edit availability.
+          </div>
+        )}
+      </div>
+
+      {loading ? (
+        <div className="mt-5 rounded-2xl border border-dashed border-slate-200 bg-slate-50 px-4 py-6 text-center text-sm text-slate-500">
+          Loading availability…
+        </div>
+      ) : (
+        <>
+          {/* Day selector tabs */}
+          <div className="mt-5 flex flex-wrap gap-2">
+            {ADMIN_AVAIL_DAYS.map((day) => {
+              const count = weekly[day]?.length || 0
+              const isActive = selectedDay === day
+              return (
+                <button
+                  key={day}
+                  type="button"
+                  onClick={() => setSelectedDay(day)}
+                  className={
+                    isActive
+                      ? 'rounded-full bg-[#2563eb] px-4 py-2 text-sm font-semibold text-white shadow-sm'
+                      : 'rounded-full border border-slate-200 bg-slate-50 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-white transition'
+                  }
+                >
+                  {day}
+                  {count > 0 && (
+                    <span className={`ml-1.5 text-xs ${isActive ? 'text-blue-200' : 'text-slate-400'}`}>
+                      ({count})
+                    </span>
+                  )}
+                </button>
+              )
+            })}
+          </div>
+
+          {/* Time ranges for selected day */}
+          <div className="mt-4 space-y-3">
+            {dayRanges.length === 0 ? (
+              <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 px-4 py-5 text-sm text-slate-500">
+                No availability set for {selectedDay}. Click "Add time slot" to add hours.
+              </div>
+            ) : (
+              dayRanges.map((range, idx) => (
+                <div
+                  key={idx}
+                  className="grid grid-cols-[1fr_auto_1fr_auto] items-end gap-2 rounded-2xl border border-slate-200 bg-white p-3"
+                >
+                  <div>
+                    <label className="mb-1 block text-[11px] font-semibold text-slate-500">Start</label>
+                    <input
+                      type="time"
+                      step="1800"
+                      value={adminMinutesToTimeInput(range.start)}
+                      disabled={disabled}
+                      onChange={(e) => {
+                        const m = adminTimeInputToMinutes(e.target.value)
+                        if (m != null) updateRange(idx, { start: m })
+                      }}
+                      className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm font-medium text-slate-800 outline-none focus:border-[#2563eb] focus:ring-2 focus:ring-[#2563eb]/20 disabled:opacity-60"
+                    />
+                  </div>
+                  <span className="pb-2 text-sm font-semibold text-slate-400">to</span>
+                  <div>
+                    <label className="mb-1 block text-[11px] font-semibold text-slate-500">End</label>
+                    <input
+                      type="time"
+                      step="1800"
+                      value={adminMinutesToTimeInput(range.end)}
+                      disabled={disabled}
+                      onChange={(e) => {
+                        const m = adminTimeInputToMinutes(e.target.value)
+                        if (m != null && m > range.start) updateRange(idx, { end: m })
+                      }}
+                      className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm font-medium text-slate-800 outline-none focus:border-[#2563eb] focus:ring-2 focus:ring-[#2563eb]/20 disabled:opacity-60"
+                    />
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => removeRange(idx)}
+                    disabled={disabled}
+                    className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-xs font-semibold text-red-700 hover:bg-red-100 disabled:opacity-40"
+                  >
+                    Remove
+                  </button>
+                </div>
+              ))
+            )}
+          </div>
+
+          {/* Summary of active days */}
+          {totalSlotsAcrossWeek > 0 && (
+            <div className="mt-4 flex flex-wrap gap-2">
+              {ADMIN_AVAIL_DAYS.filter((d) => weekly[d]?.length > 0).map((d) => (
+                <div key={d} className="rounded-xl bg-emerald-50 px-3 py-1.5 text-xs font-semibold text-emerald-800">
+                  {d}: {weekly[d].map((r) => `${adminDisplayTime(r.start)}–${adminDisplayTime(r.end)}`).join(', ')}
+                </div>
+              ))}
+            </div>
+          )}
+
+          <div className="mt-5 flex flex-wrap gap-3">
+            <button
+              type="button"
+              onClick={addRange}
+              disabled={disabled}
+              className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-white transition disabled:opacity-40"
+            >
+              + Add time slot
+            </button>
+            <button
+              type="button"
+              onClick={handleSave}
+              disabled={saving || !profileRecordId}
+              className="rounded-xl bg-[linear-gradient(180deg,#2f76ff_0%,#2450eb_100%)] px-5 py-2 text-sm font-semibold text-white shadow-sm disabled:opacity-50"
+            >
+              {saving ? 'Saving…' : 'Save availability'}
+            </button>
+          </div>
+        </>
+      )}
+    </div>
+  )
+}
 
 function AdminPropertyInternalNotesEditor({ recordId, savedValue, formDisabled, onSaved }) {
   const [text, setText] = useState(() => String(savedValue ?? ''))
@@ -481,7 +758,7 @@ export default function AdminPortal() {
     sessionStorage.removeItem(AXIS_ADMIN_SESSION_KEY)
     clearDeveloperPortalFlags()
     setSession(null)
-    window.location.replace('/admin')
+    window.location.replace('/portal')
   }
 
   // Unopened threads for dashboard badge
@@ -1389,19 +1666,22 @@ export default function AdminPortal() {
       )}
 
       {tab === 'calendar' && (
-        <Suspense
-          fallback={(
-            <div className="rounded-3xl border border-slate-200 bg-white px-6 py-12 text-center text-sm text-slate-500">
-              Loading calendar…
-            </div>
-          )}
-        >
-          <AdminPortalCalendarTab
-            loadAllSchedulingRows
-            manager={{ email: user?.email || '', name: user?.name || user?.email || 'Admin' }}
-            allowedPropertyNames={[]}
-          />
-        </Suspense>
+        <div>
+          <AdminMeetingAvailabilitySection user={user} />
+          <Suspense
+            fallback={(
+              <div className="rounded-3xl border border-slate-200 bg-white px-6 py-12 text-center text-sm text-slate-500">
+                Loading calendar…
+              </div>
+            )}
+          >
+            <AdminPortalCalendarTab
+              loadAllSchedulingRows
+              manager={{ email: user?.email || '', name: user?.name || user?.email || 'Admin' }}
+              allowedPropertyNames={[]}
+            />
+          </Suspense>
+        </div>
       )}
 
       {tab === 'profile' && (

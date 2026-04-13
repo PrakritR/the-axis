@@ -450,7 +450,7 @@ export default function ResidentPortalInbox({ resident }) {
         subject: showSubjectField ? subjResolved : '',
       })
       notifyPortalMessage({
-        toAdmins: true,
+        toAdmins: composeTo === 'admin',
         senderName: resident.Name || email,
         subject: subjResolved,
       })
@@ -485,7 +485,7 @@ export default function ResidentPortalInbox({ resident }) {
         subject: showSubjectField ? subjResolved : '',
       })
       notifyPortalMessage({
-        toAdmins: true,
+        toAdmins: selectedThreadId === UI_ADMIN,
         senderName: resident.Name || email,
         subject: subjResolved,
       })
