@@ -44,6 +44,26 @@ async function fetchLeaseDraftsForManager(ownerId) {
   return rows
 }
 
+async function fetchAllLeaseDrafts() {
+  const rows = []
+  let offset = null
+  do {
+    const url = new URL(`${AT_BASE}/Lease%20Drafts`)
+    url.searchParams.set('sort[0][field]', 'Updated At')
+    url.searchParams.set('sort[0][direction]', 'desc')
+    if (offset) url.searchParams.set('offset', offset)
+    const res = await fetch(url.toString(), { headers: { Authorization: `Bearer ${AIRTABLE_TOKEN}` } })
+    if (!res.ok) {
+      const text = await res.text()
+      throw new Error(text.slice(0, 300))
+    }
+    const data = await res.json()
+    for (const r of (data.records || [])) rows.push({ id: r.id, ...r.fields })
+    offset = data.offset || null
+  } while (offset)
+  return rows
+}
+
 async function fetchUnreadNotificationCount(recipientRecordId) {
   if (!recipientRecordId) return 0
   try {
@@ -148,16 +168,22 @@ export default function ManagerLeasingTab({ manager, allowedPropertyNames }) {
     setLoading(true)
     setLoadError('')
     try {
-      const all = await fetchLeaseDraftsForManager(ownerId)
+      const allFromOwner = await fetchLeaseDraftsForManager(ownerId)
       // Scope to allowed properties if provided
       const allowed = Array.isArray(allowedPropertyNames)
         ? new Set(allowedPropertyNames)
         : allowedPropertyNames instanceof Set
         ? allowedPropertyNames
         : null
+      // Fallback: if owner-id scoped rows are empty, fetch all drafts and scope by property names.
+      // This ensures newly approved applications show up even if Owner ID is not yet populated on the draft.
+      let sourceRows = allFromOwner
+      if (sourceRows.length === 0 && allowed && allowed.size > 0) {
+        sourceRows = await fetchAllLeaseDrafts()
+      }
       const scoped = allowed && allowed.size > 0
-        ? all.filter(d => allowed.has(d['Property']))
-        : all
+        ? sourceRows.filter(d => allowed.has(d['Property']))
+        : sourceRows
       setDrafts(scoped)
     } catch (err) {
       setLoadError(err.message || 'Could not load leases')
@@ -174,6 +200,14 @@ export default function ManagerLeasingTab({ manager, allowedPropertyNames }) {
   useEffect(() => {
     fetchUnreadNotificationCount(ownerId).then(setUnreadCount)
   }, [ownerId])
+
+  useEffect(() => {
+    const onDraftsChanged = () => {
+      loadDrafts()
+    }
+    window.addEventListener('axis:lease-drafts-changed', onDraftsChanged)
+    return () => window.removeEventListener('axis:lease-drafts-changed', onDraftsChanged)
+  }, [loadDrafts])
 
   const visibleDrafts = useMemo(() => {
     const filterFn = STATUS_FILTER_ITEMS.find(f => f.id === statusFilter)?.match ?? (() => true)
@@ -269,7 +303,8 @@ export default function ManagerLeasingTab({ manager, allowedPropertyNames }) {
       )}
 
       {/* Filter pills */}
-      <div className="grid grid-cols-2 gap-2 rounded-[28px] border border-slate-200 bg-slate-50 p-2 sm:grid-cols-4">
+      <div className="overflow-x-auto">
+        <div className="grid min-w-[760px] grid-cols-5 gap-2 rounded-[28px] border border-slate-200 bg-slate-50 p-2">
         {STATUS_FILTER_ITEMS.map(f => (
           <button
             key={f.id}
@@ -285,6 +320,7 @@ export default function ManagerLeasingTab({ manager, allowedPropertyNames }) {
             <div className="mt-0.5 text-xs font-semibold">{f.label}</div>
           </button>
         ))}
+        </div>
       </div>
 
       {/* Search */}

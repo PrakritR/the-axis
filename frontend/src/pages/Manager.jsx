@@ -4676,6 +4676,9 @@ function ApplicationsPanel({ allowedPropertyNames, manager }) {
         } else {
           toast.success(data.message || 'Application approved and lease draft generated')
         }
+        window.dispatchEvent(new CustomEvent('axis:lease-drafts-changed', {
+          detail: { source: 'application-approved', applicationRecordId: recordId },
+        }))
       } else {
         const res = await fetch('/api/portal?action=manager-reject-application', {
           method: 'POST',
