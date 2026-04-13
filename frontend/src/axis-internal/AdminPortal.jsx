@@ -1397,7 +1397,7 @@ export default function AdminPortal() {
           )}
         >
           <AdminPortalCalendarTab
-            calendarMode="admin"
+            loadAllSchedulingRows
             manager={{ email: user?.email || '', name: user?.name || user?.email || 'Admin' }}
             allowedPropertyNames={[]}
           />

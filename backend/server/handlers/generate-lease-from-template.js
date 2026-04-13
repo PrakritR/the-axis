@@ -88,6 +88,19 @@ async function findExistingDraft(applicationRecordId) {
   return rec ? { id: rec.id, ...rec.fields } : null
 }
 
+function tryParseLeaseJson(fields) {
+  const raw = fields?.['Lease JSON']
+  if (raw == null) return null
+  const s = String(raw).trim()
+  if (!s) return null
+  try {
+    const o = JSON.parse(s)
+    return o && typeof o === 'object' ? o : null
+  } catch {
+    return null
+  }
+}
+
 // ─── Lease data builder (mirrors leaseTemplate.js — server-safe, no ESM imports) ─
 
 function fmt(date) {
@@ -193,23 +206,31 @@ function buildLeaseData(app, propertyRecord, overrides = {}) {
 
 // ─── Exported helper (used by manager-approve-application.js) ─────────────────
 
-export async function generateLeaseFromTemplate({ applicationRecordId, overrides = {}, generatedBy = 'Manager', ownerId = '' }) {
+export async function generateLeaseFromTemplate({
+  applicationRecordId,
+  overrides = {},
+  generatedBy = 'Manager',
+  ownerId = '',
+  forceRegenerate = false,
+}) {
   const recordId = normalizeRecordId(applicationRecordId)
   if (!recordId) throw new Error('applicationRecordId is required')
 
-  // Check for existing draft first
   const existing = await findExistingDraft(recordId)
-  if (existing) return { draft: existing, created: false }
+  if (existing) {
+    const parsed = tryParseLeaseJson(existing)
+    if (!forceRegenerate && parsed) {
+      return { draft: existing, created: false }
+    }
+  }
 
   const app = await getApplication(recordId)
-  // Inherit Owner ID from the application if caller didn't provide one
   const resolvedOwnerId = ownerId || String(app['Owner ID'] || '').trim()
-
   const propertyRecord = await getPropertyByName(app['Property Name'])
   const leaseData = buildLeaseData(app, propertyRecord, overrides)
-
   const now = new Date().toISOString()
-  const record = await airtablePost('Lease Drafts', {
+
+  const coreFields = {
     'Resident Name': leaseData.tenantName,
     'Resident Email': leaseData.tenantEmail,
     'Resident Record ID': String(app?.Resident?.[0] || app?.['Resident Record ID'] || '').trim(),
@@ -221,14 +242,23 @@ export async function generateLeaseFromTemplate({ applicationRecordId, overrides
     'Deposit Amount': leaseData.securityDeposit,
     'Utilities Fee': leaseData.utilityFee,
     'Lease Term': app['Lease Term'] || (leaseData.isMonthToMonth ? 'Month-to-Month' : 'Fixed Term'),
+    'Lease JSON': JSON.stringify(leaseData),
+    'Updated At': now,
+    ...(resolvedOwnerId ? { 'Owner ID': resolvedOwnerId } : {}),
+  }
+
+  if (existing) {
+    const updated = await airtablePatch('Lease Drafts', existing.id, coreFields)
+    return { draft: { id: updated.id, ...updated.fields }, created: false }
+  }
+
+  const record = await airtablePost('Lease Drafts', {
+    ...coreFields,
     'AI Draft Content': '',
     'Manager Edited Content': '',
-    'Lease JSON': JSON.stringify(leaseData),
     Status: 'Draft Generated',
-    'Updated At': now,
     'Application Record ID': recordId,
     'Manager Notes': '',
-    ...(resolvedOwnerId ? { 'Owner ID': resolvedOwnerId } : {}),
   })
 
   return { draft: { id: record.id, ...record.fields }, created: true }
@@ -245,7 +275,7 @@ export default async function handler(req, res) {
 
   if (!AIRTABLE_TOKEN) return res.status(500).json({ error: 'Data service not configured.' })
 
-  const { applicationRecordId, overrides = {}, managerName } = req.body || {}
+  const { applicationRecordId, overrides = {}, managerName, forceRegenerate = false } = req.body || {}
 
   let tenant = null
   try {
@@ -271,6 +301,7 @@ export default async function handler(req, res) {
       overrides,
       generatedBy: managerName || 'Manager',
       ownerId: tenant?.ownerId || '',
+      forceRegenerate: Boolean(forceRegenerate),
     })
     return res.status(200).json({
       draft,

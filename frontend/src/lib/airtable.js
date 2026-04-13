@@ -1487,11 +1487,16 @@ export async function publishLeaseDraft(leaseDraftId) {
  * Generate a lease draft from the resident's application using the
  * structured template (no AI). Returns the created or existing draft.
  */
-export async function generateLeaseFromApplication(applicationRecordId, overrides = {}, managerRecordId = '') {
+export async function generateLeaseFromApplication(
+  applicationRecordId,
+  overrides = {},
+  managerRecordId = '',
+  { forceRegenerate = false } = {},
+) {
   const res = await fetch('/api/generate-lease-from-template', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ applicationRecordId, overrides, managerRecordId }),
+    body: JSON.stringify({ applicationRecordId, overrides, managerRecordId, forceRegenerate }),
   })
   const data = await res.json()
   if (!res.ok) throw new Error(data.error || 'Could not generate lease.')

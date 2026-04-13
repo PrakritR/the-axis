@@ -17,6 +17,8 @@ import { publishLeaseDraft, generateLeaseFromApplication } from '../lib/airtable
 function StatusBadge({ status }) {
   const map = {
     'Draft Generated': 'border-amber-200 bg-amber-50 text-amber-700',
+    'Changes Needed': 'border-amber-200 bg-amber-50 text-amber-800',
+    'Under Review': 'border-sky-200 bg-sky-50 text-sky-800',
     Published: 'border-blue-200 bg-blue-50 text-blue-700',
     Signed: 'border-emerald-200 bg-emerald-50 text-emerald-700',
   }
@@ -41,7 +43,7 @@ export default function ManagerApplicationLease({ applicationId, managerName }) 
   useEffect(() => {
     if (!applicationId) return
     setLoading(true)
-    generateLeaseFromApplication(applicationId)
+    generateLeaseFromApplication(applicationId, {}, '', { forceRegenerate: false })
       .then(({ draft: d }) => {
         setDraft(d)
         try {
@@ -61,7 +63,9 @@ export default function ManagerApplicationLease({ applicationId, managerName }) 
   async function handleGenerate() {
     setGenerating(true)
     try {
-      const { draft: d, created } = await generateLeaseFromApplication(applicationId)
+      const { draft: d, created } = await generateLeaseFromApplication(applicationId, {}, '', {
+        forceRegenerate: Boolean(draft),
+      })
       setDraft(d)
       try {
         setLeaseData(d?.['Lease JSON'] ? JSON.parse(d['Lease JSON']) : null)

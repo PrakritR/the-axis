@@ -66,6 +66,7 @@ import AddPropertyWizard from '../components/AddPropertyWizard'
 import { PropertyDetailPanel } from '../lib/propertyDetailPanel.jsx'
 import { ApplicationDetailPanel, applicationViewModelFromAirtableRow } from '../lib/applicationDetailPanel.jsx'
 import ManagerApplicationLease from '../components/ManagerApplicationLease.jsx'
+import LeaseHTMLTemplate from '../components/LeaseHTMLTemplate.jsx'
 import {
   PortalOpsCard,
   PortalOpsEmptyState,
@@ -76,11 +77,6 @@ import {
   deriveApplicationApprovalState,
   applicationRejectedFieldName,
 } from '../lib/applicationApprovalState.js'
-import {
-  loadAdminMeetingCalendarProfiles,
-  updateAdminMeetingAvailability,
-} from '../lib/adminPortalAirtable.js'
-
 // ─── Session ──────────────────────────────────────────────────────────────────
 export const MANAGER_SESSION_KEY = 'axis_manager'
 const MANAGER_ONBOARDING_KEY = 'axis_manager_onboarding'
@@ -1412,9 +1408,7 @@ function AvailabilityEditorPanel({
   propertyOptions,
   selectedPropertyId,
   onSelectProperty,
-  calendarMode = 'manager',
 }) {
-  const isAdminCalendar = calendarMode === 'admin'
   const hasApprovedPick = Array.isArray(propertyOptions) && propertyOptions.length > 0
   const disabled = availSaving || isManagerInternalPreview(manager) || !selectedPropertyId
 
@@ -1422,8 +1416,7 @@ function AvailabilityEditorPanel({
     <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm lg:sticky lg:top-6">
       <h2 className="text-xl font-black text-slate-900">Availability editor</h2>
       <label className="mt-4 block text-xs font-semibold text-slate-700">
-        {isAdminCalendar ? 'Admin profile' : 'Property'}
-        <span className="font-normal text-slate-400">{isAdminCalendar ? ' (meeting calendar)' : ' (assigned scope)'}</span>
+        Property
         <div className={`${MANAGER_PILL_SELECT_WRAP_CLS} mt-1.5 max-w-full`}>
           <select
             value={selectedPropertyId}
@@ -1432,11 +1425,7 @@ function AvailabilityEditorPanel({
             className={MANAGER_PILL_SELECT_CLS}
           >
             {!hasApprovedPick ? (
-              <option value="">
-                {isAdminCalendar
-                  ? 'No admin profiles — add Admin Profile rows (Name + Email) in Airtable'
-                  : 'No assigned properties'}
-              </option>
+              <option value=""></option>
             ) : (
               propertyOptions.map((option) => (
                 <option key={option.id} value={option.id}>{option.label}</option>
@@ -1457,7 +1446,7 @@ function AvailabilityEditorPanel({
 
       {hasApprovedPick && !selectedPropertyId ? (
         <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
-          {isAdminCalendar ? 'Select an admin profile to add availability blocks.' : 'Select a property to add availability blocks.'}
+          Select a property to add availability blocks.
         </div>
       ) : null}
 
@@ -2060,16 +2049,10 @@ function workOrdersToCalendarRows(workOrders, allowedPropertyNamesLower) {
 }
 
 function schedulingRowsForCalendarView(rows, options) {
-  const {
-    isAdminCalendar,
-    selectedPropertyName,
-    managerEmail,
-    selectedAdminProfileEmail,
-  } = options
+  const { selectedPropertyName, managerEmail } = options
 
   return (rows || []).filter((row) => {
     if (row._workOrder) {
-      if (isAdminCalendar) return true
       const prop = String(row.Property || '').trim().toLowerCase()
       const sel = String(selectedPropertyName || '').trim().toLowerCase()
       if (!sel || !prop) return false
@@ -2081,16 +2064,6 @@ function schedulingRowsForCalendarView(rows, options) {
     const rme = String(row['Manager Email'] || '').trim().toLowerCase()
     const mem = String(managerEmail || '').trim().toLowerCase()
     const selProp = String(selectedPropertyName || '').trim().toLowerCase()
-    const selAdmin = String(selectedAdminProfileEmail || '').trim().toLowerCase()
-
-    if (isAdminCalendar) {
-      if (!selAdmin) return false
-      if (type === CALENDAR_EVENT_TYPES.MEETING || type === CALENDAR_EVENT_TYPES.ISSUE) {
-        return rme === selAdmin
-      }
-      if (!rme) return true
-      return rme === selAdmin
-    }
 
     if (!selProp) return false
     if (prop) {
@@ -4736,8 +4709,7 @@ function ApplicationsPanel({ allowedPropertyNames, manager }) {
 }
 
 // ─── CalendarTabPanel ─────────────────────────────────────────────────────────
-export function CalendarTabPanel({ manager, allowedPropertyNames, calendarMode = 'manager' }) {
-  const isAdminCalendar = calendarMode === 'admin'
+export function CalendarTabPanel({ manager, allowedPropertyNames, loadAllSchedulingRows = false }) {
   const [view, setView] = useState('month')
   const [anchorDate, setAnchorDate] = useState(() => new Date())
   const [selectedDateKey, setSelectedDateKey] = useState(() => dateKeyFromDate(new Date()))
@@ -4745,7 +4717,6 @@ export function CalendarTabPanel({ manager, allowedPropertyNames, calendarMode =
   const [meetOpen, setMeetOpen] = useState(false)
   const [loading, setLoading] = useState(true)
   const [properties, setProperties] = useState([])
-  const [calendarProfiles, setCalendarProfiles] = useState([])
   const [weeklyFreeByProperty, setWeeklyFreeByProperty] = useState({})
   const [selectedPropertyId, setSelectedPropertyId] = useState('')
   const [availSaving, setAvailSaving] = useState(false)
@@ -4753,15 +4724,14 @@ export function CalendarTabPanel({ manager, allowedPropertyNames, calendarMode =
   const load = useCallback(async () => {
     setLoading(true)
     try {
-      const [sched, props, workOrders, adminProfiles] = await Promise.all([
-        isAdminCalendar
+      const [sched, props, workOrders] = await Promise.all([
+        loadAllSchedulingRows
           ? fetchAllSchedulingRows()
           : fetchSchedulingForManagerScope({ managerEmail: manager?.email, propertyNames: allowedPropertyNames || [] }),
         fetchPropertiesAdmin(),
         getAllWorkOrders().catch(() => []),
-        isAdminCalendar ? loadAdminMeetingCalendarProfiles().catch(() => []) : Promise.resolve([]),
       ])
-      const allowedLower = isAdminCalendar
+      const allowedLower = loadAllSchedulingRows
         ? null
         : new Set(
             (allowedPropertyNames || []).map((name) => String(name).trim().toLowerCase()).filter(Boolean),
@@ -4771,7 +4741,7 @@ export function CalendarTabPanel({ manager, allowedPropertyNames, calendarMode =
       setProperties(props)
       const approvedAssigned = props
         .filter((p) => {
-          if (isAdminCalendar) return isPropertyRecordApproved(p)
+          if (loadAllSchedulingRows) return isPropertyRecordApproved(p)
           return (
             propertyEligibleForManagerCalendarScheduling(p, manager) ||
             propertyNameInAllowedScope(p, allowedPropertyNames)
@@ -4781,31 +4751,13 @@ export function CalendarTabPanel({ manager, allowedPropertyNames, calendarMode =
           propertyRecordName(a).localeCompare(propertyRecordName(b), undefined, { sensitivity: 'base' }),
         )
 
-      /** All Admin Profile rows with valid email — do not require Enabled (checkbox often unset/false in Airtable). */
-      const adminCalendarProfiles = isAdminCalendar
-        ? (Array.isArray(adminProfiles) ? adminProfiles : [])
-        : []
-      setCalendarProfiles(adminCalendarProfiles)
-
       const byProperty = {}
-      if (isAdminCalendar) {
-        adminCalendarProfiles.forEach((profile) => {
-          const text = String(profile.meetingAvailability || '').trim()
-          byProperty[profile.id] = text ? weeklyFreeArraysFromTourText(text) : emptyWeeklyFreeArrays()
-        })
-      } else {
-        approvedAssigned.forEach((property) => {
-          const text = propertyTourAvailabilityText(property) || ''
-          byProperty[property.id] = text ? weeklyFreeArraysFromTourText(text) : emptyWeeklyFreeArrays()
-        })
-      }
+      approvedAssigned.forEach((property) => {
+        const text = propertyTourAvailabilityText(property) || ''
+        byProperty[property.id] = text ? weeklyFreeArraysFromTourText(text) : emptyWeeklyFreeArrays()
+      })
       setWeeklyFreeByProperty(byProperty)
       setSelectedPropertyId((current) => {
-        if (isAdminCalendar) {
-          if (adminCalendarProfiles.some((p) => p.id === current)) return current
-          const byEmail = adminCalendarProfiles.find((p) => String(p.email || '').toLowerCase() === String(manager?.email || '').toLowerCase())
-          return byEmail?.id || adminCalendarProfiles[0]?.id || ''
-        }
         if (approvedAssigned.some((p) => p.id === current)) return current
         return approvedAssigned[0]?.id || ''
       })
@@ -4814,12 +4766,12 @@ export function CalendarTabPanel({ manager, allowedPropertyNames, calendarMode =
     } finally {
       setLoading(false)
     }
-  }, [manager, allowedPropertyNames, isAdminCalendar])
+  }, [manager, allowedPropertyNames, loadAllSchedulingRows])
 
   useEffect(() => { load() }, [load])
 
   const approvedAssignedProperties = useMemo(() => {
-    if (isAdminCalendar) {
+    if (loadAllSchedulingRows) {
       return properties
         .filter((p) => isPropertyRecordApproved(p))
         .sort((a, b) =>
@@ -4834,27 +4786,17 @@ export function CalendarTabPanel({ manager, allowedPropertyNames, calendarMode =
       .sort((a, b) =>
         propertyRecordName(a).localeCompare(propertyRecordName(b), undefined, { sensitivity: 'base' }),
       )
-  }, [properties, manager, isAdminCalendar, allowedPropertyNames])
+  }, [properties, manager, loadAllSchedulingRows, allowedPropertyNames])
 
   const selectedProperty = useMemo(
     () => approvedAssignedProperties.find((p) => p.id === selectedPropertyId) || null,
     [approvedAssignedProperties, selectedPropertyId],
   )
 
-  const selectedCalendarProfile = useMemo(
-    () => calendarProfiles.find((p) => p.id === selectedPropertyId) || null,
-    [calendarProfiles, selectedPropertyId],
+  const availabilityOwnerOptions = useMemo(
+    () => approvedAssignedProperties.map((p) => ({ id: p.id, label: propertyRecordName(p) || 'Property' })),
+    [approvedAssignedProperties],
   )
-
-  const availabilityOwnerOptions = useMemo(() => {
-    if (isAdminCalendar) {
-      return calendarProfiles.map((profile) => ({
-        id: profile.id,
-        label: profile.name || profile.email,
-      }))
-    }
-    return approvedAssignedProperties.map((p) => ({ id: p.id, label: propertyRecordName(p) || 'Property' }))
-  }, [isAdminCalendar, calendarProfiles, approvedAssignedProperties])
 
   const selectedWeeklyFree = useMemo(
     () => weeklyFreeByProperty[selectedPropertyId] || emptyWeeklyFreeArrays(),
@@ -4869,18 +4811,10 @@ export function CalendarTabPanel({ manager, allowedPropertyNames, calendarMode =
   const schedulingRowsForView = useMemo(
     () =>
       schedulingRowsForCalendarView(schedulingRows, {
-        isAdminCalendar,
-        selectedPropertyName: !isAdminCalendar ? propertyRecordName(selectedProperty || {}) : '',
+        selectedPropertyName: propertyRecordName(selectedProperty || {}),
         managerEmail: manager?.email || '',
-        selectedAdminProfileEmail: isAdminCalendar ? selectedCalendarProfile?.email || '' : '',
       }),
-    [
-      schedulingRows,
-      isAdminCalendar,
-      selectedProperty,
-      selectedCalendarProfile,
-      manager?.email,
-    ],
+    [schedulingRows, selectedProperty, manager?.email],
   )
 
   const bookedByDate = useMemo(() => {
@@ -4906,30 +4840,6 @@ export function CalendarTabPanel({ manager, allowedPropertyNames, calendarMode =
   }
 
   async function handleSaveAvailability() {
-    if (isAdminCalendar) {
-      if (!selectedCalendarProfile) {
-        toast.error('Select an admin profile first')
-        return
-      }
-      setAvailSaving(true)
-      try {
-        const encoded = encodeTourAvailabilityFromWeeklyFree(selectedWeeklyFree)
-        await updateAdminMeetingAvailability(selectedCalendarProfile.id, encoded)
-        setCalendarProfiles((current) =>
-          current.map((profile) =>
-            profile.id === selectedCalendarProfile.id
-              ? { ...profile, meetingAvailability: encoded }
-              : profile,
-          ),
-        )
-        toast.success(`Availability saved for ${selectedCalendarProfile.name || selectedCalendarProfile.email}`)
-      } catch (err) {
-        toast.error(err.message || 'Could not save availability')
-      } finally {
-        setAvailSaving(false)
-      }
-      return
-    }
     if (!selectedProperty) {
       toast.error('Select a property first')
       return
@@ -5002,11 +4912,7 @@ export function CalendarTabPanel({ manager, allowedPropertyNames, calendarMode =
                   <option key={option.id} value={option.id}>{option.label}</option>
                 ))
               ) : (
-                <option value="">
-                  {isAdminCalendar
-                    ? 'No admin profiles — add Admin Profile rows (Name + Email) in Airtable'
-                    : 'No assigned properties'}
-                </option>
+                <option value=""></option>
               )}
             </select>
             {MANAGER_PILL_SELECT_CHEVRON}
@@ -5116,7 +5022,6 @@ export function CalendarTabPanel({ manager, allowedPropertyNames, calendarMode =
           propertyOptions={availabilityOwnerOptions}
           selectedPropertyId={selectedPropertyId}
           onSelectProperty={setSelectedPropertyId}
-          calendarMode={calendarMode}
         />
       </div>
 
@@ -5124,7 +5029,7 @@ export function CalendarTabPanel({ manager, allowedPropertyNames, calendarMode =
         open={meetOpen}
         onClose={() => setMeetOpen(false)}
         initialDateKey={selectedDateKey}
-        initialPropertyName={!isAdminCalendar ? propertyRecordName(selectedProperty || {}) : ''}
+        initialPropertyName={propertyRecordName(selectedProperty || {})}
         manager={manager}
         approvedPropertyNames={meetModalApprovedPropertyNames}
         onCreated={() => {
@@ -5590,6 +5495,18 @@ function LeaseEditor({ draftId, manager, onBack, embedded = false }) {
   const [actionLoading, setActionLoading] = useState('') // 'reject' | 'approve' | 'publish' | 'signforge' | 'signforge-status'
   const leaseFileInputRef = useRef(null)
 
+  const leaseDataForPreview = useMemo(() => {
+    if (!draft) return null
+    try {
+      const raw = draft['Lease JSON']
+      if (raw == null || !String(raw).trim()) return null
+      const o = JSON.parse(String(raw))
+      return o && typeof o === 'object' ? o : null
+    } catch {
+      return null
+    }
+  }, [draft])
+
   const loadDraft = useCallback(async () => {
     setLoading(true)
     try {
@@ -5890,6 +5807,36 @@ function LeaseEditor({ draftId, manager, onBack, embedded = false }) {
       {/* Body — lease-focused column (no sidebar) */}
       <div className="mx-auto w-full max-w-5xl flex-1 px-4 py-5 sm:px-6">
         <div className="min-w-0 space-y-4">
+          {leaseDataForPreview ? (
+            <div className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm">
+              <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 bg-slate-50 px-5 py-3">
+                <div>
+                  <div className="text-[11px] font-bold uppercase tracking-[0.14em] text-slate-500">Formatted lease agreement</div>
+                  <p className="mt-0.5 text-xs text-slate-500">Same layout as the resident portal (built from Lease JSON).</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => window.print()}
+                  className="shrink-0 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 transition hover:bg-slate-50"
+                >
+                  Print / PDF
+                </button>
+              </div>
+              <div className="max-h-[min(80vh,880px)] overflow-y-auto overflow-x-hidden bg-white p-2">
+                <LeaseHTMLTemplate
+                  leaseData={leaseDataForPreview}
+                  signedBy={draft?.Status === 'Signed' ? draft?.['Signature Text'] : undefined}
+                  signedAt={draft?.Status === 'Signed' ? draft?.['Signed At'] : undefined}
+                />
+              </div>
+            </div>
+          ) : draft && !loading ? (
+            <div className="rounded-2xl border border-amber-200 bg-amber-50/80 px-4 py-3 text-sm text-amber-950">
+              <strong>No structured lease data yet.</strong> Open the linked application → Details → use{' '}
+              <strong>Generate Lease</strong> / <strong>Regenerate Lease</strong> to fill <strong>Lease JSON</strong>, then refresh this page.
+            </div>
+          ) : null}
+
           {canEdit ? (
             <>
               <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
@@ -5931,7 +5878,7 @@ function LeaseEditor({ draftId, manager, onBack, embedded = false }) {
             </>
           ) : null}
 
-          {/* Lease text — single view (what residents see uses Manager Edited Content, else AI draft) */}
+          {/* Optional plain-text override (resident fallback when Lease JSON is absent) */}
           <div className="overflow-hidden rounded-3xl border border-slate-200 bg-white">
             {canEdit ? (
               <textarea
@@ -5939,7 +5886,11 @@ function LeaseEditor({ draftId, manager, onBack, embedded = false }) {
                 onChange={e => setEditorContent(e.target.value)}
                 spellCheck={false}
                 className="h-[calc(100vh-320px)] min-h-[420px] w-full resize-none p-6 font-mono text-sm leading-7 text-slate-800 focus:outline-none"
-                placeholder="Lease content will appear here after generation…"
+                placeholder={
+                  leaseDataForPreview
+                    ? 'Optional: plain-text override. Residents see the formatted lease above when Lease JSON is present; this field is a fallback.'
+                    : 'Lease content will appear here after generation, or paste plain text for the resident if you are not using Lease JSON…'
+                }
               />
             ) : (
               <>
