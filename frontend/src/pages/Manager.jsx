@@ -4788,6 +4788,13 @@ function ApplicationsPanel({ allowedPropertyNames, manager }) {
 
   const filterOptions = allowedPropertyNames || []
 
+  const applicationStatusPill = (app) => {
+    const st = deriveApplicationApprovalState(app)
+    if (st === 'approved') return { label: 'Approved', tone: 'emerald' }
+    if (st === 'rejected') return { label: 'Rejected', tone: 'red' }
+    return { label: 'Pending review', tone: 'amber' }
+  }
+
   return (
     <div className="mb-10">
       <div className="mb-5 flex flex-wrap items-center gap-3">
@@ -4871,54 +4878,69 @@ function ApplicationsPanel({ allowedPropertyNames, manager }) {
           </div>
         ) : (
           <>
-            <div className="divide-y divide-slate-100">
-              {applications.map((app) => {
-                const { label, cls } = statusLabel(app)
-                const busy = approving[app.id]
-                return (
-                  <div key={app.id} className="flex flex-col gap-3 px-6 py-5 sm:flex-row sm:items-center sm:gap-5">
-                    <div className="flex-1 min-w-0">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <span className="font-semibold text-slate-900 truncate">{app['Signer Full Name'] || '—'}</span>
-                        <span className={`shrink-0 rounded-full border px-2.5 py-0.5 text-[11px] font-bold ${cls}`}>{label}</span>
-                      </div>
-                      <div className="mt-1 flex flex-wrap gap-x-4 gap-y-0.5 text-sm text-slate-500">
-                        <span>{app['Signer Email'] || '—'}</span>
-                        {app['Property Name'] && <span>{app['Property Name']}</span>}
-                        {app['Room Number'] && <span>Room {app['Room Number']}</span>}
-                        {app['Lease Term'] && <span>{app['Lease Term']}</span>}
-                      </div>
-                      {app['Application ID'] && (
-                        <div className="mt-1 font-mono text-xs text-slate-400">APP-{String(app['Application ID'])}</div>
-                      )}
+            <DataTable
+              empty="No applications in this view"
+              columns={[
+                {
+                  key: 'applicant',
+                  label: 'Applicant',
+                  headerClassName: 'w-[30%]',
+                  render: (app) => (
+                    <>
+                      <div className="font-semibold text-slate-900">{app['Signer Full Name'] || '—'}</div>
+                      <div className="text-xs text-slate-500">{app['Signer Email'] || '—'}</div>
+                    </>
+                  ),
+                },
+                {
+                  key: 'summary',
+                  label: 'Summary',
+                  headerClassName: 'w-[40%]',
+                  render: (app) => (
+                    <div className="flex flex-wrap gap-1.5">
+                      {app['Property Name'] ? (
+                        <span className="rounded-full border border-slate-200 bg-white px-2.5 py-0.5 text-[11px] font-semibold text-slate-600">{app['Property Name']}</span>
+                      ) : null}
+                      {app['Room Number'] ? (
+                        <span className="rounded-full border border-slate-200 bg-white px-2.5 py-0.5 text-[11px] font-semibold text-slate-600">Room {app['Room Number']}</span>
+                      ) : null}
+                      {app['Lease Term'] ? (
+                        <span className="rounded-full border border-slate-200 bg-white px-2.5 py-0.5 text-[11px] font-semibold text-slate-600">{app['Lease Term']}</span>
+                      ) : null}
+                      {app['Application ID'] ? (
+                        <span className="rounded-full border border-slate-200 bg-white px-2.5 py-0.5 text-[11px] font-mono font-semibold text-slate-600">APP-{String(app['Application ID'])}</span>
+                      ) : null}
                     </div>
-                    <div className="flex shrink-0 flex-wrap gap-2">
-                      <button
-                        type="button"
-                        onClick={() => setDetailAppId((id) => (id === app.id ? null : app.id))}
-                        className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
-                      >
-                        {detailAppId === app.id ? 'Hide details' : 'Details'}
-                      </button>
-                      <button
-                        onClick={() => handleDecision(app.id, true)}
-                        disabled={!!busy || deriveApplicationApprovalState(app) === 'approved'}
-                        className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-2 text-sm font-semibold text-emerald-700 transition hover:bg-emerald-100 disabled:opacity-40"
-                      >
-                        {busy === 'approving' ? 'Approving…' : 'Approve'}
-                      </button>
-                      <button
-                        onClick={() => handleDecision(app.id, false)}
-                        disabled={!!busy || deriveApplicationApprovalState(app) === 'rejected'}
-                        className="rounded-xl border border-red-200 bg-red-50 px-4 py-2 text-sm font-semibold text-red-700 transition hover:bg-red-100 disabled:opacity-40"
-                      >
-                        {busy === 'rejecting' ? 'Rejecting…' : 'Reject'}
-                      </button>
-                    </div>
-                  </div>
-                )
-              })}
-            </div>
+                  ),
+                },
+                {
+                  key: 'status',
+                  label: 'Status',
+                  headerClassName: 'w-[16%] text-center',
+                  cellClassName: 'text-center',
+                  render: (app) => {
+                    const p = applicationStatusPill(app)
+                    return <StatusPill tone={p.tone}>{p.label}</StatusPill>
+                  },
+                },
+                {
+                  key: 'actions',
+                  label: 'Action',
+                  headerClassName: 'w-[14%] text-right',
+                  cellClassName: 'text-right',
+                  render: (app) => (
+                    <button
+                      type="button"
+                      className="whitespace-nowrap text-sm font-semibold text-[#2563eb]"
+                      onClick={() => setDetailAppId((id) => (id === app.id ? null : app.id))}
+                    >
+                      {detailAppId === app.id ? 'Hide' : 'Details'}
+                    </button>
+                  ),
+                },
+              ]}
+              rows={applications.map((app) => ({ key: app.id, data: app }))}
+            />
             {detailAppId ? (
               <div className="border-t border-slate-100 px-4 py-5 sm:px-6">
                 {(() => {

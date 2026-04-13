@@ -159,7 +159,6 @@ export default function ManagerLeasingTab({ manager, allowedPropertyNames }) {
   const [loadError, setLoadError] = useState('')
   const [selectedDraft, setSelectedDraft] = useState(null)
   const [statusFilter, setStatusFilter] = useState('all')
-  const [propertySearch, setPropertySearch] = useState('')
   const [unreadCount, setUnreadCount] = useState(0)
 
   const ownerId = manager?.id || manager?.airtableRecordId || ''
@@ -211,16 +210,8 @@ export default function ManagerLeasingTab({ manager, allowedPropertyNames }) {
 
   const visibleDrafts = useMemo(() => {
     const filterFn = STATUS_FILTER_ITEMS.find(f => f.id === statusFilter)?.match ?? (() => true)
-    let result = drafts.filter(d => filterFn(d['Status'] || ''))
-    if (propertySearch.trim()) {
-      const q = propertySearch.trim().toLowerCase()
-      result = result.filter(d =>
-        (d['Property'] || '').toLowerCase().includes(q) ||
-        (d['Resident Name'] || '').toLowerCase().includes(q)
-      )
-    }
-    return result
-  }, [drafts, statusFilter, propertySearch])
+    return drafts.filter(d => filterFn(d['Status'] || ''))
+  }, [drafts, statusFilter])
 
   const statusCounts = useMemo(() => {
     return STATUS_FILTER_ITEMS.reduce((acc, f) => {
@@ -252,9 +243,6 @@ export default function ManagerLeasingTab({ manager, allowedPropertyNames }) {
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-2xl font-black text-slate-900">Leases</h1>
-          <p className="mt-0.5 text-sm text-slate-500">
-            Review drafts, coordinate updates with admin, and track leases through signing
-          </p>
         </div>
         <div className="flex items-center gap-2">
           {unreadCount > 0 && (
@@ -323,37 +311,12 @@ export default function ManagerLeasingTab({ manager, allowedPropertyNames }) {
         </div>
       </div>
 
-      {/* Search */}
-      <div className="relative">
-        <input
-          value={propertySearch}
-          onChange={e => setPropertySearch(e.target.value)}
-          placeholder="Search by property or tenant name…"
-          className="w-full rounded-2xl border border-slate-200 bg-white py-2.5 pl-10 pr-4 text-sm text-slate-800 placeholder:text-slate-400 focus:border-[#2563eb] focus:outline-none focus:ring-2 focus:ring-[#2563eb]/20"
-        />
-        <svg className="absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
-          <path strokeLinecap="round" strokeLinejoin="round" d="m21 21-5.197-5.197m0 0A7.5 7.5 0 1 0 5.196 5.196a7.5 7.5 0 0 0 10.607 10.607Z" />
-        </svg>
-      </div>
-
       {/* Table */}
       <div className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm">
         {loading ? (
           <div className="px-6 py-16 text-center text-sm text-slate-500">Loading leases…</div>
         ) : visibleDrafts.length === 0 ? (
-          <div className="px-6 py-16 text-center">
-            <div className="mb-3 text-4xl" aria-hidden>📋</div>
-            {drafts.length === 0 ? (
-              <>
-                <div className="text-sm font-semibold text-slate-700">No lease records yet</div>
-                <p className="mt-2 max-w-sm mx-auto text-xs text-slate-500">
-                  Leases appear here when they are generated from applications. Once you have a lease draft, you can use this section to submit edit requests and track changes with admin.
-                </p>
-              </>
-            ) : (
-              <div className="text-sm font-semibold text-slate-700">No leases match this filter</div>
-            )}
-          </div>
+          <div className="px-6 py-16" />
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full min-w-[600px]">
@@ -376,21 +339,6 @@ export default function ManagerLeasingTab({ manager, allowedPropertyNames }) {
           </div>
         )}
       </div>
-
-      {/* Help card when no entries exist */}
-      {!loading && drafts.length === 0 && !loadError && (
-        <div className="rounded-3xl border border-dashed border-slate-300 bg-slate-50 p-6 text-center">
-          <div className="mb-3 text-3xl" aria-hidden>🤝</div>
-          <h3 className="text-sm font-bold text-slate-800">How the leasing workflow works</h3>
-          <ol className="mt-3 space-y-1.5 text-left text-xs text-slate-600 max-w-sm mx-auto">
-            <li className="flex gap-2"><span className="font-bold text-slate-400">1.</span>Leases are generated from the Applications tab after approval.</li>
-            <li className="flex gap-2"><span className="font-bold text-slate-400">2.</span>Draft Ready is where you check lease details and keep the current PDF up to date.</li>
-            <li className="flex gap-2"><span className="font-bold text-slate-400">3.</span>Admin Review means the lease is with admin.</li>
-            <li className="flex gap-2"><span className="font-bold text-slate-400">4.</span>With Resident means the lease has been sent out and is waiting on the resident.</li>
-            <li className="flex gap-2"><span className="font-bold text-slate-400">5.</span>Signed holds completed leases.</li>
-          </ol>
-        </div>
-      )}
     </div>
   )
 }

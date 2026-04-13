@@ -303,6 +303,7 @@ export function ApplicationDetailPanel({ application, partnerLabel, onClose, adm
   if (!raw) return null
 
   const resolvedApprovalState = application.approvalState ?? deriveApplicationApprovalState(raw)
+  const reviewBusy = !!adminReview?.busy
 
   const shownKeys = new Set(['id', 'created_at'])
   const sections = []
@@ -412,18 +413,12 @@ export function ApplicationDetailPanel({ application, partnerLabel, onClose, adm
             ) : null}
           </div>
         </div>
-        <button type="button" className="shrink-0 text-sm font-semibold text-slate-500 hover:text-slate-800" onClick={onClose}>
-          Close
-        </button>
-      </div>
-
-      {adminReview ? (
-        <div className="flex flex-wrap gap-2 border-t border-slate-100 pt-4">
-          {resolvedApprovalState === 'pending' ? (
+        <div className="ml-auto flex flex-wrap items-center justify-end gap-2">
+          {adminReview && resolvedApprovalState === 'pending' ? (
             <>
               <button
                 type="button"
-                disabled={adminReview.busy}
+                disabled={reviewBusy}
                 className="rounded-xl bg-emerald-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
                 onClick={adminReview.onApprove}
               >
@@ -431,7 +426,7 @@ export function ApplicationDetailPanel({ application, partnerLabel, onClose, adm
               </button>
               <button
                 type="button"
-                disabled={adminReview.busy}
+                disabled={reviewBusy}
                 className="rounded-xl border border-red-200 bg-red-50 px-4 py-2 text-sm font-semibold text-red-800 disabled:opacity-50"
                 onClick={adminReview.onReject}
               >
@@ -440,10 +435,10 @@ export function ApplicationDetailPanel({ application, partnerLabel, onClose, adm
             </>
           ) : null}
 
-          {(resolvedApprovalState === 'approved' || resolvedApprovalState === 'rejected') && adminReview.onUnapprove ? (
+          {adminReview && (resolvedApprovalState === 'approved' || resolvedApprovalState === 'rejected') && adminReview.onUnapprove ? (
             <button
               type="button"
-              disabled={adminReview.busy}
+              disabled={reviewBusy}
               className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-2 text-sm font-semibold text-amber-800 disabled:opacity-50"
               onClick={adminReview.onUnapprove}
             >
@@ -451,18 +446,22 @@ export function ApplicationDetailPanel({ application, partnerLabel, onClose, adm
             </button>
           ) : null}
 
-          {resolvedApprovalState !== 'approved' && adminReview.onRefund ? (
+          {adminReview && resolvedApprovalState !== 'approved' && adminReview.onRefund ? (
             <button
               type="button"
-              disabled={adminReview.busy}
+              disabled={reviewBusy}
               className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 disabled:opacity-50"
               onClick={adminReview.onRefund}
             >
               Refund application fee
             </button>
           ) : null}
+
+          <button type="button" className="shrink-0 text-sm font-semibold text-slate-500 hover:text-slate-800" onClick={onClose}>
+            Close
+          </button>
         </div>
-      ) : null}
+      </div>
 
       <dl className="space-y-0 border-t border-slate-100 pt-4">
         {submitted ? (
