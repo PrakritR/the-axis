@@ -5696,10 +5696,12 @@ function ManagerDashboard({ manager: managerProp, openDraftId, onOpenDraft, onCl
                     render: (draft) => (
                       <button
                         type="button"
-                        className="whitespace-nowrap text-sm font-semibold text-[#2563eb]"
-                        onClick={() => onOpenDraft(draft.id)}
+                        className="whitespace-nowrap text-sm font-semibold text-[#2563eb] hover:underline"
+                        onClick={() =>
+                          openDraftId === draft.id ? onCloseDraft() : onOpenDraft(draft.id)
+                        }
                       >
-                        Details
+                        {openDraftId === draft.id ? 'Hide details' : 'Details'}
                       </button>
                     ),
                   },
