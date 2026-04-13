@@ -724,6 +724,7 @@ export async function createWorkOrder({
   urgency,
   description,
   preferredEntry,
+  preferredTimeWindow = '',
   photoFile = null,
 }) {
   const usePlaceholderResident = Boolean(WORK_ORDER_RESIDENT_PLACEHOLDER_ID)
@@ -755,6 +756,12 @@ export async function createWorkOrder({
   // Attach resident's house/property link and plain-text metadata (optional — stripped on UNKNOWN_FIELD_NAME)
   const houseOptionalFields = {}
   const houseOptionalKeys = []
+
+  const preferredTime = String(preferredTimeWindow || '').trim()
+  if (preferredTime) {
+    houseOptionalFields['Preferred Time Window'] = preferredTime
+    houseOptionalKeys.push('Preferred Time Window')
+  }
 
   // Plain-text email field so getWorkOrdersForResident can match by email
   const residentEmail = String(resident?.Email || '').trim()

@@ -22,9 +22,6 @@ import { Link, Navigate, useLocation } from 'react-router-dom'
 import toast from 'react-hot-toast'
 import { HOUSING_CONTACT_MESSAGE } from '../lib/housingSite'
 import {
-  mergeWorkOrderMetaBlock,
-  parseWorkOrderMetaBlock,
-  workOrderPlainNotes,
   workOrderScheduledMeta,
 } from '../lib/workOrderShared.js'
 import { readJsonResponse } from '../lib/readJsonResponse'
@@ -704,6 +701,20 @@ function managerWorkOrderBucket(record) {
   const raw = String(record.Status || '').trim().toLowerCase()
   if (raw.includes('schedule')) return 'scheduled'
   return 'open'
+}
+
+function residentPreferredTimeWindowLabel(record) {
+  const candidates = [
+    record?.['Preferred Time Window'],
+    record?.['Preferred Time'],
+    record?.['Time Window'],
+    record?.['Preferred Entry Time'],
+  ]
+  for (const value of candidates) {
+    const text = String(value || '').trim()
+    if (text) return text
+  }
+  return String(workOrderScheduledMeta(record)?.preferredTime || '').trim()
 }
 
 function workOrderIsResolvedRecord(w) {
@@ -3338,8 +3349,6 @@ function GenerateDraftModal({ manager, propertyOptions, onClose, onGenerated }) 
 }
 
 // ─── Work orders (manager) ───────────────────────────────────────────────────
-const WORK_ORDER_UI_STATUSES = ['Open', 'In Progress', 'Scheduled', 'Completed']
-
 function normalizeWorkOrderRecordId(raw) {
   const s = String(raw || '').trim()
   const m = s.match(/rec[a-zA-Z0-9]{14,}/)
@@ -3588,36 +3597,59 @@ function WorkOrdersTabPanel({ allowedPropertyNames, allowedPropertyIds }) {
   const [quickFilter, setQuickFilter] = useState('all')
   const [propertyFilter, setPropertyFilter] = useState('')
   const [residentFilter, setResidentFilter] = useState('')
-  const [sortBy, setSortBy] = useState('newest')
+  const [sortBy, setSortBy] = useState('resident')
+  const [residentsById, setResidentsById] = useState(new Map())
   const [record, setRecord] = useState(null)
   const [loadError, setLoadError] = useState('')
   const [saving, setSaving] = useState(false)
-  const [status, setStatus] = useState('Open')
   const [scheduledVisitDate, setScheduledVisitDate] = useState('')
-  const [scheduledTimeWindow, setScheduledTimeWindow] = useState('')
-  const [managementNotes, setManagementNotes] = useState('')
-  const [residentUpdate, setResidentUpdate] = useState('')
-  const [resolutionSummary, setResolutionSummary] = useState('')
 
   const fieldCls =
     'w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none transition focus:border-[#2563eb] focus:ring-2 focus:ring-[#2563eb]/20'
 
   function applyRecordToForm(nextRecord) {
-    setStatus(managerWorkOrderStatusLabel(nextRecord))
     const sm = workOrderScheduledMeta(nextRecord)
-    const meta = parseWorkOrderMetaBlock(nextRecord?.['Management Notes'] || '')
     setScheduledVisitDate(sm?.date || '')
-    setScheduledTimeWindow(
-      String(meta['scheduled time'] || meta.window || meta.time || sm?.preferredTime || '').trim(),
-    )
-    setManagementNotes(workOrderPlainNotes(nextRecord?.['Management Notes']))
-    setResidentUpdate(safePortalText(nextRecord?.Update, ''))
-    setResolutionSummary(safePortalText(nextRecord?.['Resolution Summary'], ''))
   }
 
   function submittedAt(row) {
     return new Date(row?.['Date Submitted'] || row?.created_at || 0).getTime()
   }
+
+  const residentRecordForWorkOrder = useCallback(
+    (row) => {
+      for (const rid of workOrderLinkedResidentRecordIds(row || {})) {
+        const resident = residentsById.get(rid)
+        if (resident) return resident
+      }
+      return null
+    },
+    [residentsById],
+  )
+
+  const residentLabelForWorkOrder = useCallback(
+    (row) => {
+      const linkedResident = residentRecordForWorkOrder(row)
+      const linkedName = String(linkedResident?.Name || linkedResident?.['Resident Name'] || '').trim()
+      if (linkedName) return linkedName
+      const fallback = String(paymentResidentLabel(row)).trim()
+      if (/^rec[a-zA-Z0-9]{14,}$/.test(fallback)) return 'Resident not set'
+      return fallback || 'Resident not set'
+    },
+    [residentRecordForWorkOrder],
+  )
+
+  const propertyLabelForWorkOrder = useCallback(
+    (row) => {
+      const fromRow = String(workOrderPropertyLabel(row)).trim()
+      if (fromRow && !/^rec[a-zA-Z0-9]{14,}$/.test(fromRow)) return fromRow
+      const linkedResident = residentRecordForWorkOrder(row)
+      const fromResident = String(residentDisplayPropertyName(linkedResident)).trim()
+      if (fromResident) return fromResident
+      return 'House not set'
+    },
+    [residentRecordForWorkOrder],
+  )
 
   const loadList = useCallback(async () => {
     if (!scopeLower.size && !scopeIds.size) {
@@ -3630,11 +3662,18 @@ function WorkOrdersTabPanel({ allowedPropertyNames, allowedPropertyIds }) {
     setListError('')
     try {
       const [all, residents] = await Promise.all([getAllWorkOrders(), listAllResidentsRecords()])
+      const nextResidentsById = new Map()
+      for (const resident of residents || []) {
+        const id = String(resident?.id || '').trim()
+        if (id) nextResidentsById.set(id, resident)
+      }
+      setResidentsById(nextResidentsById)
       const scopedResidentIds = buildManagerScopedResidentIdSet(residents, scopeLower, scopeIds)
       setList(all.filter((row) => workOrderInScope(row, scopeLower, scopeIds, scopedResidentIds)))
     } catch (err) {
       console.error('[WorkOrdersTabPanel] getAllWorkOrders failed', err)
       setList([])
+      setResidentsById(new Map())
       setListError('Unable to load work orders. Please try again.')
       if (!isAirtablePermissionErrorMessage(err?.message)) toast.error('Unable to load work orders. Please try again')
     } finally {
@@ -3664,7 +3703,7 @@ function WorkOrdersTabPanel({ allowedPropertyNames, allowedPropertyIds }) {
       if (!map.has(value)) map.set(value, display)
     }
     for (const row of list) {
-      const display = String(workOrderPropertyLabel(row)).trim()
+      const display = String(propertyLabelForWorkOrder(row)).trim()
       if (!display) continue
       const value = display.toLowerCase()
       if (!map.has(value)) map.set(value, display)
@@ -3672,12 +3711,12 @@ function WorkOrdersTabPanel({ allowedPropertyNames, allowedPropertyIds }) {
     return [...map.entries()]
       .sort((a, b) => a[1].localeCompare(b[1], undefined, { sensitivity: 'base' }))
       .map(([value, display]) => ({ value, display }))
-  }, [list, allowedPropertyNames])
+  }, [list, allowedPropertyNames, propertyLabelForWorkOrder])
 
   const residentChoices = useMemo(() => {
     const map = new Map()
     for (const row of list) {
-      const display = String(paymentResidentLabel(row)).trim()
+      const display = String(residentLabelForWorkOrder(row)).trim()
       if (!display) continue
       const value = display.toLowerCase()
       if (!map.has(value)) map.set(value, display)
@@ -3685,7 +3724,7 @@ function WorkOrdersTabPanel({ allowedPropertyNames, allowedPropertyIds }) {
     return [...map.entries()]
       .sort((a, b) => a[1].localeCompare(b[1], undefined, { sensitivity: 'base' }))
       .map(([value, display]) => ({ value, display }))
-  }, [list])
+  }, [list, residentLabelForWorkOrder])
 
   useEffect(() => {
     if (!propertyFilter) return
@@ -3700,17 +3739,16 @@ function WorkOrdersTabPanel({ allowedPropertyNames, allowedPropertyIds }) {
   const filteredList = useMemo(() => {
     let rows = list
     if (quickFilter !== 'all') rows = rows.filter((row) => managerWorkOrderBucket(row) === quickFilter)
-    if (propertyFilter) rows = rows.filter((row) => String(workOrderPropertyLabel(row)).trim().toLowerCase() === propertyFilter)
-    if (residentFilter) rows = rows.filter((row) => String(paymentResidentLabel(row)).trim().toLowerCase() === residentFilter)
+    if (propertyFilter) rows = rows.filter((row) => String(propertyLabelForWorkOrder(row)).trim().toLowerCase() === propertyFilter)
+    if (residentFilter) rows = rows.filter((row) => String(residentLabelForWorkOrder(row)).trim().toLowerCase() === residentFilter)
     return [...rows].sort((a, b) => {
-      if (sortBy === 'oldest') return submittedAt(a) - submittedAt(b)
       if (sortBy === 'property') {
-        const cmp = String(workOrderPropertyLabel(a)).localeCompare(String(workOrderPropertyLabel(b)), undefined, { sensitivity: 'base' })
+        const cmp = String(propertyLabelForWorkOrder(a)).localeCompare(String(propertyLabelForWorkOrder(b)), undefined, { sensitivity: 'base' })
         if (cmp !== 0) return cmp
         return submittedAt(b) - submittedAt(a)
       }
       if (sortBy === 'resident') {
-        const cmp = String(paymentResidentLabel(a)).localeCompare(String(paymentResidentLabel(b)), undefined, { sensitivity: 'base' })
+        const cmp = String(residentLabelForWorkOrder(a)).localeCompare(String(residentLabelForWorkOrder(b)), undefined, { sensitivity: 'base' })
         if (cmp !== 0) return cmp
         return submittedAt(b) - submittedAt(a)
       }
@@ -3721,7 +3759,7 @@ function WorkOrdersTabPanel({ allowedPropertyNames, allowedPropertyIds }) {
       }
       return submittedAt(b) - submittedAt(a)
     })
-  }, [list, quickFilter, propertyFilter, residentFilter, sortBy])
+  }, [list, quickFilter, propertyFilter, residentFilter, sortBy, propertyLabelForWorkOrder, residentLabelForWorkOrder])
 
   useEffect(() => {
     if (filteredList.length === 0) {
@@ -3758,36 +3796,14 @@ function WorkOrdersTabPanel({ allowedPropertyNames, allowedPropertyIds }) {
   async function handleSave(event) {
     event.preventDefault()
     if (!record?.id) return
-    const resolved = status === 'Completed'
-    const dateStr = resolved ? '' : String(scheduledVisitDate || '').trim()
-    const timeStr = resolved ? '' : String(scheduledTimeWindow || '').trim()
-
-    if (!resolved && status === 'Scheduled' && !dateStr) {
-      toast.error('Choose a scheduled visit date, or set status to Open / In Progress.')
-      return
-    }
+    const dateStr = String(scheduledVisitDate || '').trim()
+    const resolved = workOrderIsResolvedRecord(record)
+    const nextStatus = resolved ? 'Completed' : (dateStr ? 'Scheduled' : 'Open')
 
     setSaving(true)
     try {
-      const meta = parseWorkOrderMetaBlock(record?.['Management Notes'])
-      let nextStatus = resolved ? 'Completed' : status
-      if (!resolved && dateStr) nextStatus = 'Scheduled'
-      if (!resolved && !dateStr && status === 'Scheduled') {
-        toast.error('Choose a scheduled visit date.')
-        setSaving(false)
-        return
-      }
-
       const fields = {
         Status: nextStatus,
-        'Management Notes': mergeWorkOrderMetaBlock(managementNotes, {
-          'assigned to': meta['assigned to'] || '',
-          scheduled: meta.scheduled || '',
-          'scheduled date': dateStr,
-          'scheduled time': timeStr,
-        }),
-        Update: residentUpdate || '',
-        'Resolution Summary': resolutionSummary || '',
         Resolved: resolved,
         'Last Update': new Date().toISOString().slice(0, 10),
       }
@@ -3819,10 +3835,25 @@ function WorkOrdersTabPanel({ allowedPropertyNames, allowedPropertyIds }) {
     }
   }
 
-  function handleMarkCompleted() {
-    setStatus('Completed')
-    setScheduledVisitDate('')
-    setScheduledTimeWindow('')
+  async function handleMarkCompleted() {
+    if (!record?.id || saving) return
+    setSaving(true)
+    try {
+      const fields = {
+        Status: 'Completed',
+        Resolved: true,
+        'Last Update': new Date().toISOString().slice(0, 10),
+      }
+      const nextRecord = await updateWorkOrder(record.id, fields)
+      setRecord(nextRecord)
+      applyRecordToForm(nextRecord)
+      await loadList()
+      toast.success('Work order marked completed')
+    } catch (err) {
+      toast.error(err?.message || 'Could not mark work order complete')
+    } finally {
+      setSaving(false)
+    }
   }
 
   return (
@@ -3854,8 +3885,6 @@ function WorkOrdersTabPanel({ allowedPropertyNames, allowedPropertyIds }) {
           onChange={(e) => setSortBy(e.target.value)}
           className="rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition focus:border-[#2563eb] focus:outline-none focus:ring-2 focus:ring-[#2563eb]/20"
         >
-          <option value="newest">Newest first</option>
-          <option value="oldest">Oldest first</option>
           <option value="property">Sort by property</option>
           <option value="resident">Sort by resident</option>
           <option value="status">Sort by status</option>
@@ -3920,12 +3949,12 @@ function WorkOrdersTabPanel({ allowedPropertyNames, allowedPropertyIds }) {
               {
                 key: 'prop',
                 label: 'Property',
-                render: (d) => <span className="text-slate-600">{workOrderPropertyLabel(d) || 'House not set'}</span>,
+                render: (d) => <span className="text-slate-600">{propertyLabelForWorkOrder(d)}</span>,
               },
               {
                 key: 'res',
                 label: 'Resident',
-                render: (d) => <span className="text-slate-600">{paymentResidentLabel(d)}</span>,
+                render: (d) => <span className="text-slate-600">{residentLabelForWorkOrder(d)}</span>,
               },
               {
                 key: 'stat',
@@ -3957,7 +3986,7 @@ function WorkOrdersTabPanel({ allowedPropertyNames, allowedPropertyIds }) {
         {record ? (
           <PortalOpsCard
             title={safePortalText(record.Title, 'Work order')}
-            description={`${workOrderPropertyLabel(record) || 'House not set'} · ${paymentResidentLabel(record)}`}
+            description={`${propertyLabelForWorkOrder(record)} · ${residentLabelForWorkOrder(record)}`}
             action={
               <button
                 type="button"
@@ -3976,6 +4005,11 @@ function WorkOrdersTabPanel({ allowedPropertyNames, allowedPropertyIds }) {
               <PortalOpsStatusBadge tone={managerWorkOrderStatusTone(record)}>
                 {managerWorkOrderStatusLabel(record)}
               </PortalOpsStatusBadge>
+              {residentPreferredTimeWindowLabel(record) ? (
+                <PortalOpsStatusBadge tone="axis">
+                  Resident time window: {residentPreferredTimeWindowLabel(record)}
+                </PortalOpsStatusBadge>
+              ) : null}
             </div>
 
             <div className="rounded-3xl border border-slate-200 bg-slate-50 px-5 py-4">
@@ -3984,18 +4018,6 @@ function WorkOrdersTabPanel({ allowedPropertyNames, allowedPropertyIds }) {
             </div>
 
             <form onSubmit={handleSave} className="mt-5 space-y-4">
-              <div>
-                <label className="mb-2 block text-xs font-semibold uppercase tracking-[0.14em] text-slate-400">Status</label>
-                <select value={status} onChange={(e) => setStatus(e.target.value)} className={fieldCls}>
-                  {WORK_ORDER_UI_STATUSES.map((option) => (
-                    <option key={option} value={option}>{option}</option>
-                  ))}
-                </select>
-                <p className="mt-1.5 text-xs text-slate-500">
-                  New requests start as Open. Set a visit date below to schedule (appears on your calendar). Mark Completed when the fix is done.
-                </p>
-              </div>
-
               <div className="grid gap-4 sm:grid-cols-2">
                 <div>
                   <label className="mb-2 block text-xs font-semibold uppercase tracking-[0.14em] text-slate-400">
@@ -4010,31 +4032,12 @@ function WorkOrdersTabPanel({ allowedPropertyNames, allowedPropertyIds }) {
                 </div>
                 <div>
                   <label className="mb-2 block text-xs font-semibold uppercase tracking-[0.14em] text-slate-400">
-                    Time window (optional)
+                    Resident time window
                   </label>
-                  <input
-                    type="text"
-                    value={scheduledTimeWindow}
-                    onChange={(e) => setScheduledTimeWindow(e.target.value)}
-                    className={fieldCls}
-                    placeholder="e.g. 9:00 AM - 12:00 PM"
-                  />
+                  <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
+                    {residentPreferredTimeWindowLabel(record) || 'Not provided'}
+                  </div>
                 </div>
-              </div>
-
-              <div>
-                <label className="mb-2 block text-xs font-semibold uppercase tracking-[0.14em] text-slate-400">Internal note</label>
-                <textarea rows={3} value={managementNotes} onChange={(e) => setManagementNotes(e.target.value)} className={fieldCls} placeholder="Notes only managers should see." />
-              </div>
-
-              <div>
-                <label className="mb-2 block text-xs font-semibold uppercase tracking-[0.14em] text-slate-400">Resident-facing update</label>
-                <textarea rows={3} value={residentUpdate} onChange={(e) => setResidentUpdate(e.target.value)} className={fieldCls} placeholder="We scheduled a visit for Friday morning." />
-              </div>
-
-              <div>
-                <label className="mb-2 block text-xs font-semibold uppercase tracking-[0.14em] text-slate-400">Completion note</label>
-                <textarea rows={3} value={resolutionSummary} onChange={(e) => setResolutionSummary(e.target.value)} className={fieldCls} placeholder="What was fixed and anything the resident should know." />
               </div>
 
               <button

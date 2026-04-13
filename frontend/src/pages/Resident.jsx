@@ -829,6 +829,7 @@ function WorkOrdersPanel({ resident, requests: requestsProp, onRequestCreated, o
     title: '',
     category: requestCategories[0],
     urgency: urgencyOptions[1],
+    preferredTimeWindow: '',
     description: '',
   })
   const [photo, setPhoto] = useState(null)
@@ -892,10 +893,11 @@ function WorkOrdersPanel({ resident, requests: requestsProp, onRequestCreated, o
         category: form.category,
         urgency: form.urgency === 'Medium' ? 'Routine' : form.urgency,
         preferredEntry: 'Anytime',
+        preferredTimeWindow: form.preferredTimeWindow,
         description: form.description,
         photoFile: photo || null,
       })
-      setForm({ title: '', category: requestCategories[0], urgency: urgencyOptions[1], description: '' })
+      setForm({ title: '', category: requestCategories[0], urgency: urgencyOptions[1], preferredTimeWindow: '', description: '' })
       setPhoto(null)
       setSuccess('Request submitted')
       setShowForm(false)
@@ -1007,6 +1009,15 @@ function WorkOrdersPanel({ resident, requests: requestsProp, onRequestCreated, o
                   <option key={option}>{option}</option>
                 ))}
               </select>
+            </div>
+            <div>
+              <label className="mb-2 block text-sm font-semibold text-slate-700">Preferred time window (optional)</label>
+              <input
+                value={form.preferredTimeWindow}
+                onChange={(e) => setForm((current) => ({ ...current, preferredTimeWindow: e.target.value }))}
+                className={fieldCls}
+                placeholder="e.g. 9:00 AM - 12:00 PM"
+              />
             </div>
             <div className="sm:col-span-2">
               <label className="mb-2 block text-sm font-semibold text-slate-700">Description</label>
