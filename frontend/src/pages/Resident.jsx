@@ -25,13 +25,13 @@ import {
   airtableReady,
   createResident,
   createWorkOrder,
+  deleteWorkOrderForResident,
   getApplicationById,
   getApprovedLeaseForResident,
   getLeaseDraftsForResident,
   getPaymentsForResident,
   getResidentByEmail,
   getResidentById,
-  appendWorkOrderUpdateFromResident,
   getWorkOrdersForResident,
   loginResident,
   stripWorkOrderPortalSubmitterLine,
@@ -818,67 +818,11 @@ export function ResidentAuthForm({ onLogin, footer = null, variant = 'default' }
 
 // ─── Work Orders ──────────────────────────────────────────────────────────────
 
-/** Append-only notes on the Work Orders record (no Messages table). */
-function WorkOrderNotesComposer({ workOrder, residentEmail, onUpdated, embedded = false }) {
-  const [draft, setDraft] = useState('')
-  const [sending, setSending] = useState(false)
-
-  const wrap = embedded
-    ? 'flex min-h-0 flex-1 flex-col overflow-hidden border-t border-slate-200 bg-slate-50/80'
-    : 'mt-4 rounded-3xl border border-slate-200 bg-slate-50 p-4'
-  const scroll = embedded ? 'min-h-0 flex-1 space-y-3 overflow-y-auto px-4 py-4' : 'space-y-3'
-  const formWrap = classNames('flex gap-2', embedded ? 'shrink-0 border-t border-slate-200 bg-white px-4 py-3' : 'mt-4')
-  const updateText = String(workOrder.Update || workOrder['Latest Update'] || '').trim()
-
-  async function handleSend(event) {
-    event.preventDefault()
-    if (!draft.trim()) return
-    const text = draft.trim()
-    setSending(true)
-    try {
-      await appendWorkOrderUpdateFromResident(workOrder.id, residentEmail, text)
-      setDraft('')
-      onUpdated?.()
-    } finally {
-      setSending(false)
-    }
-  }
-
-  return (
-    <div className={wrap}>
-      <div className={scroll}>
-        {!updateText ? (
-          <p className="text-sm text-slate-400">No updates yet. Add a note below — your property team sees it on the work order</p>
-        ) : (
-          <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3">
-            <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">Update log</div>
-            <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-slate-700">{updateText}</p>
-          </div>
-        )}
-      </div>
-      <form onSubmit={handleSend} className={formWrap}>
-        <input
-          value={draft}
-          onChange={(e) => setDraft(e.target.value)}
-          placeholder="Add a note for the team…"
-          className="flex-1 rounded-full border border-slate-200 px-4 py-2.5 text-sm outline-none transition focus:border-slate-900 focus:ring-2 focus:ring-slate-900/10"
-        />
-        <button
-          type="submit"
-          disabled={sending || !draft.trim()}
-          className="rounded-full bg-slate-900 px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:opacity-50"
-        >
-          Send
-        </button>
-      </form>
-    </div>
-  )
-}
-
 function WorkOrdersPanel({ resident, requests: requestsProp, onRequestCreated, onWorkOrderUpdated, onRefresh }) {
   const requests = Array.isArray(requestsProp) ? requestsProp : []
   const [woFilter, setWoFilter] = useState('all')
   const [refreshing, setRefreshing] = useState(false)
+  const [deleteBusyId, setDeleteBusyId] = useState('')
   const [showForm, setShowForm] = useState(false)
   const [selectedId, setSelectedId] = useState(null)
   const [form, setForm] = useState({
@@ -960,6 +904,26 @@ function WorkOrdersPanel({ resident, requests: requestsProp, onRequestCreated, o
       setError(err.message || 'Could not submit request.')
     } finally {
       setSubmitting(false)
+    }
+  }
+
+  async function handleDeleteWorkOrder(workOrder) {
+    if (!workOrder?.id) return
+    const label = String(workOrder.Title || 'this work order').trim()
+    const confirmed = window.confirm(`Delete ${label}? This cannot be undone.`)
+    if (!confirmed) return
+    setDeleteBusyId(workOrder.id)
+    setError('')
+    setSuccess('')
+    try {
+      await deleteWorkOrderForResident(workOrder.id, resident)
+      setSelectedId((cur) => (cur === workOrder.id ? null : cur))
+      setSuccess('Work order deleted')
+      await onWorkOrderUpdated?.()
+    } catch (err) {
+      setError(err?.message || 'Could not delete work order.')
+    } finally {
+      setDeleteBusyId('')
     }
   }
 
@@ -1166,6 +1130,17 @@ function WorkOrdersPanel({ resident, requests: requestsProp, onRequestCreated, o
                   </p>
                 </div>
 
+                <div className="mt-4 flex justify-end">
+                  <button
+                    type="button"
+                    onClick={() => handleDeleteWorkOrder(selectedRequest)}
+                    disabled={deleteBusyId === selectedRequest.id}
+                    className="rounded-full border border-red-200 bg-red-50 px-4 py-2 text-sm font-semibold text-red-700 transition hover:bg-red-100 disabled:opacity-50"
+                  >
+                    {deleteBusyId === selectedRequest.id ? 'Deleting...' : 'Delete Work Order'}
+                  </button>
+                </div>
+
                 {selectedRequest['Resolution Summary'] || selectedRequest['Management Notes'] ? (
                   <div className="mt-5 grid gap-4 lg:grid-cols-2">
                     {selectedRequest['Resolution Summary'] ? (
@@ -1186,19 +1161,6 @@ function WorkOrdersPanel({ resident, requests: requestsProp, onRequestCreated, o
                     ) : null}
                   </div>
                 ) : null}
-
-                <div className="mt-5 overflow-hidden rounded-3xl border border-slate-200">
-                  <div className="border-b border-slate-200 bg-white px-5 py-4">
-                    <div className="text-sm font-black text-slate-900">Notes to the team</div>
-                    <div className="mt-1 text-xs text-slate-400">Appends to the work order update log (no separate message thread)</div>
-                  </div>
-                  <WorkOrderNotesComposer
-                    workOrder={selectedRequest}
-                    residentEmail={resident.Email}
-                    onUpdated={onWorkOrderUpdated}
-                    embedded
-                  />
-                </div>
               </PortalOpsCard>
             ) : null}
           </div>

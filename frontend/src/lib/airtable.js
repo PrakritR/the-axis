@@ -650,6 +650,18 @@ export async function getWorkOrdersForResident(resident) {
     .sort((a, b) => new Date(b['Date Submitted'] || b.created_at) - new Date(a['Date Submitted'] || a.created_at))
 }
 
+/** Delete a Work Orders row only if it belongs to the signed-in resident. */
+export async function deleteWorkOrderForResident(workOrderId, resident) {
+  const id = String(workOrderId || '').trim()
+  if (!/^rec[a-zA-Z0-9]{14,}$/.test(id)) throw new Error('Invalid work order ID.')
+  const residentWorkOrders = await getWorkOrdersForResident(resident)
+  const owned = residentWorkOrders.some((wo) => String(wo.id || '').trim() === id)
+  if (!owned) {
+    throw new Error('You can only delete your own work orders.')
+  }
+  await request(`${tableUrl(TABLES.workOrders)}/${id}`, { method: 'DELETE' })
+}
+
 async function uploadAttachmentToRecord(table, recordId, fieldName, file) {
   const formData = new FormData()
   formData.append('file', file, file.name)
