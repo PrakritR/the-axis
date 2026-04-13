@@ -247,7 +247,27 @@ function buildEmailToManagerId(managerRows) {
   return m
 }
 
+function firstLinkedManagerRecordId(prop) {
+  for (const key of ['Manager Profile', 'Manager', 'Site Manager', 'Property Manager']) {
+    const raw = prop?.[key]
+    if (Array.isArray(raw)) {
+      const rec = raw.find((v) => String(v || '').trim().startsWith('rec'))
+      if (rec) return String(rec).trim()
+      continue
+    }
+    const one = String(raw || '').trim()
+    if (one.startsWith('rec')) return one
+  }
+  return ''
+}
+
 function ownerIdForProperty(prop, emailToManagerId) {
+  const explicitOwnerId = String(prop['Owner ID'] || '').trim()
+  if (explicitOwnerId) return explicitOwnerId
+
+  const linkedManagerId = firstLinkedManagerRecordId(prop)
+  if (linkedManagerId) return linkedManagerId
+
   const em = String(prop['Manager Email'] || prop['Site Manager Email'] || '')
     .trim()
     .toLowerCase()
