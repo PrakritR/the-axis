@@ -48,6 +48,7 @@ const SESSION_KEY = 'axis_resident'
 
 const requestCategories = ['Plumbing', 'Electrical', 'Heating / Cooling', 'Appliance', 'General Maintenance', 'Cleaning', 'Other']
 const urgencyOptions = ['Low', 'Medium', 'Urgent']
+const preferredTimeWindowOptions = ['Morning', 'Afternoon', 'Evening']
 
 function normalizeUnitLabel(value) {
   return String(value || '').replace(/^Unit\s+/i, 'Room ').trim()
@@ -829,7 +830,7 @@ function WorkOrdersPanel({ resident, requests: requestsProp, onRequestCreated, o
     title: '',
     category: requestCategories[0],
     urgency: urgencyOptions[1],
-    preferredTimeWindow: '',
+    preferredTimeWindow: preferredTimeWindowOptions[0],
     description: '',
   })
   const [photo, setPhoto] = useState(null)
@@ -892,12 +893,12 @@ function WorkOrdersPanel({ resident, requests: requestsProp, onRequestCreated, o
         title: form.title,
         category: form.category,
         urgency: form.urgency === 'Medium' ? 'Routine' : form.urgency,
-        preferredEntry: 'Anytime',
+        preferredEntry: form.preferredTimeWindow,
         preferredTimeWindow: form.preferredTimeWindow,
         description: form.description,
         photoFile: photo || null,
       })
-      setForm({ title: '', category: requestCategories[0], urgency: urgencyOptions[1], preferredTimeWindow: '', description: '' })
+      setForm({ title: '', category: requestCategories[0], urgency: urgencyOptions[1], preferredTimeWindow: preferredTimeWindowOptions[0], description: '' })
       setPhoto(null)
       setSuccess('Request submitted')
       setShowForm(false)
@@ -1011,13 +1012,16 @@ function WorkOrdersPanel({ resident, requests: requestsProp, onRequestCreated, o
               </select>
             </div>
             <div>
-              <label className="mb-2 block text-sm font-semibold text-slate-700">Preferred time window (optional)</label>
-              <input
+              <label className="mb-2 block text-sm font-semibold text-slate-700">Preferred time window</label>
+              <select
                 value={form.preferredTimeWindow}
                 onChange={(e) => setForm((current) => ({ ...current, preferredTimeWindow: e.target.value }))}
                 className={fieldCls}
-                placeholder="e.g. 9:00 AM - 12:00 PM"
-              />
+              >
+                {preferredTimeWindowOptions.map((option) => (
+                  <option key={option} value={option}>{option}</option>
+                ))}
+              </select>
             </div>
             <div className="sm:col-span-2">
               <label className="mb-2 block text-sm font-semibold text-slate-700">Description</label>

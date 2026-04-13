@@ -3820,6 +3820,9 @@ function WorkOrdersTabPanel({ allowedPropertyNames, allowedPropertyIds }) {
         if (m?.[1] === 'Scheduled Date' && fields['Scheduled Date']) {
           const { 'Scheduled Date': _sd, ...rest } = fields
           nextRecord = await updateWorkOrder(record.id, rest)
+        } else if (m?.[1] === 'Last Update' && fields['Last Update']) {
+          const { 'Last Update': _lu, ...rest } = fields
+          nextRecord = await updateWorkOrder(record.id, rest)
         } else {
           throw err
         }
@@ -3844,7 +3847,19 @@ function WorkOrdersTabPanel({ allowedPropertyNames, allowedPropertyIds }) {
         Resolved: true,
         'Last Update': new Date().toISOString().slice(0, 10),
       }
-      const nextRecord = await updateWorkOrder(record.id, fields)
+      let nextRecord
+      try {
+        nextRecord = await updateWorkOrder(record.id, fields)
+      } catch (err) {
+        const msg = String(err?.message || '')
+        const m = msg.match(/Unknown field name:\s*"([^"]+)"/i)
+        if (m?.[1] === 'Last Update') {
+          const { 'Last Update': _lu, ...rest } = fields
+          nextRecord = await updateWorkOrder(record.id, rest)
+        } else {
+          throw err
+        }
+      }
       setRecord(nextRecord)
       applyRecordToForm(nextRecord)
       await loadList()
@@ -4045,7 +4060,7 @@ function WorkOrdersTabPanel({ allowedPropertyNames, allowedPropertyIds }) {
                 disabled={saving}
                 className="rounded-full bg-axis px-5 py-3 text-sm font-semibold text-white transition hover:brightness-105 disabled:opacity-50"
               >
-                {saving ? 'Saving…' : 'Save Updates'}
+                {saving ? 'Scheduling…' : 'Schedule'}
               </button>
             </form>
           </PortalOpsCard>
