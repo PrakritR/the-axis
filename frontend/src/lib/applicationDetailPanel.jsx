@@ -296,7 +296,7 @@ export function applicationViewModelFromAirtableRow(row) {
 }
 
 /**
- * @param {{ application: { id: string, _airtable: object, applicantName: string, propertyName: string, status: string, approvalPending?: boolean }, partnerLabel?: string, onClose: () => void, adminReview?: { busy: boolean, onApprove: () => void, onReject: () => void, onUnapprove?: () => void } | null, afterSections?: React.ReactNode }} props
+ * @param {{ application: { id: string, _airtable: object, applicantName: string, propertyName: string, status: string, approvalPending?: boolean }, partnerLabel?: string, onClose: () => void, adminReview?: { busy: boolean, onApprove: () => void, onReject: () => void, onUnapprove?: () => void, onRefund?: () => void } | null, afterSections?: React.ReactNode }} props
  */
 export function ApplicationDetailPanel({ application, partnerLabel, onClose, adminReview = null, afterSections = null }) {
   const raw = application?._airtable
@@ -417,35 +417,50 @@ export function ApplicationDetailPanel({ application, partnerLabel, onClose, adm
         </button>
       </div>
 
-      {adminReview && resolvedApprovalState === 'pending' ? (
+      {adminReview ? (
         <div className="flex flex-wrap gap-2 border-t border-slate-100 pt-4">
-          <button
-            type="button"
-            disabled={adminReview.busy}
-            className="rounded-xl bg-emerald-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
-            onClick={adminReview.onApprove}
-          >
-            Approve application
-          </button>
-          <button
-            type="button"
-            disabled={adminReview.busy}
-            className="rounded-xl border border-red-200 bg-red-50 px-4 py-2 text-sm font-semibold text-red-800 disabled:opacity-50"
-            onClick={adminReview.onReject}
-          >
-            Reject
-          </button>
-        </div>
-      ) : adminReview && (resolvedApprovalState === 'approved' || resolvedApprovalState === 'rejected') && adminReview.onUnapprove ? (
-        <div className="flex flex-wrap gap-2 border-t border-slate-100 pt-4">
-          <button
-            type="button"
-            disabled={adminReview.busy}
-            className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-2 text-sm font-semibold text-amber-800 disabled:opacity-50"
-            onClick={adminReview.onUnapprove}
-          >
-            {resolvedApprovalState === 'rejected' ? 'Remove rejection' : 'Remove approval'}
-          </button>
+          {resolvedApprovalState === 'pending' ? (
+            <>
+              <button
+                type="button"
+                disabled={adminReview.busy}
+                className="rounded-xl bg-emerald-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
+                onClick={adminReview.onApprove}
+              >
+                Approve application
+              </button>
+              <button
+                type="button"
+                disabled={adminReview.busy}
+                className="rounded-xl border border-red-200 bg-red-50 px-4 py-2 text-sm font-semibold text-red-800 disabled:opacity-50"
+                onClick={adminReview.onReject}
+              >
+                Reject
+              </button>
+            </>
+          ) : null}
+
+          {(resolvedApprovalState === 'approved' || resolvedApprovalState === 'rejected') && adminReview.onUnapprove ? (
+            <button
+              type="button"
+              disabled={adminReview.busy}
+              className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-2 text-sm font-semibold text-amber-800 disabled:opacity-50"
+              onClick={adminReview.onUnapprove}
+            >
+              Send back to pending
+            </button>
+          ) : null}
+
+          {resolvedApprovalState !== 'approved' && adminReview.onRefund ? (
+            <button
+              type="button"
+              disabled={adminReview.busy}
+              className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 disabled:opacity-50"
+              onClick={adminReview.onRefund}
+            >
+              Refund application fee
+            </button>
+          ) : null}
         </div>
       ) : null}
 

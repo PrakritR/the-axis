@@ -4708,6 +4708,74 @@ function ApplicationsPanel({ allowedPropertyNames, manager }) {
     }
   }
 
+  async function handleSendBackToPending(recordId) {
+    setApproving((a) => ({ ...a, [recordId]: 'pending' }))
+    try {
+      const rf = applicationRejectedFieldName()
+      const updated = await patchApplication(recordId, {
+        Approved: null,
+        [rf]: null,
+      })
+      setScopedRows((prev) => prev.map((a) => (a.id === recordId ? { ...a, ...updated } : a)))
+      toast.success('Application moved back to pending')
+    } catch (err) {
+      toast.error('Could not move application to pending: ' + err.message)
+    } finally {
+      setApproving((a) => {
+        const n = { ...a }
+        delete n[recordId]
+        return n
+      })
+    }
+  }
+
+  async function handleRefundApplicationFee(recordId) {
+    setApproving((a) => ({ ...a, [recordId]: 'refunding' }))
+    try {
+      const row = scopedRows.find((a) => a.id === recordId)
+      if (!row) throw new Error('Application not found')
+
+      const state = deriveApplicationApprovalState(row)
+      if (state === 'approved') {
+        throw new Error('Only non-approved applications can be refunded')
+      }
+
+      const rawFee = Number(
+        row['Application Fee Paid'] ?? row['Application Fee'] ?? row['Fee Paid'] ?? row['Paid Amount'] ?? 0,
+      )
+      const amount = Number.isFinite(rawFee) && rawFee > 0 ? rawFee : 50
+
+      const now = new Date()
+      const dueDate = now.toISOString().slice(0, 10)
+      const month = now.toLocaleDateString(undefined, { month: 'short', year: 'numeric' })
+      await createPaymentRecord({
+        Name: `Application fee refund — ${row['Signer Full Name'] || 'Applicant'}`,
+        Type: 'Application Fee Refund',
+        Category: 'Fee',
+        Status: 'Paid',
+        Amount: amount,
+        'Amount Paid': amount,
+        Balance: 0,
+        Month: month,
+        'Due Date': dueDate,
+        'Resident Name': row['Signer Full Name'] || '',
+        'Property Name': row['Property Name'] || '',
+        'Room Number': row['Room Number'] || '',
+        Notes: `Refunded application fee after ${state} decision (APP-${String(row['Application ID'] || row.id)})`,
+      })
+
+      toast.success(`Application fee refund logged (${money(amount)})`)
+    } catch (err) {
+      toast.error('Could not refund application fee: ' + err.message)
+    } finally {
+      setApproving((a) => {
+        const n = { ...a }
+        delete n[recordId]
+        return n
+      })
+    }
+  }
+
   const statusLabel = (app) => {
     const st = deriveApplicationApprovalState(app)
     if (st === 'approved') return { label: 'Approved', cls: 'border-emerald-200 bg-emerald-50 text-emerald-700' }
@@ -4858,6 +4926,13 @@ function ApplicationsPanel({ allowedPropertyNames, manager }) {
                       application={vm}
                       partnerLabel="—"
                       onClose={() => setDetailAppId(null)}
+                      adminReview={{
+                        busy: !!approving[detailAppId],
+                        onApprove: () => handleDecision(detailAppId, true),
+                        onReject: () => handleDecision(detailAppId, false),
+                        onUnapprove: () => handleSendBackToPending(detailAppId),
+                        onRefund: () => handleRefundApplicationFee(detailAppId),
+                      }}
                       afterSections={
                         row?.Approved === true ? (
                           <ManagerApplicationLease
