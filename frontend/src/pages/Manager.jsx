@@ -28,6 +28,9 @@ import {
   getWorkOrderById,
   updateWorkOrder,
   getAllWorkOrders,
+  listAllResidentsRecords,
+  workOrderLinkedResidentRecordIds,
+  workOrderLinkedPropertyRecordIds,
   getAllPaymentsRecords,
   updatePaymentRecord,
   createPaymentRecord,
@@ -474,16 +477,83 @@ function normalizePortalScopeLabel(value) {
     .trim()
 }
 
-function workOrderInScope(w, approvedNamesLowerSet, approvedPropertyIdsSet) {
-  // Match by linked House record ID (most reliable — IDs never change)
-  if (approvedPropertyIdsSet?.size) {
-    const houseIds = w.House || w.Property
-    if (Array.isArray(houseIds)) {
-      for (const id of houseIds) {
-        if (approvedPropertyIdsSet.has(String(id).trim())) return true
+function residentHouseRecordIds(resident) {
+  const out = []
+  for (const key of ['House', 'Property', 'Properties']) {
+    const v = resident?.[key]
+    if (Array.isArray(v)) {
+      for (const x of v) {
+        const s = String(x).trim()
+        if (/^rec[a-zA-Z0-9]{14,}$/.test(s)) out.push(s)
       }
-    } else if (typeof houseIds === 'string' && houseIds.trim()) {
-      if (approvedPropertyIdsSet.has(houseIds.trim())) return true
+    } else if (typeof v === 'string' && /^rec[a-zA-Z0-9]{14,}$/.test(v.trim())) {
+      out.push(v.trim())
+    }
+  }
+  return out
+}
+
+function residentDisplayPropertyName(resident) {
+  const explicit = String(resident?.['Property Name'] || '').trim()
+  if (explicit) return explicit
+  for (const key of ['Property', 'House', 'Properties']) {
+    const v = resident?.[key]
+    if (Array.isArray(v)) continue
+    const s = String(v || '').trim()
+    if (s && !/^rec[a-zA-Z0-9]{14,}$/.test(s)) return s
+  }
+  return ''
+}
+
+function residentBelongsToManagerScope(resident, scopeLower, scopeIds) {
+  if (scopeIds?.size) {
+    for (const id of residentHouseRecordIds(resident)) {
+      if (scopeIds.has(id)) return true
+    }
+  }
+  if (!scopeLower?.size) return false
+  const raw = residentDisplayPropertyName(resident)
+  const prop = raw.toLowerCase()
+  const normalizedProp = normalizePortalScopeLabel(raw)
+  if (!prop && !normalizedProp) return false
+  return [...scopeLower].some((ns) => {
+    const normalizedScope = normalizePortalScopeLabel(ns)
+    return (
+      prop === ns ||
+      prop.includes(ns) ||
+      ns.includes(prop) ||
+      (normalizedProp && normalizedScope && (
+        normalizedProp === normalizedScope ||
+        normalizedProp.includes(normalizedScope) ||
+        normalizedScope.includes(normalizedProp)
+      ))
+    )
+  })
+}
+
+/** Resident Profile ids whose house/property is in the manager's scope (names + property record ids). */
+function buildManagerScopedResidentIdSet(residents, scopeLower, scopeIds) {
+  const out = new Set()
+  for (const r of residents || []) {
+    if (!residentBelongsToManagerScope(r, scopeLower, scopeIds)) continue
+    const id = String(r?.id || '').trim()
+    if (id) out.add(id)
+  }
+  return out
+}
+
+function workOrderInScope(w, approvedNamesLowerSet, approvedPropertyIdsSet, scopedResidentIds) {
+  // Match by linked resident when the WO row has no usable property name / house link (common for resident-submitted WOs).
+  if (scopedResidentIds?.size) {
+    for (const rid of workOrderLinkedResidentRecordIds(w)) {
+      if (scopedResidentIds.has(rid)) return true
+    }
+  }
+
+  // Match by linked property record IDs (all field names createWorkOrder may use).
+  if (approvedPropertyIdsSet?.size) {
+    for (const id of workOrderLinkedPropertyRecordIds(w)) {
+      if (approvedPropertyIdsSet.has(id)) return true
     }
   }
 
@@ -3693,8 +3763,9 @@ function WorkOrdersTabPanel({ allowedPropertyNames, allowedPropertyIds }) {
     setListLoading(true)
     setListError('')
     try {
-      const all = await getAllWorkOrders()
-      setList(all.filter((row) => workOrderInScope(row, scopeLower, scopeIds)))
+      const [all, residents] = await Promise.all([getAllWorkOrders(), listAllResidentsRecords()])
+      const scopedResidentIds = buildManagerScopedResidentIdSet(residents, scopeLower, scopeIds)
+      setList(all.filter((row) => workOrderInScope(row, scopeLower, scopeIds, scopedResidentIds)))
     } catch (err) {
       console.error('[WorkOrdersTabPanel] getAllWorkOrders failed', err)
       setList([])
@@ -5319,6 +5390,20 @@ function ManagerDashboard({ manager: managerProp, openDraftId, onOpenDraft, onCl
       })
       .map((p) => p.id)
   }, [propertyRecords, managerScope])
+  /** Same name + property-id scope as WorkOrdersTabPanel (assigned + approved properties). */
+  const mergedPropertyNamesLower = useMemo(
+    () =>
+      new Set(
+        [...mergedManagerPropertyNames(managerScope)]
+          .map((n) => String(n).trim().toLowerCase())
+          .filter(Boolean),
+      ),
+    [managerScope],
+  )
+  const workOrderScopePropertyIds = useMemo(
+    () => new Set(scopedPropertyIds.map((id) => String(id).trim()).filter(Boolean)),
+    [scopedPropertyIds],
+  )
   /** Calendar / tour scheduling: all houses linked to this manager (including pending approval). */
   const calendarScopedPropertyOptions = useMemo(
     () => Array.from(managerScope.assignedNames).sort(),
@@ -5372,6 +5457,7 @@ function ManagerDashboard({ manager: managerProp, openDraftId, onOpenDraft, onCl
       fetchLeaseDrafts({}),
       getAllWorkOrders(),
       getAllPaymentsRecords(),
+      listAllResidentsRecords(),
     ])
       .then((results) => {
         if (cancelled) return
@@ -5380,10 +5466,12 @@ function ManagerDashboard({ manager: managerProp, openDraftId, onOpenDraft, onCl
         const drRaw = results[1].status === 'fulfilled' ? results[1].value : null
         const woRaw = results[2].status === 'fulfilled' ? results[2].value : null
         const payRaw = results[3].status === 'fulfilled' ? results[3].value : null
+        const residentsRaw = results[4].status === 'fulfilled' ? results[4].value : null
         if (results[0].status === 'rejected') warnings.push(`Applications: ${formatDataLoadError(results[0].reason)}`)
         if (results[1].status === 'rejected') warnings.push(`Lease drafts: ${formatDataLoadError(results[1].reason)}`)
         if (results[2].status === 'rejected') warnings.push(`Work orders: ${formatDataLoadError(results[2].reason)}`)
         if (results[3].status === 'rejected') warnings.push(`Payments: ${formatDataLoadError(results[3].reason)}`)
+        if (results[4].status === 'rejected') warnings.push(`Residents: ${formatDataLoadError(results[4].reason)}`)
         setOverviewDataWarnings(warnings)
 
         if (!appsRaw && !drRaw && !woRaw && !payRaw) {
@@ -5395,9 +5483,15 @@ function ManagerDashboard({ manager: managerProp, openDraftId, onOpenDraft, onCl
           ? (appsRaw || []).filter((a) => applicationInScope(a, approvedNamesLower))
           : []
         const dr = names.size ? (drRaw || []).filter((d) => leaseDraftInScope(d, names)) : []
-        const wo = approvedNamesLower.size
-          ? (woRaw || []).filter((w) => workOrderInScope(w, approvedNamesLower))
-          : []
+        const scopedResidentIds = residentsRaw
+          ? buildManagerScopedResidentIdSet(residentsRaw, mergedPropertyNamesLower, workOrderScopePropertyIds)
+          : new Set()
+        const wo =
+          mergedPropertyNamesLower.size || workOrderScopePropertyIds.size || scopedResidentIds.size
+            ? (woRaw || []).filter((w) =>
+                workOrderInScope(w, mergedPropertyNamesLower, workOrderScopePropertyIds, scopedResidentIds),
+              )
+            : []
         const rentRows =
           approvedNamesLower.size && payRaw
             ? payRaw.filter((p) => paymentInScope(p, approvedNamesLower) && isRentPaymentRecord(p))
@@ -5424,7 +5518,7 @@ function ManagerDashboard({ manager: managerProp, openDraftId, onOpenDraft, onCl
     return () => {
       cancelled = true
     }
-  }, [dashView, managerScope.approvedNames, approvedNamesLower])
+  }, [dashView, managerScope.approvedNames, approvedNamesLower, mergedPropertyNamesLower, workOrderScopePropertyIds])
 
   // Unopened threads for dashboard badge (same rule as inbox: never opened, or new messages since last open)
   useEffect(() => {
@@ -5605,21 +5699,6 @@ function ManagerDashboard({ manager: managerProp, openDraftId, onOpenDraft, onCl
         ) : null}
         <div className="mb-5 flex flex-wrap items-center gap-3">
           <div className="mr-auto flex w-full flex-col sm:w-auto">
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              fill="none"
-              viewBox="0 0 24 24"
-              strokeWidth={1.5}
-              stroke="currentColor"
-              className="mb-2 h-9 w-9 shrink-0 text-[#2563eb]"
-              aria-hidden
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m2.25 0H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z"
-              />
-            </svg>
             <h2 className="text-2xl font-black text-slate-900">Leases</h2>
           </div>
 
@@ -5674,7 +5753,26 @@ function ManagerDashboard({ manager: managerProp, openDraftId, onOpenDraft, onCl
           ) : (
             <div className="space-y-4 p-4 sm:p-5">
               <DataTable
-                empty="No leases in this view"
+                empty={(
+                  <div className="flex flex-col items-center gap-3">
+                    <svg
+                      xmlns="http://www.w3.org/2000/svg"
+                      fill="none"
+                      viewBox="0 0 24 24"
+                      strokeWidth={1.5}
+                      stroke="currentColor"
+                      className="h-10 w-10 shrink-0 text-[#2563eb]"
+                      aria-hidden
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m2.25 0H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z"
+                      />
+                    </svg>
+                    <span>No leases in this view</span>
+                  </div>
+                )}
                 columns={[
                   {
                     key: 'resident',

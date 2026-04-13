@@ -83,6 +83,17 @@ const WORK_ORDER_RESIDENT_LINK_FIELD_FALLBACKS = [
   'Resident ID',
 ]
 
+/**
+ * Work Orders → linked record(s) to Properties. Optional env; otherwise try House then Property.
+ */
+const WORK_ORDER_PROPERTY_LINK_FIELD = (() => {
+  const raw = String(import.meta.env.VITE_AIRTABLE_WORK_ORDER_PROPERTY_LINK_FIELD ?? '').trim()
+  if (raw.toLowerCase() === 'none') return ''
+  return raw
+})()
+
+const WORK_ORDER_PROPERTY_LINK_FIELD_FALLBACKS = ['House', 'Property']
+
 function airtableUnknownFieldNameFromErrorMessage(message) {
   const raw = String(message || '').trim()
   try {
@@ -524,14 +535,74 @@ function workOrderPortalSubmitterDescriptionTag(email) {
   return `portal_submitter_email:${e}\n\n`
 }
 
+function workOrderResidentLinkFieldCandidates() {
+  const envLinkField = String(import.meta.env.VITE_AIRTABLE_WORK_ORDER_RESIDENT_LINK_FIELD ?? '').trim()
+  return envLinkField
+    ? [envLinkField]
+    : [...new Set([WORK_ORDER_RESIDENT_PROFILE_LINK_FIELD, ...WORK_ORDER_RESIDENT_LINK_FIELD_FALLBACKS])]
+}
+
+function workOrderPropertyLinkFieldCandidates() {
+  return WORK_ORDER_PROPERTY_LINK_FIELD
+    ? [WORK_ORDER_PROPERTY_LINK_FIELD]
+    : WORK_ORDER_PROPERTY_LINK_FIELD_FALLBACKS
+}
+
+/**
+ * Flattened or raw Work Orders record — returns linked Resident Profile record IDs.
+ * Used by manager portal to match WOs that only link to a resident (no House/Property on the WO).
+ */
+export function workOrderLinkedResidentRecordIds(recordOrRaw) {
+  const rec =
+    recordOrRaw &&
+    typeof recordOrRaw === 'object' &&
+    recordOrRaw.fields &&
+    typeof recordOrRaw.fields === 'object'
+      ? recordOrRaw.fields
+      : recordOrRaw || {}
+  const ids = []
+  for (const fieldName of workOrderResidentLinkFieldCandidates()) {
+    const val = rec[fieldName]
+    if (Array.isArray(val)) {
+      for (const x of val) {
+        const s = String(x).trim()
+        if (/^rec[a-zA-Z0-9]{14,}$/.test(s)) ids.push(s)
+      }
+    } else if (typeof val === 'string' && /^rec[a-zA-Z0-9]{14,}$/.test(val.trim())) {
+      ids.push(val.trim())
+    }
+  }
+  return [...new Set(ids)]
+}
+
+/** Linked Properties / House record IDs on a Work Orders row (same candidates as createWorkOrder). */
+export function workOrderLinkedPropertyRecordIds(recordOrRaw) {
+  const rec =
+    recordOrRaw &&
+    typeof recordOrRaw === 'object' &&
+    recordOrRaw.fields &&
+    typeof recordOrRaw.fields === 'object'
+      ? recordOrRaw.fields
+      : recordOrRaw || {}
+  const ids = []
+  for (const fieldName of workOrderPropertyLinkFieldCandidates()) {
+    const val = rec[fieldName]
+    if (Array.isArray(val)) {
+      for (const x of val) {
+        const s = String(x).trim()
+        if (/^rec[a-zA-Z0-9]{14,}$/.test(s)) ids.push(s)
+      }
+    } else if (typeof val === 'string' && /^rec[a-zA-Z0-9]{14,}$/.test(val.trim())) {
+      ids.push(val.trim())
+    }
+  }
+  return [...new Set(ids)]
+}
+
 export async function getWorkOrdersForResident(resident) {
   // Airtable formulas can't filter by linked-record ID (ARRAYJOIN returns display names, not IDs).
   // The only reliable approach is to fetch all work orders and filter client-side using the actual
   // linked-record ID arrays that Airtable returns in record.fields.
-  const envLinkField = String(import.meta.env.VITE_AIRTABLE_WORK_ORDER_RESIDENT_LINK_FIELD ?? '').trim()
-  const linkFieldCandidates = envLinkField
-    ? [envLinkField]
-    : [...new Set([WORK_ORDER_RESIDENT_PROFILE_LINK_FIELD, ...WORK_ORDER_RESIDENT_LINK_FIELD_FALLBACKS])]
 
   const residentId = String(resident?.id || '').trim()
   const emailRaw = String(resident?.Email || '').trim().toLowerCase()
@@ -551,12 +622,7 @@ export async function getWorkOrdersForResident(resident) {
     const fields = record.fields || {}
 
     // 1. Check linked-record fields — these contain actual record ID arrays in the API response
-    if (residentId) {
-      for (const fieldName of linkFieldCandidates) {
-        const val = fields[fieldName]
-        if (Array.isArray(val) && val.includes(residentId)) return true
-      }
-    }
+    if (residentId && workOrderLinkedResidentRecordIds(record).includes(residentId)) return true
 
     // 2. Check the plain-text Resident Email field we now write on creation
     if (emailRaw) {
@@ -685,20 +751,40 @@ export async function createWorkOrder({
     houseOptionalKeys.push('Resident Email')
   }
 
-  // Plain-text property name so manager portal workOrderInScope() can match by name
-  const propertyNameText = String(
-    resident?.['Property Name'] || resident?.['Property'] || resident?.House || '',
-  ).trim()
-  if (propertyNameText && !Array.isArray(resident?.['Property'])) {
+  // Plain-text property name so manager portal workOrderInScope() can match by name.
+  // Always copy explicit "Property Name" even when Property is a linked-record array (previous bug skipped it).
+  const explicitPropertyName = String(resident?.['Property Name'] || '').trim()
+  const propertyFromLinked = (() => {
+    for (const key of ['Property', 'House', 'Properties']) {
+      const v = resident?.[key]
+      if (Array.isArray(v) && v.length) continue
+      const s = String(v || '').trim()
+      if (s && !s.startsWith('rec')) return s
+    }
+    return ''
+  })()
+  const propertyNameText = explicitPropertyName || propertyFromLinked
+  if (propertyNameText) {
     houseOptionalFields['Property Name'] = propertyNameText
     houseOptionalKeys.push('Property Name')
   }
 
-  // Linked record for House/Property (optional — different field name per base)
-  const houseLink = resident?.House || resident?.Property
-  if (Array.isArray(houseLink) && houseLink.length && String(houseLink[0]).startsWith('rec')) {
-    houseOptionalFields['House'] = [String(houseLink[0])]
-    houseOptionalKeys.push('House')
+  /** First linked Properties record id on the resident profile (House or Property). */
+  let propertyRecordId = ''
+  for (const key of ['House', 'Property', 'Properties']) {
+    const v = resident?.[key]
+    if (Array.isArray(v) && v.length && String(v[0]).trim().startsWith('rec')) {
+      propertyRecordId = String(v[0]).trim()
+      break
+    }
+  }
+
+  const propertyLinkCandidates = WORK_ORDER_PROPERTY_LINK_FIELD
+    ? [WORK_ORDER_PROPERTY_LINK_FIELD]
+    : WORK_ORDER_PROPERTY_LINK_FIELD_FALLBACKS
+  if (propertyRecordId && propertyLinkCandidates.length) {
+    houseOptionalFields[propertyLinkCandidates[0]] = [propertyRecordId]
+    houseOptionalKeys.push(propertyLinkCandidates[0])
   }
 
   let lastError = null
@@ -715,12 +801,12 @@ export async function createWorkOrder({
       ...houseOptionalFields,
       ...appFields,
     }
-    const allOptionalKeys = [...houseOptionalKeys, ...workOrderOptionalApplicationKeys]
     if (usePlaceholderResident && WORK_ORDER_SUBMITTER_EMAIL_FIELD && String(resident?.Email || '').trim()) {
       fields[WORK_ORDER_SUBMITTER_EMAIL_FIELD] = String(resident.Email).trim()
     }
 
     for (let strip = 0; strip < 10; strip += 1) {
+      const allOptionalKeys = [...houseOptionalKeys, ...workOrderOptionalApplicationKeys]
       try {
         const data = await request(tableUrl(TABLES.workOrders), {
           method: 'POST',
@@ -740,6 +826,27 @@ export async function createWorkOrder({
       } catch (err) {
         lastError = err
         const unknown = airtableUnknownFieldNameFromErrorMessage(err?.message)
+
+        if (
+          propertyRecordId &&
+          unknown &&
+          propertyLinkCandidates.includes(unknown) &&
+          Object.prototype.hasOwnProperty.call(fields, unknown)
+        ) {
+          const idx = propertyLinkCandidates.indexOf(unknown)
+          if (idx >= 0 && idx < propertyLinkCandidates.length - 1) {
+            const nextField = propertyLinkCandidates[idx + 1]
+            const next = { ...fields }
+            delete next[unknown]
+            next[nextField] = [propertyRecordId]
+            fields = next
+            if (!houseOptionalKeys.includes(nextField)) houseOptionalKeys.push(nextField)
+            console.warn(
+              `[createWorkOrder] Work Orders has no field "${unknown}" — using "${nextField}" for property link.`,
+            )
+            continue
+          }
+        }
 
         if (
           unknown &&
@@ -1261,6 +1368,20 @@ export async function getAllWorkOrders() {
     const params = {}
     if (offset) params.offset = offset
     const data = await request(buildUrl(TABLES.workOrders, params))
+    ;(data.records || []).forEach((r) => allRecords.push(mapRecord(r)))
+    offset = data.offset || null
+  } while (offset)
+  return allRecords
+}
+
+/** All Resident Profile rows (paginated). Used to scope manager work orders by resident → property. */
+export async function listAllResidentsRecords() {
+  const allRecords = []
+  let offset = null
+  do {
+    const params = {}
+    if (offset) params.offset = offset
+    const data = await request(buildUrl(TABLES.residents, params))
     ;(data.records || []).forEach((r) => allRecords.push(mapRecord(r)))
     offset = data.offset || null
   } while (offset)
