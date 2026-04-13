@@ -63,36 +63,6 @@ const NAV_BASE = [
   { id: 'profile', label: 'Profile' },
 ]
 
-function PropertySectionIcon({ sectionKey, active }) {
-  const tone = active
-    ? 'text-[#2563eb] bg-[#2563eb]/10 border-[#2563eb]/20'
-    : 'text-slate-500 bg-slate-100 border-slate-200'
-
-  const icon = (() => {
-    if (sectionKey === 'pending') {
-      return <path strokeLinecap="round" strokeLinejoin="round" d="M12 7v5l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-    }
-    if (sectionKey === 'request_change') {
-      return <path strokeLinecap="round" strokeLinejoin="round" d="M15.232 5.232l3.536 3.536M9 11l6.768-6.768a2.5 2.5 0 113.536 3.536L12.536 14.536a2 2 0 01-.878.513L8 16l.951-3.658A2 2 0 019.464 11.5z" />
-    }
-    if (sectionKey === 'approved') {
-      return <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-    }
-    if (sectionKey === 'unlisted') {
-      return <path strokeLinecap="round" strokeLinejoin="round" d="M3 3l18 18M10.73 5.08A10.94 10.94 0 0112 5c5.523 0 10 7 10 7a18.1 18.1 0 01-4.28 4.89M9.88 9.88a3 3 0 104.24 4.24M6.1 6.1A18.13 18.13 0 002 12s1.55 2.17 4.1 4.1" />
-    }
-    return <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-  })()
-
-  return (
-    <span className={`mb-2 inline-flex h-9 w-9 items-center justify-center rounded-xl border ${tone}`}>
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="h-4.5 w-4.5">
-        {icon}
-      </svg>
-    </span>
-  )
-}
-
 /** All signed-in admin users can review applications from this UI. */
 function canReviewApplicationsFromAdmin() {
   return true
@@ -792,7 +762,6 @@ export default function AdminPortal() {
                       : 'border-transparent text-slate-600 hover:border-slate-200 hover:bg-white/70 hover:text-slate-900'
                   }`}
                 >
-                  <PropertySectionIcon sectionKey={key} active={propertiesSection === key} />
                   <div className="text-lg font-black leading-none tabular-nums text-slate-900">{count}</div>
                   <div className="mt-1 text-sm font-semibold">{label}</div>
                 </button>
