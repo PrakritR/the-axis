@@ -475,6 +475,8 @@ function workOrderInScope(w, approvedNamesLowerSet, approvedPropertyIdsSet) {
       for (const id of houseIds) {
         if (approvedPropertyIdsSet.has(String(id).trim())) return true
       }
+    } else if (typeof houseIds === 'string' && houseIds.trim()) {
+      if (approvedPropertyIdsSet.has(houseIds.trim())) return true
     }
   }
 
@@ -3644,6 +3646,7 @@ function WorkOrdersTabPanel({ allowedPropertyNames, allowedPropertyIds }) {
   const [quickFilter, setQuickFilter] = useState('all')
   const [propertyFilter, setPropertyFilter] = useState('')
   const [residentFilter, setResidentFilter] = useState('')
+  const [sortBy, setSortBy] = useState('newest')
   const [record, setRecord] = useState(null)
   const [loadError, setLoadError] = useState('')
   const [saving, setSaving] = useState(false)
@@ -3662,8 +3665,12 @@ function WorkOrdersTabPanel({ allowedPropertyNames, allowedPropertyIds }) {
     setResolutionSummary(safePortalText(nextRecord?.['Resolution Summary'], ''))
   }
 
+  function submittedAt(row) {
+    return new Date(row?.['Date Submitted'] || row?.created_at || 0).getTime()
+  }
+
   const loadList = useCallback(async () => {
-    if (!scopeLower.size) {
+    if (!scopeLower.size && !scopeIds.size) {
       setList([])
       setListLoading(false)
       setListError('')
@@ -3682,7 +3689,7 @@ function WorkOrdersTabPanel({ allowedPropertyNames, allowedPropertyIds }) {
     } finally {
       setListLoading(false)
     }
-  }, [scopeLower])
+  }, [scopeLower, scopeIds])
 
   useEffect(() => {
     loadList()
@@ -3697,13 +3704,73 @@ function WorkOrdersTabPanel({ allowedPropertyNames, allowedPropertyIds }) {
     return counts
   }, [list])
 
+  const propertyChoices = useMemo(() => {
+    const map = new Map()
+    for (const name of allowedPropertyNames || []) {
+      const display = String(name || '').trim()
+      if (!display) continue
+      const value = display.toLowerCase()
+      if (!map.has(value)) map.set(value, display)
+    }
+    for (const row of list) {
+      const display = String(workOrderPropertyLabel(row)).trim()
+      if (!display) continue
+      const value = display.toLowerCase()
+      if (!map.has(value)) map.set(value, display)
+    }
+    return [...map.entries()]
+      .sort((a, b) => a[1].localeCompare(b[1], undefined, { sensitivity: 'base' }))
+      .map(([value, display]) => ({ value, display }))
+  }, [list, allowedPropertyNames])
+
+  const residentChoices = useMemo(() => {
+    const map = new Map()
+    for (const row of list) {
+      const display = String(paymentResidentLabel(row)).trim()
+      if (!display) continue
+      const value = display.toLowerCase()
+      if (!map.has(value)) map.set(value, display)
+    }
+    return [...map.entries()]
+      .sort((a, b) => a[1].localeCompare(b[1], undefined, { sensitivity: 'base' }))
+      .map(([value, display]) => ({ value, display }))
+  }, [list])
+
+  useEffect(() => {
+    if (!propertyFilter) return
+    if (!propertyChoices.some((choice) => choice.value === propertyFilter)) setPropertyFilter('')
+  }, [propertyChoices, propertyFilter])
+
+  useEffect(() => {
+    if (!residentFilter) return
+    if (!residentChoices.some((choice) => choice.value === residentFilter)) setResidentFilter('')
+  }, [residentChoices, residentFilter])
+
   const filteredList = useMemo(() => {
     let rows = list
     if (quickFilter !== 'all') rows = rows.filter((row) => managerWorkOrderBucket(row) === quickFilter)
     if (propertyFilter) rows = rows.filter((row) => String(workOrderPropertyLabel(row)).trim().toLowerCase() === propertyFilter)
     if (residentFilter) rows = rows.filter((row) => String(paymentResidentLabel(row)).trim().toLowerCase() === residentFilter)
-    return [...rows].sort((a, b) => new Date(b['Date Submitted'] || b.created_at || 0) - new Date(a['Date Submitted'] || a.created_at || 0))
-  }, [list, quickFilter, propertyFilter, residentFilter])
+    return [...rows].sort((a, b) => {
+      if (sortBy === 'oldest') return submittedAt(a) - submittedAt(b)
+      if (sortBy === 'property') {
+        const cmp = String(workOrderPropertyLabel(a)).localeCompare(String(workOrderPropertyLabel(b)), undefined, { sensitivity: 'base' })
+        if (cmp !== 0) return cmp
+        return submittedAt(b) - submittedAt(a)
+      }
+      if (sortBy === 'resident') {
+        const cmp = String(paymentResidentLabel(a)).localeCompare(String(paymentResidentLabel(b)), undefined, { sensitivity: 'base' })
+        if (cmp !== 0) return cmp
+        return submittedAt(b) - submittedAt(a)
+      }
+      if (sortBy === 'status') {
+        const cmp = String(managerWorkOrderStatusLabel(a)).localeCompare(String(managerWorkOrderStatusLabel(b)), undefined, { sensitivity: 'base' })
+        if (cmp !== 0) return cmp
+        return submittedAt(b) - submittedAt(a)
+      }
+      return submittedAt(b) - submittedAt(a)
+    })
+  }, [list, quickFilter, propertyFilter, residentFilter, sortBy])
 
   useEffect(() => {
     if (filteredList.length === 0) {
@@ -3781,26 +3848,9 @@ function WorkOrdersTabPanel({ allowedPropertyNames, allowedPropertyIds }) {
           className="rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition focus:border-[#2563eb] focus:outline-none focus:ring-2 focus:ring-[#2563eb]/20"
         >
           <option value="">All properties</option>
-          {(() => {
-            const map = new Map()
-            for (const name of allowedPropertyNames || []) {
-              const display = String(name || '').trim()
-              if (!display) continue
-              const value = display.toLowerCase()
-              if (!map.has(value)) map.set(value, display)
-            }
-            for (const row of list) {
-              const display = String(workOrderPropertyLabel(row)).trim()
-              if (!display) continue
-              const value = display.toLowerCase()
-              if (!map.has(value)) map.set(value, display)
-            }
-            return [...map.entries()]
-              .sort((a, b) => a[1].localeCompare(b[1], undefined, { sensitivity: 'base' }))
-              .map(([value, display]) => (
-                <option key={value} value={value}>{display}</option>
-              ))
-          })()}
+          {propertyChoices.map(({ value, display }) => (
+            <option key={value} value={value}>{display}</option>
+          ))}
         </select>
         <select
           value={residentFilter}
@@ -3808,9 +3858,20 @@ function WorkOrdersTabPanel({ allowedPropertyNames, allowedPropertyIds }) {
           className="rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition focus:border-[#2563eb] focus:outline-none focus:ring-2 focus:ring-[#2563eb]/20"
         >
           <option value="">All residents</option>
-          {[...new Set(list.map((r) => String(paymentResidentLabel(r)).trim()).filter(Boolean))].sort().map((r) => (
-            <option key={r} value={r.toLowerCase()}>{r}</option>
+          {residentChoices.map(({ value, display }) => (
+            <option key={value} value={value}>{display}</option>
           ))}
+        </select>
+        <select
+          value={sortBy}
+          onChange={(e) => setSortBy(e.target.value)}
+          className="rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition focus:border-[#2563eb] focus:outline-none focus:ring-2 focus:ring-[#2563eb]/20"
+        >
+          <option value="newest">Newest first</option>
+          <option value="oldest">Oldest first</option>
+          <option value="property">Sort by property</option>
+          <option value="resident">Sort by resident</option>
+          <option value="status">Sort by status</option>
         </select>
         <button
           onClick={loadList}
@@ -3860,34 +3921,46 @@ function WorkOrdersTabPanel({ allowedPropertyNames, allowedPropertyIds }) {
               <div className="text-sm font-semibold text-slate-700">{list.length === 0 ? 'No work orders yet' : 'Nothing matches this filter'}</div>
             </div>
           ) : (
-            <div className="divide-y divide-slate-100">
-              {filteredList.map((row) => (
-                <div key={row.id} className="flex flex-col gap-3 px-6 py-5 sm:flex-row sm:items-center sm:gap-5">
-                  <div className="min-w-0 flex-1">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <span className="truncate font-semibold text-slate-900">{safePortalText(row.Title, 'Untitled request')}</span>
-                      <PortalOpsStatusBadge tone={managerWorkOrderStatusTone(row)}>
-                        {managerWorkOrderStatusLabel(row)}
-                      </PortalOpsStatusBadge>
-                    </div>
-                    <div className="mt-1 flex flex-wrap gap-x-4 gap-y-0.5 text-sm text-slate-500">
-                      <span>{workOrderPropertyLabel(row) || 'House not set'}</span>
-                      <span>{paymentResidentLabel(row)}</span>
-                      <span>{formatDate(row['Date Submitted'] || row.created_at)}</span>
-                    </div>
-                    <p className="mt-1 line-clamp-2 text-sm text-slate-500">{safePortalText(row.Description, '—')}</p>
-                  </div>
-                  <div className="flex shrink-0 flex-wrap gap-2">
-                    <button
-                      type="button"
-                      onClick={() => setRecord((current) => (current?.id === row.id ? null : row))}
-                      className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
+            <div className="overflow-x-auto">
+              <table className="min-w-full text-left">
+                <thead className="border-b border-slate-200 bg-slate-50">
+                  <tr>
+                    <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-[0.14em] text-slate-400">Description</th>
+                    <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-[0.14em] text-slate-400">Submitted</th>
+                    <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-[0.14em] text-slate-400">Property</th>
+                    <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-[0.14em] text-slate-400">Resident</th>
+                    <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-[0.14em] text-slate-400">Status</th>
+                    <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-[0.14em] text-slate-400">Action</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {filteredList.map((row) => (
+                    <tr
+                      key={row.id}
+                      className={classNames('transition hover:bg-slate-50', record?.id === row.id ? 'bg-axis/5' : '')}
                     >
-                      {record?.id === row.id ? 'Hide details' : 'Details'}
-                    </button>
-                  </div>
-                </div>
-              ))}
+                      <td className="px-4 py-4 text-sm font-semibold text-slate-900">{safePortalText(row.Title, 'Untitled request')}</td>
+                      <td className="px-4 py-4 text-sm text-slate-600">{fmtDate(row['Date Submitted'] || row.created_at)}</td>
+                      <td className="px-4 py-4 text-sm text-slate-600">{workOrderPropertyLabel(row) || 'House not set'}</td>
+                      <td className="px-4 py-4 text-sm text-slate-600">{paymentResidentLabel(row)}</td>
+                      <td className="px-4 py-4">
+                        <PortalOpsStatusBadge tone={managerWorkOrderStatusTone(row)}>
+                          {managerWorkOrderStatusLabel(row)}
+                        </PortalOpsStatusBadge>
+                      </td>
+                      <td className="px-4 py-4 text-sm">
+                        <button
+                          type="button"
+                          onClick={() => setRecord((current) => (current?.id === row.id ? null : row))}
+                          className="font-semibold text-[#2563eb] transition hover:opacity-80"
+                        >
+                          {record?.id === row.id ? 'Hide details' : 'Details'}
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
           )}
         </div>

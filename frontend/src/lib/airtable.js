@@ -687,7 +687,7 @@ export async function createWorkOrder({
 
   // Plain-text property name so manager portal workOrderInScope() can match by name
   const propertyNameText = String(
-    resident?.['Property Name'] || resident?.['Property'] || '',
+    resident?.['Property Name'] || resident?.['Property'] || resident?.House || '',
   ).trim()
   if (propertyNameText && !Array.isArray(resident?.['Property'])) {
     houseOptionalFields['Property Name'] = propertyNameText
