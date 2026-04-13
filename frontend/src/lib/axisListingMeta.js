@@ -1,19 +1,19 @@
 /**
- * Embedded JSON block inside Properties "Other Info" for fields not yet modeled
- * as dedicated Airtable columns (room extras, move-in totals, leasing bundles, etc.).
- * Safe to extend with version bumps.
+ * Small JSON block appended to Properties **Other Info** for data that does not have
+ * a first-class Airtable column (or for legacy rows). **Prefer native columns** when present:
+ * room rent / availability / furnished / utilities cost go to `Room N *` fields;
+ * full-house / promo / lease-length copy go to `Full House Price`, `Promotional Full House Price`,
+ * `Lease Length Information` (see `serializeManagerAddPropertyToAirtableFields`).
+ *
+ * What typically remains here after a save:
+ * - `roomsDetail[]` — room **labels**, notes, bathroom/furniture feature text, `unavailable` flag
+ *   (numeric rent & ISO availability read from `Room N Rent` / `Room N Availability` when those columns exist).
+ * - `leasing["Leasing Packages"]` — bundle rows when floor packages are used (no dedicated table yet).
+ * - `financials.moveInCharges` — optional until a column exists.
+ * - `listingAvailabilityWindows`, `listingVideos`, `bathroomTotalDecimal`, `sharedSpacesDetail`, etc.
  *
  * `meta.leasing` uses Properties-style field names — see PROPERTIES_LEASING_META_KEYS
  * and PROPERTIES_LEASING_PACKAGE_KEYS in managerPropertyFormAirtableMap.js.
- *
- * Optional marketing fields (read by mapAirtableRecordToPropertyPage):
- * - `listingVideos`: [{ url | src, label? }] — property-level tour clips (plus any Airtable `Videos` attachments).
- * - `sharedSpacesDetail`: parallel to Shared Space 1..N on the record; each entry may include
- *   `imageUrls?: string[]`, `videos?: [{ url|src, label? }]`.
- * - `listingAvailabilityWindows`: property-level marketing windows from the manager Basics step;
- *   each `{ start: "yyyy-mm-dd", end?: "" | "yyyy-mm-dd" }` — empty `end` means open-ended after `start`.
- * - `bathroomTotalDecimal`: sum of full (1) + half/powder (0.5) baths from the wizard — used for public “Bathrooms” count.
- * - `roomsDetail[]`: per-room objects may include `bathroomSetup` (bath/access only) plus furniture/feature strings.
  */
 
 export const AXIS_LISTING_META_START = '---AXIS_LISTING_META_JSON---'

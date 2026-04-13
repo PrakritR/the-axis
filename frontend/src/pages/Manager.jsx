@@ -5768,19 +5768,8 @@ function LeaseEditor({ draftId, manager, onBack, embedded = false }) {
     <div className={embedded ? 'overflow-hidden rounded-3xl border border-slate-200 bg-slate-50' : 'flex min-h-screen flex-col bg-slate-50'}>
       {/* Editor header */}
       <header className={`${embedded ? '' : 'sticky top-0 z-10'} border-b border-slate-200 bg-white/95 px-4 py-3 backdrop-blur sm:px-6`}>
-        <div className={`${embedded ? '' : 'mx-auto max-w-7xl'} flex items-center gap-3`}>
-          {/* Back button */}
-          <button
-            onClick={onBack}
-            className="flex shrink-0 items-center gap-1.5 rounded-xl border border-slate-200 px-3 py-2 text-sm font-semibold text-slate-600 transition hover:bg-slate-50"
-          >
-            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
-            </svg>
-            <span className="hidden sm:inline">Back</span>
-          </button>
-
-          {/* Title */}
+        <div className={`${embedded ? '' : 'mx-auto max-w-7xl'} flex items-center justify-between gap-3`}>
+          {/* Status Area */}
           <div className="min-w-0 flex-1">
             <div className="flex flex-wrap items-center gap-2">
               <h1 className="truncate text-base font-black text-slate-900">
@@ -5791,6 +5780,18 @@ function LeaseEditor({ draftId, manager, onBack, embedded = false }) {
               {status && <StatusBadge status={status} size="lg" />}
             </div>
           </div>
+          
+          {/* Send to resident button (in header if canApprove) */}
+          {canApprove && (
+            <button
+              type="button"
+              onClick={handleApprove}
+              disabled={!!actionLoading}
+              className="shrink-0 whitespace-nowrap rounded-xl bg-green-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-green-700 disabled:opacity-50"
+            >
+              {actionLoading === 'approve' ? 'Sending…' : 'Send to resident'}
+            </button>
+          )}
         </div>
       </header>
 

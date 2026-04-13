@@ -336,7 +336,7 @@ function stringOrEmpty(v) {
 export function buildPropertyWizardInitialValues(property) {
   const record = property && typeof property === 'object' ? property : {}
   const { userText, meta } = parseAxisListingMetaBlock(String(record[PROPERTY_AIR.otherInfo] || ''))
-  const leasing = normalizeLeasingFromMeta(meta?.leasing)
+  const leasingNorm = normalizeLeasingFromMeta(meta?.leasing)
   const roomDetails = Array.isArray(meta?.roomsDetail) ? meta.roomsDetail : []
 
   const fallbackRoomCount = roomDetails.length > 0 ? roomDetails.length : 1
@@ -452,7 +452,9 @@ export function buildPropertyWizardInitialValues(property) {
       amenities,
       amenitiesOther,
       pets: stringOrEmpty(record[PROPERTY_AIR.pets]),
-      securityDeposit: String(meta?.financials?.securityDeposit ?? record[PROPERTY_AIR.securityDeposit] ?? ''),
+      securityDeposit: String(
+        record[PROPERTY_AIR.securityDeposit] ?? meta?.financials?.securityDeposit ?? '',
+      ),
       moveInCharges: String(meta?.financials?.moveInCharges ?? ''),
       listingAvailabilityWindows,
     },
@@ -473,11 +475,25 @@ export function buildPropertyWizardInitialValues(property) {
     },
     otherInfo: userText,
     leasing: {
-      fullHousePrice: String(leasing.fullHousePrice || ''),
-      promoPrice: String(leasing.promoPrice || ''),
-      leaseLengthInfo: String(leasing.leaseLengthInfo || ''),
-      bundles: Array.isArray(leasing.bundles)
-        ? leasing.bundles.map((bundle) => ({
+      fullHousePrice: stringOrEmpty(
+        record[PROPERTY_AIR.fullHousePrice] != null && String(record[PROPERTY_AIR.fullHousePrice]).trim() !== ''
+          ? String(record[PROPERTY_AIR.fullHousePrice])
+          : leasingNorm.fullHousePrice,
+      ),
+      promoPrice: stringOrEmpty(
+        record[PROPERTY_AIR.promotionalFullHousePrice] != null &&
+          String(record[PROPERTY_AIR.promotionalFullHousePrice]).trim() !== ''
+          ? String(record[PROPERTY_AIR.promotionalFullHousePrice])
+          : leasingNorm.promoPrice,
+      ),
+      leaseLengthInfo: stringOrEmpty(
+        record[PROPERTY_AIR.leaseLengthInformation] != null &&
+          String(record[PROPERTY_AIR.leaseLengthInformation]).trim() !== ''
+          ? String(record[PROPERTY_AIR.leaseLengthInformation])
+          : leasingNorm.leaseLengthInfo,
+      ),
+      bundles: Array.isArray(leasingNorm.bundles)
+        ? leasingNorm.bundles.map((bundle) => ({
             name: String(bundle.name || ''),
             price: String(bundle.price || ''),
             rooms: Array.isArray(bundle.rooms) ? bundle.rooms.filter(Boolean) : [],
@@ -544,13 +560,18 @@ export function serializeManagerAddPropertyToAirtableFields(params) {
   const bc = clampInt(bathroomCount, 0, MAX_BATHROOM_SLOTS)
   const kc = clampInt(kitchenCount, 0, MAX_KITCHEN_SLOTS)
 
-  /** Native Properties columns like `Room 1 Rent` are not present on every Airtable base; default off. */
+  /**
+   * Native Properties columns (`Room N Rent`, `Room N Availability`, leasing $ fields) —
+   * **on by default** so housing data lives in typed fields, not only Other Info JSON.
+   * Set `VITE_AIRTABLE_WRITE_ROOM_COLUMNS=false` or `VITE_AIRTABLE_WRITE_LEASING_COLUMNS=false` if your base omits those columns.
+   */
   const writeRoomColumnsEnv = String(
     typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.VITE_AIRTABLE_WRITE_ROOM_COLUMNS
       ? import.meta.env.VITE_AIRTABLE_WRITE_ROOM_COLUMNS
       : '',
   ).toLowerCase()
-  const writeRoomColumns = writeRoomColumnsEnv === '1' || writeRoomColumnsEnv === 'true' || writeRoomColumnsEnv === 'yes'
+  const writeRoomColumns =
+    writeRoomColumnsEnv === '0' || writeRoomColumnsEnv === 'false' || writeRoomColumnsEnv === 'no' ? false : true
 
   const writeLeasingColumnsEnv = String(
     typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.VITE_AIRTABLE_WRITE_LEASING_COLUMNS
@@ -558,7 +579,9 @@ export function serializeManagerAddPropertyToAirtableFields(params) {
       : '',
   ).toLowerCase()
   const writeLeasingColumns =
-    writeLeasingColumnsEnv === '1' || writeLeasingColumnsEnv === 'true' || writeLeasingColumnsEnv === 'yes'
+    writeLeasingColumnsEnv === '0' || writeLeasingColumnsEnv === 'false' || writeLeasingColumnsEnv === 'no'
+      ? false
+      : true
 
   let sharedTrimmed = (sharedSpaces || []).slice(0, MAX_SHARED_SPACE_SLOTS)
   while (sharedTrimmed.length > 0 && !sharedSpaceRowHasContent(sharedTrimmed[sharedTrimmed.length - 1])) {
@@ -650,19 +673,31 @@ export function serializeManagerAddPropertyToAirtableFields(params) {
       }
     }
 
-    roomsDetail.push({
-      label: String(row.label || '').trim(),
-      notes: String(row.notes || '').trim(),
-      bathroomSetup: String(row.bathroomSetup || '').trim(),
-      furnitureIncluded: String(row.furnitureIncluded || '').trim(),
-      additionalFeatures: String(row.additionalFeatures || '').trim(),
-      rent: String(row.rent ?? '').trim(),
-      availability: row.unavailable ? 'Unavailable' : String(row.availability || '').trim(),
-      unavailable: Boolean(row.unavailable),
-      furnished: String(row.furnished || '').trim(),
-      utilitiesCost: String(row.utilitiesCost ?? '').trim(),
-      utilities: String(row.utilities || '').trim(),
-    })
+    if (writeRoomColumns) {
+      /** Keep labels + rich text in JSON for tours/listings; rent/dates live in `Room N *` columns. */
+      roomsDetail.push({
+        label: String(row.label || '').trim() || `Room ${i}`,
+        notes: String(row.notes || '').trim(),
+        bathroomSetup: String(row.bathroomSetup || '').trim(),
+        furnitureIncluded: String(row.furnitureIncluded || '').trim(),
+        additionalFeatures: String(row.additionalFeatures || '').trim(),
+        unavailable: Boolean(row.unavailable),
+      })
+    } else {
+      roomsDetail.push({
+        label: String(row.label || '').trim(),
+        notes: String(row.notes || '').trim(),
+        bathroomSetup: String(row.bathroomSetup || '').trim(),
+        furnitureIncluded: String(row.furnitureIncluded || '').trim(),
+        additionalFeatures: String(row.additionalFeatures || '').trim(),
+        rent: String(row.rent ?? '').trim(),
+        availability: row.unavailable ? 'Unavailable' : String(row.availability || '').trim(),
+        unavailable: Boolean(row.unavailable),
+        furnished: String(row.furnished || '').trim(),
+        utilitiesCost: String(row.utilitiesCost ?? '').trim(),
+        utilities: String(row.utilities || '').trim(),
+      })
+    }
   }
 
   const leasingObj = leasing && typeof leasing === 'object' ? leasing : {}
@@ -702,25 +737,33 @@ export function serializeManagerAddPropertyToAirtableFields(params) {
     const notes = String(row?.description || '').trim()
     return notes ? { notes, description: notes } : {}
   })
+  const hasSharedSpacesMeta = sharedSpacesDetail.some((o) => o && (o.notes || o.description))
 
   const bathroomTotalDecimal = computeDecimalBathroomTotal(bathrooms)
 
+  const moveInVal = optionalCurrency(basics.moveInCharges)
+  const financialsMeta =
+    moveInVal !== undefined && moveInVal !== 0 ? { moveInCharges: moveInVal } : null
+
+  /** When leasing $ / copy columns exist, do not duplicate those values inside Other Info. */
+  const leasingMeta = {}
+  if (writeLeasingColumns) {
+    if (leasingPackagesForMeta.length > 0) leasingMeta[MK.leasingPackages] = leasingPackagesForMeta
+  } else {
+    leasingMeta[MK.fullHousePrice] = String(leasingObj.fullHousePrice || '').trim()
+    leasingMeta[MK.promotionalFullHousePrice] = String(leasingObj.promoPrice || '').trim()
+    leasingMeta[MK.leaseLengthInformation] = String(leasingObj.leaseLengthInfo || '').trim()
+    leasingMeta[MK.leasingPackages] = leasingPackagesForMeta
+  }
+
   const axisMeta = {
-    propertyTypeOther: ptRaw === 'Other' ? ptOther : '',
+    ...(ptRaw === 'Other' && ptOther ? { propertyTypeOther: ptOther } : {}),
     roomsDetail,
-    sharedSpacesDetail,
+    ...(hasSharedSpacesMeta ? { sharedSpacesDetail } : {}),
     ...(bathroomTotalDecimal > 0 ? { bathroomTotalDecimal } : {}),
-    financials: {
-      securityDeposit: optionalCurrency(basics.securityDeposit) ?? 0,
-      moveInCharges: optionalCurrency(basics.moveInCharges) ?? 0,
-    },
-    leasing: {
-      [MK.fullHousePrice]: String(leasingObj.fullHousePrice || '').trim(),
-      [MK.promotionalFullHousePrice]: String(leasingObj.promoPrice || '').trim(),
-      [MK.leaseLengthInformation]: String(leasingObj.leaseLengthInfo || '').trim(),
-      [MK.leasingPackages]: leasingPackagesForMeta,
-    },
-    listingAvailabilityWindows,
+    ...(financialsMeta ? { financials: financialsMeta } : {}),
+    ...(Object.keys(leasingMeta).length > 0 ? { leasing: leasingMeta } : {}),
+    ...(listingAvailabilityWindows.length > 0 ? { listingAvailabilityWindows } : {}),
   }
 
   const mergedOtherInfo = mergeAxisListingMetaIntoOtherInfo(otherInfo, axisMeta)

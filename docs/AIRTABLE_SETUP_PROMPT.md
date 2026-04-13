@@ -66,7 +66,7 @@ Create these tables (names must match unless you change code).
 
 **Fields referenced:**
 
-- `Name` or `Property` — primary label (tour + `getPropertyByName` use `Name`).
+- `Name` or `Property` / `Property Name` — primary label (tour + lookups use `Name` or `Property Name`).
 - `Address`
 - `Notes` — long text; embeds **Tour Manager**, **Tour Availability**, **Tour Notes**, **Site Manager Email** as `Label: value` lines.
 - `Manager Email`, `Site Manager Email`, `Manager`, `Site Manager`, `Property Manager`, `Manager ID` — linking properties to managers (see `propertyAssignedToManager` in `Manager.jsx`).
@@ -74,6 +74,17 @@ Create these tables (names must match unless you change code).
 - `Utilities Fee` — number (optional).
 - `Application Fee` — number; overrides Apply page default when set.
 - Approval-style fields used in manager scope: e.g. status in notes or dedicated fields your `isPropertyRecordApproved` expects (inspect `Manager.jsx` for `isPropertyRecordApproved` / `propertyRecordName`).
+
+**Manager “Add property” wizard — prefer native columns (default in app):** The portal writes room and leasing numbers/text into typed fields so **Other Info** stays small (labels, bundle JSON, marketing windows, move-in charges until a column exists).
+
+Add columns on `Properties` as needed (up to 20 rooms):
+
+- `Room Count`, `Bathroom Count`, `Kitchen Count`, `Number of Shared Spaces`
+- Per slot `n` = 1…20: **`Room n Rent`** (currency/number), **`Room n Availability`** (date), **`Room n Furnished`**, **`Room n Utilities Cost`**; **`Room 1 Utilities`** (long text) for room 1 utilities blurb
+- Leasing (optional): **`Full House Price`**, **`Promotional Full House Price`**, **`Lease Length Information`**
+- If your base does **not** have these columns, set `VITE_AIRTABLE_WRITE_ROOM_COLUMNS=false` and/or `VITE_AIRTABLE_WRITE_LEASING_COLUMNS=false` in env (see `.env.example`).
+
+**Other Info** still holds a short `---AXIS_LISTING_META_JSON---` block for: room labels + feature notes, **Leasing Packages** (bundled rooms), **listing availability windows**, and similar fields without columns yet.
 
 **Information needed:** canonical property naming (must match Apply/tour strings), and which field marks a property “approved/live” for manager scoping.
 
@@ -94,7 +105,7 @@ Create these tables (names must match unless you change code).
 - `Title`, `Description`, `Category`, `Priority`, `Status` (e.g. `Submitted`)
 - `Preferred Entry Time`
 - `Resident profile` — link to Resident Profile (default in code; env `VITE_AIRTABLE_WORK_ORDER_RESIDENT_LINK_FIELD` if your field name differs)
-- `Application ID` / Application link fields from `workOrderApplicationFieldsFromResident`
+- **Optional:** `Application ID` (number or text) and/or **`Application`** (link to Applications) — the portal copies these from the resident record when creating a work order. If your base **does not** have these columns, the app **omits** them automatically after the first `UNKNOWN_FIELD_NAME` error. To skip the failed attempt and warnings, set `VITE_AIRTABLE_WORK_ORDER_APPLICATION_ID_FIELD=none` and/or `VITE_AIRTABLE_WORK_ORDER_APPLICATION_LINK_FIELD=none`. To use different names, set those env vars to the **exact** Airtable field names.
 - `Photo` — attachment (upload API)
 - `Date Submitted` / created time — sorting
 - `Management Notes`, `Resolution Summary`, `Resolved`, `Last Update` / `Last Updated` / `Date Resolved` — manager updates (see `Manager.jsx` work order panel)

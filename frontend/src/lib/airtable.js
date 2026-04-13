@@ -43,6 +43,26 @@ const WORK_ORDER_SUBMITTER_EMAIL_FIELD = String(
 ).trim()
 
 /**
+ * Work Orders → application id (copied from Resident Profile). Must match your base exactly.
+ * Set to `none` to never send this field (use if the column does not exist).
+ */
+const WORK_ORDER_APPLICATION_ID_FIELD = (() => {
+  const raw = String(import.meta.env.VITE_AIRTABLE_WORK_ORDER_APPLICATION_ID_FIELD ?? '').trim()
+  if (raw.toLowerCase() === 'none') return ''
+  return raw || 'Application ID'
+})()
+
+/**
+ * Work Orders → linked record(s) to Applications table. Must match your base exactly.
+ * Set to `none` to never send this field.
+ */
+const WORK_ORDER_APPLICATION_LINK_FIELD = (() => {
+  const raw = String(import.meta.env.VITE_AIRTABLE_WORK_ORDER_APPLICATION_LINK_FIELD ?? '').trim()
+  if (raw.toLowerCase() === 'none') return ''
+  return raw || 'Application'
+})()
+
+/**
  * Work Orders table: linked record field → Resident Profile ({@link TABLES.residents}).
  * Optional env: VITE_AIRTABLE_WORK_ORDER_RESIDENT_LINK_FIELD — must match your base exactly when set.
  * When unset, create/list retries common Airtable spellings (e.g. Resident Profile, Resident profile, Resident).
@@ -580,22 +600,35 @@ async function uploadAttachmentToRecord(table, recordId, fieldName, file) {
   return response.json()
 }
 
+/**
+ * Fields on Work Orders that link back to the application (optional on many bases).
+ * Returns `{ fields, optionalKeys }` so createWorkOrder can strip keys Airtable rejects (UNKNOWN_FIELD_NAME).
+ */
 function workOrderApplicationFieldsFromResident(resident) {
   const out = {}
-  if (!resident) return out
-  const aid = resident['Application ID']
-  if (aid != null && String(aid).trim() !== '') {
-    const n = Number(aid)
-    if (Number.isFinite(n) && String(aid).trim() === String(n)) out['Application ID'] = n
-    else out['Application ID'] = String(aid).trim()
+  if (!resident) return { fields: out, optionalKeys: [] }
+
+  const idField = WORK_ORDER_APPLICATION_ID_FIELD
+  if (idField) {
+    const aid = resident['Application ID']
+    if (aid != null && String(aid).trim() !== '') {
+      const n = Number(aid)
+      if (Number.isFinite(n) && String(aid).trim() === String(n)) out[idField] = n
+      else out[idField] = String(aid).trim()
+    }
   }
-  const app = resident.Application
-  if (Array.isArray(app) && app.length && String(app[0]).trim().startsWith('rec')) {
-    out.Application = [String(app[0]).trim()]
-  } else if (typeof app === 'string' && app.trim().startsWith('rec')) {
-    out.Application = [app.trim()]
+
+  const linkField = WORK_ORDER_APPLICATION_LINK_FIELD
+  if (linkField) {
+    const app = resident.Application
+    if (Array.isArray(app) && app.length && String(app[0]).trim().startsWith('rec')) {
+      out[linkField] = [String(app[0]).trim()]
+    } else if (typeof app === 'string' && app.trim().startsWith('rec')) {
+      out[linkField] = [app.trim()]
+    }
   }
-  return out
+
+  return { fields: out, optionalKeys: Object.keys(out) }
 }
 
 export async function createWorkOrder({
@@ -626,12 +659,14 @@ export async function createWorkOrder({
     ? [envLinkField]
     : [...new Set([WORK_ORDER_RESIDENT_PROFILE_LINK_FIELD, ...WORK_ORDER_RESIDENT_LINK_FIELD_FALLBACKS])]
 
-  const appFields = usePlaceholderResident ? {} : workOrderApplicationFieldsFromResident(resident)
+  const { fields: appFields, optionalKeys: workOrderOptionalApplicationKeys } = usePlaceholderResident
+    ? { fields: {}, optionalKeys: [] }
+    : workOrderApplicationFieldsFromResident(resident)
 
   let lastError = null
-  for (let i = 0; i < linkFieldCandidates.length; i++) {
+  outer: for (let i = 0; i < linkFieldCandidates.length; i++) {
     const linkField = linkFieldCandidates[i]
-    const fields = {
+    let fields = {
       Title: title,
       Description: normalizedDescription,
       Category: category,
@@ -645,32 +680,49 @@ export async function createWorkOrder({
       fields[WORK_ORDER_SUBMITTER_EMAIL_FIELD] = String(resident.Email).trim()
     }
 
-    try {
-      const data = await request(tableUrl(TABLES.workOrders), {
-        method: 'POST',
-        body: JSON.stringify({ fields, typecast: true }),
-      })
-      const record = mapRecord(data)
+    for (let strip = 0; strip < 10; strip += 1) {
+      try {
+        const data = await request(tableUrl(TABLES.workOrders), {
+          method: 'POST',
+          body: JSON.stringify({ fields, typecast: true }),
+        })
+        const record = mapRecord(data)
 
-      if (photoFile) {
-        try {
-          await uploadAttachmentToRecord(TABLES.workOrders, record.id, 'Photo', photoFile)
-        } catch (err) {
-          console.warn('Photo upload failed (work order was still created):', err.message)
+        if (photoFile) {
+          try {
+            await uploadAttachmentToRecord(TABLES.workOrders, record.id, 'Photo', photoFile)
+          } catch (err) {
+            console.warn('Photo upload failed (work order was still created):', err.message)
+          }
         }
-      }
 
-      return record
-    } catch (err) {
-      lastError = err
-      const unknown = airtableUnknownFieldNameFromErrorMessage(err?.message)
-      const isWrongResidentField = unknown && unknown === linkField
-      const canRetry = isWrongResidentField && i < linkFieldCandidates.length - 1
-      if (canRetry) {
-        console.warn(`[createWorkOrder] Retrying: Airtable has no field "${linkField}", trying next resident link field…`)
-        continue
+        return record
+      } catch (err) {
+        lastError = err
+        const unknown = airtableUnknownFieldNameFromErrorMessage(err?.message)
+
+        if (
+          unknown &&
+          workOrderOptionalApplicationKeys.includes(unknown) &&
+          Object.prototype.hasOwnProperty.call(fields, unknown)
+        ) {
+          const next = { ...fields }
+          delete next[unknown]
+          fields = next
+          console.warn(
+            `[createWorkOrder] Work Orders table has no field "${unknown}" — omitting and retrying (set VITE_AIRTABLE_WORK_ORDER_APPLICATION_ID_FIELD / _LINK_FIELD or "none" in .env to silence).`,
+          )
+          continue
+        }
+
+        const isWrongResidentField = unknown && unknown === linkField
+        const canRetryLink = isWrongResidentField && i < linkFieldCandidates.length - 1
+        if (canRetryLink) {
+          console.warn(`[createWorkOrder] Retrying: Airtable has no field "${linkField}", trying next resident link field…`)
+          continue outer
+        }
+        throw err
       }
-      throw err
     }
   }
 

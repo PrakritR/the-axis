@@ -13,6 +13,7 @@ import {
   MAX_SHARED_SPACE_SLOTS,
   normalizeLeasingFromMeta,
   parseBodyTriplet,
+  roomAvailabilityField,
   roomRentField,
   sharedSpaceAccessField,
   sharedSpaceNameField,
@@ -54,11 +55,17 @@ function formatRentForListing(raw) {
   return s
 }
 
-function availabilityDisplayFromDetail(detail) {
+function availabilityDisplayFromDetail(detail, rec, roomIndexOneBased) {
+  const detailObj = detail && typeof detail === 'object' ? detail : {}
   const unavailable =
-    detail.unavailable === true || trimStr(detail.availability).toLowerCase() === 'unavailable'
+    detailObj.unavailable === true || trimStr(detailObj.availability).toLowerCase() === 'unavailable'
   if (unavailable) return 'Currently unavailable'
-  const a = trimStr(detail.availability)
+  const fromDetail = trimStr(detailObj.availability)
+  const fromCol =
+    rec && roomIndexOneBased
+      ? trimStr(rec[roomAvailabilityField(roomIndexOneBased)])
+      : ''
+  const a = fromDetail || fromCol
   if (!a) return 'Available now'
   if (/^\d{4}-\d{2}-\d{2}$/.test(a)) {
     const d = new Date(`${a}T12:00:00`)
@@ -99,7 +106,7 @@ function buildRoomPlansFromAirtableRecord(rec, meta) {
     const label = trimStr(detail.label) || `Room ${n}`
     const rentRaw = detail.rent ?? rec[roomRentField(n)]
     const price = formatRentForListing(rentRaw) || 'Contact for pricing'
-    const available = availabilityDisplayFromDetail(detail)
+    const available = availabilityDisplayFromDetail(detail, rec, n)
     const { bathroomSetup, featureTags } = partitionRoomListingFields(detail)
 
     flat.push({

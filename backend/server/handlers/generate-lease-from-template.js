@@ -73,11 +73,16 @@ async function getApplication(recordId) {
 
 async function getPropertyByName(name) {
   if (!name) return null
-  const formula = encodeURIComponent(`{Name} = "${escapeFormula(name)}"`)
-  const url = `https://api.airtable.com/v0/${CORE_BASE_ID}/Properties?filterByFormula=${formula}&maxRecords=1`
-  const data = await airtableGet(url)
-  const rec = data.records?.[0]
-  return rec ? { id: rec.id, ...rec.fields } : null
+  const escaped = escapeFormula(name)
+  const candidates = [`{Name} = "${escaped}"`, `{Property Name} = "${escaped}"`]
+  for (const f of candidates) {
+    const formula = encodeURIComponent(f)
+    const url = `https://api.airtable.com/v0/${CORE_BASE_ID}/Properties?filterByFormula=${formula}&maxRecords=1`
+    const data = await airtableGet(url)
+    const rec = data.records?.[0]
+    if (rec) return { id: rec.id, ...rec.fields }
+  }
+  return null
 }
 
 async function findExistingDraft(applicationRecordId) {
@@ -116,10 +121,164 @@ function fmtMoney(n) {
   return '$' + num.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 }
 
+/** Keep in sync with frontend `axisListingMeta.js` */
+const AXIS_LISTING_META_START = '---AXIS_LISTING_META_JSON---'
+
+function parseAxisListingMetaFromRecord(propertyRecord) {
+  const raw = String(propertyRecord?.['Other Info'] || '').trim()
+  if (!raw) return null
+  const idx = raw.indexOf(AXIS_LISTING_META_START)
+  if (idx === -1) return null
+  const jsonPart = raw.slice(idx + AXIS_LISTING_META_START.length).trim()
+  try {
+    const meta = JSON.parse(jsonPart)
+    return meta && typeof meta === 'object' ? meta : null
+  } catch {
+    return null
+  }
+}
+
+function parseMoneyLike(val) {
+  if (val === null || val === undefined || val === '') return null
+  if (typeof val === 'number' && Number.isFinite(val) && val >= 0) return val
+  const n = parseFloat(String(val).replace(/[^0-9.-]/g, ''))
+  return Number.isFinite(n) && n >= 0 ? n : null
+}
+
+function roomLabelsMatch(appRoom, metaLabel) {
+  const a = String(appRoom || '').trim().toLowerCase()
+  const b = String(metaLabel || '').trim().toLowerCase()
+  if (!a || !b) return false
+  if (a === b) return true
+  const strip = (s) => s.replace(/^room\s*/i, '').trim()
+  if (strip(a) === strip(b)) return true
+  const da = a.match(/\d+/)
+  const db = b.match(/\d+/)
+  if (da && db && da[0] === db[0]) return true
+  return false
+}
+
+function rentFromRoomsDetailMeta(meta, appRoomNumber) {
+  const rooms = Array.isArray(meta?.roomsDetail) ? meta.roomsDetail : []
+  for (const detail of rooms) {
+    if (!detail || typeof detail !== 'object') continue
+    const label = detail.label || ''
+    if (!roomLabelsMatch(appRoomNumber, label)) continue
+    const r = parseMoneyLike(detail.rent)
+    if (r != null && r > 0) return r
+  }
+  return null
+}
+
+function rentFromRoomRentColumns(propertyRecord, appRoomNumber) {
+  const m = String(appRoomNumber || '').match(/(\d+)/)
+  if (!m) return null
+  const n = parseInt(m[1], 10)
+  if (n < 1 || n > 20) return null
+  const field = `Room ${n} Rent`
+  const r = parseMoneyLike(propertyRecord?.[field])
+  return r != null && r > 0 ? r : null
+}
+
+function rentFromLeasingBundles(meta, appRoomNumber) {
+  const leasing = meta?.leasing && typeof meta.leasing === 'object' ? meta.leasing : null
+  if (!leasing) return null
+  const packages = leasing['Leasing Packages']
+  if (!Array.isArray(packages)) return null
+  for (const pkg of packages) {
+    if (!pkg || typeof pkg !== 'object') continue
+    const roomsRaw = pkg['Bundle Rooms Included']
+    const arr = Array.isArray(roomsRaw) ? roomsRaw : []
+    const matches = arr.some((r) => roomLabelsMatch(appRoomNumber, r))
+    if (!matches) continue
+    const bundleRent = parseMoneyLike(pkg['Bundle Monthly Rent'])
+    if (bundleRent == null || bundleRent <= 0) continue
+    if (arr.length <= 1) return bundleRent
+    return Math.round((bundleRent / arr.length) * 100) / 100
+  }
+  return null
+}
+
+function resolveMonthlyRent(app, propertyRecord, overrides) {
+  if (overrides.rent != null && overrides.rent !== '') {
+    const o = parseMoneyLike(overrides.rent)
+    if (o != null && o > 0) return o
+  }
+  const appCandidates = [
+    app['Rent Amount'],
+    app.Rent,
+    app['Monthly Rent'],
+    app['Proposed Rent'],
+    app['Offered Rent'],
+    app['Room Rent'],
+  ]
+  for (const f of appCandidates) {
+    const v = parseMoneyLike(f)
+    if (v != null && v > 0) return v
+  }
+
+  const roomNum = app['Room Number'] || ''
+  if (propertyRecord && roomNum) {
+    const meta = parseAxisListingMetaFromRecord(propertyRecord)
+    if (meta) {
+      const fromDetail = rentFromRoomsDetailMeta(meta, roomNum)
+      if (fromDetail != null) return fromDetail
+      const fromBundle = rentFromLeasingBundles(meta, roomNum)
+      if (fromBundle != null) return fromBundle
+    }
+    const fromCol = rentFromRoomRentColumns(propertyRecord, roomNum)
+    if (fromCol != null) return fromCol
+  }
+
+  if (propertyRecord) {
+    const propLevel = ['Monthly Rent', 'Base Rent', 'Rent', 'Default Rent', 'Listed Rent']
+    for (const key of propLevel) {
+      const v = parseMoneyLike(propertyRecord[key])
+      if (v != null && v > 0) return v
+    }
+  }
+
+  return 0
+}
+
+function resolveUtilityFee(app, propertyRecord, overrides) {
+  if (overrides.utilityFee != null && overrides.utilityFee !== '') {
+    const o = parseMoneyLike(overrides.utilityFee)
+    if (o != null) return o
+  }
+  const v = parseMoneyLike(propertyRecord?.['Utilities Fee'] ?? app['Utilities Fee'])
+  if (v != null && v > 0) return v
+  return 125
+}
+
+function resolveSecurityDeposit(app, propertyRecord, monthlyRent, overrides) {
+  if (overrides.deposit != null && overrides.deposit !== '') {
+    const o = parseMoneyLike(overrides.deposit)
+    if (o != null) return o
+  }
+  for (const f of [app['Security Deposit'], app['Deposit Amount']]) {
+    const v = parseMoneyLike(f)
+    if (v != null && v > 0) return v
+  }
+  if (propertyRecord) {
+    const meta = parseAxisListingMetaFromRecord(propertyRecord)
+    const mf = parseMoneyLike(meta?.financials?.securityDeposit)
+    if (mf != null && mf > 0) return mf
+    const pr = parseMoneyLike(propertyRecord['Security Deposit'])
+    if (pr != null && pr > 0) return pr
+  }
+  if (monthlyRent > 0) return Math.min(monthlyRent, 500)
+  return 500
+}
+
 function buildLeaseData(app, propertyRecord, overrides = {}) {
   const propertyName = app['Property Name'] || ''
   const roomNumber = app['Room Number'] || ''
-  const propertyAddress = app['Property Address'] || ''
+  const propertyAddress =
+    app['Property Address'] ||
+    propertyRecord?.Address ||
+    propertyRecord?.['Property Address'] ||
+    ''
   const tenantName = app['Signer Full Name'] || ''
   const tenantEmail = app['Signer Email'] || ''
   const tenantPhone = app['Signer Phone Number'] || ''
@@ -128,21 +287,14 @@ function buildLeaseData(app, propertyRecord, overrides = {}) {
   const isMonthToMonth = Boolean(app['Month to Month'])
   const cosignerName = app['cosignerName'] || app['Co-Signer Name'] || ''
 
-  const monthlyRent =
-    overrides.rent ||
-    Number(app['Rent Amount'] || app['Rent'] || 0) ||
-    0
+  let monthlyRent = resolveMonthlyRent(app, propertyRecord, overrides)
+  /** Apply flow: Month-to-Month option is +$25/mo over listed room rent */
+  if (monthlyRent > 0 && (app['Month to Month'] === true || app['Month to Month'] === 1)) {
+    monthlyRent += 25
+  }
 
-  const utilityFee =
-    overrides.utilityFee != null
-      ? overrides.utilityFee
-      : Number(propertyRecord?.['Utilities Fee'] || app['Utilities Fee'] || 125)
-
-  const securityDeposit =
-    overrides.deposit != null
-      ? overrides.deposit
-      : Number(propertyRecord?.['Security Deposit'] || app['Security Deposit'] || Math.min(monthlyRent, 500))
-
+  const utilityFee = resolveUtilityFee(app, propertyRecord, overrides)
+  const securityDeposit = resolveSecurityDeposit(app, propertyRecord, monthlyRent, overrides)
   const adminFee = overrides.adminFee != null ? overrides.adminFee : 250
 
   // Prorated calculation
