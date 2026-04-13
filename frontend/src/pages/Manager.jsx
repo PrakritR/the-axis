@@ -4587,9 +4587,11 @@ function ApplicationsPanel({ allowedPropertyNames, manager }) {
           <div className="px-6 py-16 text-center">
             <div className="mb-3 text-4xl" aria-hidden>🏠</div>
             <div className="text-sm font-semibold text-slate-700">No {statusFilter !== 'all' ? statusFilter + ' ' : ''}applications</div>
-            <p className="mt-1 text-sm text-slate-500">
-              {statusFilter !== 'all' ? 'Try switching to a different filter tab' : 'Choose "All your properties" or another house to see more'}
-            </p>
+            {statusFilter === 'all' ? (
+              <p className="mt-1 text-sm text-slate-500">
+                Choose &quot;All your properties&quot; or another house to see more
+              </p>
+            ) : null}
           </div>
         ) : (
           <>

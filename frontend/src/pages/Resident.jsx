@@ -402,23 +402,18 @@ function ResidentPaymentDetailPanel({ row, onClose, onPayNow, payLoadingKey }) {
         </div>
       ) : null}
 
-      <dl className="space-y-0 border-t border-slate-100 pt-4">
-        {row.metaRows.map(({ label, value }) => (
-          <div
-            key={label}
-            className="grid gap-1 border-b border-slate-100 py-2.5 last:border-b-0 sm:grid-cols-[minmax(0,200px)_1fr] sm:gap-4"
-          >
-            <dt className="text-xs font-semibold uppercase tracking-wide text-slate-500">{label}</dt>
-            <dd className="text-sm text-slate-900">{value}</dd>
-          </div>
-        ))}
-      </dl>
-
-      {row.recordedAt ? (
-        <div className="border-t border-slate-100 pt-4">
-          <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Recorded</div>
-          <div className="mt-1 text-sm text-slate-800">{row.recordedAt}</div>
-        </div>
+      {row.metaRows?.length ? (
+        <dl className="space-y-0 border-t border-slate-100 pt-4">
+          {row.metaRows.map(({ label, value }, i) => (
+            <div
+              key={i}
+              className="grid gap-1 border-b border-slate-100 py-2.5 last:border-b-0 sm:grid-cols-[minmax(0,200px)_1fr] sm:gap-4"
+            >
+              <dt className="text-xs font-semibold uppercase tracking-wide text-slate-500">{label}</dt>
+              <dd className="text-sm text-slate-900">{value}</dd>
+            </div>
+          ))}
+        </dl>
       ) : null}
     </div>
   )
@@ -1548,24 +1543,15 @@ function PaymentsPanel({ resident, onResidentUpdated, highlightCategory, onPayme
             : lineKind === 'deposit'
               ? 'deposit'
               : 'rent'
-      const typeLabel =
-        lineKind === 'fee'
-          ? 'Fee or extra'
-          : lineKind === 'deposit'
-            ? 'Security deposit'
-            : lineKind === 'first_rent'
-              ? 'First month rent'
-              : lineKind === 'first_utilities'
-                ? 'Utilities'
-                : 'Rent'
-      const metaRows = [
-        { label: 'Type', value: typeLabel },
-        { label: 'Due date', value: dueDateLabel || '—' },
-        { label: 'Amount due', value: formatMoney(due) },
-        { label: 'Amount paid', value: formatMoney(paid) },
-        { label: 'Balance', value: formatMoney(bal) },
-      ]
-      if (payment.Notes) metaRows.push({ label: 'Notes', value: String(payment.Notes) })
+      const metaRows = []
+      if (dueDateLabel) metaRows.push({ label: 'Due date', value: dueDateLabel })
+      if (bal > 0) {
+        metaRows.push({ label: 'Amount to pay', value: formatMoney(bal) })
+      } else if (paid > 0) {
+        metaRows.push({ label: 'Paid', value: formatMoney(paid) })
+      } else {
+        metaRows.push({ label: 'Amount', value: formatMoney(due) })
+      }
       const payDescription = overrides.payDescription || `${title} — ${subtitle}`
       return {
         id: payment.id,
@@ -1613,11 +1599,8 @@ function PaymentsPanel({ resident, onResidentUpdated, highlightCategory, onPayme
       statusLabel: 'Unpaid',
       statusHint: 'Typically due at or before move-in unless your lease says otherwise',
       metaRows: [
-        { label: 'Type', value: 'Security deposit' },
         { label: 'Due date', value: moveIn || '—' },
-        { label: 'Amount due', value: formatMoney(expectedDepositAmount) },
-        { label: 'Amount paid', value: formatMoney(0) },
-        { label: 'Balance', value: formatMoney(expectedDepositAmount) },
+        { label: 'Amount to pay', value: formatMoney(expectedDepositAmount) },
       ],
       recordedAt: null,
       payCategory: 'deposit',
@@ -1671,11 +1654,9 @@ function PaymentsPanel({ resident, onResidentUpdated, highlightCategory, onPayme
         statusLabel: 'Paid',
         statusHint: '',
         metaRows: [
-          { label: 'Type', value: 'First month rent' },
-          { label: 'Due date', value: paidRent?.['Due Date'] ? formatDate(paidRent['Due Date']) : '—' },
-          { label: 'Paid on', value: pd || '—' },
-          { label: 'Amount', value: formatMoney(amt) },
-          { label: 'Balance', value: formatMoney(0) },
+          ...(paidRent?.['Due Date'] ? [{ label: 'Due date', value: formatDate(paidRent['Due Date']) }] : []),
+          ...(pd ? [{ label: 'Paid on', value: pd }] : []),
+          { label: 'Paid', value: formatMoney(amt) },
         ],
         recordedAt,
         payCategory: 'rent',
@@ -1695,11 +1676,8 @@ function PaymentsPanel({ resident, onResidentUpdated, highlightCategory, onPayme
       statusLabel: 'Unpaid',
       statusHint: 'Pay when you are ready to satisfy your move-in rent',
       metaRows: [
-        { label: 'Type', value: 'First month rent' },
         { label: 'Due date', value: resident['Lease Start Date'] ? formatDate(resident['Lease Start Date']) : '—' },
-        { label: 'Amount due', value: formatMoney(fallbackRentAmount) },
-        { label: 'Amount paid', value: formatMoney(0) },
-        { label: 'Balance', value: formatMoney(fallbackRentAmount) },
+        { label: 'Amount to pay', value: formatMoney(fallbackRentAmount) },
       ],
       recordedAt: null,
       payCategory: 'rent',
@@ -1741,12 +1719,8 @@ function PaymentsPanel({ resident, onResidentUpdated, highlightCategory, onPayme
       statusLabel: 'Unpaid',
       statusHint: 'Typically due at move-in (flat utilities for this home)',
       metaRows: [
-        { label: 'Type', value: 'Utilities (move-in)' },
         { label: 'Due date', value: resident['Lease Start Date'] ? formatDate(resident['Lease Start Date']) : '—' },
-        { label: 'Amount due', value: formatMoney(fallbackUtilitiesAmount) },
-        { label: 'Amount paid', value: formatMoney(0) },
-        { label: 'Balance', value: formatMoney(fallbackUtilitiesAmount) },
-        { label: 'Monthly utilities (flat)', value: `${formatMoney(fallbackUtilitiesAmount)}/month` },
+        { label: 'Amount to pay', value: formatMoney(fallbackUtilitiesAmount) },
       ],
       recordedAt: null,
       payCategory: 'first_utilities',
