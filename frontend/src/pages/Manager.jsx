@@ -429,7 +429,15 @@ function rentStatusPresentation(p) {
 }
 
 function workOrderPropertyLabel(w) {
-  return String(w.Property || w['Property Name'] || w['House'] || '').trim()
+  // Prefer plain-text name fields; skip linked-record arrays (contain IDs, not names)
+  const candidates = [w['Property Name'], w.Property, w['House']]
+  for (const v of candidates) {
+    if (!v) continue
+    if (Array.isArray(v)) continue // linked record IDs — not useful as a name
+    const s = String(v).trim()
+    if (s) return s
+  }
+  return ''
 }
 
 function normalizePortalScopeLabel(value) {

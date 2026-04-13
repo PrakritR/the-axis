@@ -535,12 +535,20 @@ export async function getWorkOrdersForResident(resident) {
   const residentEmail = escapeFormulaValue(emailRaw)
   const portalTag = emailRaw ? escapeFormulaValue(`portal_submitter_email:${emailRaw}`) : ''
 
+  // Optional text fields we added to work orders at creation time. Track which are safe to include.
+  // If Airtable says the field is unknown, we strip it and retry so the query never silently fails.
+  let includeResidentEmailField = true
+
   let lastError = null
   for (let i = 0; i < linkFieldCandidates.length; i++) {
     const woResidentField = linkFieldCandidates[i]
+
+    // Build OR conditions. Note: ARRAYJOIN on a linked record field returns display (primary) field
+    // values, not record IDs — so the ID-based condition works only when residents table primary
+    // field is the ID. We always include the email-field fallback for newly-created work orders.
     const parts = [`FIND("${residentId}", ARRAYJOIN({${woResidentField}})) > 0`]
-    if (residentEmail) {
-      parts.push(`FIND("${residentEmail}", LOWER(ARRAYJOIN({Resident Email}))) > 0`)
+    if (residentEmail && includeResidentEmailField) {
+      parts.push(`FIND("${residentEmail}", LOWER({Resident Email} & "")) > 0`)
     }
     if (portalTag) {
       parts.push(`FIND("${portalTag}", LOWER({Description})) > 0`)
@@ -564,6 +572,15 @@ export async function getWorkOrdersForResident(resident) {
     } catch (err) {
       lastError = err
       const unknown = airtableUnknownFieldNameFromErrorMessage(err?.message)
+
+      // 'Resident Email' field doesn't exist in this base — retry without it
+      if (unknown === 'Resident Email' && includeResidentEmailField) {
+        console.warn('[getWorkOrdersForResident] No "Resident Email" field — retrying without it')
+        includeResidentEmailField = false
+        i-- // re-try same link field candidate without the email condition
+        continue
+      }
+
       const isWrongLinkField = unknown && unknown === woResidentField
       if (isWrongLinkField && i < linkFieldCandidates.length - 1) {
         console.warn(`[getWorkOrdersForResident] No formula field "${woResidentField}", trying next resident link field…`)
@@ -666,9 +683,27 @@ export async function createWorkOrder({
     ? { fields: {}, optionalKeys: [] }
     : workOrderApplicationFieldsFromResident(resident)
 
-  // Attach resident's house/property link if available (optional — stripped if field doesn't exist)
+  // Attach resident's house/property link and plain-text metadata (optional — stripped on UNKNOWN_FIELD_NAME)
   const houseOptionalFields = {}
   const houseOptionalKeys = []
+
+  // Plain-text email field so getWorkOrdersForResident can match by email
+  const residentEmail = String(resident?.Email || '').trim()
+  if (residentEmail) {
+    houseOptionalFields['Resident Email'] = residentEmail
+    houseOptionalKeys.push('Resident Email')
+  }
+
+  // Plain-text property name so manager portal workOrderInScope() can match by name
+  const propertyNameText = String(
+    resident?.['Property Name'] || resident?.['Property'] || '',
+  ).trim()
+  if (propertyNameText && !Array.isArray(resident?.['Property'])) {
+    houseOptionalFields['Property Name'] = propertyNameText
+    houseOptionalKeys.push('Property Name')
+  }
+
+  // Linked record for House/Property (optional — different field name per base)
   const houseLink = resident?.House || resident?.Property
   if (Array.isArray(houseLink) && houseLink.length && String(houseLink[0]).startsWith('rec')) {
     houseOptionalFields['House'] = [String(houseLink[0])]
