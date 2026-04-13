@@ -997,113 +997,74 @@ export default function PropertyPage(){
                   {sharedSpacesList.length + sharedSpaceVideos.length} shared spaces
                 </div>
               </div>
-              <div className="mt-8 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                {sharedSpacesList.map((row, rowIdx) => (
-                  <div key={`${row.title}-${rowIdx}`} className="overflow-hidden rounded-[18px] border border-slate-200 bg-white">
-                    {/* Image section */}
-                    {Array.isArray(row.images) && row.images.length > 0 ? (
-                      <div className="relative overflow-hidden">
-                        <div className="flex gap-0 overflow-x-auto scrollbar-none">
-                          {row.images.slice(0, 1).map((src) => (
-                            <a
-                              key={src}
-                              href={src}
-                              target="_blank"
-                              rel="noreferrer"
-                              className="relative block h-48 w-full shrink-0 overflow-hidden bg-slate-100"
-                              title="View photo"
-                            >
-                              <img
-                                src={src}
-                                alt={`${row.title} photo`}
-                                className="h-full w-full object-cover transition hover:scale-105"
-                              />
-                              {row.images.length > 1 && (
-                                <div className="absolute bottom-2 right-2 rounded-full bg-black/60 px-2 py-0.5 text-[10px] font-semibold text-white">
-                                  +{row.images.length - 1} more
-                                </div>
-                              )}
-                            </a>
-                          ))}
-                        </div>
-                        {row.images.length > 1 && (
-                          <div className="flex gap-1.5 overflow-x-auto px-3 py-2 scrollbar-none">
-                            {row.images.slice(1).map((src, si) => (
-                              <a
-                                key={`${src}-${si}`}
-                                href={src}
-                                target="_blank"
-                                rel="noreferrer"
-                                className="block h-14 w-20 shrink-0 overflow-hidden rounded-lg border border-slate-200 bg-slate-100"
-                              >
-                                <img src={src} alt={`${row.title} photo`} className="h-full w-full object-cover transition hover:opacity-90" />
-                              </a>
-                            ))}
-                          </div>
+              <div className="mt-8 w-full min-w-0 max-w-full overflow-hidden rounded-xl border border-slate-200 bg-white">
+                <div className="hidden sm:grid grid-cols-12 gap-3 border-b border-slate-100 bg-slate-50 px-6 py-2.5 text-[10px] font-bold uppercase tracking-[0.16em] text-slate-400">
+                  <div className="col-span-3">Space</div>
+                  <div className="col-span-4">Details</div>
+                  <div className="col-span-3">Access</div>
+                  <div className="col-span-2 text-right">Action</div>
+                </div>
+                <div className="divide-y divide-slate-100 px-4 sm:px-6">
+                  {sharedSpacesList.map((row, rowIdx) => (
+                    <div key={`${row.title}-${rowIdx}`} className="grid grid-cols-1 gap-3 py-4 sm:grid-cols-12 sm:items-center">
+                      <div className="sm:col-span-3">
+                        <div className="font-semibold text-slate-900">{row.title}</div>
+                        <div className="mt-0.5 text-xs text-slate-500">Shared area</div>
+                      </div>
+                      <div className="sm:col-span-4 text-sm text-slate-600">
+                        {row.description || 'Shared common area'}
+                      </div>
+                      <div className="sm:col-span-3 text-xs font-semibold uppercase tracking-[0.12em] text-axis">
+                        {row.accessLabel || 'All rooms'}
+                      </div>
+                      <div className="sm:col-span-2 sm:text-right">
+                        {Array.isArray(row.images) && row.images.length > 0 ? (
+                          <a
+                            href={row.images[0]}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="inline-flex items-center rounded-full border border-slate-300 px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:border-axis hover:text-axis"
+                          >
+                            Details
+                          </a>
+                        ) : Array.isArray(row.videos) && row.videos.length > 0 ? (
+                          <button
+                            type="button"
+                            onClick={() => setActiveSharedSpace(row.videos[0])}
+                            className="inline-flex items-center rounded-full border border-slate-300 px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:border-axis hover:text-axis"
+                          >
+                            Details
+                          </button>
+                        ) : (
+                          <span className="inline-flex items-center rounded-full border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-400">No media</span>
                         )}
                       </div>
-                    ) : (
-                      <div className="h-48 w-full overflow-hidden bg-slate-100">
-                        <PropertyMediaPlaceholder className="h-full w-full" compact label="Photos coming soon" />
-                      </div>
-                    )}
-                    {/* Info section */}
-                    <div className="px-4 py-4">
-                      <div className="font-semibold text-slate-900">{row.title}</div>
-                      {row.accessLabel && (
-                        <div className="mt-0.5 text-[11px] font-semibold uppercase tracking-[0.12em] text-axis">{row.accessLabel}</div>
-                      )}
-                      <div className="mt-1.5 text-sm leading-5 text-slate-600">{row.description || 'Shared common area'}</div>
-                      {Array.isArray(row.videos) && row.videos.length > 0 ? (
-                        <div className="mt-3 flex flex-wrap gap-2">
-                          {row.videos.map((video, vi) => (
-                            <button
-                              key={video.src || `${row.title}-v-${vi}`}
-                              type="button"
-                              onClick={() => setActiveSharedSpace(video)}
-                              className="inline-flex items-center gap-1.5 rounded-full border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:border-axis hover:text-axis"
-                            >
-                              <svg className="h-3 w-3 shrink-0" viewBox="0 0 24 24" fill="none" aria-hidden><polygon points="5,3 19,12 5,21" fill="currentColor" /></svg>
-                              {video.label || 'Video'}
-                            </button>
-                          ))}
+                    </div>
+                  ))}
+
+                  {sharedSpaceVideos.map((video) => {
+                    const meta = getSharedSpaceDetailMeta(video)
+                    return (
+                      <div key={video.label} className="grid grid-cols-1 gap-3 py-4 sm:grid-cols-12 sm:items-center">
+                        <div className="sm:col-span-3">
+                          <div className="font-semibold text-slate-900">{meta.title.replace(' Tour', '')}</div>
+                          <div className="mt-0.5 text-xs text-slate-500">Shared area video</div>
                         </div>
-                      ) : null}
-                    </div>
-                  </div>
-                ))}
-                {sharedSpaceVideos.map((video) => {
-                  const meta = getSharedSpaceDetailMeta(video)
-                  return (
-                    <div key={video.label} className="overflow-hidden rounded-[18px] border border-slate-200 bg-white">
-                      <div className="h-48 w-full overflow-hidden bg-slate-900">
-                        <button
-                          type="button"
-                          onClick={() => setActiveSharedSpace(video)}
-                          className="relative flex h-full w-full items-center justify-center bg-[linear-gradient(180deg,#0f172a_0%,#020617_100%)] transition hover:opacity-90"
-                          aria-label={`Play ${meta.title}`}
-                        >
-                          <div className="flex h-14 w-14 items-center justify-center rounded-full border border-white/10 bg-white/10">
-                            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden><polygon points="5,3 19,12 5,21" fill="white"/></svg>
-                          </div>
-                          <div className="absolute bottom-3 left-3 rounded-full bg-black/60 px-2.5 py-1 text-xs font-semibold text-white">▶ Play tour video</div>
-                        </button>
+                        <div className="sm:col-span-4 text-sm text-slate-600">{meta.rowSummary}</div>
+                        <div className="sm:col-span-3 text-xs font-semibold uppercase tracking-[0.12em] text-axis">All rooms</div>
+                        <div className="sm:col-span-2 sm:text-right">
+                          <button
+                            type="button"
+                            onClick={() => setActiveSharedSpace(video)}
+                            className="inline-flex items-center rounded-full border border-slate-300 px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:border-axis hover:text-axis"
+                          >
+                            Details
+                          </button>
+                        </div>
                       </div>
-                      <div className="px-4 py-4">
-                        <div className="font-semibold text-slate-900">{meta.title.replace(' Tour', '')}</div>
-                        <div className="mt-1.5 text-sm leading-5 text-slate-600">{meta.rowSummary}</div>
-                        <button
-                          type="button"
-                          onClick={() => setActiveSharedSpace(video)}
-                          className="mt-3 inline-flex items-center gap-1.5 rounded-full border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:border-axis hover:text-axis"
-                        >
-                          <svg className="h-3 w-3 shrink-0" viewBox="0 0 24 24" fill="none" aria-hidden><polygon points="5,3 19,12 5,21" fill="currentColor"/></svg>
-                          Watch tour
-                        </button>
-                      </div>
-                    </div>
-                  )
-                })}
+                    )
+                  })}
+                </div>
               </div>
             </section>
           ) : null}

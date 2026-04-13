@@ -37,6 +37,58 @@ function trimStr(v) {
   return String(v ?? '').trim()
 }
 
+function toFiniteNumber(value) {
+  const n = Number(value)
+  return Number.isFinite(n) ? n : null
+}
+
+function normalizeAddressKey(address) {
+  return String(address || '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, '')
+}
+
+const ADDRESS_COORD_FALLBACKS = {
+  '4709a8thaveneseattlewa98105': { lat: 47.662043, lng: -122.319837 },
+  '4709b8thaveneseattlewa98105': { lat: 47.662043, lng: -122.319837 },
+  '5259brooklynaveneseattlewa98105': { lat: 47.666673, lng: -122.314335 },
+}
+
+function resolvePropertyLocation(rec) {
+  const directLat =
+    toFiniteNumber(rec?.Latitude) ??
+    toFiniteNumber(rec?.latitude) ??
+    toFiniteNumber(rec?.Lat) ??
+    toFiniteNumber(rec?.lat)
+  const directLng =
+    toFiniteNumber(rec?.Longitude) ??
+    toFiniteNumber(rec?.longitude) ??
+    toFiniteNumber(rec?.Lng) ??
+    toFiniteNumber(rec?.lng) ??
+    toFiniteNumber(rec?.Long) ??
+    toFiniteNumber(rec?.long)
+  if (directLat != null && directLng != null) {
+    return { lat: directLat, lng: directLng }
+  }
+
+  const loc = rec?.Location
+  if (loc && typeof loc === 'object') {
+    const objLat = toFiniteNumber(loc.lat ?? loc.latitude)
+    const objLng = toFiniteNumber(loc.lng ?? loc.lon ?? loc.longitude)
+    if (objLat != null && objLng != null) {
+      return { lat: objLat, lng: objLng }
+    }
+  }
+
+  const address = String(rec?.Address || '').trim()
+  const key = normalizeAddressKey(address)
+  if (ADDRESS_COORD_FALLBACKS[key]) {
+    return ADDRESS_COORD_FALLBACKS[key]
+  }
+
+  return { lat: 47.661, lng: -122.318 }
+}
+
 function parseMonthlyRentAmount(value) {
   const match = String(value || '').match(/\$([\d,]+)/)
   if (!match) return null
@@ -386,7 +438,7 @@ export function mapAirtableRecordToHomeProperty(rec) {
     images: urls,
     videos,
     roomPlans,
-    location: { lat: 47.65, lng: -122.32 },
+    location: resolvePropertyLocation(rec),
     tags: ['Shared Housing', 'Seattle', 'Shared Living'],
     _fromAirtable: true,
     airtableRecordId: rec.id,
