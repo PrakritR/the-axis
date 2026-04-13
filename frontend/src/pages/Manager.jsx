@@ -5,7 +5,7 @@
 // approving AI-generated lease drafts before they are visible to residents.
 //
 // Workflow enforced by this page:
-//   Draft Generated → Under Review → (Changes Needed ↔ Under Review) → Published (+ SignForge) → Signed
+//   Draft Generated → Under Review → Published (+ SignForge) → Signed
 //
 // Residents see only "Published" or "Signed" leases in their portal.
 // Every action (open, edit, approve, reject, publish) is written to Audit Log.
@@ -107,7 +107,6 @@ const STATUS_CONFIG = {
   'Sent to resident':{ bg: 'bg-axis/5',    text: 'text-axis',       border: 'border-axis/20',    dot: 'bg-axis'       },
   'Draft Generated': { bg: 'bg-blue-50',   text: 'text-blue-700',   border: 'border-blue-200',   dot: 'bg-blue-400'   },
   'Under Review':    { bg: 'bg-amber-50',  text: 'text-amber-700',  border: 'border-amber-200',  dot: 'bg-amber-400'  },
-  'Changes Needed':  { bg: 'bg-red-50',    text: 'text-red-700',    border: 'border-red-200',    dot: 'bg-red-500'    },
   'Approved':        { bg: 'bg-green-50',  text: 'text-green-700',  border: 'border-green-200',  dot: 'bg-green-500'  },
   'Published':       { bg: 'bg-axis/5',    text: 'text-axis',       border: 'border-axis/20',    dot: 'bg-axis'       },
   'Signed':          { bg: 'bg-purple-50', text: 'text-purple-700', border: 'border-purple-200', dot: 'bg-purple-500' },
@@ -5725,7 +5724,7 @@ function LeaseEditor({ draftId, manager, onBack, embedded = false }) {
   const [managerNotes, setManagerNotes] = useState('')
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
-  const [actionLoading, setActionLoading] = useState('') // 'reject' | 'approve' | 'publish' | 'signforge' | 'signforge-status'
+  const [actionLoading, setActionLoading] = useState('') // 'approve' | 'publish' | 'signforge' | 'signforge-status'
   const leaseFileInputRef = useRef(null)
 
   const leaseDataForPreview = useMemo(() => {
@@ -5816,31 +5815,6 @@ function LeaseEditor({ draftId, manager, onBack, embedded = false }) {
       toast.error('Save failed: ' + err.message)
     } finally {
       setSaving(false)
-    }
-  }
-
-  // ── Mark as "Changes Needed" ──────────────────────────────────────────────
-  async function handleReject() {
-    setActionLoading('reject')
-    try {
-      const updated = await patchLeaseDraft(draftId, {
-        'Status': 'Changes Needed',
-        'Manager Notes': managerNotes,
-        'Updated At': new Date().toISOString(),
-      })
-      setDraft(updated)
-      await logAudit({
-        leaseDraftId: draftId,
-        actionType: 'Rejected',
-        performedBy: manager.name,
-        performedByRole: manager.role,
-        notes: managerNotes ? `Marked "Changes Needed": ${managerNotes}` : 'Marked "Changes Needed"',
-      })
-      toast.success('Marked as "Changes Needed"')
-    } catch (err) {
-      toast.error('Action failed: ' + err.message)
-    } finally {
-      setActionLoading('')
     }
   }
 
@@ -5989,7 +5963,6 @@ function LeaseEditor({ draftId, manager, onBack, embedded = false }) {
   const canEdit    = draft && !['Published', 'Signed'].includes(status)
   const canApprove = draft && ['Under Review', 'Changes Needed'].includes(status)
   const canPublish = draft && status === 'Approved'
-  const canReject  = draft && ['Under Review', 'Draft Generated', 'Changes Needed'].includes(status)
   const signforgeEnvelopeId = draft?.['SignForge Envelope ID']
   const canSignforgeSend =
     draft &&
@@ -6020,7 +5993,7 @@ function LeaseEditor({ draftId, manager, onBack, embedded = false }) {
                 {draft?.['Property'] ? ` — ${draft['Property']}` : ''}
                 {draft?.['Unit'] ? `, ${draft['Unit']}` : ''}
               </h1>
-              {status && <StatusBadge status={status} size="lg" />}
+              {status && <StatusBadge status={leaseUiStatusLabel(status)} size="lg" />}
             </div>
           </div>
           
@@ -6122,7 +6095,7 @@ function LeaseEditor({ draftId, manager, onBack, embedded = false }) {
               <>
                 <div className="border-b border-slate-100 bg-slate-50 px-5 py-2.5">
                   <span className="text-xs font-semibold text-slate-500">
-                    Read-only — this lease has been {status?.toLowerCase()}
+                    Read-only — this lease has been {leaseUiStatusLabel(status).toLowerCase()}
                   </span>
                 </div>
                 <div className="h-[calc(100vh-360px)] min-h-[420px] overflow-y-auto p-6">
@@ -6133,7 +6106,6 @@ function LeaseEditor({ draftId, manager, onBack, embedded = false }) {
           </div>
 
           {(canEdit ||
-            canReject ||
             canApprove ||
             canPublish ||
             canSignforgeSend ||

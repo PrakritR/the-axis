@@ -2024,6 +2024,13 @@ function PaymentsPanel({ resident, onResidentUpdated, highlightCategory, onPayme
 
 // ─── Leasing ──────────────────────────────────────────────────────────────────
 
+/** Never surface internal Airtable status "Changes Needed" to residents. */
+function residentLeaseStatusDisplay(raw) {
+  const s = String(raw || '').trim()
+  if (s === 'Changes Needed') return 'Under review'
+  return s || 'Pending'
+}
+
 /** Pick the best available lease draft: Signed > Published > any (newest first). */
 function pickBestLeaseDraft(drafts) {
   if (!Array.isArray(drafts) || drafts.length === 0) return null
@@ -2174,7 +2181,7 @@ function LeasingPanel({ resident, payments, onOpenPayments }) {
                     leaseStatus === 'Published' ? 'border-blue-200 bg-blue-50 text-blue-800' :
                     'border-slate-200 bg-slate-100 text-slate-600'
                   }`}>
-                    {leaseStatus || 'Pending'}
+                    {residentLeaseStatusDisplay(leaseStatus)}
                   </span>
                 </div>
               </div>
@@ -2412,7 +2419,7 @@ function ResidentDashboardHome({
     : leaseStatus === 'Signed'
       ? 'Lease signed'
       : approvedLease
-        ? String(leaseStatus || 'In progress')
+        ? residentLeaseStatusDisplay(leaseStatus || 'In progress')
         : 'Lease document not on file yet'
 
   return (

@@ -14,17 +14,26 @@ import toast from 'react-hot-toast'
 import LeaseHTMLTemplate from './LeaseHTMLTemplate'
 import { publishLeaseDraft, generateLeaseFromApplication } from '../lib/airtable'
 
+/** Hide legacy Airtable value "Changes Needed" — same queue as other pre-publish drafts. */
+function leaseDraftStatusLabel(raw) {
+  const s = String(raw || '').trim()
+  if (s === 'Changes Needed') return 'Draft ready'
+  return s || 'No draft'
+}
+
 function StatusBadge({ status }) {
+  const label = leaseDraftStatusLabel(status)
   const map = {
+    'Draft ready': 'border-amber-200 bg-amber-50 text-amber-700',
     'Draft Generated': 'border-amber-200 bg-amber-50 text-amber-700',
-    'Changes Needed': 'border-amber-200 bg-amber-50 text-amber-800',
     'Under Review': 'border-sky-200 bg-sky-50 text-sky-800',
+    Approved: 'border-emerald-200 bg-emerald-50 text-emerald-800',
     Published: 'border-blue-200 bg-blue-50 text-blue-700',
     Signed: 'border-emerald-200 bg-emerald-50 text-emerald-700',
   }
   return (
-    <span className={`rounded-full border px-2.5 py-0.5 text-[11px] font-bold ${map[status] || 'border-slate-200 bg-slate-50 text-slate-600'}`}>
-      {status || 'No draft'}
+    <span className={`rounded-full border px-2.5 py-0.5 text-[11px] font-bold ${map[label] || 'border-slate-200 bg-slate-50 text-slate-600'}`}>
+      {label}
     </span>
   )
 }
