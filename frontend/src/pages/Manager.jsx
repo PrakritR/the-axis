@@ -3752,11 +3752,6 @@ function WorkOrdersTabPanel({ allowedPropertyNames, allowedPropertyIds }) {
         if (cmp !== 0) return cmp
         return submittedAt(b) - submittedAt(a)
       }
-      if (sortBy === 'status') {
-        const cmp = String(managerWorkOrderStatusLabel(a)).localeCompare(String(managerWorkOrderStatusLabel(b)), undefined, { sensitivity: 'base' })
-        if (cmp !== 0) return cmp
-        return submittedAt(b) - submittedAt(a)
-      }
       return submittedAt(b) - submittedAt(a)
     })
   }, [list, quickFilter, propertyFilter, residentFilter, sortBy, propertyLabelForWorkOrder, residentLabelForWorkOrder])
@@ -3805,7 +3800,6 @@ function WorkOrdersTabPanel({ allowedPropertyNames, allowedPropertyIds }) {
       const fields = {
         Status: nextStatus,
         Resolved: resolved,
-        'Last Update': new Date().toISOString().slice(0, 10),
       }
       if (!resolved && dateStr) {
         fields['Scheduled Date'] = dateStr
@@ -3819,9 +3813,6 @@ function WorkOrdersTabPanel({ allowedPropertyNames, allowedPropertyIds }) {
         const m = msg.match(/Unknown field name:\s*"([^"]+)"/i)
         if (m?.[1] === 'Scheduled Date' && fields['Scheduled Date']) {
           const { 'Scheduled Date': _sd, ...rest } = fields
-          nextRecord = await updateWorkOrder(record.id, rest)
-        } else if (m?.[1] === 'Last Update' && fields['Last Update']) {
-          const { 'Last Update': _lu, ...rest } = fields
           nextRecord = await updateWorkOrder(record.id, rest)
         } else {
           throw err
@@ -3845,21 +3836,8 @@ function WorkOrdersTabPanel({ allowedPropertyNames, allowedPropertyIds }) {
       const fields = {
         Status: 'Completed',
         Resolved: true,
-        'Last Update': new Date().toISOString().slice(0, 10),
       }
-      let nextRecord
-      try {
-        nextRecord = await updateWorkOrder(record.id, fields)
-      } catch (err) {
-        const msg = String(err?.message || '')
-        const m = msg.match(/Unknown field name:\s*"([^"]+)"/i)
-        if (m?.[1] === 'Last Update') {
-          const { 'Last Update': _lu, ...rest } = fields
-          nextRecord = await updateWorkOrder(record.id, rest)
-        } else {
-          throw err
-        }
-      }
+      const nextRecord = await updateWorkOrder(record.id, fields)
       setRecord(nextRecord)
       applyRecordToForm(nextRecord)
       await loadList()
@@ -3902,7 +3880,6 @@ function WorkOrdersTabPanel({ allowedPropertyNames, allowedPropertyIds }) {
         >
           <option value="property">Sort by property</option>
           <option value="resident">Sort by resident</option>
-          <option value="status">Sort by status</option>
         </select>
         <button
           onClick={loadList}
