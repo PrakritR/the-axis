@@ -450,7 +450,17 @@ function normalizePortalScopeLabel(value) {
     .trim()
 }
 
-function workOrderInScope(w, approvedNamesLowerSet) {
+function workOrderInScope(w, approvedNamesLowerSet, approvedPropertyIdsSet) {
+  // Match by linked House record ID (most reliable — IDs never change)
+  if (approvedPropertyIdsSet?.size) {
+    const houseIds = w.House || w.Property
+    if (Array.isArray(houseIds)) {
+      for (const id of houseIds) {
+        if (approvedPropertyIdsSet.has(String(id).trim())) return true
+      }
+    }
+  }
+
   if (!approvedNamesLowerSet?.size) return false
   const raw = workOrderPropertyLabel(w)
   const prop = raw.toLowerCase()
@@ -3575,10 +3585,14 @@ function ManagerDashboardHomePanel({
   )
 }
 
-function WorkOrdersTabPanel({ allowedPropertyNames }) {
+function WorkOrdersTabPanel({ allowedPropertyNames, allowedPropertyIds }) {
   const scopeLower = useMemo(
     () => new Set((allowedPropertyNames || []).map((n) => String(n).trim().toLowerCase()).filter(Boolean)),
     [allowedPropertyNames],
+  )
+  const scopeIds = useMemo(
+    () => new Set((allowedPropertyIds || []).map((id) => String(id).trim()).filter(Boolean)),
+    [allowedPropertyIds],
   )
   const [list, setList] = useState([])
   const [listLoading, setListLoading] = useState(true)
@@ -3615,7 +3629,7 @@ function WorkOrdersTabPanel({ allowedPropertyNames }) {
     setListError('')
     try {
       const all = await getAllWorkOrders()
-      setList(all.filter((row) => workOrderInScope(row, scopeLower)))
+      setList(all.filter((row) => workOrderInScope(row, scopeLower, scopeIds)))
     } catch (err) {
       console.error('[WorkOrdersTabPanel] getAllWorkOrders failed', err)
       setList([])
@@ -5138,6 +5152,16 @@ function ManagerDashboard({ manager: managerProp, openDraftId, onOpenDraft, onCl
     () => Array.from(managerScope.assignedNames || managerScope.approvedNames).sort(),
     [managerScope.assignedNames, managerScope.approvedNames],
   )
+  // Property record IDs for the work orders scope filter (matches linked House field directly)
+  const scopedPropertyIds = useMemo(() => {
+    const names = managerScope.assignedNames || managerScope.approvedNames
+    return propertyRecords
+      .filter((p) => {
+        const n = propertyRecordName(p)
+        return n && names.has(n)
+      })
+      .map((p) => p.id)
+  }, [propertyRecords, managerScope.assignedNames, managerScope.approvedNames])
   /** Calendar / tour scheduling: all houses linked to this manager (including pending approval). */
   const calendarScopedPropertyOptions = useMemo(
     () => Array.from(managerScope.assignedNames).sort(),
@@ -5391,7 +5415,7 @@ function ManagerDashboard({ manager: managerProp, openDraftId, onOpenDraft, onCl
         ) : dashView === 'payments' ? (
           <ManagerPaymentsPanel allowedPropertyNames={scopedPropertyOptions} />
         ) : dashView === 'workorders' ? (
-          <WorkOrdersTabPanel manager={manager} allowedPropertyNames={scopedPropertyOptions} />
+          <WorkOrdersTabPanel manager={manager} allowedPropertyNames={scopedPropertyOptions} allowedPropertyIds={scopedPropertyIds} />
         ) : dashView === 'calendar' ? (
           <CalendarTabPanel manager={manager} allowedPropertyNames={calendarScopedPropertyOptions} />
         ) : dashView === 'inbox' ? (

@@ -525,72 +525,63 @@ function workOrderPortalSubmitterDescriptionTag(email) {
 }
 
 export async function getWorkOrdersForResident(resident) {
+  // Airtable formulas can't filter by linked-record ID (ARRAYJOIN returns display names, not IDs).
+  // The only reliable approach is to fetch all work orders and filter client-side using the actual
+  // linked-record ID arrays that Airtable returns in record.fields.
   const envLinkField = String(import.meta.env.VITE_AIRTABLE_WORK_ORDER_RESIDENT_LINK_FIELD ?? '').trim()
   const linkFieldCandidates = envLinkField
     ? [envLinkField]
     : [...new Set([WORK_ORDER_RESIDENT_PROFILE_LINK_FIELD, ...WORK_ORDER_RESIDENT_LINK_FIELD_FALLBACKS])]
 
-  const residentId = escapeFormulaValue(resident.id)
-  const emailRaw = String(resident.Email || '').trim().toLowerCase()
-  const residentEmail = escapeFormulaValue(emailRaw)
-  const portalTag = emailRaw ? escapeFormulaValue(`portal_submitter_email:${emailRaw}`) : ''
+  const residentId = String(resident?.id || '').trim()
+  const emailRaw = String(resident?.Email || '').trim().toLowerCase()
+  const portalTag = emailRaw ? `portal_submitter_email:${emailRaw}` : ''
 
-  // Optional text fields we added to work orders at creation time. Track which are safe to include.
-  // If Airtable says the field is unknown, we strip it and retry so the query never silently fails.
-  let includeResidentEmailField = true
+  const allRecords = []
+  let offset = null
+  do {
+    const params = {}
+    if (offset) params.offset = offset
+    const data = await request(buildUrl(TABLES.workOrders, params))
+    ;(data.records || []).forEach((r) => allRecords.push(r))
+    offset = data.offset || null
+  } while (offset)
 
-  let lastError = null
-  for (let i = 0; i < linkFieldCandidates.length; i++) {
-    const woResidentField = linkFieldCandidates[i]
+  const matched = allRecords.filter((record) => {
+    const fields = record.fields || {}
 
-    // Build OR conditions. Note: ARRAYJOIN on a linked record field returns display (primary) field
-    // values, not record IDs — so the ID-based condition works only when residents table primary
-    // field is the ID. We always include the email-field fallback for newly-created work orders.
-    const parts = [`FIND("${residentId}", ARRAYJOIN({${woResidentField}})) > 0`]
-    if (residentEmail && includeResidentEmailField) {
-      parts.push(`FIND("${residentEmail}", LOWER({Resident Email} & "")) > 0`)
-    }
-    if (portalTag) {
-      parts.push(`FIND("${portalTag}", LOWER({Description})) > 0`)
-    }
-    if (WORK_ORDER_SUBMITTER_EMAIL_FIELD && residentEmail) {
-      parts.push(
-        `FIND("${residentEmail}", LOWER({${WORK_ORDER_SUBMITTER_EMAIL_FIELD}} & "")) > 0`,
-      )
+    // 1. Check linked-record fields — these contain actual record ID arrays in the API response
+    if (residentId) {
+      for (const fieldName of linkFieldCandidates) {
+        const val = fields[fieldName]
+        if (Array.isArray(val) && val.includes(residentId)) return true
+      }
     }
 
-    const formula = parts.length === 1 ? parts[0] : `OR(${parts.join(', ')})`
+    // 2. Check the plain-text Resident Email field we now write on creation
+    if (emailRaw) {
+      const emailField = String(fields['Resident Email'] || '').trim().toLowerCase()
+      if (emailField && emailField === emailRaw) return true
 
-    try {
-      const data = await request(buildUrl(TABLES.workOrders, {
-        filterByFormula: formula,
-      }))
-
-      return (data.records || [])
-        .map(mapRecord)
-        .sort((a, b) => new Date(b['Date Submitted'] || b.created_at) - new Date(a['Date Submitted'] || a.created_at))
-    } catch (err) {
-      lastError = err
-      const unknown = airtableUnknownFieldNameFromErrorMessage(err?.message)
-
-      // 'Resident Email' field doesn't exist in this base — retry without it
-      if (unknown === 'Resident Email' && includeResidentEmailField) {
-        console.warn('[getWorkOrdersForResident] No "Resident Email" field — retrying without it')
-        includeResidentEmailField = false
-        i-- // re-try same link field candidate without the email condition
-        continue
+      // 3. Check any configured submitter email field
+      if (WORK_ORDER_SUBMITTER_EMAIL_FIELD) {
+        const se = String(fields[WORK_ORDER_SUBMITTER_EMAIL_FIELD] || '').trim().toLowerCase()
+        if (se && se === emailRaw) return true
       }
 
-      const isWrongLinkField = unknown && unknown === woResidentField
-      if (isWrongLinkField && i < linkFieldCandidates.length - 1) {
-        console.warn(`[getWorkOrdersForResident] No formula field "${woResidentField}", trying next resident link field…`)
-        continue
+      // 4. Check portal-tag in description (legacy fallback)
+      if (portalTag) {
+        const desc = String(fields.Description || '').toLowerCase()
+        if (desc.includes(portalTag)) return true
       }
-      throw err
     }
-  }
 
-  throw lastError || new Error('Could not load work orders.')
+    return false
+  })
+
+  return matched
+    .map(mapRecord)
+    .sort((a, b) => new Date(b['Date Submitted'] || b.created_at) - new Date(a['Date Submitted'] || a.created_at))
 }
 
 async function uploadAttachmentToRecord(table, recordId, fieldName, file) {
