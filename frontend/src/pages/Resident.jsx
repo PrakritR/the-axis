@@ -1081,7 +1081,6 @@ function WorkOrdersPanel({ resident, requests: requestsProp, onRequestCreated, o
             <PortalOpsEmptyState
               icon="🛠"
               title="No work orders yet"
-              description="When you submit a maintenance request, it will appear here with status updates"
             />
           </div>
         ) : filteredRequests.length === 0 ? (

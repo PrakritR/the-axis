@@ -268,6 +268,23 @@ function propertyAssignedToManager(p, manager) {
   }
   const pid = String(p['Manager ID'] || '').trim()
   if (mid && pid && pid === mid) return true
+
+  // Plain-text fallback for older rows where manager fields are not linked records.
+  const managerName = String(manager?.name || '').trim().toLowerCase()
+  if (managerName) {
+    for (const k of ['Manager Name', 'Site Manager Name', 'Manager', 'Site Manager', 'Property Manager']) {
+      const raw = p?.[k]
+      if (raw == null) continue
+      if (Array.isArray(raw)) {
+        const hasName = raw.some((v) => String(v || '').trim().toLowerCase() === managerName)
+        if (hasName) return true
+      } else {
+        const text = String(raw || '').trim().toLowerCase()
+        if (text && text === managerName) return true
+      }
+    }
+  }
+
   return false
 }
 
