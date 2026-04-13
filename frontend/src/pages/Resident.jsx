@@ -138,6 +138,14 @@ function residentWorkOrderStatusTone(record) {
   return 'slate'
 }
 
+function residentWorkOrderStatusPillTone(record) {
+  const label = residentWorkOrderStatusLabel(record)
+  if (label === 'Done') return 'green'
+  if (label === 'Scheduled') return 'axis'
+  if (label === 'In Progress') return 'amber'
+  return 'slate'
+}
+
 function residentWorkOrderFilterBucket(record) {
   if (!record) return 'open'
   if (isWorkOrderResolved(record)) return 'completed'
@@ -1093,40 +1101,52 @@ function WorkOrdersPanel({ resident, requests: requestsProp, onRequestCreated, o
             />
           </div>
         ) : (
-          <div className="mt-6 grid gap-6 xl:grid-cols-[360px_minmax(0,1fr)]">
-            <div className="overflow-hidden rounded-3xl border border-slate-200 bg-white">
-              <div className="border-b border-slate-100 px-5 py-4">
-                <h3 className="text-sm font-black text-slate-900">My Work Orders</h3>
-              </div>
-              <div className="divide-y divide-slate-100">
-                {filteredRequests.map((request) => (
-                  <button
-                    key={request.id}
-                    type="button"
-                    onClick={() => setSelectedId(request.id)}
-                    className={classNames(
-                      'flex w-full flex-col gap-2 px-5 py-4 text-left transition',
-                      selectedId === request.id ? 'bg-axis/5' : 'hover:bg-slate-50',
-                    )}
-                  >
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="min-w-0">
-                        <div className="truncate text-sm font-bold text-slate-900">{request.Title || 'Work order'}</div>
-                        <div className="mt-1 text-xs text-slate-400">
-                          {request.Category || 'General'} · {formatDate(request['Date Submitted'] || request.created_at)}
-                        </div>
-                      </div>
-                      <PortalOpsStatusBadge tone={residentWorkOrderStatusTone(request)}>
-                        {residentWorkOrderStatusLabel(request)}
-                      </PortalOpsStatusBadge>
-                    </div>
-                    <p className="line-clamp-2 text-sm text-slate-500">
-                      {stripWorkOrderPortalSubmitterLine(request.Description) || 'No description added'}
-                    </p>
-                  </button>
-                ))}
-              </div>
-            </div>
+          <div className="mt-6 space-y-6">
+            <DataTable
+              empty="Nothing in this view"
+              columns={[
+                {
+                  key: 'd',
+                  label: 'Description',
+                  render: (r) => <span className="font-semibold text-slate-900">{r.Title || 'Work order'}</span>,
+                },
+                {
+                  key: 'sub',
+                  label: 'Submitted',
+                  render: (r) => (
+                    <span className="text-slate-600">{formatDate(r['Date Submitted'] || r.created_at)}</span>
+                  ),
+                },
+                {
+                  key: 'cat',
+                  label: 'Category',
+                  render: (r) => <span className="text-slate-600">{r.Category || '—'}</span>,
+                },
+                {
+                  key: 'st',
+                  label: 'Status',
+                  render: (r) => (
+                    <StatusPill tone={residentWorkOrderStatusPillTone(r)}>{residentWorkOrderStatusLabel(r)}</StatusPill>
+                  ),
+                },
+                {
+                  key: 'act',
+                  label: '',
+                  headerClassName: 'text-right',
+                  cellClassName: 'text-right',
+                  render: (r) => (
+                    <button
+                      type="button"
+                      className="text-sm font-semibold text-[#2563eb] hover:underline"
+                      onClick={() => setSelectedId((cur) => (cur === r.id ? null : r.id))}
+                    >
+                      {selectedId === r.id ? 'Hide details' : 'Details'}
+                    </button>
+                  ),
+                },
+              ]}
+              rows={filteredRequests.map((r) => ({ key: r.id, data: r }))}
+            />
 
             {selectedRequest ? (
               <PortalOpsCard

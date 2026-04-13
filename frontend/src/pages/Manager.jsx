@@ -339,6 +339,14 @@ function computeManagerScope(propertyRecords, manager) {
   return { approvedNames, assignedNames, pendingAssigned }
 }
 
+/** Union of assigned + approved names. (`new Set() || x` is wrong — empty Set is truthy.) */
+function mergedManagerPropertyNames(scope) {
+  const out = new Set()
+  if (scope?.assignedNames?.size) for (const n of scope.assignedNames) out.add(n)
+  if (scope?.approvedNames?.size) for (const n of scope.approvedNames) out.add(n)
+  return out
+}
+
 function applicationInScope(app, approvedNamesLowerSet) {
   const pn = String(app['Property Name'] || '').trim().toLowerCase()
   if (!pn || !approvedNamesLowerSet?.size) return false
@@ -595,6 +603,13 @@ function managerWorkOrderStatusLabel(record) {
 function managerWorkOrderStatusTone(record) {
   const label = managerWorkOrderStatusLabel(record)
   if (label === 'Completed') return 'emerald'
+  if (label === 'In Progress') return 'axis'
+  return 'slate'
+}
+
+function managerWorkOrderStatusPillTone(record) {
+  const label = managerWorkOrderStatusLabel(record)
+  if (label === 'Completed') return 'green'
   if (label === 'In Progress') return 'axis'
   return 'slate'
 }
@@ -3910,59 +3925,61 @@ function WorkOrdersTabPanel({ allowedPropertyNames, allowedPropertyIds }) {
         ))}
       </div>
 
-      <div className={classNames('grid gap-6', record ? 'xl:grid-cols-[minmax(0,1.15fr)_minmax(360px,0.85fr)]' : '')}>
-        <div className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm">
-          {listLoading ? (
-            <div className="px-6 py-16 text-center text-sm text-slate-500">Loading work orders…</div>
-          ) : filteredList.length === 0 ? (
-            <div className="px-6 py-16 text-center">
-              <div className="mb-3 text-4xl" aria-hidden>{list.length === 0 ? '🔧' : '🔍'}</div>
-              <div className="text-sm font-semibold text-slate-700">{list.length === 0 ? 'No work orders yet' : 'Nothing matches this filter'}</div>
-            </div>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="min-w-full text-left">
-                <thead className="border-b border-slate-200 bg-slate-50">
-                  <tr>
-                    <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-[0.14em] text-slate-400">Description</th>
-                    <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-[0.14em] text-slate-400">Submitted</th>
-                    <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-[0.14em] text-slate-400">Property</th>
-                    <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-[0.14em] text-slate-400">Resident</th>
-                    <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-[0.14em] text-slate-400">Status</th>
-                    <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-[0.14em] text-slate-400">Action</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {filteredList.map((row) => (
-                    <tr
-                      key={row.id}
-                      className={classNames('transition hover:bg-slate-50', record?.id === row.id ? 'bg-axis/5' : '')}
-                    >
-                      <td className="px-4 py-4 text-sm font-semibold text-slate-900">{safePortalText(row.Title, 'Untitled request')}</td>
-                      <td className="px-4 py-4 text-sm text-slate-600">{fmtDate(row['Date Submitted'] || row.created_at)}</td>
-                      <td className="px-4 py-4 text-sm text-slate-600">{workOrderPropertyLabel(row) || 'House not set'}</td>
-                      <td className="px-4 py-4 text-sm text-slate-600">{paymentResidentLabel(row)}</td>
-                      <td className="px-4 py-4">
-                        <PortalOpsStatusBadge tone={managerWorkOrderStatusTone(row)}>
-                          {managerWorkOrderStatusLabel(row)}
-                        </PortalOpsStatusBadge>
-                      </td>
-                      <td className="px-4 py-4 text-sm">
-                        <button
-                          type="button"
-                          onClick={() => setRecord((current) => (current?.id === row.id ? null : row))}
-                          className="font-semibold text-[#2563eb] transition hover:opacity-80"
-                        >
-                          {record?.id === row.id ? 'Hide details' : 'Details'}
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </div>
+      <div className="space-y-6">
+        {listLoading ? (
+          <div className="rounded-3xl border border-dashed border-slate-200 bg-slate-50/80 px-6 py-16 text-center text-sm text-slate-500">
+            Loading work orders…
+          </div>
+        ) : (
+          <DataTable
+            empty={list.length === 0 ? 'No work orders yet' : 'Nothing matches this filter'}
+            columns={[
+              {
+                key: 'desc',
+                label: 'Description',
+                render: (d) => <span className="font-semibold text-slate-900">{safePortalText(d.Title, 'Untitled request')}</span>,
+              },
+              {
+                key: 'sub',
+                label: 'Submitted',
+                render: (d) => <span className="text-slate-600">{fmtDate(d['Date Submitted'] || d.created_at)}</span>,
+              },
+              {
+                key: 'prop',
+                label: 'Property',
+                render: (d) => <span className="text-slate-600">{workOrderPropertyLabel(d) || 'House not set'}</span>,
+              },
+              {
+                key: 'res',
+                label: 'Resident',
+                render: (d) => <span className="text-slate-600">{paymentResidentLabel(d)}</span>,
+              },
+              {
+                key: 'stat',
+                label: 'Status',
+                render: (d) => (
+                  <StatusPill tone={managerWorkOrderStatusPillTone(d)}>{managerWorkOrderStatusLabel(d)}</StatusPill>
+                ),
+              },
+              {
+                key: 'act',
+                label: '',
+                headerClassName: 'text-right',
+                cellClassName: 'text-right',
+                render: (d) => (
+                  <button
+                    type="button"
+                    onClick={() => setRecord((current) => (current?.id === d.id ? null : d))}
+                    className="text-sm font-semibold text-[#2563eb] hover:underline"
+                  >
+                    {record?.id === d.id ? 'Hide details' : 'Details'}
+                  </button>
+                ),
+              },
+            ]}
+            rows={filteredList.map((row) => ({ key: row.id, data: row }))}
+          />
+        )}
 
         {record ? (
           <PortalOpsCard
@@ -5289,19 +5306,19 @@ function ManagerDashboard({ manager: managerProp, openDraftId, onOpenDraft, onCl
 
   const managerScope = useMemo(() => computeManagerScope(propertyRecords, manager), [propertyRecords, manager])
   const scopedPropertyOptions = useMemo(
-    () => Array.from(managerScope.assignedNames || managerScope.approvedNames).sort(),
-    [managerScope.assignedNames, managerScope.approvedNames],
+    () => Array.from(mergedManagerPropertyNames(managerScope)).sort(),
+    [managerScope],
   )
   // Property record IDs for the work orders scope filter (matches linked House field directly)
   const scopedPropertyIds = useMemo(() => {
-    const names = managerScope.assignedNames || managerScope.approvedNames
+    const names = mergedManagerPropertyNames(managerScope)
     return propertyRecords
       .filter((p) => {
         const n = propertyRecordName(p)
         return n && names.has(n)
       })
       .map((p) => p.id)
-  }, [propertyRecords, managerScope.assignedNames, managerScope.approvedNames])
+  }, [propertyRecords, managerScope])
   /** Calendar / tour scheduling: all houses linked to this manager (including pending approval). */
   const calendarScopedPropertyOptions = useMemo(
     () => Array.from(managerScope.assignedNames).sort(),
