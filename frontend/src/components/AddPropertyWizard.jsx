@@ -24,9 +24,11 @@ import {
   emptyKitchenRow,
   emptyLaundryRow,
   emptySharedSpaceRow,
+  emptyListingAvailabilityWindow,
   adjustRoomAccessLabels,
   clampInt,
   MAX_ROOM_SLOTS,
+  MAX_LISTING_AVAILABILITY_WINDOWS,
   MAX_BATHROOM_SLOTS,
   MAX_KITCHEN_SLOTS,
   MAX_SHARED_SPACE_SLOTS,
@@ -84,6 +86,18 @@ function validateBasics(basics, appFee) {
   if (mcStr === '') e.moveInCharges = 'Required — enter 0 if none'
   else if (!Number.isFinite(Number(mcStr)) || Number(mcStr) < 0)
     e.moveInCharges = 'Enter a valid number (0 or more)'
+
+  const windows = Array.isArray(basics.listingAvailabilityWindows) ? basics.listingAvailabilityWindows : []
+  windows.forEach((w, i) => {
+    const start = String(w?.start || '').trim()
+    const end = String(w?.end || '').trim()
+    const openEnded = Boolean(w?.openEnded)
+    const touched = start || end || openEnded
+    if (!touched) return
+    if (!start) e[`lav${i}_start`] = 'Start date required for this window'
+    if (start && !openEnded && !end) e[`lav${i}_end`] = 'Enter an end date or choose “No end date”'
+    if (start && end && !openEnded && end < start) e[`lav${i}_end`] = 'End must be on or after start'
+  })
 
   return e
 }
@@ -228,6 +242,15 @@ export default function AddPropertyWizard({
         pets: String(basics.pets || ''),
         securityDeposit: String(basics.securityDeposit || ''),
         moveInCharges: String(basics.moveInCharges || ''),
+        listingAvailabilityWindows: Array.isArray(basics.listingAvailabilityWindows)
+          ? basics.listingAvailabilityWindows.map((row) => ({
+              ...emptyListingAvailabilityWindow(),
+              ...row,
+              start: String(row?.start || ''),
+              end: row?.openEnded ? '' : String(row?.end || ''),
+              openEnded: Boolean(row?.openEnded),
+            }))
+          : [],
       },
       appFee: String(payload?.appFee || ''),
       rooms:
@@ -555,6 +578,29 @@ export default function AddPropertyWizard({
   }
   function removeBundle(idx) { setLeasing(L => ({ ...L, bundles: (L.bundles || []).filter((_, i) => i !== idx) })) }
 
+  function addListingAvailabilityWindow() {
+    setBasics((b) => {
+      const cur = Array.isArray(b.listingAvailabilityWindows) ? b.listingAvailabilityWindows : []
+      if (cur.length >= MAX_LISTING_AVAILABILITY_WINDOWS) return b
+      return { ...b, listingAvailabilityWindows: [...cur, emptyListingAvailabilityWindow()] }
+    })
+  }
+  function updateListingAvailabilityWindow(idx, patch) {
+    setBasics((b) => {
+      const rows = [...(Array.isArray(b.listingAvailabilityWindows) ? b.listingAvailabilityWindows : [])]
+      rows[idx] = { ...rows[idx], ...patch }
+      return { ...b, listingAvailabilityWindows: rows }
+    })
+  }
+  function removeListingAvailabilityWindow(idx) {
+    setBasics((b) => ({
+      ...b,
+      listingAvailabilityWindows: (Array.isArray(b.listingAvailabilityWindows) ? b.listingAvailabilityWindows : []).filter(
+        (_, i) => i !== idx,
+      ),
+    }))
+  }
+
   // ── Image helpers ─────────────────────────────────────────────────────────────
   function addImageFiles(files) {
     const valid = Array.from(files).filter(f => f.type.startsWith('image/'))
@@ -727,6 +773,113 @@ export default function AddPropertyWizard({
               <FieldError msg={e.moveInCharges} />
             </div>
           </div>
+        </div>
+
+        {/* Listing-level move-in availability (optional) */}
+        <div className="rounded-2xl border border-slate-200 bg-white p-4 space-y-3">
+          <SectionHeading>
+            Listing availability <span className="ml-1 font-normal normal-case text-slate-400">(optional)</span>
+          </SectionHeading>
+          <p className="text-xs text-slate-500">
+            Add one or more windows when the home accepts move-ins (e.g. Mar 20–30, then again from Aug 3 with no fixed end).
+            Each window needs a start date. Use “No end date” for open-ended availability after that start.
+          </p>
+          {(Array.isArray(basics.listingAvailabilityWindows) ? basics.listingAvailabilityWindows : []).map((win, idx) => {
+            const rowErrStart = e[`lav${idx}_start`]
+            const rowErrEnd = e[`lav${idx}_end`]
+            return (
+              <div
+                key={`lav-${idx}`}
+                className="rounded-xl border border-slate-200 bg-slate-50/80 p-3 space-y-3"
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-xs font-bold text-slate-700">Window {idx + 1}</span>
+                  <button
+                    type="button"
+                    onClick={() => removeListingAvailabilityWindow(idx)}
+                    className="text-[11px] font-bold text-red-500 hover:text-red-700"
+                  >
+                    Remove
+                  </button>
+                </div>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <div>
+                    <label className={LBL}>Available from</label>
+                    <input
+                      type="date"
+                      className={rowErrStart ? ERR_INPUT : OK_INPUT}
+                      value={win.start || ''}
+                      onChange={(ev) => updateListingAvailabilityWindow(idx, { start: ev.target.value })}
+                    />
+                    <FieldError msg={rowErrStart} />
+                  </div>
+                  {!win.openEnded ? (
+                    <div>
+                      <label className={LBL}>Available through</label>
+                      <input
+                        type="date"
+                        className={rowErrEnd ? ERR_INPUT : OK_INPUT}
+                        value={win.end || ''}
+                        min={win.start || undefined}
+                        onChange={(ev) => updateListingAvailabilityWindow(idx, { end: ev.target.value })}
+                      />
+                      <FieldError msg={rowErrEnd} />
+                    </div>
+                  ) : (
+                    <div className="flex flex-col justify-end pb-1">
+                      <p className="text-xs font-medium text-slate-600">Open-ended — no end date.</p>
+                    </div>
+                  )}
+                </div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <label className="inline-flex cursor-pointer items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-slate-700">
+                    <input
+                      type="checkbox"
+                      className="rounded border-slate-300 text-[#2563eb] focus:ring-[#2563eb]"
+                      checked={Boolean(win.openEnded)}
+                      onChange={(ev) => {
+                        const on = ev.target.checked
+                        updateListingAvailabilityWindow(idx, {
+                          openEnded: on,
+                          end: on ? '' : win.end,
+                        })
+                      }}
+                    />
+                    No end date
+                  </label>
+                  {win.openEnded ? (
+                    <button
+                      type="button"
+                      onClick={() => updateListingAvailabilityWindow(idx, { openEnded: false })}
+                      className="text-[11px] font-bold text-[#2563eb] hover:text-[#1d4ed8]"
+                    >
+                      Set end date
+                    </button>
+                  ) : win.end ? (
+                    <button
+                      type="button"
+                      onClick={() => updateListingAvailabilityWindow(idx, { openEnded: true, end: '' })}
+                      className="text-[11px] font-bold text-slate-600 hover:text-slate-800"
+                    >
+                      Remove end date
+                    </button>
+                  ) : null}
+                </div>
+              </div>
+            )
+          })}
+          {(Array.isArray(basics.listingAvailabilityWindows) ? basics.listingAvailabilityWindows : []).length <
+          MAX_LISTING_AVAILABILITY_WINDOWS ? (
+            <button
+              type="button"
+              onClick={addListingAvailabilityWindow}
+              className="text-sm font-bold text-[#2563eb] hover:text-[#1d4ed8]"
+            >
+              + Add availability window
+            </button>
+          ) : (
+            <p className="text-xs text-slate-500">Maximum {MAX_LISTING_AVAILABILITY_WINDOWS} windows.</p>
+          )}
         </div>
 
         {/* Amenities */}

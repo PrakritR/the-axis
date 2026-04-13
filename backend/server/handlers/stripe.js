@@ -62,7 +62,7 @@ async function handleCheckout(req, res, secretKey) {
   const form = toFormBody({
     mode: 'payment',
     ...(embedded
-      ? { ui_mode: 'embedded', return_url: successUrl }
+      ? { ui_mode: 'embedded_page', return_url: successUrl }
       : { success_url: successUrl, cancel_url: cancelUrl }),
     customer_email: residentEmail,
     customer_creation: 'always',

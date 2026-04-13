@@ -5,6 +5,13 @@
  *
  * `meta.leasing` uses Properties-style field names — see PROPERTIES_LEASING_META_KEYS
  * and PROPERTIES_LEASING_PACKAGE_KEYS in managerPropertyFormAirtableMap.js.
+ *
+ * Optional marketing fields (read by mapAirtableRecordToPropertyPage):
+ * - `listingVideos`: [{ url | src, label? }] — property-level tour clips (plus any Airtable `Videos` attachments).
+ * - `sharedSpacesDetail`: parallel to Shared Space 1..N on the record; each entry may include
+ *   `imageUrls?: string[]`, `videos?: [{ url|src, label? }]`.
+ * - `listingAvailabilityWindows`: property-level marketing windows from the manager Basics step;
+ *   each `{ start: "yyyy-mm-dd", end?: "" | "yyyy-mm-dd" }` — empty `end` means open-ended after `start`.
  */
 
 export const AXIS_LISTING_META_START = '---AXIS_LISTING_META_JSON---'

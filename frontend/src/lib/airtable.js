@@ -44,12 +44,37 @@ const WORK_ORDER_SUBMITTER_EMAIL_FIELD = String(
 
 /**
  * Work Orders table: linked record field → Resident Profile ({@link TABLES.residents}).
- * Must match the linked-field name in Airtable exactly (this base uses "Resident profile", not "Resident").
+ * Optional env: VITE_AIRTABLE_WORK_ORDER_RESIDENT_LINK_FIELD — must match your base exactly when set.
+ * When unset, create/list retries common Airtable spellings (e.g. Resident Profile, Resident profile, Resident).
  */
 const WORK_ORDER_RESIDENT_PROFILE_LINK_FIELD = (() => {
   const raw = String(import.meta.env.VITE_AIRTABLE_WORK_ORDER_RESIDENT_LINK_FIELD ?? '').trim()
-  return raw || 'Resident profile'
+  /** Default tries most common Airtable labels; createWorkOrder retries alternates on UNKNOWN_FIELD_NAME. */
+  return raw || 'Resident Profile'
 })()
+
+/** When env is unset, try these linked-record field names (order matters). */
+const WORK_ORDER_RESIDENT_LINK_FIELD_FALLBACKS = [
+  'Resident Profile',
+  'Resident profile',
+  'Resident',
+  'Tenant',
+  'Resident Link',
+  'Resident ID',
+]
+
+function airtableUnknownFieldNameFromErrorMessage(message) {
+  const raw = String(message || '').trim()
+  try {
+    const j = JSON.parse(raw)
+    const m = j?.error?.message
+    if (typeof m !== 'string') return null
+    const match = m.match(/Unknown field name:\s*"([^"]+)"/i)
+    return match ? match[1] : null
+  } catch {
+    return null
+  }
+}
 
 const TABLES = {
   workOrders: 'Work Orders',
@@ -480,35 +505,55 @@ function workOrderPortalSubmitterDescriptionTag(email) {
 }
 
 export async function getWorkOrdersForResident(resident) {
-  const woResidentField = WORK_ORDER_RESIDENT_PROFILE_LINK_FIELD
-  // Linked field stores Resident Profile record IDs. "Resident Email" is typically a lookup from that link.
+  const envLinkField = String(import.meta.env.VITE_AIRTABLE_WORK_ORDER_RESIDENT_LINK_FIELD ?? '').trim()
+  const linkFieldCandidates = envLinkField
+    ? [envLinkField]
+    : [...new Set([WORK_ORDER_RESIDENT_PROFILE_LINK_FIELD, ...WORK_ORDER_RESIDENT_LINK_FIELD_FALLBACKS])]
+
   const residentId = escapeFormulaValue(resident.id)
   const emailRaw = String(resident.Email || '').trim().toLowerCase()
   const residentEmail = escapeFormulaValue(emailRaw)
   const portalTag = emailRaw ? escapeFormulaValue(`portal_submitter_email:${emailRaw}`) : ''
 
-  const parts = [`FIND("${residentId}", ARRAYJOIN({${woResidentField}})) > 0`]
-  if (residentEmail) {
-    parts.push(`FIND("${residentEmail}", LOWER(ARRAYJOIN({Resident Email}))) > 0`)
-  }
-  if (portalTag) {
-    parts.push(`FIND("${portalTag}", LOWER({Description})) > 0`)
-  }
-  if (WORK_ORDER_SUBMITTER_EMAIL_FIELD && residentEmail) {
-    parts.push(
-      `FIND("${residentEmail}", LOWER({${WORK_ORDER_SUBMITTER_EMAIL_FIELD}} & "")) > 0`,
-    )
+  let lastError = null
+  for (let i = 0; i < linkFieldCandidates.length; i++) {
+    const woResidentField = linkFieldCandidates[i]
+    const parts = [`FIND("${residentId}", ARRAYJOIN({${woResidentField}})) > 0`]
+    if (residentEmail) {
+      parts.push(`FIND("${residentEmail}", LOWER(ARRAYJOIN({Resident Email}))) > 0`)
+    }
+    if (portalTag) {
+      parts.push(`FIND("${portalTag}", LOWER({Description})) > 0`)
+    }
+    if (WORK_ORDER_SUBMITTER_EMAIL_FIELD && residentEmail) {
+      parts.push(
+        `FIND("${residentEmail}", LOWER({${WORK_ORDER_SUBMITTER_EMAIL_FIELD}} & "")) > 0`,
+      )
+    }
+
+    const formula = parts.length === 1 ? parts[0] : `OR(${parts.join(', ')})`
+
+    try {
+      const data = await request(buildUrl(TABLES.workOrders, {
+        filterByFormula: formula,
+      }))
+
+      return (data.records || [])
+        .map(mapRecord)
+        .sort((a, b) => new Date(b['Date Submitted'] || b.created_at) - new Date(a['Date Submitted'] || a.created_at))
+    } catch (err) {
+      lastError = err
+      const unknown = airtableUnknownFieldNameFromErrorMessage(err?.message)
+      const isWrongLinkField = unknown && unknown === woResidentField
+      if (isWrongLinkField && i < linkFieldCandidates.length - 1) {
+        console.warn(`[getWorkOrdersForResident] No formula field "${woResidentField}", trying next resident link field…`)
+        continue
+      }
+      throw err
+    }
   }
 
-  const formula = parts.length === 1 ? parts[0] : `OR(${parts.join(', ')})`
-
-  const data = await request(buildUrl(TABLES.workOrders, {
-    filterByFormula: formula,
-  }))
-
-  return (data.records || [])
-    .map(mapRecord)
-    .sort((a, b) => new Date(b['Date Submitted'] || b.created_at) - new Date(a['Date Submitted'] || a.created_at))
+  throw lastError || new Error('Could not load work orders.')
 }
 
 async function uploadAttachmentToRecord(table, recordId, fieldName, file) {
@@ -575,35 +620,61 @@ export async function createWorkOrder({
     const tag = workOrderPortalSubmitterDescriptionTag(resident?.Email)
     if (tag) normalizedDescription = tag + normalizedDescription
   }
-  const fields = {
-    Title: title,
-    Description: normalizedDescription,
-    Category: category,
-    Priority: airtablePriority,
-    Status: 'Submitted',
-    'Preferred Entry Time': preferredEntry,
-    [WORK_ORDER_RESIDENT_PROFILE_LINK_FIELD]: [residentLinkId],
-    ...(usePlaceholderResident ? {} : workOrderApplicationFieldsFromResident(resident)),
-  }
-  if (usePlaceholderResident && WORK_ORDER_SUBMITTER_EMAIL_FIELD && String(resident?.Email || '').trim()) {
-    fields[WORK_ORDER_SUBMITTER_EMAIL_FIELD] = String(resident.Email).trim()
-  }
 
-  const data = await request(tableUrl(TABLES.workOrders), {
-    method: 'POST',
-    body: JSON.stringify({ fields, typecast: true }),
-  })
-  const record = mapRecord(data)
+  const envLinkField = String(import.meta.env.VITE_AIRTABLE_WORK_ORDER_RESIDENT_LINK_FIELD ?? '').trim()
+  const linkFieldCandidates = envLinkField
+    ? [envLinkField]
+    : [...new Set([WORK_ORDER_RESIDENT_PROFILE_LINK_FIELD, ...WORK_ORDER_RESIDENT_LINK_FIELD_FALLBACKS])]
 
-  if (photoFile) {
+  const appFields = usePlaceholderResident ? {} : workOrderApplicationFieldsFromResident(resident)
+
+  let lastError = null
+  for (let i = 0; i < linkFieldCandidates.length; i++) {
+    const linkField = linkFieldCandidates[i]
+    const fields = {
+      Title: title,
+      Description: normalizedDescription,
+      Category: category,
+      Priority: airtablePriority,
+      Status: 'Submitted',
+      'Preferred Entry Time': preferredEntry,
+      [linkField]: [residentLinkId],
+      ...appFields,
+    }
+    if (usePlaceholderResident && WORK_ORDER_SUBMITTER_EMAIL_FIELD && String(resident?.Email || '').trim()) {
+      fields[WORK_ORDER_SUBMITTER_EMAIL_FIELD] = String(resident.Email).trim()
+    }
+
     try {
-      await uploadAttachmentToRecord(TABLES.workOrders, record.id, 'Photo', photoFile)
+      const data = await request(tableUrl(TABLES.workOrders), {
+        method: 'POST',
+        body: JSON.stringify({ fields, typecast: true }),
+      })
+      const record = mapRecord(data)
+
+      if (photoFile) {
+        try {
+          await uploadAttachmentToRecord(TABLES.workOrders, record.id, 'Photo', photoFile)
+        } catch (err) {
+          console.warn('Photo upload failed (work order was still created):', err.message)
+        }
+      }
+
+      return record
     } catch (err) {
-      console.warn('Photo upload failed (work order was still created):', err.message)
+      lastError = err
+      const unknown = airtableUnknownFieldNameFromErrorMessage(err?.message)
+      const isWrongResidentField = unknown && unknown === linkField
+      const canRetry = isWrongResidentField && i < linkFieldCandidates.length - 1
+      if (canRetry) {
+        console.warn(`[createWorkOrder] Retrying: Airtable has no field "${linkField}", trying next resident link field…`)
+        continue
+      }
+      throw err
     }
   }
 
-  return record
+  throw lastError || new Error('Could not create work order.')
 }
 
 function messageFieldNameConfigured(name) {

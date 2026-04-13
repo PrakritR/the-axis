@@ -13,6 +13,8 @@ export const MAX_BATHROOM_SLOTS = 10
 export const MAX_KITCHEN_SLOTS = 3
 export const MAX_SHARED_SPACE_SLOTS = 13
 export const MAX_LAUNDRY_SLOTS = 5
+/** Property-level marketing windows (Basics step) — stored in axis meta `listingAvailabilityWindows`. */
+export const MAX_LISTING_AVAILABILITY_WINDOWS = 8
 // Rooms Sharing Bathroom only exists for bathrooms 1–5 in Airtable
 export const MAX_BATHROOM_SHARING_SLOTS = 5
 
@@ -196,6 +198,10 @@ export function emptySharedSpaceRow() {
   return { name: '', type: '', typeOther: '', access: [] }
 }
 
+export function emptyListingAvailabilityWindow() {
+  return { start: '', end: '', openEnded: false }
+}
+
 function sharedSpaceRowHasContent(row) {
   if (!row || typeof row !== 'object') return false
   if (String(row.name || '').trim()) return true
@@ -221,6 +227,18 @@ function toIsoDate(raw) {
   const d = new Date(s)
   if (Number.isNaN(d.getTime())) return undefined
   return d.toISOString().slice(0, 10)
+}
+
+function normalizeListingAvailabilityWindowFromMeta(raw) {
+  const r = raw && typeof raw === 'object' ? raw : {}
+  const start = toIsoDate(r.start) || String(r.start || '').trim()
+  const endNorm = toIsoDate(r.end) || String(r.end || '').trim()
+  const openEnded = r.openEnded === true || (Boolean(start) && !endNorm)
+  return {
+    start,
+    end: openEnded ? '' : endNorm,
+    openEnded,
+  }
 }
 
 function boolFromRaw(v) {
@@ -363,6 +381,12 @@ export function buildPropertyWizardInitialValues(property) {
       ? 'Other'
       : ''
 
+  const listingAvailabilityWindows = Array.isArray(meta?.listingAvailabilityWindows)
+    ? meta.listingAvailabilityWindows
+        .map(normalizeListingAvailabilityWindowFromMeta)
+        .filter((w) => String(w.start || '').trim())
+    : []
+
   return {
     basics: {
       name: stringOrEmpty(record[PROPERTY_AIR.propertyName] || record.Name),
@@ -374,6 +398,7 @@ export function buildPropertyWizardInitialValues(property) {
       pets: stringOrEmpty(record[PROPERTY_AIR.pets]),
       securityDeposit: String(meta?.financials?.securityDeposit ?? record[PROPERTY_AIR.securityDeposit] ?? ''),
       moveInCharges: String(meta?.financials?.moveInCharges ?? ''),
+      listingAvailabilityWindows,
     },
     appFee: String(record[PROPERTY_AIR.applicationFee] ?? ''),
     rooms,
@@ -443,7 +468,7 @@ export function normalizeLeasingFromMeta(leasing) {
  */
 export function serializeManagerAddPropertyToAirtableFields(params) {
   const {
-    basics,          // { name, address, propertyType, propertyTypeOther?, amenities[], amenitiesOther?, pets, securityDeposit, moveInCharges }
+    basics,          // { name, address, propertyType, propertyTypeOther?, amenities[], amenitiesOther?, pets, securityDeposit, moveInCharges, listingAvailabilityWindows? }
     roomCount,
     bathroomCount,
     kitchenCount,
@@ -602,6 +627,20 @@ export function serializeManagerAddPropertyToAirtableFields(params) {
     [PK.bundleRoomsIncluded]: b.rooms,
   }))
 
+  const rawListingWindows = Array.isArray(basics.listingAvailabilityWindows)
+    ? basics.listingAvailabilityWindows
+    : []
+  const listingAvailabilityWindows = rawListingWindows
+    .map((w) => {
+      const start = toIsoDate(w?.start) || String(w?.start || '').trim()
+      if (!start) return null
+      const openEnded = Boolean(w?.openEnded)
+      const end = openEnded ? '' : toIsoDate(w?.end) || String(w?.end || '').trim()
+      if (!openEnded && !end) return null
+      return { start, end }
+    })
+    .filter(Boolean)
+
   const axisMeta = {
     propertyTypeOther: ptRaw === 'Other' ? ptOther : '',
     roomsDetail,
@@ -615,6 +654,7 @@ export function serializeManagerAddPropertyToAirtableFields(params) {
       [MK.leaseLengthInformation]: String(leasingObj.leaseLengthInfo || '').trim(),
       [MK.leasingPackages]: leasingPackagesForMeta,
     },
+    listingAvailabilityWindows,
   }
 
   const mergedOtherInfo = mergeAxisListingMetaIntoOtherInfo(otherInfo, axisMeta)

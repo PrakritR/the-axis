@@ -160,6 +160,22 @@ export default function PropertyGallery({ images = [], videos = [] }) {
             </div>
           </div>
 
+          {normalizedVideos.length > 0 ? (
+            <div className="hidden items-center justify-between gap-4 border-t border-slate-200 px-1 pt-5 lg:flex">
+              <div className="text-sm font-semibold text-slate-800">Video tours</div>
+              <button
+                type="button"
+                onClick={() => openVideoAt(0)}
+                className="inline-flex items-center gap-2 rounded-full border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:border-slate-500"
+              >
+                <svg className="h-4 w-4 shrink-0 text-axis" viewBox="0 0 24 24" fill="none" aria-hidden>
+                  <polygon points="5,3 19,12 5,21" fill="currentColor" />
+                </svg>
+                {normalizedVideos.length === 1 ? 'Watch video' : `Watch ${normalizedVideos.length} videos`}
+              </button>
+            </div>
+          ) : null}
+
           <div className="lg:hidden">
             <button
               type="button"

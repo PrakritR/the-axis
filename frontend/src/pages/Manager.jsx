@@ -280,6 +280,13 @@ function propertyEligibleForManagerCalendarScheduling(p, manager) {
   return propertyAssignedToManager(p, manager)
 }
 
+function propertyNameInAllowedScope(p, allowedPropertyNames) {
+  const allowed = new Set((allowedPropertyNames || []).map((name) => String(name).trim().toLowerCase()).filter(Boolean))
+  if (!allowed.size) return false
+  const n = propertyRecordName(p).toLowerCase()
+  return !!n && allowed.has(n)
+}
+
 function isManagerInternalPreview(manager) {
   return manager?.__axisDeveloper === true || manager?.__axisInternalStaff === true
 }
@@ -525,6 +532,7 @@ function paymentResidentLabel(record) {
   return String(
     record?.['Resident Name'] ||
       record?.Name ||
+      record?.['Resident Profile'] ||
       record?.['Resident profile'] ||
       record?.Resident ||
       '',
@@ -1406,7 +1414,7 @@ function AvailabilityEditorPanel({
       <h2 className="text-xl font-black text-slate-900">Availability editor</h2>
       <label className="mt-4 block text-xs font-semibold text-slate-700">
         {isAdminCalendar ? 'Admin profile' : 'Property'}
-        <span className="font-normal text-slate-400">{isAdminCalendar ? ' (meeting calendar)' : ' (listed only)'}</span>
+        <span className="font-normal text-slate-400">{isAdminCalendar ? ' (meeting calendar)' : ' (assigned scope)'}</span>
         <div className={`${MANAGER_PILL_SELECT_WRAP_CLS} mt-1.5 max-w-full`}>
           <select
             value={selectedPropertyId}
@@ -1415,7 +1423,7 @@ function AvailabilityEditorPanel({
             className={MANAGER_PILL_SELECT_CLS}
           >
             {!hasApprovedPick ? (
-              <option value="">{isAdminCalendar ? 'No enabled admins' : 'No listed properties'}</option>
+              <option value="">{isAdminCalendar ? 'No enabled admins' : 'No assigned properties'}</option>
             ) : (
               propertyOptions.map((option) => (
                 <option key={option.id} value={option.id}>{option.label}</option>
@@ -4689,10 +4697,16 @@ export function CalendarTabPanel({ manager, allowedPropertyNames, calendarMode =
       setSchedulingRows([...sched, ...workOrderRows])
       setProperties(props)
       const approvedAssigned = props
-            .filter((p) => propertyEligibleForManagerCalendarScheduling(p, manager))
-            .sort((a, b) =>
-              propertyRecordName(a).localeCompare(propertyRecordName(b), undefined, { sensitivity: 'base' }),
-            )
+        .filter((p) => {
+          if (isAdminCalendar) return isPropertyRecordApproved(p)
+          return (
+            propertyEligibleForManagerCalendarScheduling(p, manager) ||
+            propertyNameInAllowedScope(p, allowedPropertyNames)
+          )
+        })
+        .sort((a, b) =>
+          propertyRecordName(a).localeCompare(propertyRecordName(b), undefined, { sensitivity: 'base' }),
+        )
 
       const enabledAdminProfiles = isAdminCalendar
         ? (Array.isArray(adminProfiles) ? adminProfiles : []).filter((p) => p.enabled)
@@ -4756,11 +4770,14 @@ export function CalendarTabPanel({ manager, allowedPropertyNames, calendarMode =
         )
     }
     return properties
-      .filter((p) => propertyEligibleForManagerCalendarScheduling(p, manager))
+      .filter((p) => (
+        propertyEligibleForManagerCalendarScheduling(p, manager) ||
+        propertyNameInAllowedScope(p, allowedPropertyNames)
+      ))
       .sort((a, b) =>
         propertyRecordName(a).localeCompare(propertyRecordName(b), undefined, { sensitivity: 'base' }),
       )
-  }, [properties, manager, isAdminCalendar])
+  }, [properties, manager, isAdminCalendar, allowedPropertyNames])
 
   const selectedProperty = useMemo(
     () => approvedAssignedProperties.find((p) => p.id === selectedPropertyId) || null,
