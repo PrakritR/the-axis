@@ -6101,16 +6101,22 @@ function LeaseEditor({ draftId, manager, onBack, embedded = false }) {
             </>
           ) : null}
 
-          {!canEdit ? (
+          {!canEdit && !leaseDataForPreview ? (
             <div className="overflow-hidden rounded-3xl border border-slate-200 bg-white">
               <div className="border-b border-slate-100 bg-slate-50 px-5 py-2.5">
                 <span className="text-xs font-semibold text-slate-500">
                   Read-only — this lease has been {leaseUiStatusLabel(status).toLowerCase()}
                 </span>
               </div>
-              <div className="h-[calc(100vh-360px)] min-h-[420px] overflow-y-auto p-6">
-                <pre className="whitespace-pre-wrap font-mono text-sm leading-7 text-slate-800">{editorContent}</pre>
-              </div>
+              {String(editorContent || '').trim() ? (
+                <div className="max-h-[min(55vh,520px)] overflow-y-auto p-5">
+                  <pre className="whitespace-pre-wrap font-mono text-sm leading-7 text-slate-800">{editorContent}</pre>
+                </div>
+              ) : (
+                <p className="px-5 py-4 text-sm text-slate-500">
+                  No plain-text copy on file. When <strong>Lease JSON</strong> is filled, the formatted agreement above is what residents see.
+                </p>
+              )}
             </div>
           ) : null}
 
