@@ -44,6 +44,33 @@ function formatTourSlotDisplayLabel(token) {
   return t
 }
 
+function normalizeTimeRangeLabel(value) {
+  const parts = String(value || '')
+    .split(/\s*[\-–]\s*/)
+    .map((part) => part.trim())
+    .filter(Boolean)
+  if (parts.length !== 2) return String(value || '').trim()
+  const parseClock = (v) => {
+    const m = String(v).trim().toUpperCase().match(/^(\d{1,2})(?::(\d{2}))?\s*(AM|PM)$/)
+    if (!m) return null
+    let h = Number(m[1]) % 12
+    const min = Number(m[2] || '0')
+    if (!Number.isFinite(h) || !Number.isFinite(min)) return null
+    if (m[3] === 'PM') h += 12
+    return { h, min }
+  }
+  const a = parseClock(parts[0])
+  const b = parseClock(parts[1])
+  if (!a || !b) return String(value || '').trim()
+  const display = (t) => {
+    let h = t.h % 12
+    if (h === 0) h = 12
+    const ap = t.h >= 12 ? 'PM' : 'AM'
+    return `${h}:${String(t.min).padStart(2, '0')} ${ap}`
+  }
+  return `${display(a)} - ${display(b)}`
+}
+
 function formatYMD(d) {
   const y = d.getFullYear()
   const m = String(d.getMonth() + 1).padStart(2, '0')
@@ -75,6 +102,20 @@ function getUpcomingDates(daySlotMap, daysAhead = 28) {
     }
   }
   return dates
+}
+
+function availableSlotsForDate(daySlotMap, dateKey, bookedSlotsByDate = {}) {
+  if (!dateKey) return []
+  const d = new Date(`${dateKey}T00:00:00`)
+  if (Number.isNaN(d.getTime())) return []
+  const dayName = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][d.getDay()]
+  const allSlots = (daySlotMap[dayName] || []).map(formatTourSlotDisplayLabel)
+  const booked = new Set(
+    (bookedSlotsByDate?.[dateKey] || [])
+      .map((slot) => normalizeTimeRangeLabel(slot).toLowerCase())
+      .filter(Boolean),
+  )
+  return allSlots.filter((slot) => !booked.has(normalizeTimeRangeLabel(slot).toLowerCase()))
 }
 
 const AIRTABLE_BASE_ID = import.meta.env.VITE_AIRTABLE_BASE_ID || 'appol57LKtMKaQ75T'
@@ -240,7 +281,15 @@ function HousingScheduler() {
   const daySlotMap = selectedProperty
     ? parseTourCalendar(selectedProperty.availability)
     : DEFAULT_CALENDAR
-  const availableDates = getUpcomingDates(daySlotMap)
+  const availableDates = useMemo(() => {
+    const base = getUpcomingDates(daySlotMap)
+    return base
+      .map((entry) => {
+        const slots = availableSlotsForDate(daySlotMap, entry.date, selectedProperty?.bookedSlotsByDate || {})
+        return { ...entry, slots }
+      })
+      .filter((entry) => entry.slots.length > 0)
+  }, [daySlotMap, selectedProperty?.bookedSlotsByDate])
   const selectableSet = useMemo(() => new Set(availableDates.map((d) => d.date)), [availableDates])
   const selectedDateEntry = availableDates.find(d => d.date === selectedDate)
   const currentSlots = selectedDateEntry?.slots || []
@@ -264,6 +313,7 @@ function HousingScheduler() {
             data.properties.map((p) => ({
               ...p,
               rooms: p.rooms?.length ? p.rooms : DEFAULT_PROPERTIES.find((f) => f.id === p.id)?.rooms || [],
+              bookedSlotsByDate: p.bookedSlotsByDate || {},
             })),
           )
           return
@@ -520,6 +570,189 @@ function SoftwareMessageForm() {
   )
 }
 
+function SoftwareMeetingScheduler() {
+  const [admins, setAdmins] = useState([])
+  const [loadingAdmins, setLoadingAdmins] = useState(true)
+  const [adminId, setAdminId] = useState('')
+  const [selectedDate, setSelectedDate] = useState('')
+  const [selectedTime, setSelectedTime] = useState('')
+  const [form, setFormState] = useState({ name: '', email: '', phone: '', notes: '' })
+  const [submitting, setSubmitting] = useState(false)
+  const [submitted, setSubmitted] = useState(false)
+  const [submitError, setSubmitError] = useState('')
+
+  const selectedAdmin = admins.find((a) => a.id === adminId) || null
+  const daySlotMap = selectedAdmin ? parseTourCalendar(selectedAdmin.availability) : {}
+  const availableDates = useMemo(() => {
+    if (!selectedAdmin) return []
+    const base = getUpcomingDates(daySlotMap)
+    return base
+      .map((entry) => {
+        const slots = availableSlotsForDate(daySlotMap, entry.date, selectedAdmin.bookedSlotsByDate || {})
+        return { ...entry, slots }
+      })
+      .filter((entry) => entry.slots.length > 0)
+  }, [selectedAdmin, daySlotMap])
+  const selectableSet = useMemo(() => new Set(availableDates.map((d) => d.date)), [availableDates])
+  const selectedDateEntry = availableDates.find((d) => d.date === selectedDate)
+  const currentSlots = selectedDateEntry?.slots || []
+
+  function setField(k, v) {
+    setFormState((prev) => ({ ...prev, [k]: v }))
+  }
+
+  function reset() {
+    setAdminId('')
+    setSelectedDate('')
+    setSelectedTime('')
+    setFormState({ name: '', email: '', phone: '', notes: '' })
+    setSubmitted(false)
+    setSubmitError('')
+  }
+
+  useEffect(() => {
+    let cancelled = false
+    fetch('/api/forms?action=meeting')
+      .then((r) => r.json())
+      .then((data) => {
+        if (cancelled) return
+        const next = Array.isArray(data?.admins) ? data.admins : []
+        setAdmins(next)
+      })
+      .catch(() => {
+        if (!cancelled) setAdmins([])
+      })
+      .finally(() => {
+        if (!cancelled) setLoadingAdmins(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  useEffect(() => {
+    setSelectedDate('')
+    setSelectedTime('')
+  }, [adminId])
+
+  async function handleBookMeeting() {
+    setSubmitting(true)
+    setSubmitError('')
+    try {
+      const res = await fetch('/api/forms?action=meeting', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: form.name.trim(),
+          email: form.email.trim(),
+          phone: form.phone.trim(),
+          notes: form.notes.trim(),
+          adminEmail: selectedAdmin?.email || '',
+          adminName: selectedAdmin?.name || '',
+          preferredDate: selectedDate,
+          preferredTime: selectedTime,
+        }),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(data.error || 'Could not book meeting.')
+      setSubmitted(true)
+    } catch (err) {
+      setSubmitError(err.message || 'Could not book meeting.')
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  if (submitted) {
+    return (
+      <SuccessCard
+        title="Meeting request sent!"
+        body={`We'll confirm your time at ${form.email} shortly.`}
+        onReset={reset}
+        resetLabel="Schedule another meeting"
+      />
+    )
+  }
+
+  return (
+    <div className="space-y-6">
+      <div>
+        <label className="mb-1.5 block text-xs font-semibold text-slate-700">Choose admin</label>
+        <select
+          className={selectCls}
+          value={adminId}
+          onChange={(e) => setAdminId(e.target.value)}
+          disabled={loadingAdmins || admins.length === 0}
+        >
+          <option value="">{loadingAdmins ? 'Loading admins…' : admins.length ? 'Select admin…' : 'No admins available'}</option>
+          {admins.map((admin) => (
+            <option key={admin.id} value={admin.id}>{admin.name}</option>
+          ))}
+        </select>
+      </div>
+
+      {selectedAdmin ? (
+        <div className="rounded-2xl border border-blue-100 bg-blue-50 px-4 py-3 text-sm">
+          <div className="font-semibold text-slate-900">{selectedAdmin.name}</div>
+          <div className="mt-1 text-slate-600">{selectedAdmin.email}</div>
+        </div>
+      ) : null}
+
+      {selectedAdmin ? (
+        <>
+          <div>
+            <div className="mb-3 text-sm font-semibold text-slate-700">Choose a date</div>
+            <MonthCalendar
+              selectableSet={selectableSet}
+              selectedDate={selectedDate}
+              onSelectDate={(d) => {
+                setSelectedDate(d)
+                setSelectedTime('')
+              }}
+            />
+          </div>
+
+          {selectedDate ? (
+            <div>
+              <div className="mb-3 text-sm font-semibold text-slate-700">
+                Times <span className="font-normal text-slate-400">— {selectedDateEntry?.display}</span>
+              </div>
+              <TimeSlots slots={currentSlots} selectedTime={selectedTime} onSelectTime={setSelectedTime} />
+            </div>
+          ) : null}
+
+          <ContactFields form={form} setField={setField} />
+
+          <div>
+            <label className="mb-1.5 block text-xs font-semibold text-slate-700">
+              Notes <span className="font-normal text-slate-400">(optional)</span>
+            </label>
+            <textarea
+              className={`${inputCls} min-h-[90px] resize-y`}
+              placeholder="Anything we should prepare in advance?"
+              value={form.notes}
+              onChange={(e) => setField('notes', e.target.value)}
+            />
+          </div>
+
+          {submitError ? (
+            <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{submitError}</div>
+          ) : null}
+
+          <button
+            type="button"
+            onClick={handleBookMeeting}
+            disabled={!selectedAdmin || !selectedDate || !selectedTime || !form.name.trim() || !form.email.trim() || submitting}
+            className="w-full rounded-full bg-slate-900 py-3.5 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            {submitting ? 'Booking…' : 'Book meeting'}
+          </button>
+        </>
+      ) : null}
+    </div>
+  )
+}
+
 // ── Tab bar ───────────────────────────────────────────────────────────────────
 
 function TabBar({ tabs, active, onChange }) {
@@ -541,6 +774,7 @@ export default function Contact() {
   const location = useLocation()
   const [section, setSection] = useState('software')
   const [housingTab, setHousingTab] = useState('schedule')
+  const [softwareTab, setSoftwareTab] = useState('message')
 
   useEffect(() => {
     if (location.pathname.startsWith('/owners/contact')) {
@@ -571,6 +805,12 @@ export default function Contact() {
 
     if (nextSection === 'housing' && tabParam === 'message') {
       nextHousingTab = 'message'
+    }
+
+    if (nextSection === 'software' && tabParam === 'meeting') {
+      setSoftwareTab('meeting')
+    } else {
+      setSoftwareTab('message')
     }
 
     setSection(nextSection)
@@ -608,9 +848,16 @@ export default function Contact() {
           {section === 'software' && (
             <div>
               <div className="mb-6 border-b border-slate-100 pb-5">
-                <h2 className="text-3xl font-black tracking-tight text-slate-900">Connect with Axis Team</h2>
+                <h2 className="text-3xl font-black tracking-tight text-slate-900">
+                  {softwareTab === 'meeting' ? 'Schedule meeting' : 'Connect with Axis Team'}
+                </h2>
               </div>
-              <SoftwareMessageForm />
+              <TabBar
+                tabs={[{ id: 'meeting', label: 'Schedule meeting' }, { id: 'message', label: 'Send message' }]}
+                active={softwareTab}
+                onChange={setSoftwareTab}
+              />
+              {softwareTab === 'meeting' ? <SoftwareMeetingScheduler /> : <SoftwareMessageForm />}
             </div>
           )}
 

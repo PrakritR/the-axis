@@ -22,6 +22,7 @@ import { Link, Navigate, useLocation } from 'react-router-dom'
 import toast from 'react-hot-toast'
 import { HOUSING_CONTACT_MESSAGE } from '../lib/housingSite'
 import { readJsonResponse } from '../lib/readJsonResponse'
+import { eventFromSchedulingRow } from '../lib/calendarEventModel'
 import ManagerInboxPage from '../components/manager-inbox/ManagerInboxPage'
 import {
   getWorkOrderById,
@@ -720,12 +721,24 @@ function extractNoteValue(notes, label) {
   return match ? match[1].trim() : ''
 }
 
+function extractMultilineNoteValue(notes, label) {
+  const escaped = String(label || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  const startRe = new RegExp(`(?:^|\\n)${escaped}:\\s*`, 'i')
+  const s = String(notes || '')
+  const startMatch = s.match(startRe)
+  if (!startMatch) return ''
+  const after = s.slice(startMatch.index + startMatch[0].length)
+  const stopMatch = after.match(/\n[A-Za-z][A-Za-z ]*:/)
+  const block = stopMatch ? after.slice(0, stopMatch.index) : after
+  return block.trim()
+}
+
 function buildTourNotesText(existingNotes, metadata) {
   const labels = ['Tour Manager', 'Tour Availability', 'Tour Notes']
   let stripped = String(existingNotes || '').trim()
   labels.forEach((label) => {
     const escaped = label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-    stripped = stripped.replace(new RegExp(`(?:^|\\n)${escaped}:\\s*.+?(?=\\n|$)`, 'gi'), '')
+    stripped = stripped.replace(new RegExp(`(?:^|\\n)${escaped}:\\s*[\\s\\S]*?(?=(?:\\n[A-Za-z][A-Za-z ]*:)|$)`, 'gi'), '')
   })
   stripped = stripped.replace(/^\n+|\n+$/g, '').trim()
 
@@ -1812,6 +1825,35 @@ async function updatePropertyAdmin(recordId, fields) {
   return mapRecord(data)
 }
 
+function buildManagerListingPatch(property, listed) {
+  const nextListed = listed === true
+  const patch = {}
+  const hasListedField = Object.prototype.hasOwnProperty.call(property || {}, 'Listed')
+  const hasApprovalStatusField = Object.prototype.hasOwnProperty.call(property || {}, 'Approval Status')
+  const hasAxisListingStatusField = Object.prototype.hasOwnProperty.call(
+    property || {},
+    'Axis Admin Listing Status',
+  )
+  const hasAdminListingStatusField = Object.prototype.hasOwnProperty.call(
+    property || {},
+    'Admin Listing Status',
+  )
+
+  if (hasListedField || (!hasAxisListingStatusField && !hasAdminListingStatusField)) {
+    patch.Listed = nextListed
+  }
+  if (hasApprovalStatusField) {
+    patch['Approval Status'] = nextListed ? 'Approved' : 'Unlisted'
+  }
+  if (hasAxisListingStatusField) {
+    patch['Axis Admin Listing Status'] = nextListed ? 'Live' : 'Unlisted'
+  }
+  if (hasAdminListingStatusField) {
+    patch['Admin Listing Status'] = nextListed ? 'Live' : 'Unlisted'
+  }
+  return patch
+}
+
 async function createPropertyAdmin(fields) {
   const data = await atRequest(`${CORE_AIRTABLE_BASE_URL}/Properties`, {
     method: 'POST',
@@ -1853,12 +1895,17 @@ async function patchManagerRecord(recordId, fields) {
 }
 
 async function fetchSchedulingForManagerScope({ managerEmail, propertyNames }) {
-  const url = new URL(`${CORE_AIRTABLE_BASE_URL}/Scheduling`)
-  url.searchParams.set('sort[0][field]', 'Preferred Date')
-  url.searchParams.set('sort[0][direction]', 'desc')
-  url.searchParams.set('maxRecords', '100')
-  const data = await atRequest(url.toString())
-  const rows = (data.records || []).map(mapRecord)
+  const rows = []
+  let offset = null
+  do {
+    const url = new URL(`${CORE_AIRTABLE_BASE_URL}/Scheduling`)
+    url.searchParams.set('sort[0][field]', 'Preferred Date')
+    url.searchParams.set('sort[0][direction]', 'desc')
+    if (offset) url.searchParams.set('offset', offset)
+    const data = await atRequest(url.toString())
+    for (const record of data.records || []) rows.push(mapRecord(record))
+    offset = data.offset || null
+  } while (offset)
   const em = String(managerEmail || '').trim().toLowerCase()
   const props = (propertyNames || []).map((p) => String(p).trim().toLowerCase()).filter(Boolean)
   return rows.filter((r) => {
@@ -1868,6 +1915,51 @@ async function fetchSchedulingForManagerScope({ managerEmail, propertyNames }) {
     if (!prop || !props.length) return false
     return props.some((pn) => prop === pn || prop.includes(pn) || pn.includes(prop))
   })
+}
+
+function workOrderScheduledMeta(record) {
+  const meta = parseWorkOrderMetaBlock(record?.['Management Notes'] || '')
+  const scheduledRaw = String(
+    record?.['Scheduled Time'] ||
+      record?.['Schedule Time'] ||
+      record?.['Scheduled For'] ||
+      meta.scheduled ||
+      '',
+  ).trim()
+  if (!scheduledRaw) return null
+  const dateMatch = scheduledRaw.match(/(\d{4}-\d{2}-\d{2})/)
+  const date = dateMatch ? dateMatch[1] : ''
+  if (!date) return null
+  let preferredTime = ''
+  const range = scheduledRaw.match(/(\d{1,2}:\d{2}\s*[AP]M)\s*[-–]\s*(\d{1,2}:\d{2}\s*[AP]M)/i)
+  if (range) {
+    preferredTime = `${range[1].toUpperCase()} - ${range[2].toUpperCase()}`
+  }
+  return { date, preferredTime }
+}
+
+function workOrdersToCalendarRows(workOrders, allowedPropertyNamesLower) {
+  const rows = []
+  for (const workOrder of workOrders || []) {
+    const scheduled = workOrderScheduledMeta(workOrder)
+    if (!scheduled) continue
+    const property = String(workOrder.Property || workOrder.House || '').trim()
+    const lowerProperty = property.toLowerCase()
+    if (allowedPropertyNamesLower?.size && lowerProperty && !allowedPropertyNamesLower.has(lowerProperty)) {
+      continue
+    }
+    rows.push({
+      id: `wo:${workOrder.id}`,
+      Type: 'Work Order',
+      Name: String(workOrder.Title || 'Work order').trim(),
+      Property: property,
+      Status: String(workOrder.Status || '').trim(),
+      'Preferred Date': scheduled.date,
+      'Preferred Time': scheduled.preferredTime,
+      _workOrder: workOrder,
+    })
+  }
+  return rows
 }
 
 async function patchSchedulingRecord(recordId, fields) {
@@ -2512,47 +2604,36 @@ function HouseManagementPanel({ manager, onPropertiesChange }) {
       ),
     [approvedAssigned],
   )
-  const propertySections = useMemo(
-    () => [
-      {
-        key: 'request_change',
-        label: 'Request change',
-        hint: null,
-        rows: changesRequestedAssigned,
-        actions: 'edits_requested',
-        cardClass: 'rounded-2xl border border-amber-300/90 bg-amber-50/80 px-4 py-4',
-      },
-      {
-        key: 'listed',
-        label: 'Listed on public site',
-        hint: null,
-        rows: listedAssigned,
-        actions: 'listing',
-        marketingListed: true,
-        cardClass: 'rounded-2xl border border-slate-100 bg-slate-50 px-4 py-4',
-      },
-      {
-        key: 'unlisted',
-        label: 'Unlisted',
-        hint: null,
-        rows: unlistedAssigned,
-        actions: 'listing',
-        marketingListed: false,
-        cardClass: 'rounded-2xl border border-violet-200/80 bg-violet-50/50 px-4 py-4',
-      },
-    ],
-    [changesRequestedAssigned, listedAssigned, unlistedAssigned],
-  )
   const managedPropertyCount =
     pendingAssigned.length +
     changesRequestedAssigned.length +
     listedAssigned.length +
     unlistedAssigned.length +
     rejectedAssigned.length
-  const activeSection = useMemo(
-    () => propertySections.find((s) => s.key === propertiesSection) || null,
-    [propertySections, propertiesSection],
-  )
+  /** Rows for the selected property tab (unified card UI for all of these). */
+  const managerPropertyTabRows = useMemo(() => {
+    switch (propertiesSection) {
+      case 'pending':
+        return pendingAssigned
+      case 'rejected':
+        return rejectedAssigned
+      case 'request_change':
+        return changesRequestedAssigned
+      case 'listed':
+        return listedAssigned
+      case 'unlisted':
+        return unlistedAssigned
+      default:
+        return null
+    }
+  }, [
+    propertiesSection,
+    pendingAssigned,
+    rejectedAssigned,
+    changesRequestedAssigned,
+    listedAssigned,
+    unlistedAssigned,
+  ])
 
   async function handleSaveTourHours(property) {
     setSaving(true)
@@ -2609,6 +2690,54 @@ function HouseManagementPanel({ manager, onPropertiesChange }) {
       toast.error('Could not save property: ' + err.message)
     } finally {
       setSaving(false)
+    }
+  }
+
+  const MANAGER_PROPERTY_CARD_SHELL =
+    'rounded-[28px] border border-slate-200 bg-white p-5 shadow-[0_8px_28px_rgba(15,23,42,0.06)]'
+
+  function beginEditListing(property) {
+    const rc = clampInt(property['Room Count'] ?? 1, 1, MAX_ROOM_SLOTS)
+    setEditingPropertyId(property.id)
+    setDetailsPropertyId(null)
+    setTourForm({
+      propertyName: String(property['Property Name'] ?? property.Name ?? ''),
+      address: String(property.Address ?? ''),
+      propertyType: String(property['Property Type'] ?? ''),
+      pets: String(property.Pets ?? ''),
+      amenities: Array.isArray(property.Amenities) ? [...property.Amenities] : (property.Amenities ? [property.Amenities] : []),
+      securityDeposit: String(property['Security Deposit'] ?? ''),
+      utilitiesFee: String(property['Utilities Fee'] ?? ''),
+      applicationFee: String(property['Application Fee'] ?? ''),
+      otherInfo: String(property['Other Info'] ?? ''),
+      roomCount: rc,
+      rooms: Array.from({ length: rc }, (_, i) => {
+        const n = i + 1
+        const avail = property[`Room ${n} Availability`]
+        return {
+          rent: String(property[`Room ${n} Rent`] ?? property[`Room ${n} for Rent`] ?? ''),
+          availability: avail ? String(avail).slice(0, 10) : '',
+          furnished: String(property[`Room ${n} Furnished`] ?? ''),
+          utilitiesCost: String(property[`Room ${n} Utilities Cost`] ?? ''),
+        }
+      }),
+    })
+  }
+
+  function managerPropertyStatusPill(section) {
+    switch (section) {
+      case 'pending':
+        return { label: 'Pending review', className: 'bg-amber-100 text-amber-900' }
+      case 'rejected':
+        return { label: 'Rejected', className: 'bg-red-100 text-red-800' }
+      case 'request_change':
+        return { label: 'Needs edits', className: 'bg-violet-100 text-violet-900' }
+      case 'listed':
+        return { label: 'Live', className: 'bg-emerald-100 text-emerald-800' }
+      case 'unlisted':
+        return { label: 'Hidden', className: 'bg-violet-100 text-violet-800' }
+      default:
+        return { label: 'Property', className: 'bg-slate-100 text-slate-700' }
     }
   }
 
@@ -2949,116 +3078,14 @@ function HouseManagementPanel({ manager, onPropertiesChange }) {
               ))}
             </div>
 
-            {propertiesSection === 'pending' && pendingAssigned.length ? null : null}
-            {propertiesSection === 'pending' ? (
-              pendingAssigned.length ? (
-              <div className="grid gap-4 lg:grid-cols-2">
-                {pendingAssigned.map((property) => (
-                  <div key={property.id} className="rounded-[28px] border border-amber-200 bg-[linear-gradient(180deg,rgba(255,251,235,0.96),rgba(255,247,237,0.9))] p-5 shadow-sm">
-                    <div className="flex items-start justify-between gap-3">
-                      <div>
-                        <div className="text-lg font-black text-slate-900">{propertyRecordName(property) || 'Untitled house'}</div>
-                        <div className="mt-1 text-sm text-slate-600">{property.Address || 'Address not set'}</div>
-                      </div>
-                      <span className="rounded-full bg-amber-200/90 px-3 py-1 text-[11px] font-bold uppercase tracking-[0.12em] text-amber-950">
-                        Pending review
-                      </span>
-                    </div>
-                    <div className="mt-4 flex flex-wrap gap-2 text-xs text-slate-600">
-                      {property['Property Type'] ? <span className="rounded-full border border-amber-200 bg-white/80 px-3 py-1 font-semibold">{property['Property Type']}</span> : null}
-                      {property['Room Count'] ? <span className="rounded-full border border-amber-200 bg-white/80 px-3 py-1 font-semibold">{property['Room Count']} rooms</span> : null}
-                    </div>
-                    <div className="mt-5 flex justify-end">
-                      <button
-                        type="button"
-                        disabled={deletingPropertyId === property.id || isManagerInternalPreview(manager)}
-                        onClick={async () => {
-                          if (!window.confirm(`Delete "${propertyRecordName(property) || 'this property'}"? This cannot be undone.`)) return
-                          setDeletingPropertyId(property.id)
-                          try {
-                            await deletePropertyAdmin(property.id)
-                            toast.success('Property deleted')
-                            await loadProperties()
-                          } catch (err) {
-                            toast.error(err.message || 'Delete failed')
-                          } finally {
-                            setDeletingPropertyId(null)
-                          }
-                        }}
-                        className="rounded-2xl border border-red-200 bg-white px-4 py-2 text-sm font-semibold text-red-700 hover:bg-red-50 disabled:opacity-40"
-                      >
-                        {deletingPropertyId === property.id ? 'Deleting…' : 'Delete'}
-                      </button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-              ) : (
-                <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50/80 px-6 py-10 text-center">
-                  <div className="mb-3 text-4xl" aria-hidden>🏠</div>
-                  <p className="text-sm font-semibold text-slate-800">No properties yet</p>
-                </div>
-              )
-            ) : null}
-
-            {propertiesSection === 'rejected' ? (
-              rejectedAssigned.length ? (
-              <div className="grid gap-4 lg:grid-cols-2">
-                {rejectedAssigned.map((property) => (
-                  <div key={property.id} className="rounded-[28px] border border-red-200 bg-[linear-gradient(180deg,rgba(254,242,242,0.96),rgba(255,245,245,0.92))] p-5 shadow-sm">
-                    <div className="flex items-start justify-between gap-3">
-                      <div>
-                        <div className="text-lg font-black text-slate-900">{propertyRecordName(property) || 'Untitled house'}</div>
-                        <div className="mt-1 text-sm text-slate-600">{property.Address || 'Address not set'}</div>
-                      </div>
-                      <span className="rounded-full bg-red-200/90 px-3 py-1 text-[11px] font-bold uppercase tracking-[0.12em] text-red-950">
-                        Rejected
-                      </span>
-                    </div>
-                    <div className="mt-4 flex flex-wrap gap-2 text-xs text-slate-600">
-                      {property['Property Type'] ? <span className="rounded-full border border-red-200 bg-white/80 px-3 py-1 font-semibold">{property['Property Type']}</span> : null}
-                      {property['Room Count'] ? <span className="rounded-full border border-red-200 bg-white/80 px-3 py-1 font-semibold">{property['Room Count']} rooms</span> : null}
-                    </div>
-                    <div className="mt-5 flex justify-end">
-                      <button
-                        type="button"
-                        disabled={deletingPropertyId === property.id || isManagerInternalPreview(manager)}
-                        onClick={async () => {
-                          if (!window.confirm(`Delete "${propertyRecordName(property) || 'this property'}"? This cannot be undone.`)) return
-                          setDeletingPropertyId(property.id)
-                          try {
-                            await deletePropertyAdmin(property.id)
-                            toast.success('Property deleted')
-                            await loadProperties()
-                          } catch (err) {
-                            toast.error(err.message || 'Delete failed')
-                          } finally {
-                            setDeletingPropertyId(null)
-                          }
-                        }}
-                        className="rounded-2xl border border-red-200 bg-white px-4 py-2 text-sm font-semibold text-red-700 hover:bg-red-50 disabled:opacity-40"
-                      >
-                        {deletingPropertyId === property.id ? 'Deleting…' : 'Delete'}
-                      </button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-              ) : (
-                <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50/80 px-6 py-10 text-center">
-                  <div className="mb-3 text-4xl" aria-hidden>🏠</div>
-                  <p className="text-sm font-semibold text-slate-800">No properties yet</p>
-                </div>
-              )
-            ) : null}
-
-            {activeSection && ['listed', 'unlisted', 'request_change'].includes(propertiesSection) ? (
-              <React.Fragment key={activeSection.key}>
-                {activeSection.rows.length ? (
+            {managerPropertyTabRows != null ? (
+              managerPropertyTabRows.length ? (
                 <div className="grid gap-4 xl:grid-cols-2">
-                {activeSection.rows.map((property) => (
-              <div key={property.id} className={`${activeSection.cardClass} rounded-[28px] p-5 shadow-sm`}>
-                {activeSection.actions === 'edits_requested' && property[PROPERTY_EDIT_REQUEST_FIELD] ? (
+                  {managerPropertyTabRows.map((property) => {
+                    const statusPill = managerPropertyStatusPill(propertiesSection)
+                    return (
+              <div key={property.id} className={MANAGER_PROPERTY_CARD_SHELL}>
+                {propertiesSection === 'request_change' && property[PROPERTY_EDIT_REQUEST_FIELD] ? (
                   <div className="mb-3 rounded-xl border border-violet-200 bg-violet-50 px-3 py-2 text-sm text-violet-950">
                     <div className="text-[11px] font-bold uppercase tracking-[0.14em] text-violet-800">From Axis — please update</div>
                     <p className="mt-1 whitespace-pre-wrap">{property[PROPERTY_EDIT_REQUEST_FIELD]}</p>
@@ -3074,18 +3101,8 @@ function HouseManagementPanel({ manager, onPropertiesChange }) {
                         <div className="text-xl font-black tracking-tight text-slate-900">{propertyRecordName(property) || 'Untitled house'}</div>
                         <div className="mt-1 text-sm text-slate-500">{property.Address || 'Address not set'}</div>
                       </div>
-                      <span className={`rounded-full px-3 py-1 text-[11px] font-bold uppercase tracking-[0.12em] ${
-                        propertiesSection === 'listed'
-                          ? 'bg-emerald-100 text-emerald-800'
-                          : propertiesSection === 'unlisted'
-                            ? 'bg-violet-100 text-violet-800'
-                            : 'bg-amber-100 text-amber-900'
-                      }`}>
-                        {propertiesSection === 'listed'
-                          ? 'Live'
-                          : propertiesSection === 'unlisted'
-                            ? 'Hidden'
-                            : 'Needs edits'}
+                      <span className={`rounded-full px-3 py-1 text-[11px] font-bold uppercase tracking-[0.12em] ${statusPill.className}`}>
+                        {statusPill.label}
                       </span>
                     </div>
                     <div className="mt-4 flex flex-wrap gap-2 text-sm text-slate-600">
@@ -3095,8 +3112,8 @@ function HouseManagementPanel({ manager, onPropertiesChange }) {
                       {property['Application Fee'] ? <span className="rounded-full border border-slate-200 bg-white/90 px-3 py-1 font-semibold">App fee ${property['Application Fee']}</span> : null}
                     </div>
                   </div>
-                  <div className="flex shrink-0 flex-wrap items-start justify-end gap-2 xl:max-w-[210px] xl:flex-col xl:items-stretch">
-                    {activeSection.actions === 'listing' && activeSection.marketingListed ? (
+                  <div className="flex w-full shrink-0 flex-wrap items-stretch justify-end gap-2 sm:justify-end xl:w-[220px] xl:flex-col">
+                    {propertiesSection === 'listed' ? (
                       <button
                         type="button"
                         disabled={
@@ -3114,7 +3131,10 @@ function HouseManagementPanel({ manager, onPropertiesChange }) {
                           }
                           setListingBusyPropertyId(property.id)
                           try {
-                            await updatePropertyAdmin(property.id, { Listed: false })
+                            await updatePropertyAdmin(
+                              property.id,
+                              buildManagerListingPatch(property, false),
+                            )
                             toast.success('Property unlisted')
                             await loadProperties()
                           } catch (err) {
@@ -3126,11 +3146,11 @@ function HouseManagementPanel({ manager, onPropertiesChange }) {
                             setListingBusyPropertyId(null)
                           }
                         }}
-                        className="rounded-2xl border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-800 hover:bg-slate-100 disabled:opacity-40"
+                        className="w-full rounded-2xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-800 hover:bg-slate-100 disabled:opacity-40 xl:w-auto"
                       >
                         {listingBusyPropertyId === property.id ? 'Saving…' : 'Unlist'}
                       </button>
-                    ) : activeSection.actions === 'listing' ? (
+                    ) : propertiesSection === 'unlisted' ? (
                       <button
                         type="button"
                         disabled={
@@ -3141,7 +3161,10 @@ function HouseManagementPanel({ manager, onPropertiesChange }) {
                         onClick={async () => {
                           setListingBusyPropertyId(property.id)
                           try {
-                            await updatePropertyAdmin(property.id, { Listed: true })
+                            await updatePropertyAdmin(
+                              property.id,
+                              buildManagerListingPatch(property, true),
+                            )
                             toast.success('Property listed on the site again')
                             await loadProperties()
                           } catch (err) {
@@ -3153,7 +3176,7 @@ function HouseManagementPanel({ manager, onPropertiesChange }) {
                             setListingBusyPropertyId(null)
                           }
                         }}
-                        className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-2 text-sm font-semibold text-emerald-800 hover:bg-emerald-100 disabled:opacity-40"
+                        className="w-full rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-2.5 text-sm font-semibold text-emerald-800 hover:bg-emerald-100 disabled:opacity-40 xl:w-auto"
                       >
                         {listingBusyPropertyId === property.id ? 'Saving…' : 'Relist'}
                       </button>
@@ -3174,7 +3197,7 @@ function HouseManagementPanel({ manager, onPropertiesChange }) {
                           setDeletingPropertyId(null)
                         }
                       }}
-                      className="rounded-2xl border border-red-200 bg-red-50 px-4 py-2 text-sm font-semibold text-red-700 hover:bg-red-100 disabled:opacity-40"
+                      className="w-full rounded-2xl border border-red-200 bg-red-50 px-4 py-2.5 text-sm font-semibold text-red-700 hover:bg-red-100 disabled:opacity-40 xl:w-auto"
                     >
                       {deletingPropertyId === property.id ? 'Deleting…' : 'Delete'}
                     </button>
@@ -3560,58 +3583,36 @@ function HouseManagementPanel({ manager, onPropertiesChange }) {
                       </button>
                     </div>
                   </div>
-                ) : (<div className="mt-5 flex flex-wrap gap-2 border-t border-slate-200/80 pt-4"><button
-                    type="button"
-                    onClick={() => {
-                      const rc = clampInt(property['Room Count'] ?? 1, 1, MAX_ROOM_SLOTS)
-                      setEditingPropertyId(property.id)
-                      setDetailsPropertyId(null)
-                      setTourForm({
-                        propertyName: String(property['Property Name'] ?? property.Name ?? ''),
-                        address: String(property.Address ?? ''),
-                        propertyType: String(property['Property Type'] ?? ''),
-                        pets: String(property.Pets ?? ''),
-                        amenities: Array.isArray(property.Amenities) ? [...property.Amenities] : (property.Amenities ? [property.Amenities] : []),
-                        securityDeposit: String(property['Security Deposit'] ?? ''),
-                        utilitiesFee: String(property['Utilities Fee'] ?? ''),
-                        applicationFee: String(property['Application Fee'] ?? ''),
-                        otherInfo: String(property['Other Info'] ?? ''),
-                        roomCount: rc,
-                        rooms: Array.from({ length: rc }, (_, i) => {
-                          const n = i + 1
-                          const avail = property[`Room ${n} Availability`]
-                          return {
-                            rent: String(property[`Room ${n} Rent`] ?? property[`Room ${n} for Rent`] ?? ''),
-                            availability: avail ? String(avail).slice(0, 10) : '',
-                            furnished: String(property[`Room ${n} Furnished`] ?? ''),
-                            utilitiesCost: String(property[`Room ${n} Utilities Cost`] ?? ''),
-                          }
-                        }),
-                      })
-                    }}
-                    className="rounded-2xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
-                  >
-                    Edit listing
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setDetailsPropertyId(detailsPropertyId === property.id ? null : property.id)}
-                    className="rounded-2xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
-                  >
-                    {detailsPropertyId === property.id ? "Hide details" : "Details"}
-                  </button>
+                ) : (
+                  <div className="mt-5 flex flex-wrap gap-2 border-t border-slate-200 pt-4">
+                    {propertiesSection !== 'rejected' ? (
+                      <button
+                        type="button"
+                        onClick={() => beginEditListing(property)}
+                        className="rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+                      >
+                        Edit listing
+                      </button>
+                    ) : null}
+                    <button
+                      type="button"
+                      onClick={() => setDetailsPropertyId(detailsPropertyId === property.id ? null : property.id)}
+                      className="rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+                    >
+                      {detailsPropertyId === property.id ? 'Hide details' : 'Details'}
+                    </button>
                   </div>
                 )}
               </div>
-                ))}
+                    )
+                  })}
                 </div>
-                ) : (
-                  <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50/80 px-6 py-10 text-center">
-                    <div className="mb-3 text-4xl" aria-hidden>🏠</div>
-                    <p className="text-sm font-semibold text-slate-800">No properties yet</p>
-                  </div>
-                )}
-              </React.Fragment>
+              ) : (
+                <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50/80 px-6 py-10 text-center">
+                  <div className="mb-3 text-4xl" aria-hidden>🏠</div>
+                  <p className="text-sm font-semibold text-slate-800">No properties in this view</p>
+                </div>
+              )
             ) : null}
           </div>
         )}
@@ -5201,7 +5202,7 @@ function WorkOrdersTabPanel({ allowedPropertyNames }) {
         </div>
       ) : null}
 
-      <div className="mb-4 inline-flex flex-wrap gap-1 rounded-2xl border border-slate-200 bg-slate-50 p-1">
+      <div className="mb-5 grid gap-2 rounded-[28px] border border-slate-200 bg-slate-50 p-2 sm:grid-cols-2 xl:grid-cols-4">
         {[
           ['all', 'All', list.length],
           ['open', 'Open', woBucketCounts.open],
@@ -5212,13 +5213,14 @@ function WorkOrdersTabPanel({ allowedPropertyNames }) {
             key={key}
             type="button"
             onClick={() => setQuickFilter(key)}
-            className={classNames(
-              'rounded-xl px-4 py-2 text-sm font-semibold transition',
-              quickFilter === key ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-600 hover:text-slate-900',
-            )}
+            className={`rounded-2xl border px-4 py-3 text-left transition ${
+              quickFilter === key
+                ? 'border-[#2563eb]/30 bg-white text-slate-900 shadow-[0_10px_24px_rgba(37,99,235,0.14)]'
+                : 'border-transparent text-slate-600 hover:border-slate-200 hover:bg-white/70 hover:text-slate-900'
+            }`}
           >
-            {label}
-            <span className="ml-1.5 tabular-nums text-slate-500">({count})</span>
+            <div className="text-lg font-black leading-none tabular-nums text-slate-900">{count}</div>
+            <div className="mt-1 text-sm font-semibold">{label}</div>
           </button>
         ))}
       </div>
@@ -5668,7 +5670,7 @@ function ManagerPaymentsPanel({ allowedPropertyNames }) {
         </div>
       ) : null}
 
-      <div className="mb-4 inline-flex flex-wrap gap-1 rounded-2xl border border-slate-200 bg-slate-50 p-1">
+      <div className="mb-5 grid gap-2 rounded-[28px] border border-slate-200 bg-slate-50 p-2 sm:grid-cols-2 xl:grid-cols-4">
         {[
           ['all', 'All', paymentRows.length],
           ['overdue', 'Overdue', overdueLineCount],
@@ -5679,13 +5681,14 @@ function ManagerPaymentsPanel({ allowedPropertyNames }) {
             key={key}
             type="button"
             onClick={() => setFilter(key)}
-            className={classNames(
-              'rounded-xl px-4 py-2 text-sm font-semibold transition',
-              filter === key ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-600 hover:text-slate-900',
-            )}
+            className={`rounded-2xl border px-4 py-3 text-left transition ${
+              filter === key
+                ? 'border-[#2563eb]/30 bg-white text-slate-900 shadow-[0_10px_24px_rgba(37,99,235,0.14)]'
+                : 'border-transparent text-slate-600 hover:border-slate-200 hover:bg-white/70 hover:text-slate-900'
+            }`}
           >
-            {label}
-            <span className="ml-1.5 tabular-nums text-slate-500">({count})</span>
+            <div className="text-lg font-black leading-none tabular-nums text-slate-900">{count}</div>
+            <div className="mt-1 text-sm font-semibold">{label}</div>
           </button>
         ))}
       </div>
@@ -6081,7 +6084,7 @@ function ApplicationsPanel({ allowedPropertyNames, manager }) {
         </div>
       </div>
 
-      <div className="mb-4 inline-flex flex-wrap gap-1 rounded-2xl border border-slate-200 bg-slate-50 p-1">
+      <div className="mb-5 grid gap-2 rounded-[28px] border border-slate-200 bg-slate-50 p-2 sm:grid-cols-2 xl:grid-cols-4">
         {[
           ['all', 'All', propertyFilteredRows.length],
           ['pending', 'Pending', propertyFilteredRows.filter((a) => deriveApplicationApprovalState(a) === 'pending').length],
@@ -6092,13 +6095,14 @@ function ApplicationsPanel({ allowedPropertyNames, manager }) {
             key={key}
             type="button"
             onClick={() => { setStatusFilter(key); setDetailAppId(null) }}
-            className={classNames(
-              'rounded-xl px-4 py-2 text-sm font-semibold transition',
-              statusFilter === key ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-600 hover:text-slate-900',
-            )}
+            className={`rounded-2xl border px-4 py-3 text-left transition ${
+              statusFilter === key
+                ? 'border-[#2563eb]/30 bg-white text-slate-900 shadow-[0_10px_24px_rgba(37,99,235,0.14)]'
+                : 'border-transparent text-slate-600 hover:border-slate-200 hover:bg-white/70 hover:text-slate-900'
+            }`}
           >
-            {label}
-            <span className="ml-1.5 tabular-nums text-slate-500">({count})</span>
+            <div className="text-lg font-black leading-none tabular-nums text-slate-900">{count}</div>
+            <div className="mt-1 text-sm font-semibold">{label}</div>
           </button>
         ))}
       </div>
@@ -6288,16 +6292,21 @@ function CalendarTabPanel({ manager, allowedPropertyNames }) {
   const load = useCallback(async () => {
     setLoading(true)
     try {
-      const [sched, props] = await Promise.all([
+      const [sched, props, workOrders] = await Promise.all([
         fetchSchedulingForManagerScope({ managerEmail: manager?.email, propertyNames: allowedPropertyNames || [] }),
         fetchPropertiesAdmin(),
+        getAllWorkOrders().catch(() => []),
       ])
-      setSchedulingRows(sched)
+      const allowedLower = new Set(
+        (allowedPropertyNames || []).map((name) => String(name).trim().toLowerCase()).filter(Boolean),
+      )
+      const workOrderRows = workOrdersToCalendarRows(workOrders, allowedLower)
+      setSchedulingRows([...sched, ...workOrderRows])
       setProperties(props)
       const approvedAssigned = props.filter((p) => propertyAssignedToManager(p, manager) && isPropertyRecordApproved(p))
       const byProperty = {}
       approvedAssigned.forEach((property) => {
-        const text = extractNoteValue(property.Notes, 'Tour Availability') || ''
+        const text = extractMultilineNoteValue(property.Notes, 'Tour Availability') || ''
         byProperty[property.id] = text ? weeklyFreeArraysFromTourText(text) : emptyWeeklyFreeArrays()
       })
       setWeeklyFreeByProperty(byProperty)
@@ -6315,12 +6324,13 @@ function CalendarTabPanel({ manager, allowedPropertyNames }) {
   useEffect(() => { load() }, [load])
 
   const bookedByDate = useMemo(() => {
+    const events = (schedulingRows || []).map((row) => eventFromSchedulingRow(row))
     const m = new Map()
-    for (const r of schedulingRows) {
-      const d = String(r['Preferred Date'] || '').trim().slice(0, 10)
+    for (const ev of events) {
+      const d = String(ev.dateKey || '').trim()
       if (!d) continue
       if (!m.has(d)) m.set(d, [])
-      m.get(d).push(r)
+      m.get(d).push(ev.source)
     }
     return m
   }, [schedulingRows])
@@ -6413,6 +6423,26 @@ function CalendarTabPanel({ manager, allowedPropertyNames }) {
     })
   }
 
+  const calendarStats = useMemo(() => {
+    const today = new Date()
+    const todayStr = dateKeyFromDate(today)
+    const weekStart = startOfWeekSunday(today)
+    let weekCount = 0
+    for (let i = 0; i < 7; i++) {
+      const d = new Date(weekStart)
+      d.setDate(d.getDate() + i)
+      weekCount += bookedByDate.get(dateKeyFromDate(d))?.length || 0
+    }
+    const monthStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`
+    const monthCount = schedulingRows.filter((r) => String(r['Preferred Date'] || '').trim().slice(0, 7) === monthStr).length
+    return {
+      today: bookedByDate.get(todayStr)?.length || 0,
+      week: weekCount,
+      month: monthCount,
+      total: schedulingRows.length,
+    }
+  }, [schedulingRows, bookedByDate])
+
   return (
     <div className="mb-10">
       <div className="mb-5 flex flex-wrap items-center gap-3">
@@ -6444,6 +6474,31 @@ function CalendarTabPanel({ manager, allowedPropertyNames }) {
             {loading ? 'Loading…' : 'Refresh'}
           </button>
         </div>
+      </div>
+
+      <div className="mb-5 grid gap-2 rounded-[28px] border border-slate-200 bg-slate-50 p-2 sm:grid-cols-2 xl:grid-cols-4">
+        {([
+          ['day', 'Today', calendarStats.today],
+          ['week', 'This week', calendarStats.week],
+          ['month', 'This month', calendarStats.month],
+          [null, 'Total booked', calendarStats.total],
+        ]).map(([viewKey, label, count]) => (
+          <button
+            key={label}
+            type="button"
+            onClick={viewKey ? () => setView(viewKey) : undefined}
+            className={`rounded-2xl border px-4 py-3 text-left transition ${
+              viewKey && view === viewKey
+                ? 'border-[#2563eb]/30 bg-white text-slate-900 shadow-[0_10px_24px_rgba(37,99,235,0.14)]'
+                : viewKey
+                  ? 'border-transparent text-slate-600 hover:border-slate-200 hover:bg-white/70 hover:text-slate-900'
+                  : 'border-transparent cursor-default text-slate-600'
+            }`}
+          >
+            <div className="text-lg font-black leading-none tabular-nums text-slate-900">{count}</div>
+            <div className="mt-1 text-sm font-semibold">{label}</div>
+          </button>
+        ))}
       </div>
 
       <div className="mb-5">
@@ -6846,19 +6901,20 @@ function ManagerDashboard({ manager: managerProp, openDraftId, onOpenDraft, onCl
           </div>
         </div>
 
-        <div className="mb-4 inline-flex flex-wrap gap-1 rounded-2xl border border-slate-200 bg-slate-50 p-1">
+        <div className="mb-5 grid gap-2 rounded-[28px] border border-slate-200 bg-slate-50 p-2 sm:grid-cols-2 xl:grid-cols-4">
           {leaseFilterItems.map(({ id, label, value }) => (
             <button
               key={id}
               type="button"
               onClick={() => { setLeaseFilterCardId(id) }}
-              className={classNames(
-                'rounded-xl px-4 py-2 text-sm font-semibold transition',
-                leaseFilterCardId === id ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-600 hover:text-slate-900',
-              )}
+              className={`rounded-2xl border px-4 py-3 text-left transition ${
+                leaseFilterCardId === id
+                  ? 'border-[#2563eb]/30 bg-white text-slate-900 shadow-[0_10px_24px_rgba(37,99,235,0.14)]'
+                  : 'border-transparent text-slate-600 hover:border-slate-200 hover:bg-white/70 hover:text-slate-900'
+              }`}
             >
-              {label}
-              <span className="ml-1.5 tabular-nums text-slate-500">({value})</span>
+              <div className="text-lg font-black leading-none tabular-nums text-slate-900">{value}</div>
+              <div className="mt-1 text-sm font-semibold">{label}</div>
             </button>
           ))}
         </div>

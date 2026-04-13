@@ -3,7 +3,8 @@ import ConversationListItem from './ConversationListItem'
 
 const STATUS_TABS = [
   ['all', 'All'],
-  ['unread', 'Unread'],
+  /** Must match parent `sectionFilter` values (`unopened`, not `unread`). */
+  ['unopened', 'Unread'],
   ['trash', 'Trash'],
 ]
 
@@ -37,7 +38,7 @@ export default function ConversationList({
           type="search"
           value={searchQuery}
           onChange={(e) => onSearchChange(e.target.value)}
-          placeholder="Search…"
+          placeholder="Search..."
           autoComplete="off"
           className="w-full rounded-2xl border border-slate-200 bg-slate-50/80 px-3.5 py-2.5 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-[#2563eb] focus:bg-white focus:ring-2 focus:ring-[#2563eb]/15"
         />

@@ -921,7 +921,7 @@ function WorkOrdersPanel({ resident, requests: requestsProp, onRequestCreated, o
         ) : null}
       </div>
 
-      <div className="mb-4 inline-flex flex-wrap gap-1 rounded-2xl border border-slate-200 bg-slate-50 p-1">
+      <div className="mb-5 grid gap-2 rounded-[28px] border border-slate-200 bg-slate-50 p-2 sm:grid-cols-2 xl:grid-cols-4">
         {[
           ['all', 'All', requests.length],
           ['open', 'Open', woBucketCounts.open],
@@ -932,13 +932,14 @@ function WorkOrdersPanel({ resident, requests: requestsProp, onRequestCreated, o
             key={key}
             type="button"
             onClick={() => setWoFilter(key)}
-            className={classNames(
-              'rounded-xl px-4 py-2 text-sm font-semibold transition',
-              woFilter === key ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-600 hover:text-slate-900',
-            )}
+            className={`rounded-2xl border px-4 py-3 text-left transition ${
+              woFilter === key
+                ? 'border-[#2563eb]/30 bg-white text-slate-900 shadow-[0_10px_24px_rgba(37,99,235,0.14)]'
+                : 'border-transparent text-slate-600 hover:border-slate-200 hover:bg-white/70 hover:text-slate-900'
+            }`}
           >
-            {label}
-            <span className="ml-1.5 tabular-nums text-slate-500">({count})</span>
+            <div className="text-lg font-black leading-none tabular-nums text-slate-900">{count}</div>
+            <div className="mt-1 text-sm font-semibold">{label}</div>
           </button>
         ))}
       </div>
@@ -1278,10 +1279,6 @@ function ProfilePanel({ resident, onUpdated }) {
       <section className="rounded-3xl border border-slate-200 bg-white p-6">
         <h2 className="text-lg font-black text-slate-900">Your home & lease</h2>
         <div className="mt-6 grid gap-3 sm:grid-cols-2">
-          <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4">
-            <div className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-400">Property</div>
-            <div className="mt-2 text-sm font-semibold text-slate-900">{resident.House || '—'}</div>
-          </div>
           <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4">
             <div className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-400">Unit</div>
             <div className="mt-2 text-sm font-semibold text-slate-900">{normalizeUnitLabel(resident['Unit Number'] || '') || '—'}</div>
@@ -1751,7 +1748,7 @@ function PaymentsPanel({ resident, onResidentUpdated, highlightCategory, onPayme
         </button>
       </div>
 
-      <div className="mb-4 inline-flex flex-wrap gap-1 rounded-2xl border border-slate-200 bg-slate-50 p-1">
+      <div className="mb-5 grid gap-2 rounded-[28px] border border-slate-200 bg-slate-50 p-2 sm:grid-cols-2 xl:grid-cols-4">
         {[
           ['all', 'All activity', sortedPayments.length],
           ['pending', 'Due or upcoming', unpaidRentPayments.length],
@@ -1762,13 +1759,14 @@ function PaymentsPanel({ resident, onResidentUpdated, highlightCategory, onPayme
             key={key}
             type="button"
             onClick={() => setPayFilter(key)}
-            className={classNames(
-              'rounded-xl px-4 py-2 text-sm font-semibold transition',
-              payFilter === key ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-600 hover:text-slate-900',
-            )}
+            className={`rounded-2xl border px-4 py-3 text-left transition ${
+              payFilter === key
+                ? 'border-[#2563eb]/30 bg-white text-slate-900 shadow-[0_10px_24px_rgba(37,99,235,0.14)]'
+                : 'border-transparent text-slate-600 hover:border-slate-200 hover:bg-white/70 hover:text-slate-900'
+            }`}
           >
-            {label}
-            <span className="ml-1.5 tabular-nums text-slate-500">({count})</span>
+            <div className="text-lg font-black leading-none tabular-nums text-slate-900">{count}</div>
+            <div className="mt-1 text-sm font-semibold">{label}</div>
           </button>
         ))}
       </div>
@@ -1781,47 +1779,6 @@ function PaymentsPanel({ resident, onResidentUpdated, highlightCategory, onPayme
               Payment history could not be loaded right now. Try refreshing
             </div>
           ) : null}
-
-          <div className="rounded-3xl border border-slate-200 bg-[linear-gradient(135deg,#ffffff_0%,#f8fbff_100%)] p-6 sm:p-7">
-            <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
-              <div>
-                <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">Rent due</div>
-                <div className="mt-3 text-4xl font-black tracking-tight text-slate-900">
-                  {effectiveCurrentDue ? formatMoney(currentDuePayment ? currentAmountDue : effectiveCurrentDue.Amount) : '$0'}
-                </div>
-                {effectiveCurrentDueDate ? (
-                  <div className="mt-2 text-lg font-bold text-slate-900">
-                    Due {formatDate(effectiveCurrentDueDate)}
-                  </div>
-                ) : (
-                  <div className="mt-2 text-lg font-semibold text-slate-500">No due date on file</div>
-                )}
-                <div className="mt-1 text-sm leading-6 text-slate-500">
-                  {effectiveCurrentDue ? 'This is your current rent balance on record' : 'No rent charge is on file right now'}
-                </div>
-                <div className="mt-3">
-                  <PortalOpsStatusBadge tone={paymentToneForStatus(currentStatus)}>
-                    {currentStatus}
-                  </PortalOpsStatusBadge>
-                </div>
-              </div>
-              <div className="flex flex-wrap gap-3">
-                <button
-                  type="button"
-                  disabled={!effectiveCurrentDue || actionLoading === 'rent'}
-                  onClick={() => launchCheckout({
-                    amount: Number(currentDuePayment ? currentAmountDue : effectiveCurrentDue?.Amount || 0),
-                    description: effectiveCurrentDue?.Month ? `Rent payment - ${effectiveCurrentDue.Month}` : 'Rent payment',
-                    category: 'rent',
-                    paymentRecordId: effectiveCurrentDue?.id,
-                  })}
-                  className={classNames(RP_HEADER_BTN_PRIMARY, 'px-6')}
-                >
-                  {actionLoading === 'rent' ? 'Opening...' : 'Pay now'}
-                </button>
-              </div>
-            </div>
-          </div>
 
           {actionError ? (
             <div className="mt-4 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{actionError}</div>
@@ -2017,6 +1974,13 @@ function LeasingPanel({ resident, payments, onOpenPayments }) {
     }
   }
 
+  const leaseSummaryStats = useMemo(() => {
+    const signed = leaseDrafts.filter((d) => String(d.Status || '').trim() === 'Signed').length
+    const active = leaseDrafts.filter((d) => ['Published', 'Active'].includes(String(d.Status || '').trim())).length
+    const pending = leaseDrafts.filter((d) => ['Draft Generated', 'Under Review', 'Changes Needed'].includes(String(d.Status || '').trim())).length
+    return { total: leaseDrafts.length, pending, active, signed }
+  }, [leaseDrafts])
+
   return (
     <div className="mb-10">
       <div className="mb-5 flex flex-wrap items-center gap-3">
@@ -2024,6 +1988,23 @@ function LeasingPanel({ resident, payments, onOpenPayments }) {
         <button type="button" onClick={() => loadLeaseDrafts()} disabled={leaseLoading} className={RP_HEADER_BTN_SECONDARY}>
           {leaseLoading ? 'Refreshing…' : 'Refresh'}
         </button>
+      </div>
+
+      <div className="mb-5 grid gap-2 rounded-[28px] border border-slate-200 bg-slate-50 p-2 sm:grid-cols-2 xl:grid-cols-4">
+        {[
+          ['total', 'Total', leaseSummaryStats.total],
+          ['pending', 'Pending review', leaseSummaryStats.pending],
+          ['active', 'Active', leaseSummaryStats.active],
+          ['signed', 'Signed', leaseSummaryStats.signed],
+        ].map(([key, label, count]) => (
+          <div
+            key={key}
+            className="rounded-2xl border border-transparent px-4 py-3 text-left"
+          >
+            <div className="text-lg font-black leading-none tabular-nums text-slate-900">{count}</div>
+            <div className="mt-1 text-sm font-semibold text-slate-600">{label}</div>
+          </div>
+        ))}
       </div>
 
       <div className="space-y-5 rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">

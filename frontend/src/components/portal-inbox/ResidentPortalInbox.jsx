@@ -27,6 +27,9 @@ import {
   PORTAL_TAB_TOOLBAR_CLS,
   PORTAL_TAB_REFRESH_CLS,
   PORTAL_TAB_PRIMARY_CLS,
+  PORTAL_TAB_SELECT_WRAP_CLS,
+  PORTAL_TAB_SELECT_CLS,
+  PORTAL_TAB_SELECT_CHEVRON_CLS,
 } from '../../lib/portalTabHeader.js'
 import ConversationList from '../manager-inbox/ConversationList'
 import ConversationThread from '../manager-inbox/ConversationThread'
@@ -513,11 +516,14 @@ export default function ResidentPortalInbox({ resident }) {
     )
   }
 
-  const channelTabs = useMemo(() => [
-    ['all', 'Both'],
-    ['manager', 'Manager'],
-    ['admin', 'Admin'],
-  ], [])
+  const channelSelectOptions = useMemo(
+    () => [
+      ['all', 'All'],
+      ['manager', 'Manager'],
+      ['admin', 'Admin'],
+    ],
+    [],
+  )
 
   const listEmptyMessage =
     sectionFilter === 'trash' && inboxSections.trash.length === 0
@@ -550,13 +556,30 @@ export default function ResidentPortalInbox({ resident }) {
           >
             New message
           </button>
+          <div className={PORTAL_TAB_SELECT_WRAP_CLS}>
+            <select
+              value={channelFilter}
+              onChange={(e) => setChannelFilter(e.target.value)}
+              className={PORTAL_TAB_SELECT_CLS}
+              aria-label="Filter conversations"
+            >
+              {channelSelectOptions.map(([value, label]) => (
+                <option key={value} value={value}>
+                  {label}
+                </option>
+              ))}
+            </select>
+            <span className={PORTAL_TAB_SELECT_CHEVRON_CLS} aria-hidden>
+              ▾
+            </span>
+          </div>
           <button type="button" onClick={() => loadAll()} className={PORTAL_TAB_REFRESH_CLS}>
             Refresh
           </button>
         </div>
       </div>
 
-      <div className="flex h-[min(560px,calc(100dvh-10rem))] flex-col overflow-hidden rounded-2xl border border-slate-200 bg-slate-50/80 shadow-sm md:flex-row">
+      <div className="flex h-[min(560px,calc(100dvh-10rem))] flex-col overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm md:flex-row">
         <ConversationList
           loading={loading}
           errorMessage={loadError}
@@ -578,7 +601,7 @@ export default function ResidentPortalInbox({ resident }) {
           }}
           emptyMessage={listEmptyMessage}
           onTrashThread={(stateKey, trashed = true) => moveThreadTrash(stateKey, trashed)}
-          channelTabs={channelTabs}
+          channelTabs={[]}
           channelFilter={channelFilter}
           onChannelFilterChange={setChannelFilter}
         />

@@ -27,6 +27,7 @@ import sendLeaseInvite from '../backend/server/handlers/send-lease-invite.js'
 import signforgeWebhook from '../backend/server/handlers/signforge-webhook.js'
 import softwareTeamMeetings from '../backend/server/handlers/software-team-meetings.js'
 import stripe from '../backend/server/handlers/stripe.js'
+import meeting from '../backend/server/handlers/meeting.js'
 import tour from '../backend/server/handlers/tour.js'
 
 const routes = {
@@ -35,6 +36,7 @@ const routes = {
   portal: portalGateway,
   stripe,
   tour,
+  meeting,
   'software-team-meetings': softwareTeamMeetings,
   'generate-lease-draft': generateLeaseDraft,
   'generate-lease-from-template': generateLeaseFromTemplate,

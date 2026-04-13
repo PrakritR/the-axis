@@ -18,6 +18,8 @@ import {
   isAdminPortalAirtableConfigured,
   loadAdminPortalDataset,
   loadResidentsForAdmin,
+  loadAdminMeetingCalendarProfiles,
+  updateAdminMeetingAvailability,
 } from '../lib/adminPortalAirtable.js'
 import { readJsonResponse } from '../lib/readJsonResponse'
 import { authenticateAdminPortal } from '../lib/adminPortalSignIn'
@@ -54,9 +56,233 @@ const NAV_BASE = [
   { id: 'dashboard', label: 'Dashboard' },
   { id: 'properties', label: 'Properties' },
   { id: 'accounts', label: 'Managers' },
+  { id: 'calendar', label: 'Calendar' },
   { id: 'messages', label: 'Inbox' },
   { id: 'profile', label: 'Profile' },
 ]
+
+const WEEK_DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+
+function parseAvailabilityText(raw) {
+  const out = {}
+  String(raw || '')
+    .split(/\n|;/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .forEach((line) => {
+      const m = line.match(/^(Mon|Tue|Wed|Thu|Fri|Sat|Sun)\s*[:\-]\s*(.+)$/i)
+      if (!m) return
+      const day = m[1].slice(0, 1).toUpperCase() + m[1].slice(1, 3).toLowerCase()
+      out[day] = m[2]
+        .split(',')
+        .map((s) => s.trim())
+        .filter(Boolean)
+    })
+  return out
+}
+
+function displayClockFromMinutes(totalMinutes) {
+  const h24 = Math.floor(totalMinutes / 60)
+  const mins = Math.max(0, totalMinutes % 60)
+  let h12 = h24 % 12
+  if (h12 === 0) h12 = 12
+  const ap = h24 >= 12 ? 'PM' : 'AM'
+  return `${h12}:${String(mins).padStart(2, '0')} ${ap}`
+}
+
+function normalizeTimeRange(value) {
+  const pair = String(value || '').trim().match(/^(\d+)-(\d+)$/)
+  if (pair) {
+    const start = Number(pair[1])
+    const end = Number(pair[2])
+    if (Number.isFinite(start) && Number.isFinite(end) && end > start) {
+      return `${displayClockFromMinutes(start)} - ${displayClockFromMinutes(end)}`
+    }
+  }
+  const parts = String(value || '')
+    .split(/\s*[\-–]\s*/)
+    .map((part) => part.trim())
+    .filter(Boolean)
+  if (parts.length !== 2) return String(value || '').trim()
+  return `${parts[0].toUpperCase()} - ${parts[1].toUpperCase()}`
+}
+
+function AdminCalendarPanel({ user }) {
+  const [loading, setLoading] = useState(true)
+  const [admins, setAdmins] = useState([])
+  const [selectedAdminEmail, setSelectedAdminEmail] = useState('')
+  const [availabilityDraft, setAvailabilityDraft] = useState('')
+  const [saving, setSaving] = useState(false)
+
+  const loadCalendar = useCallback(async () => {
+    setLoading(true)
+    try {
+      const [profiles, meetingResp] = await Promise.all([
+        loadAdminMeetingCalendarProfiles(),
+        fetch('/api/forms?action=meeting').then((r) => r.json()).catch(() => ({ admins: [] })),
+      ])
+      const meetingMap = new Map(
+        (Array.isArray(meetingResp?.admins) ? meetingResp.admins : [])
+          .map((row) => [String(row.email || '').trim().toLowerCase(), row.bookedSlotsByDate || {}]),
+      )
+      const merged = profiles.map((profile) => ({
+        ...profile,
+        bookedSlotsByDate: meetingMap.get(profile.email) || {},
+      }))
+      setAdmins(merged)
+      setSelectedAdminEmail((current) => {
+        if (current && merged.some((row) => row.email === current)) return current
+        const mine = String(user?.email || '').trim().toLowerCase()
+        if (mine && merged.some((row) => row.email === mine)) return mine
+        return merged[0]?.email || ''
+      })
+    } finally {
+      setLoading(false)
+    }
+  }, [user?.email])
+
+  useEffect(() => {
+    loadCalendar()
+  }, [loadCalendar])
+
+  const selectedAdmin = useMemo(
+    () => admins.find((row) => row.email === selectedAdminEmail) || null,
+    [admins, selectedAdminEmail],
+  )
+
+  useEffect(() => {
+    setAvailabilityDraft(String(selectedAdmin?.meetingAvailability || '').trim())
+  }, [selectedAdmin?.id, selectedAdmin?.meetingAvailability])
+
+  const canEditSelected = Boolean(
+    selectedAdmin &&
+      user?.airtableRecordId &&
+      String(user.airtableRecordId).trim() === String(selectedAdmin.id || '').trim(),
+  )
+
+  const upcomingBookedRows = useMemo(() => {
+    if (!selectedAdmin?.bookedSlotsByDate) return []
+    return Object.entries(selectedAdmin.bookedSlotsByDate)
+      .flatMap(([dateKey, slots]) =>
+        (slots || []).map((slot) => ({
+          dateKey,
+          slot: normalizeTimeRange(slot),
+        })),
+      )
+      .sort((a, b) => {
+        if (a.dateKey !== b.dateKey) return a.dateKey.localeCompare(b.dateKey)
+        return a.slot.localeCompare(b.slot)
+      })
+  }, [selectedAdmin])
+
+  async function handleSaveAvailability() {
+    if (!selectedAdmin) return
+    if (!canEditSelected) {
+      toast.error('Sign in with this admin profile account to edit its calendar availability.')
+      return
+    }
+    setSaving(true)
+    try {
+      await updateAdminMeetingAvailability(selectedAdmin.id, availabilityDraft)
+      toast.success('Meeting availability saved')
+      await loadCalendar()
+    } catch (err) {
+      toast.error(err.message || 'Could not save meeting availability')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  if (loading) {
+    return <div className="rounded-3xl border border-slate-200 bg-white px-6 py-12 text-center text-sm text-slate-500">Loading calendar…</div>
+  }
+
+  return (
+    <div className="space-y-6">
+      <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+          <h2 className="text-2xl font-black text-slate-900">Meeting calendar</h2>
+          <button
+            type="button"
+            onClick={loadCalendar}
+            className="rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-50"
+          >
+            Refresh
+          </button>
+        </div>
+
+        <label className="mb-1.5 block text-xs font-semibold text-slate-700">Admin</label>
+        <select
+          value={selectedAdminEmail}
+          onChange={(e) => setSelectedAdminEmail(e.target.value)}
+          className={`${adminSelectCls} w-full max-w-md`}
+        >
+          {admins.map((row) => (
+            <option key={row.email} value={row.email}>{row.name} · {row.email}</option>
+          ))}
+        </select>
+
+        <div className="mt-5 grid gap-6 lg:grid-cols-2">
+          <div>
+            <div className="mb-2 text-sm font-semibold text-slate-800">Weekly meeting availability</div>
+            <p className="mb-2 text-xs text-slate-500">Format: Mon: 9:00 AM - 10:00 AM, 1:30 PM - 2:30 PM</p>
+            <textarea
+              rows={8}
+              value={availabilityDraft}
+              onChange={(e) => setAvailabilityDraft(e.target.value)}
+              className="w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm"
+              placeholder="Mon: 9:00 AM - 10:00 AM\nTue: 1:30 PM - 2:30 PM"
+            />
+            <div className="mt-3 flex items-center gap-3">
+              <button
+                type="button"
+                disabled={saving || !selectedAdmin}
+                onClick={handleSaveAvailability}
+                className="rounded-xl bg-[#2563eb] px-4 py-2 text-sm font-semibold text-white disabled:opacity-40"
+              >
+                {saving ? 'Saving…' : 'Save availability'}
+              </button>
+              {!canEditSelected ? (
+                <span className="text-xs text-amber-700">You can only edit your own admin profile availability.</span>
+              ) : null}
+            </div>
+          </div>
+
+          <div>
+            <div className="mb-2 text-sm font-semibold text-slate-800">Booked meetings</div>
+            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
+              {upcomingBookedRows.length ? (
+                <div className="space-y-2">
+                  {upcomingBookedRows.slice(0, 40).map((row, idx) => (
+                    <div key={`${row.dateKey}-${row.slot}-${idx}`} className="rounded-xl border border-violet-200 bg-violet-50 px-3 py-2 text-sm text-violet-900">
+                      <div className="font-semibold">Meeting</div>
+                      <div className="text-xs opacity-90">
+                        {new Date(`${row.dateKey}T00:00:00`).toLocaleDateString('en-US', {
+                          weekday: 'short',
+                          month: 'short',
+                          day: 'numeric',
+                        })} · {row.slot}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="text-sm text-slate-500">No meetings booked yet.</div>
+              )}
+            </div>
+
+            <div className="mt-4 rounded-2xl border border-slate-200 bg-white px-4 py-3 text-xs text-slate-600">
+              Active days in availability:
+              <span className="ml-2 font-semibold text-slate-800">
+                {Object.keys(parseAvailabilityText(availabilityDraft || '')).filter((day) => WEEK_DAYS.includes(day)).join(', ') || 'None'}
+              </span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
 
 /** All signed-in admin users can review applications from this UI. */
 function canReviewApplicationsFromAdmin() {
@@ -445,8 +671,8 @@ export default function AdminPortal() {
   /** Admin asked manager to edit; waiting on manager resubmit → then returns to pending review. */
   const requestChangeProperties = useMemo(() => properties.filter((p) => p.status === 'changes_requested'), [properties])
   const propertiesAwaitingAdminAttention = useMemo(
-    () => pendingReviewProperties.length + requestChangeProperties.length,
-    [pendingReviewProperties, requestChangeProperties],
+    () => pendingReviewProperties.length,
+    [pendingReviewProperties],
   )
   const approvedProperties = useMemo(
     () => properties.filter((p) => p.status === 'approved' || p.status === 'live'),
@@ -614,11 +840,7 @@ export default function AdminPortal() {
               <div className="min-w-0 flex-1">
                 <p className="text-sm font-bold text-amber-900">Action needed</p>
                 <p className="text-xs text-amber-800">
-                  {pendingReviewProperties.length > 0 && requestChangeProperties.length > 0
-                    ? `${pendingReviewProperties.length} pending review · ${requestChangeProperties.length} request change`
-                    : pendingReviewProperties.length > 0
-                      ? `${pendingReviewProperties.length} propert${pendingReviewProperties.length === 1 ? 'y' : 'ies'} pending review`
-                      : `${requestChangeProperties.length} propert${requestChangeProperties.length === 1 ? 'y' : 'ies'} in request change`}
+                  {`${pendingReviewProperties.length} propert${pendingReviewProperties.length === 1 ? 'y' : 'ies'} pending review`}
                 </p>
               </div>
               <div className="flex gap-2">
@@ -626,7 +848,7 @@ export default function AdminPortal() {
                   type="button"
                   onClick={() => {
                     setTab('properties')
-                    setPropertiesSection(pendingReviewProperties.length > 0 ? 'pending' : 'request_change')
+                    setPropertiesSection('pending')
                   }}
                   className="rounded-xl bg-amber-500 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-amber-600"
                 >
@@ -741,7 +963,7 @@ export default function AdminPortal() {
                 </button>
               )}
             </div>
-            <div className="inline-flex flex-wrap gap-1 rounded-2xl border border-slate-200 bg-slate-50 p-1">
+            <div className="grid gap-2 rounded-[28px] border border-slate-200 bg-slate-50 p-2 sm:grid-cols-2 xl:grid-cols-5">
               {[
                 ['pending', 'Pending review', pendingReviewProperties.length],
                 ['request_change', 'Request change', requestChangeProperties.length],
@@ -753,14 +975,14 @@ export default function AdminPortal() {
                   key={key}
                   type="button"
                   onClick={() => setPropertiesSection(key)}
-                  className={`rounded-xl px-4 py-2 text-sm font-semibold transition ${
+                  className={`rounded-2xl border px-4 py-3 text-left transition ${
                     propertiesSection === key
-                      ? 'bg-white text-slate-900 shadow-sm'
-                      : 'text-slate-600 hover:text-slate-900'
+                      ? 'border-[#2563eb]/30 bg-white text-slate-900 shadow-[0_10px_24px_rgba(37,99,235,0.14)]'
+                      : 'border-transparent text-slate-600 hover:border-slate-200 hover:bg-white/70 hover:text-slate-900'
                   }`}
                 >
-                  {label}
-                  <span className="ml-1.5 tabular-nums text-slate-500">({count})</span>
+                  <div className="text-lg font-black leading-none tabular-nums text-slate-900">{count}</div>
+                  <div className="mt-1 text-sm font-semibold">{label}</div>
                 </button>
               ))}
             </div>
@@ -1154,20 +1376,20 @@ export default function AdminPortal() {
                 <div className="mb-4">
                   <h1 className="text-2xl font-black">Managers</h1>
                 </div>
-                <div className="inline-flex flex-wrap gap-1 rounded-2xl border border-slate-200 bg-slate-50 p-1">
+                <div className="grid gap-2 rounded-[28px] border border-slate-200 bg-slate-50 p-2 sm:grid-cols-2">
                   {[['current', 'Current subscribers', accounts.filter((a) => a.enabled !== false).length], ['past', 'Past subscribers', accounts.filter((a) => a.enabled === false).length]].map(([key, label, count]) => (
                     <button
                       key={key}
                       type="button"
                       onClick={() => { setManagersFilter(key); setSelectedManagerAccountId(null) }}
-                      className={`rounded-xl px-4 py-2 text-sm font-semibold transition ${
+                      className={`rounded-2xl border px-4 py-3 text-left transition ${
                         managersFilter === key
-                          ? 'bg-white text-slate-900 shadow-sm'
-                          : 'text-slate-600 hover:text-slate-900'
+                          ? 'border-[#2563eb]/30 bg-white text-slate-900 shadow-[0_10px_24px_rgba(37,99,235,0.14)]'
+                          : 'border-transparent text-slate-600 hover:border-slate-200 hover:bg-white/70 hover:text-slate-900'
                       }`}
                     >
-                      {label}
-                      <span className="ml-1.5 tabular-nums text-slate-500">({count})</span>
+                      <div className="text-lg font-black leading-none tabular-nums text-slate-900">{count}</div>
+                      <div className="mt-1 text-sm font-semibold">{label}</div>
                     </button>
                   ))}
                 </div>
@@ -1280,6 +1502,10 @@ export default function AdminPortal() {
               label: [r.Name, r.House].filter(Boolean).join(' · ') || String(r.Email || r.id),
             }))}
         />
+      )}
+
+      {tab === 'calendar' && (
+        <AdminCalendarPanel user={user} />
       )}
 
       {tab === 'profile' && (

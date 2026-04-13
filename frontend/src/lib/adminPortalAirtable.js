@@ -36,7 +36,6 @@ const RESIDENT_PROFILE_LIST_FIELDS = [
   'Email',
   'House',
   'Unit Number',
-  'Application Approval',
   'Approved',
 ]
 
@@ -138,7 +137,35 @@ function residentHouseMatchesScope(houseField, allowedNamesLower) {
 }
 
 function propertyRecordName(p) {
-  return String(p?.['Property Name'] || p?.Name || p?.Property || '').trim()
+  const candidates = [p?.['Property Name'], p?.Name, p?.Title, p?.['Property Title']]
+  for (const candidate of candidates) {
+    const text = String(candidate || '').trim()
+    if (!text) continue
+    if (text.startsWith('rec')) continue
+    if (!/[A-Za-z]/.test(text)) continue
+    return text
+  }
+  return ''
+}
+
+function extractMultilineNoteValue(notes, label) {
+  const escaped = String(label || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  const startRe = new RegExp(`(?:^|\\n)${escaped}:\\s*`, 'i')
+  const s = String(notes || '')
+  const startMatch = s.match(startRe)
+  if (!startMatch) return ''
+  const after = s.slice(startMatch.index + startMatch[0].length)
+  const stopMatch = after.match(/\n[A-Za-z][A-Za-z ]*:/)
+  const block = stopMatch ? after.slice(0, stopMatch.index) : after
+  return block.trim()
+}
+
+function propertyDisplayName(p) {
+  const name = propertyRecordName(p)
+  if (name) return name
+  const address = String(p?.Address || '').trim()
+  if (address) return address
+  return 'Untitled property'
 }
 
 function isPropertyRecordApproved(p) {
@@ -256,7 +283,7 @@ export async function loadAdminPortalDataset() {
   const minRent = buildMinRentByPropertyId(roomRows)
 
   const properties = propertyRows.map((raw) => {
-    const name = propertyRecordName(raw) || 'Untitled property'
+    const name = propertyDisplayName(raw)
     const st = propertyAdminStatus(raw)
     const notes = String(raw.Notes || '')
     return {
@@ -503,5 +530,67 @@ export async function loadAdminProfilesForInbox() {
   } catch {
     return []
   }
+}
+
+/** Admin profiles with meeting-availability text for Admin calendar scheduling. */
+export async function loadAdminMeetingCalendarProfiles() {
+  if (!isAdminPortalAirtableConfigured()) return []
+  try {
+    const rows = await listTableRecordsWithFields(ADMIN_PROFILE_TABLE_NAME, [
+      'Email',
+      'Name',
+      'Role',
+      'Enabled',
+      'Meeting Availability',
+      'Calendar Availability',
+      'Notes',
+    ])
+    const out = []
+    for (const row of rows) {
+      const email = String(row.Email || '').trim().toLowerCase()
+      if (!email.includes('@')) continue
+      const enabledRaw = row.Enabled
+      const enabled = !(
+        enabledRaw === false ||
+        enabledRaw === 0 ||
+        ['false', 'no', 'inactive', 'disabled'].includes(String(enabledRaw || '').trim().toLowerCase())
+      )
+      const availability =
+        String(row['Meeting Availability'] || row['Calendar Availability'] || '').trim() ||
+        extractMultilineNoteValue(row.Notes, 'Meeting Availability')
+      out.push({
+        id: row.id,
+        email,
+        name: String(row.Name || email).trim(),
+        role: String(row.Role || '').trim(),
+        enabled,
+        meetingAvailability: availability,
+      })
+    }
+    out.sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }))
+    return out
+  } catch {
+    return []
+  }
+}
+
+/** Save meeting availability for one admin profile row. */
+export async function updateAdminMeetingAvailability(recordId, availabilityText) {
+  const id = String(recordId || '').trim()
+  if (!id) throw new Error('Missing admin profile record id.')
+  const value = String(availabilityText || '').trim()
+  const data = await requestJson(
+    `${BASE_URL}/${encodeURIComponent(ADMIN_PROFILE_TABLE_NAME)}/${id}`,
+    {
+      method: 'PATCH',
+      body: JSON.stringify({
+        fields: {
+          'Meeting Availability': value,
+        },
+        typecast: true,
+      }),
+    },
+  )
+  return mapRecord(data)
 }
 
