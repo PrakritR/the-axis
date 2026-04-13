@@ -12,9 +12,10 @@
 
 import React, { useState, useEffect, useCallback, useMemo } from 'react'
 import toast from 'react-hot-toast'
-import LeaseWorkspace from '../components/LeaseWorkspace.jsx'
+import LeaseHTMLTemplate from '../components/LeaseHTMLTemplate.jsx'
 import { DataTable } from '../components/PortalShell'
 import { getStatusConfig, fmtTs } from '../lib/leaseWorkflowConstants.js'
+import { getLeaseDraftById, publishLeaseDraft, upsertCurrentLeaseVersion } from '../lib/airtable'
 
 const AIRTABLE_TOKEN = import.meta.env.VITE_AIRTABLE_TOKEN
 const CORE_BASE_ID = import.meta.env.VITE_AIRTABLE_BASE_ID || 'appol57LKtMKaQ75T'
@@ -22,6 +23,17 @@ const APPS_BASE_ID = import.meta.env.VITE_AIRTABLE_APPLICATIONS_BASE_ID || CORE_
 const APPLICATIONS_TABLE = (import.meta.env.VITE_AIRTABLE_APPLICATIONS_TABLE || 'Applications').trim() || 'Applications'
 const AT_BASE = `https://api.airtable.com/v0/${CORE_BASE_ID}`
 const APPS_BASE = `https://api.airtable.com/v0/${APPS_BASE_ID}`
+
+async function callPortalAction(action, body) {
+  const res = await fetch(`/api/portal?action=${action}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+  const json = await res.json().catch(() => ({}))
+  if (!res.ok) throw new Error(json.error || `Request failed (${res.status})`)
+  return json
+}
 
 function mapRecord(record) {
   return { id: record.id, ...record.fields, created_at: record.createdTime }
@@ -158,7 +170,15 @@ export default function ManagerLeasingTab({ manager, allowedPropertyNames }) {
   const [drafts, setDrafts] = useState([])
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState('')
-  const [selectedDraft, setSelectedDraft] = useState(null)
+  const [selectedDraftId, setSelectedDraftId] = useState('')
+  const [activeDraft, setActiveDraft] = useState(null)
+  const [detailLoading, setDetailLoading] = useState(false)
+  const [actionBusy, setActionBusy] = useState('')
+  const [showUploadForm, setShowUploadForm] = useState(false)
+  const [pdfUrl, setPdfUrl] = useState('')
+  const [pdfFileName, setPdfFileName] = useState('')
+  const [showChangeBox, setShowChangeBox] = useState(false)
+  const [changeRequestText, setChangeRequestText] = useState('')
   const [statusFilter, setStatusFilter] = useState('all')
   const [unreadCount, setUnreadCount] = useState(0)
 
@@ -211,33 +231,49 @@ export default function ManagerLeasingTab({ manager, allowedPropertyNames }) {
   }, [ownerId, allowedPropertyNames])
 
   const openLeaseDetails = useCallback(async (draft) => {
-    if (!draft?.__syntheticFromApplication) {
-      setSelectedDraft(draft)
+    const draftId = String(draft?.id || '').trim()
+    if (!draftId) return
+    if (selectedDraftId === draftId) {
+      setSelectedDraftId('')
+      setActiveDraft(null)
+      setShowUploadForm(false)
+      setShowChangeBox(false)
       return
     }
+    setDetailLoading(true)
     try {
-      const appId = String(draft['Application Record ID'] || '').trim()
-      if (!appId) throw new Error('Application record id missing')
-      const res = await fetch('/api/generate-lease-from-template', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          applicationRecordId: appId,
-          managerName: manager?.name || manager?.email || 'Manager',
-        }),
-      })
-      const data = await res.json().catch(() => ({}))
-      if (!res.ok) throw new Error(data.error || 'Could not generate lease draft')
-      if (data?.draft?.id) {
-        setSelectedDraft(data.draft)
-        loadDrafts()
-        return
+      let resolvedDraft = draft
+      if (draft?.__syntheticFromApplication) {
+        const appId = String(draft['Application Record ID'] || '').trim()
+        if (!appId) throw new Error('Application record id missing')
+        const res = await fetch('/api/generate-lease-from-template', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            applicationRecordId: appId,
+            managerName: manager?.name || manager?.email || 'Manager',
+          }),
+        })
+        const data = await res.json().catch(() => ({}))
+        if (!res.ok) throw new Error(data.error || 'Could not generate lease draft')
+        if (!data?.draft?.id) throw new Error('Draft was not returned by server')
+        resolvedDraft = data.draft
+        await loadDrafts()
       }
-      throw new Error('Draft was not returned by server')
+      const full = await getLeaseDraftById(resolvedDraft.id).catch(() => resolvedDraft)
+      setSelectedDraftId(String(full?.id || resolvedDraft.id))
+      setActiveDraft(full)
+      setShowUploadForm(false)
+      setShowChangeBox(false)
+      setPdfUrl('')
+      setPdfFileName('')
+      setChangeRequestText('')
     } catch (err) {
       toast.error(err.message || 'Could not open lease details')
+    } finally {
+      setDetailLoading(false)
     }
-  }, [manager, loadDrafts])
+  }, [selectedDraftId, manager, loadDrafts])
 
   useEffect(() => {
     loadDrafts()
@@ -267,16 +303,84 @@ export default function ManagerLeasingTab({ manager, allowedPropertyNames }) {
     }, {})
   }, [drafts])
 
-  if (selectedDraft) {
-    return (
-      <LeaseWorkspace
-        draft={selectedDraft}
-        isAdmin={false}
-        manager={manager}
-        onBack={() => setSelectedDraft(null)}
-        onRefresh={loadDrafts}
-      />
-    )
+  const leaseJson = useMemo(() => {
+    try {
+      return JSON.parse(activeDraft?.['Lease JSON'] || '{}')
+    } catch {
+      return {}
+    }
+  }, [activeDraft])
+
+  async function handleSendToResident() {
+    if (!activeDraft?.id) return
+    setActionBusy('send')
+    try {
+      const updated = await publishLeaseDraft(activeDraft.id)
+      setActiveDraft(updated)
+      toast.success('Sent to resident')
+      await loadDrafts()
+    } catch (err) {
+      toast.error(err.message || 'Could not send to resident')
+    } finally {
+      setActionBusy('')
+    }
+  }
+
+  async function handleSavePdf() {
+    if (!activeDraft?.id) return
+    const nextPdfUrl = String(pdfUrl || '').trim()
+    if (!nextPdfUrl) {
+      toast.error('PDF URL is required')
+      return
+    }
+    setActionBusy('upload')
+    try {
+      await upsertCurrentLeaseVersion({
+        leaseDraftId: activeDraft.id,
+        pdfUrl: nextPdfUrl,
+        fileName: String(pdfFileName || '').trim() || 'lease.pdf',
+        uploaderName: manager?.name || manager?.email || 'Manager',
+        uploaderRole: 'Manager',
+      })
+      toast.success('PDF uploaded')
+      setShowUploadForm(false)
+      const full = await getLeaseDraftById(activeDraft.id).catch(() => activeDraft)
+      setActiveDraft(full)
+      await loadDrafts()
+    } catch (err) {
+      toast.error(err.message || 'Could not upload PDF')
+    } finally {
+      setActionBusy('')
+    }
+  }
+
+  async function handleRequestChangeFromAdmin() {
+    if (!activeDraft?.id) return
+    const text = String(changeRequestText || '').trim()
+    if (!text) {
+      toast.error('Enter a change request first')
+      return
+    }
+    setActionBusy('request-change')
+    try {
+      await callPortalAction('lease-submit-edit-request', {
+        leaseDraftId: activeDraft.id,
+        managerRecordId: manager?.id || manager?.airtableRecordId || '',
+        managerName: manager?.name || manager?.email || 'Manager',
+        editNotes: text,
+        requestedFields: {},
+      })
+      toast.success('Change request sent to admin')
+      setShowChangeBox(false)
+      setChangeRequestText('')
+      const full = await getLeaseDraftById(activeDraft.id).catch(() => activeDraft)
+      setActiveDraft(full)
+      await loadDrafts()
+    } catch (err) {
+      toast.error(err.message || 'Could not send change request')
+    } finally {
+      setActionBusy('')
+    }
   }
 
   return (
@@ -383,7 +487,7 @@ export default function ManagerLeasingTab({ manager, allowedPropertyNames }) {
                     className="whitespace-nowrap text-sm font-semibold text-[#2563eb]"
                     onClick={() => openLeaseDetails(draft)}
                   >
-                    Details
+                    {selectedDraftId === draft.id ? 'Hide' : 'Details'}
                   </button>
                 ),
               },
@@ -392,6 +496,106 @@ export default function ManagerLeasingTab({ manager, allowedPropertyNames }) {
           />
         )}
       </div>
+
+      {selectedDraftId ? (
+        <div className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm">
+          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 px-5 py-4">
+            <div className="flex flex-wrap items-center gap-2">
+              <h3 className="text-2xl font-black text-slate-900">Lease Draft</h3>
+              <StatusPill status={activeDraft?.Status || 'Draft Generated'} />
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={handleSendToResident}
+                disabled={actionBusy === 'send' || detailLoading || !activeDraft?.id}
+                className="rounded-full bg-axis px-4 py-2 text-sm font-semibold text-white transition hover:brightness-105 disabled:opacity-50"
+              >
+                {actionBusy === 'send' ? 'Sending...' : 'Send to Resident'}
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowUploadForm((v) => !v)}
+                className="rounded-full border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:border-slate-400"
+              >
+                Upload PDF
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowChangeBox((v) => !v)}
+                className="rounded-full border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:border-slate-400"
+              >
+                Request change from admin
+              </button>
+            </div>
+          </div>
+
+          {showUploadForm ? (
+            <div className="border-b border-slate-100 bg-slate-50 px-5 py-4">
+              <div className="grid gap-3 sm:grid-cols-2">
+                <input
+                  value={pdfUrl}
+                  onChange={(event) => setPdfUrl(event.target.value)}
+                  placeholder="PDF URL"
+                  className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-[#2563eb] focus:ring-2 focus:ring-[#2563eb]/20"
+                />
+                <input
+                  value={pdfFileName}
+                  onChange={(event) => setPdfFileName(event.target.value)}
+                  placeholder="File name (optional)"
+                  className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-[#2563eb] focus:ring-2 focus:ring-[#2563eb]/20"
+                />
+              </div>
+              <div className="mt-3">
+                <button
+                  type="button"
+                  onClick={handleSavePdf}
+                  disabled={actionBusy === 'upload'}
+                  className="rounded-full bg-axis px-4 py-2 text-sm font-semibold text-white transition hover:brightness-105 disabled:opacity-50"
+                >
+                  {actionBusy === 'upload' ? 'Saving...' : 'Save PDF'}
+                </button>
+              </div>
+            </div>
+          ) : null}
+
+          {showChangeBox ? (
+            <div className="border-b border-slate-100 bg-slate-50 px-5 py-4">
+              <textarea
+                value={changeRequestText}
+                onChange={(event) => setChangeRequestText(event.target.value)}
+                rows={4}
+                placeholder="What changes do you need from admin?"
+                className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-[#2563eb] focus:ring-2 focus:ring-[#2563eb]/20"
+              />
+              <div className="mt-3">
+                <button
+                  type="button"
+                  onClick={handleRequestChangeFromAdmin}
+                  disabled={actionBusy === 'request-change'}
+                  className="rounded-full bg-axis px-4 py-2 text-sm font-semibold text-white transition hover:brightness-105 disabled:opacity-50"
+                >
+                  {actionBusy === 'request-change' ? 'Sending...' : 'Send request'}
+                </button>
+              </div>
+            </div>
+          ) : null}
+
+          <div className="px-4 py-5 sm:px-6">
+            {detailLoading ? (
+              <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-6 text-sm text-slate-500">Loading lease details...</div>
+            ) : leaseJson && Object.keys(leaseJson).length > 0 ? (
+              <LeaseHTMLTemplate
+                leaseData={leaseJson}
+                signedBy={activeDraft?.['Signed By']}
+                signedAt={activeDraft?.['Signed At']}
+              />
+            ) : (
+              <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-6 text-sm text-slate-500">Lease document is not available yet.</div>
+            )}
+          </div>
+        </div>
+      ) : null}
     </div>
   )
 }

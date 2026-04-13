@@ -71,7 +71,6 @@ import Modal from '../components/Modal'
 import AddPropertyWizard from '../components/AddPropertyWizard'
 import { PropertyDetailPanel } from '../lib/propertyDetailPanel.jsx'
 import { ApplicationDetailPanel, applicationViewModelFromAirtableRow } from '../lib/applicationDetailPanel.jsx'
-import ManagerApplicationLease from '../components/ManagerApplicationLease.jsx'
 import LeaseHTMLTemplate from '../components/LeaseHTMLTemplate.jsx'
 import {
   PortalOpsCard,
@@ -4958,14 +4957,6 @@ function ApplicationsPanel({ allowedPropertyNames, manager }) {
                         onUnapprove: () => handleSendBackToPending(detailAppId),
                         onRefund: () => handleRefundApplicationFee(detailAppId),
                       }}
-                      afterSections={
-                        row?.Approved === true ? (
-                          <ManagerApplicationLease
-                            applicationId={detailAppId}
-                            managerName={manager?.name || manager?.email || 'Manager'}
-                          />
-                        ) : null
-                      }
                     />
                   ) : null
                 })()}
