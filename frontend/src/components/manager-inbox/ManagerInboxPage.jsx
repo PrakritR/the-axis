@@ -15,6 +15,7 @@ import {
   fetchInboxThreadStateMap,
   inboxThreadStateAirtableEnabled,
   markInboxThreadRead,
+  upsertInboxThreadState,
   setInboxThreadTrash,
   getPortalInboxSubjectFieldName,
   HOUSING_PUBLIC_ADMIN_GENERAL_THREAD,
@@ -348,7 +349,7 @@ export default function ManagerInboxPage({
       }
       setLoading(true)
       try {
-        const rows = await getAllPortalInternalThreadMessages()
+        const rows = await getAllMessages()
         setAllMsgs(rows)
         setAxisMsgs([])
       } catch (err) {
@@ -491,7 +492,7 @@ export default function ManagerInboxPage({
       const byKey = new Map()
       for (const m of allMsgs) {
         const tk = portalInboxThreadKeyFromRecord(m)
-        if (!tk) continue
+        if (!tk || !String(tk).startsWith('internal:')) continue
         if (!byKey.has(tk)) byKey.set(tk, [])
         byKey.get(tk).push(m)
       }
@@ -680,23 +681,37 @@ export default function ManagerInboxPage({
     [managerEmail, inboxStateBackend],
   )
 
+  const markThreadUnopened = useCallback(
+    async (stateKey) => {
+      if (!managerEmail || !stateKey) return
+      const tryAirtable =
+        (inboxStateBackend === 'airtable' || inboxStateBackend === 'pending') && inboxThreadStateAirtableEnabled()
+      if (tryAirtable) {
+        try {
+          await upsertInboxThreadState(managerEmail, stateKey, { lastReadAt: null })
+          setInboxStateBackend('airtable')
+          setInboxStateMap(await fetchInboxThreadStateMap(managerEmail))
+          return
+        } catch {
+          saveLocalInboxStatePatch(managerEmail, stateKey, { lastReadAt: null })
+          setInboxStateBackend('local')
+          setInboxStateMap(loadLocalInboxStateMap(managerEmail))
+          return
+        }
+      }
+      saveLocalInboxStatePatch(managerEmail, stateKey, { lastReadAt: null })
+      setInboxStateMap(loadLocalInboxStateMap(managerEmail))
+      if (inboxStateBackend === 'pending') setInboxStateBackend('local')
+    },
+    [managerEmail, inboxStateBackend],
+  )
+
   const selectedStateKey = managerInboxStateKeyForSelection(selectedThreadId, axisThreadKey, adminFullInbox)
   const selectedMeta = selectedStateKey ? inboxStateMap.get(selectedStateKey) : null
   const selectedInTrash = Boolean(selectedMeta?.trashed)
 
   const touchThreadReadRef = useRef(touchThreadRead)
   touchThreadReadRef.current = touchThreadRead
-  const lastTouchedThreadRef = useRef('')
-
-  useEffect(() => {
-    if (!selectedStateKey) {
-      lastTouchedThreadRef.current = ''
-      return
-    }
-    if (lastTouchedThreadRef.current === selectedStateKey) return
-    lastTouchedThreadRef.current = selectedStateKey
-    void touchThreadReadRef.current(selectedStateKey)
-  }, [selectedStateKey])
 
   useEffect(() => {
     setThreadMenuOpen(false)
@@ -1185,6 +1200,10 @@ export default function ManagerInboxPage({
           onSelect={(id) => {
             setComposeOpen(false)
             setSelectedThreadId(id)
+            const row = visibleThreadRows.find((r) => r.id === id)
+            if (row?.stateKey) {
+              void markThreadUnopened(row.stateKey)
+            }
           }}
           emptyMessage={listEmptyMessage}
           onTrashThread={(stateKey, trashed = true) => moveThreadTrash(stateKey, trashed)}
@@ -1455,7 +1474,10 @@ export default function ManagerInboxPage({
 
           {!composeOpen && !selectedThreadId ? (
             <div className="flex flex-1 flex-col items-center justify-center gap-3 px-6 text-center">
-              <p className="max-w-xs text-sm text-slate-500">Select a conversation from the list to view messages.</p>
+              <p className="inline-flex items-center gap-2 whitespace-nowrap text-sm text-slate-500">
+                <span aria-hidden>💬</span>
+                Select a conversation from the list to view messages.
+              </p>
             </div>
           ) : null}
 

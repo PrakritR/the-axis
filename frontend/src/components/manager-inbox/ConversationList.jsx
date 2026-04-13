@@ -3,8 +3,9 @@ import ConversationListItem from './ConversationListItem'
 
 const STATUS_TABS = [
   ['all', 'All'],
-  /** Must match parent `sectionFilter` values (`unopened`, not `unread`). */
-  ['unopened', 'Unread'],
+  ['opened', 'Opened'],
+  /** Must match parent `sectionFilter` values (`unopened`). */
+  ['unopened', 'Unopened'],
   ['trash', 'Trash'],
 ]
 

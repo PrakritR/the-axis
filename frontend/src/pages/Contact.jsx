@@ -692,13 +692,6 @@ function SoftwareMeetingScheduler() {
       </div>
 
       {selectedAdmin ? (
-        <div className="rounded-2xl border border-blue-100 bg-blue-50 px-4 py-3 text-sm">
-          <div className="font-semibold text-slate-900">{selectedAdmin.name}</div>
-          <div className="mt-1 text-slate-600">{selectedAdmin.email}</div>
-        </div>
-      ) : null}
-
-      {selectedAdmin ? (
         <>
           <div>
             <div className="mb-3 text-sm font-semibold text-slate-700">Choose a date</div>

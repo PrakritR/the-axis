@@ -98,6 +98,10 @@ import {
   deriveApplicationApprovalState,
   applicationRejectedFieldName,
 } from '../lib/applicationApprovalState.js'
+import {
+  loadAdminMeetingCalendarProfiles,
+  updateAdminMeetingAvailability,
+} from '../lib/adminPortalAirtable.js'
 
 // ─── Session ──────────────────────────────────────────────────────────────────
 export const MANAGER_SESSION_KEY = 'axis_manager'
@@ -1405,7 +1409,6 @@ function AvailabilityEditorPanel({
   selectedDateKey,
   ranges,
   onRangesChange,
-  onOpenMeet,
   onSave,
   onClearDay,
   scheduledItems,
@@ -1414,7 +1417,9 @@ function AvailabilityEditorPanel({
   propertyOptions,
   selectedPropertyId,
   onSelectProperty,
+  calendarMode = 'manager',
 }) {
+  const isAdminCalendar = calendarMode === 'admin'
   const hasApprovedPick = Array.isArray(propertyOptions) && propertyOptions.length > 0
   const disabled = availSaving || isManagerInternalPreview(manager) || !selectedPropertyId
 
@@ -1422,7 +1427,8 @@ function AvailabilityEditorPanel({
     <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm lg:sticky lg:top-6">
       <h2 className="text-xl font-black text-slate-900">Availability editor</h2>
       <label className="mt-4 block text-xs font-semibold text-slate-700">
-        Property <span className="font-normal text-slate-400">(listed only)</span>
+        {isAdminCalendar ? 'Admin profile' : 'Property'}
+        <span className="font-normal text-slate-400">{isAdminCalendar ? ' (meeting calendar)' : ' (listed only)'}</span>
         <div className={`${MANAGER_PILL_SELECT_WRAP_CLS} mt-1.5 max-w-full`}>
           <select
             value={selectedPropertyId}
@@ -1431,7 +1437,7 @@ function AvailabilityEditorPanel({
             className={MANAGER_PILL_SELECT_CLS}
           >
             {!hasApprovedPick ? (
-              <option value="">No listed properties</option>
+              <option value="">{isAdminCalendar ? 'No enabled admins' : 'No listed properties'}</option>
             ) : (
               propertyOptions.map((option) => (
                 <option key={option.id} value={option.id}>{option.label}</option>
@@ -1452,7 +1458,7 @@ function AvailabilityEditorPanel({
 
       {hasApprovedPick && !selectedPropertyId ? (
         <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
-          Select a property to add availability blocks.
+          {isAdminCalendar ? 'Select an admin profile to add availability blocks.' : 'Select a property to add availability blocks.'}
         </div>
       ) : null}
 
@@ -1491,14 +1497,6 @@ function AvailabilityEditorPanel({
           className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 font-semibold text-red-700 hover:bg-red-100 disabled:opacity-40"
         >
           Clear day
-        </button>
-        <button
-          type="button"
-          onClick={onOpenMeet}
-          disabled={availSaving || isManagerInternalPreview(manager) || !hasApprovedPick}
-          className="rounded-full border border-slate-200 bg-white px-4 py-2 font-semibold text-slate-700 transition hover:bg-slate-50 disabled:opacity-40"
-        >
-          Quick schedule
         </button>
       </div>
 
@@ -5120,20 +5118,21 @@ export function CalendarTabPanel({ manager, allowedPropertyNames, calendarMode =
   const [schedulingRows, setSchedulingRows] = useState([])
   const [loading, setLoading] = useState(true)
   const [properties, setProperties] = useState([])
+  const [calendarProfiles, setCalendarProfiles] = useState([])
   const [weeklyFreeByProperty, setWeeklyFreeByProperty] = useState({})
   const [selectedPropertyId, setSelectedPropertyId] = useState('')
   const [availSaving, setAvailSaving] = useState(false)
-  const [meetOpen, setMeetOpen] = useState(false)
 
   const load = useCallback(async () => {
     setLoading(true)
     try {
-      const [sched, props, workOrders] = await Promise.all([
+      const [sched, props, workOrders, adminProfiles] = await Promise.all([
         isAdminCalendar
           ? fetchAllSchedulingRows()
           : fetchSchedulingForManagerScope({ managerEmail: manager?.email, propertyNames: allowedPropertyNames || [] }),
         fetchPropertiesAdmin(),
         getAllWorkOrders().catch(() => []),
+        isAdminCalendar ? loadAdminMeetingCalendarProfiles().catch(() => []) : Promise.resolve([]),
       ])
       const allowedLower = isAdminCalendar
         ? null
@@ -5143,24 +5142,36 @@ export function CalendarTabPanel({ manager, allowedPropertyNames, calendarMode =
       const workOrderRows = workOrdersToCalendarRows(workOrders, allowedLower)
       setSchedulingRows([...sched, ...workOrderRows])
       setProperties(props)
-      const approvedAssigned = isAdminCalendar
-        ? props
-            .filter((p) => isPropertyRecordApproved(p))
-            .sort((a, b) =>
-              propertyRecordName(a).localeCompare(propertyRecordName(b), undefined, { sensitivity: 'base' }),
-            )
-        : props
+      const approvedAssigned = props
             .filter((p) => propertyEligibleForManagerCalendarScheduling(p, manager))
             .sort((a, b) =>
               propertyRecordName(a).localeCompare(propertyRecordName(b), undefined, { sensitivity: 'base' }),
             )
+
+      const enabledAdminProfiles = isAdminCalendar
+        ? (Array.isArray(adminProfiles) ? adminProfiles : []).filter((p) => p.enabled)
+        : []
+      setCalendarProfiles(enabledAdminProfiles)
+
       const byProperty = {}
-      approvedAssigned.forEach((property) => {
-        const text = extractMultilineNoteValue(property.Notes, 'Tour Availability') || ''
-        byProperty[property.id] = text ? weeklyFreeArraysFromTourText(text) : emptyWeeklyFreeArrays()
-      })
+      if (isAdminCalendar) {
+        enabledAdminProfiles.forEach((profile) => {
+          const text = String(profile.meetingAvailability || '').trim()
+          byProperty[profile.id] = text ? weeklyFreeArraysFromTourText(text) : emptyWeeklyFreeArrays()
+        })
+      } else {
+        approvedAssigned.forEach((property) => {
+          const text = extractMultilineNoteValue(property.Notes, 'Tour Availability') || ''
+          byProperty[property.id] = text ? weeklyFreeArraysFromTourText(text) : emptyWeeklyFreeArrays()
+        })
+      }
       setWeeklyFreeByProperty(byProperty)
       setSelectedPropertyId((current) => {
+        if (isAdminCalendar) {
+          if (enabledAdminProfiles.some((p) => p.id === current)) return current
+          const byEmail = enabledAdminProfiles.find((p) => String(p.email || '').toLowerCase() === String(manager?.email || '').toLowerCase())
+          return byEmail?.id || enabledAdminProfiles[0]?.id || ''
+        }
         if (approvedAssigned.some((p) => p.id === current)) return current
         return approvedAssigned[0]?.id || ''
       })
@@ -5210,6 +5221,21 @@ export function CalendarTabPanel({ manager, allowedPropertyNames, calendarMode =
     [approvedAssignedProperties, selectedPropertyId],
   )
 
+  const selectedCalendarProfile = useMemo(
+    () => calendarProfiles.find((p) => p.id === selectedPropertyId) || null,
+    [calendarProfiles, selectedPropertyId],
+  )
+
+  const availabilityOwnerOptions = useMemo(() => {
+    if (isAdminCalendar) {
+      return calendarProfiles.map((profile) => ({
+        id: profile.id,
+        label: profile.name || profile.email,
+      }))
+    }
+    return approvedAssignedProperties.map((p) => ({ id: p.id, label: propertyRecordName(p) || 'Property' }))
+  }, [isAdminCalendar, calendarProfiles, approvedAssignedProperties])
+
   const selectedWeeklyFree = useMemo(
     () => weeklyFreeByProperty[selectedPropertyId] || emptyWeeklyFreeArrays(),
     [weeklyFreeByProperty, selectedPropertyId],
@@ -5221,6 +5247,30 @@ export function CalendarTabPanel({ manager, allowedPropertyNames, calendarMode =
   }
 
   async function handleSaveAvailability() {
+    if (isAdminCalendar) {
+      if (!selectedCalendarProfile) {
+        toast.error('Select an admin profile first')
+        return
+      }
+      setAvailSaving(true)
+      try {
+        const encoded = encodeTourAvailabilityFromWeeklyFree(selectedWeeklyFree)
+        await updateAdminMeetingAvailability(selectedCalendarProfile.id, encoded)
+        setCalendarProfiles((current) =>
+          current.map((profile) =>
+            profile.id === selectedCalendarProfile.id
+              ? { ...profile, meetingAvailability: encoded }
+              : profile,
+          ),
+        )
+        toast.success(`Availability saved for ${selectedCalendarProfile.name || selectedCalendarProfile.email}`)
+      } catch (err) {
+        toast.error(err.message || 'Could not save availability')
+      } finally {
+        setAvailSaving(false)
+      }
+      return
+    }
     if (!selectedProperty) {
       toast.error('Select a property first')
       return
@@ -5280,15 +5330,15 @@ export function CalendarTabPanel({ manager, allowedPropertyNames, calendarMode =
             <select
               value={selectedPropertyId}
               onChange={(e) => setSelectedPropertyId(e.target.value)}
-              disabled={!approvedAssignedProperties.length}
+              disabled={!availabilityOwnerOptions.length}
               className={MANAGER_PILL_SELECT_CLS}
             >
-              {approvedAssignedProperties.length ? (
-                approvedAssignedProperties.map((p) => (
-                  <option key={p.id} value={p.id}>{propertyRecordName(p) || 'Property'}</option>
+              {availabilityOwnerOptions.length ? (
+                availabilityOwnerOptions.map((option) => (
+                  <option key={option.id} value={option.id}>{option.label}</option>
                 ))
               ) : (
-                <option value="">No listed properties</option>
+                <option value="">{isAdminCalendar ? 'No enabled admins' : 'No listed properties'}</option>
               )}
             </select>
             {MANAGER_PILL_SELECT_CHEVRON}
@@ -5305,20 +5355,50 @@ export function CalendarTabPanel({ manager, allowedPropertyNames, calendarMode =
       </div>
 
       <div className="mb-5 grid gap-2 rounded-[28px] border border-slate-200 bg-slate-50 p-2 sm:grid-cols-2 xl:grid-cols-4">
-        {([
-          ['Today', calendarStats.today],
-          ['This week', calendarStats.week],
-          ['This month', calendarStats.month],
-          ['Total booked', calendarStats.total],
-        ]).map(([label, count]) => (
-          <div
-            key={label}
-            className="rounded-2xl border border-transparent px-4 py-3 text-left text-slate-600"
-          >
-            <div className="text-lg font-black leading-none tabular-nums text-slate-900">{count}</div>
-            <div className="mt-1 text-sm font-semibold">{label}</div>
-          </div>
-        ))}
+        <button
+          type="button"
+          onClick={() => {
+            const t = new Date()
+            const k = dateKeyFromDate(t)
+            setSelectedDateKey(k)
+            setAnchorDate(t)
+          }}
+          className="rounded-2xl border border-transparent px-4 py-3 text-left text-slate-600 transition hover:border-slate-200 hover:bg-white"
+        >
+          <div className="text-lg font-black leading-none tabular-nums text-slate-900">{calendarStats.today}</div>
+          <div className="mt-1 text-sm font-semibold">Today</div>
+        </button>
+        <button
+          type="button"
+          onClick={() => {
+            const d = startOfWeekSunday(new Date())
+            const k = dateKeyFromDate(d)
+            setSelectedDateKey(k)
+            setAnchorDate(d)
+          }}
+          className="rounded-2xl border border-transparent px-4 py-3 text-left text-slate-600 transition hover:border-slate-200 hover:bg-white"
+        >
+          <div className="text-lg font-black leading-none tabular-nums text-slate-900">{calendarStats.week}</div>
+          <div className="mt-1 text-sm font-semibold">This week</div>
+        </button>
+        <button
+          type="button"
+          onClick={() => {
+            const d = new Date()
+            const first = new Date(d.getFullYear(), d.getMonth(), 1)
+            const k = dateKeyFromDate(first)
+            setSelectedDateKey(k)
+            setAnchorDate(first)
+          }}
+          className="rounded-2xl border border-transparent px-4 py-3 text-left text-slate-600 transition hover:border-slate-200 hover:bg-white"
+        >
+          <div className="text-lg font-black leading-none tabular-nums text-slate-900">{calendarStats.month}</div>
+          <div className="mt-1 text-sm font-semibold">This month</div>
+        </button>
+        <div className="rounded-2xl border border-transparent px-4 py-3 text-left text-slate-600">
+          <div className="text-lg font-black leading-none tabular-nums text-slate-900">{calendarStats.total}</div>
+          <div className="mt-1 text-sm font-semibold">Total booked</div>
+        </div>
       </div>
 
       <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_360px]">
@@ -5347,24 +5427,12 @@ export function CalendarTabPanel({ manager, allowedPropertyNames, calendarMode =
           scheduledItems={scheduledItemsForSelectedDay}
           availSaving={availSaving}
           manager={manager}
-          propertyOptions={approvedAssignedProperties.map((p) => ({ id: p.id, label: propertyRecordName(p) || 'Property' }))}
+          propertyOptions={availabilityOwnerOptions}
           selectedPropertyId={selectedPropertyId}
           onSelectProperty={setSelectedPropertyId}
+          calendarMode={calendarMode}
         />
       </div>
-
-      <LetUsMeetModal
-        open={meetOpen}
-        initialDateKey={selectedDateKey}
-        manager={manager}
-        approvedPropertyNames={
-          isAdminCalendar
-            ? approvedAssignedProperties.map((p) => propertyRecordName(p)).filter(Boolean)
-            : approvedAssignedProperties.map((p) => propertyRecordName(p)).filter(Boolean)
-        }
-        onClose={() => setMeetOpen(false)}
-        onCreated={load}
-      />
     </div>
   )
 }

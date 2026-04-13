@@ -283,6 +283,8 @@ export default async function handler(req, res) {
       Status: 'New',
       'Preferred Date': preferredDateKey,
       'Preferred Time': preferredTimeLabel,
+      'Scheduled Date': preferredDateKey,
+      'Scheduled Time': preferredTimeLabel,
       'Manager Email': selectedAdminEmail,
       'Tour Manager': selectedAdminName || String(adminRecord.fields?.Name || selectedAdminEmail),
     }
