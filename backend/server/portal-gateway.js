@@ -12,6 +12,7 @@ import applicationCreateLeaseDraft from './handlers/application-create-lease-dra
 import generateLeaseDraft from './handlers/generate-lease-draft.js'
 import managerAuth from './handlers/manager-auth.js'
 import managerApproveApplication from './handlers/manager-approve-application.js'
+import managerRejectApplication from './handlers/manager-reject-application.js'
 import managerBillingPortal from './handlers/manager-billing-portal.js'
 import managerCreateAccount from './handlers/manager-create-account.js'
 import managerCreateSubscriptionSession from './handlers/manager-create-subscription-session.js'
@@ -29,6 +30,7 @@ const handlers = {
   'application-create-lease-draft': applicationCreateLeaseDraft,
   'manager-auth': managerAuth,
   'manager-approve-application': managerApproveApplication,
+  'manager-reject-application': managerRejectApplication,
   'manager-create-account': managerCreateAccount,
   'manager-lookup': managerLookup,
   'manager-subscription-complete': managerSubscriptionComplete,

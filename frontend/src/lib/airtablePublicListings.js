@@ -44,6 +44,59 @@ function parseMonthlyRentAmount(value) {
   return Number.isFinite(amount) ? amount : null
 }
 
+/** Dollar amounts from Room N Rent / meta roomsDetail (for card + detail rent line). */
+function collectRoomRentAmountsFromRecord(rec, meta) {
+  const amounts = []
+  const roomDetails = Array.isArray(meta?.roomsDetail) ? meta.roomsDetail : []
+  const fromCount = clampInt(rec[PROPERTY_AIR.roomCount] ?? 0, 0, MAX_ROOM_SLOTS)
+  const roomCount =
+    fromCount > 0
+      ? fromCount
+      : roomDetails.length > 0
+        ? clampInt(roomDetails.length, 1, MAX_ROOM_SLOTS)
+        : 0
+
+  for (let i = 0; i < roomCount; i += 1) {
+    const n = i + 1
+    const detail = roomDetails[i] && typeof roomDetails[i] === 'object' ? roomDetails[i] : {}
+    const rentRaw = detail.rent ?? rec[roomRentField(n)]
+    const formatted = formatRentForListing(rentRaw)
+    let amt = parseMonthlyRentAmount(formatted)
+    if (amt == null) amt = parseMonthlyRentAmount(String(rentRaw))
+    if (amt == null && rentRaw != null && String(rentRaw).trim() !== '') {
+      const plain = Number(String(rentRaw).replace(/[^\d.]/g, ''))
+      if (Number.isFinite(plain) && plain > 0) amt = plain
+    }
+    if (Number.isFinite(amt) && amt > 0) amounts.push(amt)
+  }
+  return amounts
+}
+
+/**
+ * Marketing rent string (with /month) from leasing meta, else min–max of room rents.
+ */
+export function computeListingRentLabel(rec, meta) {
+  const leasing = normalizeLeasingFromMeta(meta?.leasing)
+  const fh = parseFloat(String(leasing.fullHousePrice || '').replace(/[^\d.]/g, ''))
+  const pr = parseFloat(String(leasing.promoPrice || '').replace(/[^\d.]/g, ''))
+  if (Number.isFinite(fh) && fh > 0 && Number.isFinite(pr) && pr > 0) {
+    const lo = Math.min(fh, pr)
+    const hi = Math.max(fh, pr)
+    return lo === hi
+      ? `$${lo.toLocaleString('en-US')}/month`
+      : `$${lo.toLocaleString('en-US')}–$${hi.toLocaleString('en-US')}/month`
+  }
+  if (Number.isFinite(fh) && fh > 0) {
+    return `$${fh.toLocaleString('en-US')}/month`
+  }
+  const roomAmounts = collectRoomRentAmountsFromRecord(rec, meta)
+  if (!roomAmounts.length) return ''
+  const min = Math.min(...roomAmounts)
+  const max = Math.max(...roomAmounts)
+  if (min === max) return `$${min.toLocaleString('en-US')}/month`
+  return `$${min.toLocaleString('en-US')}–$${max.toLocaleString('en-US')}/month`
+}
+
 /** Normalize wizard / Airtable rent to a display string like $775/month */
 function formatRentForListing(raw) {
   const s = trimStr(raw)
@@ -318,6 +371,7 @@ export function mapAirtableRecordToHomeProperty(rec) {
     bathsResolved > 0 ? bathsResolved : Number(rec['Bathroom Count'] ?? rec[PROPERTY_AIR.bathroomCount]) || 0
   const summary = userText.slice(0, 240) || 'Axis-managed shared housing in Seattle.'
   const videos = listingVideosFromRecord(rec, meta)
+  const rent = computeListingRentLabel(rec, meta)
   return {
     slug,
     name,
@@ -326,7 +380,7 @@ export function mapAirtableRecordToHomeProperty(rec) {
     type: 'Shared housing',
     beds: beds || 1,
     baths: baths > 0 ? baths : 1,
-    rent: 'View listing',
+    rent,
     summary,
     images: urls,
     videos,
@@ -362,14 +416,6 @@ export function mapAirtableRecordToPropertyPage(rec) {
   const base = mapAirtableRecordToHomeProperty(rec)
   const { userText, meta } = parseAxisListingMetaBlock(String(rec['Other Info'] || ''))
   const leasing = normalizeLeasingFromMeta(meta?.leasing)
-  const fh = parseFloat(String(leasing.fullHousePrice || '').replace(/[^\d.]/g, ''))
-  const pr = parseFloat(String(leasing.promoPrice || '').replace(/[^\d.]/g, ''))
-  const rentHint =
-    Number.isFinite(fh) && fh > 0 && Number.isFinite(pr) && pr > 0
-      ? `$${Math.min(fh, pr).toLocaleString('en-US')}–$${Math.max(fh, pr).toLocaleString('en-US')}/month`
-      : Number.isFinite(fh) && fh > 0
-        ? `$${fh.toLocaleString('en-US')}/month`
-        : base.rent
   const leasingPackages = (leasing.bundles || [])
     .map((b) => {
       const title = String(b.name || '').trim() || 'Package'
@@ -386,7 +432,7 @@ export function mapAirtableRecordToPropertyPage(rec) {
 
   return {
     ...base,
-    rent: rentHint,
+    rent: base.rent,
     summary: userText.slice(0, 400) || base.summary,
     roomPlans,
     floorPlans: [],

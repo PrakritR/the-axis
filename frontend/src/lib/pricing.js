@@ -6,6 +6,15 @@ function parseMonthlyRentValue(value) {
   return Number.isFinite(amount) ? amount : null
 }
 
+/** Strip /mo and keep string only if it still looks like a dollar amount (avoids “View listing” on cards). */
+function rentStringForCardOverlay(raw) {
+  const s = String(raw || '')
+    .replace(/\/mo(?:nth)?/gi, '')
+    .trim()
+  if (!s) return ''
+  return /\$[\d,]+/.test(s) ? s : ''
+}
+
 // Returns plain dollar range with no unit suffix, e.g. "$725" or "$725–$850"
 // Callers are responsible for appending "/mo" or "/month" as needed.
 export function getPropertyRentRange(property) {
@@ -15,8 +24,7 @@ export function getPropertyRentRange(property) {
     .filter((value) => Number.isFinite(value))
 
   if (roomPrices.length === 0) {
-    // Strip any existing unit suffix from the fallback rent string
-    return (property?.rent || '').replace(/\/mo(?:nth)?/gi, '').trim()
+    return rentStringForCardOverlay(property?.rent)
   }
 
   const min = Math.min(...roomPrices)
@@ -33,7 +41,7 @@ export function getStartingRent(property) {
     .filter((value) => Number.isFinite(value))
 
   if (roomPrices.length === 0) {
-    return (property?.rent || '').replace(/\/mo(?:nth)?/gi, '').trim()
+    return rentStringForCardOverlay(property?.rent)
   }
   return `$${Math.min(...roomPrices)}`
 }

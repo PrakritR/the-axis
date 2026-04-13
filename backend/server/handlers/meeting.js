@@ -9,6 +9,7 @@ const AIRTABLE_TOKEN = process.env.AIRTABLE_TOKEN || process.env.VITE_AIRTABLE_T
 const ADMIN_PROFILE_TABLE = process.env.AIRTABLE_ADMIN_PROFILE_TABLE || 'Admin Profile'
 const SCHEDULING_TABLE = 'Scheduling'
 const STATUS_BLOCKED_VALUES = new Set(['declined', 'rejected', 'cancelled', 'canceled'])
+const AVAILABILITY_TYPE_VALUES = new Set(['availability', 'meeting availability'])
 
 function normalizeDateKey(value) {
   const match = String(value || '').trim().match(/^(\d{4}-\d{2}-\d{2})/)
@@ -160,6 +161,24 @@ function buildMeetingBookingsByAdmin(records) {
   return out
 }
 
+function buildMeetingAvailabilityByAdminDate(records) {
+  const out = {}
+  for (const record of records || []) {
+    const fields = record?.fields || {}
+    const type = String(fields.Type || '').trim().toLowerCase()
+    if (!AVAILABILITY_TYPE_VALUES.has(type)) continue
+    if (!statusAllowsConflict(fields.Status)) continue
+    const adminEmail = String(fields['Manager Email'] || '').trim().toLowerCase()
+    const dateKey = normalizeDateKey(fields['Preferred Date'])
+    const slot = normalizeRangeLabel(fields['Preferred Time'])
+    if (!adminEmail || !dateKey || !slot) continue
+    if (!out[adminEmail]) out[adminEmail] = {}
+    if (!out[adminEmail][dateKey]) out[adminEmail][dateKey] = []
+    if (!out[adminEmail][dateKey].includes(slot)) out[adminEmail][dateKey].push(slot)
+  }
+  return out
+}
+
 function enabledAdminProfile(row) {
   const fields = row?.fields || {}
   const enabled = fields.Enabled
@@ -198,18 +217,21 @@ export default async function handler(req, res) {
       ])
       if (!adminData) return res.status(200).json({ admins: [] })
       const bookings = buildMeetingBookingsByAdmin(schedulingRows)
+      const availabilityByAdminDate = buildMeetingAvailabilityByAdminDate(schedulingRows)
       const admins = (adminData.records || [])
         .filter(enabledAdminProfile)
         .map((row) => {
           const fields = row.fields || {}
           const email = String(fields.Email || '').trim().toLowerCase()
           if (!email.includes('@')) return null
+          const availableSlotsByDate = availabilityByAdminDate[email] || {}
           const availability = adminMeetingAvailability(fields)
           return {
             id: row.id,
             name: String(fields.Name || email).trim(),
             email,
             availability,
+            availableSlotsByDate,
             bookedSlotsByDate: bookings[email] || {},
           }
         })
@@ -255,19 +277,24 @@ export default async function handler(req, res) {
       return res.status(409).json({ error: 'Selected admin is not available for meetings.' })
     }
 
-    const availability = adminMeetingAvailability(adminRecord.fields || {})
-    const availableSlots = availabilitySlotsForDate(availability, preferredDateKey)
+    const sameDayFormula = encodeURIComponent(
+      `AND({Preferred Date} = "${preferredDateKey}", LOWER({Manager Email} & "") = "${selectedAdminEmail.replace(/"/g, '\\"')}")`,
+    )
+    const sameDayRows = await listSchedulingRows(sameDayFormula)
+    const availabilityByDate = buildMeetingAvailabilityByAdminDate(sameDayRows)
+    const explicitSlots = availabilityByDate[selectedAdminEmail]?.[preferredDateKey] || []
+    const fallbackAvailability = adminMeetingAvailability(adminRecord.fields || {})
+    const availableSlots = explicitSlots.length
+      ? explicitSlots
+      : availabilitySlotsForDate(fallbackAvailability, preferredDateKey)
     const allowedSet = new Set(availableSlots.map((slot) => slot.toLowerCase()))
     if (!allowedSet.has(preferredTimeLabel.toLowerCase())) {
       return res.status(409).json({ error: 'That meeting slot is no longer available.' })
     }
 
-    const conflictFormula = encodeURIComponent(
-      `AND({Preferred Date} = "${preferredDateKey}", LOWER({Manager Email} & "") = "${selectedAdminEmail.replace(/"/g, '\\"')}", {Type} = "Meeting")`,
-    )
-    const sameDayRows = await listSchedulingRows(conflictFormula)
     for (const record of sameDayRows) {
       const fields = record?.fields || {}
+      if (String(fields.Type || '').trim().toLowerCase() !== 'meeting') continue
       if (!statusAllowsConflict(fields.Status)) continue
       const rowRange = parseTimeRangeToMinutes(fields['Preferred Time'])
       if (!rowRange) continue

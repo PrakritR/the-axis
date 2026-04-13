@@ -585,6 +585,37 @@ function SoftwareMeetingScheduler() {
   const daySlotMap = selectedAdmin ? parseTourCalendar(selectedAdmin.availability) : {}
   const availableDates = useMemo(() => {
     if (!selectedAdmin) return []
+    const explicitDateMap = selectedAdmin.availableSlotsByDate || {}
+    const explicitEntries = Object.entries(explicitDateMap)
+      .map(([date, rawSlots]) => {
+        const d = new Date(`${date}T00:00:00`)
+        if (Number.isNaN(d.getTime())) return null
+        const now = new Date()
+        now.setHours(0, 0, 0, 0)
+        if (d < now) return null
+        const booked = new Set(
+          (selectedAdmin.bookedSlotsByDate?.[date] || [])
+            .map((slot) => normalizeTimeRangeLabel(slot).toLowerCase())
+            .filter(Boolean),
+        )
+        const slots = (Array.isArray(rawSlots) ? rawSlots : [])
+          .map((slot) => normalizeTimeRangeLabel(slot))
+          .filter((slot) => slot && !booked.has(slot.toLowerCase()))
+        if (!slots.length) return null
+        return {
+          date,
+          display: d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }),
+          shortDate: d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+          dayAbbr: d.toLocaleDateString('en-US', { weekday: 'short' }),
+          dayName: d.toLocaleDateString('en-US', { weekday: 'short' }),
+          slots,
+        }
+      })
+      .filter(Boolean)
+      .sort((a, b) => a.date.localeCompare(b.date))
+
+    if (explicitEntries.length) return explicitEntries
+
     const base = getUpcomingDates(daySlotMap)
     return base
       .map((entry) => {

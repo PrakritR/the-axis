@@ -386,6 +386,8 @@ export default async function handler(req, res) {
     const normalizedType =
       rawType === 'meeting'
         ? 'Meeting'
+        : rawType === 'availability' || rawType === 'meeting availability'
+          ? 'Meeting Availability'
         : rawType === 'work order'
           ? 'Work Order'
           : rawType === 'issue' || rawType === 'other'
@@ -432,7 +434,7 @@ export default async function handler(req, res) {
       'Name': String(name).trim(),
       'Email': String(email).trim().toLowerCase(),
       'Type': normalizedType,
-      'Status': 'New',
+      'Status': normalizedType === 'Meeting Availability' ? 'Available' : 'New',
     }
     if (phone)             fields['Phone'] = String(phone).trim()
     if (property)          fields['Property'] = String(property).trim()

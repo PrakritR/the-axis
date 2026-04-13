@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react'
+import PropertyMediaPlaceholder from './PropertyMediaPlaceholder'
 
 export default function Carousel({
   images = [],
@@ -39,6 +40,7 @@ export default function Carousel({
   }
 
   const currentImage = images[idx]
+  const showPlaceholder = wrap === 0
 
   return (
     <div
@@ -47,7 +49,11 @@ export default function Carousel({
       onTouchStart={onTouchStart}
       onTouchEnd={onTouchEnd}
     >
-      {currentImage ? (
+      {showPlaceholder ? (
+        <div className="absolute inset-0">
+          <PropertyMediaPlaceholder className="h-full w-full min-h-[12rem] rounded-md" label="Photos coming soon" />
+        </div>
+      ) : currentImage ? (
         <button
           type="button"
           onClick={() => onOpen && onOpen(idx)}

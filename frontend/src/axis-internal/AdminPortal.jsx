@@ -1065,7 +1065,14 @@ export default function AdminPortal() {
         <div className="space-y-6">
           <div>
             <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-              <h1 className="text-2xl font-black text-slate-900">Properties</h1>
+              <div className="flex items-center gap-2.5">
+                <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl border border-[#2563eb]/20 bg-[#2563eb]/5 text-[#2563eb]" aria-hidden>
+                  <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" strokeWidth={1.75} stroke="currentColor" aria-hidden>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="m2.25 12 8.954-8.955c.44-.439 1.152-.439 1.591 0L21.75 12M4.5 9.75v10.125c0 .621.504 1.125 1.125 1.125H9.75v-4.875c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125V21h4.125c.621 0 1.125-.504 1.125-1.125V9.75M8.25 21h8.25" />
+                  </svg>
+                </span>
+                <h1 className="text-2xl font-black text-slate-900">Properties</h1>
+              </div>
               {dataLoading ? (
                 <span className="inline-flex items-center gap-1.5 rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-500">
                   <span className="inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-slate-400" />
@@ -1535,7 +1542,14 @@ export default function AdminPortal() {
             <div className="space-y-6">
               <div>
                 <div className="mb-4">
-                  <h1 className="text-2xl font-black">Managers</h1>
+                  <div className="flex items-center gap-2.5">
+                    <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl border border-[#2563eb]/20 bg-[#2563eb]/5 text-[#2563eb]" aria-hidden>
+                      <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" strokeWidth={1.75} stroke="currentColor" aria-hidden>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M15 19.128a9.38 9.38 0 0 0 2.625.372 9.337 9.337 0 0 0 4.121-.952 4.125 4.125 0 0 0-7.533-2.493M15 19.128v-.003c0-1.113-.285-2.16-.786-3.07M15 19.128v.106A12.318 12.318 0 0 1 8.624 21c-2.331 0-4.512-.645-6.374-1.766l-.001-.109a6.375 6.375 0 0 1 11.964-3.07M12 6.375a3.375 3.375 0 1 1-6.75 0 3.375 3.375 0 0 1 6.75 0Zm8.25 2.25a2.625 2.625 0 1 1-5.25 0 2.625 2.625 0 0 1 5.25 0Z" />
+                      </svg>
+                    </span>
+                    <h1 className="text-2xl font-black text-slate-900">Managers</h1>
+                  </div>
                 </div>
                 <div className="grid gap-2 rounded-[28px] border border-slate-200 bg-slate-50 p-2 sm:grid-cols-2">
                   {[['current', 'Current subscribers', accounts.filter((a) => a.enabled !== false).length], ['past', 'Past subscribers', accounts.filter((a) => a.enabled === false).length]].map(([key, label, count]) => (

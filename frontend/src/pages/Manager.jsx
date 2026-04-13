@@ -1163,6 +1163,7 @@ function DayAvailabilityTimeline({ ranges, onRangesChange, disabled }) {
 function bookingBadgeTone(row) {
   const type = String(row.Type || '').trim().toLowerCase()
   const approval = String(row['Manager Approval'] || '').trim().toLowerCase()
+  if (type === 'availability' || type === 'meeting availability') return 'bg-emerald-50 text-emerald-800 border-emerald-200'
   if (type === 'work order') return 'bg-amber-50 text-amber-900 border-amber-200'
   if (type === 'issue' || type === 'other') return 'bg-slate-100 text-slate-700 border-slate-200'
   if (type === 'meeting') return 'bg-violet-50 text-violet-800 border-violet-200'
@@ -1173,6 +1174,7 @@ function bookingBadgeTone(row) {
 
 function bookingLabel(row) {
   const type = String(row.Type || '').trim().toLowerCase()
+  if (type === 'availability' || type === 'meeting availability') return 'Open meeting slot'
   if (type === 'meeting') return 'Meeting'
   if (type === 'work order') return 'Work order'
   if (type === 'issue' || type === 'other') return 'Issue'
@@ -1384,11 +1386,6 @@ function AvailabilityCalendar({ view, anchorDate, selectedDateKey, onSelectDate,
                   </div>
                 )
               })}
-              {!ranges.length && !dayBookings.length ? (
-                <div className="absolute inset-0 flex items-center justify-center px-6 text-center text-sm text-slate-500">
-                  No availability or scheduled items for this date yet
-                </div>
-              ) : null}
             </div>
           </div>
         </div>
@@ -1515,6 +1512,14 @@ function AvailabilityEditorPanel({
       <div className="mt-6 flex flex-wrap gap-2 text-sm">
         <button
           type="button"
+          onClick={onOpenMeet}
+          disabled={availSaving}
+          className="rounded-xl border border-[#2563eb]/25 bg-[#2563eb]/5 px-3 py-2 font-semibold text-[#2563eb] transition hover:bg-[#2563eb]/10 disabled:opacity-40"
+        >
+          Let us meet
+        </button>
+        <button
+          type="button"
           onClick={onClearDay}
           disabled={availSaving || isManagerInternalPreview(manager) || !hasApprovedPick}
           className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 font-semibold text-red-700 hover:bg-red-100 disabled:opacity-40"
@@ -1537,7 +1542,16 @@ function AvailabilityEditorPanel({
   )
 }
 
-function LetUsMeetModal({ open, initialDateKey, initialPropertyName = '', manager, onClose, onCreated, approvedPropertyNames = [] }) {
+function LetUsMeetModal({
+  open,
+  initialDateKey,
+  initialPropertyName = '',
+  manager,
+  onClose,
+  onCreated,
+  approvedPropertyNames = [],
+  requirePropertyForAvailability = true,
+}) {
   const [date, setDate] = useState(initialDateKey)
   const [itemType, setItemType] = useState('Meeting')
   const [property, setProperty] = useState('')
@@ -1569,8 +1583,9 @@ function LetUsMeetModal({ open, initialDateKey, initialPropertyName = '', manage
 
   useEffect(() => {
     if (!open) return
-    if (itemType === 'Tour' && !canScheduleTours) setItemType('Meeting')
-  }, [open, itemType, canScheduleTours])
+    const needsProperty = itemType === 'Tour' || (itemType === 'Availability' && requirePropertyForAvailability)
+    if (needsProperty && !canScheduleTours) setItemType('Meeting')
+  }, [open, itemType, canScheduleTours, requirePropertyForAvailability])
 
   if (!open) return null
 
@@ -1582,13 +1597,14 @@ function LetUsMeetModal({ open, initialDateKey, initialPropertyName = '', manage
       setError('Choose a valid date and time range.')
       return
     }
-    if (itemType === 'Tour') {
-      if (!canScheduleTours) {
+    if (itemType === 'Tour' || itemType === 'Availability') {
+      const needsProperty = itemType === 'Tour' || (itemType === 'Availability' && requirePropertyForAvailability)
+      if (needsProperty && !canScheduleTours) {
         setError('You need at least one listed property before scheduling a tour.')
         return
       }
-      if (!String(property || '').trim()) {
-        setError('Select a property for this tour.')
+      if (needsProperty && !String(property || '').trim()) {
+        setError(itemType === 'Availability' ? 'Select a property for this availability slot.' : 'Select a property for this tour.')
         return
       }
     }
@@ -1636,6 +1652,7 @@ function LetUsMeetModal({ open, initialDateKey, initialPropertyName = '', manage
             <select value={itemType} onChange={(e) => setItemType(e.target.value)} className={MANAGER_PILL_SELECT_CLS}>
               <option value="Meeting">Meeting</option>
               {canScheduleTours ? <option value="Tour">Tour</option> : null}
+              {(canScheduleTours || !requirePropertyForAvailability) ? <option value="Availability">Availability slot</option> : null}
               <option value="Work Order">Work Order</option>
               <option value="Issue">Issue</option>
             </select>
@@ -1658,11 +1675,15 @@ function LetUsMeetModal({ open, initialDateKey, initialPropertyName = '', manage
               disabled={!canScheduleTours}
               className={MANAGER_PILL_SELECT_CLS}
             >
-              {!canScheduleTours ? (
+              {!(canScheduleTours || !requirePropertyForAvailability) ? (
                 <option value="">No approved properties</option>
               ) : (
                 <>
-                  <option value="">{itemType === 'Tour' ? 'Select property…' : 'Optional — select property'}</option>
+                  <option value="">
+                    {itemType === 'Tour' || (itemType === 'Availability' && requirePropertyForAvailability)
+                      ? 'Select property…'
+                      : 'Optional — select property'}
+                  </option>
                   {approvedPropertyNames.map((name) => (
                     <option key={name} value={name}>{name}</option>
                   ))}
@@ -1703,7 +1724,9 @@ function LetUsMeetModal({ open, initialDateKey, initialPropertyName = '', manage
           onClick={handleSave}
           disabled={
             saving ||
-            (itemType === 'Tour' && canScheduleTours && !String(property || '').trim())
+            ((itemType === 'Tour' || (itemType === 'Availability' && requirePropertyForAvailability)) &&
+              canScheduleTours &&
+              !String(property || '').trim())
           }
         >
           {saving ? 'Saving…' : 'Save'}
@@ -2082,7 +2105,11 @@ function workOrdersToCalendarRows(workOrders, allowedPropertyNamesLower) {
 }
 
 function schedulingRowsForCalendarView(rows, options) {
-  const { selectedPropertyName, managerEmail } = options
+  const { selectedPropertyName, managerEmail, showAllRows = false } = options
+
+  if (showAllRows) {
+    return (rows || []).filter((row) => String(row?.['Preferred Date'] || '').trim())
+  }
 
   return (rows || []).filter((row) => {
     if (row._workOrder) {
@@ -4553,17 +4580,29 @@ function ApplicationsPanel({ allowedPropertyNames, manager }) {
           toast.success(data.message || 'Application approved and lease draft generated')
         }
       } else {
+        const res = await fetch('/api/portal?action=manager-reject-application', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            applicationRecordId: recordId,
+            managerName: manager?.name || manager?.email || 'Axis Manager',
+            managerRole: manager?.role || 'Manager',
+            managerRecordId: manager?.id || '',
+          }),
+        })
+        const data = await readJsonResponse(res)
+        if (!res.ok) throw new Error(data.error || 'Could not reject application')
         const rf = applicationRejectedFieldName()
-        const updated = await patchApplication(recordId, { Approved: null, [rf]: true })
+        const app = data.application || {}
         setScopedRows((prev) =>
           prev.map((a) => {
             if (a.id !== recordId) return a
-            const next = { ...a, ...updated, [rf]: true }
+            const next = { ...a, ...app, [rf]: true }
             delete next.Approved
             return next
           }),
         )
-        toast.success('Application rejected')
+        toast.success(data.message || 'Application rejected')
       }
     } catch (err) {
       toast.error('Could not update application: ' + err.message)
@@ -4881,8 +4920,9 @@ export function CalendarTabPanel({ manager, allowedPropertyNames, loadAllSchedul
       schedulingRowsForCalendarView(schedulingRows, {
         selectedPropertyName: propertyRecordName(selectedProperty || {}),
         managerEmail: manager?.email || '',
+        showAllRows: loadAllSchedulingRows,
       }),
-    [schedulingRows, selectedProperty, manager?.email],
+    [schedulingRows, selectedProperty, manager?.email, loadAllSchedulingRows],
   )
 
   const bookedByDate = useMemo(() => {
@@ -4995,8 +5035,21 @@ export function CalendarTabPanel({ manager, allowedPropertyNames, loadAllSchedul
           >
             {loading ? 'Loading…' : 'Refresh'}
           </button>
+          <button
+            type="button"
+            onClick={() => setMeetOpen(true)}
+            className="h-[42px] shrink-0 rounded-full bg-[#2563eb] px-4 text-sm font-semibold text-white transition hover:brightness-110"
+          >
+            Let us meet
+          </button>
         </div>
       </div>
+
+      {loadAllSchedulingRows ? (
+        <div className="mb-5 rounded-2xl border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-900">
+          Admin calendar creates meetings and open availability directly in Scheduling. Public Contact Axis booking uses these slots.
+        </div>
+      ) : null}
 
       <div className="mb-5 grid gap-2 rounded-[28px] border border-slate-200 bg-slate-50 p-2 sm:grid-cols-2 xl:grid-cols-4">
         <button
@@ -5119,6 +5172,7 @@ export function CalendarTabPanel({ manager, allowedPropertyNames, loadAllSchedul
         initialPropertyName={propertyRecordName(selectedProperty || {})}
         manager={manager}
         approvedPropertyNames={meetModalApprovedPropertyNames}
+        requirePropertyForAvailability={!loadAllSchedulingRows}
         onCreated={() => {
           load()
         }}
@@ -5195,18 +5249,18 @@ function ManagerDashboard({ manager: managerProp, openDraftId, onOpenDraft, onCl
     setLoading(true)
     setLeasesLoadError('')
     try {
-      const rows = await fetchLeaseDrafts({ ...filters, status: '' })
+      const rows = await fetchLeaseDrafts({ property: filters.property, status: '' })
       const names = managerScope.approvedNames
-      let scoped =
+      const scoped =
         names.size > 0 ? rows.filter((d) => leaseDraftInScope(d, names)) : []
-      scoped = scoped.filter((d) => leaseDraftMatchesQueueFilter(d.Status, filters.status))
+      // Keep full property-scoped list in state; status tab only filters the table + card counts stay stable.
       setDrafts(scoped)
     } catch (err) {
       setLeasesLoadError(formatDataLoadError(err))
     } finally {
       setLoading(false)
     }
-  }, [filters, managerScope.approvedNames])
+  }, [filters.property, managerScope.approvedNames])
 
   useEffect(() => {
     if (dashView !== 'leases') return
@@ -5361,6 +5415,11 @@ function ManagerDashboard({ manager: managerProp, openDraftId, onOpenDraft, onCl
       ...flow,
     ]
   }, [drafts])
+
+  const visibleLeaseDrafts = useMemo(
+    () => drafts.filter((d) => leaseDraftMatchesQueueFilter(d.Status, filters.status)),
+    [drafts, filters.status],
+  )
 
   function setLeaseFilterCardId(cardId) {
     const map = {
@@ -5556,7 +5615,7 @@ function ManagerDashboard({ manager: managerProp, openDraftId, onOpenDraft, onCl
                     ),
                   },
                 ]}
-                rows={drafts.map((draft) => ({ key: draft.id, data: draft }))}
+                rows={visibleLeaseDrafts.map((draft) => ({ key: draft.id, data: draft }))}
               />
             </div>
           )}

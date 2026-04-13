@@ -508,13 +508,105 @@ export async function adminPatchApplication(recordId, fields) {
   return mapRecord(data)
 }
 
+function escapeFormulaValueForFilter(s) {
+  return String(s || '').replace(/\\/g, '\\\\').replace(/"/g, '\\"')
+}
+
+async function fetchApplicationRecordForAdmin(recordId) {
+  const id = String(recordId || '').trim()
+  if (!id) return null
+  const enc = encodeURIComponent(TABLES.applications)
+  const data = await requestJson(`${BASE_URL}/${enc}/${id}`)
+  return mapRecord(data)
+}
+
+async function listResidentProfilesMatchingApplication(applicationRecordId, signerEmail) {
+  const enc = encodeURIComponent(RESIDENT_PROFILE_TABLE)
+  const byId = new Map()
+  const run = async (formula) => {
+    const url = new URL(`${BASE_URL}/${enc}`)
+    url.searchParams.set('filterByFormula', formula)
+    url.searchParams.set('maxRecords', '25')
+    const data = await requestJson(url.toString())
+    for (const rec of data.records || []) {
+      byId.set(rec.id, mapRecord(rec))
+    }
+  }
+  const email = String(signerEmail || '').trim().toLowerCase()
+  if (email) {
+    await run(`LOWER({Email}) = "${escapeFormulaValueForFilter(email)}"`)
+  }
+  const appId = String(applicationRecordId || '').trim()
+  if (appId.startsWith('rec')) {
+    try {
+      await run(`FIND("${escapeFormulaValueForFilter(appId)}", ARRAYJOIN({Applications})) > 0`)
+    } catch {
+      /* Applications link field may be missing on Resident Profile */
+    }
+  }
+  return [...byId.values()]
+}
+
+async function patchResidentProfileAdmin(recordId, fields) {
+  const enc = encodeURIComponent(RESIDENT_PROFILE_TABLE)
+  const data = await requestJson(`${BASE_URL}/${enc}/${recordId}`, {
+    method: 'PATCH',
+    body: JSON.stringify({ fields, typecast: true }),
+  })
+  return mapRecord(data)
+}
+
+/** Clear Resident Profile approval flags for applicants tied to this application (email + Applications link). */
+async function syncResidentProfilesAfterApplicationReject(application) {
+  if (!application?.id) return
+  const rf = applicationRejectedFieldName()
+  let rows = []
+  try {
+    rows = await listResidentProfilesMatchingApplication(application.id, application['Signer Email'])
+  } catch {
+    return
+  }
+  for (const r of rows) {
+    const fullRejectFields = {
+      Approved: false,
+      'Application Approval': 'Rejected',
+      [rf]: true,
+    }
+    try {
+      await patchResidentProfileAdmin(r.id, fullRejectFields)
+    } catch {
+      try {
+        await patchResidentProfileAdmin(r.id, {
+          Approved: false,
+          'Application Approval': 'Rejected',
+        })
+      } catch {
+        try {
+          await patchResidentProfileAdmin(r.id, { Approved: false })
+        } catch {
+          /* field set may differ per base */
+        }
+      }
+    }
+  }
+}
+
 /** Reject — sets `Rejected` checkbox (Airtable omits unchecked `Approved`, so rejection must use a checked field). */
 export async function adminRejectApplication(recordId) {
   const rf = applicationRejectedFieldName()
-  return adminPatchApplication(recordId, {
+  let appBefore = null
+  try {
+    appBefore = await fetchApplicationRecordForAdmin(recordId)
+  } catch {
+    /* proceed — PATCH response may still carry Signer Email */
+  }
+  const updated = await adminPatchApplication(recordId, {
     Approved: null,
     [rf]: true,
   })
+  const appForSync = appBefore ? { ...appBefore, ...updated } : { id: String(recordId || '').trim(), ...updated }
+  await syncResidentProfilesAfterApplicationReject(appForSync)
+  return updated
 }
 
 /** Remove approval — clears both markers so the row returns to pending. */

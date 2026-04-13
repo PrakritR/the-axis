@@ -1,5 +1,9 @@
 import React, { useEffect, useMemo, useState } from 'react'
 import GalleryLightbox from './GalleryLightbox'
+import PropertyMediaPlaceholder from './PropertyMediaPlaceholder'
+
+/** Sentinel URL — never a real attachment; shows shared placeholder UI */
+const GALLERY_MEDIA_PLACEHOLDER = '__AXIS_GALLERY_PLACEHOLDER__'
 
 function ArrowLeft() {
   return (
@@ -29,16 +33,21 @@ export default function PropertyGallery({ images = [], videos = [] }) {
       : { placeholder: false, ...video }
   )
 
-  const orderedImages = useMemo(() => {
-    if (!images.length) return []
+  const hasRealImages = images.length > 0
 
+  const orderedImages = useMemo(() => {
+    if (!images.length) {
+      return [{ image: GALLERY_MEDIA_PLACEHOLDER, imageIndex: 0 }]
+    }
     const mapped = images.map((image, imageIndex) => ({ image, imageIndex }))
     return [...mapped.slice(index), ...mapped.slice(0, index)]
   }, [images, index])
 
   const leadImage = orderedImages[0]
   const supportingImages = orderedImages.slice(1, 3)
-  const reelImages = orderedImages.slice(0, Math.min(8, images.length))
+  const reelImages = hasRealImages
+    ? orderedImages.slice(0, Math.min(8, images.length))
+    : []
 
   function openAt(i) {
     if (!images.length) return
@@ -81,27 +90,33 @@ export default function PropertyGallery({ images = [], videos = [] }) {
     }
   }, [videoOpen, normalizedVideos.length])
 
-  if (!images.length || !leadImage) return null
+  if (!leadImage) return null
 
   return (
     <div className="w-full">
       <section className="overflow-hidden rounded-[24px] border border-slate-200 bg-[linear-gradient(180deg,#ffffff_0%,#f8f7f4_100%)] shadow-[0_24px_70px_rgba(15,23,42,0.08)] sm:rounded-[30px]">
         <div className="px-4 py-4 sm:px-6 lg:px-8">
           <div className="hidden gap-4 lg:grid lg:grid-cols-12">
-            <button
-              type="button"
-              onClick={() => openAt(leadImage.imageIndex)}
-              className="group relative col-span-7 row-span-2 overflow-hidden rounded-[26px] bg-slate-100 text-left"
-            >
-              <img
-                src={leadImage.image}
-                alt={`Property image ${leadImage.imageIndex + 1}`}
-                className="h-[620px] w-full object-cover transition duration-500 group-hover:scale-[1.015]"
-              />
-              <div className="pointer-events-none absolute right-4 top-4 rounded-full border border-white/25 bg-black/45 px-3 py-1 text-xs font-semibold text-white backdrop-blur-sm">
-                {leadImage.imageIndex + 1} / {images.length}
+            {hasRealImages ? (
+              <button
+                type="button"
+                onClick={() => openAt(leadImage.imageIndex)}
+                className="group relative col-span-7 row-span-2 overflow-hidden rounded-[26px] bg-slate-100 text-left"
+              >
+                <img
+                  src={leadImage.image}
+                  alt={`Property image ${leadImage.imageIndex + 1}`}
+                  className="h-[620px] w-full object-cover transition duration-500 group-hover:scale-[1.015]"
+                />
+                <div className="pointer-events-none absolute right-4 top-4 rounded-full border border-white/25 bg-black/45 px-3 py-1 text-xs font-semibold text-white backdrop-blur-sm">
+                  {leadImage.imageIndex + 1} / {images.length}
+                </div>
+              </button>
+            ) : (
+              <div className="relative col-span-7 row-span-2 overflow-hidden rounded-[26px] border border-slate-200 bg-slate-100">
+                <PropertyMediaPlaceholder className="h-[620px] w-full" label="Photos coming soon" />
               </div>
-            </button>
+            )}
 
             {supportingImages.map((item, supportingIndex) => (
               <button
@@ -121,6 +136,7 @@ export default function PropertyGallery({ images = [], videos = [] }) {
             ))}
           </div>
 
+          {hasRealImages ? (
           <div className="hidden items-center justify-between gap-4 border-t border-slate-200 pt-5 lg:flex">
             <div className="flex items-center gap-2">
               <button
@@ -159,6 +175,7 @@ export default function PropertyGallery({ images = [], videos = [] }) {
               ))}
             </div>
           </div>
+          ) : null}
 
           {normalizedVideos.length > 0 ? (
             <div className="hidden items-center justify-between gap-4 border-t border-slate-200 px-1 pt-5 lg:flex">
@@ -177,33 +194,45 @@ export default function PropertyGallery({ images = [], videos = [] }) {
           ) : null}
 
           <div className="lg:hidden">
-            <button
-              type="button"
-              onClick={() => openAt(leadImage.imageIndex)}
-              className="group relative block w-full overflow-hidden rounded-[24px] bg-slate-100"
-            >
-              <div className="aspect-[4/5] w-full bg-slate-100 sm:aspect-[16/11]">
-                <img
-                  src={leadImage.image}
-                  alt={`Property image ${leadImage.imageIndex + 1}`}
-                  className="h-full w-full object-cover transition duration-500 group-hover:scale-[1.015]"
-                />
+            {hasRealImages ? (
+              <button
+                type="button"
+                onClick={() => openAt(leadImage.imageIndex)}
+                className="group relative block w-full overflow-hidden rounded-[24px] bg-slate-100"
+              >
+                <div className="aspect-[4/5] w-full bg-slate-100 sm:aspect-[16/11]">
+                  <img
+                    src={leadImage.image}
+                    alt={`Property image ${leadImage.imageIndex + 1}`}
+                    className="h-full w-full object-cover transition duration-500 group-hover:scale-[1.015]"
+                  />
+                </div>
+                <div className="pointer-events-none absolute right-3 top-3 rounded-full border border-white/25 bg-black/45 px-2.5 py-1 text-[11px] font-semibold text-white backdrop-blur-sm">
+                  {leadImage.imageIndex + 1} / {images.length}
+                </div>
+              </button>
+            ) : (
+              <div className="overflow-hidden rounded-[24px] border border-slate-200 bg-slate-100">
+                <div className="aspect-[4/5] w-full sm:aspect-[16/11]">
+                  <PropertyMediaPlaceholder className="h-full w-full min-h-[14rem]" label="Photos coming soon" />
+                </div>
               </div>
-              <div className="pointer-events-none absolute right-3 top-3 rounded-full border border-white/25 bg-black/45 px-2.5 py-1 text-[11px] font-semibold text-white backdrop-blur-sm">
-                {leadImage.imageIndex + 1} / {images.length}
-              </div>
-            </button>
+            )}
 
             <div className="mt-3 flex flex-wrap items-center gap-2">
-              <button type="button" onClick={prev} className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-slate-300 bg-white text-slate-700">
-                <ArrowLeft />
-              </button>
-              <button type="button" onClick={next} className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-slate-300 bg-white text-slate-700">
-                <ArrowRight />
-              </button>
-              <button type="button" onClick={() => setOpen(true)} className="order-3 w-full rounded-full bg-axis px-4 py-2.5 text-sm font-semibold text-white hover:bg-axis-dark sm:order-none sm:flex-1">
-                All images
-              </button>
+              {hasRealImages ? (
+                <>
+                  <button type="button" onClick={prev} className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-slate-300 bg-white text-slate-700">
+                    <ArrowLeft />
+                  </button>
+                  <button type="button" onClick={next} className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-slate-300 bg-white text-slate-700">
+                    <ArrowRight />
+                  </button>
+                  <button type="button" onClick={() => setOpen(true)} className="order-3 w-full rounded-full bg-axis px-4 py-2.5 text-sm font-semibold text-white hover:bg-axis-dark sm:order-none sm:flex-1">
+                    All images
+                  </button>
+                </>
+              ) : null}
               {normalizedVideos.length > 0 ? (
                 <button type="button" onClick={() => openVideoAt(0)} className="rounded-full border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700">
                   Videos
@@ -211,22 +240,24 @@ export default function PropertyGallery({ images = [], videos = [] }) {
               ) : null}
             </div>
 
-            <div className="mt-3 flex gap-2.5 overflow-x-auto pb-1 scrollbar-none">
-              {reelImages.map((item) => (
-                <button
-                  key={`mobile-${item.image}-${item.imageIndex}`}
-                  type="button"
-                  onClick={() => setIndex(item.imageIndex)}
-                  className={`relative h-20 w-20 shrink-0 overflow-hidden rounded-[16px] border transition sm:h-24 sm:w-24 ${
-                    item.imageIndex === index
-                      ? 'border-slate-900 ring-1 ring-slate-900'
-                      : 'border-slate-200'
-                  }`}
-                >
-                  <img src={item.image} alt={`Thumbnail ${item.imageIndex + 1}`} className="h-full w-full object-cover" />
-                </button>
-              ))}
-            </div>
+            {hasRealImages ? (
+              <div className="mt-3 flex gap-2.5 overflow-x-auto pb-1 scrollbar-none">
+                {reelImages.map((item) => (
+                  <button
+                    key={`mobile-${item.image}-${item.imageIndex}`}
+                    type="button"
+                    onClick={() => setIndex(item.imageIndex)}
+                    className={`relative h-20 w-20 shrink-0 overflow-hidden rounded-[16px] border transition sm:h-24 sm:w-24 ${
+                      item.imageIndex === index
+                        ? 'border-slate-900 ring-1 ring-slate-900'
+                        : 'border-slate-200'
+                    }`}
+                  >
+                    <img src={item.image} alt={`Thumbnail ${item.imageIndex + 1}`} className="h-full w-full object-cover" />
+                  </button>
+                ))}
+              </div>
+            ) : null}
           </div>
         </div>
       </section>

@@ -1,9 +1,7 @@
-import { generateLeaseFromTemplate } from './generate-lease-from-template.js'
 import { resolveManagerTenant, canEnforceTenant } from '../middleware/resolveManagerTenant.js'
-import { markMatchingResidentsApproved } from '../lib/application-resident-sync.js'
+import { markMatchingResidentsRejected } from '../lib/application-resident-sync.js'
 
 const AIRTABLE_TOKEN = process.env.AIRTABLE_TOKEN || process.env.VITE_AIRTABLE_TOKEN
-/** Prefer explicit apps base; otherwise same base as Lease Drafts / portal (manager list uses CORE base). */
 const CORE_BASE_ID =
   process.env.VITE_AIRTABLE_BASE_ID || process.env.AIRTABLE_BASE_ID || 'appol57LKtMKaQ75T'
 const APPS_BASE_ID =
@@ -15,6 +13,12 @@ const APPLICATIONS_TABLE =
   process.env.VITE_AIRTABLE_APPLICATIONS_TABLE ||
   process.env.AIRTABLE_APPLICATIONS_TABLE ||
   'Applications'
+
+const APPLICATION_REJECTED_FIELD = String(
+  process.env.VITE_AIRTABLE_APPLICATION_REJECTED_FIELD ||
+    process.env.AIRTABLE_APPLICATION_REJECTED_FIELD ||
+    'Rejected',
+).trim() || 'Rejected'
 
 function airtableHeaders() {
   return {
@@ -61,19 +65,11 @@ async function getApplication(recordId) {
   return mapRecord(data)
 }
 
-const APPLICATION_REJECTED_FIELD = String(
-  process.env.VITE_AIRTABLE_APPLICATION_REJECTED_FIELD ||
-    process.env.AIRTABLE_APPLICATION_REJECTED_FIELD ||
-    'Rejected',
-).trim() || 'Rejected'
-
-async function approveApplication(recordId) {
-  const now = new Date().toISOString()
+async function rejectApplicationRecord(recordId) {
   const enc = encodeURIComponent(APPLICATIONS_TABLE)
   const data = await airtablePatch(`${APPS_AIRTABLE_BASE_URL}/${enc}/${recordId}`, {
-    Approved: true,
-    'Approved At': now,
-    [APPLICATION_REJECTED_FIELD]: null,
+    Approved: null,
+    [APPLICATION_REJECTED_FIELD]: true,
   })
   return mapRecord(data)
 }
@@ -93,14 +89,10 @@ export default async function handler(req, res) {
   }
 
   const recordId = normalizeRecordId(req.body?.applicationRecordId)
-  const managerName = String(req.body?.managerName || 'Manager').trim()
-  const managerRole = String(req.body?.managerRole || 'Manager').trim()
-
   if (!recordId) {
     return res.status(400).json({ error: 'applicationRecordId is required.' })
   }
 
-  // Resolve tenant — optional (graceful degradation if managerRecordId not sent)
   let tenant = null
   try {
     tenant = await resolveManagerTenant(req)
@@ -110,44 +102,25 @@ export default async function handler(req, res) {
 
   try {
     const existing = await getApplication(recordId)
-
-    // Tenant guard — reject if the application belongs to a different owner
     if (canEnforceTenant(tenant, existing)) {
       return res.status(403).json({ error: 'Access denied: this application belongs to a different manager.' })
     }
 
-    const approvedApplication = existing.Approved === true ? existing : await approveApplication(recordId)
-    const ownerId = tenant?.ownerId || String(approvedApplication['Owner ID'] || '').trim()
-    const residentSync = await markMatchingResidentsApproved(approvedApplication, ownerId)
-
-    // Generate lease draft from template (no AI). Skips gracefully if it fails.
-    let draft = null
-    let created = false
-    try {
-      const result = await generateLeaseFromTemplate({
-        applicationRecordId: recordId,
-        generatedBy: managerName,
-        ownerId,
-      })
-      draft = result.draft
-      created = result.created
-    } catch (draftErr) {
-      console.warn('[manager-approve-application] Lease draft skipped:', draftErr?.message || draftErr)
-    }
+    const rejectedApplication = await rejectApplicationRecord(recordId)
+    const residentSync = await markMatchingResidentsRejected(rejectedApplication)
 
     return res.status(200).json({
-      application: approvedApplication,
-      draft,
-      createdLeaseDraft: created,
+      application: rejectedApplication,
       residentRecordsUpdated: residentSync.updatedIds,
-      message: created
-        ? 'Application approved and lease draft generated.'
-        : 'Application approved.',
+      message:
+        residentSync.updatedIds.length > 0
+          ? `Application rejected. Resident profile updated (${residentSync.updatedIds.length}).`
+          : 'Application rejected.',
     })
   } catch (err) {
-    console.error('[manager-approve-application]', err)
+    console.error('[manager-reject-application]', err)
     return res.status(500).json({
-      error: err.message || 'Could not approve application.',
+      error: err.message || 'Could not reject application.',
     })
   }
 }

@@ -3,6 +3,7 @@ import { useParams, Link, useLocation } from 'react-router-dom'
 import { usePropertyListingChrome } from '../contexts/PropertyListingChromeContext'
 import MapView from '../components/Map'
 import PropertyGallery from '../components/PropertyGallery'
+import PropertyMediaPlaceholder from '../components/PropertyMediaPlaceholder'
 import { properties } from '../data/properties'
 import { fetchPropertyRecordById, propertyListingVisibleForMarketing } from '../lib/airtable'
 import { mapAirtableRecordToPropertyPage, marketingSlugForAirtablePropertyId } from '../lib/airtablePublicListings'
@@ -1033,7 +1034,11 @@ export default function PropertyPage(){
                               </a>
                             ))}
                           </div>
-                        ) : null}
+                        ) : (
+                          <div className="mt-3 h-24 w-full max-w-xs overflow-hidden rounded-xl border border-slate-200">
+                            <PropertyMediaPlaceholder className="h-full w-full" compact label="No photos yet" />
+                          </div>
+                        )}
                         {Array.isArray(row.videos) && row.videos.length > 0 ? (
                           <div className="mt-3 flex flex-wrap gap-2">
                             {row.videos.map((video, vi) => (

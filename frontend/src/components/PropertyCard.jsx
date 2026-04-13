@@ -59,9 +59,18 @@ export default function PropertyCard({ p }) {
               {p.type}
             </span>
           </div>
-          <div className="absolute bottom-3 right-3 pointer-events-none text-right sm:right-4 [text-shadow:0_1px_3px_rgba(0,0,0,0.95),0_2px_12px_rgba(0,0,0,0.55)]">
-            <p className="text-xs font-semibold text-white">from</p>
-            <p className="leading-none text-lg font-black text-white">{rentRange || '—'}<span className="text-xs font-semibold text-white/95">/mo</span></p>
+          <div className="absolute bottom-3 right-3 max-w-[11rem] pointer-events-none text-right sm:right-4 [text-shadow:0_1px_3px_rgba(0,0,0,0.95),0_2px_12px_rgba(0,0,0,0.55)]">
+            {rentRange ? (
+              <>
+                <p className="text-xs font-semibold text-white">from</p>
+                <p className="leading-none text-lg font-black text-white">
+                  {rentRange}
+                  <span className="text-xs font-semibold text-white/95">/mo</span>
+                </p>
+              </>
+            ) : (
+              <p className="text-xs font-bold leading-snug text-white">Pricing on request</p>
+            )}
           </div>
         </Carousel>
       </div>
