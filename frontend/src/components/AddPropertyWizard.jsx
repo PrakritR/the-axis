@@ -1020,6 +1020,18 @@ export default function AddPropertyWizard({
                 <FieldError msg={e[`r${idx}_furn`]} />
               </div>
 
+              <div className="sm:col-span-2">
+                <label className={LBL}>
+                  Bathroom setup <span className="font-normal text-slate-400">(optional — bathroom / access only)</span>
+                </label>
+                <input
+                  className={OK_INPUT}
+                  value={room.bathroomSetup}
+                  onChange={(ev) => updateRoom(idx, { bathroomSetup: ev.target.value })}
+                  placeholder="e.g. First floor – private bathroom; shared hall bath with Rooms 2–3"
+                />
+              </div>
+
               {(room.furnished === 'Yes' || room.furnished === 'Partial') && (
                 <div className="sm:col-span-2">
                   <label className={LBL}>Furniture included <Req /></label>
@@ -1229,7 +1241,17 @@ export default function AddPropertyWizard({
                 <textarea className={`${OK_INPUT} min-h-[64px]`} value={kit.description} onChange={ev => updateKitchen(idx, { description: ev.target.value })} placeholder="Appliances, shared vs private, condition…" rows={2} />
               </div>
               <div className="sm:col-span-2">
-                <label className={`${LBL} mb-2`}>Room access <Req /></label>
+                <div className="mb-2 flex flex-wrap items-end justify-between gap-2">
+                  <label className={`${LBL} mb-0`}>Room access <Req /></label>
+                  <button
+                    type="button"
+                    onClick={() => updateKitchen(idx, { access: [...roomOptions] })}
+                    disabled={!roomOptions.length}
+                    className="shrink-0 rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-bold text-[#2563eb] transition hover:border-[#2563eb]/40 hover:bg-[#2563eb]/5 disabled:cursor-not-allowed disabled:opacity-40"
+                  >
+                    All rooms
+                  </button>
+                </div>
                 <RoomChips access={kit.access} onChange={access => updateKitchen(idx, { access })} />
                 <FieldError msg={e[`k${idx}_access`]} />
               </div>
@@ -1290,6 +1312,16 @@ export default function AddPropertyWizard({
                   <FieldError msg={e[`s${idx}_typeOther`]} />
                 </div>
               )}
+              <div className="sm:col-span-2">
+                <label className={LBL}>Shared space description <span className="font-normal text-slate-400">(optional)</span></label>
+                <textarea
+                  className={`${OK_INPUT} min-h-[64px]`}
+                  value={space.description}
+                  onChange={ev => updateSpace(idx, { description: ev.target.value })}
+                  placeholder="e.g. Large dining room next to kitchen; laundry room in basement; backyard with patio seating…"
+                  rows={2}
+                />
+              </div>
               <div className="sm:col-span-2">
                 <div className="mb-2 flex flex-wrap items-end justify-between gap-2">
                   <label className={`${LBL} mb-0`}>Room access <span className="font-normal text-slate-400">(optional)</span></label>
@@ -1357,7 +1389,17 @@ export default function AddPropertyWizard({
                     <FieldError msg={e[`l${idx}_type`]} />
                   </div>
                   <div className="sm:col-span-2">
-                    <label className={`${LBL} mb-2`}>Room access <Req /></label>
+                    <div className="mb-2 flex flex-wrap items-end justify-between gap-2">
+                      <label className={`${LBL} mb-0`}>Room access <Req /></label>
+                      <button
+                        type="button"
+                        onClick={() => updateLaundryRow(idx, { access: [...roomOptions] })}
+                        disabled={!roomOptions.length}
+                        className="shrink-0 rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-bold text-[#2563eb] transition hover:border-[#2563eb]/40 hover:bg-[#2563eb]/5 disabled:cursor-not-allowed disabled:opacity-40"
+                      >
+                        All rooms
+                      </button>
+                    </div>
                     <RoomChips
                       access={row.access || []}
                       onChange={(access) => updateLaundryRow(idx, { access })}

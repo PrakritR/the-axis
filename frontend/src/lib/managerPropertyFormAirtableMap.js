@@ -160,6 +160,8 @@ export function emptyRoomRow() {
     utilitiesCost: '',
     utilities: '',
     notes: '',
+    /** Bathroom / access only — not mixed with furniture (stored in axis meta `roomsDetail`). */
+    bathroomSetup: '',
     furnitureIncluded: '',
     additionalFeatures: '',
     media: [],
@@ -254,7 +256,7 @@ function normalizeRoomAccessLabel(raw) {
   return s
 }
 
-function splitRoomAccess(raw) {
+export function splitRoomAccess(raw) {
   if (Array.isArray(raw)) {
     return [...new Set(raw.map(normalizeRoomAccessLabel).filter(Boolean))]
   }
@@ -263,7 +265,7 @@ function splitRoomAccess(raw) {
   return [...new Set(s.split(',').map((part) => normalizeRoomAccessLabel(part)).filter(Boolean))]
 }
 
-function parseBodyTriplet(raw) {
+export function parseBodyTriplet(raw) {
   const parts = String(raw || '')
     .split(/\n{2,}/)
     .map((part) => part.trim())
@@ -273,6 +275,55 @@ function parseBodyTriplet(raw) {
     label: parts[1] || '',
     description: parts.slice(2).join('\n\n'),
   }
+}
+
+/**
+ * Sum bath equivalents from manager wizard rows (full ≈ 1, half / powder ≈ 0.5).
+ * @param {{ kind?: string, label?: string, description?: string }[]} bathrooms
+ */
+function bathroomKindToWeight(kindRaw) {
+  const k = String(kindRaw || '').trim().toLowerCase()
+  if (!k) return 1
+  if (/\bpowder\b/.test(k) || /\bhalf\b/.test(k)) return 0.5
+  return 1
+}
+
+export function computeDecimalBathroomTotal(bathrooms) {
+  const rows = Array.isArray(bathrooms) ? bathrooms : []
+  let sum = 0
+  let any = false
+  for (const row of rows) {
+    const kind = String(row?.kind || '').trim().toLowerCase()
+    const hasBody =
+      kind ||
+      String(row?.label || '').trim() ||
+      String(row?.description || '').trim() ||
+      (Array.isArray(row?.access) && row.access.length > 0)
+    if (!hasBody) continue
+    any = true
+    sum += bathroomKindToWeight(kind)
+  }
+  return any ? sum : 0
+}
+
+/**
+ * Same as {@link computeDecimalBathroomTotal} using saved Airtable `Bathroom N` bodies.
+ * @param {Record<string, unknown>} record
+ */
+export function computeDecimalBathroomTotalFromAirtableRecord(record) {
+  const rec = record && typeof record === 'object' ? record : {}
+  const bc = clampInt(rec[PROPERTY_AIR.bathroomCount] ?? 0, 0, MAX_BATHROOM_SLOTS)
+  let sum = 0
+  let any = false
+  for (let i = 1; i <= bc; i++) {
+    const parsed = parseBodyTriplet(rec[bathroomDescriptionField(i)])
+    const kind = String(parsed.kind || '').trim().toLowerCase()
+    const hasBody = kind || String(parsed.label || '').trim() || String(parsed.description || '').trim()
+    if (!hasBody) continue
+    any = true
+    sum += bathroomKindToWeight(kind)
+  }
+  return any ? sum : 0
 }
 
 function stringOrEmpty(v) {
@@ -310,6 +361,7 @@ export function buildPropertyWizardInitialValues(property) {
       utilitiesCost: stringOrEmpty(detail.utilitiesCost || record[roomUtilitiesCostField(n)]),
       utilities: stringOrEmpty(detail.utilities || (n === 1 ? record[ROOM_1_UTILITIES_FIELD] : '')),
       notes: stringOrEmpty(detail.notes),
+      bathroomSetup: stringOrEmpty(detail.bathroomSetup),
       furnitureIncluded: stringOrEmpty(detail.furnitureIncluded),
       additionalFeatures: stringOrEmpty(detail.additionalFeatures),
       media: [],
@@ -601,6 +653,7 @@ export function serializeManagerAddPropertyToAirtableFields(params) {
     roomsDetail.push({
       label: String(row.label || '').trim(),
       notes: String(row.notes || '').trim(),
+      bathroomSetup: String(row.bathroomSetup || '').trim(),
       furnitureIncluded: String(row.furnitureIncluded || '').trim(),
       additionalFeatures: String(row.additionalFeatures || '').trim(),
       rent: String(row.rent ?? '').trim(),
@@ -650,10 +703,13 @@ export function serializeManagerAddPropertyToAirtableFields(params) {
     return notes ? { notes, description: notes } : {}
   })
 
+  const bathroomTotalDecimal = computeDecimalBathroomTotal(bathrooms)
+
   const axisMeta = {
     propertyTypeOther: ptRaw === 'Other' ? ptOther : '',
     roomsDetail,
     sharedSpacesDetail,
+    ...(bathroomTotalDecimal > 0 ? { bathroomTotalDecimal } : {}),
     financials: {
       securityDeposit: optionalCurrency(basics.securityDeposit) ?? 0,
       moveInCharges: optionalCurrency(basics.moveInCharges) ?? 0,

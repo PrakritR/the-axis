@@ -2,14 +2,28 @@ import { parseAxisListingMetaBlock } from './axisListingMeta.js'
 import {
   PROPERTY_AIR,
   clampInt,
+  computeDecimalBathroomTotalFromAirtableRecord,
+  kitchenDescriptionField,
+  kitchenRoomsSharingField,
+  laundryRoomsSharingField,
+  laundryTypeField,
+  MAX_KITCHEN_SLOTS,
+  MAX_LAUNDRY_SLOTS,
   MAX_ROOM_SLOTS,
   MAX_SHARED_SPACE_SLOTS,
   normalizeLeasingFromMeta,
+  parseBodyTriplet,
   roomRentField,
   sharedSpaceAccessField,
   sharedSpaceNameField,
   sharedSpaceTypeField,
+  splitRoomAccess,
 } from './managerPropertyFormAirtableMap.js'
+import {
+  formatBathroomCountForDisplay,
+  formatSharedSpaceAccessDisplay,
+  partitionRoomListingFields,
+} from './listingRoomDisplay.js'
 
 /** URL slug for an approved Airtable property (stable, unique). */
 export function marketingSlugForAirtablePropertyId(recordId) {
@@ -86,16 +100,16 @@ function buildRoomPlansFromAirtableRecord(rec, meta) {
     const rentRaw = detail.rent ?? rec[roomRentField(n)]
     const price = formatRentForListing(rentRaw) || 'Contact for pricing'
     const available = availabilityDisplayFromDetail(detail)
-    const detailParts = [detail.notes, detail.furnitureIncluded, detail.additionalFeatures]
-      .map(trimStr)
-      .filter(Boolean)
-    const details = detailParts.join(' · ')
+    const { bathroomSetup, featureTags } = partitionRoomListingFields(detail)
 
     flat.push({
       name: label,
       price,
       available,
-      details: details || undefined,
+      bathroomSetup: bathroomSetup || undefined,
+      featureTags,
+      /** @deprecated listing subtitle — bathroom only; use `bathroomSetup` */
+      details: bathroomSetup || undefined,
       videoPlaceholder: true,
       videoPlaceholderText: `${label} tour coming soon.`,
     })
@@ -169,27 +183,31 @@ const DEFAULT_SHARED_SPACES_FALLBACK = [
 ]
 
 function buildSharedSpacesListFromRecord(rec, meta) {
+  const roomCount = clampInt(rec[PROPERTY_AIR.roomCount] ?? 0, 0, MAX_ROOM_SLOTS)
   const sc = clampInt(rec[PROPERTY_AIR.sharedSpaceCount] ?? 0, 0, MAX_SHARED_SPACE_SLOTS)
   const mediaRows = Array.isArray(meta?.sharedSpacesDetail) ? meta.sharedSpacesDetail : []
-
-  if (sc <= 0) return DEFAULT_SHARED_SPACES_FALLBACK
 
   const out = []
   for (let i = 1; i <= sc; i++) {
     const name = trimStr(rec[sharedSpaceNameField(i)])
     const type = trimStr(rec[sharedSpaceTypeField(i)])
     const accessRaw = rec[sharedSpaceAccessField(i)]
-    const accessStr = Array.isArray(accessRaw) ? accessRaw.map(trimStr).filter(Boolean).join(', ') : trimStr(accessRaw)
+    const accessList = Array.isArray(accessRaw)
+      ? accessRaw.map(trimStr).filter(Boolean)
+      : trimStr(accessRaw)
+          .split(',')
+          .map((s) => s.trim())
+          .filter(Boolean)
 
-    if (!name && !type && !accessStr) continue
+    if (!name && !type && !accessList.length) continue
 
     const title = name || type || `Shared space ${i}`
-    const descParts = []
-    if (type && type !== name) descParts.push(type)
-    if (accessStr) descParts.push(`Access: ${accessStr}`)
-    const description = descParts.join(' · ') || 'Shared area'
-
     const m = mediaRows[i - 1] && typeof mediaRows[i - 1] === 'object' ? mediaRows[i - 1] : {}
+    const descText = trimStr(m.description || m.notes || '')
+    const accessDisplay = formatSharedSpaceAccessDisplay(accessList, roomCount)
+    const typeLine = type && type !== name ? type : ''
+    const descriptionParts = [descText, typeLine].filter(Boolean)
+    const description = descriptionParts.join(' — ') || (typeLine || 'Shared area')
     const imageUrls = (Array.isArray(m.imageUrls) ? m.imageUrls : []).map(trimStr).filter(Boolean)
     const vidRaw = Array.isArray(m.videos) ? m.videos : []
     const videos = vidRaw
@@ -207,10 +225,78 @@ function buildSharedSpacesListFromRecord(rec, meta) {
       })
       .filter(Boolean)
 
-    out.push({ title, description, images: imageUrls, videos })
+    out.push({
+      title,
+      description,
+      accessLabel: accessDisplay,
+      images: imageUrls,
+      videos,
+    })
+  }
+
+  const kc = clampInt(rec[PROPERTY_AIR.kitchenCount] ?? 0, 0, MAX_KITCHEN_SLOTS)
+  for (let i = 1; i <= kc; i++) {
+    const parsed = parseBodyTriplet(rec[kitchenDescriptionField(i)])
+    const kind = trimStr(parsed.kind)
+    const label = trimStr(parsed.label)
+    const descExtra = trimStr(parsed.description)
+    const accessList = splitRoomAccess(rec[kitchenRoomsSharingField(i)])
+    if (!kind && !label && !descExtra && !accessList.length) continue
+    const title = label || kind || (kc > 1 ? `Kitchen ${i}` : 'Kitchen')
+    const descParts = [kind, descExtra].filter(Boolean)
+    const descText = descParts.join(' — ')
+    const accessDisplay = formatSharedSpaceAccessDisplay(accessList, roomCount)
+    out.push({
+      title,
+      description: descText || 'Shared kitchen',
+      accessLabel: accessDisplay,
+      images: [],
+      videos: [],
+    })
+  }
+
+  const laundryOn = rec[PROPERTY_AIR.laundry] === true || rec[PROPERTY_AIR.laundry] === 1
+  if (laundryOn) {
+    let laundryPushed = false
+    for (let i = 1; i <= MAX_LAUNDRY_SLOTS; i++) {
+      const lt = trimStr(rec[laundryTypeField(i)])
+      const accessList = splitRoomAccess(rec[laundryRoomsSharingField(i)])
+      if (!lt && !accessList.length) continue
+      laundryPushed = true
+      const accessDisplay = formatSharedSpaceAccessDisplay(accessList, roomCount)
+      out.push({
+        title: i === 1 ? 'Laundry' : `Laundry ${i}`,
+        description: lt || 'Shared laundry',
+        accessLabel: accessDisplay,
+        images: [],
+        videos: [],
+      })
+    }
+    if (!laundryPushed) {
+      const gen = splitRoomAccess(rec[PROPERTY_AIR.roomsSharingLaundry])
+      if (gen.length) {
+        out.push({
+          title: 'Laundry',
+          description: 'Shared laundry',
+          accessLabel: formatSharedSpaceAccessDisplay(gen, roomCount),
+          images: [],
+          videos: [],
+        })
+      }
+    }
   }
 
   return out.length ? out : DEFAULT_SHARED_SPACES_FALLBACK
+}
+
+function resolveBathroomTotalForListing(rec, meta) {
+  const m = parseFloat(meta?.bathroomTotalDecimal)
+  if (Number.isFinite(m) && m > 0) return m
+  const fromBodies = computeDecimalBathroomTotalFromAirtableRecord(rec)
+  if (fromBodies > 0) return fromBodies
+  const n = Number(rec[PROPERTY_AIR.bathroomCount] ?? rec['Bathroom Count'])
+  if (Number.isFinite(n) && n > 0) return n
+  return 0
 }
 
 export function mapAirtableRecordToHomeProperty(rec) {
@@ -219,8 +305,10 @@ export function mapAirtableRecordToHomeProperty(rec) {
   const name = String(rec['Property Name'] || rec.Name || 'Axis listing').trim()
   const slug = marketingSlugForAirtablePropertyId(rec.id)
   const beds = Number(rec['Room Count']) || 0
-  const baths = Number(rec['Bathroom Count']) || 0
   const { userText, meta } = parseAxisListingMetaBlock(String(rec['Other Info'] || ''))
+  const bathsResolved = resolveBathroomTotalForListing(rec, meta)
+  const baths =
+    bathsResolved > 0 ? bathsResolved : Number(rec['Bathroom Count'] ?? rec[PROPERTY_AIR.bathroomCount]) || 0
   const summary = userText.slice(0, 240) || 'Axis-managed shared housing in Seattle.'
   const videos = listingVideosFromRecord(rec, meta)
   return {
@@ -230,7 +318,7 @@ export function mapAirtableRecordToHomeProperty(rec) {
     neighborhood: 'Seattle',
     type: 'Shared housing',
     beds: beds || 1,
-    baths: baths || 1,
+    baths: formatBathroomCountForDisplay(baths > 0 ? baths : 1),
     rent: 'View listing',
     summary,
     images: urls,

@@ -12,6 +12,8 @@
  *   `imageUrls?: string[]`, `videos?: [{ url|src, label? }]`.
  * - `listingAvailabilityWindows`: property-level marketing windows from the manager Basics step;
  *   each `{ start: "yyyy-mm-dd", end?: "" | "yyyy-mm-dd" }` — empty `end` means open-ended after `start`.
+ * - `bathroomTotalDecimal`: sum of full (1) + half/powder (0.5) baths from the wizard — used for public “Bathrooms” count.
+ * - `roomsDetail[]`: per-room objects may include `bathroomSetup` (bath/access only) plus furniture/feature strings.
  */
 
 export const AXIS_LISTING_META_START = '---AXIS_LISTING_META_JSON---'

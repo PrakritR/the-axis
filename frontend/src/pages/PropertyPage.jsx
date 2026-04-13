@@ -6,6 +6,7 @@ import PropertyGallery from '../components/PropertyGallery'
 import { properties } from '../data/properties'
 import { fetchPropertyRecordById, propertyListingVisibleForMarketing } from '../lib/airtable'
 import { mapAirtableRecordToPropertyPage, marketingSlugForAirtablePropertyId } from '../lib/airtablePublicListings'
+import { formatBathroomCountForDisplay, partitionRoomListingFields } from '../lib/listingRoomDisplay.js'
 import { Seo, buildPropertySchema } from '../lib/seo'
 import { getStartingRent } from '../lib/pricing'
 import Modal from '../components/Modal'
@@ -284,6 +285,23 @@ function getBathroomVideoMetaForRoom(roomName, planTitle, videos = [], propertyS
   return getBathroomVideoMeta(planTitle, videos)
 }
 
+/** Legacy `details` strings → `bathroomSetup` + `featureTags` (Airtable rows already ship the new shape). */
+function enrichListingRoomForDisplay(room) {
+  const r = room && typeof room === 'object' ? room : {}
+  if (Array.isArray(r.featureTags)) return r
+  const detailsStr = typeof r.details === 'string' ? r.details.trim() : ''
+  if (detailsStr) {
+    const { bathroomSetup, featureTags } = partitionRoomListingFields({ notes: detailsStr })
+    return {
+      ...r,
+      bathroomSetup: bathroomSetup || undefined,
+      featureTags,
+      details: bathroomSetup || undefined,
+    }
+  }
+  return { ...r, featureTags: [] }
+}
+
 function buildRoomPlanDisplay(property) {
   if (!Array.isArray(property.roomPlans)) return []
 
@@ -294,7 +312,7 @@ function buildRoomPlanDisplay(property) {
         return {
           ...plan,
           rooms: sortedRooms.map((room) => ({
-            ...room,
+            ...enrichListingRoomForDisplay(room),
             floorTitle: plan.title,
             videoPlaceholder: room.videoPlaceholder,
             videoPlaceholderText: room.videoPlaceholderText,
@@ -350,7 +368,7 @@ function buildRoomPlanDisplay(property) {
 
       const group = grouped.get(room.price)
       group.rooms.push({
-        ...room,
+        ...enrichListingRoomForDisplay(room),
         floorTitle: plan.title,
         pricingTierTitle: meta.title,
         pricingTierSummary: meta.summary,
@@ -421,8 +439,30 @@ function FloorPlanCard({plan, onDetail}){
                   </span>
                 )}
               </div>
-              {(r.floorTitle || r.details) && (
-                <div className="mt-0.5 text-xs text-slate-400 break-words">{[r.floorTitle, r.details].filter(Boolean).join(' · ')}</div>
+              {(r.floorTitle || r.bathroomSetup || r.details) && (
+                <div className="mt-0.5 space-y-1">
+                  {r.floorTitle ? (
+                    <div className="text-xs text-slate-400 break-words">{r.floorTitle}</div>
+                  ) : null}
+                  {(r.bathroomSetup || r.details) ? (
+                    <div className="text-xs text-slate-500 break-words">{r.bathroomSetup || r.details}</div>
+                  ) : null}
+                  {Array.isArray(r.featureTags) && r.featureTags.length > 0 ? (
+                    <div className="flex flex-wrap gap-1">
+                      {r.featureTags.slice(0, 6).map((tag) => (
+                        <span
+                          key={`${r.name}-${tag}`}
+                          className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold text-slate-600"
+                        >
+                          {normalizeFeatureLabel(tag)}
+                        </span>
+                      ))}
+                      {r.featureTags.length > 6 ? (
+                        <span className="self-center text-[10px] text-slate-400">+{r.featureTags.length - 6} more</span>
+                      ) : null}
+                    </div>
+                  ) : null}
+                </div>
               )}
             </div>
 
@@ -850,13 +890,9 @@ export default function PropertyPage(){
   }
 
   const includedItems = modalPlan
-    ? Array.from(new Set([
-        'Bed',
-        'Desk',
-        'Keypad lock',
-        ...(Array.isArray(p.unitAmenities) ? p.unitAmenities : []),
-        ...(modalPlan.room.details ? modalPlan.room.details.split(',') : []),
-      ].map(normalizeFeatureLabel).filter(Boolean)))
+    ? (Array.isArray(modalPlan.room.featureTags) ? modalPlan.room.featureTags : [])
+        .map(normalizeFeatureLabel)
+        .filter(Boolean)
     : []
 
   const displayedRoomPlans = displayedRoomPlansForEffect
@@ -974,6 +1010,11 @@ export default function PropertyPage(){
                       </div>
                       <div className="min-w-0 sm:col-span-8">
                         <div className="text-sm text-slate-600">{row.description || '—'}</div>
+                        {row.accessLabel ? (
+                          <div className="mt-1.5 text-xs font-semibold text-slate-500">
+                            Access: {row.accessLabel}
+                          </div>
+                        ) : null}
                         {Array.isArray(row.images) && row.images.length > 0 ? (
                           <div className="mt-3 flex gap-2 overflow-x-auto pb-1 scrollbar-none">
                             {row.images.map((src) => (
@@ -1085,7 +1126,9 @@ export default function PropertyPage(){
                   </div>
                   <div className="rounded-[18px] border border-slate-200 bg-slate-50 p-4">
                     <div className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-400">Bathroom setup</div>
-                    <div className="mt-2 text-sm font-semibold text-slate-700">{modalPlan.room.details || 'Shared bathroom'}</div>
+                    <div className="mt-2 text-sm font-semibold text-slate-700">
+                      {modalPlan.room.bathroomSetup || modalPlan.room.details || 'Contact for bathroom details'}
+                    </div>
                   </div>
                   <div className="rounded-[18px] border border-slate-200 bg-slate-50 p-4">
                     <div className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-400">Status</div>
@@ -1138,17 +1181,23 @@ export default function PropertyPage(){
                     text={modalPlan.room.bathroomVideoPlaceholderText || 'Bathroom tour coming soon.'}
                   />
                 )}
-                <div className="mt-4 rounded-[18px] border border-blue-100 bg-blue-50 px-4 py-3">
-                  <div className="text-xs font-semibold uppercase tracking-[0.14em] text-blue-600">What's included</div>
-                  <div className="mt-2 text-sm text-slate-700">This room includes the following features:</div>
-                  <div className="mt-3 flex flex-wrap gap-2">
-                    {includedItems.map((item) => (
-                      <span key={item} className="rounded-full border border-blue-200 bg-white px-3 py-1 text-xs font-semibold text-blue-700">
-                        {item}
-                      </span>
-                    ))}
+                {includedItems.length > 0 ? (
+                  <div className="mt-4 rounded-[18px] border border-blue-100 bg-blue-50 px-4 py-3">
+                    <div className="text-xs font-semibold uppercase tracking-[0.14em] text-blue-600">In this room</div>
+                    <div className="mt-2 text-sm text-slate-700">Furniture and features included with this room:</div>
+                    <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
+                      {includedItems.map((item, ii) => (
+                        <div
+                          key={`${item}-${ii}`}
+                          className="flex items-center gap-2 rounded-xl border border-blue-200/80 bg-white px-3 py-2 text-xs font-semibold text-slate-800"
+                        >
+                          <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-axis" aria-hidden />
+                          {item}
+                        </div>
+                      ))}
+                    </div>
                   </div>
-                </div>
+                ) : null}
                 <div className="mt-5 flex flex-col gap-3 sm:flex-row">
                   <Link to={`/apply?property=${p.slug}&room=${encodeURIComponent(modalPlan.room.name)}`} onClick={scrollToTop} className="flex-1 rounded-full bg-axis py-3 text-center text-sm font-semibold text-white shadow-soft transition hover:opacity-95">Apply for this room</Link>
                   <Link to={`/contact?section=housing&tab=message&property=${p.slug}&room=${encodeURIComponent(modalPlan.room.name)}`} onClick={() => window.scrollTo({ top: 0, left: 0, behavior: 'auto' })} className="flex-1 rounded-full border border-slate-300 py-3 text-center text-sm font-semibold text-slate-700 transition hover:border-axis hover:text-axis">Ask a question</Link>
@@ -1358,7 +1407,14 @@ export default function PropertyPage(){
                 {[
                   ['Neighborhood', p.neighborhood],
                   ['Bedrooms', p.beds],
-                  ['Bathrooms', p.baths],
+                  [
+                    'Bathrooms',
+                    p.baths === '' || p.baths == null
+                      ? '—'
+                      : typeof p.baths === 'number'
+                        ? formatBathroomCountForDisplay(p.baths)
+                        : String(p.baths),
+                  ],
                   ['Type', p.type],
                 ].map(([label, val]) => (
                   <div key={label} className="flex items-center justify-between py-2.5">
