@@ -82,7 +82,7 @@ import {
   PortalSegmentedControl,
   portalAuthInputCls,
 } from '../components/PortalAuthUI'
-import PortalShell, { StatusPill } from '../components/PortalShell'
+import PortalShell, { DataTable, StatusPill } from '../components/PortalShell'
 import Modal from '../components/Modal'
 import AddPropertyWizard from '../components/AddPropertyWizard'
 import { PropertyDetailPanel } from '../lib/propertyDetailPanel.jsx'
@@ -2773,13 +2773,15 @@ function HouseManagementPanel({ manager, onPropertiesChange }) {
     }
   }
 
-  const MANAGER_PROPERTY_CARD_SHELL =
-    'rounded-[28px] border border-slate-200 bg-white p-5 shadow-[0_8px_28px_rgba(15,23,42,0.06)]'
+  const selectedManagerProperty = useMemo(() => {
+    if (!detailsPropertyId) return null
+    return managerPropertyTabRows?.find((p) => p.id === detailsPropertyId) || null
+  }, [detailsPropertyId, managerPropertyTabRows])
 
   function beginEditListing(property) {
     const rc = clampInt(property['Room Count'] ?? 1, 1, MAX_ROOM_SLOTS)
     setEditingPropertyId(property.id)
-    setDetailsPropertyId(null)
+    setDetailsPropertyId(property.id)
     setTourForm({
       propertyName: String(property['Property Name'] ?? property.Name ?? ''),
       address: String(property.Address ?? ''),
@@ -2864,133 +2866,154 @@ function HouseManagementPanel({ manager, onPropertiesChange }) {
 
             {managerPropertyTabRows != null ? (
               managerPropertyTabRows.length ? (
-                <div className="grid gap-4 xl:grid-cols-2">
-                  {managerPropertyTabRows.map((property) => {
-                    const statusPill = managerPropertySectionTableStatus(propertiesSection)
-                    return (
-              <div key={property.id} className={MANAGER_PROPERTY_CARD_SHELL}>
-                {propertiesSection === 'request_change' && property[PROPERTY_EDIT_REQUEST_FIELD] ? (
-                  <div className="mb-3 rounded-xl border border-violet-200 bg-violet-50 px-3 py-2 text-sm text-violet-950">
-                    <div className="text-[11px] font-bold uppercase tracking-[0.14em] text-violet-800">From Axis</div>
-                    <p className="mt-1 whitespace-pre-wrap">{property[PROPERTY_EDIT_REQUEST_FIELD]}</p>
-                  </div>
-                ) : null}
-                <div className="flex flex-col gap-4 xl:min-h-[176px] xl:flex-row xl:justify-between">
-                  <div className="min-w-0 flex-1">
-                    <div className="flex flex-wrap items-start gap-2">
-                      <div className="min-w-0 flex-1">
-                        <div className="text-xl font-black tracking-tight text-slate-900">{propertyRecordName(property) || 'Untitled house'}</div>
-                        <div className="mt-1 text-sm text-slate-500">{property.Address || 'Address not set'}</div>
+                <div className="space-y-4">
+                  <DataTable
+                    empty="No properties in this view"
+                    columns={[
+                      {
+                        key: 'property',
+                        label: 'Property',
+                        render: (p) => (
+                          <>
+                            <div className="font-semibold text-slate-900">{propertyRecordName(p) || 'Untitled house'}</div>
+                            <div className="text-xs text-slate-500">{p.Address || 'Address not set'}</div>
+                          </>
+                        ),
+                      },
+                      {
+                        key: 'summary',
+                        label: 'Summary',
+                        render: (p) => (
+                          <div className="flex flex-wrap gap-1.5">
+                            {p['Property Type'] ? <span className="rounded-full border border-slate-200 bg-white px-2.5 py-0.5 text-[11px] font-semibold text-slate-600">{p['Property Type']}</span> : null}
+                            {p['Room Count'] ? <span className="rounded-full border border-slate-200 bg-white px-2.5 py-0.5 text-[11px] font-semibold text-slate-600">{p['Room Count']} rooms</span> : null}
+                            {p['Bathroom Count'] ? <span className="rounded-full border border-slate-200 bg-white px-2.5 py-0.5 text-[11px] font-semibold text-slate-600">{p['Bathroom Count']} baths</span> : null}
+                            {p['Application Fee'] ? <span className="rounded-full border border-slate-200 bg-white px-2.5 py-0.5 text-[11px] font-semibold text-slate-600">App fee ${p['Application Fee']}</span> : null}
+                          </div>
+                        ),
+                      },
+                      {
+                        key: 'status',
+                        label: 'Status',
+                        render: () => {
+                          const statusPill = managerPropertySectionTableStatus(propertiesSection)
+                          return <StatusPill tone={statusPill.tone}>{statusPill.label}</StatusPill>
+                        },
+                      },
+                      {
+                        key: 'actions',
+                        label: '',
+                        render: (p) => (
+                          <button
+                            type="button"
+                            className="text-sm font-semibold text-[#2563eb]"
+                            onClick={() => {
+                              setEditingPropertyId(null)
+                              setDetailsPropertyId(detailsPropertyId === p.id ? null : p.id)
+                            }}
+                          >
+                            {detailsPropertyId === p.id ? 'Hide' : 'Details'}
+                          </button>
+                        ),
+                      },
+                    ]}
+                    rows={managerPropertyTabRows.map((p) => ({ key: p.id, data: p }))}
+                  />
+
+                  {selectedManagerProperty ? (
+                    <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm space-y-4">
+                      {propertiesSection === 'request_change' && selectedManagerProperty[PROPERTY_EDIT_REQUEST_FIELD] ? (
+                        <div className="rounded-xl border border-violet-200 bg-violet-50 px-3 py-2 text-sm text-violet-950">
+                          <div className="text-[11px] font-bold uppercase tracking-[0.14em] text-violet-800">From Axis</div>
+                          <p className="mt-1 whitespace-pre-wrap">{selectedManagerProperty[PROPERTY_EDIT_REQUEST_FIELD]}</p>
+                        </div>
+                      ) : null}
+
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <h2 className="text-lg font-black text-slate-900">{propertyRecordName(selectedManagerProperty) || 'Untitled house'}</h2>
+                          <p className="mt-1 text-sm text-slate-600">{selectedManagerProperty.Address || 'Address not set'}</p>
+                        </div>
+                        <div className="flex flex-wrap items-center justify-end gap-2">
+                          {propertiesSection === 'listed' ? (
+                            <button
+                              type="button"
+                              disabled={
+                                listingBusyPropertyId === selectedManagerProperty.id ||
+                                deletingPropertyId === selectedManagerProperty.id ||
+                                isManagerInternalPreview(manager)
+                              }
+                              onClick={async () => {
+                                if (!window.confirm(`Unlist "${propertyRecordName(selectedManagerProperty) || 'this property'}" from the public site? It stays in your portal.`)) return
+                                setListingBusyPropertyId(selectedManagerProperty.id)
+                                try {
+                                  await updatePropertyAdmin(selectedManagerProperty.id, buildManagerListingPatch(selectedManagerProperty, false))
+                                  toast.success('Property unlisted')
+                                  await loadProperties()
+                                } catch (err) {
+                                  toast.error(err.message || 'Unlist failed — add a "Listed" checkbox on the Properties table in Airtable.')
+                                } finally {
+                                  setListingBusyPropertyId(null)
+                                }
+                              }}
+                              className={`${MANAGER_PROP_TOOLBAR_BTN} text-slate-800 hover:bg-slate-100`}
+                            >
+                              {listingBusyPropertyId === selectedManagerProperty.id ? 'Saving…' : 'Unlist'}
+                            </button>
+                          ) : propertiesSection === 'unlisted' ? (
+                            <button
+                              type="button"
+                              disabled={
+                                listingBusyPropertyId === selectedManagerProperty.id ||
+                                deletingPropertyId === selectedManagerProperty.id ||
+                                isManagerInternalPreview(manager)
+                              }
+                              onClick={async () => {
+                                setListingBusyPropertyId(selectedManagerProperty.id)
+                                try {
+                                  await updatePropertyAdmin(selectedManagerProperty.id, buildManagerListingPatch(selectedManagerProperty, true))
+                                  toast.success('Property listed on the site again')
+                                  await loadProperties()
+                                } catch (err) {
+                                  toast.error(err.message || 'Relist failed — add a "Listed" checkbox on the Properties table in Airtable.')
+                                } finally {
+                                  setListingBusyPropertyId(null)
+                                }
+                              }}
+                              className="rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-xs font-semibold text-emerald-800 transition hover:bg-emerald-100 disabled:opacity-50"
+                            >
+                              {listingBusyPropertyId === selectedManagerProperty.id ? 'Saving…' : 'Relist'}
+                            </button>
+                          ) : null}
+                          <button
+                            type="button"
+                            disabled={deletingPropertyId === selectedManagerProperty.id || isManagerInternalPreview(manager)}
+                            onClick={async () => {
+                              if (!window.confirm(`Delete "${propertyRecordName(selectedManagerProperty) || 'this property'}"? This cannot be undone.`)) return
+                              setDeletingPropertyId(selectedManagerProperty.id)
+                              try {
+                                await deletePropertyAdmin(selectedManagerProperty.id)
+                                toast.success('Property deleted')
+                                setDetailsPropertyId(null)
+                                setEditingPropertyId(null)
+                                await loadProperties()
+                              } catch (err) {
+                                toast.error(err.message || 'Delete failed')
+                              } finally {
+                                setDeletingPropertyId(null)
+                              }
+                            }}
+                            className="rounded-xl border border-red-200 bg-red-50 px-3 py-1.5 text-xs font-semibold text-red-700 transition hover:bg-red-100 disabled:opacity-50"
+                          >
+                            {deletingPropertyId === selectedManagerProperty.id ? 'Deleting…' : 'Delete'}
+                          </button>
+                        </div>
                       </div>
-                      <StatusPill tone={statusPill.tone}>{statusPill.label}</StatusPill>
-                    </div>
-                    <div className="mt-4 flex flex-wrap gap-2 text-sm text-slate-600">
-                      {property['Property Type'] ? <span className="rounded-full border border-slate-200 bg-white/90 px-3 py-1 font-semibold">{property['Property Type']}</span> : null}
-                      {property['Room Count'] ? <span className="rounded-full border border-slate-200 bg-white/90 px-3 py-1 font-semibold">{property['Room Count']} rooms</span> : null}
-                      {property['Bathroom Count'] ? <span className="rounded-full border border-slate-200 bg-white/90 px-3 py-1 font-semibold">{property['Bathroom Count']} baths</span> : null}
-                      {property['Application Fee'] ? <span className="rounded-full border border-slate-200 bg-white/90 px-3 py-1 font-semibold">App fee ${property['Application Fee']}</span> : null}
-                    </div>
-                  </div>
-                  <div className="flex w-full shrink-0 flex-wrap items-stretch justify-end gap-2 sm:justify-end xl:w-[220px] xl:flex-col">
-                    {propertiesSection === 'listed' ? (
-                      <button
-                        type="button"
-                        disabled={
-                          listingBusyPropertyId === property.id ||
-                          deletingPropertyId === property.id ||
-                          isManagerInternalPreview(manager)
-                        }
-                        onClick={async () => {
-                          if (
-                            !window.confirm(
-                              `Unlist "${propertyRecordName(property) || 'this property'}" from the public site? It stays in your portal.`,
-                            )
-                          ) {
-                            return
-                          }
-                          setListingBusyPropertyId(property.id)
-                          try {
-                            await updatePropertyAdmin(
-                              property.id,
-                              buildManagerListingPatch(property, false),
-                            )
-                            toast.success('Property unlisted')
-                            await loadProperties()
-                          } catch (err) {
-                            toast.error(
-                              err.message ||
-                                'Unlist failed — add a "Listed" checkbox on the Properties table in Airtable.',
-                            )
-                          } finally {
-                            setListingBusyPropertyId(null)
-                          }
-                        }}
-                        className={`${MANAGER_PROP_TOOLBAR_BTN} w-full text-slate-800 hover:bg-slate-100 xl:w-auto`}
-                      >
-                        {listingBusyPropertyId === property.id ? 'Saving…' : 'Unlist'}
-                      </button>
-                    ) : propertiesSection === 'unlisted' ? (
-                      <button
-                        type="button"
-                        disabled={
-                          listingBusyPropertyId === property.id ||
-                          deletingPropertyId === property.id ||
-                          isManagerInternalPreview(manager)
-                        }
-                        onClick={async () => {
-                          setListingBusyPropertyId(property.id)
-                          try {
-                            await updatePropertyAdmin(
-                              property.id,
-                              buildManagerListingPatch(property, true),
-                            )
-                            toast.success('Property listed on the site again')
-                            await loadProperties()
-                          } catch (err) {
-                            toast.error(
-                              err.message ||
-                                'Relist failed — add a "Listed" checkbox on the Properties table in Airtable.',
-                            )
-                          } finally {
-                            setListingBusyPropertyId(null)
-                          }
-                        }}
-                        className="w-full rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-xs font-semibold text-emerald-800 transition hover:bg-emerald-100 disabled:opacity-50 xl:w-auto"
-                      >
-                        {listingBusyPropertyId === property.id ? 'Saving…' : 'Relist'}
-                      </button>
-                    ) : null}
-                    <button
-                      type="button"
-                      disabled={deletingPropertyId === property.id || isManagerInternalPreview(manager)}
-                      onClick={async () => {
-                        if (!window.confirm(`Delete "${propertyRecordName(property) || 'this property'}"? This cannot be undone.`)) return
-                        setDeletingPropertyId(property.id)
-                        try {
-                          await deletePropertyAdmin(property.id)
-                          toast.success('Property deleted')
-                          await loadProperties()
-                        } catch (err) {
-                          toast.error(err.message || 'Delete failed')
-                        } finally {
-                          setDeletingPropertyId(null)
-                        }
-                      }}
-                      className="w-full rounded-xl border border-red-200 bg-red-50 px-3 py-1.5 text-xs font-semibold text-red-700 transition hover:bg-red-100 disabled:opacity-50 xl:w-auto"
-                    >
-                      {deletingPropertyId === property.id ? 'Deleting…' : 'Delete'}
-                    </button>
-                  </div>
-                </div>
 
-                {detailsPropertyId === property.id ? (
-                  <div className="mt-4 border-t border-slate-200 pt-4">
-                    <PropertyDetailPanel property={managerPropertyToDetailPanelModel(property)} ownerLabel={manager?.email || '—'} />
-                  </div>
-                ) : null}
+                      <PropertyDetailPanel property={managerPropertyToDetailPanelModel(selectedManagerProperty)} ownerLabel={manager?.email || '—'} />
 
-                {editingPropertyId === property.id ? (
-                  <div className="mt-4 space-y-5 border-t border-slate-200 pt-4">
+                      {editingPropertyId === selectedManagerProperty.id ? (
+                        <div className="space-y-5 border-t border-slate-200 pt-4">
                     <div className="rounded-xl bg-amber-50 border border-amber-200 px-3 py-2 text-xs text-amber-800 font-medium">
                       Saving changes will reset this property to pending admin approval.
                     </div>
@@ -3201,37 +3224,29 @@ function HouseManagementPanel({ manager, onPropertiesChange }) {
                       </button>
                       <button
                         type="button"
-                        onClick={() => handleSaveTourHours(property)}
+                        onClick={() => handleSaveTourHours(selectedManagerProperty)}
                         className="rounded-2xl bg-[#2563eb] px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-50"
                         disabled={saving}
                       >
                         {saving ? 'Saving…' : 'Save & submit for approval'}
                       </button>
                     </div>
-                  </div>
-                ) : (
-                  <div className="mt-5 flex flex-wrap gap-2 border-t border-slate-200 pt-4">
-                    {propertiesSection !== 'rejected' ? (
-                      <button
-                        type="button"
-                        onClick={() => beginEditListing(property)}
-                        className={MANAGER_PROP_TOOLBAR_BTN}
-                      >
-                        Edit listing
-                      </button>
-                    ) : null}
-                    <button
-                      type="button"
-                      onClick={() => setDetailsPropertyId(detailsPropertyId === property.id ? null : property.id)}
-                      className={MANAGER_PROP_TOOLBAR_BTN}
-                    >
-                      {detailsPropertyId === property.id ? 'Hide details' : 'Details'}
-                    </button>
-                  </div>
-                )}
-              </div>
-                    )
-                  })}
+                        </div>
+                      ) : (
+                        <div className="flex gap-2 border-t border-slate-200 pt-4">
+                          {propertiesSection !== 'rejected' ? (
+                            <button
+                              type="button"
+                              onClick={() => beginEditListing(selectedManagerProperty)}
+                              className={MANAGER_PROP_TOOLBAR_BTN}
+                            >
+                              Edit listing
+                            </button>
+                          ) : null}
+                        </div>
+                      )}
+                    </div>
+                  ) : null}
                 </div>
               ) : (
                 <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50/80 px-6 py-10 text-center">

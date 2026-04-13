@@ -192,9 +192,28 @@ function isApprovalGranted(value) {
 }
 
 function residentApplicationUnlocked(resident) {
+  if (isResidentApplicationRejected(resident)) return false
   return (
     isApprovalGranted(resident?.['Application Approval']) || isApprovalGranted(resident?.Approved)
   )
+}
+
+function isResidentApplicationRejected(resident) {
+  const statusFields = [
+    resident?.['Application Status'],
+    resident?.['Approval Status'],
+    resident?.Status,
+    resident?.Decision,
+  ]
+  return statusFields.some((value) => {
+    const normalized = String(value || '').trim().toLowerCase()
+    return ['rejected', 'declined', 'denied', 'not approved'].includes(normalized)
+  })
+}
+
+function residentPortalAccessState(resident) {
+  if (isResidentApplicationRejected(resident)) return 'rejected'
+  return residentApplicationUnlocked(resident) ? 'approved' : 'pending'
 }
 
 function ResidentPendingApprovalGate() {
@@ -203,6 +222,17 @@ function ResidentPendingApprovalGate() {
       <p className="text-base font-semibold text-amber-950">Waiting for manager approval</p>
       <p className="mx-auto mt-2 max-w-lg text-sm text-amber-900/90">
         You&apos;re signed in. Your rental application is still being reviewed. When a manager approves it in Axis, this section will unlock. You can update your profile anytime from the sidebar.
+      </p>
+    </div>
+  )
+}
+
+function ResidentRejectedGate() {
+  return (
+    <div className="rounded-3xl border border-red-200 bg-red-50/60 px-6 py-12 text-center shadow-soft">
+      <p className="text-base font-semibold text-red-900">Application not approved</p>
+      <p className="mx-auto mt-2 max-w-lg text-sm text-red-900/90">
+        Your application was not approved. Payments, work orders, leasing, and inbox are disabled for this account.
       </p>
     </div>
   )
@@ -2274,6 +2304,7 @@ function ResidentDashboardHome({
   onNavigate,
   setPaymentFocus,
   pendingApplicationApproval,
+  applicationRejected,
   inboxUnopenedCount,
 }) {
   const snapshot = useMemo(() => buildResidentRentSnapshot(payments, resident), [payments, resident])
@@ -2310,6 +2341,15 @@ function ResidentDashboardHome({
           <p className="font-semibold">Application under review</p>
           <p className="mt-1 text-amber-900/90">
             A property manager still needs to approve your application before work orders, payments, leasing, and inbox are available.
+          </p>
+        </div>
+      ) : null}
+
+      {applicationRejected ? (
+        <div className="rounded-2xl border border-red-200 bg-red-50 px-5 py-4 text-sm text-red-950">
+          <p className="font-semibold">Application not approved</p>
+          <p className="mt-1 text-red-900/90">
+            Payments, work orders, leasing, and inbox are disabled for this account.
           </p>
         </div>
       ) : null}
@@ -2527,7 +2567,24 @@ function Dashboard({ resident, onResidentUpdated, onSignOut }) {
     return () => { cancelled = true }
   }, [resident])
 
-  const applicationUnlocked = residentApplicationUnlocked(resident)
+  const accessState = residentPortalAccessState(resident)
+  const applicationUnlocked = accessState === 'approved'
+  const isRejected = accessState === 'rejected'
+  const RESTRICTED_TAB_IDS = new Set(['leasing', 'payments', 'workorders', 'inbox'])
+
+  const handleNavigate = useCallback((nextTab) => {
+    if (isRejected && RESTRICTED_TAB_IDS.has(nextTab)) {
+      setTab('dashboard')
+      return
+    }
+    setTab(nextTab)
+  }, [isRejected])
+
+  useEffect(() => {
+    if (isRejected && RESTRICTED_TAB_IDS.has(tab)) {
+      setTab('dashboard')
+    }
+  }, [isRejected, tab])
 
   const TABS = [
     ['dashboard', 'Dashboard'],
@@ -2536,7 +2593,7 @@ function Dashboard({ resident, onResidentUpdated, onSignOut }) {
     ['workorders', 'Work Orders'],
     ['inbox', 'Inbox'],
     ['profile', 'Profile'],
-  ]
+  ].filter(([id]) => !(isRejected && RESTRICTED_TAB_IDS.has(id)))
 
   return (
     <PortalShell
@@ -2544,7 +2601,7 @@ function Dashboard({ resident, onResidentUpdated, onSignOut }) {
       desktopNav="sidebar"
       navItems={TABS.map(([id, label]) => ({ id, label }))}
       activeId={tab}
-      onNavigate={setTab}
+      onNavigate={handleNavigate}
       userLabel={resident.Name || 'Resident'}
       userMeta={`Resident · ${resident.id}`}
       onSignOut={onSignOut}
@@ -2562,9 +2619,10 @@ function Dashboard({ resident, onResidentUpdated, onSignOut }) {
             visibleWorkOrders={visibleWorkOrders}
             payments={payments}
             approvedLease={approvedLease}
-            onNavigate={setTab}
+            onNavigate={handleNavigate}
             setPaymentFocus={setPaymentFocus}
-            pendingApplicationApproval={!applicationUnlocked}
+            pendingApplicationApproval={accessState === 'pending'}
+            applicationRejected={isRejected}
             inboxUnopenedCount={inboxUnopenedCount}
           />
         ) : null}
@@ -2580,14 +2638,14 @@ function Dashboard({ resident, onResidentUpdated, onSignOut }) {
               />
             </PanelErrorBoundary>
           ) : (
-            <ResidentPendingApprovalGate />
+            isRejected ? <ResidentRejectedGate /> : <ResidentPendingApprovalGate />
           )
         ) : null}
         {!loading && tab === 'leasing' ? (
           applicationUnlocked ? (
-            <LeasingPanel resident={resident} payments={payments} onOpenPayments={(focus = '') => { setPaymentFocus(focus); setTab('payments') }} />
+            <LeasingPanel resident={resident} payments={payments} onOpenPayments={(focus = '') => { setPaymentFocus(focus); handleNavigate('payments') }} />
           ) : (
-            <ResidentPendingApprovalGate />
+            isRejected ? <ResidentRejectedGate /> : <ResidentPendingApprovalGate />
           )
         ) : null}
         {!loading && tab === 'payments' ? (
@@ -2601,11 +2659,11 @@ function Dashboard({ resident, onResidentUpdated, onSignOut }) {
               />
             </PanelErrorBoundary>
           ) : (
-            <ResidentPendingApprovalGate />
+            isRejected ? <ResidentRejectedGate /> : <ResidentPendingApprovalGate />
           )
         ) : null}
         {!loading && tab === 'inbox' ? (
-          applicationUnlocked ? <ResidentInboxPanel resident={resident} /> : <ResidentPendingApprovalGate />
+          applicationUnlocked ? <ResidentInboxPanel resident={resident} /> : (isRejected ? <ResidentRejectedGate /> : <ResidentPendingApprovalGate />)
         ) : null}
         {!loading && tab === 'profile' ? (
           <ProfilePanel resident={resident} onUpdated={onResidentUpdated} />

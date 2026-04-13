@@ -44,6 +44,34 @@ const AdminPortalCalendarTab = lazy(() =>
   import('../pages/Manager.jsx').then((m) => ({ default: m.CalendarTabPanel })),
 )
 
+const AIRTABLE_TOKEN = import.meta.env.VITE_AIRTABLE_TOKEN
+const CORE_BASE_ID = import.meta.env.VITE_AIRTABLE_BASE_ID || 'appol57LKtMKaQ75T'
+const CORE_AIRTABLE_BASE_URL = `https://api.airtable.com/v0/${CORE_BASE_ID}`
+
+async function fetchAdminCalendarEventsCount() {
+  if (!AIRTABLE_TOKEN) return 0
+  let total = 0
+  let offset = null
+  do {
+    const url = new URL(`${CORE_AIRTABLE_BASE_URL}/Scheduling`)
+    if (offset) url.searchParams.set('offset', offset)
+    const res = await fetch(url.toString(), {
+      headers: {
+        Authorization: `Bearer ${AIRTABLE_TOKEN}`,
+      },
+    })
+    const body = await readJsonResponse(res)
+    if (!res.ok) {
+      const msg = body?.error?.message || `Could not load scheduling rows (${res.status})`
+      throw new Error(msg)
+    }
+    const rows = Array.isArray(body?.records) ? body.records : []
+    total += rows.length
+    offset = body?.offset || null
+  } while (offset)
+  return total
+}
+
 const PROPERTY_STATUS_LABEL = {
   pending: 'Pending approval',
   changes_requested: 'Changes requested',
@@ -336,6 +364,7 @@ export default function AdminPortal() {
   const [managerTableSort, setManagerTableSort] = useState('house_asc')
   const [applicationsTableSort, setApplicationsTableSort] = useState('house_asc')
   const [unopenedThreadCount, setUnopenedThreadCount] = useState(0)
+  const [calendarEventsCount, setCalendarEventsCount] = useState(0)
   const [propertiesSearch, setPropertiesSearch] = useState('')
   const [managersSearch, setManagersSearch] = useState('')
   const [applicationsManagerFilter, setApplicationsManagerFilter] = useState('')
@@ -355,14 +384,16 @@ export default function AdminPortal() {
     if (!isAdminPortalAirtableConfigured()) return
     setDataLoading(true)
     try {
-      const [next, residentList] = await Promise.all([
+      const [next, residentList, calendarCount] = await Promise.all([
         loadAdminPortalDataset(),
         loadResidentsForAdmin().catch(() => []),
+        fetchAdminCalendarEventsCount().catch(() => 0),
       ])
       setProperties(next.properties)
       setAccounts(next.accounts)
       setApplications(next.applications)
       setResidents(residentList)
+      setCalendarEventsCount(calendarCount)
     } catch (e) {
       toast.error(e?.message || 'Could not load data.')
     } finally {
@@ -640,7 +671,7 @@ export default function AdminPortal() {
           ) : null}
 
           {/* Metrics grid — unified light blue tint */}
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
             {/* Properties pending */}
             <button
               type="button"
@@ -649,35 +680,6 @@ export default function AdminPortal() {
             >
               <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-sky-800">Properties · Pending review</span>
               <span className="text-3xl font-black tabular-nums text-slate-900">{pendingReviewProperties.length}</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => { setTab('properties'); setPropertiesSection('request_change') }}
-              className="flex flex-col gap-1 rounded-3xl border border-sky-200/90 bg-sky-50 p-5 text-left transition hover:border-sky-300 hover:bg-sky-100/80 hover:shadow-sm"
-            >
-              <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-sky-800">Properties · Request change</span>
-              <span className="text-3xl font-black tabular-nums text-slate-900">{requestChangeProperties.length}</span>
-            </button>
-
-            {/* Properties approved (listed) */}
-            <button
-              type="button"
-              onClick={() => { setTab('properties'); setPropertiesSection('approved') }}
-              className="flex flex-col gap-1 rounded-3xl border border-sky-200/90 bg-sky-50 p-5 text-left transition hover:border-sky-300 hover:bg-sky-100/80 hover:shadow-sm"
-            >
-              <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-sky-800">Properties · Listed</span>
-              <span className="text-3xl font-black tabular-nums text-slate-900">{approvedProperties.length}</span>
-            </button>
-
-            {/* Properties unlisted */}
-            <button
-              type="button"
-              onClick={() => { setTab('properties'); setPropertiesSection('unlisted') }}
-              className="flex flex-col gap-1 rounded-3xl border border-sky-200/90 bg-sky-50 p-5 text-left transition hover:border-sky-300 hover:bg-sky-100/80 hover:shadow-sm"
-            >
-              <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-sky-800">Properties · Unlisted</span>
-              <span className="text-3xl font-black tabular-nums text-slate-900">{unlistedProperties.length}</span>
             </button>
 
             {/* Subscribed managers */}
@@ -690,6 +692,16 @@ export default function AdminPortal() {
               <span className="text-3xl font-black tabular-nums text-slate-900">{accounts.filter((a) => a.enabled).length}</span>
             </button>
 
+            {/* Calendar events */}
+            <button
+              type="button"
+              onClick={() => setTab('calendar')}
+              className="flex flex-col gap-1 rounded-3xl border border-sky-200/90 bg-sky-50 p-5 text-left transition hover:border-sky-300 hover:bg-sky-100/80 hover:shadow-sm"
+            >
+              <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-sky-800">Calendar · Events</span>
+              <span className="text-3xl font-black tabular-nums text-slate-900">{calendarEventsCount}</span>
+            </button>
+
             {/* Residents */}
             <button
               type="button"
@@ -698,27 +710,6 @@ export default function AdminPortal() {
             >
               <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-sky-800">Residents</span>
               <span className="text-3xl font-black tabular-nums text-slate-900">{residents.length}</span>
-            </button>
-
-            {/* Inbox — full-width row spanning all 3 columns */}
-            <button
-              type="button"
-              onClick={() => setTab('messages')}
-              className="col-span-full flex items-center justify-between rounded-3xl border border-sky-300/90 bg-gradient-to-r from-sky-100 to-sky-50 px-6 py-5 text-left transition hover:border-sky-400 hover:from-sky-200/70 hover:to-sky-100/90 hover:shadow-sm"
-            >
-              <div className="flex items-center gap-3">
-                <span className="text-[10px] font-bold uppercase tracking-[0.18em] text-sky-900">Inbox</span>
-                {unopenedThreadCount > 0 ? (
-                  <span
-                    className="flex h-5 min-w-[1.25rem] items-center justify-center rounded-full bg-red-500 px-1.5 text-[10px] font-black text-white tabular-nums"
-                    title="Unopened conversations"
-                    aria-label={`${unopenedThreadCount} unopened conversation${unopenedThreadCount === 1 ? '' : 's'}`}
-                  >
-                    {unopenedThreadCount}
-                  </span>
-                ) : null}
-              </div>
-              <span className="text-lg font-black text-slate-900">Open messages →</span>
             </button>
           </div>
         </div>
