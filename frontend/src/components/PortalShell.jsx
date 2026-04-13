@@ -235,10 +235,32 @@ export function StatusPill({ children, tone = 'slate' }) {
   )
 }
 
-export function DataTable({ columns, rows, empty }) {
+const DEFAULT_EMPTY_STATE_ICON = (
+  <span
+    className="mb-3 flex h-12 w-12 items-center justify-center rounded-2xl border border-slate-200/90 bg-white text-slate-400 shadow-sm"
+    aria-hidden
+  >
+    <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" aria-hidden>
+      <path
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        d="M20 13V7a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v6m16 0v4a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-4m16 0h-2.586a1 1 0 0 0-.707.293l-2.414 2.414a1 1 0 0 1-.707.293h-3.172a1 1 0 0 1-.707-.293l-2.414-2.414A1 1 0 0 0 6.586 13H4"
+      />
+    </svg>
+  </span>
+)
+
+export function DataTable({ columns, rows, empty, emptyIcon = true }) {
   if (!rows.length) {
+    const visual =
+      emptyIcon === false
+        ? null
+        : emptyIcon === true
+          ? DEFAULT_EMPTY_STATE_ICON
+          : emptyIcon
     return (
-      <div className="rounded-3xl border border-dashed border-slate-200 bg-slate-50/80 px-6 py-16 text-center text-sm text-slate-500">
+      <div className="flex flex-col items-center justify-center rounded-3xl border border-dashed border-slate-200 bg-slate-50/80 px-6 py-16 text-center text-sm text-slate-500">
+        {visual}
         {empty}
       </div>
     )
