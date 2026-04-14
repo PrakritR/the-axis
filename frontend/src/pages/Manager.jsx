@@ -1717,29 +1717,26 @@ function LetUsMeetModal({
     }
 
     setSaving(true)
+    const preferredTimeLabel = `${displayTimeFromMinutes(startMinutes)} - ${displayTimeFromMinutes(endMinutes)}`
     try {
-      const res = await fetch('/api/forms?action=tour', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          name: manager?.name || 'Axis manager',
-          email: manager?.email || 'manager@axis.invalid',
-          type: itemType,
-          property: property || '',
-          manager: manager?.name || '',
-          managerEmail: manager?.email || '',
-          preferredDate: date,
-          preferredTime: `${displayTimeFromMinutes(startMinutes)} - ${displayTimeFromMinutes(endMinutes)}`,
-          notes: String(notes || '').trim(),
-        }),
+      const normalizedType = itemType === 'Availability' ? 'Meeting Availability' : itemType
+      await createSchedulingRecord({
+        Name: String(manager?.name || 'Axis manager').trim(),
+        Email: String(manager?.email || 'manager@axis.invalid').trim().toLowerCase(),
+        Type: normalizedType,
+        Status: normalizedType === 'Meeting Availability' ? 'Available' : 'New',
+        Property: String(property || '').trim(),
+        'Tour Manager': String(manager?.name || '').trim(),
+        'Manager Email': String(manager?.email || '').trim().toLowerCase(),
+        'Preferred Date': String(date || '').trim(),
+        'Preferred Time': preferredTimeLabel,
+        Notes: String(notes || '').trim(),
       })
-      const data = await readJsonResponse(res)
-      if (!res.ok) throw new Error(data.error || 'Could not save meeting.')
       toast.success('Meeting saved')
       onCreated?.()
       onClose()
     } catch (err) {
-      setError(err.message || 'Could not save meeting.')
+      setError(String(err?.message || '') || 'Could not save meeting.')
     } finally {
       setSaving(false)
     }
@@ -2124,6 +2121,14 @@ async function patchSchedulingRecord(recordId, fields) {
   if (!id) throw new Error('Missing scheduling record id.')
   const data = await atRequest(`${CORE_AIRTABLE_BASE_URL}/Scheduling/${id}`, {
     method: 'PATCH',
+    body: JSON.stringify({ fields, typecast: true }),
+  })
+  return mapRecord(data)
+}
+
+async function createSchedulingRecord(fields) {
+  const data = await atRequest(`${CORE_AIRTABLE_BASE_URL}/Scheduling`, {
+    method: 'POST',
     body: JSON.stringify({ fields, typecast: true }),
   })
   return mapRecord(data)
@@ -4428,10 +4433,10 @@ function ManagerPaymentsPanel({ allowedPropertyNames }) {
 
       <div className="mb-5 grid gap-2 rounded-[28px] border border-slate-200 bg-slate-50 p-2 sm:grid-cols-3">
         {[
-          ['pending', 'Pending', pendingLineCount, 'Incl. first month deposit'],
-          ['overdue', 'Overdue', overdueLineCount, 'Past due rent'],
-          ['paid', 'Paid', paidLineCount, 'Incl. application fee'],
-        ].map(([key, label, count, hint]) => (
+          ['pending', 'Pending', pendingLineCount],
+          ['overdue', 'Overdue', overdueLineCount],
+          ['paid', 'Paid', paidLineCount],
+        ].map(([key, label, count]) => (
           <button
             key={key}
             type="button"
@@ -4444,7 +4449,6 @@ function ManagerPaymentsPanel({ allowedPropertyNames }) {
           >
             <div className="text-lg font-black leading-none tabular-nums text-slate-900">{count}</div>
             <div className="mt-1 text-sm font-semibold">{label}</div>
-            <div className="mt-0.5 text-[11px] text-slate-400">{hint}</div>
           </button>
         ))}
       </div>
@@ -4659,7 +4663,7 @@ function ApplicationsPanel({ allowedPropertyNames, manager }) {
   const [scopedRows, setScopedRows] = useState([])
   const [loading, setLoading] = useState(true)
   const [propertyFilter, setPropertyFilter] = useState('')
-  const [statusFilter, setStatusFilter] = useState('all')
+  const [statusFilter, setStatusFilter] = useState('pending')
   const [approving, setApproving] = useState({}) // recordId -> 'approving' | 'rejecting'
 
   const [loadError, setLoadError] = useState('')
@@ -4692,7 +4696,7 @@ function ApplicationsPanel({ allowedPropertyNames, manager }) {
     if (statusFilter === 'pending') return propertyFilteredRows.filter((a) => deriveApplicationApprovalState(a) === 'pending')
     if (statusFilter === 'approved') return propertyFilteredRows.filter((a) => deriveApplicationApprovalState(a) === 'approved')
     if (statusFilter === 'rejected') return propertyFilteredRows.filter((a) => deriveApplicationApprovalState(a) === 'rejected')
-    return propertyFilteredRows
+    return propertyFilteredRows.filter((a) => deriveApplicationApprovalState(a) === 'pending')
   }, [propertyFilteredRows, statusFilter])
 
   const applications = useMemo(
@@ -4872,9 +4876,8 @@ function ApplicationsPanel({ allowedPropertyNames, manager }) {
         </div>
       </div>
 
-      <div className="mb-5 grid gap-2 rounded-[28px] border border-slate-200 bg-slate-50 p-2 sm:grid-cols-2 xl:grid-cols-4">
+      <div className="mb-5 grid gap-2 rounded-[28px] border border-slate-200 bg-slate-50 p-2 sm:grid-cols-3 xl:grid-cols-3">
         {[
-          ['all', 'All', propertyFilteredRows.length],
           ['pending', 'Pending', propertyFilteredRows.filter((a) => deriveApplicationApprovalState(a) === 'pending').length],
           ['approved', 'Approved', propertyFilteredRows.filter((a) => deriveApplicationApprovalState(a) === 'approved').length],
           ['rejected', 'Rejected', propertyFilteredRows.filter((a) => deriveApplicationApprovalState(a) === 'rejected').length],
@@ -4922,12 +4925,7 @@ function ApplicationsPanel({ allowedPropertyNames, manager }) {
         ) : filteredRows.length === 0 ? (
           <div className="px-6 py-16 text-center">
             <div className="mb-3 text-4xl" aria-hidden>🏠</div>
-            <div className="text-sm font-semibold text-slate-700">No {statusFilter !== 'all' ? statusFilter + ' ' : ''}applications</div>
-            {statusFilter === 'all' ? (
-              <p className="mt-1 text-sm text-slate-500">
-                Choose &quot;All your properties&quot; or another house to see more
-              </p>
-            ) : null}
+            <div className="text-sm font-semibold text-slate-700">No {statusFilter} applications</div>
           </div>
         ) : (
           <>
@@ -5087,11 +5085,11 @@ export function CalendarTabPanel({ manager, allowedPropertyNames, loadAllSchedul
         }
       }
 
-      // Last-resort fallback: if still empty (data not yet linked), show all approved properties
-      // so the manager can at least set availability.
+      // Last-resort fallback: if still empty (data not yet linked), show all named properties
+      // so the manager can still set availability.
       if (approvedAssigned.length === 0 && !loadAllSchedulingRows) {
         approvedAssigned = props
-          .filter((p) => isPropertyRecordApproved(p))
+          .filter((p) => Boolean(propertyRecordName(p)))
           .sort((a, b) =>
             propertyRecordName(a).localeCompare(propertyRecordName(b), undefined, { sensitivity: 'base' }),
           )
@@ -5144,13 +5142,13 @@ export function CalendarTabPanel({ manager, allowedPropertyNames, loadAllSchedul
         }
       }
     }
-    // Last-resort fallback: show all approved properties
+    // Last-resort fallback: show all named properties
     const results = primary.sort((a, b) =>
       propertyRecordName(a).localeCompare(propertyRecordName(b), undefined, { sensitivity: 'base' }),
     )
     if (results.length === 0) {
       return properties
-        .filter((p) => isPropertyRecordApproved(p))
+        .filter((p) => Boolean(propertyRecordName(p)))
         .sort((a, b) =>
           propertyRecordName(a).localeCompare(propertyRecordName(b), undefined, { sensitivity: 'base' }),
         )
@@ -5164,7 +5162,9 @@ export function CalendarTabPanel({ manager, allowedPropertyNames, loadAllSchedul
   )
 
   const availabilityOwnerOptions = useMemo(
-    () => approvedAssignedProperties.map((p) => ({ id: p.id, label: propertyRecordName(p) || 'Property' })),
+    () => approvedAssignedProperties
+      .map((p) => ({ id: p.id, label: propertyRecordName(p) || 'Property' }))
+      .filter((option) => Boolean(String(option.label || '').trim())),
     [approvedAssignedProperties],
   )
 
@@ -5174,8 +5174,8 @@ export function CalendarTabPanel({ manager, allowedPropertyNames, loadAllSchedul
   )
 
   const meetModalApprovedPropertyNames = useMemo(
-    () => approvedAssignedProperties.map((p) => propertyRecordName(p)).filter(Boolean),
-    [approvedAssignedProperties],
+    () => availabilityOwnerOptions.map((option) => option.label),
+    [availabilityOwnerOptions],
   )
 
   const schedulingRowsForView = useMemo(
