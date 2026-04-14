@@ -125,6 +125,7 @@ Add columns on `Properties` as needed (up to 20 rooms):
 - `Message` (long text)
 - `Sender Email`
 - `Is Admin` (checkbox)
+- **`Subject`** — single line text (thread title + email notification subject); default field name `Subject`; env `VITE_AIRTABLE_MESSAGE_SUBJECT_FIELD` (set to `none` to omit if the column does not exist)
 - `Work Order` — link (optional for internal threads)
 - **`Thread Key`** — text (internal thread id); env `VITE_AIRTABLE_MESSAGE_THREAD_KEY_FIELD`
 - **`Channel`** — single select; include option matching `internal_mgmt_admin` (`PORTAL_INBOX_CHANNEL_INTERNAL` in `airtable.js`); env `VITE_AIRTABLE_MESSAGE_CHANNEL_FIELD`

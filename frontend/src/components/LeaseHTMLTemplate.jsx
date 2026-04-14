@@ -16,7 +16,10 @@ const LANDLORD_ADDRESS = '4709 A 8th Ave N, Seattle, WA 98105'
 const COMPANY_NAME = 'Axis Seattle Housing'
 const LATE_FEE = '$75.00'
 const LATE_GRACE_DAYS = 5
-const NOTICE_DAYS = 20
+/** RCW 59.18.200 — tenant / month-to-month termination notice (days). */
+const TERMINATION_NOTICE_DAYS = 20
+/** RCW 59.18.150 — minimum written notice before entering the resident's private room (non-emergency). */
+const LANDLORD_ENTRY_NOTICE_HOURS = 24
 
 function Row({ label, value }) {
   return (
@@ -87,6 +90,10 @@ export default function LeaseHTMLTemplate({ leaseData = {}, signedBy, signedAt, 
           <Row label="Utilities Fee" value={d.utilityFeeFmt} />
           <Row label="Monthly Total" value={d.monthlyTotalFmt} />
           <Row label="Security Deposit" value={d.securityDepositFmt} />
+          <Row
+            label="Last Month's Rent (prepaid)"
+            value={(d.lastMonthRent || 0) > 0 ? d.lastMonthRentFmt : 'Not collected at move-in'}
+          />
           <Row label="Admin Fee" value={d.adminFeeFmt} />
           {d.proratedDays > 0 ? (
             <>
@@ -120,8 +127,8 @@ export default function LeaseHTMLTemplate({ leaseData = {}, signedBy, signedAt, 
           <P>
             This Agreement is for a {termDesc}.
             {d.isMonthToMonth
-              ? ' Either party may terminate this Agreement by providing at least 20 days\' written notice prior to the end of a rental period, as required by RCW 59.18.200.'
-              : ' At the expiration of the fixed term, this Agreement shall automatically convert to a month-to-month tenancy unless either party provides written notice of non-renewal at least 20 days before the end of the term, or a new written agreement is signed.'}
+              ? ` Either party may terminate this Agreement by providing at least ${TERMINATION_NOTICE_DAYS} days' written notice prior to the end of a rental period, as required by RCW 59.18.200.`
+              : ` At the expiration of the fixed term, this Agreement shall automatically convert to a month-to-month tenancy unless either party provides written notice of non-renewal at least ${TERMINATION_NOTICE_DAYS} days before the end of the term, or a new written agreement is signed.`}
           </P>
         </Section>
 
@@ -148,6 +155,13 @@ export default function LeaseHTMLTemplate({ leaseData = {}, signedBy, signedAt, 
               ({d.leaseStartFmt} through end of month).
             </P>
           ) : null}
+          <P>
+            <strong>Prepaid / last month&apos;s rent:</strong> Unless a separate amount for last month&apos;s rent or other
+            prepaid rent is stated in the Agreement Summary above, none is required at move-in. Any amount collected and
+            identified as prepaid rent for the final rental period is not a security deposit under RCW 59.18.260 unless
+            expressly designated as such in writing at collection, and shall be applied only to rent for the final month
+            of tenancy after proper termination notice, subject to Washington law.
+          </P>
         </Section>
 
         {/* 4 */}
@@ -259,23 +273,43 @@ export default function LeaseHTMLTemplate({ leaseData = {}, signedBy, signedAt, 
         <Section number="9" title="Maintenance and Repairs">
           <P>
             Landlord shall maintain the Premises and common areas in a habitable condition in compliance with applicable
-            housing codes and RCW 59.18.060, including maintaining structural components, heating systems, plumbing, and
-            weatherproofing.
+            housing codes and RCW 59.18.060, including maintaining structural components, heating systems, hot and cold
+            running water, plumbing, water supply and drainage, sewer connections, and weatherproofing.
+          </P>
+          <P>
+            <strong>Plumbing, water, and drains:</strong> Resident shall immediately notify Landlord of any leak, drip,
+            standing water, sewage odor, backup, or loss of water pressure. Resident shall not pour grease, oil, paint,
+            harsh chemicals, or foreign objects into sinks, toilets, or drains. In a burst pipe or uncontrolled water
+            leak, Resident shall shut off the nearest fixture valve if safe to do so and contact Landlord without delay.
+          </P>
+          <P>
+            After written notice of a defect that materially and adversely affects health or safety, Landlord shall
+            commence remedial efforts within the timeframes and procedures required by RCW 59.18.070 where applicable.
+            For emergencies threatening life or major property damage (including fire, gas odor, or major flooding),
+            Resident shall call 911 when appropriate and notify Landlord as soon as practicable.
           </P>
           <P>
             Resident shall keep the private room and any areas under Resident's control in a clean and sanitary condition.
-            Resident shall promptly notify Landlord in writing of any damage, defect, or maintenance need. Resident shall
-            not perform any repairs or alterations without Landlord's prior written approval. Resident shall be liable for
-            damage caused by Resident's negligence or intentional acts.
+            Resident shall promptly notify Landlord in writing of any damage, defect, or maintenance need (email or text
+            to the management number on file is acceptable for urgent matters, followed by written confirmation if
+            requested). Resident shall not perform any repairs or alterations without Landlord's prior written approval.
+            Resident shall be liable for damage caused by Resident's negligence or intentional acts.
           </P>
         </Section>
 
         {/* 10 */}
         <Section number="10" title="Entry by Landlord">
           <P>
-            Landlord shall provide at least <strong>{NOTICE_DAYS} days'</strong> written notice before entering the private
-            room for inspections, repairs, or showings, except in cases of emergency, as provided by RCW 59.18.150.
+            For non-emergency entry to the Resident&apos;s private room (including inspections, repairs, or showings),
+            Landlord shall provide at least <strong>{LANDLORD_ENTRY_NOTICE_HOURS} hours&apos;</strong> written notice,
+            consistent with RCW 59.18.150. In an emergency (including imminent threat to life, health, safety, or
+            property), Landlord may enter the private room without prior notice when reasonably necessary.
             Landlord retains the right to enter common areas at any time for legitimate purposes without prior notice.
+          </P>
+          <P>
+            <strong>Keys and access devices:</strong> Resident shall safeguard all keys, fobs, and codes. Lost or
+            unreturned keys or fobs may be replaced or re-keyed at Resident&apos;s expense for Landlord&apos;s reasonable
+            actual cost.
           </P>
         </Section>
 

@@ -912,6 +912,7 @@ export default function PropertyPage(){
   const [activeTab, setActiveTab] = useState('overview')
   const [showScarcityPopup, setShowScarcityPopup] = useState(false)
   const [activeSharedSpace, setActiveSharedSpace] = useState(null)
+  const [activeBathroom, setActiveBathroom] = useState(null)
   const sectionRefs = useRef({})
   const sectionNavRef = useRef(null)
   /** Reserve layout space — section nav is `fixed` (page-wrapper overflow breaks `sticky`). */
@@ -930,8 +931,23 @@ export default function PropertyPage(){
     const plans = buildRoomPlanDisplay(p)
     const sharedVideos = getSharedSpaceVideos(p.videos || [])
     const hasSharedList = (p.sharedSpacesList || []).length > 0
+    const amenities = Array.isArray(p.communityAmenities) ? p.communityAmenities : []
+    const hasHouseDetails =
+      Boolean(p._fromAirtable) ||
+      amenities.length > 0 ||
+      String(p.policies || '').trim().length > 0 ||
+      (Array.isArray(p.leasingPackages) && p.leasingPackages.length > 0) ||
+      String(p.address || '').trim().length > 0 ||
+      (p.location && typeof p.location.lat === 'number' && typeof p.location.lng === 'number') ||
+      String(p.listingAvailabilitySummary || '').trim().length > 0 ||
+      Boolean(p.applicationFeeDisplay) ||
+      Boolean(p.moveInChargesDisplay) ||
+      String(p.applicationFee || '').trim().length > 0
+    const hasBathrooms = (p.bathroomsList || []).length > 0
     return [
       ...(plans.length > 0 ? [['floor-plans', 'Floor Plans']] : []),
+      ...(hasHouseDetails ? [['house-details', 'Amenities & info']] : []),
+      ...(hasBathrooms ? [['bathrooms', 'Bathrooms']] : []),
       ...(sharedVideos.length > 0 || hasSharedList ? [['shared-spaces', 'Shared Spaces']] : []),
     ]
   }, [p])
@@ -1258,6 +1274,172 @@ export default function PropertyPage(){
             </section>
           )}
 
+          {sectionNavTabs.some(([id]) => id === 'house-details') ? (
+            <section
+              id="house-details"
+              ref={(node) => {
+                sectionRefs.current['house-details'] = node
+              }}
+              className="mt-14 min-w-0 scroll-mt-32 md:scroll-mt-44"
+            >
+              <div className="flex min-w-0 flex-wrap items-end justify-between gap-x-4 gap-y-3">
+                <div className="min-w-0 flex-1">
+                  <h2 className="font-editorial text-3xl font-black leading-tight text-slate-900 sm:text-4xl">Amenities &amp; lease info</h2>
+                  <p className="mt-2 text-base text-slate-600">From the house listing your manager set up — fees, lease options, bundles, and location.</p>
+                </div>
+              </div>
+
+              <div className="mt-8 space-y-10">
+                {Array.isArray(p.communityAmenities) && p.communityAmenities.length > 0 ? (
+                  <div>
+                    <h3 className="text-sm font-black uppercase tracking-[0.14em] text-slate-500">Amenities</h3>
+                    <ul className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                      {p.communityAmenities.map((a) => (
+                        <li
+                          key={a}
+                          className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm font-semibold text-slate-800"
+                        >
+                          <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-axis" aria-hidden />
+                          {a}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                ) : null}
+
+                <div>
+                  <h3 className="text-sm font-black uppercase tracking-[0.14em] text-slate-500">Lease basics</h3>
+                  <div className="mt-3 rounded-xl border border-slate-200 bg-white px-5 py-4 text-sm text-slate-700">
+                    {String(p.policies || '').trim() ? (
+                      <p className="leading-relaxed">{p.policies}</p>
+                    ) : (
+                      <p className="text-slate-500">Contact Axis for current lease options.</p>
+                    )}
+                    <dl className="mt-4 grid gap-3 border-t border-slate-100 pt-4 sm:grid-cols-2">
+                      <div>
+                        <dt className="text-xs font-bold uppercase tracking-wide text-slate-400">Application fee</dt>
+                        <dd className="mt-1 font-semibold text-slate-900">
+                          {p.applicationFeeDisplay ||
+                            (p.applicationFee ? `${p.applicationFee} application fee` : '—')}
+                        </dd>
+                      </div>
+                      <div>
+                        <dt className="text-xs font-bold uppercase tracking-wide text-slate-400">Security deposit</dt>
+                        <dd className="mt-1 font-semibold text-slate-900">{p.securityDeposit || '—'}</dd>
+                      </div>
+                      {p.moveInChargesDisplay ? (
+                        <div className="sm:col-span-2">
+                          <dt className="text-xs font-bold uppercase tracking-wide text-slate-400">Move-in charges</dt>
+                          <dd className="mt-1 font-semibold text-slate-900">{p.moveInChargesDisplay}</dd>
+                        </div>
+                      ) : null}
+                    </dl>
+                    {p.listingAvailabilitySummary ? (
+                      <p className="mt-4 rounded-lg bg-sky-50 px-3 py-2 text-sm font-medium text-sky-900">{p.listingAvailabilitySummary}</p>
+                    ) : null}
+                  </div>
+                </div>
+
+                {Array.isArray(p.leasingPackages) && p.leasingPackages.length > 0 ? (
+                  <div>
+                    <h3 className="text-sm font-black uppercase tracking-[0.14em] text-slate-500">Bundles &amp; discounts</h3>
+                    <p className="mt-2 text-sm text-slate-600">Rent multiple rooms together at a combined monthly rate.</p>
+                    <div className="mt-4 w-full min-w-0 max-w-full overflow-hidden rounded-xl border border-slate-200 bg-white">
+                      <div className="hidden sm:grid sm:grid-cols-12 sm:gap-3 sm:border-b sm:border-slate-100 sm:bg-slate-50 sm:px-6 sm:py-2.5 sm:text-[10px] sm:font-bold sm:uppercase sm:tracking-[0.16em] sm:text-slate-400">
+                        <div className="sm:col-span-4">Bundle</div>
+                        <div className="sm:col-span-5">Rooms included</div>
+                        <div className="sm:col-span-3 sm:text-right">Monthly rent</div>
+                      </div>
+                      <div className="divide-y divide-slate-100 px-4 sm:px-6">
+                        {p.leasingPackages.map((pkg, idx) => (
+                          <div key={`${pkg.title}-${idx}`} className="grid grid-cols-1 gap-2 py-4 sm:grid-cols-12 sm:items-center sm:gap-3">
+                            <div className="font-semibold text-slate-900 sm:col-span-4">{pkg.title}</div>
+                            <div className="text-sm text-slate-600 sm:col-span-5">
+                              {(pkg.rooms || []).length ? (pkg.rooms || []).join(', ') : '—'}
+                            </div>
+                            <div className="text-sm font-black text-axis sm:col-span-3 sm:text-right">{pkg.totalRent || '—'}</div>
+                            {pkg.details ? <div className="text-xs text-slate-500 sm:col-span-12">{pkg.details}</div> : null}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                ) : null}
+
+                <div>
+                  <h3 className="text-sm font-black uppercase tracking-[0.14em] text-slate-500">Location</h3>
+                  <p className="mt-2 text-base font-semibold text-slate-900">{p.address || 'Seattle, WA'}</p>
+                  {p.location && typeof p.location.lat === 'number' && typeof p.location.lng === 'number' ? (
+                    <a
+                      href={`https://www.google.com/maps?q=${p.location.lat},${p.location.lng}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="mt-2 inline-flex text-sm font-semibold text-axis hover:underline"
+                    >
+                      Open in Google Maps
+                    </a>
+                  ) : p.address ? (
+                    <a
+                      href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(p.address)}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="mt-2 inline-flex text-sm font-semibold text-axis hover:underline"
+                    >
+                      Open in Google Maps
+                    </a>
+                  ) : null}
+                </div>
+              </div>
+            </section>
+          ) : null}
+
+          {sectionNavTabs.some(([id]) => id === 'bathrooms') ? (
+            <section
+              id="bathrooms"
+              ref={(node) => {
+                sectionRefs.current.bathrooms = node
+              }}
+              className="mt-14 scroll-mt-32 md:scroll-mt-44"
+            >
+              <div className="flex items-end justify-between gap-4">
+                <div>
+                  <h2 className="font-editorial text-3xl font-black leading-tight text-slate-900 sm:text-4xl">Bathrooms</h2>
+                  <p className="mt-2 text-base text-slate-600">Shared and en-suite baths — who has access, and photos from the house setup.</p>
+                </div>
+                <div className="shrink-0 text-sm text-slate-500">{(p.bathroomsList || []).length} bathroom{(p.bathroomsList || []).length !== 1 ? 's' : ''}</div>
+              </div>
+              <div className="mt-8 w-full min-w-0 max-w-full overflow-hidden rounded-xl border border-slate-200 bg-white">
+                <div className="hidden sm:grid sm:grid-cols-12 sm:gap-3 sm:border-b sm:border-slate-100 sm:bg-slate-50 sm:px-6 sm:py-2.5 sm:text-[10px] sm:font-bold sm:uppercase sm:tracking-[0.16em] sm:text-slate-400">
+                  <div className="sm:col-span-3">Bathroom</div>
+                  <div className="sm:col-span-4">Details</div>
+                  <div className="sm:col-span-3">Room access</div>
+                  <div className="sm:col-span-2 sm:text-right">Photos</div>
+                </div>
+                <div className="divide-y divide-slate-100 px-4 sm:px-6">
+                  {(p.bathroomsList || []).map((row, rowIdx) => (
+                    <div key={`${row.title}-${rowIdx}`} className="grid grid-cols-1 gap-3 py-4 sm:grid-cols-12 sm:items-center">
+                      <div className="sm:col-span-3">
+                        <div className="font-semibold text-slate-900">{row.title}</div>
+                        <div className="mt-0.5 text-xs text-slate-500">House bathroom</div>
+                      </div>
+                      <div className="sm:col-span-4 text-sm text-slate-600">{row.description}</div>
+                      <div className="sm:col-span-3 text-xs font-semibold uppercase tracking-[0.12em] text-axis">{row.accessLabel || '—'}</div>
+                      <div className="sm:col-span-2 sm:text-right">
+                        <button
+                          type="button"
+                          onClick={() => setActiveBathroom(row)}
+                          className="inline-flex items-center rounded-full border border-slate-300 px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:border-axis hover:text-axis"
+                        >
+                          {(row.images || []).length > 0 ? `${row.images.length} photo${row.images.length !== 1 ? 's' : ''}` : 'Details'}
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </section>
+          ) : null}
+
           {sharedSpacesList.length > 0 || sharedSpaceVideos.length > 0 ? (
             <section id="shared-spaces" ref={(node) => { sectionRefs.current['shared-spaces'] = node }} className="mt-14 scroll-mt-32 md:scroll-mt-44">
               <div className="flex items-end justify-between gap-4">
@@ -1482,6 +1664,35 @@ export default function PropertyPage(){
                   <div className="text-xs font-semibold uppercase tracking-[0.14em] text-blue-600">What this shows</div>
                   <div className="mt-2 text-sm leading-6 text-slate-700">{getSharedSpaceDetailMeta(activeSharedSpace).description}</div>
                 </div>
+              </div>
+            </Modal>
+          )}
+          {activeBathroom && (
+            <Modal onClose={() => setActiveBathroom(null)}>
+              <div className="p-1">
+                <div className="flex items-start justify-between gap-4 pr-12">
+                  <div>
+                    <div className="text-xs font-bold uppercase tracking-[0.18em] text-axis">Bathroom</div>
+                    <h3 className="mt-1 text-2xl font-black text-slate-900">{activeBathroom.title}</h3>
+                    <p className="mt-2 text-sm leading-6 text-slate-600">{activeBathroom.description}</p>
+                    {activeBathroom.accessLabel ? (
+                      <p className="mt-2 text-xs font-bold uppercase tracking-[0.12em] text-axis">{activeBathroom.accessLabel}</p>
+                    ) : null}
+                  </div>
+                </div>
+                {Array.isArray(activeBathroom.images) && activeBathroom.images.length > 0 ? (
+                  <div className="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-2">
+                    {activeBathroom.images.map((src) => (
+                      <div key={src} className="overflow-hidden rounded-[18px] border border-slate-200">
+                        <img src={src} alt={`${activeBathroom.title} photo`} className="h-56 w-full object-cover" />
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="mt-5 h-64 overflow-hidden rounded-[18px] border border-slate-200">
+                    <PropertyMediaPlaceholder className="h-full w-full" compact label="Photos coming soon" />
+                  </div>
+                )}
               </div>
             </Modal>
           )}

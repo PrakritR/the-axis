@@ -214,6 +214,7 @@ Create table `Work Orders`
 Create table `Messages`
 `Work Order` -> link to `Work Orders`
 `Message` -> long text
+`Subject` -> single line text
 `Sender Email` -> email
 `Is Admin` -> checkbox
 `Timestamp` -> created time

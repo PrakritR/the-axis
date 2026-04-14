@@ -57,6 +57,35 @@ const STEPS = [
 const DEFAULT_LEASE_INFO =
   '3-month, 9-month, 12-month, and month-to-month (+$25/month). Start and end dates are flexible unless noted otherwise.'
 
+/** OS/file pickers often omit MIME for AVIF/HEIC/WebP; accept when type or filename looks like an image. */
+const IMAGE_FILENAME_EXT_RE = /\.(avif|heic|heif|webp|jpe?g|png|gif|bmp|tif|tiff|jp2|jxl|ico|svg|raw|cr2|cr3|nef|arw|dng|orf|rw2)(\?|$)/i
+const VIDEO_FILENAME_EXT_RE = /\.(mp4|mov|webm|mkv|m4v|avi|mpg|mpeg|wmv|3gp|ogv)(\?|$)/i
+
+/** Broad `accept` so native pickers show AVIF/HEIC/etc., not only legacy types. */
+const ACCEPT_PROPERTY_IMAGES =
+  'image/*,image/avif,image/heic,image/heif,image/webp,image/jxl,image/jp2,.avif,.heif,.heic,.webp,.jxl,.jp2,.png,.jpg,.jpeg,.gif,.bmp,.tif,.tiff,.svg,.ico,.raw,.cr2,.cr3,.nef,.arw,.dng'
+const ACCEPT_PROPERTY_IMAGES_AND_VIDEOS = `${ACCEPT_PROPERTY_IMAGES},video/*,.mp4,.mov,.webm,.mkv,.m4v,.avi`
+
+function isLikelyImageUpload(file) {
+  if (!file || !file.name) return false
+  const t = String(file.type || '').toLowerCase()
+  if (t.startsWith('image/')) return true
+  if (t === '' || t === 'application/octet-stream') return IMAGE_FILENAME_EXT_RE.test(file.name)
+  return IMAGE_FILENAME_EXT_RE.test(file.name)
+}
+
+function isLikelyVideoUpload(file) {
+  if (!file || !file.name) return false
+  const t = String(file.type || '').toLowerCase()
+  if (t.startsWith('video/')) return true
+  if (t === '' || t === 'application/octet-stream') return VIDEO_FILENAME_EXT_RE.test(file.name)
+  return VIDEO_FILENAME_EXT_RE.test(file.name)
+}
+
+function isLikelyRoomGalleryFile(file) {
+  return isLikelyImageUpload(file) || isLikelyVideoUpload(file)
+}
+
 // ─── Validation ───────────────────────────────────────────────────────────────
 function validateBasics(basics, appFee) {
   const e = {}
@@ -257,7 +286,13 @@ export default function AddPropertyWizard({
         Array.isArray(payload?.rooms) && payload.rooms.length
           ? payload.rooms.map((row) => ({ ...emptyRoomRow(), ...row, media: [] }))
           : [emptyRoomRow()],
-      bathrooms: Array.isArray(payload?.bathrooms) ? payload.bathrooms.map((row) => ({ ...emptyBathroomRow(), ...row })) : [],
+      bathrooms: Array.isArray(payload?.bathrooms)
+        ? payload.bathrooms.map((row) => ({
+            ...emptyBathroomRow(),
+            ...row,
+            media: Array.isArray(row.media) ? row.media : [],
+          }))
+        : [],
       kitchens: Array.isArray(payload?.kitchens) ? payload.kitchens.map((row) => ({ ...emptyKitchenRow(), ...row })) : [],
       sharedSpaces: Array.isArray(payload?.sharedSpaces) ? payload.sharedSpaces.map((row) => ({ ...emptySharedSpaceRow(), ...row })) : [],
       laundry: {
@@ -400,6 +435,7 @@ export default function AddPropertyWizard({
     setSaving(true)
     try {
       const roomsPayload = rooms.map(({ media, ...rest }) => rest)
+      const bathroomsPayload = bathrooms.map(({ media, ...rest }) => rest)
       const fields = serializeManagerAddPropertyToAirtableFields({
         basics,
         roomCount: rc,
@@ -408,7 +444,7 @@ export default function AddPropertyWizard({
         laundry: laundryPayload,
         parking,
         rooms: roomsPayload,
-        bathrooms,
+        bathrooms: bathroomsPayload,
         kitchens,
         sharedSpaces,
         applicationFee: appFee,
@@ -442,6 +478,16 @@ export default function AddPropertyWizard({
             const f = item.file
             if (!f) continue
             const renamed = new File([f], `axis-l${li + 1}-${f.name}`, { type: f.type || 'application/octet-stream' })
+            await uploadPropertyImage(created.id, renamed)
+          } catch { /* non-fatal */ }
+        }
+      }
+      for (let bi = 0; bi < bathrooms.length; bi++) {
+        for (const item of bathrooms[bi].media || []) {
+          try {
+            const f = item.file
+            if (!f) continue
+            const renamed = new File([f], `axis-b${bi + 1}-${f.name}`, { type: f.type || 'application/octet-stream' })
             await uploadPropertyImage(created.id, renamed)
           } catch { /* non-fatal */ }
         }
@@ -500,7 +546,7 @@ export default function AddPropertyWizard({
     }))
   }
   function addRoomMedia(roomIdx, fileList) {
-    const valid = Array.from(fileList || []).filter(f => f.type.startsWith('image/') || f.type.startsWith('video/'))
+    const valid = Array.from(fileList || []).filter(isLikelyRoomGalleryFile)
     if (!valid.length) return
     const entries = valid.map(file => ({ id: `${Date.now()}-${Math.random()}`, file, preview: URL.createObjectURL(file) }))
     setRooms(prev => prev.map((r, i) => i === roomIdx ? { ...r, media: [...(r.media || []), ...entries] } : r))
@@ -528,11 +574,39 @@ export default function AddPropertyWizard({
         {
           ...src,
           access: Array.isArray(src.access) ? [...src.access] : [],
+          media: [],
         },
       ]
     })
   }
-  function removeBath(idx) { setBathrooms(prev => prev.filter((_, i) => i !== idx)) }
+  function removeBath(idx) {
+    setBathrooms((prev) => {
+      const row = prev[idx]
+      for (const m of row?.media || []) {
+        if (m?.preview && m.file) URL.revokeObjectURL(m.preview)
+      }
+      return prev.filter((_, i) => i !== idx)
+    })
+  }
+
+  function addBathroomMedia(bathIdx, fileList) {
+    const valid = Array.from(fileList || []).filter(isLikelyImageUpload)
+    if (!valid.length) return
+    const entries = valid.map((file) => ({ id: `${Date.now()}-${Math.random()}`, file, preview: URL.createObjectURL(file) }))
+    setBathrooms((prev) =>
+      prev.map((b, i) => (i === bathIdx ? { ...b, media: [...(b.media || []), ...entries] } : b)),
+    )
+  }
+  function removeBathroomMedia(bathIdx, mediaId) {
+    setBathrooms((prev) =>
+      prev.map((b, i) => {
+        if (i !== bathIdx) return b
+        const removed = (b.media || []).find((m) => m.id === mediaId)
+        if (removed?.preview && removed.file) URL.revokeObjectURL(removed.preview)
+        return { ...b, media: (b.media || []).filter((m) => m.id !== mediaId) }
+      }),
+    )
+  }
 
   // ── Kitchen helpers ───────────────────────────────────────────────────────────
   function updateKitchen(idx, patch) {
@@ -609,7 +683,7 @@ export default function AddPropertyWizard({
   }
 
   function addLaundryMedia(laundryIdx, fileList) {
-    const valid = Array.from(fileList || []).filter((f) => f.type.startsWith('image/'))
+    const valid = Array.from(fileList || []).filter(isLikelyImageUpload)
     if (!valid.length) return
     const entries = valid.map((file) => ({ id: `${Date.now()}-${Math.random()}`, file, preview: URL.createObjectURL(file) }))
     setLaundry((l) => ({
@@ -1155,7 +1229,7 @@ export default function AddPropertyWizard({
                 <label className="flex cursor-pointer flex-col items-center justify-center rounded-2xl border-2 border-dashed border-slate-200 bg-slate-50/60 px-4 py-5 text-center text-xs text-slate-500 transition hover:border-[#2563eb]/50 hover:bg-blue-50/20">
                   <input
                     type="file"
-                    accept="image/*,video/*"
+                    accept={ACCEPT_PROPERTY_IMAGES_AND_VIDEOS}
                     multiple
                     className="hidden"
                     onChange={ev => { addRoomMedia(idx, ev.target.files); ev.target.value = '' }}
@@ -1243,6 +1317,37 @@ export default function AddPropertyWizard({
                 <label className={`${LBL} mb-2`}>Room access <Req /></label>
                 <RoomChips access={bath.access} onChange={access => updateBath(idx, { access })} />
                 <FieldError msg={e[`b${idx}_access`]} />
+              </div>
+              <div className="sm:col-span-2">
+                <label className={`${LBL} mb-2`}>Photos for this bathroom</label>
+                <p className="mb-2 text-[11px] text-slate-500">Shown on the public listing (same as laundry photos).</p>
+                <div className="flex flex-wrap gap-2">
+                  {(bath.media || []).map((m) => (
+                    <div key={m.id} className="relative h-20 w-20 overflow-hidden rounded-lg border border-slate-200 bg-slate-50">
+                      <img src={m.preview} alt="" className="h-full w-full object-cover" />
+                      <button
+                        type="button"
+                        onClick={() => removeBathroomMedia(idx, m.id)}
+                        className="absolute right-0.5 top-0.5 rounded bg-black/60 px-1 text-[10px] font-bold text-white hover:bg-black/80"
+                      >
+                        ×
+                      </button>
+                    </div>
+                  ))}
+                </div>
+                <label className="mt-2 flex cursor-pointer flex-col items-center justify-center rounded-xl border border-dashed border-slate-300 bg-slate-50/80 px-3 py-4 text-center text-xs font-semibold text-slate-600 transition hover:border-[#2563eb]/50 hover:bg-slate-50">
+                  <input
+                    type="file"
+                    accept={ACCEPT_PROPERTY_IMAGES}
+                    multiple
+                    className="hidden"
+                    onChange={(ev) => {
+                      addBathroomMedia(idx, ev.target.files)
+                      ev.target.value = ''
+                    }}
+                  />
+                  Drag & drop or click to add bathroom photos
+                </label>
               </div>
             </div>
           </div>
@@ -1475,7 +1580,7 @@ export default function AddPropertyWizard({
                     <label className="flex cursor-pointer flex-col items-center justify-center rounded-2xl border-2 border-dashed border-slate-200 bg-slate-50/60 px-4 py-5 text-center text-xs text-slate-500 transition hover:border-[#2563eb]/50 hover:bg-blue-50/20">
                       <input
                         type="file"
-                        accept="image/*"
+                        accept={ACCEPT_PROPERTY_IMAGES}
                         multiple
                         className="hidden"
                         onChange={(ev) => {
@@ -1584,7 +1689,14 @@ export default function AddPropertyWizard({
           >
             <div className="text-sm font-semibold text-slate-500">Drag & drop images, or <span className="text-[#2563eb]">click to upload</span></div>
             <div className="mt-1 text-xs text-slate-400">JPG, PNG, WEBP · optional caption per image</div>
-            <input ref={imageInputRef} type="file" accept="image/*" multiple className="hidden" onChange={ev => addImageFiles(ev.target.files)} />
+            <input
+              ref={imageInputRef}
+              type="file"
+              accept={ACCEPT_PROPERTY_IMAGES}
+              multiple
+              className="hidden"
+              onChange={(ev) => addImageFiles(ev.target.files)}
+            />
           </div>
           {images.length > 0 && (
             <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-3">

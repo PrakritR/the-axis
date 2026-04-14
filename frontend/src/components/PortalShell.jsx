@@ -151,13 +151,8 @@ export default function PortalShell({
       <aside
         className={`hidden lg:flex h-full w-[16.25rem] shrink-0 flex-col bg-white ${sidebarBorder}`}
       >
-        {/* Brand */}
-        <div className="shrink-0 border-b border-slate-100 px-4 py-4">
-          <div className="text-sm font-black text-slate-900">{brandSubtitle}</div>
-        </div>
-
-        {/* Nav — scrolls independently */}
-        <nav className="min-h-0 flex-1 space-y-1 overflow-y-auto overflow-x-hidden p-2 [scrollbar-gutter:stable]">
+        {/* Nav — scrolls independently (no title strip; each view has its own heading) */}
+        <nav className="min-h-0 flex-1 space-y-1 overflow-y-auto overflow-x-hidden p-2 pt-3 [scrollbar-gutter:stable]">
           {navItems.map((item) => {
             const active = activeId === item.id
             return (

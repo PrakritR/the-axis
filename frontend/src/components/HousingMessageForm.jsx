@@ -395,6 +395,7 @@ export function HousingMessageForm({ variant = 'marketing', prefill = null, form
             isAdmin: false,
             threadKey,
             channel: PORTAL_INBOX_CHANNEL_INTERNAL,
+            subject: `[Housing] ${catLabel}`,
           })
         } catch (portalErr) {
           console.warn('[HousingMessageForm] Messages table write failed (inquiry may still be saved):', portalErr)

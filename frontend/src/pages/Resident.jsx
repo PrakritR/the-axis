@@ -45,6 +45,7 @@ import {
   portalInboxAirtableConfigured,
   portalInboxThreadKeyFromRecord,
   submitResidentLeaseChangeRequest,
+  getLeaseCommentsForDraft,
 } from '../lib/airtable'
 import { applicationRejectedFieldName, deriveApplicationApprovalState } from '../lib/applicationApprovalState.js'
 import { anyLeaseDraftAllowsSignWithoutMoveInPay } from '../lib/leaseMoveInOverride.js'
@@ -2460,6 +2461,23 @@ function pickLeaseDraftForPaymentsPricing(drafts) {
   return pickSignedLeaseDraft(drafts) || pickBestLeaseDraft(drafts) || null
 }
 
+/** Lease states where the resident may ask the manager for edits (does not require move-in paid first). */
+const RESIDENT_LEASE_CHANGE_STATUSES = new Set([
+  'Published',
+  'Signed',
+  'Changes Made',
+  'Ready for Signature',
+  'Manager Approved',
+])
+
+function formatLeaseCommentTime(row) {
+  const raw = row?.Timestamp || row?.created_at
+  if (!raw) return '—'
+  const d = parseDisplayDate(String(raw))
+  if (!d) return String(raw).slice(0, 40)
+  return `${d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })} · ${d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })}`
+}
+
 function LeasingPanel({ resident, payments, onOpenPayments }) {
   const leaseTermLabel = getLeaseTermLabel(resident)
   const isMonthToMonth = leaseTermLabel.toLowerCase().includes('month-to-month')
@@ -2475,11 +2493,13 @@ function LeasingPanel({ resident, payments, onOpenPayments }) {
   const [extendToDate, setExtendToDate] = useState('')
   const [extendNotice, setExtendNotice] = useState('')
   const [currentLeasePdf, setCurrentLeasePdf] = useState(null)
-  const [showLeaseChangeForm, setShowLeaseChangeForm] = useState(false)
+  const [showLeaseChangeForm, setShowLeaseChangeForm] = useState(true)
   const [leaseChangeMessage, setLeaseChangeMessage] = useState('')
   const [leaseChangePdfUrl, setLeaseChangePdfUrl] = useState('')
   const [leaseChangeFileName, setLeaseChangeFileName] = useState('')
   const [leaseChangeSubmitting, setLeaseChangeSubmitting] = useState(false)
+  const [leaseComments, setLeaseComments] = useState([])
+  const [leaseCommentsLoading, setLeaseCommentsLoading] = useState(false)
 
   const loadLeaseDrafts = useCallback(async () => {
     setLeaseLoading(true)
@@ -2534,7 +2554,7 @@ function LeasingPanel({ resident, payments, onOpenPayments }) {
   const leaseIsSigned = leaseStatus === 'Signed'
   /** Extension only after move-in charges are satisfied and the lease is signed. */
   const canRequestLeaseExtension = leaseIsSigned && securityDepositPaid && firstMonthRentPaid
-  const canRequestLeaseChange = moveInPrereqsMet && Boolean(activeLeaseDraft) && (leaseStatus === 'Published' || leaseStatus === 'Signed')
+  const canRequestLeaseChange = Boolean(activeLeaseDraft) && RESIDENT_LEASE_CHANGE_STATUSES.has(leaseStatus)
   const leaseBodyAllowed = leaseStatus === 'Published' || leaseStatus === 'Signed'
   const leaseContent = leaseBodyAllowed
     ? (activeLeaseDraft?.['Manager Edited Content'] || activeLeaseDraft?.['AI Draft Content'] || '')
@@ -2569,6 +2589,34 @@ function LeasingPanel({ resident, payments, onOpenPayments }) {
     }
   }, [activeLeaseDraft?.id])
 
+  const reloadLeaseComments = useCallback(async () => {
+    const id = activeLeaseDraft?.id
+    if (!id || !canRequestLeaseChange) {
+      setLeaseComments([])
+      return
+    }
+    setLeaseCommentsLoading(true)
+    try {
+      const rows = await getLeaseCommentsForDraft(id)
+      setLeaseComments(Array.isArray(rows) ? rows : [])
+    } catch {
+      setLeaseComments([])
+    } finally {
+      setLeaseCommentsLoading(false)
+    }
+  }, [activeLeaseDraft?.id, canRequestLeaseChange])
+
+  useEffect(() => {
+    reloadLeaseComments()
+  }, [reloadLeaseComments])
+
+  const residentRequestsOnLease = useMemo(() => {
+    return (leaseComments || []).filter((row) => {
+      const role = String(row['Author Role'] || row.authorRole || '').toLowerCase()
+      return role.includes('resident')
+    })
+  }, [leaseComments])
+
   function handleRequestExtension() {
     if (extendMode === 'date') {
       if (!extendToDate) return
@@ -2598,6 +2646,7 @@ function LeasingPanel({ resident, payments, onOpenPayments }) {
       setLeaseChangeFileName('')
       setShowLeaseChangeForm(false)
       await loadLeaseDrafts()
+      await reloadLeaseComments()
       toast.success('Lease change request sent to your manager')
     } catch (err) {
       toast.error(err.message || 'Could not send lease change request')
@@ -2647,6 +2696,88 @@ function LeasingPanel({ resident, payments, onOpenPayments }) {
           >
             Go to Payments
           </button>
+        </div>
+      ) : null}
+
+      {activeLeaseDraft && canRequestLeaseChange ? (
+        <div className="mb-5 rounded-3xl border border-violet-200 bg-violet-50/90 p-5 shadow-sm">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div className="min-w-0">
+              <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-violet-900">Request lease changes</p>
+              <p className="mt-1 text-sm text-violet-950/90">
+                Describe what you need updated. Your manager sees this on the lease draft and in lease comments — you do
+                not need to finish every move-in payment first to send a request.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setShowLeaseChangeForm((value) => !value)}
+              className="shrink-0 rounded-full border border-violet-200 bg-white px-4 py-2 text-sm font-semibold text-violet-900 transition hover:bg-violet-100/80"
+            >
+              {showLeaseChangeForm ? 'Hide form' : 'Show form'}
+            </button>
+          </div>
+
+          <div className="mt-4 rounded-2xl border border-violet-200/80 bg-white/95 px-4 py-3">
+            <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-slate-500">What you asked for</p>
+            {leaseCommentsLoading ? (
+              <p className="mt-2 text-sm text-slate-500">Loading your requests…</p>
+            ) : residentRequestsOnLease.length === 0 ? (
+              <p className="mt-2 text-sm text-slate-600">
+                No saved requests yet. Use the box below — after you send, your message appears here for your records.
+              </p>
+            ) : (
+              <ul className="mt-2 space-y-3">
+                {residentRequestsOnLease.map((row) => (
+                  <li key={row.id} className="rounded-xl border border-slate-100 bg-slate-50/80 px-3 py-2.5 text-sm text-slate-800">
+                    <div className="flex flex-wrap items-center justify-between gap-2 text-xs font-semibold text-slate-500">
+                      <span>{formatLeaseCommentTime(row)}</span>
+                      <span className="rounded-full bg-violet-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-violet-800">
+                        Sent to manager
+                      </span>
+                    </div>
+                    <p className="mt-2 whitespace-pre-wrap leading-relaxed text-slate-800">{row.Message || row.message || '—'}</p>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+
+          {showLeaseChangeForm ? (
+            <form onSubmit={handleSubmitLeaseChangeRequest} className="mt-4 space-y-3">
+              <label className="block text-xs font-semibold uppercase tracking-wide text-violet-900/90">
+                Your change request
+                <textarea
+                  value={leaseChangeMessage}
+                  onChange={(event) => setLeaseChangeMessage(event.target.value)}
+                  rows={5}
+                  placeholder="Example: Please change the lease start date to May 1, add my co-signer Jane Doe, and update the parking clause…"
+                  className="mt-1.5 w-full rounded-2xl border border-violet-200 bg-white px-4 py-3 text-sm text-slate-900 outline-none focus:border-[#2563eb] focus:ring-2 focus:ring-[#2563eb]/20"
+                />
+              </label>
+              <div className="grid gap-3 md:grid-cols-2">
+                <input
+                  value={leaseChangePdfUrl}
+                  onChange={(event) => setLeaseChangePdfUrl(event.target.value)}
+                  placeholder="Optional: link to a replacement PDF"
+                  className="w-full rounded-xl border border-violet-200 bg-white px-3 py-2 text-sm outline-none focus:border-[#2563eb] focus:ring-2 focus:ring-[#2563eb]/20"
+                />
+                <input
+                  value={leaseChangeFileName}
+                  onChange={(event) => setLeaseChangeFileName(event.target.value)}
+                  placeholder="Optional: file name for that PDF"
+                  className="w-full rounded-xl border border-violet-200 bg-white px-3 py-2 text-sm outline-none focus:border-[#2563eb] focus:ring-2 focus:ring-[#2563eb]/20"
+                />
+              </div>
+              <button
+                type="submit"
+                disabled={leaseChangeSubmitting || !leaseChangeMessage.trim()}
+                className="rounded-full bg-[linear-gradient(180deg,#4f46e5_0%,#4338ca_100%)] px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:brightness-105 disabled:opacity-50"
+              >
+                {leaseChangeSubmitting ? 'Sending…' : 'Send to manager'}
+              </button>
+            </form>
+          ) : null}
         </div>
       ) : null}
 
@@ -2715,55 +2846,6 @@ function LeasingPanel({ resident, payments, onOpenPayments }) {
             {currentLeasePdf?.['PDF URL'] ? (
               <div className="mt-4 overflow-hidden rounded-[20px] border border-slate-200 bg-white shadow-sm">
                 <iframe title="Resident lease PDF" src={currentLeasePdf['PDF URL']} className="h-[420px] w-full bg-white" />
-              </div>
-            ) : null}
-            {canRequestLeaseChange ? (
-              <div className="mt-4 rounded-[20px] border border-slate-200 bg-white/90 p-4 shadow-sm">
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <div>
-                    <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">Request a Change</div>
-                    <p className="mt-1 text-sm text-slate-500">Send one note to your manager. If you include a new PDF URL, it replaces the PDF shown here.</p>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => setShowLeaseChangeForm((value) => !value)}
-                    className="rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
-                  >
-                    {showLeaseChangeForm ? 'Hide form' : 'Request change'}
-                  </button>
-                </div>
-                {showLeaseChangeForm ? (
-                  <form onSubmit={handleSubmitLeaseChangeRequest} className="mt-4 space-y-3">
-                    <textarea
-                      value={leaseChangeMessage}
-                      onChange={(event) => setLeaseChangeMessage(event.target.value)}
-                      rows={4}
-                      placeholder="What should change in the lease?"
-                      className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm outline-none focus:border-[#2563eb] focus:ring-2 focus:ring-[#2563eb]/20"
-                    />
-                    <div className="grid gap-3 md:grid-cols-2">
-                      <input
-                        value={leaseChangePdfUrl}
-                        onChange={(event) => setLeaseChangePdfUrl(event.target.value)}
-                        placeholder="Optional new PDF URL"
-                        className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm outline-none focus:border-[#2563eb] focus:ring-2 focus:ring-[#2563eb]/20"
-                      />
-                      <input
-                        value={leaseChangeFileName}
-                        onChange={(event) => setLeaseChangeFileName(event.target.value)}
-                        placeholder="Optional PDF file name"
-                        className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm outline-none focus:border-[#2563eb] focus:ring-2 focus:ring-[#2563eb]/20"
-                      />
-                    </div>
-                    <button
-                      type="submit"
-                      disabled={leaseChangeSubmitting || !leaseChangeMessage.trim()}
-                      className="rounded-full bg-slate-900 px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:opacity-50"
-                    >
-                      {leaseChangeSubmitting ? 'Sending…' : 'Send Request'}
-                    </button>
-                  </form>
-                ) : null}
               </div>
             ) : null}
             {showLeaseText && leaseBodyAllowed && (() => {

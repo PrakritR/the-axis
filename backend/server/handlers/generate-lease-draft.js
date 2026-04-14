@@ -158,6 +158,18 @@ Important requirements:
 - Reference Washington State Residential Landlord-Tenant Act (RCW Chapter 59.18) where applicable
 - Include specific clauses about shared housing etiquette, common areas, and co-tenant responsibilities
 - Make the language clear, complete, and legally professional
+
+Washington-specific content you MUST include (use these rules; do not contradict them):
+- **Lease termination (month-to-month / notice to end tenancy):** For periods governed by RCW 59.18.200, tenant notice to terminate is **20 days** before the end of a rental period — NOT 24 hours. Do not use "20 days" for landlord entry to the private room.
+- **Landlord entry to the resident's private room (non-emergency):** At least **24 hours' written notice** before entry for inspection, repair, or showing, per RCW 59.18.150. **Emergency entry** (imminent threat to life, health, safety, or property) may occur without prior notice when reasonably necessary. Landlord may enter **common areas** without the same notice when appropriate for legitimate management purposes.
+- **Rent / money:** Address **security deposit** (RCW 59.18.260), return/itemization (RCW 59.18.280), late fees, payment methods. Include an explicit **prepaid / last month's rent** clause: if none is collected, state that; if collected, state it is not a deposit unless designated as such and applies only to the final month as allowed by law.
+- **Maintenance:** Landlord habitability (RCW 59.18.060). **Plumbing and water:** resident must report leaks, backups, and loss of pressure immediately; no grease/chemicals in drains; resident may shut fixture supply if safe in a burst leak. After written notice of serious defects, reference **RCW 59.18.070** repair timelines. Emergencies: 911 when appropriate, then notify landlord.
+- **Utilities:** Shared utilities / flat fee if applicable; resident may not transfer accounts without consent.
+- **Insurance:** Recommend **renters insurance** for personal property.
+- **Keys / access:** Lost or unreturned keys/fobs — replacement at resident's reasonable actual cost.
+- **Noise / guests / shared kitchen and bathrooms:** Co-living conduct rules; quiet hours.
+- **Pets, smoking, cannabis** where relevant to Washington.
+- **Subletting, alterations, default/remedies, governing law (Washington), entire agreement, signatures** as in the section list above.
 - For the signatures section, use EXACTLY these placeholders (do not fill them in):
   Tenant Signature: [RESIDENT SIGNATURE]
   Tenant Printed Name: [RESIDENT PRINT NAME]

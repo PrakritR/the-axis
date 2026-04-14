@@ -256,11 +256,11 @@ a, button {
 
 @media (max-width: 767px) {
   .chatbot-fab {
-    /* Above bottom dock + extra clearance so the FAB does not sit on the footer */
-    bottom: calc(6.75rem + env(safe-area-inset-bottom)) !important;
+    /* Just above the 5rem mobile dock; footer uses horizontal inset so bottom padding can stay smaller */
+    bottom: calc(5.5rem + env(safe-area-inset-bottom)) !important;
   }
   .chatbot-panel {
-    bottom: calc(10.75rem + env(safe-area-inset-bottom)) !important;
-    height: min(460px, calc(100dvh - env(safe-area-inset-top) - env(safe-area-inset-bottom) - 13.5rem)) !important;
+    bottom: calc(9.25rem + env(safe-area-inset-bottom)) !important;
+    height: min(460px, calc(100dvh - env(safe-area-inset-top) - env(safe-area-inset-bottom) - 12rem)) !important;
   }
 }

@@ -94,7 +94,7 @@ function getAmenities(propertyName) {
 
 /**
  * @param {object} app - Application record from the applications backend (mapped fields)
- * @param {object} [overrides] - Admin overrides: { rent, deposit, utilityFee, adminFee }
+ * @param {object} [overrides] - Admin overrides: { rent, deposit, utilityFee, adminFee, lastMonthRent }
  * @returns {object} Structured lease data object
  */
 export function buildLease(app, overrides = {}) {
@@ -113,6 +113,16 @@ export function buildLease(app, overrides = {}) {
   const utilityFee = overrides.utilityFee ?? getUtilityFee(propertyName)
   const securityDeposit = overrides.deposit ?? getSecDeposit(propertyName, monthlyRent)
   const adminFee = overrides.adminFee ?? 250
+  let lastMonthRent = 0
+  if (overrides.lastMonthRent != null && String(overrides.lastMonthRent).trim() !== '') {
+    const fromOverride = parseMoneyStr(String(overrides.lastMonthRent))
+    lastMonthRent =
+      fromOverride != null
+        ? fromOverride
+        : Number(overrides.lastMonthRent) || 0
+  } else {
+    lastMonthRent = parseMoneyStr(app['Last Month Rent']) ?? 0
+  }
   const bathroomNote = getBathroomNote(propertyName, roomNumber)
   const amenities = getAmenities(propertyName)
 
@@ -134,7 +144,8 @@ export function buildLease(app, overrides = {}) {
     }
   }
 
-  const totalMoveIn = proratedRent + proratedUtility + monthlyRent + utilityFee + securityDeposit + adminFee
+  const totalMoveIn =
+    proratedRent + proratedUtility + monthlyRent + utilityFee + securityDeposit + adminFee + lastMonthRent
 
   const today = new Date().toLocaleDateString('en-US', { month: '2-digit', day: '2-digit', year: 'numeric' })
 
@@ -177,6 +188,7 @@ export function buildLease(app, overrides = {}) {
     monthlyRentFmt: fmtMoney(monthlyRent),
     utilityFeeFmt: fmtMoney(utilityFee),
     securityDepositFmt: fmtMoney(securityDeposit),
+    lastMonthRentFmt: fmtMoney(lastMonthRent),
     adminFeeFmt: fmtMoney(adminFee),
     proratedRentFmt: fmtMoney(proratedRent),
     proratedUtilityFmt: fmtMoney(proratedUtility),

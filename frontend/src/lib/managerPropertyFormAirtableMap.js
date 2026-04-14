@@ -169,7 +169,7 @@ export function emptyRoomRow() {
 }
 
 export function emptyBathroomRow() {
-  return { label: '', kind: '', description: '', access: [] }
+  return { label: '', kind: '', description: '', access: [], media: [] }
 }
 
 export function emptyKitchenRow() {
@@ -367,18 +367,29 @@ export function buildPropertyWizardInitialValues(property) {
     }
   })
 
+  const photosRaw = Array.isArray(record.Photos) ? record.Photos : []
+
   const bathrooms = []
   const bathroomCount = clampInt(record[PROPERTY_AIR.bathroomCount] ?? 0, 0, MAX_BATHROOM_SLOTS)
   for (let i = 1; i <= bathroomCount; i++) {
     const desc = String(record[bathroomDescriptionField(i)] || '')
     const parsed = parseBodyTriplet(desc)
     const roomsSharing = i <= MAX_BATHROOM_SHARING_SLOTS ? record[bathroomRoomsSharingField(i)] : ''
+    const prefix = `axis-b${i}-`.toLowerCase()
+    const media = []
+    for (const att of photosRaw) {
+      const fn = String(att?.filename || att?.name || '').toLowerCase()
+      if (!fn.startsWith(prefix)) continue
+      const url = typeof att === 'string' ? att : att?.url
+      if (url) media.push({ id: url, preview: url })
+    }
     bathrooms.push({
       ...emptyBathroomRow(),
       label: parsed.label,
       kind: parsed.kind,
       description: parsed.description,
       access: splitRoomAccess(roomsSharing),
+      media,
     })
   }
 
@@ -413,7 +424,6 @@ export function buildPropertyWizardInitialValues(property) {
   }
 
   const laundryMetaRows = Array.isArray(meta?.laundryDetail) ? meta.laundryDetail : []
-  const photosRaw = Array.isArray(record.Photos) ? record.Photos : []
   const laundryRows = []
   for (let i = 1; i <= MAX_LAUNDRY_SLOTS; i++) {
     const type = stringOrEmpty(record[laundryTypeField(i)])

@@ -373,6 +373,15 @@ function buildLeaseData(app, propertyRecord, overrides = {}) {
   const securityDeposit = resolveSecurityDeposit(app, propertyRecord, monthlyRent, overrides, axisDetails.securityDeposit)
   const adminFee = overrides.adminFee != null ? overrides.adminFee : (axisDetails.adminFee ?? 250)
 
+  let lastMonthRent = 0
+  if (overrides.lastMonthRent != null && String(overrides.lastMonthRent).trim() !== '') {
+    const fromOverride = parseMoneyLike(overrides.lastMonthRent)
+    lastMonthRent = fromOverride != null ? fromOverride : Number(overrides.lastMonthRent) || 0
+  } else {
+    const fromApp = parseMoneyLike(app['Last Month Rent'])
+    lastMonthRent = fromApp != null ? fromApp : 0
+  }
+
   // Prorated calculation
   let proratedRent = 0
   let proratedUtility = 0
@@ -391,7 +400,8 @@ function buildLeaseData(app, propertyRecord, overrides = {}) {
     }
   }
 
-  const totalMoveIn = proratedRent + proratedUtility + monthlyRent + utilityFee + securityDeposit + adminFee
+  const totalMoveIn =
+    proratedRent + proratedUtility + monthlyRent + utilityFee + securityDeposit + adminFee + lastMonthRent
 
   const today = new Date().toLocaleDateString('en-US', { month: '2-digit', day: '2-digit', year: 'numeric' })
 
@@ -418,6 +428,7 @@ function buildLeaseData(app, propertyRecord, overrides = {}) {
     monthlyRent,
     utilityFee,
     securityDeposit,
+    lastMonthRent,
     adminFee,
     proratedDays,
     proratedRent,
@@ -429,6 +440,7 @@ function buildLeaseData(app, propertyRecord, overrides = {}) {
     roomFurnished,
     roomFurnitureIncluded,
     securityDepositFmt: fmtMoney(securityDeposit),
+    lastMonthRentFmt: fmtMoney(lastMonthRent),
     adminFeeFmt: fmtMoney(adminFee),
     proratedRentFmt: fmtMoney(proratedRent),
     proratedUtilityFmt: fmtMoney(proratedUtility),

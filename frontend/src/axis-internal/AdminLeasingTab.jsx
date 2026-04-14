@@ -104,7 +104,68 @@ function AdminLeaseCommentBubble({ comment }) {
   )
 }
 
+/** Manager Edit Notes on the draft — shown as the first row in the unified thread (not a second panel). */
+function ManagerEditRequestBubble({ summary }) {
+  if (!summary) return null
+  const fieldLines = summary.fieldLines || []
+  const hasBody = Boolean(summary.text?.trim()) || fieldLines.length > 0
+  if (!hasBody) return null
+  return (
+    <div className="flex gap-3">
+      <div className="max-w-[min(100%,42rem)] rounded-2xl border border-amber-200 bg-amber-50/95 px-4 py-3 shadow-sm">
+        <div className="mb-1 flex flex-wrap items-center gap-2 text-[11px] font-semibold text-amber-900/90">
+          <span className="text-amber-950">Manager request (draft notes)</span>
+          <span className="rounded-full bg-amber-200/90 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-amber-950">
+            Summary
+          </span>
+          {summary.submittedBy || summary.submittedAt ? (
+            <span className="font-normal text-amber-800/90">
+              {[summary.submittedBy, summary.submittedAt ? fmtTs(summary.submittedAt) : ''].filter(Boolean).join(' · ')}
+            </span>
+          ) : null}
+        </div>
+        {summary.text ? <p className="whitespace-pre-wrap text-sm font-medium text-amber-950">{summary.text}</p> : null}
+        {fieldLines.length > 0 ? (
+          <div className="mt-3 rounded-xl border border-amber-200/80 bg-white/80 px-3 py-2">
+            <div className="text-[10px] font-bold uppercase tracking-wide text-amber-800/80">Requested field changes</div>
+            <ul className="mt-1.5 list-inside list-disc text-sm text-amber-950">
+              {fieldLines.map((line) => (
+                <li key={line}>{line}</li>
+              ))}
+            </ul>
+          </div>
+        ) : null}
+      </div>
+    </div>
+  )
+}
+
 /** Human-readable lines from structured edit-request payload (when present). */
+/** Strip boilerplate so we can hide lease comments that only repeat Manager Edit Notes. */
+function managerEditBodyForDedupe(summary) {
+  if (!summary) return ''
+  const parts = []
+  if (summary.text) parts.push(String(summary.text).trim())
+  for (const line of summary.fieldLines || []) parts.push(String(line).trim())
+  return parts.filter(Boolean).join('\n').trim()
+}
+
+function leaseCommentDuplicatesManagerSummary(comment, summaryBody) {
+  if (!summaryBody) return false
+  const raw = String(comment?.Message || '').trim()
+  if (!raw) return false
+  const stripped = raw
+    .replace(/^\*\*Edit Request Submitted\*\*\s*/i, '')
+    .replace(/^\*\*Manager edit request\*\*\s*/i, '')
+    .trim()
+  const a = stripped.replace(/\s+/g, ' ')
+  const b = summaryBody.replace(/\s+/g, ' ')
+  if (!a || !b) return false
+  if (a === b) return true
+  if (a.length >= 12 && b.length >= 12 && (a.includes(b) || b.includes(a))) return true
+  return false
+}
+
 function linesFromRequestedFields(rf) {
   if (!rf || typeof rf !== 'object') return []
   const lines = []
@@ -295,6 +356,23 @@ export default function AdminLeasingTab({ adminUser, accounts = [] }) {
       submittedAt: parsed.submittedAt ? String(parsed.submittedAt).trim() : '',
     }
   }, [activeDraft])
+
+  const managerEditDedupeBody = useMemo(() => managerEditBodyForDedupe(managerEditRequestSummary), [managerEditRequestSummary])
+
+  const leaseCommentsWithoutManagerDupes = useMemo(() => {
+    if (!managerEditDedupeBody) return leaseComments
+    return leaseComments.filter((c) => !leaseCommentDuplicatesManagerSummary(c, managerEditDedupeBody))
+  }, [leaseComments, managerEditDedupeBody])
+
+  const unifiedChangeThreadCount = useMemo(() => {
+    const summaryHasRow =
+      Boolean(managerEditRequestSummary) &&
+      (Boolean(managerEditRequestSummary.text?.trim()) ||
+        (managerEditRequestSummary.fieldLines || []).length > 0) &&
+      Boolean(managerEditBodyForDedupe(managerEditRequestSummary))
+    const summaryCount = summaryHasRow ? 1 : 0
+    return summaryCount + leaseCommentsWithoutManagerDupes.length
+  }, [managerEditRequestSummary, leaseCommentsWithoutManagerDupes])
 
   const openLeaseDetails = useCallback(async (draft) => {
     if (!draft?.id) return
@@ -731,46 +809,23 @@ export default function AdminLeasingTab({ adminUser, accounts = [] }) {
           ) : null}
 
           <div className="min-w-0 space-y-5 overflow-x-auto px-4 py-5 sm:px-6">
-            {!detailLoading && (managerEditRequestSummary || leaseComments.length > 0) ? (
-              <div className="space-y-4">
-                {managerEditRequestSummary ? (
-                  <div className="rounded-2xl border border-amber-200 bg-amber-50/90 px-4 py-4">
-                    <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-amber-900">Manager request for review</div>
-                    {managerEditRequestSummary.submittedBy || managerEditRequestSummary.submittedAt ? (
-                      <p className="mt-1 text-xs text-amber-800/90">
-                        {[managerEditRequestSummary.submittedBy, managerEditRequestSummary.submittedAt ? fmtTs(managerEditRequestSummary.submittedAt) : '']
-                          .filter(Boolean)
-                          .join(' · ')}
-                      </p>
-                    ) : null}
-                    {managerEditRequestSummary.text ? (
-                      <p className="mt-3 whitespace-pre-wrap text-sm font-medium text-amber-950">{managerEditRequestSummary.text}</p>
-                    ) : null}
-                    {managerEditRequestSummary.fieldLines.length > 0 ? (
-                      <div className="mt-3 rounded-xl border border-amber-200/80 bg-white/80 px-3 py-2">
-                        <div className="text-[10px] font-bold uppercase tracking-wide text-amber-800/80">Requested field changes</div>
-                        <ul className="mt-1.5 list-inside list-disc text-sm text-amber-950">
-                          {managerEditRequestSummary.fieldLines.map((line) => (
-                            <li key={line}>{line}</li>
-                          ))}
-                        </ul>
-                      </div>
-                    ) : null}
-                  </div>
-                ) : null}
-                {leaseComments.length > 0 ? (
-                  <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4">
-                    <div className="flex items-center justify-between gap-2">
-                      <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-500">Lease messages</div>
-                      <span className="rounded-full bg-white px-2 py-0.5 text-xs font-semibold text-slate-600 shadow-sm">{leaseComments.length}</span>
-                    </div>
-                    <div className="mt-4 space-y-3">
-                      {leaseComments.map((c) => (
-                        <AdminLeaseCommentBubble key={c.id} comment={c} />
-                      ))}
-                    </div>
-                  </div>
-                ) : null}
+            {!detailLoading && unifiedChangeThreadCount > 0 ? (
+              <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-500">Change requests &amp; messages</div>
+                  <span className="rounded-full bg-white px-2 py-0.5 text-xs font-semibold text-slate-600 shadow-sm">
+                    {unifiedChangeThreadCount}
+                  </span>
+                </div>
+                <p className="mt-1 text-xs text-slate-500">
+                  Manager notes from the draft appear first; lease comments follow (duplicates of the same request are hidden).
+                </p>
+                <div className="mt-4 space-y-3">
+                  <ManagerEditRequestBubble summary={managerEditRequestSummary} />
+                  {leaseCommentsWithoutManagerDupes.map((c) => (
+                    <AdminLeaseCommentBubble key={c.id} comment={c} />
+                  ))}
+                </div>
               </div>
             ) : null}
 

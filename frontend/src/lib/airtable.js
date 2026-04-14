@@ -23,13 +23,16 @@ const MESSAGE_CHANNEL_FIELD =
     ? import.meta.env.VITE_AIRTABLE_MESSAGE_CHANNEL_FIELD
     : 'Channel'
 
-/** Single-line text on Messages; set VITE_AIRTABLE_MESSAGE_SUBJECT_FIELD=none to omit from API writes. */
+/**
+ * Single-line text on Messages (default field name `Subject`).
+ * Set `VITE_AIRTABLE_MESSAGE_SUBJECT_FIELD` to your exact Airtable column name, or `none` to skip writes.
+ */
 const MESSAGE_SUBJECT_FIELD = (() => {
   const raw = import.meta.env.VITE_AIRTABLE_MESSAGE_SUBJECT_FIELD
   if (raw === 'none' || raw === false) return ''
-  if (raw === undefined || raw === null) return ''
+  if (raw === undefined || raw === null) return 'Subject'
   const s = String(raw).trim()
-  return s || ''
+  return s || 'Subject'
 })()
 
 /**
@@ -1339,6 +1342,39 @@ export async function createRoomRecord({ propertyId, name, rent, status, notes }
   return mapRecord(data)
 }
 
+/** When `File.type` is empty or generic, infer a MIME type from the filename (AVIF, HEIC, etc.). */
+function inferPropertyPhotoContentType(file) {
+  const explicit = String(file?.type || '').trim()
+  if (explicit && explicit !== 'application/octet-stream') return explicit
+  const name = String(file?.name || '').toLowerCase()
+  const dot = name.lastIndexOf('.')
+  const ext = dot >= 0 ? name.slice(dot) : ''
+  const byExt = {
+    '.avif': 'image/avif',
+    '.heic': 'image/heic',
+    '.heif': 'image/heif',
+    '.webp': 'image/webp',
+    '.jxl': 'image/jxl',
+    '.jp2': 'image/jp2',
+    '.jpg': 'image/jpeg',
+    '.jpeg': 'image/jpeg',
+    '.png': 'image/png',
+    '.gif': 'image/gif',
+    '.bmp': 'image/bmp',
+    '.tif': 'image/tiff',
+    '.tiff': 'image/tiff',
+    '.svg': 'image/svg+xml',
+    '.ico': 'image/x-icon',
+    '.mp4': 'video/mp4',
+    '.mov': 'video/quicktime',
+    '.webm': 'video/webm',
+    '.mkv': 'video/x-matroska',
+    '.m4v': 'video/x-m4v',
+    '.avi': 'video/x-msvideo',
+  }
+  return byExt[ext] || explicit || 'application/octet-stream'
+}
+
 /**
  * Upload a file as an attachment to a property record's Photos/Images field.
  * Uses Airtable's content upload API.
@@ -1347,7 +1383,7 @@ export async function uploadPropertyImage(propertyId, file) {
   const formData = new FormData()
   formData.append('file', file, file.name)
   formData.append('filename', file.name)
-  formData.append('contentType', file.type || 'application/octet-stream')
+  formData.append('contentType', inferPropertyPhotoContentType(file))
   const response = await fetch(
     `https://content.airtable.com/v0/${BASE_ID}/${encodeURIComponent(TABLES.properties)}/${propertyId}/${encodeURIComponent('Photos')}/uploadAttachment`,
     {
@@ -1745,6 +1781,7 @@ export async function submitAnnouncementFromInbox({
       isAdmin: Boolean(notifyInbox.isAdmin),
       threadKey: notifyInbox.threadKey,
       channel: PORTAL_INBOX_CHANNEL_INTERNAL,
+      subject: head,
     })
   }
 
@@ -2083,11 +2120,12 @@ export async function submitResidentLeaseChangeRequest({
     'Updated At': new Date().toISOString(),
   })
 
+  const preview = text.length > 220 ? `${text.slice(0, 220)}…` : text
   await createLeaseNotification({
     recipientRecordId: draft?.['Owner ID'] || '',
     recipientRole: 'manager',
     leaseDraftId: draftId,
-    message: `${resident?.Name || 'Resident'} requested lease changes`,
+    message: `${resident?.Name || 'Resident'} requested lease changes: ${preview}`,
     actionType: 'resident-requested-changes',
   }).catch(() => null)
 

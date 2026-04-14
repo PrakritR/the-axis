@@ -516,8 +516,9 @@ export default function Chatbot() {
           background: 'linear-gradient(135deg, #3b82f6 0%, #2563eb 100%)',
           color: 'white',
           boxShadow: '0 4px 20px rgba(37,99,235,0.35)',
-          bottom: 'calc(2.75rem + env(safe-area-inset-bottom))',
-          right: 'calc(1.5rem + env(safe-area-inset-right))',
+          /* Sits above footer / mobile dock without requiring excessive footer padding */
+          bottom: 'calc(3.25rem + env(safe-area-inset-bottom))',
+          right: 'calc(1.25rem + env(safe-area-inset-right))',
         }}
       >
         <div className="transition-all duration-200" style={{ transform: open ? 'rotate(90deg) scale(0.85)' : 'rotate(0deg) scale(1)' }}>
@@ -539,8 +540,8 @@ export default function Chatbot() {
         style={{
           width: 'min(380px, calc(100vw - 2rem))',
           height: 'min(540px, calc(100dvh - env(safe-area-inset-top) - env(safe-area-inset-bottom) - 9.5rem))',
-          bottom: 'calc(7.25rem + env(safe-area-inset-bottom))',
-          right: 'calc(1.5rem + env(safe-area-inset-right))',
+          bottom: 'calc(8rem + env(safe-area-inset-bottom))',
+          right: 'calc(1.25rem + env(safe-area-inset-right))',
           background: 'white',
           boxShadow: '0 8px 40px rgba(15,23,42,0.18), 0 2px 8px rgba(15,23,42,0.08)',
           opacity: open ? 1 : 0,

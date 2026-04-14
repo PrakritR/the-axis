@@ -8,7 +8,9 @@ export default function Footer() {
   const isOwners = location.pathname.startsWith('/owners')
 
   return (
-    <footer className={`w-full shrink-0 border-t border-white/70 bg-[linear-gradient(180deg,rgba(255,255,255,0.36)_0%,rgba(255,255,255,0.72)_100%)] text-sm text-slate-500 backdrop-blur-xl md:pb-0 ${isOwners ? 'pb-10' : 'pb-24'}`}>
+    <footer
+      className={`w-full shrink-0 border-t border-white/70 bg-[linear-gradient(180deg,rgba(255,255,255,0.36)_0%,rgba(255,255,255,0.72)_100%)] text-sm text-slate-500 backdrop-blur-xl ${isOwners ? 'pb-10 pr-16 md:pr-8' : 'pb-20 pr-[4.5rem] sm:pr-20 md:pb-20 md:pr-10'}`}
+    >
       <div className="h-px w-full bg-gradient-to-r from-transparent via-[#2563eb]/35 to-transparent" />
 
       <div className="border-b border-slate-200/70">

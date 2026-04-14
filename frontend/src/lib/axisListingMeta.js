@@ -11,7 +11,8 @@
  * - `leasing["Leasing Packages"]` — bundle rows when floor packages are used (no dedicated table yet).
  * - `financials.moveInCharges` — optional until a column exists.
  * - `listingAvailabilityWindows`, `listingVideos`, `bathroomTotalDecimal`, `sharedSpacesDetail`,
- *   `laundryDetail[]` (per laundry slot: extra description for listings; photos use `axis-l{n}-` filenames on Photos), etc.
+ *   `laundryDetail[]` (per laundry slot: extra description for listings; photos use `axis-l{n}-` filenames on Photos),
+ *   optional `bathroomsDetail[]` (per bathroom slot notes / `imageUrls`); bathroom photos may also use `axis-b{n}-` on Photos), etc.
  *
  * `meta.leasing` uses Properties-style field names — see PROPERTIES_LEASING_META_KEYS
  * and PROPERTIES_LEASING_PACKAGE_KEYS in managerPropertyFormAirtableMap.js.

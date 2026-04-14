@@ -1,12 +1,16 @@
 import { parseAxisListingMetaBlock } from './axisListingMeta.js'
 import {
   PROPERTY_AIR,
+  bathroomDescriptionField,
+  bathroomRoomsSharingField,
   clampInt,
   computeDecimalBathroomTotalFromAirtableRecord,
   kitchenDescriptionField,
   kitchenRoomsSharingField,
   laundryRoomsSharingField,
   laundryTypeField,
+  MAX_BATHROOM_SHARING_SLOTS,
+  MAX_BATHROOM_SLOTS,
   MAX_KITCHEN_SLOTS,
   MAX_LAUNDRY_SLOTS,
   MAX_ROOM_SLOTS,
@@ -431,6 +435,51 @@ function resolveBathroomTotalForListing(rec, meta) {
   return 0
 }
 
+/**
+ * Bathrooms from manager wizard (`Bathroom N` + `Rooms Sharing Bathroom N`) plus
+ * listing photos named `axis-b{n}-*` on the property Photos field.
+ */
+function buildBathroomsListFromRecord(rec, meta) {
+  const roomCount = clampInt(rec[PROPERTY_AIR.roomCount] ?? 0, 0, MAX_ROOM_SLOTS)
+  const bc = clampInt(rec[PROPERTY_AIR.bathroomCount] ?? 0, 0, MAX_BATHROOM_SLOTS)
+  const bathroomMetaRows = Array.isArray(meta?.bathroomsDetail) ? meta.bathroomsDetail : []
+  const photos = Array.isArray(rec?.Photos) ? rec.Photos : []
+  const out = []
+  for (let i = 1; i <= bc; i++) {
+    const parsed = parseBodyTriplet(rec[bathroomDescriptionField(i)])
+    const kind = trimStr(parsed.kind)
+    const label = trimStr(parsed.label)
+    const descExtra = trimStr(parsed.description)
+    const roomsSharing =
+      i <= MAX_BATHROOM_SHARING_SLOTS ? rec[bathroomRoomsSharingField(i)] : ''
+    const accessList = splitRoomAccess(roomsSharing)
+    if (!kind && !label && !descExtra && !accessList.length) continue
+    const title = label || kind || (bc > 1 ? `Bathroom ${i}` : 'Bathroom')
+    const descParts = [kind, descExtra].filter(Boolean)
+    const descText = descParts.join(' — ')
+    const accessDisplay = formatSharedSpaceAccessDisplay(accessList, roomCount)
+    const bm = bathroomMetaRows[i - 1] && typeof bathroomMetaRows[i - 1] === 'object' ? bathroomMetaRows[i - 1] : {}
+    const metaNote = trimStr(bm.description || bm.notes || '')
+    const description = [descText, metaNote].filter(Boolean).join(' · ') || 'Bathroom'
+    const fromPhotos = attachmentUrlsWithFilenamePrefix(photos, `axis-b${i}-`.toLowerCase())
+    const fromMeta = (Array.isArray(bm.imageUrls) ? bm.imageUrls : []).map(trimStr).filter(Boolean)
+    const images = [...new Set([...fromPhotos, ...fromMeta])]
+    out.push({
+      title,
+      description,
+      accessLabel: accessDisplay,
+      images,
+    })
+  }
+  return out
+}
+
+function formatMoneyLabelFromNumber(n) {
+  if (!Number.isFinite(n) || n < 0) return ''
+  if (n === 0) return '$0'
+  return `$${n.toLocaleString('en-US', { maximumFractionDigits: n % 1 !== 0 ? 2 : 0 })}`
+}
+
 export function mapAirtableRecordToHomeProperty(rec) {
   const photos = Array.isArray(rec?.Photos) ? rec.Photos : []
   const urls = photos.map((a) => (typeof a === 'string' ? a : a?.url)).filter(Boolean)
@@ -502,7 +551,20 @@ export function mapAirtableRecordToPropertyPage(rec) {
 
   const roomPlans = buildRoomPlansFromAirtableRecord(rec, meta)
   const sharedSpacesList = buildSharedSpacesListFromRecord(rec, meta)
+  const bathroomsList = buildBathroomsListFromRecord(rec, meta)
   const availabilitySummary = formatListingAvailabilitySummary(meta?.listingAvailabilityWindows)
+
+  const appFeeNum = Number(rec[PROPERTY_AIR.applicationFee])
+  const applicationFeeDisplay =
+    Number.isFinite(appFeeNum) && appFeeNum >= 0
+      ? appFeeNum === 0
+        ? 'No application fee'
+        : `${formatMoneyLabelFromNumber(appFeeNum)} application fee`
+      : '$50 application fee'
+
+  const moveInNum = Number(meta?.financials?.moveInCharges)
+  const moveInChargesDisplay =
+    Number.isFinite(moveInNum) && moveInNum > 0 ? `${formatMoneyLabelFromNumber(moveInNum)} other move-in charges (see lease)` : ''
 
   return {
     ...base,
@@ -514,12 +576,21 @@ export function mapAirtableRecordToPropertyPage(rec) {
     communityAmenities: Array.isArray(rec.Amenities) ? rec.Amenities : [],
     unitAmenities: [],
     policies: String(leasing.leaseLengthInfo || '').trim() || 'Contact Axis for lease options.',
-    applicationFee: '$50',
+    applicationFee:
+      Number.isFinite(appFeeNum) && appFeeNum >= 0
+        ? appFeeNum === 0
+          ? '$0'
+          : formatMoneyLabelFromNumber(appFeeNum)
+        : '$50',
+    applicationFeeDisplay,
+    moveInChargesDisplay,
+    listingAvailabilitySummary: availabilitySummary,
     leasingPackages,
     leaseTerms: [],
     cleaningFee: '',
     utilitiesFee: '',
     securityDeposit: String(rec['Security Deposit'] != null ? rec['Security Deposit'] : '$500'),
     sharedSpacesList,
+    bathroomsList,
   }
 }
