@@ -442,8 +442,12 @@ export default async function handler(req, res) {
 
   // ── POST: schedule a tour ─────────────────────────────────────────────────
   if (req.method === 'POST') {
-    const token = process.env.AIRTABLE_TOKEN
-    if (!token) return res.status(500).json({ error: 'Data API token is not configured on the server.' })
+    if (!AIRTABLE_TOKEN) {
+      return res.status(500).json({
+        error:
+          'Data API token is not configured on the server. Set AIRTABLE_TOKEN or VITE_AIRTABLE_TOKEN on Vercel (Project → Settings → Environment Variables) for Production and Preview.',
+      })
+    }
 
     const { name, email, phone, type, property, room, tourFormat, manager, managerEmail, tourAvailability, preferredDate, preferredTime, notes } = req.body ?? {}
     if (!name || !email) return res.status(400).json({ error: 'Name and email are required.' })
@@ -593,7 +597,7 @@ export default async function handler(req, res) {
     try {
       const data = await airtableCreateWithUnknownFieldRetry({
         baseId: AIRTABLE_BASE_ID,
-        token,
+        token: AIRTABLE_TOKEN,
         tableName: SCHEDULING_TABLE,
         fields,
       })

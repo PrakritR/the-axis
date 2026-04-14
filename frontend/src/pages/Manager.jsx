@@ -6273,6 +6273,17 @@ export function CalendarTabPanel({ manager, allowedPropertyNames, loadAllSchedul
     return () => window.clearTimeout(t)
   }, [weeklyFreeByProperty, selectedPropertyId, selectedDateKey, loadAllSchedulingRows, saveTourDirtyIfNeeded, maTableOk])
 
+  /** Debounced persist for Manager Availability (structured table) — matches legacy Notes autosave UX. */
+  useEffect(() => {
+    if (loadAllSchedulingRows || !maTableOk) return
+    if (!maDirtyRef.current) return
+    if (!selectedPropertyId) return
+    const t = window.setTimeout(() => {
+      void saveMaRef.current()
+    }, 750)
+    return () => window.clearTimeout(t)
+  }, [pendingRanges, repeatWeekly, selectedPropertyId, selectedDateKey, loadAllSchedulingRows, maTableOk])
+
   adminAutosaveCtxRef.current = {
     manager,
     selectedDateKey,

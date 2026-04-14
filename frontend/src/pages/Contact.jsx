@@ -1,9 +1,12 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { Seo } from '../lib/seo'
 import { errorFromAirtableApiBody } from '../lib/airtablePermissionError'
 import { isHousingMessageCategoryId } from '../lib/housingSite'
-import { dispatchAxisSchedulingChanged } from '../lib/portalCalendarSync.js'
+import {
+  AXIS_SCHEDULING_CHANGED_EVENT,
+  dispatchAxisSchedulingChanged,
+} from '../lib/portalCalendarSync.js'
 import {
   DEFAULT_PROPERTIES,
   HousingMessageForm,
@@ -333,12 +336,10 @@ function HousingScheduler() {
     setSubmitted(false); setSubmitError('')
   }
 
-  useEffect(() => {
-    let cancelled = false
+  const loadTourProperties = useCallback(() => {
     fetch('/api/forms?action=tour')
       .then((r) => r.json())
       .then((data) => {
-        if (cancelled) return
         if (Array.isArray(data?.properties)) {
           setProperties(
             data.properties.map((p) => ({
@@ -351,16 +352,23 @@ function HousingScheduler() {
         }
         setProperties([])
       })
-      .catch(() => {
-        if (!cancelled) setProperties([])
-      })
-      .finally(() => {
-        if (!cancelled) setTourPropertiesLoading(false)
-      })
-    return () => {
-      cancelled = true
-    }
+      .catch(() => setProperties([]))
+      .finally(() => setTourPropertiesLoading(false))
   }, [])
+
+  useEffect(() => {
+    setTourPropertiesLoading(true)
+    loadTourProperties()
+  }, [loadTourProperties])
+
+  useEffect(() => {
+    function onSchedulingChanged() {
+      setTourPropertiesLoading(true)
+      loadTourProperties()
+    }
+    window.addEventListener(AXIS_SCHEDULING_CHANGED_EVENT, onSchedulingChanged)
+    return () => window.removeEventListener(AXIS_SCHEDULING_CHANGED_EVENT, onSchedulingChanged)
+  }, [loadTourProperties])
 
   async function handleSchedule() {
     setSubmitting(true); setSubmitError('')
