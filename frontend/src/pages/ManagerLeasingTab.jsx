@@ -15,7 +15,7 @@ import toast from 'react-hot-toast'
 import LeaseHTMLTemplate from '../components/LeaseHTMLTemplate.jsx'
 import { DataTable } from '../components/PortalShell'
 import { getStatusConfig, fmtTs } from '../lib/leaseWorkflowConstants.js'
-import { getLeaseDraftById, publishLeaseDraft, uploadLeaseVersionPdfFile } from '../lib/airtable'
+import { getLeaseDraftById, publishLeaseDraft, uploadLeaseVersionPdfFile, getCurrentLeaseVersion } from '../lib/airtable'
 
 const AIRTABLE_TOKEN = import.meta.env.VITE_AIRTABLE_TOKEN
 const CORE_BASE_ID = import.meta.env.VITE_AIRTABLE_BASE_ID || 'appol57LKtMKaQ75T'
@@ -176,6 +176,7 @@ export default function ManagerLeasingTab({ manager, allowedPropertyNames }) {
   const [actionBusy, setActionBusy] = useState('')
   const [showUploadForm, setShowUploadForm] = useState(false)
   const [pdfFile, setPdfFile] = useState(null)
+  const [activeVersion, setActiveVersion] = useState(null)
   const [showChangeBox, setShowChangeBox] = useState(false)
   const [changeRequestText, setChangeRequestText] = useState('')
   const [statusFilter, setStatusFilter] = useState('all')
@@ -259,9 +260,13 @@ export default function ManagerLeasingTab({ manager, allowedPropertyNames }) {
         resolvedDraft = data.draft
         await loadDrafts()
       }
-      const full = await getLeaseDraftById(resolvedDraft.id).catch(() => resolvedDraft)
+      const [full, version] = await Promise.all([
+        getLeaseDraftById(resolvedDraft.id).catch(() => resolvedDraft),
+        getCurrentLeaseVersion(resolvedDraft.id).catch(() => null),
+      ])
       setSelectedDraftId(String(full?.id || resolvedDraft.id))
       setActiveDraft(full)
+      setActiveVersion(version)
       setShowUploadForm(false)
       setShowChangeBox(false)
       setPdfFile(null)
@@ -341,8 +346,12 @@ export default function ManagerLeasingTab({ manager, allowedPropertyNames }) {
       toast.success('PDF uploaded')
       setShowUploadForm(false)
       setPdfFile(null)
-      const full = await getLeaseDraftById(activeDraft.id).catch(() => activeDraft)
+      const [full, version] = await Promise.all([
+        getLeaseDraftById(activeDraft.id).catch(() => activeDraft),
+        getCurrentLeaseVersion(activeDraft.id).catch(() => null),
+      ])
       setActiveDraft(full)
+      setActiveVersion(version)
       await loadDrafts()
     } catch (err) {
       toast.error(err.message || 'Could not upload PDF')
@@ -572,6 +581,21 @@ export default function ManagerLeasingTab({ manager, allowedPropertyNames }) {
                   {actionBusy === 'request-change' ? 'Sending...' : 'Send request'}
                 </button>
               </div>
+            </div>
+          ) : null}
+
+          {activeVersion?.['PDF URL'] ? (
+            <div className="border-b border-slate-100 bg-emerald-50 px-5 py-3 flex items-center gap-3">
+              <span className="text-xs font-semibold text-emerald-700">PDF uploaded</span>
+              <a
+                href={activeVersion['PDF URL']}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="rounded-full border border-emerald-300 bg-white px-3 py-1 text-xs font-semibold text-emerald-700 hover:bg-emerald-50"
+              >
+                View / Download PDF
+              </a>
+              {activeVersion['File Name'] ? <span className="text-xs text-slate-500 truncate max-w-[200px]">{activeVersion['File Name']}</span> : null}
             </div>
           ) : null}
 

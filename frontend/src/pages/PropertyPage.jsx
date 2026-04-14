@@ -5,7 +5,7 @@ import MapView from '../components/Map'
 import PropertyGallery from '../components/PropertyGallery'
 import PropertyMediaPlaceholder from '../components/PropertyMediaPlaceholder'
 import { properties } from '../data/properties'
-import { fetchPropertyRecordById, propertyListingVisibleForMarketing } from '../lib/airtable'
+import { fetchPropertyRecordById, propertyListingVisibleForMarketing, fetchBlockedTourDatesByName } from '../lib/airtable'
 import { mapAirtableRecordToPropertyPage, marketingSlugForAirtablePropertyId } from '../lib/airtablePublicListings'
 import { formatBathroomCountForDisplay, partitionRoomListingFields } from '../lib/listingRoomDisplay.js'
 import { Seo, buildPropertySchema } from '../lib/seo'
@@ -16,6 +16,321 @@ import { getAmenityIcon } from '../components/AmenityIcon'
 
 /** Space reserved below the fixed section nav so the gallery never sits underneath (wrap, fonts, subpixels). */
 const SECTION_NAV_LAYOUT_BUFFER_PX = 20
+
+// ─── Tour availability helpers ────────────────────────────────────────────────
+function extractMultilineNoteValuePublic(notes, label) {
+  const escaped = label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  const startRe = new RegExp(`(?:^|\\n)${escaped}:\\s*`, 'i')
+  const s = String(notes || '')
+  const startMatch = s.match(startRe)
+  if (!startMatch) return ''
+  const after = s.slice(startMatch.index + startMatch[0].length)
+  const stopMatch = after.match(/\n[A-Za-z][A-Za-z ]*:/)
+  const block = stopMatch ? after.slice(0, stopMatch.index) : after
+  return block.trim()
+}
+
+function tourAvailabilityFromRaw(rec) {
+  const f = rec || {}
+  const explicit = String(f['Tour Availability'] || f['Calendar Availability'] || '').trim()
+  const fromNotes = extractMultilineNoteValuePublic(String(f['Notes'] || ''), 'Tour Availability')
+  return explicit || fromNotes
+}
+
+function displayTimeFromMins(minutes) {
+  const hrs24 = Math.floor(minutes / 60)
+  const mins = minutes % 60
+  let hrs12 = hrs24 % 12
+  if (hrs12 === 0) hrs12 = 12
+  const ampm = hrs24 >= 12 ? 'PM' : 'AM'
+  return `${hrs12}:${String(mins).padStart(2, '0')} ${ampm}`
+}
+
+function slotsForDateFromAvailText(text, dateKey) {
+  const d = new Date(`${dateKey}T00:00:00`)
+  if (isNaN(d.getTime())) return []
+  const dayAbbr = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][d.getDay()]
+  const slots = []
+  const lines = String(text || '').split(/\n|;/).map((l) => l.trim()).filter(Boolean)
+  for (const line of lines) {
+    const m = line.match(/^(Mon|Tue|Wed|Thu|Fri|Sat|Sun)\s*[:\-]\s*(.+)$/i)
+    if (!m) continue
+    const day = m[1][0].toUpperCase() + m[1].slice(1, 3).toLowerCase()
+    if (day !== dayAbbr) continue
+    const tokens = m[2].split(',').map((t) => t.trim()).filter(Boolean)
+    for (const token of tokens) {
+      const pair = token.match(/^(\d+)-(\d+)$/)
+      if (pair) {
+        const start = Number(pair[1])
+        const end = Number(pair[2])
+        if (end > start) slots.push(`${displayTimeFromMins(start)} - ${displayTimeFromMins(end)}`)
+        continue
+      }
+      if (/\d+:\d+/.test(token)) slots.push(token)
+    }
+  }
+  return slots
+}
+
+function dayHasAvailability(text, dateKey) {
+  return slotsForDateFromAvailText(text, dateKey).length > 0
+}
+
+// ─── TourBookingModal ─────────────────────────────────────────────────────────
+function TourBookingModal({ open, onClose, propertyName, tourAvailabilityText, propertyId }) {
+  const [blockedDates, setBlockedDates] = useState(new Set())
+  const [loadingBlocked, setLoadingBlocked] = useState(false)
+  const [selectedDate, setSelectedDate] = useState('')
+  const [selectedTime, setSelectedTime] = useState('')
+  const [name, setName] = useState('')
+  const [email, setEmail] = useState('')
+  const [phone, setPhone] = useState('')
+  const [notes, setNotes] = useState('')
+  const [submitting, setSubmitting] = useState(false)
+  const [submitted, setSubmitted] = useState(false)
+  const [error, setError] = useState('')
+
+  const hasAvailability = Boolean(String(tourAvailabilityText || '').trim())
+
+  useEffect(() => {
+    if (!open) return
+    setSelectedDate(''); setSelectedTime(''); setName(''); setEmail(''); setPhone('')
+    setNotes(''); setSubmitted(false); setError('')
+    if (!propertyName) { setBlockedDates(new Set()); return }
+    setLoadingBlocked(true)
+    fetchBlockedTourDatesByName(propertyName)
+      .then((records) => {
+        const s = new Set()
+        records.forEach((r) => {
+          const d = String(r['Date'] || '').trim().slice(0, 10)
+          if (d) s.add(d)
+        })
+        setBlockedDates(s)
+      })
+      .catch(() => setBlockedDates(new Set()))
+      .finally(() => setLoadingBlocked(false))
+  }, [open, propertyName])
+
+  const availableDates = useMemo(() => {
+    const dates = []
+    const today = new Date()
+    for (let i = 1; i <= 45; i++) {
+      const d = new Date(today)
+      d.setDate(today.getDate() + i)
+      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+      const blocked = blockedDates.has(key)
+      const hasSlots = hasAvailability ? dayHasAvailability(tourAvailabilityText, key) : true
+      dates.push({ key, date: d, blocked, hasSlots })
+    }
+    return dates
+  }, [blockedDates, tourAvailabilityText, hasAvailability])
+
+  const timeSlots = useMemo(() => {
+    if (!selectedDate || !hasAvailability) return []
+    return slotsForDateFromAvailText(tourAvailabilityText, selectedDate)
+  }, [selectedDate, tourAvailabilityText, hasAvailability])
+
+  useEffect(() => { setSelectedTime('') }, [selectedDate])
+
+  async function handleSubmit(e) {
+    e.preventDefault()
+    setError('')
+    if (!selectedDate) { setError('Pick a date.'); return }
+    if (hasAvailability && !selectedTime) { setError('Pick a time slot.'); return }
+    if (!name.trim()) { setError('Your name is required.'); return }
+    if (!email.trim()) { setError('Your email is required.'); return }
+    setSubmitting(true)
+    try {
+      const body = {
+        name: name.trim(),
+        email: email.trim(),
+        phone: phone.trim() || undefined,
+        type: 'Tour',
+        property: propertyName,
+        preferredDate: selectedDate,
+        preferredTime: selectedTime || 'To be confirmed',
+        notes: notes.trim() || undefined,
+      }
+      const res = await fetch('/api/forms?action=tour', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(data.error || `Request failed (${res.status})`)
+      setSubmitted(true)
+    } catch (err) {
+      setError(err.message || 'Could not book tour. Please try again.')
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  if (!open) return null
+
+  const months = []
+  availableDates.forEach(({ key, date, blocked, hasSlots }) => {
+    const monthKey = key.slice(0, 7)
+    const monthLabel = date.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
+    let last = months[months.length - 1]
+    if (!last || last.monthKey !== monthKey) {
+      months.push({ monthKey, monthLabel, days: [] })
+      last = months[months.length - 1]
+    }
+    last.days.push({ key, date, blocked, hasSlots })
+  })
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end justify-center sm:items-center">
+      <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={onClose} />
+      <div className="relative z-10 flex max-h-[92dvh] w-full max-w-lg flex-col overflow-hidden rounded-t-3xl bg-white shadow-2xl sm:rounded-3xl">
+        <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4">
+          <div>
+            <h2 className="text-lg font-black text-slate-900">Schedule a tour</h2>
+            {propertyName && <p className="text-xs text-slate-500">{propertyName}</p>}
+          </div>
+          <button type="button" onClick={onClose} className="flex h-8 w-8 items-center justify-center rounded-full border border-slate-200 text-slate-500 hover:bg-slate-50">
+            ✕
+          </button>
+        </div>
+
+        {submitted ? (
+          <div className="flex flex-1 flex-col items-center justify-center gap-4 px-6 py-12 text-center">
+            <div className="flex h-14 w-14 items-center justify-center rounded-full bg-emerald-100 text-2xl">✓</div>
+            <h3 className="text-xl font-black text-slate-900">Tour request sent!</h3>
+            <p className="text-sm text-slate-500">We'll confirm your tour for {selectedDate}{selectedTime ? ` at ${selectedTime}` : ''} shortly.</p>
+            <button type="button" onClick={onClose} className="mt-2 rounded-full bg-axis px-6 py-2.5 text-sm font-semibold text-white">Done</button>
+          </div>
+        ) : (
+          <form onSubmit={handleSubmit} className="flex flex-1 flex-col overflow-y-auto">
+            <div className="space-y-5 px-5 py-4">
+              <div>
+                <div className="mb-2 text-xs font-bold text-slate-700">Pick a date</div>
+                {loadingBlocked ? (
+                  <div className="text-xs text-slate-400">Loading availability…</div>
+                ) : (
+                  <div className="space-y-4">
+                    {months.map(({ monthKey, monthLabel, days }) => {
+                      const firstDay = new Date(monthKey + '-01T00:00:00')
+                      const firstDow = firstDay.getDay()
+                      return (
+                        <div key={monthKey}>
+                          <div className="mb-2 text-[11px] font-bold uppercase tracking-[0.12em] text-slate-400">{monthLabel}</div>
+                          <div className="grid grid-cols-7 gap-1 text-center text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                            {['S','M','T','W','T','F','S'].map((d, i) => <div key={`${monthKey}-${i}`}>{d}</div>)}
+                          </div>
+                          <div className="mt-1 grid grid-cols-7 gap-1">
+                            {Array.from({ length: firstDow }, (_, i) => <div key={`pad-${i}`} />)}
+                            {days.map(({ key, date, blocked, hasSlots }) => {
+                              const selectable = !blocked && hasSlots
+                              const selected = selectedDate === key
+                              return (
+                                <button
+                                  key={key}
+                                  type="button"
+                                  disabled={!selectable}
+                                  onClick={() => setSelectedDate(selected ? '' : key)}
+                                  className={[
+                                    'h-9 w-full rounded-xl text-xs font-semibold transition',
+                                    selected ? 'bg-axis text-white shadow-md' :
+                                    blocked ? 'bg-red-50 text-red-400 line-through cursor-not-allowed' :
+                                    !hasSlots ? 'text-slate-300 cursor-not-allowed' :
+                                    'bg-emerald-50 text-emerald-700 hover:bg-emerald-100',
+                                  ].join(' ')}
+                                >
+                                  {date.getDate()}
+                                </button>
+                              )
+                            })}
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+                )}
+              </div>
+
+              {selectedDate && timeSlots.length > 0 && (
+                <div>
+                  <div className="mb-2 text-xs font-bold text-slate-700">Pick a time</div>
+                  <div className="flex flex-wrap gap-2">
+                    {timeSlots.map((slot) => (
+                      <button
+                        key={slot}
+                        type="button"
+                        onClick={() => setSelectedTime(selectedTime === slot ? '' : slot)}
+                        className={[
+                          'rounded-full border px-3 py-1.5 text-xs font-semibold transition',
+                          selectedTime === slot ? 'border-axis bg-axis text-white' : 'border-slate-200 bg-white text-slate-700 hover:border-slate-400',
+                        ].join(' ')}
+                      >
+                        {slot}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {selectedDate && !hasAvailability && (
+                <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+                  No specific time slots set yet — we'll reach out to confirm a time.
+                </div>
+              )}
+
+              <div className="space-y-3">
+                <div className="text-xs font-bold text-slate-700">Your details</div>
+                <input
+                  type="text"
+                  placeholder="Full name *"
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  required
+                  className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm outline-none focus:border-axis focus:ring-2 focus:ring-axis/20"
+                />
+                <input
+                  type="email"
+                  placeholder="Email address *"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  required
+                  className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm outline-none focus:border-axis focus:ring-2 focus:ring-axis/20"
+                />
+                <input
+                  type="tel"
+                  placeholder="Phone number (optional)"
+                  value={phone}
+                  onChange={(e) => setPhone(e.target.value)}
+                  className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm outline-none focus:border-axis focus:ring-2 focus:ring-axis/20"
+                />
+                <textarea
+                  rows={2}
+                  placeholder="Any questions or notes? (optional)"
+                  value={notes}
+                  onChange={(e) => setNotes(e.target.value)}
+                  className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm outline-none focus:border-axis focus:ring-2 focus:ring-axis/20"
+                />
+              </div>
+
+              {error && (
+                <div className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{error}</div>
+              )}
+            </div>
+
+            <div className="border-t border-slate-100 px-5 py-4">
+              <button
+                type="submit"
+                disabled={submitting}
+                className="w-full rounded-full bg-axis py-3 text-sm font-semibold text-white shadow-sm transition hover:brightness-105 disabled:opacity-60"
+              >
+                {submitting ? 'Sending…' : 'Request tour'}
+              </button>
+            </div>
+          </form>
+        )}
+      </div>
+    </div>
+  )
+}
 
 function AvailableBadge({ text, bookedFrom, bookedUntil }) {
   const normalized = (text || '').toLowerCase().trim()
@@ -599,15 +914,22 @@ export default function PropertyPage(){
   const pStatic = properties.find((x) => x.slug === slug)
   const [pDynamic, setPDynamic] = useState(null)
   const [dynamicLoading, setDynamicLoading] = useState(false)
+  const [tourAvailabilityText, setTourAvailabilityText] = useState('')
+  const [dynamicPropertyId, setDynamicPropertyId] = useState('')
+  const [showTourModal, setShowTourModal] = useState(false)
 
   useEffect(() => {
     if (pStatic) {
       setPDynamic(null)
+      setTourAvailabilityText('')
+      setDynamicPropertyId('')
       return undefined
     }
     const rid = String(slug || '').startsWith('axis-') ? String(slug).slice('axis-'.length) : ''
     if (!/^rec[a-zA-Z0-9]{14,}$/.test(rid)) {
       setPDynamic(null)
+      setTourAvailabilityText('')
+      setDynamicPropertyId('')
       return undefined
     }
     let cancelled = false
@@ -615,18 +937,22 @@ export default function PropertyPage(){
     fetchPropertyRecordById(rid)
       .then((rec) => {
         if (cancelled || !rec) {
-          if (!cancelled) setPDynamic(null)
+          if (!cancelled) { setPDynamic(null); setTourAvailabilityText(''); setDynamicPropertyId('') }
           return
         }
         const expected = marketingSlugForAirtablePropertyId(rec.id)
         if (!propertyListingVisibleForMarketing(rec) || expected !== slug) {
           setPDynamic(null)
+          setTourAvailabilityText('')
+          setDynamicPropertyId('')
           return
         }
         setPDynamic(mapAirtableRecordToPropertyPage(rec))
+        setTourAvailabilityText(tourAvailabilityFromRaw(rec))
+        setDynamicPropertyId(rec.id || '')
       })
       .catch(() => {
-        if (!cancelled) setPDynamic(null)
+        if (!cancelled) { setPDynamic(null); setTourAvailabilityText(''); setDynamicPropertyId('') }
       })
       .finally(() => {
         if (!cancelled) setDynamicLoading(false)
@@ -1409,11 +1735,11 @@ export default function PropertyPage(){
                 <div className="mt-1 text-sm text-slate-500">per month</div>
               </div>
               <div className="flex flex-col gap-2.5 border-t border-slate-200 p-5">
-                <Link
-                  to={`/contact?section=housing`}
-                  onClick={scrollToTop}
+                <button
+                  type="button"
+                  onClick={() => setShowTourModal(true)}
                   className="w-full rounded-full bg-axis py-3 text-center text-sm font-semibold text-white transition hover:opacity-95"
-                >Schedule a tour</Link>
+                >Schedule a tour</button>
                 <Link
                   to={`/apply?property=${p.slug}`}
                   onClick={scrollToTop}
@@ -1464,9 +1790,7 @@ export default function PropertyPage(){
           </div>
           <button
             type="button"
-            onClick={() => {
-              window.location.href = '/contact?section=housing'
-            }}
+            onClick={() => setShowTourModal(true)}
             className="shrink-0 rounded-full border border-slate-300/90 bg-white/60 px-4 py-2.5 text-sm font-semibold text-slate-800 shadow-sm backdrop-blur-sm transition active:scale-95"
           >
             Schedule a tour
@@ -1480,6 +1804,15 @@ export default function PropertyPage(){
           </Link>
         </div>
       </div>
+      {showTourModal && (
+        <TourBookingModal
+          open={showTourModal}
+          onClose={() => setShowTourModal(false)}
+          propertyName={p?.name || p?.title || ''}
+          tourAvailabilityText={tourAvailabilityText}
+          propertyId={dynamicPropertyId}
+        />
+      )}
     </div>
   )
 }

@@ -46,6 +46,9 @@ import {
   fetchInboxThreadStateMap,
   portalInboxAirtableConfigured,
   portalInboxThreadKeyFromRecord,
+  fetchBlockedTourDates,
+  createBlockedTourDate,
+  deleteBlockedTourDate,
 } from '../lib/airtable'
 import {
   buildPropertyWizardInitialValues,
@@ -1344,7 +1347,7 @@ function TimeRangeList({ ranges, onChangeRange, onRemoveRange, disabled = false 
   )
 }
 
-function AvailabilityCalendar({ view, anchorDate, selectedDateKey, onSelectDate, weeklyFree, bookedByDate }) {
+function AvailabilityCalendar({ view, anchorDate, selectedDateKey, onSelectDate, weeklyFree, bookedByDate, blockedDates }) {
   const y = anchorDate.getFullYear()
   const m = anchorDate.getMonth()
   const daysInMonth = new Date(y, m + 1, 0).getDate()
@@ -1358,11 +1361,13 @@ function AvailabilityCalendar({ view, anchorDate, selectedDateKey, onSelectDate,
     return timeRangesFromWeeklyFree(weeklyFree, weekdayAbbrFromDateKey(key))
   }
   const bookings = (key) => bookedByDate.get(key) || []
+  const isBlocked = (key) => Boolean(blockedDates?.has(key))
 
   const renderDayCard = (dateKey, dayLabel, dateLabel) => {
     const ranges = dayRanges(dateKey)
     const dayBookings = bookings(dateKey)
     const selected = selectedDateKey === dateKey
+    const blocked = isBlocked(dateKey)
     return (
       <button
         key={dateKey}
@@ -1371,22 +1376,28 @@ function AvailabilityCalendar({ view, anchorDate, selectedDateKey, onSelectDate,
         className={classNames(
           'min-h-[154px] rounded-3xl border p-4 text-left transition',
           selected ? 'border-[#2563eb] bg-[#2563eb]/5 ring-2 ring-[#2563eb]/20' : 'border-slate-200 bg-slate-50/70 hover:bg-white',
+          blocked ? 'bg-red-50/60 border-red-200' : '',
           dateKey === todayKey ? 'ring-1 ring-slate-300' : '',
         )}
       >
         <div>
-          <div>
-            <div className="text-[10px] font-bold uppercase tracking-[0.14em] text-slate-400">{dayLabel}</div>
-            <div className="mt-1 text-lg font-black text-slate-900">{dateLabel}</div>
+          <div className="flex items-center justify-between">
+            <div>
+              <div className="text-[10px] font-bold uppercase tracking-[0.14em] text-slate-400">{dayLabel}</div>
+              <div className="mt-1 text-lg font-black text-slate-900">{dateLabel}</div>
+            </div>
+            {blocked && (
+              <span className="rounded-full bg-red-100 px-2 py-0.5 text-[10px] font-bold text-red-600">Blocked</span>
+            )}
           </div>
         </div>
         <div className="mt-3 space-y-1">
-          {ranges.slice(0, 2).map((range) => (
+          {!blocked && ranges.slice(0, 2).map((range) => (
             <div key={`${range.start}-${range.end}`} className="rounded-xl bg-emerald-50 px-2.5 py-1.5 text-xs font-semibold text-emerald-800">
               {formatTimeRangeLabel(range)}
             </div>
           ))}
-          {ranges.length > 2 ? <div className="text-xs text-slate-400">+{ranges.length - 2} more</div> : null}
+          {!blocked && ranges.length > 2 ? <div className="text-xs text-slate-400">+{ranges.length - 2} more</div> : null}
         </div>
         <div className="mt-4 space-y-1">
           {dayBookings.slice(0, 2).map((row) => (
@@ -1513,6 +1524,10 @@ function AvailabilityEditorPanel({
   propertyOptions,
   selectedPropertyId,
   onSelectProperty,
+  isDateBlocked,
+  onBlockDay,
+  onUnblockDay,
+  blockSaving,
 }) {
   const hasApprovedPick = Array.isArray(propertyOptions) && propertyOptions.length > 0
   const disabled = availSaving || isManagerInternalPreview(manager) || !selectedPropertyId
@@ -1599,6 +1614,25 @@ function AvailabilityEditorPanel({
         >
           Clear day
         </button>
+        {isDateBlocked ? (
+          <button
+            type="button"
+            onClick={onUnblockDay}
+            disabled={blockSaving || isManagerInternalPreview(manager) || !selectedPropertyId}
+            className="rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 font-semibold text-emerald-700 hover:bg-emerald-100 disabled:opacity-40"
+          >
+            {blockSaving ? 'Unblocking…' : 'Unblock day'}
+          </button>
+        ) : (
+          <button
+            type="button"
+            onClick={onBlockDay}
+            disabled={blockSaving || isManagerInternalPreview(manager) || !selectedPropertyId}
+            className="rounded-xl border border-orange-200 bg-orange-50 px-3 py-2 font-semibold text-orange-700 hover:bg-orange-100 disabled:opacity-40"
+          >
+            {blockSaving ? 'Blocking…' : 'Block this day'}
+          </button>
+        )}
       </div>
 
       <div className="mt-6">
@@ -5001,6 +5035,8 @@ export function CalendarTabPanel({ manager, allowedPropertyNames, loadAllSchedul
   const [weeklyFreeByProperty, setWeeklyFreeByProperty] = useState({})
   const [selectedPropertyId, setSelectedPropertyId] = useState('')
   const [availSaving, setAvailSaving] = useState(false)
+  const [blockedDateRecords, setBlockedDateRecords] = useState([])
+  const [blockSaving, setBlockSaving] = useState(false)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -5051,6 +5087,16 @@ export function CalendarTabPanel({ manager, allowedPropertyNames, loadAllSchedul
         }
       }
 
+      // Last-resort fallback: if still empty (data not yet linked), show all approved properties
+      // so the manager can at least set availability.
+      if (approvedAssigned.length === 0 && !loadAllSchedulingRows) {
+        approvedAssigned = props
+          .filter((p) => isPropertyRecordApproved(p))
+          .sort((a, b) =>
+            propertyRecordName(a).localeCompare(propertyRecordName(b), undefined, { sensitivity: 'base' }),
+          )
+      }
+
       const byProperty = {}
       approvedAssigned.forEach((property) => {
         const text = propertyTourAvailabilityText(property) || ''
@@ -5098,9 +5144,18 @@ export function CalendarTabPanel({ manager, allowedPropertyNames, loadAllSchedul
         }
       }
     }
-    return primary.sort((a, b) =>
+    // Last-resort fallback: show all approved properties
+    const results = primary.sort((a, b) =>
       propertyRecordName(a).localeCompare(propertyRecordName(b), undefined, { sensitivity: 'base' }),
     )
+    if (results.length === 0) {
+      return properties
+        .filter((p) => isPropertyRecordApproved(p))
+        .sort((a, b) =>
+          propertyRecordName(a).localeCompare(propertyRecordName(b), undefined, { sensitivity: 'base' }),
+        )
+    }
+    return results
   }, [properties, manager, loadAllSchedulingRows, allowedPropertyNames])
 
   const selectedProperty = useMemo(
@@ -5149,6 +5204,65 @@ export function CalendarTabPanel({ manager, allowedPropertyNames, loadAllSchedul
     () => bookedByDate.get(selectedDateKey) || [],
     [bookedByDate, selectedDateKey],
   )
+
+  // Load blocked dates whenever the selected property changes
+  useEffect(() => {
+    if (!selectedPropertyId) {
+      setBlockedDateRecords([])
+      return
+    }
+    fetchBlockedTourDates(selectedPropertyId)
+      .then(setBlockedDateRecords)
+      .catch(() => setBlockedDateRecords([]))
+  }, [selectedPropertyId])
+
+  const blockedDatesSet = useMemo(() => {
+    const s = new Set()
+    for (const rec of blockedDateRecords) {
+      const d = String(rec['Date'] || '').trim().slice(0, 10)
+      if (d) s.add(d)
+    }
+    return s
+  }, [blockedDateRecords])
+
+  const blockedRecordForSelectedDay = useMemo(
+    () => blockedDateRecords.find((r) => String(r['Date'] || '').trim().slice(0, 10) === selectedDateKey) || null,
+    [blockedDateRecords, selectedDateKey],
+  )
+
+  async function handleBlockDay() {
+    if (!selectedProperty || !selectedDateKey) return
+    setBlockSaving(true)
+    try {
+      const newRec = await createBlockedTourDate({
+        propertyId: selectedPropertyId,
+        propertyName: propertyRecordName(selectedProperty),
+        date: selectedDateKey,
+        managerId: manager?.id || '',
+        managerName: manager?.name || manager?.email || '',
+      })
+      setBlockedDateRecords((prev) => [...prev, newRec])
+      toast.success(`${selectedDateKey} blocked`)
+    } catch (err) {
+      toast.error(err.message || 'Could not block day')
+    } finally {
+      setBlockSaving(false)
+    }
+  }
+
+  async function handleUnblockDay() {
+    if (!blockedRecordForSelectedDay) return
+    setBlockSaving(true)
+    try {
+      await deleteBlockedTourDate(blockedRecordForSelectedDay.id)
+      setBlockedDateRecords((prev) => prev.filter((r) => r.id !== blockedRecordForSelectedDay.id))
+      toast.success(`${selectedDateKey} unblocked`)
+    } catch (err) {
+      toast.error(err.message || 'Could not unblock day')
+    } finally {
+      setBlockSaving(false)
+    }
+  }
 
   function handleSelectDate(key) {
     setSelectedDateKey(key)
@@ -5332,6 +5446,7 @@ export function CalendarTabPanel({ manager, allowedPropertyNames, loadAllSchedul
           onSelectDate={handleSelectDate}
           weeklyFree={selectedWeeklyFree}
           bookedByDate={bookedByDate}
+          blockedDates={blockedDatesSet}
         />
         {!loadAllSchedulingRows && (
           <AvailabilityEditorPanel
@@ -5354,6 +5469,10 @@ export function CalendarTabPanel({ manager, allowedPropertyNames, loadAllSchedul
             propertyOptions={availabilityOwnerOptions}
             selectedPropertyId={selectedPropertyId}
             onSelectProperty={setSelectedPropertyId}
+            isDateBlocked={blockedDatesSet.has(selectedDateKey)}
+            onBlockDay={handleBlockDay}
+            onUnblockDay={handleUnblockDay}
+            blockSaving={blockSaving}
           />
         )}
         {loadAllSchedulingRows && scheduledItemsForSelectedDay.length > 0 && (

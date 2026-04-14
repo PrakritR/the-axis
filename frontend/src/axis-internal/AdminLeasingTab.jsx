@@ -3,7 +3,7 @@ import toast from 'react-hot-toast'
 import LeaseHTMLTemplate from '../components/LeaseHTMLTemplate.jsx'
 import { DataTable } from '../components/PortalShell'
 import { getStatusConfig, fmtTs } from '../lib/leaseWorkflowConstants.js'
-import { getLeaseDraftById, uploadLeaseVersionPdfFile } from '../lib/airtable.js'
+import { getLeaseDraftById, uploadLeaseVersionPdfFile, getCurrentLeaseVersion } from '../lib/airtable.js'
 
 const AIRTABLE_TOKEN = import.meta.env.VITE_AIRTABLE_TOKEN
 const CORE_BASE_ID = import.meta.env.VITE_AIRTABLE_BASE_ID || 'appol57LKtMKaQ75T'
@@ -79,6 +79,7 @@ export default function AdminLeasingTab({ adminUser, accounts = [] }) {
   const [pdfFile, setPdfFile] = useState(null)
   const [showChangeBox, setShowChangeBox] = useState(false)
   const [changeRequestText, setChangeRequestText] = useState('')
+  const [activeVersion, setActiveVersion] = useState(null)
 
   const adminRecordId = adminUser?.airtableRecordId || adminUser?.id || ''
   const adminName = adminUser?.name || adminUser?.email || 'Admin'
@@ -136,6 +137,7 @@ export default function AdminLeasingTab({ adminUser, accounts = [] }) {
     if (selectedDraftId === draft.id) {
       setSelectedDraftId('')
       setActiveDraft(null)
+      setActiveVersion(null)
       setShowUploadForm(false)
       setShowChangeBox(false)
       setPdfFile(null)
@@ -144,9 +146,13 @@ export default function AdminLeasingTab({ adminUser, accounts = [] }) {
     }
     setDetailLoading(true)
     try {
-      const full = await getLeaseDraftById(draft.id).catch(() => draft)
+      const [full, version] = await Promise.all([
+        getLeaseDraftById(draft.id).catch(() => draft),
+        getCurrentLeaseVersion(draft.id).catch(() => null),
+      ])
       setSelectedDraftId(String(full?.id || draft.id))
       setActiveDraft(full)
+      setActiveVersion(version)
       setShowUploadForm(false)
       setShowChangeBox(false)
       setPdfFile(null)
@@ -197,8 +203,12 @@ export default function AdminLeasingTab({ adminUser, accounts = [] }) {
       toast.success('PDF uploaded')
       setShowUploadForm(false)
       setPdfFile(null)
-      const full = await getLeaseDraftById(activeDraft.id).catch(() => activeDraft)
+      const [full, version] = await Promise.all([
+        getLeaseDraftById(activeDraft.id).catch(() => activeDraft),
+        getCurrentLeaseVersion(activeDraft.id).catch(() => null),
+      ])
       setActiveDraft(full)
+      setActiveVersion(version)
       await loadDrafts()
     } catch (err) {
       toast.error(err.message || 'Could not upload PDF')
@@ -226,8 +236,12 @@ export default function AdminLeasingTab({ adminUser, accounts = [] }) {
       toast.success('Change request sent to manager')
       setShowChangeBox(false)
       setChangeRequestText('')
-      const full = await getLeaseDraftById(activeDraft.id).catch(() => activeDraft)
+      const [full, version] = await Promise.all([
+        getLeaseDraftById(activeDraft.id).catch(() => activeDraft),
+        getCurrentLeaseVersion(activeDraft.id).catch(() => null),
+      ])
       setActiveDraft(full)
+      setActiveVersion(version)
       await loadDrafts()
     } catch (err) {
       toast.error(err.message || 'Could not send change request')
@@ -369,7 +383,7 @@ export default function AdminLeasingTab({ adminUser, accounts = [] }) {
                 onClick={() => setShowChangeBox((value) => !value)}
                 className="rounded-full border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:border-slate-400"
               >
-                Request change
+                Return for Revisions
               </button>
             </div>
           </div>
@@ -419,6 +433,21 @@ export default function AdminLeasingTab({ adminUser, accounts = [] }) {
                   {actionBusy === 'request-change' ? 'Sending...' : 'Send request'}
                 </button>
               </div>
+            </div>
+          ) : null}
+
+          {activeVersion?.['PDF URL'] ? (
+            <div className="border-b border-slate-100 bg-emerald-50 px-5 py-3 flex items-center gap-3">
+              <span className="text-xs font-semibold text-emerald-700">PDF uploaded</span>
+              <a
+                href={activeVersion['PDF URL']}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="rounded-full border border-emerald-300 bg-white px-3 py-1 text-xs font-semibold text-emerald-700 hover:bg-emerald-50"
+              >
+                View / Download PDF
+              </a>
+              {activeVersion['File Name'] ? <span className="text-xs text-slate-500 truncate max-w-[200px]">{activeVersion['File Name']}</span> : null}
             </div>
           ) : null}
 

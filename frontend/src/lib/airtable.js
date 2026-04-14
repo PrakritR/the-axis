@@ -2036,3 +2036,78 @@ export async function generateLeaseFromApplication(
   if (!res.ok) throw new Error(data.error || 'Could not generate lease.')
   return { draft: data.draft, created: data.created }
 }
+
+// ---------------------------------------------------------------------------
+// Blocked Tour Dates — manager block system
+// Table name: "Blocked Tour Dates"
+// Required fields: Property Name (text), Property ID (text), Date (text YYYY-MM-DD),
+//   Manager ID (text), Manager Name (text), Reason (text), Created At (text)
+// ---------------------------------------------------------------------------
+
+/**
+ * Fetch all blocked tour dates for a specific property (by Airtable property record ID).
+ * Returns an array of records with at minimum: id, 'Date', 'Property Name', 'Property ID'.
+ */
+export async function fetchBlockedTourDates(propertyId) {
+  const id = String(propertyId || '').trim()
+  if (!id) return []
+  const formula = `{Property ID} = "${escapeFormulaValue(id)}"`
+  const data = await request(buildUrl('Blocked Tour Dates', {
+    filterByFormula: formula,
+    sort: [{ field: 'Date', direction: 'asc' }],
+  }))
+  return (data.records || []).map(mapRecord)
+}
+
+/**
+ * Fetch blocked tour dates by property name (for public-facing pages that only know the property name).
+ */
+export async function fetchBlockedTourDatesByName(propertyName) {
+  const name = String(propertyName || '').trim()
+  if (!name) return []
+  const formula = `{Property Name} = "${escapeFormulaValue(name)}"`
+  const data = await request(buildUrl('Blocked Tour Dates', {
+    filterByFormula: formula,
+    sort: [{ field: 'Date', direction: 'asc' }],
+  }))
+  return (data.records || []).map(mapRecord)
+}
+
+/**
+ * Create a new blocked tour date for a property.
+ */
+export async function createBlockedTourDate({ propertyId, propertyName, date, managerId, managerName, reason = '' }) {
+  const fields = {
+    'Property ID': String(propertyId || '').trim(),
+    'Property Name': String(propertyName || '').trim(),
+    'Date': String(date || '').trim(),
+    'Manager ID': String(managerId || '').trim(),
+    'Manager Name': String(managerName || '').trim(),
+    'Reason': String(reason || '').trim(),
+    'Created At': new Date().toISOString(),
+  }
+  const data = await request(`${BASE_URL}/${encodeURIComponent('Blocked Tour Dates')}`, {
+    method: 'POST',
+    body: JSON.stringify({ fields, typecast: true }),
+  })
+  return mapRecord(data)
+}
+
+/**
+ * Delete a blocked tour date by its Airtable record ID.
+ */
+export async function deleteBlockedTourDate(recordId) {
+  const id = String(recordId || '').trim()
+  if (!/^rec[a-zA-Z0-9]{14,}$/.test(id)) throw new Error('Invalid record ID.')
+  const res = await fetch(`${BASE_URL}/${encodeURIComponent('Blocked Tour Dates')}/${id}`, {
+    method: 'DELETE',
+    headers: { Authorization: `Bearer ${API_KEY}`, 'Content-Type': 'application/json' },
+  })
+  if (!res.ok) {
+    const body = await res.text().catch(() => '')
+    let msg = `Delete failed: ${res.status}`
+    try { msg = JSON.parse(body)?.error?.message || msg } catch { /* ignore */ }
+    throw new Error(msg)
+  }
+  return res.json()
+}
