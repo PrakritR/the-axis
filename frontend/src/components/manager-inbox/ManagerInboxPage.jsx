@@ -9,6 +9,7 @@ import {
   residentLeasingThreadKey,
   residentAdminThreadKey,
   parseResidentLeasingThreadKey,
+  parseResidentAdminThreadKey,
   portalInboxThreadKeyFromRecord,
   PORTAL_INBOX_CHANNEL_INTERNAL,
   portalInboxAirtableConfigured,
@@ -98,6 +99,13 @@ function managerInboxParseResidentThreadId(selectedId) {
   return id || null
 }
 
+/** Resident record id from inbox selection (supports legacy `resident:rec…` or full thread key). */
+function managerInboxResidentIdFromSelection(selectedThreadId) {
+  const t = String(selectedThreadId || '')
+  if (t.startsWith('internal:resident-leasing:')) return parseResidentLeasingThreadKey(t)
+  return managerInboxParseResidentThreadId(selectedThreadId)
+}
+
 function loadLocalInboxStateMap(email) {
   const em = String(email || '').trim().toLowerCase()
   if (!em) return new Map()
@@ -182,10 +190,12 @@ function adminRecipientLabelForThreadId(threadId) {
     return `Website · ${t.slice('internal:admin-public:'.length)}`
   }
   if (t.startsWith('internal:resident-leasing:')) {
-    return `Resident · House team (${t.slice('internal:resident-leasing:'.length)})`
+    const rid = parseResidentLeasingThreadKey(t) || t.slice('internal:resident-leasing:'.length)
+    return `Resident · House team (${rid})`
   }
   if (t.startsWith('internal:resident-admin:')) {
-    return `Resident · Admin (${t.slice('internal:resident-admin:'.length)})`
+    const rid = parseResidentAdminThreadKey(t) || t.slice('internal:resident-admin:'.length)
+    return `Resident · Admin (${rid})`
   }
   return t || 'Thread'
 }
@@ -199,22 +209,22 @@ function getOtherPartyEmail(threadMessages, myEmail) {
   return m ? String(m['Sender Email'] || '').trim() : ''
 }
 
-/** Finds a resident's email from all messages by looking for their leasing thread. */
+/** Finds a resident's email from any leasing-segment thread for that resident. */
 function getResidentEmailFromAllMsgs(allMsgs, resId, myEmail, threadKeyFn) {
-  const targetKey = threadKeyFn(resId)
+  const targetPrefix = threadKeyFn(resId)
   const my = String(myEmail || '').toLowerCase()
-  const m = (allMsgs || []).find(
-    (msg) =>
-      String(msg['Thread Key'] || msg.thread_key || '').trim() === targetKey &&
-      String(msg['Sender Email'] || '').toLowerCase() !== my,
-  )
+  const m = (allMsgs || []).find((msg) => {
+    const tk = String(msg['Thread Key'] || msg.thread_key || '').trim()
+    if (!tk || (tk !== targetPrefix && !tk.startsWith(`${targetPrefix}:s:`))) return false
+    return String(msg['Sender Email'] || '').toLowerCase() !== my
+  })
   return m ? String(m['Sender Email'] || '').trim() : ''
 }
 
 function managerComposerToLabel(selectedThreadId, adminFullInbox) {
   if (adminFullInbox && selectedThreadId) return adminRecipientLabelForThreadId(selectedThreadId)
   if (selectedThreadId === MANAGER_INBOX_AXIS) return 'Axis internal team'
-  if (managerInboxParseResidentThreadId(selectedThreadId)) return 'Resident (leasing thread)'
+  if (managerInboxResidentIdFromSelection(selectedThreadId)) return 'Resident (leasing thread)'
   return ''
 }
 
@@ -249,6 +259,8 @@ function managerInboxStateKeyForSelection(selectedThreadId, axisThreadKey, admin
     return selectedThreadId
   }
   if (selectedThreadId === MANAGER_INBOX_AXIS) return axisThreadKey || ''
+  const t = String(selectedThreadId || '')
+  if (t.startsWith('internal:resident-leasing:')) return t
   const resId = managerInboxParseResidentThreadId(selectedThreadId)
   if (resId) return residentLeasingThreadKey(resId)
   return ''
@@ -281,7 +293,7 @@ function inboxParticipantsLine(selectedThreadId, adminFullInbox) {
     return 'Portal thread'
   }
   if (selectedThreadId === MANAGER_INBOX_AXIS) return 'You ↔ Axis internal team'
-  if (managerInboxParseResidentThreadId(selectedThreadId)) return 'You ↔ Resident (leasing)'
+  if (managerInboxResidentIdFromSelection(selectedThreadId)) return 'You ↔ Resident (leasing)'
   return ''
 }
 
@@ -609,7 +621,7 @@ export default function ManagerInboxPage({
       const subjectLine =
         threadSubjectFromMessages(sorted, subjectFieldName) || 'House team'
       rows.push({
-        id: managerInboxResidentThreadId(rid),
+        id: tk,
         stateKey: tk,
         participantLabel,
         subjectLine,
@@ -822,6 +834,19 @@ export default function ManagerInboxPage({
           }
           return
         }
+        const tSel = String(selectedThreadId || '')
+        if (tSel.startsWith('internal:resident-leasing:')) {
+          const next = await getMessagesByThreadKey(tSel)
+          if (!cancelled) {
+            setThread(
+              [...next].sort(
+                (a, b) =>
+                  new Date(a.Timestamp || a.created_at || 0) - new Date(b.Timestamp || b.created_at || 0),
+              ),
+            )
+          }
+          return
+        }
         const resId = managerInboxParseResidentThreadId(selectedThreadId)
         if (resId) {
           const next = await getMessagesByThreadKey(residentLeasingThreadKey(resId))
@@ -953,7 +978,7 @@ export default function ManagerInboxPage({
       const selectionId = adminFullInbox
         ? threadKey
         : kind === 'resident'
-          ? managerInboxResidentThreadId(ridForSelect)
+          ? threadKey
           : MANAGER_INBOX_AXIS
       setSelectedThreadId(selectionId)
       const next = await getMessagesByThreadKey(threadKey)
@@ -1029,13 +1054,16 @@ export default function ManagerInboxPage({
         mergePortalSavedMessage(saved)
         notifyPortalMessage({ toAdmins: true, senderName: managerEmail, subject: notifySubj })
       } else {
-        const resId = managerInboxParseResidentThreadId(selectedThreadId)
+        const tSel = String(selectedThreadId || '')
+        const resId = managerInboxResidentIdFromSelection(selectedThreadId)
         if (!resId) return
+        const threadKey =
+          tSel.startsWith('internal:resident-leasing:') ? tSel : residentLeasingThreadKey(resId)
         const saved = await sendMessage({
           senderEmail: managerEmail,
           message: bodyOut,
           isAdmin: true,
-          threadKey: residentLeasingThreadKey(resId),
+          threadKey,
           channel: PORTAL_INBOX_CHANNEL_INTERNAL,
           subject: showSubjectField ? subjResolved : '',
         })
@@ -1058,15 +1086,26 @@ export default function ManagerInboxPage({
           ),
         )
       } else {
-        const resId2 = managerInboxParseResidentThreadId(selectedThreadId)
-        if (resId2) {
-          const next = await getMessagesByThreadKey(residentLeasingThreadKey(resId2))
+        const tSel = String(selectedThreadId || '')
+        if (tSel.startsWith('internal:resident-leasing:')) {
+          const next = await getMessagesByThreadKey(tSel)
           setThread(
             [...next].sort(
               (a, b) =>
                 new Date(a.Timestamp || a.created_at || 0) - new Date(b.Timestamp || b.created_at || 0),
             ),
           )
+        } else {
+          const resId2 = managerInboxParseResidentThreadId(selectedThreadId)
+          if (resId2) {
+            const next = await getMessagesByThreadKey(residentLeasingThreadKey(resId2))
+            setThread(
+              [...next].sort(
+                (a, b) =>
+                  new Date(a.Timestamp || a.created_at || 0) - new Date(b.Timestamp || b.created_at || 0),
+              ),
+            )
+          }
         }
       }
       const sk = managerInboxStateKeyForSelection(selectedThreadId, axisThreadKey, adminFullInbox)
@@ -1089,7 +1128,7 @@ export default function ManagerInboxPage({
   const residentThreadLabels = useMemo(() => {
     const labelMap = new Map()
     for (const row of threadRows) {
-      const rid = managerInboxParseResidentThreadId(row.id)
+      const rid = managerInboxResidentIdFromSelection(row.id)
       if (!rid) continue
       labelMap.set(rid, row.participantLabel || 'Resident')
     }
@@ -1165,7 +1204,7 @@ export default function ManagerInboxPage({
       : 'Inbox'
     : selectedThreadId === MANAGER_INBOX_AXIS
       ? 'Axis team'
-      : managerInboxParseResidentThreadId(selectedThreadId || '')
+      : managerInboxResidentIdFromSelection(selectedThreadId || '')
         ? 'Resident inbox'
         : 'Inbox'
 
@@ -1173,7 +1212,7 @@ export default function ManagerInboxPage({
     ? ''
     : selectedThreadId === MANAGER_INBOX_AXIS
       ? 'Axis support'
-      : managerInboxParseResidentThreadId(selectedThreadId)
+      : managerInboxResidentIdFromSelection(selectedThreadId)
         ? 'Leasing thread'
         : ''
 

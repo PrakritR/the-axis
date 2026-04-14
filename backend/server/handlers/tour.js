@@ -5,6 +5,7 @@
 
 import { airtableCreateWithUnknownFieldRetry } from '../lib/airtable-write-retry.js'
 import {
+  availabilityAirtableBaseId,
   buildManagerAvailabilityConfig,
   buildPropertySlotsByDate,
   mergePropertyAvailabilityRanges,
@@ -183,16 +184,17 @@ async function listSchedulingRows(filterByFormula = '') {
   return rows
 }
 
-/** Paginated load of Manager Availability (optional table). */
+/** Paginated load of manager tour availability table (optional). Uses availability base id when set. */
 async function listAllManagerAvailabilityRecords() {
   if (!AIRTABLE_TOKEN) return []
+  const baseId = availabilityAirtableBaseId(process.env) || AIRTABLE_BASE_ID
   const cfg = buildManagerAvailabilityConfig(process.env)
   const table = encodeURIComponent(cfg.tableName)
   const rows = []
   let offset = null
   try {
     do {
-      const url = new URL(`https://api.airtable.com/v0/${AIRTABLE_BASE_ID}/${table}`)
+      const url = new URL(`https://api.airtable.com/v0/${baseId}/${table}`)
       if (offset) url.searchParams.set('offset', offset)
       const res = await fetch(url.toString(), { headers: { Authorization: `Bearer ${AIRTABLE_TOKEN}` } })
       if (!res.ok) return []

@@ -275,7 +275,7 @@ function resolveMonthlyRent(app, propertyRecord, overrides, axisRent = 0) {
   return 0
 }
 
-function resolveUtilityFee(app, propertyRecord, overrides, axisDefault = 125) {
+function resolveUtilityFee(app, propertyRecord, overrides, axisDefault = 0) {
   if (overrides.utilityFee != null && overrides.utilityFee !== '') {
     const o = parseMoneyLike(overrides.utilityFee)
     if (o != null) return o
@@ -288,8 +288,8 @@ function resolveUtilityFee(app, propertyRecord, overrides, axisDefault = 125) {
   const v = parseMoneyLike(app['Utilities Fee'] ?? propertyRecord?.['Utilities Fee'])
   if (v != null && v > 0) return v
 
-  // Use axis-properties.js authoritative value (e.g. $175 for all Axis properties)
-  return axisDefault
+  if (typeof axisDefault === 'number' && axisDefault > 0) return axisDefault
+  return 0
 }
 
 function resolveRoomUtilitySummary(app, propertyRecord) {
@@ -328,10 +328,8 @@ function resolveSecurityDeposit(app, propertyRecord, monthlyRent, overrides, axi
     const pr = parseMoneyLike(propertyRecord['Security Deposit'])
     if (pr != null && pr > 0) return pr
   }
-  // Use axis-properties.js authoritative deposit (e.g. $600 for Brooklyn, $500 for 8th Ave)
   if (axisDefault != null && axisDefault > 0) return axisDefault
-  if (monthlyRent > 0) return Math.min(monthlyRent, 500)
-  return 500
+  return 0
 }
 
 function buildLeaseData(app, propertyRecord, overrides = {}) {
@@ -371,7 +369,17 @@ function buildLeaseData(app, propertyRecord, overrides = {}) {
   const roomFurnished = resolveRoomFurnished(app, propertyRecord)
   const roomFurnitureIncluded = resolveRoomFurnitureIncluded(app, propertyRecord)
   const securityDeposit = resolveSecurityDeposit(app, propertyRecord, monthlyRent, overrides, axisDetails.securityDeposit)
-  const adminFee = overrides.adminFee != null ? overrides.adminFee : (axisDetails.adminFee ?? 250)
+  let adminFee = 0
+  if (overrides.adminFee != null && overrides.adminFee !== '') {
+    const o = parseMoneyLike(overrides.adminFee)
+    if (o != null) adminFee = o
+  } else {
+    const fromApp = parseMoneyLike(
+      app['Admin Fee'] ?? app['Administration Fee'] ?? app['Move-in Admin Fee'] ?? app['Administrative Fee'],
+    )
+    if (fromApp != null && fromApp > 0) adminFee = fromApp
+    else if (typeof axisDetails.adminFee === 'number' && axisDetails.adminFee > 0) adminFee = axisDetails.adminFee
+  }
 
   let lastMonthRent = 0
   if (overrides.lastMonthRent != null && String(overrides.lastMonthRent).trim() !== '') {
@@ -446,7 +454,9 @@ function buildLeaseData(app, propertyRecord, overrides = {}) {
     proratedUtilityFmt: fmtMoney(proratedUtility),
     totalMoveInFmt: fmtMoney(totalMoveIn),
     monthlyTotalFmt: fmtMoney(monthlyRent + utilityFee),
-    breakLeaseFee: fmtMoney(900),
+    /** Only shown in lease body when > 0; otherwise generic early-termination language without a dollar figure */
+    breakLeaseFee: '',
+    breakLeaseFeeAmount: 0,
     // Property-specific from axis-properties.js
     bathroomNote: axisDetails.bathroomNote || '',
     bathroomGroup: axisDetails.bathroomGroup || '',

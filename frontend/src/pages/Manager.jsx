@@ -33,17 +33,26 @@ import {
   dispatchAxisSchedulingChanged,
 } from '../lib/portalCalendarSync.js'
 import {
+  availabilityTablesAreSplit,
+  buildAdminMeetingAvailabilityConfig,
+  buildGlobalAdminFreeRangesMapByDate,
   buildManagerAvailabilityConfig,
+  intervalFromMaRecord,
   mergePropertyAvailabilityRanges,
   normalizeWeekdayAbbr,
+  recordIsGlobalAdminRow,
   slotLabelFromRange,
 } from '../../../shared/manager-availability-merge.js'
 import {
   listManagerAvailabilityForProperty,
   createManagerAvailabilityRecord,
+  createAdminMeetingAvailabilityRecord,
   deleteManagerAvailabilityRecord,
+  deleteAdminMeetingAvailabilityRecord,
+  buildAdminMeetingAvailabilityRecordFields,
   buildManagerAvailabilityRecordFields,
   formatHHmmFromMinutes,
+  listAdminMeetingAvailabilityRows,
   listManagerAvailabilityRows,
 } from '../lib/managerAvailabilityAirtable.js'
 import ManagerInboxPage from '../components/manager-inbox/ManagerInboxPage'
@@ -5238,18 +5247,19 @@ function ApplicationsPanel({ allowedPropertyNames, manager }) {
           </div>
         ) : scopedRows.length === 0 ? (
           <div className="px-6 py-16 text-center">
-            <PortalEmptyVisual variant="clipboard" />
+            <PortalEmptyVisual variant="applications" />
             <div className="text-sm font-semibold text-slate-700">No applications yet</div>
           </div>
         ) : filteredRows.length === 0 ? (
           <div className="px-6 py-16 text-center">
-            <PortalEmptyVisual variant="house" />
+            <PortalEmptyVisual variant="applications" />
             <div className="text-sm font-semibold text-slate-700">No {statusFilter} applications</div>
           </div>
         ) : (
           <>
             <DataTable
               empty="No applications in this view"
+              emptyIcon={<PortalEmptyVisual variant="applications" />}
               columns={[
                 {
                   key: 'applicant',
@@ -5361,7 +5371,14 @@ export function CalendarTabPanel({ manager, allowedPropertyNames, loadAllSchedul
   const [pendingRanges, setPendingRanges] = useState([])
   const [repeatWeekly, setRepeatWeekly] = useState(false)
   const maDirtyRef = useRef(false)
+  /** Avoid leaving "Apply every week" on when switching days — easy to accidentally write recurring rules. */
+  useEffect(() => {
+    setRepeatWeekly(false)
+  }, [selectedDateKey, selectedPropertyId])
   const maCfg = useMemo(() => buildManagerAvailabilityConfig(import.meta.env), [])
+  const adminMaCfg = useMemo(() => buildAdminMeetingAvailabilityConfig(import.meta.env), [])
+  const splitAdminMa = useMemo(() => availabilityTablesAreSplit(import.meta.env), [])
+  const [adminMaRecords, setAdminMaRecords] = useState([])
   /** Tour template: user edited weekly grid — debounced persist to Airtable */
   const availabilityDirtyRef = useRef(false)
   const adminAvailabilityDirtyRef = useRef(false)
@@ -5417,6 +5434,25 @@ export function CalendarTabPanel({ manager, allowedPropertyNames, loadAllSchedul
       cancelled = true
     }
   }, [loadAllSchedulingRows])
+
+  useEffect(() => {
+    if (!loadAllSchedulingRows || !splitAdminMa) {
+      setAdminMaRecords([])
+      return
+    }
+    let cancelled = false
+    ;(async () => {
+      try {
+        const rows = await listAdminMeetingAvailabilityRows('')
+        if (!cancelled) setAdminMaRecords(rows)
+      } catch {
+        if (!cancelled) setAdminMaRecords([])
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [loadAllSchedulingRows, splitAdminMa, manager?.email])
 
   useEffect(() => {
     if (!maTableOk || !selectedPropertyId || loadAllSchedulingRows) {
@@ -5688,20 +5724,45 @@ export function CalendarTabPanel({ manager, allowedPropertyNames, loadAllSchedul
       if (!adminEmail || !dayKey) return
       setAvailSaving(true)
       try {
-        await Promise.all((existingRows || []).map((row) => deleteSchedulingRecord(row.id)))
-        for (const range of ranges || []) {
-          await createSchedulingRecord({
-            Name: String(manager?.name || 'Axis admin').trim(),
-            Email: adminEmail,
-            Type: 'Meeting Availability',
-            Status: 'Available',
-            'Manager Email': adminEmail,
-            'Tour Manager': String(manager?.name || '').trim(),
-            'Preferred Date': dayKey,
-            'Preferred Time': `${displayTimeFromMinutes(range.start)} - ${displayTimeFromMinutes(range.end)}`,
-            'Scheduled Date': dayKey,
-            'Scheduled Time': `${displayTimeFromMinutes(range.start)} - ${displayTimeFromMinutes(range.end)}`,
-          })
+        if (splitAdminMa) {
+          await Promise.all((existingRows || []).map((row) => deleteAdminMeetingAvailabilityRecord(row.id)))
+          const mgrId = String(manager?.airtableRecordId || manager?.id || '').trim()
+          for (const range of ranges || []) {
+            const fields = buildAdminMeetingAvailabilityRecordFields({
+              propertyName: '',
+              propertyRecordId: '',
+              managerEmail: adminEmail,
+              managerRecordId: mgrId,
+              dateKey: dayKey,
+              weekdayAbbr: weekdayAbbrFromDateKey(dayKey),
+              startHHmm: formatHHmmFromMinutes(range.start),
+              endHHmm: formatHHmmFromMinutes(range.end),
+              isRecurring: false,
+            })
+            await createAdminMeetingAvailabilityRecord(fields)
+          }
+          try {
+            const refreshed = await listAdminMeetingAvailabilityRows('')
+            setAdminMaRecords(refreshed)
+          } catch {
+            /* non-fatal */
+          }
+        } else {
+          await Promise.all((existingRows || []).map((row) => deleteSchedulingRecord(row.id)))
+          for (const range of ranges || []) {
+            await createSchedulingRecord({
+              Name: String(manager?.name || 'Axis admin').trim(),
+              Email: adminEmail,
+              Type: 'Meeting Availability',
+              Status: 'Available',
+              'Manager Email': adminEmail,
+              'Tour Manager': String(manager?.name || '').trim(),
+              'Preferred Date': dayKey,
+              'Preferred Time': `${displayTimeFromMinutes(range.start)} - ${displayTimeFromMinutes(range.end)}`,
+              'Scheduled Date': dayKey,
+              'Scheduled Time': `${displayTimeFromMinutes(range.start)} - ${displayTimeFromMinutes(range.end)}`,
+            })
+          }
         }
         toast.success('Saved', { id: 'calendar-admin-avail-autosave', duration: 1800 })
         await refreshSchedulingRowsOnly()
@@ -5713,7 +5774,7 @@ export function CalendarTabPanel({ manager, allowedPropertyNames, loadAllSchedul
         setAvailSaving(false)
       }
     },
-    [manager, refreshSchedulingRowsOnly],
+    [manager, refreshSchedulingRowsOnly, splitAdminMa],
   )
 
   const saveTourDirtyRef = useRef(saveTourDirtyIfNeeded)
@@ -5847,16 +5908,27 @@ export function CalendarTabPanel({ manager, allowedPropertyNames, loadAllSchedul
 
   const managerDayFreeOverrides = useMemo(() => {
     if (loadAllSchedulingRows || !maTableOk || !selectedProperty) return null
+    const keys = new Set()
     const y = anchorDate.getFullYear()
     const m = anchorDate.getMonth()
     const last = new Date(y, m + 1, 0).getDate()
-    const out = {}
     for (let d = 1; d <= last; d += 1) {
-      const key = calendarDateKey(y, m, d)
+      keys.add(calendarDateKey(y, m, d))
+    }
+    // Week view uses 7 days from Sunday; those dates can sit outside anchor month — include them or the grid shows empty strips.
+    const ws = startOfWeekSunday(anchorDate)
+    for (let i = 0; i < 7; i += 1) {
+      keys.add(dateKeyFromDate(addDaysDate(ws, i)))
+    }
+    const sel = String(selectedDateKey || '').trim().slice(0, 10)
+    if (sel) keys.add(sel)
+    const out = {}
+    for (const key of keys) {
+      if (!key) continue
       out[key] = computeMergedForDateKey(key)
     }
     return out
-  }, [loadAllSchedulingRows, maTableOk, selectedProperty, anchorDate, computeMergedForDateKey])
+  }, [loadAllSchedulingRows, maTableOk, selectedProperty, anchorDate, selectedDateKey, computeMergedForDateKey])
 
   const saveManagerAvailabilityToAirtable = useCallback(async () => {
     if (!maTableOk || !selectedProperty || !manager?.email) {
@@ -6000,6 +6072,22 @@ export function CalendarTabPanel({ manager, allowedPropertyNames, loadAllSchedul
     if (!loadAllSchedulingRows) return []
     const adminEmail = String(manager?.email || '').trim().toLowerCase()
     if (!adminEmail) return []
+    if (splitAdminMa) {
+      const f = adminMaCfg.fields
+      const wkSel = weekdayAbbrFromDateKey(selectedDateKey)
+      return (adminMaRecords || []).filter((row) => {
+        if (!recordIsGlobalAdminRow(row, f)) return false
+        if (String(row[f.managerEmail] || '').trim().toLowerCase() !== adminEmail) return false
+        const isRec =
+          row[f.isRecurring] === true ||
+          row[f.isRecurring] === 1 ||
+          String(row[f.isRecurring] || '').toLowerCase() === 'true' ||
+          String(row[f.isRecurring] || '').toLowerCase() === 'yes'
+        if (isRec) return normalizeWeekdayAbbr(row[f.weekday]) === wkSel
+        const dk = String(row[f.date] || '').trim().slice(0, 10)
+        return dk === selectedDateKey
+      })
+    }
     return (schedulingRows || []).filter((row) => {
       const type = String(row?.Type || '').trim().toLowerCase()
       if (type !== 'meeting availability') return false
@@ -6008,22 +6096,49 @@ export function CalendarTabPanel({ manager, allowedPropertyNames, loadAllSchedul
       const rowEmail = String(row?.['Manager Email'] || '').trim().toLowerCase()
       return rowEmail === adminEmail
     })
-  }, [loadAllSchedulingRows, schedulingRows, manager?.email, selectedDateKey])
+  }, [
+    loadAllSchedulingRows,
+    schedulingRows,
+    manager?.email,
+    selectedDateKey,
+    splitAdminMa,
+    adminMaRecords,
+    adminMaCfg.fields,
+  ])
 
-  const adminRangesFromRows = useMemo(
-    () => normalizeTimeRanges(
+  const adminRangesFromRows = useMemo(() => {
+    if (splitAdminMa) {
+      return normalizeTimeRanges(
+        adminAvailabilityRowsForSelectedDay
+          .map((row) => intervalFromMaRecord(row, adminMaCfg.fields))
+          .filter(Boolean),
+      )
+    }
+    return normalizeTimeRanges(
       adminAvailabilityRowsForSelectedDay
         .map((row) => parsePreferredTimeRange(row?.['Preferred Time']))
         .filter(Boolean),
-    ),
-    [adminAvailabilityRowsForSelectedDay],
-  )
+    )
+  }, [adminAvailabilityRowsForSelectedDay, splitAdminMa, adminMaCfg.fields])
 
-  /** Per-date explicit "Meeting Availability" rows (admin calendar) for month/week/day green blocks. */
+  /** Per-date explicit availability (admin calendar) for month/week/day green blocks. */
   const adminMeetingAvailabilityFreeByDate = useMemo(() => {
     if (!loadAllSchedulingRows) return null
     const adminEmail = String(manager?.email || '').trim().toLowerCase()
     if (!adminEmail) return null
+    if (splitAdminMa) {
+      const mapRanges = buildGlobalAdminFreeRangesMapByDate({
+        records: adminMaRecords,
+        config: adminMaCfg,
+        adminEmail,
+        daysAhead: 120,
+      })
+      const byDate = {}
+      for (const [dk, ranges] of Object.entries(mapRanges)) {
+        byDate[dk] = normalizeTimeRanges(ranges)
+      }
+      return byDate
+    }
     const byDate = {}
     for (const row of schedulingRows || []) {
       const type = String(row?.Type || '').trim().toLowerCase()
@@ -6041,7 +6156,7 @@ export function CalendarTabPanel({ manager, allowedPropertyNames, loadAllSchedul
       byDate[dk] = normalizeTimeRanges(byDate[dk])
     }
     return byDate
-  }, [loadAllSchedulingRows, schedulingRows, manager?.email])
+  }, [loadAllSchedulingRows, schedulingRows, manager?.email, splitAdminMa, adminMaRecords, adminMaCfg])
 
   /** Month/week grid: reflect Manager Availability editor state on the selected day (not only rows already in Airtable). */
   const calendarDayFreeOverrides = useMemo(() => {
@@ -6250,7 +6365,9 @@ export function CalendarTabPanel({ manager, allowedPropertyNames, loadAllSchedul
 
       {loadAllSchedulingRows ? (
         <div className="mb-5 rounded-2xl border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-900">
-          Meetings and availability here sync to Contact Axis booking.
+          {splitAdminMa
+            ? 'Admin meeting hours are stored in the Admin Meeting Availability table; confirmed meetings still appear in Scheduling. Public Contact Axis slots update from the API after save.'
+            : 'Meetings and availability here sync to Contact Axis booking (Scheduling rows).'}
         </div>
       ) : null}
 
@@ -6461,7 +6578,7 @@ export function CalendarTabPanel({ manager, allowedPropertyNames, loadAllSchedul
             saveButtonLabel={maTableOk ? 'Save availability to Airtable' : undefined}
             availabilityHint={
               maTableOk
-                ? 'Drag to add blocks for the selected date. Save writes to the Manager Availability table (per-date or weekly). Public tour booking uses these windows minus tours already scheduled.'
+                ? 'Save updates only the selected date unless “Apply every week” is on. That checkbox resets when you pick another day so you do not accidentally save recurring rules. Week view days outside the month grid are included. If Fridays (etc.) still repeat, delete old recurring rows in Airtable — see scripts/airtable/manager-availability-clear-recurring.js in the repo.'
                 : undefined
             }
             scheduledItems={scheduledItemsForSelectedDay}
@@ -6751,6 +6868,7 @@ function ManagerDashboard({ manager: managerProp, openDraftId, onOpenDraft, onCl
         let unopened = 0
         for (const [tk, latest] of latestByThread) {
           const state = stateMap.get(tk)
+          if (state?.trashed) continue
           if (!state?.lastReadAt || latest > state.lastReadAt) unopened++
         }
         if (!cancelled) setInboxUnopenedCount(unopened)

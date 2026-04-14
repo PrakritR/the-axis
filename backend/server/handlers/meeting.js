@@ -5,7 +5,8 @@
 
 import { airtableCreateWithUnknownFieldRetry } from '../lib/airtable-write-retry.js'
 import {
-  buildManagerAvailabilityConfig,
+  availabilityAirtableBaseId,
+  buildAdminMeetingAvailabilityConfig,
   buildGlobalAdminSlotsByDate,
   mergeGlobalAdminAvailabilityRanges,
   rangesToSlotLabels,
@@ -152,15 +153,17 @@ async function listSchedulingRows(filterByFormula = '') {
   return rows
 }
 
-async function listAllManagerAvailabilityRecords() {
+/** Admin meeting availability rows (separate table when env split is configured). */
+async function listAllAdminMeetingAvailabilityRecords() {
   if (!AIRTABLE_TOKEN) return []
-  const cfg = buildManagerAvailabilityConfig(process.env)
+  const baseId = availabilityAirtableBaseId(process.env) || AIRTABLE_BASE_ID
+  const cfg = buildAdminMeetingAvailabilityConfig(process.env)
   const table = encodeURIComponent(cfg.tableName)
   const rows = []
   let offset = null
   try {
     do {
-      const url = new URL(`https://api.airtable.com/v0/${AIRTABLE_BASE_ID}/${table}`)
+      const url = new URL(`https://api.airtable.com/v0/${baseId}/${table}`)
       if (offset) url.searchParams.set('offset', offset)
       const data = await fetchAirtableJson(url.toString())
       if (!data) break
@@ -243,12 +246,12 @@ export default async function handler(req, res) {
       const [adminData, schedulingRows, maRecords] = await Promise.all([
         fetchAirtableJson(adminUrl),
         listSchedulingRows(),
-        listAllManagerAvailabilityRecords(),
+        listAllAdminMeetingAvailabilityRecords(),
       ])
       if (!adminData) return res.status(200).json({ admins: [] })
       const bookings = buildMeetingBookingsByAdmin(schedulingRows)
       const availabilityByAdminDate = buildMeetingAvailabilityByAdminDate(schedulingRows)
-      const maCfg = buildManagerAvailabilityConfig(process.env)
+      const maCfg = buildAdminMeetingAvailabilityConfig(process.env)
       const admins = (adminData.records || [])
         .filter(enabledAdminProfile)
         .map((row) => {
@@ -340,8 +343,8 @@ export default async function handler(req, res) {
       const lab = normalizeRangeLabel(f['Preferred Time'])
       if (lab) meetingBookedLabels.push(lab)
     }
-    const maCfg = buildManagerAvailabilityConfig(process.env)
-    const maRows = await listAllManagerAvailabilityRecords()
+    const maCfg = buildAdminMeetingAvailabilityConfig(process.env)
+    const maRows = await listAllAdminMeetingAvailabilityRecords()
     const mergedFree = mergeGlobalAdminAvailabilityRanges({
       records: maRows,
       fieldsConfig: maCfg.fields,

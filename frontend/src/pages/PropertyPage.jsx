@@ -1430,48 +1430,93 @@ export default function PropertyPage(){
               className="mt-14 min-w-0 scroll-mt-32 md:scroll-mt-44"
             >
               <h2 className="font-editorial text-3xl font-black leading-tight text-slate-900 sm:text-4xl">Lease basics</h2>
-              <p className="mt-2 text-sm text-slate-600">Lease length, fees, bundles, and move-in details.</p>
+              <p className="mt-2 text-sm text-slate-600">Lease length, fees, utilities, pets, and move-in details.</p>
 
-              <div className="mt-8 rounded-xl border border-slate-200 bg-white px-5 py-4 text-sm text-slate-700">
-                {String(p.policies || '').trim() ? (
-                  <p className="leading-relaxed">{p.policies}</p>
-                ) : (
-                  <p className="text-slate-500">Contact Axis for current lease options.</p>
-                )}
-                <dl className="mt-4 grid gap-3 border-t border-slate-100 pt-4 sm:grid-cols-2">
-                  <div>
-                    <dt className="text-xs font-bold uppercase tracking-wide text-slate-400">Application fee</dt>
-                    <dd className="mt-1 font-semibold text-slate-900">
-                      {p.applicationFeeDisplay ||
-                        (p.applicationFee ? `${p.applicationFee} application fee` : '—')}
-                    </dd>
-                  </div>
-                  <div>
-                    <dt className="text-xs font-bold uppercase tracking-wide text-slate-400">Security deposit</dt>
-                    <dd className="mt-1 font-semibold text-slate-900">{p.securityDeposit || '—'}</dd>
-                  </div>
-                  {p.utilitiesFee ? (
-                    <div>
-                      <dt className="text-xs font-bold uppercase tracking-wide text-slate-400">Utilities</dt>
-                      <dd className="mt-1 font-semibold text-slate-900">{p.utilitiesFee}</dd>
-                    </div>
-                  ) : null}
-                  {p.petsPolicy ? (
-                    <div>
-                      <dt className="text-xs font-bold uppercase tracking-wide text-slate-400">Pets</dt>
-                      <dd className="mt-1 font-semibold text-slate-900">{p.petsPolicy}</dd>
-                    </div>
-                  ) : null}
-                  {p.moveInChargesDisplay ? (
-                    <div className="sm:col-span-2">
-                      <dt className="text-xs font-bold uppercase tracking-wide text-slate-400">Move-in charges</dt>
-                      <dd className="mt-1 font-semibold text-slate-900">{p.moveInChargesDisplay}</dd>
-                    </div>
-                  ) : null}
-                </dl>
-                {p.listingAvailabilitySummary ? (
-                  <p className="mt-4 rounded-lg bg-sky-50 px-3 py-2 text-sm font-medium text-sky-900">{p.listingAvailabilitySummary}</p>
-                ) : null}
+              <div className="mt-8 overflow-hidden rounded-xl border border-slate-200 bg-white text-sm">
+                <table className="w-full border-collapse text-left">
+                  <tbody>
+                    <tr className="border-b border-slate-100">
+                      <th
+                        scope="row"
+                        className="w-[34%] max-w-[220px] align-top bg-slate-50/80 px-4 py-3.5 text-xs font-bold uppercase tracking-wide text-slate-500 sm:px-5 sm:py-4"
+                      >
+                        Lease length
+                      </th>
+                      <td className="align-top px-4 py-3.5 font-semibold leading-relaxed text-slate-900 sm:px-5 sm:py-4">
+                        {String(p.policies || '').trim() ? (
+                          p.policies
+                        ) : (
+                          <span className="font-medium text-slate-500">Contact Axis for current lease options.</span>
+                        )}
+                      </td>
+                    </tr>
+                    <tr className="border-b border-slate-100">
+                      <th
+                        scope="row"
+                        className="align-top bg-slate-50/80 px-4 py-3.5 text-xs font-bold uppercase tracking-wide text-slate-500 sm:px-5 sm:py-4"
+                      >
+                        Application fee
+                      </th>
+                      <td className="align-top px-4 py-3.5 font-semibold text-slate-900 sm:px-5 sm:py-4">
+                        {p.applicationFeeDisplay ||
+                          (p.applicationFee ? `${p.applicationFee} application fee` : '—')}
+                      </td>
+                    </tr>
+                    <tr className="border-b border-slate-100">
+                      <th
+                        scope="row"
+                        className="align-top bg-slate-50/80 px-4 py-3.5 text-xs font-bold uppercase tracking-wide text-slate-500 sm:px-5 sm:py-4"
+                      >
+                        Security deposit
+                      </th>
+                      <td className="align-top px-4 py-3.5 font-semibold text-slate-900 sm:px-5 sm:py-4">{p.securityDeposit || '—'}</td>
+                    </tr>
+                    {p.utilitiesFee ? (
+                      <tr className="border-b border-slate-100">
+                        <th
+                          scope="row"
+                          className="align-top bg-slate-50/80 px-4 py-3.5 text-xs font-bold uppercase tracking-wide text-slate-500 sm:px-5 sm:py-4"
+                        >
+                          Utilities
+                        </th>
+                        <td className="align-top px-4 py-3.5 font-semibold text-slate-900 sm:px-5 sm:py-4">{p.utilitiesFee}</td>
+                      </tr>
+                    ) : null}
+                    {p.petsPolicy ? (
+                      <tr className="border-b border-slate-100">
+                        <th
+                          scope="row"
+                          className="align-top bg-slate-50/80 px-4 py-3.5 text-xs font-bold uppercase tracking-wide text-slate-500 sm:px-5 sm:py-4"
+                        >
+                          Pets
+                        </th>
+                        <td className="align-top px-4 py-3.5 font-semibold text-slate-900 sm:px-5 sm:py-4">{p.petsPolicy}</td>
+                      </tr>
+                    ) : null}
+                    {p.moveInChargesDisplay ? (
+                      <tr className="border-b border-slate-100">
+                        <th
+                          scope="row"
+                          className="align-top bg-slate-50/80 px-4 py-3.5 text-xs font-bold uppercase tracking-wide text-slate-500 sm:px-5 sm:py-4"
+                        >
+                          Move-in charges
+                        </th>
+                        <td className="align-top px-4 py-3.5 font-semibold text-slate-900 sm:px-5 sm:py-4">{p.moveInChargesDisplay}</td>
+                      </tr>
+                    ) : null}
+                    {p.listingAvailabilitySummary ? (
+                      <tr className="border-b-0">
+                        <th
+                          scope="row"
+                          className="align-top bg-slate-50/80 px-4 py-3.5 text-xs font-bold uppercase tracking-wide text-slate-500 sm:px-5 sm:py-4"
+                        >
+                          Availability
+                        </th>
+                        <td className="align-top px-4 py-3.5 font-semibold text-slate-900 sm:px-5 sm:py-4">{p.listingAvailabilitySummary}</td>
+                      </tr>
+                    ) : null}
+                  </tbody>
+                </table>
               </div>
 
               {Array.isArray(p.leasingPackages) && p.leasingPackages.length > 0 ? (

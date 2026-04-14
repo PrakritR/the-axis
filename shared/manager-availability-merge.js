@@ -1,11 +1,21 @@
 /**
- * Manager Availability — shared merge rules for tours & meetings.
+ * Manager / Admin availability — shared merge rules for tours & meetings.
  * Used by backend (tour/meeting handlers) and frontend (Manager calendar, optional tooling).
+ *
+ * **Split tables (recommended):** set `ADMIN_MEETING_AVAILABILITY_TABLE` (or `VITE_…`) to a table
+ * name different from the manager tour table (`MANAGER_AVAILABILITY_TABLE` / defaults). Admin
+ * “Contact Axis” meeting slots then read/write only the admin table; property tour slots use only
+ * the manager table. When unset, both flows share one table (legacy: global rows use empty Property).
+ *
+ * Optional **`AIRTABLE_AVAILABILITY_BASE_ID`**: if set, both availability tables are read from this
+ * base while `Scheduling` and `Properties` stay on the main base.
  *
  * Precedence for a given calendar date:
  * 1) Date-specific (Is Recurring false) active rows for that exact date
  * 2) Else recurring weekly rows (Is Recurring true) for that weekday with optional Recurrence Start
- * 3) Else legacy weekly text (Mon: 540-720, …) from property/admin profile
+ * 3) Else legacy weekly text (Mon: 540-720, …) from property/admin profile — **only if there are no
+ *    active Manager Availability rows at all** for that property+manager (otherwise legacy is ignored
+ *    so one-off MA edits are not masked by the old property template).
  */
 
 export const DEFAULT_MA_FIELD_NAMES = {
@@ -27,6 +37,16 @@ export const DEFAULT_MA_FIELD_NAMES = {
 const DOW_ABBR = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
 const DOW_FULL = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
 
+/** Airtable base id for Manager + Admin availability tables only (optional). */
+export function availabilityAirtableBaseId(env = {}) {
+  const pick = (a, b, c) => String(env[a] ?? env[b] ?? env[c] ?? '').trim()
+  return (
+    pick('AIRTABLE_AVAILABILITY_BASE_ID', 'VITE_AIRTABLE_AVAILABILITY_BASE_ID', '') ||
+    pick('VITE_AIRTABLE_BASE_ID', 'AIRTABLE_BASE_ID', '') ||
+    ''
+  )
+}
+
 /** @param {Record<string, string>} env */
 export function buildManagerAvailabilityConfig(env = {}) {
   const pick = (a, b, d) => String(env[a] ?? env[b] ?? '').trim() || d
@@ -34,7 +54,7 @@ export function buildManagerAvailabilityConfig(env = {}) {
     tableName: pick(
       'AIRTABLE_MANAGER_AVAILABILITY_TABLE',
       'VITE_AIRTABLE_MANAGER_AVAILABILITY_TABLE',
-      'Manager Availability',
+      pick('MANAGER_AVAILABILITY_TABLE', 'VITE_MANAGER_AVAILABILITY_TABLE', 'Manager Availability'),
     ),
     fields: {
       propertyName: pick('MANAGER_AVAIL_FIELD_PROPERTY_NAME', 'VITE_MANAGER_AVAIL_FIELD_PROPERTY_NAME', DEFAULT_MA_FIELD_NAMES.propertyName),
@@ -64,6 +84,32 @@ export function buildManagerAvailabilityConfig(env = {}) {
       ),
     },
   }
+}
+
+/**
+ * Admin-only meeting availability table (global rows: empty Property Name / Property Record ID).
+ * Same field schema as manager tour availability. If env table name is empty, uses the manager
+ * table name (single-table legacy mode).
+ */
+export function buildAdminMeetingAvailabilityConfig(env = {}) {
+  const mgr = buildManagerAvailabilityConfig(env)
+  const pick = (a, b, d) => String(env[a] ?? env[b] ?? '').trim() || d
+  const adminTable = pick(
+    'AIRTABLE_ADMIN_MEETING_AVAILABILITY_TABLE',
+    'VITE_AIRTABLE_ADMIN_MEETING_AVAILABILITY_TABLE',
+    '',
+  )
+  return {
+    ...mgr,
+    tableName: adminTable || mgr.tableName,
+  }
+}
+
+/** True when admin meeting rows live in a different Airtable table than manager tour rows. */
+export function availabilityTablesAreSplit(env = {}) {
+  const a = String(buildManagerAvailabilityConfig(env).tableName || '').trim()
+  const b = String(buildAdminMeetingAvailabilityConfig(env).tableName || '').trim()
+  return Boolean(a && b && a !== b)
 }
 
 export function normalizeDateKey(value) {
@@ -323,13 +369,21 @@ export function mergePropertyAvailabilityRanges({
     }
   }
 
+  /** If this property/manager has any active MA rows, do not fall back to legacy property weekly text (it repeats every week and masks date-only edits). */
+  const scopedUsesManagerAvailability = scoped.some((row) => {
+    const fields = row.fields || row
+    return isActiveRecord(fields, f.active)
+  })
+
   let base = []
   if (dateSpecific.length) {
     base = normalizeMergedRanges(dateSpecific)
   } else if (recurring.length) {
     base = normalizeMergedRanges(recurring)
-  } else {
+  } else if (!scopedUsesManagerAvailability) {
     base = legacyFreeRangesForDate(legacyAvailabilityText || '', dateKey)
+  } else {
+    base = []
   }
 
   const blocked = (bookedSlotLabels || []).map(parseBookedSlotToRange).filter(Boolean)
@@ -366,7 +420,8 @@ export function mergeGlobalAdminAvailabilityRanges({
     const isRec =
       fields[f.isRecurring] === true ||
       fields[f.isRecurring] === 1 ||
-      String(fields[f.isRecurring] || '').toLowerCase() === 'true'
+      String(fields[f.isRecurring] || '').toLowerCase() === 'true' ||
+      String(fields[f.isRecurring] || '').toLowerCase() === 'yes'
     const dk = normalizeDateKey(fields[f.date])
     if (!isRec && dk === dateKey) {
       dateSpecific.push(interval)
@@ -380,13 +435,20 @@ export function mergeGlobalAdminAvailabilityRanges({
     }
   }
 
+  const scopedUsesGlobalMa = scoped.some((row) => {
+    const fields = row.fields || row
+    return isActiveRecord(fields, f.active)
+  })
+
   let base = []
   if (dateSpecific.length) {
     base = normalizeMergedRanges(dateSpecific)
   } else if (recurring.length) {
     base = normalizeMergedRanges(recurring)
-  } else {
+  } else if (!scopedUsesGlobalMa) {
     base = legacyFreeRangesForDate(legacyWeeklyText || '', dateKey)
+  } else {
+    base = []
   }
 
   const blocked = (bookedSlotLabels || []).map(parseBookedSlotToRange).filter(Boolean)
@@ -470,6 +532,51 @@ export function buildGlobalAdminSlotsByDate({
     })
     const labels = rangesToSlotLabels(ranges)
     if (labels.length) out[dateKey] = labels
+  }
+  return out
+}
+
+/**
+ * Map dateKey → merged free minute ranges for one admin (global rows only).
+ * Used by the admin portal calendar when availability lives in `Admin Meeting Availability`.
+ */
+export function buildGlobalAdminFreeRangesMapByDate({
+  records,
+  config,
+  adminEmail,
+  daysAhead = 120,
+  fromDate,
+}) {
+  const f = config.fields
+  const em = String(adminEmail || '').trim().toLowerCase()
+  const normalized = (records || []).map((r) => {
+    if (r && r.fields) return r
+    return { fields: r || {} }
+  })
+  const scoped = normalized.filter((row) => {
+    const fields = row.fields || {}
+    if (!recordIsGlobalAdminRow(fields, f)) return false
+    return String(fields[f.managerEmail] || '').trim().toLowerCase() === em
+  })
+  const out = {}
+  const today = fromDate ? new Date(fromDate) : new Date()
+  today.setHours(0, 0, 0, 0)
+  for (let i = 0; i < daysAhead; i += 1) {
+    const d = new Date(today)
+    d.setDate(today.getDate() + i)
+    const y = d.getFullYear()
+    const m = String(d.getMonth() + 1).padStart(2, '0')
+    const day = String(d.getDate()).padStart(2, '0')
+    const dateKey = `${y}-${m}-${day}`
+    const ranges = mergeGlobalAdminAvailabilityRanges({
+      records: scoped,
+      fieldsConfig: f,
+      dateKey,
+      adminEmail: em,
+      legacyWeeklyText: '',
+      bookedSlotLabels: [],
+    })
+    if (ranges.length) out[dateKey] = ranges
   }
   return out
 }

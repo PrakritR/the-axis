@@ -61,14 +61,14 @@ function parseMoneyStr(s) {
 
 function getUtilityFee(propertyName) {
   const prop = findPropRecord(propertyName)
-  return parseMoneyStr(prop?.utilitiesFee) ?? parseMoneyStr(prop?.utilityFee) ?? 125
+  return parseMoneyStr(prop?.utilitiesFee) ?? parseMoneyStr(prop?.utilityFee) ?? 0
 }
 
 function getSecDeposit(propertyName, monthlyRent) {
   const prop = findPropRecord(propertyName)
   const explicit = parseMoneyStr(prop?.securityDeposit)
   if (explicit != null) return explicit
-  return Math.min(monthlyRent, 500)
+  return 0
 }
 
 function getBathroomNote(propertyName, roomNumber) {
@@ -112,7 +112,10 @@ export function buildLease(app, overrides = {}) {
   const monthlyRent = overrides.rent || getRoomRent(propertyName, roomNumber) || 0
   const utilityFee = overrides.utilityFee ?? getUtilityFee(propertyName)
   const securityDeposit = overrides.deposit ?? getSecDeposit(propertyName, monthlyRent)
-  const adminFee = overrides.adminFee ?? 250
+  const adminFee =
+    overrides.adminFee != null && String(overrides.adminFee).trim() !== ''
+      ? parseMoneyStr(String(overrides.adminFee)) ?? 0
+      : parseMoneyStr(app['Admin Fee'] ?? app['Administration Fee'] ?? app['Move-in Admin Fee']) ?? 0
   let lastMonthRent = 0
   if (overrides.lastMonthRent != null && String(overrides.lastMonthRent).trim() !== '') {
     const fromOverride = parseMoneyStr(String(overrides.lastMonthRent))
@@ -194,7 +197,9 @@ export function buildLease(app, overrides = {}) {
     proratedUtilityFmt: fmtMoney(proratedUtility),
     totalMoveInFmt: fmtMoney(totalMoveIn),
     monthlyTotalFmt: fmtMoney(monthlyRent + utilityFee),
-    breakLeaseFee: fmtMoney(900),
+    breakLeaseFee: '',
+    /** Set from manager overrides when you add an explicit lease-break dollar amount to the template */
+    breakLeaseFeeAmount: 0,
     // Property-specific
     bathroomNote,
     amenities,

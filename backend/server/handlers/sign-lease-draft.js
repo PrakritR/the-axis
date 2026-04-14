@@ -1,7 +1,7 @@
 /**
  * POST /api/sign-lease-draft
  *
- * Records a resident's e-signature on a Published lease draft.
+ * Records a resident's e-signature on a Published or Ready for Signature lease draft.
  * Sets Status → "Signed", stores the typed name + timestamp.
  * Also back-fills the linked Applications record if present.
  *
@@ -71,8 +71,11 @@ export default async function handler(req, res) {
     if (currentStatus === 'Signed') {
       return res.status(400).json({ error: 'Lease has already been signed.' })
     }
-    if (currentStatus !== 'Published') {
-      return res.status(400).json({ error: 'Lease must be Published before it can be signed.' })
+    const signable = currentStatus === 'Published' || currentStatus === 'Ready for Signature'
+    if (!signable) {
+      return res.status(400).json({
+        error: 'Lease must be sent for signature (Published or Ready for Signature) before it can be signed.',
+      })
     }
 
     const now = new Date().toISOString()

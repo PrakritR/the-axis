@@ -2,9 +2,13 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import toast from 'react-hot-toast'
 import {
   getMessagesByThreadKey,
+  getMessagesByThreadKeyPrefix,
   sendMessage,
   residentLeasingThreadKey,
   residentAdminThreadKey,
+  nextResidentLeasingThreadKey,
+  nextResidentAdminThreadKey,
+  portalInboxThreadKeyFromRecord,
   PORTAL_INBOX_CHANNEL_INTERNAL,
   portalInboxAirtableConfigured,
   fetchInboxThreadStateMap,
@@ -38,10 +42,51 @@ import ConversationThread from '../manager-inbox/ConversationThread'
 import MessageComposer from '../manager-inbox/MessageComposer'
 import { displayMessageForResidentPortal } from '../PortalInboxThreadView.jsx'
 
-const UI_LEASING = 'ui:leasing'
-const UI_ADMIN = 'ui:admin'
-
 const RESIDENT_INBOX_THREAD_STATE_LS = 'axis_resident_inbox_thread_state_v1'
+
+/**
+ * Pick Messages thread key for send: reuse non-trashed explicit thread, else latest
+ * non-trashed segment for the lane, else a brand-new `:s:` key when the default is trashed.
+ */
+function resolveResidentOutboundThreadKey({
+  laneBaseKey,
+  nextSegmentKey,
+  inboxStateMap,
+  flatMessages,
+  explicitSelectedKey,
+  msgTime,
+}) {
+  const trashed = (k) => Boolean(inboxStateMap.get(k)?.trashed)
+
+  if (explicitSelectedKey) {
+    const ex = String(explicitSelectedKey).trim()
+    if (ex && !trashed(ex)) return ex
+    return nextSegmentKey()
+  }
+
+  const byKey = new Map()
+  for (const m of flatMessages || []) {
+    const tk = String(portalInboxThreadKeyFromRecord(m) || '').trim()
+    if (!tk) continue
+    if (tk !== laneBaseKey && !tk.startsWith(`${laneBaseKey}:s:`)) continue
+    if (!byKey.has(tk)) byKey.set(tk, [])
+    byKey.get(tk).push(m)
+  }
+  let latestKey = ''
+  let latestTs = -1
+  for (const [tk, arr] of byKey) {
+    const last = [...arr].sort((a, b) => msgTime(a) - msgTime(b)).pop()
+    const ts = msgTime(last)
+    if (ts >= latestTs) {
+      latestTs = ts
+      latestKey = tk
+    }
+  }
+  if (latestKey && !trashed(latestKey)) return latestKey
+  if (latestKey && trashed(latestKey)) return nextSegmentKey()
+  if (!trashed(laneBaseKey)) return laneBaseKey
+  return nextSegmentKey()
+}
 
 function formatDataLoadError(err) {
   if (err == null) return 'Unavailable'
@@ -111,9 +156,10 @@ function saveLocalInboxStatePatch(email, threadKey, patch) {
   }
 }
 
-function participantsLine(uiId) {
-  if (uiId === UI_LEASING) return 'You ↔ House / Manager'
-  if (uiId === UI_ADMIN) return 'You ↔ Axis Admin'
+function participantsLineForThreadKey(threadKey) {
+  const t = String(threadKey || '')
+  if (t.startsWith('internal:resident-admin')) return 'You ↔ Axis Admin'
+  if (t.startsWith('internal:resident-leasing')) return 'You ↔ House / Manager'
   return ''
 }
 
@@ -184,8 +230,8 @@ export default function ResidentPortalInbox({ resident }) {
     setLoading(true)
     try {
       const [l, a] = await Promise.all([
-        getMessagesByThreadKey(leasingKey),
-        getMessagesByThreadKey(adminKey),
+        getMessagesByThreadKeyPrefix(leasingKey),
+        getMessagesByThreadKeyPrefix(adminKey),
       ])
       setLeasingMsgs(l)
       setAdminMsgs(a)
@@ -208,56 +254,41 @@ export default function ResidentPortalInbox({ resident }) {
     loadAll()
   }, [loadAll])
 
-  // Auto-select the first (most recent) thread after initial load
-  const hasAutoSelectedRef = useRef(false)
-  useEffect(() => {
-    if (loading) return
-    if (hasAutoSelectedRef.current) return
-    if (selectedThreadId) return
-    // Pick thread with most recent message, default to leasing thread
-    const mostRecent =
-      (leasingMsgs.length > 0 || adminMsgs.length > 0)
-        ? (leasingMsgs.length > 0 && adminMsgs.length === 0
-            ? UI_LEASING
-            : adminMsgs.length > 0 && leasingMsgs.length === 0
-              ? UI_ADMIN
-              : (() => {
-                  const lTime = Math.max(...leasingMsgs.map((m) => new Date(m?.Timestamp || m?.created_at || 0).getTime()), 0)
-                  const aTime = Math.max(...adminMsgs.map((m) => new Date(m?.Timestamp || m?.created_at || 0).getTime()), 0)
-                  return lTime >= aTime ? UI_LEASING : UI_ADMIN
-                })())
-        : UI_LEASING
-    hasAutoSelectedRef.current = true
-    setSelectedThreadId(mostRecent)
-  }, [loading, selectedThreadId, leasingMsgs, adminMsgs])
-
   const msgTime = (m) => new Date(m?.Timestamp || m?.created_at || 0).getTime()
 
   const threadRows = useMemo(() => {
     const rows = []
-    const mkRow = (uiId, stateKey, participantLabel, sorted) => {
-      const last = sorted[sorted.length - 1]
-      const lastMsgTs = last ? msgTime(last) : 0
-      const subjectLine =
-        threadSubjectFromMessages(sorted, subjectFieldName) ||
-        (uiId === UI_LEASING ? 'House / Manager' : 'Axis Admin')
-      rows.push({
-        id: uiId,
-        stateKey,
-        participantLabel,
-        subjectLine,
-        preview: threadBodyPreviewFromMessage(last),
-        searchText: threadSearchHaystack(sorted, subjectFieldName, participantLabel, subjectLine),
-        time: last ? fmtDateTime(last.Timestamp || last.created_at) : '',
-        ts: lastMsgTs,
-        lastMsgTs,
-        lastSenderEmail: last ? portalSenderEmailFromMessage(last) : '',
-      })
+    const addLane = (lanePrefix, defaultParticipantLabel) => {
+      const byKey = new Map()
+      for (const m of lanePrefix === leasingKey ? leasingMsgs : adminMsgs) {
+        const tk = String(portalInboxThreadKeyFromRecord(m) || '').trim()
+        if (!tk) continue
+        if (tk !== lanePrefix && !tk.startsWith(`${lanePrefix}:s:`)) continue
+        if (!byKey.has(tk)) byKey.set(tk, [])
+        byKey.get(tk).push(m)
+      }
+      for (const [tk, msgs] of byKey) {
+        const sorted = [...msgs].sort((a, b) => msgTime(a) - msgTime(b))
+        const last = sorted[sorted.length - 1]
+        const lastMsgTs = last ? msgTime(last) : 0
+        const subjectLine =
+          threadSubjectFromMessages(sorted, subjectFieldName) || defaultParticipantLabel
+        rows.push({
+          id: tk,
+          stateKey: tk,
+          participantLabel: defaultParticipantLabel,
+          subjectLine,
+          preview: threadBodyPreviewFromMessage(last),
+          searchText: threadSearchHaystack(sorted, subjectFieldName, defaultParticipantLabel, subjectLine),
+          time: last ? fmtDateTime(last.Timestamp || last.created_at) : '',
+          ts: lastMsgTs,
+          lastMsgTs,
+          lastSenderEmail: last ? portalSenderEmailFromMessage(last) : '',
+        })
+      }
     }
-    const sortedL = [...leasingMsgs].sort((a, b) => msgTime(a) - msgTime(b))
-    const sortedA = [...adminMsgs].sort((a, b) => msgTime(a) - msgTime(b))
-    mkRow(UI_LEASING, leasingKey, 'House / Manager', sortedL)
-    mkRow(UI_ADMIN, adminKey, 'Axis Admin', sortedA)
+    addLane(leasingKey, 'House / Manager')
+    addLane(adminKey, 'Axis Admin')
     rows.sort((a, b) => b.ts - a.ts)
     return rows
   }, [leasingMsgs, adminMsgs, leasingKey, adminKey, subjectFieldName])
@@ -275,6 +306,23 @@ export default function ResidentPortalInbox({ resident }) {
       return { ...row, section, unopened }
     })
   }, [threadRows, inboxStateMap, email])
+
+  const hasAutoSelectedRef = useRef(false)
+  useEffect(() => {
+    setSelectedThreadId(null)
+    hasAutoSelectedRef.current = false
+  }, [resident?.id])
+
+  useEffect(() => {
+    if (loading) return
+    if (hasAutoSelectedRef.current) return
+    if (selectedThreadId) return
+    const candidates = threadRowsWithMeta.filter((r) => r.section !== 'trash')
+    const pool = candidates.length ? candidates : threadRowsWithMeta
+    const pick = [...pool].sort((a, b) => b.lastMsgTs - a.lastMsgTs)[0]
+    if (pick?.id) setSelectedThreadId(pick.id)
+    hasAutoSelectedRef.current = true
+  }, [loading, selectedThreadId, threadRowsWithMeta])
 
   const inboxSections = useMemo(() => {
     const unopened = []
@@ -358,7 +406,11 @@ export default function ResidentPortalInbox({ resident }) {
   )
 
   const selectedStateKey =
-    selectedThreadId === UI_LEASING ? leasingKey : selectedThreadId === UI_ADMIN ? adminKey : ''
+    typeof selectedThreadId === 'string' &&
+    (selectedThreadId.startsWith('internal:resident-leasing:') ||
+      selectedThreadId.startsWith('internal:resident-admin:'))
+      ? selectedThreadId
+      : ''
   const selectedMeta = selectedStateKey ? inboxStateMap.get(selectedStateKey) : null
   const selectedInTrash = Boolean(selectedMeta?.trashed)
 
@@ -381,8 +433,10 @@ export default function ResidentPortalInbox({ resident }) {
       setReplySubject('')
       return
     }
-    const msgs = selectedThreadId === UI_LEASING ? leasingMsgs : adminMsgs
-    const t = threadSubjectFromMessages(msgs, subjectFieldName)
+    const pool = selectedThreadId.startsWith('internal:resident-admin') ? adminMsgs : leasingMsgs
+    const msgs = pool.filter((m) => portalInboxThreadKeyFromRecord(m) === selectedThreadId)
+    const sorted = [...msgs].sort((a, b) => msgTime(a) - msgTime(b))
+    const t = threadSubjectFromMessages(sorted, subjectFieldName)
     setReplySubject(t ? `Re: ${t}` : '')
   }, [selectedThreadId, leasingMsgs, adminMsgs, subjectFieldName])
 
@@ -401,7 +455,7 @@ export default function ResidentPortalInbox({ resident }) {
     }
     let cancelled = false
     setThreadLoading(true)
-    const key = selectedThreadId === UI_LEASING ? leasingKey : adminKey
+    const key = String(selectedThreadId || '').trim()
     getMessagesByThreadKey(key)
       .then((next) => {
         if (!cancelled) {
@@ -422,7 +476,7 @@ export default function ResidentPortalInbox({ resident }) {
     return () => {
       cancelled = true
     }
-  }, [selectedThreadId, leasingKey, adminKey])
+  }, [selectedThreadId])
 
   const activeThreadSubject = useMemo(
     () =>
@@ -445,7 +499,17 @@ export default function ResidentPortalInbox({ resident }) {
       toast.error('Enter a subject.')
       return
     }
-    const threadKey = composeTo === 'admin' ? adminKey : leasingKey
+    const laneBase = composeTo === 'admin' ? adminKey : leasingKey
+    const flat = composeTo === 'admin' ? adminMsgs : leasingMsgs
+    const threadKey = resolveResidentOutboundThreadKey({
+      laneBaseKey: laneBase,
+      nextSegmentKey: () =>
+        composeTo === 'admin' ? nextResidentAdminThreadKey(resident.id) : nextResidentLeasingThreadKey(resident.id),
+      inboxStateMap,
+      flatMessages: flat,
+      explicitSelectedKey: null,
+      msgTime,
+    })
     const bodyOut = mergeSubjectIntoMessageIfNeeded(composeBody.trim(), subjResolved, showSubjectField)
     setComposeSending(true)
     try {
@@ -467,7 +531,7 @@ export default function ResidentPortalInbox({ resident }) {
       setComposeSubject('')
       setComposeTo('manager')
       await loadAll()
-      setSelectedThreadId(composeTo === 'admin' ? UI_ADMIN : UI_LEASING)
+      setSelectedThreadId(threadKey)
       toast.success('Sent')
     } catch (err) {
       toast.error(err.message || 'Send failed')
@@ -479,8 +543,15 @@ export default function ResidentPortalInbox({ resident }) {
   async function handleSendReply(e) {
     e.preventDefault()
     if (!selectedThreadId || !reply.trim() || !email) return
-    const msgs = selectedThreadId === UI_LEASING ? leasingMsgs : adminMsgs
-    const threadSubj = threadSubjectFromMessages(msgs, subjectFieldName)
+    if (selectedInTrash) {
+      toast.error('Restore this conversation to reply here, or use New message for a fresh thread.')
+      return
+    }
+    const laneBase = selectedThreadId.startsWith('internal:resident-admin')
+      ? adminKey
+      : leasingKey
+    const flat = selectedThreadId.startsWith('internal:resident-admin') ? adminMsgs : leasingMsgs
+    const threadSubj = threadSubjectFromMessages(thread, subjectFieldName)
     const notifySubj = replySubject.trim() || threadSubj || 'Axis portal message'
     const subjResolved = showSubjectField ? replySubject.trim() : ''
     const bodyOut = mergeSubjectIntoMessageIfNeeded(
@@ -488,7 +559,15 @@ export default function ResidentPortalInbox({ resident }) {
       showSubjectField ? subjResolved : notifySubj,
       showSubjectField,
     )
-    const threadKey = selectedThreadId === UI_LEASING ? leasingKey : adminKey
+    const threadKey = resolveResidentOutboundThreadKey({
+      laneBaseKey: laneBase,
+      nextSegmentKey: () =>
+        laneBase === adminKey ? nextResidentAdminThreadKey(resident.id) : nextResidentLeasingThreadKey(resident.id),
+      inboxStateMap,
+      flatMessages: flat,
+      explicitSelectedKey: selectedThreadId,
+      msgTime,
+    })
     setSending(true)
     try {
       await sendMessage({
@@ -500,7 +579,7 @@ export default function ResidentPortalInbox({ resident }) {
         subject: showSubjectField ? subjResolved : '',
       })
       notifyPortalMessage({
-        toAdmins: selectedThreadId === UI_ADMIN,
+        toAdmins: selectedThreadId.startsWith('internal:resident-admin'),
         senderName: resident.Name || email,
         subject: notifySubj,
       })
@@ -665,7 +744,7 @@ export default function ResidentPortalInbox({ resident }) {
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div className="min-w-0 flex-1">
                   <h3 className="text-lg font-black text-slate-900 md:text-xl">{headerSubject}</h3>
-                  <p className="mt-1 text-sm text-slate-600">{participantsLine(selectedThreadId)}</p>
+                  <p className="mt-1 text-sm text-slate-600">{participantsLineForThreadKey(selectedThreadId)}</p>
                   {selectedInTrash ? (
                     <p className="mt-2 text-xs font-medium text-amber-800">In trash</p>
                   ) : null}
@@ -721,7 +800,7 @@ export default function ResidentPortalInbox({ resident }) {
               value={reply}
               onChange={setReply}
               onSubmit={handleSendReply}
-              disabled={!selectedThreadId}
+              disabled={!selectedThreadId || selectedInTrash}
               sending={sending}
               placeholder="Write your reply…"
               showSubject
@@ -734,7 +813,7 @@ export default function ResidentPortalInbox({ resident }) {
                   : 'Subject for email notification'
               }
               allowSubjectEmpty
-              toLabel={participantsLine(selectedThreadId)}
+              toLabel={participantsLineForThreadKey(selectedThreadId)}
             />
           ) : null}
         </div>

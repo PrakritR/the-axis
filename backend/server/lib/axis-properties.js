@@ -20,7 +20,8 @@ export const AXIS_PROPERTIES = [
     utilitiesFee: 175,
     securityDeposit: 600,
     cleaningFee: 25,
-    adminFee: 250,
+    /** Omit or 0 — only appears on generated lease when set from Airtable / manager overrides */
+    adminFee: 0,
     amenities: [
       'Walkable location',
       'In-unit laundry (washer & dryer)',
@@ -52,7 +53,7 @@ export const AXIS_PROPERTIES = [
     utilitiesFee: 175,
     securityDeposit: 500,
     cleaningFee: 25,
-    adminFee: 250,
+    adminFee: 0,
     amenities: [
       'Walkable location',
       'In-unit laundry (washer & dryer)',
@@ -84,7 +85,7 @@ export const AXIS_PROPERTIES = [
     utilitiesFee: 175,
     securityDeposit: 500,
     cleaningFee: 25,
-    adminFee: 250,
+    adminFee: 0,
     amenities: [
       'Walkable location',
       'In-unit laundry (washer & dryer)',
@@ -166,17 +167,17 @@ export function resolveLeaseDetails(propertyName, roomNumber, overrides = {}) {
   const utilitiesFee =
     (overrides.utilitiesFee != null && overrides.utilitiesFee !== '' ? parseFloat(overrides.utilitiesFee) : null) ??
     prop?.utilitiesFee ??
-    125
+    0
 
   const securityDeposit =
     (overrides.deposit != null && overrides.deposit !== '' ? parseFloat(overrides.deposit) : null) ??
     prop?.securityDeposit ??
-    (rent > 0 ? Math.min(rent, 500) : 500)
+    0
 
   const adminFee =
-    (overrides.adminFee != null ? parseFloat(overrides.adminFee) : null) ??
+    (overrides.adminFee != null && overrides.adminFee !== '' ? parseFloat(overrides.adminFee) : null) ??
     prop?.adminFee ??
-    250
+    0
 
   return {
     rent,

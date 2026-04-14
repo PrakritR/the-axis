@@ -1,7 +1,7 @@
 /**
  * LeaseSignPanel.jsx
  *
- * E-signing UI shown below the lease when status is "Published".
+ * E-signing UI shown below the lease when status is Published or Ready for Signature.
  * Resident must:
  *   1. Check "I have read and agree…"
  *   2. Type their full legal name (must match tenantName on lease)

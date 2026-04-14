@@ -975,18 +975,34 @@ export function siteManagerThreadKey(managerEmail) {
 }
 
 const RESIDENT_LEASING_PREFIX = 'internal:resident-leasing:'
+/** Appended segment so a new Messages thread can start after the resident trashes the prior one (`:s:` + unix ms). */
+const RESIDENT_THREAD_SEGMENT = ':s:'
 
-/** Stable thread id: resident ↔ house team / admin (one thread per resident record). */
+/** Stable base thread id: resident ↔ house team (one base key per resident; optional `:s:`… segments for new threads). */
 export function residentLeasingThreadKey(residentRecordId) {
   const id = String(residentRecordId || '').trim()
   if (!id) return ''
   return `${RESIDENT_LEASING_PREFIX}${id}`
 }
 
+/** Next thread key after trash / fresh conversation — same resident, new Messages rows. */
+export function nextResidentLeasingThreadKey(residentRecordId) {
+  const base = residentLeasingThreadKey(residentRecordId)
+  if (!base) return ''
+  return `${base}${RESIDENT_THREAD_SEGMENT}${Date.now()}`
+}
+
 export function parseResidentLeasingThreadKey(threadKey) {
   const t = String(threadKey || '').trim()
   if (!t.startsWith(RESIDENT_LEASING_PREFIX)) return ''
-  return t.slice(RESIDENT_LEASING_PREFIX.length).trim()
+  const rest = t.slice(RESIDENT_LEASING_PREFIX.length).trim()
+  if (!rest) return ''
+  const seg = `${RESIDENT_THREAD_SEGMENT}`
+  const idx = rest.lastIndexOf(seg)
+  if (idx <= 0) return rest
+  const after = rest.slice(idx + seg.length)
+  if (/^\d+$/.test(after)) return rest.slice(0, idx)
+  return rest
 }
 
 const RESIDENT_ADMIN_PREFIX = 'internal:resident-admin:'
@@ -998,10 +1014,23 @@ export function residentAdminThreadKey(residentRecordId) {
   return `${RESIDENT_ADMIN_PREFIX}${id}`
 }
 
+export function nextResidentAdminThreadKey(residentRecordId) {
+  const base = residentAdminThreadKey(residentRecordId)
+  if (!base) return ''
+  return `${base}${RESIDENT_THREAD_SEGMENT}${Date.now()}`
+}
+
 export function parseResidentAdminThreadKey(threadKey) {
   const t = String(threadKey || '').trim()
   if (!t.startsWith(RESIDENT_ADMIN_PREFIX)) return ''
-  return t.slice(RESIDENT_ADMIN_PREFIX.length).trim()
+  const rest = t.slice(RESIDENT_ADMIN_PREFIX.length).trim()
+  if (!rest) return ''
+  const seg = `${RESIDENT_THREAD_SEGMENT}`
+  const idx = rest.lastIndexOf(seg)
+  if (idx <= 0) return rest
+  const after = rest.slice(idx + seg.length)
+  if (/^\d+$/.test(after)) return rest.slice(0, idx)
+  return rest
 }
 
 /** Public Contact / housing message with no specific property — visible in Admin portal inbox only. */
@@ -1055,6 +1084,20 @@ export async function getMessagesByThreadKey(threadKey) {
   if (!tk) return []
   const f = `{${MESSAGE_THREAD_KEY_FIELD}}`
   const formula = `${f} = "${escapeFormulaValue(tk)}"`
+  return listMessagesByFormulaPaginated(formula)
+}
+
+/** All Messages rows whose thread key starts with `prefix` (base thread + `:s:`… segments). */
+export async function getMessagesByThreadKeyPrefix(prefix) {
+  if (!messageFieldNameConfigured(MESSAGE_THREAD_KEY_FIELD)) {
+    throw new Error('Configure the Messages thread-key field name in your project environment and add that field on the Messages table.')
+  }
+  const p = String(prefix || '').trim()
+  if (!p) return []
+  const esc = escapeFormulaValue(p)
+  const len = esc.length
+  const f = `{${MESSAGE_THREAD_KEY_FIELD}}`
+  const formula = `LEFT(${f} & "", ${len}) = "${esc}"`
   return listMessagesByFormulaPaginated(formula)
 }
 
@@ -1833,7 +1876,7 @@ function sortLeaseDraftRowsForResident(allRecords) {
 export async function getApprovedLeaseForResident(residentRecordId, residentEmail = '') {
   if (!residentRecordId) return null
   const escaped = escapeFormulaValue(residentRecordId)
-  const statusOr = `OR({Status} = "Published", {Status} = "Signed")`
+  const statusOr = `OR({Status} = "Published", {Status} = "Signed", {Status} = "Ready for Signature")`
   const byIdFormula = `AND({Resident Record ID} = "${escaped}", ${statusOr})`
 
   const fetchOne = async (formula) => {

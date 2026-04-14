@@ -44,11 +44,10 @@ import {
   fetchInboxThreadStateMap,
   portalInboxAirtableConfigured,
   portalInboxThreadKeyFromRecord,
-  submitResidentLeaseChangeRequest,
-  getLeaseCommentsForDraft,
 } from '../lib/airtable'
 import { applicationRejectedFieldName, deriveApplicationApprovalState } from '../lib/applicationApprovalState.js'
 import { anyLeaseDraftAllowsSignWithoutMoveInPay } from '../lib/leaseMoveInOverride.js'
+import { isResidentLeaseBodyViewable, isResidentLeaseSignable } from '../lib/residentLeaseAccess.js'
 import { workOrderScheduledMeta } from '../lib/workOrderShared.js'
 import {
   classifyResidentPaymentLine,
@@ -62,10 +61,18 @@ import {
   reconcilePaymentStatusesInAirtable,
   rentDueDayFromResident,
 } from '../lib/residentPaymentsShared.js'
+import {
+  ROOM_CLEANING_FEE_USD,
+  ROOM_CLEANING_PAYMENT_MARKER,
+  nextPaidRoomCleaningWithoutWorkOrder,
+  roomCleaningPrepaidUnpaid,
+  roomCleaningWorkOrderDescriptionBody,
+} from '../lib/roomCleaningWorkOrder.js'
 
 const SESSION_KEY = 'axis_resident'
 
-const requestCategories = ['Plumbing', 'Electrical', 'Heating / Cooling', 'Appliance', 'General Maintenance', 'Cleaning', 'Other']
+/** "Cleaning" is only via the prepaid room-cleaning flow below — not the general work order form. */
+const requestCategories = ['Plumbing', 'Electrical', 'Heating / Cooling', 'Appliance', 'General Maintenance', 'Other']
 const urgencyOptions = ['Low', 'Medium', 'Urgent']
 const preferredTimeWindowOptions = ['Morning', 'Afternoon', 'Evening']
 
@@ -957,13 +964,27 @@ export function ResidentAuthForm({ onLogin, footer = null, variant = 'default' }
 
 // ─── Work Orders ──────────────────────────────────────────────────────────────
 
-function WorkOrdersPanel({ resident, requests: requestsProp, onRequestCreated, onWorkOrderUpdated, onRefresh }) {
+function WorkOrdersPanel({
+  resident,
+  requests: requestsProp,
+  payments: paymentsProp = [],
+  onRequestCreated,
+  onWorkOrderUpdated,
+  onRefresh,
+  onDataRefresh,
+  onOpenPayments,
+}) {
   const requests = Array.isArray(requestsProp) ? requestsProp : []
+  const payments = Array.isArray(paymentsProp) ? paymentsProp : []
   const [woFilter, setWoFilter] = useState('open')
   const [refreshing, setRefreshing] = useState(false)
   const [deleteBusyId, setDeleteBusyId] = useState('')
   const [showForm, setShowForm] = useState(false)
   const [selectedId, setSelectedId] = useState(null)
+  const [cleaningAck, setCleaningAck] = useState(false)
+  const [cleaningBusy, setCleaningBusy] = useState(false)
+  const [cleaningError, setCleaningError] = useState('')
+  const [cleaningSuccess, setCleaningSuccess] = useState('')
   const [form, setForm] = useState({
     title: '',
     category: requestCategories[0],
@@ -1015,10 +1036,84 @@ function WorkOrdersPanel({ resident, requests: requestsProp, onRequestCreated, o
     [filteredRequests, selectedId],
   )
 
+  const cleaningUnpaid = useMemo(() => roomCleaningPrepaidUnpaid(payments), [payments])
+  const cleaningPaidSubmit = useMemo(
+    () => nextPaidRoomCleaningWithoutWorkOrder(payments, requests),
+    [payments, requests],
+  )
+
   const fieldCls = 'w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm outline-none transition focus:border-slate-900 focus:ring-2 focus:ring-slate-900/10'
+
+  async function handleCreateRoomCleaningCharge() {
+    if (!cleaningAck) return
+    if (cleaningUnpaid) {
+      setCleaningError('You already have a room cleaning charge open. Pay it in Payments first.')
+      return
+    }
+    setCleaningBusy(true)
+    setCleaningError('')
+    setCleaningSuccess('')
+    try {
+      const due = new Date().toISOString().slice(0, 10)
+      const prop = String(resident.House || '').trim()
+      const unit = String(resident['Unit Number'] || '').trim()
+      const name = String(resident.Name || '').trim()
+      await createPaymentRecord({
+        Resident: [resident.id],
+        Amount: ROOM_CLEANING_FEE_USD,
+        Balance: ROOM_CLEANING_FEE_USD,
+        Status: 'Unpaid',
+        Type: 'Room cleaning fee',
+        Category: 'Fee',
+        Month: 'One-time room cleaning (prepaid)',
+        Notes: `${ROOM_CLEANING_PAYMENT_MARKER} One-time room cleaning for ${[prop, unit].filter(Boolean).join(' · ') || 'your unit'}.`,
+        'Due Date': due,
+        'Property Name': prop || undefined,
+        'Room Number': unit || undefined,
+        'Resident Name': name || undefined,
+      })
+      setCleaningAck(false)
+      setCleaningSuccess(`Added ${formatMoney(ROOM_CLEANING_FEE_USD)} to Payments. Pay there to send the cleaning request to your manager.`)
+      await onDataRefresh?.()
+    } catch (err) {
+      setCleaningError(err?.message || 'Could not add the charge.')
+    } finally {
+      setCleaningBusy(false)
+    }
+  }
+
+  async function handleSubmitRoomCleaningWorkOrder() {
+    const pay = cleaningPaidSubmit
+    if (!pay?.id) return
+    setCleaningBusy(true)
+    setCleaningError('')
+    setCleaningSuccess('')
+    try {
+      await createWorkOrder({
+        resident,
+        title: 'Room cleaning (prepaid)',
+        category: 'Cleaning',
+        urgency: 'Low',
+        preferredEntry: preferredTimeWindowOptions[0],
+        preferredTimeWindow: preferredTimeWindowOptions[0],
+        description: roomCleaningWorkOrderDescriptionBody(pay.id, resident),
+        photoFile: null,
+      })
+      setCleaningSuccess('Cleaning request sent to your manager. They can schedule once they see it in work orders.')
+      await onDataRefresh?.()
+    } catch (err) {
+      setCleaningError(err?.message || 'Could not submit cleaning request.')
+    } finally {
+      setCleaningBusy(false)
+    }
+  }
 
   async function handleSubmit(event) {
     event.preventDefault()
+    if (form.category === 'Cleaning') {
+      setError('Room cleaning requests use the “Room cleaning” section above after you pay the fee in Payments.')
+      return
+    }
     setSubmitting(true)
     setError('')
     setSuccess('')
@@ -1111,6 +1206,69 @@ function WorkOrdersPanel({ resident, requests: requestsProp, onRequestCreated, o
             <div className="mt-1 text-sm font-semibold">{label}</div>
           </button>
         ))}
+      </div>
+
+      <div className="mb-6 rounded-3xl border border-teal-200 bg-teal-50/80 px-5 py-4 shadow-sm">
+        <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-teal-900">Room cleaning</p>
+        <p className="mt-2 text-sm leading-relaxed text-teal-950/90">
+          Request a <span className="font-semibold">one-time cleaning of your room</span>. We add a{' '}
+          <span className="font-semibold">{formatMoney(ROOM_CLEANING_FEE_USD)}</span> line under{' '}
+          <span className="font-semibold">Payments → Fees &amp; extras</span>. After that charge is{' '}
+          <span className="font-semibold">paid</span>, you can submit the work order here so your manager receives it and
+          can schedule.
+        </p>
+        {cleaningError ? (
+          <p className="mt-2 text-sm font-medium text-red-700">{cleaningError}</p>
+        ) : null}
+        {cleaningSuccess ? (
+          <p className="mt-2 text-sm font-medium text-emerald-800">{cleaningSuccess}</p>
+        ) : null}
+        {cleaningUnpaid ? (
+          <div className="mt-3 flex flex-wrap items-center gap-2">
+            <p className="text-sm font-semibold text-teal-950">You have an unpaid room cleaning charge.</p>
+            {typeof onOpenPayments === 'function' ? (
+              <button
+                type="button"
+                onClick={() => onOpenPayments()}
+                className="rounded-full border border-teal-300 bg-white px-4 py-2 text-xs font-semibold text-teal-900 transition hover:bg-teal-100/80"
+              >
+                Open Payments
+              </button>
+            ) : null}
+          </div>
+        ) : cleaningPaidSubmit ? (
+          <div className="mt-3 space-y-2">
+            <p className="text-sm font-semibold text-teal-950">Payment received — send the cleaning request to your manager.</p>
+            <button
+              type="button"
+              disabled={cleaningBusy}
+              onClick={() => void handleSubmitRoomCleaningWorkOrder()}
+              className="rounded-full bg-teal-800 px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-teal-900 disabled:opacity-50"
+            >
+              {cleaningBusy ? 'Submitting…' : 'Submit cleaning work order'}
+            </button>
+          </div>
+        ) : (
+          <div className="mt-3 space-y-3">
+            <label className="flex cursor-pointer items-start gap-2 text-sm text-teal-950">
+              <input
+                type="checkbox"
+                checked={cleaningAck}
+                onChange={(e) => setCleaningAck(e.target.checked)}
+                className="mt-0.5 h-4 w-4 shrink-0 rounded border-teal-400 text-teal-800"
+              />
+              <span>Yes, I want a one-time room cleaning and agree to the {formatMoney(ROOM_CLEANING_FEE_USD)} charge.</span>
+            </label>
+            <button
+              type="button"
+              disabled={cleaningBusy || !cleaningAck}
+              onClick={() => void handleCreateRoomCleaningCharge()}
+              className="rounded-full border border-teal-400 bg-white px-5 py-2.5 text-sm font-semibold text-teal-900 transition hover:bg-teal-100/80 disabled:cursor-not-allowed disabled:opacity-45"
+            >
+              {cleaningBusy ? 'Working…' : `Add ${formatMoney(ROOM_CLEANING_FEE_USD)} to Payments`}
+            </button>
+          </div>
+        )}
       </div>
 
         {showForm ? (
@@ -2053,7 +2211,7 @@ function PaymentsPanel({ resident, onResidentUpdated, highlightCategory, onPayme
   ])
 
   useEffect(() => {
-    if (highlightCategory === 'extension') {
+    if (highlightCategory === 'extension' || highlightCategory === 'fees') {
       setPayFilter('fees')
       setPayDetailId(null)
       return
@@ -2247,21 +2405,6 @@ function PaymentsPanel({ resident, onResidentUpdated, highlightCategory, onPayme
       <div className="mb-5 flex flex-wrap items-center gap-3">
         <div className="mr-auto min-w-0">
           <h2 className="text-2xl font-black text-slate-900">Payments</h2>
-          <div className="mt-1 space-y-0.5 text-sm text-slate-600">
-            {residentRoomHoldFeeUsd(resident) > 0 ? (
-              <p>
-                Room hold:{' '}
-                <span className="font-semibold text-slate-900">{formatMoney(residentRoomHoldFeeUsd(resident))}</span>
-              </p>
-            ) : null}
-            {fallbackUtilitiesAmount > 0 ? (
-              <p>
-                Monthly utilities (flat):{' '}
-                <span className="font-semibold text-slate-900">{formatMoney(fallbackUtilitiesAmount)}/mo</span>
-                {' — '}first month at move-in; recurring months appear below after move-in rent is paid
-              </p>
-            ) : null}
-          </div>
         </div>
         <label className="flex flex-wrap items-center gap-2 text-sm text-slate-600">
           <span className="font-semibold text-slate-800">Sort</span>
@@ -2432,15 +2575,15 @@ function PaymentsPanel({ resident, onResidentUpdated, highlightCategory, onPayme
 function residentLeaseStatusDisplay(raw) {
   const s = String(raw || '').trim()
   if (!s) return 'Pending'
-  if (s === 'Published') return 'Ready to sign'
+  if (s === 'Published' || s === 'Ready for Signature') return 'Ready to sign'
   if (s === 'Signed') return 'Signed'
-  if (['Draft Generated', 'Under Review', 'Changes Needed', 'Approved', 'Submitted to Admin', 'Admin In Review', 'Changes Made', 'Sent Back to Manager', 'Manager Approved', 'Ready for Signature'].includes(s)) {
+  if (['Draft Generated', 'Under Review', 'Changes Needed', 'Approved', 'Submitted to Admin', 'Admin In Review', 'Changes Made', 'Sent Back to Manager', 'Manager Approved'].includes(s)) {
     return 'Preparing lease'
   }
   return s
 }
 
-/** Pick the best available lease draft: Signed > Published > any (newest first). */
+/** Pick the best available lease draft: Signed > Published > Ready for Signature > any (newest first). */
 function pickBestLeaseDraft(drafts) {
   if (!Array.isArray(drafts) || drafts.length === 0) return null
   const sorted = [...drafts].sort((a, b) => {
@@ -2451,6 +2594,7 @@ function pickBestLeaseDraft(drafts) {
   return (
     sorted.find((d) => String(d.Status || '').trim() === 'Signed') ||
     sorted.find((d) => String(d.Status || '').trim() === 'Published') ||
+    sorted.find((d) => String(d.Status || '').trim() === 'Ready for Signature') ||
     sorted[0]
   )
 }
@@ -2460,45 +2604,21 @@ function pickLeaseDraftForPaymentsPricing(drafts) {
   return pickSignedLeaseDraft(drafts) || pickBestLeaseDraft(drafts) || null
 }
 
-/** Lease states where the resident may ask the manager for edits (does not require move-in paid first). */
-const RESIDENT_LEASE_CHANGE_STATUSES = new Set([
-  'Published',
-  'Signed',
-  'Changes Made',
-  'Ready for Signature',
-  'Manager Approved',
-])
-
-function formatLeaseCommentTime(row) {
-  const raw = row?.Timestamp || row?.created_at
-  if (!raw) return '—'
-  const d = parseDisplayDate(String(raw))
-  if (!d) return String(raw).slice(0, 40)
-  return `${d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })} · ${d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })}`
-}
-
-function LeasingPanel({ resident, payments, onOpenPayments }) {
+function LeasingPanel({ resident, payments, onOpenPayments, onNavigateTab }) {
   const leaseTermLabel = getLeaseTermLabel(resident)
   const isMonthToMonth = leaseTermLabel.toLowerCase().includes('month-to-month')
-  const leaseSigningUrl = resolveLeaseSigningUrl(resident)
   const moveInLabel = resident['Lease Start Date'] ? formatDate(resident['Lease Start Date']) : '—'
   const moveOutLabel = resident['Lease End Date'] ? formatDate(resident['Lease End Date']) : (isMonthToMonth ? 'No fixed end date' : '—')
 
   const [leaseDrafts, setLeaseDrafts] = useState([])
   const [leaseLoading, setLeaseLoading] = useState(true)
+  const [selectedLeaseDraftId, setSelectedLeaseDraftId] = useState(null)
   const [showLeaseText, setShowLeaseText] = useState(false)
   const [extendByMonths, setExtendByMonths] = useState('3')
   const [extendMode, setExtendMode] = useState('months')
   const [extendToDate, setExtendToDate] = useState('')
   const [extendNotice, setExtendNotice] = useState('')
   const [currentLeasePdf, setCurrentLeasePdf] = useState(null)
-  const [showLeaseChangeForm, setShowLeaseChangeForm] = useState(true)
-  const [leaseChangeMessage, setLeaseChangeMessage] = useState('')
-  const [leaseChangePdfUrl, setLeaseChangePdfUrl] = useState('')
-  const [leaseChangeFileName, setLeaseChangeFileName] = useState('')
-  const [leaseChangeSubmitting, setLeaseChangeSubmitting] = useState(false)
-  const [leaseComments, setLeaseComments] = useState([])
-  const [leaseCommentsLoading, setLeaseCommentsLoading] = useState(false)
 
   const loadLeaseDrafts = useCallback(async () => {
     setLeaseLoading(true)
@@ -2515,6 +2635,13 @@ function LeasingPanel({ resident, payments, onOpenPayments }) {
   useEffect(() => {
     loadLeaseDrafts()
   }, [loadLeaseDrafts])
+
+  useEffect(() => {
+    if (!selectedLeaseDraftId) return
+    if (!leaseDrafts.some((d) => d.id === selectedLeaseDraftId)) {
+      setSelectedLeaseDraftId(null)
+    }
+  }, [leaseDrafts, selectedLeaseDraftId])
 
   const depositPreviewLabel = useMemo(() => {
     const raw =
@@ -2541,7 +2668,14 @@ function LeasingPanel({ resident, payments, onOpenPayments }) {
     return list.some((p) => classifyResidentPaymentLine(p) === 'deposit' && residentPaymentLineStatus(p) === 'Paid')
   }, [payments])
 
-  const activeLeaseDraft = useMemo(() => pickBestLeaseDraft(leaseDrafts), [leaseDrafts])
+  const activeLeaseDraft = useMemo(() => {
+    if (!Array.isArray(leaseDrafts) || leaseDrafts.length === 0) return null
+    if (selectedLeaseDraftId) {
+      const found = leaseDrafts.find((d) => d.id === selectedLeaseDraftId)
+      if (found) return found
+    }
+    return pickBestLeaseDraft(leaseDrafts)
+  }, [leaseDrafts, selectedLeaseDraftId])
   const signWithoutMoveInPayOverride = useMemo(
     () => anyLeaseDraftAllowsSignWithoutMoveInPay(leaseDrafts),
     [leaseDrafts],
@@ -2553,8 +2687,7 @@ function LeasingPanel({ resident, payments, onOpenPayments }) {
   const leaseIsSigned = leaseStatus === 'Signed'
   /** Extension only after move-in charges are satisfied and the lease is signed. */
   const canRequestLeaseExtension = leaseIsSigned && securityDepositPaid && firstMonthRentPaid
-  const canRequestLeaseChange = Boolean(activeLeaseDraft) && RESIDENT_LEASE_CHANGE_STATUSES.has(leaseStatus)
-  const leaseBodyAllowed = leaseStatus === 'Published' || leaseStatus === 'Signed'
+  const leaseBodyAllowed = isResidentLeaseBodyViewable(leaseStatus)
   const leaseContent = leaseBodyAllowed
     ? (activeLeaseDraft?.['Manager Edited Content'] || activeLeaseDraft?.['AI Draft Content'] || '')
     : ''
@@ -2588,34 +2721,6 @@ function LeasingPanel({ resident, payments, onOpenPayments }) {
     }
   }, [activeLeaseDraft?.id])
 
-  const reloadLeaseComments = useCallback(async () => {
-    const id = activeLeaseDraft?.id
-    if (!id || !canRequestLeaseChange) {
-      setLeaseComments([])
-      return
-    }
-    setLeaseCommentsLoading(true)
-    try {
-      const rows = await getLeaseCommentsForDraft(id)
-      setLeaseComments(Array.isArray(rows) ? rows : [])
-    } catch {
-      setLeaseComments([])
-    } finally {
-      setLeaseCommentsLoading(false)
-    }
-  }, [activeLeaseDraft?.id, canRequestLeaseChange])
-
-  useEffect(() => {
-    reloadLeaseComments()
-  }, [reloadLeaseComments])
-
-  const residentRequestsOnLease = useMemo(() => {
-    return (leaseComments || []).filter((row) => {
-      const role = String(row['Author Role'] || row.authorRole || '').toLowerCase()
-      return role.includes('resident')
-    })
-  }, [leaseComments])
-
   function handleRequestExtension() {
     if (extendMode === 'date') {
       if (!extendToDate) return
@@ -2627,32 +2732,18 @@ function LeasingPanel({ resident, payments, onOpenPayments }) {
     }
   }
 
-  async function handleSubmitLeaseChangeRequest(event) {
-    event.preventDefault()
-    const message = leaseChangeMessage.trim()
-    if (!activeLeaseDraft?.id || !message) return
-    setLeaseChangeSubmitting(true)
-    try {
-      await submitResidentLeaseChangeRequest({
-        draft: activeLeaseDraft,
-        resident,
-        message,
-        pdfUrl: leaseChangePdfUrl.trim(),
-        fileName: leaseChangeFileName.trim(),
-      })
-      setLeaseChangeMessage('')
-      setLeaseChangePdfUrl('')
-      setLeaseChangeFileName('')
-      setShowLeaseChangeForm(false)
-      await loadLeaseDrafts()
-      await reloadLeaseComments()
-      toast.success('Lease change request sent to your manager')
-    } catch (err) {
-      toast.error(err.message || 'Could not send lease change request')
-    } finally {
-      setLeaseChangeSubmitting(false)
-    }
-  }
+  const leaseDraftTableRows = useMemo(() => {
+    const list = Array.isArray(leaseDrafts) ? leaseDrafts : []
+    const sorted = [...list].sort((a, b) => {
+      const pb = new Date(b['Published At'] || b.created_at || 0).getTime()
+      const pa = new Date(a['Published At'] || a.created_at || 0).getTime()
+      return pb - pa
+    })
+    return sorted.map((d) => ({
+      key: d.id,
+      data: d,
+    }))
+  }, [leaseDrafts])
 
   return (
     <div className="mb-10">
@@ -2679,116 +2770,106 @@ function LeasingPanel({ resident, payments, onOpenPayments }) {
         </button>
       </div>
 
-      {!moveInPrereqsMet ? (
-        <div className="mb-5 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-4 text-sm text-amber-950 shadow-sm">
-          <p className="font-semibold text-amber-950">Lease document not available yet</p>
-          <p className="mt-1.5 leading-relaxed text-amber-900/90">
-            This section stays locked until your <span className="font-semibold">security deposit</span> and{' '}
-            <span className="font-semibold">first month rent</span> are paid. Use Payments to complete them (including any{' '}
-            <span className="font-semibold">$100 room hold</span> toward your unit), then your lease document and signing
-            will unlock here.
-          </p>
-          <button
-            type="button"
-            onClick={() => onOpenPayments('pending')}
-            className="mt-3 text-sm font-semibold text-amber-950 underline decoration-amber-800/50 underline-offset-2 hover:decoration-amber-950"
-          >
-            Go to Payments
-          </button>
-        </div>
-      ) : null}
-
-      {activeLeaseDraft && canRequestLeaseChange ? (
-        <div className="mb-5 rounded-3xl border border-violet-200 bg-violet-50/90 p-5 shadow-sm">
-          <div className="flex flex-wrap items-start justify-between gap-3">
-            <div className="min-w-0">
-              <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-violet-900">Request lease changes</p>
-              <p className="mt-1 text-sm text-violet-950/90">
-                Describe what you need updated. Your manager sees this on the lease draft and in lease comments — you do
-                not need to finish every move-in payment first to send a request.
-              </p>
-            </div>
-            <button
-              type="button"
-              onClick={() => setShowLeaseChangeForm((value) => !value)}
-              className="shrink-0 rounded-full border border-violet-200 bg-white px-4 py-2 text-sm font-semibold text-violet-900 transition hover:bg-violet-100/80"
-            >
-              {showLeaseChangeForm ? 'Hide form' : 'Show form'}
-            </button>
-          </div>
-
-          <div className="mt-4 rounded-2xl border border-violet-200/80 bg-white/95 px-4 py-3">
-            <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-slate-500">What you asked for</p>
-            {leaseCommentsLoading ? (
-              <p className="mt-2 text-sm text-slate-500">Loading your requests…</p>
-            ) : residentRequestsOnLease.length === 0 ? (
-              <p className="mt-2 text-sm text-slate-600">
-                No saved requests yet. Use the box below — after you send, your message appears here for your records.
-              </p>
-            ) : (
-              <ul className="mt-2 space-y-3">
-                {residentRequestsOnLease.map((row) => (
-                  <li key={row.id} className="rounded-xl border border-slate-100 bg-slate-50/80 px-3 py-2.5 text-sm text-slate-800">
-                    <div className="flex flex-wrap items-center justify-between gap-2 text-xs font-semibold text-slate-500">
-                      <span>{formatLeaseCommentTime(row)}</span>
-                      <span className="rounded-full bg-violet-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-violet-800">
-                        Sent to manager
-                      </span>
-                    </div>
-                    <p className="mt-2 whitespace-pre-wrap leading-relaxed text-slate-800">{row.Message || row.message || '—'}</p>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </div>
-
-          {showLeaseChangeForm ? (
-            <form onSubmit={handleSubmitLeaseChangeRequest} className="mt-4 space-y-3">
-              <label className="block text-xs font-semibold uppercase tracking-wide text-violet-900/90">
-                Your change request
-                <textarea
-                  value={leaseChangeMessage}
-                  onChange={(event) => setLeaseChangeMessage(event.target.value)}
-                  rows={5}
-                  placeholder="Example: Please change the lease start date to May 1, add my co-signer Jane Doe, and update the parking clause…"
-                  className="mt-1.5 w-full rounded-2xl border border-violet-200 bg-white px-4 py-3 text-sm text-slate-900 outline-none focus:border-[#2563eb] focus:ring-2 focus:ring-[#2563eb]/20"
-                />
-              </label>
-              <div className="grid gap-3 md:grid-cols-2">
-                <input
-                  value={leaseChangePdfUrl}
-                  onChange={(event) => setLeaseChangePdfUrl(event.target.value)}
-                  placeholder="Optional: link to a replacement PDF"
-                  className="w-full rounded-xl border border-violet-200 bg-white px-3 py-2 text-sm outline-none focus:border-[#2563eb] focus:ring-2 focus:ring-[#2563eb]/20"
-                />
-                <input
-                  value={leaseChangeFileName}
-                  onChange={(event) => setLeaseChangeFileName(event.target.value)}
-                  placeholder="Optional: file name for that PDF"
-                  className="w-full rounded-xl border border-violet-200 bg-white px-3 py-2 text-sm outline-none focus:border-[#2563eb] focus:ring-2 focus:ring-[#2563eb]/20"
-                />
-              </div>
-              <button
-                type="submit"
-                disabled={leaseChangeSubmitting || !leaseChangeMessage.trim()}
-                className="rounded-full bg-[linear-gradient(180deg,#4f46e5_0%,#4338ca_100%)] px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:brightness-105 disabled:opacity-50"
-              >
-                {leaseChangeSubmitting ? 'Sending…' : 'Send to manager'}
-              </button>
-            </form>
-          ) : null}
-        </div>
-      ) : null}
-
       <div className="space-y-5 rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
-        {/* Lease document card — only after deposit + first rent paid */}
         {leaseLoading ? (
           <div className="rounded-[24px] border border-slate-200 bg-white p-6 text-sm text-slate-400">Loading lease…</div>
-        ) : !moveInPrereqsMet ? null : !activeLeaseDraft ? (
+        ) : null}
+
+        {!leaseLoading && !moveInPrereqsMet ? (
+          <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950 shadow-sm">
+            <p className="font-semibold text-amber-950">Lease document not available yet</p>
+            <p className="mt-1 leading-relaxed text-amber-900/90">
+              This stays locked until your <span className="font-semibold">security deposit</span> and{' '}
+              <span className="font-semibold">first month rent</span> are paid — unless your manager enabled signing
+              without those payments. Use Payments to complete move-in charges, then viewing and signing unlock below.
+            </p>
+            <button
+              type="button"
+              onClick={() => onOpenPayments('pending')}
+              className="mt-3 text-sm font-semibold text-amber-950 underline decoration-amber-800/50 underline-offset-2 hover:decoration-amber-950"
+            >
+              Go to Payments
+            </button>
+          </div>
+        ) : null}
+
+        {!leaseLoading && leaseDrafts.length > 0 ? (
+          <div>
+            <p className="mb-2 text-[11px] font-bold uppercase tracking-[0.14em] text-slate-400">Your lease drafts</p>
+            <DataTable
+              emptyIcon={false}
+              empty="No lease drafts yet."
+              columns={[
+                {
+                  key: 'status',
+                  label: 'Status',
+                  render: (d) => (
+                    <StatusPill tone="slate">{residentLeaseStatusDisplay(String(d.Status || '').trim())}</StatusPill>
+                  ),
+                },
+                {
+                  key: 'updated',
+                  label: 'Updated',
+                  render: (d) => {
+                    const raw = d['Published At'] || d.created_at
+                    if (!raw) return '—'
+                    const dt = parseDisplayDate(String(raw))
+                    return dt
+                      ? dt.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })
+                      : String(raw).slice(0, 16)
+                  },
+                },
+                {
+                  key: 'actions',
+                  label: '',
+                  headerClassName: 'text-right',
+                  cellClassName: 'text-right',
+                  render: (d) => {
+                    const isFocused = activeLeaseDraft?.id === d.id
+                    if (!isFocused) {
+                      return (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSelectedLeaseDraftId(d.id)
+                            setShowLeaseText(false)
+                          }}
+                          className="rounded-full border border-slate-200 bg-white px-4 py-1.5 text-xs font-semibold text-[#2563eb] transition hover:bg-slate-50"
+                        >
+                          Details
+                        </button>
+                      )
+                    }
+                    if (selectedLeaseDraftId && selectedLeaseDraftId === d.id) {
+                      return (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSelectedLeaseDraftId(null)
+                            setShowLeaseText(false)
+                          }}
+                          className="rounded-full border border-slate-200 bg-white px-4 py-1.5 text-xs font-semibold text-slate-600 transition hover:bg-slate-50"
+                        >
+                          Use latest
+                        </button>
+                      )
+                    }
+                    return <span className="text-xs font-medium text-slate-400">Viewing</span>
+                  },
+                },
+              ]}
+              rows={leaseDraftTableRows}
+            />
+          </div>
+        ) : null}
+
+        {!leaseLoading && leaseDrafts.length === 0 ? (
           <div className="rounded-[24px] border border-slate-200 bg-slate-50 px-5 py-5 text-center text-sm text-slate-600">
             Your manager will post your lease here when it is ready.
           </div>
-        ) : (
+        ) : null}
+
+        {!leaseLoading && moveInPrereqsMet && activeLeaseDraft ? (
           <div className="rounded-[24px] border border-[#2563eb]/20 bg-[linear-gradient(135deg,#eff6ff_0%,#ffffff_100%)] p-5">
             {signWithoutMoveInPayOverride && (!securityDepositPaid || !firstMonthRentPaid) ? (
               <div className="mb-4 rounded-2xl border border-blue-200 bg-blue-50/90 px-4 py-3 text-sm text-blue-950">
@@ -2803,7 +2884,7 @@ function LeasingPanel({ resident, payments, onOpenPayments }) {
                 <div className="mt-2 flex flex-wrap items-center gap-2">
                   <span className={`inline-flex rounded-full border px-2.5 py-0.5 text-[11px] font-bold ${
                     leaseStatus === 'Signed' ? 'border-emerald-200 bg-emerald-50 text-emerald-800' :
-                    leaseStatus === 'Published' ? 'border-blue-200 bg-blue-50 text-blue-800' :
+                    leaseStatus === 'Published' || leaseStatus === 'Ready for Signature' ? 'border-blue-200 bg-blue-50 text-blue-800' :
                     'border-slate-200 bg-slate-100 text-slate-600'
                   }`}>
                     {residentLeaseStatusDisplay(leaseStatus)}
@@ -2828,11 +2909,29 @@ function LeasingPanel({ resident, payments, onOpenPayments }) {
                   type="button"
                   onClick={() => setShowLeaseText((v) => !v)}
                   disabled={!leaseBodyAllowed}
-                  title={leaseBodyAllowed ? '' : 'Available once your manager publishes the lease'}
+                  title={leaseBodyAllowed ? '' : 'Available once your manager sends your lease for signature'}
                   className="shrink-0 rounded-full bg-[linear-gradient(180deg,#2f76ff_0%,#2450eb_100%)] px-5 py-2.5 text-sm font-semibold text-white transition hover:brightness-105 disabled:cursor-not-allowed disabled:opacity-40"
                 >
                   {showLeaseText ? 'Hide' : 'View lease'}
                 </button>
+                <button
+                  type="button"
+                  onClick={() => window.print()}
+                  disabled={!leaseBodyAllowed}
+                  title={leaseBodyAllowed ? '' : 'Available once your manager sends your lease for signature'}
+                  className="shrink-0 rounded-full border border-slate-200 bg-white px-5 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  Print
+                </button>
+                {typeof onNavigateTab === 'function' ? (
+                  <button
+                    type="button"
+                    onClick={() => onNavigateTab('inbox')}
+                    className="shrink-0 rounded-full border border-slate-200 bg-white px-5 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
+                  >
+                    Message manager
+                  </button>
+                ) : null}
               </div>
             </div>
             {!leaseBodyAllowed && (
@@ -2855,7 +2954,7 @@ function LeasingPanel({ resident, payments, onOpenPayments }) {
               } catch { /* use null */ }
 
               const isSigned = leaseStatus === 'Signed'
-              const isPublished = leaseStatus === 'Published'
+              const showSignPanel = isResidentLeaseSignable(leaseStatus)
               const signedBy = isSigned ? (activeLeaseDraft?.['Signature Text'] || '') : undefined
               const signedAt = isSigned ? (activeLeaseDraft?.['Signed At'] || '') : undefined
 
@@ -2885,7 +2984,7 @@ function LeasingPanel({ resident, payments, onOpenPayments }) {
                     </div>
                   )}
 
-                  {isPublished && leaseData ? (
+                  {showSignPanel && leaseData ? (
                     <LeaseSignPanel
                       leaseDraftId={activeLeaseDraft.id}
                       tenantName={leaseData.tenantName || resident.Name}
@@ -2917,7 +3016,7 @@ function LeasingPanel({ resident, payments, onOpenPayments }) {
               )
             })()}
           </div>
-        )}
+        ) : null}
 
         {canRequestLeaseExtension ? (
           <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
@@ -3441,10 +3540,16 @@ function Dashboard({ resident, onResidentUpdated, onSignOut }) {
             <PanelErrorBoundary>
               <WorkOrdersPanel
                 resident={resident}
+                payments={payments}
                 requests={visibleWorkOrders}
                 onRequestCreated={loadData}
                 onWorkOrderUpdated={loadData}
                 onRefresh={refreshWorkOrdersOnly}
+                onDataRefresh={loadData}
+                onOpenPayments={() => {
+                  setPaymentFocus('fees')
+                  handleNavigate('payments')
+                }}
               />
             </PanelErrorBoundary>
           ) : (
@@ -3453,7 +3558,15 @@ function Dashboard({ resident, onResidentUpdated, onSignOut }) {
         ) : null}
         {!loading && tab === 'leasing' ? (
           applicationUnlocked ? (
-            <LeasingPanel resident={resident} payments={payments} onOpenPayments={(focus = '') => { setPaymentFocus(focus); handleNavigate('payments') }} />
+            <LeasingPanel
+              resident={resident}
+              payments={payments}
+              onOpenPayments={(focus = '') => {
+                setPaymentFocus(focus)
+                handleNavigate('payments')
+              }}
+              onNavigateTab={handleNavigate}
+            />
           ) : (
             isRejected ? <ResidentRejectedGate /> : <ResidentPendingApprovalGate />
           )

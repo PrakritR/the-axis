@@ -9,7 +9,7 @@ Implementation lives mainly in `frontend/src/pages/Manager.jsx` (`CalendarTabPan
 ## What the calendar shows (two layers)
 
 1. **Availability (the grid you edit)**  
-   “Free” slots for a **selected owner** — either an **admin profile** (internal meetings) or a **property** (tours / house availability). This is **not** stored in `Scheduling` until someone books; it is stored as **encoded text** on the admin row or property row (see below).
+   “Free” slots for a **selected owner** — either an **admin** (internal meetings) or a **property** (tours). Prefer **structured Airtable tables** (see `docs/AIRTABLE_SETUP_PROMPT.md` §2.7–2.8): manager **tour** windows in one table; admin **meeting** windows in a **separate** table when `AIRTABLE_ADMIN_MEETING_AVAILABILITY_TABLE` names a different table. Legacy mode still supports **long text** on `Properties` / `Admin Profile`, and (when tables are not split) **`Scheduling`** rows with `Type` = Meeting Availability for admin open hours.
 
 2. **Booked items (dots / list for a day)**  
    Things that already have a date:
@@ -51,23 +51,21 @@ The UI merges scheduling + work-order-derived events into one `bookedByDate` map
 
 ---
 
-## Availability storage (the weekly grid)
+## Availability storage (structured tables + legacy text)
 
-This is **separate** from `Scheduling`. Saving “availability” **updates a long text field** that encodes weekly free slots (same general idea as public tour parsing on the marketing site).
+Open slots are **not** tour/meeting bookings until a visitor submits; bookings always land in **`Scheduling`**.
 
-### Admin portal (`calendarMode="admin"`)
+### Admin portal (`loadAllSchedulingRows` / internal calendar)
 
-- **Source:** **`Admin Profile`** table (name overridable with `VITE_AIRTABLE_ADMIN_PROFILE_TABLE`).
-- **Rows:** One row per internal contact with a valid **Email**; dropdown lists those profiles.
-- **Write field:** **`Meeting Availability`** (PATCH from `updateAdminMeetingAvailability` in `adminPortalAirtable.js`).  
-  Reads also merge **`Calendar Availability`** and optional **`Notes`** lines for “Meeting Availability”.
-- **Who sees what:** Admin calendar loads **all** scheduling rows + can edit **meeting** availability per admin profile.
+- **Preferred:** **`Admin Meeting Availability`** table (§2.8) when its name differs from the manager tour table — rows are global (empty property fields) per admin email; saves go to this table.
+- **Legacy:** **`Admin Profile`** — long text **`Meeting Availability`** (and `Calendar Availability` / `Notes` lines) when no structured rows apply for that admin.
+- **Legacy per-day:** `Scheduling` rows with **`Type`** = `Meeting Availability` when §2.8 is **not** split out.
+- **Who sees what:** Admin calendar still loads **all** `Scheduling` rows for booked tours/meetings; availability paint uses the sources above.
 
-### Manager portal (`calendarMode="manager"`)
+### Manager portal (property calendar)
 
-- **Source:** **`Properties`** records linked to that manager.
-- **Dropdown:** Properties where the manager is assigned **or** the property name is in the allowed list (assigned names, including not-yet-approved if linked).
-- **Write path:** Updates **`Notes`** on the property via `updatePropertyAdmin`, embedding / updating a **`Tour Availability:`** line inside the multiline notes (see `buildTourNotesText` / `extractMultilineNoteValue` patterns in `Manager.jsx`).
+- **Preferred:** **`Manager Availability`** (or renamed tour table, §2.7) with per-property + recurring rows when `VITE_USE_MANAGER_AVAILABILITY_TABLE` is enabled.
+- **Legacy:** **`Properties`** — `Tour Availability` field or **`Tour Availability:`** block inside **`Notes`** (see `Manager.jsx` / `tour.js`).
 - **Scope:** Scheduling fetch + work orders are limited to that manager’s emails and property names.
 
 ---
@@ -83,9 +81,9 @@ This is **separate** from `Scheduling`. Saving “availability” **updates a lo
 ### Staff sets “when we’re free”
 
 1. Open **Calendar** in **Manager** or **Admin** portal.  
-2. Pick **property** or **admin profile** in the dropdown.  
-3. Edit the week grid, **Save availability** → PATCH **Properties.Notes** (tour line) or **Admin Profile.Meeting Availability**.  
-4. That text is what tour/meeting UIs can use to offer slots (alongside any public parsing on `Contact.jsx`).
+2. Pick **property** (manager) or use the **admin** org-wide calendar.  
+3. Edit availability → saves to **structured tables** when configured, else legacy **Notes** / **Meeting Availability** text.  
+4. Public **Contact** + `/api/tour` / `/api/meeting` merge structured rows, legacy text, and existing **`Scheduling`** bookings (see `shared/manager-availability-merge.js`).
 
 ---
 

@@ -27,6 +27,12 @@ function signWithoutOverrideValueTruthy(v) {
   if (v === false || v === 0 || v === null) return false
   if (v === undefined) return false
   if (typeof v === 'number' && Number.isFinite(v)) return v !== 0
+  /** Airtable single select / some field types return `{ name: 'Yes' }` */
+  if (v && typeof v === 'object' && !Array.isArray(v)) {
+    if (typeof v.name === 'string' && v.name.trim()) return signWithoutOverrideValueTruthy(v.name)
+    if (typeof v.state === 'string' && v.state.trim()) return signWithoutOverrideValueTruthy(v.state)
+  }
+  if (Array.isArray(v) && v.length === 1) return signWithoutOverrideValueTruthy(v[0])
   const s = String(v).trim().toLowerCase()
   if (!s) return false
   if (['yes', 'true', 'on', 'checked', 'y', '✓', 'check', 'enabled', '1'].includes(s)) return true

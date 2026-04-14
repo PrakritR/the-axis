@@ -252,9 +252,13 @@ export function buildStructuredLeasePdfHtml(leaseData = {}, opts = {}) {
   const monthlyTotalFmt = e(d.monthlyTotalFmt || fmtMoney((d.monthlyRent || 0) + (d.utilitiesFee || d.utilityFee || 0)))
   const depositFmt      = e(d.securityDepositFmt || fmtMoney(d.securityDeposit))
   const adminFeeFmt     = e(d.adminFeeFmt     || fmtMoney(d.adminFee))
-  const breakLeaseFee   = e(d.breakLeaseFee   || '$900.00')
+  const utilityFeeNum = Number(d.utilityFee ?? d.utilitiesFee ?? 0) || 0
+  const adminFeeNum = Number(d.adminFee ?? 0) || 0
+  const proratedUtilNum = Number(d.proratedUtility ?? 0) || 0
+  const breakLeaseAmt = Number(d.breakLeaseFeeAmount ?? 0) || 0
+  const breakLeaseFeeTxt = breakLeaseAmt > 0 && d.breakLeaseFee ? e(d.breakLeaseFee) : ''
 
-  // ── Summary rows
+  // ── Summary rows (omit fabricated line items — amounts must come from application / property / overrides)
   const summaryRows = [
     ['Agreement Date', agreementDate],
     ['Landlord',       landlordName],
@@ -265,18 +269,20 @@ export function buildStructuredLeasePdfHtml(leaseData = {}, opts = {}) {
     ['Lease Start',    e(d.leaseStartFmt  || '—')],
     ['Lease End',      d.isMonthToMonth ? 'Month-to-Month' : e(d.leaseEndFmt || '—')],
     ['Monthly Rent',   monthlyRentFmt],
-    ['Utilities Fee',  utilityFeeFmt],
+    ...(utilityFeeNum > 0 ? [['Utilities Fee', utilityFeeFmt]] : []),
     ['Monthly Total',  monthlyTotalFmt],
     ['Security Deposit', depositFmt],
     [
       "Last Month's Rent (prepaid)",
       (d.lastMonthRent || 0) > 0 ? e(d.lastMonthRentFmt || fmtMoney(d.lastMonthRent)) : 'Not collected at move-in',
     ],
-    ['Admin Fee',      adminFeeFmt],
-    ...(d.proratedDays > 0 ? [
-      [`Prorated Rent (${d.proratedDays} days)`, e(d.proratedRentFmt || fmtMoney(d.proratedRent))],
-      ['Prorated Utilities', e(d.proratedUtilityFmt || fmtMoney(d.proratedUtility))],
-    ] : []),
+    ...(adminFeeNum > 0 ? [['Admin Fee', adminFeeFmt]] : []),
+    ...(d.proratedDays > 0
+      ? [
+          [`Prorated Rent (${d.proratedDays} days)`, e(d.proratedRentFmt || fmtMoney(d.proratedRent))],
+          ...(proratedUtilNum > 0 ? [['Prorated Utilities', e(d.proratedUtilityFmt || fmtMoney(d.proratedUtility))]] : []),
+        ]
+      : []),
     ['Total Move-In', e(d.totalMoveInFmt || fmtMoney(d.totalMoveIn))],
   ]
 
@@ -313,11 +319,17 @@ export function buildStructuredLeasePdfHtml(leaseData = {}, opts = {}) {
   ].join('')
 
   // ── Prorated paragraph
-  const proratedHtml = d.proratedDays > 0 ? `
-    <p>For the first partial month, Resident shall pay a prorated rent of
+  const proratedHtml =
+    d.proratedDays > 0
+      ? proratedUtilNum > 0
+        ? `<p>For the first partial month, Resident shall pay a prorated rent of
     <strong>${e(d.proratedRentFmt || fmtMoney(d.proratedRent))}</strong> and a prorated utilities fee of
     <strong>${e(d.proratedUtilityFmt || fmtMoney(d.proratedUtility))}</strong>, covering
-    ${d.proratedDays} days (${e(d.leaseStartFmt)} through end of month).</p>` : ''
+    ${d.proratedDays} days (${e(d.leaseStartFmt)} through end of month).</p>`
+        : `<p>For the first partial month, Resident shall pay a prorated rent of
+    <strong>${e(d.proratedRentFmt || fmtMoney(d.proratedRent))}</strong>, covering
+    ${d.proratedDays} days (${e(d.leaseStartFmt)} through end of month).</p>`
+      : ''
 
   // ── Co-signer line
   const cosignerLine = cosignerName
@@ -425,9 +437,14 @@ export function buildStructuredLeasePdfHtml(leaseData = {}, opts = {}) {
     <!-- 3 -->
     <div class="section">
       <div class="section-title">3. Rent and Payment Terms</div>
-      <p>Resident agrees to pay <strong>${monthlyRentFmt}</strong> per month as base rent, plus a monthly
+      <p>${
+        utilityFeeNum > 0
+          ? `Resident agrees to pay <strong>${monthlyRentFmt}</strong> per month as base rent, plus a monthly
       utilities fee of <strong>${utilityFeeFmt}</strong>, for a combined monthly total of
-      <strong>${monthlyTotalFmt}</strong>. Rent is due on the 1st day of each calendar month.</p>
+      <strong>${monthlyTotalFmt}</strong>. Rent is due on the 1st day of each calendar month.`
+          : `Resident agrees to pay <strong>${monthlyRentFmt}</strong> per month as base rent (utilities included in rent
+      unless a separate utilities charge appears in the Agreement Summary). Rent is due on the 1st day of each calendar month.`
+      }</p>
       <p>Rent shall be paid by ACH bank transfer, Zelle, Venmo, or another method approved in writing by Landlord.
       Cash payments are not accepted.</p>
       <p>If rent is not received by the ${LATE_GRACE_DAYS}th day of the month, a late fee of
@@ -455,8 +472,13 @@ export function buildStructuredLeasePdfHtml(leaseData = {}, opts = {}) {
     <!-- 5 -->
     <div class="section">
       <div class="section-title">5. Utilities and Services Included</div>
-      <p>The monthly utilities fee of <strong>${utilityFeeFmt}</strong> covers Resident&rsquo;s proportionate share of
-      the following services provided at the property:</p>
+      ${
+        utilityFeeNum > 0
+          ? `<p>The monthly utilities fee of <strong>${utilityFeeFmt}</strong> covers Resident&rsquo;s proportionate share of
+      the following services provided at the property:</p>`
+          : `<p>Base rent includes the household utility arrangement described at move-in and in any property-specific addenda.
+      The following services are associated with the property:</p>`
+      }
       <ul>
         ${amenitiesHtml}
       </ul>
@@ -575,8 +597,10 @@ export function buildStructuredLeasePdfHtml(leaseData = {}, opts = {}) {
       return the Premises in substantially the same condition as received, allowing for normal wear and tear.
       Resident shall return all keys, access fobs, and parking passes to Landlord.</p>
       <p>If Resident breaks the lease prior to the end of the fixed term without Landlord&rsquo;s written consent, Resident
-      shall be liable for a lease-break fee of <strong>${breakLeaseFee}</strong> and any unpaid rent
-      through the earlier of the end of the lease term or the date a new qualified tenant takes possession.</p>
+      shall be liable for actual damages and unpaid obligations permitted by Washington law, including unpaid rent
+      through the earlier of the end of the lease term or the date a new qualified tenant takes possession${
+        breakLeaseFeeTxt ? `, and a stated lease-break fee of <strong>${breakLeaseFeeTxt}</strong>` : ''
+      }.</p>
     </div>
 
     <!-- 15 -->

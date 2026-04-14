@@ -87,18 +87,18 @@ export default function LeaseHTMLTemplate({ leaseData = {}, signedBy, signedAt, 
           <Row label="Lease Start" value={d.leaseStartFmt} />
           <Row label="Lease End" value={d.isMonthToMonth ? 'Month-to-Month' : d.leaseEndFmt} />
           <Row label="Monthly Rent" value={d.monthlyRentFmt} />
-          <Row label="Utilities Fee" value={d.utilityFeeFmt} />
+          {(d.utilityFee || 0) > 0 ? <Row label="Utilities Fee" value={d.utilityFeeFmt} /> : null}
           <Row label="Monthly Total" value={d.monthlyTotalFmt} />
           <Row label="Security Deposit" value={d.securityDepositFmt} />
           <Row
             label="Last Month's Rent (prepaid)"
             value={(d.lastMonthRent || 0) > 0 ? d.lastMonthRentFmt : 'Not collected at move-in'}
           />
-          <Row label="Admin Fee" value={d.adminFeeFmt} />
+          {(d.adminFee || 0) > 0 ? <Row label="Admin Fee" value={d.adminFeeFmt} /> : null}
           {d.proratedDays > 0 ? (
             <>
               <Row label={`Prorated Rent (${d.proratedDays} days)`} value={d.proratedRentFmt} />
-              <Row label="Prorated Utilities" value={d.proratedUtilityFmt} />
+              {(d.proratedUtility || 0) > 0 ? <Row label="Prorated Utilities" value={d.proratedUtilityFmt} /> : null}
             </>
           ) : null}
           <Row label="Total Move-In" value={d.totalMoveInFmt} />
@@ -135,9 +135,19 @@ export default function LeaseHTMLTemplate({ leaseData = {}, signedBy, signedAt, 
         {/* 3 */}
         <Section number="3" title="Rent and Payment Terms">
           <P>
-            Resident agrees to pay <strong>{d.monthlyRentFmt || '$0.00'}</strong> per month as base rent, plus a monthly
-            utilities fee of <strong>{d.utilityFeeFmt || '$0.00'}</strong>, for a combined monthly total of{' '}
-            <strong>{d.monthlyTotalFmt || '$0.00'}</strong>. Rent is due on the 1st day of each calendar month.
+            {(d.utilityFee || 0) > 0 ? (
+              <>
+                Resident agrees to pay <strong>{d.monthlyRentFmt || '$0.00'}</strong> per month as base rent, plus a
+                monthly utilities fee of <strong>{d.utilityFeeFmt || '$0.00'}</strong>, for a combined monthly total of{' '}
+                <strong>{d.monthlyTotalFmt || '$0.00'}</strong>. Rent is due on the 1st day of each calendar month.
+              </>
+            ) : (
+              <>
+                Resident agrees to pay <strong>{d.monthlyRentFmt || '$0.00'}</strong> per month as base rent (utilities
+                included in rent unless a separate utilities charge is listed in the Agreement Summary). Rent is due on
+                the 1st day of each calendar month.
+              </>
+            )}
           </P>
           <P>
             Rent shall be paid by ACH bank transfer, Zelle, Venmo, or another method approved in writing by Landlord.
@@ -150,9 +160,18 @@ export default function LeaseHTMLTemplate({ leaseData = {}, signedBy, signedAt, 
           </P>
           {d.proratedDays > 0 ? (
             <P>
-              For the first partial month, Resident shall pay a prorated rent of <strong>{d.proratedRentFmt}</strong> and
-              a prorated utilities fee of <strong>{d.proratedUtilityFmt}</strong>, covering {d.proratedDays} days
-              ({d.leaseStartFmt} through end of month).
+              {(d.proratedUtility || 0) > 0 ? (
+                <>
+                  For the first partial month, Resident shall pay a prorated rent of <strong>{d.proratedRentFmt}</strong>{' '}
+                  and a prorated utilities fee of <strong>{d.proratedUtilityFmt}</strong>, covering {d.proratedDays} days
+                  ({d.leaseStartFmt} through end of month).
+                </>
+              ) : (
+                <>
+                  For the first partial month, Resident shall pay a prorated rent of <strong>{d.proratedRentFmt}</strong>,
+                  covering {d.proratedDays} days ({d.leaseStartFmt} through end of month).
+                </>
+              )}
             </P>
           ) : null}
           <P>
@@ -180,12 +199,20 @@ export default function LeaseHTMLTemplate({ leaseData = {}, signedBy, signedAt, 
 
         {/* 5 */}
         <Section number="5" title="Utilities and Services Included">
-          <P>
-            The monthly utilities fee of <strong>{d.utilityFeeFmt || '$0.00'}</strong> covers the Resident's proportionate
-            share of electricity, gas, water, sewer, and garbage collection, as well as high-speed internet (Wi-Fi).
-            Landlord shall maintain all utility accounts in Landlord's name. Resident agrees not to add or change any
-            utilities without prior written consent of Landlord.
-          </P>
+          {(d.utilityFee || 0) > 0 ? (
+            <P>
+              The monthly utilities fee of <strong>{d.utilityFeeFmt || '$0.00'}</strong> covers the Resident&apos;s
+              proportionate share of electricity, gas, water, sewer, and garbage collection, as well as high-speed
+              internet (Wi-Fi). Landlord shall maintain all utility accounts in Landlord&apos;s name. Resident agrees not
+              to add or change any utilities without prior written consent of Landlord.
+            </P>
+          ) : (
+            <P>
+              Base rent includes the household utility arrangement described at move-in and in any property-specific
+              addenda. Landlord shall maintain shared utility accounts unless otherwise agreed in writing. Resident agrees
+              not to add or change any utilities without prior written consent of Landlord.
+            </P>
+          )}
           <P>
             Resident is responsible for personal streaming services, phone plans, and any other personal communications
             services not explicitly listed above.
@@ -352,9 +379,16 @@ export default function LeaseHTMLTemplate({ leaseData = {}, signedBy, signedAt, 
             Resident shall return all keys, access fobs, and parking passes to Landlord.
           </P>
           <P>
-            If Resident breaks the lease prior to the end of the fixed term without Landlord's written consent, Resident
-            shall be liable for a lease-break fee of <strong>{d.breakLeaseFee || '$900.00'}</strong> and any unpaid rent
-            through the earlier of the end of the lease term or the date a new qualified tenant takes possession.
+            If Resident breaks the lease prior to the end of the fixed term without Landlord&apos;s written consent,
+            Resident shall be liable for actual damages and unpaid obligations permitted by Washington law, including
+            unpaid rent through the earlier of the end of the lease term or the date a new qualified tenant takes
+            possession
+            {(d.breakLeaseFeeAmount || 0) > 0 && d.breakLeaseFee ? (
+              <>
+                , and a stated lease-break fee of <strong>{d.breakLeaseFee}</strong>
+              </>
+            ) : null}
+            .
           </P>
         </Section>
 

@@ -141,6 +141,7 @@ export function PortalEmptyVisual({ variant, className = '' }) {
     switch (v) {
       case 'house':
         return <PortalNavGlyph tabId="properties" className="h-7 w-7" />
+      case 'applications':
       case 'clipboard':
         return <PortalNavGlyph tabId="applications" className="h-7 w-7" />
       case 'payments':
