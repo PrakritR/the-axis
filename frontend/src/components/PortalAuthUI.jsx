@@ -1,6 +1,7 @@
 import React, { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { PortalNavGlyph } from './portalNavIcons.jsx'
+import { portalNavIconBackdropClass } from '../lib/portalLayout.js'
 
 function cx(...values) {
   return values.filter(Boolean).join(' ')
@@ -40,18 +41,21 @@ export function PortalSegmentedControl({ tabs, active, onChange }) {
       {tabs.map((entry) => {
         const [id, label, iconKey] = entry
         const glyphId = iconKey || (id === 'resident' ? 'hub-resident' : id === 'manager' ? 'hub-manager' : id === 'admin' ? 'hub-admin' : id)
+        const isActive = active === id
         return (
           <button
             key={id}
             type="button"
             onClick={() => onChange(id)}
             className={cx(
-              'flex flex-1 items-center justify-center gap-2 rounded-[18px] px-3 py-3 text-base font-semibold transition',
-              active === id ? 'bg-white text-slate-900 shadow-sm ring-2 ring-[#2563eb]' : 'text-slate-500 hover:text-slate-900'
+              'flex flex-1 flex-col items-center gap-1.5 rounded-[18px] px-2 py-3 text-sm font-semibold transition',
+              isActive ? 'bg-white text-slate-900 shadow-sm ring-2 ring-[#2563eb]/35' : 'text-slate-500 hover:text-slate-900'
             )}
           >
-            <PortalNavGlyph tabId={glyphId} className="h-5 w-5 shrink-0 opacity-90" />
-            <span>{label}</span>
+            <span className={portalNavIconBackdropClass({ active: isActive, variant: 'auth' })}>
+              <PortalNavGlyph tabId={glyphId} className="h-5 w-5 shrink-0 opacity-95" />
+            </span>
+            <span className="text-center leading-tight">{label}</span>
           </button>
         )
       })}
