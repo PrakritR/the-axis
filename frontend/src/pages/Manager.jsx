@@ -5150,8 +5150,8 @@ export function CalendarTabPanel({ manager, allowedPropertyNames, loadAllSchedul
   const [meetOpen, setMeetOpen] = useState(false)
   const [loading, setLoading] = useState(true)
   const [properties, setProperties] = useState([])
-  // Remove weekly free logic, use only explicit day-by-day availability
-  const [dayAvailabilityByProperty, setDayAvailabilityByProperty] = useState({})
+  /** Per-property weekly tour-availability grid (half-hour indices by weekday). */
+  const [weeklyFreeByProperty, setWeeklyFreeByProperty] = useState({})
   const [selectedPropertyId, setSelectedPropertyId] = useState('')
   const [availSaving, setAvailSaving] = useState(false)
   const [adminDayRanges, setAdminDayRanges] = useState([])
@@ -5298,11 +5298,15 @@ export function CalendarTabPanel({ manager, allowedPropertyNames, loadAllSchedul
     [approvedAssignedProperties],
   )
 
-  // Only use explicit day-by-day availability
-  const selectedDayAvailability = useMemo(
-    () => (dayAvailabilityByProperty[selectedPropertyId]?.[selectedDateKey] || []),
-    [dayAvailabilityByProperty, selectedPropertyId, selectedDateKey],
+  const selectedWeeklyFree = useMemo(
+    () => weeklyFreeByProperty[selectedPropertyId] || emptyWeeklyFreeArrays(),
+    [weeklyFreeByProperty, selectedPropertyId],
   )
+
+  const selectedDayAvailability = useMemo(() => {
+    const ranges = timeRangesFromWeeklyFree(selectedWeeklyFree, weekdayAbbrFromDateKey(selectedDateKey))
+    return ranges.map((r) => ({ ...r, label: formatTimeRangeLabel(r) }))
+  }, [selectedWeeklyFree, selectedDateKey])
 
   const meetModalApprovedPropertyNames = useMemo(
     () => availabilityOwnerOptions.map((option) => option.label),
@@ -5319,6 +5323,20 @@ export function CalendarTabPanel({ manager, allowedPropertyNames, loadAllSchedul
     }),
     [schedulingRows, selectedProperty],
   )
+
+  const bookedByDate = useMemo(() => {
+    const map = new Map()
+    for (const row of schedulingRowsForView || []) {
+      const t = String(row?.Type || '').trim().toLowerCase()
+      if (t === 'availability' || t === 'meeting availability') continue
+      const dk = String(row?.['Preferred Date'] || '').trim().slice(0, 10)
+      if (!dk) continue
+      const list = map.get(dk) || []
+      list.push(row)
+      map.set(dk, list)
+    }
+    return map
+  }, [schedulingRowsForView])
 
   // Show all scheduled items and availability for each day
   const scheduledItemsForSelectedDay = useMemo(() => {
