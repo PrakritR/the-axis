@@ -848,10 +848,22 @@ export async function createWorkOrder({
         const record = mapRecord(data)
 
         if (photoFile) {
-          try {
-            await uploadAttachmentToRecord(TABLES.workOrders, record.id, 'Photo', photoFile)
-          } catch (err) {
-            console.warn('Photo upload failed (work order was still created):', err.message)
+          const photoFieldCandidates = ['Photo', 'Photos', 'Attachments', 'Images', 'Image', 'Pictures']
+          let uploaded = false
+          for (const fieldName of photoFieldCandidates) {
+            try {
+              await uploadAttachmentToRecord(TABLES.workOrders, record.id, fieldName, photoFile)
+              uploaded = true
+              break
+            } catch (err) {
+              if (!isUnknownAttachmentFieldError(err?.message)) {
+                console.warn(`Photo upload failed on field "${fieldName}" (work order was still created):`, err.message)
+                break
+              }
+            }
+          }
+          if (!uploaded) {
+            console.warn('Photo upload failed: no matching attachment field on Work Orders (tried Photo, Photos, …).')
           }
         }
 

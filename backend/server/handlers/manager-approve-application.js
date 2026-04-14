@@ -128,11 +128,13 @@ export default async function handler(req, res) {
         applicationRecordId: recordId,
         generatedBy: managerName,
         ownerId,
+        // Always rebuild from the application so each approval produces an up-to-date draft in Lease Drafts.
+        forceRegenerate: true,
       })
       draft = result.draft
       created = result.created
     } catch (draftErr) {
-      console.warn('[manager-approve-application] Lease draft skipped:', draftErr?.message || draftErr)
+      console.error('[manager-approve-application] Lease draft failed:', draftErr?.message || draftErr)
     }
 
     return res.status(200).json({

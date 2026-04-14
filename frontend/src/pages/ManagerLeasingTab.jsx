@@ -138,6 +138,16 @@ async function fetchUnreadNotificationCount(recipientRecordId) {
 }
 
 // ─── Status filter options ────────────────────────────────────────────────────
+/** Match manager portal Work orders / Calendar property toolbar styling. */
+const LEASE_PILL_SELECT_WRAP_CLS = 'relative min-w-0 flex-1 sm:min-w-[220px] sm:flex-none'
+const LEASE_PILL_SELECT_CLS =
+  'h-[42px] w-full min-w-0 cursor-pointer appearance-none rounded-full border border-slate-200 bg-white py-2.5 pl-4 pr-10 text-sm font-medium text-slate-800 transition focus:border-[#2563eb] focus:outline-none focus:ring-2 focus:ring-[#2563eb]/20 disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-400'
+const LEASE_PILL_SELECT_CHEVRON = (
+  <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-slate-400" aria-hidden>
+    ▾
+  </span>
+)
+
 const STATUS_FILTER_ITEMS = [
   { id: 'all', label: 'All Leases', match: () => true },
   {
@@ -180,6 +190,7 @@ export default function ManagerLeasingTab({ manager, allowedPropertyNames }) {
   const [showChangeBox, setShowChangeBox] = useState(false)
   const [changeRequestText, setChangeRequestText] = useState('')
   const [statusFilter, setStatusFilter] = useState('all')
+  const [propertyFilter, setPropertyFilter] = useState('')
   const [unreadCount, setUnreadCount] = useState(0)
 
   const ownerId = manager?.id || manager?.airtableRecordId || ''
@@ -294,10 +305,45 @@ export default function ManagerLeasingTab({ manager, allowedPropertyNames }) {
     return () => window.removeEventListener('axis:lease-drafts-changed', onDraftsChanged)
   }, [loadDrafts])
 
+  const propertyChoices = useMemo(() => {
+    const map = new Map()
+    const allowed = Array.isArray(allowedPropertyNames)
+      ? allowedPropertyNames
+      : allowedPropertyNames instanceof Set
+        ? [...allowedPropertyNames]
+        : []
+    for (const name of allowed || []) {
+      const display = String(name || '').trim()
+      if (!display) continue
+      const value = display.toLowerCase()
+      if (!map.has(value)) map.set(value, display)
+    }
+    for (const d of drafts) {
+      const display = String(d['Property'] || '').trim()
+      if (!display) continue
+      const value = display.toLowerCase()
+      if (!map.has(value)) map.set(value, display)
+    }
+    return [...map.entries()]
+      .sort((a, b) => a[1].localeCompare(b[1], undefined, { sensitivity: 'base' }))
+      .map(([value, display]) => ({ value, display }))
+  }, [drafts, allowedPropertyNames])
+
+  useEffect(() => {
+    if (!propertyFilter) return
+    if (!propertyChoices.some((c) => c.value === propertyFilter)) setPropertyFilter('')
+  }, [propertyFilter, propertyChoices])
+
   const visibleDrafts = useMemo(() => {
     const filterFn = STATUS_FILTER_ITEMS.find(f => f.id === statusFilter)?.match ?? (() => true)
-    return drafts.filter(d => filterFn(d['Status'] || ''))
-  }, [drafts, statusFilter])
+    let rows = drafts.filter((d) => filterFn(d['Status'] || ''))
+    if (propertyFilter) {
+      rows = rows.filter(
+        (d) => String(d['Property'] || '').trim().toLowerCase() === propertyFilter,
+      )
+    }
+    return rows
+  }, [drafts, statusFilter, propertyFilter])
 
   const statusCounts = useMemo(() => {
     return STATUS_FILTER_ITEMS.reduce((acc, f) => {
@@ -396,7 +442,23 @@ export default function ManagerLeasingTab({ manager, allowedPropertyNames }) {
         <div>
           <h1 className="text-2xl font-black text-slate-900">Leases</h1>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex w-full min-w-0 flex-wrap items-center gap-2 sm:w-auto sm:flex-nowrap">
+          <div className={LEASE_PILL_SELECT_WRAP_CLS}>
+            <select
+              value={propertyFilter}
+              onChange={(e) => setPropertyFilter(e.target.value)}
+              className={LEASE_PILL_SELECT_CLS}
+              aria-label="Filter leases by property"
+            >
+              <option value="">All properties</option>
+              {propertyChoices.map(({ value, display }) => (
+                <option key={value} value={value}>
+                  {display}
+                </option>
+              ))}
+            </select>
+            {LEASE_PILL_SELECT_CHEVRON}
+          </div>
           {unreadCount > 0 && (
             <span className="flex items-center gap-1.5 rounded-full bg-orange-100 px-3 py-1 text-xs font-bold text-orange-700">
               <span className="h-1.5 w-1.5 rounded-full bg-orange-500" />
@@ -407,7 +469,7 @@ export default function ManagerLeasingTab({ manager, allowedPropertyNames }) {
             type="button"
             onClick={loadDrafts}
             disabled={loading}
-            className="rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-50 disabled:opacity-50"
+            className="h-[42px] shrink-0 rounded-full border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-600 transition hover:bg-slate-50 disabled:opacity-50"
           >
             {loading ? 'Loading…' : 'Refresh'}
           </button>

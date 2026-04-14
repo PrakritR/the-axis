@@ -70,6 +70,7 @@ import {
   portalAuthInputCls,
 } from '../components/PortalAuthUI'
 import PortalShell, { DataTable, StatusPill } from '../components/PortalShell'
+import { portalChromeSecondaryButtonClass } from '../lib/portalLayout.js'
 import { PortalEmptyVisual } from '../components/portalNavIcons.jsx'
 import Modal from '../components/Modal'
 import AddPropertyWizard from '../components/AddPropertyWizard'
@@ -3529,6 +3530,30 @@ function workOrderLinkedId(woField) {
   return ''
 }
 
+/** Airtable attachment arrays from resident-submitted work orders (field names vary by base). */
+function workOrderPhotoAttachmentUrls(record) {
+  if (!record || typeof record !== 'object') return []
+  const fieldNames = ['Photo', 'Photos', 'Attachments', 'Images', 'Image', 'Pictures']
+  const urls = []
+  const seen = new Set()
+  for (const key of fieldNames) {
+    const v = record[key]
+    if (!Array.isArray(v)) continue
+    for (const item of v) {
+      const url =
+        item && typeof item === 'object' && typeof item.url === 'string'
+          ? item.url.trim()
+          : typeof item === 'string' && item.startsWith('http')
+            ? item.trim()
+            : ''
+      if (!url || seen.has(url)) continue
+      seen.add(url)
+      urls.push(url)
+    }
+  }
+  return urls
+}
+
 function parseCalendarDay(val) {
   if (!val) return null
   const m = String(val).match(/^(\d{4}-\d{2}-\d{2})/)
@@ -3762,6 +3787,7 @@ function WorkOrdersTabPanel({ allowedPropertyNames, allowedPropertyIds }) {
   const [loadError, setLoadError] = useState('')
   const [saving, setSaving] = useState(false)
   const [scheduledVisitDate, setScheduledVisitDate] = useState('')
+  const woDetailPhotoUrls = useMemo(() => workOrderPhotoAttachmentUrls(record), [record])
   const tomorrowIso = useMemo(() => {
     const next = new Date()
     next.setHours(0, 0, 0, 0)
@@ -3880,6 +3906,15 @@ function WorkOrdersTabPanel({ allowedPropertyNames, allowedPropertyIds }) {
 
   const residentChoices = useMemo(() => {
     const map = new Map()
+    const scopedIds = buildManagerScopedResidentIdSet([...residentsById.values()], scopeLower, scopeIds)
+    for (const rid of scopedIds) {
+      const res = residentsById.get(rid)
+      if (!res) continue
+      const display = String(res?.Name || res?.['Resident Name'] || '').trim()
+      if (!display) continue
+      const value = display.toLowerCase()
+      if (!map.has(value)) map.set(value, display)
+    }
     for (const row of list) {
       const display = String(residentLabelForWorkOrder(row)).trim()
       if (!display) continue
@@ -3889,7 +3924,7 @@ function WorkOrdersTabPanel({ allowedPropertyNames, allowedPropertyIds }) {
     return [...map.entries()]
       .sort((a, b) => a[1].localeCompare(b[1], undefined, { sensitivity: 'base' }))
       .map(([value, display]) => ({ value, display }))
-  }, [list, residentLabelForWorkOrder])
+  }, [list, residentLabelForWorkOrder, residentsById, scopeLower, scopeIds])
 
   useEffect(() => {
     if (!propertyFilter) return
@@ -4185,6 +4220,25 @@ function WorkOrdersTabPanel({ allowedPropertyNames, allowedPropertyIds }) {
               <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">Issue details</div>
               <p className="mt-2 whitespace-pre-wrap text-sm leading-7 text-slate-700">{safePortalText(record.Description, 'No description provided')}</p>
             </div>
+
+            {woDetailPhotoUrls.length > 0 ? (
+              <div className="mt-5">
+                <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">Photos</div>
+                <div className="mt-2 flex flex-wrap gap-2">
+                  {woDetailPhotoUrls.map((src) => (
+                    <a
+                      key={src}
+                      href={src}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="block overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm"
+                    >
+                      <img src={src} alt="Work order attachment" className="h-28 w-28 object-cover sm:h-36 sm:w-36" />
+                    </a>
+                  ))}
+                </div>
+              </div>
+            ) : null}
 
             <form onSubmit={handleSave} className="mt-5 space-y-4">
               <div className="grid gap-4 sm:grid-cols-2">
@@ -6038,13 +6092,12 @@ function ManagerDashboard({ manager: managerProp, openDraftId, onOpenDraft, onCl
             type="button"
             onClick={handleBillingPortal}
             disabled={billingLoading}
-            className="rounded-xl border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-50 disabled:opacity-50"
+            className={`${portalChromeSecondaryButtonClass} disabled:opacity-50`}
           >
             {billingLoading ? 'Opening…' : 'Billing'}
           </button>
         }
       >
-        <div className="mx-auto w-full max-w-[1600px]">
         {dashView === 'profile' ? (
           <ManagerProfilePanel manager={manager} onManagerUpdate={handleManagerUpdate} />
         ) : dashView === 'applications' ? (
@@ -6222,7 +6275,6 @@ function ManagerDashboard({ manager: managerProp, openDraftId, onOpenDraft, onCl
 
       </>
       )}
-        </div>
       </PortalShell>
 
       {showGenerateModal && (
