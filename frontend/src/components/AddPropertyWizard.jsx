@@ -1313,7 +1313,7 @@ export default function AddPropertyWizard({
                 </div>
               )}
               <div className="sm:col-span-2">
-                <label className={LBL}>Shared space description <span className="font-normal text-slate-400">(optional)</span></label>
+                <label className={LBL}>Details <span className="font-normal text-slate-400">(optional, shown on listing)</span></label>
                 <textarea
                   className={`${OK_INPUT} min-h-[64px]`}
                   value={space.description}

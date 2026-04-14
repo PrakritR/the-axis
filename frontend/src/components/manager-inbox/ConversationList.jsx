@@ -1,16 +1,16 @@
 import React from 'react'
 import ConversationListItem from './ConversationListItem'
 
+/** Inbox folder order (left → right, top → bottom on narrow screens): Unopened → Opened → Sent → Trash. */
 const STATUS_TABS = [
-  ['all', 'All'],
-  ['opened', 'Opened'],
-  /** Must match parent `sectionFilter` values (`unopened`). */
   ['unopened', 'Unopened'],
+  ['opened', 'Opened'],
+  ['sent', 'Sent'],
   ['trash', 'Trash'],
 ]
 
 /**
- * Left column: search, status pills (All / Unread / Trash), optional channel
+ * Left column: search, status pills (Unopened / Opened / Sent / Trash), optional channel
  * filter pills (e.g. Both / Admin / Residents), and the conversation list.
  */
 export default function ConversationList({
@@ -44,7 +44,11 @@ export default function ConversationList({
           className="w-full rounded-2xl border border-slate-200 bg-slate-50/80 px-3.5 py-2.5 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-[#2563eb] focus:bg-white focus:ring-2 focus:ring-[#2563eb]/15"
         />
 
-        <div className="flex items-center gap-1.5">
+        <div
+          className="grid grid-cols-2 gap-1.5 min-[400px]:grid-cols-4"
+          role="tablist"
+          aria-label="Inbox folders"
+        >
           {STATUS_TABS.map(([id, label]) => {
             const count = counts[id] ?? 0
             const active = filter === id
@@ -52,6 +56,8 @@ export default function ConversationList({
               <button
                 key={id}
                 type="button"
+                role="tab"
+                aria-selected={active}
                 onClick={() => onFilterChange(id)}
                 className={`rounded-full px-3 py-1 text-[11px] font-semibold transition ${
                   active

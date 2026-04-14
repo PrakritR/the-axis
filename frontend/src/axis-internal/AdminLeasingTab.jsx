@@ -77,8 +77,6 @@ export default function AdminLeasingTab({ adminUser, accounts = [] }) {
   const [actionBusy, setActionBusy] = useState('')
   const [showUploadForm, setShowUploadForm] = useState(false)
   const [pdfFile, setPdfFile] = useState(null)
-  const [showChangeBox, setShowChangeBox] = useState(false)
-  const [changeRequestText, setChangeRequestText] = useState('')
   const [activeVersion, setActiveVersion] = useState(null)
 
   const adminRecordId = adminUser?.airtableRecordId || adminUser?.id || ''
@@ -139,9 +137,7 @@ export default function AdminLeasingTab({ adminUser, accounts = [] }) {
       setActiveDraft(null)
       setActiveVersion(null)
       setShowUploadForm(false)
-      setShowChangeBox(false)
       setPdfFile(null)
-      setChangeRequestText('')
       return
     }
     setDetailLoading(true)
@@ -154,9 +150,7 @@ export default function AdminLeasingTab({ adminUser, accounts = [] }) {
       setActiveDraft(full)
       setActiveVersion(version)
       setShowUploadForm(false)
-      setShowChangeBox(false)
       setPdfFile(null)
-      setChangeRequestText('')
     } catch (err) {
       toast.error(err.message || 'Could not open lease details')
     } finally {
@@ -212,39 +206,6 @@ export default function AdminLeasingTab({ adminUser, accounts = [] }) {
       await loadDrafts()
     } catch (err) {
       toast.error(err.message || 'Could not upload PDF')
-    } finally {
-      setActionBusy('')
-    }
-  }
-
-  async function handleRequestChange() {
-    if (!activeDraft?.id) return
-    const text = String(changeRequestText || '').trim()
-    if (!text) {
-      toast.error('Enter a change request first')
-      return
-    }
-    setActionBusy('request-change')
-    try {
-      await callPortalAction('lease-admin-respond', {
-        leaseDraftId: activeDraft.id,
-        adminRecordId,
-        adminName,
-        newStatus: 'Sent Back to Manager',
-        adminNotes: text,
-      })
-      toast.success('Change request sent to manager')
-      setShowChangeBox(false)
-      setChangeRequestText('')
-      const [full, version] = await Promise.all([
-        getLeaseDraftById(activeDraft.id).catch(() => activeDraft),
-        getCurrentLeaseVersion(activeDraft.id).catch(() => null),
-      ])
-      setActiveDraft(full)
-      setActiveVersion(version)
-      await loadDrafts()
-    } catch (err) {
-      toast.error(err.message || 'Could not send change request')
     } finally {
       setActionBusy('')
     }
@@ -362,15 +323,7 @@ export default function AdminLeasingTab({ adminUser, accounts = [] }) {
               <h3 className="text-2xl font-black text-slate-900">Lease Draft</h3>
               <StatusPill status={activeDraft?.Status || 'Draft Generated'} />
             </div>
-            <div className="flex flex-wrap items-center gap-2">
-              <button
-                type="button"
-                onClick={handleSendToManager}
-                disabled={actionBusy === 'send' || detailLoading || !activeDraft?.id}
-                className="rounded-full bg-axis px-4 py-2 text-sm font-semibold text-white transition hover:brightness-105 disabled:opacity-50"
-              >
-                {actionBusy === 'send' ? 'Sending...' : 'Send to Manager'}
-              </button>
+            <div className="ml-auto flex flex-wrap items-center gap-2">
               <button
                 type="button"
                 onClick={() => setShowUploadForm((value) => !value)}
@@ -380,10 +333,11 @@ export default function AdminLeasingTab({ adminUser, accounts = [] }) {
               </button>
               <button
                 type="button"
-                onClick={() => setShowChangeBox((value) => !value)}
-                className="rounded-full border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:border-slate-400"
+                onClick={handleSendToManager}
+                disabled={actionBusy === 'send' || detailLoading || !activeDraft?.id}
+                className="rounded-full bg-axis px-4 py-2 text-sm font-semibold text-white transition hover:brightness-105 disabled:opacity-50"
               >
-                Return for Revisions
+                {actionBusy === 'send' ? 'Sending...' : 'Send to Manager'}
               </button>
             </div>
           </div>
@@ -409,28 +363,6 @@ export default function AdminLeasingTab({ adminUser, accounts = [] }) {
                   className="rounded-full bg-axis px-4 py-2 text-sm font-semibold text-white transition hover:brightness-105 disabled:opacity-50"
                 >
                   {actionBusy === 'upload' ? 'Saving...' : 'Save PDF'}
-                </button>
-              </div>
-            </div>
-          ) : null}
-
-          {showChangeBox ? (
-            <div className="border-b border-slate-100 bg-slate-50 px-5 py-4">
-              <textarea
-                value={changeRequestText}
-                onChange={(event) => setChangeRequestText(event.target.value)}
-                rows={4}
-                placeholder="What changes do you need from the manager?"
-                className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-[#2563eb] focus:ring-2 focus:ring-[#2563eb]/20"
-              />
-              <div className="mt-3">
-                <button
-                  type="button"
-                  onClick={handleRequestChange}
-                  disabled={actionBusy === 'request-change'}
-                  className="rounded-full bg-axis px-4 py-2 text-sm font-semibold text-white transition hover:brightness-105 disabled:opacity-50"
-                >
-                  {actionBusy === 'request-change' ? 'Sending...' : 'Send request'}
                 </button>
               </div>
             </div>

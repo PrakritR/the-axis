@@ -1,7 +1,6 @@
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { useParams, Link, useLocation } from 'react-router-dom'
 import { usePropertyListingChrome } from '../contexts/PropertyListingChromeContext'
-import MapView from '../components/Map'
 import PropertyGallery from '../components/PropertyGallery'
 import PropertyMediaPlaceholder from '../components/PropertyMediaPlaceholder'
 import { properties } from '../data/properties'
@@ -12,8 +11,6 @@ import { Seo, buildPropertySchema } from '../lib/seo'
 import { getStartingRent } from '../lib/pricing'
 import Modal from '../components/Modal'
 import scrollToTop from '../utils/scrollToTop'
-import { getAmenityIcon } from '../components/AmenityIcon'
-
 /** Space reserved below the fixed section nav so the gallery never sits underneath (wrap, fonts, subpixels). */
 const SECTION_NAV_LAYOUT_BUFFER_PX = 20
 
@@ -471,59 +468,6 @@ function formatStartingRent(value) {
     .replace(/\/\s*month/gi, '')
     .replace(/\/\s*mo/gi, '')
     .trim()
-}
-
-function parseMonthlyRentValue(value) {
-  if (!value) return null
-  const match = String(value).match(/\$([\d,]+)/)
-  if (!match) return null
-  const amount = Number(match[1].replace(/,/g, ''))
-  return Number.isFinite(amount) ? amount : null
-}
-
-function formatMonthlyCurrency(value) {
-  if (!Number.isFinite(value)) return ''
-  return `$${value.toLocaleString()}/month`
-}
-
-function formatCompactMonthlyCurrency(value) {
-  if (!Number.isFinite(value)) return ''
-  return `$${value.toLocaleString()}/mo`
-}
-
-/** List → promo ratio from $7,175/mo → $7,000/mo (~2.44% off), applied to every full-house total */
-const FULL_HOUSE_PROMO_RATIO = 7000 / 7175
-
-/**
- * Returns { list, promo } with promo rounded to nearest $25, or null if no meaningful discount.
- */
-function computeFullHousePromoPrice(listMonthlyTotal) {
-  const n = Number(listMonthlyTotal)
-  if (!Number.isFinite(n) || n <= 0) return null
-  const rawPromo = n * FULL_HOUSE_PROMO_RATIO
-  let promo = Math.round(rawPromo / 25) * 25
-  if (promo >= n) promo = Math.max(0, Math.floor(n / 25) * 25 - 25)
-  if (promo <= 0 || n - promo < 50) return null
-  return { list: n, promo }
-}
-
-function buildRentTotals(property) {
-  if (!Array.isArray(property.roomPlans) || property.roomPlans.length === 0) {
-    return { totalHouseRent: null, floorTotals: [] }
-  }
-
-  const floorTotals = property.roomPlans.map((plan) => ({
-    title: plan.title,
-    total: (plan.rooms || []).reduce((sum, room) => {
-      const amount = parseMonthlyRentValue(room.price)
-      return sum + (amount || 0)
-    }, 0),
-  }))
-
-  return {
-    totalHouseRent: floorTotals.reduce((sum, floor) => sum + floor.total, 0),
-    floorTotals,
-  }
 }
 
 function extractRoomNumber(name) {
@@ -986,21 +930,17 @@ export default function PropertyPage(){
     const plans = buildRoomPlanDisplay(p)
     const sharedVideos = getSharedSpaceVideos(p.videos || [])
     const hasSharedList = (p.sharedSpacesList || []).length > 0
-    const rentTotalsNav = buildRentTotals(p)
-    const packages = p.leasingPackages || []
-    const hasLeasing =
-      rentTotalsNav.totalHouseRent > 0 ||
-      packages.length > 0 ||
-      (p.leaseTerms && p.leaseTerms.length > 0)
     return [
       ...(plans.length > 0 ? [['floor-plans', 'Floor Plans']] : []),
       ...(sharedVideos.length > 0 || hasSharedList ? [['shared-spaces', 'Shared Spaces']] : []),
-      ['policies', 'Lease basics'],
-      ['amenities', 'Amenities'],
-      ...(hasLeasing ? [['leasing', 'Bundles & leasing']] : []),
-      ['location', 'Location'],
     ]
   }, [p])
+
+  const showSectionNav = sectionNavTabs.length > 0
+
+  useEffect(() => {
+    if (!showSectionNav) setSectionNavHeight(0)
+  }, [showSectionNav])
 
   /** Scroll-spy order: gallery first (`overview`), then each section below. */
   const sectionScrollOrder = useMemo(() => ['overview', ...sectionNavTabs.map(([id]) => id)], [sectionNavTabs])
@@ -1013,10 +953,6 @@ export default function PropertyPage(){
     if (!sectionId) return
     if (sectionNavIds.has(sectionId)) {
       setActiveTab(sectionId)
-    } else if (sectionId === 'highlights') {
-      setActiveTab('amenities')
-    } else if (sectionId === 'map') {
-      setActiveTab('location')
     } else {
       setActiveTab('overview')
     }
@@ -1161,7 +1097,7 @@ export default function PropertyPage(){
     if (!p) return undefined
     const raw = (hash || '').replace('#', '')
     if (!raw) return undefined
-    const targetId = raw === 'highlights' ? 'amenities' : raw === 'map' ? 'location' : raw
+    const targetId = raw === 'highlights' || raw === 'map' ? 'overview' : raw
     if (!sectionNavIds.has(targetId)) return undefined
     scrollSpyLockUntilRef.current = Date.now() + 900
     const t = window.setTimeout(() => scrollToId(targetId), 0)
@@ -1229,28 +1165,6 @@ export default function PropertyPage(){
 
   const galleryImages = (p.images && p.images.length) ? p.images : []
 
-  // allow properties to explicitly declare community vs unit amenities. fall back to old `amenities` slicing
-  const community = p.communityAmenities || (p.amenities || []).slice(0,4)
-  const unitFeatures = p.unitAmenities || (p.amenities || []).slice(4,12)
-
-  // Deduplicate and ensure no overlap: community features should be distinct from unit features
-  const normalize = s => (s || '').toString().trim().toLowerCase()
-  const seen = new Set()
-  const communityUnique = []
-  for(const a of community){
-    const n = normalize(a)
-    if(!n || seen.has(n)) continue
-    seen.add(n)
-    communityUnique.push(a)
-  }
-  const unitUnique = []
-  for(const a of unitFeatures){
-    const n = normalize(a)
-    if(!n || seen.has(n)) continue // skip if already in community
-    if(unitUnique.map(x=>normalize(x)).includes(n)) continue
-    unitUnique.push(a)
-  }
-
   const includedItems = modalPlan
     ? (Array.isArray(modalPlan.room.featureTags) ? modalPlan.room.featureTags : [])
         .map(normalizeFeatureLabel)
@@ -1260,15 +1174,10 @@ export default function PropertyPage(){
   const displayedRoomPlans = displayedRoomPlansForEffect
   const useBrooklynStyleHeadings = p.slug === '5259-brooklyn-ave-ne' || p._fromAirtable
   const roomPlansHeading = useBrooklynStyleHeadings ? 'Pricing & Availability' : 'Floor Plans'
-  const roomPlansLabel = useBrooklynStyleHeadings ? 'Pricing tiers' : 'Availability'
   const scarcePlan = scarcePlanForEffect
   const startingRent = formatStartingRent(getStartingRent(p))
-  const rentTotals = buildRentTotals(p)
-  const fullHousePromo =
-    rentTotals.totalHouseRent > 0 ? computeFullHousePromoPrice(rentTotals.totalHouseRent) : null
   const sharedSpaceVideos = getSharedSpaceVideos(p.videos || [])
   const sharedSpacesList = p.sharedSpacesList || []
-  const leasingPackages = p.leasingPackages || []
 
   return (
     <div className="page-wrapper py-6 sm:py-8 w-full">
@@ -1280,41 +1189,43 @@ export default function PropertyPage(){
         structuredData={buildPropertySchema(p)}
       />
       <div className="main-container">
-        <div
-          ref={sectionNavRef}
-          id="section-nav"
-          className="fixed left-0 right-0 z-[45] w-full border-b border-slate-200 bg-white/95 shadow-[0_1px_0_0_rgba(15,23,42,0.06)] backdrop-blur-md supports-[backdrop-filter]:bg-white/90"
-        >
-          <div className="mx-auto max-w-[1480px] px-4 py-3 sm:px-6 sm:py-3.5 lg:px-10">
-            <nav
-              className="flex w-full max-w-full flex-wrap items-center justify-start gap-x-3 gap-y-2.5 overflow-x-auto scrollbar-none sm:gap-x-4 sm:gap-y-3 md:justify-center md:gap-x-5 lg:gap-x-6 [&::-webkit-scrollbar]:hidden"
-              aria-label="Property sections"
-            >
-              {sectionNavTabs.map(([id, label]) => (
-                <button
-                  type="button"
-                  key={id}
-                  aria-current={activeTab === id ? 'true' : undefined}
-                  onClick={() => {
-                    scrollSpyLockUntilRef.current = Date.now() + 900
-                    setActiveTab(id)
-                    scrollToId(id)
-                  }}
-                  className={`shrink-0 rounded-full px-4 py-2.5 text-sm font-semibold transition sm:px-5 sm:text-[15px] ${
-                    activeTab === id
-                      ? 'bg-axis text-white shadow-sm'
-                      : 'text-slate-500 hover:bg-slate-50 hover:text-slate-900'
-                  }`}
-                >
-                  {label}
-                </button>
-              ))}
-            </nav>
+        {showSectionNav ? (
+          <div
+            ref={sectionNavRef}
+            id="section-nav"
+            className="fixed left-0 right-0 z-[45] w-full border-b border-slate-200 bg-white/95 shadow-[0_1px_0_0_rgba(15,23,42,0.06)] backdrop-blur-md supports-[backdrop-filter]:bg-white/90"
+          >
+            <div className="mx-auto max-w-[1480px] px-4 py-3 sm:px-6 sm:py-3.5 lg:px-10">
+              <nav
+                className="flex w-full max-w-full flex-wrap items-center justify-start gap-x-3 gap-y-2.5 overflow-x-auto scrollbar-none sm:gap-x-4 sm:gap-y-3 md:justify-center md:gap-x-5 lg:gap-x-6 [&::-webkit-scrollbar]:hidden"
+                aria-label="Property sections"
+              >
+                {sectionNavTabs.map(([id, label]) => (
+                  <button
+                    type="button"
+                    key={id}
+                    aria-current={activeTab === id ? 'true' : undefined}
+                    onClick={() => {
+                      scrollSpyLockUntilRef.current = Date.now() + 900
+                      setActiveTab(id)
+                      scrollToId(id)
+                    }}
+                    className={`shrink-0 rounded-full px-4 py-2.5 text-sm font-semibold transition sm:px-5 sm:text-[15px] ${
+                      activeTab === id
+                        ? 'bg-axis text-white shadow-sm'
+                        : 'text-slate-500 hover:bg-slate-50 hover:text-slate-900'
+                    }`}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </nav>
+            </div>
           </div>
-        </div>
+        ) : null}
 
         {/* Flow spacer — fixed nav is out of document flow */}
-        <div aria-hidden="true" className="w-full shrink-0" style={{ height: sectionNavHeight }} />
+        <div aria-hidden="true" className="w-full shrink-0" style={{ height: showSectionNav ? sectionNavHeight : 0 }} />
 
         <div
           id="overview"
@@ -1416,28 +1327,6 @@ export default function PropertyPage(){
               </div>
             </section>
           ) : null}
-
-          <section id="policies" ref={(node) => { sectionRefs.current.policies = node }} className="mt-14 scroll-mt-32 md:scroll-mt-44">
-            <h2 className="font-editorial text-3xl font-black leading-tight text-slate-900 sm:text-4xl">Lease basics</h2>
-            <div className="mt-8 overflow-hidden rounded-[24px] border border-slate-200 bg-white shadow-[0_24px_70px_rgba(15,23,42,0.06)]">
-              {[
-                ...(p.policies ? [{ emoji:'📋', label:'Lease terms', value: p.policies }] : []),
-                { emoji:'📄', label:'Application', value: `Fee: ${p.applicationFee || 'Contact us'}` },
-                { emoji:'💲', label:'Move-in charges', value: `First month rent + ${p.securityDeposit || '$500'} deposit` },
-                { emoji:'🔒', label:'Security deposit', value: p.securityDeposit || '$500' },
-                { emoji:'📶', label:'Utilities', value: 'Flat fee: $175/month — includes cleaning (bi-monthly), WiFi, water & trash' },
-                { emoji:'🐾', label:'Pets', value: 'Pets may be allowed' },
-              ].map(({ emoji, label, value }, i, arr) => (
-                <div key={label} className={`flex items-start gap-4 px-5 py-5 sm:gap-5 sm:px-8 sm:py-6 ${i < arr.length - 1 ? 'border-b border-slate-100' : ''}`}>
-                  <div className="flex h-8 w-8 shrink-0 items-center justify-center text-base sm:h-10 sm:w-10 sm:text-lg">{emoji}</div>
-                  <div className="min-w-0 flex-1">
-                    <div className="break-words text-[13px] font-bold text-slate-900 sm:text-sm">{label}</div>
-                    <div className="mt-0.5 break-words text-[13px] leading-5 text-slate-500 sm:text-sm sm:leading-6">{value}</div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </section>
 
           {modalPlan && (
             <Modal onClose={() => setModalPlan(null)}>
@@ -1596,134 +1485,6 @@ export default function PropertyPage(){
               </div>
             </Modal>
           )}
-
-          {/* Amenities */}
-          <section id="amenities" ref={(node) => { sectionRefs.current.amenities = node }} className="mt-14 scroll-mt-32 border-t border-slate-200 pt-12 sm:pt-14 md:scroll-mt-44">
-            <h2 className="font-editorial text-3xl font-black leading-tight text-slate-900 sm:text-4xl">Amenities</h2>
-            <div className="mt-10 space-y-12 sm:mt-12 sm:space-y-14">
-              {communityUnique.length > 0 && (
-                <div>
-                  <h3 className="text-sm font-bold uppercase tracking-[0.16em] text-slate-500 sm:text-[13px] sm:tracking-[0.18em]">
-                    Shared spaces and house features
-                  </h3>
-                  <div className="mt-6 grid gap-x-10 gap-y-0 sm:grid-cols-2">
-                    {communityUnique.map((a, i) => (
-                      <div key={i} className="flex items-start gap-4 border-t border-slate-200 py-5 sm:py-6">
-                        <div className="mt-0.5 shrink-0 text-axis">{getAmenityIcon(a, 'sm')}</div>
-                        <div className="text-[15px] leading-7 text-slate-700">{a}</div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {unitUnique.length > 0 && (
-                <div>
-                  <h3 className="text-sm font-bold uppercase tracking-[0.16em] text-slate-500 sm:text-[13px] sm:tracking-[0.18em]">
-                    In each room
-                  </h3>
-                  <div className="mt-6 grid gap-x-10 gap-y-0 sm:grid-cols-2">
-                    {unitUnique.map((a, i) => (
-                      <div key={i} className="flex items-start gap-4 border-t border-slate-200 py-5 sm:py-6">
-                        <div className="mt-0.5 shrink-0 text-axis">{getAmenityIcon(a, 'sm')}</div>
-                        <div className="text-[15px] leading-7 text-slate-700">{a}</div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </div>
-          </section>
-
-          {(rentTotals.totalHouseRent > 0 || leasingPackages.length > 0 || (p.leaseTerms && p.leaseTerms.length > 0)) ? (
-            <section id="leasing" ref={(node) => { sectionRefs.current.leasing = node }} className="mt-14 scroll-mt-32 md:scroll-mt-44">
-              <h2 className="font-editorial text-3xl font-black leading-tight text-slate-900 sm:text-4xl">Bundles &amp; leasing</h2>
-
-              <div className="mt-8 overflow-hidden rounded-[24px] border border-slate-200 bg-white shadow-[0_24px_70px_rgba(15,23,42,0.06)]">
-                {rentTotals.totalHouseRent > 0 ? (
-                  <div className="border-b border-slate-100 bg-[linear-gradient(180deg,#fafaf9_0%,#ffffff_100%)] px-6 py-6 sm:px-8 sm:py-7">
-                    <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">Full house</div>
-                    <div className="mt-3 flex flex-wrap items-end justify-between gap-4">
-                      {fullHousePromo ? (
-                        <div
-                          className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-end sm:gap-x-4 sm:gap-y-1"
-                          aria-label={`Listed at ${formatCompactMonthlyCurrency(fullHousePromo.list)}, promotional full-house rate ${formatCompactMonthlyCurrency(fullHousePromo.promo)}`}
-                        >
-                          <span className="text-2xl font-bold tracking-tight text-slate-400 line-through decoration-2 decoration-slate-400 sm:text-3xl">
-                            {formatCompactMonthlyCurrency(fullHousePromo.list)}
-                          </span>
-                          <span className="text-3xl font-black tracking-tight text-slate-900 sm:text-[2.5rem]">
-                            {formatCompactMonthlyCurrency(fullHousePromo.promo)}
-                          </span>
-                          <span className="text-[11px] font-bold uppercase tracking-[0.14em] text-emerald-700 sm:ml-1 sm:self-center">
-                            Promo rate
-                          </span>
-                        </div>
-                      ) : (
-                        <div className="text-3xl font-black tracking-tight text-slate-900 sm:text-[2.5rem]">
-                          {formatCompactMonthlyCurrency(rentTotals.totalHouseRent)}
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                ) : null}
-
-                {leasingPackages.length > 0 ? (
-                  <div className="border-b border-slate-100 px-6 py-6 sm:px-8">
-                    <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">Grouped packages</div>
-                    <div className="mt-4 grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-                      {leasingPackages.map((pkg) => (
-                        <div
-                          key={pkg.title}
-                          className="rounded-[18px] border border-slate-200 bg-stone-50/90 px-5 py-5"
-                        >
-                          <div className="text-[11px] font-bold uppercase tracking-[0.16em] text-slate-400">{pkg.title}</div>
-                          <div className="mt-2 text-2xl font-black leading-none text-slate-900">
-                            {pkg.totalRent.replace('/month', '/mo')}
-                          </div>
-                          <div className="mt-3 text-sm leading-relaxed text-slate-500">{pkg.rooms.join(' · ')}</div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                ) : null}
-
-                {p.leaseTerms?.length > 0 ? (
-                  <div className="px-6 py-6 sm:px-8 sm:py-7">
-                    <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">Lease lengths</div>
-                    <p className="mt-3 max-w-2xl text-sm leading-7 text-slate-600">
-                      <span className="font-semibold text-slate-800">Four lease options</span>
-                      {' '}are available: 3-month, 9-month, and 12-month, plus month-to-month with an extra{' '}
-                      <span className="font-semibold text-slate-800">$25/month</span>
-                      {' '}charge. Start and end dates are flexible — you choose the window that works for you.
-                    </p>
-                  </div>
-                ) : null}
-              </div>
-            </section>
-          ) : null}
-
-          {/* Location (map only — address & neighborhood are in quick facts) */}
-          <section
-            id="location"
-            ref={(node) => {
-              sectionRefs.current.location = node
-            }}
-            className="mt-14 mb-14 scroll-mt-32 border-t border-slate-200 pt-12 sm:pt-14 md:scroll-mt-44"
-          >
-            <h2 className="font-editorial text-3xl font-black leading-tight text-slate-900 sm:text-4xl">Location</h2>
-            <div className="mt-8 overflow-hidden rounded-[18px] border border-slate-200">
-              {p.location ? (
-                <div className="h-[280px] sm:h-[440px] md:h-[480px]">
-                  <MapView lat={p.location.lat} lng={p.location.lng} zoom={15} />
-                </div>
-              ) : (
-                <div className="flex h-[320px] items-center justify-center bg-slate-50 text-sm text-slate-400">
-                  Location map unavailable for {p.address}
-                </div>
-              )}
-            </div>
-          </section>
         </div>
 
         <div className="hidden md:block md:col-span-3">

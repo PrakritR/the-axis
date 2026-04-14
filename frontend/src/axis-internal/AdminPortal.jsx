@@ -976,7 +976,6 @@ export default function AdminPortal() {
       onNavigate={setTab}
       onSignOut={handleSignOut}
     >
-      <div className="mx-auto w-full max-w-[1600px]">
       {tab === 'dashboard' && (
         <div className="space-y-6">
           {/* Header */}
@@ -1732,7 +1731,6 @@ export default function AdminPortal() {
           }}
         />
       )}
-      </div>
     </PortalShell>
   )
 }

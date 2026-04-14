@@ -8,6 +8,7 @@
  * Body: { applicationRecordId, overrides?, managerRecordId? }
  */
 import { resolveManagerTenant, canEnforceTenant } from '../middleware/resolveManagerTenant.js'
+import { resolveLeaseDetails } from '../lib/axis-properties.js'
 
 const AIRTABLE_TOKEN = process.env.AIRTABLE_TOKEN || process.env.VITE_AIRTABLE_TOKEN
 const CORE_BASE_ID =
@@ -228,7 +229,7 @@ function rentFromLeasingBundles(meta, appRoomNumber) {
   return null
 }
 
-function resolveMonthlyRent(app, propertyRecord, overrides) {
+function resolveMonthlyRent(app, propertyRecord, overrides, axisRent = 0) {
   if (overrides.rent != null && overrides.rent !== '') {
     const o = parseMoneyLike(overrides.rent)
     if (o != null && o > 0) return o
@@ -267,10 +268,13 @@ function resolveMonthlyRent(app, propertyRecord, overrides) {
     }
   }
 
+  // Fall back to axis-properties.js room rent (most reliable for known properties)
+  if (axisRent > 0) return axisRent
+
   return 0
 }
 
-function resolveUtilityFee(app, propertyRecord, overrides) {
+function resolveUtilityFee(app, propertyRecord, overrides, axisDefault = 125) {
   if (overrides.utilityFee != null && overrides.utilityFee !== '') {
     const o = parseMoneyLike(overrides.utilityFee)
     if (o != null) return o
@@ -282,7 +286,9 @@ function resolveUtilityFee(app, propertyRecord, overrides) {
 
   const v = parseMoneyLike(app['Utilities Fee'] ?? propertyRecord?.['Utilities Fee'])
   if (v != null && v > 0) return v
-  return 125
+
+  // Use axis-properties.js authoritative value (e.g. $175 for all Axis properties)
+  return axisDefault
 }
 
 function resolveRoomUtilitySummary(app, propertyRecord) {
@@ -305,7 +311,7 @@ function resolveRoomFurnitureIncluded(app, propertyRecord) {
   return ''
 }
 
-function resolveSecurityDeposit(app, propertyRecord, monthlyRent, overrides) {
+function resolveSecurityDeposit(app, propertyRecord, monthlyRent, overrides, axisDefault = null) {
   if (overrides.deposit != null && overrides.deposit !== '') {
     const o = parseMoneyLike(overrides.deposit)
     if (o != null) return o
@@ -321,6 +327,8 @@ function resolveSecurityDeposit(app, propertyRecord, monthlyRent, overrides) {
     const pr = parseMoneyLike(propertyRecord['Security Deposit'])
     if (pr != null && pr > 0) return pr
   }
+  // Use axis-properties.js authoritative deposit (e.g. $600 for Brooklyn, $500 for 8th Ave)
+  if (axisDefault != null && axisDefault > 0) return axisDefault
   if (monthlyRent > 0) return Math.min(monthlyRent, 500)
   return 500
 }
@@ -333,10 +341,15 @@ function buildLeaseData(app, propertyRecord, overrides = {}) {
   const roomLabel = roomRaw
     ? (/^room\s*/i.test(roomRaw) ? roomRaw.replace(/\s+/g, ' ').trim() : `Room ${roomRaw}`)
     : ''
+
+  // ── Axis-properties authoritative lookup (room rent, utilities, deposit, bathroom, amenities) ──
+  const axisDetails = resolveLeaseDetails(propertyName, roomNumber, overrides)
+
   const propertyAddress =
     app['Property Address'] ||
     propertyRecord?.Address ||
     propertyRecord?.['Property Address'] ||
+    axisDetails.propertyAddress ||
     ''
   const tenantName = app['Signer Full Name'] || ''
   const tenantEmail = app['Signer Email'] || ''
@@ -346,18 +359,18 @@ function buildLeaseData(app, propertyRecord, overrides = {}) {
   const isMonthToMonth = Boolean(app['Month to Month'])
   const cosignerName = app['cosignerName'] || app['Co-Signer Name'] || ''
 
-  let monthlyRent = resolveMonthlyRent(app, propertyRecord, overrides)
+  let monthlyRent = resolveMonthlyRent(app, propertyRecord, overrides, axisDetails.rent)
   /** Apply flow: Month-to-Month option is +$25/mo over listed room rent */
   if (monthlyRent > 0 && (app['Month to Month'] === true || app['Month to Month'] === 1)) {
     monthlyRent += 25
   }
 
-  const utilityFee = resolveUtilityFee(app, propertyRecord, overrides)
+  const utilityFee = resolveUtilityFee(app, propertyRecord, overrides, axisDetails.utilitiesFee)
   const roomUtilitiesSummary = resolveRoomUtilitySummary(app, propertyRecord)
   const roomFurnished = resolveRoomFurnished(app, propertyRecord)
   const roomFurnitureIncluded = resolveRoomFurnitureIncluded(app, propertyRecord)
-  const securityDeposit = resolveSecurityDeposit(app, propertyRecord, monthlyRent, overrides)
-  const adminFee = overrides.adminFee != null ? overrides.adminFee : 250
+  const securityDeposit = resolveSecurityDeposit(app, propertyRecord, monthlyRent, overrides, axisDetails.securityDeposit)
+  const adminFee = overrides.adminFee != null ? overrides.adminFee : (axisDetails.adminFee ?? 250)
 
   // Prorated calculation
   let proratedRent = 0
@@ -421,6 +434,10 @@ function buildLeaseData(app, propertyRecord, overrides = {}) {
     totalMoveInFmt: fmtMoney(totalMoveIn),
     monthlyTotalFmt: fmtMoney(monthlyRent + utilityFee),
     breakLeaseFee: fmtMoney(900),
+    // Property-specific from axis-properties.js
+    bathroomNote: axisDetails.bathroomNote || '',
+    bathroomGroup: axisDetails.bathroomGroup || '',
+    amenities: axisDetails.amenities || [],
   }
 }
 

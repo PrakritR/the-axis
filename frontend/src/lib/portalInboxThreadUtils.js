@@ -50,3 +50,20 @@ export function mergeSubjectIntoMessageIfNeeded(message, subject, subjectFieldCo
   if (!s || subjectFieldConfigured) return m
   return `[Subject: ${s}]\n\n${m}`
 }
+
+/**
+ * Inbox folder for a thread: trash, sent (you sent the latest message), unopened, or opened.
+ * @param {{ lastMsgTs: number, state: { lastReadAt?: Date|null, trashed?: boolean }|undefined, lastSenderEmail: string, myEmail: string }} p
+ */
+export function portalInboxThreadSection({ lastMsgTs, state, lastSenderEmail, myEmail }) {
+  if (state?.trashed) return 'trash'
+  const my = String(myEmail || '').trim().toLowerCase()
+  const from = String(lastSenderEmail || '').trim().toLowerCase()
+  if (my && from && from === my) return 'sent'
+  const ts = Number(lastMsgTs) || 0
+  if (ts <= 0) {
+    return state?.lastReadAt ? 'opened' : 'unopened'
+  }
+  if (!state?.lastReadAt) return 'unopened'
+  return ts > state.lastReadAt.getTime() ? 'unopened' : 'opened'
+}

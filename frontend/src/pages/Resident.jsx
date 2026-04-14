@@ -43,7 +43,7 @@ import {
   portalInboxThreadKeyFromRecord,
   submitResidentLeaseChangeRequest,
 } from '../lib/airtable'
-import { applicationRejectedFieldName } from '../lib/applicationApprovalState.js'
+import { applicationRejectedFieldName, deriveApplicationApprovalState } from '../lib/applicationApprovalState.js'
 import { workOrderScheduledMeta } from '../lib/workOrderShared.js'
 
 const SESSION_KEY = 'axis_resident'
@@ -196,11 +196,21 @@ function isApprovalGranted(value) {
   return ['true', '1', 'yes', 'approved'].includes(normalized)
 }
 
+/** Linked Applications record ids on Resident Profile (apply / manager-approve pipeline). */
+function residentApplicationsRecordIds(resident) {
+  const apps = resident?.Applications
+  if (!Array.isArray(apps)) return []
+  return apps
+    .map((id) => String(id || '').trim())
+    .filter((s) => s.startsWith('rec') && s.length >= 11)
+}
+
 function residentApplicationUnlocked(resident) {
   if (isResidentApplicationRejected(resident)) return false
-  return (
-    isApprovalGranted(resident?.['Application Approval']) || isApprovalGranted(resident?.Approved)
-  )
+  if (isApprovalGranted(resident?.['Application Approval'])) return true
+  // Applicants with a linked Applications row must not unlock on `Approved` alone (legacy / mis-set rows).
+  if (residentApplicationsRecordIds(resident).length > 0) return false
+  return isApprovalGranted(resident?.Approved)
 }
 
 function isResidentApplicationRejected(resident) {
@@ -231,8 +241,15 @@ function isResidentApplicationRejected(resident) {
   })
 }
 
-function residentPortalAccessState(resident) {
+/**
+ * @param {'pending' | 'approved' | 'rejected' | null | undefined} linkedAppState
+ *   Live state from the Applications table when the resident row links to an application (source of truth).
+ */
+function residentPortalAccessState(resident, linkedAppState) {
   if (isResidentApplicationRejected(resident)) return 'rejected'
+  if (linkedAppState === 'rejected') return 'rejected'
+  if (linkedAppState === 'approved') return 'approved'
+  if (linkedAppState === 'pending') return 'pending'
   return residentApplicationUnlocked(resident) ? 'approved' : 'pending'
 }
 
@@ -2495,6 +2512,7 @@ function ResidentDashboardHome({
   setPaymentFocus,
   pendingApplicationApproval,
   applicationRejected,
+  portalFeaturesLocked,
   inboxUnopenedCount,
 }) {
   const snapshot = useMemo(() => buildResidentRentSnapshot(payments, resident), [payments, resident])
@@ -2516,6 +2534,7 @@ function ResidentDashboardHome({
   const firstName = String(resident?.Name || '').split(' ')[0] || 'Resident'
   const homeLabel = [resident.House, normalizeUnitLabel(resident['Unit Number'] || '')].filter(Boolean).join(' · ') || null
   const leaseDurationHeadline = leaseTermLabel.trim() || '—'
+  const lock = Boolean(portalFeaturesLocked)
   const leaseCardSubline = leaseNeedsSigning
     ? 'Sign your lease to finish onboarding'
     : leaseStatus === 'Signed'
@@ -2554,7 +2573,9 @@ function ResidentDashboardHome({
       {/* Metric cards — Lease → Payments → Work orders → Your home */}
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <div
-          className={`flex flex-col gap-2 rounded-3xl border p-5 text-left transition hover:shadow-sm ${
+          className={`flex flex-col gap-2 rounded-3xl border p-5 text-left transition ${
+            lock ? 'opacity-60' : 'hover:shadow-sm'
+          } ${
             leaseNeedsSigning
               ? 'border-amber-200 bg-amber-50 hover:border-amber-300'
               : leaseStatus === 'Signed'
@@ -2588,30 +2609,40 @@ function ResidentDashboardHome({
           {leaseStatus === 'Signed' ? (
             <button
               type="button"
-              onClick={() => onNavigate('leasing')}
-              className="mt-1 inline-flex w-fit rounded-full border border-emerald-300 bg-emerald-100 px-4 py-2 text-xs font-semibold text-emerald-800 transition hover:bg-emerald-200"
+              disabled={lock}
+              onClick={() => {
+                if (lock) return
+                onNavigate('leasing')
+              }}
+              className="mt-1 inline-flex w-fit rounded-full border border-emerald-300 bg-emerald-100 px-4 py-2 text-xs font-semibold text-emerald-800 transition hover:bg-emerald-200 disabled:cursor-not-allowed disabled:opacity-50"
             >
               Extend
             </button>
           ) : leaseNeedsSigning ? (
             <button
               type="button"
+              disabled={lock}
               onClick={() => {
+                if (lock) return
                 if (leaseSigningUrl) {
                   window.location.href = leaseSigningUrl
                   return
                 }
                 onNavigate('leasing')
               }}
-              className="mt-1 inline-flex w-fit rounded-full border border-amber-300 bg-amber-100 px-4 py-2 text-xs font-semibold text-amber-900 transition hover:bg-amber-200"
+              className="mt-1 inline-flex w-fit rounded-full border border-amber-300 bg-amber-100 px-4 py-2 text-xs font-semibold text-amber-900 transition hover:bg-amber-200 disabled:cursor-not-allowed disabled:opacity-50"
             >
               Sign lease
             </button>
           ) : (
             <button
               type="button"
-              onClick={() => onNavigate('leasing')}
-              className="mt-1 inline-flex w-fit rounded-full border border-blue-200 bg-blue-100 px-4 py-2 text-xs font-semibold text-blue-800 transition hover:bg-blue-200"
+              disabled={lock}
+              onClick={() => {
+                if (lock) return
+                onNavigate('leasing')
+              }}
+              className="mt-1 inline-flex w-fit rounded-full border border-blue-200 bg-blue-100 px-4 py-2 text-xs font-semibold text-blue-800 transition hover:bg-blue-200 disabled:cursor-not-allowed disabled:opacity-50"
             >
               View lease
             </button>
@@ -2620,12 +2651,18 @@ function ResidentDashboardHome({
 
         <button
           type="button"
-          onClick={() => { setPaymentFocus(hasOverdueRent ? 'overdue' : ''); onNavigate('payments') }}
+          disabled={lock}
+          onClick={() => {
+            if (lock) return
+            setPaymentFocus(hasOverdueRent ? 'overdue' : '')
+            onNavigate('payments')
+          }}
           className={classNames(
             'flex flex-col gap-1 rounded-3xl border p-5 text-left transition hover:shadow-sm',
             hasOverdueRent
               ? 'border-red-100 bg-red-50 hover:border-red-200'
               : 'border-blue-100 bg-blue-50 hover:border-blue-200',
+            lock && 'cursor-not-allowed opacity-60',
           )}
         >
           <span className={classNames('text-[10px] font-bold uppercase tracking-[0.14em]', hasOverdueRent ? 'text-red-600' : 'text-blue-600')}>
@@ -2638,8 +2675,15 @@ function ResidentDashboardHome({
 
         <button
           type="button"
-          onClick={() => onNavigate('workorders')}
-          className="flex flex-col gap-1 rounded-3xl border border-blue-100 bg-blue-50 p-5 text-left transition hover:border-blue-200 hover:shadow-sm"
+          disabled={lock}
+          onClick={() => {
+            if (lock) return
+            onNavigate('workorders')
+          }}
+          className={classNames(
+            'flex flex-col gap-1 rounded-3xl border border-blue-100 bg-blue-50 p-5 text-left transition hover:border-blue-200 hover:shadow-sm',
+            lock && 'cursor-not-allowed opacity-60',
+          )}
         >
           <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-blue-600">Work Orders</span>
           <span className="text-3xl font-black tabular-nums text-blue-700">{workOrderCardValue}</span>
@@ -2659,8 +2703,15 @@ function ResidentDashboardHome({
 
         <button
           type="button"
-          onClick={() => onNavigate('inbox')}
-          className="col-span-full flex items-center justify-between rounded-3xl border border-blue-100 bg-blue-50 px-6 py-5 text-left transition hover:border-blue-200 hover:shadow-sm"
+          disabled={lock}
+          onClick={() => {
+            if (lock) return
+            onNavigate('inbox')
+          }}
+          className={classNames(
+            'col-span-full flex items-center justify-between rounded-3xl border border-blue-100 bg-blue-50 px-6 py-5 text-left transition hover:border-blue-200 hover:shadow-sm',
+            lock && 'cursor-not-allowed opacity-60',
+          )}
         >
           <div className="flex items-center gap-3">
             <span className="text-[10px] font-bold uppercase tracking-[0.18em] text-blue-600">Inbox</span>
@@ -2734,6 +2785,29 @@ function Dashboard({ resident, onResidentUpdated, onSignOut }) {
     loadData()
   }, [loadData])
 
+  const applicationRecordIds = useMemo(() => residentApplicationsRecordIds(resident), [resident])
+  const [linkedApplicationApprovalState, setLinkedApplicationApprovalState] = useState(null)
+
+  useEffect(() => {
+    if (!applicationRecordIds.length) {
+      setLinkedApplicationApprovalState(null)
+      return
+    }
+    let cancelled = false
+    ;(async () => {
+      try {
+        const app = await getApplicationById(applicationRecordIds[0])
+        if (cancelled) return
+        setLinkedApplicationApprovalState(app ? deriveApplicationApprovalState(app) : 'pending')
+      } catch {
+        if (!cancelled) setLinkedApplicationApprovalState(null)
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [applicationRecordIds])
+
   useEffect(() => {
     const email = String(resident?.Email || '').trim()
     if (!email || !portalInboxAirtableConfigured()) return
@@ -2767,24 +2841,25 @@ function Dashboard({ resident, onResidentUpdated, onSignOut }) {
     return () => { cancelled = true }
   }, [resident])
 
-  const accessState = residentPortalAccessState(resident)
+  const accessState = residentPortalAccessState(resident, linkedApplicationApprovalState)
   const applicationUnlocked = accessState === 'approved'
   const isRejected = accessState === 'rejected'
   const RESTRICTED_TAB_IDS = new Set(['leasing', 'payments', 'workorders', 'inbox'])
+  const restrictNavTabs = accessState !== 'approved'
 
   const handleNavigate = useCallback((nextTab) => {
-    if (isRejected && RESTRICTED_TAB_IDS.has(nextTab)) {
+    if (restrictNavTabs && RESTRICTED_TAB_IDS.has(nextTab)) {
       setTab('dashboard')
       return
     }
     setTab(nextTab)
-  }, [isRejected])
+  }, [restrictNavTabs])
 
   useEffect(() => {
-    if (isRejected && RESTRICTED_TAB_IDS.has(tab)) {
+    if (restrictNavTabs && RESTRICTED_TAB_IDS.has(tab)) {
       setTab('dashboard')
     }
-  }, [isRejected, tab])
+  }, [restrictNavTabs, tab])
 
   const TABS = [
     ['dashboard', 'Dashboard'],
@@ -2793,7 +2868,7 @@ function Dashboard({ resident, onResidentUpdated, onSignOut }) {
     ['workorders', 'Work Orders'],
     ['inbox', 'Inbox'],
     ['profile', 'Profile'],
-  ].filter(([id]) => !(isRejected && RESTRICTED_TAB_IDS.has(id)))
+  ].filter(([id]) => !(restrictNavTabs && RESTRICTED_TAB_IDS.has(id)))
 
   return (
     <PortalShell
@@ -2804,7 +2879,6 @@ function Dashboard({ resident, onResidentUpdated, onSignOut }) {
       onNavigate={handleNavigate}
       onSignOut={onSignOut}
     >
-      <div className="mx-auto w-full max-w-[1600px]">
         {loading ? (
           <div className="rounded-3xl border border-slate-200 bg-white px-6 py-16 text-center text-sm text-slate-400 shadow-soft">
             Loading...
@@ -2821,6 +2895,7 @@ function Dashboard({ resident, onResidentUpdated, onSignOut }) {
             setPaymentFocus={setPaymentFocus}
             pendingApplicationApproval={accessState === 'pending'}
             applicationRejected={isRejected}
+            portalFeaturesLocked={!applicationUnlocked}
             inboxUnopenedCount={inboxUnopenedCount}
           />
         ) : null}
@@ -2866,7 +2941,6 @@ function Dashboard({ resident, onResidentUpdated, onSignOut }) {
         {!loading && tab === 'profile' ? (
           <ProfilePanel resident={resident} onUpdated={onResidentUpdated} />
         ) : null}
-      </div>
     </PortalShell>
   )
 }

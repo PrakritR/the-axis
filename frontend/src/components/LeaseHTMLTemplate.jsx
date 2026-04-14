@@ -181,6 +181,14 @@ export default function LeaseHTMLTemplate({ leaseData = {}, signedBy, signedAt, 
               Property-specific utilities note: <strong>{d.roomUtilitiesSummary}</strong>
             </P>
           ) : null}
+          {Array.isArray(d.amenities) && d.amenities.length > 0 ? (
+            <>
+              <p className="text-[11px] font-semibold uppercase tracking-[0.1em] text-slate-500 mt-3 mb-1">Community Amenities Included</p>
+              <ul className="list-disc space-y-0.5 pl-6 text-sm text-slate-700">
+                {d.amenities.map((a, i) => <li key={i}>{a}</li>)}
+              </ul>
+            </>
+          ) : null}
         </Section>
 
         {/* 6 */}
@@ -200,6 +208,11 @@ export default function LeaseHTMLTemplate({ leaseData = {}, signedBy, signedAt, 
 
         {/* 7 */}
         <Section number="7" title="Shared Spaces and House Rules">
+          {d.bathroomNote ? (
+            <P>
+              <strong>Bathroom Assignment:</strong> {d.bathroomNote}
+            </P>
+          ) : null}
           <P>
             Resident shall share common areas — including kitchen, living room, bathrooms, laundry, and outdoor spaces —
             with other residents of the dwelling in a respectful and cooperative manner. Resident agrees to:

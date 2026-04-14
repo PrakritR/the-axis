@@ -1,5 +1,11 @@
 import React from 'react'
 import { PortalNavGlyph } from './portalNavIcons.jsx'
+import {
+  portalChromeSecondaryButtonClass,
+  portalContentWidthClass,
+  portalMainPaddingClass,
+  portalMobileTabPillBaseClass,
+} from '../lib/portalLayout.js'
 
 function PortalShellFooter({ brandTitle, brandSubtitle }) {
   return (
@@ -66,11 +72,7 @@ export default function PortalShell({
             </div>
             <div className="flex shrink-0 items-center gap-2">
               {sidebarFooterExtra ? sidebarFooterExtra : null}
-              <button
-                type="button"
-                onClick={onSignOut}
-                className="rounded-xl border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-600"
-              >
+              <button type="button" onClick={onSignOut} className={portalChromeSecondaryButtonClass}>
                 Sign out
               </button>
             </div>
@@ -81,7 +83,7 @@ export default function PortalShell({
                 key={item.id}
                 type="button"
                 onClick={() => onNavigate(item.id)}
-                className={`inline-flex shrink-0 items-center gap-1.5 rounded-full px-2.5 py-1.5 text-xs font-semibold transition ${
+                className={`${portalMobileTabPillBaseClass} ${
                   activeId === item.id
                     ? 'bg-[linear-gradient(180deg,#2f76ff_0%,#2450eb_100%)] text-white shadow-[0_2px_10px_rgba(37,99,235,0.35)]'
                     : 'bg-slate-100 text-slate-600'
@@ -96,8 +98,8 @@ export default function PortalShell({
 
         {/* Main scrolls; footer stays at bottom of viewport when content is short */}
         <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
-          <main className="min-h-0 flex-1 overflow-y-auto">
-            {children}
+          <main className={`min-h-0 flex-1 overflow-y-auto ${portalMainPaddingClass}`}>
+            <div className={portalContentWidthClass}>{children}</div>
           </main>
           <PortalShellFooter brandTitle={brandTitle} brandSubtitle={brandSubtitle} />
         </div>
@@ -130,7 +132,7 @@ export default function PortalShell({
               key={item.id}
               type="button"
               onClick={() => onNavigate(item.id)}
-              className={`flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-sm font-semibold transition ${
+              className={`flex w-full items-center gap-2.5 rounded-lg px-3 py-2.5 text-left text-sm font-semibold transition ${
                 activeId === item.id
                   ? 'bg-[linear-gradient(180deg,#2f76ff_0%,#2450eb_100%)] text-white shadow-[0_4px_16px_rgba(37,99,235,0.35)]'
                   : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
@@ -151,11 +153,7 @@ export default function PortalShell({
         {/* Footer — always visible, never scrolls away */}
         <div className="shrink-0 border-t border-slate-100 p-3">
           {sidebarFooterExtra ? <div className="mb-3">{sidebarFooterExtra}</div> : null}
-          <button
-            type="button"
-            onClick={onSignOut}
-            className="w-full rounded-xl border border-slate-200 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-50"
-          >
+          <button type="button" onClick={onSignOut} className={`w-full ${portalChromeSecondaryButtonClass}`}>
             Sign out
           </button>
         </div>
@@ -170,11 +168,7 @@ export default function PortalShell({
               <div className="text-sm font-black">{brandSubtitle}</div>
             </div>
             <div className="flex shrink-0 items-center gap-2">
-              <button
-                type="button"
-                onClick={onSignOut}
-                className="rounded-xl border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-600"
-              >
+              <button type="button" onClick={onSignOut} className={portalChromeSecondaryButtonClass}>
                 Sign out
               </button>
             </div>
@@ -185,7 +179,7 @@ export default function PortalShell({
                 key={item.id}
                 type="button"
                 onClick={() => onNavigate(item.id)}
-                className={`inline-flex shrink-0 items-center gap-1.5 rounded-full px-2.5 py-1.5 text-xs font-semibold transition ${
+                className={`${portalMobileTabPillBaseClass} ${
                   activeId === item.id
                     ? 'bg-[linear-gradient(180deg,#2f76ff_0%,#2450eb_100%)] text-white shadow-[0_2px_10px_rgba(37,99,235,0.35)]'
                     : 'bg-slate-100 text-slate-600'
@@ -200,8 +194,8 @@ export default function PortalShell({
 
         {/* Page content scrolls; footer pinned to bottom of column when content is short */}
         <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
-          <main className="min-h-0 flex-1 overflow-y-auto px-4 py-6 sm:px-6 lg:px-8">
-            {children}
+          <main className={`min-h-0 flex-1 overflow-y-auto ${portalMainPaddingClass}`}>
+            <div className={portalContentWidthClass}>{children}</div>
           </main>
           <PortalShellFooter brandTitle={brandTitle} brandSubtitle={brandSubtitle} />
         </div>
@@ -217,7 +211,7 @@ export function StatCard({ label, value, hint, onClick }) {
     <Comp
       type={onClick ? 'button' : undefined}
       onClick={onClick}
-      className={`rounded-3xl border border-slate-200 bg-white p-5 text-left shadow-sm ${
+      className={`rounded-3xl border border-slate-200 bg-white p-6 text-left shadow-sm ${
         onClick ? 'cursor-pointer transition hover:border-[#2563eb]/30 hover:shadow' : ''
       }`}
     >
@@ -305,3 +299,10 @@ export function DataTable({ columns, rows, empty, emptyIcon = true }) {
     </div>
   )
 }
+
+export {
+  portalChromeSecondaryButtonClass,
+  portalContentWidthClass,
+  portalMainPaddingClass,
+  portalMobileTabPillBaseClass,
+} from '../lib/portalLayout.js'

@@ -20,6 +20,7 @@ import {
   threadBodyPreviewFromMessage,
   mergeSubjectIntoMessageIfNeeded,
   threadSearchHaystack,
+  portalInboxThreadSection,
 } from '../../lib/portalInboxThreadUtils.js'
 import {
   PORTAL_TAB_HEADER_ROW_CLS,
@@ -109,15 +110,6 @@ function saveLocalInboxStatePatch(email, threadKey, patch) {
   }
 }
 
-function sectionForRow(lastMsgTs, state) {
-  if (state?.trashed) return 'trash'
-  if (lastMsgTs <= 0) {
-    return state?.lastReadAt ? 'opened' : 'unopened'
-  }
-  if (!state?.lastReadAt) return 'unopened'
-  return lastMsgTs > state.lastReadAt.getTime() ? 'unopened' : 'opened'
-}
-
 function participantsLine(uiId) {
   if (uiId === UI_LEASING) return 'You ↔ House / Manager'
   if (uiId === UI_ADMIN) return 'You ↔ Axis Admin'
@@ -155,7 +147,7 @@ export default function ResidentPortalInbox({ resident }) {
 
   const [inboxStateMap, setInboxStateMap] = useState(() => new Map())
   const [inboxStateBackend, setInboxStateBackend] = useState('pending')
-  const [sectionFilter, setSectionFilter] = useState('all')
+  const [sectionFilter, setSectionFilter] = useState('unopened')
   const [channelFilter, setChannelFilter] = useState('all')
   const [threadSearch, setThreadSearch] = useState('')
 
@@ -256,6 +248,7 @@ export default function ResidentPortalInbox({ resident }) {
         time: last ? fmtDateTime(last.Timestamp || last.created_at) : '',
         ts: lastMsgTs,
         lastMsgTs,
+        lastSenderEmail: last ? String(last['Sender Email'] || '').trim() : '',
       })
     }
     const sortedL = [...leasingMsgs].sort((a, b) => msgTime(a) - msgTime(b))
@@ -269,32 +262,40 @@ export default function ResidentPortalInbox({ resident }) {
   const threadRowsWithMeta = useMemo(() => {
     return threadRows.map((row) => {
       const st = inboxStateMap.get(row.stateKey)
-      const section = sectionForRow(row.lastMsgTs, st)
+      const section = portalInboxThreadSection({
+        lastMsgTs: row.lastMsgTs,
+        state: st,
+        lastSenderEmail: row.lastSenderEmail,
+        myEmail: email,
+      })
       const unopened = section === 'unopened'
       return { ...row, section, unopened }
     })
-  }, [threadRows, inboxStateMap])
+  }, [threadRows, inboxStateMap, email])
 
   const inboxSections = useMemo(() => {
     const unopened = []
     const opened = []
+    const sent = []
     const trash = []
     for (const row of threadRowsWithMeta) {
       if (row.section === 'trash') trash.push(row)
+      else if (row.section === 'sent') sent.push(row)
       else if (row.section === 'unopened') unopened.push(row)
       else opened.push(row)
     }
-    return { unopened, opened, trash }
+    return { unopened, opened, sent, trash }
   }, [threadRowsWithMeta])
 
-  const inboxActiveTotal = inboxSections.unopened.length + inboxSections.opened.length
+  const inboxActiveTotal =
+    inboxSections.unopened.length + inboxSections.opened.length + inboxSections.sent.length
 
   const visibleThreadRows = useMemo(() => {
     const q = threadSearch.trim().toLowerCase()
     let rows = threadRowsWithMeta
-    if (sectionFilter === 'all') rows = rows.filter((r) => r.section !== 'trash')
-    else if (sectionFilter === 'unopened') rows = rows.filter((r) => r.section === 'unopened')
+    if (sectionFilter === 'unopened') rows = rows.filter((r) => r.section === 'unopened')
     else if (sectionFilter === 'opened') rows = rows.filter((r) => r.section === 'opened')
+    else if (sectionFilter === 'sent') rows = rows.filter((r) => r.section === 'sent')
     else if (sectionFilter === 'trash') rows = rows.filter((r) => r.section === 'trash')
     if (channelFilter === 'manager') rows = rows.filter((r) => r.id === UI_LEASING)
     else if (channelFilter === 'admin') rows = rows.filter((r) => r.id === UI_ADMIN)
@@ -375,8 +376,14 @@ export default function ResidentPortalInbox({ resident }) {
   }, [selectedStateKey])
 
   useEffect(() => {
-    setReplySubject('')
-  }, [selectedThreadId])
+    if (!selectedThreadId) {
+      setReplySubject('')
+      return
+    }
+    const msgs = selectedThreadId === UI_LEASING ? leasingMsgs : adminMsgs
+    const t = threadSubjectFromMessages(msgs, subjectFieldName)
+    setReplySubject(t ? `Re: ${t}` : '')
+  }, [selectedThreadId, leasingMsgs, adminMsgs, subjectFieldName])
 
   useEffect(() => {
     if (composeOpen) return
@@ -471,8 +478,15 @@ export default function ResidentPortalInbox({ resident }) {
   async function handleSendReply(e) {
     e.preventDefault()
     if (!selectedThreadId || !reply.trim() || !email) return
+    const msgs = selectedThreadId === UI_LEASING ? leasingMsgs : adminMsgs
+    const threadSubj = threadSubjectFromMessages(msgs, subjectFieldName)
+    const notifySubj = replySubject.trim() || threadSubj || 'Axis portal message'
     const subjResolved = showSubjectField ? replySubject.trim() : ''
-    const bodyOut = mergeSubjectIntoMessageIfNeeded(reply.trim(), subjResolved, showSubjectField)
+    const bodyOut = mergeSubjectIntoMessageIfNeeded(
+      reply.trim(),
+      showSubjectField ? subjResolved : notifySubj,
+      showSubjectField,
+    )
     const threadKey = selectedThreadId === UI_LEASING ? leasingKey : adminKey
     setSending(true)
     try {
@@ -487,7 +501,7 @@ export default function ResidentPortalInbox({ resident }) {
       notifyPortalMessage({
         toAdmins: selectedThreadId === UI_ADMIN,
         senderName: resident.Name || email,
-        subject: subjResolved,
+        subject: notifySubj,
       })
       setReply('')
       setReplySubject('')
@@ -518,7 +532,7 @@ export default function ResidentPortalInbox({ resident }) {
 
   const channelSelectOptions = useMemo(
     () => [
-      ['all', 'All'],
+      ['all', 'Everything'],
       ['manager', 'Manager'],
       ['admin', 'Admin'],
     ],
@@ -536,9 +550,11 @@ export default function ResidentPortalInbox({ resident }) {
             ? 'No unopened conversations'
             : sectionFilter === 'opened'
               ? 'No opened conversations'
-              : channelFilter !== 'all'
-                ? `No ${channelFilter === 'manager' ? 'manager' : 'admin'} conversations`
-                : 'No conversations'
+              : sectionFilter === 'sent'
+                ? 'No sent conversations'
+                : channelFilter !== 'all'
+                  ? `No ${channelFilter === 'manager' ? 'manager' : 'admin'} conversations`
+                  : 'No conversations'
 
   return (
     <div>
@@ -588,9 +604,9 @@ export default function ResidentPortalInbox({ resident }) {
           filter={sectionFilter}
           onFilterChange={setSectionFilter}
           counts={{
-            all: inboxActiveTotal,
             unopened: inboxSections.unopened.length,
             opened: inboxSections.opened.length,
+            sent: inboxSections.sent.length,
             trash: inboxSections.trash.length,
           }}
           rows={visibleThreadRows}
@@ -730,11 +746,15 @@ export default function ResidentPortalInbox({ resident }) {
               disabled={!selectedThreadId}
               sending={sending}
               placeholder="Write your reply…"
-              showSubject={showSubjectField}
+              showSubject
               useSubjectPresets={false}
               subject={replySubject}
               onSubjectChange={setReplySubject}
-              subjectPlaceholder="Optional — adds a subject line to this reply"
+              subjectPlaceholder={
+                activeThreadSubject
+                  ? `Re: ${activeThreadSubject} — edit for email notification`
+                  : 'Subject for email notification'
+              }
               allowSubjectEmpty
               toLabel={participantsLine(selectedThreadId)}
             />

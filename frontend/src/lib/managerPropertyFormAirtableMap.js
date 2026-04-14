@@ -737,7 +737,8 @@ export function serializeManagerAddPropertyToAirtableFields(params) {
     const notes = String(row?.description || '').trim()
     return notes ? { notes, description: notes } : {}
   })
-  const hasSharedSpacesMeta = sharedSpacesDetail.some((o) => o && (o.notes || o.description))
+  /** Always persist one meta slot per shared space so indices match `Shared Space N` columns even when details are blank. */
+  const hasSharedSpacesMeta = sc > 0
 
   const bathroomTotalDecimal = computeDecimalBathroomTotal(bathrooms)
 

@@ -4,6 +4,9 @@
  *   { toAdmins: true, senderName, subject, portalUrl }   — notify all enabled admins
  *   { recipientEmail, recipientName, senderName, subject, portalUrl } — notify one person
  *
+ * EmailJS `template_params` include `subject`, `mail_subject` ([Axis] prefix), and `portal_url`.
+ * Map `mail_subject` (or `subject`) to your template’s subject line field in the EmailJS dashboard.
+ *
  * "Enabled admins" = Admin Profile records where the Enabled field is checked.
  * Field name is configurable via AIRTABLE_ADMIN_ENABLED_FIELD (default: "Enabled").
  *
@@ -59,6 +62,10 @@ async function sendEmailJsNotification({ serviceId, publicKey, templateId, toEma
           to_name: toName || toEmail,
           sender_name: senderName || 'Someone',
           subject: subject || 'New message',
+          /** Use in EmailJS as the email “Subject” / title when your template maps it. */
+          mail_subject: subject && String(subject).trim()
+            ? `[Axis] ${String(subject).trim()}`
+            : '[Axis] New portal message',
           portal_url: portalUrl || 'https://thenorthseattlehomes.com/portal',
         },
       }),

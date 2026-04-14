@@ -5,7 +5,7 @@
  * then sends it for e-signature with SignForge quick-sign API:
  * https://signforge.io/developers
  */
-import { buildLeasePdfHtml } from '../lib/lease-html-document.js'
+import { buildLeasePdfHtml, buildStructuredLeasePdfHtml } from '../lib/lease-html-document.js'
 import { renderHtmlToPdfBuffer } from '../lib/lease-puppeteer-pdf.js'
 
 const AIRTABLE_TOKEN = process.env.AIRTABLE_TOKEN || process.env.VITE_AIRTABLE_TOKEN
@@ -114,15 +114,32 @@ export default async function handler(req, res) {
       return res.status(400).json({ error: 'Resident Email is required on the lease draft for SignForge.' })
     }
 
-    const bodyText =
-      String(draft['Manager Edited Content'] || '').trim() || String(draft['AI Draft Content'] || '').trim()
-    if (!bodyText) {
-      return res.status(400).json({ error: 'No lease text to render (Manager Edited / AI Draft is empty).' })
+    const title = `Lease — ${residentName || 'Resident'} — ${draft.Property || 'Property'}`
+
+    // Prefer structured JSON lease (property-specific, formatted); fall back to plain text
+    let html
+    const leaseJsonRaw = String(draft['Lease JSON'] || '').trim()
+    let leaseData = null
+    if (leaseJsonRaw) {
+      try {
+        const parsed = JSON.parse(leaseJsonRaw)
+        if (parsed && typeof parsed === 'object') leaseData = parsed
+      } catch {
+        // malformed JSON — fall through to plain text
+      }
     }
 
-    const title = `Lease — ${residentName || 'Resident'} — ${draft.Property || 'Property'}`
-    const subtitle = [draft.Property, draft.Unit].filter(Boolean).join(' · ')
-    const html = buildLeasePdfHtml({ title: 'RESIDENTIAL LEASE AGREEMENT', subtitle, bodyText })
+    if (leaseData) {
+      html = buildStructuredLeasePdfHtml(leaseData)
+    } else {
+      const bodyText =
+        String(draft['Manager Edited Content'] || '').trim() || String(draft['AI Draft Content'] || '').trim()
+      if (!bodyText) {
+        return res.status(400).json({ error: 'No lease content to render (Lease JSON, Manager Edited, and AI Draft are all empty).' })
+      }
+      const subtitle = [draft.Property, draft.Unit].filter(Boolean).join(' · ')
+      html = buildLeasePdfHtml({ title: 'RESIDENTIAL LEASE AGREEMENT', subtitle, bodyText })
+    }
     const pdfBuffer = await renderHtmlToPdfBuffer(html)
     const pdfBase64 = pdfBuffer.toString('base64')
 

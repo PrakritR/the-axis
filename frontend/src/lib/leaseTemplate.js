@@ -19,25 +19,77 @@ function fmtMoney(n) {
   return '$' + num.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 }
 
+function findPropRecord(propertyName) {
+  if (!propertyName) return null
+  const q = String(propertyName).trim().toLowerCase()
+  return (
+    properties.find((p) => String(p.name || '').trim().toLowerCase() === q) ||
+    properties.find((p) => {
+      const n = String(p.name || '').trim().toLowerCase()
+      return n.includes(q) || q.includes(n)
+    }) ||
+    null
+  )
+}
+
 function getRoomRent(propertyName, roomNumber) {
-  const prop = properties.find((p) => p.name === propertyName)
+  const prop = findPropRecord(propertyName)
   if (!prop) return 0
+  const roomLabel = String(roomNumber || '').trim()
   for (const plan of prop.roomPlans || []) {
-    const room = (plan.rooms || []).find((r) => r.name === roomNumber)
-    if (room?.price) return parseFloat(room.price) || 0
+    for (const room of plan.rooms || []) {
+      if (!room?.name) continue
+      const nameNorm = String(room.name).trim().toLowerCase()
+      const labelNorm = roomLabel.toLowerCase()
+      const stripRoom = (s) => s.replace(/^room\s*/i, '').trim()
+      if (
+        nameNorm === labelNorm ||
+        stripRoom(nameNorm) === stripRoom(labelNorm)
+      ) {
+        if (room.price) return parseFloat(String(room.price).replace(/[^0-9.]/g, '')) || 0
+      }
+    }
   }
   return 0
 }
 
+function parseMoneyStr(s) {
+  if (!s) return null
+  const n = parseFloat(String(s).replace(/[^0-9.]/g, ''))
+  return Number.isFinite(n) && n > 0 ? n : null
+}
+
 function getUtilityFee(propertyName) {
-  const prop = properties.find((p) => p.name === propertyName)
-  return prop?.utilityFee || prop?.utilitiesFee || 125
+  const prop = findPropRecord(propertyName)
+  return parseMoneyStr(prop?.utilitiesFee) ?? parseMoneyStr(prop?.utilityFee) ?? 125
 }
 
 function getSecDeposit(propertyName, monthlyRent) {
-  const prop = properties.find((p) => p.name === propertyName)
-  if (prop?.securityDeposit) return prop.securityDeposit
+  const prop = findPropRecord(propertyName)
+  const explicit = parseMoneyStr(prop?.securityDeposit)
+  if (explicit != null) return explicit
   return Math.min(monthlyRent, 500)
+}
+
+function getBathroomNote(propertyName, roomNumber) {
+  const prop = findPropRecord(propertyName)
+  if (!prop || !roomNumber) return ''
+  const roomLabel = String(roomNumber).trim()
+  const stripRoom = (s) => String(s || '').replace(/^room\s*/i, '').trim().toLowerCase()
+  for (const plan of prop.roomPlans || []) {
+    for (const room of plan.rooms || []) {
+      if (!room?.name) continue
+      if (stripRoom(room.name) === stripRoom(roomLabel)) {
+        return room.details || ''
+      }
+    }
+  }
+  return ''
+}
+
+function getAmenities(propertyName) {
+  const prop = findPropRecord(propertyName)
+  return prop?.communityAmenities || []
 }
 
 /**
@@ -61,6 +113,8 @@ export function buildLease(app, overrides = {}) {
   const utilityFee = overrides.utilityFee ?? getUtilityFee(propertyName)
   const securityDeposit = overrides.deposit ?? getSecDeposit(propertyName, monthlyRent)
   const adminFee = overrides.adminFee ?? 250
+  const bathroomNote = getBathroomNote(propertyName, roomNumber)
+  const amenities = getAmenities(propertyName)
 
   // Calculate prorated amounts (days from start to end of first month)
   let proratedRent = 0
@@ -129,5 +183,8 @@ export function buildLease(app, overrides = {}) {
     totalMoveInFmt: fmtMoney(totalMoveIn),
     monthlyTotalFmt: fmtMoney(monthlyRent + utilityFee),
     breakLeaseFee: fmtMoney(900),
+    // Property-specific
+    bathroomNote,
+    amenities,
   }
 }

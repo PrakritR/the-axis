@@ -27,7 +27,12 @@ import {
   loadResidentsForManagerPortalInbox,
 } from '../../lib/adminPortalAirtable.js'
 import { notifyPortalMessage } from '../../lib/notifyPortalMessage.js'
-import { threadSubjectFromMessages, threadBodyPreviewFromMessage, mergeSubjectIntoMessageIfNeeded } from '../../lib/portalInboxThreadUtils.js'
+import {
+  threadSubjectFromMessages,
+  threadBodyPreviewFromMessage,
+  mergeSubjectIntoMessageIfNeeded,
+  portalInboxThreadSection,
+} from '../../lib/portalInboxThreadUtils.js'
 import {
   isAirtablePermissionErrorMessage,
 } from '../../lib/airtablePermissionError'
@@ -148,15 +153,6 @@ function saveLocalInboxStatePatch(email, threadKey, patch) {
   } catch {
     /* ignore */
   }
-}
-
-function managerInboxSectionForRow(lastMsgTs, state) {
-  if (state?.trashed) return 'trash'
-  if (lastMsgTs <= 0) {
-    return state?.lastReadAt ? 'opened' : 'unopened'
-  }
-  if (!state?.lastReadAt) return 'unopened'
-  return lastMsgTs > state.lastReadAt.getTime() ? 'unopened' : 'opened'
 }
 
 function threadSearchHaystack(sorted, subjectKey, participantLabel, subjectLine) {
@@ -315,7 +311,7 @@ export default function ManagerInboxPage({
   const [adminContactsLoading, setAdminContactsLoading] = useState(false)
   const [inboxStateMap, setInboxStateMap] = useState(() => new Map())
   const [inboxStateBackend, setInboxStateBackend] = useState('pending')
-  const [sectionFilter, setSectionFilter] = useState('all')
+  const [sectionFilter, setSectionFilter] = useState('unopened')
   const [channelFilter, setChannelFilter] = useState('all')
   const [threadSearch, setThreadSearch] = useState('')
   const [threadMenuOpen, setThreadMenuOpen] = useState(false)
@@ -491,8 +487,9 @@ export default function ManagerInboxPage({
   }, [adminFullInbox])
 
   useEffect(() => {
-    setReplySubject('')
-  }, [selectedThreadId])
+    const t = threadSubjectFromMessages(thread, subjectFieldName)
+    setReplySubject(t ? `Re: ${t}` : '')
+  }, [selectedThreadId, thread, subjectFieldName])
 
   useEffect(() => {
     if (!threadMenuOpen) return
@@ -534,6 +531,7 @@ export default function ManagerInboxPage({
           time: last ? fmtDateTime(last.Timestamp || last.created_at) : '',
           ts: lastMsgTs,
           lastMsgTs,
+          lastSenderEmail: last ? String(last['Sender Email'] || '').trim() : '',
         })
       }
       rows.sort((a, b) => b.ts - a.ts)
@@ -558,6 +556,7 @@ export default function ManagerInboxPage({
         time: last ? fmtDateTime(last.Timestamp || last.created_at) : '',
         ts: lastMsgTs,
         lastMsgTs,
+        lastSenderEmail: last ? String(last['Sender Email'] || '').trim() : '',
       })
     }
 
@@ -589,6 +588,7 @@ export default function ManagerInboxPage({
         time: last ? fmtDateTime(last.Timestamp || last.created_at) : '',
         ts: lastMsgTs,
         lastMsgTs,
+        lastSenderEmail: last ? String(last['Sender Email'] || '').trim() : '',
       })
     }
 
@@ -599,32 +599,40 @@ export default function ManagerInboxPage({
   const threadRowsWithMeta = useMemo(() => {
     return threadRows.map((row) => {
       const st = inboxStateMap.get(row.stateKey)
-      const section = managerInboxSectionForRow(row.lastMsgTs, st)
+      const section = portalInboxThreadSection({
+        lastMsgTs: row.lastMsgTs,
+        state: st,
+        lastSenderEmail: row.lastSenderEmail,
+        myEmail: managerEmail,
+      })
       const unopened = section === 'unopened'
       return { ...row, section, unopened }
     })
-  }, [threadRows, inboxStateMap])
+  }, [threadRows, inboxStateMap, managerEmail])
 
   const inboxSections = useMemo(() => {
     const unopened = []
     const opened = []
+    const sent = []
     const trash = []
     for (const row of threadRowsWithMeta) {
       if (row.section === 'trash') trash.push(row)
+      else if (row.section === 'sent') sent.push(row)
       else if (row.section === 'unopened') unopened.push(row)
       else opened.push(row)
     }
-    return { unopened, opened, trash }
+    return { unopened, opened, sent, trash }
   }, [threadRowsWithMeta])
 
-  const inboxActiveTotal = inboxSections.unopened.length + inboxSections.opened.length
+  const inboxActiveTotal =
+    inboxSections.unopened.length + inboxSections.opened.length + inboxSections.sent.length
 
   const visibleThreadRows = useMemo(() => {
     const q = threadSearch.trim().toLowerCase()
     let rows = threadRowsWithMeta
-    if (sectionFilter === 'all') rows = rows.filter((row) => row.section !== 'trash')
-    else if (sectionFilter === 'unopened') rows = rows.filter((row) => row.section === 'unopened')
+    if (sectionFilter === 'unopened') rows = rows.filter((row) => row.section === 'unopened')
     else if (sectionFilter === 'opened') rows = rows.filter((row) => row.section === 'opened')
+    else if (sectionFilter === 'sent') rows = rows.filter((row) => row.section === 'sent')
     else if (sectionFilter === 'trash') rows = rows.filter((row) => row.section === 'trash')
 
     if (adminFullInbox) {
@@ -933,8 +941,14 @@ export default function ManagerInboxPage({
   async function handleSendReply(e) {
     e.preventDefault()
     if (!selectedThreadId || !reply.trim() || !managerEmail) return
+    const threadSubj = threadSubjectFromMessages(thread, subjectFieldName)
+    const notifySubj = replySubject.trim() || threadSubj || 'Axis portal message'
     const subjResolved = showSubjectField ? replySubject.trim() : ''
-    const bodyOut = mergeSubjectIntoMessageIfNeeded(reply.trim(), subjResolved, showSubjectField)
+    const bodyOut = mergeSubjectIntoMessageIfNeeded(
+      reply.trim(),
+      showSubjectField ? subjResolved : notifySubj,
+      showSubjectField,
+    )
     setSending(true)
     try {
       if (adminFullInbox) {
@@ -949,7 +963,7 @@ export default function ManagerInboxPage({
         notifyPortalMessage({
           recipientEmail: getOtherPartyEmail(thread, managerEmail),
           senderName: managerEmail,
-          subject: subjResolved,
+          subject: notifySubj,
         })
         setReply('')
         setReplySubject('')
@@ -975,7 +989,7 @@ export default function ManagerInboxPage({
           channel: PORTAL_INBOX_CHANNEL_INTERNAL,
           subject: showSubjectField ? subjResolved : '',
         })
-        notifyPortalMessage({ toAdmins: true, senderName: managerEmail, subject: subjResolved })
+        notifyPortalMessage({ toAdmins: true, senderName: managerEmail, subject: notifySubj })
       } else {
         const resId = managerInboxParseResidentThreadId(selectedThreadId)
         if (!resId) return
@@ -990,7 +1004,7 @@ export default function ManagerInboxPage({
         notifyPortalMessage({
           recipientEmail: getOtherPartyEmail(thread, managerEmail),
           senderName: managerEmail,
-          subject: subjResolved,
+          subject: notifySubj,
         })
       }
       setReply('')
@@ -1128,12 +1142,12 @@ export default function ManagerInboxPage({
 
   const channelSelectOptions = adminFullInbox
     ? [
-        ['all', 'All'],
+        ['all', 'Everything'],
         ['resident', 'Resident'],
         ['admin', 'Admin'],
       ]
     : [
-        ['all', 'All'],
+        ['all', 'Everything'],
         ['admin', 'Admin'],
         ['resident', 'Resident'],
       ]
@@ -1152,9 +1166,11 @@ export default function ManagerInboxPage({
             ? 'No unopened conversations'
             : sectionFilter === 'opened'
               ? 'No opened conversations'
-            : channelFilter !== 'all'
-              ? `No ${channelLabel} conversations`
-              : 'No conversations'
+              : sectionFilter === 'sent'
+                ? 'No sent conversations'
+                : channelFilter !== 'all'
+                  ? `No ${channelLabel} conversations`
+                  : 'No conversations'
 
   const composerPlaceholder =
     adminFullInbox || selectedThreadId !== MANAGER_INBOX_AXIS ? 'Write a reply…' : 'Message Axis…'
@@ -1210,9 +1226,9 @@ export default function ManagerInboxPage({
           filter={sectionFilter}
           onFilterChange={setSectionFilter}
           counts={{
-            all: inboxActiveTotal,
             unopened: inboxSections.unopened.length,
             opened: inboxSections.opened.length,
+            sent: inboxSections.sent.length,
             trash: inboxSections.trash.length,
           }}
           rows={visibleThreadRows}
@@ -1222,7 +1238,7 @@ export default function ManagerInboxPage({
             setSelectedThreadId(id)
             const row = visibleThreadRows.find((r) => r.id === id)
             if (row?.stateKey) {
-              void markThreadUnopened(row.stateKey)
+              void touchThreadRead(row.stateKey)
             }
           }}
           emptyMessage={listEmptyMessage}
@@ -1523,11 +1539,15 @@ export default function ManagerInboxPage({
               disabled={!selectedThreadId}
               sending={sending}
               placeholder={composerPlaceholder}
-              showSubject={showSubjectField}
+              showSubject
               useSubjectPresets={false}
               subject={replySubject}
               onSubjectChange={setReplySubject}
-              subjectPlaceholder="Optional — adds a subject line to this reply"
+              subjectPlaceholder={
+                activeThreadSubject
+                  ? `Re: ${activeThreadSubject} — edit for email notification`
+                  : 'Subject for email notification'
+              }
               allowSubjectEmpty
               toLabel={composerToLabel || null}
             />
