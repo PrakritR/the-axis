@@ -305,7 +305,7 @@ export default function SiteHeader() {
             onClick={() => setMobileOpen((o) => !o)}
             aria-label="Toggle navigation menu"
             aria-expanded={mobileOpen}
-            className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-slate-200 bg-white/70 text-slate-600 transition hover:border-[#2563eb] hover:text-[#2563eb] md:hidden"
+            className="inline-flex h-11 w-11 touch-manipulation items-center justify-center rounded-full border border-slate-200 bg-white/70 text-slate-600 transition hover:border-[#2563eb] hover:text-[#2563eb] active:scale-[0.97] md:hidden"
           >
             {mobileOpen ? (
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden>

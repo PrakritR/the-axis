@@ -144,6 +144,9 @@ export default function ResidentPortalInbox({ resident }) {
   const [composeSubject, setComposeSubject] = useState('')
   const [composeBody, setComposeBody] = useState('')
   const [composeSending, setComposeSending] = useState(false)
+  /** Incremented on each list-row click so re-opening the same thread can mark read again after load. */
+  const [readIntentEpoch, setReadIntentEpoch] = useState(0)
+  const openReadIntentKeyRef = useRef('')
 
   const [inboxStateMap, setInboxStateMap] = useState(() => new Map())
   const [inboxStateBackend, setInboxStateBackend] = useState('pending')
@@ -363,17 +366,17 @@ export default function ResidentPortalInbox({ resident }) {
 
   const touchThreadReadRef = useRef(touchThreadRead)
   touchThreadReadRef.current = touchThreadRead
-  const lastTouchedThreadRef = useRef('')
 
   useEffect(() => {
-    if (!selectedStateKey) {
-      lastTouchedThreadRef.current = ''
-      return
-    }
-    if (lastTouchedThreadRef.current === selectedStateKey) return
-    lastTouchedThreadRef.current = selectedStateKey
-    void touchThreadReadRef.current(selectedStateKey)
+    if (!selectedStateKey) openReadIntentKeyRef.current = ''
   }, [selectedStateKey])
+
+  useEffect(() => {
+    if (!selectedStateKey || threadLoading) return
+    if (openReadIntentKeyRef.current !== selectedStateKey) return
+    openReadIntentKeyRef.current = ''
+    void touchThreadReadRef.current(selectedStateKey)
+  }, [selectedStateKey, threadLoading, readIntentEpoch])
 
   useEffect(() => {
     if (!selectedThreadId) {
@@ -614,6 +617,14 @@ export default function ResidentPortalInbox({ resident }) {
           onSelect={(id) => {
             setComposeOpen(false)
             setSelectedThreadId(id)
+            if (!id) {
+              openReadIntentKeyRef.current = ''
+              return
+            }
+            const row = visibleThreadRows.find((r) => r.id === id)
+            const sk = row?.stateKey || ''
+            openReadIntentKeyRef.current = sk
+            if (sk) setReadIntentEpoch((n) => n + 1)
           }}
           emptyMessage={listEmptyMessage}
           onTrashThread={(stateKey, trashed = true) => moveThreadTrash(stateKey, trashed)}

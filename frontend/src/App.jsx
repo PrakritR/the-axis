@@ -191,7 +191,10 @@ function AppInner() {
             <SiteHeader />
           </div>
           {standaloneToaster}
-          <main className="min-h-0 w-full flex-1" style={{ paddingTop: portalChromeInset.insetPx, '--portal-inset': `${portalChromeInset.insetPx ?? 0}px` }}>
+          <main
+            className="flex min-h-0 w-full flex-1 flex-col overflow-hidden"
+            style={{ paddingTop: portalChromeInset.insetPx, '--portal-inset': `${portalChromeInset.insetPx ?? 0}px` }}
+          >
             {standaloneRoutes}
           </main>
           <Chatbot />

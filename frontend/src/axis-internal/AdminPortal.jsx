@@ -3,6 +3,7 @@ import toast from 'react-hot-toast'
 import ManagerInboxPage from '../components/manager-inbox/ManagerInboxPage'
 import Modal from '../components/Modal'
 import PortalShell, { StatCard, StatusPill, DataTable } from '../components/PortalShell'
+import { PortalEmptyVisual } from '../components/portalNavIcons.jsx'
 import {
   adminApproveProperty,
   adminPatchApplication,
@@ -33,7 +34,7 @@ import {
 } from '../lib/developerPortal'
 import { ApplicationDetailPanel } from '../lib/applicationDetailPanel.jsx'
 import { PropertyDetailPanel } from '../lib/propertyDetailPanel.jsx'
-import { AXIS_ADMIN_SESSION_KEY } from './adminSessionConstants'
+import { AXIS_ADMIN_SESSION_KEY, AXIS_ADMIN_SHOW_PORTAL_HANDOFF_KEY } from './adminSessionConstants'
 import AdminProfilePanel from './AdminProfilePanel.jsx'
 import AdminLeasingTab from './AdminLeasingTab.jsx'
 import {
@@ -43,7 +44,7 @@ import {
   portalInboxThreadKeyFromRecord,
 } from '../lib/airtable.js'
 
-export { AXIS_ADMIN_SESSION_KEY } from './adminSessionConstants'
+export { AXIS_ADMIN_SESSION_KEY, AXIS_ADMIN_SHOW_PORTAL_HANDOFF_KEY } from './adminSessionConstants'
 
 const AdminPortalCalendarTab = lazy(() =>
   import('../pages/Manager.jsx').then((m) => ({ default: m.CalendarTabPanel })),
@@ -560,16 +561,16 @@ function PortalHandoffCard({ accounts, residents, user }) {
   )
 
   return (
-    <div className="rounded-3xl border border-sky-200/90 bg-[linear-gradient(135deg,#f0f9ff_0%,#ffffff_100%)] p-5 shadow-sm">
+    <div className="w-full min-w-0 max-w-full overflow-hidden rounded-3xl border border-sky-200/90 bg-[linear-gradient(135deg,#f0f9ff_0%,#ffffff_100%)] p-5 shadow-sm">
       <h2 className="text-sm font-black text-slate-900">Open portals as a specific account</h2>
-      <div className="mt-4 grid gap-4 sm:grid-cols-2">
-        <div>
+      <div className="mt-4 grid min-w-0 gap-4 sm:grid-cols-2">
+        <div className="min-w-0">
           <div className="mb-2 text-[11px] font-bold uppercase tracking-[0.14em] text-sky-800">Manager portal</div>
-          <div className="flex gap-2">
+          <div className="flex w-full min-w-0 gap-2">
             <select
               value={selectedManagerId}
               onChange={(e) => setSelectedManagerId(e.target.value)}
-              className="min-w-0 flex-1 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 outline-none focus:border-sky-400 focus:ring-1 focus:ring-sky-400/30"
+              className="min-w-0 w-0 max-w-full flex-1 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 outline-none focus:border-sky-400 focus:ring-1 focus:ring-sky-400/30"
             >
               <option value="">— choose manager —</option>
               {sortedManagers.map((m) => (
@@ -585,19 +586,19 @@ function PortalHandoffCard({ accounts, residents, user }) {
               type="button"
               disabled={!selectedManagerId}
               onClick={openManagerPortal}
-              className="rounded-xl bg-[#2563eb] px-3 py-2 text-xs font-semibold text-white shadow-sm transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-40"
+              className="shrink-0 rounded-xl bg-[#2563eb] px-3 py-2 text-xs font-semibold text-white shadow-sm transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-40"
             >
               Open
             </button>
           </div>
         </div>
-        <div>
+        <div className="min-w-0">
           <div className="mb-2 text-[11px] font-bold uppercase tracking-[0.14em] text-sky-800">Resident portal</div>
-          <div className="flex gap-2">
+          <div className="flex w-full min-w-0 gap-2">
             <select
               value={selectedResidentId}
               onChange={(e) => setSelectedResidentId(e.target.value)}
-              className="min-w-0 flex-1 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 outline-none focus:border-sky-400 focus:ring-1 focus:ring-sky-400/30"
+              className="min-w-0 w-0 max-w-full flex-1 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 outline-none focus:border-sky-400 focus:ring-1 focus:ring-sky-400/30"
             >
               <option value="">— choose resident —</option>
               {sortedResidents.map((r) => (
@@ -615,7 +616,7 @@ function PortalHandoffCard({ accounts, residents, user }) {
               type="button"
               disabled={!selectedResidentId}
               onClick={openResidentPortal}
-              className="rounded-xl bg-[#2563eb] px-3 py-2 text-xs font-semibold text-white shadow-sm transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-40"
+              className="shrink-0 rounded-xl bg-[#2563eb] px-3 py-2 text-xs font-semibold text-white shadow-sm transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-40"
             >
               Open
             </button>
@@ -734,6 +735,16 @@ export default function AdminPortal() {
   const [applicationsHouseFilter, setApplicationsHouseFilter] = useState('')
   const [requestEditsModalOpen, setRequestEditsModalOpen] = useState(false)
   const [requestEditsNotes, setRequestEditsNotes] = useState('')
+  const [showPortalHandoff, setShowPortalHandoff] = useState(() => {
+    if (typeof window === 'undefined') return true
+    try {
+      const v = localStorage.getItem(AXIS_ADMIN_SHOW_PORTAL_HANDOFF_KEY)
+      if (v === '0' || v === 'false') return false
+      return true
+    } catch {
+      return true
+    }
+  })
   const airtableConfigWarned = useRef(false)
 
   const user = session
@@ -844,25 +855,15 @@ export default function AdminPortal() {
     setSelectedApprovalId(null)
   }, [propertiesSection])
 
-  const navItems = useMemo(
-    () => [
-      { id: 'dashboard', label: 'Dashboard', description: 'Overview & alerts' },
-      { id: 'properties', label: 'Properties', description: 'Listings & approvals' },
-      { id: 'accounts', label: 'Managers', description: 'Subscribers & access' },
-      {
-        id: 'leasing',
-        label: 'Leases',
-        description:
-          leaseChangesNeededCount > 0
-            ? `${leaseChangesNeededCount} need admin review`
-            : 'Drafts, PDFs & workflow',
-      },
-      { id: 'calendar', label: 'Calendar', description: 'Scheduling & tours' },
-      { id: 'messages', label: 'Inbox', description: 'Resident & manager threads' },
-      { id: 'profile', label: 'Profile', description: 'Your account' },
-    ],
-    [leaseChangesNeededCount],
-  )
+  const navItems = [
+    { id: 'dashboard', label: 'Dashboard' },
+    { id: 'properties', label: 'Properties' },
+    { id: 'accounts', label: 'Managers' },
+    { id: 'leasing', label: 'Leases' },
+    { id: 'calendar', label: 'Calendar' },
+    { id: 'messages', label: 'Inbox' },
+    { id: 'profile', label: 'Profile' },
+  ]
 
   /** First-time submissions awaiting admin review (not admin “request change” flow). */
   const pendingReviewProperties = useMemo(() => properties.filter((p) => p.status === 'pending'), [properties])
@@ -996,7 +997,7 @@ export default function AdminPortal() {
       onSignOut={handleSignOut}
     >
       {tab === 'dashboard' && (
-        <div className="space-y-6">
+        <div className="min-w-0 space-y-6">
           {/* Header */}
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
@@ -1020,9 +1021,35 @@ export default function AdminPortal() {
             )}
           </div>
 
-          {/* Portal handoff — top */}
+          {/* Portal handoff — optional (persisted in this browser) */}
           {isAdminPortalAirtableConfigured() ? (
-            <PortalHandoffCard accounts={accounts} residents={residents} user={user} />
+            <div className="min-w-0 space-y-3">
+              <label className="flex cursor-pointer items-start gap-3 rounded-2xl border border-slate-200 bg-white px-4 py-3 shadow-sm touch-manipulation">
+                <input
+                  type="checkbox"
+                  checked={showPortalHandoff}
+                  onChange={(e) => {
+                    const next = e.target.checked
+                    setShowPortalHandoff(next)
+                    try {
+                      localStorage.setItem(AXIS_ADMIN_SHOW_PORTAL_HANDOFF_KEY, next ? '1' : '0')
+                    } catch {
+                      /* ignore quota / private mode */
+                    }
+                  }}
+                  className="mt-0.5 h-[18px] w-[18px] shrink-0 rounded border-slate-300 text-[#2563eb] focus:ring-2 focus:ring-[#2563eb]/30"
+                />
+                <span className="min-w-0 select-none text-sm leading-snug text-slate-700">
+                  <span className="font-semibold text-slate-900">Open portals as a specific account</span>
+                  <span className="mt-0.5 block text-xs text-slate-500">
+                    Show manager/resident shortcuts on the dashboard. Preference is stored only in this browser.
+                  </span>
+                </span>
+              </label>
+              {showPortalHandoff ? (
+                <PortalHandoffCard accounts={accounts} residents={residents} user={user} />
+              ) : null}
+            </div>
           ) : null}
 
           {/* Action-needed banner */}
@@ -1158,6 +1185,7 @@ export default function AdminPortal() {
             <>
               <DataTable
                 empty={propertyReviewQueue.empty}
+                emptyIcon={<PortalEmptyVisual variant="house" />}
                 columns={[
                   { key: 'n', label: 'Property', render: (d) => <><div className="font-semibold">{d.name}</div><div className="text-xs text-slate-500">{d.address}</div></> },
                   { key: 'o', label: 'Manager', render: (d) => ownerLabel(d.ownerId) },
@@ -1284,6 +1312,7 @@ export default function AdminPortal() {
             <>
               <DataTable
                 empty="No listed properties"
+                emptyIcon={<PortalEmptyVisual variant="house" />}
                 columns={[
                   { key: 'n', label: 'Property', render: (d) => <><div className="font-semibold">{d.name}</div><div className="text-xs text-slate-500">{d.address}</div></> },
                   { key: 'o', label: 'Manager', render: (d) => ownerLabel(d.ownerId) },
@@ -1372,6 +1401,7 @@ export default function AdminPortal() {
             <>
               <DataTable
                 empty="No unlisted properties"
+                emptyIcon={<PortalEmptyVisual variant="house" />}
                 columns={[
                   { key: 'n', label: 'Property', render: (d) => <><div className="font-semibold">{d.name}</div><div className="text-xs text-slate-500">{d.address}</div></> },
                   { key: 'o', label: 'Manager', render: (d) => ownerLabel(d.ownerId) },
@@ -1460,6 +1490,7 @@ export default function AdminPortal() {
             <>
               <DataTable
                 empty="No rejected properties"
+                emptyIcon={<PortalEmptyVisual variant="house" />}
                 columns={[
                   { key: 'n', label: 'Property', render: (d) => <><div className="font-semibold">{d.name}</div><div className="text-xs text-slate-500">{d.address}</div></> },
                   { key: 'o', label: 'Manager', render: (d) => ownerLabel(d.ownerId) },

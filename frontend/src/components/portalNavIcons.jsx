@@ -21,9 +21,10 @@ export function PortalNavGlyph({ tabId, className = 'h-5 w-5' }) {
         </svg>
       )
     case 'properties':
+      /* Home / house — listings (same silhouette as resident “home”; distinct label in nav). */
       return (
         <svg {...svgProps}>
-          <path d="M2.25 21h19.5m-18-18v18m2.25-18v18m13.5-13.5V21M6 7.5h.75v.75H6V7.5Zm0 3h.75v.75H6V10.5Zm0 3h.75v.75H6V13.5Zm3-6H12v.75H9V7.5Zm0 3h3v.75H9V10.5Zm0 3h3v.75H9V13.5Zm4.5-6H18v2.25h-2.25V7.5Zm0 4.5H18V15h-2.25v-3Zm0 4.5H18v2.25h-2.25V18Z" />
+          <path d="m2.25 12 8.954-8.955c.44-.439 1.152-.439 1.591 0L21.75 12M4.5 9.75v10.125c0 .621.504 1.125 1.125 1.125H9.75v-4.875c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125V21h4.125c.621 0 1.125-.504 1.125-1.125V9.75M8.25 21h8.25" />
         </svg>
       )
     case 'accounts':
@@ -51,6 +52,12 @@ export function PortalNavGlyph({ tabId, className = 'h-5 w-5' }) {
       return (
         <svg {...svgProps}>
           <path d="M2.25 8.25h19.5M2.25 9h19.5m-16.5 5.25h6m-6 2.25h3m-3.75 3h15a2.25 2.25 0 0 0 2.25-2.25V6.75A2.25 2.25 0 0 0 19.5 4.5h-15a2.25 2.25 0 0 0-2.25 2.25v10.5A2.25 2.25 0 0 0 4.5 19.5Z" />
+        </svg>
+      )
+    case 'search':
+      return (
+        <svg {...svgProps}>
+          <path d="m21 21-5.197-5.197m0 0A7.5 7.5 0 1 0 5.196 5.196a7.5 7.5 0 0 0 10.607 10.607Z" />
         </svg>
       )
     case 'workorders':
@@ -133,17 +140,15 @@ export function PortalEmptyVisual({ variant, className = '' }) {
   const inner = (() => {
     switch (v) {
       case 'house':
-        return <PortalNavGlyph tabId="resident" className="h-7 w-7" />
+        return <PortalNavGlyph tabId="properties" className="h-7 w-7" />
       case 'clipboard':
         return <PortalNavGlyph tabId="applications" className="h-7 w-7" />
       case 'payments':
         return <PortalNavGlyph tabId="payments" className="h-7 w-7" />
+      case 'workorders':
+        return <PortalNavGlyph tabId="workorders" className="h-7 w-7" />
       case 'search':
-        return (
-          <svg className="h-7 w-7" viewBox="0 0 24 24" aria-hidden {...stroke}>
-            <path d="m21 21-5.197-5.197m0 0A7.5 7.5 0 1 0 5.196 5.196a7.5 7.5 0 0 0 10.607 10.607Z" />
-          </svg>
-        )
+        return <PortalNavGlyph tabId="search" className="h-7 w-7" />
       case 'warning':
         return (
           <svg className="h-7 w-7 text-amber-500" viewBox="0 0 24 24" aria-hidden {...stroke}>

@@ -20,6 +20,7 @@ import {
   portalAuthInputCls,
 } from '../components/PortalAuthUI'
 import PortalShell, { DataTable, StatusPill } from '../components/PortalShell'
+import { PortalNavGlyph } from '../components/portalNavIcons.jsx'
 import { HOUSING_CONTACT_MESSAGE, HOUSING_CONTACT_SCHEDULE } from '../lib/housingSite'
 import {
   airtableReady,
@@ -44,7 +45,7 @@ import {
   submitResidentLeaseChangeRequest,
 } from '../lib/airtable'
 import { applicationRejectedFieldName, deriveApplicationApprovalState } from '../lib/applicationApprovalState.js'
-import { leaseDraftAllowsSignWithoutMoveInPay } from '../lib/leaseMoveInOverride.js'
+import { anyLeaseDraftAllowsSignWithoutMoveInPay } from '../lib/leaseMoveInOverride.js'
 import { workOrderScheduledMeta } from '../lib/workOrderShared.js'
 
 const SESSION_KEY = 'axis_resident'
@@ -1189,14 +1190,14 @@ function WorkOrdersPanel({ resident, requests: requestsProp, onRequestCreated, o
         {requests.length === 0 ? (
           <div className="mt-6">
             <PortalOpsEmptyState
-              icon="🛠"
+              icon={<PortalNavGlyph tabId="workorders" className="h-8 w-8 text-slate-500" />}
               title="No work orders yet"
             />
           </div>
         ) : filteredRequests.length === 0 ? (
           <div className="mt-6">
             <PortalOpsEmptyState
-              icon="🔍"
+              icon={<PortalNavGlyph tabId="search" className="h-8 w-8 text-slate-500" />}
               title="Nothing in this view"
               description="Try another filter above — your requests may be in a different stage"
             />
@@ -2281,8 +2282,8 @@ function LeasingPanel({ resident, payments, onOpenPayments }) {
 
   const activeLeaseDraft = useMemo(() => pickBestLeaseDraft(leaseDrafts), [leaseDrafts])
   const signWithoutMoveInPayOverride = useMemo(
-    () => leaseDraftAllowsSignWithoutMoveInPay(activeLeaseDraft),
-    [activeLeaseDraft],
+    () => anyLeaseDraftAllowsSignWithoutMoveInPay(leaseDrafts),
+    [leaseDrafts],
   )
   const moveInPrereqsMet =
     signWithoutMoveInPayOverride || (securityDepositPaid && firstMonthRentPaid)
@@ -2372,13 +2373,30 @@ function LeasingPanel({ resident, payments, onOpenPayments }) {
         </button>
       </div>
 
+      <div className="mb-5 rounded-2xl border border-sky-200 bg-sky-50/95 px-4 py-4 text-sm text-slate-800 shadow-sm">
+        <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-sky-900">Room hold · Payments</p>
+        <p className="mt-2 leading-relaxed">
+          To hold a room, there is a <span className="font-semibold">$100 hold fee</span> that will be credited toward your
+          rent or security deposit. Please note that this fee is <span className="font-semibold">non-refundable</span> if
+          the lease agreement and deposit are not completed within <span className="font-semibold">48 hours</span>.
+        </p>
+        <button
+          type="button"
+          onClick={() => onOpenPayments('pending')}
+          className="mt-3 text-sm font-semibold text-[#2563eb] underline decoration-sky-400 underline-offset-2 hover:decoration-[#2563eb]"
+        >
+          Open Payments to pay the hold or move-in charges
+        </button>
+      </div>
+
       {!moveInPrereqsMet ? (
         <div className="mb-5 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-4 text-sm text-amber-950 shadow-sm">
           <p className="font-semibold text-amber-950">Lease document not available yet</p>
           <p className="mt-1.5 leading-relaxed text-amber-900/90">
             This section stays locked until your <span className="font-semibold">security deposit</span> and{' '}
-            <span className="font-semibold">first month rent</span> are paid. Use Payments to complete them, then your
-            lease document and signing will unlock here.
+            <span className="font-semibold">first month rent</span> are paid. Use Payments to complete them (including any{' '}
+            <span className="font-semibold">$100 room hold</span> toward your unit), then your lease document and signing
+            will unlock here.
           </p>
           <button
             type="button"

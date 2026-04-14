@@ -48,7 +48,7 @@ export function PortalSegmentedControl({ tabs, active, onChange }) {
             type="button"
             onClick={() => onChange(id)}
             className={cx(
-              'flex flex-1 flex-col items-center gap-1.5 rounded-[18px] px-2 py-3 text-sm font-semibold transition',
+              'flex min-h-[52px] flex-1 flex-col items-center justify-center gap-1.5 rounded-[18px] px-2 py-2.5 text-sm font-semibold transition touch-manipulation active:scale-[0.98] sm:min-h-0 sm:py-3',
               isActive ? 'bg-white text-slate-900 shadow-sm ring-2 ring-[#2563eb]/35' : 'text-slate-500 hover:text-slate-900'
             )}
           >

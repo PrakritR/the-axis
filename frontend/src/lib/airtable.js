@@ -32,13 +32,17 @@ const MESSAGE_SUBJECT_FIELD = (() => {
   return s || ''
 })()
 
-/** Date/time on Messages for sorting (getAllMessages). Set `none` if your base has no such field. */
+/**
+ * Writable date/time on Messages (optional). Leave unset to omit — sorting uses Airtable `createdTime`
+ * (`created_at` on mapped records). Set to `Timestamp` only if that column is a real Date field, not
+ * formula/Created time (those reject writes with INVALID_VALUE_FOR_COLUMN).
+ */
 const MESSAGE_TIMESTAMP_FIELD = (() => {
   const raw = import.meta.env.VITE_AIRTABLE_MESSAGE_TIMESTAMP_FIELD
   if (raw === 'none' || raw === false || raw === '0') return ''
-  if (raw === undefined || raw === null) return 'Timestamp'
+  if (raw === undefined || raw === null) return ''
   const s = String(raw).trim()
-  return s || 'Timestamp'
+  return s || ''
 })()
 
 /** When set, Work Orders always link to this Resident Profile row (e.g. placeholder "Unnamed record") instead of the portal user row. */
@@ -115,6 +119,14 @@ function airtableUnknownFieldNameFromErrorMessage(message) {
   } catch {
     return null
   }
+}
+
+/** When POST/PATCH targets a formula / created time / read-only field (INVALID_VALUE_FOR_COLUMN). */
+function airtableComputedOrReadOnlyFieldFromErrorMessage(message) {
+  const raw = String(message || '')
+  if (!/computed|read-only|read only/i.test(raw)) return null
+  const match = raw.match(/Field "([^"]+)" cannot accept a value/i)
+  return match ? match[1] : null
 }
 
 const TABLES = {
@@ -1128,15 +1140,43 @@ export async function sendMessage({
     fields[MESSAGE_SUBJECT_FIELD] = subj
   }
 
-  const data = await request(tableUrl(TABLES.messages), {
-    method: 'POST',
-    body: JSON.stringify({
-      fields,
-      typecast: true,
-    }),
-  })
+  let payload = { ...fields }
+  let lastErr = null
+  for (let attempt = 0; attempt < 6; attempt += 1) {
+    try {
+      const data = await request(tableUrl(TABLES.messages), {
+        method: 'POST',
+        body: JSON.stringify({
+          fields: payload,
+          typecast: true,
+        }),
+      })
+      return mapRecord(data)
+    } catch (err) {
+      lastErr = err
+      const unknown = airtableUnknownFieldNameFromErrorMessage(err?.message)
+      if (unknown && Object.prototype.hasOwnProperty.call(payload, unknown)) {
+        const next = { ...payload }
+        delete next[unknown]
+        payload = next
+        console.warn(`[sendMessage] Messages has no field "${unknown}" — omitting and retrying.`)
+        continue
+      }
+      const nonWritable = airtableComputedOrReadOnlyFieldFromErrorMessage(err?.message)
+      if (nonWritable && Object.prototype.hasOwnProperty.call(payload, nonWritable)) {
+        const next = { ...payload }
+        delete next[nonWritable]
+        payload = next
+        console.warn(
+          `[sendMessage] Field "${nonWritable}" is computed/read-only — omitting and retrying (use record created time for ordering, or set VITE_AIRTABLE_MESSAGE_TIMESTAMP_FIELD to a writable date field).`,
+        )
+        continue
+      }
+      throw err
+    }
+  }
 
-  return mapRecord(data)
+  throw lastErr || new Error('Could not create message.')
 }
 
 // ---------------------------------------------------------------------------

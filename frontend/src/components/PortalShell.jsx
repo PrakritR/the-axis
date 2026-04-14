@@ -4,14 +4,17 @@ import {
   portalChromeSecondaryButtonClass,
   portalContentWidthClass,
   portalMainPaddingClass,
+  portalMobileBottomInsetClass,
   portalMobileTabPillBaseClass,
   portalNavIconBackdropClass,
 } from '../lib/portalLayout.js'
 
+const portalMobileSignOutClass = `${portalChromeSecondaryButtonClass} inline-flex min-h-[44px] min-w-[44px] items-center justify-center px-4 text-sm font-semibold touch-manipulation active:bg-slate-100 lg:min-h-0 lg:min-w-0 lg:px-3 lg:text-xs`
+
 function PortalShellFooter({ brandTitle, brandSubtitle }) {
   return (
     <footer className="shrink-0 border-t border-slate-200 bg-white/95">
-      <div className="mx-auto flex w-full max-w-[1600px] flex-col gap-3 px-4 py-5 text-sm text-slate-500 sm:px-6 lg:px-8 lg:flex-row lg:items-center lg:justify-between">
+      <div className="mx-auto flex w-full max-w-[1600px] flex-col gap-3 px-3 py-4 text-sm text-slate-500 sm:px-6 sm:py-5 lg:px-8 lg:flex-row lg:items-center lg:justify-between">
         <div>
           <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-[#2f76ff]">{brandTitle}</div>
           <div className="mt-0.5 text-sm font-black text-slate-900">{brandSubtitle}</div>
@@ -25,6 +28,45 @@ function PortalShellFooter({ brandTitle, brandSubtitle }) {
   )
 }
 
+/** Fixed bottom tab strip — large tap targets, horizontal scroll, safe-area aware (phones). */
+function PortalMobileBottomNav({ navItems, activeId, onNavigate }) {
+  return (
+    <nav
+      className="fixed inset-x-0 bottom-0 z-[60] border-t border-slate-200/95 bg-white/[0.97] backdrop-blur-md lg:hidden"
+      style={{ paddingBottom: 'max(0.35rem, env(safe-area-inset-bottom))' }}
+      aria-label="Portal navigation"
+    >
+      <div className="pt-2">
+        <div className="flex touch-pan-x gap-2 overflow-x-auto overscroll-x-contain px-2 pb-1 scrollbar-none snap-x snap-mandatory [-webkit-overflow-scrolling:touch]">
+          {navItems.map((item) => {
+            const active = activeId === item.id
+            return (
+              <button
+                key={item.id}
+                type="button"
+                aria-current={active ? 'page' : undefined}
+                onClick={() => onNavigate(item.id)}
+                className={`flex snap-center shrink-0 touch-manipulation flex-col items-center justify-center gap-1.5 rounded-2xl px-2.5 py-2.5 transition active:scale-[0.98] min-h-[64px] min-w-[4.75rem] max-w-[6.5rem] ${
+                  active
+                    ? 'bg-[linear-gradient(180deg,#2f76ff_0%,#2450eb_100%)] text-white shadow-[0_4px_14px_rgba(37,99,235,0.35)]'
+                    : 'bg-slate-100 text-slate-800 active:bg-slate-200/90'
+                }`}
+              >
+                <span className={portalNavIconBackdropClass({ active, variant: 'bottom' })}>
+                  <PortalNavGlyph tabId={item.id} className="h-[22px] w-[22px] shrink-0 opacity-95" />
+                </span>
+                <span className="line-clamp-2 w-full px-0.5 text-center text-[11px] font-bold leading-tight">
+                  {item.label}
+                </span>
+              </button>
+            )
+          })}
+        </div>
+      </div>
+    </nav>
+  )
+}
+
 /**
  * Shared chrome for Manager, Resident, and Admin portals.
  *
@@ -33,7 +75,7 @@ function PortalShellFooter({ brandTitle, brandSubtitle }) {
  * short; only the `<main>` area scrolls when content is tall. Sidebar
  * footer (optional extras + sign-out) stays visible.
  *
- * Mobile: sticky tab-pill bar at top, content scrolls below it.
+ * Mobile: slim header + fixed bottom tab bar (scrollable) so switching sections is thumb-friendly.
  *
  * @param {'left' | 'right'} [sidebarPosition='left']
  * @param {'sidebar' | 'none'} [desktopNav='sidebar']
@@ -65,60 +107,33 @@ export default function PortalShell({
         style={{ height: shellHeight }}
         dir="ltr"
       >
-        {/* Sticky top bar */}
+        {/* Mobile: compact header — tabs live in fixed bottom bar */}
         <header className="shrink-0 border-b border-slate-200 bg-white/95 backdrop-blur">
-          <div className="flex items-center justify-between gap-3 px-4 py-3">
-            <div className="min-w-0">
-              <div className="text-sm font-black">{brandSubtitle}</div>
+          <div className="flex items-center justify-between gap-2 px-3 py-2.5 sm:px-4">
+            <div className="min-w-0 flex-1">
+              <div className="truncate text-xs font-black uppercase tracking-wide text-slate-500 sm:text-sm sm:normal-case sm:tracking-normal">
+                {brandSubtitle}
+              </div>
             </div>
-            <div className="flex shrink-0 items-center gap-2">
-              {sidebarFooterExtra ? sidebarFooterExtra : null}
-              <button type="button" onClick={onSignOut} className={portalChromeSecondaryButtonClass}>
+            <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
+              {sidebarFooterExtra ? (
+                <div className="min-w-0 max-w-[11rem] shrink sm:max-w-none">{sidebarFooterExtra}</div>
+              ) : null}
+              <button type="button" onClick={onSignOut} className={portalMobileSignOutClass}>
                 Sign out
               </button>
             </div>
           </div>
-          <div className="flex gap-1 overflow-x-auto px-2 pb-2 scrollbar-none">
-            {navItems.map((item) => {
-              const desc = item.description ? String(item.description).trim() : ''
-              const active = activeId === item.id
-              return (
-                <button
-                  key={item.id}
-                  type="button"
-                  onClick={() => onNavigate(item.id)}
-                  className={`${portalMobileTabPillBaseClass} ${
-                    active
-                      ? 'bg-[linear-gradient(180deg,#2f76ff_0%,#2450eb_100%)] text-white shadow-[0_2px_10px_rgba(37,99,235,0.35)]'
-                      : 'bg-slate-100 text-slate-600'
-                  }`}
-                >
-                  <span className={portalNavIconBackdropClass({ active, variant: 'mobile' })}>
-                    <PortalNavGlyph tabId={item.id} className="h-[18px] w-[18px] shrink-0 opacity-95" />
-                  </span>
-                  <span className="max-w-[5.5rem] truncate text-[11px] font-semibold leading-tight">{item.label}</span>
-                  {desc ? (
-                    <span
-                      className={`block max-w-[5.75rem] truncate text-center text-[9px] font-medium leading-tight ${
-                        active ? 'text-white/85' : 'text-slate-500'
-                      }`}
-                    >
-                      {desc}
-                    </span>
-                  ) : null}
-                </button>
-              )
-            })}
-          </div>
         </header>
 
         {/* Main scrolls; footer stays at bottom of viewport when content is short */}
-        <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
-          <main className={`min-h-0 flex-1 overflow-y-auto ${portalMainPaddingClass}`}>
+        <div className={`flex min-h-0 flex-1 flex-col overflow-hidden ${portalMobileBottomInsetClass}`}>
+          <main className={`min-h-0 flex-1 overflow-y-auto overscroll-y-contain [-webkit-overflow-scrolling:touch] ${portalMainPaddingClass}`}>
             <div className={portalContentWidthClass}>{children}</div>
           </main>
           <PortalShellFooter brandTitle={brandTitle} brandSubtitle={brandSubtitle} />
         </div>
+        <PortalMobileBottomNav navItems={navItems} activeId={activeId} onNavigate={onNavigate} />
       </div>
     )
   }
@@ -144,7 +159,6 @@ export default function PortalShell({
         {/* Nav — scrolls independently */}
         <nav className="min-h-0 flex-1 space-y-1 overflow-y-auto overflow-x-hidden p-2 [scrollbar-gutter:stable]">
           {navItems.map((item) => {
-            const desc = item.description ? String(item.description).trim() : ''
             const active = activeId === item.id
             return (
               <button
@@ -161,15 +175,6 @@ export default function PortalShell({
                   <PortalNavGlyph tabId={item.id} className="h-5 w-5 shrink-0 opacity-95" />
                 </span>
                 <span className="block w-full truncate px-0.5 text-xs font-semibold leading-tight">{item.label}</span>
-                {desc ? (
-                  <span
-                    className={`line-clamp-2 w-full break-words px-0.5 text-[10px] font-medium leading-snug ${
-                      active ? 'text-white/80' : 'text-slate-500'
-                    }`}
-                  >
-                    {desc}
-                  </span>
-                ) : null}
               </button>
             )
           })}
@@ -186,59 +191,28 @@ export default function PortalShell({
 
       {/* ── Main content column ── */}
       <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
-        {/* Mobile tab bar (hidden on desktop) */}
+        {/* Mobile: compact header — section tabs in fixed bottom bar */}
         <header className="shrink-0 border-b border-slate-200 bg-white/95 backdrop-blur lg:hidden">
-          <div className="flex items-center justify-between gap-3 px-4 py-3">
-            <div className="min-w-0">
-              <div className="text-sm font-black">{brandSubtitle}</div>
+          <div className="flex items-center justify-between gap-2 px-3 py-2.5 sm:px-4">
+            <div className="min-w-0 flex-1">
+              <div className="truncate text-xs font-black uppercase tracking-wide text-slate-500 sm:text-sm sm:normal-case sm:tracking-normal">
+                {brandSubtitle}
+              </div>
             </div>
-            <div className="flex shrink-0 items-center gap-2">
-              <button type="button" onClick={onSignOut} className={portalChromeSecondaryButtonClass}>
-                Sign out
-              </button>
-            </div>
-          </div>
-          <div className="flex gap-1 overflow-x-auto px-2 pb-2 scrollbar-none">
-            {navItems.map((item) => {
-              const desc = item.description ? String(item.description).trim() : ''
-              const active = activeId === item.id
-              return (
-                <button
-                  key={item.id}
-                  type="button"
-                  onClick={() => onNavigate(item.id)}
-                  className={`${portalMobileTabPillBaseClass} ${
-                    active
-                      ? 'bg-[linear-gradient(180deg,#2f76ff_0%,#2450eb_100%)] text-white shadow-[0_2px_10px_rgba(37,99,235,0.35)]'
-                      : 'bg-slate-100 text-slate-600'
-                  }`}
-                >
-                  <span className={portalNavIconBackdropClass({ active, variant: 'mobile' })}>
-                    <PortalNavGlyph tabId={item.id} className="h-[18px] w-[18px] shrink-0 opacity-95" />
-                  </span>
-                  <span className="max-w-[5.5rem] truncate text-[11px] font-semibold leading-tight">{item.label}</span>
-                  {desc ? (
-                    <span
-                      className={`block max-w-[5.75rem] truncate text-center text-[9px] font-medium leading-tight ${
-                        active ? 'text-white/85' : 'text-slate-500'
-                      }`}
-                    >
-                      {desc}
-                    </span>
-                  ) : null}
-                </button>
-              )
-            })}
+            <button type="button" onClick={onSignOut} className={portalMobileSignOutClass}>
+              Sign out
+            </button>
           </div>
         </header>
 
         {/* Page content scrolls; footer pinned to bottom of column when content is short */}
-        <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
-          <main className={`min-h-0 flex-1 overflow-y-auto ${portalMainPaddingClass}`}>
+        <div className={`flex min-h-0 flex-1 flex-col overflow-hidden ${portalMobileBottomInsetClass}`}>
+          <main className={`min-h-0 flex-1 overflow-y-auto overscroll-y-contain [-webkit-overflow-scrolling:touch] ${portalMainPaddingClass}`}>
             <div className={portalContentWidthClass}>{children}</div>
           </main>
           <PortalShellFooter brandTitle={brandTitle} brandSubtitle={brandSubtitle} />
         </div>
+        <PortalMobileBottomNav navItems={navItems} activeId={activeId} onNavigate={onNavigate} />
       </div>
     </div>
   )
@@ -279,18 +253,13 @@ export function StatusPill({ children, tone = 'slate' }) {
   )
 }
 
+/** Generic table empty state — grid, not inbox (inbox looked like “messages” on property screens). */
 const DEFAULT_EMPTY_STATE_ICON = (
   <span
     className="mb-3 flex h-12 w-12 items-center justify-center rounded-2xl border border-slate-200/90 bg-white text-slate-400 shadow-sm"
     aria-hidden
   >
-    <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" aria-hidden>
-      <path
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        d="M20 13V7a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v6m16 0v4a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-4m16 0h-2.586a1 1 0 0 0-.707.293l-2.414 2.414a1 1 0 0 1-.707.293h-3.172a1 1 0 0 1-.707-.293l-2.414-2.414A1 1 0 0 0 6.586 13H4"
-      />
-    </svg>
+    <PortalNavGlyph tabId="dashboard" className="h-6 w-6" />
   </span>
 )
 
@@ -344,6 +313,7 @@ export {
   portalChromeSecondaryButtonClass,
   portalContentWidthClass,
   portalMainPaddingClass,
+  portalMobileBottomInsetClass,
   portalMobileTabPillBaseClass,
   portalNavIconBackdropClass,
 } from '../lib/portalLayout.js'

@@ -318,6 +318,9 @@ export default function ManagerInboxPage({
   const [composeSubject, setComposeSubject] = useState('')
   const [composeBody, setComposeBody] = useState('')
   const [composeSending, setComposeSending] = useState(false)
+  /** Incremented on each list-row click so re-opening the same thread can mark read again after load. */
+  const [readIntentEpoch, setReadIntentEpoch] = useState(0)
+  const openReadIntentKeyRef = useRef('')
   /** Resident Profile rows scoped to this manager’s properties (House matches portal property names). */
   const [scopedResidents, setScopedResidents] = useState([])
   const [residentComposeLoading, setResidentComposeLoading] = useState(false)
@@ -767,6 +770,17 @@ export default function ManagerInboxPage({
 
   const touchThreadReadRef = useRef(touchThreadRead)
   touchThreadReadRef.current = touchThreadRead
+
+  useEffect(() => {
+    if (!selectedStateKey) openReadIntentKeyRef.current = ''
+  }, [selectedStateKey])
+
+  useEffect(() => {
+    if (!selectedStateKey || threadLoading) return
+    if (openReadIntentKeyRef.current !== selectedStateKey) return
+    openReadIntentKeyRef.current = ''
+    void touchThreadReadRef.current(selectedStateKey)
+  }, [selectedStateKey, threadLoading, readIntentEpoch])
 
   useEffect(() => {
     setThreadMenuOpen(false)
@@ -1279,10 +1293,14 @@ export default function ManagerInboxPage({
           onSelect={(id) => {
             setComposeOpen(false)
             setSelectedThreadId(id)
-            const row = visibleThreadRows.find((r) => r.id === id)
-            if (row?.stateKey) {
-              void touchThreadRead(row.stateKey)
+            if (!id) {
+              openReadIntentKeyRef.current = ''
+              return
             }
+            const row = visibleThreadRows.find((r) => r.id === id)
+            const sk = row?.stateKey || ''
+            openReadIntentKeyRef.current = sk
+            if (sk) setReadIntentEpoch((n) => n + 1)
           }}
           emptyMessage={listEmptyMessage}
           onTrashThread={(stateKey, trashed = true) => moveThreadTrash(stateKey, trashed)}

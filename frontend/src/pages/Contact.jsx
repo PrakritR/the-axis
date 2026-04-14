@@ -3,6 +3,7 @@ import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { Seo } from '../lib/seo'
 import { errorFromAirtableApiBody } from '../lib/airtablePermissionError'
 import { isHousingMessageCategoryId } from '../lib/housingSite'
+import { dispatchAxisSchedulingChanged } from '../lib/portalCalendarSync.js'
 import {
   DEFAULT_PROPERTIES,
   HousingMessageForm,
@@ -350,6 +351,7 @@ function HousingScheduler() {
       })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || 'Submission failed.')
+      dispatchAxisSchedulingChanged({ reason: 'contact-tour-request' })
       setSubmitted(true)
     } catch (err) {
       setSubmitError(err.message || 'Could not submit. Please try again.')
@@ -686,6 +688,7 @@ function SoftwareMeetingScheduler() {
       })
       const data = await res.json().catch(() => ({}))
       if (!res.ok) throw new Error(data.error || 'Could not book meeting.')
+      dispatchAxisSchedulingChanged({ reason: 'contact-meeting-request' })
       setSubmitted(true)
     } catch (err) {
       setSubmitError(err.message || 'Could not book meeting.')

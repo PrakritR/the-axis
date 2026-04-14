@@ -205,6 +205,8 @@ export default function ManagerLeasingTab({ manager, allowedPropertyNames }) {
   const [changeRequestText, setChangeRequestText] = useState('')
   const [statusFilter, setStatusFilter] = useState('draft_ready')
   const [propertyFilter, setPropertyFilter] = useState('')
+  /** @type {'updated_desc'|'updated_asc'|'property_asc'|'property_desc'|'resident_asc'|'resident_desc'} */
+  const [leaseSort, setLeaseSort] = useState('updated_desc')
   const [unreadCount, setUnreadCount] = useState(0)
 
   const ownerId = manager?.id || manager?.airtableRecordId || ''
@@ -362,8 +364,34 @@ export default function ManagerLeasingTab({ manager, allowedPropertyNames }) {
         (d) => String(d['Property'] || '').trim().toLowerCase() === propertyFilter,
       )
     }
-    return rows
-  }, [drafts, statusFilter, propertyFilter])
+    const propKey = (d) => String(d['Property'] || '').trim().toLowerCase()
+    const residentKey = (d) => String(d['Resident Name'] || '').trim().toLowerCase()
+    const updatedMs = (d) => new Date(d['Updated At'] || d.created_at || 0).getTime()
+    const cmp = (a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' })
+    const sorted = [...rows]
+    switch (leaseSort) {
+      case 'property_asc':
+        sorted.sort((a, b) => cmp(propKey(a), propKey(b)) || updatedMs(b) - updatedMs(a))
+        break
+      case 'property_desc':
+        sorted.sort((a, b) => cmp(propKey(b), propKey(a)) || updatedMs(b) - updatedMs(a))
+        break
+      case 'resident_asc':
+        sorted.sort((a, b) => cmp(residentKey(a), residentKey(b)) || updatedMs(b) - updatedMs(a))
+        break
+      case 'resident_desc':
+        sorted.sort((a, b) => cmp(residentKey(b), residentKey(a)) || updatedMs(b) - updatedMs(a))
+        break
+      case 'updated_asc':
+        sorted.sort((a, b) => updatedMs(a) - updatedMs(b) || cmp(propKey(a), propKey(b)))
+        break
+      case 'updated_desc':
+      default:
+        sorted.sort((a, b) => updatedMs(b) - updatedMs(a) || cmp(propKey(a), propKey(b)))
+        break
+    }
+    return sorted
+  }, [drafts, statusFilter, propertyFilter, leaseSort])
 
   const statusCounts = useMemo(() => {
     return STATUS_FILTER_ITEMS.reduce((acc, f) => {
@@ -542,6 +570,22 @@ export default function ManagerLeasingTab({ manager, allowedPropertyNames }) {
           <h1 className="text-2xl font-black text-slate-900">Leases</h1>
         </div>
         <div className="flex w-full min-w-0 flex-wrap items-center justify-end gap-2 sm:ml-auto sm:w-auto sm:flex-nowrap">
+          <div className={LEASE_PILL_SELECT_WRAP_CLS}>
+            <select
+              value={leaseSort}
+              onChange={(e) => setLeaseSort(e.target.value)}
+              className={LEASE_PILL_SELECT_CLS}
+              aria-label="Sort leases"
+            >
+              <option value="updated_desc">Sort: Updated (newest)</option>
+              <option value="updated_asc">Sort: Updated (oldest)</option>
+              <option value="property_asc">Sort: Property (A–Z)</option>
+              <option value="property_desc">Sort: Property (Z–A)</option>
+              <option value="resident_asc">Sort: Resident (A–Z)</option>
+              <option value="resident_desc">Sort: Resident (Z–A)</option>
+            </select>
+            {LEASE_PILL_SELECT_CHEVRON}
+          </div>
           <div className={LEASE_PILL_SELECT_WRAP_CLS}>
             <select
               value={propertyFilter}

@@ -28,6 +28,10 @@ import {
 import { readJsonResponse } from '../lib/readJsonResponse'
 import { PORTAL_TAB_H2_CLS, PORTAL_SECTION_TITLE_CLS } from '../lib/portalTabHeader'
 import { CALENDAR_EVENT_TYPES, eventFromSchedulingRow, normalizeEventType } from '../lib/calendarEventModel'
+import {
+  AXIS_SCHEDULING_CHANGED_EVENT,
+  dispatchAxisSchedulingChanged,
+} from '../lib/portalCalendarSync.js'
 import ManagerInboxPage from '../components/manager-inbox/ManagerInboxPage'
 import {
   getWorkOrderById,
@@ -1779,12 +1783,17 @@ function AdminDayAvailabilityEditor({
   ranges,
   onRangesChange,
   onClearDay,
+  onSaveNow,
   scheduledItems,
   availSaving,
 }) {
   return (
     <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm lg:sticky lg:top-6">
       <h2 className={PORTAL_SECTION_TITLE_CLS}>Meeting availability</h2>
+      <p className="mt-2 text-xs leading-relaxed text-slate-500">
+        Drag on the timeline to add blocks, then save. Your changes sync to the Scheduling table in Airtable (Contact Axis
+        booking).
+      </p>
 
       <div className="mt-6">
         <DayAvailabilityTimeline ranges={ranges} onRangesChange={onRangesChange} disabled={availSaving} />
@@ -1814,6 +1823,16 @@ function AdminDayAvailabilityEditor({
       </div>
 
       <div className="mt-6 flex flex-wrap gap-2 text-sm">
+        {typeof onSaveNow === 'function' ? (
+          <button
+            type="button"
+            onClick={() => void onSaveNow()}
+            disabled={availSaving}
+            className="rounded-xl bg-[linear-gradient(180deg,#2f76ff_0%,#2450eb_100%)] px-4 py-2.5 font-semibold text-white shadow-sm hover:brightness-105 disabled:opacity-40"
+          >
+            {availSaving ? 'Saving…' : 'Save to Airtable now'}
+          </button>
+        ) : null}
         <button
           type="button"
           onClick={onClearDay}
@@ -2170,11 +2189,25 @@ function schedulingRowsForCalendarView(rows, options) {
 async function patchSchedulingRecord(recordId, fields) {
   const id = String(recordId || '').trim()
   if (!id) throw new Error('Missing scheduling record id.')
-  const data = await atRequest(`${CORE_AIRTABLE_BASE_URL}/Scheduling/${id}`, {
-    method: 'PATCH',
-    body: JSON.stringify({ fields, typecast: true }),
-  })
-  return mapRecord(data)
+  let payload = { ...(fields || {}) }
+  let lastErr = null
+  for (let attempt = 0; attempt < 10; attempt += 1) {
+    try {
+      const data = await atRequest(`${CORE_AIRTABLE_BASE_URL}/Scheduling/${id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ fields: payload, typecast: true }),
+      })
+      return mapRecord(data)
+    } catch (err) {
+      lastErr = err
+      const unknownRaw = airtableUnknownFieldFromError(err)
+      const key = resolvePayloadKeyForUnknownField(payload, unknownRaw)
+      if (!key) break
+      const { [key]: _drop, ...rest } = payload
+      payload = rest
+    }
+  }
+  throw lastErr || new Error('Could not update scheduling record.')
 }
 
 async function deleteSchedulingRecord(recordId) {
@@ -2914,6 +2947,7 @@ function HouseManagementPanel({ manager, onPropertiesChange }) {
                 <div className="space-y-4">
                   <DataTable
                     empty="No properties in this view"
+                    emptyIcon={<PortalEmptyVisual variant="house" />}
                     columns={[
                       {
                         key: 'property',
@@ -3564,6 +3598,12 @@ function addDaysDate(d, delta) {
   return x
 }
 
+function addMonthsToDate(d, deltaMonths) {
+  const x = new Date(d.getFullYear(), d.getMonth(), d.getDate())
+  x.setMonth(x.getMonth() + deltaMonths)
+  return x
+}
+
 function formatWeekRangeLabel(weekStart) {
   const end = addDaysDate(weekStart, 6)
   const sameMonth = weekStart.getMonth() === end.getMonth()
@@ -4169,6 +4209,7 @@ function WorkOrdersTabPanel({ allowedPropertyNames, allowedPropertyIds }) {
         ) : (
           <DataTable
             empty={list.length === 0 ? 'No work orders yet' : 'Nothing matches this filter'}
+            emptyIcon={<PortalEmptyVisual variant={list.length === 0 ? 'workorders' : 'search'} />}
             columns={[
               {
                 key: 'desc',
@@ -5280,6 +5321,9 @@ export function CalendarTabPanel({ manager, allowedPropertyNames, loadAllSchedul
   const managerRef = useRef(manager)
   /** Pending tour grid to write — keyed so property switch still saves the edited property. */
   const tourDirtyPayloadRef = useRef(null)
+  /** Latest admin-day editor context for autosave / flush. */
+  const adminAutosaveCtxRef = useRef({})
+  const flushPendingCalendarWritesRef = useRef(async () => true)
 
   useEffect(() => {
     propertiesRef.current = properties
@@ -5324,6 +5368,11 @@ export function CalendarTabPanel({ manager, allowedPropertyNames, loadAllSchedul
   }, [])
 
   const load = useCallback(async () => {
+    const flushed = await flushPendingCalendarWritesRef.current()
+    if (!flushed) {
+      toast.error('Save your calendar changes before refreshing, or fix the error shown above.')
+      return
+    }
     setLoading(true)
     availabilityDirtyRef.current = false
     tourDirtyPayloadRef.current = null
@@ -5403,13 +5452,45 @@ export function CalendarTabPanel({ manager, allowedPropertyNames, loadAllSchedul
 
   useEffect(() => { load() }, [load])
 
+  /** Public Contact tour bookings use the house manager email on Scheduling rows — not the logged-in admin — so admin calendar must not filter those out. */
+  useEffect(() => {
+    const onSchedulingChanged = () => {
+      void refreshSchedulingRowsOnly()
+    }
+    window.addEventListener(AXIS_SCHEDULING_CHANGED_EVENT, onSchedulingChanged)
+    const id = setInterval(() => {
+      if (document.visibilityState !== 'visible') return
+      void refreshSchedulingRowsOnly()
+    }, 22000)
+    return () => {
+      window.removeEventListener(AXIS_SCHEDULING_CHANGED_EVENT, onSchedulingChanged)
+      clearInterval(id)
+    }
+  }, [refreshSchedulingRowsOnly])
+
   useEffect(() => {
     if (!loadAllSchedulingRows) return
     const id = setInterval(() => {
-      load()
-    }, 15000)
+      if (document.visibilityState !== 'visible') return
+      void load()
+    }, 45000)
     return () => clearInterval(id)
   }, [loadAllSchedulingRows, load])
+
+  useEffect(() => {
+    const flush = () => {
+      void flushPendingCalendarWritesRef.current()
+    }
+    const onVis = () => {
+      if (document.visibilityState === 'hidden') flush()
+    }
+    window.addEventListener('pagehide', flush)
+    document.addEventListener('visibilitychange', onVis)
+    return () => {
+      window.removeEventListener('pagehide', flush)
+      document.removeEventListener('visibilitychange', onVis)
+    }
+  }, [])
 
   const approvedAssignedProperties = useMemo(() => {
     if (loadAllSchedulingRows) {
@@ -5495,6 +5576,7 @@ export function CalendarTabPanel({ manager, allowedPropertyNames, loadAllSchedul
       tourDirtyPayloadRef.current = null
       availabilityDirtyRef.current = false
       await refreshSchedulingRowsOnly()
+      dispatchAxisSchedulingChanged({ reason: 'property-tour-availability' })
       return true
     } catch (err) {
       toast.error(err.message || 'Could not save availability')
@@ -5527,6 +5609,7 @@ export function CalendarTabPanel({ manager, allowedPropertyNames, loadAllSchedul
         }
         toast.success('Saved', { id: 'calendar-admin-avail-autosave', duration: 1800 })
         await refreshSchedulingRowsOnly()
+        dispatchAxisSchedulingChanged({ reason: 'admin-meeting-availability' })
       } catch (err) {
         toast.error(err.message || 'Could not save availability')
         throw err
@@ -5536,6 +5619,33 @@ export function CalendarTabPanel({ manager, allowedPropertyNames, loadAllSchedul
     },
     [manager, refreshSchedulingRowsOnly],
   )
+
+  const saveTourDirtyRef = useRef(saveTourDirtyIfNeeded)
+  saveTourDirtyRef.current = saveTourDirtyIfNeeded
+  const persistAdminRef = useRef(persistAdminMeetingAvailability)
+  persistAdminRef.current = persistAdminMeetingAvailability
+
+  const flushPendingCalendarWrites = useCallback(async () => {
+    if (!loadAllSchedulingRows && availabilityDirtyRef.current) {
+      const ok = await saveTourDirtyRef.current()
+      if (!ok) return false
+    }
+    if (loadAllSchedulingRows && adminAvailabilityDirtyRef.current) {
+      const ctx = adminAutosaveCtxRef.current
+      const dayKey = String(ctx?.selectedDateKey || '').trim()
+      if (!dayKey) return true
+      adminAvailabilityDirtyRef.current = false
+      try {
+        await persistAdminRef.current(dayKey, ctx.adminDayRanges, ctx.adminAvailabilityRowsForSelectedDay)
+      } catch {
+        adminAvailabilityDirtyRef.current = true
+        return false
+      }
+    }
+    return true
+  }, [loadAllSchedulingRows])
+
+  flushPendingCalendarWritesRef.current = flushPendingCalendarWrites
 
   const selectPropertyAndFlush = useCallback(
     async (nextId) => {
@@ -5549,14 +5659,18 @@ export function CalendarTabPanel({ manager, allowedPropertyNames, loadAllSchedul
     [loadAllSchedulingRows, selectedPropertyId, saveTourDirtyIfNeeded],
   )
 
-  // Manager: property-scoped rows. Admin (loadAllSchedulingRows): everything tied to this admin email.
+  // Manager: property-scoped rows. Admin: org-wide tours/work orders/meetings; "Meeting Availability" stays scoped to this admin.
   const schedulingRowsForView = useMemo(() => {
     if (loadAllSchedulingRows) {
       const adminEmail = String(manager?.email || '').trim().toLowerCase()
-      if (!adminEmail) return []
       return (schedulingRows || []).filter((row) => {
+        const dk = String(row?.['Preferred Date'] || '').trim()
+        if (!dk) return false
+        const type = String(row?.Type || '').trim().toLowerCase()
         const rme = String(row['Manager Email'] || '').trim().toLowerCase()
-        return rme === adminEmail
+        if (type === 'meeting availability') return adminEmail && rme === adminEmail
+        if (['tour', 'work order', 'meeting', 'issue', 'other', 'availability'].includes(type)) return true
+        return adminEmail && rme === adminEmail
       })
     }
     return (schedulingRows || []).filter((row) => {
@@ -5639,6 +5753,7 @@ export function CalendarTabPanel({ manager, allowedPropertyNames, loadAllSchedul
 
   useEffect(() => {
     if (!loadAllSchedulingRows) return
+    if (adminAvailabilityDirtyRef.current) return
     setAdminDayRanges(adminRangesFromRows)
   }, [loadAllSchedulingRows, adminRangesFromRows, selectedDateKey])
 
@@ -5703,6 +5818,10 @@ export function CalendarTabPanel({ manager, allowedPropertyNames, loadAllSchedul
 
   async function handleSelectDate(key) {
     const nextKey = String(key || '').trim()
+    if (!loadAllSchedulingRows && availabilityDirtyRef.current) {
+      const ok = await saveTourDirtyIfNeeded()
+      if (!ok) return
+    }
     if (loadAllSchedulingRows && adminAvailabilityDirtyRef.current) {
       const {
         manager: mgr,
@@ -5729,9 +5848,8 @@ export function CalendarTabPanel({ manager, allowedPropertyNames, loadAllSchedul
       void saveTourDirtyIfNeeded()
     }, 550)
     return () => window.clearTimeout(t)
-  }, [weeklyFreeByProperty, selectedPropertyId, loadAllSchedulingRows, saveTourDirtyIfNeeded])
+  }, [weeklyFreeByProperty, selectedPropertyId, selectedDateKey, loadAllSchedulingRows, saveTourDirtyIfNeeded])
 
-  const adminAutosaveCtxRef = useRef({})
   adminAutosaveCtxRef.current = {
     manager,
     selectedDateKey,
@@ -5898,6 +6016,73 @@ export function CalendarTabPanel({ manager, allowedPropertyNames, loadAllSchedul
         </div>
       </div>
 
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-white px-4 py-3 shadow-sm">
+        <div className="text-sm font-semibold text-slate-800">
+          {view === 'month'
+            ? anchorDate.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
+            : view === 'week'
+              ? formatWeekRangeLabel(startOfWeekSunday(anchorDate))
+              : new Date(selectedDateKey + 'T12:00:00').toLocaleDateString('en-US', {
+                  weekday: 'long',
+                  month: 'short',
+                  day: 'numeric',
+                  year: 'numeric',
+                })}
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <button
+            type="button"
+            className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
+            onClick={() => void (async () => {
+              if (view === 'month') {
+                const d = addMonthsToDate(anchorDate, -1)
+                const first = new Date(d.getFullYear(), d.getMonth(), 1)
+                const k = dateKeyFromDate(first)
+                await handleSelectDate(k)
+                setAnchorDate(first)
+              } else if (view === 'week') {
+                const d = addDaysDate(anchorDate, -7)
+                const ws = startOfWeekSunday(d)
+                await handleSelectDate(dateKeyFromDate(ws))
+                setAnchorDate(ws)
+              } else {
+                const d = addDaysDate(dateFromCalendarKey(selectedDateKey), -1)
+                const k = dateKeyFromDate(d)
+                await handleSelectDate(k)
+                setAnchorDate(d)
+              }
+            })()}
+          >
+            Previous
+          </button>
+          <button
+            type="button"
+            className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
+            onClick={() => void (async () => {
+              if (view === 'month') {
+                const d = addMonthsToDate(anchorDate, 1)
+                const first = new Date(d.getFullYear(), d.getMonth(), 1)
+                const k = dateKeyFromDate(first)
+                await handleSelectDate(k)
+                setAnchorDate(first)
+              } else if (view === 'week') {
+                const d = addDaysDate(anchorDate, 7)
+                const ws = startOfWeekSunday(d)
+                await handleSelectDate(dateKeyFromDate(ws))
+                setAnchorDate(ws)
+              } else {
+                const d = addDaysDate(dateFromCalendarKey(selectedDateKey), 1)
+                const k = dateKeyFromDate(d)
+                await handleSelectDate(k)
+                setAnchorDate(d)
+              }
+            })()}
+          >
+            Next
+          </button>
+        </div>
+      </div>
+
       <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_360px]">
         <AvailabilityCalendar
           view={view}
@@ -5963,6 +6148,17 @@ export function CalendarTabPanel({ manager, allowedPropertyNames, loadAllSchedul
             onClearDay={() => {
               adminAvailabilityDirtyRef.current = true
               setAdminDayRanges([])
+            }}
+            onSaveNow={async () => {
+              const ctx = adminAutosaveCtxRef.current
+              const dayKey = String(ctx?.selectedDateKey || '').trim()
+              if (!dayKey) return
+              adminAvailabilityDirtyRef.current = false
+              try {
+                await persistAdminMeetingAvailability(dayKey, ctx.adminDayRanges, ctx.adminAvailabilityRowsForSelectedDay)
+              } catch {
+                adminAvailabilityDirtyRef.current = true
+              }
             }}
             scheduledItems={adminScheduledItemsForDay}
             availSaving={availSaving}

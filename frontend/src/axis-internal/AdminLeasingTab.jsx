@@ -130,6 +130,9 @@ export default function AdminLeasingTab({ adminUser, accounts = [] }) {
   const [loadError, setLoadError] = useState('')
   const [statusFilter, setStatusFilter] = useState('draft_ready')
   const [propertyFilter, setPropertyFilter] = useState('')
+  const [managerFilter, setManagerFilter] = useState('')
+  /** @type {'updated_desc'|'updated_asc'|'property_asc'|'property_desc'|'resident_asc'|'resident_desc'|'manager_asc'|'manager_desc'} */
+  const [leaseSort, setLeaseSort] = useState('updated_desc')
   const [selectedDraftId, setSelectedDraftId] = useState('')
   const [activeDraft, setActiveDraft] = useState(null)
   const [detailLoading, setDetailLoading] = useState(false)
@@ -183,10 +186,28 @@ export default function AdminLeasingTab({ adminUser, accounts = [] }) {
       .map(([value, display]) => ({ value, display }))
   }, [drafts])
 
+  const managerChoices = useMemo(() => {
+    const byId = new Map()
+    for (const d of drafts) {
+      const id = String(d['Owner ID'] || '').trim()
+      if (!id) continue
+      const label = String(managerNameMap.get(id) || id).trim() || id
+      if (!byId.has(id)) byId.set(id, label)
+    }
+    return [...byId.entries()]
+      .sort((a, b) => String(a[1]).localeCompare(String(b[1]), undefined, { sensitivity: 'base' }))
+      .map(([value, display]) => ({ value, display }))
+  }, [drafts, managerNameMap])
+
   useEffect(() => {
     if (!propertyFilter) return
     if (!propertyChoices.some((c) => c.value === propertyFilter)) setPropertyFilter('')
   }, [propertyFilter, propertyChoices])
+
+  useEffect(() => {
+    if (!managerFilter) return
+    if (!managerChoices.some((c) => c.value === managerFilter)) setManagerFilter('')
+  }, [managerFilter, managerChoices])
 
   const visibleDrafts = useMemo(() => {
     const filterFn = ADMIN_STATUS_FILTER_ITEMS.find((item) => item.id === statusFilter)?.match ?? (() => true)
@@ -196,8 +217,45 @@ export default function AdminLeasingTab({ adminUser, accounts = [] }) {
         (d) => String(d['Property'] || '').trim().toLowerCase() === propertyFilter,
       )
     }
-    return rows
-  }, [drafts, statusFilter, propertyFilter])
+    if (managerFilter) {
+      rows = rows.filter((d) => String(d['Owner ID'] || '').trim() === managerFilter)
+    }
+    const propKey = (d) => String(d['Property'] || '').trim().toLowerCase()
+    const residentKey = (d) => String(d['Resident Name'] || '').trim().toLowerCase()
+    const updatedMs = (d) => new Date(d['Updated At'] || d.created_at || 0).getTime()
+    const managerKey = (d) =>
+      String(managerNameMap.get(String(d['Owner ID'] || '').trim()) || '').trim().toLowerCase()
+    const cmp = (a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' })
+    const sorted = [...rows]
+    switch (leaseSort) {
+      case 'property_asc':
+        sorted.sort((a, b) => cmp(propKey(a), propKey(b)) || updatedMs(b) - updatedMs(a))
+        break
+      case 'property_desc':
+        sorted.sort((a, b) => cmp(propKey(b), propKey(a)) || updatedMs(b) - updatedMs(a))
+        break
+      case 'resident_asc':
+        sorted.sort((a, b) => cmp(residentKey(a), residentKey(b)) || updatedMs(b) - updatedMs(a))
+        break
+      case 'resident_desc':
+        sorted.sort((a, b) => cmp(residentKey(b), residentKey(a)) || updatedMs(b) - updatedMs(a))
+        break
+      case 'manager_asc':
+        sorted.sort((a, b) => cmp(managerKey(a), managerKey(b)) || cmp(propKey(a), propKey(b)) || updatedMs(b) - updatedMs(a))
+        break
+      case 'manager_desc':
+        sorted.sort((a, b) => cmp(managerKey(b), managerKey(a)) || cmp(propKey(a), propKey(b)) || updatedMs(b) - updatedMs(a))
+        break
+      case 'updated_asc':
+        sorted.sort((a, b) => updatedMs(a) - updatedMs(b) || cmp(propKey(a), propKey(b)))
+        break
+      case 'updated_desc':
+      default:
+        sorted.sort((a, b) => updatedMs(b) - updatedMs(a) || cmp(propKey(a), propKey(b)))
+        break
+    }
+    return sorted
+  }, [drafts, statusFilter, propertyFilter, managerFilter, leaseSort, managerNameMap])
 
   const statusCounts = useMemo(() => {
     return ADMIN_STATUS_FILTER_ITEMS.reduce((acc, item) => {
@@ -395,6 +453,40 @@ export default function AdminLeasingTab({ adminUser, accounts = [] }) {
           <h1 className="text-2xl font-black text-slate-900">Leases</h1>
         </div>
         <div className="flex w-full min-w-0 flex-wrap items-center justify-end gap-2 sm:ml-auto sm:w-auto sm:flex-nowrap">
+          <div className={LEASE_PILL_SELECT_WRAP_CLS}>
+            <select
+              value={leaseSort}
+              onChange={(e) => setLeaseSort(e.target.value)}
+              className={LEASE_PILL_SELECT_CLS}
+              aria-label="Sort leases"
+            >
+              <option value="updated_desc">Sort: Updated (newest)</option>
+              <option value="updated_asc">Sort: Updated (oldest)</option>
+              <option value="manager_asc">Sort: Manager (A–Z)</option>
+              <option value="manager_desc">Sort: Manager (Z–A)</option>
+              <option value="property_asc">Sort: Property (A–Z)</option>
+              <option value="property_desc">Sort: Property (Z–A)</option>
+              <option value="resident_asc">Sort: Resident (A–Z)</option>
+              <option value="resident_desc">Sort: Resident (Z–A)</option>
+            </select>
+            {LEASE_PILL_SELECT_CHEVRON}
+          </div>
+          <div className={LEASE_PILL_SELECT_WRAP_CLS}>
+            <select
+              value={managerFilter}
+              onChange={(e) => setManagerFilter(e.target.value)}
+              className={LEASE_PILL_SELECT_CLS}
+              aria-label="Filter leases by manager"
+            >
+              <option value="">All managers</option>
+              {managerChoices.map(({ value, display }) => (
+                <option key={value} value={value}>
+                  {display}
+                </option>
+              ))}
+            </select>
+            {LEASE_PILL_SELECT_CHEVRON}
+          </div>
           <div className={LEASE_PILL_SELECT_WRAP_CLS}>
             <select
               value={propertyFilter}

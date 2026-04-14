@@ -22,11 +22,22 @@ export function leaseDraftAllowsSignWithoutMoveInPay(draft) {
     (k, i, a) => k && a.indexOf(k) === i,
   )
   for (const key of keys) {
-    if (!(key in draft)) continue
     const v = draft[key]
+    // Airtable often omits unchecked checkboxes from `fields`; missing key => undefined.
+    if (v === undefined) continue
     if (v === true || v === 1 || v === '1') return true
     const s = String(v).trim().toLowerCase()
     if (['yes', 'true', 'on', 'checked'].includes(s)) return true
   }
   return false
+}
+
+/**
+ * True when **any** lease draft for the resident has the override. Needed because
+ * `pickBestLeaseDraft` may surface a different row (e.g. older Published) than the
+ * one the manager toggled while a newer in-progress draft holds the checkbox.
+ */
+export function anyLeaseDraftAllowsSignWithoutMoveInPay(drafts) {
+  if (!Array.isArray(drafts) || drafts.length === 0) return false
+  return drafts.some((d) => leaseDraftAllowsSignWithoutMoveInPay(d))
 }
