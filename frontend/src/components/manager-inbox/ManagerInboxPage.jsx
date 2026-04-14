@@ -32,6 +32,7 @@ import {
   threadBodyPreviewFromMessage,
   mergeSubjectIntoMessageIfNeeded,
   portalInboxThreadSection,
+  portalSenderEmailFromMessage,
 } from '../../lib/portalInboxThreadUtils.js'
 import {
   isAirtablePermissionErrorMessage,
@@ -560,7 +561,7 @@ export default function ManagerInboxPage({
           time: last ? fmtDateTime(last.Timestamp || last.created_at) : '',
           ts: lastMsgTs,
           lastMsgTs,
-          lastSenderEmail: last ? String(last['Sender Email'] || '').trim() : '',
+          lastSenderEmail: last ? portalSenderEmailFromMessage(last) : '',
         })
       }
       rows.sort((a, b) => b.ts - a.ts)
@@ -585,7 +586,7 @@ export default function ManagerInboxPage({
         time: last ? fmtDateTime(last.Timestamp || last.created_at) : '',
         ts: lastMsgTs,
         lastMsgTs,
-        lastSenderEmail: last ? String(last['Sender Email'] || '').trim() : '',
+        lastSenderEmail: last ? portalSenderEmailFromMessage(last) : '',
       })
     }
 
@@ -617,7 +618,7 @@ export default function ManagerInboxPage({
         time: last ? fmtDateTime(last.Timestamp || last.created_at) : '',
         ts: lastMsgTs,
         lastMsgTs,
-        lastSenderEmail: last ? String(last['Sender Email'] || '').trim() : '',
+        lastSenderEmail: last ? portalSenderEmailFromMessage(last) : '',
       })
     }
 

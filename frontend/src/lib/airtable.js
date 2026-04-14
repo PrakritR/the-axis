@@ -1804,31 +1804,7 @@ export async function deleteAnnouncement(recordId) {
 // Lease Drafts — resident-facing read
 // ---------------------------------------------------------------------------
 
-// Returns the most recent published (or signed) lease draft for dashboard /
-// snapshots. The Leasing tab loads all stages via `getLeaseDraftsForResident`
-// and only shows full lease text for Published / Signed.
-export async function getApprovedLeaseForResident(residentRecordId) {
-  if (!residentRecordId) return null
-  const escaped = escapeFormulaValue(residentRecordId)
-  const formula = `AND(
-    {Resident Record ID} = "${escaped}",
-    OR({Status} = "Published", {Status} = "Signed")
-  )`
-  const url = new URL(`${BASE_URL}/Lease%20Drafts`)
-  url.searchParams.set('filterByFormula', formula)
-  url.searchParams.set('sort[0][field]', 'Published At')
-  url.searchParams.set('sort[0][direction]', 'desc')
-  url.searchParams.set('maxRecords', '1')
-  const data = await request(url.toString())
-  const record = data.records?.[0]
-  return record ? mapRecord(record) : null
-}
-
-/** All lease draft rows for a resident (any status), newest first — for portal stage filter. */
-export async function getLeaseDraftsForResident(residentRecordId) {
-  if (!residentRecordId) return []
-  const escaped = escapeFormulaValue(residentRecordId)
-  const formula = `{Resident Record ID} = "${escaped}"`
+async function listLeaseDraftsByFormula(formula) {
   const table = 'Lease Drafts'
   const allRecords = []
   let offset = null
@@ -1839,13 +1815,97 @@ export async function getLeaseDraftsForResident(residentRecordId) {
     ;(data.records || []).forEach((r) => allRecords.push(mapRecord(r)))
     offset = data.offset || null
   } while (offset)
+  return allRecords
+}
 
+function sortLeaseDraftRowsForResident(allRecords) {
   allRecords.sort((a, b) => {
     const pb = new Date(b['Published At'] || 0).getTime()
     const pa = new Date(a['Published At'] || 0).getTime()
     if (pb !== pa) return pb - pa
     return new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime()
   })
+  return allRecords
+}
+
+// Returns the most recent published (or signed) lease draft for dashboard /
+// snapshots. Pass `residentEmail` so drafts match when `Resident Record ID` on the row is blank.
+export async function getApprovedLeaseForResident(residentRecordId, residentEmail = '') {
+  if (!residentRecordId) return null
+  const escaped = escapeFormulaValue(residentRecordId)
+  const statusOr = `OR({Status} = "Published", {Status} = "Signed")`
+  const byIdFormula = `AND({Resident Record ID} = "${escaped}", ${statusOr})`
+
+  const fetchOne = async (formula) => {
+    const url = new URL(`${BASE_URL}/Lease%20Drafts`)
+    url.searchParams.set('filterByFormula', formula)
+    url.searchParams.set('sort[0][field]', 'Published At')
+    url.searchParams.set('sort[0][direction]', 'desc')
+    url.searchParams.set('maxRecords', '1')
+    const data = await request(url.toString())
+    const record = data.records?.[0]
+    return record ? mapRecord(record) : null
+  }
+
+  let found = await fetchOne(byIdFormula)
+  if (found) return found
+
+  const em = String(residentEmail || '').trim().toLowerCase()
+  if (em) {
+    try {
+      const byEmailFormula = `AND(LOWER(TRIM({Resident Email})) = "${escapeFormulaValue(em)}", ${statusOr})`
+      found = await fetchOne(byEmailFormula)
+      if (found) return found
+    } catch {
+      /* Resident Email field missing or renamed */
+    }
+  }
+
+  try {
+    const byLinkFormula = `AND({Resident} = "${escaped}", ${statusOr})`
+    return await fetchOne(byLinkFormula)
+  } catch {
+    return null
+  }
+}
+
+/**
+ * All lease draft rows for a resident (any status), newest first — for portal stage filter.
+ * Matches `{Resident Record ID}` first, then `{Resident Email}`, then linked `{Resident}` if present,
+ * so the resident portal still loads drafts when the application never copied the profile id onto the row.
+ * @param {string} residentRecordId
+ * @param {string} [residentEmail] — portal sign-in email (same as Lease Drafts `Resident Email`)
+ */
+export async function getLeaseDraftsForResident(residentRecordId, residentEmail = '') {
+  if (!residentRecordId) return []
+  const escaped = escapeFormulaValue(residentRecordId)
+  const byId = await listLeaseDraftsByFormula(`{Resident Record ID} = "${escaped}"`)
+  const merged = new Map(byId.map((r) => [r.id, r]))
+
+  if (merged.size === 0) {
+    const em = String(residentEmail || '').trim().toLowerCase()
+    if (em) {
+      try {
+        const byEmail = await listLeaseDraftsByFormula(
+          `LOWER(TRIM({Resident Email})) = "${escapeFormulaValue(em)}"`,
+        )
+        for (const r of byEmail) merged.set(r.id, r)
+      } catch {
+        /* e.g. column renamed away from `Resident Email` */
+      }
+    }
+  }
+
+  if (merged.size === 0) {
+    try {
+      const byLink = await listLeaseDraftsByFormula(`{Resident} = "${escaped}"`)
+      for (const r of byLink) merged.set(r.id, r)
+    } catch {
+      /* "Resident" link field may not exist in this base */
+    }
+  }
+
+  const allRecords = sortLeaseDraftRowsForResident([...merged.values()])
   return allRecords
 }
 

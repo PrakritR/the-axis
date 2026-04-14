@@ -52,6 +52,21 @@ export function mergeSubjectIntoMessageIfNeeded(message, subject, subjectFieldCo
 }
 
 /**
+ * Normalize `Sender Email` from a Messages row (plain text, email field quirks, or linked arrays).
+ * Lowercase trim for comparison with portal sign-in email.
+ */
+export function portalSenderEmailFromMessage(m) {
+  if (!m) return ''
+  const raw = m['Sender Email']
+  if (raw == null || raw === '') return ''
+  if (Array.isArray(raw)) {
+    const withAt = raw.map((x) => String(x).trim()).find((s) => s.includes('@'))
+    return (withAt || String(raw[0] || '').trim()).toLowerCase()
+  }
+  return String(raw).trim().toLowerCase()
+}
+
+/**
  * Inbox folder for a thread: trash, sent (you sent the latest message), unopened, or opened.
  * @param {{ lastMsgTs: number, state: { lastReadAt?: Date|null, trashed?: boolean }|undefined, lastSenderEmail: string, myEmail: string }} p
  */

@@ -159,9 +159,12 @@ Add columns on `Properties` as needed (up to 20 rooms):
 
 **Behavior summary**
 
-- **Unopened:** not trashed, and (no `Last Read At` yet, or latest message timestamp is newer than `Last Read At`).
-- **Opened:** not trashed, and the manager has read through the latest message.
+- **Sent (per viewer):** not trashed, and the **latest message** in the thread has `Sender Email` equal to **this viewer’s** portal email (the person who sent last always sees the thread under **Sent**). This is independent of `Last Read At`.
+- **Unopened:** not trashed, you are **not** the latest sender, and (no `Last Read At` yet, or latest message timestamp is newer than `Last Read At`).
+- **Opened:** not trashed, you are not the latest sender, and `Last Read At` is at or after the latest message time.
 - **Trash:** `Trashed` is checked (thread still loadable; **Restore** clears the checkbox).
+
+The **recipient** (different email than the latest `Sender Email`) uses the same table with their own `Participant Email` row for that `Thread Key`. No extra Airtable fields are required for Sent vs Unopened beyond **Messages** (`Thread Key`, `Sender Email`, timestamp) and these **Inbox Thread State** columns.
 
 ---
 
@@ -227,7 +230,7 @@ Optional: `Stripe Customer ID` (mentioned in `.env.example`).
 
 **Fields referenced in app:**
 
-- `Resident Name`, `Resident Email`, `Resident Record ID`
+- `Resident Name`, `Resident Email`, `Resident Record ID` (text; should match the Resident Profile `record.id` when known — the resident portal also matches drafts by **email** or linked **`Resident`** if this text field is blank)
 - `Property`, `Unit`
 - `Lease Start Date`, `Lease End Date`, `Rent Amount`, `Deposit Amount`, `Utilities Fee`, `Lease Term`
 - `AI Draft Content`, `Manager Edited Content`, `Manager Notes`
@@ -235,6 +238,7 @@ Optional: `Stripe Customer ID` (mentioned in `.env.example`).
 - `Updated At`
 - `Approved By`, `Approved At`, `Published At`
 - `Application Record ID`
+- **`Allow Sign Without Move-In Pay`** — checkbox (optional). When checked, residents can open/sign the lease before security deposit + first month rent; env `VITE_AIRTABLE_LEASE_SIGN_WITHOUT_PAY_FIELD` if your column name differs
 - `SignForge Envelope ID`, `SignForge Sent At` — SignForge send handler
 - Sort/filter: `Updated At`, `Property`, `Resident Name`
 

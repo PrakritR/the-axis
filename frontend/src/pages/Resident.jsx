@@ -1525,10 +1525,10 @@ function PaymentsPanel({ resident, onResidentUpdated, highlightCategory, onPayme
   }, [resident])
 
   const reloadLeaseDraftsForPayments = useCallback(() => {
-    return getLeaseDraftsForResident(resident.id)
+    return getLeaseDraftsForResident(resident.id, resident.Email || '')
       .then((d) => setLeaseDraftsForPayments(Array.isArray(d) ? d : []))
       .catch(() => setLeaseDraftsForPayments([]))
-  }, [resident.id])
+  }, [resident.id, resident.Email])
 
   useEffect(() => {
     loadPayments()
@@ -2226,7 +2226,7 @@ function PaymentsPanel({ resident, onResidentUpdated, highlightCategory, onPayme
       }
       const [refreshed, drafts] = await Promise.all([
         getPaymentsForResident(resident),
-        getLeaseDraftsForResident(resident.id).catch(() => []),
+        getLeaseDraftsForResident(resident.id, resident.Email || '').catch(() => []),
       ])
       const rows = Array.isArray(refreshed) ? refreshed : []
       setPayments(rows)
@@ -2252,7 +2252,6 @@ function PaymentsPanel({ resident, onResidentUpdated, highlightCategory, onPayme
               <p>
                 Room hold:{' '}
                 <span className="font-semibold text-slate-900">{formatMoney(residentRoomHoldFeeUsd(resident))}</span>
-                {' — '}due with move-in unless you already have a paid hold line in Airtable
               </p>
             ) : null}
             {fallbackUtilitiesAmount > 0 ? (
@@ -2504,14 +2503,14 @@ function LeasingPanel({ resident, payments, onOpenPayments }) {
   const loadLeaseDrafts = useCallback(async () => {
     setLeaseLoading(true)
     try {
-      const drafts = await getLeaseDraftsForResident(resident.id)
+      const drafts = await getLeaseDraftsForResident(resident.id, resident.Email || '')
       setLeaseDrafts(drafts)
     } catch {
       setLeaseDrafts([])
     } finally {
       setLeaseLoading(false)
     }
-  }, [resident.id])
+  }, [resident.id, resident.Email])
 
   useEffect(() => {
     loadLeaseDrafts()
@@ -3304,7 +3303,7 @@ function Dashboard({ resident, onResidentUpdated, onSignOut }) {
       const [nextRequests, nextPayments, lease] = await Promise.all([
         getWorkOrdersForResident(resident).catch(() => []),
         getPaymentsForResident(resident).catch(() => []),
-        getApprovedLeaseForResident(resident.id).catch(() => null),
+        getApprovedLeaseForResident(resident.id, resident.Email || '').catch(() => null),
       ])
       setRequests(nextRequests)
       setPayments(nextPayments)

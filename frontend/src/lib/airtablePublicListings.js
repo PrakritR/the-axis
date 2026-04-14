@@ -588,7 +588,10 @@ export function mapAirtableRecordToPropertyPage(rec) {
     leasingPackages,
     leaseTerms: [],
     cleaningFee: '',
-    utilitiesFee: '',
+    utilitiesFee: String(
+      rec['Utilities Fee'] ?? rec['Utilities'] ?? rec['House Utilities'] ?? meta?.financials?.utilities ?? '',
+    ).trim(),
+    petsPolicy: String(rec[PROPERTY_AIR.pets] ?? rec.Pets ?? '').trim(),
     securityDeposit: String(rec['Security Deposit'] != null ? rec['Security Deposit'] : '$500'),
     sharedSpacesList,
     bathroomsList,

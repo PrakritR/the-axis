@@ -33,13 +33,28 @@ function signWithoutOverrideValueTruthy(v) {
   return false
 }
 
+/** Heuristic: field name looks like "allow … sign without … pay / move-in" (avoids matching *…signature* alone). */
+function fieldNameLooksLikeSignWithoutMoveInGate(slug) {
+  if (!slug || slug.length < 12) return false
+  if (!slug.includes('allow')) return false
+  if (slug.includes('signwithout') || slug.includes('withoutpay') || slug.includes('withoutmovein')) return true
+  if (slug.includes('lease') && slug.includes('without') && (slug.includes('pay') || slug.includes('sign'))) return true
+  return false
+}
+
 /** True when the draft record has the override enabled (checkbox or yes-like text). */
 export function leaseDraftAllowsSignWithoutMoveInPay(draft) {
   if (!draft || typeof draft !== 'object') return false
   const primary = leaseSignWithoutMoveInPayFieldName()
-  const explicitKeys = [primary, DEFAULT_LEASE_SIGN_WITHOUT_PAY_FIELD, 'Skip Move-In Pay Gate'].filter(
-    (k, i, a) => Boolean(k) && a.indexOf(k) === i,
-  )
+  const explicitKeys = [
+    primary,
+    DEFAULT_LEASE_SIGN_WITHOUT_PAY_FIELD,
+    'Skip Move-In Pay Gate',
+    'Allow lease signing without paying',
+    'Allow Lease Signing Without Paying',
+    'Allow sign without paying',
+    'Allow Sign Without Paying',
+  ].filter((k, i, a) => Boolean(k) && a.indexOf(k) === i)
 
   for (const key of explicitKeys) {
     const v = draft[key]
@@ -53,6 +68,14 @@ export function leaseDraftAllowsSignWithoutMoveInPay(draft) {
     if (key === 'id' || key === 'created_at') continue
     if (!targetSlugs.has(normFieldKeySlug(key))) continue
     if (v === undefined) continue
+    if (signWithoutOverrideValueTruthy(v)) return true
+  }
+
+  for (const [key, v] of Object.entries(draft)) {
+    if (key === 'id' || key === 'created_at') continue
+    if (v === undefined) continue
+    const slug = normFieldKeySlug(key)
+    if (!fieldNameLooksLikeSignWithoutMoveInGate(slug)) continue
     if (signWithoutOverrideValueTruthy(v)) return true
   }
 

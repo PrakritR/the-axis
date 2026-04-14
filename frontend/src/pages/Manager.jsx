@@ -6043,6 +6043,16 @@ export function CalendarTabPanel({ manager, allowedPropertyNames, loadAllSchedul
     return byDate
   }, [loadAllSchedulingRows, schedulingRows, manager?.email])
 
+  /** Month/week grid: reflect Manager Availability editor state on the selected day (not only rows already in Airtable). */
+  const calendarDayFreeOverrides = useMemo(() => {
+    if (loadAllSchedulingRows) return adminMeetingAvailabilityFreeByDate
+    if (!maTableOk || !managerDayFreeOverrides) return managerDayFreeOverrides
+    return {
+      ...managerDayFreeOverrides,
+      [selectedDateKey]: normalizeTimeRanges(pendingRanges),
+    }
+  }, [loadAllSchedulingRows, maTableOk, managerDayFreeOverrides, selectedDateKey, pendingRanges, adminMeetingAvailabilityFreeByDate])
+
   const adminScheduledItemsForDay = scheduledItemsForSelectedDay
 
   useEffect(() => {
@@ -6113,7 +6123,8 @@ export function CalendarTabPanel({ manager, allowedPropertyNames, loadAllSchedul
   async function handleSelectDate(key) {
     const nextKey = String(key || '').trim()
     if (!loadAllSchedulingRows && maTableOk && maDirtyRef.current) {
-      maDirtyRef.current = false
+      const ok = await saveManagerAvailabilityToAirtable()
+      if (!ok) return
     }
     if (!loadAllSchedulingRows && !maTableOk && availabilityDirtyRef.current) {
       const ok = await saveTourDirtyIfNeeded()
@@ -6389,7 +6400,7 @@ export function CalendarTabPanel({ manager, allowedPropertyNames, loadAllSchedul
           weeklyFree={selectedWeeklyFree}
           bookedByDate={bookedByDate}
           blockedDates={loadAllSchedulingRows ? new Set() : blockedDatesSet}
-          dayFreeOverrides={loadAllSchedulingRows ? adminMeetingAvailabilityFreeByDate : managerDayFreeOverrides}
+          dayFreeOverrides={calendarDayFreeOverrides}
         />
         {!loadAllSchedulingRows && (
           <AvailabilityEditorPanel

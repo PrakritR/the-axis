@@ -21,6 +21,7 @@ import {
   mergeSubjectIntoMessageIfNeeded,
   threadSearchHaystack,
   portalInboxThreadSection,
+  portalSenderEmailFromMessage,
 } from '../../lib/portalInboxThreadUtils.js'
 import {
   PORTAL_TAB_HEADER_ROW_CLS,
@@ -250,7 +251,7 @@ export default function ResidentPortalInbox({ resident }) {
         time: last ? fmtDateTime(last.Timestamp || last.created_at) : '',
         ts: lastMsgTs,
         lastMsgTs,
-        lastSenderEmail: last ? String(last['Sender Email'] || '').trim() : '',
+        lastSenderEmail: last ? portalSenderEmailFromMessage(last) : '',
       })
     }
     const sortedL = [...leasingMsgs].sort((a, b) => msgTime(a) - msgTime(b))
