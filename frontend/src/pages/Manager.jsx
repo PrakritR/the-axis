@@ -70,6 +70,7 @@ import {
   portalAuthInputCls,
 } from '../components/PortalAuthUI'
 import PortalShell, { DataTable, StatusPill } from '../components/PortalShell'
+import { PortalEmptyVisual } from '../components/portalNavIcons.jsx'
 import Modal from '../components/Modal'
 import AddPropertyWizard from '../components/AddPropertyWizard'
 import { PropertyDetailPanel } from '../lib/propertyDetailPanel.jsx'
@@ -2903,7 +2904,7 @@ function HouseManagementPanel({ manager, onPropertiesChange }) {
           <div className="mt-5 rounded-2xl border border-slate-100 bg-slate-50 px-4 py-5 text-sm text-slate-500">Loading houses…</div>
         ) : managedPropertyCount === 0 ? (
           <div className="mt-5 rounded-2xl border border-dashed border-slate-200 bg-slate-50/80 px-6 py-10 text-center">
-            <div className="mb-3 text-4xl" aria-hidden>🏠</div>
+            <PortalEmptyVisual variant="house" />
             <p className="text-sm font-semibold text-slate-800">No properties yet</p>
           </div>
         ) : (
@@ -3100,7 +3101,7 @@ function HouseManagementPanel({ manager, onPropertiesChange }) {
                 </div>
               ) : (
                 <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50/80 px-6 py-10 text-center">
-                  <div className="mb-3 text-4xl" aria-hidden>🏠</div>
+                  <PortalEmptyVisual variant="house" />
                   <p className="text-sm font-semibold text-slate-800">No properties in this view</p>
                 </div>
               )
@@ -4578,12 +4579,12 @@ function ManagerPaymentsPanel({ allowedPropertyNames }) {
             <div className="px-6 py-16 text-center text-sm text-slate-500">Loading payments…</div>
           ) : rentRows.length === 0 ? (
             <div className="px-6 py-16 text-center">
-              <div className="mb-3 text-4xl" aria-hidden>💳</div>
+              <PortalEmptyVisual variant="payments" />
               <div className="text-sm font-semibold text-slate-700">No payments to show</div>
             </div>
           ) : filteredForList.length === 0 ? (
             <div className="px-6 py-16 text-center">
-              <div className="mb-3 text-4xl" aria-hidden>🔍</div>
+              <PortalEmptyVisual variant="search" />
               <div className="text-sm font-semibold text-slate-700">Nothing matches this filter</div>
             </div>
           ) : (
@@ -5032,18 +5033,18 @@ function ApplicationsPanel({ allowedPropertyNames, manager }) {
           <div className="px-6 py-16 text-center text-sm text-slate-500">Loading applications…</div>
         ) : loadError ? (
           <div className="px-6 py-16 text-center">
-            <div className="mb-3 text-4xl" aria-hidden>⚠️</div>
+            <PortalEmptyVisual variant="warning" />
             <div className="text-sm font-semibold text-slate-700">Could not load the list</div>
             <p className="mt-1 text-sm text-slate-500">Check the message above and try Refresh</p>
           </div>
         ) : scopedRows.length === 0 ? (
           <div className="px-6 py-16 text-center">
-            <div className="mb-3 text-4xl" aria-hidden>📋</div>
+            <PortalEmptyVisual variant="clipboard" />
             <div className="text-sm font-semibold text-slate-700">No applications yet</div>
           </div>
         ) : filteredRows.length === 0 ? (
           <div className="px-6 py-16 text-center">
-            <div className="mb-3 text-4xl" aria-hidden>🏠</div>
+            <PortalEmptyVisual variant="house" />
             <div className="text-sm font-semibold text-slate-700">No {statusFilter} applications</div>
           </div>
         ) : (
@@ -6115,7 +6116,7 @@ function ManagerDashboard({ manager: managerProp, openDraftId, onOpenDraft, onCl
             <div className="px-6 py-16 text-center text-sm text-slate-500">Loading lease queue…</div>
           ) : drafts.length === 0 ? (
             <div className="px-6 py-16 text-center">
-              <div className="mb-3 text-4xl" aria-hidden>📄</div>
+              <PortalEmptyVisual variant="document" />
               <div className="text-sm font-semibold text-slate-700">No leases yet</div>
             </div>
           ) : (

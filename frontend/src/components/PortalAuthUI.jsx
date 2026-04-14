@@ -1,5 +1,6 @@
 import React, { useState } from 'react'
 import { Link } from 'react-router-dom'
+import { PortalNavGlyph } from './portalNavIcons.jsx'
 
 function cx(...values) {
   return values.filter(Boolean).join(' ')
@@ -36,19 +37,24 @@ export function PortalAuthCard({ title, children, footer }) {
 export function PortalSegmentedControl({ tabs, active, onChange }) {
   return (
     <div className="flex gap-1 rounded-[24px] border border-slate-100 bg-slate-50 p-1.5">
-      {tabs.map(([id, label]) => (
-        <button
-          key={id}
-          type="button"
-          onClick={() => onChange(id)}
-          className={cx(
-            'flex-1 rounded-[18px] px-4 py-3 text-base font-semibold transition',
-            active === id ? 'bg-white text-slate-900 shadow-sm ring-2 ring-[#2563eb]' : 'text-slate-500 hover:text-slate-900'
-          )}
-        >
-          {label}
-        </button>
-      ))}
+      {tabs.map((entry) => {
+        const [id, label, iconKey] = entry
+        const glyphId = iconKey || (id === 'resident' ? 'hub-resident' : id === 'manager' ? 'hub-manager' : id === 'admin' ? 'hub-admin' : id)
+        return (
+          <button
+            key={id}
+            type="button"
+            onClick={() => onChange(id)}
+            className={cx(
+              'flex flex-1 items-center justify-center gap-2 rounded-[18px] px-3 py-3 text-base font-semibold transition',
+              active === id ? 'bg-white text-slate-900 shadow-sm ring-2 ring-[#2563eb]' : 'text-slate-500 hover:text-slate-900'
+            )}
+          >
+            <PortalNavGlyph tabId={glyphId} className="h-5 w-5 shrink-0 opacity-90" />
+            <span>{label}</span>
+          </button>
+        )
+      })}
     </div>
   )
 }
