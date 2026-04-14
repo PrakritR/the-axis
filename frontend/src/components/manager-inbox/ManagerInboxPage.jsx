@@ -253,6 +253,21 @@ function managerInboxStateKeyForSelection(selectedThreadId, axisThreadKey, admin
   return ''
 }
 
+function sortInboxMessagesAsc(list) {
+  return [...(list || [])].sort(
+    (a, b) =>
+      new Date(a.Timestamp || a.created_at || 0).getTime() -
+      new Date(b.Timestamp || b.created_at || 0).getTime(),
+  )
+}
+
+/** Merge a freshly POSTed Messages row into cached lists so Sent / thread preview update immediately. */
+function mergeMessageIntoInboxList(prevList, saved) {
+  if (!saved?.id) return prevList || []
+  const filtered = (prevList || []).filter((m) => m.id !== saved.id)
+  return sortInboxMessagesAsc([...filtered, saved])
+}
+
 function inboxParticipantsLine(selectedThreadId, adminFullInbox) {
   if (!selectedThreadId) return ''
   const t = String(selectedThreadId)
@@ -327,6 +342,18 @@ export default function ManagerInboxPage({
     if (!portalInboxAirtableConfigured() || !managerEmail) return ''
     return siteManagerThreadKey(managerEmail)
   }, [managerEmail])
+
+  const mergePortalSavedMessage = useCallback(
+    (saved) => {
+      if (!saved?.id) return
+      const tk = portalInboxThreadKeyFromRecord(saved)
+      setAllMsgs((prev) => mergeMessageIntoInboxList(prev, saved))
+      if (axisThreadKey && tk === axisThreadKey) {
+        setAxisMsgs((prev) => mergeMessageIntoInboxList(prev, saved))
+      }
+    },
+    [axisThreadKey],
+  )
 
   const refreshInboxThreadState = useCallback(async () => {
     if (!managerEmail) {
@@ -885,7 +912,7 @@ export default function ManagerInboxPage({
     const ridForSelect = composeResidentRecordId.trim()
     setComposeSending(true)
     try {
-      await sendMessage({
+      const saved = await sendMessage({
         senderEmail: managerEmail,
         message: bodyOut,
         isAdmin: true,
@@ -893,6 +920,7 @@ export default function ManagerInboxPage({
         channel: PORTAL_INBOX_CHANNEL_INTERNAL,
         subject: showSubjectField ? subjResolved : '',
       })
+      mergePortalSavedMessage(saved)
       if (adminFullInbox) {
         if (kind === 'manager' && composeManagerEmail.trim()) {
           notifyPortalMessage({
@@ -939,6 +967,7 @@ export default function ManagerInboxPage({
         ),
       )
       if (threadKey) await touchThreadRead(threadKey)
+      setSectionFilter('sent')
       toast.success('Sent')
     } catch (err) {
       toast.error(err.message || 'Send failed')
@@ -961,7 +990,7 @@ export default function ManagerInboxPage({
     setSending(true)
     try {
       if (adminFullInbox) {
-        await sendMessage({
+        const saved = await sendMessage({
           senderEmail: managerEmail,
           message: bodyOut,
           isAdmin: true,
@@ -969,6 +998,7 @@ export default function ManagerInboxPage({
           channel: PORTAL_INBOX_CHANNEL_INTERNAL,
           subject: showSubjectField ? subjResolved : '',
         })
+        mergePortalSavedMessage(saved)
         notifyPortalMessage({
           recipientEmail: getOtherPartyEmail(thread, managerEmail),
           senderName: managerEmail,
@@ -986,11 +1016,12 @@ export default function ManagerInboxPage({
         )
         const sk = managerInboxStateKeyForSelection(selectedThreadId, axisThreadKey, adminFullInbox)
         if (sk) await touchThreadRead(sk)
+        setSectionFilter('sent')
         toast.success('Sent')
         return
       }
       if (selectedThreadId === MANAGER_INBOX_AXIS) {
-        await sendMessage({
+        const saved = await sendMessage({
           senderEmail: managerEmail,
           message: bodyOut,
           isAdmin: false,
@@ -998,11 +1029,12 @@ export default function ManagerInboxPage({
           channel: PORTAL_INBOX_CHANNEL_INTERNAL,
           subject: showSubjectField ? subjResolved : '',
         })
+        mergePortalSavedMessage(saved)
         notifyPortalMessage({ toAdmins: true, senderName: managerEmail, subject: notifySubj })
       } else {
         const resId = managerInboxParseResidentThreadId(selectedThreadId)
         if (!resId) return
-        await sendMessage({
+        const saved = await sendMessage({
           senderEmail: managerEmail,
           message: bodyOut,
           isAdmin: true,
@@ -1010,6 +1042,7 @@ export default function ManagerInboxPage({
           channel: PORTAL_INBOX_CHANNEL_INTERNAL,
           subject: showSubjectField ? subjResolved : '',
         })
+        mergePortalSavedMessage(saved)
         notifyPortalMessage({
           recipientEmail: getOtherPartyEmail(thread, managerEmail),
           senderName: managerEmail,
@@ -1041,6 +1074,7 @@ export default function ManagerInboxPage({
       }
       const sk = managerInboxStateKeyForSelection(selectedThreadId, axisThreadKey, adminFullInbox)
       if (sk) await touchThreadRead(sk)
+      setSectionFilter('sent')
       toast.success('Sent')
     } catch (err) {
       toast.error(err.message || 'Send failed')

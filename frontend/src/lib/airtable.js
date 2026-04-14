@@ -31,6 +31,15 @@ const MESSAGE_SUBJECT_FIELD = (() => {
   return s || ''
 })()
 
+/** Date/time on Messages for sorting (getAllMessages). Set `none` if your base has no such field. */
+const MESSAGE_TIMESTAMP_FIELD = (() => {
+  const raw = import.meta.env.VITE_AIRTABLE_MESSAGE_TIMESTAMP_FIELD
+  if (raw === 'none' || raw === false || raw === '0') return ''
+  if (raw === undefined || raw === null) return 'Timestamp'
+  const s = String(raw).trim()
+  return s || 'Timestamp'
+})()
+
 /** When set, Work Orders always link to this Resident Profile row (e.g. placeholder "Unnamed record") instead of the portal user row. */
 const WORK_ORDER_RESIDENT_PLACEHOLDER_ID = (() => {
   const id = String(import.meta.env.VITE_AIRTABLE_WORK_ORDER_RESIDENT_RECORD_ID || '').trim()
@@ -1098,8 +1107,11 @@ export async function sendMessage({
 
   const fields = {
     Message: message,
-    'Sender Email': senderEmail,
+    'Sender Email': String(senderEmail || '').trim(),
     'Is Admin': isAdmin,
+  }
+  if (MESSAGE_TIMESTAMP_FIELD) {
+    fields[MESSAGE_TIMESTAMP_FIELD] = new Date().toISOString()
   }
   if (wo) {
     fields['Work Order'] = [wo]
