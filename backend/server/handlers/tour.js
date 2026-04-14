@@ -9,7 +9,7 @@ import {
   buildManagerAvailabilityConfig,
   buildPropertySlotsByDate,
   mergePropertyAvailabilityRanges,
-  rangesToSlotLabels,
+  rangesToThirtyMinuteSlotLabels,
 } from '../../../shared/manager-availability-merge.js'
 
 const AIRTABLE_BASE_ID =
@@ -145,21 +145,23 @@ function availabilitySlotsForDate(rawAvailability, dateKey) {
   if (!day) return []
   const map = parseAvailabilityTokens(rawAvailability)
   const tokens = map[day] || []
-  const labels = []
+  const rangePairs = []
   for (const token of tokens) {
     const pair = String(token).match(/^(\d+)-(\d+)$/)
     if (pair) {
       const start = Number(pair[1])
       const end = Number(pair[2])
       if (Number.isFinite(start) && Number.isFinite(end) && end > start) {
-        labels.push(`${displayTime(start)} - ${displayTime(end)}`)
+        rangePairs.push({ start, end })
       }
       continue
     }
     const normalized = normalizeRangeLabel(token)
-    if (normalized) labels.push(normalized)
+    if (!normalized) continue
+    const parsed = parseTimeRangeToMinutes(normalized)
+    if (parsed) rangePairs.push(parsed)
   }
-  return labels
+  return rangesToThirtyMinuteSlotLabels(rangePairs)
 }
 
 function statusAllowsConflict(statusValue) {
@@ -524,7 +526,7 @@ export default async function handler(req, res) {
         legacyAvailabilityText: propertyAvailability,
         bookedSlotLabels: bookedTourLabels,
       })
-      const mergedLabels = rangesToSlotLabels(mergedRanges)
+      const mergedLabels = rangesToThirtyMinuteSlotLabels(mergedRanges)
       const allowedLegacy = availabilitySlotsForDate(propertyAvailability, preferredDateKey)
       const allowedSet = new Set(
         [...mergedLabels, ...allowedLegacy].map((slot) => String(slot || '').trim().toLowerCase()),

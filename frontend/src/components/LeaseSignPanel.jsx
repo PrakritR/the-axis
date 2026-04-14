@@ -16,7 +16,7 @@
 import { useState } from 'react'
 import toast from 'react-hot-toast'
 
-export default function LeaseSignPanel({ leaseDraftId, tenantName = '', onSigned }) {
+export default function LeaseSignPanel({ leaseDraftId, tenantName = '', residentRecordId = '', onSigned }) {
   const [agreed, setAgreed] = useState(false)
   const [typedName, setTypedName] = useState('')
   const [signing, setSigning] = useState(false)
@@ -38,6 +38,7 @@ export default function LeaseSignPanel({ leaseDraftId, tenantName = '', onSigned
         body: JSON.stringify({
           leaseDraftId,
           signatureText: typedName.trim(),
+          residentRecordId: residentRecordId || undefined,
         }),
       })
       const data = await res.json()

@@ -8,6 +8,13 @@
  * Body: { leaseDraftId, signatureText, residentRecordId }
  */
 
+import {
+  evaluateLeaseAccessPrereqs,
+  normalizeLeaseAccessRequirement,
+  paymentsIndicateFirstMonthRentPaid,
+  paymentsIndicateSecurityDepositPaid,
+} from '../../../shared/lease-access-requirements.js'
+
 const AIRTABLE_TOKEN = process.env.AIRTABLE_TOKEN || process.env.VITE_AIRTABLE_TOKEN
 const CORE_BASE_ID =
   process.env.VITE_AIRTABLE_BASE_ID || process.env.AIRTABLE_BASE_ID || 'appol57LKtMKaQ75T'
@@ -44,6 +51,53 @@ async function airtablePatch(table, recordId, fields, baseId = CORE_BASE_ID) {
   return res.json()
 }
 
+function escapeFormulaValue(value) {
+  return String(value || '').replace(/"/g, '\\"')
+}
+
+async function findPropertyByName(propertyName) {
+  const name = String(propertyName || '').trim()
+  if (!name) return null
+  const formula = encodeURIComponent(`{Property Name} = "${escapeFormulaValue(name)}"`)
+  const url = `https://api.airtable.com/v0/${CORE_BASE_ID}/Properties?filterByFormula=${formula}&maxRecords=1`
+  try {
+    const data = await airtableGet(url)
+    const rec = data.records?.[0]
+    return rec ? { id: rec.id, ...rec.fields } : null
+  } catch {
+    return null
+  }
+}
+
+async function listPaymentsForResidentRecordId(residentRecordId) {
+  const rid = String(residentRecordId || '').trim()
+  if (!rid.startsWith('rec')) return []
+  const formula = encodeURIComponent(`FIND("${escapeFormulaValue(rid)}", ARRAYJOIN({Resident})) > 0`)
+  const url = `https://api.airtable.com/v0/${CORE_BASE_ID}/Payments?filterByFormula=${formula}&pageSize=100`
+  try {
+    const data = await airtableGet(url)
+    return (data.records || []).map((r) => ({ id: r.id, ...r.fields }))
+  } catch {
+    return []
+  }
+}
+
+function truthyAirtableCheckbox(v) {
+  if (v === true || v === 1) return true
+  if (v === false || v === 0 || v == null) return false
+  const s = String(v).trim().toLowerCase()
+  return ['yes', 'true', '1', 'on'].includes(s)
+}
+
+function leaseDraftAllowsSignWithoutMoveInPayServer(draft) {
+  const envName = String(process.env.VITE_AIRTABLE_LEASE_SIGN_WITHOUT_PAY_FIELD || '').trim()
+  const keys = [envName, 'Allow Sign Without Move-In Pay'].filter((k, i, a) => k && a.indexOf(k) === i)
+  for (const k of keys) {
+    if (truthyAirtableCheckbox(draft[k])) return true
+  }
+  return false
+}
+
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*')
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS')
@@ -78,6 +132,38 @@ export default async function handler(req, res) {
       })
     }
 
+    const draftResident = String(draft['Resident Record ID'] || '').trim()
+    const bodyResident = String(residentRecordId || '').trim()
+    if (bodyResident && draftResident && bodyResident !== draftResident) {
+      return res.status(403).json({ error: 'Resident does not match this lease draft.' })
+    }
+    const residentForPayments = bodyResident || draftResident
+    if (!residentForPayments.startsWith('rec')) {
+      return res.status(400).json({
+        error:
+          'This lease draft is not linked to a resident record. Ask your manager to regenerate the lease from your approved application.',
+      })
+    }
+
+    const propertyName = String(draft.Property || '').trim()
+    const propertyRecord = propertyName ? await findPropertyByName(propertyName) : null
+    const payments = await listPaymentsForResidentRecordId(residentForPayments)
+    const snap = normalizeLeaseAccessRequirement(propertyRecord?.['Lease Access Requirement'])
+    const sdP = paymentsIndicateSecurityDepositPaid(payments)
+    const fmP = paymentsIndicateFirstMonthRentPaid(payments)
+    const override = leaseDraftAllowsSignWithoutMoveInPayServer(draft)
+    const accessEval = evaluateLeaseAccessPrereqs({
+      requirement: snap,
+      securityDepositPaid: sdP,
+      firstMonthRentPaid: fmP,
+      managerSignWithoutPayOverride: override,
+    })
+    if (!accessEval.met) {
+      return res.status(403).json({
+        error: accessEval.blockReason || 'Lease signing requirements are not satisfied yet.',
+      })
+    }
+
     const now = new Date().toISOString()
     const sig = String(signatureText).trim()
 
@@ -87,6 +173,9 @@ export default async function handler(req, res) {
       'Signature Text': sig,
       'Signed At': now,
       'Updated At': now,
+      'Lease Access Granted': true,
+      'Lease Access Block Reason': '',
+      'Lease Access Granted At': now,
     })
 
     // Back-fill the linked Applications record (best-effort)

@@ -12,6 +12,12 @@
 // review, edit, and explicitly approve before it reaches the resident portal.
 
 import Anthropic from '@anthropic-ai/sdk'
+import {
+  evaluateLeaseAccessPrereqs,
+  normalizeLeaseAccessRequirement,
+  paymentsIndicateFirstMonthRentPaid,
+  paymentsIndicateSecurityDepositPaid,
+} from '../../../shared/lease-access-requirements.js'
 
 const AIRTABLE_TOKEN = process.env.AIRTABLE_TOKEN || process.env.VITE_AIRTABLE_TOKEN
 const BASE_ID =
@@ -47,6 +53,19 @@ async function airtableGet(url) {
     throw new Error(`Records API read error: ${text}`)
   }
   return res.json()
+}
+
+async function listPaymentsForResidentRecordId(residentRecordId) {
+  const rid = String(residentRecordId || '').trim()
+  if (!rid.startsWith('rec')) return []
+  const formula = encodeURIComponent(`FIND("${escapeFormulaValue(rid)}", ARRAYJOIN({Resident})) > 0`)
+  const url = `${AIRTABLE_BASE_URL}/Payments?filterByFormula=${formula}&pageSize=100`
+  try {
+    const data = await airtableGet(url)
+    return (data.records || []).map((r) => ({ id: r.id, ...r.fields }))
+  } catch {
+    return []
+  }
 }
 
 // Audit log insertion — non-fatal: log errors to console but don't fail the request
@@ -236,6 +255,18 @@ export async function createLeaseDraft({
   }
 
   const now = new Date().toISOString()
+  const propertyRecord = await findPropertyByName(property)
+  const payments = residentRecordId ? await listPaymentsForResidentRecordId(residentRecordId) : []
+  const snap = normalizeLeaseAccessRequirement(propertyRecord?.['Lease Access Requirement'])
+  const sdP = paymentsIndicateSecurityDepositPaid(payments)
+  const fmP = paymentsIndicateFirstMonthRentPaid(payments)
+  const accessEval = evaluateLeaseAccessPrereqs({
+    requirement: snap,
+    securityDepositPaid: sdP,
+    firstMonthRentPaid: fmP,
+    managerSignWithoutPayOverride: false,
+  })
+
   const draftRecord = await airtablePost('Lease Drafts', {
     'Resident Name': residentName,
     'Resident Email': residentEmail || '',
@@ -254,6 +285,10 @@ export async function createLeaseDraft({
     'Updated At': now,
     'Application Record ID': normalizeApplicationRecordId(applicationRecordId) || '',
     'Manager Notes': '',
+    'Lease Access Requirement Snapshot': snap,
+    'Lease Access Granted': accessEval.met,
+    'Lease Access Block Reason': accessEval.met ? '' : accessEval.blockReason,
+    ...(accessEval.met ? { 'Lease Access Granted At': now } : {}),
   })
 
   await logAuditEvent({

@@ -459,6 +459,25 @@ export function rangesToSlotLabels(ranges) {
   return normalizeMergedRanges(ranges).map((r) => slotLabelFromRange(r.start, r.end))
 }
 
+const SLOT_STEP_MIN = 30
+
+/**
+ * Expand free ranges into selectable tour slots (e.g. 1:00–4:00 PM → 1:00–1:30, 1:30–2:00, …).
+ * Labels are start–end for the sub-slot so booking + conflict checks stay range-based.
+ */
+export function rangesToThirtyMinuteSlotLabels(ranges) {
+  const merged = normalizeMergedRanges(ranges)
+  const out = []
+  for (const r of merged) {
+    let t = r.start
+    while (t + SLOT_STEP_MIN <= r.end) {
+      out.push(slotLabelFromRange(t, t + SLOT_STEP_MIN))
+      t += SLOT_STEP_MIN
+    }
+  }
+  return out
+}
+
 /**
  * Build map dateKey -> slot labels for the next `daysAhead` days.
  */
@@ -496,7 +515,7 @@ export function buildPropertySlotsByDate({
       legacyAvailabilityText,
       bookedSlotLabels: booked,
     })
-    const labels = rangesToSlotLabels(ranges)
+    const labels = rangesToThirtyMinuteSlotLabels(ranges)
     if (labels.length) out[dateKey] = labels
   }
   return out

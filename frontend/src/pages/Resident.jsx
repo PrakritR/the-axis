@@ -31,6 +31,7 @@ import {
   getApprovedLeaseForResident,
   getCurrentLeaseVersion,
   getLeaseDraftsForResident,
+  getPropertyByName,
   getPaymentsForResident,
   createPaymentRecord,
   updatePaymentRecord,
@@ -48,6 +49,12 @@ import {
 import { applicationRejectedFieldName, deriveApplicationApprovalState } from '../lib/applicationApprovalState.js'
 import { anyLeaseDraftAllowsSignWithoutMoveInPay } from '../lib/leaseMoveInOverride.js'
 import { isResidentLeaseBodyViewable, isResidentLeaseSignable } from '../lib/residentLeaseAccess.js'
+import {
+  evaluateLeaseAccessPrereqs,
+  normalizeLeaseAccessRequirement,
+  paymentsIndicateFirstMonthRentPaid,
+  paymentsIndicateSecurityDepositPaid,
+} from '../../../shared/lease-access-requirements.js'
 import { workOrderScheduledMeta } from '../lib/workOrderShared.js'
 import {
   classifyResidentPaymentLine,
@@ -2619,6 +2626,26 @@ function LeasingPanel({ resident, payments, onOpenPayments, onNavigateTab }) {
   const [extendToDate, setExtendToDate] = useState('')
   const [extendNotice, setExtendNotice] = useState('')
   const [currentLeasePdf, setCurrentLeasePdf] = useState(null)
+  const [propertyForLeaseAccess, setPropertyForLeaseAccess] = useState(null)
+
+  useEffect(() => {
+    const house = String(resident.House || '').trim()
+    if (!house) {
+      setPropertyForLeaseAccess(null)
+      return
+    }
+    let cancelled = false
+    getPropertyByName(house)
+      .then((rec) => {
+        if (!cancelled) setPropertyForLeaseAccess(rec)
+      })
+      .catch(() => {
+        if (!cancelled) setPropertyForLeaseAccess(null)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [resident.House])
 
   const loadLeaseDrafts = useCallback(async () => {
     setLeaseLoading(true)
@@ -2654,18 +2681,17 @@ function LeasingPanel({ resident, payments, onOpenPayments, onNavigateTab }) {
     return Number.isFinite(n) && n > 0 ? formatMoney(n) : '—'
   }, [resident.House, resident['Security Deposit'], resident['Security Deposit Amount']])
 
-  const firstMonthRentPaid = useMemo(() => {
-    const list = Array.isArray(payments) ? payments : []
-    const firstMonthLinePaid = list.some(
-      (p) => classifyResidentPaymentLine(p) === 'first_rent' && residentPaymentLineStatus(p) === 'Paid',
-    )
-    if (firstMonthLinePaid) return true
-    return list.some((p) => getPaymentKind(p) === 'rent' && residentPaymentLineStatus(p) === 'Paid')
-  }, [payments])
+  const firstMonthRentPaid = useMemo(
+    () => paymentsIndicateFirstMonthRentPaid(Array.isArray(payments) ? payments : []),
+    [payments],
+  )
 
   const securityDepositPaid = useMemo(() => {
     const list = Array.isArray(payments) ? payments : []
-    return list.some((p) => classifyResidentPaymentLine(p) === 'deposit' && residentPaymentLineStatus(p) === 'Paid')
+    if (paymentsIndicateSecurityDepositPaid(list)) return true
+    return list.some(
+      (p) => classifyResidentPaymentLine(p) === 'deposit' && residentPaymentLineStatus(p) === 'Paid',
+    )
   }, [payments])
 
   const activeLeaseDraft = useMemo(() => {
@@ -2680,8 +2706,25 @@ function LeasingPanel({ resident, payments, onOpenPayments, onNavigateTab }) {
     () => anyLeaseDraftAllowsSignWithoutMoveInPay(leaseDrafts),
     [leaseDrafts],
   )
-  const moveInPrereqsMet =
-    signWithoutMoveInPayOverride || (securityDepositPaid && firstMonthRentPaid)
+  const leaseAccessRequirement = normalizeLeaseAccessRequirement(
+    propertyForLeaseAccess?.['Lease Access Requirement'],
+  )
+  const leaseAccessEval = useMemo(
+    () =>
+      evaluateLeaseAccessPrereqs({
+        requirement: leaseAccessRequirement,
+        securityDepositPaid,
+        firstMonthRentPaid,
+        managerSignWithoutPayOverride: signWithoutMoveInPayOverride,
+      }),
+    [
+      leaseAccessRequirement,
+      securityDepositPaid,
+      firstMonthRentPaid,
+      signWithoutMoveInPayOverride,
+    ],
+  )
+  const moveInPrereqsMet = leaseAccessEval.met
 
   const leaseStatus = activeLeaseDraft?.Status ? String(activeLeaseDraft.Status).trim() : ''
   const leaseIsSigned = leaseStatus === 'Signed'
@@ -2779,9 +2822,8 @@ function LeasingPanel({ resident, payments, onOpenPayments, onNavigateTab }) {
           <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950 shadow-sm">
             <p className="font-semibold text-amber-950">Lease document not available yet</p>
             <p className="mt-1 leading-relaxed text-amber-900/90">
-              This stays locked until your <span className="font-semibold">security deposit</span> and{' '}
-              <span className="font-semibold">first month rent</span> are paid — unless your manager enabled signing
-              without those payments. Use Payments to complete move-in charges, then viewing and signing unlock below.
+              {leaseAccessEval.blockReason ||
+                'Complete the payments your property requires before viewing and signing. If your manager enabled signing without move-in payments, this unlocks automatically.'}
             </p>
             <button
               type="button"
@@ -2988,6 +3030,7 @@ function LeasingPanel({ resident, payments, onOpenPayments, onNavigateTab }) {
                     <LeaseSignPanel
                       leaseDraftId={activeLeaseDraft.id}
                       tenantName={leaseData.tenantName || resident.Name}
+                      residentRecordId={resident.id}
                       onSigned={(sig) => {
                         setLeaseDrafts((prev) =>
                           prev.map((d) =>

@@ -6,6 +6,12 @@
 
 import { mergeAxisListingMetaIntoOtherInfo } from './axisListingMeta.js'
 import { parseAxisListingMetaBlock } from './axisListingMeta.js'
+import {
+  LEASE_ACCESS_REQUIREMENT,
+  normalizeLeaseAccessRequirement,
+} from '../../../shared/lease-access-requirements.js'
+
+export { LEASE_ACCESS_REQUIREMENT }
 
 // ─── Slot limits ────────────────────────────────────────────────────────────────
 export const MAX_ROOM_SLOTS = 20
@@ -75,6 +81,87 @@ export const PROPERTY_AIR = {
   fullHousePrice: PROPERTIES_LEASING_META_KEYS.fullHousePrice,
   promotionalFullHousePrice: PROPERTIES_LEASING_META_KEYS.promotionalFullHousePrice,
   leaseLengthInformation: PROPERTIES_LEASING_META_KEYS.leaseLengthInformation,
+  /** Single select — add in Airtable; see scripts/airtable/create-required-fields.js */
+  leaseAccessRequirement: 'Lease Access Requirement',
+  requiredBeforeSigningSummary: 'Required Before Signing Summary',
+  moveInChargesJson: 'Move In Charges JSON',
+  feesRequiredBeforeSigning: 'Fees Required Before Signing',
+}
+
+/** Preset charge names for structured move-in charges (dropdown + Other). */
+export const MOVE_IN_CHARGE_NAME_OPTIONS = [
+  'First Month Rent',
+  'Last Month Rent',
+  'Security Deposit',
+  'Prorated Rent',
+  'Cleaning Fee',
+  'Key Fee',
+  'Admin Fee',
+  'Other',
+]
+
+export function emptyMoveInChargeRow() {
+  return {
+    name: 'First Month Rent',
+    amount: '',
+    requiredBeforeSigning: false,
+  }
+}
+
+/**
+ * @param {{ leaseAccessRequirement?: string, moveInChargeRows?: { name?: string, amount?: string|number, requiredBeforeSigning?: boolean }[] }} p
+ * @returns {{ requiredBeforeSigningSummary: string, feesRequiredBeforeSigning: string }}
+ */
+export function buildLeaseSigningLongTexts({ leaseAccessRequirement, moveInChargeRows }) {
+  const req = normalizeLeaseAccessRequirement(leaseAccessRequirement)
+  const rows = Array.isArray(moveInChargeRows) ? moveInChargeRows : []
+  const normalizedRows = rows
+    .map((r) => ({
+      name: String(r?.name || '').trim(),
+      amount: String(r?.amount ?? '').trim(),
+      requiredBeforeSigning: Boolean(r?.requiredBeforeSigning),
+    }))
+    .filter((r) => r.name || r.amount)
+
+  const reqBefore = normalizedRows.filter((r) => r.requiredBeforeSigning && r.name)
+
+  let leaseRule = ''
+  if (req === LEASE_ACCESS_REQUIREMENT.NONE) leaseRule = 'No payment is required before signing the lease.'
+  else if (req === LEASE_ACCESS_REQUIREMENT.SECURITY_DEPOSIT) {
+    leaseRule = 'Security deposit must be paid before signing the lease.'
+  } else {
+    leaseRule = 'Security deposit and first month rent must be paid before signing the lease.'
+  }
+
+  const feeParts = []
+  feeParts.push(`Lease access rule: ${leaseRule}`)
+  if (reqBefore.length) {
+    feeParts.push(
+      'Move-in charges required before signing: ' +
+        reqBefore.map((r) => (r.amount ? `${r.name} ($${r.amount})` : r.name)).join(', '),
+    )
+  }
+
+  const feesRequiredBeforeSigning = feeParts.join(' ')
+
+  const summaryLines = [
+    'What must be paid before signing the lease',
+    '',
+    leaseRule,
+    '',
+  ]
+  if (reqBefore.length) {
+    summaryLines.push('Move-in charges marked “required before signing”:')
+    for (const r of reqBefore) {
+      summaryLines.push(`- ${r.amount ? `${r.name}: $${r.amount}` : r.name}`)
+    }
+  } else {
+    summaryLines.push('(No move-in line items require payment before signing beyond the lease access rule above.)')
+  }
+
+  const requiredBeforeSigningSummary = summaryLines.join('\n')
+
+  return { requiredBeforeSigningSummary, feesRequiredBeforeSigning }
 }
 
 /** Airtable long-text field for manager-visible edit-request notes (same as PROPERTY_AIR.adminEditRequest by default). */
@@ -202,6 +289,46 @@ export function emptySharedSpaceRow() {
 
 export function emptyListingAvailabilityWindow() {
   return { start: '', end: '', openEnded: false }
+}
+
+function parseMoveInChargeRowsFromRecord(record, meta) {
+  const rawJson = String(record[PROPERTY_AIR.moveInChargesJson] || '').trim()
+  if (rawJson) {
+    try {
+      const j = JSON.parse(rawJson)
+      if (Array.isArray(j) && j.length) {
+        return j.map((row) => ({
+          ...emptyMoveInChargeRow(),
+          name: String(row?.name || '').trim() || 'First Month Rent',
+          amount: String(row?.amount ?? '').trim(),
+          requiredBeforeSigning: Boolean(row?.requiredBeforeSigning),
+        }))
+      }
+    } catch {
+      /* ignore invalid JSON */
+    }
+  }
+  const list = meta?.financials?.moveInChargeList
+  if (Array.isArray(list) && list.length) {
+    return list.map((row) => ({
+      ...emptyMoveInChargeRow(),
+      name: String(row?.name || '').trim() || 'First Month Rent',
+      amount: String(row?.amount ?? '').trim(),
+      requiredBeforeSigning: Boolean(row?.requiredBeforeSigning),
+    }))
+  }
+  const legacy = meta?.financials?.moveInCharges
+  if (legacy != null && String(legacy).trim() !== '') {
+    return [
+      {
+        ...emptyMoveInChargeRow(),
+        name: 'Move-in charges',
+        amount: String(legacy).trim(),
+        requiredBeforeSigning: false,
+      },
+    ]
+  }
+  return [{ ...emptyMoveInChargeRow() }]
 }
 
 function sharedSpaceRowHasContent(row) {
@@ -468,6 +595,11 @@ export function buildPropertyWizardInitialValues(property) {
         .filter((w) => String(w.start || '').trim())
     : []
 
+  const moveInChargeRows = parseMoveInChargeRowsFromRecord(record, meta)
+  const leaseAccessRaw =
+    record[PROPERTY_AIR.leaseAccessRequirement] ??
+    meta?.leaseAccessRequirement ??
+    ''
   return {
     basics: {
       name: stringOrEmpty(record[PROPERTY_AIR.propertyName] || record.Name),
@@ -480,7 +612,10 @@ export function buildPropertyWizardInitialValues(property) {
       securityDeposit: String(
         record[PROPERTY_AIR.securityDeposit] ?? meta?.financials?.securityDeposit ?? '',
       ),
+      /** @deprecated legacy single number — prefer moveInChargeRows */
       moveInCharges: String(meta?.financials?.moveInCharges ?? ''),
+      leaseAccessRequirement: normalizeLeaseAccessRequirement(leaseAccessRaw),
+      moveInChargeRows,
       listingAvailabilityWindows,
     },
     appFee: String(record[PROPERTY_AIR.applicationFee] ?? ''),
@@ -789,9 +924,39 @@ export function serializeManagerAddPropertyToAirtableFields(params) {
 
   const bathroomTotalDecimal = computeDecimalBathroomTotal(bathrooms)
 
-  const moveInVal = optionalCurrency(basics.moveInCharges)
+  const lacFull = normalizeLeaseAccessRequirement(basics?.leaseAccessRequirement)
+  fields[PROPERTY_AIR.leaseAccessRequirement] = lacFull
+
+  const rawMir = Array.isArray(basics.moveInChargeRows) ? basics.moveInChargeRows : []
+  const moveInChargeRowsClean = rawMir
+    .map((row) => ({
+      name: String(row?.name || '').trim(),
+      amount: String(row?.amount ?? '').trim(),
+      requiredBeforeSigning: Boolean(row?.requiredBeforeSigning),
+    }))
+    .filter((row) => row.name)
+
+  fields[PROPERTY_AIR.moveInChargesJson] = JSON.stringify(moveInChargeRowsClean)
+
+  const signingTexts = buildLeaseSigningLongTexts({
+    leaseAccessRequirement: lacFull,
+    moveInChargeRows: moveInChargeRowsClean,
+  })
+  fields[PROPERTY_AIR.requiredBeforeSigningSummary] = signingTexts.requiredBeforeSigningSummary
+  fields[PROPERTY_AIR.feesRequiredBeforeSigning] = signingTexts.feesRequiredBeforeSigning
+
+  let moveInTotal = 0
+  for (const row of moveInChargeRowsClean) {
+    const v = optionalCurrency(row.amount)
+    if (v !== undefined) moveInTotal += v
+  }
   const financialsMeta =
-    moveInVal !== undefined && moveInVal !== 0 ? { moveInCharges: moveInVal } : null
+    moveInChargeRowsClean.length || moveInTotal > 0
+      ? {
+          ...(moveInChargeRowsClean.length ? { moveInChargeList: moveInChargeRowsClean } : {}),
+          ...(moveInTotal > 0 ? { moveInCharges: moveInTotal } : {}),
+        }
+      : null
 
   /** When leasing $ / copy columns exist, do not duplicate those values inside Other Info. */
   const leasingMeta = {}
@@ -806,6 +971,7 @@ export function serializeManagerAddPropertyToAirtableFields(params) {
 
   const axisMeta = {
     ...(ptRaw === 'Other' && ptOther ? { propertyTypeOther: ptOther } : {}),
+    leaseAccessRequirement: lacFull,
     roomsDetail,
     ...(hasSharedSpacesMeta ? { sharedSpacesDetail } : {}),
     ...(laundryDetail && laundryDetail.some((x) => String(x?.description || '').trim()) ? { laundryDetail } : {}),

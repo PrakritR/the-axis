@@ -684,7 +684,13 @@ function paymentBalanceDue(record) {
   return Math.max(0, paymentAmountDue(record) - paymentAmountPaid(record))
 }
 
+function isFeeWaivePaymentRow(record) {
+  const t = String(record?.Type || record?.['Payment Type'] || '').trim().toLowerCase()
+  return t === 'fee waive'
+}
+
 function paymentComputedStatus(record) {
+  if (isFeeWaivePaymentRow(record)) return 'waiver'
   const balance = paymentBalanceDue(record)
   const total = paymentAmountDue(record)
   const due = record?.['Due Date'] ? new Date(record['Due Date']) : null
@@ -706,6 +712,7 @@ function paymentStatusLabel(status) {
     case 'partial': return 'Partial'
     case 'due_soon': return 'Due Soon'
     case 'overdue': return 'Overdue'
+    case 'waiver': return 'Fee waive'
     default: return 'Unpaid'
   }
 }
@@ -716,6 +723,7 @@ function paymentStatusTone(status) {
     case 'partial': return 'axis'
     case 'due_soon': return 'amber'
     case 'overdue': return 'red'
+    case 'waiver': return 'blue'
     default: return 'slate'
   }
 }
@@ -4447,6 +4455,9 @@ function ManagerPaymentsPanel({ allowedPropertyNames }) {
   const [fineDue, setFineDue] = useState('')
   const [fineNotes, setFineNotes] = useState('')
   const [fineSaving, setFineSaving] = useState(false)
+  const [waiveAmount, setWaiveAmount] = useState('')
+  const [waiveReason, setWaiveReason] = useState('')
+  const [waiveSaving, setWaiveSaving] = useState(false)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -4630,6 +4641,60 @@ function ManagerPaymentsPanel({ allowedPropertyNames }) {
         delete n[id]
         return n
       })
+    }
+  }
+
+  async function submitFeeWaive(event) {
+    event.preventDefault()
+    if (!selectedRow) return
+    const residentId = paymentResidentRecordId(selectedRow)
+    if (!residentId) {
+      toast.error('This payment row has no linked resident. Link Resident on the payment in Airtable, then try again')
+      return
+    }
+    const amt = Number(String(waiveAmount).replace(/[^0-9.]/g, ''))
+    if (!Number.isFinite(amt) || amt <= 0) {
+      toast.error('Enter a valid waiver amount')
+      return
+    }
+    const reason = String(waiveReason || '').trim()
+    if (!reason) {
+      toast.error('Add a short reason for this waiver')
+      return
+    }
+    setWaiveSaving(true)
+    try {
+      let propertyName = paymentPropertyLabel(selectedRow)
+      let roomNumber = String(selectedRow['Room Number'] ?? selectedRow.Room ?? selectedRow.Unit ?? selectedRow['Unit / Room'] ?? '').trim()
+      if (!propertyName || !roomNumber) {
+        const profile = await getResidentById(residentId).catch(() => null)
+        if (profile) {
+          if (!propertyName) propertyName = String(profile.House || '').trim()
+          if (!roomNumber) roomNumber = String(profile['Unit Number'] || '').trim()
+        }
+      }
+      const fields = {
+        Resident: [residentId],
+        Amount: amt,
+        Balance: 0,
+        Status: 'Posted',
+        Type: 'Fee Waive',
+        Category: 'Waiver',
+        Month: 'Fee waiver',
+        Notes: reason,
+        'Property Name': propertyName || undefined,
+        'Room Number': roomNumber || undefined,
+        'Resident Name': paymentResidentLabel(selectedRow) || undefined,
+      }
+      await createPaymentRecord(fields)
+      toast.success('Fee waive recorded')
+      setWaiveAmount('')
+      setWaiveReason('')
+      await load()
+    } catch (err) {
+      toast.error(err.message || 'Could not record waiver')
+    } finally {
+      setWaiveSaving(false)
     }
   }
 
@@ -4918,6 +4983,43 @@ function ManagerPaymentsPanel({ allowedPropertyNames }) {
                 </div>
               )}
             </div>
+
+            <form onSubmit={submitFeeWaive} className="mt-6 rounded-3xl border border-dashed border-violet-200 bg-violet-50/50 p-4">
+              <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-violet-700">Fee waive</div>
+              <p className="mt-2 text-xs text-slate-600">
+                Record a waiver for tracking — it does not count as a rent/deposit payment. Linked to this resident
+                {paymentPropertyLabel(selectedRow) ? ` · ${paymentPropertyLabel(selectedRow)}` : ''}.
+              </p>
+              <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                <label className="block">
+                  <span className="mb-1 block text-xs font-semibold text-slate-600">Amount (USD)</span>
+                  <input
+                    value={waiveAmount}
+                    onChange={(e) => setWaiveAmount(e.target.value)}
+                    inputMode="decimal"
+                    placeholder="0"
+                    className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-violet-500 focus:ring-2 focus:ring-violet-500/20"
+                  />
+                </label>
+                <label className="block sm:col-span-2">
+                  <span className="mb-1 block text-xs font-semibold text-slate-600">Reason / notes</span>
+                  <textarea
+                    value={waiveReason}
+                    onChange={(e) => setWaiveReason(e.target.value)}
+                    rows={2}
+                    placeholder="Why this fee is waived"
+                    className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-violet-500 focus:ring-2 focus:ring-violet-500/20"
+                  />
+                </label>
+              </div>
+              <button
+                type="submit"
+                disabled={waiveSaving || !paymentResidentRecordId(selectedRow)}
+                className="mt-4 rounded-full bg-violet-600 px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-violet-700 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {waiveSaving ? 'Saving…' : 'Record fee waive'}
+              </button>
+            </form>
 
             <form onSubmit={submitFine} className="mt-6 rounded-3xl border border-dashed border-slate-200 bg-slate-50/80 p-4">
               <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">Add fine / extra charge</div>
@@ -6643,8 +6745,8 @@ export function CalendarTabPanel({ manager, allowedPropertyNames, loadAllSchedul
 const MANAGER_DASH_TABS = [
   ['dashboard', 'Dashboard'],
   ['properties', 'Properties'],
-  ['leases', 'Leases'],
   ['applications', 'Applications'],
+  ['leases', 'Leases'],
   ['payments', 'Payments'],
   ['workorders', 'Work orders'],
   ['calendar', 'Calendar'],

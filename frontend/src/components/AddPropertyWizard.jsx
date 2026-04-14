@@ -25,6 +25,8 @@ import {
   emptyLaundryRow,
   emptySharedSpaceRow,
   emptyListingAvailabilityWindow,
+  emptyMoveInChargeRow,
+  buildLeaseSigningLongTexts,
   adjustRoomAccessLabels,
   clampInt,
   MAX_ROOM_SLOTS,
@@ -40,6 +42,8 @@ import {
   SHARED_SPACE_TYPE_OPTIONS,
   BATHROOM_TYPE_OPTIONS,
   KITCHEN_TYPE_OPTIONS,
+  MOVE_IN_CHARGE_NAME_OPTIONS,
+  LEASE_ACCESS_REQUIREMENT,
 } from '../lib/managerPropertyFormAirtableMap.js'
 
 // ─── Wizard step metadata ─────────────────────────────────────────────────────
@@ -56,6 +60,12 @@ const STEPS = [
 
 const DEFAULT_LEASE_INFO =
   '3-month, 9-month, 12-month, and month-to-month (+$25/month). Start and end dates are flexible unless noted otherwise.'
+
+const LEASE_ACCESS_SELECT_OPTIONS = [
+  LEASE_ACCESS_REQUIREMENT.SECURITY_DEPOSIT,
+  LEASE_ACCESS_REQUIREMENT.SECURITY_AND_FIRST,
+  LEASE_ACCESS_REQUIREMENT.NONE,
+]
 
 /** OS/file pickers often omit MIME for AVIF/HEIC/WebP; accept when type or filename looks like an image. */
 const IMAGE_FILENAME_EXT_RE = /\.(avif|heic|heif|webp|jpe?g|png|gif|bmp|tif|tiff|jp2|jxl|ico|svg|raw|cr2|cr3|nef|arw|dng|orf|rw2)(\?|$)/i
@@ -111,10 +121,19 @@ function validateBasics(basics, appFee) {
   else if (!Number.isFinite(Number(sdStr)) || Number(sdStr) < 0)
     e.securityDeposit = 'Enter a valid number (0 or more)'
 
-  const mcStr = String(basics.moveInCharges ?? '')
-  if (mcStr === '') e.moveInCharges = 'Required — enter 0 if none'
-  else if (!Number.isFinite(Number(mcStr)) || Number(mcStr) < 0)
-    e.moveInCharges = 'Enter a valid number (0 or more)'
+  if (!String(basics.leaseAccessRequirement || '').trim()) {
+    e.leaseAccessRequirement = 'Select a lease access requirement'
+  }
+
+  const mir = Array.isArray(basics.moveInChargeRows) ? basics.moveInChargeRows : []
+  mir.forEach((row, i) => {
+    const name = String(row?.name || '').trim()
+    const amt = String(row?.amount ?? '').trim()
+    if (!name && !amt) return
+    if (!name) e[`mir${i}_name`] = 'Charge name is required'
+    if (amt === '') e[`mir${i}_amt`] = 'Amount is required (enter 0 if none)'
+    else if (!Number.isFinite(Number(amt)) || Number(amt) < 0) e[`mir${i}_amt`] = 'Enter a valid number (0 or more)'
+  })
 
   const windows = Array.isArray(basics.listingAvailabilityWindows) ? basics.listingAvailabilityWindows : []
   windows.forEach((w, i) => {
@@ -271,6 +290,17 @@ export default function AddPropertyWizard({
         pets: String(basics.pets || ''),
         securityDeposit: String(basics.securityDeposit || ''),
         moveInCharges: String(basics.moveInCharges || ''),
+        leaseAccessRequirement: String(
+          basics.leaseAccessRequirement || LEASE_ACCESS_REQUIREMENT.SECURITY_AND_FIRST,
+        ),
+        moveInChargeRows: Array.isArray(basics.moveInChargeRows) && basics.moveInChargeRows.length
+          ? basics.moveInChargeRows.map((row) => ({
+              ...emptyMoveInChargeRow(),
+              name: String(row?.name || '').trim() || 'First Month Rent',
+              amount: String(row?.amount ?? '').trim(),
+              requiredBeforeSigning: Boolean(row?.requiredBeforeSigning),
+            }))
+          : [{ ...emptyMoveInChargeRow() }],
         listingAvailabilityWindows: Array.isArray(basics.listingAvailabilityWindows)
           ? basics.listingAvailabilityWindows.map((row) => ({
               ...emptyListingAvailabilityWindow(),
@@ -360,6 +390,41 @@ export default function AddPropertyWizard({
   const roomOptions = Array.from({ length: rc }, (_, i) => `Room ${i + 1}`)
   const formState = { basics, appFee, rooms, bathrooms, kitchens, sharedSpaces, laundry, parking, leasing }
 
+  const leaseSigningPreview = useMemo(
+    () =>
+      buildLeaseSigningLongTexts({
+        leaseAccessRequirement: basics.leaseAccessRequirement,
+        moveInChargeRows: basics.moveInChargeRows,
+      }),
+    [basics.leaseAccessRequirement, basics.moveInChargeRows],
+  )
+
+  function addMoveInChargeRow() {
+    setBasics((b) => ({
+      ...b,
+      moveInChargeRows: [
+        ...(Array.isArray(b.moveInChargeRows) ? b.moveInChargeRows : []),
+        { ...emptyMoveInChargeRow() },
+      ],
+    }))
+  }
+
+  function removeMoveInChargeRow(idx) {
+    setBasics((b) => {
+      const cur = Array.isArray(b.moveInChargeRows) ? b.moveInChargeRows : []
+      const next = cur.filter((_, i) => i !== idx)
+      return { ...b, moveInChargeRows: next.length ? next : [{ ...emptyMoveInChargeRow() }] }
+    })
+  }
+
+  function updateMoveInChargeRow(idx, patch) {
+    setBasics((b) => {
+      const cur = Array.isArray(b.moveInChargeRows) ? [...b.moveInChargeRows] : []
+      cur[idx] = { ...cur[idx], ...patch }
+      return { ...b, moveInChargeRows: cur }
+    })
+  }
+
   const currentErrors = useMemo(
     () => attempted ? getStepErrors(step, formState) : {},
     // deps: all form state + step + attempted flag
@@ -436,6 +501,10 @@ export default function AddPropertyWizard({
     try {
       const roomsPayload = rooms.map(({ media, ...rest }) => rest)
       const bathroomsPayload = bathrooms.map(({ media, ...rest }) => rest)
+      const laundryPayload = {
+        ...laundry,
+        rows: (laundry.rows || []).map(({ media, ...rest }) => rest),
+      }
       const fields = serializeManagerAddPropertyToAirtableFields({
         basics,
         roomCount: rc,
@@ -860,11 +929,11 @@ export default function AddPropertyWizard({
           )}
         </div>
 
-        {/* Fees */}
+        {/* Fees & lease access */}
         <div className="rounded-2xl border border-slate-200 bg-slate-50/60 p-4 space-y-4">
           <SectionHeading>Fees</SectionHeading>
-          <p className="text-xs text-slate-500">All three fee fields are required. Enter 0 if not applicable.</p>
-          <div className="grid gap-4 sm:grid-cols-3">
+          <p className="text-xs text-slate-500">Application fee and security deposit are required. Enter 0 if not applicable.</p>
+          <div className="grid gap-4 sm:grid-cols-2">
             <div>
               <label className={LBL}>Application fee ($) <Req /></label>
               <input
@@ -891,20 +960,131 @@ export default function AddPropertyWizard({
               />
               <FieldError msg={e.securityDeposit} />
             </div>
-            <div>
-              <label className={LBL}>Move-in charges ($) <Req /></label>
-              <input
-                className={ic('moveInCharges')}
-                type="number"
-                min="0"
-                step="1"
-                value={basics.moveInCharges}
-                onChange={ev => setBasics(b => ({ ...b, moveInCharges: ev.target.value }))}
-                placeholder="0"
-              />
-              <FieldError msg={e.moveInCharges} />
-            </div>
           </div>
+        </div>
+
+        <div className="rounded-2xl border border-slate-200 bg-white p-4 space-y-4">
+          <SectionHeading>Lease access requirements</SectionHeading>
+          <p className="text-xs text-slate-500">
+            Controls what residents must pay before they can open and sign the lease in the resident portal.
+          </p>
+          <div>
+            <label className={LBL}>Lease access requirement <Req /></label>
+            <select
+              className={ic('leaseAccessRequirement')}
+              value={basics.leaseAccessRequirement}
+              onChange={(ev) => setBasics((b) => ({ ...b, leaseAccessRequirement: ev.target.value }))}
+            >
+              {LEASE_ACCESS_SELECT_OPTIONS.map((opt) => (
+                <option key={opt} value={opt}>
+                  {opt}
+                </option>
+              ))}
+            </select>
+            <FieldError msg={e.leaseAccessRequirement} />
+          </div>
+        </div>
+
+        <div className="rounded-2xl border border-slate-200 bg-slate-50/60 p-4 space-y-4">
+          <SectionHeading>Move-in charges</SectionHeading>
+          <p className="text-xs text-slate-500">
+            Add one row per move-in line item. Mark charges that must be paid before lease signing.
+          </p>
+          {(Array.isArray(basics.moveInChargeRows) ? basics.moveInChargeRows : []).map((row, idx) => {
+            const nameStr = String(row?.name || '').trim()
+            const nameIsPreset =
+              nameStr && MOVE_IN_CHARGE_NAME_OPTIONS.filter((o) => o !== 'Other').includes(nameStr)
+            const nameSelectVal = nameIsPreset ? nameStr : 'Other'
+            const otherNameVal = nameIsPreset ? '' : nameStr
+            return (
+            <div
+              key={`mir-${idx}`}
+              className="rounded-xl border border-slate-200 bg-white p-3 space-y-3"
+            >
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-xs font-bold text-slate-700">Line {idx + 1}</span>
+                <button
+                  type="button"
+                  onClick={() => removeMoveInChargeRow(idx)}
+                  className="text-[11px] font-bold text-red-500 hover:text-red-700"
+                >
+                  Remove
+                </button>
+              </div>
+              <div className="grid gap-3 sm:grid-cols-3">
+                <div>
+                  <label className={LBL}>Charge name <Req /></label>
+                  <select
+                    className={ic(`mir${idx}_name`)}
+                    value={nameSelectVal}
+                    onChange={(ev) => {
+                      const v = ev.target.value
+                      if (v === 'Other') updateMoveInChargeRow(idx, { name: '' })
+                      else updateMoveInChargeRow(idx, { name: v })
+                    }}
+                  >
+                    {MOVE_IN_CHARGE_NAME_OPTIONS.map((n) => (
+                      <option key={n} value={n}>
+                        {n}
+                      </option>
+                    ))}
+                  </select>
+                  {nameSelectVal === 'Other' ? (
+                    <input
+                      className={`${OK_INPUT} mt-2`}
+                      value={otherNameVal}
+                      onChange={(ev) => updateMoveInChargeRow(idx, { name: ev.target.value })}
+                      placeholder="Describe this charge"
+                    />
+                  ) : null}
+                  <FieldError msg={e[`mir${idx}_name`]} />
+                </div>
+                <div>
+                  <label className={LBL}>Amount ($) <Req /></label>
+                  <input
+                    type="number"
+                    min="0"
+                    step="1"
+                    className={ic(`mir${idx}_amt`)}
+                    value={row.amount}
+                    onChange={(ev) => updateMoveInChargeRow(idx, { amount: ev.target.value })}
+                    placeholder="0"
+                  />
+                  <FieldError msg={e[`mir${idx}_amt`]} />
+                </div>
+                <div className="flex flex-col justify-end">
+                  <label className="flex cursor-pointer items-center gap-2 text-sm font-semibold text-slate-700">
+                    <input
+                      type="checkbox"
+                      checked={Boolean(row.requiredBeforeSigning)}
+                      onChange={(ev) =>
+                        updateMoveInChargeRow(idx, { requiredBeforeSigning: ev.target.checked })
+                      }
+                      className="h-4 w-4 rounded border-slate-300 text-[#2563eb]"
+                    />
+                    Required before signing
+                  </label>
+                </div>
+              </div>
+            </div>
+            )
+          })}
+          <button
+            type="button"
+            onClick={addMoveInChargeRow}
+            className="text-sm font-semibold text-[#2563eb] hover:underline"
+          >
+            + Add move-in charge
+          </button>
+        </div>
+
+        <div className="rounded-2xl border border-blue-100 bg-blue-50/80 p-4 space-y-2">
+          <SectionHeading>What must be paid before signing the lease</SectionHeading>
+          <p className="text-xs text-slate-600 whitespace-pre-wrap leading-relaxed">
+            {leaseSigningPreview.requiredBeforeSigningSummary}
+          </p>
+          <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-400">Summary for records</p>
+          <p className="text-xs text-slate-700">{leaseSigningPreview.feesRequiredBeforeSigning}</p>
         </div>
 
         {/* Listing-level move-in availability (optional) */}

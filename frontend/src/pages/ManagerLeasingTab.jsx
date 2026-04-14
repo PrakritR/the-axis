@@ -736,6 +736,28 @@ export default function ManagerLeasingTab({ manager, allowedPropertyNames }) {
               <h3 className="text-2xl font-black text-slate-900">Lease Draft</h3>
               <StatusPill status={activeDraft?.Status || 'Draft Generated'} />
             </div>
+            {activeDraft?.['Lease Access Requirement Snapshot'] || activeDraft?.['Lease Access Block Reason'] ? (
+              <div className="w-full rounded-2xl border border-slate-100 bg-slate-50/90 px-4 py-3 text-sm text-slate-700">
+                <div className="text-[11px] font-bold uppercase tracking-[0.14em] text-slate-400">
+                  Resident lease access
+                </div>
+                <p className="mt-1">
+                  <span className="font-semibold text-slate-800">Requirement (snapshot): </span>
+                  {String(activeDraft['Lease Access Requirement Snapshot'] || '—')}
+                </p>
+                {activeDraft['Lease Access Block Reason'] ? (
+                  <p className="mt-1 text-amber-950">
+                    <span className="font-semibold">Status: </span>
+                    {String(activeDraft['Lease Access Block Reason'])}
+                  </p>
+                ) : (
+                  <p className="mt-1 text-emerald-900">
+                    <span className="font-semibold">Access: </span>
+                    Requirements satisfied or not applicable for this draft snapshot.
+                  </p>
+                )}
+              </div>
+            ) : null}
             <div className="flex w-full min-w-0 flex-wrap items-center gap-2">
               <button
                 type="button"

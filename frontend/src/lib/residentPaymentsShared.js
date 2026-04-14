@@ -3,6 +3,8 @@
  * Keeps Manager and Resident portals aligned on how "rent" vs fees vs move-in lines are read.
  */
 
+import { isFeeWaivePaymentRecord } from '../../../shared/lease-access-requirements.js'
+
 function paymentRawBlob(payment) {
   if (!payment || typeof payment !== 'object') return ''
   return [payment.Type, payment.Category, payment.Kind, payment['Line Item Type'], payment.Month, payment.Notes]
@@ -14,6 +16,7 @@ function paymentRawBlob(payment) {
 /** Rent-like rows for lists (excludes damage-type fees; includes recurring utilities with rent bucket). */
 export function getPaymentKind(payment) {
   if (!payment || typeof payment !== 'object') return 'rent'
+  if (isFeeWaivePaymentRecord(payment)) return 'waiver'
   const raw = paymentRawBlob(payment)
   if (
     /(room\s*hold|hold(ing)?\s*fee|unit\s*hold|application\s*hold|reservation\s*(fee|hold))/i.test(raw) &&
@@ -39,6 +42,7 @@ export function getPaymentKind(payment) {
  */
 export function classifyResidentPaymentLine(payment) {
   if (!payment || typeof payment !== 'object') return 'rent'
+  if (isFeeWaivePaymentRecord(payment)) return 'fee_waive'
   const raw = paymentRawBlob(payment)
 
   if (/(security deposit|sec\.?\s*deposit|tenant deposit|initial deposit)/i.test(raw) && !/return/i.test(raw)) return 'deposit'
