@@ -1638,49 +1638,79 @@ function AvailabilityEditorPanel({
         )}
       </div>
 
-      <div className="mt-6 flex flex-wrap gap-2 text-sm">
-        <button
-          type="button"
-          onClick={onOpenMeet}
-          disabled={availSaving}
-          className="rounded-xl border border-[#2563eb]/25 bg-[#2563eb]/5 px-3 py-2 font-semibold text-[#2563eb] transition hover:bg-[#2563eb]/10 disabled:opacity-40"
-        >
-          Let us meet
-        </button>
-        <button
-          type="button"
-          onClick={onClearDay}
-          disabled={availSaving || isManagerInternalPreview(manager) || !hasApprovedPick}
-          className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 font-semibold text-red-700 hover:bg-red-100 disabled:opacity-40"
-        >
-          Clear day
-        </button>
-        {isDateBlocked ? (
-          <button
-            type="button"
-            onClick={onUnblockDay}
-            disabled={blockSaving || isManagerInternalPreview(manager) || !selectedPropertyId}
-            className="rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 font-semibold text-emerald-700 hover:bg-emerald-100 disabled:opacity-40"
-          >
-            {blockSaving ? 'Unblocking…' : 'Unblock day'}
-          </button>
-        ) : (
-          <button
-            type="button"
-            onClick={onBlockDay}
-            disabled={blockSaving || isManagerInternalPreview(manager) || !selectedPropertyId}
-            className="rounded-xl border border-orange-200 bg-orange-50 px-3 py-2 font-semibold text-orange-700 hover:bg-orange-100 disabled:opacity-40"
-          >
-            {blockSaving ? 'Blocking…' : 'Block this day'}
-          </button>
-        )}
-      </div>
+      {/* Removed Let us meet, Block day, and Clear day buttons for manager portal */}
 
       <div className="mt-6">
         <button
           type="button"
           onClick={onSave}
           disabled={availSaving || isManagerInternalPreview(manager) || !hasApprovedPick}
+          className="w-full rounded-2xl bg-[linear-gradient(180deg,#2f76ff_0%,#2450eb_100%)] px-4 py-3 text-sm font-semibold text-white shadow-[0_12px_28px_rgba(37,99,235,0.22)] disabled:opacity-50"
+        >
+          {availSaving ? 'Saving…' : 'Save availability'}
+        </button>
+      </div>
+    </div>
+  )
+}
+
+function AdminDayAvailabilityEditor({
+  selectedDateKey,
+  ranges,
+  onRangesChange,
+  onSave,
+  onClearDay,
+  scheduledItems,
+  availSaving,
+}) {
+  return (
+    <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm lg:sticky lg:top-6">
+      <h2 className="text-xl font-black text-slate-900">Meeting availability</h2>
+      <p className="mt-1 text-sm text-slate-500">Drag on the timeline to set free meeting times for {selectedDateKey}.</p>
+
+      <div className="mt-6">
+        <DayAvailabilityTimeline ranges={ranges} onRangesChange={onRangesChange} disabled={availSaving} />
+      </div>
+
+      <div className="mt-6">
+        <div className="mb-3 text-sm font-bold text-slate-900">Items on this date</div>
+        {scheduledItems?.length ? (
+          <div className="space-y-2">
+            {scheduledItems.map((item) => (
+              <div
+                key={item.id}
+                className={`rounded-2xl border px-3 py-3 text-sm ${bookingBadgeTone(item)}`}
+              >
+                <div className="font-semibold">{bookingLabel(item)}</div>
+                <div className="mt-1 text-xs opacity-80">
+                  {[item.Name || 'Guest', item['Preferred Time'], item.Property].filter(Boolean).join(' · ')}
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 px-4 py-5 text-sm text-slate-500">
+            Nothing scheduled for this date.
+          </div>
+        )}
+      </div>
+
+      <div className="mt-6 flex flex-wrap gap-2 text-sm">
+        <button
+          type="button"
+          onClick={onClearDay}
+          disabled={availSaving}
+          className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 font-semibold text-red-700 hover:bg-red-100 disabled:opacity-40"
+        >
+          Clear day
+        </button>
+      </div>
+
+      <div className="mt-6">
+        <button
+          type="button"
+          onClick={onSave}
+          disabled={availSaving}
           className="w-full rounded-2xl bg-[linear-gradient(180deg,#2f76ff_0%,#2450eb_100%)] px-4 py-3 text-sm font-semibold text-white shadow-[0_12px_28px_rgba(37,99,235,0.22)] disabled:opacity-50"
         >
           {availSaving ? 'Saving…' : 'Save availability'}
@@ -1805,40 +1835,42 @@ function LetUsMeetModal({
             {MANAGER_PILL_SELECT_CHEVRON}
           </div>
           {!canScheduleTours && !allowPropertylessEvents ? (
-            <p className="mt-1.5 text-xs text-slate-500">Tours require a listed property (Properties -> Listed).</p>
+            <p className="mt-1.5 text-xs text-slate-500">Tours require a listed property (Properties -&gt; Listed).</p>
           ) : null}
         </div>
         <div>
           <label className="mb-1.5 block text-xs font-semibold text-slate-700">Date</label>
           <input type="date" value={date} onChange={(e) => setDate(e.target.value)} className={portalAuthInputCls} />
         </div>
-        <div className="sm:col-span-2">
-          <label className="mb-1.5 block text-xs font-semibold text-slate-700">Property</label>
-          <div className={MANAGER_PILL_SELECT_WRAP_CLS + ' max-w-full sm:max-w-md'}>
-            <select
-              value={property}
-              onChange={(e) => setProperty(e.target.value)}
-              disabled={!canScheduleTours && !allowPropertylessEvents}
-              className={MANAGER_PILL_SELECT_CLS}
-            >
-              {!(canScheduleTours || !requirePropertyForAvailability || allowPropertylessEvents) ? (
-                <option value="">No approved properties</option>
-              ) : (
-                <>
-                  <option value="">
-                    {(!allowPropertylessEvents && (itemType === 'Tour' || (itemType === 'Availability' && requirePropertyForAvailability)))
-                      ? 'Select property…'
-                      : 'Optional — select property'}
-                  </option>
-                  {approvedPropertyNames.map((name) => (
-                    <option key={name} value={name}>{name}</option>
-                  ))}
-                </>
-              )}
-            </select>
-            {MANAGER_PILL_SELECT_CHEVRON}
+        {!allowPropertylessEvents ? (
+          <div className="sm:col-span-2">
+            <label className="mb-1.5 block text-xs font-semibold text-slate-700">Property</label>
+            <div className={MANAGER_PILL_SELECT_WRAP_CLS + ' max-w-full sm:max-w-md'}>
+              <select
+                value={property}
+                onChange={(e) => setProperty(e.target.value)}
+                disabled={!canScheduleTours && !allowPropertylessEvents}
+                className={MANAGER_PILL_SELECT_CLS}
+              >
+                {!(canScheduleTours || !requirePropertyForAvailability || allowPropertylessEvents) ? (
+                  <option value="">No approved properties</option>
+                ) : (
+                  <>
+                    <option value="">
+                      {(!allowPropertylessEvents && (itemType === 'Tour' || (itemType === 'Availability' && requirePropertyForAvailability)))
+                        ? 'Select property…'
+                        : 'Optional — select property'}
+                    </option>
+                    {approvedPropertyNames.map((name) => (
+                      <option key={name} value={name}>{name}</option>
+                    ))}
+                  </>
+                )}
+              </select>
+              {MANAGER_PILL_SELECT_CHEVRON}
+            </div>
           </div>
-        </div>
+        ) : null}
         <div className="grid grid-cols-2 gap-3">
           <div>
             <label className="mb-1.5 block text-xs font-semibold text-slate-700">Start time</label>
@@ -2166,6 +2198,21 @@ async function patchSchedulingRecord(recordId, fields) {
     body: JSON.stringify({ fields, typecast: true }),
   })
   return mapRecord(data)
+}
+
+async function deleteSchedulingRecord(recordId) {
+  const id = String(recordId || '').trim()
+  if (!id) return
+  const res = await fetch(`${CORE_AIRTABLE_BASE_URL}/Scheduling/${id}`, {
+    method: 'DELETE',
+    headers: atHeaders(),
+  })
+  if (!res.ok) {
+    const body = await res.text().catch(() => '')
+    let msg = `Delete failed: ${res.status}`
+    try { msg = JSON.parse(body)?.error?.message || msg } catch { /* ignore */ }
+    throw new Error(msg)
+  }
 }
 
 async function createSchedulingRecord(fields) {
@@ -3705,7 +3752,7 @@ function WorkOrdersTabPanel({ allowedPropertyNames, allowedPropertyIds }) {
   const [list, setList] = useState([])
   const [listLoading, setListLoading] = useState(true)
   const [listError, setListError] = useState('')
-  const [quickFilter, setQuickFilter] = useState('all')
+  const [quickFilter, setQuickFilter] = useState('open')
   const [propertyFilter, setPropertyFilter] = useState('')
   const [residentFilter, setResidentFilter] = useState('')
   const [sortBy, setSortBy] = useState('resident')
@@ -3855,7 +3902,7 @@ function WorkOrdersTabPanel({ allowedPropertyNames, allowedPropertyIds }) {
 
   const filteredList = useMemo(() => {
     let rows = list
-    if (quickFilter !== 'all') rows = rows.filter((row) => managerWorkOrderBucket(row) === quickFilter)
+    rows = rows.filter((row) => managerWorkOrderBucket(row) === quickFilter)
     if (propertyFilter) rows = rows.filter((row) => String(propertyLabelForWorkOrder(row)).trim().toLowerCase() === propertyFilter)
     if (residentFilter) rows = rows.filter((row) => String(residentLabelForWorkOrder(row)).trim().toLowerCase() === residentFilter)
     return [...rows].sort((a, b) => {
@@ -4026,9 +4073,8 @@ function WorkOrdersTabPanel({ allowedPropertyNames, allowedPropertyIds }) {
         </div>
       ) : null}
 
-      <div className="mb-5 grid gap-2 rounded-[28px] border border-slate-200 bg-slate-50 p-2 sm:grid-cols-2 xl:grid-cols-4">
+      <div className="mb-5 grid gap-2 rounded-[28px] border border-slate-200 bg-slate-50 p-2 sm:grid-cols-3 xl:grid-cols-3">
         {[
-          ['all', 'All', list.length],
           ['open', 'Open', woBucketCounts.open],
           ['scheduled', 'Scheduled', woBucketCounts.scheduled],
           ['completed', 'Completed', woBucketCounts.completed],
@@ -5103,9 +5149,11 @@ export function CalendarTabPanel({ manager, allowedPropertyNames, loadAllSchedul
   const [meetOpen, setMeetOpen] = useState(false)
   const [loading, setLoading] = useState(true)
   const [properties, setProperties] = useState([])
-  const [weeklyFreeByProperty, setWeeklyFreeByProperty] = useState({})
+  // Remove weekly free logic, use only explicit day-by-day availability
+  const [dayAvailabilityByProperty, setDayAvailabilityByProperty] = useState({})
   const [selectedPropertyId, setSelectedPropertyId] = useState('')
   const [availSaving, setAvailSaving] = useState(false)
+  const [adminDayRanges, setAdminDayRanges] = useState([])
   const [blockedDateRecords, setBlockedDateRecords] = useState([])
   const [blockSaving, setBlockSaving] = useState(false)
 
@@ -5187,6 +5235,14 @@ export function CalendarTabPanel({ manager, allowedPropertyNames, loadAllSchedul
 
   useEffect(() => { load() }, [load])
 
+  useEffect(() => {
+    if (!loadAllSchedulingRows) return
+    const id = setInterval(() => {
+      load()
+    }, 15000)
+    return () => clearInterval(id)
+  }, [loadAllSchedulingRows, load])
+
   const approvedAssignedProperties = useMemo(() => {
     if (loadAllSchedulingRows) {
       return properties
@@ -5241,9 +5297,10 @@ export function CalendarTabPanel({ manager, allowedPropertyNames, loadAllSchedul
     [approvedAssignedProperties],
   )
 
-  const selectedWeeklyFree = useMemo(
-    () => weeklyFreeByProperty[selectedPropertyId] || emptyWeeklyFreeArrays(),
-    [weeklyFreeByProperty, selectedPropertyId],
+  // Only use explicit day-by-day availability
+  const selectedDayAvailability = useMemo(
+    () => (dayAvailabilityByProperty[selectedPropertyId]?.[selectedDateKey] || []),
+    [dayAvailabilityByProperty, selectedPropertyId, selectedDateKey],
   )
 
   const meetModalApprovedPropertyNames = useMemo(
@@ -5251,32 +5308,52 @@ export function CalendarTabPanel({ manager, allowedPropertyNames, loadAllSchedul
     [availabilityOwnerOptions],
   )
 
+  // Always show all availability and bookings for each property/day
   const schedulingRowsForView = useMemo(
-    () =>
-      schedulingRowsForCalendarView(schedulingRows, {
-        selectedPropertyName: propertyRecordName(selectedProperty || {}),
-        managerEmail: manager?.email || '',
-        showAllRows: loadAllSchedulingRows,
-      }),
-    [schedulingRows, selectedProperty, manager?.email, loadAllSchedulingRows],
+    () => (schedulingRows || []).filter((row) => {
+      // Show all rows for the selected property, regardless of selection
+      const prop = String(row.Property || '').trim().toLowerCase()
+      const sel = String(propertyRecordName(selectedProperty || {}) || '').trim().toLowerCase()
+      return prop === sel || prop.includes(sel) || sel.includes(prop)
+    }),
+    [schedulingRows, selectedProperty],
   )
 
-  const bookedByDate = useMemo(() => {
-    const events = (schedulingRowsForView || []).map((row) => eventFromSchedulingRow(row))
-    const m = new Map()
-    for (const ev of events) {
-      const d = String(ev.dateKey || '').trim()
-      if (!d) continue
-      if (!m.has(d)) m.set(d, [])
-      m.get(d).push(ev.source)
-    }
-    return m
-  }, [schedulingRowsForView])
+  // Show all scheduled items and availability for each day
+  const scheduledItemsForSelectedDay = useMemo(() => {
+    return (schedulingRowsForView || []).filter((row) => {
+      const rowDate = String(row['Preferred Date'] || '').trim().slice(0, 10)
+      return rowDate === selectedDateKey
+    })
+  }, [schedulingRowsForView, selectedDateKey])
 
-  const scheduledItemsForSelectedDay = useMemo(
-    () => bookedByDate.get(selectedDateKey) || [],
-    [bookedByDate, selectedDateKey],
+  const adminAvailabilityRowsForSelectedDay = useMemo(() => {
+    if (!loadAllSchedulingRows) return []
+    const adminEmail = String(manager?.email || '').trim().toLowerCase()
+    if (!adminEmail) return []
+    return (schedulingRows || []).filter((row) => {
+      const type = String(row?.Type || '').trim().toLowerCase()
+      if (!(type === 'availability' || type === 'meeting availability')) return false
+      const rowDate = String(row?.['Preferred Date'] || '').trim().slice(0, 10)
+      if (rowDate !== selectedDateKey) return false
+      const rowEmail = String(row?.['Manager Email'] || '').trim().toLowerCase()
+      return rowEmail === adminEmail
+    })
+  }, [loadAllSchedulingRows, schedulingRows, manager?.email, selectedDateKey])
+
+  const adminRangesFromRows = useMemo(
+    () => normalizeTimeRanges(
+      adminAvailabilityRowsForSelectedDay
+        .map((row) => parsePreferredTimeRange(row?.['Preferred Time']))
+        .filter(Boolean),
+    ),
+    [adminAvailabilityRowsForSelectedDay],
   )
+
+  useEffect(() => {
+    if (!loadAllSchedulingRows) return
+    setAdminDayRanges(adminRangesFromRows)
+  }, [loadAllSchedulingRows, adminRangesFromRows, selectedDateKey])
 
   // Load blocked dates whenever the selected property changes
   useEffect(() => {
@@ -5342,6 +5419,7 @@ export function CalendarTabPanel({ manager, allowedPropertyNames, loadAllSchedul
     setAnchorDate(dateFromCalendarKey(key))
   }
 
+  // Save explicit day-by-day availability only
   async function handleSaveAvailability() {
     if (!selectedProperty) {
       toast.error('Select a property first')
@@ -5349,17 +5427,17 @@ export function CalendarTabPanel({ manager, allowedPropertyNames, loadAllSchedul
     }
     setAvailSaving(true)
     try {
-      const encoded = encodeTourAvailabilityFromWeeklyFree(selectedWeeklyFree)
-      const updated = await updatePropertyAdmin(selectedProperty.id, {
-        Notes: buildTourNotesText(selectedProperty.Notes, { manager: manager?.name || '', availability: encoded }),
+      // Save to Airtable Scheduling table as a new "availability" row for this property/date
+      await createSchedulingRecord({
+        Type: 'availability',
+        Property: propertyRecordName(selectedProperty),
+        'Preferred Date': selectedDateKey,
+        'Preferred Time': selectedDayAvailability.map(r => r.label).join(', '),
+        'Manager Email': manager?.email || '',
       })
-      setProperties((current) => current.map((item) => (item.id === updated.id ? updated : item)))
-      const mergedText = propertyTourAvailabilityText(updated) || ''
-      setWeeklyFreeByProperty((prev) => ({
-        ...prev,
-        [updated.id]: mergedText ? weeklyFreeArraysFromTourText(mergedText) : emptyWeeklyFreeArrays(),
-      }))
       toast.success(`Availability saved for ${propertyRecordName(selectedProperty) || 'property'}`)
+      // Reload availability
+      load()
     } catch (err) {
       toast.error(err.message || 'Could not save availability')
     } finally {
@@ -5376,6 +5454,40 @@ export function CalendarTabPanel({ manager, allowedPropertyNames, loadAllSchedul
       next[abbr] = []
       return { ...prev, [selectedPropertyId]: next }
     })
+  }
+
+  async function handleSaveAdminAvailability() {
+    const adminEmail = String(manager?.email || '').trim().toLowerCase()
+    if (!adminEmail) {
+      toast.error('Admin email is required to save availability')
+      return
+    }
+    setAvailSaving(true)
+    try {
+      await Promise.all(adminAvailabilityRowsForSelectedDay.map((row) => deleteSchedulingRecord(row.id)))
+
+      for (const range of adminDayRanges) {
+        await createSchedulingRecord({
+          Name: String(manager?.name || 'Axis admin').trim(),
+          Email: adminEmail,
+          Type: 'Meeting Availability',
+          Status: 'Available',
+          'Manager Email': adminEmail,
+          'Tour Manager': String(manager?.name || '').trim(),
+          'Preferred Date': selectedDateKey,
+          'Preferred Time': `${displayTimeFromMinutes(range.start)} - ${displayTimeFromMinutes(range.end)}`,
+          'Scheduled Date': selectedDateKey,
+          'Scheduled Time': `${displayTimeFromMinutes(range.start)} - ${displayTimeFromMinutes(range.end)}`,
+        })
+      }
+
+      toast.success('Meeting availability saved')
+      await load()
+    } catch (err) {
+      toast.error(err.message || 'Could not save availability')
+    } finally {
+      setAvailSaving(false)
+    }
   }
 
   const calendarStats = useMemo(() => {
@@ -5430,13 +5542,15 @@ export function CalendarTabPanel({ manager, allowedPropertyNames, loadAllSchedul
           >
             {loading ? 'Loading…' : 'Refresh'}
           </button>
-          <button
-            type="button"
-            onClick={() => setMeetOpen(true)}
-            className="h-[42px] shrink-0 rounded-full bg-[#2563eb] px-4 text-sm font-semibold text-white transition hover:brightness-110"
-          >
-            Let us meet
-          </button>
+          {!loadAllSchedulingRows ? (
+            <button
+              type="button"
+              onClick={() => setMeetOpen(true)}
+              className="h-[42px] shrink-0 rounded-full bg-[#2563eb] px-4 text-sm font-semibold text-white transition hover:brightness-110"
+            >
+              Let us meet
+            </button>
+          ) : null}
         </div>
       </div>
 
@@ -5511,7 +5625,7 @@ export function CalendarTabPanel({ manager, allowedPropertyNames, loadAllSchedul
         </div>
       </div>
 
-      <div className={loadAllSchedulingRows ? '' : 'grid gap-6 lg:grid-cols-[minmax(0,1fr)_360px]'}>
+      <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_360px]">
         <AvailabilityCalendar
           view={view}
           anchorDate={anchorDate}
@@ -5548,21 +5662,17 @@ export function CalendarTabPanel({ manager, allowedPropertyNames, loadAllSchedul
             blockSaving={blockSaving}
           />
         )}
-        {loadAllSchedulingRows && scheduledItemsForSelectedDay.length > 0 && (
-          <div className="mt-6 rounded-3xl border border-slate-200 bg-white p-5">
-            <div className="mb-3 text-sm font-bold text-slate-900">Scheduled for {selectedDateKey}</div>
-            <div className="space-y-2">
-              {scheduledItemsForSelectedDay.map((item) => (
-                <div key={item.id} className={`rounded-2xl border px-3 py-3 text-sm ${bookingBadgeTone(item)}`}>
-                  <div className="font-semibold">{bookingLabel(item)}</div>
-                  <div className="mt-1 text-xs opacity-80">
-                    {[item.Name || 'Guest', item['Preferred Time'], item.Property].filter(Boolean).join(' · ')}
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
+        {loadAllSchedulingRows ? (
+          <AdminDayAvailabilityEditor
+            selectedDateKey={selectedDateKey}
+            ranges={adminDayRanges}
+            onRangesChange={setAdminDayRanges}
+            onSave={handleSaveAdminAvailability}
+            onClearDay={() => setAdminDayRanges([])}
+            scheduledItems={scheduledItemsForSelectedDay}
+            availSaving={availSaving}
+          />
+        ) : null}
       </div>
 
       <LetUsMeetModal
@@ -5608,7 +5718,7 @@ function ManagerDashboard({ manager: managerProp, openDraftId, onOpenDraft, onCl
   const [drafts, setDrafts] = useState([])
   const [loading, setLoading] = useState(true)
   const [showGenerateModal, setShowGenerateModal] = useState(false)
-  const [filters, setFilters] = useState({ status: '', property: '' })
+  const [filters, setFilters] = useState({ status: '__draft_ready__', property: '' })
   const [propertyRecords, setPropertyRecords] = useState([])
   const [billingLoading, setBillingLoading] = useState(false)
   const [overviewStats, setOverviewStats] = useState(null)
@@ -5838,15 +5948,14 @@ function ManagerDashboard({ manager: managerProp, openDraftId, onOpenDraft, onCl
 
   const leaseFilterCardId = useMemo(() => {
     const s = filters.status
-    if (!s) return 'all'
+    if (!s) return 'draft_ready'
     if (s === '__draft_ready__') return 'draft_ready'
     if (s === '__sent_to_resident__') return 'sent_to_resident'
     if (s === '__signed__') return 'signed'
-    return 'all'
+    return 'draft_ready'
   }, [filters.status])
 
   const leaseFilterItems = useMemo(() => {
-    const total = drafts.length
     const flow = LEASE_FLOW_CARDS.map((card) => ({
       id: card.id,
       label: card.label,
@@ -5854,10 +5963,7 @@ function ManagerDashboard({ manager: managerProp, openDraftId, onOpenDraft, onCl
       hint: 'In queue',
       tone: card.id === 'draft_ready' ? 'amber' : card.id === 'signed' ? 'emerald' : 'axis',
     }))
-    return [
-      { id: 'all', label: 'All', value: String(total), hint: 'Every stage', tone: 'slate' },
-      ...flow,
-    ]
+    return flow
   }, [drafts])
 
   const visibleLeaseDrafts = useMemo(
@@ -5867,12 +5973,11 @@ function ManagerDashboard({ manager: managerProp, openDraftId, onOpenDraft, onCl
 
   function setLeaseFilterCardId(cardId) {
     const map = {
-      all: '',
       draft_ready: '__draft_ready__',
       sent_to_resident: '__sent_to_resident__',
       signed: '__signed__',
     }
-    setFilters((f) => ({ ...f, status: map[cardId] ?? '' }))
+    setFilters((f) => ({ ...f, status: map[cardId] ?? '__draft_ready__' }))
   }
 
   function handleGenerated(newDraft) {
@@ -5986,7 +6091,7 @@ function ManagerDashboard({ manager: managerProp, openDraftId, onOpenDraft, onCl
           </div>
         </div>
 
-        <div className="mb-5 grid gap-2 rounded-[28px] border border-slate-200 bg-slate-50 p-2 sm:grid-cols-2 xl:grid-cols-4">
+        <div className="mb-5 grid gap-2 rounded-[28px] border border-slate-200 bg-slate-50 p-2 sm:grid-cols-3 xl:grid-cols-3">
           {leaseFilterItems.map(({ id, label, value }) => (
             <button
               key={id}
