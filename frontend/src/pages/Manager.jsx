@@ -32,6 +32,20 @@ import {
   AXIS_SCHEDULING_CHANGED_EVENT,
   dispatchAxisSchedulingChanged,
 } from '../lib/portalCalendarSync.js'
+import {
+  buildManagerAvailabilityConfig,
+  mergePropertyAvailabilityRanges,
+  normalizeWeekdayAbbr,
+  slotLabelFromRange,
+} from '../../../shared/manager-availability-merge.js'
+import {
+  listManagerAvailabilityForProperty,
+  createManagerAvailabilityRecord,
+  deleteManagerAvailabilityRecord,
+  buildManagerAvailabilityRecordFields,
+  formatHHmmFromMinutes,
+  listManagerAvailabilityRows,
+} from '../lib/managerAvailabilityAirtable.js'
 import ManagerInboxPage from '../components/manager-inbox/ManagerInboxPage'
 import {
   getWorkOrderById,
@@ -57,6 +71,7 @@ import {
   deleteBlockedTourDate,
   getApplicationsForOwner,
 } from '../lib/airtable'
+import { getPaymentKind } from '../lib/residentPaymentsShared.js'
 import {
   buildPropertyWizardInitialValues,
   PROPERTY_EDIT_REQUEST_FIELD,
@@ -445,21 +460,7 @@ function paymentInScope(p, approvedNamesLowerSet) {
 }
 
 function isRentPaymentRecord(p) {
-  const raw = [p.Type, p.Category, p.Kind, p['Line Item Type'], p.Month, p.Notes].filter(Boolean).join(' ').toLowerCase()
-  if (/(fee|fine|damage|late fee|late charge|cleaning|lockout)/.test(raw)) return false
-  return true
-}
-
-/** Same rules as resident portal PaymentsPanel — rent vs fee/extra charges. */
-function getPaymentKind(payment) {
-  if (!payment) return 'rent'
-  const raw = [payment.Type, payment.Category, payment.Kind, payment['Line Item Type'], payment.Month, payment.Notes]
-    .filter(Boolean)
-    .map((x) => String(x))
-    .join(' ')
-    .toLowerCase()
-  if (/(fee|fine|damage|late fee|late charge|cleaning|lockout)/.test(raw)) return 'fee'
-  return 'rent'
+  return getPaymentKind(p) === 'rent'
 }
 
 function isPaymentOverdueRecord(p) {
@@ -1681,6 +1682,11 @@ function AvailabilityEditorPanel({
   onBlockDay,
   onUnblockDay,
   blockSaving,
+  repeatWeekly = false,
+  onRepeatWeeklyChange,
+  onCancelDraft,
+  saveButtonLabel,
+  availabilityHint,
 }) {
   const hasApprovedPick = Array.isArray(propertyOptions) && propertyOptions.length > 0
   const disabled = availSaving || isManagerInternalPreview(manager) || !selectedPropertyId
@@ -1723,6 +1729,29 @@ function AvailabilityEditorPanel({
         </div>
       ) : null}
 
+      {availabilityHint ? (
+        <p className="mt-3 text-xs leading-relaxed text-slate-500">{availabilityHint}</p>
+      ) : null}
+
+      {typeof onRepeatWeeklyChange === 'function' ? (
+        <label className="mt-4 flex cursor-pointer items-start gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-800">
+          <input
+            type="checkbox"
+            className="mt-1 h-4 w-4 shrink-0 rounded border-slate-300"
+            checked={repeatWeekly}
+            disabled={disabled}
+            onChange={(e) => onRepeatWeeklyChange(e.target.checked)}
+          />
+          <span>
+            <span className="font-semibold text-slate-900">Apply every week</span>
+            <span className="mt-0.5 block text-xs font-normal text-slate-500">
+              When checked, saved hours repeat on this weekday from the selected date forward. When unchecked, only the
+              selected calendar date is updated.
+            </span>
+          </span>
+        </label>
+      ) : null}
+
       <div className="mt-6">
         <DayAvailabilityTimeline ranges={ranges} onRangesChange={onRangesChange} disabled={disabled} />
       </div>
@@ -1763,6 +1792,19 @@ function AvailabilityEditorPanel({
         </div>
       ) : null}
 
+      {typeof onCancelDraft === 'function' ? (
+        <div className="mt-3">
+          <button
+            type="button"
+            onClick={onCancelDraft}
+            disabled={disabled}
+            className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:opacity-50"
+          >
+            Cancel draft
+          </button>
+        </div>
+      ) : null}
+
       {typeof onSave === 'function' ? (
         <div className="mt-6">
           <button
@@ -1771,7 +1813,7 @@ function AvailabilityEditorPanel({
             disabled={availSaving || isManagerInternalPreview(manager) || !hasApprovedPick}
             className="w-full rounded-2xl bg-[linear-gradient(180deg,#2f76ff_0%,#2450eb_100%)] px-4 py-3 text-sm font-semibold text-white shadow-[0_12px_28px_rgba(37,99,235,0.22)] disabled:opacity-50"
           >
-            {availSaving ? 'Saving…' : 'Save to property & calendar'}
+            {availSaving ? 'Saving…' : saveButtonLabel || 'Save to property & calendar'}
           </button>
         </div>
       ) : null}
@@ -5313,6 +5355,13 @@ export function CalendarTabPanel({ manager, allowedPropertyNames, loadAllSchedul
   const [adminDayRanges, setAdminDayRanges] = useState([])
   const [blockedDateRecords, setBlockedDateRecords] = useState([])
   const [blockSaving, setBlockSaving] = useState(false)
+  /** Structured Manager Availability table (per-date + weekly recurring). Falls back to legacy property text when unset/disabled. */
+  const [maTableOk, setMaTableOk] = useState(false)
+  const [maRecords, setMaRecords] = useState([])
+  const [pendingRanges, setPendingRanges] = useState([])
+  const [repeatWeekly, setRepeatWeekly] = useState(false)
+  const maDirtyRef = useRef(false)
+  const maCfg = useMemo(() => buildManagerAvailabilityConfig(import.meta.env), [])
   /** Tour template: user edited weekly grid — debounced persist to Airtable */
   const availabilityDirtyRef = useRef(false)
   const adminAvailabilityDirtyRef = useRef(false)
@@ -5347,6 +5396,48 @@ export function CalendarTabPanel({ manager, allowedPropertyNames, loadAllSchedul
         : [...(allowedPropertyNames || [])],
     }
   }, [loadAllSchedulingRows, manager?.email, allowedPropertyNames])
+
+  useEffect(() => {
+    if (loadAllSchedulingRows) return
+    const off = String(import.meta.env.VITE_USE_MANAGER_AVAILABILITY_TABLE || '').trim().toLowerCase()
+    if (off === 'false' || off === '0' || off === 'none') {
+      setMaTableOk(false)
+      return
+    }
+    let cancelled = false
+    ;(async () => {
+      try {
+        await listManagerAvailabilityRows('')
+        if (!cancelled) setMaTableOk(true)
+      } catch {
+        if (!cancelled) setMaTableOk(false)
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [loadAllSchedulingRows])
+
+  useEffect(() => {
+    if (!maTableOk || !selectedPropertyId || loadAllSchedulingRows) {
+      setMaRecords([])
+      return
+    }
+    let cancelled = false
+    const prop = properties.find((p) => p.id === selectedPropertyId)
+    const pname = prop ? propertyRecordName(prop) : ''
+    ;(async () => {
+      try {
+        const rows = await listManagerAvailabilityForProperty(selectedPropertyId, pname)
+        if (!cancelled) setMaRecords(rows)
+      } catch {
+        if (!cancelled) setMaRecords([])
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [maTableOk, selectedPropertyId, properties, loadAllSchedulingRows])
 
   const refreshSchedulingRowsOnly = useCallback(async () => {
     const { loadAll, managerEmail, propertyNames } = calendarFetchScopeRef.current
@@ -5552,6 +5643,11 @@ export function CalendarTabPanel({ manager, allowedPropertyNames, loadAllSchedul
   )
 
   const saveTourDirtyIfNeeded = useCallback(async () => {
+    if (maTableOk) {
+      availabilityDirtyRef.current = false
+      tourDirtyPayloadRef.current = null
+      return true
+    }
     if (!availabilityDirtyRef.current) return true
     const pending = tourDirtyPayloadRef.current
     if (!pending?.propertyId) {
@@ -5622,11 +5718,16 @@ export function CalendarTabPanel({ manager, allowedPropertyNames, loadAllSchedul
 
   const saveTourDirtyRef = useRef(saveTourDirtyIfNeeded)
   saveTourDirtyRef.current = saveTourDirtyIfNeeded
+  const saveMaRef = useRef(async () => true)
   const persistAdminRef = useRef(persistAdminMeetingAvailability)
   persistAdminRef.current = persistAdminMeetingAvailability
 
   const flushPendingCalendarWrites = useCallback(async () => {
-    if (!loadAllSchedulingRows && availabilityDirtyRef.current) {
+    if (!loadAllSchedulingRows && maTableOk && maDirtyRef.current) {
+      const ok = await saveMaRef.current()
+      if (!ok) return false
+    }
+    if (!loadAllSchedulingRows && !maTableOk && availabilityDirtyRef.current) {
       const ok = await saveTourDirtyRef.current()
       if (!ok) return false
     }
@@ -5651,12 +5752,18 @@ export function CalendarTabPanel({ manager, allowedPropertyNames, loadAllSchedul
     async (nextId) => {
       const next = String(nextId || '').trim()
       if (!loadAllSchedulingRows && next && next !== String(selectedPropertyId || '').trim()) {
-        const ok = await saveTourDirtyIfNeeded()
-        if (!ok) return
+        if (maTableOk && maDirtyRef.current) {
+          const ok = await saveMaRef.current()
+          if (!ok) return
+        }
+        if (!maTableOk) {
+          const ok = await saveTourDirtyIfNeeded()
+          if (!ok) return
+        }
       }
       setSelectedPropertyId(next)
     },
-    [loadAllSchedulingRows, selectedPropertyId, saveTourDirtyIfNeeded],
+    [loadAllSchedulingRows, selectedPropertyId, saveTourDirtyIfNeeded, maTableOk],
   )
 
   // Manager: property-scoped rows. Admin: org-wide tours/work orders/meetings; "Meeting Availability" stays scoped to this admin.
@@ -5679,6 +5786,193 @@ export function CalendarTabPanel({ manager, allowedPropertyNames, loadAllSchedul
       return prop === sel || prop.includes(sel) || sel.includes(prop)
     })
   }, [schedulingRows, selectedProperty, loadAllSchedulingRows, manager?.email])
+
+  const computeMergedForDateKey = useCallback(
+    (dateKey) => {
+      if (!maTableOk || !selectedProperty) {
+        return timeRangesFromWeeklyFree(selectedWeeklyFree, weekdayAbbrFromDateKey(dateKey))
+      }
+      const selProp = String(propertyRecordName(selectedProperty) || '').trim().toLowerCase()
+      const tourRows = (schedulingRowsForView || []).filter((row) => {
+        const t = String(row.Type || '').trim().toLowerCase()
+        if (t !== 'tour') return false
+        const dk = String(row['Preferred Date'] || '').trim().slice(0, 10)
+        if (dk !== dateKey) return false
+        const rp = String(row.Property || '').trim().toLowerCase()
+        return !selProp || rp === selProp || rp.includes(selProp) || selProp.includes(rp)
+      })
+      const bookedLabels = tourRows
+        .map((row) => {
+          const p = parsePreferredTimeRange(row['Preferred Time'])
+          return p ? slotLabelFromRange(p.start, p.end) : ''
+        })
+        .filter(Boolean)
+      const ranges = mergePropertyAvailabilityRanges({
+        records: maRecords.map((r) => ({ fields: r })),
+        fieldsConfig: maCfg.fields,
+        dateKey,
+        propertyName: propertyRecordName(selectedProperty),
+        propertyRecordId: selectedProperty.id,
+        managerEmail: manager?.email,
+        managerRecordId: manager?.airtableRecordId || manager?.id || '',
+        legacyAvailabilityText: propertyTourAvailabilityText(selectedProperty),
+        bookedSlotLabels: bookedLabels,
+      })
+      return normalizeTimeRanges(ranges)
+    },
+    [
+      maTableOk,
+      selectedProperty,
+      maRecords,
+      maCfg.fields,
+      manager?.email,
+      manager?.airtableRecordId,
+      manager?.id,
+      schedulingRowsForView,
+      selectedWeeklyFree,
+    ],
+  )
+
+  const mergedForSelectedDay = useMemo(
+    () => computeMergedForDateKey(selectedDateKey),
+    [computeMergedForDateKey, selectedDateKey],
+  )
+
+  useEffect(() => {
+    if (loadAllSchedulingRows) return
+    if (!maTableOk) return
+    if (maDirtyRef.current) return
+    setPendingRanges(mergedForSelectedDay)
+  }, [mergedForSelectedDay, maTableOk, loadAllSchedulingRows, selectedDateKey])
+
+  const managerDayFreeOverrides = useMemo(() => {
+    if (loadAllSchedulingRows || !maTableOk || !selectedProperty) return null
+    const y = anchorDate.getFullYear()
+    const m = anchorDate.getMonth()
+    const last = new Date(y, m + 1, 0).getDate()
+    const out = {}
+    for (let d = 1; d <= last; d += 1) {
+      const key = calendarDateKey(y, m, d)
+      out[key] = computeMergedForDateKey(key)
+    }
+    return out
+  }, [loadAllSchedulingRows, maTableOk, selectedProperty, anchorDate, computeMergedForDateKey])
+
+  const saveManagerAvailabilityToAirtable = useCallback(async () => {
+    if (!maTableOk || !selectedProperty || !manager?.email) {
+      toast.error('Manager Availability is not available or property is not selected.')
+      return false
+    }
+    if (!selectedDateKey) {
+      toast.error('No date selected.')
+      return false
+    }
+    const dk = selectedDateKey
+    const abbr = weekdayAbbrFromDateKey(dk)
+    const propName = propertyRecordName(selectedProperty)
+    const propId = selectedProperty.id
+    const mgrEmail = String(manager.email || '').trim().toLowerCase()
+    const mgrId = String(manager.airtableRecordId || manager.id || '').trim()
+    const ranges = normalizeTimeRanges(pendingRanges)
+    const f = maCfg.fields
+    const isRecVal = (row) =>
+      row[f.isRecurring] === true ||
+      row[f.isRecurring] === 1 ||
+      String(row[f.isRecurring] || '').toLowerCase() === 'true' ||
+      String(row[f.isRecurring] || '').toLowerCase() === 'yes'
+    const isActiveVal = (row) => {
+      const v = row[f.active]
+      if (v === false || v === 0 || String(v).toLowerCase() === 'false') return false
+      return true
+    }
+    setAvailSaving(true)
+    try {
+      const toDelete = maRecords.filter((row) => {
+        if (!isActiveVal(row)) return false
+        const matchesProp =
+          String(row[f.propertyRecordId] || '').trim() === propId ||
+          String(row[f.propertyName] || '').trim().toLowerCase() === propName.trim().toLowerCase()
+        const matchesMgr =
+          String(row[f.managerEmail] || '').trim().toLowerCase() === mgrEmail ||
+          (mgrId && String(row[f.managerRecordId] || '').trim() === mgrId)
+        if (!matchesProp || !matchesMgr) return false
+        if (repeatWeekly) return isRecVal(row) && normalizeWeekdayAbbr(row[f.weekday]) === abbr
+        return !isRecVal(row) && String(row[f.date] || '').trim().slice(0, 10) === dk
+      })
+      await Promise.all(toDelete.map((row) => deleteManagerAvailabilityRecord(row.id)))
+      for (const range of ranges) {
+        const fields = buildManagerAvailabilityRecordFields({
+          propertyName: propName,
+          propertyRecordId: propId,
+          managerEmail: mgrEmail,
+          managerRecordId: mgrId,
+          dateKey: dk,
+          weekdayAbbr: abbr,
+          startHHmm: formatHHmmFromMinutes(range.start),
+          endHHmm: formatHHmmFromMinutes(range.end),
+          isRecurring: repeatWeekly,
+          source: 'manager_portal',
+        })
+        await createManagerAvailabilityRecord(fields)
+      }
+      const refreshed = await listManagerAvailabilityForProperty(propId, propName)
+      const selProp = String(propName || '').trim().toLowerCase()
+      const tourRows = (schedulingRowsForView || []).filter((row) => {
+        const t = String(row.Type || '').trim().toLowerCase()
+        if (t !== 'tour') return false
+        const rowDk = String(row['Preferred Date'] || '').trim().slice(0, 10)
+        if (rowDk !== dk) return false
+        const rp = String(row.Property || '').trim().toLowerCase()
+        return !selProp || rp === selProp || rp.includes(selProp) || selProp.includes(rp)
+      })
+      const bookedLabels = tourRows
+        .map((row) => {
+          const p = parsePreferredTimeRange(row['Preferred Time'])
+          return p ? slotLabelFromRange(p.start, p.end) : ''
+        })
+        .filter(Boolean)
+      const mergedAfter = normalizeTimeRanges(
+        mergePropertyAvailabilityRanges({
+          records: refreshed.map((r) => ({ fields: r })),
+          fieldsConfig: maCfg.fields,
+          dateKey: dk,
+          propertyName: propName,
+          propertyRecordId: propId,
+          managerEmail: mgrEmail,
+          managerRecordId: mgrId,
+          legacyAvailabilityText: propertyTourAvailabilityText(selectedProperty),
+          bookedSlotLabels: bookedLabels,
+        }),
+      )
+      setMaRecords(refreshed)
+      maDirtyRef.current = false
+      setPendingRanges(mergedAfter)
+      toast.success(repeatWeekly ? 'Weekly availability saved' : 'Availability saved')
+      await refreshSchedulingRowsOnly()
+      dispatchAxisSchedulingChanged({ reason: 'manager-availability' })
+      return true
+    } catch (err) {
+      toast.error(err.message || 'Failed to save availability')
+      return false
+    } finally {
+      setAvailSaving(false)
+    }
+  }, [
+    maTableOk,
+    selectedProperty,
+    manager,
+    selectedDateKey,
+    pendingRanges,
+    repeatWeekly,
+    maRecords,
+    maCfg.fields,
+    refreshSchedulingRowsOnly,
+    schedulingRowsForView,
+  ])
+
+  useEffect(() => {
+    saveMaRef.current = saveManagerAvailabilityToAirtable
+  }, [saveManagerAvailabilityToAirtable])
 
   const bookedByDate = useMemo(() => {
     const map = new Map()
@@ -5818,7 +6112,10 @@ export function CalendarTabPanel({ manager, allowedPropertyNames, loadAllSchedul
 
   async function handleSelectDate(key) {
     const nextKey = String(key || '').trim()
-    if (!loadAllSchedulingRows && availabilityDirtyRef.current) {
+    if (!loadAllSchedulingRows && maTableOk && maDirtyRef.current) {
+      maDirtyRef.current = false
+    }
+    if (!loadAllSchedulingRows && !maTableOk && availabilityDirtyRef.current) {
       const ok = await saveTourDirtyIfNeeded()
       if (!ok) return
     }
@@ -5842,13 +6139,13 @@ export function CalendarTabPanel({ manager, allowedPropertyNames, loadAllSchedul
   }
 
   useEffect(() => {
-    if (loadAllSchedulingRows) return
+    if (loadAllSchedulingRows || maTableOk) return
     if (!availabilityDirtyRef.current) return
     const t = window.setTimeout(() => {
       void saveTourDirtyIfNeeded()
     }, 550)
     return () => window.clearTimeout(t)
-  }, [weeklyFreeByProperty, selectedPropertyId, selectedDateKey, loadAllSchedulingRows, saveTourDirtyIfNeeded])
+  }, [weeklyFreeByProperty, selectedPropertyId, selectedDateKey, loadAllSchedulingRows, saveTourDirtyIfNeeded, maTableOk])
 
   adminAutosaveCtxRef.current = {
     manager,
@@ -6092,13 +6389,22 @@ export function CalendarTabPanel({ manager, allowedPropertyNames, loadAllSchedul
           weeklyFree={selectedWeeklyFree}
           bookedByDate={bookedByDate}
           blockedDates={loadAllSchedulingRows ? new Set() : blockedDatesSet}
-          dayFreeOverrides={adminMeetingAvailabilityFreeByDate}
+          dayFreeOverrides={loadAllSchedulingRows ? adminMeetingAvailabilityFreeByDate : managerDayFreeOverrides}
         />
         {!loadAllSchedulingRows && (
           <AvailabilityEditorPanel
-            ranges={timeRangesFromWeeklyFree(selectedWeeklyFree, weekdayAbbrFromDateKey(selectedDateKey))}
+            ranges={
+              maTableOk
+                ? pendingRanges
+                : timeRangesFromWeeklyFree(selectedWeeklyFree, weekdayAbbrFromDateKey(selectedDateKey))
+            }
             onRangesChange={(ranges) => {
               if (!selectedPropertyId) return
+              if (maTableOk) {
+                maDirtyRef.current = true
+                setPendingRanges(normalizeTimeRanges(ranges))
+                return
+              }
               availabilityDirtyRef.current = true
               const abbr = weekdayAbbrFromDateKey(selectedDateKey)
               const pid = selectedPropertyId
@@ -6109,23 +6415,44 @@ export function CalendarTabPanel({ manager, allowedPropertyNames, loadAllSchedul
                 return { ...prev, [pid]: nextForProp }
               })
             }}
-            onCopyHoursToWholeWeek={() => {
-              if (!selectedPropertyId) return
-              availabilityDirtyRef.current = true
-              const abbr = weekdayAbbrFromDateKey(selectedDateKey)
-              const pid = selectedPropertyId
-              setWeeklyFreeByProperty((prev) => {
-                const base = prev[pid] || emptyWeeklyFreeArrays()
-                const nextForProp = weeklyFreeCopySourceDayToAllDays(base, abbr)
-                tourDirtyPayloadRef.current = { propertyId: pid, weeklyFree: nextForProp }
-                return {
-                  ...prev,
-                  [pid]: nextForProp,
-                }
-              })
-              toast.success('Copied to Mon–Sun')
-            }}
-            onSave={() => void saveTourDirtyIfNeeded()}
+            onCopyHoursToWholeWeek={
+              maTableOk
+                ? undefined
+                : () => {
+                    if (!selectedPropertyId) return
+                    availabilityDirtyRef.current = true
+                    const abbr = weekdayAbbrFromDateKey(selectedDateKey)
+                    const pid = selectedPropertyId
+                    setWeeklyFreeByProperty((prev) => {
+                      const base = prev[pid] || emptyWeeklyFreeArrays()
+                      const nextForProp = weeklyFreeCopySourceDayToAllDays(base, abbr)
+                      tourDirtyPayloadRef.current = { propertyId: pid, weeklyFree: nextForProp }
+                      return {
+                        ...prev,
+                        [pid]: nextForProp,
+                      }
+                    })
+                    toast.success('Copied to Mon–Sun')
+                  }
+            }
+            onSave={() => void (maTableOk ? saveManagerAvailabilityToAirtable() : saveTourDirtyIfNeeded())}
+            repeatWeekly={maTableOk ? repeatWeekly : false}
+            onRepeatWeeklyChange={maTableOk ? (v) => setRepeatWeekly(v) : undefined}
+            onCancelDraft={
+              maTableOk
+                ? () => {
+                    maDirtyRef.current = false
+                    setPendingRanges(mergedForSelectedDay)
+                    setRepeatWeekly(false)
+                  }
+                : undefined
+            }
+            saveButtonLabel={maTableOk ? 'Save availability to Airtable' : undefined}
+            availabilityHint={
+              maTableOk
+                ? 'Drag to add blocks for the selected date. Save writes to the Manager Availability table (per-date or weekly). Public tour booking uses these windows minus tours already scheduled.'
+                : undefined
+            }
             scheduledItems={scheduledItemsForSelectedDay}
             availSaving={availSaving}
             manager={manager}

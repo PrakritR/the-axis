@@ -20,9 +20,9 @@ const NOTICE_DAYS = 20
 
 function Row({ label, value }) {
   return (
-    <div className="flex gap-2 py-0.5">
-      <span className="w-44 shrink-0 text-[11px] font-semibold uppercase tracking-[0.1em] text-slate-500">{label}</span>
-      <span className="flex-1 text-sm font-medium text-slate-900">{value || '—'}</span>
+    <div className="flex flex-col gap-0.5 py-2 sm:flex-row sm:gap-2 sm:py-0.5">
+      <span className="shrink-0 text-[11px] font-semibold uppercase tracking-[0.1em] text-slate-500 sm:w-44">{label}</span>
+      <span className="min-w-0 flex-1 text-sm font-medium text-slate-900">{value || '—'}</span>
     </div>
   )
 }
@@ -58,7 +58,7 @@ export default function LeaseHTMLTemplate({ leaseData = {}, signedBy, signedAt, 
       className={
         printMode
           ? 'bg-white font-sans text-slate-900'
-          : 'rounded-2xl border border-slate-200 bg-white px-6 py-8 shadow-sm md:px-10 md:py-10'
+          : 'max-w-full min-w-0 rounded-2xl border border-slate-200 bg-white px-4 py-6 shadow-sm sm:px-6 sm:py-8 md:px-10 md:py-10'
       }
       style={{ fontFamily: 'Georgia, "Times New Roman", serif' }}
     >

@@ -330,7 +330,6 @@ export default function ManagerInboxPage({
   const [inboxStateMap, setInboxStateMap] = useState(() => new Map())
   const [inboxStateBackend, setInboxStateBackend] = useState('pending')
   const [sectionFilter, setSectionFilter] = useState('unopened')
-  const [channelFilter, setChannelFilter] = useState('all')
   const [threadSearch, setThreadSearch] = useState('')
   const [threadMenuOpen, setThreadMenuOpen] = useState(false)
   const threadMenuRef = useRef(null)
@@ -665,26 +664,9 @@ export default function ManagerInboxPage({
     else if (sectionFilter === 'sent') rows = rows.filter((row) => row.section === 'sent')
     else if (sectionFilter === 'trash') rows = rows.filter((row) => row.section === 'trash')
 
-    if (adminFullInbox) {
-      if (channelFilter === 'resident') {
-        rows = rows.filter((r) => {
-          const t = String(r.id)
-          return t.startsWith('internal:resident-leasing:') || t.startsWith('internal:resident-admin:')
-        })
-      } else if (channelFilter === 'admin') {
-        rows = rows.filter((r) => {
-          const t = String(r.id)
-          return t.startsWith('internal:mgmt-admin:') || t.startsWith('internal:site-manager:')
-        })
-      }
-    } else {
-      if (channelFilter === 'admin') rows = rows.filter((r) => r.id === MANAGER_INBOX_AXIS)
-      else if (channelFilter === 'resident') rows = rows.filter((r) => r.id !== MANAGER_INBOX_AXIS)
-    }
-
     if (!q) return rows
     return rows.filter((row) => (row.searchText || '').includes(q))
-  }, [threadRowsWithMeta, sectionFilter, channelFilter, threadSearch, adminFullInbox])
+  }, [threadRowsWithMeta, sectionFilter, threadSearch])
 
   const touchThreadRead = useCallback(
     async (stateKey) => {
@@ -1197,21 +1179,6 @@ export default function ManagerInboxPage({
   const headerSubject =
     activeThreadSubject || selectedRowMeta?.subjectLine || readingTitle
 
-  const channelSelectOptions = adminFullInbox
-    ? [
-        ['all', 'Everything'],
-        ['resident', 'Resident'],
-        ['admin', 'Admin'],
-      ]
-    : [
-        ['all', 'Everything'],
-        ['admin', 'Admin'],
-        ['resident', 'Resident'],
-      ]
-
-  const channelLabel =
-    channelSelectOptions.find(([value]) => value === channelFilter)?.[1]?.toLowerCase() || 'all'
-
   const listEmptyMessage =
     sectionFilter === 'trash' && inboxSections.trash.length === 0
       ? 'Nothing in trash'
@@ -1225,9 +1192,7 @@ export default function ManagerInboxPage({
               ? 'No opened conversations'
               : sectionFilter === 'sent'
                 ? 'No sent conversations'
-                : channelFilter !== 'all'
-                  ? `No ${channelLabel} conversations`
-                  : 'No conversations'
+                : 'No conversations'
 
   const composerPlaceholder =
     adminFullInbox || selectedThreadId !== MANAGER_INBOX_AXIS ? 'Write a reply…' : 'Message Axis…'
@@ -1242,21 +1207,6 @@ export default function ManagerInboxPage({
       <div className={PORTAL_TAB_HEADER_ROW_CLS}>
         <h2 className={PORTAL_TAB_H2_CLS}>Inbox</h2>
         <div className={PORTAL_TAB_TOOLBAR_CLS}>
-          <div className={PORTAL_TAB_SELECT_WRAP_CLS}>
-            <select
-              value={channelFilter}
-              onChange={(e) => setChannelFilter(e.target.value)}
-              className={PORTAL_TAB_SELECT_CLS}
-              aria-label="Channel filter"
-            >
-              {channelSelectOptions.map(([value, label]) => (
-                <option key={value} value={value}>{label}</option>
-              ))}
-            </select>
-            <span className={PORTAL_TAB_SELECT_CHEVRON_CLS} aria-hidden>
-              ▾
-            </span>
-          </div>
           <button
             type="button"
             onClick={() => {
@@ -1304,9 +1254,6 @@ export default function ManagerInboxPage({
           }}
           emptyMessage={listEmptyMessage}
           onTrashThread={(stateKey, trashed = true) => moveThreadTrash(stateKey, trashed)}
-          channelTabs={[]}
-          channelFilter={channelFilter}
-          onChannelFilterChange={setChannelFilter}
         />
 
         <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-white">

@@ -11,7 +11,7 @@ const STATUS_TABS = [
 
 /**
  * Left column: search, status pills (Unopened / Opened / Sent / Trash), optional channel
- * filter pills (e.g. Both / Admin / Residents), and the conversation list.
+ * filter pills when channelTabs + onChannelFilterChange are provided, and the list.
  */
 export default function ConversationList({
   loading,

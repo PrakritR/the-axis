@@ -119,6 +119,22 @@ function availableSlotsForDate(daySlotMap, dateKey, bookedSlotsByDate = {}) {
   return allSlots.filter((slot) => !booked.has(normalizeTimeRangeLabel(slot).toLowerCase()))
 }
 
+/** Prefer server-merged per-date slots (Manager Availability + legacy); still subtract booked as a safety net. */
+function tourSlotsForPropertyDate(selectedProperty, dateKey, daySlotMap, bookedSlotsByDate = {}) {
+  const preMerged = selectedProperty?.availabilitySlotsByDate?.[dateKey]
+  const booked = new Set(
+    (bookedSlotsByDate?.[dateKey] || [])
+      .map((slot) => normalizeTimeRangeLabel(slot).toLowerCase())
+      .filter(Boolean),
+  )
+  if (Array.isArray(preMerged) && preMerged.length) {
+    return preMerged
+      .map((s) => normalizeTimeRangeLabel(String(s || '').trim()))
+      .filter((slot) => slot && !booked.has(slot.toLowerCase()))
+  }
+  return availableSlotsForDate(daySlotMap, dateKey, bookedSlotsByDate)
+}
+
 const AIRTABLE_BASE_ID = import.meta.env.VITE_AIRTABLE_BASE_ID || 'appol57LKtMKaQ75T'
 const AIRTABLE_TOKEN   = import.meta.env.VITE_AIRTABLE_TOKEN
 
@@ -283,14 +299,28 @@ function HousingScheduler() {
     ? parseTourCalendar(selectedProperty.availability)
     : DEFAULT_CALENDAR
   const availableDates = useMemo(() => {
-    const base = getUpcomingDates(daySlotMap)
-    return base
-      .map((entry) => {
-        const slots = availableSlotsForDate(daySlotMap, entry.date, selectedProperty?.bookedSlotsByDate || {})
-        return { ...entry, slots }
+    const today = new Date()
+    today.setHours(0, 0, 0, 0)
+    const dates = []
+    for (let i = 0; i < 56; i += 1) {
+      const d = new Date(today)
+      d.setDate(today.getDate() + i)
+      const dateKey = formatYMD(d)
+      const slots = selectedProperty
+        ? tourSlotsForPropertyDate(selectedProperty, dateKey, daySlotMap, selectedProperty.bookedSlotsByDate || {})
+        : availableSlotsForDate(daySlotMap, dateKey, {})
+      if (!slots.length) continue
+      dates.push({
+        date: dateKey,
+        display: d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }),
+        shortDate: d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+        dayAbbr: d.toLocaleDateString('en-US', { weekday: 'short' }),
+        dayName: ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][d.getDay()],
+        slots,
       })
-      .filter((entry) => entry.slots.length > 0)
-  }, [daySlotMap, selectedProperty?.bookedSlotsByDate])
+    }
+    return dates
+  }, [daySlotMap, selectedProperty])
   const selectableSet = useMemo(() => new Set(availableDates.map((d) => d.date)), [availableDates])
   const selectedDateEntry = availableDates.find(d => d.date === selectedDate)
   const currentSlots = selectedDateEntry?.slots || []

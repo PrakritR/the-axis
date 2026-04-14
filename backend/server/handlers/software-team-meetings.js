@@ -47,7 +47,7 @@ export default async function handler(req, res) {
         staff: f['Tour Manager'] || '',
         preferredDate: f['Preferred Date'] || '',
         preferredTime: f['Preferred Time'] || '',
-        notes: f.Notes || '',
+        notes: f.Notes || f.Message || '',
         createdTime: rec.createdTime,
       }
     })

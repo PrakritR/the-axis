@@ -1,6 +1,7 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react'
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import toast from 'react-hot-toast'
 import LeaseHTMLTemplate from '../components/LeaseHTMLTemplate.jsx'
+import { PortalEmptyVisual } from '../components/portalNavIcons.jsx'
 import { DataTable } from '../components/PortalShell'
 import { getStatusConfig, fmtTs, parseManagerEditNotes } from '../lib/leaseWorkflowConstants.js'
 import {
@@ -133,6 +134,7 @@ export default function AdminLeasingTab({ adminUser, accounts = [] }) {
   const [managerFilter, setManagerFilter] = useState('')
   /** @type {'updated_desc'|'updated_asc'|'property_asc'|'property_desc'|'resident_asc'|'resident_desc'|'manager_asc'|'manager_desc'} */
   const [leaseSort, setLeaseSort] = useState('updated_desc')
+  const leaseDraftDetailRef = useRef(null)
   const [selectedDraftId, setSelectedDraftId] = useState('')
   const [activeDraft, setActiveDraft] = useState(null)
   const [detailLoading, setDetailLoading] = useState(false)
@@ -162,6 +164,14 @@ export default function AdminLeasingTab({ adminUser, accounts = [] }) {
   useEffect(() => {
     loadDrafts()
   }, [loadDrafts])
+
+  useEffect(() => {
+    if (!selectedDraftId || detailLoading) return
+    const id = window.requestAnimationFrame(() => {
+      leaseDraftDetailRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    })
+    return () => window.cancelAnimationFrame(id)
+  }, [selectedDraftId, detailLoading, activeDraft?.id])
 
   const managerNameMap = useMemo(() => {
     const map = new Map()
@@ -349,7 +359,7 @@ export default function AdminLeasingTab({ adminUser, accounts = [] }) {
     setActionBusy('sign-override')
     try {
       const updated = await updateLeaseDraftRecord(activeDraft.id, { [field]: Boolean(nextChecked) })
-      setActiveDraft(updated)
+      setActiveDraft({ ...activeDraft, ...updated, [field]: Boolean(nextChecked) })
       await loadDrafts()
       toast.success(
         nextChecked
@@ -544,7 +554,14 @@ export default function AdminLeasingTab({ adminUser, accounts = [] }) {
         {loading ? (
           <div className="px-6 py-16 text-center text-sm text-slate-500">Loading leases…</div>
         ) : visibleDrafts.length === 0 ? (
-          <div className="px-6 py-16" />
+          <div className="px-6 py-16 text-center">
+            <PortalEmptyVisual variant="document" />
+            <div className="text-sm font-semibold text-slate-700">
+              {drafts.length === 0
+                ? 'No leases yet'
+                : `No leases in ${ADMIN_STATUS_FILTER_ITEMS.find((item) => item.id === statusFilter)?.label || 'this view'}`}
+            </div>
+          </div>
         ) : (
           <DataTable
             empty="No leases in this view"
@@ -605,7 +622,10 @@ export default function AdminLeasingTab({ adminUser, accounts = [] }) {
       </div>
 
       {selectedDraftId ? (
-        <div className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm">
+        <div
+          ref={leaseDraftDetailRef}
+          className="scroll-mt-28 overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm lg:scroll-mt-8"
+        >
           <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 px-5 py-4">
             <div className="flex flex-wrap items-center gap-2">
               <h3 className="text-2xl font-black text-slate-900">Lease Draft</h3>
@@ -620,14 +640,26 @@ export default function AdminLeasingTab({ adminUser, accounts = [] }) {
                 Upload PDF
               </button>
               {canEditLeaseDraftFields ? (
-                <label className="inline-flex max-w-full cursor-pointer items-center gap-2 rounded-full border border-amber-200 bg-amber-50/90 px-4 py-2 text-sm font-semibold text-amber-950 shadow-sm transition hover:bg-amber-50">
+                <label className="inline-flex max-w-full cursor-pointer items-center gap-2.5 rounded-full border border-amber-200 bg-amber-50/90 px-4 py-2 text-sm font-semibold text-amber-950 shadow-sm transition hover:bg-amber-50 has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-amber-500 has-[:focus-visible]:ring-offset-2">
                   <input
                     type="checkbox"
-                    className="h-4 w-4 shrink-0 rounded border-amber-400 text-amber-700 focus:ring-amber-500"
+                    className="sr-only"
                     checked={leaseDraftAllowsSignWithoutMoveInPay(activeDraft)}
                     disabled={actionBusy === 'sign-override' || detailLoading}
                     onChange={(e) => handleToggleSignWithoutMoveInPay(e.target.checked)}
                   />
+                  <span
+                    className={`pointer-events-none flex h-5 w-5 shrink-0 items-center justify-center rounded border-2 transition ${
+                      leaseDraftAllowsSignWithoutMoveInPay(activeDraft)
+                        ? 'border-amber-800 bg-amber-700'
+                        : 'border-amber-500 bg-white'
+                    } ${actionBusy === 'sign-override' || detailLoading ? 'opacity-50' : ''}`}
+                    aria-hidden
+                  >
+                    {leaseDraftAllowsSignWithoutMoveInPay(activeDraft) ? (
+                      <span className="select-none text-[12px] font-black leading-none text-white">✓</span>
+                    ) : null}
+                  </span>
                   <span className="min-w-0 leading-snug">Allow sign without paying move-in</span>
                 </label>
               ) : null}
@@ -698,7 +730,7 @@ export default function AdminLeasingTab({ adminUser, accounts = [] }) {
             </div>
           ) : null}
 
-          <div className="px-4 py-5 sm:px-6 space-y-5">
+          <div className="min-w-0 space-y-5 overflow-x-auto px-4 py-5 sm:px-6">
             {!detailLoading && (managerEditRequestSummary || leaseComments.length > 0) ? (
               <div className="space-y-4">
                 {managerEditRequestSummary ? (
@@ -745,11 +777,13 @@ export default function AdminLeasingTab({ adminUser, accounts = [] }) {
             {detailLoading ? (
               <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-6 text-sm text-slate-500">Loading lease details...</div>
             ) : leaseJson && Object.keys(leaseJson).length > 0 ? (
-              <LeaseHTMLTemplate
-                leaseData={leaseJson}
-                signedBy={activeDraft?.['Signed By']}
-                signedAt={activeDraft?.['Signed At']}
-              />
+              <div className="min-w-0 max-w-full">
+                <LeaseHTMLTemplate
+                  leaseData={leaseJson}
+                  signedBy={activeDraft?.['Signed By']}
+                  signedAt={activeDraft?.['Signed At']}
+                />
+              </div>
             ) : (
               <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-6 text-sm text-slate-500">Lease document is not available yet.</div>
             )}

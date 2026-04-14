@@ -151,7 +151,6 @@ export default function ResidentPortalInbox({ resident }) {
   const [inboxStateMap, setInboxStateMap] = useState(() => new Map())
   const [inboxStateBackend, setInboxStateBackend] = useState('pending')
   const [sectionFilter, setSectionFilter] = useState('unopened')
-  const [channelFilter, setChannelFilter] = useState('all')
   const [threadSearch, setThreadSearch] = useState('')
 
   const refreshInboxThreadState = useCallback(async () => {
@@ -300,11 +299,9 @@ export default function ResidentPortalInbox({ resident }) {
     else if (sectionFilter === 'opened') rows = rows.filter((r) => r.section === 'opened')
     else if (sectionFilter === 'sent') rows = rows.filter((r) => r.section === 'sent')
     else if (sectionFilter === 'trash') rows = rows.filter((r) => r.section === 'trash')
-    if (channelFilter === 'manager') rows = rows.filter((r) => r.id === UI_LEASING)
-    else if (channelFilter === 'admin') rows = rows.filter((r) => r.id === UI_ADMIN)
     if (!q) return rows
     return rows.filter((r) => (r.searchText || '').includes(q))
-  }, [threadRowsWithMeta, sectionFilter, channelFilter, threadSearch])
+  }, [threadRowsWithMeta, sectionFilter, threadSearch])
 
   const touchThreadRead = useCallback(
     async (stateKey) => {
@@ -533,15 +530,6 @@ export default function ResidentPortalInbox({ resident }) {
     )
   }
 
-  const channelSelectOptions = useMemo(
-    () => [
-      ['all', 'Everything'],
-      ['manager', 'Manager'],
-      ['admin', 'Admin'],
-    ],
-    [],
-  )
-
   const listEmptyMessage =
     sectionFilter === 'trash' && inboxSections.trash.length === 0
       ? 'Nothing in trash'
@@ -555,32 +543,13 @@ export default function ResidentPortalInbox({ resident }) {
               ? 'No opened conversations'
               : sectionFilter === 'sent'
                 ? 'No sent conversations'
-                : channelFilter !== 'all'
-                  ? `No ${channelFilter === 'manager' ? 'manager' : 'admin'} conversations`
-                  : 'No conversations'
+                : 'No conversations'
 
   return (
     <div>
       <div className={PORTAL_TAB_HEADER_ROW_CLS}>
         <h2 className={PORTAL_TAB_H2_CLS}>Inbox</h2>
         <div className={PORTAL_TAB_TOOLBAR_CLS}>
-          <div className={PORTAL_TAB_SELECT_WRAP_CLS}>
-            <select
-              value={channelFilter}
-              onChange={(e) => setChannelFilter(e.target.value)}
-              className={PORTAL_TAB_SELECT_CLS}
-              aria-label="Filter conversations"
-            >
-              {channelSelectOptions.map(([value, label]) => (
-                <option key={value} value={value}>
-                  {label}
-                </option>
-              ))}
-            </select>
-            <span className={PORTAL_TAB_SELECT_CHEVRON_CLS} aria-hidden>
-              ▾
-            </span>
-          </div>
           <button
             type="button"
             onClick={() => {
@@ -628,9 +597,6 @@ export default function ResidentPortalInbox({ resident }) {
           }}
           emptyMessage={listEmptyMessage}
           onTrashThread={(stateKey, trashed = true) => moveThreadTrash(stateKey, trashed)}
-          channelTabs={[]}
-          channelFilter={channelFilter}
-          onChannelFilterChange={setChannelFilter}
         />
 
         <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-white">

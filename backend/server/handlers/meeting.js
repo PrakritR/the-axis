@@ -3,6 +3,14 @@
  * POST /api/meeting  → books a meeting against admin availability
  */
 
+import { airtableCreateWithUnknownFieldRetry } from '../lib/airtable-write-retry.js'
+import {
+  buildManagerAvailabilityConfig,
+  buildGlobalAdminSlotsByDate,
+  mergeGlobalAdminAvailabilityRanges,
+  rangesToSlotLabels,
+} from '../../../shared/manager-availability-merge.js'
+
 const AIRTABLE_BASE_ID =
   process.env.VITE_AIRTABLE_BASE_ID || process.env.AIRTABLE_BASE_ID || 'appol57LKtMKaQ75T'
 const AIRTABLE_TOKEN = process.env.AIRTABLE_TOKEN || process.env.VITE_AIRTABLE_TOKEN
@@ -144,6 +152,27 @@ async function listSchedulingRows(filterByFormula = '') {
   return rows
 }
 
+async function listAllManagerAvailabilityRecords() {
+  if (!AIRTABLE_TOKEN) return []
+  const cfg = buildManagerAvailabilityConfig(process.env)
+  const table = encodeURIComponent(cfg.tableName)
+  const rows = []
+  let offset = null
+  try {
+    do {
+      const url = new URL(`https://api.airtable.com/v0/${AIRTABLE_BASE_ID}/${table}`)
+      if (offset) url.searchParams.set('offset', offset)
+      const data = await fetchAirtableJson(url.toString())
+      if (!data) break
+      for (const record of data.records || []) rows.push(record)
+      offset = data.offset || null
+    } while (offset)
+  } catch {
+    return []
+  }
+  return rows
+}
+
 function buildMeetingBookingsByAdmin(records) {
   const out = {}
   for (const record of records || []) {
@@ -211,27 +240,47 @@ export default async function handler(req, res) {
   if (req.method === 'GET') {
     try {
       const adminUrl = `https://api.airtable.com/v0/${AIRTABLE_BASE_ID}/${encodeURIComponent(ADMIN_PROFILE_TABLE)}`
-      const [adminData, schedulingRows] = await Promise.all([
+      const [adminData, schedulingRows, maRecords] = await Promise.all([
         fetchAirtableJson(adminUrl),
         listSchedulingRows(),
+        listAllManagerAvailabilityRecords(),
       ])
       if (!adminData) return res.status(200).json({ admins: [] })
       const bookings = buildMeetingBookingsByAdmin(schedulingRows)
       const availabilityByAdminDate = buildMeetingAvailabilityByAdminDate(schedulingRows)
+      const maCfg = buildManagerAvailabilityConfig(process.env)
       const admins = (adminData.records || [])
         .filter(enabledAdminProfile)
         .map((row) => {
           const fields = row.fields || {}
           const email = String(fields.Email || '').trim().toLowerCase()
           if (!email.includes('@')) return null
-          const availableSlotsByDate = availabilityByAdminDate[email] || {}
+          const schedulingExplicit = availabilityByAdminDate[email] || {}
+          const legacyText = adminMeetingAvailability(fields)
+          const maByDate = buildGlobalAdminSlotsByDate({
+            records: maRecords,
+            config: maCfg,
+            adminEmail: email,
+            legacyWeeklyText: legacyText,
+            bookedSlotsByDate: bookings[email] || {},
+            daysAhead: 56,
+          })
+          const mergedSlots = {}
+          const keys = new Set([...Object.keys(schedulingExplicit), ...Object.keys(maByDate)])
+          for (const dk of keys) {
+            const sch = schedulingExplicit[dk]
+            if (Array.isArray(sch) && sch.length) mergedSlots[dk] = sch
+            else if (maByDate[dk]?.length) mergedSlots[dk] = maByDate[dk]
+          }
           const availability = adminMeetingAvailability(fields)
           return {
             id: row.id,
             name: String(fields.Name || email).trim(),
             email,
             availability,
-            availableSlotsByDate,
+            availableSlotsByDate: mergedSlots,
+            /** Raw Scheduling “Meeting Availability” rows only (calendar tab); merged view is `availableSlotsByDate`. */
+            schedulingAvailabilityByDate: schedulingExplicit,
             bookedSlotsByDate: bookings[email] || {},
           }
         })
@@ -283,10 +332,32 @@ export default async function handler(req, res) {
     const sameDayRows = await listSchedulingRows(sameDayFormula)
     const availabilityByDate = buildMeetingAvailabilityByAdminDate(sameDayRows)
     const explicitSlots = availabilityByDate[selectedAdminEmail]?.[preferredDateKey] || []
+    const meetingBookedLabels = []
+    for (const record of sameDayRows) {
+      const f = record?.fields || {}
+      if (String(f.Type || '').trim().toLowerCase() !== 'meeting') continue
+      if (!statusAllowsConflict(f.Status)) continue
+      const lab = normalizeRangeLabel(f['Preferred Time'])
+      if (lab) meetingBookedLabels.push(lab)
+    }
+    const maCfg = buildManagerAvailabilityConfig(process.env)
+    const maRows = await listAllManagerAvailabilityRecords()
+    const mergedFree = mergeGlobalAdminAvailabilityRanges({
+      records: maRows,
+      fieldsConfig: maCfg.fields,
+      dateKey: preferredDateKey,
+      adminEmail: selectedAdminEmail,
+      legacyWeeklyText: adminMeetingAvailability(adminRecord.fields || {}),
+      bookedSlotLabels: meetingBookedLabels,
+    })
+    const maSlots = rangesToSlotLabels(mergedFree)
     const fallbackAvailability = adminMeetingAvailability(adminRecord.fields || {})
+    const legacyOnly = availabilitySlotsForDate(fallbackAvailability, preferredDateKey)
     const availableSlots = explicitSlots.length
       ? explicitSlots
-      : availabilitySlotsForDate(fallbackAvailability, preferredDateKey)
+      : maSlots.length
+        ? maSlots
+        : legacyOnly
     const allowedSet = new Set(availableSlots.map((slot) => slot.toLowerCase()))
     if (!allowedSet.has(preferredTimeLabel.toLowerCase())) {
       return res.status(409).json({ error: 'That meeting slot is no longer available.' })
@@ -316,30 +387,28 @@ export default async function handler(req, res) {
       'Tour Manager': selectedAdminName || String(adminRecord.fields?.Name || selectedAdminEmail),
     }
     if (phone) fields.Phone = String(phone).trim()
-    if (notes) fields.Notes = String(notes).trim()
+    const schedulingNotesField =
+      String(
+        process.env.AIRTABLE_SCHEDULING_NOTES_FIELD ||
+          process.env.VITE_AIRTABLE_SCHEDULING_NOTES_FIELD ||
+          'Message',
+      ).trim() || 'Message'
+    if (notes) {
+      const nt = String(notes).trim()
+      if (nt) fields[schedulingNotesField] = nt
+    }
 
     try {
-      const createRes = await fetch(
-        `https://api.airtable.com/v0/${AIRTABLE_BASE_ID}/${encodeURIComponent(SCHEDULING_TABLE)}`,
-        {
-          method: 'POST',
-          headers: {
-            Authorization: `Bearer ${AIRTABLE_TOKEN}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({ fields, typecast: true }),
-        },
-      )
-      if (!createRes.ok) {
-        const body = await createRes.text()
-        let msg = `Data service error ${createRes.status}`
-        try { msg += ': ' + JSON.parse(body)?.error?.message } catch { msg += ': ' + body }
-        return res.status(502).json({ error: msg })
-      }
-      const created = await createRes.json()
+      const created = await airtableCreateWithUnknownFieldRetry({
+        baseId: AIRTABLE_BASE_ID,
+        token: AIRTABLE_TOKEN,
+        tableName: SCHEDULING_TABLE,
+        fields,
+      })
       return res.status(200).json({ id: created.id })
     } catch (err) {
-      return res.status(500).json({ error: err?.message || 'Could not save meeting booking.' })
+      const msg = err?.message || 'Could not save meeting booking.'
+      return res.status(502).json({ error: msg })
     }
   }
 

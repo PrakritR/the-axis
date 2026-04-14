@@ -3,6 +3,14 @@
  * POST /api/tour  → saves a tour or meeting booking to Scheduling table
  */
 
+import { airtableCreateWithUnknownFieldRetry } from '../lib/airtable-write-retry.js'
+import {
+  buildManagerAvailabilityConfig,
+  buildPropertySlotsByDate,
+  mergePropertyAvailabilityRanges,
+  rangesToSlotLabels,
+} from '../../../shared/manager-availability-merge.js'
+
 const AIRTABLE_BASE_ID =
   process.env.VITE_AIRTABLE_BASE_ID || process.env.AIRTABLE_BASE_ID || 'appol57LKtMKaQ75T'
 const AIRTABLE_TOKEN = process.env.AIRTABLE_TOKEN || process.env.VITE_AIRTABLE_TOKEN
@@ -172,6 +180,29 @@ async function listSchedulingRows(filterByFormula = '') {
     for (const record of data.records || []) rows.push(record)
     offset = data.offset || null
   } while (offset)
+  return rows
+}
+
+/** Paginated load of Manager Availability (optional table). */
+async function listAllManagerAvailabilityRecords() {
+  if (!AIRTABLE_TOKEN) return []
+  const cfg = buildManagerAvailabilityConfig(process.env)
+  const table = encodeURIComponent(cfg.tableName)
+  const rows = []
+  let offset = null
+  try {
+    do {
+      const url = new URL(`https://api.airtable.com/v0/${AIRTABLE_BASE_ID}/${table}`)
+      if (offset) url.searchParams.set('offset', offset)
+      const res = await fetch(url.toString(), { headers: { Authorization: `Bearer ${AIRTABLE_TOKEN}` } })
+      if (!res.ok) return []
+      const data = await res.json()
+      for (const record of data.records || []) rows.push(record)
+      offset = data.offset || null
+    } while (offset)
+  } catch {
+    return []
+  }
   return rows
 }
 
@@ -359,7 +390,7 @@ export default async function handler(req, res) {
     if (!AIRTABLE_TOKEN) return res.status(200).json(fallback)
     try {
       const roomsTable = process.env.VITE_AIRTABLE_ROOMS_TABLE || 'Rooms'
-      const [propRes, roomsRes, schedulingRecords] = await Promise.all([
+      const [propRes, roomsRes, schedulingRecords, maRecords] = await Promise.all([
         fetch(`https://api.airtable.com/v0/${AIRTABLE_BASE_ID}/Properties`, {
           headers: { Authorization: `Bearer ${AIRTABLE_TOKEN}` },
         }),
@@ -367,6 +398,7 @@ export default async function handler(req, res) {
           headers: { Authorization: `Bearer ${AIRTABLE_TOKEN}` },
         }),
         listSchedulingRows(),
+        listAllManagerAvailabilityRecords(),
       ])
       if (!propRes.ok) return res.status(200).json(fallback)
       const [propData, roomsData] = await Promise.all([propRes.json(), roomsRes.ok ? roomsRes.json() : Promise.resolve({ records: [] })])
@@ -374,13 +406,30 @@ export default async function handler(req, res) {
       const allRecords = propData.records || []
       const approvedRecords = allRecords.filter(propertyRecordVisibleForPublic)
       const bookedSlotsByPropertyDate = buildBookedSlotsByPropertyDate(schedulingRecords)
+      const maCfg = buildManagerAvailabilityConfig(process.env)
       const properties = approvedRecords
         .map((r) => mapProperty(r, roomsByPropertyId))
         .filter(Boolean)
-        .map((property) => ({
-          ...property,
-          bookedSlotsByDate: bookedSlotsByPropertyDate[String(property.name || '').trim().toLowerCase()] || {},
-        }))
+        .map((property) => {
+          const booked =
+            bookedSlotsByPropertyDate[String(property.name || '').trim().toLowerCase()] || {}
+          const availabilitySlotsByDate = buildPropertySlotsByDate({
+            records: maRecords,
+            config: maCfg,
+            propertyName: property.name,
+            propertyRecordId: property.id,
+            managerEmail: property.managerEmail,
+            managerRecordId: '',
+            legacyAvailabilityText: property.availability,
+            bookedSlotsByDate: booked,
+            daysAhead: 56,
+          })
+          return {
+            ...property,
+            bookedSlotsByDate: booked,
+            availabilitySlotsByDate,
+          }
+        })
       if (properties.length) return res.status(200).json({ properties })
       // Empty table or no approved listings yet.
       return res.status(200).json({ properties: [] })
@@ -411,6 +460,8 @@ export default async function handler(req, res) {
 
     const preferredDateKey = normalizeDateKey(preferredDate)
     const preferredTimeLabel = normalizeRangeLabel(preferredTime)
+    /** @type {any[]|null} Reused for conflict check to avoid a second Scheduling fetch for tours. */
+    let tourSameDaySchedulingRows = null
 
     if (normalizedType === 'Tour') {
       if (!String(property || '').trim()) {
@@ -438,8 +489,40 @@ export default async function handler(req, res) {
         return res.status(409).json({ error: 'This property is not available for tours right now.' })
       }
       const propertyAvailability = propertyTourAvailabilityFromFields(propertyRecord.fields)
-      const allowed = availabilitySlotsForDate(propertyAvailability, preferredDateKey)
-      const allowedSet = new Set(allowed.map((slot) => slot.toLowerCase()))
+      const mapped = mapProperty(propertyRecord, new Map())
+      const propertyNameForFormula = String(property || '').trim().toLowerCase()
+      const formulaPartsTour = [`{Preferred Date} = "${preferredDateKey}"`]
+      if (propertyNameForFormula) {
+        formulaPartsTour.push(`LOWER({Property} & "") = "${propertyNameForFormula.replace(/"/g, '\\"')}"`)
+      }
+      const formulaTour = `AND(${formulaPartsTour.join(', ')})`
+      tourSameDaySchedulingRows = await listSchedulingRows(formulaTour)
+      const bookedTourLabels = []
+      for (const record of tourSameDaySchedulingRows || []) {
+        const row = record?.fields || {}
+        if (String(row.Type || '').trim().toLowerCase() !== 'tour') continue
+        if (!statusAllowsConflict(row.Status)) continue
+        const slot = normalizeRangeLabel(row['Preferred Time'])
+        if (slot) bookedTourLabels.push(slot)
+      }
+      const maCfg = buildManagerAvailabilityConfig(process.env)
+      const maRows = await listAllManagerAvailabilityRecords()
+      const mergedRanges = mergePropertyAvailabilityRanges({
+        records: maRows,
+        fieldsConfig: maCfg.fields,
+        dateKey: preferredDateKey,
+        propertyName: mapped?.name || String(property || ''),
+        propertyRecordId: propertyRecord.id,
+        managerEmail: mapped?.managerEmail || String(managerEmail || ''),
+        managerRecordId: '',
+        legacyAvailabilityText: propertyAvailability,
+        bookedSlotLabels: bookedTourLabels,
+      })
+      const mergedLabels = rangesToSlotLabels(mergedRanges)
+      const allowedLegacy = availabilitySlotsForDate(propertyAvailability, preferredDateKey)
+      const allowedSet = new Set(
+        [...mergedLabels, ...allowedLegacy].map((slot) => String(slot || '').trim().toLowerCase()),
+      )
       if (!allowedSet.has(preferredTimeLabel.toLowerCase())) {
         return res.status(409).json({ error: 'That tour slot is no longer available. Please choose another time.' })
       }
@@ -460,7 +543,17 @@ export default async function handler(req, res) {
     if (tourAvailability)  fields['Tour Availability'] = String(tourAvailability).trim()
     if (preferredDateKey)  fields['Preferred Date'] = preferredDateKey
     if (preferredTimeLabel) fields['Preferred Time'] = preferredTimeLabel
-    if (notes)             fields['Notes'] = String(notes).trim()
+    /** Guest / requester notes: portal schema uses `Message`; older bases used `Notes`. Unknown keys are stripped on retry. */
+    const schedulingNotesField =
+      String(
+        process.env.AIRTABLE_SCHEDULING_NOTES_FIELD ||
+          process.env.VITE_AIRTABLE_SCHEDULING_NOTES_FIELD ||
+          'Message',
+      ).trim() || 'Message'
+    if (notes) {
+      const nt = String(notes).trim()
+      if (nt) fields[schedulingNotesField] = nt
+    }
 
     const conflictRange = parseTimeRangeToMinutes(preferredTimeLabel)
     if (preferredDateKey && conflictRange) {
@@ -469,7 +562,10 @@ export default async function handler(req, res) {
       const formulaParts = [`{Preferred Date} = "${preferredDateKey}"`]
       if (propertyName) formulaParts.push(`LOWER({Property} & "") = "${propertyName.replace(/"/g, '\\"')}"`)
       const formula = `AND(${formulaParts.join(', ')})`
-      const existingRows = await listSchedulingRows(formula)
+      const existingRows =
+        normalizedType === 'Tour' && Array.isArray(tourSameDaySchedulingRows)
+          ? tourSameDaySchedulingRows
+          : await listSchedulingRows(formula)
       for (const record of existingRows) {
         const row = record?.fields || {}
         if (!statusAllowsConflict(row.Status)) continue
@@ -493,22 +589,17 @@ export default async function handler(req, res) {
     }
 
     try {
-      const r = await fetch(`https://api.airtable.com/v0/${AIRTABLE_BASE_ID}/${encodeURIComponent(SCHEDULING_TABLE)}`, {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ fields, typecast: true }),
+      const data = await airtableCreateWithUnknownFieldRetry({
+        baseId: AIRTABLE_BASE_ID,
+        token,
+        tableName: SCHEDULING_TABLE,
+        fields,
       })
-      if (!r.ok) {
-        const body = await r.text()
-        let msg = `Data service error ${r.status}`
-        try { msg += ': ' + JSON.parse(body)?.error?.message } catch { msg += ': ' + body }
-        return res.status(502).json({ error: msg })
-      }
-      const data = await r.json()
       return res.status(200).json({ id: data.id })
     } catch (err) {
       console.error('[tour]', err)
-      return res.status(500).json({ error: err?.message || 'Could not save booking request.' })
+      const msg = err?.message || 'Could not save booking request.'
+      return res.status(502).json({ error: msg })
     }
   }
 

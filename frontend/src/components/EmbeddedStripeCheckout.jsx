@@ -68,8 +68,9 @@ export function EmbeddedStripeCheckout({ open, title, checkoutRequest, apiEndpoi
 
         const embedded = await stripe.initEmbeddedCheckout({
           fetchClientSecret: async () => data.client_secret,
+          // Parent keeps checkout context on a ref — do not pass session-create response as “payment result”.
           onComplete: () => {
-            onComplete?.(data)
+            onComplete?.()
           },
         })
 

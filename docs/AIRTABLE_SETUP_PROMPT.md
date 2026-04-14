@@ -286,7 +286,7 @@ These are **not** a separate base — they live in `VITE_AIRTABLE_BASE_ID` along
 - `Property`, `Room`
 - `Tour Format`, `Tour Manager`, `Tour Availability`
 - `Preferred Date`, `Preferred Time`
-- `Notes`
+- Guest / requester text: **`Message`** (long text) — used by `/api/tour` and `/api/meeting`. Older bases may use `Notes` instead; set server env **`AIRTABLE_SCHEDULING_NOTES_FIELD`** to that column name if needed. Writes retry without unknown fields so minimal tables still accept bookings.
 
 **Portal calendar UI:** Manager and admin portals read `Scheduling` to show booked tours/meetings on the calendar; availability editing uses other fields (`Properties.Notes` / `Admin Profile.Meeting Availability`). See **`docs/CALENDAR_SYSTEM.md`** for the full picture.
 
@@ -322,6 +322,37 @@ Same as section 1.12; used by `generate-lease-draft`, SignForge webhook, and the
 
 ---
 
+### 2.7 `Manager Availability` (optional — per-property tour windows + weekly recurrence)
+
+**Used by:** Manager portal calendar (when `VITE_USE_MANAGER_AVAILABILITY_TABLE` is not disabled), `server/handlers/tour.js` GET (open tour slots per property), `server/handlers/meeting.js` GET/POST (admin “Contact Axis” / software meeting slots when no per-day Scheduling override exists).
+
+**Table name:** default `Manager Availability`; override with **`MANAGER_AVAILABILITY_TABLE`** (server) or match in env.
+
+**Suggested fields** (types are flexible — text works if you avoid linked-record complexity at first):
+
+| Field | Purpose |
+|-------|--------|
+| **Property Name** | Exact property display name (must match `Properties` name for filtering). |
+| **Property Record ID** | Optional; Airtable record id of the property row for stricter matching. |
+| **Manager Email** | Manager or admin email owning this availability. |
+| **Manager Record ID** | Optional linked record id from Manager Profile. |
+| **Date** | For one-time blocks: `YYYY-MM-DD` (date only). Empty when row is recurring weekly. |
+| **Weekday** | For recurring rows: `Sun`–`Sat` (or full name; app normalizes). |
+| **Start Time** / **End Time** | Same-day local times, e.g. `8:30 AM` and `11:30 AM`, or `08:30` / `11:30`. |
+| **Is Recurring** | Checkbox: true = weekly rule for **Weekday** from **Recurrence Start** onward. |
+| **Recurrence Start** | Optional date; weekly rule applies only on/after this calendar date (defaults to first **Date** if you only use one-time then “apply weekly” in UI). |
+| **Active** | Checkbox; inactive rows are ignored. |
+| **Timezone** | IANA zone, e.g. `America/New_York` (recommended for consistency). |
+| **Source** | Optional tag, e.g. `manager_portal`. |
+| **Notes** | Optional. |
+| **Created At** / **Updated At** | Optional; not required for slot math. |
+
+**Merge rules:** For a given property + date, **date-specific** active rows override **recurring** rows for that weekday. Tour/meeting booking still subtracts existing **`Scheduling`** rows for that day. Rows with **no** property set are treated as **global admin** availability for meeting flow fallback.
+
+**Env overrides:** See `.env.example` (`MANAGER_AVAIL_FIELD_*` / `VITE_MANAGER_AVAIL_FIELD_*`).
+
+---
+
 ## 3) Optional / “not Airtable”
 
 - **Axis internal Management/Admin mock portals:** mock data; no tables.
@@ -350,7 +381,7 @@ Using the repo the-axis, implement or verify Airtable:
 
 1) Use a single base ID: VITE_AIRTABLE_BASE_ID (and AIRTABLE_BASE_ID on the server with the same value).
 
-2) In that base, create/verify: Resident Profile, Manager Profile, Properties, Rooms, Work Orders (Status + optional Scheduled Date; see docs/AIRTABLE_BASE_SCHEMA_PROMPT.md), Messages (Thread Key + Channel + internal_mgmt_admin), Announcements, Payments, Documents, Packages, Inbox Thread State (optional), Properties + Scheduling (tour), Applications, Co-Signers, Lease Drafts, Audit Log — fields per docs/AIRTABLE_SETUP_PROMPT.md sections 1–2.
+2) In that base, create/verify: Resident Profile, Manager Profile, Properties, Rooms, Work Orders (Status + optional Scheduled Date; see docs/AIRTABLE_BASE_SCHEMA_PROMPT.md), Messages (Thread Key + Channel + internal_mgmt_admin), Announcements, Payments, Documents, Packages, Inbox Thread State (optional), Properties + Scheduling (tour), optional Manager Availability (§2.7), Applications, Co-Signers, Lease Drafts, Audit Log — fields per docs/AIRTABLE_SETUP_PROMPT.md sections 1–2.
 
 3) List any table in TABLES that still has no API usage (Website Settings) and either add usage or remove from roadmap.
 
@@ -367,6 +398,7 @@ Using the repo the-axis, implement or verify Airtable:
 - Work order schedule meta (shared): `src/lib/workOrderShared.js`
 - Apply payloads: `src/pages/Apply.jsx`
 - Tour POST/GET: `server/handlers/tour.js`
+- Manager Availability merge + slots: `shared/manager-availability-merge.js`, `server/handlers/meeting.js`, `frontend/src/lib/managerAvailabilityAirtable.js`
 - AI lease create: `server/handlers/generate-lease-draft.js`
 - SignForge: `server/handlers/signforge-send-lease.js`, `signforge-webhook.js`
 - Env template: `.env.example`

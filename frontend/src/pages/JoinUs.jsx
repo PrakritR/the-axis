@@ -270,13 +270,8 @@ export default function JoinUs() {
         apiEndpoint="/api/portal?action=manager-create-subscription-session"
         checkoutRequest={embeddedCheckout}
         onClose={() => { setEmbeddedCheckout(null); setManagerLoading(false) }}
-        onComplete={(session) => {
-          const sid = session?.id
-          if (sid) {
-            window.location.href = `/portal?portal=manager&setup=success&session_id=${encodeURIComponent(sid)}`
-          } else {
-            window.location.href = '/portal?portal=manager&setup=success'
-          }
+        onComplete={() => {
+          window.location.href = '/portal?portal=manager&setup=success'
         }}
       />
 

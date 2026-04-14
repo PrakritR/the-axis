@@ -1,4 +1,4 @@
-import { Component, useCallback, useEffect, useMemo, useState } from 'react'
+import { Component, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, Navigate } from 'react-router-dom'
 import { properties } from '../data/properties'
 import { EmbeddedStripeCheckout } from '../components/EmbeddedStripeCheckout'
@@ -32,6 +32,8 @@ import {
   getCurrentLeaseVersion,
   getLeaseDraftsForResident,
   getPaymentsForResident,
+  createPaymentRecord,
+  updatePaymentRecord,
   getResidentByEmail,
   getResidentById,
   getWorkOrdersForResident,
@@ -47,6 +49,18 @@ import {
 import { applicationRejectedFieldName, deriveApplicationApprovalState } from '../lib/applicationApprovalState.js'
 import { anyLeaseDraftAllowsSignWithoutMoveInPay } from '../lib/leaseMoveInOverride.js'
 import { workOrderScheduledMeta } from '../lib/workOrderShared.js'
+import {
+  classifyResidentPaymentLine,
+  dueDateStringForMonth,
+  finalizeResidentPaymentAfterStripeSuccess,
+  findRentPaymentForBillingMonth,
+  findUtilitiesPaymentForBillingMonth,
+  getPaymentKind,
+  iterRecurringBillingMonthKeys,
+  longMonthLabel,
+  reconcilePaymentStatusesInAirtable,
+  rentDueDayFromResident,
+} from '../lib/residentPaymentsShared.js'
 
 const SESSION_KEY = 'axis_resident'
 
@@ -380,6 +394,19 @@ function parseResidentMoney(value) {
   return Number.isFinite(n) && n > 0 ? n : 0
 }
 
+/** Default room hold shown in Payments when no matching Airtable row yet (override per resident or VITE_ROOM_HOLD_FEE_USD). */
+function residentRoomHoldFeeUsd(resident) {
+  const keys = ['Room Hold Fee', 'Hold Fee', 'Hold Fee Amount']
+  for (const k of keys) {
+    const n = parseResidentMoney(resident?.[k])
+    if (n > 0) return n
+  }
+  const envRaw = String(import.meta.env.VITE_ROOM_HOLD_FEE_USD ?? '100').trim()
+  if (envRaw === '0' || envRaw.toLowerCase() === 'false') return 0
+  const env = parseInt(envRaw.replace(/[^0-9]/g, ''), 10)
+  return Number.isFinite(env) && env > 0 ? env : 100
+}
+
 /** Newest signed lease draft (for payments: rent / utilities / deposit match the signed unit). */
 function pickSignedLeaseDraft(drafts) {
   if (!Array.isArray(drafts) || drafts.length === 0) return null
@@ -462,27 +489,6 @@ function firstAvailableLink(record, fields) {
 
 function resolveLeaseSigningUrl(resident) {
   return firstAvailableLink(resident, leaseSigningFields) || import.meta.env.VITE_DOCUSIGN_SIGNING_URL || ''
-}
-
-function getPaymentKind(payment) {
-  if (!payment || typeof payment !== 'object') return 'rent'
-  const raw = [payment.Type, payment.Category, payment.Kind, payment['Line Item Type'], payment.Month, payment.Notes]
-    .filter(Boolean).join(' ').toLowerCase()
-  if (/(fee|fine|damage|late fee|late charge|cleaning|lockout)/.test(raw)) return 'fee'
-  return 'rent'
-}
-
-/** Finer bucket for resident UI (deposit / move-in rent vs recurring rent vs fees). */
-function classifyResidentPaymentLine(payment) {
-  if (!payment || typeof payment !== 'object') return 'rent'
-  const raw = [payment.Type, payment.Category, payment.Kind, payment['Line Item Type'], payment.Month, payment.Notes]
-    .filter(Boolean).join(' ').toLowerCase()
-  if (/(security deposit|sec\.?\s*deposit|tenant deposit|initial deposit)/i.test(raw) && !/return/i.test(raw)) return 'deposit'
-  if (/(^|\s)(first month|1st month|first months|move-?in rent)/i.test(raw)) return 'first_rent'
-  if (/(first month.{0,20}util|1st month.{0,20}util|move-?in.{0,20}util|move-?in.{0,12}utilities)/i.test(raw))
-    return 'first_utilities'
-  if (/(^|\s)(first|1st)\s+month\s+utilities/i.test(raw)) return 'first_utilities'
-  return getPaymentKind(payment) === 'fee' ? 'fee' : 'rent'
 }
 
 function statusPillToneForResidentPayment(status) {
@@ -1497,10 +1503,16 @@ function PaymentsPanel({ resident, onResidentUpdated, highlightCategory, onPayme
   const [payDetailId, setPayDetailId] = useState(null)
   const [payTableSort, setPayTableSort] = useState('due_asc')
   const [leaseDraftsForPayments, setLeaseDraftsForPayments] = useState([])
+  const pendingStripeCheckoutRef = useRef(null)
+  const paymentStatusReconcileSigRef = useRef('')
 
   useEffect(() => {
     setPayDetailId(null)
   }, [payFilter])
+
+  useEffect(() => {
+    paymentStatusReconcileSigRef.current = ''
+  }, [resident.id])
 
   const loadPayments = useCallback(() => {
     setLoading(true)
@@ -1524,6 +1536,30 @@ function PaymentsPanel({ resident, onResidentUpdated, highlightCategory, onPayme
   useEffect(() => {
     reloadLeaseDraftsForPayments()
   }, [reloadLeaseDraftsForPayments])
+
+  /** Keep Airtable `Status` aligned with balance + due date (manager exports + automations). */
+  useEffect(() => {
+    if (loading) return
+    const rows = Array.isArray(payments) ? payments : []
+    if (!rows.length) return
+    const sig = rows.map((p) => `${p.id}:${p.Status}:${p.Amount}:${p['Amount Paid']}:${p.Balance}:${p['Due Date']}`).join('|')
+    if (paymentStatusReconcileSigRef.current === sig) return
+    paymentStatusReconcileSigRef.current = sig
+    let cancelled = false
+    ;(async () => {
+      const patched = await reconcilePaymentStatusesInAirtable(rows, updatePaymentRecord)
+      if (cancelled || patched === 0) return
+      try {
+        const fresh = await getPaymentsForResident(resident)
+        if (!cancelled) setPayments(Array.isArray(fresh) ? fresh : [])
+      } catch {
+        /* ignore */
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [loading, payments, resident])
 
   const amountDueForRecord = useCallback((payment) => {
     const direct = Number(payment?.Amount ?? payment?.['Amount Due'] ?? payment?.Total ?? 0)
@@ -1580,13 +1616,13 @@ function PaymentsPanel({ resident, onResidentUpdated, highlightCategory, onPayme
   const currentDuePayment = unpaidRentPayments[0] || null
   const currentStatus = currentDuePayment ? paymentStatusForRecord(currentDuePayment) : 'Paid'
   const currentAmountDue = currentDuePayment ? balanceForRecord(currentDuePayment) : 0
-  const signedLeaseForPayments = useMemo(
-    () => pickSignedLeaseDraft(leaseDraftsForPayments),
+  const leaseDraftForPaymentsPricing = useMemo(
+    () => pickLeaseDraftForPaymentsPricing(leaseDraftsForPayments),
     [leaseDraftsForPayments],
   )
   const payPricing = useMemo(
-    () => residentPaymentsPricing(resident, signedLeaseForPayments),
-    [resident, signedLeaseForPayments],
+    () => residentPaymentsPricing(resident, leaseDraftForPaymentsPricing),
+    [resident, leaseDraftForPaymentsPricing],
   )
   const fallbackRentAmount = payPricing.monthlyRent
   const fallbackUtilitiesAmount = payPricing.utilitiesFee
@@ -1617,6 +1653,19 @@ function PaymentsPanel({ resident, onResidentUpdated, highlightCategory, onPayme
     [sortedPayments, paymentStatusForRecord],
   )
 
+  const holdFeePaymentRecord = useMemo(
+    () => sortedPayments.find((p) => classifyResidentPaymentLine(p) === 'hold_fee') || null,
+    [sortedPayments],
+  )
+
+  const holdFeePaid = useMemo(
+    () =>
+      sortedPayments.some(
+        (p) => classifyResidentPaymentLine(p) === 'hold_fee' && paymentStatusForRecord(p) === 'Paid',
+      ),
+    [sortedPayments, paymentStatusForRecord],
+  )
+
   const depositPaymentRecord = useMemo(
     () => sortedPayments.find((p) => classifyResidentPaymentLine(p) === 'deposit') || null,
     [sortedPayments],
@@ -1637,9 +1686,10 @@ function PaymentsPanel({ resident, onResidentUpdated, highlightCategory, onPayme
       if (depositPaymentRecord && p.id === depositPaymentRecord.id) return false
       if (firstRentPaymentRecord && p.id === firstRentPaymentRecord.id) return false
       if (firstUtilitiesPaymentRecord && p.id === firstUtilitiesPaymentRecord.id) return false
+      if (holdFeePaymentRecord && p.id === holdFeePaymentRecord.id) return false
       return true
     })
-  }, [sortedPayments, depositPaymentRecord, firstRentPaymentRecord, firstUtilitiesPaymentRecord])
+  }, [sortedPayments, depositPaymentRecord, firstRentPaymentRecord, firstUtilitiesPaymentRecord, holdFeePaymentRecord])
 
   const buildRowFromPayment = useCallback(
     (payment, overrides = {}) => {
@@ -1665,11 +1715,17 @@ function PaymentsPanel({ resident, onResidentUpdated, highlightCategory, onPayme
       const payCategory =
         lineKind === 'fee'
           ? 'fee'
-          : lineKind === 'first_utilities'
-            ? 'first_utilities'
-            : lineKind === 'deposit'
-              ? 'deposit'
-              : 'rent'
+          : lineKind === 'hold_fee'
+            ? 'hold_fee'
+            : lineKind === 'first_utilities'
+              ? 'first_utilities'
+              : lineKind === 'monthly_utilities'
+                ? 'monthly_utilities'
+                : lineKind === 'monthly_rent'
+                  ? 'monthly_rent'
+                  : lineKind === 'deposit'
+                    ? 'deposit'
+                    : 'rent'
       const metaRows = []
       if (dueDateLabel) metaRows.push({ label: 'Due date', value: dueDateLabel })
       if (bal > 0) {
@@ -1697,7 +1753,9 @@ function PaymentsPanel({ resident, onResidentUpdated, highlightCategory, onPayme
         metaRows,
         recordedAt,
         payCategory,
-        paymentRecordId: payment.id,
+        paymentRecordId: /^rec[a-zA-Z0-9]{14,}$/.test(String(payment?.id || '').trim())
+          ? payment.id
+          : undefined,
         sortDue: parseDisplayDate(dueRaw)?.getTime() ?? 0,
         sortAmount: due,
         payDescription,
@@ -1744,6 +1802,50 @@ function PaymentsPanel({ resident, onResidentUpdated, highlightCategory, onPayme
     payPricing.propertyName,
     payPricing.securityDeposit,
     payPricing.unitNumber,
+    resident['Lease Start Date'],
+  ])
+
+  const holdFeeRow = useMemo(() => {
+    const amount = residentRoomHoldFeeUsd(resident)
+    if (amount <= 0) return null
+    if (holdFeePaymentRecord) {
+      return buildRowFromPayment(holdFeePaymentRecord, {
+        title: 'Room hold fee',
+        payDescription: `Room hold fee — ${payPricing.propertyName || 'your home'}`,
+      })
+    }
+    if (holdFeePaid) return null
+    const subtitle =
+      [payPricing.propertyName, normalizeUnitLabel(payPricing.unitNumber || '')].filter(Boolean).join(' · ') ||
+      'Your home'
+    const moveIn = resident['Lease Start Date'] ? formatDate(resident['Lease Start Date']) : ''
+    return {
+      id: 'synth-room-hold-unpaid',
+      title: 'Room hold fee',
+      subtitle,
+      dueDateLabel: moveIn || '—',
+      displayAmount: amount,
+      balance: amount,
+      statusLabel: 'Unpaid',
+      statusHint: 'Credited toward rent or deposit; see your leasing notice for refund timing',
+      metaRows: [
+        { label: 'Due date', value: moveIn || '—' },
+        { label: 'Amount to pay', value: formatMoney(amount) },
+      ],
+      recordedAt: null,
+      payCategory: 'hold_fee',
+      paymentRecordId: undefined,
+      sortDue: parseDisplayDate(resident['Lease Start Date'])?.getTime() ?? 0,
+      sortAmount: amount,
+      payDescription: `Room hold fee — ${payPricing.propertyName || 'your home'}`,
+    }
+  }, [
+    buildRowFromPayment,
+    holdFeePaid,
+    holdFeePaymentRecord,
+    payPricing.propertyName,
+    payPricing.unitNumber,
+    resident.id,
     resident['Lease Start Date'],
   ])
 
@@ -1872,6 +1974,83 @@ function PaymentsPanel({ resident, onResidentUpdated, highlightCategory, onPayme
     resident['Lease Start Date'],
   ])
 
+  /**
+   * After move-in rent is satisfied, show each following month’s rent + (when configured) utilities
+   * until the horizon. Missing Airtable rows appear as synthetic lines so the schedule auto-advances.
+   */
+  const monthlyRecurringRowVMs = useMemo(() => {
+    const leaseStart = resident['Lease Start Date']
+    if (!leaseStart || !firstMonthRentPaid || payPricing.monthlyRent <= 0) return []
+
+    const horizon = Number(import.meta.env.VITE_PAYMENT_SCHEDULE_HORIZON_MONTHS || 12) || 12
+    const yms = iterRecurringBillingMonthKeys(leaseStart, resident['Lease End Date'], horizon)
+    const rd = rentDueDayFromResident(resident)
+    const vms = []
+
+    for (const ym of yms) {
+      const dueStr = dueDateStringForMonth(ym, rd)
+      const rentRec = findRentPaymentForBillingMonth(sortedPayments, ym)
+      if (rentRec) {
+        vms.push(
+          buildRowFromPayment(rentRec, {
+            title: rentRec.Month || `${longMonthLabel(ym)} rent`,
+            payDescription: `${longMonthLabel(ym)} rent — ${payPricing.propertyName || 'your home'}`,
+          }),
+        )
+      } else {
+        const fakeRent = {
+          id: `synth-month-rent-${ym}`,
+          Amount: payPricing.monthlyRent,
+          'Due Date': dueStr,
+          Month: `${longMonthLabel(ym)} rent`,
+          Type: 'Monthly rent',
+          Status: 'Unpaid',
+        }
+        vms.push(
+          buildRowFromPayment(fakeRent, {
+            payDescription: `${longMonthLabel(ym)} rent — ${payPricing.propertyName || 'your home'}`,
+          }),
+        )
+      }
+
+      if (fallbackUtilitiesAmount > 0 && firstMonthUtilitiesPaid) {
+        const urec = findUtilitiesPaymentForBillingMonth(sortedPayments, ym)
+        if (urec) {
+          vms.push(
+            buildRowFromPayment(urec, {
+              title: urec.Month || `${longMonthLabel(ym)} utilities`,
+              payDescription: `${longMonthLabel(ym)} utilities — ${payPricing.propertyName || 'your home'}`,
+            }),
+          )
+        } else {
+          const fakeU = {
+            id: `synth-month-util-${ym}`,
+            Amount: fallbackUtilitiesAmount,
+            'Due Date': dueStr,
+            Month: `${longMonthLabel(ym)} utilities`,
+            Type: 'Monthly utilities',
+            Status: 'Unpaid',
+          }
+          vms.push(
+            buildRowFromPayment(fakeU, {
+              payDescription: `${longMonthLabel(ym)} utilities — ${payPricing.propertyName || 'your home'}`,
+            }),
+          )
+        }
+      }
+    }
+    return vms
+  }, [
+    buildRowFromPayment,
+    firstMonthRentPaid,
+    firstMonthUtilitiesPaid,
+    fallbackUtilitiesAmount,
+    payPricing.monthlyRent,
+    payPricing.propertyName,
+    resident,
+    sortedPayments,
+  ])
+
   useEffect(() => {
     if (highlightCategory === 'extension') {
       setPayFilter('fees')
@@ -1879,8 +2058,20 @@ function PaymentsPanel({ resident, onResidentUpdated, highlightCategory, onPayme
       return
     }
     if (!highlightCategory) return
-    if (highlightCategory === 'deposit' || highlightCategory === 'rent' || highlightCategory === 'utilities') {
+    if (
+      highlightCategory === 'deposit' ||
+      highlightCategory === 'rent' ||
+      highlightCategory === 'utilities' ||
+      highlightCategory === 'hold'
+    ) {
       setPayFilter('pending')
+    }
+    if (highlightCategory === 'hold') {
+      setPayDetailId(
+        holdFeePaymentRecord?.id ||
+          (!holdFeePaid && residentRoomHoldFeeUsd(resident) > 0 ? 'synth-room-hold-unpaid' : null),
+      )
+      return
     }
     if (highlightCategory === 'deposit') {
       setPayDetailId('synth-security-deposit')
@@ -1905,6 +2096,9 @@ function PaymentsPanel({ resident, onResidentUpdated, highlightCategory, onPayme
     firstMonthRentPaid,
     firstMonthUtilitiesPaid,
     fallbackUtilitiesAmount,
+    holdFeePaid,
+    holdFeePaymentRecord,
+    resident,
   ])
 
   const recordRowsForCurrentFilter = useMemo(() => {
@@ -1921,30 +2115,34 @@ function PaymentsPanel({ resident, onResidentUpdated, highlightCategory, onPayme
   )
 
   const moveInRowsCombined = useMemo(
-    () => [depositRow, firstMonthRow, firstUtilitiesRow].filter(Boolean),
-    [depositRow, firstMonthRow, firstUtilitiesRow],
+    () => [holdFeeRow, depositRow, firstMonthRow, firstUtilitiesRow].filter(Boolean),
+    [holdFeeRow, depositRow, firstMonthRow, firstUtilitiesRow],
   )
 
   const unifiedPaymentRows = useMemo(() => {
     if (payFilter === 'fees') return recordVMsForFilter
     if (payFilter === 'paid') {
       const mi = moveInRowsCombined.filter((r) => r.statusLabel === 'Paid')
-      return [...mi, ...recordVMsForFilter]
+      const mo = monthlyRecurringRowVMs.filter((r) => r.statusLabel === 'Paid')
+      return [...mi, ...mo, ...recordVMsForFilter]
     }
     const mi = moveInRowsCombined.filter((r) => r.balance > 0)
-    return [...mi, ...recordVMsForFilter]
-  }, [payFilter, moveInRowsCombined, recordVMsForFilter])
+    const mo = monthlyRecurringRowVMs.filter((r) => r.balance > 0)
+    return [...mi, ...mo, ...recordVMsForFilter]
+  }, [payFilter, moveInRowsCombined, monthlyRecurringRowVMs, recordVMsForFilter])
 
   const sortedUnifiedPaymentRows = useMemo(() => {
     const arr = [...unifiedPaymentRows]
     const moveInRank = (id) => {
       const s = String(id)
-      if (s === 'synth-security-deposit') return 0
-      if (s.startsWith('synth-first-month')) return 1
-      if (s.startsWith('synth-first-utilities')) return 2
+      if (s === 'synth-room-hold-unpaid' || (holdFeePaymentRecord && s === holdFeePaymentRecord.id)) return 0
+      if (s === 'synth-security-deposit') return 1
+      if (s.startsWith('synth-first-month')) return 2
+      if (s.startsWith('synth-first-utilities')) return 3
       const utilRec = firstUtilitiesPaymentRecord
-      if (utilRec && s === utilRec.id) return 2
-      return 3
+      if (utilRec && s === utilRec.id) return 3
+      if (s.startsWith('synth-month-rent-') || s.startsWith('synth-month-util-')) return 4
+      return 4
     }
     arr.sort((a, b) => {
       const mr = moveInRank(a.id) - moveInRank(b.id)
@@ -1955,7 +2153,7 @@ function PaymentsPanel({ resident, onResidentUpdated, highlightCategory, onPayme
       return a.sortDue - b.sortDue
     })
     return arr
-  }, [unifiedPaymentRows, payTableSort, firstUtilitiesPaymentRecord])
+  }, [unifiedPaymentRows, payTableSort, firstUtilitiesPaymentRecord, holdFeePaymentRecord])
 
   const detailRow = useMemo(() => {
     if (!payDetailId) return null
@@ -1968,37 +2166,63 @@ function PaymentsPanel({ resident, onResidentUpdated, highlightCategory, onPayme
 
   const effectiveCurrentDueDate = effectiveCurrentDue?.['Due Date']
 
-  async function launchCheckout({ amount, items, description, category, paymentRecordId }) {
-    setActionError('')
-    setActionLoading(category)
-    setEmbeddedCheckout({
-      title: description,
-      request: {
-        residentId: resident.id,
-        residentName: resident.Name,
-        residentEmail: resident.Email,
-        propertyName: payPricing.propertyName || resident.House,
-        unitNumber: payPricing.unitNumber || resident['Unit Number'],
+  const launchCheckout = useCallback(
+    async ({ amount, items, description, category, paymentRecordId, syntheticRowId }) => {
+      setActionError('')
+      setActionLoading(category)
+      pendingStripeCheckoutRef.current = {
         amount,
         items,
         description,
         category,
         paymentRecordId,
-      },
-      category,
-    })
-  }
+        syntheticRowId,
+        residentId: resident.id,
+        residentName: resident.Name,
+        residentEmail: resident.Email,
+        propertyName: payPricing.propertyName || resident.House,
+        unitNumber: payPricing.unitNumber || resident['Unit Number'],
+      }
+      setEmbeddedCheckout({
+        title: description,
+        request: {
+          residentId: resident.id,
+          residentName: resident.Name,
+          residentEmail: resident.Email,
+          propertyName: payPricing.propertyName || resident.House,
+          unitNumber: payPricing.unitNumber || resident['Unit Number'],
+          amount,
+          items,
+          description,
+          category,
+          paymentRecordId,
+          syntheticRowId,
+        },
+        category,
+      })
+    },
+    [payPricing.propertyName, payPricing.unitNumber, resident],
+  )
 
-  function handleEmbeddedCheckoutClose() {
+  const handleEmbeddedCheckoutClose = useCallback(() => {
+    setActionLoading('')
+    pendingStripeCheckoutRef.current = null
+    setEmbeddedCheckout(null)
+  }, [])
+
+  const handleEmbeddedCheckoutComplete = useCallback(async () => {
     setActionLoading('')
     setEmbeddedCheckout(null)
-  }
-
-  async function handleEmbeddedCheckoutComplete() {
-    setActionLoading('')
-    setEmbeddedCheckout(null)
+    const checkoutPayload = pendingStripeCheckoutRef.current
+    pendingStripeCheckoutRef.current = null
     setLoading(true)
     try {
+      if (checkoutPayload) {
+        await finalizeResidentPaymentAfterStripeSuccess(
+          { resident, checkoutPayload },
+          { updatePaymentRecord, createPaymentRecord },
+        ).catch(() => {})
+      }
       const [refreshed, drafts] = await Promise.all([
         getPaymentsForResident(resident),
         getLeaseDraftsForResident(resident.id).catch(() => []),
@@ -2015,19 +2239,29 @@ function PaymentsPanel({ resident, onResidentUpdated, highlightCategory, onPayme
     } finally {
       setLoading(false)
     }
-  }
+  }, [resident, onPaymentsDataUpdated, onResidentUpdated])
 
   return (
     <div className="mb-10">
       <div className="mb-5 flex flex-wrap items-center gap-3">
         <div className="mr-auto min-w-0">
           <h2 className="text-2xl font-black text-slate-900">Payments</h2>
-          {fallbackUtilitiesAmount > 0 ? (
-            <p className="mt-1 text-sm text-slate-600">
-              Monthly utilities (flat):{' '}
-              <span className="font-semibold text-slate-900">{formatMoney(fallbackUtilitiesAmount)}/mo</span>
-            </p>
-          ) : null}
+          <div className="mt-1 space-y-0.5 text-sm text-slate-600">
+            {residentRoomHoldFeeUsd(resident) > 0 ? (
+              <p>
+                Room hold:{' '}
+                <span className="font-semibold text-slate-900">{formatMoney(residentRoomHoldFeeUsd(resident))}</span>
+                {' — '}due with move-in unless you already have a paid hold line in Airtable
+              </p>
+            ) : null}
+            {fallbackUtilitiesAmount > 0 ? (
+              <p>
+                Monthly utilities (flat):{' '}
+                <span className="font-semibold text-slate-900">{formatMoney(fallbackUtilitiesAmount)}/mo</span>
+                {' — '}first month at move-in; recurring months appear below after move-in rent is paid
+              </p>
+            ) : null}
+          </div>
         </div>
         <label className="flex flex-wrap items-center gap-2 text-sm text-slate-600">
           <span className="font-semibold text-slate-800">Sort</span>
@@ -2049,12 +2283,14 @@ function PaymentsPanel({ resident, onResidentUpdated, highlightCategory, onPayme
             'pending',
             'Due or upcoming',
             moveInRowsCombined.filter((r) => r.balance > 0).length +
+              monthlyRecurringRowVMs.filter((r) => r.balance > 0).length +
               tableSourcePayments.filter((p) => balanceForRecord(p) > 0).length,
           ],
           [
             'paid',
             'Paid',
             moveInRowsCombined.filter((r) => r.statusLabel === 'Paid').length +
+              monthlyRecurringRowVMs.filter((r) => r.statusLabel === 'Paid').length +
               tableSourcePayments.filter((p) => paymentStatusForRecord(p) === 'Paid').length,
           ],
           ['fees', 'Fees & extras', feeChargeRows.length],
@@ -2108,7 +2344,7 @@ function PaymentsPanel({ resident, onResidentUpdated, highlightCategory, onPayme
                             d="M9 14.25h6m-6 3h6m2.25 3.75H6.75a2.25 2.25 0 0 1-2.25-2.25V5.25A2.25 2.25 0 0 1 6.75 3h10.5A2.25 2.25 0 0 1 19.5 5.25v13.5A2.25 2.25 0 0 1 17.25 21Zm-8.25-12h6a.75.75 0 0 0 .75-.75v-1.5a.75.75 0 0 0-.75-.75h-6a.75.75 0 0 0-.75.75v1.5c0 .414.336.75.75.75Z"
                           />
                         </svg>
-                        <span>No fees or utilities charges right now</span>
+                        <span>No fee or extra charges right now</span>
                       </div>
                     )
                   : payFilter === 'paid' && unifiedPaymentRows.length === 0
@@ -2170,6 +2406,7 @@ function PaymentsPanel({ resident, onResidentUpdated, highlightCategory, onPayme
                     description: detailRow.payDescription,
                     category: detailRow.payCategory,
                     paymentRecordId: detailRow.paymentRecordId,
+                    syntheticRowId: String(detailRow.id || '').startsWith('synth-') ? detailRow.id : undefined,
                   })}
                 payLoadingKey={actionLoading}
               />
@@ -2216,6 +2453,11 @@ function pickBestLeaseDraft(drafts) {
     sorted.find((d) => String(d.Status || '').trim() === 'Published') ||
     sorted[0]
   )
+}
+
+/** Prefer signed lease for amounts; else best draft so Published rows still drive move-in amounts before signing. */
+function pickLeaseDraftForPaymentsPricing(drafts) {
+  return pickSignedLeaseDraft(drafts) || pickBestLeaseDraft(drafts) || null
 }
 
 function LeasingPanel({ resident, payments, onOpenPayments }) {
@@ -2382,7 +2624,7 @@ function LeasingPanel({ resident, payments, onOpenPayments }) {
         </p>
         <button
           type="button"
-          onClick={() => onOpenPayments('pending')}
+          onClick={() => onOpenPayments('hold')}
           className="mt-3 text-sm font-semibold text-[#2563eb] underline decoration-sky-400 underline-offset-2 hover:decoration-[#2563eb]"
         >
           Open Payments to pay the hold or move-in charges
