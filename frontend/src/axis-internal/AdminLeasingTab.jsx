@@ -1,29 +1,14 @@
-/**
- * AdminLeasingTab.jsx
- *
- * The "Leasing" tab in the Admin portal. Shows all lease drafts across all
- * managers/properties with full filter controls. Admin has full edit, version
- * upload, and status control access via the shared LeaseWorkspace.
- *
- * Props:
- *   adminUser – admin session object (AXIS_ADMIN_SESSION_KEY)
- *   accounts  – loaded manager accounts for name lookup
- */
-
 import React, { useState, useEffect, useCallback, useMemo } from 'react'
 import toast from 'react-hot-toast'
-import LeaseWorkspace from '../components/LeaseWorkspace.jsx'
-import {
-  getStatusConfig,
-  WORKFLOW_STATUS_LIST,
-  fmtTs,
-} from '../lib/leaseWorkflowConstants.js'
+import LeaseHTMLTemplate from '../components/LeaseHTMLTemplate.jsx'
+import { DataTable } from '../components/PortalShell'
+import { getStatusConfig, fmtTs } from '../lib/leaseWorkflowConstants.js'
+import { getLeaseDraftById, uploadLeaseVersionPdfFile } from '../lib/airtable.js'
 
 const AIRTABLE_TOKEN = import.meta.env.VITE_AIRTABLE_TOKEN
 const CORE_BASE_ID = import.meta.env.VITE_AIRTABLE_BASE_ID || 'appol57LKtMKaQ75T'
 const AT_BASE = `https://api.airtable.com/v0/${CORE_BASE_ID}`
 
-// ─── Data fetching ────────────────────────────────────────────────────────────
 async function fetchAllLeaseDrafts() {
   const rows = []
   let offset = null
@@ -38,54 +23,39 @@ async function fetchAllLeaseDrafts() {
       throw new Error(text.slice(0, 300))
     }
     const data = await res.json()
-    for (const r of (data.records || [])) rows.push({ id: r.id, ...r.fields })
+    for (const record of data.records || []) rows.push({ id: record.id, ...record.fields })
     offset = data.offset || null
   } while (offset)
   return rows
 }
 
-async function fetchAdminUnreadNotificationCount(adminRecordId) {
-  if (!adminRecordId) return 0
-  try {
-    const url = new URL(`${AT_BASE}/Lease%20Notifications`)
-    url.searchParams.set('filterByFormula', `AND({Recipient Record ID}="${adminRecordId}",{Recipient Role}="admin",NOT({Is Read}))`)
-    url.searchParams.set('fields[]', 'Is Read')
-    const res = await fetch(url.toString(), { headers: { Authorization: `Bearer ${AIRTABLE_TOKEN}` } })
-    if (!res.ok) return 0
-    const data = await res.json()
-    return (data.records || []).length
-  } catch {
-    return 0
-  }
+async function callPortalAction(action, body) {
+  const response = await fetch(`/api/portal?action=${encodeURIComponent(action)}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body || {}),
+  })
+  const data = await response.json().catch(() => ({}))
+  if (!response.ok || data?.error) throw new Error(data?.error || `Request failed (${response.status})`)
+  return data
 }
 
-// ─── Filter definitions ────────────────────────────────────────────────────────
 const ADMIN_STATUS_FILTER_ITEMS = [
   { id: 'all', label: 'All Leases', match: () => true },
   {
     id: 'draft_ready',
     label: 'Draft Ready',
-    match: (s) => ['Draft Generated', 'Under Review', 'Changes Needed', 'Approved', 'Sent Back to Manager'].includes(String(s || '').trim()),
+    match: (status) => ['Draft Generated', 'Under Review', 'Changes Needed', 'Approved', 'Sent Back to Manager'].includes(String(status || '').trim()),
   },
   {
     id: 'admin_review',
     label: 'Admin Review',
-    match: (s) => ['Submitted to Admin', 'Admin In Review', 'Changes Made', 'Manager Approved', 'Ready for Signature'].includes(String(s || '').trim()),
+    match: (status) => ['Submitted to Admin', 'Admin In Review', 'Changes Made', 'Manager Approved', 'Ready for Signature'].includes(String(status || '').trim()),
   },
-  { id: 'sent', label: 'With Resident', match: (s) => String(s || '').trim() === 'Published' },
-  { id: 'signed', label: 'Signed', match: (s) => String(s || '').trim() === 'Signed' },
+  { id: 'sent', label: 'With Resident', match: (status) => String(status || '').trim() === 'Published' },
+  { id: 'signed', label: 'Signed', match: (status) => String(status || '').trim() === 'Signed' },
 ]
 
-function adminQueueLabel(status) {
-  const normalized = String(status || '').trim()
-  if (['Draft Generated', 'Under Review', 'Changes Needed', 'Approved', 'Sent Back to Manager'].includes(normalized)) return 'Draft Ready'
-  if (['Submitted to Admin', 'Admin In Review', 'Changes Made', 'Manager Approved', 'Ready for Signature'].includes(normalized)) return 'Admin Review'
-  if (normalized === 'Published') return 'With Resident'
-  if (normalized === 'Signed') return 'Signed'
-  return normalized || 'Draft Ready'
-}
-
-// ─── Sub-components ───────────────────────────────────────────────────────────
 function StatusPill({ status }) {
   const cfg = getStatusConfig(status)
   return (
@@ -96,61 +66,22 @@ function StatusPill({ status }) {
   )
 }
 
-function AdminLeasingTableRow({ draft, onOpen, managerName }) {
-  const status = draft['Status'] || 'Draft Generated'
-  const cfg = getStatusConfig(status)
-  return (
-    <tr
-      className="cursor-pointer border-b border-slate-100 transition hover:bg-sky-50/70 last:border-0"
-      onClick={() => onOpen(draft)}
-    >
-      <td className="px-4 py-3">
-        <span className="font-mono text-[10px] text-slate-400">#{draft.id?.slice(-8)}</span>
-      </td>
-      <td className="px-4 py-3">
-        <div className="font-semibold text-slate-900">{draft['Resident Name'] || '—'}</div>
-        <div className="text-xs text-slate-500">{draft['Resident Email'] || 'No email'}</div>
-      </td>
-      <td className="px-4 py-3">
-        <div className="text-sm font-medium text-slate-800">{draft['Property'] || '—'}</div>
-        <div className="text-xs text-slate-500">{draft['Unit'] ? `Unit ${draft['Unit']}` : '—'}</div>
-      </td>
-      <td className="px-4 py-3">
-        <div className="text-xs text-slate-600">{managerName || '—'}</div>
-      </td>
-      <td className="px-4 py-3 text-center">
-        <StatusPill status={status} />
-        <div className="mt-1 text-[10px] font-bold uppercase tracking-wide text-slate-400">{adminQueueLabel(status)}</div>
-        {cfg.adminActionNeeded && (
-          <div className="mt-1 text-[10px] font-bold uppercase tracking-wide text-blue-600">Action needed</div>
-        )}
-      </td>
-      <td className="px-4 py-3 text-center">
-        <span className="text-sm text-slate-600">{draft['Current Version'] ? `v${draft['Current Version']}` : 'v1'}</span>
-      </td>
-      <td className="px-4 py-3 text-right">
-        <span className="text-xs text-slate-400">{fmtTs(draft['Updated At'] || draft['created_at'])}</span>
-      </td>
-      <td className="px-4 py-3 text-right">
-        <span className="text-sm font-semibold text-[#2563eb]">Open →</span>
-      </td>
-    </tr>
-  )
-}
-
-// ─── Main component ───────────────────────────────────────────────────────────
 export default function AdminLeasingTab({ adminUser, accounts = [] }) {
   const [drafts, setDrafts] = useState([])
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState('')
-  const [selectedDraft, setSelectedDraft] = useState(null)
   const [statusFilter, setStatusFilter] = useState('all')
-  const [statusDropdown, setStatusDropdown] = useState('')
-  const [managerFilter, setManagerFilter] = useState('')
-  const [propertySearch, setPropertySearch] = useState('')
-  const [unreadCount, setUnreadCount] = useState(0)
+  const [selectedDraftId, setSelectedDraftId] = useState('')
+  const [activeDraft, setActiveDraft] = useState(null)
+  const [detailLoading, setDetailLoading] = useState(false)
+  const [actionBusy, setActionBusy] = useState('')
+  const [showUploadForm, setShowUploadForm] = useState(false)
+  const [pdfFile, setPdfFile] = useState(null)
+  const [showChangeBox, setShowChangeBox] = useState(false)
+  const [changeRequestText, setChangeRequestText] = useState('')
 
   const adminRecordId = adminUser?.airtableRecordId || adminUser?.id || ''
+  const adminName = adminUser?.name || adminUser?.email || 'Admin'
 
   const loadDrafts = useCallback(async () => {
     setLoading(true)
@@ -170,282 +101,342 @@ export default function AdminLeasingTab({ adminUser, accounts = [] }) {
     loadDrafts()
   }, [loadDrafts])
 
-  useEffect(() => {
-    fetchAdminUnreadNotificationCount(adminRecordId).then(setUnreadCount)
-  }, [adminRecordId])
-
-  // Build manager ID → name lookup from accounts
   const managerNameMap = useMemo(() => {
     const map = new Map()
-    for (const a of accounts) {
-      if (a.id) map.set(a.id, a.businessName || a.name || a.email || a.id)
+    for (const account of accounts) {
+      const display = account.businessName || account.name || account.email || account.id || account.airtableRecordId || ''
+      if (account.id) map.set(account.id, display)
+      if (account.airtableRecordId) map.set(account.airtableRecordId, display)
     }
     return map
   }, [accounts])
 
-  // Unique property names for filter dropdown
-  const propertyOptions = useMemo(() => {
-    const set = new Set()
-    for (const d of drafts) {
-      const p = String(d['Property'] || '').trim()
-      if (p) set.add(p)
-    }
-    return [...set].sort()
-  }, [drafts])
-
-  // Unique manager IDs for filter dropdown
-  const managerOptions = useMemo(() => {
-    const set = new Set()
-    for (const d of drafts) {
-      const oid = String(d['Owner ID'] || '').trim()
-      if (oid) set.add(oid)
-    }
-    return [...set].sort()
-  }, [drafts])
-
   const visibleDrafts = useMemo(() => {
-    // Quick filter card
-    const quickFn = ADMIN_STATUS_FILTER_ITEMS.find(f => f.id === statusFilter)?.match ?? (() => true)
-    let result = drafts.filter(d => quickFn(d['Status'] || ''))
-
-    // Dropdown status filter
-    if (statusDropdown) result = result.filter(d => d['Status'] === statusDropdown)
-
-    // Manager filter
-    if (managerFilter) result = result.filter(d => d['Owner ID'] === managerFilter)
-
-    // Property / tenant search
-    if (propertySearch.trim()) {
-      const q = propertySearch.trim().toLowerCase()
-      result = result.filter(d =>
-        (d['Property'] || '').toLowerCase().includes(q) ||
-        (d['Resident Name'] || '').toLowerCase().includes(q)
-      )
-    }
-
-    return result
-  }, [drafts, statusFilter, statusDropdown, managerFilter, propertySearch])
+    const filterFn = ADMIN_STATUS_FILTER_ITEMS.find((item) => item.id === statusFilter)?.match ?? (() => true)
+    return drafts.filter((draft) => filterFn(draft['Status'] || ''))
+  }, [drafts, statusFilter])
 
   const statusCounts = useMemo(() => {
-    return ADMIN_STATUS_FILTER_ITEMS.reduce((acc, f) => {
-      acc[f.id] = f.id === 'all' ? drafts.length : drafts.filter(d => f.match(d['Status'] || '')).length
+    return ADMIN_STATUS_FILTER_ITEMS.reduce((acc, item) => {
+      acc[item.id] = item.id === 'all' ? drafts.length : drafts.filter((draft) => item.match(draft['Status'] || '')).length
       return acc
     }, {})
   }, [drafts])
 
-  const actionNeededDrafts = useMemo(
-    () => drafts.filter(d => getStatusConfig(d['Status'] || '').adminActionNeeded),
-    [drafts]
-  )
+  const leaseJson = useMemo(() => {
+    try {
+      return JSON.parse(activeDraft?.['Lease JSON'] || '{}')
+    } catch {
+      return {}
+    }
+  }, [activeDraft])
 
-  const selectCls = 'h-[38px] cursor-pointer appearance-none rounded-full border border-slate-200 bg-white py-2 pl-3 pr-8 text-xs font-medium text-slate-700 focus:border-[#2563eb] focus:outline-none focus:ring-2 focus:ring-[#2563eb]/20'
+  const openLeaseDetails = useCallback(async (draft) => {
+    if (!draft?.id) return
+    if (selectedDraftId === draft.id) {
+      setSelectedDraftId('')
+      setActiveDraft(null)
+      setShowUploadForm(false)
+      setShowChangeBox(false)
+      setPdfFile(null)
+      setChangeRequestText('')
+      return
+    }
+    setDetailLoading(true)
+    try {
+      const full = await getLeaseDraftById(draft.id).catch(() => draft)
+      setSelectedDraftId(String(full?.id || draft.id))
+      setActiveDraft(full)
+      setShowUploadForm(false)
+      setShowChangeBox(false)
+      setPdfFile(null)
+      setChangeRequestText('')
+    } catch (err) {
+      toast.error(err.message || 'Could not open lease details')
+    } finally {
+      setDetailLoading(false)
+    }
+  }, [selectedDraftId])
 
-  if (selectedDraft) {
-    return (
-      <LeaseWorkspace
-        draft={selectedDraft}
-        isAdmin={true}
-        adminUser={adminUser}
-        onBack={() => setSelectedDraft(null)}
-        onRefresh={loadDrafts}
-      />
-    )
+  async function handleSendToManager() {
+    if (!activeDraft?.id) return
+    setActionBusy('send')
+    try {
+      await callPortalAction('lease-admin-respond', {
+        leaseDraftId: activeDraft.id,
+        adminRecordId,
+        adminName,
+        newStatus: 'Sent Back to Manager',
+        adminNotes: 'Lease sent to manager for review.',
+      })
+      toast.success('Sent to manager')
+      const full = await getLeaseDraftById(activeDraft.id).catch(() => activeDraft)
+      setActiveDraft(full)
+      await loadDrafts()
+    } catch (err) {
+      toast.error(err.message || 'Could not send to manager')
+    } finally {
+      setActionBusy('')
+    }
+  }
+
+  async function handleSavePdf() {
+    if (!activeDraft?.id) return
+    if (!pdfFile) {
+      toast.error('Select a PDF first')
+      return
+    }
+    setActionBusy('upload')
+    try {
+      await uploadLeaseVersionPdfFile({
+        leaseDraftId: activeDraft.id,
+        file: pdfFile,
+        uploaderName: adminName,
+        uploaderRole: 'Admin',
+      })
+      toast.success('PDF uploaded')
+      setShowUploadForm(false)
+      setPdfFile(null)
+      const full = await getLeaseDraftById(activeDraft.id).catch(() => activeDraft)
+      setActiveDraft(full)
+      await loadDrafts()
+    } catch (err) {
+      toast.error(err.message || 'Could not upload PDF')
+    } finally {
+      setActionBusy('')
+    }
+  }
+
+  async function handleRequestChange() {
+    if (!activeDraft?.id) return
+    const text = String(changeRequestText || '').trim()
+    if (!text) {
+      toast.error('Enter a change request first')
+      return
+    }
+    setActionBusy('request-change')
+    try {
+      await callPortalAction('lease-admin-respond', {
+        leaseDraftId: activeDraft.id,
+        adminRecordId,
+        adminName,
+        newStatus: 'Sent Back to Manager',
+        adminNotes: text,
+      })
+      toast.success('Change request sent to manager')
+      setShowChangeBox(false)
+      setChangeRequestText('')
+      const full = await getLeaseDraftById(activeDraft.id).catch(() => activeDraft)
+      setActiveDraft(full)
+      await loadDrafts()
+    } catch (err) {
+      toast.error(err.message || 'Could not send change request')
+    } finally {
+      setActionBusy('')
+    }
   }
 
   return (
     <div className="space-y-5">
-      {/* Header */}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-2xl font-black text-slate-900">Leases</h1>
-          <p className="mt-0.5 text-sm text-slate-500">
-            Review drafts, update leases, and track what is with residents or fully signed
-          </p>
         </div>
-        <div className="flex items-center gap-2">
-          {unreadCount > 0 && (
-            <span className="flex items-center gap-1.5 rounded-full bg-blue-100 px-3 py-1 text-xs font-bold text-blue-700">
-              <span className="h-1.5 w-1.5 rounded-full bg-blue-500" />
-              {unreadCount} unread
-            </span>
-          )}
-          <button
-            type="button"
-            onClick={loadDrafts}
-            disabled={loading}
-            className="rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-50 disabled:opacity-50"
-          >
-            {loading ? 'Loading…' : 'Refresh'}
-          </button>
-        </div>
+        <button
+          type="button"
+          onClick={loadDrafts}
+          disabled={loading}
+          className="rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-50 disabled:opacity-50"
+        >
+          {loading ? 'Loading…' : 'Refresh'}
+        </button>
       </div>
 
-      {/* Action-needed banner */}
-      {actionNeededDrafts.length > 0 && (
-        <div className="flex flex-wrap items-center gap-3 rounded-2xl border border-blue-200 bg-blue-50 px-4 py-3">
-          <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-blue-500 text-xs font-black text-white">
-            {actionNeededDrafts.length}
-          </span>
-          <div className="flex-1">
-            <p className="text-sm font-bold text-blue-900">Admin action needed</p>
-            <p className="text-xs text-blue-800">
-              {actionNeededDrafts.length} lease{actionNeededDrafts.length !== 1 ? 's' : ''} waiting on admin
-            </p>
-          </div>
-          <button
-            type="button"
-            onClick={() => setStatusFilter('admin_review')}
-            className="rounded-xl bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-blue-700"
-          >
-            Review
-          </button>
-        </div>
-      )}
-
-      {loadError && (
+      {loadError ? (
         <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-900">
           <span className="font-semibold">Could not load leases: </span>{loadError}
         </div>
-      )}
+      ) : null}
 
-      {/* Filter pills */}
-      <div className="grid grid-cols-2 gap-2 rounded-[28px] border border-slate-200 bg-slate-50 p-2 sm:grid-cols-4">
-        {ADMIN_STATUS_FILTER_ITEMS.map(f => (
-          <button
-            key={f.id}
-            type="button"
-            onClick={() => setStatusFilter(f.id)}
-            className={`rounded-2xl border px-4 py-3 text-left transition ${
-              statusFilter === f.id
-                ? 'border-[#2563eb]/30 bg-white text-slate-900 shadow-[0_10px_24px_rgba(37,99,235,0.12)]'
-                : 'border-transparent text-slate-600 hover:border-slate-200 hover:bg-white/70 hover:text-slate-900'
-            }`}
-          >
-            <div className="text-lg font-black leading-none tabular-nums text-slate-900">{statusCounts[f.id]}</div>
-            <div className="mt-0.5 text-xs font-semibold">{f.label}</div>
-          </button>
-        ))}
+      <div className="overflow-x-auto">
+        <div className="grid min-w-[760px] grid-cols-5 gap-2 rounded-[28px] border border-slate-200 bg-slate-50 p-2">
+          {ADMIN_STATUS_FILTER_ITEMS.map((item) => (
+            <button
+              key={item.id}
+              type="button"
+              onClick={() => setStatusFilter(item.id)}
+              className={`rounded-2xl border px-4 py-3 text-left transition ${
+                statusFilter === item.id
+                  ? 'border-[#2563eb]/30 bg-white text-slate-900 shadow-[0_10px_24px_rgba(37,99,235,0.12)]'
+                  : 'border-transparent text-slate-600 hover:border-slate-200 hover:bg-white/70 hover:text-slate-900'
+              }`}
+            >
+              <div className="text-lg font-black leading-none tabular-nums text-slate-900">{statusCounts[item.id]}</div>
+              <div className="mt-0.5 text-xs font-semibold">{item.label}</div>
+            </button>
+          ))}
+        </div>
       </div>
 
-      {/* Advanced filters */}
-      <div className="flex flex-wrap gap-2">
-        {/* Status dropdown */}
-        <div className="relative">
-          <select value={statusDropdown} onChange={e => setStatusDropdown(e.target.value)} className={selectCls}>
-            <option value="">All statuses</option>
-            {WORKFLOW_STATUS_LIST.map(s => (
-              <option key={s} value={s}>{s}</option>
-            ))}
-          </select>
-          <span className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 text-xs">▾</span>
-        </div>
-
-        {/* Manager filter */}
-        {managerOptions.length > 0 && (
-          <div className="relative">
-            <select value={managerFilter} onChange={e => setManagerFilter(e.target.value)} className={selectCls}>
-              <option value="">All managers</option>
-              {managerOptions.map(id => (
-                <option key={id} value={id}>{managerNameMap.get(id) || id}</option>
-              ))}
-            </select>
-            <span className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 text-xs">▾</span>
-          </div>
-        )}
-
-        {/* Property/tenant search */}
-        <div className="relative flex-1 min-w-[200px]">
-          <input
-            value={propertySearch}
-            onChange={e => setPropertySearch(e.target.value)}
-            placeholder="Search property or tenant…"
-            className="h-[38px] w-full rounded-full border border-slate-200 bg-white py-2 pl-9 pr-4 text-xs text-slate-700 placeholder:text-slate-400 focus:border-[#2563eb] focus:outline-none focus:ring-2 focus:ring-[#2563eb]/20"
-          />
-          <svg className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" d="m21 21-5.197-5.197m0 0A7.5 7.5 0 1 0 5.196 5.196a7.5 7.5 0 0 0 10.607 10.607Z" />
-          </svg>
-        </div>
-
-        {(statusDropdown || managerFilter || propertySearch) && (
-          <button
-            type="button"
-            onClick={() => { setStatusDropdown(''); setManagerFilter(''); setPropertySearch('') }}
-            className="rounded-full border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-500 hover:bg-slate-50"
-          >
-            Clear filters
-          </button>
-        )}
-      </div>
-
-      {/* Table */}
       <div className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm">
         {loading ? (
           <div className="px-6 py-16 text-center text-sm text-slate-500">Loading leases…</div>
         ) : visibleDrafts.length === 0 ? (
-          <div className="px-6 py-16 text-center">
-            <div className="mb-3 text-4xl" aria-hidden>📋</div>
-            {drafts.length === 0 ? (
-              <>
-                <div className="text-sm font-semibold text-slate-700">No lease records found</div>
-                <p className="mt-2 max-w-sm mx-auto text-xs text-slate-500">
-                  Leases will appear here once managers generate drafts from their applications.
-                </p>
-              </>
-            ) : (
-              <div className="text-sm font-semibold text-slate-700">No leases match the current filters</div>
-            )}
-          </div>
+          <div className="px-6 py-16" />
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[800px]">
-              <thead>
-                <tr className="border-b border-slate-100 bg-slate-50/70">
-                  <th className="px-4 py-3 text-left text-[10px] font-bold uppercase tracking-[0.12em] text-slate-400">ID</th>
-                  <th className="px-4 py-3 text-left text-[10px] font-bold uppercase tracking-[0.12em] text-slate-400">Tenant</th>
-                  <th className="px-4 py-3 text-left text-[10px] font-bold uppercase tracking-[0.12em] text-slate-400">Property</th>
-                  <th className="px-4 py-3 text-left text-[10px] font-bold uppercase tracking-[0.12em] text-slate-400">Manager</th>
-                  <th className="px-4 py-3 text-center text-[10px] font-bold uppercase tracking-[0.12em] text-slate-400">Status</th>
-                  <th className="px-4 py-3 text-center text-[10px] font-bold uppercase tracking-[0.12em] text-slate-400">Version</th>
-                  <th className="px-4 py-3 text-right text-[10px] font-bold uppercase tracking-[0.12em] text-slate-400">Updated</th>
-                  <th className="px-4 py-3 text-right text-[10px] font-bold uppercase tracking-[0.12em] text-slate-400"></th>
-                </tr>
-              </thead>
-              <tbody>
-                {visibleDrafts.map(draft => (
-                  <AdminLeasingTableRow
-                    key={draft.id}
-                    draft={draft}
-                    onOpen={setSelectedDraft}
-                    managerName={managerNameMap.get(draft['Owner ID']) || draft['Owner ID'] || '—'}
-                  />
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-        {!loading && visibleDrafts.length > 0 && (
-          <div className="border-t border-slate-100 px-4 py-2.5 text-right text-xs text-slate-400">
-            Showing {visibleDrafts.length} of {drafts.length} total lease records
-          </div>
+          <DataTable
+            empty="No leases in this view"
+            columns={[
+              {
+                key: 'property',
+                label: 'Property',
+                headerClassName: 'w-[30%]',
+                render: (draft) => (
+                  <>
+                    <div className="font-semibold text-slate-900">{draft['Property'] || 'Property not set'}</div>
+                    <div className="text-xs text-slate-500">{draft['Resident Name'] || 'Resident not set'}</div>
+                  </>
+                ),
+              },
+              {
+                key: 'summary',
+                label: 'Summary',
+                headerClassName: 'w-[40%]',
+                render: (draft) => (
+                  <div className="flex flex-wrap gap-1.5">
+                    {draft['Unit'] ? <span className="rounded-full border border-slate-200 bg-white px-2.5 py-0.5 text-[11px] font-semibold text-slate-600">Room {draft['Unit']}</span> : null}
+                    <span className="rounded-full border border-slate-200 bg-white px-2.5 py-0.5 text-[11px] font-semibold text-slate-600">
+                      Manager {managerNameMap.get(draft['Owner ID']) || 'Not set'}
+                    </span>
+                    <span className="rounded-full border border-slate-200 bg-white px-2.5 py-0.5 text-[11px] font-semibold text-slate-600">{draft['Current Version'] ? `v${draft['Current Version']}` : 'v1'}</span>
+                    <span className="rounded-full border border-slate-200 bg-white px-2.5 py-0.5 text-[11px] font-semibold text-slate-600">Updated {fmtTs(draft['Updated At'] || draft['created_at'])}</span>
+                  </div>
+                ),
+              },
+              {
+                key: 'status',
+                label: 'Status',
+                headerClassName: 'w-[16%] text-center',
+                cellClassName: 'text-center',
+                render: (draft) => <StatusPill status={draft['Status'] || 'Draft Generated'} />,
+              },
+              {
+                key: 'action',
+                label: 'Action',
+                headerClassName: 'w-[14%] text-right',
+                cellClassName: 'text-right',
+                render: (draft) => (
+                  <button
+                    type="button"
+                    onClick={() => openLeaseDetails(draft)}
+                    className="whitespace-nowrap text-sm font-semibold text-[#2563eb]"
+                  >
+                    {selectedDraftId === draft.id ? 'Hide' : 'Details'}
+                  </button>
+                ),
+              },
+            ]}
+            rows={visibleDrafts.map((draft) => ({ key: draft.id, data: draft }))}
+          />
         )}
       </div>
 
-      {/* Summary stats */}
-      {!loading && drafts.length > 0 && (
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-          {[
-            { label: 'Total Leases', value: drafts.length, color: 'text-slate-900' },
-            { label: 'Draft Ready', value: drafts.filter(d => ADMIN_STATUS_FILTER_ITEMS[1].match(d['Status'])).length, color: 'text-amber-700' },
-            { label: 'Admin Review', value: drafts.filter(d => ADMIN_STATUS_FILTER_ITEMS[2].match(d['Status'])).length, color: 'text-blue-700' },
-            { label: 'Signed', value: drafts.filter(d => d['Status'] === 'Signed').length, color: 'text-purple-700' },
-          ].map(s => (
-            <div key={s.label} className="rounded-2xl border border-slate-200 bg-white p-4">
-              <div className={`text-2xl font-black tabular-nums ${s.color}`}>{s.value}</div>
-              <div className="mt-0.5 text-[11px] font-semibold uppercase tracking-wide text-slate-400">{s.label}</div>
+      {selectedDraftId ? (
+        <div className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm">
+          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 px-5 py-4">
+            <div className="flex flex-wrap items-center gap-2">
+              <h3 className="text-2xl font-black text-slate-900">Lease Draft</h3>
+              <StatusPill status={activeDraft?.Status || 'Draft Generated'} />
             </div>
-          ))}
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={handleSendToManager}
+                disabled={actionBusy === 'send' || detailLoading || !activeDraft?.id}
+                className="rounded-full bg-axis px-4 py-2 text-sm font-semibold text-white transition hover:brightness-105 disabled:opacity-50"
+              >
+                {actionBusy === 'send' ? 'Sending...' : 'Send to Manager'}
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowUploadForm((value) => !value)}
+                className="rounded-full border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:border-slate-400"
+              >
+                Upload PDF
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowChangeBox((value) => !value)}
+                className="rounded-full border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:border-slate-400"
+              >
+                Request change
+              </button>
+            </div>
+          </div>
+
+          {showUploadForm ? (
+            <div className="border-b border-slate-100 bg-slate-50 px-5 py-4">
+              <div className="grid gap-3 sm:grid-cols-2">
+                <input
+                  type="file"
+                  accept="application/pdf,.pdf"
+                  onChange={(event) => setPdfFile(event.target.files?.[0] || null)}
+                  className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-[#2563eb] focus:ring-2 focus:ring-[#2563eb]/20"
+                />
+                <div className="flex items-center rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-500">
+                  {pdfFile?.name || 'Choose a PDF from your computer'}
+                </div>
+              </div>
+              <div className="mt-3">
+                <button
+                  type="button"
+                  onClick={handleSavePdf}
+                  disabled={actionBusy === 'upload'}
+                  className="rounded-full bg-axis px-4 py-2 text-sm font-semibold text-white transition hover:brightness-105 disabled:opacity-50"
+                >
+                  {actionBusy === 'upload' ? 'Saving...' : 'Save PDF'}
+                </button>
+              </div>
+            </div>
+          ) : null}
+
+          {showChangeBox ? (
+            <div className="border-b border-slate-100 bg-slate-50 px-5 py-4">
+              <textarea
+                value={changeRequestText}
+                onChange={(event) => setChangeRequestText(event.target.value)}
+                rows={4}
+                placeholder="What changes do you need from the manager?"
+                className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-[#2563eb] focus:ring-2 focus:ring-[#2563eb]/20"
+              />
+              <div className="mt-3">
+                <button
+                  type="button"
+                  onClick={handleRequestChange}
+                  disabled={actionBusy === 'request-change'}
+                  className="rounded-full bg-axis px-4 py-2 text-sm font-semibold text-white transition hover:brightness-105 disabled:opacity-50"
+                >
+                  {actionBusy === 'request-change' ? 'Sending...' : 'Send request'}
+                </button>
+              </div>
+            </div>
+          ) : null}
+
+          <div className="px-4 py-5 sm:px-6">
+            {detailLoading ? (
+              <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-6 text-sm text-slate-500">Loading lease details...</div>
+            ) : leaseJson && Object.keys(leaseJson).length > 0 ? (
+              <LeaseHTMLTemplate
+                leaseData={leaseJson}
+                signedBy={activeDraft?.['Signed By']}
+                signedAt={activeDraft?.['Signed At']}
+              />
+            ) : (
+              <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-6 text-sm text-slate-500">Lease document is not available yet.</div>
+            )}
+          </div>
         </div>
-      )}
+      ) : null}
     </div>
   )
 }

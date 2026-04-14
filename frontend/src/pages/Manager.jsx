@@ -3602,6 +3602,12 @@ function WorkOrdersTabPanel({ allowedPropertyNames, allowedPropertyIds }) {
   const [loadError, setLoadError] = useState('')
   const [saving, setSaving] = useState(false)
   const [scheduledVisitDate, setScheduledVisitDate] = useState('')
+  const tomorrowIso = useMemo(() => {
+    const next = new Date()
+    next.setHours(0, 0, 0, 0)
+    next.setDate(next.getDate() + 1)
+    return next.toISOString().slice(0, 10)
+  }, [])
 
   const fieldCls =
     'w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none transition focus:border-[#2563eb] focus:ring-2 focus:ring-[#2563eb]/20'
@@ -3791,8 +3797,19 @@ function WorkOrdersTabPanel({ allowedPropertyNames, allowedPropertyIds }) {
     event.preventDefault()
     if (!record?.id) return
     const dateStr = String(scheduledVisitDate || '').trim()
-    const resolved = workOrderIsResolvedRecord(record)
-    const nextStatus = resolved ? 'Completed' : (dateStr ? 'Scheduled' : 'Open')
+    const today = new Date()
+    today.setHours(0, 0, 0, 0)
+    if (dateStr) {
+      const scheduledDate = new Date(`${dateStr}T00:00:00`)
+      if (!(scheduledDate > today)) {
+        toast.error('Scheduled visit date must be after today')
+        return
+      }
+    }
+
+    const isScheduling = Boolean(dateStr)
+    const resolved = isScheduling ? false : workOrderIsResolvedRecord(record)
+    const nextStatus = isScheduling ? 'Scheduled' : (resolved ? 'Completed' : 'Open')
 
     setSaving(true)
     try {
@@ -3800,8 +3817,10 @@ function WorkOrdersTabPanel({ allowedPropertyNames, allowedPropertyIds }) {
         Status: nextStatus,
         Resolved: resolved,
       }
-      if (!resolved && dateStr) {
+      if (dateStr) {
         fields['Scheduled Date'] = dateStr
+      } else {
+        fields['Scheduled Date'] = ''
       }
 
       let nextRecord
@@ -3820,7 +3839,7 @@ function WorkOrdersTabPanel({ allowedPropertyNames, allowedPropertyIds }) {
       setRecord(nextRecord)
       applyRecordToForm(nextRecord)
       await loadList()
-      toast.success('Work order saved')
+      toast.success(isScheduling ? 'Work order scheduled' : 'Work order saved')
     } catch (err) {
       toast.error(err.message || 'Could not save work order')
     } finally {
@@ -4018,6 +4037,7 @@ function WorkOrdersTabPanel({ allowedPropertyNames, allowedPropertyIds }) {
                     type="date"
                     value={scheduledVisitDate}
                     onChange={(e) => setScheduledVisitDate(e.target.value)}
+                    min={tomorrowIso}
                     className={fieldCls}
                   />
                 </div>

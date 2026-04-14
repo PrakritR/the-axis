@@ -686,6 +686,20 @@ async function uploadAttachmentToRecord(table, recordId, fieldName, file) {
   return response.json()
 }
 
+function extractAttachmentUrl(uploadResponse, fieldName) {
+  const fields = uploadResponse?.fields || uploadResponse?.record?.fields || {}
+  const attachments = fields?.[fieldName]
+  if (!Array.isArray(attachments)) return ''
+  const first = attachments.find((item) => typeof item?.url === 'string' && item.url.trim())
+  return first?.url?.trim() || ''
+}
+
+function isUnknownAttachmentFieldError(message) {
+  return /unknown field name|field .* does not exist|cannot find field/i.test(String(message || ''))
+}
+
+const LEASE_VERSION_ATTACHMENT_FIELDS = ['PDF File', 'PDF', 'Attachment', 'File']
+
 /**
  * Fields on Work Orders that link back to the application (optional on many bases).
  * Returns `{ fields, optionalKeys }` so createWorkOrder can strip keys Airtable rejects (UNKNOWN_FIELD_NAME).
@@ -1844,6 +1858,97 @@ export async function upsertCurrentLeaseVersion({
   }).catch(() => null)
 
   return saved
+}
+
+export async function uploadLeaseVersionPdfFile({
+  leaseDraftId,
+  file,
+  notes = '',
+  uploaderName,
+  uploaderRole,
+}) {
+  const draftId = String(leaseDraftId || '').trim()
+  const nextFile = file
+  const nextFileName = String(nextFile?.name || '').trim()
+  if (!/^rec[a-zA-Z0-9]{14,}$/.test(draftId)) throw new Error('Invalid lease draft ID.')
+  if (!nextFile || typeof nextFile !== 'object' || !nextFileName) throw new Error('PDF file is required.')
+  if (!/\.pdf$/i.test(nextFileName) && String(nextFile?.type || '').trim() !== 'application/pdf') {
+    throw new Error('Select a PDF file.')
+  }
+
+  const draft = await getLeaseDraftById(draftId)
+  const current = await getCurrentLeaseVersion(draftId)
+  const versionNumber = Number(current?.['Version Number'] || draft?.['Current Version'] || 1) || 1
+  const fields = {
+    'Lease Draft ID': draftId,
+    'Version Number': versionNumber,
+    'PDF URL': current?.['PDF URL'] || '',
+    'File Name': nextFileName || `lease-v${versionNumber}.pdf`,
+    'Uploader Name': String(uploaderName || '').trim() || 'Axis',
+    'Uploader Role': String(uploaderRole || '').trim() || 'Manager',
+    'Upload Date': new Date().toISOString(),
+    'Notes': String(notes || '').trim(),
+    'Is Current': true,
+  }
+
+  let saved = null
+  if (current?.id) {
+    const data = await request(`${BASE_URL}/${encodeURIComponent('Lease Versions')}/${current.id}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ fields, typecast: true }),
+    })
+    saved = mapRecord(data)
+  } else {
+    const data = await request(`${BASE_URL}/${encodeURIComponent('Lease Versions')}`, {
+      method: 'POST',
+      body: JSON.stringify({ fields, typecast: true }),
+    })
+    saved = mapRecord(data)
+  }
+
+  let uploadedUrl = ''
+  let lastFieldError = null
+  for (const fieldName of LEASE_VERSION_ATTACHMENT_FIELDS) {
+    try {
+      const uploadResponse = await uploadAttachmentToRecord('Lease Versions', saved.id, fieldName, nextFile)
+      uploadedUrl = extractAttachmentUrl(uploadResponse, fieldName)
+      if (!uploadedUrl) {
+        const refreshed = await request(`${BASE_URL}/${encodeURIComponent('Lease Versions')}/${saved.id}`)
+        uploadedUrl = extractAttachmentUrl(refreshed, fieldName)
+      }
+      if (uploadedUrl) break
+      lastFieldError = new Error(`Uploaded PDF but could not read URL from ${fieldName}.`)
+    } catch (err) {
+      lastFieldError = err
+      if (isUnknownAttachmentFieldError(err?.message)) continue
+      throw err
+    }
+  }
+
+  if (!uploadedUrl) {
+    throw lastFieldError || new Error('Could not upload PDF file. Add a PDF attachment field to Lease Versions.')
+  }
+
+  const finalized = await request(`${BASE_URL}/${encodeURIComponent('Lease Versions')}/${saved.id}`, {
+    method: 'PATCH',
+    body: JSON.stringify({
+      fields: {
+        'PDF URL': uploadedUrl,
+        'File Name': nextFileName || saved['File Name'] || `lease-v${versionNumber}.pdf`,
+        'Upload Date': new Date().toISOString(),
+        'Notes': String(notes || '').trim(),
+        'Is Current': true,
+      },
+      typecast: true,
+    }),
+  })
+
+  await updateLeaseDraftRecord(draftId, {
+    'Current Version': versionNumber,
+    'Updated At': new Date().toISOString(),
+  }).catch(() => null)
+
+  return mapRecord(finalized)
 }
 
 export async function submitResidentLeaseChangeRequest({

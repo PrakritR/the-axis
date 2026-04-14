@@ -15,7 +15,7 @@ import toast from 'react-hot-toast'
 import LeaseHTMLTemplate from '../components/LeaseHTMLTemplate.jsx'
 import { DataTable } from '../components/PortalShell'
 import { getStatusConfig, fmtTs } from '../lib/leaseWorkflowConstants.js'
-import { getLeaseDraftById, publishLeaseDraft, upsertCurrentLeaseVersion } from '../lib/airtable'
+import { getLeaseDraftById, publishLeaseDraft, uploadLeaseVersionPdfFile } from '../lib/airtable'
 
 const AIRTABLE_TOKEN = import.meta.env.VITE_AIRTABLE_TOKEN
 const CORE_BASE_ID = import.meta.env.VITE_AIRTABLE_BASE_ID || 'appol57LKtMKaQ75T'
@@ -175,8 +175,7 @@ export default function ManagerLeasingTab({ manager, allowedPropertyNames }) {
   const [detailLoading, setDetailLoading] = useState(false)
   const [actionBusy, setActionBusy] = useState('')
   const [showUploadForm, setShowUploadForm] = useState(false)
-  const [pdfUrl, setPdfUrl] = useState('')
-  const [pdfFileName, setPdfFileName] = useState('')
+  const [pdfFile, setPdfFile] = useState(null)
   const [showChangeBox, setShowChangeBox] = useState(false)
   const [changeRequestText, setChangeRequestText] = useState('')
   const [statusFilter, setStatusFilter] = useState('all')
@@ -265,8 +264,7 @@ export default function ManagerLeasingTab({ manager, allowedPropertyNames }) {
       setActiveDraft(full)
       setShowUploadForm(false)
       setShowChangeBox(false)
-      setPdfUrl('')
-      setPdfFileName('')
+      setPdfFile(null)
       setChangeRequestText('')
     } catch (err) {
       toast.error(err.message || 'Could not open lease details')
@@ -328,22 +326,21 @@ export default function ManagerLeasingTab({ manager, allowedPropertyNames }) {
 
   async function handleSavePdf() {
     if (!activeDraft?.id) return
-    const nextPdfUrl = String(pdfUrl || '').trim()
-    if (!nextPdfUrl) {
-      toast.error('PDF URL is required')
+    if (!pdfFile) {
+      toast.error('Select a PDF first')
       return
     }
     setActionBusy('upload')
     try {
-      await upsertCurrentLeaseVersion({
+      await uploadLeaseVersionPdfFile({
         leaseDraftId: activeDraft.id,
-        pdfUrl: nextPdfUrl,
-        fileName: String(pdfFileName || '').trim() || 'lease.pdf',
+        file: pdfFile,
         uploaderName: manager?.name || manager?.email || 'Manager',
         uploaderRole: 'Manager',
       })
       toast.success('PDF uploaded')
       setShowUploadForm(false)
+      setPdfFile(null)
       const full = await getLeaseDraftById(activeDraft.id).catch(() => activeDraft)
       setActiveDraft(full)
       await loadDrafts()
@@ -534,17 +531,14 @@ export default function ManagerLeasingTab({ manager, allowedPropertyNames }) {
             <div className="border-b border-slate-100 bg-slate-50 px-5 py-4">
               <div className="grid gap-3 sm:grid-cols-2">
                 <input
-                  value={pdfUrl}
-                  onChange={(event) => setPdfUrl(event.target.value)}
-                  placeholder="PDF URL"
+                  type="file"
+                  accept="application/pdf,.pdf"
+                  onChange={(event) => setPdfFile(event.target.files?.[0] || null)}
                   className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-[#2563eb] focus:ring-2 focus:ring-[#2563eb]/20"
                 />
-                <input
-                  value={pdfFileName}
-                  onChange={(event) => setPdfFileName(event.target.value)}
-                  placeholder="File name (optional)"
-                  className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-[#2563eb] focus:ring-2 focus:ring-[#2563eb]/20"
-                />
+                <div className="flex items-center rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-500">
+                  {pdfFile?.name || 'Choose a PDF from your computer'}
+                </div>
               </div>
               <div className="mt-3">
                 <button
