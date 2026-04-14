@@ -20,6 +20,7 @@ import {
   setInboxThreadTrash,
   getPortalInboxSubjectFieldName,
   HOUSING_PUBLIC_ADMIN_GENERAL_THREAD,
+  housingPublicAdminPropertyThread,
   managementAdminThreadKey,
 } from '../../lib/airtable'
 import {
@@ -34,6 +35,7 @@ import {
   mergeSubjectIntoMessageIfNeeded,
   portalInboxThreadSection,
   portalSenderEmailFromMessage,
+  PORTAL_INBOX_MARK_READ_DELAY_MS,
 } from '../../lib/portalInboxThreadUtils.js'
 import {
   isAirtablePermissionErrorMessage,
@@ -223,6 +225,9 @@ function getResidentEmailFromAllMsgs(allMsgs, resId, myEmail, threadKeyFn) {
 
 function managerComposerToLabel(selectedThreadId, adminFullInbox) {
   if (adminFullInbox && selectedThreadId) return adminRecipientLabelForThreadId(selectedThreadId)
+  if (String(selectedThreadId || '').startsWith('internal:admin-public:')) {
+    return adminRecipientLabelForThreadId(selectedThreadId)
+  }
   if (selectedThreadId === MANAGER_INBOX_AXIS) return 'Axis internal team'
   if (managerInboxResidentIdFromSelection(selectedThreadId)) return 'Resident (leasing thread)'
   return ''
@@ -258,8 +263,9 @@ function managerInboxStateKeyForSelection(selectedThreadId, axisThreadKey, admin
   if (adminFullInbox && selectedThreadId && String(selectedThreadId).startsWith('internal:')) {
     return selectedThreadId
   }
-  if (selectedThreadId === MANAGER_INBOX_AXIS) return axisThreadKey || ''
   const t = String(selectedThreadId || '')
+  if (t.startsWith('internal:admin-public:')) return t
+  if (selectedThreadId === MANAGER_INBOX_AXIS) return axisThreadKey || ''
   if (t.startsWith('internal:resident-leasing:')) return t
   const resId = managerInboxParseResidentThreadId(selectedThreadId)
   if (resId) return residentLeasingThreadKey(resId)
@@ -293,6 +299,7 @@ function inboxParticipantsLine(selectedThreadId, adminFullInbox) {
     return 'Portal thread'
   }
   if (selectedThreadId === MANAGER_INBOX_AXIS) return 'You ↔ Axis internal team'
+  if (String(selectedThreadId).startsWith('internal:admin-public:')) return 'Website ↔ Manager'
   if (managerInboxResidentIdFromSelection(selectedThreadId)) return 'You ↔ Resident (leasing)'
   return ''
 }
@@ -306,6 +313,8 @@ function inboxParticipantsLine(selectedThreadId, adminFullInbox) {
 export default function ManagerInboxPage({
   manager,
   allowedPropertyNames,
+  /** Airtable Properties record ids in this manager's scope — website inquiries routed to Admin (no site-manager email) show in inbox. */
+  allowedPropertyIds = [],
   adminFullInbox = false,
   adminComposeManagers = [],
   adminComposeResidents = [],
@@ -314,7 +323,6 @@ export default function ManagerInboxPage({
   const showSubjectField = Boolean(subjectFieldName)
 
   const [allMsgs, setAllMsgs] = useState([])
-  const [axisMsgs, setAxisMsgs] = useState([])
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState('')
   const [selectedThreadId, setSelectedThreadId] = useState(null)
@@ -352,23 +360,31 @@ export default function ManagerInboxPage({
     [allowedPropertyNames],
   )
 
+  const allowedPropertyInquiryKeys = useMemo(() => {
+    const set = new Set()
+    for (const id of allowedPropertyIds || []) {
+      const k = housingPublicAdminPropertyThread(id)
+      if (k) set.add(k)
+    }
+    return set
+  }, [allowedPropertyIds])
+
   const managerEmail = String(manager?.email || '').trim()
   const axisThreadKey = useMemo(() => {
     if (!portalInboxAirtableConfigured() || !managerEmail) return ''
     return siteManagerThreadKey(managerEmail)
   }, [managerEmail])
 
-  const mergePortalSavedMessage = useCallback(
-    (saved) => {
-      if (!saved?.id) return
-      const tk = portalInboxThreadKeyFromRecord(saved)
-      setAllMsgs((prev) => mergeMessageIntoInboxList(prev, saved))
-      if (axisThreadKey && tk === axisThreadKey) {
-        setAxisMsgs((prev) => mergeMessageIntoInboxList(prev, saved))
-      }
-    },
-    [axisThreadKey],
-  )
+  /** Site-manager thread messages — derived from full fetch so contact-page sends always match list + preview. */
+  const axisMsgs = useMemo(() => {
+    if (!axisThreadKey) return []
+    return allMsgs.filter((m) => portalInboxThreadKeyFromRecord(m) === axisThreadKey)
+  }, [allMsgs, axisThreadKey])
+
+  const mergePortalSavedMessage = useCallback((saved) => {
+    if (!saved?.id) return
+    setAllMsgs((prev) => mergeMessageIntoInboxList(prev, saved))
+  }, [])
 
   const refreshInboxThreadState = useCallback(async () => {
     if (!managerEmail) {
@@ -396,7 +412,6 @@ export default function ManagerInboxPage({
     if (adminFullInbox) {
       if (!managerEmail) {
         setAllMsgs([])
-        setAxisMsgs([])
         setLoading(false)
         try {
           await refreshInboxThreadState()
@@ -409,7 +424,6 @@ export default function ManagerInboxPage({
       try {
         const rows = await getAllMessages()
         setAllMsgs(rows)
-        setAxisMsgs([])
       } catch (err) {
         if (!isAirtablePermissionErrorMessage(err?.message)) {
           setLoadError(formatDataLoadError(err))
@@ -428,9 +442,9 @@ export default function ManagerInboxPage({
 
     const hasScope = inboxScopeLower.size > 0
     const hasAxis = Boolean(axisThreadKey)
-    if (!hasScope && !hasAxis) {
+    const hasPublicProperty = (allowedPropertyIds || []).length > 0
+    if (!hasScope && !hasAxis && !hasPublicProperty) {
       setAllMsgs([])
-      setAxisMsgs([])
       setLoading(false)
       try {
         await refreshInboxThreadState()
@@ -441,13 +455,8 @@ export default function ManagerInboxPage({
     }
     setLoading(true)
     try {
-      const tasks = [getAllMessages()]
-      if (hasAxis) tasks.push(getMessagesByThreadKey(axisThreadKey))
-      const results = await Promise.all(tasks)
-      const msgs = results[0]
-      const axis = hasAxis ? results[1] : []
+      const msgs = await getAllMessages()
       setAllMsgs(msgs)
-      setAxisMsgs(axis)
     } catch (err) {
       if (!isAirtablePermissionErrorMessage(err?.message)) {
         setLoadError(formatDataLoadError(err))
@@ -461,7 +470,7 @@ export default function ManagerInboxPage({
         /* non-fatal */
       }
     }
-  }, [adminFullInbox, managerEmail, inboxScopeLower, axisThreadKey, refreshInboxThreadState])
+  }, [adminFullInbox, managerEmail, inboxScopeLower, axisThreadKey, allowedPropertyIds, refreshInboxThreadState])
 
   useEffect(() => {
     loadAll()
@@ -634,9 +643,48 @@ export default function ManagerInboxPage({
       })
     }
 
+    if (allowedPropertyInquiryKeys.size > 0) {
+      const publicByKey = new Map()
+      for (const m of allMsgs) {
+        const tk = portalInboxThreadKeyFromRecord(m)
+        if (!tk || !tk.startsWith('internal:admin-public:property:')) continue
+        if (!allowedPropertyInquiryKeys.has(tk)) continue
+        if (!publicByKey.has(tk)) publicByKey.set(tk, [])
+        publicByKey.get(tk).push(m)
+      }
+      for (const [tk, rmsgs] of publicByKey) {
+        const sorted = [...rmsgs].sort((a, b) => msgTime(a) - msgTime(b))
+        const last = sorted[sorted.length - 1]
+        const lastMsgTs = last ? msgTime(last) : 0
+        const participantLabel = adminRecipientLabelForThreadId(tk)
+        const subjectLine =
+          threadSubjectFromMessages(sorted, subjectFieldName) || adminPortalThreadTitle(tk)
+        rows.push({
+          id: tk,
+          stateKey: tk,
+          participantLabel,
+          subjectLine,
+          preview: threadBodyPreviewFromMessage(last),
+          searchText: threadSearchHaystack(sorted, subjectFieldName, participantLabel, subjectLine),
+          time: last ? fmtDateTime(last.Timestamp || last.created_at) : '',
+          ts: lastMsgTs,
+          lastMsgTs,
+          lastSenderEmail: last ? portalSenderEmailFromMessage(last) : '',
+        })
+      }
+    }
+
     rows.sort((a, b) => b.ts - a.ts)
     return rows
-  }, [adminFullInbox, allMsgs, axisMsgs, axisThreadKey, inboxScopeLower, subjectFieldName])
+  }, [
+    adminFullInbox,
+    allMsgs,
+    axisMsgs,
+    axisThreadKey,
+    inboxScopeLower,
+    subjectFieldName,
+    allowedPropertyInquiryKeys,
+  ])
 
   const threadRowsWithMeta = useMemo(() => {
     return threadRows.map((row) => {
@@ -766,6 +814,13 @@ export default function ManagerInboxPage({
   const touchThreadReadRef = useRef(touchThreadRead)
   touchThreadReadRef.current = touchThreadRead
 
+  const threadRowsWithMetaRef = useRef(threadRowsWithMeta)
+  threadRowsWithMetaRef.current = threadRowsWithMeta
+  const selectedStateKeyRef = useRef(selectedStateKey)
+  selectedStateKeyRef.current = selectedStateKey
+  const selectedThreadIdRef = useRef(selectedThreadId)
+  selectedThreadIdRef.current = selectedThreadId
+
   useEffect(() => {
     if (!selectedStateKey) openReadIntentKeyRef.current = ''
   }, [selectedStateKey])
@@ -773,8 +828,25 @@ export default function ManagerInboxPage({
   useEffect(() => {
     if (!selectedStateKey || threadLoading) return
     if (openReadIntentKeyRef.current !== selectedStateKey) return
-    openReadIntentKeyRef.current = ''
-    void touchThreadReadRef.current(selectedStateKey)
+    const key = selectedStateKey
+    const t = window.setTimeout(() => {
+      if (openReadIntentKeyRef.current !== key) return
+      if (selectedStateKeyRef.current !== key) return
+      const row = threadRowsWithMetaRef.current.find(
+        (r) => r.stateKey === key || r.id === selectedThreadIdRef.current,
+      )
+      if (!row || row.section === 'trash') {
+        openReadIntentKeyRef.current = ''
+        return
+      }
+      if (row.section !== 'unopened') {
+        openReadIntentKeyRef.current = ''
+        return
+      }
+      openReadIntentKeyRef.current = ''
+      void touchThreadReadRef.current(key)
+    }, PORTAL_INBOX_MARK_READ_DELAY_MS)
+    return () => window.clearTimeout(t)
   }, [selectedStateKey, threadLoading, readIntentEpoch])
 
   useEffect(() => {
@@ -835,6 +907,18 @@ export default function ManagerInboxPage({
           return
         }
         const tSel = String(selectedThreadId || '')
+        if (tSel.startsWith('internal:admin-public:')) {
+          const next = await getMessagesByThreadKey(tSel)
+          if (!cancelled) {
+            setThread(
+              [...next].sort(
+                (a, b) =>
+                  new Date(a.Timestamp || a.created_at || 0) - new Date(b.Timestamp || b.created_at || 0),
+              ),
+            )
+          }
+          return
+        }
         if (tSel.startsWith('internal:resident-leasing:')) {
           const next = await getMessagesByThreadKey(tSel)
           if (!cancelled) {
@@ -1042,7 +1126,23 @@ export default function ManagerInboxPage({
         toast.success('Sent')
         return
       }
-      if (selectedThreadId === MANAGER_INBOX_AXIS) {
+      const selStr = String(selectedThreadId || '')
+      if (selStr.startsWith('internal:admin-public:')) {
+        const saved = await sendMessage({
+          senderEmail: managerEmail,
+          message: bodyOut,
+          isAdmin: true,
+          threadKey: selectedThreadId,
+          channel: PORTAL_INBOX_CHANNEL_INTERNAL,
+          subject: showSubjectField ? subjResolved : '',
+        })
+        mergePortalSavedMessage(saved)
+        notifyPortalMessage({
+          recipientEmail: getOtherPartyEmail(thread, managerEmail),
+          senderName: managerEmail,
+          subject: notifySubj,
+        })
+      } else if (selectedThreadId === MANAGER_INBOX_AXIS) {
         const saved = await sendMessage({
           senderEmail: managerEmail,
           message: bodyOut,
@@ -1077,7 +1177,15 @@ export default function ManagerInboxPage({
       setReply('')
       setReplySubject('')
       await loadAll()
-      if (selectedThreadId === MANAGER_INBOX_AXIS) {
+      if (String(selectedThreadId || '').startsWith('internal:admin-public:')) {
+        const next = await getMessagesByThreadKey(selectedThreadId)
+        setThread(
+          [...next].sort(
+            (a, b) =>
+              new Date(a.Timestamp || a.created_at || 0) - new Date(b.Timestamp || b.created_at || 0),
+          ),
+        )
+      } else if (selectedThreadId === MANAGER_INBOX_AXIS) {
         const next = await getMessagesByThreadKey(axisThreadKey)
         setThread(
           [...next].sort(
@@ -1182,19 +1290,27 @@ export default function ManagerInboxPage({
   }, [adminComposeResidents])
 
   const selectedRowMeta = useMemo(
-    () => visibleThreadRows.find((r) => r.id === selectedThreadId),
-    [visibleThreadRows, selectedThreadId],
+    () =>
+      visibleThreadRows.find((r) => r.id === selectedThreadId) ||
+      threadRowsWithMeta.find((r) => r.id === selectedThreadId),
+    [visibleThreadRows, threadRowsWithMeta, selectedThreadId],
   )
 
   useEffect(() => {
     if (composeOpen) return
     if (!selectedThreadId) return
-    if (!visibleThreadRows.some((r) => r.id === selectedThreadId)) {
+    const meta = threadRowsWithMeta.find((r) => r.id === selectedThreadId)
+    if (!meta) {
+      setSelectedThreadId(null)
+      return
+    }
+    if (meta.section === 'trash' && sectionFilter !== 'trash') {
       setSelectedThreadId(null)
     }
-  }, [visibleThreadRows, selectedThreadId, composeOpen])
+  }, [threadRowsWithMeta, selectedThreadId, composeOpen, sectionFilter])
 
-  if (!adminFullInbox && !inboxScopeLower.size && !axisThreadKey) {
+  const hasPropertyWebsiteInbox = (allowedPropertyIds || []).length > 0
+  if (!adminFullInbox && !inboxScopeLower.size && !axisThreadKey && !hasPropertyWebsiteInbox) {
     return null
   }
 
@@ -1204,17 +1320,21 @@ export default function ManagerInboxPage({
       : 'Inbox'
     : selectedThreadId === MANAGER_INBOX_AXIS
       ? 'Axis team'
-      : managerInboxResidentIdFromSelection(selectedThreadId || '')
-        ? 'Resident inbox'
-        : 'Inbox'
+      : String(selectedThreadId || '').startsWith('internal:admin-public:')
+        ? adminPortalThreadTitle(selectedThreadId)
+        : managerInboxResidentIdFromSelection(selectedThreadId || '')
+          ? 'Resident inbox'
+          : 'Inbox'
 
   const readingSubtitle = adminFullInbox
     ? ''
     : selectedThreadId === MANAGER_INBOX_AXIS
       ? 'Axis support'
-      : managerInboxResidentIdFromSelection(selectedThreadId)
-        ? 'Leasing thread'
-        : ''
+      : String(selectedThreadId || '').startsWith('internal:admin-public:')
+        ? 'Website inquiry'
+        : managerInboxResidentIdFromSelection(selectedThreadId)
+          ? 'Leasing thread'
+          : ''
 
   const headerSubject =
     activeThreadSubject || selectedRowMeta?.subjectLine || readingTitle
@@ -1287,7 +1407,7 @@ export default function ManagerInboxPage({
               openReadIntentKeyRef.current = ''
               return
             }
-            const row = visibleThreadRows.find((r) => r.id === id)
+            const row = threadRowsWithMeta.find((r) => r.id === id)
             const sk = row?.stateKey || ''
             openReadIntentKeyRef.current = sk
             if (sk) setReadIntentEpoch((n) => n + 1)

@@ -75,11 +75,15 @@ import {
   fetchInboxThreadStateMap,
   portalInboxAirtableConfigured,
   portalInboxThreadKeyFromRecord,
+  siteManagerThreadKey,
+  housingPublicAdminPropertyThread,
+  HOUSING_PUBLIC_ADMIN_GENERAL_THREAD,
   fetchBlockedTourDates,
   createBlockedTourDate,
   deleteBlockedTourDate,
   getApplicationsForOwner,
 } from '../lib/airtable'
+import { residentLeasingThreadVisibleToManager } from '../lib/portalInboxResidentScope.js'
 import { getPaymentKind } from '../lib/residentPaymentsShared.js'
 import {
   buildPropertyWizardInitialValues,
@@ -6852,7 +6856,7 @@ function ManagerDashboard({ manager: managerProp, openDraftId, onOpenDraft, onCl
     }
   }, [dashView, managerScope.approvedNames, approvedNamesLower, mergedPropertyNamesLower, workOrderScopePropertyIds])
 
-  // Unopened threads for dashboard badge (same rule as inbox: never opened, or new messages since last open)
+  // Unopened threads for dashboard badge (aligned with ManagerInboxPage: scope + site-manager + property website inquiries)
   useEffect(() => {
     const email = String(manager?.email || '').trim()
     if (!email || !portalInboxAirtableConfigured()) return
@@ -6863,24 +6867,40 @@ function ManagerDashboard({ manager: managerProp, openDraftId, onOpenDraft, onCl
           getAllPortalInternalThreadMessages(),
           fetchInboxThreadStateMap(email),
         ])
-        const managerSiteKey = `internal:site-manager:${email.trim().toLowerCase()}`
-        const latestByThread = new Map()
+        const managerSiteKey = siteManagerThreadKey(email)
+        const allowedAdminPropertyKeys = new Set(
+          (scopedPropertyIds || []).map((id) => housingPublicAdminPropertyThread(id)),
+        )
+        const byTk = new Map()
         for (const m of msgs) {
           const tk = portalInboxThreadKeyFromRecord(m)
           if (!tk) continue
-          // Only count this manager's own site-manager thread and resident leasing threads.
-          // Skip site-manager threads belonging to other managers.
-          if (tk.startsWith('internal:site-manager:') && tk !== managerSiteKey) continue
-          const ts = m.Timestamp ? new Date(m.Timestamp) : null
-          if (!ts) continue
-          const prev = latestByThread.get(tk)
-          if (!prev || ts > prev) latestByThread.set(tk, ts)
+          if (!byTk.has(tk)) byTk.set(tk, [])
+          byTk.get(tk).push(m)
         }
         let unopened = 0
-        for (const [tk, latest] of latestByThread) {
+        for (const [tk, list] of byTk) {
+          if (tk.startsWith('internal:site-manager:') && tk !== managerSiteKey) continue
+          if (tk === HOUSING_PUBLIC_ADMIN_GENERAL_THREAD) continue
+          if (tk.startsWith('internal:admin-public:property:')) {
+            if (!allowedAdminPropertyKeys.has(tk)) continue
+          } else if (tk.startsWith('internal:admin-public:')) {
+            continue
+          }
+          if (tk.startsWith('internal:resident-leasing:')) {
+            if (!residentLeasingThreadVisibleToManager(list, mergedPropertyNamesLower)) continue
+          }
+          if (tk.startsWith('internal:mgmt-admin:') || tk.startsWith('internal:resident-admin:')) continue
+          let latest = 0
+          for (const m of list) {
+            const ts = new Date(m.Timestamp || m.created_at || 0).getTime()
+            if (ts > latest) latest = ts
+          }
+          if (latest <= 0) continue
           const state = stateMap.get(tk)
           if (state?.trashed) continue
-          if (!state?.lastReadAt || latest > state.lastReadAt) unopened++
+          const latestDate = new Date(latest)
+          if (!state?.lastReadAt || latestDate > state.lastReadAt) unopened++
         }
         if (!cancelled) setInboxUnopenedCount(unopened)
       } catch {
@@ -6888,8 +6908,10 @@ function ManagerDashboard({ manager: managerProp, openDraftId, onOpenDraft, onCl
       }
     }
     fetchUnopenedCount()
-    return () => { cancelled = true }
-  }, [manager])
+    return () => {
+      cancelled = true
+    }
+  }, [manager, scopedPropertyIds, mergedPropertyNamesLower])
 
   const handlePropertiesChange = useCallback((records) => {
     const nextRecords = Array.isArray(records) ? records : []
@@ -7002,7 +7024,11 @@ function ManagerDashboard({ manager: managerProp, openDraftId, onOpenDraft, onCl
         ) : dashView === 'calendar' ? (
           <CalendarTabPanel manager={manager} allowedPropertyNames={calendarScopedPropertyOptions} />
         ) : dashView === 'inbox' ? (
-          <ManagerInboxPage manager={manager} allowedPropertyNames={scopedPropertyOptions} />
+          <ManagerInboxPage
+            manager={manager}
+            allowedPropertyNames={scopedPropertyOptions}
+            allowedPropertyIds={scopedPropertyIds}
+          />
         ) : dashView === 'leases' ? (
           <ManagerLeasingTab manager={manager} allowedPropertyNames={scopedPropertyOptions} />
         ) : dashView === 'dashboard' ? (

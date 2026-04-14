@@ -67,7 +67,14 @@ export function portalSenderEmailFromMessage(m) {
 }
 
 /**
+ * Delay before marking a thread read after opening (ms). Keeps “Unopened” stable while
+ * reading; only then moves to Opened. Export for manager + resident inbox UIs.
+ */
+export const PORTAL_INBOX_MARK_READ_DELAY_MS = 45_000
+
+/**
  * Inbox folder for a thread: trash, sent (you sent the latest message), unopened, or opened.
+ * New inbound messages use `lastMsgTs > lastReadAt` → unopened for the recipient.
  * @param {{ lastMsgTs: number, state: { lastReadAt?: Date|null, trashed?: boolean }|undefined, lastSenderEmail: string, myEmail: string }} p
  */
 export function portalInboxThreadSection({ lastMsgTs, state, lastSenderEmail, myEmail }) {

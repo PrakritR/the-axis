@@ -26,6 +26,7 @@ import {
   threadSearchHaystack,
   portalInboxThreadSection,
   portalSenderEmailFromMessage,
+  PORTAL_INBOX_MARK_READ_DELAY_MS,
 } from '../../lib/portalInboxThreadUtils.js'
 import {
   PORTAL_TAB_HEADER_ROW_CLS,
@@ -417,6 +418,13 @@ export default function ResidentPortalInbox({ resident }) {
   const touchThreadReadRef = useRef(touchThreadRead)
   touchThreadReadRef.current = touchThreadRead
 
+  const threadRowsWithMetaRef = useRef(threadRowsWithMeta)
+  threadRowsWithMetaRef.current = threadRowsWithMeta
+  const selectedStateKeyRef = useRef(selectedStateKey)
+  selectedStateKeyRef.current = selectedStateKey
+  const selectedThreadIdRef = useRef(selectedThreadId)
+  selectedThreadIdRef.current = selectedThreadId
+
   useEffect(() => {
     if (!selectedStateKey) openReadIntentKeyRef.current = ''
   }, [selectedStateKey])
@@ -424,8 +432,25 @@ export default function ResidentPortalInbox({ resident }) {
   useEffect(() => {
     if (!selectedStateKey || threadLoading) return
     if (openReadIntentKeyRef.current !== selectedStateKey) return
-    openReadIntentKeyRef.current = ''
-    void touchThreadReadRef.current(selectedStateKey)
+    const key = selectedStateKey
+    const t = window.setTimeout(() => {
+      if (openReadIntentKeyRef.current !== key) return
+      if (selectedStateKeyRef.current !== key) return
+      const row = threadRowsWithMetaRef.current.find(
+        (r) => r.stateKey === key || r.id === selectedThreadIdRef.current,
+      )
+      if (!row || row.section === 'trash') {
+        openReadIntentKeyRef.current = ''
+        return
+      }
+      if (row.section !== 'unopened') {
+        openReadIntentKeyRef.current = ''
+        return
+      }
+      openReadIntentKeyRef.current = ''
+      void touchThreadReadRef.current(key)
+    }, PORTAL_INBOX_MARK_READ_DELAY_MS)
+    return () => window.clearTimeout(t)
   }, [selectedStateKey, threadLoading, readIntentEpoch])
 
   useEffect(() => {
@@ -485,8 +510,10 @@ export default function ResidentPortalInbox({ resident }) {
   )
 
   const selectedRowMeta = useMemo(
-    () => visibleThreadRows.find((r) => r.id === selectedThreadId),
-    [visibleThreadRows, selectedThreadId],
+    () =>
+      visibleThreadRows.find((r) => r.id === selectedThreadId) ||
+      threadRowsWithMeta.find((r) => r.id === selectedThreadId),
+    [visibleThreadRows, threadRowsWithMeta, selectedThreadId],
   )
 
   const headerSubject = activeThreadSubject || selectedRowMeta?.subjectLine || 'Inbox'
@@ -670,7 +697,7 @@ export default function ResidentPortalInbox({ resident }) {
               openReadIntentKeyRef.current = ''
               return
             }
-            const row = visibleThreadRows.find((r) => r.id === id)
+            const row = threadRowsWithMeta.find((r) => r.id === id)
             const sk = row?.stateKey || ''
             openReadIntentKeyRef.current = sk
             if (sk) setReadIntentEpoch((n) => n + 1)
