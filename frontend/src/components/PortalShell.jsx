@@ -78,21 +78,36 @@ export default function PortalShell({
             </div>
           </div>
           <div className="flex gap-1 overflow-x-auto px-2 pb-2 scrollbar-none">
-            {navItems.map((item) => (
-              <button
-                key={item.id}
-                type="button"
-                onClick={() => onNavigate(item.id)}
-                className={`${portalMobileTabPillBaseClass} ${
-                  activeId === item.id
-                    ? 'bg-[linear-gradient(180deg,#2f76ff_0%,#2450eb_100%)] text-white shadow-[0_2px_10px_rgba(37,99,235,0.35)]'
-                    : 'bg-slate-100 text-slate-600'
-                }`}
-              >
-                <PortalNavGlyph tabId={item.id} className="h-3.5 w-3.5 opacity-90" />
-                <span className="whitespace-nowrap">{item.label}</span>
-              </button>
-            ))}
+            {navItems.map((item) => {
+              const desc = item.description ? String(item.description).trim() : ''
+              const active = activeId === item.id
+              return (
+                <button
+                  key={item.id}
+                  type="button"
+                  onClick={() => onNavigate(item.id)}
+                  className={`${portalMobileTabPillBaseClass} ${desc ? 'flex-col items-stretch gap-0.5 py-2' : ''} ${
+                    active
+                      ? 'bg-[linear-gradient(180deg,#2f76ff_0%,#2450eb_100%)] text-white shadow-[0_2px_10px_rgba(37,99,235,0.35)]'
+                      : 'bg-slate-100 text-slate-600'
+                  }`}
+                >
+                  <span className={`flex items-center gap-1.5 ${desc ? 'justify-start' : ''}`}>
+                    <PortalNavGlyph tabId={item.id} className="h-3.5 w-3.5 shrink-0 opacity-90" />
+                    <span className="whitespace-nowrap font-semibold">{item.label}</span>
+                  </span>
+                  {desc ? (
+                    <span
+                      className={`block max-w-[10.5rem] truncate pl-[calc(0.875rem+14px)] text-left text-[10px] font-medium leading-tight ${
+                        active ? 'text-white/80' : 'text-slate-500'
+                      }`}
+                    >
+                      {desc}
+                    </span>
+                  ) : null}
+                </button>
+              )
+            })}
           </div>
         </header>
 
@@ -127,27 +142,42 @@ export default function PortalShell({
 
         {/* Nav — scrolls independently */}
         <nav className="min-h-0 flex-1 space-y-0.5 overflow-y-auto overflow-x-hidden p-2 [scrollbar-gutter:stable]">
-          {navItems.map((item) => (
-            <button
-              key={item.id}
-              type="button"
-              onClick={() => onNavigate(item.id)}
-              className={`flex w-full items-center gap-2.5 rounded-lg px-3 py-2.5 text-left text-sm font-semibold transition ${
-                activeId === item.id
-                  ? 'bg-[linear-gradient(180deg,#2f76ff_0%,#2450eb_100%)] text-white shadow-[0_4px_16px_rgba(37,99,235,0.35)]'
-                  : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
-              }`}
-            >
-              <span
-                className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${
-                  activeId === item.id ? 'bg-white/15 text-white' : 'bg-slate-100 text-slate-500'
+          {navItems.map((item) => {
+            const desc = item.description ? String(item.description).trim() : ''
+            const active = activeId === item.id
+            return (
+              <button
+                key={item.id}
+                type="button"
+                onClick={() => onNavigate(item.id)}
+                className={`flex w-full items-start gap-2.5 rounded-lg px-3 py-2.5 text-left text-sm font-semibold transition ${
+                  active
+                    ? 'bg-[linear-gradient(180deg,#2f76ff_0%,#2450eb_100%)] text-white shadow-[0_4px_16px_rgba(37,99,235,0.35)]'
+                    : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
                 }`}
               >
-                <PortalNavGlyph tabId={item.id} className="h-[18px] w-[18px]" />
-              </span>
-              <span className="min-w-0 truncate">{item.label}</span>
-            </button>
-          ))}
+                <span
+                  className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${
+                    active ? 'bg-white/15 text-white' : 'bg-slate-100 text-slate-500'
+                  }`}
+                >
+                  <PortalNavGlyph tabId={item.id} className="h-[18px] w-[18px]" />
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate">{item.label}</span>
+                  {desc ? (
+                    <span
+                      className={`mt-0.5 block truncate text-[11px] font-medium leading-snug ${
+                        active ? 'text-white/80' : 'text-slate-500'
+                      }`}
+                    >
+                      {desc}
+                    </span>
+                  ) : null}
+                </span>
+              </button>
+            )
+          })}
         </nav>
 
         {/* Footer — always visible, never scrolls away */}
@@ -174,21 +204,36 @@ export default function PortalShell({
             </div>
           </div>
           <div className="flex gap-1 overflow-x-auto px-2 pb-2 scrollbar-none">
-            {navItems.map((item) => (
-              <button
-                key={item.id}
-                type="button"
-                onClick={() => onNavigate(item.id)}
-                className={`${portalMobileTabPillBaseClass} ${
-                  activeId === item.id
-                    ? 'bg-[linear-gradient(180deg,#2f76ff_0%,#2450eb_100%)] text-white shadow-[0_2px_10px_rgba(37,99,235,0.35)]'
-                    : 'bg-slate-100 text-slate-600'
-                }`}
-              >
-                <PortalNavGlyph tabId={item.id} className="h-3.5 w-3.5 opacity-90" />
-                <span className="whitespace-nowrap">{item.label}</span>
-              </button>
-            ))}
+            {navItems.map((item) => {
+              const desc = item.description ? String(item.description).trim() : ''
+              const active = activeId === item.id
+              return (
+                <button
+                  key={item.id}
+                  type="button"
+                  onClick={() => onNavigate(item.id)}
+                  className={`${portalMobileTabPillBaseClass} ${desc ? 'flex-col items-stretch gap-0.5 py-2' : ''} ${
+                    active
+                      ? 'bg-[linear-gradient(180deg,#2f76ff_0%,#2450eb_100%)] text-white shadow-[0_2px_10px_rgba(37,99,235,0.35)]'
+                      : 'bg-slate-100 text-slate-600'
+                  }`}
+                >
+                  <span className={`flex items-center gap-1.5 ${desc ? 'justify-start' : ''}`}>
+                    <PortalNavGlyph tabId={item.id} className="h-3.5 w-3.5 shrink-0 opacity-90" />
+                    <span className="whitespace-nowrap font-semibold">{item.label}</span>
+                  </span>
+                  {desc ? (
+                    <span
+                      className={`block max-w-[10.5rem] truncate pl-[calc(0.875rem+14px)] text-left text-[10px] font-medium leading-tight ${
+                        active ? 'text-white/80' : 'text-slate-500'
+                      }`}
+                    >
+                      {desc}
+                    </span>
+                  ) : null}
+                </button>
+              )
+            })}
           </div>
         </header>
 

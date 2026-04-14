@@ -25,7 +25,12 @@ import {
   uploadLeaseVersionPdfFile,
   getCurrentLeaseVersion,
   getApplicationsForOwner,
+  updateLeaseDraftRecord,
 } from '../lib/airtable'
+import {
+  leaseDraftAllowsSignWithoutMoveInPay,
+  leaseSignWithoutMoveInPayFieldName,
+} from '../lib/leaseMoveInOverride.js'
 
 const AIRTABLE_TOKEN = import.meta.env.VITE_AIRTABLE_TOKEN
 const CORE_BASE_ID = import.meta.env.VITE_AIRTABLE_BASE_ID || 'appol57LKtMKaQ75T'
@@ -161,7 +166,7 @@ const LEASE_PILL_SELECT_CHEVRON = (
 const STATUS_FILTER_ITEMS = [
   {
     id: 'draft_ready',
-    label: 'Draft Ready',
+    label: 'Manager Review',
     match: (s) => ['Draft Generated', 'Under Review', 'Changes Needed', 'Approved', 'Sent Back to Manager'].includes(String(s || '').trim()),
   },
   {
@@ -421,6 +426,35 @@ export default function ManagerLeasingTab({ manager, allowedPropertyNames }) {
     }
   }
 
+  const canEditLeaseDraftFields = Boolean(
+    activeDraft?.id &&
+      String(activeDraft.id).startsWith('rec') &&
+      !activeDraft.__syntheticFromApplication,
+  )
+
+  async function handleToggleSignWithoutMoveInPay(nextChecked) {
+    if (!canEditLeaseDraftFields) return
+    const field = leaseSignWithoutMoveInPayFieldName()
+    setActionBusy('sign-override')
+    try {
+      const updated = await updateLeaseDraftRecord(activeDraft.id, { [field]: Boolean(nextChecked) })
+      setActiveDraft(updated)
+      await loadDrafts()
+      toast.success(
+        nextChecked
+          ? 'Resident can open and sign the lease before paying move-in charges.'
+          : 'Move-in payment is required again before the resident can access the lease.',
+      )
+    } catch (err) {
+      toast.error(
+        err.message ||
+          `Could not save. Add a checkbox field "${field}" on the Lease Drafts table in Airtable (or set VITE_AIRTABLE_LEASE_SIGN_WITHOUT_PAY_FIELD).`,
+      )
+    } finally {
+      setActionBusy('')
+    }
+  }
+
   async function handleRequestChangeFromAdmin() {
     if (!activeDraft?.id) return
     const text = String(changeRequestText || '').trim()
@@ -652,6 +686,18 @@ export default function ManagerLeasingTab({ manager, allowedPropertyNames }) {
               >
                 Upload PDF
               </button>
+              {canEditLeaseDraftFields ? (
+                <label className="inline-flex max-w-full cursor-pointer items-center gap-2 rounded-full border border-amber-200 bg-amber-50/90 px-4 py-2 text-sm font-semibold text-amber-950 shadow-sm transition hover:bg-amber-50">
+                  <input
+                    type="checkbox"
+                    className="h-4 w-4 shrink-0 rounded border-amber-400 text-amber-700 focus:ring-amber-500"
+                    checked={leaseDraftAllowsSignWithoutMoveInPay(activeDraft)}
+                    disabled={actionBusy === 'sign-override' || detailLoading}
+                    onChange={(e) => handleToggleSignWithoutMoveInPay(e.target.checked)}
+                  />
+                  <span className="min-w-0 leading-snug">Allow sign without paying move-in</span>
+                </label>
+              ) : null}
               <button
                 type="button"
                 onClick={handleDownloadGeneratedPdf}

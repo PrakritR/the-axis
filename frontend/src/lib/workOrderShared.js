@@ -165,3 +165,115 @@ export function workOrderScheduledMeta(record) {
   if (!date) return null
   return { date, preferredTime }
 }
+
+// ─── Work order photos (Airtable attachments) — manager + resident portals ──
+
+/** Field names tried when uploading a photo on create (keep in sync with `createWorkOrder` in airtable.js). */
+export const WORK_ORDER_PHOTO_ATTACHMENT_FIELD_CANDIDATES = [
+  'Photo',
+  'Photos',
+  'Attachments',
+  'Images',
+  'Image',
+  'Pictures',
+  'Attachment',
+  'Screenshot',
+  'Evidence',
+  'File',
+]
+
+function workOrderPhotoFieldNameOrder() {
+  const raw =
+    typeof import.meta !== 'undefined'
+      ? String(import.meta.env?.VITE_AIRTABLE_WORK_ORDER_PHOTO_FIELDS ?? '').trim()
+      : ''
+  if (!raw || /^(none|false|0)$/i.test(raw)) return [...WORK_ORDER_PHOTO_ATTACHMENT_FIELD_CANDIDATES]
+  const fromEnv = raw.split(',').map((s) => s.trim()).filter(Boolean)
+  return [...fromEnv, ...WORK_ORDER_PHOTO_ATTACHMENT_FIELD_CANDIDATES]
+}
+
+/** Same order as URL extraction — use for `uploadAttachment` field attempts. */
+export function workOrderPhotoAttachmentFieldNamesOrdered() {
+  return workOrderPhotoFieldNameOrder()
+}
+
+function attachmentRecordToUrl(item) {
+  if (typeof item === 'string') {
+    const s = item.trim()
+    return /^https?:\/\//i.test(s) ? s : ''
+  }
+  if (!item || typeof item !== 'object') return ''
+  if (typeof item.url === 'string') {
+    const s = item.url.trim()
+    if (/^https?:\/\//i.test(s)) return s
+  }
+  const thumbs = item.thumbnails
+  if (thumbs && typeof thumbs === 'object') {
+    for (const k of ['full', 'large', 'small']) {
+      const u = thumbs[k]?.url
+      if (typeof u === 'string') {
+        const t = u.trim()
+        if (/^https?:\/\//i.test(t)) return t
+      }
+    }
+  }
+  return ''
+}
+
+function isAirtableAttachmentLikeObject(item) {
+  return Boolean(attachmentRecordToUrl(item))
+}
+
+function isLinkedRecordIdArray(value) {
+  if (!Array.isArray(value) || value.length === 0) return false
+  return value.every((x) => typeof x === 'string' && /^rec[a-zA-Z0-9]{14,}$/.test(x.trim()))
+}
+
+function pushAttachmentUrlsFromValue(value, urls, seen) {
+  if (value == null) return
+  if (Array.isArray(value)) {
+    if (isLinkedRecordIdArray(value)) return
+    for (const item of value) {
+      const url = attachmentRecordToUrl(item)
+      if (!url || seen.has(url)) continue
+      seen.add(url)
+      urls.push(url)
+    }
+    return
+  }
+  if (typeof value === 'object' && isAirtableAttachmentLikeObject(value)) {
+    const url = attachmentRecordToUrl(value)
+    if (url && !seen.has(url)) {
+      seen.add(url)
+      urls.push(url)
+    }
+  }
+}
+
+/**
+ * Public URLs for images attached to a work order row (Airtable attachment fields).
+ * Supports multiple field labels, thumbnail-only payloads, optional
+ * `VITE_AIRTABLE_WORK_ORDER_PHOTO_FIELDS` (comma-separated exact Airtable names),
+ * and falls back to scanning non-reserved keys for attachment-shaped arrays.
+ */
+export function workOrderPhotoAttachmentUrls(record) {
+  if (!record || typeof record !== 'object') return []
+  const seen = new Set()
+  const urls = []
+  const orderedNames = workOrderPhotoFieldNameOrder()
+  const usedKeys = new Set()
+  for (const key of orderedNames) {
+    if (!Object.prototype.hasOwnProperty.call(record, key)) continue
+    usedKeys.add(key)
+    pushAttachmentUrlsFromValue(record[key], urls, seen)
+  }
+  for (const key of Object.keys(record)) {
+    if (usedKeys.has(key)) continue
+    if (key === 'id' || key === 'created_at') continue
+    const value = record[key]
+    if (!Array.isArray(value) || value.length === 0) continue
+    if (!value.some((item) => isAirtableAttachmentLikeObject(item))) continue
+    pushAttachmentUrlsFromValue(value, urls, seen)
+  }
+  return urls
+}

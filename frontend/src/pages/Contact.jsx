@@ -46,7 +46,7 @@ function formatTourSlotDisplayLabel(token) {
 
 function normalizeTimeRangeLabel(value) {
   const parts = String(value || '')
-    .split(/\s*[\-–]\s*/)
+    .split(/\s*[\-–—]\s*/)
     .map((part) => part.trim())
     .filter(Boolean)
   if (parts.length !== 2) return String(value || '').trim()

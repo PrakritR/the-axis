@@ -23,6 +23,7 @@ import toast from 'react-hot-toast'
 import { HOUSING_CONTACT_MESSAGE } from '../lib/housingSite'
 import {
   workOrderScheduledMeta,
+  workOrderPhotoAttachmentUrls,
 } from '../lib/workOrderShared.js'
 import { readJsonResponse } from '../lib/readJsonResponse'
 import { PORTAL_TAB_H2_CLS, PORTAL_SECTION_TITLE_CLS } from '../lib/portalTabHeader'
@@ -118,7 +119,7 @@ const APPLICATIONS_TABLE_NAME =
 const STATUS_CONFIG = {
   Draft: { bg: 'bg-slate-50', text: 'text-slate-600', border: 'border-slate-200', dot: 'bg-slate-400' },
   'Admin review': { bg: 'bg-blue-50', text: 'text-blue-700', border: 'border-blue-200', dot: 'bg-blue-500' },
-  'Manager review': { bg: 'bg-orange-50', text: 'text-orange-700', border: 'border-orange-200', dot: 'bg-orange-500' },
+  'Manager Review': { bg: 'bg-orange-50', text: 'text-orange-700', border: 'border-orange-200', dot: 'bg-orange-500' },
   'With resident': { bg: 'bg-axis/5', text: 'text-axis', border: 'border-axis/20', dot: 'bg-axis' },
   'Draft Generated': { bg: 'bg-blue-50', text: 'text-blue-700', border: 'border-blue-200', dot: 'bg-blue-400' },
   'Under Review': { bg: 'bg-amber-50', text: 'text-amber-700', border: 'border-amber-200', dot: 'bg-amber-400' },
@@ -131,9 +132,10 @@ const ALL_STATUSES = Object.keys(STATUS_CONFIG)
 const LEASE_FLOW_CARDS = [
   {
     id: 'draft_ready',
-    label: 'Draft Ready',
-    match: (status) => ['Draft Generated', 'Under Review', 'Changes Needed', 'Approved'].includes(status),
-    activeStatuses: ['Draft Generated', 'Under Review', 'Changes Needed', 'Approved'],
+    label: 'Manager Review',
+    match: (status) =>
+      ['Draft Generated', 'Under Review', 'Changes Needed', 'Approved', 'Sent Back to Manager'].includes(status),
+    activeStatuses: ['Draft Generated', 'Under Review', 'Changes Needed', 'Approved', 'Sent Back to Manager'],
     cls: 'border-amber-200 bg-amber-50 text-amber-700',
   },
   {
@@ -165,8 +167,9 @@ function leaseDraftMatchesQueueFilter(status, filterValue) {
 
 function leaseUiStatusLabel(status) {
   const normalized = String(status || '').trim()
-  if (['Draft Generated', 'Under Review', 'Changes Needed', 'Approved'].includes(normalized)) return 'Draft'
-  if (normalized === 'Sent Back to Manager') return 'Manager review'
+  if (['Draft Generated', 'Under Review', 'Changes Needed', 'Approved', 'Sent Back to Manager'].includes(normalized)) {
+    return 'Manager Review'
+  }
   if (
     ['Submitted to Admin', 'Admin In Review', 'Changes Made', 'Manager Approved', 'Ready for Signature'].includes(
       normalized,
@@ -176,7 +179,7 @@ function leaseUiStatusLabel(status) {
   }
   if (normalized === 'Published') return 'With resident'
   if (normalized === 'Signed') return 'Signed'
-  return normalized || 'Draft'
+  return normalized || 'Manager Review'
 }
 
 const LEASE_TERMS = [
@@ -905,7 +908,7 @@ function extractMultilineNoteValue(notes, label) {
 function propertyTourAvailabilityText(property) {
   if (!property) return ''
   const explicit = String(property['Tour Availability'] || property['Calendar Availability'] || '').trim()
-  const fromNotes = extractMultilineNoteValue(property.Notes, 'Tour Availability') || ''
+  const fromNotes = extractMultilineNoteValue(property['Notes'], 'Tour Availability') || ''
   return explicit || fromNotes
 }
 
@@ -1344,14 +1347,44 @@ function isWorkOrderOrScheduledTourCalendarRow(row) {
   return t === CALENDAR_EVENT_TYPES.WORK_ORDER || t === CALENDAR_EVENT_TYPES.TOUR
 }
 
+/**
+ * Parse Scheduling `Preferred Time` for calendar layout — matches server `tour.js` and
+ * `workOrderShared` (hyphen, en/em dash, "to", minute ranges, 24h HH:MM).
+ */
 function parsePreferredTimeRange(preferredTime) {
-  const parts = String(preferredTime || '')
-    .split('-')
+  const raw = String(preferredTime || '').trim()
+  if (!raw) return null
+
+  const pair = raw.match(/^(\d{1,4})-(\d{1,4})$/)
+  if (pair) {
+    const start = Number(pair[1])
+    const end = Number(pair[2])
+    if (Number.isFinite(start) && Number.isFinite(end) && end > start && start < 48 * 60 && end <= 48 * 60) {
+      return {
+        start: Math.max(TOUR_GRID_START_MIN, start),
+        end: Math.min(TOUR_GRID_END_MIN, end),
+      }
+    }
+  }
+
+  const joined = raw.replace(/\s+to\s+/i, ' - ')
+  const parts = joined
+    .split(/\s*[\-–—]\s*/)
     .map((part) => part.trim())
     .filter(Boolean)
   if (parts.length !== 2) return null
+
   const parseLabel = (value) => {
-    const match = String(value).match(/^(\d{1,2})(?::(\d{2}))?\s*(AM|PM)$/i)
+    const v = String(value).trim()
+    const hm24 = v.match(/^(\d{1,2}):(\d{2})$/)
+    if (hm24) {
+      const hh = Number(hm24[1])
+      const mm = Number(hm24[2])
+      if (Number.isFinite(hh) && Number.isFinite(mm) && hh >= 0 && hh <= 23 && mm >= 0 && mm <= 59) {
+        return hh * 60 + mm
+      }
+    }
+    const match = v.match(/^(\d{1,2})(?::(\d{2}))?\s*(AM|PM)$/i)
     if (!match) return null
     let hour = Number(match[1]) % 12
     const minute = Number(match[2] || '0')
@@ -1914,27 +1947,62 @@ async function updatePropertyAdmin(recordId, fields) {
   return mapRecord(data)
 }
 
-/** Persist tour grid to Properties — tries Tour Availability + Notes, then each alone (bases vary). */
+/** Strip unknown Airtable field from PATCH error message (same idea as createSchedulingRecord). */
+function airtableUnknownFieldFromError(err) {
+  const msg = String(err?.message || '')
+  return (
+    msg.match(/Unknown field name:\s*"([^"]+)"/i)?.[1] ||
+    msg.match(/Unknown field name:\s*'([^']+)'/i)?.[1] ||
+    ''
+  )
+}
+
+/** Airtable error may use different casing than our payload keys (e.g. "notes" vs "Notes"). */
+function resolvePayloadKeyForUnknownField(payload, unknownRaw) {
+  if (!unknownRaw || !payload || typeof payload !== 'object') return ''
+  const u = String(unknownRaw).trim()
+  if (Object.prototype.hasOwnProperty.call(payload, u)) return u
+  const lower = u.toLowerCase()
+  for (const k of Object.keys(payload)) {
+    if (k.toLowerCase() === lower) return k
+  }
+  return ''
+}
+
+/**
+ * Persist tour grid to Properties.
+ * Tries dedicated columns first (no Notes) so bases without a Notes column succeed; then optional Notes merge.
+ */
 async function patchPropertyTourAvailability(propertyRecord, tourText, manager) {
   const id = String(propertyRecord?.id || '').trim()
   if (!id) throw new Error('Missing property id.')
-  const notesVal = String(propertyRecord?.Notes || '')
+  const notesVal = String(propertyRecord?.['Notes'] ?? '')
   const mergedNotes = buildTourNotesText(notesVal, {
     manager: String(propertyRecord['Tour Manager'] || manager?.name || manager?.email || '').trim(),
     availability: tourText,
     notes: extractMultilineNoteValue(notesVal, 'Tour Notes') || '',
   })
-  const attempts = [
-    { 'Tour Availability': tourText, Notes: mergedNotes },
+  const starters = [
     { 'Tour Availability': tourText },
+    { 'Calendar Availability': tourText },
+    { 'Tour Availability': tourText, Notes: mergedNotes },
+    { 'Calendar Availability': tourText, Notes: mergedNotes },
     { Notes: mergedNotes },
   ]
   let lastErr = null
-  for (const fields of attempts) {
-    try {
-      return await updatePropertyAdmin(id, fields)
-    } catch (e) {
-      lastErr = e
+  for (const starter of starters) {
+    let payload = { ...starter }
+    for (let attempt = 0; attempt < 12 && Object.keys(payload).length > 0; attempt++) {
+      try {
+        return await updatePropertyAdmin(id, payload)
+      } catch (e) {
+        lastErr = e
+        const unknownRaw = airtableUnknownFieldFromError(e)
+        const key = resolvePayloadKeyForUnknownField(payload, unknownRaw)
+        if (!key) break
+        const { [key]: _drop, ...rest } = payload
+        payload = rest
+      }
     }
   }
   throw lastErr || new Error('Could not save tour availability.')
@@ -2137,10 +2205,10 @@ async function createSchedulingRecord(fields) {
       return mapRecord(data)
     } catch (err) {
       lastErr = err
-      const msg = String(err?.message || '')
-      const unknown = msg.match(/Unknown field name:\s*"([^"]+)"/i)?.[1]
-      if (!unknown || !Object.prototype.hasOwnProperty.call(payload, unknown)) break
-      const { [unknown]: _drop, ...rest } = payload
+      const unknownRaw = airtableUnknownFieldFromError(err)
+      const key = resolvePayloadKeyForUnknownField(payload, unknownRaw)
+      if (!key) break
+      const { [key]: _drop, ...rest } = payload
       payload = rest
       continue
     }
@@ -3437,30 +3505,6 @@ function workOrderLinkedId(woField) {
   return ''
 }
 
-/** Airtable attachment arrays from resident-submitted work orders (field names vary by base). */
-function workOrderPhotoAttachmentUrls(record) {
-  if (!record || typeof record !== 'object') return []
-  const fieldNames = ['Photo', 'Photos', 'Attachments', 'Images', 'Image', 'Pictures']
-  const urls = []
-  const seen = new Set()
-  for (const key of fieldNames) {
-    const v = record[key]
-    if (!Array.isArray(v)) continue
-    for (const item of v) {
-      const url =
-        item && typeof item === 'object' && typeof item.url === 'string'
-          ? item.url.trim()
-          : typeof item === 'string' && item.startsWith('http')
-            ? item.trim()
-            : ''
-      if (!url || seen.has(url)) continue
-      seen.add(url)
-      urls.push(url)
-    }
-  }
-  return urls
-}
-
 function parseCalendarDay(val) {
   if (!val) return null
   const m = String(val).match(/^(\d{4}-\d{2}-\d{2})/)
@@ -3574,6 +3618,12 @@ function ManagerDashboardHomePanel({
 
   const firstName = String(manager?.name || '').split(' ')[0] || null
 
+  const actionLease = !statsLoading && typeof leasePending === 'number' && leasePending > 0
+  const actionApps = !statsLoading && typeof pendingApps === 'number' && pendingApps > 0
+  const actionRent = !statsLoading && typeof rentOverdue === 'number' && rentOverdue > 0
+  const actionWo = !statsLoading && typeof openWo === 'number' && openWo > 0
+  const showActionBanner = actionLease || actionApps || actionRent || actionWo
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -3582,6 +3632,79 @@ function ManagerDashboardHomePanel({
           {firstName ? `WELCOME ${firstName}` : 'DASHBOARD'}
         </h2>
       </div>
+
+      {showActionBanner ? (
+        <div
+          role="status"
+          aria-label="Items needing your attention"
+          className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-4 shadow-sm"
+        >
+          <p className="text-sm font-bold text-amber-950">Action needed</p>
+          <p className="mt-0.5 text-xs text-amber-900/85">Open the matching tab to take care of these.</p>
+          <ul className="mt-3 space-y-2">
+            {actionApps ? (
+              <li className="flex flex-wrap items-center justify-between gap-2 rounded-xl bg-white/60 px-3 py-2 text-sm text-amber-950">
+                <span>
+                  <span className="font-semibold tabular-nums">{pendingApps}</span>
+                  {` application${pendingApps === 1 ? '' : 's'} awaiting your review`}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => onNavigate('applications')}
+                  className="shrink-0 rounded-lg bg-amber-600 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-amber-700"
+                >
+                  Review
+                </button>
+              </li>
+            ) : null}
+            {actionLease ? (
+              <li className="flex flex-wrap items-center justify-between gap-2 rounded-xl bg-white/60 px-3 py-2 text-sm text-amber-950">
+                <span>
+                  <span className="font-semibold tabular-nums">{leasePending}</span>
+                  {` lease${leasePending === 1 ? '' : 's'} need your attention (draft, review, or publish)`}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => onNavigate('leases')}
+                  className="shrink-0 rounded-lg bg-amber-600 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-amber-700"
+                >
+                  Open leases
+                </button>
+              </li>
+            ) : null}
+            {actionRent ? (
+              <li className="flex flex-wrap items-center justify-between gap-2 rounded-xl bg-white/60 px-3 py-2 text-sm text-amber-950">
+                <span>
+                  <span className="font-semibold tabular-nums">{rentOverdue}</span>
+                  {` overdue rent payment${rentOverdue === 1 ? '' : 's'}`}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => onNavigate('payments')}
+                  className="shrink-0 rounded-lg bg-amber-600 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-amber-700"
+                >
+                  View payments
+                </button>
+              </li>
+            ) : null}
+            {actionWo ? (
+              <li className="flex flex-wrap items-center justify-between gap-2 rounded-xl bg-white/60 px-3 py-2 text-sm text-amber-950">
+                <span>
+                  <span className="font-semibold tabular-nums">{openWo}</span>
+                  {` open work order${openWo === 1 ? '' : 's'}`}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => onNavigate('workorders')}
+                  className="shrink-0 rounded-lg bg-amber-600 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-amber-700"
+                >
+                  Open work orders
+                </button>
+              </li>
+            ) : null}
+          </ul>
+        </div>
+      ) : null}
 
       {displayDataWarnings?.length ? (
         <div role="status" className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950">
@@ -4051,6 +4174,28 @@ function WorkOrdersTabPanel({ allowedPropertyNames, allowedPropertyIds }) {
                 key: 'desc',
                 label: 'Description',
                 render: (d) => <span className="font-semibold text-slate-900">{safePortalText(d.Title, 'Untitled request')}</span>,
+              },
+              {
+                key: 'thumb',
+                label: 'Photo',
+                headerClassName: 'w-[72px]',
+                cellClassName: 'w-[72px]',
+                render: (d) => {
+                  const src = workOrderPhotoAttachmentUrls(d)[0]
+                  if (!src) return <span className="text-slate-400">—</span>
+                  return (
+                    <a
+                      href={src}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-block overflow-hidden rounded-xl border border-slate-200 bg-slate-100 shadow-sm"
+                      title="Open photo"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <img src={src} alt="" className="h-12 w-12 object-cover" loading="lazy" />
+                    </a>
+                  )
+                },
               },
               {
                 key: 'sub',
@@ -5130,9 +5275,58 @@ export function CalendarTabPanel({ manager, allowedPropertyNames, loadAllSchedul
   /** Tour template: user edited weekly grid — debounced persist to Airtable */
   const availabilityDirtyRef = useRef(false)
   const adminAvailabilityDirtyRef = useRef(false)
+  /** Latest Properties rows for autosave (avoid stale closure in debounced timeout). */
+  const propertiesRef = useRef([])
+  const managerRef = useRef(manager)
+  /** Pending tour grid to write — keyed so property switch still saves the edited property. */
+  const tourDirtyPayloadRef = useRef(null)
+
+  useEffect(() => {
+    propertiesRef.current = properties
+  }, [properties])
+  useEffect(() => {
+    managerRef.current = manager
+  }, [manager])
+
+  /** Stable scope for partial calendar reloads (avoid full `load()` wiping in-flight availability edits). */
+  const calendarFetchScopeRef = useRef({
+    loadAll: false,
+    managerEmail: '',
+    propertyNames: [],
+  })
+  useEffect(() => {
+    calendarFetchScopeRef.current = {
+      loadAll: !!loadAllSchedulingRows,
+      managerEmail: String(manager?.email || '').trim(),
+      propertyNames: Array.isArray(allowedPropertyNames)
+        ? allowedPropertyNames
+        : [...(allowedPropertyNames || [])],
+    }
+  }, [loadAllSchedulingRows, manager?.email, allowedPropertyNames])
+
+  const refreshSchedulingRowsOnly = useCallback(async () => {
+    const { loadAll, managerEmail, propertyNames } = calendarFetchScopeRef.current
+    try {
+      const sched = loadAll
+        ? await fetchAllSchedulingRows()
+        : await fetchSchedulingForManagerScope({ managerEmail, propertyNames })
+      const workOrders = await getAllWorkOrders().catch(() => [])
+      const allowedLower = loadAll
+        ? null
+        : new Set(
+            (propertyNames || []).map((name) => String(name).trim().toLowerCase()).filter(Boolean),
+          )
+      const workOrderRows = workOrdersToCalendarRows(workOrders, allowedLower)
+      setSchedulingRows([...sched, ...workOrderRows])
+    } catch (err) {
+      console.error('[CalendarTabPanel] refreshSchedulingRowsOnly', err)
+    }
+  }, [])
 
   const load = useCallback(async () => {
     setLoading(true)
+    availabilityDirtyRef.current = false
+    tourDirtyPayloadRef.current = null
     try {
       const [sched, props, workOrders] = await Promise.all([
         loadAllSchedulingRows
@@ -5276,6 +5470,85 @@ export function CalendarTabPanel({ manager, allowedPropertyNames, loadAllSchedul
     [weeklyFreeByProperty, selectedPropertyId],
   )
 
+  const saveTourDirtyIfNeeded = useCallback(async () => {
+    if (!availabilityDirtyRef.current) return true
+    const pending = tourDirtyPayloadRef.current
+    if (!pending?.propertyId) {
+      availabilityDirtyRef.current = false
+      return true
+    }
+    const p2 = propertiesRef.current.find((p) => p.id === pending.propertyId)
+    const m2 = managerRef.current
+    if (!p2 || isManagerInternalPreview(m2)) {
+      availabilityDirtyRef.current = false
+      tourDirtyPayloadRef.current = null
+      return true
+    }
+    setAvailSaving(true)
+    try {
+      const tourText = encodeTourAvailabilityFromWeeklyFree(pending.weeklyFree)
+      const updated = await patchPropertyTourAvailability(p2, tourText, m2)
+      const parsedFree = weeklyFreeArraysFromTourText(tourText)
+      setWeeklyFreeByProperty((prev) => ({ ...prev, [pending.propertyId]: parsedFree }))
+      setProperties((prev) => prev.map((p) => (p.id === p2.id ? { ...p, ...updated } : p)))
+      toast.success('Saved', { id: 'calendar-avail-autosave', duration: 1800 })
+      tourDirtyPayloadRef.current = null
+      availabilityDirtyRef.current = false
+      await refreshSchedulingRowsOnly()
+      return true
+    } catch (err) {
+      toast.error(err.message || 'Could not save availability')
+      return false
+    } finally {
+      setAvailSaving(false)
+    }
+  }, [refreshSchedulingRowsOnly])
+
+  const persistAdminMeetingAvailability = useCallback(
+    async (dayKey, ranges, existingRows) => {
+      const adminEmail = String(manager?.email || '').trim().toLowerCase()
+      if (!adminEmail || !dayKey) return
+      setAvailSaving(true)
+      try {
+        await Promise.all((existingRows || []).map((row) => deleteSchedulingRecord(row.id)))
+        for (const range of ranges || []) {
+          await createSchedulingRecord({
+            Name: String(manager?.name || 'Axis admin').trim(),
+            Email: adminEmail,
+            Type: 'Meeting Availability',
+            Status: 'Available',
+            'Manager Email': adminEmail,
+            'Tour Manager': String(manager?.name || '').trim(),
+            'Preferred Date': dayKey,
+            'Preferred Time': `${displayTimeFromMinutes(range.start)} - ${displayTimeFromMinutes(range.end)}`,
+            'Scheduled Date': dayKey,
+            'Scheduled Time': `${displayTimeFromMinutes(range.start)} - ${displayTimeFromMinutes(range.end)}`,
+          })
+        }
+        toast.success('Saved', { id: 'calendar-admin-avail-autosave', duration: 1800 })
+        await refreshSchedulingRowsOnly()
+      } catch (err) {
+        toast.error(err.message || 'Could not save availability')
+        throw err
+      } finally {
+        setAvailSaving(false)
+      }
+    },
+    [manager, refreshSchedulingRowsOnly],
+  )
+
+  const selectPropertyAndFlush = useCallback(
+    async (nextId) => {
+      const next = String(nextId || '').trim()
+      if (!loadAllSchedulingRows && next && next !== String(selectedPropertyId || '').trim()) {
+        const ok = await saveTourDirtyIfNeeded()
+        if (!ok) return
+      }
+      setSelectedPropertyId(next)
+    },
+    [loadAllSchedulingRows, selectedPropertyId, saveTourDirtyIfNeeded],
+  )
+
   // Manager: property-scoped rows. Admin (loadAllSchedulingRows): everything tied to this admin email.
   const schedulingRowsForView = useMemo(() => {
     if (loadAllSchedulingRows) {
@@ -5369,11 +5642,6 @@ export function CalendarTabPanel({ manager, allowedPropertyNames, loadAllSchedul
     setAdminDayRanges(adminRangesFromRows)
   }, [loadAllSchedulingRows, adminRangesFromRows, selectedDateKey])
 
-  useEffect(() => {
-    if (!loadAllSchedulingRows) return
-    adminAvailabilityDirtyRef.current = false
-  }, [selectedDateKey, loadAllSchedulingRows])
-
   // Load blocked dates whenever the selected property changes
   useEffect(() => {
     if (!selectedPropertyId) {
@@ -5433,52 +5701,35 @@ export function CalendarTabPanel({ manager, allowedPropertyNames, loadAllSchedul
     }
   }
 
-  function handleSelectDate(key) {
-    setSelectedDateKey(key)
-    setAnchorDate(dateFromCalendarKey(key))
+  async function handleSelectDate(key) {
+    const nextKey = String(key || '').trim()
+    if (loadAllSchedulingRows && adminAvailabilityDirtyRef.current) {
+      const {
+        manager: mgr,
+        selectedDateKey: dayKey,
+        adminDayRanges: ranges,
+        adminAvailabilityRowsForSelectedDay: rows,
+      } = adminAutosaveCtxRef.current
+      adminAvailabilityDirtyRef.current = false
+      try {
+        await persistAdminMeetingAvailability(dayKey, ranges, rows)
+      } catch {
+        adminAvailabilityDirtyRef.current = true
+        return
+      }
+    }
+    setSelectedDateKey(nextKey)
+    setAnchorDate(dateFromCalendarKey(nextKey))
   }
-
-  const tourAutosaveCtxRef = useRef({})
-  tourAutosaveCtxRef.current = {
-    selectedProperty,
-    selectedWeeklyFree,
-    selectedPropertyId,
-    manager,
-    load,
-  }
-
-  useEffect(() => {
-    if (loadAllSchedulingRows) return
-    availabilityDirtyRef.current = false
-  }, [selectedPropertyId, loadAllSchedulingRows])
 
   useEffect(() => {
     if (loadAllSchedulingRows) return
     if (!availabilityDirtyRef.current) return
-    const { manager: mgr, selectedPropertyId: pid, selectedProperty: prop } = tourAutosaveCtxRef.current
-    if (isManagerInternalPreview(mgr) || !pid || !prop) return
-    const t = window.setTimeout(async () => {
-      const { selectedProperty: p2, selectedWeeklyFree: f2, selectedPropertyId: pid2, manager: m2, load: r2 } =
-        tourAutosaveCtxRef.current
-      if (isManagerInternalPreview(m2) || !pid2 || !p2) return
-      availabilityDirtyRef.current = false
-      setAvailSaving(true)
-      try {
-        const tourText = encodeTourAvailabilityFromWeeklyFree(f2)
-        const updated = await patchPropertyTourAvailability(p2, tourText, m2)
-        const parsedFree = weeklyFreeArraysFromTourText(tourText)
-        setWeeklyFreeByProperty((prev) => ({ ...prev, [pid2]: parsedFree }))
-        setProperties((prev) => prev.map((p) => (p.id === p2.id ? { ...p, ...updated } : p)))
-        toast.success('Saved', { id: 'calendar-avail-autosave', duration: 1800 })
-        await r2()
-      } catch (err) {
-        toast.error(err.message || 'Could not save availability')
-      } finally {
-        setAvailSaving(false)
-      }
+    const t = window.setTimeout(() => {
+      void saveTourDirtyIfNeeded()
     }, 550)
     return () => window.clearTimeout(t)
-  }, [weeklyFreeByProperty, selectedPropertyId, loadAllSchedulingRows])
+  }, [weeklyFreeByProperty, selectedPropertyId, loadAllSchedulingRows, saveTourDirtyIfNeeded])
 
   const adminAutosaveCtxRef = useRef({})
   adminAutosaveCtxRef.current = {
@@ -5486,7 +5737,6 @@ export function CalendarTabPanel({ manager, allowedPropertyNames, loadAllSchedul
     selectedDateKey,
     adminDayRanges,
     adminAvailabilityRowsForSelectedDay,
-    load,
   }
 
   useEffect(() => {
@@ -5498,38 +5748,18 @@ export function CalendarTabPanel({ manager, allowedPropertyNames, loadAllSchedul
         selectedDateKey: dayKey,
         adminDayRanges: ranges,
         adminAvailabilityRowsForSelectedDay: rows,
-        load: reload,
       } = adminAutosaveCtxRef.current
       const adminEmail = String(mgr?.email || '').trim().toLowerCase()
       if (!adminEmail) return
       adminAvailabilityDirtyRef.current = false
-      setAvailSaving(true)
       try {
-        await Promise.all((rows || []).map((row) => deleteSchedulingRecord(row.id)))
-        for (const range of ranges || []) {
-          await createSchedulingRecord({
-            Name: String(mgr?.name || 'Axis admin').trim(),
-            Email: adminEmail,
-            Type: 'Meeting Availability',
-            Status: 'Available',
-            'Manager Email': adminEmail,
-            'Tour Manager': String(mgr?.name || '').trim(),
-            'Preferred Date': dayKey,
-            'Preferred Time': `${displayTimeFromMinutes(range.start)} - ${displayTimeFromMinutes(range.end)}`,
-            'Scheduled Date': dayKey,
-            'Scheduled Time': `${displayTimeFromMinutes(range.start)} - ${displayTimeFromMinutes(range.end)}`,
-          })
-        }
-        toast.success('Saved', { id: 'calendar-admin-avail-autosave', duration: 1800 })
-        await reload()
-      } catch (err) {
-        toast.error(err.message || 'Could not save availability')
-      } finally {
-        setAvailSaving(false)
+        await persistAdminMeetingAvailability(dayKey, ranges, rows)
+      } catch {
+        adminAvailabilityDirtyRef.current = true
       }
     }, 550)
     return () => window.clearTimeout(t)
-  }, [adminDayRanges, selectedDateKey, loadAllSchedulingRows])
+  }, [adminDayRanges, selectedDateKey, loadAllSchedulingRows, persistAdminMeetingAvailability])
 
   const calendarStats = useMemo(() => {
     const today = new Date()
@@ -5566,7 +5796,7 @@ export function CalendarTabPanel({ manager, allowedPropertyNames, loadAllSchedul
             <div className={MANAGER_PILL_SELECT_WRAP_CLS}>
               <select
                 value={selectedPropertyId}
-                onChange={(e) => setSelectedPropertyId(e.target.value)}
+                onChange={(e) => void selectPropertyAndFlush(e.target.value)}
                 disabled={!availabilityOwnerOptions.length}
                 className={MANAGER_PILL_SELECT_CLS}
               >
@@ -5602,11 +5832,12 @@ export function CalendarTabPanel({ manager, allowedPropertyNames, loadAllSchedul
         <button
           type="button"
           onClick={() => {
-            const t = new Date()
-            const k = dateKeyFromDate(t)
-            setSelectedDateKey(k)
-            setAnchorDate(t)
-            setView('day')
+            void (async () => {
+              const t = new Date()
+              const k = dateKeyFromDate(t)
+              await handleSelectDate(k)
+              setView('day')
+            })()
           }}
           className={classNames(
             'rounded-2xl border px-4 py-3 text-left transition',
@@ -5621,11 +5852,13 @@ export function CalendarTabPanel({ manager, allowedPropertyNames, loadAllSchedul
         <button
           type="button"
           onClick={() => {
-            const d = startOfWeekSunday(new Date())
-            const k = dateKeyFromDate(d)
-            setSelectedDateKey(k)
-            setAnchorDate(d)
-            setView('week')
+            void (async () => {
+              const d = startOfWeekSunday(new Date())
+              const k = dateKeyFromDate(d)
+              await handleSelectDate(k)
+              setAnchorDate(d)
+              setView('week')
+            })()
           }}
           className={classNames(
             'rounded-2xl border px-4 py-3 text-left transition',
@@ -5640,12 +5873,14 @@ export function CalendarTabPanel({ manager, allowedPropertyNames, loadAllSchedul
         <button
           type="button"
           onClick={() => {
-            const d = new Date()
-            const first = new Date(d.getFullYear(), d.getMonth(), 1)
-            const k = dateKeyFromDate(first)
-            setSelectedDateKey(k)
-            setAnchorDate(first)
-            setView('month')
+            void (async () => {
+              const d = new Date()
+              const first = new Date(d.getFullYear(), d.getMonth(), 1)
+              const k = dateKeyFromDate(first)
+              await handleSelectDate(k)
+              setAnchorDate(first)
+              setView('month')
+            })()
           }}
           className={classNames(
             'rounded-2xl border px-4 py-3 text-left transition',
@@ -5681,30 +5916,37 @@ export function CalendarTabPanel({ manager, allowedPropertyNames, loadAllSchedul
               if (!selectedPropertyId) return
               availabilityDirtyRef.current = true
               const abbr = weekdayAbbrFromDateKey(selectedDateKey)
+              const pid = selectedPropertyId
               setWeeklyFreeByProperty((prev) => {
-                const base = prev[selectedPropertyId] || emptyWeeklyFreeArrays()
-                return { ...prev, [selectedPropertyId]: weeklyFreeWithDayRanges(base, abbr, ranges) }
+                const base = prev[pid] || emptyWeeklyFreeArrays()
+                const nextForProp = weeklyFreeWithDayRanges(base, abbr, ranges)
+                tourDirtyPayloadRef.current = { propertyId: pid, weeklyFree: nextForProp }
+                return { ...prev, [pid]: nextForProp }
               })
             }}
             onCopyHoursToWholeWeek={() => {
               if (!selectedPropertyId) return
               availabilityDirtyRef.current = true
               const abbr = weekdayAbbrFromDateKey(selectedDateKey)
+              const pid = selectedPropertyId
               setWeeklyFreeByProperty((prev) => {
-                const base = prev[selectedPropertyId] || emptyWeeklyFreeArrays()
+                const base = prev[pid] || emptyWeeklyFreeArrays()
+                const nextForProp = weeklyFreeCopySourceDayToAllDays(base, abbr)
+                tourDirtyPayloadRef.current = { propertyId: pid, weeklyFree: nextForProp }
                 return {
                   ...prev,
-                  [selectedPropertyId]: weeklyFreeCopySourceDayToAllDays(base, abbr),
+                  [pid]: nextForProp,
                 }
               })
               toast.success('Copied to Mon–Sun')
             }}
+            onSave={() => void saveTourDirtyIfNeeded()}
             scheduledItems={scheduledItemsForSelectedDay}
             availSaving={availSaving}
             manager={manager}
             propertyOptions={availabilityOwnerOptions}
             selectedPropertyId={selectedPropertyId}
-            onSelectProperty={setSelectedPropertyId}
+            onSelectProperty={(id) => void selectPropertyAndFlush(id)}
             isDateBlocked={blockedDatesSet.has(selectedDateKey)}
             onBlockDay={handleBlockDay}
             onUnblockDay={handleUnblockDay}

@@ -2,6 +2,7 @@ import {
   airtablePermissionDeniedMessage,
   responseBodyIndicatesAirtablePermissionDenied,
 } from './airtablePermissionError.js'
+import { workOrderPhotoAttachmentFieldNamesOrdered } from './workOrderShared.js'
 
 /** Single Airtable base for the whole app (portal, applications, tour, lease drafts, payments, etc.). */
 const BASE_ID = import.meta.env.VITE_AIRTABLE_BASE_ID || 'appol57LKtMKaQ75T'
@@ -857,7 +858,7 @@ export async function createWorkOrder({
         const record = mapRecord(data)
 
         if (photoFile) {
-          const photoFieldCandidates = ['Photo', 'Photos', 'Attachments', 'Images', 'Image', 'Pictures']
+          const photoFieldCandidates = workOrderPhotoAttachmentFieldNamesOrdered()
           let uploaded = false
           for (const fieldName of photoFieldCandidates) {
             try {

@@ -112,14 +112,14 @@ const PROPERTY_STATUS_LABEL = {
   unlisted: 'Unlisted',
 }
 
-const NAV_BASE = [
-  { id: 'dashboard', label: 'Dashboard' },
-  { id: 'properties', label: 'Properties' },
-  { id: 'accounts', label: 'Managers' },
-  { id: 'leasing', label: 'Leases' },
-  { id: 'calendar', label: 'Calendar' },
-  { id: 'messages', label: 'Inbox' },
-  { id: 'profile', label: 'Profile' },
+const ADMIN_TAB_IDS = [
+  'dashboard',
+  'properties',
+  'accounts',
+  'leasing',
+  'calendar',
+  'messages',
+  'profile',
 ]
 
 /** All signed-in admin users can review applications from this UI. */
@@ -704,7 +704,7 @@ export default function AdminPortal() {
   })
   const [tab, setTab] = useState(() => {
     const h = window.location.hash.slice(1)
-    return NAV_BASE.some((n) => n.id === h) ? h : 'dashboard'
+    return ADMIN_TAB_IDS.includes(h) ? h : 'dashboard'
   })
   useEffect(() => { window.location.hash = tab }, [tab])
   /** Within Properties: pending | request_change | approved | unlisted | rejected */
@@ -844,7 +844,25 @@ export default function AdminPortal() {
     setSelectedApprovalId(null)
   }, [propertiesSection])
 
-  const navItems = useMemo(() => NAV_BASE, [])
+  const navItems = useMemo(
+    () => [
+      { id: 'dashboard', label: 'Dashboard', description: 'Overview & alerts' },
+      { id: 'properties', label: 'Properties', description: 'Listings & approvals' },
+      { id: 'accounts', label: 'Managers', description: 'Subscribers & access' },
+      {
+        id: 'leasing',
+        label: 'Leases',
+        description:
+          leaseChangesNeededCount > 0
+            ? `${leaseChangesNeededCount} need admin review`
+            : 'Drafts, PDFs & workflow',
+      },
+      { id: 'calendar', label: 'Calendar', description: 'Scheduling & tours' },
+      { id: 'messages', label: 'Inbox', description: 'Resident & manager threads' },
+      { id: 'profile', label: 'Profile', description: 'Your account' },
+    ],
+    [leaseChangesNeededCount],
+  )
 
   /** First-time submissions awaiting admin review (not admin “request change” flow). */
   const pendingReviewProperties = useMemo(() => properties.filter((p) => p.status === 'pending'), [properties])
@@ -970,6 +988,7 @@ export default function AdminPortal() {
   return (
     <PortalShell
       brandTitle="Axis"
+      brandSubtitle="Admin portal"
       desktopNav="sidebar"
       navItems={navItems}
       activeId={tab}

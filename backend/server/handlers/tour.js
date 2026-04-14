@@ -71,13 +71,28 @@ function parseClockToMinutes(value) {
 }
 
 function parseTimeRangeToMinutes(value) {
-  const parts = String(value || '')
-    .split(/\s*[\-–]\s*/)
+  const raw = String(value || '').trim()
+  if (!raw) return null
+  const joined = raw.replace(/\s+to\s+/i, ' - ')
+  const parts = joined
+    .split(/\s*[\-–—]\s*/)
     .map((part) => part.trim())
     .filter(Boolean)
   if (parts.length !== 2) return null
-  const start = parseClockToMinutes(parts[0])
-  const end = parseClockToMinutes(parts[1])
+  const parseOne = (token) => {
+    const t = String(token || '').trim()
+    const hm24 = t.match(/^(\d{1,2}):(\d{2})$/)
+    if (hm24) {
+      const hh = Number(hm24[1])
+      const mm = Number(hm24[2])
+      if (Number.isFinite(hh) && Number.isFinite(mm) && hh >= 0 && hh <= 23 && mm >= 0 && mm <= 59) {
+        return hh * 60 + mm
+      }
+    }
+    return parseClockToMinutes(t)
+  }
+  const start = parseOne(parts[0])
+  const end = parseOne(parts[1])
   if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) return null
   return { start, end }
 }

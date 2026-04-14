@@ -70,7 +70,7 @@ export function applicationDisplayLabelFromApprovalState(state) {
 
 /**
  * Lease lists (manager portal): a draft tied to an Applications row should not
- * appear as "draft ready" until that application passes {@link deriveApplicationApprovalState}
+ * appear in the manager-review lease queue until that application passes {@link deriveApplicationApprovalState}
  * (same rule as backend lease-creation guards).
  *
  * @param {object} draft - Lease Drafts fields (+ id)

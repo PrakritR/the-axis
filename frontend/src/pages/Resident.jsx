@@ -44,6 +44,7 @@ import {
   submitResidentLeaseChangeRequest,
 } from '../lib/airtable'
 import { applicationRejectedFieldName, deriveApplicationApprovalState } from '../lib/applicationApprovalState.js'
+import { leaseDraftAllowsSignWithoutMoveInPay } from '../lib/leaseMoveInOverride.js'
 import { workOrderScheduledMeta } from '../lib/workOrderShared.js'
 
 const SESSION_KEY = 'axis_resident'
@@ -299,22 +300,53 @@ function getLeaseTermLabel(resident) {
 function getRoomMonthlyRent(propertyName, unitNumber) {
   if (!propertyName || !unitNumber) return 0
   const property = properties.find((p) => p.name === propertyName)
-  if (!property) return 0
-  for (const plan of property.roomPlans || []) {
-    const room = (plan.rooms || []).find((r) => normalizeUnitLabel(r.name) === normalizeUnitLabel(unitNumber))
-    if (room?.price) {
-      const amount = parseInt(String(room.price).replace(/[^0-9]/g, ''), 10)
-      if (Number.isFinite(amount) && amount > 0) return amount
+  if (property) {
+    for (const plan of property.roomPlans || []) {
+      const room = (plan.rooms || []).find((r) => normalizeUnitLabel(r.name) === normalizeUnitLabel(unitNumber))
+      if (room?.price) {
+        const amount = parseInt(String(room.price).replace(/[^0-9]/g, ''), 10)
+        if (Number.isFinite(amount) && amount > 0) return amount
+      }
     }
+  }
+  const propKey = String(propertyName || '')
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, ' ')
+  const roomDigits =
+    String(normalizeUnitLabel(unitNumber) || '')
+      .replace(/^room\s*/i, '')
+      .match(/(\d+)/)?.[1] || ''
+  if (!roomDigits) return 0
+  if (propKey.includes('5259') && propKey.includes('brooklyn')) {
+    const brooklyn = { 1: 865, 2: 865, 3: 825, 4: 825, 5: 825, 6: 800, 7: 800, 8: 800, 9: 800 }
+    return brooklyn[Number(roomDigits)] || 0
+  }
+  if (propKey.includes('4709a') || propKey.includes('4709 a')) {
+    const a = { 1: 775, 2: 775, 3: 775, 4: 775, 5: 775, 6: 775, 7: 775, 8: 775, 9: 750, 10: 875 }
+    return a[Number(roomDigits)] || 0
+  }
+  if (propKey.includes('4709b') || propKey.includes('4709 b')) {
+    const b = { 1: 775, 2: 800, 3: 800, 4: 800, 5: 800, 6: 800, 7: 800, 8: 800, 9: 800 }
+    return b[Number(roomDigits)] || 0
   }
   return 0
 }
 
 function getStaticSecurityDeposit(propertyName) {
   const property = properties.find((p) => p.name === propertyName)
-  if (!property?.securityDeposit) return 0
-  const amount = parseInt(String(property.securityDeposit).replace(/[^0-9]/g, ''), 10)
-  return Number.isFinite(amount) && amount > 0 ? amount : 0
+  if (property?.securityDeposit) {
+    const amount = parseInt(String(property.securityDeposit).replace(/[^0-9]/g, ''), 10)
+    if (Number.isFinite(amount) && amount > 0) return amount
+  }
+  const k = String(propertyName || '')
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, ' ')
+  if (k.includes('5259') && k.includes('brooklyn')) return 600
+  if (k.includes('4709a') || k.includes('4709 a')) return 500
+  if (k.includes('4709b') || k.includes('4709 b')) return 500
+  return 0
 }
 
 /** Monthly flat utilities (resident profile overrides property default). */
@@ -335,6 +367,85 @@ function getMonthlyUtilitiesAmount(propertyName, resident) {
     if (Number.isFinite(n) && n > 0) return n
   }
   return 0
+}
+
+/** Parse currency / numeric fields from Airtable or Lease JSON (same idea as manager portal). */
+function parseResidentMoney(value) {
+  if (value == null || value === '') return 0
+  if (typeof value === 'number' && Number.isFinite(value) && value > 0) return value
+  const digits = String(value).replace(/[^0-9]/g, '')
+  if (!digits) return 0
+  const n = parseInt(digits, 10)
+  return Number.isFinite(n) && n > 0 ? n : 0
+}
+
+/** Newest signed lease draft (for payments: rent / utilities / deposit match the signed unit). */
+function pickSignedLeaseDraft(drafts) {
+  if (!Array.isArray(drafts) || drafts.length === 0) return null
+  const signed = drafts.filter((d) => String(d.Status || '').trim() === 'Signed')
+  if (signed.length === 0) return null
+  return [...signed].sort(
+    (a, b) =>
+      new Date(b['Published At'] || b.created_at || 0) - new Date(a['Published At'] || a.created_at || 0),
+  )[0]
+}
+
+/**
+ * Move-in and recurring payment fallbacks: after the lease is signed, amounts follow the signed
+ * Lease Drafts row (Property / Unit / Rent Amount / Utilities Fee / Deposit Amount), with Lease JSON
+ * and static room lookup as backups (e.g. 4709A vs Brooklyn deposit differs on the draft).
+ */
+function residentPaymentsPricing(resident, signedLeaseDraft) {
+  const profileHouse = String(resident?.House || '').trim()
+  const profileUnit = String(resident?.['Unit Number'] || '').trim()
+
+  if (!signedLeaseDraft) {
+    const depositDirect =
+      parseResidentMoney(resident['Security Deposit Amount'] ?? resident['Security Deposit']) ||
+      getStaticSecurityDeposit(profileHouse)
+    return {
+      propertyName: profileHouse,
+      unitNumber: profileUnit,
+      monthlyRent: getRoomMonthlyRent(profileHouse, profileUnit),
+      utilitiesFee: getMonthlyUtilitiesAmount(profileHouse, resident),
+      securityDeposit: depositDirect,
+    }
+  }
+
+  const prop = String(signedLeaseDraft.Property || signedLeaseDraft['Property Name'] || profileHouse).trim()
+  const unit = String(signedLeaseDraft.Unit || signedLeaseDraft['Unit Number'] || profileUnit).trim()
+
+  let leaseJson = null
+  try {
+    const raw = signedLeaseDraft['Lease JSON']
+    if (raw && typeof raw === 'string') leaseJson = JSON.parse(raw)
+  } catch {
+    leaseJson = null
+  }
+
+  let monthlyRent = parseResidentMoney(signedLeaseDraft['Rent Amount'])
+  if (monthlyRent <= 0 && leaseJson) monthlyRent = parseResidentMoney(leaseJson.monthlyRent)
+  if (monthlyRent <= 0) monthlyRent = getRoomMonthlyRent(prop, unit)
+
+  let utilitiesFee = parseResidentMoney(signedLeaseDraft['Utilities Fee'])
+  if (utilitiesFee <= 0 && leaseJson) utilitiesFee = parseResidentMoney(leaseJson.utilityFee ?? leaseJson.utilitiesFee)
+  if (utilitiesFee <= 0) utilitiesFee = getMonthlyUtilitiesAmount(prop, resident)
+
+  let securityDeposit = parseResidentMoney(signedLeaseDraft['Deposit Amount'])
+  if (securityDeposit <= 0 && leaseJson) securityDeposit = parseResidentMoney(leaseJson.securityDeposit)
+  if (securityDeposit <= 0) {
+    securityDeposit =
+      parseResidentMoney(resident['Security Deposit Amount'] ?? resident['Security Deposit']) ||
+      getStaticSecurityDeposit(prop || profileHouse)
+  }
+
+  return {
+    propertyName: prop || profileHouse,
+    unitNumber: unit || profileUnit,
+    monthlyRent,
+    utilitiesFee,
+    securityDeposit,
+  }
 }
 
 const leaseSigningFields = ['DocuSign Signing URL', 'DocuSign URL', 'Lease Signing URL', 'Lease Sign URL', 'Lease Document URL', 'Lease URL']
@@ -840,7 +951,7 @@ export function ResidentAuthForm({ onLogin, footer = null, variant = 'default' }
 
 function WorkOrdersPanel({ resident, requests: requestsProp, onRequestCreated, onWorkOrderUpdated, onRefresh }) {
   const requests = Array.isArray(requestsProp) ? requestsProp : []
-  const [woFilter, setWoFilter] = useState('all')
+  const [woFilter, setWoFilter] = useState('open')
   const [refreshing, setRefreshing] = useState(false)
   const [deleteBusyId, setDeleteBusyId] = useState('')
   const [showForm, setShowForm] = useState(false)
@@ -866,9 +977,10 @@ function WorkOrdersPanel({ resident, requests: requestsProp, onRequestCreated, o
     return c
   }, [requests])
 
-  const filteredRequests = useMemo(() => {
-    return woFilter === 'all' ? requests : requests.filter((r) => residentWorkOrderFilterBucket(r) === woFilter)
-  }, [requests, woFilter])
+  const filteredRequests = useMemo(
+    () => requests.filter((r) => residentWorkOrderFilterBucket(r) === woFilter),
+    [requests, woFilter],
+  )
 
   async function handleRefresh() {
     if (!onRefresh) return
@@ -971,9 +1083,8 @@ function WorkOrdersPanel({ resident, requests: requestsProp, onRequestCreated, o
         ) : null}
       </div>
 
-      <div className="mb-5 grid gap-2 rounded-[28px] border border-slate-200 bg-slate-50 p-2 sm:grid-cols-2 xl:grid-cols-4">
+      <div className="mb-5 grid gap-2 rounded-[28px] border border-slate-200 bg-slate-50 p-2 sm:grid-cols-2 xl:grid-cols-3">
         {[
-          ['all', 'All', requests.length],
           ['open', 'Open', woBucketCounts.open],
           ['scheduled', 'Scheduled', woBucketCounts.scheduled],
           ['completed', 'Completed', woBucketCounts.completed],
@@ -1381,9 +1492,10 @@ function PaymentsPanel({ resident, onResidentUpdated, highlightCategory, onPayme
   const [actionError, setActionError] = useState('')
   const [actionLoading, setActionLoading] = useState('')
   const [embeddedCheckout, setEmbeddedCheckout] = useState(null)
-  const [payFilter, setPayFilter] = useState('all')
+  const [payFilter, setPayFilter] = useState('pending')
   const [payDetailId, setPayDetailId] = useState(null)
   const [payTableSort, setPayTableSort] = useState('due_asc')
+  const [leaseDraftsForPayments, setLeaseDraftsForPayments] = useState([])
 
   useEffect(() => {
     setPayDetailId(null)
@@ -1398,9 +1510,19 @@ function PaymentsPanel({ resident, onResidentUpdated, highlightCategory, onPayme
       .finally(() => setLoading(false))
   }, [resident])
 
+  const reloadLeaseDraftsForPayments = useCallback(() => {
+    return getLeaseDraftsForResident(resident.id)
+      .then((d) => setLeaseDraftsForPayments(Array.isArray(d) ? d : []))
+      .catch(() => setLeaseDraftsForPayments([]))
+  }, [resident.id])
+
   useEffect(() => {
     loadPayments()
   }, [loadPayments])
+
+  useEffect(() => {
+    reloadLeaseDraftsForPayments()
+  }, [reloadLeaseDraftsForPayments])
 
   const amountDueForRecord = useCallback((payment) => {
     const direct = Number(payment?.Amount ?? payment?.['Amount Due'] ?? payment?.Total ?? 0)
@@ -1457,11 +1579,16 @@ function PaymentsPanel({ resident, onResidentUpdated, highlightCategory, onPayme
   const currentDuePayment = unpaidRentPayments[0] || null
   const currentStatus = currentDuePayment ? paymentStatusForRecord(currentDuePayment) : 'Paid'
   const currentAmountDue = currentDuePayment ? balanceForRecord(currentDuePayment) : 0
-  const fallbackRentAmount = useMemo(() => getRoomMonthlyRent(resident.House, resident['Unit Number']), [resident])
-  const fallbackUtilitiesAmount = useMemo(
-    () => getMonthlyUtilitiesAmount(resident.House, resident),
-    [resident.House, resident],
+  const signedLeaseForPayments = useMemo(
+    () => pickSignedLeaseDraft(leaseDraftsForPayments),
+    [leaseDraftsForPayments],
   )
+  const payPricing = useMemo(
+    () => residentPaymentsPricing(resident, signedLeaseForPayments),
+    [resident, signedLeaseForPayments],
+  )
+  const fallbackRentAmount = payPricing.monthlyRent
+  const fallbackUtilitiesAmount = payPricing.utilitiesFee
   const effectiveCurrentDue = currentDuePayment || (fallbackRentAmount > 0 ? {
     Amount: fallbackRentAmount,
     Month: 'Current rent',
@@ -1488,17 +1615,6 @@ function PaymentsPanel({ resident, onResidentUpdated, highlightCategory, onPayme
       ),
     [sortedPayments, paymentStatusForRecord],
   )
-
-  const expectedDepositAmount = useMemo(() => {
-    const raw =
-      resident['Security Deposit Amount'] ??
-      resident['Security Deposit'] ??
-      getStaticSecurityDeposit(resident.House)
-    if (raw == null || raw === '') return 0
-    if (typeof raw === 'number' && Number.isFinite(raw) && raw > 0) return raw
-    const n = parseInt(String(raw).replace(/[^0-9]/g, ''), 10)
-    return Number.isFinite(n) && n > 0 ? n : 0
-  }, [resident.House, resident['Security Deposit'], resident['Security Deposit Amount']])
 
   const depositPaymentRecord = useMemo(
     () => sortedPayments.find((p) => classifyResidentPaymentLine(p) === 'deposit') || null,
@@ -1534,7 +1650,9 @@ function PaymentsPanel({ resident, onResidentUpdated, highlightCategory, onPayme
       const paid = amountPaidForRecord(payment)
       const status = paymentStatusForRecord(payment)
       const title = payment.Month || payment.Type || (lineKind === 'fee' ? 'Fee or extra' : 'Rent')
-      const subtitle = [resident.House, normalizeUnitLabel(resident['Unit Number'] || '')].filter(Boolean).join(' · ') || 'Your home'
+      const subtitle =
+        [payPricing.propertyName, normalizeUnitLabel(payPricing.unitNumber || '')].filter(Boolean).join(' · ') ||
+        'Your home'
       let recordedAt = null
       if (payment?.created_at) {
         try {
@@ -1585,56 +1703,60 @@ function PaymentsPanel({ resident, onResidentUpdated, highlightCategory, onPayme
         ...overrides,
       }
     },
-    [resident, amountDueForRecord, amountPaidForRecord, balanceForRecord, paymentStatusForRecord],
+    [payPricing, amountDueForRecord, amountPaidForRecord, balanceForRecord, paymentStatusForRecord],
   )
 
   const depositRow = useMemo(() => {
     if (depositPaymentRecord) {
       return buildRowFromPayment(depositPaymentRecord, {
         title: 'Initial security deposit',
-        payDescription: `Security deposit — ${resident.House || 'your home'}`,
+        payDescription: `Security deposit — ${payPricing.propertyName || 'your home'}`,
       })
     }
-    if (expectedDepositAmount <= 0) return null
+    if (payPricing.securityDeposit <= 0) return null
     const moveIn = resident['Lease Start Date'] ? formatDate(resident['Lease Start Date']) : ''
     return {
       id: 'synth-security-deposit',
       title: 'Initial security deposit',
-      subtitle: [resident.House, normalizeUnitLabel(resident['Unit Number'] || '')].filter(Boolean).join(' · ') || 'Your home',
+      subtitle:
+        [payPricing.propertyName, normalizeUnitLabel(payPricing.unitNumber || '')].filter(Boolean).join(' · ') ||
+        'Your home',
       dueDateLabel: moveIn,
-      displayAmount: expectedDepositAmount,
-      balance: expectedDepositAmount,
+      displayAmount: payPricing.securityDeposit,
+      balance: payPricing.securityDeposit,
       statusLabel: 'Unpaid',
       statusHint: 'Typically due at or before move-in unless your lease says otherwise',
       metaRows: [
         { label: 'Due date', value: moveIn || '—' },
-        { label: 'Amount to pay', value: formatMoney(expectedDepositAmount) },
+        { label: 'Amount to pay', value: formatMoney(payPricing.securityDeposit) },
       ],
       recordedAt: null,
       payCategory: 'deposit',
       paymentRecordId: undefined,
       sortDue: parseDisplayDate(resident['Lease Start Date'])?.getTime() ?? 0,
-      sortAmount: expectedDepositAmount,
-      payDescription: `Security deposit — ${resident.House || 'your home'}`,
+      sortAmount: payPricing.securityDeposit,
+      payDescription: `Security deposit — ${payPricing.propertyName || 'your home'}`,
     }
   }, [
     buildRowFromPayment,
     depositPaymentRecord,
-    expectedDepositAmount,
-    resident.House,
+    payPricing.propertyName,
+    payPricing.securityDeposit,
+    payPricing.unitNumber,
     resident['Lease Start Date'],
-    resident['Unit Number'],
   ])
 
   const firstMonthRow = useMemo(() => {
     if (firstRentPaymentRecord) {
       return buildRowFromPayment(firstRentPaymentRecord, {
         title: 'First month rent',
-        payDescription: `First month rent — ${resident.House || 'your home'}`,
+        payDescription: `First month rent — ${payPricing.propertyName || 'your home'}`,
       })
     }
     if (fallbackRentAmount <= 0) return null
-    const subtitle = [resident.House, normalizeUnitLabel(resident['Unit Number'] || '')].filter(Boolean).join(' · ') || 'Your home'
+    const subtitle =
+      [payPricing.propertyName, normalizeUnitLabel(payPricing.unitNumber || '')].filter(Boolean).join(' · ') ||
+      'Your home'
     if (firstMonthRentPaid) {
       const paidRent = [...rentPayments]
         .filter((p) => paymentStatusForRecord(p) === 'Paid')
@@ -1671,7 +1793,7 @@ function PaymentsPanel({ resident, onResidentUpdated, highlightCategory, onPayme
         paymentRecordId: paidRent?.id,
         sortDue: parseDisplayDate(paidRent?.['Due Date'])?.getTime() ?? 0,
         sortAmount: amt,
-        payDescription: `First month rent — ${resident.House || 'your home'}`,
+        payDescription: `First month rent — ${payPricing.propertyName || 'your home'}`,
       }
     }
     return {
@@ -1692,7 +1814,7 @@ function PaymentsPanel({ resident, onResidentUpdated, highlightCategory, onPayme
       paymentRecordId: undefined,
       sortDue: parseDisplayDate(resident['Lease Start Date'])?.getTime() ?? 0,
       sortAmount: fallbackRentAmount,
-      payDescription: `First month rent — ${resident.House || 'your home'}`,
+      payDescription: `First month rent — ${payPricing.propertyName || 'your home'}`,
     }
   }, [
     buildRowFromPayment,
@@ -1702,21 +1824,23 @@ function PaymentsPanel({ resident, onResidentUpdated, highlightCategory, onPayme
     paymentStatusForRecord,
     rentPayments,
     amountDueForRecord,
-    resident.House,
+    payPricing.propertyName,
+    payPricing.unitNumber,
     resident['Lease Start Date'],
-    resident['Unit Number'],
   ])
 
   const firstUtilitiesRow = useMemo(() => {
     if (firstUtilitiesPaymentRecord) {
       return buildRowFromPayment(firstUtilitiesPaymentRecord, {
         title: 'First month utilities',
-        payDescription: `First month utilities — ${resident.House || 'your home'}`,
+        payDescription: `First month utilities — ${payPricing.propertyName || 'your home'}`,
       })
     }
     if (fallbackUtilitiesAmount <= 0) return null
     if (firstMonthUtilitiesPaid) return null
-    const subtitle = [resident.House, normalizeUnitLabel(resident['Unit Number'] || '')].filter(Boolean).join(' · ') || 'Your home'
+    const subtitle =
+      [payPricing.propertyName, normalizeUnitLabel(payPricing.unitNumber || '')].filter(Boolean).join(' · ') ||
+      'Your home'
     return {
       id: 'synth-first-utilities-unpaid',
       title: 'First month utilities',
@@ -1735,16 +1859,16 @@ function PaymentsPanel({ resident, onResidentUpdated, highlightCategory, onPayme
       paymentRecordId: undefined,
       sortDue: parseDisplayDate(resident['Lease Start Date'])?.getTime() ?? 0,
       sortAmount: fallbackUtilitiesAmount,
-      payDescription: `First month utilities — ${resident.House || 'your home'}`,
+      payDescription: `First month utilities — ${payPricing.propertyName || 'your home'}`,
     }
   }, [
     buildRowFromPayment,
     firstUtilitiesPaymentRecord,
     firstMonthUtilitiesPaid,
     fallbackUtilitiesAmount,
-    resident.House,
+    payPricing.propertyName,
+    payPricing.unitNumber,
     resident['Lease Start Date'],
-    resident['Unit Number'],
   ])
 
   useEffect(() => {
@@ -1786,8 +1910,7 @@ function PaymentsPanel({ resident, onResidentUpdated, highlightCategory, onPayme
     return tableSourcePayments.filter((p) => {
       if (payFilter === 'fees') return getPaymentKind(p) === 'fee'
       if (payFilter === 'paid') return paymentStatusForRecord(p) === 'Paid'
-      if (payFilter === 'pending') return balanceForRecord(p) > 0
-      return true
+      return balanceForRecord(p) > 0
     })
   }, [tableSourcePayments, payFilter, paymentStatusForRecord, balanceForRecord])
 
@@ -1807,11 +1930,8 @@ function PaymentsPanel({ resident, onResidentUpdated, highlightCategory, onPayme
       const mi = moveInRowsCombined.filter((r) => r.statusLabel === 'Paid')
       return [...mi, ...recordVMsForFilter]
     }
-    if (payFilter === 'pending') {
-      const mi = moveInRowsCombined.filter((r) => r.balance > 0)
-      return [...mi, ...recordVMsForFilter]
-    }
-    return [...moveInRowsCombined, ...recordVMsForFilter]
+    const mi = moveInRowsCombined.filter((r) => r.balance > 0)
+    return [...mi, ...recordVMsForFilter]
   }, [payFilter, moveInRowsCombined, recordVMsForFilter])
 
   const sortedUnifiedPaymentRows = useMemo(() => {
@@ -1853,9 +1973,16 @@ function PaymentsPanel({ resident, onResidentUpdated, highlightCategory, onPayme
     setEmbeddedCheckout({
       title: description,
       request: {
-        residentId: resident.id, residentName: resident.Name, residentEmail: resident.Email,
-        propertyName: resident.House, unitNumber: resident['Unit Number'],
-        amount, items, description, category, paymentRecordId,
+        residentId: resident.id,
+        residentName: resident.Name,
+        residentEmail: resident.Email,
+        propertyName: payPricing.propertyName || resident.House,
+        unitNumber: payPricing.unitNumber || resident['Unit Number'],
+        amount,
+        items,
+        description,
+        category,
+        paymentRecordId,
       },
       category,
     })
@@ -1871,9 +1998,13 @@ function PaymentsPanel({ resident, onResidentUpdated, highlightCategory, onPayme
     setEmbeddedCheckout(null)
     setLoading(true)
     try {
-      const refreshed = await getPaymentsForResident(resident)
+      const [refreshed, drafts] = await Promise.all([
+        getPaymentsForResident(resident),
+        getLeaseDraftsForResident(resident.id).catch(() => []),
+      ])
       const rows = Array.isArray(refreshed) ? refreshed : []
       setPayments(rows)
+      setLeaseDraftsForPayments(Array.isArray(drafts) ? drafts : [])
       onPaymentsDataUpdated?.(rows)
       // Parent passes `setResident` — must receive a record, not `undefined`, or the whole portal crashes.
       const nextResident = await getResidentById(resident.id)
@@ -1911,11 +2042,20 @@ function PaymentsPanel({ resident, onResidentUpdated, highlightCategory, onPayme
         </button>
       </div>
 
-      <div className="mb-5 grid gap-2 rounded-[28px] border border-slate-200 bg-slate-50 p-2 sm:grid-cols-2 xl:grid-cols-4">
+      <div className="mb-5 grid gap-2 rounded-[28px] border border-slate-200 bg-slate-50 p-2 sm:grid-cols-2 xl:grid-cols-3">
         {[
-          ['all', 'All activity', sortedPayments.length],
-          ['pending', 'Due or upcoming', unpaidRentPayments.length],
-          ['paid', 'Paid rent', paymentHistory.length],
+          [
+            'pending',
+            'Due or upcoming',
+            moveInRowsCombined.filter((r) => r.balance > 0).length +
+              tableSourcePayments.filter((p) => balanceForRecord(p) > 0).length,
+          ],
+          [
+            'paid',
+            'Paid',
+            moveInRowsCombined.filter((r) => r.statusLabel === 'Paid').length +
+              tableSourcePayments.filter((p) => paymentStatusForRecord(p) === 'Paid').length,
+          ],
           ['fees', 'Fees & extras', feeChargeRows.length],
         ].map(([key, label, count]) => (
           <button
@@ -2139,9 +2279,14 @@ function LeasingPanel({ resident, payments, onOpenPayments }) {
     return list.some((p) => classifyResidentPaymentLine(p) === 'deposit' && residentPaymentLineStatus(p) === 'Paid')
   }, [payments])
 
-  const moveInPrereqsMet = securityDepositPaid && firstMonthRentPaid
-
   const activeLeaseDraft = useMemo(() => pickBestLeaseDraft(leaseDrafts), [leaseDrafts])
+  const signWithoutMoveInPayOverride = useMemo(
+    () => leaseDraftAllowsSignWithoutMoveInPay(activeLeaseDraft),
+    [activeLeaseDraft],
+  )
+  const moveInPrereqsMet =
+    signWithoutMoveInPayOverride || (securityDepositPaid && firstMonthRentPaid)
+
   const leaseStatus = activeLeaseDraft?.Status ? String(activeLeaseDraft.Status).trim() : ''
   const leaseIsSigned = leaseStatus === 'Signed'
   /** Extension only after move-in charges are satisfied and the lease is signed. */
@@ -2255,6 +2400,13 @@ function LeasingPanel({ resident, payments, onOpenPayments }) {
           </div>
         ) : (
           <div className="rounded-[24px] border border-[#2563eb]/20 bg-[linear-gradient(135deg,#eff6ff_0%,#ffffff_100%)] p-5">
+            {signWithoutMoveInPayOverride && (!securityDepositPaid || !firstMonthRentPaid) ? (
+              <div className="mb-4 rounded-2xl border border-blue-200 bg-blue-50/90 px-4 py-3 text-sm text-blue-950">
+                <span className="font-semibold">Move-in payment waived for signing.</span>{' '}
+                Your manager enabled access to the lease before security deposit and first month rent are paid. You
+                still owe any move-in charges shown in Payments unless your lease says otherwise.
+              </div>
+            ) : null}
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div className="min-w-0 flex-1">
                 <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-[#2563eb]">Lease Document</div>
@@ -2550,6 +2702,50 @@ function ResidentDashboardHome({
           {`WELCOME ${firstName}`}
         </h2>
       </div>
+
+      {!lock && leaseNeedsSigning ? (
+        <div
+          role="status"
+          className="rounded-2xl border border-amber-200 bg-amber-50 px-5 py-4 shadow-sm"
+        >
+          <p className="text-sm font-bold text-amber-950">Sign your lease</p>
+          <p className="mt-1 text-sm text-amber-900/90">
+            Your lease is ready. Complete signing to finish onboarding and keep your move-in on track.
+          </p>
+          <button
+            type="button"
+            onClick={() => {
+              if (leaseSigningUrl) {
+                window.location.href = leaseSigningUrl
+                return
+              }
+              onNavigate('leasing')
+            }}
+            className="mt-3 inline-flex rounded-full border border-amber-300 bg-amber-100 px-5 py-2.5 text-xs font-semibold text-amber-950 transition hover:bg-amber-200"
+          >
+            {leaseSigningUrl ? 'Open signing' : 'Go to lease'}
+          </button>
+        </div>
+      ) : null}
+
+      {!lock && hasOverdueRent ? (
+        <div role="status" className="rounded-2xl border border-red-200 bg-red-50 px-5 py-4 shadow-sm">
+          <p className="text-sm font-bold text-red-950">Rent overdue</p>
+          <p className="mt-1 text-sm text-red-900/90">
+            You have a balance past due. Open Payments to review amounts and pay now.
+          </p>
+          <button
+            type="button"
+            onClick={() => {
+              setPaymentFocus('overdue')
+              onNavigate('payments')
+            }}
+            className="mt-3 inline-flex rounded-full border border-red-300 bg-red-100 px-5 py-2.5 text-xs font-semibold text-red-950 transition hover:bg-red-200"
+          >
+            Go to payments
+          </button>
+        </div>
+      ) : null}
 
       {/* Pending approval banner */}
       {pendingApplicationApproval ? (

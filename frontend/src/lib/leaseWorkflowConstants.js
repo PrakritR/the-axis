@@ -77,15 +77,15 @@ export const LEASE_WORKFLOW_STATUS_CONFIG = {
   },
   // ── Legacy / existing statuses preserved ──
   'Draft Generated': {
-    label: 'Draft ready',
-    short: 'Draft ready',
+    label: 'Manager Review',
+    short: 'Manager Review',
     bg: 'bg-slate-50',
     text: 'text-slate-600',
     border: 'border-slate-200',
     dot: 'bg-slate-400',
     adminActionNeeded: false,
     managerActionNeeded: true,
-    description: 'Structured or AI lease draft is ready for manager review',
+    description: 'Lease draft is with the manager for review',
   },
   'Under Review': {
     label: 'Reviewing',

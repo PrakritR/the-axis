@@ -178,6 +178,7 @@ Create table `Lease Drafts`
 `Approved By` -> single line text
 `Approved At` -> date and time
 `Published At` -> date and time
+`Allow Sign Without Move-In Pay` -> checkbox (optional; manager portal — when checked, resident can open/sign lease before paying move-in charges)
 `SignForge Envelope ID` -> single line text
 `SignForge Sent At` -> date and time
 

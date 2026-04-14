@@ -17,14 +17,14 @@ import { publishLeaseDraft, generateLeaseFromApplication } from '../lib/airtable
 /** Hide legacy Airtable value "Changes Needed" — same queue as other pre-publish drafts. */
 function leaseDraftStatusLabel(raw) {
   const s = String(raw || '').trim()
-  if (s === 'Changes Needed') return 'Draft ready'
+  if (s === 'Changes Needed') return 'Manager Review'
   return s || 'No draft'
 }
 
 function StatusBadge({ status }) {
   const label = leaseDraftStatusLabel(status)
   const map = {
-    'Draft ready': 'border-amber-200 bg-amber-50 text-amber-700',
+    'Manager Review': 'border-amber-200 bg-amber-50 text-amber-700',
     'Draft Generated': 'border-amber-200 bg-amber-50 text-amber-700',
     'Under Review': 'border-sky-200 bg-sky-50 text-sky-800',
     Approved: 'border-emerald-200 bg-emerald-50 text-emerald-800',

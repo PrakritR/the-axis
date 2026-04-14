@@ -2,8 +2,18 @@ import React, { useState, useEffect, useCallback, useMemo } from 'react'
 import toast from 'react-hot-toast'
 import LeaseHTMLTemplate from '../components/LeaseHTMLTemplate.jsx'
 import { DataTable } from '../components/PortalShell'
-import { getStatusConfig, fmtTs } from '../lib/leaseWorkflowConstants.js'
-import { getLeaseDraftById, uploadLeaseVersionPdfFile, getCurrentLeaseVersion } from '../lib/airtable.js'
+import { getStatusConfig, fmtTs, parseManagerEditNotes } from '../lib/leaseWorkflowConstants.js'
+import {
+  getLeaseDraftById,
+  uploadLeaseVersionPdfFile,
+  getCurrentLeaseVersion,
+  getLeaseCommentsForDraft,
+  updateLeaseDraftRecord,
+} from '../lib/airtable.js'
+import {
+  leaseDraftAllowsSignWithoutMoveInPay,
+  leaseSignWithoutMoveInPayFieldName,
+} from '../lib/leaseMoveInOverride.js'
 
 const AIRTABLE_TOKEN = import.meta.env.VITE_AIRTABLE_TOKEN
 const CORE_BASE_ID = import.meta.env.VITE_AIRTABLE_BASE_ID || 'appol57LKtMKaQ75T'
@@ -43,7 +53,7 @@ async function callPortalAction(action, body) {
 const ADMIN_STATUS_FILTER_ITEMS = [
   {
     id: 'draft_ready',
-    label: 'Draft Ready',
+    label: 'Manager Review',
     match: (status) => ['Draft Generated', 'Under Review', 'Changes Needed', 'Approved', 'Sent Back to Manager'].includes(String(status || '').trim()),
   },
   {
@@ -75,6 +85,45 @@ function StatusPill({ status }) {
   )
 }
 
+function AdminLeaseCommentBubble({ comment }) {
+  const role = String(comment['Author Role'] || 'Unknown').trim() || 'Unknown'
+  const roleTone =
+    role === 'Admin' ? 'bg-blue-100 text-blue-700' : role === 'Resident' ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-200 text-slate-700'
+  return (
+    <div className="flex gap-3">
+      <div className="max-w-[min(100%,42rem)] rounded-2xl border border-slate-200 bg-white px-4 py-3 shadow-sm">
+        <div className="mb-1 flex flex-wrap items-center gap-2 text-[11px] font-semibold text-slate-500">
+          <span className="text-slate-800">{comment['Author Name'] || role}</span>
+          <span className={`rounded-full px-2 py-0.5 ${roleTone}`}>{role}</span>
+          <span>{fmtTs(comment['Timestamp'])}</span>
+        </div>
+        <p className="whitespace-pre-wrap text-sm text-slate-800">{comment['Message']}</p>
+      </div>
+    </div>
+  )
+}
+
+/** Human-readable lines from structured edit-request payload (when present). */
+function linesFromRequestedFields(rf) {
+  if (!rf || typeof rf !== 'object') return []
+  const lines = []
+  const pick = (k, label, fmt = (v) => v) => {
+    const v = rf[k]
+    if (v === undefined || v === null || String(v).trim() === '') return
+    lines.push(`${label}: ${fmt(v)}`)
+  }
+  pick('tenantName', 'Tenant')
+  pick('property', 'Property')
+  pick('room', 'Room')
+  pick('leaseStart', 'Lease start')
+  pick('leaseEnd', 'Lease end')
+  pick('rent', 'Monthly rent', (v) => `$${v}`)
+  pick('deposit', 'Deposit', (v) => `$${v}`)
+  pick('utilities', 'Utilities', (v) => `$${v}`)
+  pick('specialTerms', 'Special terms')
+  return lines
+}
+
 export default function AdminLeasingTab({ adminUser, accounts = [] }) {
   const [drafts, setDrafts] = useState([])
   const [loading, setLoading] = useState(true)
@@ -88,6 +137,7 @@ export default function AdminLeasingTab({ adminUser, accounts = [] }) {
   const [showUploadForm, setShowUploadForm] = useState(false)
   const [pdfFile, setPdfFile] = useState(null)
   const [activeVersion, setActiveVersion] = useState(null)
+  const [leaseComments, setLeaseComments] = useState([])
 
   const adminRecordId = adminUser?.airtableRecordId || adminUser?.id || ''
   const adminName = adminUser?.name || adminUser?.email || 'Admin'
@@ -164,25 +214,42 @@ export default function AdminLeasingTab({ adminUser, accounts = [] }) {
     }
   }, [activeDraft])
 
+  const managerEditRequestSummary = useMemo(() => {
+    const parsed = parseManagerEditNotes(activeDraft?.['Manager Edit Notes'])
+    if (!parsed || typeof parsed !== 'object') return null
+    const text = String(parsed.freeText || '').trim()
+    const rfLines = linesFromRequestedFields(parsed.requestedFields)
+    if (!text && rfLines.length === 0) return null
+    return {
+      text,
+      fieldLines: rfLines,
+      submittedBy: parsed.submittedBy ? String(parsed.submittedBy).trim() : '',
+      submittedAt: parsed.submittedAt ? String(parsed.submittedAt).trim() : '',
+    }
+  }, [activeDraft])
+
   const openLeaseDetails = useCallback(async (draft) => {
     if (!draft?.id) return
     if (selectedDraftId === draft.id) {
       setSelectedDraftId('')
       setActiveDraft(null)
       setActiveVersion(null)
+      setLeaseComments([])
       setShowUploadForm(false)
       setPdfFile(null)
       return
     }
     setDetailLoading(true)
     try {
-      const [full, version] = await Promise.all([
+      const [full, version, comments] = await Promise.all([
         getLeaseDraftById(draft.id).catch(() => draft),
         getCurrentLeaseVersion(draft.id).catch(() => null),
+        getLeaseCommentsForDraft(draft.id).catch(() => []),
       ])
       setSelectedDraftId(String(full?.id || draft.id))
       setActiveDraft(full)
       setActiveVersion(version)
+      setLeaseComments(Array.isArray(comments) ? comments : [])
       setShowUploadForm(false)
       setPdfFile(null)
     } catch (err) {
@@ -206,9 +273,36 @@ export default function AdminLeasingTab({ adminUser, accounts = [] }) {
       toast.success('Sent to manager')
       const full = await getLeaseDraftById(activeDraft.id).catch(() => activeDraft)
       setActiveDraft(full)
+      const cm = await getLeaseCommentsForDraft(activeDraft.id).catch(() => [])
+      setLeaseComments(Array.isArray(cm) ? cm : [])
       await loadDrafts()
     } catch (err) {
       toast.error(err.message || 'Could not send to manager')
+    } finally {
+      setActionBusy('')
+    }
+  }
+
+  const canEditLeaseDraftFields = Boolean(activeDraft?.id && String(activeDraft.id).startsWith('rec'))
+
+  async function handleToggleSignWithoutMoveInPay(nextChecked) {
+    if (!canEditLeaseDraftFields) return
+    const field = leaseSignWithoutMoveInPayFieldName()
+    setActionBusy('sign-override')
+    try {
+      const updated = await updateLeaseDraftRecord(activeDraft.id, { [field]: Boolean(nextChecked) })
+      setActiveDraft(updated)
+      await loadDrafts()
+      toast.success(
+        nextChecked
+          ? 'Resident can open and sign the lease before paying move-in charges.'
+          : 'Move-in payment is required again before the resident can access the lease.',
+      )
+    } catch (err) {
+      toast.error(
+        err.message ||
+          `Could not save. Add a checkbox "${field}" on Lease Drafts (or set VITE_AIRTABLE_LEASE_SIGN_WITHOUT_PAY_FIELD).`,
+      )
     } finally {
       setActionBusy('')
     }
@@ -237,6 +331,8 @@ export default function AdminLeasingTab({ adminUser, accounts = [] }) {
       ])
       setActiveDraft(full)
       setActiveVersion(version)
+      const cm = await getLeaseCommentsForDraft(activeDraft.id).catch(() => [])
+      setLeaseComments(Array.isArray(cm) ? cm : [])
       await loadDrafts()
     } catch (err) {
       toast.error(err.message || 'Could not upload PDF')
@@ -431,6 +527,18 @@ export default function AdminLeasingTab({ adminUser, accounts = [] }) {
               >
                 Upload PDF
               </button>
+              {canEditLeaseDraftFields ? (
+                <label className="inline-flex max-w-full cursor-pointer items-center gap-2 rounded-full border border-amber-200 bg-amber-50/90 px-4 py-2 text-sm font-semibold text-amber-950 shadow-sm transition hover:bg-amber-50">
+                  <input
+                    type="checkbox"
+                    className="h-4 w-4 shrink-0 rounded border-amber-400 text-amber-700 focus:ring-amber-500"
+                    checked={leaseDraftAllowsSignWithoutMoveInPay(activeDraft)}
+                    disabled={actionBusy === 'sign-override' || detailLoading}
+                    onChange={(e) => handleToggleSignWithoutMoveInPay(e.target.checked)}
+                  />
+                  <span className="min-w-0 leading-snug">Allow sign without paying move-in</span>
+                </label>
+              ) : null}
               <button
                 type="button"
                 onClick={handleDownloadGeneratedPdf}
@@ -498,7 +606,50 @@ export default function AdminLeasingTab({ adminUser, accounts = [] }) {
             </div>
           ) : null}
 
-          <div className="px-4 py-5 sm:px-6">
+          <div className="px-4 py-5 sm:px-6 space-y-5">
+            {!detailLoading && (managerEditRequestSummary || leaseComments.length > 0) ? (
+              <div className="space-y-4">
+                {managerEditRequestSummary ? (
+                  <div className="rounded-2xl border border-amber-200 bg-amber-50/90 px-4 py-4">
+                    <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-amber-900">Manager request for review</div>
+                    {managerEditRequestSummary.submittedBy || managerEditRequestSummary.submittedAt ? (
+                      <p className="mt-1 text-xs text-amber-800/90">
+                        {[managerEditRequestSummary.submittedBy, managerEditRequestSummary.submittedAt ? fmtTs(managerEditRequestSummary.submittedAt) : '']
+                          .filter(Boolean)
+                          .join(' · ')}
+                      </p>
+                    ) : null}
+                    {managerEditRequestSummary.text ? (
+                      <p className="mt-3 whitespace-pre-wrap text-sm font-medium text-amber-950">{managerEditRequestSummary.text}</p>
+                    ) : null}
+                    {managerEditRequestSummary.fieldLines.length > 0 ? (
+                      <div className="mt-3 rounded-xl border border-amber-200/80 bg-white/80 px-3 py-2">
+                        <div className="text-[10px] font-bold uppercase tracking-wide text-amber-800/80">Requested field changes</div>
+                        <ul className="mt-1.5 list-inside list-disc text-sm text-amber-950">
+                          {managerEditRequestSummary.fieldLines.map((line) => (
+                            <li key={line}>{line}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    ) : null}
+                  </div>
+                ) : null}
+                {leaseComments.length > 0 ? (
+                  <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4">
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-500">Lease messages</div>
+                      <span className="rounded-full bg-white px-2 py-0.5 text-xs font-semibold text-slate-600 shadow-sm">{leaseComments.length}</span>
+                    </div>
+                    <div className="mt-4 space-y-3">
+                      {leaseComments.map((c) => (
+                        <AdminLeaseCommentBubble key={c.id} comment={c} />
+                      ))}
+                    </div>
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
+
             {detailLoading ? (
               <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-6 text-sm text-slate-500">Loading lease details...</div>
             ) : leaseJson && Object.keys(leaseJson).length > 0 ? (
