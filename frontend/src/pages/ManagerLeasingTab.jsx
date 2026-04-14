@@ -15,8 +15,17 @@ import toast from 'react-hot-toast'
 import LeaseHTMLTemplate from '../components/LeaseHTMLTemplate.jsx'
 import { DataTable } from '../components/PortalShell'
 import { getStatusConfig, fmtTs } from '../lib/leaseWorkflowConstants.js'
-import { deriveApplicationApprovalState } from '../lib/applicationApprovalState.js'
-import { getLeaseDraftById, publishLeaseDraft, uploadLeaseVersionPdfFile, getCurrentLeaseVersion } from '../lib/airtable'
+import {
+  deriveApplicationApprovalState,
+  leaseDraftPassesApplicationApprovalGate,
+} from '../lib/applicationApprovalState.js'
+import {
+  getLeaseDraftById,
+  publishLeaseDraft,
+  uploadLeaseVersionPdfFile,
+  getCurrentLeaseVersion,
+  getApplicationsForOwner,
+} from '../lib/airtable'
 
 const AIRTABLE_TOKEN = import.meta.env.VITE_AIRTABLE_TOKEN
 const CORE_BASE_ID = import.meta.env.VITE_AIRTABLE_BASE_ID || 'appol57LKtMKaQ75T'
@@ -216,6 +225,10 @@ export default function ManagerLeasingTab({ manager, allowedPropertyNames }) {
         ? sourceRows.filter(d => allowed.has(d['Property']))
         : sourceRows
 
+      const appsForOwner = await getApplicationsForOwner(ownerId).catch(() => [])
+      const appById = new Map(appsForOwner.map((a) => [a.id, a]))
+      const scopedAfterAppGate = scoped.filter((d) => leaseDraftPassesApplicationApprovalGate(d, appById))
+
       const approvedApps = await fetchApprovedApplicationsForManager(ownerId).catch(() => [])
       const approvedScoped = allowed && allowed.size > 0
         ? approvedApps.filter((a) => allowed.has(String(a['Property Name'] || '')))
@@ -223,7 +236,7 @@ export default function ManagerLeasingTab({ manager, allowedPropertyNames }) {
       // Airtable {Approved}=TRUE() can be out of sync with status text; only show placeholder leases when fully approved.
       const approvedForLeaseUi = approvedScoped.filter((a) => deriveApplicationApprovalState(a) === 'approved')
       const existingAppIds = new Set(
-        scoped
+        scopedAfterAppGate
           .map((d) => String(d['Application Record ID'] || '').trim())
           .filter(Boolean),
       )
@@ -231,7 +244,7 @@ export default function ManagerLeasingTab({ manager, allowedPropertyNames }) {
         .filter((a) => !existingAppIds.has(String(a.id || '').trim()))
         .map(toSyntheticLeaseDraftFromApplication)
 
-      const merged = [...syntheticRows, ...scoped].sort(
+      const merged = [...syntheticRows, ...scopedAfterAppGate].sort(
         (a, b) => new Date(b['Updated At'] || b.created_at || 0) - new Date(a['Updated At'] || a.created_at || 0),
       )
       setDrafts(merged)

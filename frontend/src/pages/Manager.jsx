@@ -50,6 +50,7 @@ import {
   fetchBlockedTourDates,
   createBlockedTourDate,
   deleteBlockedTourDate,
+  getApplicationsForOwner,
 } from '../lib/airtable'
 import {
   buildPropertyWizardInitialValues,
@@ -86,6 +87,7 @@ import {
 import {
   deriveApplicationApprovalState,
   applicationRejectedFieldName,
+  leaseDraftPassesApplicationApprovalGate,
 } from '../lib/applicationApprovalState.js'
 import ManagerLeasingTab from './ManagerLeasingTab.jsx'
 // ─── Session ──────────────────────────────────────────────────────────────────
@@ -5831,10 +5833,21 @@ function ManagerDashboard({ manager: managerProp, openDraftId, onOpenDraft, onCl
     setLoading(true)
     setLeasesLoadError('')
     try {
-      const rows = await fetchLeaseDrafts({ property: filters.property, status: '' })
+      const ownerKey = String(manager?.id || manager?.airtableRecordId || '').trim()
+      const [rows, appsForOwner] = await Promise.all([
+        fetchLeaseDrafts({ property: filters.property, status: '' }),
+        getApplicationsForOwner(ownerKey).catch(() => []),
+      ])
+      const appById = new Map(appsForOwner.map((a) => [a.id, a]))
       const names = managerScope.approvedNames
       const scoped =
-        names.size > 0 ? rows.filter((d) => leaseDraftInScope(d, names)) : []
+        names.size > 0
+          ? rows.filter(
+              (d) =>
+                leaseDraftInScope(d, names) &&
+                leaseDraftPassesApplicationApprovalGate(d, appById),
+            )
+          : []
       // Keep full property-scoped list in state; status tab only filters the table + card counts stay stable.
       setDrafts(scoped)
     } catch (err) {
@@ -5842,7 +5855,7 @@ function ManagerDashboard({ manager: managerProp, openDraftId, onOpenDraft, onCl
     } finally {
       setLoading(false)
     }
-  }, [filters.property, managerScope.approvedNames])
+  }, [filters.property, managerScope.approvedNames, manager?.id, manager?.airtableRecordId])
 
   useEffect(() => {
     if (dashView !== 'leases') return
@@ -5890,7 +5903,14 @@ function ManagerDashboard({ manager: managerProp, openDraftId, onOpenDraft, onCl
         const apps = approvedNamesLower.size
           ? (appsRaw || []).filter((a) => applicationInScope(a, approvedNamesLower))
           : []
-        const dr = names.size ? (drRaw || []).filter((d) => leaseDraftInScope(d, names)) : []
+        const appByIdForLeases = new Map((apps || []).map((a) => [a.id, a]))
+        const dr = names.size
+          ? (drRaw || []).filter(
+              (d) =>
+                leaseDraftInScope(d, names) &&
+                leaseDraftPassesApplicationApprovalGate(d, appByIdForLeases),
+            )
+          : []
         const scopedResidentIds = residentsRaw
           ? buildManagerScopedResidentIdSet(residentsRaw, mergedPropertyNamesLower, workOrderScopePropertyIds)
           : new Set()

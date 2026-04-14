@@ -1549,6 +1549,37 @@ export async function getAllApplications() {
   })
 }
 
+/** Applications table may live on {@link VITE_AIRTABLE_APPLICATIONS_BASE_ID} when set. */
+function applicationsV0BaseUrl() {
+  const alt = String(import.meta.env.VITE_AIRTABLE_APPLICATIONS_BASE_ID || '').trim()
+  return `https://api.airtable.com/v0/${alt || BASE_ID}`
+}
+
+/**
+ * All application rows for a manager (Owner ID), including pending — for lease-draft gating.
+ * @param {string} ownerId Manager Profile Airtable record id
+ */
+export async function getApplicationsForOwner(ownerId) {
+  const id = String(ownerId || '').trim()
+  if (!id.startsWith('rec') || !API_KEY) return []
+  const root = `${applicationsV0BaseUrl()}/${encodeURIComponent(applicationsTableName())}`
+  const allRecords = []
+  let offset = null
+  do {
+    const url = new URL(root)
+    url.searchParams.set('filterByFormula', `{Owner ID} = "${escapeFormulaValue(id)}"`)
+    if (offset) url.searchParams.set('offset', offset)
+    const data = await request(url.toString())
+    ;(data.records || []).forEach((r) => allRecords.push(mapRecord(r)))
+    offset = data.offset || null
+  } while (offset)
+  return allRecords.sort((a, b) => {
+    const ta = new Date(a.created_at || 0).getTime()
+    const tb = new Date(b.created_at || 0).getTime()
+    return tb - ta
+  })
+}
+
 export async function getFullApplicationById(recordId) {
   const app = await request(`${applicationsTableUrl()}/${recordId}`)
   return mapRecord(app)

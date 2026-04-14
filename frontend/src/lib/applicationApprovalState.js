@@ -67,3 +67,21 @@ export function applicationDisplayLabelFromApprovalState(state) {
   if (state === 'rejected') return 'Rejected'
   return 'Under review'
 }
+
+/**
+ * Lease lists (manager portal): a draft tied to an Applications row should not
+ * appear as "draft ready" until that application passes {@link deriveApplicationApprovalState}
+ * (same rule as backend lease-creation guards).
+ *
+ * @param {object} draft - Lease Drafts fields (+ id)
+ * @param {Map<string, object>} applicationByRecordId - Applications rows by Airtable record id
+ * @returns {boolean} true if the draft may be shown in manager lease UI
+ */
+export function leaseDraftPassesApplicationApprovalGate(draft, applicationByRecordId) {
+  const appId = String(draft?.['Application Record ID'] || '').trim()
+  if (!appId) return true
+  if (!applicationByRecordId || typeof applicationByRecordId.get !== 'function') return true
+  const app = applicationByRecordId.get(appId)
+  if (!app) return true
+  return deriveApplicationApprovalState(app) === 'approved'
+}
