@@ -248,6 +248,47 @@ function managerLinkArray(val) {
   return []
 }
 
+function managerProfilePropertyRefs(manager) {
+  const recordIds = new Set()
+  const names = new Set()
+  const keys = [
+    'Assigned Properties',
+    'Approved Properties',
+    'Properties',
+    'Property Access',
+    'House Access',
+  ]
+  for (const key of keys) {
+    const raw = manager?.[key]
+    if (raw == null) continue
+    const values = Array.isArray(raw)
+      ? raw
+      : String(raw)
+          .split(/,|\n/)
+          .map((v) => v.trim())
+          .filter(Boolean)
+    for (const value of values) {
+      const text = String(value || '').trim()
+      if (!text) continue
+      if (/^rec[a-zA-Z0-9]{8,}$/.test(text)) {
+        recordIds.add(text)
+      } else {
+        names.add(text.toLowerCase())
+      }
+    }
+  }
+  return { recordIds, names }
+}
+
+function propertyMatchesManagerProfileRef(propertyRecord, manager) {
+  const refs = managerProfilePropertyRefs(manager)
+  const propertyId = String(propertyRecord?.id || '').trim()
+  const propertyName = propertyRecordName(propertyRecord).trim().toLowerCase()
+  if (propertyId && refs.recordIds.has(propertyId)) return true
+  if (propertyName && refs.names.has(propertyName)) return true
+  return false
+}
+
 /**
  * Property must be assigned to this manager.
  *
@@ -336,7 +377,7 @@ function computeManagerScope(propertyRecords, manager) {
     return { approvedNames, assignedNames, pendingAssigned: [] }
   }
   for (const p of list) {
-    if (!propertyAssignedToManager(p, manager)) continue
+    if (!propertyAssignedToManager(p, manager) && !propertyMatchesManagerProfileRef(p, manager)) continue
     const n = propertyRecordName(p)
     if (n) assignedNames.add(n)
     if (isPropertyRecordApproved(p)) {
@@ -1658,6 +1699,7 @@ function LetUsMeetModal({
   onCreated,
   approvedPropertyNames = [],
   requirePropertyForAvailability = true,
+  allowPropertylessEvents = false,
 }) {
   const [date, setDate] = useState(initialDateKey)
   const [itemType, setItemType] = useState('Meeting')
@@ -1690,9 +1732,9 @@ function LetUsMeetModal({
 
   useEffect(() => {
     if (!open) return
-    const needsProperty = itemType === 'Tour' || (itemType === 'Availability' && requirePropertyForAvailability)
+    const needsProperty = !allowPropertylessEvents && (itemType === 'Tour' || (itemType === 'Availability' && requirePropertyForAvailability))
     if (needsProperty && !canScheduleTours) setItemType('Meeting')
-  }, [open, itemType, canScheduleTours, requirePropertyForAvailability])
+  }, [open, itemType, canScheduleTours, requirePropertyForAvailability, allowPropertylessEvents])
 
   if (!open) return null
 
@@ -1705,7 +1747,7 @@ function LetUsMeetModal({
       return
     }
     if (itemType === 'Tour' || itemType === 'Availability') {
-      const needsProperty = itemType === 'Tour' || (itemType === 'Availability' && requirePropertyForAvailability)
+      const needsProperty = !allowPropertylessEvents && (itemType === 'Tour' || (itemType === 'Availability' && requirePropertyForAvailability))
       if (needsProperty && !canScheduleTours) {
         setError('You need at least one listed property before scheduling a tour.')
         return
@@ -1755,15 +1797,15 @@ function LetUsMeetModal({
           <div className={MANAGER_PILL_SELECT_WRAP_CLS}>
             <select value={itemType} onChange={(e) => setItemType(e.target.value)} className={MANAGER_PILL_SELECT_CLS}>
               <option value="Meeting">Meeting</option>
-              {canScheduleTours ? <option value="Tour">Tour</option> : null}
-              {(canScheduleTours || !requirePropertyForAvailability) ? <option value="Availability">Availability slot</option> : null}
+              {(canScheduleTours || allowPropertylessEvents) ? <option value="Tour">Tour</option> : null}
+              {(canScheduleTours || !requirePropertyForAvailability || allowPropertylessEvents) ? <option value="Availability">Availability slot</option> : null}
               <option value="Work Order">Work Order</option>
               <option value="Issue">Issue</option>
             </select>
             {MANAGER_PILL_SELECT_CHEVRON}
           </div>
-          {!canScheduleTours ? (
-            <p className="mt-1.5 text-xs text-slate-500">Tours require a listed property (Properties → Listed).</p>
+          {!canScheduleTours && !allowPropertylessEvents ? (
+            <p className="mt-1.5 text-xs text-slate-500">Tours require a listed property (Properties -> Listed).</p>
           ) : null}
         </div>
         <div>
@@ -1776,15 +1818,15 @@ function LetUsMeetModal({
             <select
               value={property}
               onChange={(e) => setProperty(e.target.value)}
-              disabled={!canScheduleTours}
+              disabled={!canScheduleTours && !allowPropertylessEvents}
               className={MANAGER_PILL_SELECT_CLS}
             >
-              {!(canScheduleTours || !requirePropertyForAvailability) ? (
+              {!(canScheduleTours || !requirePropertyForAvailability || allowPropertylessEvents) ? (
                 <option value="">No approved properties</option>
               ) : (
                 <>
                   <option value="">
-                    {itemType === 'Tour' || (itemType === 'Availability' && requirePropertyForAvailability)
+                    {(!allowPropertylessEvents && (itemType === 'Tour' || (itemType === 'Availability' && requirePropertyForAvailability)))
                       ? 'Select property…'
                       : 'Optional — select property'}
                   </option>
@@ -1828,7 +1870,7 @@ function LetUsMeetModal({
           onClick={handleSave}
           disabled={
             saving ||
-            ((itemType === 'Tour' || (itemType === 'Availability' && requirePropertyForAvailability)) &&
+            ((!allowPropertylessEvents && (itemType === 'Tour' || (itemType === 'Availability' && requirePropertyForAvailability))) &&
               canScheduleTours &&
               !String(property || '').trim())
           }
@@ -2127,11 +2169,28 @@ async function patchSchedulingRecord(recordId, fields) {
 }
 
 async function createSchedulingRecord(fields) {
-  const data = await atRequest(`${CORE_AIRTABLE_BASE_URL}/Scheduling`, {
-    method: 'POST',
-    body: JSON.stringify({ fields, typecast: true }),
-  })
-  return mapRecord(data)
+  let payload = { ...(fields || {}) }
+  let lastErr = null
+
+  for (let attempt = 0; attempt < 8; attempt++) {
+    try {
+      const data = await atRequest(`${CORE_AIRTABLE_BASE_URL}/Scheduling`, {
+        method: 'POST',
+        body: JSON.stringify({ fields: payload, typecast: true }),
+      })
+      return mapRecord(data)
+    } catch (err) {
+      lastErr = err
+      const msg = String(err?.message || '')
+      const unknown = msg.match(/Unknown field name:\s*"([^"]+)"/i)?.[1]
+      if (!unknown || !Object.prototype.hasOwnProperty.call(payload, unknown)) break
+      const { [unknown]: _drop, ...rest } = payload
+      payload = rest
+      continue
+    }
+  }
+
+  throw lastErr || new Error('Could not create scheduling record.')
 }
 
 // Log an action to the Audit Log table — failures are non-fatal
@@ -5514,6 +5573,7 @@ export function CalendarTabPanel({ manager, allowedPropertyNames, loadAllSchedul
         manager={manager}
         approvedPropertyNames={meetModalApprovedPropertyNames}
         requirePropertyForAvailability={!loadAllSchedulingRows}
+        allowPropertylessEvents={loadAllSchedulingRows}
         onCreated={() => {
           load()
         }}
@@ -5600,6 +5660,25 @@ function ManagerDashboard({ manager: managerProp, openDraftId, onOpenDraft, onCl
     setManager(updated)
     onManagerUpdate?.(updated)
   }
+
+  useEffect(() => {
+    const managerId = String(manager?.id || '').trim()
+    if (!managerId || isManagerInternalPreview(manager)) return
+    let cancelled = false
+    fetchManagerRecordById(managerId)
+      .then((record) => {
+        if (cancelled || !record) return
+        const next = { ...manager, ...record }
+        setManager(next)
+        onManagerUpdate?.(next)
+      })
+      .catch(() => {
+        // non-fatal: keep existing manager context
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [manager?.id])
 
   const loadDrafts = useCallback(async () => {
     setLoading(true)
