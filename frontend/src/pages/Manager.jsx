@@ -3199,7 +3199,8 @@ function ManagerProfilePanel({ manager, onManagerUpdate }) {
 }
 
 // ─── GenerateDraftModal ───────────────────────────────────────────────────────
-// Collects lease data and calls /api/portal?action=generate-lease-draft
+// Prefers /api/generate-lease-from-template when Application Record ID is provided
+// so lease financials and room details come from exact Airtable property data.
 function GenerateDraftModal({ manager, propertyOptions, onClose, onGenerated }) {
   const [form, setForm] = useState({
     residentName: '',
@@ -3225,14 +3226,27 @@ function GenerateDraftModal({ manager, propertyOptions, onClose, onGenerated }) 
     setError('')
     setLoading(true)
     try {
-      const res = await fetch('/api/portal?action=generate-lease-draft', {
+      const appId = String(form.applicationRecordId || '').trim()
+      const useTemplate = Boolean(appId)
+      const endpoint = useTemplate
+        ? '/api/generate-lease-from-template'
+        : '/api/portal?action=generate-lease-draft'
+      const payload = useTemplate
+        ? { applicationRecordId: appId, managerName: manager.name, forceRegenerate: true }
+        : { ...form, generatedBy: manager.name, generatedByRole: manager.role }
+
+      const res = await fetch(endpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...form, generatedBy: manager.name, generatedByRole: manager.role }),
+        body: JSON.stringify(payload),
       })
       const data = await readJsonResponse(res)
       if (!res.ok) throw new Error(data.error || 'Generation failed')
-      toast.success('Lease draft generated — ready for review')
+      toast.success(
+        useTemplate
+          ? 'Lease draft generated from application and property data'
+          : 'Lease draft generated — ready for review',
+      )
       onGenerated(data.draft)
       onClose()
     } catch (err) {

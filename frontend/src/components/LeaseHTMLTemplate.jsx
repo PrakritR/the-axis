@@ -80,7 +80,7 @@ export default function LeaseHTMLTemplate({ leaseData = {}, signedBy, signedAt, 
           <Row label="Tenant" value={d.tenantName} />
           {d.cosignerName ? <Row label="Co-Signer" value={d.cosignerName} /> : null}
           <Row label="Property" value={d.fullAddress} />
-          <Row label="Room / Unit" value={d.roomNumber} />
+          <Row label="Room / Unit" value={d.roomLabel || d.roomNumber} />
           <Row label="Lease Start" value={d.leaseStartFmt} />
           <Row label="Lease End" value={d.isMonthToMonth ? 'Month-to-Month' : d.leaseEndFmt} />
           <Row label="Monthly Rent" value={d.monthlyRentFmt} />
@@ -110,8 +110,8 @@ export default function LeaseHTMLTemplate({ leaseData = {}, signedBy, signedAt, 
           </P>
           <P>
             Landlord hereby leases to Resident, and Resident hereby leases from Landlord, the private room identified as
-            <strong> Room {d.roomNumber || '___________'}</strong> located at <strong>{d.fullAddress || '___________'}</strong>,
-            Seattle, Washington ("Premises"). Resident shall have access to all common areas of the dwelling as a shared co-tenant.
+            <strong> {d.roomLabel || `Room ${d.roomNumber || '___________'}`}</strong> located at <strong>{d.fullAddress || '___________'}</strong>
+            (&quot;Premises&quot;). Resident shall have access to all common areas of the dwelling as a shared co-tenant.
           </P>
         </Section>
 
@@ -176,6 +176,11 @@ export default function LeaseHTMLTemplate({ leaseData = {}, signedBy, signedAt, 
             Resident is responsible for personal streaming services, phone plans, and any other personal communications
             services not explicitly listed above.
           </P>
+          {d.roomUtilitiesSummary ? (
+            <P>
+              Property-specific utilities note: <strong>{d.roomUtilitiesSummary}</strong>
+            </P>
+          ) : null}
         </Section>
 
         {/* 6 */}
@@ -221,6 +226,16 @@ export default function LeaseHTMLTemplate({ leaseData = {}, signedBy, signedAt, 
             care for all Landlord-owned furnishings in good condition and shall be liable for damage beyond normal wear and
             tear. Resident shall not remove Landlord-owned furnishings from the Premises.
           </P>
+          {d.roomFurnished ? (
+            <P>
+              Furnished status for this room: <strong>{d.roomFurnished}</strong>
+            </P>
+          ) : null}
+          {d.roomFurnitureIncluded ? (
+            <P>
+              Furniture included for this room: <strong>{d.roomFurnitureIncluded}</strong>
+            </P>
+          ) : null}
           <P>
             Landlord is not responsible for the loss, theft, or damage to Resident's personal property. Resident is strongly
             encouraged to obtain renters' insurance to protect personal belongings.

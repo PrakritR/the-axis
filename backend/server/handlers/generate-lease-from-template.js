@@ -145,6 +145,35 @@ function parseMoneyLike(val) {
   return Number.isFinite(n) && n >= 0 ? n : null
 }
 
+function getFieldCaseInsensitive(record, fieldName) {
+  if (!record || !fieldName) return undefined
+  if (Object.prototype.hasOwnProperty.call(record, fieldName)) return record[fieldName]
+  const target = String(fieldName).trim().toLowerCase()
+  if (!target) return undefined
+  for (const key of Object.keys(record)) {
+    if (String(key).trim().toLowerCase() === target) return record[key]
+  }
+  return undefined
+}
+
+function roomSlotNumber(roomValue) {
+  const m = String(roomValue || '').match(/(\d+)/)
+  if (!m) return null
+  const n = parseInt(m[1], 10)
+  return Number.isFinite(n) && n >= 1 && n <= 40 ? n : null
+}
+
+function roomFieldValue(propertyRecord, roomValue, suffixes = []) {
+  const n = roomSlotNumber(roomValue)
+  if (!n || !propertyRecord) return undefined
+  for (const suffix of suffixes) {
+    const field = `Room ${n} ${suffix}`
+    const value = getFieldCaseInsensitive(propertyRecord, field)
+    if (value !== undefined && value !== null && String(value).trim() !== '') return value
+  }
+  return undefined
+}
+
 function roomLabelsMatch(appRoom, metaLabel) {
   const a = String(appRoom || '').trim().toLowerCase()
   const b = String(metaLabel || '').trim().toLowerCase()
@@ -246,9 +275,34 @@ function resolveUtilityFee(app, propertyRecord, overrides) {
     const o = parseMoneyLike(overrides.utilityFee)
     if (o != null) return o
   }
-  const v = parseMoneyLike(propertyRecord?.['Utilities Fee'] ?? app['Utilities Fee'])
+  const roomSpecific = parseMoneyLike(
+    roomFieldValue(propertyRecord, app?.['Room Number'], ['Utilities Cost', 'Utilities cost', 'Utilities Fee', 'Utility Fee']),
+  )
+  if (roomSpecific != null && roomSpecific > 0) return roomSpecific
+
+  const v = parseMoneyLike(app['Utilities Fee'] ?? propertyRecord?.['Utilities Fee'])
   if (v != null && v > 0) return v
   return 125
+}
+
+function resolveRoomUtilitySummary(app, propertyRecord) {
+  const roomSpecific = roomFieldValue(propertyRecord, app?.['Room Number'], ['Utilities'])
+  if (roomSpecific != null && String(roomSpecific).trim()) return String(roomSpecific).trim()
+  const fallback = getFieldCaseInsensitive(propertyRecord, 'Utilities')
+  return fallback != null && String(fallback).trim() ? String(fallback).trim() : ''
+}
+
+function resolveRoomFurnished(app, propertyRecord) {
+  const roomSpecific = roomFieldValue(propertyRecord, app?.['Room Number'], ['Furnished'])
+  if (roomSpecific != null && String(roomSpecific).trim()) return String(roomSpecific).trim()
+  const fallback = getFieldCaseInsensitive(propertyRecord, 'Furnished')
+  return fallback != null && String(fallback).trim() ? String(fallback).trim() : ''
+}
+
+function resolveRoomFurnitureIncluded(app, propertyRecord) {
+  const roomSpecific = roomFieldValue(propertyRecord, app?.['Room Number'], ['Furniture included', 'Furniture Included'])
+  if (roomSpecific != null && String(roomSpecific).trim()) return String(roomSpecific).trim()
+  return ''
 }
 
 function resolveSecurityDeposit(app, propertyRecord, monthlyRent, overrides) {
@@ -273,7 +327,12 @@ function resolveSecurityDeposit(app, propertyRecord, monthlyRent, overrides) {
 
 function buildLeaseData(app, propertyRecord, overrides = {}) {
   const propertyName = app['Property Name'] || ''
-  const roomNumber = app['Room Number'] || ''
+  const roomRaw = String(app['Room Number'] || '').trim()
+  const roomDigits = roomRaw.match(/(\d+)/)?.[1] || roomRaw
+  const roomNumber = roomDigits || ''
+  const roomLabel = roomRaw
+    ? (/^room\s*/i.test(roomRaw) ? roomRaw.replace(/\s+/g, ' ').trim() : `Room ${roomRaw}`)
+    : ''
   const propertyAddress =
     app['Property Address'] ||
     propertyRecord?.Address ||
@@ -294,6 +353,9 @@ function buildLeaseData(app, propertyRecord, overrides = {}) {
   }
 
   const utilityFee = resolveUtilityFee(app, propertyRecord, overrides)
+  const roomUtilitiesSummary = resolveRoomUtilitySummary(app, propertyRecord)
+  const roomFurnished = resolveRoomFurnished(app, propertyRecord)
+  const roomFurnitureIncluded = resolveRoomFurnitureIncluded(app, propertyRecord)
   const securityDeposit = resolveSecurityDeposit(app, propertyRecord, monthlyRent, overrides)
   const adminFee = overrides.adminFee != null ? overrides.adminFee : 250
 
@@ -330,7 +392,10 @@ function buildLeaseData(app, propertyRecord, overrides = {}) {
     propertyName,
     propertyAddress,
     roomNumber,
-    fullAddress: propertyAddress || `${propertyName} - Room ${roomNumber}`,
+    roomLabel,
+    fullAddress: propertyAddress
+      ? `${propertyAddress}${roomLabel ? `, ${roomLabel}` : ''}`
+      : `${propertyName}${roomLabel ? ` - ${roomLabel}` : ''}`,
     leaseStart,
     leaseEnd,
     isMonthToMonth,
@@ -346,6 +411,9 @@ function buildLeaseData(app, propertyRecord, overrides = {}) {
     totalMoveIn,
     monthlyRentFmt: fmtMoney(monthlyRent),
     utilityFeeFmt: fmtMoney(utilityFee),
+    roomUtilitiesSummary,
+    roomFurnished,
+    roomFurnitureIncluded,
     securityDepositFmt: fmtMoney(securityDeposit),
     adminFeeFmt: fmtMoney(adminFee),
     proratedRentFmt: fmtMoney(proratedRent),

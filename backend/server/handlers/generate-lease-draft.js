@@ -152,6 +152,9 @@ Generate the full lease agreement with ALL of the following numbered sections. E
 20. SIGNATURES
 
 Important requirements:
+- Use the provided property, unit, dates, rent, deposit, and utilities values exactly.
+- Do not invent room number, rent, fees, dates, or amenities.
+- If any required factual value is missing, keep a clear placeholder like [MISSING DATA] instead of guessing.
 - Reference Washington State Residential Landlord-Tenant Act (RCW Chapter 59.18) where applicable
 - Include specific clauses about shared housing etiquette, common areas, and co-tenant responsibilities
 - Make the language clear, complete, and legally professional
