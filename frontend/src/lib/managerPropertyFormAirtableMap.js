@@ -193,7 +193,7 @@ export function adjustRoomAccessLabels(accessArr, removedZeroBased) {
 }
 
 export function emptyLaundryRow() {
-  return { type: '', access: [] }
+  return { type: '', access: [], description: '', media: [] }
 }
 
 export function emptySharedSpaceRow() {
@@ -206,7 +206,6 @@ export function emptyListingAvailabilityWindow() {
 
 function sharedSpaceRowHasContent(row) {
   if (!row || typeof row !== 'object') return false
-  if (String(row.name || '').trim()) return true
   if (String(row.type || '').trim()) return true
   if (String(row.typeOther || '').trim()) return true
   if (String(row.description || '').trim()) return true
@@ -405,7 +404,7 @@ export function buildPropertyWizardInitialValues(property) {
     const metaRow = sharedMetaRows[i - 1] && typeof sharedMetaRows[i - 1] === 'object' ? sharedMetaRows[i - 1] : {}
     sharedSpaces.push({
       ...emptySharedSpaceRow(),
-      name: stringOrEmpty(record[sharedSpaceNameField(i)]),
+      name: '',
       type: SHARED_SPACE_TYPE_OPTIONS.includes(type) ? type : type ? 'Other' : '',
       typeOther: SHARED_SPACE_TYPE_OPTIONS.includes(type) ? '' : type,
       description: stringOrEmpty(metaRow.description || metaRow.notes),
@@ -413,12 +412,28 @@ export function buildPropertyWizardInitialValues(property) {
     })
   }
 
+  const laundryMetaRows = Array.isArray(meta?.laundryDetail) ? meta.laundryDetail : []
+  const photosRaw = Array.isArray(record.Photos) ? record.Photos : []
   const laundryRows = []
   for (let i = 1; i <= MAX_LAUNDRY_SLOTS; i++) {
     const type = stringOrEmpty(record[laundryTypeField(i)])
     const access = splitRoomAccess(record[laundryRoomsSharingField(i)])
     if (!type && !access.length) continue
-    laundryRows.push({ type, access })
+    const lm = laundryMetaRows[i - 1] && typeof laundryMetaRows[i - 1] === 'object' ? laundryMetaRows[i - 1] : {}
+    const prefix = `axis-l${i}-`.toLowerCase()
+    const media = []
+    for (const att of photosRaw) {
+      const fn = String(att?.filename || att?.name || '').toLowerCase()
+      if (!fn.startsWith(prefix)) continue
+      const url = typeof att === 'string' ? att : att?.url
+      if (url) media.push({ id: url, preview: url })
+    }
+    laundryRows.push({
+      type,
+      access,
+      description: stringOrEmpty(lm.description || lm.notes),
+      media,
+    })
   }
   const laundryEnabled = boolFromRaw(record[PROPERTY_AIR.laundry]) || laundryRows.length > 0
   const parkingEnabled = boolFromRaw(record[PROPERTY_AIR.parking])
@@ -545,7 +560,7 @@ export function serializeManagerAddPropertyToAirtableFields(params) {
     bathroomCount,
     kitchenCount,
     parking,         // { enabled, type, fee }
-    laundry,         // { enabled, generalAccess?, roomsSharing?, rows: [{ type, access[], roomsSharing? }] }
+    laundry,         // { enabled, generalAccess?, roomsSharing?, rows: [{ type, access[], description?, media? }] }
     rooms,           // room row shape from emptyRoomRow() (media stripped before call)
     bathrooms,       // [{ label?, kind?, description?, access[] }]
     kitchens,        // [{ label?, kind?, description?, access[] }]
@@ -736,9 +751,9 @@ export function serializeManagerAddPropertyToAirtableFields(params) {
   /** One entry per shared space so listing UI can show details even when description is blank. */
   const sharedSpacesDetail = sharedTrimmed.map((row) => {
     const desc = String(row?.description || '').trim()
-    const title = String(row?.name || '').trim()
     let st = String(row?.type || '').trim()
     if (st === 'Other') st = String(row?.typeOther || '').trim() || 'Other'
+    const title = st || 'Shared space'
     return {
       title,
       type: st,
@@ -747,6 +762,20 @@ export function serializeManagerAddPropertyToAirtableFields(params) {
     }
   })
   const hasSharedSpacesMeta = sc > 0
+
+  const laundryRowsForMeta = Array.isArray(laundry?.rows) ? laundry.rows : []
+  const laundryEnabledForMeta =
+    Boolean(laundry?.enabled) ||
+    laundryRowsForMeta.some(
+      (row) => String(row?.type || '').trim() || (Array.isArray(row?.access) && row.access.length > 0),
+    )
+  const laundryDetail =
+    laundryEnabledForMeta && laundryRowsForMeta.length
+      ? laundryRowsForMeta.slice(0, MAX_LAUNDRY_SLOTS).map((row) => {
+          const d = String(row?.description || '').trim()
+          return { description: d, notes: d }
+        })
+      : null
 
   const bathroomTotalDecimal = computeDecimalBathroomTotal(bathrooms)
 
@@ -769,6 +798,7 @@ export function serializeManagerAddPropertyToAirtableFields(params) {
     ...(ptRaw === 'Other' && ptOther ? { propertyTypeOther: ptOther } : {}),
     roomsDetail,
     ...(hasSharedSpacesMeta ? { sharedSpacesDetail } : {}),
+    ...(laundryDetail && laundryDetail.some((x) => String(x?.description || '').trim()) ? { laundryDetail } : {}),
     ...(bathroomTotalDecimal > 0 ? { bathroomTotalDecimal } : {}),
     ...(financialsMeta ? { financials: financialsMeta } : {}),
     ...(Object.keys(leasingMeta).length > 0 ? { leasing: leasingMeta } : {}),
@@ -853,8 +883,7 @@ export function serializeManagerAddPropertyToAirtableFields(params) {
   // ── Shared spaces ─────────────────────────────────────────────────────────────
   for (let i = 1; i <= sc; i++) {
     const row = sharedTrimmed[i - 1] || emptySharedSpaceRow()
-    const sn = String(row.name || '').trim()
-    if (sn) fields[sharedSpaceNameField(i)] = sn
+    fields[sharedSpaceNameField(i)] = ''
     let st = String(row.type || '').trim()
     if (st === 'Other') {
       const custom = String(row.typeOther || '').trim()

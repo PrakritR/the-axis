@@ -9,6 +9,7 @@
  */
 import { resolveManagerTenant, canEnforceTenant } from '../middleware/resolveManagerTenant.js'
 import { resolveLeaseDetails } from '../lib/axis-properties.js'
+import { isApplicationApprovedForLease } from '../lib/application-approval-lease-guard.js'
 
 const AIRTABLE_TOKEN = process.env.AIRTABLE_TOKEN || process.env.VITE_AIRTABLE_TOKEN
 const CORE_BASE_ID =
@@ -21,23 +22,6 @@ const APPS_TABLE =
   process.env.VITE_AIRTABLE_APPLICATIONS_TABLE ||
   process.env.AIRTABLE_APPLICATIONS_TABLE ||
   'Applications'
-
-const APPLICATION_REJECTED_FIELD = String(
-  process.env.VITE_AIRTABLE_APPLICATION_REJECTED_FIELD ||
-    process.env.AIRTABLE_APPLICATION_REJECTED_FIELD ||
-    'Rejected',
-).trim() || 'Rejected'
-
-/** Only generate leases when the Applications row is clearly approved (not pending/rejected). */
-function applicationApprovedForLeaseGeneration(app) {
-  if (!app || typeof app !== 'object') return false
-  if (app[APPLICATION_REJECTED_FIELD] === true || app[APPLICATION_REJECTED_FIELD] === 1) return false
-  if (app.Approved === false || app.Approved === 0) return false
-  if (app.Approved === true || app.Approved === 1) return true
-  const status = String(app['Approval Status'] || app['Application Status'] || '').trim().toLowerCase()
-  if (['rejected', 'declined', 'denied', 'pending', 'under review'].includes(status)) return false
-  return status === 'approved' || status === 'accept' || status === 'accepted'
-}
 
 function airtableHeaders() {
   return {
@@ -471,7 +455,7 @@ export async function generateLeaseFromTemplate({
   if (!recordId) throw new Error('applicationRecordId is required')
 
   const app = await getApplication(recordId)
-  if (!applicationApprovedForLeaseGeneration(app)) {
+  if (!isApplicationApprovedForLease(app)) {
     throw new Error('Lease drafts can only be generated for approved applications.')
   }
 

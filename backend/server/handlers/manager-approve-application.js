@@ -1,6 +1,10 @@
 import { generateLeaseFromTemplate } from './generate-lease-from-template.js'
 import { resolveManagerTenant, canEnforceTenant } from '../middleware/resolveManagerTenant.js'
 import { markMatchingResidentsApproved } from '../lib/application-resident-sync.js'
+import {
+  applicationStatusLooksPipelinePending,
+  isApplicationApprovedForLease,
+} from '../lib/application-approval-lease-guard.js'
 
 const AIRTABLE_TOKEN = process.env.AIRTABLE_TOKEN || process.env.VITE_AIRTABLE_TOKEN
 /** Prefer explicit apps base; otherwise same base as Lease Drafts / portal (manager list uses CORE base). */
@@ -67,14 +71,30 @@ const APPLICATION_REJECTED_FIELD = String(
     'Rejected',
 ).trim() || 'Rejected'
 
-async function approveApplication(recordId) {
+async function approveApplication(recordId, existingFields) {
   const now = new Date().toISOString()
   const enc = encodeURIComponent(APPLICATIONS_TABLE)
-  const data = await airtablePatch(`${APPS_AIRTABLE_BASE_URL}/${enc}/${recordId}`, {
+  const fields = {
     Approved: true,
     'Approved At': now,
     [APPLICATION_REJECTED_FIELD]: null,
-  })
+  }
+  // Clear stale "Pending" / pipeline labels so lease guards and UI stay aligned with Approved.
+  if (existingFields && typeof existingFields === 'object') {
+    if (Object.prototype.hasOwnProperty.call(existingFields, 'Application Status')) {
+      const cur = String(existingFields['Application Status'] || '').trim().toLowerCase()
+      if (!cur || applicationStatusLooksPipelinePending(cur)) {
+        fields['Application Status'] = 'Approved'
+      }
+    }
+    if (Object.prototype.hasOwnProperty.call(existingFields, 'Approval Status')) {
+      const cur = String(existingFields['Approval Status'] || '').trim().toLowerCase()
+      if (!cur || applicationStatusLooksPipelinePending(cur)) {
+        fields['Approval Status'] = 'Approved'
+      }
+    }
+  }
+  const data = await airtablePatch(`${APPS_AIRTABLE_BASE_URL}/${enc}/${recordId}`, fields)
   return mapRecord(data)
 }
 
@@ -116,7 +136,10 @@ export default async function handler(req, res) {
       return res.status(403).json({ error: 'Access denied: this application belongs to a different manager.' })
     }
 
-    const approvedApplication = existing.Approved === true ? existing : await approveApplication(recordId)
+    let approvedApplication = existing
+    if (!isApplicationApprovedForLease(existing) || existing.Approved !== true) {
+      approvedApplication = await approveApplication(recordId, existing)
+    }
     const ownerId = tenant?.ownerId || String(approvedApplication['Owner ID'] || '').trim()
     const residentSync = await markMatchingResidentsApproved(approvedApplication, ownerId)
 

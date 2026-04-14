@@ -294,6 +294,18 @@ const DEFAULT_SHARED_SPACES_FALLBACK = [
   { title: 'Laundry', description: 'Shared laundry for residents (layout varies by floor).', images: [], videos: [] },
 ]
 
+function attachmentUrlsWithFilenamePrefix(photos, prefixLower) {
+  const out = []
+  const arr = Array.isArray(photos) ? photos : []
+  for (const att of arr) {
+    const fn = String(att?.filename || att?.name || '').toLowerCase()
+    if (!fn.startsWith(prefixLower)) continue
+    const url = typeof att === 'string' ? att : att?.url
+    if (url) out.push(url)
+  }
+  return out
+}
+
 function buildSharedSpacesListFromRecord(rec, meta) {
   const roomCount = clampInt(rec[PROPERTY_AIR.roomCount] ?? 0, 0, MAX_ROOM_SLOTS)
   const sc = clampInt(rec[PROPERTY_AIR.sharedSpaceCount] ?? 0, 0, MAX_SHARED_SPACE_SLOTS)
@@ -301,7 +313,7 @@ function buildSharedSpacesListFromRecord(rec, meta) {
 
   const out = []
   for (let i = 1; i <= sc; i++) {
-    const name = trimStr(rec[sharedSpaceNameField(i)])
+    const legacyName = trimStr(rec[sharedSpaceNameField(i)])
     const type = trimStr(rec[sharedSpaceTypeField(i)])
     const accessRaw = rec[sharedSpaceAccessField(i)]
     const accessList = Array.isArray(accessRaw)
@@ -311,13 +323,13 @@ function buildSharedSpacesListFromRecord(rec, meta) {
           .map((s) => s.trim())
           .filter(Boolean)
 
-    if (!name && !type && !accessList.length) continue
+    if (!type && !accessList.length && !legacyName) continue
 
     const m = mediaRows[i - 1] && typeof mediaRows[i - 1] === 'object' ? mediaRows[i - 1] : {}
-    const title = name || trimStr(m.title) || type || `Shared space ${i}`
+    const title = trimStr(m.title) || type || legacyName || `Shared space ${i}`
     const descText = trimStr(m.description || m.notes || m.type || '')
     const accessDisplay = formatSharedSpaceAccessDisplay(accessList, roomCount)
-    const typeLine = type && type !== name ? type : ''
+    const typeLine = type && type !== legacyName ? type : ''
     const descriptionParts = [descText, typeLine].filter(Boolean)
     const description = descriptionParts.join(' — ') || (typeLine || 'Shared area')
     const imageUrls = (Array.isArray(m.imageUrls) ? m.imageUrls : []).map(trimStr).filter(Boolean)
@@ -370,17 +382,25 @@ function buildSharedSpacesListFromRecord(rec, meta) {
   const laundryOn = rec[PROPERTY_AIR.laundry] === true || rec[PROPERTY_AIR.laundry] === 1
   if (laundryOn) {
     let laundryPushed = false
+    const laundryMetaRows = Array.isArray(meta?.laundryDetail) ? meta.laundryDetail : []
     for (let i = 1; i <= MAX_LAUNDRY_SLOTS; i++) {
       const lt = trimStr(rec[laundryTypeField(i)])
       const accessList = splitRoomAccess(rec[laundryRoomsSharingField(i)])
       if (!lt && !accessList.length) continue
       laundryPushed = true
       const accessDisplay = formatSharedSpaceAccessDisplay(accessList, roomCount)
+      const lm = laundryMetaRows[i - 1] && typeof laundryMetaRows[i - 1] === 'object' ? laundryMetaRows[i - 1] : {}
+      const extra = trimStr(lm.description || lm.notes || '')
+      const descParts = [lt, extra].filter(Boolean)
+      const description = descParts.join(' — ') || 'Shared laundry'
+      const fromPhotos = attachmentUrlsWithFilenamePrefix(rec?.Photos, `axis-l${i}-`.toLowerCase())
+      const fromMeta = (Array.isArray(lm.imageUrls) ? lm.imageUrls : []).map(trimStr).filter(Boolean)
+      const images = [...new Set([...fromPhotos, ...fromMeta])]
       out.push({
         title: i === 1 ? 'Laundry' : `Laundry ${i}`,
-        description: lt || 'Shared laundry',
+        description,
         accessLabel: accessDisplay,
-        images: [],
+        images,
         videos: [],
       })
     }

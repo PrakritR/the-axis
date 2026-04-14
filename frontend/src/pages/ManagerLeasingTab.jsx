@@ -15,6 +15,7 @@ import toast from 'react-hot-toast'
 import LeaseHTMLTemplate from '../components/LeaseHTMLTemplate.jsx'
 import { DataTable } from '../components/PortalShell'
 import { getStatusConfig, fmtTs } from '../lib/leaseWorkflowConstants.js'
+import { deriveApplicationApprovalState } from '../lib/applicationApprovalState.js'
 import { getLeaseDraftById, publishLeaseDraft, uploadLeaseVersionPdfFile, getCurrentLeaseVersion } from '../lib/airtable'
 
 const AIRTABLE_TOKEN = import.meta.env.VITE_AIRTABLE_TOKEN
@@ -219,12 +220,14 @@ export default function ManagerLeasingTab({ manager, allowedPropertyNames }) {
       const approvedScoped = allowed && allowed.size > 0
         ? approvedApps.filter((a) => allowed.has(String(a['Property Name'] || '')))
         : approvedApps
+      // Airtable {Approved}=TRUE() can be out of sync with status text; only show placeholder leases when fully approved.
+      const approvedForLeaseUi = approvedScoped.filter((a) => deriveApplicationApprovalState(a) === 'approved')
       const existingAppIds = new Set(
         scoped
           .map((d) => String(d['Application Record ID'] || '').trim())
           .filter(Boolean),
       )
-      const syntheticRows = approvedScoped
+      const syntheticRows = approvedForLeaseUi
         .filter((a) => !existingAppIds.has(String(a.id || '').trim()))
         .map(toSyntheticLeaseDraftFromApplication)
 

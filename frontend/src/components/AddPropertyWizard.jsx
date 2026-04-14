@@ -262,7 +262,13 @@ export default function AddPropertyWizard({
       sharedSpaces: Array.isArray(payload?.sharedSpaces) ? payload.sharedSpaces.map((row) => ({ ...emptySharedSpaceRow(), ...row })) : [],
       laundry: {
         enabled: Boolean(payload?.laundry?.enabled),
-        rows: Array.isArray(payload?.laundry?.rows) ? payload.laundry.rows.map((row) => ({ ...emptyLaundryRow(), ...row })) : [],
+        rows: Array.isArray(payload?.laundry?.rows)
+          ? payload.laundry.rows.map((row) => ({
+              ...emptyLaundryRow(),
+              ...row,
+              media: Array.isArray(row.media) ? row.media : [],
+            }))
+          : [],
         generalAccess: Array.isArray(payload?.laundry?.generalAccess) ? [...payload.laundry.generalAccess] : [],
       },
       parking: {
@@ -334,10 +340,20 @@ export default function AddPropertyWizard({
     setAppFee(initialState.appFee)
     setRooms(initialState.rooms)
     setBathrooms(initialState.bathrooms); setKitchens(initialState.kitchens); setSharedSpaces(initialState.sharedSpaces)
-    setLaundry(initialState.laundry)
+    setLaundry((l) => {
+      for (const row of l.rows || []) {
+        for (const m of row.media || []) {
+          if (m?.preview && m.file) URL.revokeObjectURL(m.preview)
+        }
+      }
+      return initialState.laundry
+    })
     setParking(initialState.parking)
     setOtherInfo(initialState.otherInfo)
-    setImages(prev => { prev.forEach(img => URL.revokeObjectURL(img.preview)); return [] })
+    setImages((prev) => {
+      prev.forEach((img) => URL.revokeObjectURL(img.preview))
+      return []
+    })
     setLeasing(initialState.leasing)
   }
 
@@ -389,7 +405,7 @@ export default function AddPropertyWizard({
         roomCount: rc,
         bathroomCount: clampInt(bathrooms.length, 0, MAX_BATHROOM_SLOTS),
         kitchenCount: clampInt(kitchens.length, 0, MAX_KITCHEN_SLOTS),
-        laundry,
+        laundry: laundryPayload,
         parking,
         rooms: roomsPayload,
         bathrooms,
@@ -414,7 +430,18 @@ export default function AddPropertyWizard({
         for (const item of rooms[ri].media || []) {
           try {
             const f = item.file
+            if (!f) continue
             const renamed = new File([f], `axis-r${ri + 1}-${f.name}`, { type: f.type || 'application/octet-stream' })
+            await uploadPropertyImage(created.id, renamed)
+          } catch { /* non-fatal */ }
+        }
+      }
+      for (let li = 0; li < (laundry.rows || []).length; li++) {
+        for (const item of laundry.rows[li].media || []) {
+          try {
+            const f = item.file
+            if (!f) continue
+            const renamed = new File([f], `axis-l${li + 1}-${f.name}`, { type: f.type || 'application/octet-stream' })
             await uploadPropertyImage(created.id, renamed)
           } catch { /* non-fatal */ }
         }
@@ -540,6 +567,7 @@ export default function AddPropertyWizard({
         ...prev,
         {
           ...src,
+          name: '',
           access: Array.isArray(src.access) ? [...src.access] : [],
         },
       ]
@@ -564,12 +592,42 @@ export default function AddPropertyWizard({
           {
             ...src,
             access: Array.isArray(src.access) ? [...src.access] : [],
+            media: [],
           },
         ],
       }
     })
   }
-  function removeLaundryRow(idx) { setLaundry(l => ({ ...l, rows: (l.rows || []).filter((_, i) => i !== idx) })) }
+  function removeLaundryRow(idx) {
+    setLaundry((l) => {
+      const row = (l.rows || [])[idx]
+      for (const m of row?.media || []) {
+        if (m?.preview && m.file) URL.revokeObjectURL(m.preview)
+      }
+      return { ...l, rows: (l.rows || []).filter((_, i) => i !== idx) }
+    })
+  }
+
+  function addLaundryMedia(laundryIdx, fileList) {
+    const valid = Array.from(fileList || []).filter((f) => f.type.startsWith('image/'))
+    if (!valid.length) return
+    const entries = valid.map((file) => ({ id: `${Date.now()}-${Math.random()}`, file, preview: URL.createObjectURL(file) }))
+    setLaundry((l) => ({
+      ...l,
+      rows: (l.rows || []).map((r, i) => (i === laundryIdx ? { ...r, media: [...(r.media || []), ...entries] } : r)),
+    }))
+  }
+  function removeLaundryMedia(laundryIdx, mediaId) {
+    setLaundry((l) => ({
+      ...l,
+      rows: (l.rows || []).map((r, i) => {
+        if (i !== laundryIdx) return r
+        const removed = (r.media || []).find((m) => m.id === mediaId)
+        if (removed?.preview && removed.file) URL.revokeObjectURL(removed.preview)
+        return { ...r, media: (r.media || []).filter((m) => m.id !== mediaId) }
+      }),
+    }))
+  }
 
   // ── Bundle helpers ────────────────────────────────────────────────────────────
   function addBundle() { setLeasing(L => ({ ...L, bundles: [...(L.bundles || []), { name: '', price: '', rooms: [] }] })) }
@@ -1293,11 +1351,7 @@ export default function AddPropertyWizard({
               </div>
             </div>
             <div className="grid gap-3 sm:grid-cols-2">
-              <div>
-                <label className={LBL}>Name <span className="font-normal text-slate-400">(optional)</span></label>
-                <input className={OK_INPUT} value={space.name} onChange={ev => updateSpace(idx, { name: ev.target.value })} placeholder="e.g. Main living room" />
-              </div>
-              <div>
+              <div className="sm:col-span-2">
                 <label className={LBL}>Type <Req /></label>
                 <select className={ic(`s${idx}_type`)} value={space.type} onChange={ev => updateSpace(idx, { type: ev.target.value })}>
                   <option value="">Select type…</option>
@@ -1356,7 +1410,7 @@ export default function AddPropertyWizard({
         <div className="rounded-2xl border border-slate-200 bg-white p-4 space-y-4">
           <SectionHeading>Laundry</SectionHeading>
           <p className="text-xs text-slate-500">
-            Add laundry locations and assign which rooms can use each one.
+            Add laundry locations, which rooms can use each one, optional details for the listing, and photos (shown on the property page).
           </p>
           {(laundry.rows || []).length === 0 ? (
             <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 px-6 py-8 text-center text-sm text-slate-500">
@@ -1405,6 +1459,48 @@ export default function AddPropertyWizard({
                       onChange={(access) => updateLaundryRow(idx, { access })}
                     />
                     <FieldError msg={e[`l${idx}_access`]} />
+                  </div>
+                  <div className="sm:col-span-2">
+                    <label className={LBL}>Details <span className="font-normal text-slate-400">(optional, listing)</span></label>
+                    <textarea
+                      className={`${OK_INPUT} min-h-[64px]`}
+                      value={row.description || ''}
+                      onChange={(ev) => updateLaundryRow(idx, { description: ev.target.value })}
+                      placeholder="e.g. Coin-op in basement, hours 7am–10pm; detergent shelf; folding table…"
+                      rows={2}
+                    />
+                  </div>
+                  <div className="sm:col-span-2">
+                    <label className={LBL}>Laundry photos <span className="font-normal text-slate-400">(optional)</span></label>
+                    <label className="flex cursor-pointer flex-col items-center justify-center rounded-2xl border-2 border-dashed border-slate-200 bg-slate-50/60 px-4 py-5 text-center text-xs text-slate-500 transition hover:border-[#2563eb]/50 hover:bg-blue-50/20">
+                      <input
+                        type="file"
+                        accept="image/*"
+                        multiple
+                        className="hidden"
+                        onChange={(ev) => {
+                          addLaundryMedia(idx, ev.target.files)
+                          ev.target.value = ''
+                        }}
+                      />
+                      Drag & drop or click to add photos for this laundry
+                    </label>
+                    {(row.media || []).length > 0 && (
+                      <div className="mt-2 flex flex-wrap gap-2">
+                        {(row.media || []).map((m) => (
+                          <div key={m.id} className="relative h-20 w-20 overflow-hidden rounded-xl border border-slate-200 bg-slate-100">
+                            <img src={m.preview} alt="" className="h-full w-full object-cover" />
+                            <button
+                              type="button"
+                              onClick={() => removeLaundryMedia(idx, m.id)}
+                              className="absolute right-0.5 top-0.5 rounded-full bg-white/90 px-1.5 text-[10px] font-bold text-red-600 shadow"
+                            >
+                              ✕
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 </div>
               </div>

@@ -10,11 +10,34 @@ export function applicationRejectedFieldName() {
   return s || 'Rejected'
 }
 
+function statusImpliesPipelineNotComplete(status) {
+  if (!status) return false
+  const s = String(status).trim().toLowerCase()
+  const blockedExact = new Set([
+    'pending',
+    'under review',
+    'in review',
+    'submitted',
+    'new',
+    'draft',
+    'incomplete',
+    'awaiting',
+    'processing',
+  ])
+  if (blockedExact.has(s)) return true
+  if (s.includes('pending')) return true
+  if (s.includes('under review')) return true
+  if (s.includes('in review')) return true
+  if (s.includes('awaiting')) return true
+  return false
+}
+
 /**
  * Map an Applications table row to pending | approved | rejected.
  * Uses optional `Approval Status` / `Application Status` when set.
  * `Rejected` checkbox (see applicationRejectedFieldName) is the reliable store for rejection.
- * `Approved` true → approved; explicit false (e.g. optimistic UI) → rejected; both omitted → pending.
+ * If status is still in the pipeline (pending, submitted, …), stays pending even when `Approved` is true
+ * — must match `backend/server/lib/application-approval-lease-guard.js` for lease creation.
  */
 export function deriveApplicationApprovalState(raw) {
   if (!raw || typeof raw !== 'object') return 'pending'
@@ -29,6 +52,8 @@ export function deriveApplicationApprovalState(raw) {
   if (status === 'rejected' || status === 'reject' || status === 'declined' || status === 'denied') {
     return 'rejected'
   }
+
+  if (statusImpliesPipelineNotComplete(status)) return 'pending'
 
   const a = raw.Approved
   if (a === true || a === 1) return 'approved'

@@ -1300,16 +1300,27 @@ function DayAvailabilityTimeline({ ranges, onRangesChange, disabled }) {
   )
 }
 
+/** Stronger tour vs work-order hues for calendar strips and list rows */
+function bookingEventStripClass(row) {
+  const type = String(row.Type || '').trim().toLowerCase()
+  if (type === 'work order') return 'border-amber-600 bg-amber-400/95'
+  if (type === 'tour') return 'border-violet-600 bg-violet-400/95'
+  if (type === 'meeting') return 'border-indigo-600 bg-indigo-400/90'
+  if (type === 'issue' || type === 'other') return 'border-slate-500 bg-slate-400/90'
+  return 'border-sky-600 bg-sky-400/95'
+}
+
 function bookingBadgeTone(row) {
   const type = String(row.Type || '').trim().toLowerCase()
   const approval = String(row['Manager Approval'] || '').trim().toLowerCase()
   if (type === 'availability' || type === 'meeting availability') return 'bg-emerald-50 text-emerald-800 border-emerald-200'
-  if (type === 'work order') return 'bg-amber-50 text-amber-900 border-amber-200'
+  if (type === 'work order') return 'bg-amber-50 text-amber-950 border-amber-300'
+  if (type === 'tour') return 'bg-violet-50 text-violet-950 border-violet-300'
   if (type === 'issue' || type === 'other') return 'bg-slate-100 text-slate-700 border-slate-200'
-  if (type === 'meeting') return 'bg-violet-50 text-violet-800 border-violet-200'
+  if (type === 'meeting') return 'bg-indigo-50 text-indigo-900 border-indigo-200'
   if (approval === 'approved') return 'bg-emerald-50 text-emerald-800 border-emerald-200'
   if (approval === 'declined') return 'bg-red-50 text-red-700 border-red-200'
-  return 'bg-sky-50 text-sky-800 border-sky-200'
+  return 'bg-sky-50 text-sky-900 border-sky-300'
 }
 
 function bookingLabel(row) {
@@ -1321,6 +1332,14 @@ function bookingLabel(row) {
   if (type === 'issue' || type === 'other') return 'Issue'
   if (type === 'tour') return 'Tour booking'
   return 'Booked tour'
+}
+
+/** Month/week/day strips, day timeline, and “Items on this date” only list real bookings. */
+function isWorkOrderOrScheduledTourCalendarRow(row) {
+  if (!row || typeof row !== 'object') return false
+  if (row._workOrder) return true
+  const t = normalizeEventType(row.Type)
+  return t === CALENDAR_EVENT_TYPES.WORK_ORDER || t === CALENDAR_EVENT_TYPES.TOUR
 }
 
 function parsePreferredTimeRange(preferredTime) {
@@ -1355,6 +1374,41 @@ function timelineBlockStyle(start, end) {
     top: `${((safeStart - TOUR_GRID_START_MIN) / total) * 100}%`,
     height: `${Math.max(((safeEnd - safeStart) / total) * 100, 2)}%`,
   }
+}
+
+/** Mini day column: left = weekly free slots (emerald), right = bookings (tour vs work order colors). */
+function MonthDayMiniStrip({ ranges, dayBookings, blocked }) {
+  return (
+    <div
+      className="relative mt-1 h-[72px] w-full overflow-hidden rounded-xl border border-slate-200/80 bg-slate-100/80"
+      aria-hidden
+    >
+      {blocked ? <div className="absolute inset-0 z-20 rounded-xl bg-red-200/50" /> : null}
+      {!blocked &&
+        (ranges || []).map((range) => (
+          <div
+            key={`a-${range.start}-${range.end}`}
+            className="absolute left-0.5 z-[1] w-[42%] rounded-sm bg-emerald-400/90 shadow-sm ring-1 ring-emerald-600/25"
+            style={timelineBlockStyle(range.start, range.end)}
+          />
+        ))}
+      {!blocked &&
+        (dayBookings || []).map((row) => {
+          const parsed = parsePreferredTimeRange(row['Preferred Time'])
+          if (!parsed) return null
+          return (
+            <div
+              key={row.id}
+              className={classNames(
+                'absolute right-0.5 z-[2] w-[48%] rounded-sm border shadow-sm',
+                bookingEventStripClass(row),
+              )}
+              style={timelineBlockStyle(parsed.start, parsed.end)}
+            />
+          )
+        })}
+    </div>
+  )
 }
 
 function TimeRangeRow({ range, onChange, onRemove, disabled = false, disableRemove = false }) {
@@ -1427,7 +1481,7 @@ function AvailabilityCalendar({ view, anchorDate, selectedDateKey, onSelectDate,
       const o = dayFreeOverrides[key]
       return Array.isArray(o) ? normalizeTimeRanges(o) : []
     }
-    if (view !== 'day' && key !== selectedDateKey) return []
+    // Manager tour template: show the same weekly pattern on every day in month/week (not only selected).
     return timeRangesFromWeeklyFree(weeklyFree, weekdayAbbrFromDateKey(key))
   }
   const bookings = (key) => bookedByDate.get(key) || []
@@ -1438,44 +1492,33 @@ function AvailabilityCalendar({ view, anchorDate, selectedDateKey, onSelectDate,
     const dayBookings = bookings(dateKey)
     const selected = selectedDateKey === dateKey
     const blocked = isBlocked(dateKey)
+    const aria = `${dayLabel} ${dateLabel}${blocked ? ', blocked' : ''}`
     return (
       <button
         key={dateKey}
         type="button"
         onClick={() => onSelectDate(dateKey)}
+        aria-label={aria}
+        title={aria}
         className={classNames(
-          'min-h-[154px] rounded-3xl border p-4 text-left transition',
-          selected ? 'border-[#2563eb] bg-[#2563eb]/5 ring-2 ring-[#2563eb]/20' : 'border-slate-200 bg-slate-50/70 hover:bg-white',
-          blocked ? 'bg-red-50/60 border-red-200' : '',
-          dateKey === todayKey ? 'ring-1 ring-slate-300' : '',
+          'min-h-[118px] rounded-2xl border p-2 text-left transition',
+          selected ? 'border-[#2563eb] bg-[#2563eb]/5 ring-2 ring-[#2563eb]/20' : 'border-slate-200 bg-white hover:border-slate-300',
+          blocked ? 'border-red-200 bg-red-50/50' : '',
+          dateKey === todayKey && !selected ? 'ring-1 ring-slate-300' : '',
         )}
       >
-        <div>
-          <div className="flex items-center justify-between">
-            <div>
-              <div className="text-[10px] font-bold uppercase tracking-[0.14em] text-slate-400">{dayLabel}</div>
-              <div className="mt-1 text-lg font-black text-slate-900">{dateLabel}</div>
-            </div>
-            {blocked && (
-              <span className="rounded-full bg-red-100 px-2 py-0.5 text-[10px] font-bold text-red-600">Blocked</span>
-            )}
-          </div>
+        <span className="sr-only">{aria}</span>
+        <div className="flex items-start justify-between gap-1">
+          {blocked ? (
+            <span className="rounded bg-red-100 px-1 py-0.5 text-[9px] font-bold uppercase tracking-wide text-red-700">
+              Off
+            </span>
+          ) : (
+            <span className="inline-block w-6 shrink-0" aria-hidden />
+          )}
+          <span className="ml-auto text-xs font-black tabular-nums text-slate-800">{dateLabel}</span>
         </div>
-        <div className="mt-3 space-y-1">
-          {!blocked && ranges.slice(0, 2).map((range) => (
-            <div key={`${range.start}-${range.end}`} className="rounded-xl bg-emerald-50 px-2.5 py-1.5 text-xs font-semibold text-emerald-800">
-              {formatTimeRangeLabel(range)}
-            </div>
-          ))}
-          {!blocked && ranges.length > 2 ? <div className="text-xs text-slate-400">+{ranges.length - 2} more</div> : null}
-        </div>
-        <div className="mt-4 space-y-1">
-          {dayBookings.slice(0, 2).map((row) => (
-            <div key={row.id} className={`rounded-xl border px-2.5 py-1.5 text-xs font-semibold ${bookingBadgeTone(row)}`}>
-              {bookingLabel(row)}{row['Preferred Time'] ? ` · ${row['Preferred Time']}` : ''}
-            </div>
-          ))}
-        </div>
+        <MonthDayMiniStrip ranges={ranges} dayBookings={dayBookings} blocked={blocked} />
       </button>
     )
   }
@@ -1526,15 +1569,18 @@ function AvailabilityCalendar({ view, anchorDate, selectedDateKey, onSelectDate,
                 return (
                   <div
                     key={row.id}
-                    className={`absolute rounded-2xl border px-3 py-2 text-sm shadow-sm ${bookingBadgeTone(row)}`}
+                    className={classNames(
+                      'absolute rounded-2xl border-2 px-3 py-2 text-sm font-semibold shadow-md',
+                      bookingBadgeTone(row),
+                    )}
                     style={{
                       ...timelineBlockStyle(parsed.start, parsed.end),
                       left: idx % 2 === 0 ? '0.75rem' : '50%',
                       right: idx % 2 === 0 ? '50%' : '0.75rem',
                     }}
                   >
-                    <div className="font-semibold">{bookingLabel(row)}</div>
-                    <div className="mt-1 text-xs opacity-80">
+                    <div>{bookingLabel(row)}</div>
+                    <div className="mt-0.5 text-[11px] font-medium opacity-90">
                       {[row.Name || 'Guest', row['Preferred Time'], row.Property].filter(Boolean).join(' · ')}
                     </div>
                   </div>
@@ -1582,11 +1628,9 @@ function AvailabilityCalendar({ view, anchorDate, selectedDateKey, onSelectDate,
 }
 
 function AvailabilityEditorPanel({
-  selectedDateKey,
   ranges,
   onRangesChange,
   onSave,
-  onClearDay,
   onCopyHoursToWholeWeek,
   scheduledItems,
   availSaving,
@@ -1667,10 +1711,6 @@ function AvailabilityEditorPanel({
         )}
       </div>
 
-      <p className="mt-4 text-xs text-slate-500">
-        Timeline edits <strong>this weekday</strong> in the weekly template. Save updates <strong>Tour Availability</strong> (public tour slots use the same field).
-      </p>
-
       {typeof onCopyHoursToWholeWeek === 'function' ? (
         <div className="mt-4">
           <button
@@ -1681,29 +1721,28 @@ function AvailabilityEditorPanel({
           >
             Copy this day&apos;s hours to Mon–Sun
           </button>
-          <p className="mt-1.5 text-[11px] text-slate-500">Applies the same blocks to every day of the week in the template.</p>
         </div>
       ) : null}
 
-      <div className="mt-6">
-        <button
-          type="button"
-          onClick={onSave}
-          disabled={availSaving || isManagerInternalPreview(manager) || !hasApprovedPick}
-          className="w-full rounded-2xl bg-[linear-gradient(180deg,#2f76ff_0%,#2450eb_100%)] px-4 py-3 text-sm font-semibold text-white shadow-[0_12px_28px_rgba(37,99,235,0.22)] disabled:opacity-50"
-        >
-          {availSaving ? 'Saving…' : 'Save to property & calendar'}
-        </button>
-      </div>
+      {typeof onSave === 'function' ? (
+        <div className="mt-6">
+          <button
+            type="button"
+            onClick={onSave}
+            disabled={availSaving || isManagerInternalPreview(manager) || !hasApprovedPick}
+            className="w-full rounded-2xl bg-[linear-gradient(180deg,#2f76ff_0%,#2450eb_100%)] px-4 py-3 text-sm font-semibold text-white shadow-[0_12px_28px_rgba(37,99,235,0.22)] disabled:opacity-50"
+          >
+            {availSaving ? 'Saving…' : 'Save to property & calendar'}
+          </button>
+        </div>
+      ) : null}
     </div>
   )
 }
 
 function AdminDayAvailabilityEditor({
-  selectedDateKey,
   ranges,
   onRangesChange,
-  onSave,
   onClearDay,
   scheduledItems,
   availSaving,
@@ -1711,7 +1750,6 @@ function AdminDayAvailabilityEditor({
   return (
     <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm lg:sticky lg:top-6">
       <h2 className={PORTAL_SECTION_TITLE_CLS}>Meeting availability</h2>
-      <p className="mt-1 text-sm text-slate-500">Drag on the timeline to set free meeting times for {selectedDateKey}.</p>
 
       <div className="mt-6">
         <DayAvailabilityTimeline ranges={ranges} onRangesChange={onRangesChange} disabled={availSaving} />
@@ -1748,17 +1786,6 @@ function AdminDayAvailabilityEditor({
           className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 font-semibold text-red-700 hover:bg-red-100 disabled:opacity-40"
         >
           Clear day
-        </button>
-      </div>
-
-      <div className="mt-6">
-        <button
-          type="button"
-          onClick={onSave}
-          disabled={availSaving}
-          className="w-full rounded-2xl bg-[linear-gradient(180deg,#2f76ff_0%,#2450eb_100%)] px-4 py-3 text-sm font-semibold text-white shadow-[0_12px_28px_rgba(37,99,235,0.22)] disabled:opacity-50"
-        >
-          {availSaving ? 'Saving…' : 'Save availability'}
         </button>
       </div>
     </div>
@@ -5098,6 +5125,9 @@ export function CalendarTabPanel({ manager, allowedPropertyNames, loadAllSchedul
   const [adminDayRanges, setAdminDayRanges] = useState([])
   const [blockedDateRecords, setBlockedDateRecords] = useState([])
   const [blockSaving, setBlockSaving] = useState(false)
+  /** Tour template: user edited weekly grid — debounced persist to Airtable */
+  const availabilityDirtyRef = useRef(false)
+  const adminAvailabilityDirtyRef = useRef(false)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -5264,8 +5294,7 @@ export function CalendarTabPanel({ manager, allowedPropertyNames, loadAllSchedul
   const bookedByDate = useMemo(() => {
     const map = new Map()
     for (const row of schedulingRowsForView || []) {
-      const t = String(row?.Type || '').trim().toLowerCase()
-      if (t === 'availability' || t === 'meeting availability') continue
+      if (!isWorkOrderOrScheduledTourCalendarRow(row)) continue
       const dk = String(row?.['Preferred Date'] || '').trim().slice(0, 10)
       if (!dk) continue
       const list = map.get(dk) || []
@@ -5275,9 +5304,10 @@ export function CalendarTabPanel({ manager, allowedPropertyNames, loadAllSchedul
     return map
   }, [schedulingRowsForView])
 
-  // Show all scheduled items and availability for each day
+  // Items on selected day: work orders + scheduled tours only (not meetings, issues, or availability rows)
   const scheduledItemsForSelectedDay = useMemo(() => {
     return (schedulingRowsForView || []).filter((row) => {
+      if (!isWorkOrderOrScheduledTourCalendarRow(row)) return false
       const rowDate = String(row['Preferred Date'] || '').trim().slice(0, 10)
       return rowDate === selectedDateKey
     })
@@ -5330,18 +5360,17 @@ export function CalendarTabPanel({ manager, allowedPropertyNames, loadAllSchedul
     return byDate
   }, [loadAllSchedulingRows, schedulingRows, manager?.email])
 
-  const adminScheduledItemsForDay = useMemo(
-    () => (scheduledItemsForSelectedDay || []).filter((row) => {
-      const t = String(row.Type || '').trim().toLowerCase()
-      return t !== 'meeting availability' && t !== 'availability'
-    }),
-    [scheduledItemsForSelectedDay],
-  )
+  const adminScheduledItemsForDay = scheduledItemsForSelectedDay
 
   useEffect(() => {
     if (!loadAllSchedulingRows) return
     setAdminDayRanges(adminRangesFromRows)
   }, [loadAllSchedulingRows, adminRangesFromRows, selectedDateKey])
+
+  useEffect(() => {
+    if (!loadAllSchedulingRows) return
+    adminAvailabilityDirtyRef.current = false
+  }, [selectedDateKey, loadAllSchedulingRows])
 
   // Load blocked dates whenever the selected property changes
   useEffect(() => {
@@ -5407,72 +5436,98 @@ export function CalendarTabPanel({ manager, allowedPropertyNames, loadAllSchedul
     setAnchorDate(dateFromCalendarKey(key))
   }
 
-  // Persist weekly tour template on the Properties row (drives public tour slots + manager calendar load).
-  async function handleSaveAvailability() {
-    if (!selectedProperty) {
-      toast.error('Select a property first')
-      return
-    }
-    setAvailSaving(true)
-    try {
-      const tourText = encodeTourAvailabilityFromWeeklyFree(selectedWeeklyFree)
-      const updated = await patchPropertyTourAvailability(selectedProperty, tourText, manager)
-      const parsedFree = weeklyFreeArraysFromTourText(tourText)
-      setWeeklyFreeByProperty((prev) => ({ ...prev, [selectedPropertyId]: parsedFree }))
-      setProperties((prev) => prev.map((p) => (p.id === selectedProperty.id ? { ...p, ...updated } : p)))
-      toast.success(`Tour availability saved for ${propertyRecordName(selectedProperty) || 'property'}`)
-      await load()
-    } catch (err) {
-      toast.error(err.message || 'Could not save availability')
-    } finally {
-      setAvailSaving(false)
-    }
+  const tourAutosaveCtxRef = useRef({})
+  tourAutosaveCtxRef.current = {
+    selectedProperty,
+    selectedWeeklyFree,
+    selectedPropertyId,
+    manager,
+    load,
   }
 
-  function handleClearDay() {
-    if (!selectedPropertyId) return
-    const abbr = weekdayAbbrFromDateKey(selectedDateKey)
-    setWeeklyFreeByProperty((prev) => {
-      const base = prev[selectedPropertyId] || emptyWeeklyFreeArrays()
-      const next = cloneWeeklyArrays(base)
-      next[abbr] = []
-      return { ...prev, [selectedPropertyId]: next }
-    })
-  }
+  useEffect(() => {
+    if (loadAllSchedulingRows) return
+    availabilityDirtyRef.current = false
+  }, [selectedPropertyId, loadAllSchedulingRows])
 
-  async function handleSaveAdminAvailability() {
-    const adminEmail = String(manager?.email || '').trim().toLowerCase()
-    if (!adminEmail) {
-      toast.error('Admin email is required to save availability')
-      return
-    }
-    setAvailSaving(true)
-    try {
-      await Promise.all(adminAvailabilityRowsForSelectedDay.map((row) => deleteSchedulingRecord(row.id)))
-
-      for (const range of adminDayRanges) {
-        await createSchedulingRecord({
-          Name: String(manager?.name || 'Axis admin').trim(),
-          Email: adminEmail,
-          Type: 'Meeting Availability',
-          Status: 'Available',
-          'Manager Email': adminEmail,
-          'Tour Manager': String(manager?.name || '').trim(),
-          'Preferred Date': selectedDateKey,
-          'Preferred Time': `${displayTimeFromMinutes(range.start)} - ${displayTimeFromMinutes(range.end)}`,
-          'Scheduled Date': selectedDateKey,
-          'Scheduled Time': `${displayTimeFromMinutes(range.start)} - ${displayTimeFromMinutes(range.end)}`,
-        })
+  useEffect(() => {
+    if (loadAllSchedulingRows) return
+    if (!availabilityDirtyRef.current) return
+    const { manager: mgr, selectedPropertyId: pid, selectedProperty: prop } = tourAutosaveCtxRef.current
+    if (isManagerInternalPreview(mgr) || !pid || !prop) return
+    const t = window.setTimeout(async () => {
+      const { selectedProperty: p2, selectedWeeklyFree: f2, selectedPropertyId: pid2, manager: m2, load: r2 } =
+        tourAutosaveCtxRef.current
+      if (isManagerInternalPreview(m2) || !pid2 || !p2) return
+      availabilityDirtyRef.current = false
+      setAvailSaving(true)
+      try {
+        const tourText = encodeTourAvailabilityFromWeeklyFree(f2)
+        const updated = await patchPropertyTourAvailability(p2, tourText, m2)
+        const parsedFree = weeklyFreeArraysFromTourText(tourText)
+        setWeeklyFreeByProperty((prev) => ({ ...prev, [pid2]: parsedFree }))
+        setProperties((prev) => prev.map((p) => (p.id === p2.id ? { ...p, ...updated } : p)))
+        toast.success('Saved', { id: 'calendar-avail-autosave', duration: 1800 })
+        await r2()
+      } catch (err) {
+        toast.error(err.message || 'Could not save availability')
+      } finally {
+        setAvailSaving(false)
       }
+    }, 550)
+    return () => window.clearTimeout(t)
+  }, [weeklyFreeByProperty, selectedPropertyId, loadAllSchedulingRows])
 
-      toast.success('Meeting availability saved')
-      await load()
-    } catch (err) {
-      toast.error(err.message || 'Could not save availability')
-    } finally {
-      setAvailSaving(false)
-    }
+  const adminAutosaveCtxRef = useRef({})
+  adminAutosaveCtxRef.current = {
+    manager,
+    selectedDateKey,
+    adminDayRanges,
+    adminAvailabilityRowsForSelectedDay,
+    load,
   }
+
+  useEffect(() => {
+    if (!loadAllSchedulingRows) return
+    if (!adminAvailabilityDirtyRef.current) return
+    const t = window.setTimeout(async () => {
+      const {
+        manager: mgr,
+        selectedDateKey: dayKey,
+        adminDayRanges: ranges,
+        adminAvailabilityRowsForSelectedDay: rows,
+        load: reload,
+      } = adminAutosaveCtxRef.current
+      const adminEmail = String(mgr?.email || '').trim().toLowerCase()
+      if (!adminEmail) return
+      adminAvailabilityDirtyRef.current = false
+      setAvailSaving(true)
+      try {
+        await Promise.all((rows || []).map((row) => deleteSchedulingRecord(row.id)))
+        for (const range of ranges || []) {
+          await createSchedulingRecord({
+            Name: String(mgr?.name || 'Axis admin').trim(),
+            Email: adminEmail,
+            Type: 'Meeting Availability',
+            Status: 'Available',
+            'Manager Email': adminEmail,
+            'Tour Manager': String(mgr?.name || '').trim(),
+            'Preferred Date': dayKey,
+            'Preferred Time': `${displayTimeFromMinutes(range.start)} - ${displayTimeFromMinutes(range.end)}`,
+            'Scheduled Date': dayKey,
+            'Scheduled Time': `${displayTimeFromMinutes(range.start)} - ${displayTimeFromMinutes(range.end)}`,
+          })
+        }
+        toast.success('Saved', { id: 'calendar-admin-avail-autosave', duration: 1800 })
+        await reload()
+      } catch (err) {
+        toast.error(err.message || 'Could not save availability')
+      } finally {
+        setAvailSaving(false)
+      }
+    }, 550)
+    return () => window.clearTimeout(t)
+  }, [adminDayRanges, selectedDateKey, loadAllSchedulingRows])
 
   const calendarStats = useMemo(() => {
     const today = new Date()
@@ -5619,20 +5674,19 @@ export function CalendarTabPanel({ manager, allowedPropertyNames, loadAllSchedul
         />
         {!loadAllSchedulingRows && (
           <AvailabilityEditorPanel
-            selectedDateKey={selectedDateKey}
             ranges={timeRangesFromWeeklyFree(selectedWeeklyFree, weekdayAbbrFromDateKey(selectedDateKey))}
             onRangesChange={(ranges) => {
               if (!selectedPropertyId) return
+              availabilityDirtyRef.current = true
               const abbr = weekdayAbbrFromDateKey(selectedDateKey)
               setWeeklyFreeByProperty((prev) => {
                 const base = prev[selectedPropertyId] || emptyWeeklyFreeArrays()
                 return { ...prev, [selectedPropertyId]: weeklyFreeWithDayRanges(base, abbr, ranges) }
               })
             }}
-            onSave={handleSaveAvailability}
-            onClearDay={handleClearDay}
             onCopyHoursToWholeWeek={() => {
               if (!selectedPropertyId) return
+              availabilityDirtyRef.current = true
               const abbr = weekdayAbbrFromDateKey(selectedDateKey)
               setWeeklyFreeByProperty((prev) => {
                 const base = prev[selectedPropertyId] || emptyWeeklyFreeArrays()
@@ -5641,7 +5695,7 @@ export function CalendarTabPanel({ manager, allowedPropertyNames, loadAllSchedul
                   [selectedPropertyId]: weeklyFreeCopySourceDayToAllDays(base, abbr),
                 }
               })
-              toast.success('Copied this day to Mon–Sun — press save when ready')
+              toast.success('Copied to Mon–Sun')
             }}
             scheduledItems={scheduledItemsForSelectedDay}
             availSaving={availSaving}
@@ -5657,11 +5711,15 @@ export function CalendarTabPanel({ manager, allowedPropertyNames, loadAllSchedul
         )}
         {loadAllSchedulingRows ? (
           <AdminDayAvailabilityEditor
-            selectedDateKey={selectedDateKey}
             ranges={adminDayRanges}
-            onRangesChange={setAdminDayRanges}
-            onSave={handleSaveAdminAvailability}
-            onClearDay={() => setAdminDayRanges([])}
+            onRangesChange={(next) => {
+              adminAvailabilityDirtyRef.current = true
+              setAdminDayRanges(next)
+            }}
+            onClearDay={() => {
+              adminAvailabilityDirtyRef.current = true
+              setAdminDayRanges([])
+            }}
             scheduledItems={adminScheduledItemsForDay}
             availSaving={availSaving}
           />

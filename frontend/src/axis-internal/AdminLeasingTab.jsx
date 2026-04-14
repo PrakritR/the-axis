@@ -55,6 +55,16 @@ const ADMIN_STATUS_FILTER_ITEMS = [
   { id: 'signed', label: 'Signed', match: (status) => String(status || '').trim() === 'Signed' },
 ]
 
+/** Match manager portal Leasing tab property toolbar styling. */
+const LEASE_PILL_SELECT_WRAP_CLS = 'relative min-w-0 flex-1 sm:min-w-[220px] sm:flex-none'
+const LEASE_PILL_SELECT_CLS =
+  'h-[42px] w-full min-w-0 cursor-pointer appearance-none rounded-full border border-slate-200 bg-white py-2.5 pl-4 pr-10 text-sm font-medium text-slate-800 transition focus:border-[#2563eb] focus:outline-none focus:ring-2 focus:ring-[#2563eb]/20 disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-400'
+const LEASE_PILL_SELECT_CHEVRON = (
+  <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-slate-400" aria-hidden>
+    ▾
+  </span>
+)
+
 function StatusPill({ status }) {
   const cfg = getStatusConfig(status)
   return (
@@ -70,6 +80,7 @@ export default function AdminLeasingTab({ adminUser, accounts = [] }) {
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState('')
   const [statusFilter, setStatusFilter] = useState('draft_ready')
+  const [propertyFilter, setPropertyFilter] = useState('')
   const [selectedDraftId, setSelectedDraftId] = useState('')
   const [activeDraft, setActiveDraft] = useState(null)
   const [detailLoading, setDetailLoading] = useState(false)
@@ -109,10 +120,34 @@ export default function AdminLeasingTab({ adminUser, accounts = [] }) {
     return map
   }, [accounts])
 
+  const propertyChoices = useMemo(() => {
+    const map = new Map()
+    for (const d of drafts) {
+      const display = String(d['Property'] || '').trim()
+      if (!display) continue
+      const value = display.toLowerCase()
+      if (!map.has(value)) map.set(value, display)
+    }
+    return [...map.entries()]
+      .sort((a, b) => a[1].localeCompare(b[1], undefined, { sensitivity: 'base' }))
+      .map(([value, display]) => ({ value, display }))
+  }, [drafts])
+
+  useEffect(() => {
+    if (!propertyFilter) return
+    if (!propertyChoices.some((c) => c.value === propertyFilter)) setPropertyFilter('')
+  }, [propertyFilter, propertyChoices])
+
   const visibleDrafts = useMemo(() => {
     const filterFn = ADMIN_STATUS_FILTER_ITEMS.find((item) => item.id === statusFilter)?.match ?? (() => true)
-    return drafts.filter((draft) => filterFn(draft['Status'] || ''))
-  }, [drafts, statusFilter])
+    let rows = drafts.filter((draft) => filterFn(draft['Status'] || ''))
+    if (propertyFilter) {
+      rows = rows.filter(
+        (d) => String(d['Property'] || '').trim().toLowerCase() === propertyFilter,
+      )
+    }
+    return rows
+  }, [drafts, statusFilter, propertyFilter])
 
   const statusCounts = useMemo(() => {
     return ADMIN_STATUS_FILTER_ITEMS.reduce((acc, item) => {
@@ -210,18 +245,85 @@ export default function AdminLeasingTab({ adminUser, accounts = [] }) {
     }
   }
 
+  const canDownloadGeneratedPdf = useMemo(() => {
+    if (!activeDraft?.id) return false
+    try {
+      const j = JSON.parse(activeDraft['Lease JSON'] || '{}')
+      if (j && typeof j === 'object' && Object.keys(j).length > 0) return true
+    } catch {
+      /* ignore */
+    }
+    return Boolean(String(activeDraft['AI Draft Content'] || '').trim())
+  }, [activeDraft])
+
+  async function handleDownloadGeneratedPdf() {
+    if (!activeDraft?.id || !canDownloadGeneratedPdf) return
+    setActionBusy('download-pdf')
+    try {
+      const res = await fetch('/api/portal?action=lease-download-generated-pdf', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ leaseDraftId: activeDraft.id }),
+      })
+      if (!res.ok) {
+        const ct = String(res.headers.get('Content-Type') || '')
+        if (ct.includes('application/json')) {
+          const errBody = await res.json().catch(() => ({}))
+          throw new Error(errBody.error || `Download failed (${res.status})`)
+        }
+        const text = await res.text().catch(() => '')
+        throw new Error(text || `Download failed (${res.status})`)
+      }
+      const blob = await res.blob()
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `axis-generated-lease-${String(activeDraft['Property'] || 'lease').replace(/\s+/g, '-')}.pdf`
+      a.rel = 'noopener'
+      document.body.appendChild(a)
+      a.click()
+      a.remove()
+      URL.revokeObjectURL(url)
+      toast.success('Downloaded generated lease PDF')
+    } catch (err) {
+      toast.error(err.message || 'Could not download PDF')
+    } finally {
+      setActionBusy('')
+    }
+  }
+
   return (
     <div className="space-y-5">
-      <div className="flex flex-wrap items-center gap-3">
-        <h1 className="mr-auto text-2xl font-black tracking-tight text-slate-900">Leases</h1>
-        <button
-          type="button"
-          onClick={loadDrafts}
-          disabled={loading}
-          className="h-[42px] shrink-0 rounded-full border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-600 transition hover:bg-slate-50 disabled:opacity-50"
-        >
-          {loading ? 'Loading…' : 'Refresh'}
-        </button>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h1 className="text-2xl font-black text-slate-900">Leases</h1>
+        </div>
+        <div className="flex w-full min-w-0 flex-wrap items-center justify-end gap-2 sm:ml-auto sm:w-auto sm:flex-nowrap">
+          <div className={LEASE_PILL_SELECT_WRAP_CLS}>
+            <select
+              value={propertyFilter}
+              onChange={(e) => setPropertyFilter(e.target.value)}
+              className={LEASE_PILL_SELECT_CLS}
+              aria-label="Filter leases by property"
+            >
+              <option value="">All properties</option>
+              {propertyChoices.map(({ value, display }) => (
+                <option key={value} value={value}>
+                  {display}
+                </option>
+              ))}
+            </select>
+            {LEASE_PILL_SELECT_CHEVRON}
+          </div>
+          <button
+            type="button"
+            onClick={loadDrafts}
+            disabled={loading}
+            className="h-[42px] shrink-0 rounded-full border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-600 transition hover:bg-slate-50 disabled:opacity-50"
+          >
+            {loading ? 'Loading…' : 'Refresh'}
+          </button>
+        </div>
       </div>
 
       {loadError ? (
@@ -277,6 +379,7 @@ export default function AdminLeasingTab({ adminUser, accounts = [] }) {
                 render: (draft) => (
                   <div className="flex flex-wrap gap-1.5">
                     {draft['Unit'] ? <span className="rounded-full border border-slate-200 bg-white px-2.5 py-0.5 text-[11px] font-semibold text-slate-600">Room {draft['Unit']}</span> : null}
+                    {draft['Lease Term'] ? <span className="rounded-full border border-slate-200 bg-white px-2.5 py-0.5 text-[11px] font-semibold text-slate-600">{draft['Lease Term']}</span> : null}
                     <span className="rounded-full border border-slate-200 bg-white px-2.5 py-0.5 text-[11px] font-semibold text-slate-600">
                       Manager {managerNameMap.get(draft['Owner ID']) || 'Not set'}
                     </span>
@@ -293,7 +396,7 @@ export default function AdminLeasingTab({ adminUser, accounts = [] }) {
                 render: (draft) => <StatusPill status={draft['Status'] || 'Draft Generated'} />,
               },
               {
-                key: 'action',
+                key: 'actions',
                 label: 'Action',
                 headerClassName: 'w-[14%] text-right',
                 cellClassName: 'text-right',
@@ -320,7 +423,7 @@ export default function AdminLeasingTab({ adminUser, accounts = [] }) {
               <h3 className="text-2xl font-black text-slate-900">Lease Draft</h3>
               <StatusPill status={activeDraft?.Status || 'Draft Generated'} />
             </div>
-            <div className="ml-auto flex flex-wrap items-center gap-2">
+            <div className="flex w-full min-w-0 flex-wrap items-center gap-2">
               <button
                 type="button"
                 onClick={() => setShowUploadForm((value) => !value)}
@@ -330,9 +433,24 @@ export default function AdminLeasingTab({ adminUser, accounts = [] }) {
               </button>
               <button
                 type="button"
+                onClick={handleDownloadGeneratedPdf}
+                disabled={
+                  actionBusy === 'download-pdf' || detailLoading || !activeDraft?.id || !canDownloadGeneratedPdf
+                }
+                className="rounded-full border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:border-slate-400 disabled:opacity-50"
+                title={
+                  canDownloadGeneratedPdf
+                    ? 'Download PDF generated from Lease JSON or AI draft (not your uploaded file)'
+                    : 'Generate the lease first'
+                }
+              >
+                {actionBusy === 'download-pdf' ? 'Preparing…' : 'Download PDF'}
+              </button>
+              <button
+                type="button"
                 onClick={handleSendToManager}
                 disabled={actionBusy === 'send' || detailLoading || !activeDraft?.id}
-                className="rounded-full bg-axis px-4 py-2 text-sm font-semibold text-white transition hover:brightness-105 disabled:opacity-50"
+                className="ml-auto rounded-full bg-axis px-4 py-2 text-sm font-semibold text-white transition hover:brightness-105 disabled:opacity-50"
               >
                 {actionBusy === 'send' ? 'Sending...' : 'Send to Manager'}
               </button>

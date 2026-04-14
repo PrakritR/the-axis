@@ -1,20 +1,35 @@
 /**
  * Render HTML to PDF using Puppeteer ([PuppeteerNode](https://pptr.dev/api/puppeteer.puppeteernode)).
- * - On Vercel: puppeteer-core + @sparticuz/chromium
+ * - On Vercel: puppeteer-core + @sparticuz/chromium (AL2023 libs + headless_shell; see vercel.json includeFiles)
  * - Locally: set PUPPETEER_EXECUTABLE_PATH, or install `puppeteer` (dev) for bundled Chromium
  */
 import puppeteer from 'puppeteer-core'
 
-export async function launchLeaseBrowser() {
-  const onVercel = process.env.VERCEL === '1' || String(process.env.VERCEL || '').toLowerCase() === 'true'
+function isVercelRuntime() {
+  // Vercel Node runs on Linux; do not use @sparticuz on macOS/Windows (e.g. pulled .env with VERCEL set).
+  if (process.platform !== 'linux') return false
+  if (process.env.VERCEL === '1') return true
+  return String(process.env.VERCEL || '').toLowerCase() === 'true'
+}
 
-  if (onVercel) {
+export async function launchLeaseBrowser() {
+  if (isVercelRuntime()) {
     const chromium = (await import('@sparticuz/chromium')).default
+    // Match @sparticuz/chromium serverless defaults (avoids missing NSS/graphics libs on AL2023)
+    chromium.setGraphicsMode = false
+    const viewport = chromium.defaultViewport || {
+      deviceScaleFactor: 1,
+      hasTouch: false,
+      height: 1080,
+      isLandscape: false,
+      isMobile: false,
+      width: 1280,
+    }
     return puppeteer.launch({
-      args: chromium.args,
-      defaultViewport: chromium.defaultViewport,
+      args: puppeteer.defaultArgs({ args: chromium.args, headless: 'shell' }),
+      defaultViewport: viewport,
       executablePath: await chromium.executablePath(),
-      headless: chromium.headless,
+      headless: 'shell',
     })
   }
 
