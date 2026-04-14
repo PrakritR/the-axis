@@ -25,6 +25,7 @@ import {
   workOrderScheduledMeta,
 } from '../lib/workOrderShared.js'
 import { readJsonResponse } from '../lib/readJsonResponse'
+import { PORTAL_TAB_H2_CLS, PORTAL_SECTION_TITLE_CLS } from '../lib/portalTabHeader'
 import { CALENDAR_EVENT_TYPES, eventFromSchedulingRow, normalizeEventType } from '../lib/calendarEventModel'
 import ManagerInboxPage from '../components/manager-inbox/ManagerInboxPage'
 import {
@@ -72,7 +73,6 @@ import {
 import PortalShell, { DataTable, StatusPill } from '../components/PortalShell'
 import { portalChromeSecondaryButtonClass } from '../lib/portalLayout.js'
 import { PortalEmptyVisual } from '../components/portalNavIcons.jsx'
-import Modal from '../components/Modal'
 import AddPropertyWizard from '../components/AddPropertyWizard'
 import { PropertyDetailPanel } from '../lib/propertyDetailPanel.jsx'
 import { ApplicationDetailPanel, applicationViewModelFromAirtableRow } from '../lib/applicationDetailPanel.jsx'
@@ -114,13 +114,15 @@ const APPLICATIONS_TABLE_NAME =
 // ─── Lease status configuration ───────────────────────────────────────────────
 // Each status has a color set used by StatusBadge and the stats row
 const STATUS_CONFIG = {
-  'Draft ready':     { bg: 'bg-amber-50',  text: 'text-amber-700',  border: 'border-amber-200',  dot: 'bg-amber-400'  },
-  'With resident':   { bg: 'bg-axis/5',    text: 'text-axis',       border: 'border-axis/20',    dot: 'bg-axis'       },
-  'Draft Generated': { bg: 'bg-blue-50',   text: 'text-blue-700',   border: 'border-blue-200',   dot: 'bg-blue-400'   },
-  'Under Review':    { bg: 'bg-amber-50',  text: 'text-amber-700',  border: 'border-amber-200',  dot: 'bg-amber-400'  },
-  'Approved':        { bg: 'bg-green-50',  text: 'text-green-700',  border: 'border-green-200',  dot: 'bg-green-500'  },
-  'Published':       { bg: 'bg-axis/5',    text: 'text-axis',       border: 'border-axis/20',    dot: 'bg-axis'       },
-  'Signed':          { bg: 'bg-purple-50', text: 'text-purple-700', border: 'border-purple-200', dot: 'bg-purple-500' },
+  Draft: { bg: 'bg-slate-50', text: 'text-slate-600', border: 'border-slate-200', dot: 'bg-slate-400' },
+  'Admin review': { bg: 'bg-blue-50', text: 'text-blue-700', border: 'border-blue-200', dot: 'bg-blue-500' },
+  'Manager review': { bg: 'bg-orange-50', text: 'text-orange-700', border: 'border-orange-200', dot: 'bg-orange-500' },
+  'With resident': { bg: 'bg-axis/5', text: 'text-axis', border: 'border-axis/20', dot: 'bg-axis' },
+  'Draft Generated': { bg: 'bg-blue-50', text: 'text-blue-700', border: 'border-blue-200', dot: 'bg-blue-400' },
+  'Under Review': { bg: 'bg-amber-50', text: 'text-amber-700', border: 'border-amber-200', dot: 'bg-amber-400' },
+  Approved: { bg: 'bg-green-50', text: 'text-green-700', border: 'border-green-200', dot: 'bg-green-500' },
+  Published: { bg: 'bg-axis/5', text: 'text-axis', border: 'border-axis/20', dot: 'bg-axis' },
+  Signed: { bg: 'bg-purple-50', text: 'text-purple-700', border: 'border-purple-200', dot: 'bg-purple-500' },
 }
 
 const ALL_STATUSES = Object.keys(STATUS_CONFIG)
@@ -161,10 +163,18 @@ function leaseDraftMatchesQueueFilter(status, filterValue) {
 
 function leaseUiStatusLabel(status) {
   const normalized = String(status || '').trim()
-  if (['Draft Generated', 'Under Review', 'Changes Needed', 'Approved'].includes(normalized)) return 'Draft ready'
+  if (['Draft Generated', 'Under Review', 'Changes Needed', 'Approved'].includes(normalized)) return 'Draft'
+  if (normalized === 'Sent Back to Manager') return 'Manager review'
+  if (
+    ['Submitted to Admin', 'Admin In Review', 'Changes Made', 'Manager Approved', 'Ready for Signature'].includes(
+      normalized,
+    )
+  ) {
+    return 'Admin review'
+  }
   if (normalized === 'Published') return 'With resident'
   if (normalized === 'Signed') return 'Signed'
-  return normalized || 'Draft ready'
+  return normalized || 'Draft'
 }
 
 const LEASE_TERMS = [
@@ -939,6 +949,17 @@ function cloneWeeklyArrays(src) {
   return o
 }
 
+/** Copy one weekday’s free half-hour indices to every weekday (repeating template). */
+function weeklyFreeCopySourceDayToAllDays(weeklyArrays, sourceDayAbbr) {
+  const src = [...(weeklyArrays?.[sourceDayAbbr] || [])].sort((a, b) => a - b)
+  const base = weeklyArrays && typeof weeklyArrays === 'object' ? weeklyArrays : emptyWeeklyFreeArrays()
+  const next = cloneWeeklyArrays(base)
+  for (const d of TOUR_DAYS) {
+    next[d] = [...src]
+  }
+  return next
+}
+
 function emptyWeeklyFreeArrays() {
   const o = {}
   for (const d of TOUR_DAYS) o[d] = []
@@ -1293,10 +1314,12 @@ function bookingBadgeTone(row) {
 
 function bookingLabel(row) {
   const type = String(row.Type || '').trim().toLowerCase()
-  if (type === 'availability' || type === 'meeting availability') return 'Open meeting slot'
+  if (type === 'availability') return 'Tour availability (saved slot)'
+  if (type === 'meeting availability') return 'Meeting availability'
   if (type === 'meeting') return 'Meeting'
-  if (type === 'work order') return 'Work order'
+  if (type === 'work order') return 'Work order visit'
   if (type === 'issue' || type === 'other') return 'Issue'
+  if (type === 'tour') return 'Tour booking'
   return 'Booked tour'
 }
 
@@ -1390,7 +1413,7 @@ function TimeRangeList({ ranges, onChangeRange, onRemoveRange, disabled = false 
   )
 }
 
-function AvailabilityCalendar({ view, anchorDate, selectedDateKey, onSelectDate, weeklyFree, bookedByDate, blockedDates }) {
+function AvailabilityCalendar({ view, anchorDate, selectedDateKey, onSelectDate, weeklyFree, bookedByDate, blockedDates, dayFreeOverrides }) {
   const y = anchorDate.getFullYear()
   const m = anchorDate.getMonth()
   const daysInMonth = new Date(y, m + 1, 0).getDate()
@@ -1400,6 +1423,10 @@ function AvailabilityCalendar({ view, anchorDate, selectedDateKey, onSelectDate,
   const weekDays = Array.from({ length: 7 }, (_, i) => addDaysDate(weekStart, i))
 
   const dayRanges = (key) => {
+    if (dayFreeOverrides != null) {
+      const o = dayFreeOverrides[key]
+      return Array.isArray(o) ? normalizeTimeRanges(o) : []
+    }
     if (view !== 'day' && key !== selectedDateKey) return []
     return timeRangesFromWeeklyFree(weeklyFree, weekdayAbbrFromDateKey(key))
   }
@@ -1558,9 +1585,9 @@ function AvailabilityEditorPanel({
   selectedDateKey,
   ranges,
   onRangesChange,
-  onOpenMeet,
   onSave,
   onClearDay,
+  onCopyHoursToWholeWeek,
   scheduledItems,
   availSaving,
   manager,
@@ -1577,7 +1604,7 @@ function AvailabilityEditorPanel({
 
   return (
     <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm lg:sticky lg:top-6">
-      <h2 className="text-xl font-black text-slate-900">Availability editor</h2>
+      <h2 className={PORTAL_SECTION_TITLE_CLS}>Availability editor</h2>
       <label className="mt-4 block text-xs font-semibold text-slate-700">
         Property
         <div className={`${MANAGER_PILL_SELECT_WRAP_CLS} mt-1.5 max-w-full`}>
@@ -1640,7 +1667,23 @@ function AvailabilityEditorPanel({
         )}
       </div>
 
-      {/* Removed Let us meet, Block day, and Clear day buttons for manager portal */}
+      <p className="mt-4 text-xs text-slate-500">
+        Timeline edits <strong>this weekday</strong> in the weekly template. Save updates <strong>Tour Availability</strong> (public tour slots use the same field).
+      </p>
+
+      {typeof onCopyHoursToWholeWeek === 'function' ? (
+        <div className="mt-4">
+          <button
+            type="button"
+            onClick={onCopyHoursToWholeWeek}
+            disabled={disabled}
+            className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-800 transition hover:bg-slate-50 disabled:opacity-50"
+          >
+            Copy this day&apos;s hours to Mon–Sun
+          </button>
+          <p className="mt-1.5 text-[11px] text-slate-500">Applies the same blocks to every day of the week in the template.</p>
+        </div>
+      ) : null}
 
       <div className="mt-6">
         <button
@@ -1649,7 +1692,7 @@ function AvailabilityEditorPanel({
           disabled={availSaving || isManagerInternalPreview(manager) || !hasApprovedPick}
           className="w-full rounded-2xl bg-[linear-gradient(180deg,#2f76ff_0%,#2450eb_100%)] px-4 py-3 text-sm font-semibold text-white shadow-[0_12px_28px_rgba(37,99,235,0.22)] disabled:opacity-50"
         >
-          {availSaving ? 'Saving…' : 'Save availability'}
+          {availSaving ? 'Saving…' : 'Save to property & calendar'}
         </button>
       </div>
     </div>
@@ -1667,7 +1710,7 @@ function AdminDayAvailabilityEditor({
 }) {
   return (
     <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm lg:sticky lg:top-6">
-      <h2 className="text-xl font-black text-slate-900">Meeting availability</h2>
+      <h2 className={PORTAL_SECTION_TITLE_CLS}>Meeting availability</h2>
       <p className="mt-1 text-sm text-slate-500">Drag on the timeline to set free meeting times for {selectedDateKey}.</p>
 
       <div className="mt-6">
@@ -1719,200 +1762,6 @@ function AdminDayAvailabilityEditor({
         </button>
       </div>
     </div>
-  )
-}
-
-function LetUsMeetModal({
-  open,
-  initialDateKey,
-  initialPropertyName = '',
-  manager,
-  onClose,
-  onCreated,
-  approvedPropertyNames = [],
-  requirePropertyForAvailability = true,
-  allowPropertylessEvents = false,
-}) {
-  const [date, setDate] = useState(initialDateKey)
-  const [itemType, setItemType] = useState('Meeting')
-  const [property, setProperty] = useState('')
-  const [startTime, setStartTime] = useState('10:00')
-  const [endTime, setEndTime] = useState('11:00')
-  const [notes, setNotes] = useState('')
-  const [saving, setSaving] = useState(false)
-  const [error, setError] = useState('')
-
-  const canScheduleTours = Array.isArray(approvedPropertyNames) && approvedPropertyNames.length > 0
-
-  useEffect(() => {
-    if (!open) return
-    setDate(initialDateKey)
-    setItemType('Meeting')
-    const pick = String(initialPropertyName || '').trim()
-    const lower = pick.toLowerCase()
-    const matched =
-      canScheduleTours && pick
-        ? approvedPropertyNames.find((n) => String(n).trim().toLowerCase() === lower)
-        : null
-    setProperty(matched != null ? String(matched).trim() : '')
-    setStartTime('10:00')
-    setEndTime('11:00')
-    setNotes('')
-    setSaving(false)
-    setError('')
-  }, [open, initialDateKey, initialPropertyName, canScheduleTours, approvedPropertyNames])
-
-  useEffect(() => {
-    if (!open) return
-    const needsProperty = !allowPropertylessEvents && (itemType === 'Tour' || (itemType === 'Availability' && requirePropertyForAvailability))
-    if (needsProperty && !canScheduleTours) setItemType('Meeting')
-  }, [open, itemType, canScheduleTours, requirePropertyForAvailability, allowPropertylessEvents])
-
-  if (!open) return null
-
-  async function handleSave() {
-    setError('')
-    const startMinutes = minutesFromInputValue(startTime)
-    const endMinutes = minutesFromInputValue(endTime)
-    if (!date || startMinutes == null || endMinutes == null || endMinutes <= startMinutes) {
-      setError('Choose a valid date and time range.')
-      return
-    }
-    if (itemType === 'Tour' || itemType === 'Availability') {
-      const needsProperty = !allowPropertylessEvents && (itemType === 'Tour' || (itemType === 'Availability' && requirePropertyForAvailability))
-      if (needsProperty && !canScheduleTours) {
-        setError('You need at least one listed property before scheduling a tour.')
-        return
-      }
-      if (needsProperty && !String(property || '').trim()) {
-        setError(itemType === 'Availability' ? 'Select a property for this availability slot.' : 'Select a property for this tour.')
-        return
-      }
-    }
-
-    setSaving(true)
-    const preferredTimeLabel = `${displayTimeFromMinutes(startMinutes)} - ${displayTimeFromMinutes(endMinutes)}`
-    try {
-      const normalizedType = itemType === 'Availability' ? 'Meeting Availability' : itemType
-      await createSchedulingRecord({
-        Name: String(manager?.name || 'Axis manager').trim(),
-        Email: String(manager?.email || 'manager@axis.invalid').trim().toLowerCase(),
-        Type: normalizedType,
-        Status: normalizedType === 'Meeting Availability' ? 'Available' : 'New',
-        Property: String(property || '').trim(),
-        'Tour Manager': String(manager?.name || '').trim(),
-        'Manager Email': String(manager?.email || '').trim().toLowerCase(),
-        'Preferred Date': String(date || '').trim(),
-        'Preferred Time': preferredTimeLabel,
-        Notes: String(notes || '').trim(),
-      })
-      toast.success('Meeting saved')
-      onCreated?.()
-      onClose()
-    } catch (err) {
-      setError(String(err?.message || '') || 'Could not save meeting.')
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  return (
-    <Modal onClose={onClose}>
-      <div className="pr-8">
-        <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-[#2563eb]">Let us meet</div>
-        <h3 className="mt-2 text-2xl font-black text-slate-900">Quick schedule item</h3>
-        <p className="mt-2 text-sm text-slate-500">Create a one-off tour, meeting, work order visit, or issue reminder for this day</p>
-      </div>
-      <div className="mt-6 grid gap-4 sm:grid-cols-2">
-        <div>
-          <label className="mb-1.5 block text-xs font-semibold text-slate-700">Type</label>
-          <div className={MANAGER_PILL_SELECT_WRAP_CLS}>
-            <select value={itemType} onChange={(e) => setItemType(e.target.value)} className={MANAGER_PILL_SELECT_CLS}>
-              <option value="Meeting">Meeting</option>
-              {(canScheduleTours || allowPropertylessEvents) ? <option value="Tour">Tour</option> : null}
-              {(canScheduleTours || !requirePropertyForAvailability || allowPropertylessEvents) ? <option value="Availability">Availability slot</option> : null}
-              <option value="Work Order">Work Order</option>
-              <option value="Issue">Issue</option>
-            </select>
-            {MANAGER_PILL_SELECT_CHEVRON}
-          </div>
-          {!canScheduleTours && !allowPropertylessEvents ? (
-            <p className="mt-1.5 text-xs text-slate-500">Tours require a listed property (Properties -&gt; Listed).</p>
-          ) : null}
-        </div>
-        <div>
-          <label className="mb-1.5 block text-xs font-semibold text-slate-700">Date</label>
-          <input type="date" value={date} onChange={(e) => setDate(e.target.value)} className={portalAuthInputCls} />
-        </div>
-        {!allowPropertylessEvents ? (
-          <div className="sm:col-span-2">
-            <label className="mb-1.5 block text-xs font-semibold text-slate-700">Property</label>
-            <div className={MANAGER_PILL_SELECT_WRAP_CLS + ' max-w-full sm:max-w-md'}>
-              <select
-                value={property}
-                onChange={(e) => setProperty(e.target.value)}
-                disabled={!canScheduleTours && !allowPropertylessEvents}
-                className={MANAGER_PILL_SELECT_CLS}
-              >
-                {!(canScheduleTours || !requirePropertyForAvailability || allowPropertylessEvents) ? (
-                  <option value="">No approved properties</option>
-                ) : (
-                  <>
-                    <option value="">
-                      {(!allowPropertylessEvents && (itemType === 'Tour' || (itemType === 'Availability' && requirePropertyForAvailability)))
-                        ? 'Select property…'
-                        : 'Optional — select property'}
-                    </option>
-                    {approvedPropertyNames.map((name) => (
-                      <option key={name} value={name}>{name}</option>
-                    ))}
-                  </>
-                )}
-              </select>
-              {MANAGER_PILL_SELECT_CHEVRON}
-            </div>
-          </div>
-        ) : null}
-        <div className="grid grid-cols-2 gap-3">
-          <div>
-            <label className="mb-1.5 block text-xs font-semibold text-slate-700">Start time</label>
-            <input type="time" step="1800" value={startTime} onChange={(e) => setStartTime(e.target.value)} className={portalAuthInputCls} />
-          </div>
-          <div>
-            <label className="mb-1.5 block text-xs font-semibold text-slate-700">End time</label>
-            <input type="time" step="1800" value={endTime} onChange={(e) => setEndTime(e.target.value)} className={portalAuthInputCls} />
-          </div>
-        </div>
-      </div>
-      <div className="mt-4">
-        <label className="mb-1.5 block text-xs font-semibold text-slate-700">Notes</label>
-        <textarea
-          rows={4}
-          value={notes}
-          onChange={(e) => setNotes(e.target.value)}
-          placeholder="Optional details"
-          className={`${portalAuthInputCls} min-h-[120px] resize-y`}
-        />
-      </div>
-      {error ? <div className="mt-4 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">{error}</div> : null}
-      <div className="mt-6 flex justify-end gap-3">
-        <button type="button" onClick={onClose} className="rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-semibold text-slate-600 hover:bg-slate-50">
-          Cancel
-        </button>
-        <PortalPrimaryButton
-          type="button"
-          onClick={handleSave}
-          disabled={
-            saving ||
-            ((!allowPropertylessEvents && (itemType === 'Tour' || (itemType === 'Availability' && requirePropertyForAvailability))) &&
-              canScheduleTours &&
-              !String(property || '').trim())
-          }
-        >
-          {saving ? 'Saving…' : 'Save'}
-        </PortalPrimaryButton>
-      </div>
-    </Modal>
   )
 }
 
@@ -2036,6 +1885,32 @@ async function updatePropertyAdmin(recordId, fields) {
   return mapRecord(data)
 }
 
+/** Persist tour grid to Properties — tries Tour Availability + Notes, then each alone (bases vary). */
+async function patchPropertyTourAvailability(propertyRecord, tourText, manager) {
+  const id = String(propertyRecord?.id || '').trim()
+  if (!id) throw new Error('Missing property id.')
+  const notesVal = String(propertyRecord?.Notes || '')
+  const mergedNotes = buildTourNotesText(notesVal, {
+    manager: String(propertyRecord['Tour Manager'] || manager?.name || manager?.email || '').trim(),
+    availability: tourText,
+    notes: extractMultilineNoteValue(notesVal, 'Tour Notes') || '',
+  })
+  const attempts = [
+    { 'Tour Availability': tourText, Notes: mergedNotes },
+    { 'Tour Availability': tourText },
+    { Notes: mergedNotes },
+  ]
+  let lastErr = null
+  for (const fields of attempts) {
+    try {
+      return await updatePropertyAdmin(id, fields)
+    } catch (e) {
+      lastErr = e
+    }
+  }
+  throw lastErr || new Error('Could not save tour availability.')
+}
+
 function buildManagerListingPatch(property, listed) {
   const nextListed = listed === true
   /**
@@ -2139,6 +2014,9 @@ async function fetchAllSchedulingRows() {
 function workOrdersToCalendarRows(workOrders, allowedPropertyNamesLower) {
   const rows = []
   for (const workOrder of workOrders || []) {
+    if (workOrderIsResolvedRecord(workOrder)) continue
+    const st = String(workOrder.Status || '').trim().toLowerCase()
+    if (['completed', 'resolved', 'closed', 'cancelled', 'canceled', 'done'].includes(st)) continue
     const scheduled = workOrderScheduledMeta(workOrder)
     if (!scheduled) continue
     const property = workOrderPropertyLabel(workOrder) || String(workOrder.Property || workOrder.House || '').trim()
@@ -3373,8 +3251,8 @@ function GenerateDraftModal({ manager, propertyOptions, onClose, onGenerated }) 
         {/* Header */}
         <div className="flex items-start justify-between border-b border-slate-200 px-8 py-5">
           <div>
-            <h2 className="text-xl font-black text-slate-900">Generate lease draft</h2>
-            <p className="mt-0.5 text-sm text-slate-500">Choose the resident and property details, then generate the first lease draft for review</p>
+            <h2 className={PORTAL_SECTION_TITLE_CLS}>Generate lease draft</h2>
+            <p className="mt-0.5 text-sm text-slate-500">Resident, property, and term — then generate the draft for review.</p>
           </div>
           <button onClick={onClose} className="mt-0.5 rounded-xl p-2 text-slate-400 transition hover:bg-slate-100 hover:text-slate-700">
             <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -4945,13 +4823,23 @@ function ApplicationsPanel({ allowedPropertyNames, manager }) {
   async function handleSendBackToPending(recordId) {
     setApproving((a) => ({ ...a, [recordId]: 'pending' }))
     try {
-      const rf = applicationRejectedFieldName()
-      const updated = await patchApplication(recordId, {
-        Approved: null,
-        [rf]: null,
+      const res = await fetch('/api/portal?action=manager-application-set-pending', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          applicationRecordId: recordId,
+          managerName: manager?.name || manager?.email || 'Axis Manager',
+          managerRole: manager?.role || 'Manager',
+          managerRecordId: manager?.id || '',
+        }),
       })
-      setScopedRows((prev) => prev.map((a) => (a.id === recordId ? { ...a, ...updated } : a)))
-      toast.success('Application moved back to pending')
+      const data = await readJsonResponse(res)
+      if (!res.ok) throw new Error(data.error || 'Could not move application to pending')
+      setScopedRows((prev) => prev.map((a) => (a.id === recordId ? { ...a, ...(data.application || {}) } : a)))
+      toast.success(data.message || 'Application moved back to pending')
+      window.dispatchEvent(new CustomEvent('axis:lease-drafts-changed', {
+        detail: { source: 'application-pending', applicationRecordId: recordId },
+      }))
     } catch (err) {
       toast.error('Could not move application to pending: ' + err.message)
     } finally {
@@ -5201,7 +5089,6 @@ export function CalendarTabPanel({ manager, allowedPropertyNames, loadAllSchedul
   const [anchorDate, setAnchorDate] = useState(() => new Date())
   const [selectedDateKey, setSelectedDateKey] = useState(() => dateKeyFromDate(new Date()))
   const [schedulingRows, setSchedulingRows] = useState([])
-  const [meetOpen, setMeetOpen] = useState(false)
   const [loading, setLoading] = useState(true)
   const [properties, setProperties] = useState([])
   /** Per-property weekly tour-availability grid (half-hour indices by weekday). */
@@ -5357,26 +5244,22 @@ export function CalendarTabPanel({ manager, allowedPropertyNames, loadAllSchedul
     [weeklyFreeByProperty, selectedPropertyId],
   )
 
-  const selectedDayAvailability = useMemo(() => {
-    const ranges = timeRangesFromWeeklyFree(selectedWeeklyFree, weekdayAbbrFromDateKey(selectedDateKey))
-    return ranges.map((r) => ({ ...r, label: formatTimeRangeLabel(r) }))
-  }, [selectedWeeklyFree, selectedDateKey])
-
-  const meetModalApprovedPropertyNames = useMemo(
-    () => availabilityOwnerOptions.map((option) => option.label),
-    [availabilityOwnerOptions],
-  )
-
-  // Always show all availability and bookings for each property/day
-  const schedulingRowsForView = useMemo(
-    () => (schedulingRows || []).filter((row) => {
-      // Show all rows for the selected property, regardless of selection
+  // Manager: property-scoped rows. Admin (loadAllSchedulingRows): everything tied to this admin email.
+  const schedulingRowsForView = useMemo(() => {
+    if (loadAllSchedulingRows) {
+      const adminEmail = String(manager?.email || '').trim().toLowerCase()
+      if (!adminEmail) return []
+      return (schedulingRows || []).filter((row) => {
+        const rme = String(row['Manager Email'] || '').trim().toLowerCase()
+        return rme === adminEmail
+      })
+    }
+    return (schedulingRows || []).filter((row) => {
       const prop = String(row.Property || '').trim().toLowerCase()
       const sel = String(propertyRecordName(selectedProperty || {}) || '').trim().toLowerCase()
       return prop === sel || prop.includes(sel) || sel.includes(prop)
-    }),
-    [schedulingRows, selectedProperty],
-  )
+    })
+  }, [schedulingRows, selectedProperty, loadAllSchedulingRows, manager?.email])
 
   const bookedByDate = useMemo(() => {
     const map = new Map()
@@ -5406,7 +5289,7 @@ export function CalendarTabPanel({ manager, allowedPropertyNames, loadAllSchedul
     if (!adminEmail) return []
     return (schedulingRows || []).filter((row) => {
       const type = String(row?.Type || '').trim().toLowerCase()
-      if (!(type === 'availability' || type === 'meeting availability')) return false
+      if (type !== 'meeting availability') return false
       const rowDate = String(row?.['Preferred Date'] || '').trim().slice(0, 10)
       if (rowDate !== selectedDateKey) return false
       const rowEmail = String(row?.['Manager Email'] || '').trim().toLowerCase()
@@ -5421,6 +5304,38 @@ export function CalendarTabPanel({ manager, allowedPropertyNames, loadAllSchedul
         .filter(Boolean),
     ),
     [adminAvailabilityRowsForSelectedDay],
+  )
+
+  /** Per-date explicit "Meeting Availability" rows (admin calendar) for month/week/day green blocks. */
+  const adminMeetingAvailabilityFreeByDate = useMemo(() => {
+    if (!loadAllSchedulingRows) return null
+    const adminEmail = String(manager?.email || '').trim().toLowerCase()
+    if (!adminEmail) return null
+    const byDate = {}
+    for (const row of schedulingRows || []) {
+      const type = String(row?.Type || '').trim().toLowerCase()
+      if (type !== 'meeting availability') continue
+      const rme = String(row['Manager Email'] || '').trim().toLowerCase()
+      if (rme !== adminEmail) continue
+      const dk = String(row['Preferred Date'] || '').trim().slice(0, 10)
+      if (!dk) continue
+      const parsed = parsePreferredTimeRange(row['Preferred Time'])
+      if (!parsed) continue
+      if (!byDate[dk]) byDate[dk] = []
+      byDate[dk].push(parsed)
+    }
+    for (const dk of Object.keys(byDate)) {
+      byDate[dk] = normalizeTimeRanges(byDate[dk])
+    }
+    return byDate
+  }, [loadAllSchedulingRows, schedulingRows, manager?.email])
+
+  const adminScheduledItemsForDay = useMemo(
+    () => (scheduledItemsForSelectedDay || []).filter((row) => {
+      const t = String(row.Type || '').trim().toLowerCase()
+      return t !== 'meeting availability' && t !== 'availability'
+    }),
+    [scheduledItemsForSelectedDay],
   )
 
   useEffect(() => {
@@ -5492,7 +5407,7 @@ export function CalendarTabPanel({ manager, allowedPropertyNames, loadAllSchedul
     setAnchorDate(dateFromCalendarKey(key))
   }
 
-  // Save explicit day-by-day availability only
+  // Persist weekly tour template on the Properties row (drives public tour slots + manager calendar load).
   async function handleSaveAvailability() {
     if (!selectedProperty) {
       toast.error('Select a property first')
@@ -5500,17 +5415,13 @@ export function CalendarTabPanel({ manager, allowedPropertyNames, loadAllSchedul
     }
     setAvailSaving(true)
     try {
-      // Save to Airtable Scheduling table as a new "availability" row for this property/date
-      await createSchedulingRecord({
-        Type: 'availability',
-        Property: propertyRecordName(selectedProperty),
-        'Preferred Date': selectedDateKey,
-        'Preferred Time': selectedDayAvailability.map(r => r.label).join(', '),
-        'Manager Email': manager?.email || '',
-      })
-      toast.success(`Availability saved for ${propertyRecordName(selectedProperty) || 'property'}`)
-      // Reload availability
-      load()
+      const tourText = encodeTourAvailabilityFromWeeklyFree(selectedWeeklyFree)
+      const updated = await patchPropertyTourAvailability(selectedProperty, tourText, manager)
+      const parsedFree = weeklyFreeArraysFromTourText(tourText)
+      setWeeklyFreeByProperty((prev) => ({ ...prev, [selectedPropertyId]: parsedFree }))
+      setProperties((prev) => prev.map((p) => (p.id === selectedProperty.id ? { ...p, ...updated } : p)))
+      toast.success(`Tour availability saved for ${propertyRecordName(selectedProperty) || 'property'}`)
+      await load()
     } catch (err) {
       toast.error(err.message || 'Could not save availability')
     } finally {
@@ -5574,20 +5485,26 @@ export function CalendarTabPanel({ manager, allowedPropertyNames, loadAllSchedul
       weekCount += bookedByDate.get(dateKeyFromDate(d))?.length || 0
     }
     const monthStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`
-    const monthCount = schedulingRowsForView.filter((r) => String(r['Preferred Date'] || '').trim().slice(0, 7) === monthStr).length
+    const statsRows = loadAllSchedulingRows
+      ? schedulingRowsForView.filter((r) => {
+          const t = String(r.Type || '').trim().toLowerCase()
+          return t !== 'meeting availability' && t !== 'availability'
+        })
+      : schedulingRowsForView
+    const monthCount = statsRows.filter((r) => String(r['Preferred Date'] || '').trim().slice(0, 7) === monthStr).length
     return {
       today: bookedByDate.get(todayStr)?.length || 0,
       week: weekCount,
       month: monthCount,
-      total: schedulingRowsForView.length,
+      total: statsRows.length,
     }
-  }, [schedulingRowsForView, bookedByDate])
+  }, [schedulingRowsForView, bookedByDate, loadAllSchedulingRows])
 
   return (
     <div className="mb-10">
       <div className="mb-5 flex flex-wrap items-center gap-3">
-        <h2 className="mr-auto w-full text-2xl font-black text-slate-900 sm:w-auto">Calendar</h2>
-        <div className="flex w-full min-w-0 flex-wrap items-center gap-2 sm:ml-auto sm:w-auto sm:flex-nowrap">
+        <h2 className={PORTAL_TAB_H2_CLS}>Calendar</h2>
+        <div className="flex w-full min-w-0 flex-wrap items-center justify-end gap-2 sm:ml-auto sm:w-auto sm:flex-nowrap">
           {!loadAllSchedulingRows && (
             <div className={MANAGER_PILL_SELECT_WRAP_CLS}>
               <select
@@ -5601,7 +5518,7 @@ export function CalendarTabPanel({ manager, allowedPropertyNames, loadAllSchedul
                     <option key={option.id} value={option.id}>{option.label}</option>
                   ))
                 ) : (
-                  <option value=""></option>
+                  <option value="">No properties</option>
                 )}
               </select>
               {MANAGER_PILL_SELECT_CHEVRON}
@@ -5615,21 +5532,12 @@ export function CalendarTabPanel({ manager, allowedPropertyNames, loadAllSchedul
           >
             {loading ? 'Loading…' : 'Refresh'}
           </button>
-          {!loadAllSchedulingRows ? (
-            <button
-              type="button"
-              onClick={() => setMeetOpen(true)}
-              className="h-[42px] shrink-0 rounded-full bg-[#2563eb] px-4 text-sm font-semibold text-white transition hover:brightness-110"
-            >
-              Let us meet
-            </button>
-          ) : null}
         </div>
       </div>
 
       {loadAllSchedulingRows ? (
         <div className="mb-5 rounded-2xl border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-900">
-          Admin calendar creates meetings and open availability directly in Scheduling. Public Contact Axis booking uses these slots.
+          Meetings and availability here sync to Contact Axis booking.
         </div>
       ) : null}
 
@@ -5706,7 +5614,8 @@ export function CalendarTabPanel({ manager, allowedPropertyNames, loadAllSchedul
           onSelectDate={handleSelectDate}
           weeklyFree={selectedWeeklyFree}
           bookedByDate={bookedByDate}
-          blockedDates={blockedDatesSet}
+          blockedDates={loadAllSchedulingRows ? new Set() : blockedDatesSet}
+          dayFreeOverrides={adminMeetingAvailabilityFreeByDate}
         />
         {!loadAllSchedulingRows && (
           <AvailabilityEditorPanel
@@ -5720,9 +5629,20 @@ export function CalendarTabPanel({ manager, allowedPropertyNames, loadAllSchedul
                 return { ...prev, [selectedPropertyId]: weeklyFreeWithDayRanges(base, abbr, ranges) }
               })
             }}
-            onOpenMeet={() => setMeetOpen(true)}
             onSave={handleSaveAvailability}
             onClearDay={handleClearDay}
+            onCopyHoursToWholeWeek={() => {
+              if (!selectedPropertyId) return
+              const abbr = weekdayAbbrFromDateKey(selectedDateKey)
+              setWeeklyFreeByProperty((prev) => {
+                const base = prev[selectedPropertyId] || emptyWeeklyFreeArrays()
+                return {
+                  ...prev,
+                  [selectedPropertyId]: weeklyFreeCopySourceDayToAllDays(base, abbr),
+                }
+              })
+              toast.success('Copied this day to Mon–Sun — press save when ready')
+            }}
             scheduledItems={scheduledItemsForSelectedDay}
             availSaving={availSaving}
             manager={manager}
@@ -5742,25 +5662,11 @@ export function CalendarTabPanel({ manager, allowedPropertyNames, loadAllSchedul
             onRangesChange={setAdminDayRanges}
             onSave={handleSaveAdminAvailability}
             onClearDay={() => setAdminDayRanges([])}
-            scheduledItems={scheduledItemsForSelectedDay}
+            scheduledItems={adminScheduledItemsForDay}
             availSaving={availSaving}
           />
         ) : null}
       </div>
-
-      <LetUsMeetModal
-        open={meetOpen}
-        onClose={() => setMeetOpen(false)}
-        initialDateKey={selectedDateKey}
-        initialPropertyName={propertyRecordName(selectedProperty || {})}
-        manager={manager}
-        approvedPropertyNames={meetModalApprovedPropertyNames}
-        requirePropertyForAvailability={!loadAllSchedulingRows}
-        allowPropertylessEvents={loadAllSchedulingRows}
-        onCreated={() => {
-          load()
-        }}
-      />
     </div>
   )
 }
@@ -6576,7 +6482,7 @@ function LeaseEditor({ draftId, manager, onBack, embedded = false }) {
               type="button"
               onClick={handleApprove}
               disabled={!!actionLoading}
-              className="shrink-0 whitespace-nowrap rounded-xl bg-green-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-green-700 disabled:opacity-50"
+              className="ml-auto shrink-0 whitespace-nowrap rounded-xl bg-green-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-green-700 disabled:opacity-50"
             >
               {actionLoading === 'approve' ? 'Sending…' : 'Send to resident'}
             </button>
@@ -6679,57 +6585,61 @@ function LeaseEditor({ draftId, manager, onBack, embedded = false }) {
             canPublish ||
             canSignforgeSend ||
             canSignforgeRefresh) && (
-            <div className="flex flex-wrap items-center justify-end gap-2 rounded-2xl border border-slate-200 bg-white px-4 py-3 shadow-sm">
-              {canEdit && (
-                <button
-                  type="button"
-                  onClick={handleSave}
-                  disabled={saving || !!actionLoading}
-                  className="rounded-xl border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:opacity-50 sm:px-4"
-                >
-                  {saving ? 'Saving…' : 'Save'}
-                </button>
-              )}
-              {canApprove && (
-                <button
-                  type="button"
-                  onClick={handleApprove}
-                  disabled={!!actionLoading}
-                  className="rounded-xl bg-green-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-green-700 disabled:opacity-50"
-                >
-                  {actionLoading === 'approve' ? 'Sending…' : 'Send to resident'}
-                </button>
-              )}
-              {canPublish && (
-                <button
-                  type="button"
-                  onClick={handlePublish}
-                  disabled={!!actionLoading}
-                  className="rounded-xl bg-[#2563eb] px-4 py-2 text-sm font-semibold text-white transition hover:brightness-110 disabled:opacity-50"
-                >
-                  {actionLoading === 'publish' ? 'Sending…' : 'Send to resident'}
-                </button>
-              )}
-              {canSignforgeSend && (
-                <button
-                  type="button"
-                  onClick={handleSignforgeSend}
-                  disabled={!!actionLoading}
-                  className="rounded-xl border border-violet-200 bg-violet-50 px-4 py-2 text-sm font-semibold text-violet-800 transition hover:bg-violet-100 disabled:opacity-50"
-                >
-                  {actionLoading === 'signforge' ? 'Sending…' : 'Resend signing link'}
-                </button>
-              )}
-              {canSignforgeRefresh && (
-                <button
-                  type="button"
-                  onClick={handleSignforgeRefreshStatus}
-                  disabled={!!actionLoading}
-                  className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:opacity-50"
-                >
-                  {actionLoading === 'signforge-status' ? 'Checking…' : 'Refresh SignForge status'}
-                </button>
-              )}
+            <div className="flex flex-wrap items-center gap-2 rounded-2xl border border-slate-200 bg-white px-4 py-3 shadow-sm">
+              <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
+                {canEdit && (
+                  <button
+                    type="button"
+                    onClick={handleSave}
+                    disabled={saving || !!actionLoading}
+                    className="rounded-xl border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:opacity-50 sm:px-4"
+                  >
+                    {saving ? 'Saving…' : 'Save'}
+                  </button>
+                )}
+                {canSignforgeSend && (
+                  <button
+                    type="button"
+                    onClick={handleSignforgeSend}
+                    disabled={!!actionLoading}
+                    className="rounded-xl border border-violet-200 bg-violet-50 px-4 py-2 text-sm font-semibold text-violet-800 transition hover:bg-violet-100 disabled:opacity-50"
+                  >
+                    {actionLoading === 'signforge' ? 'Sending…' : 'Resend signing link'}
+                  </button>
+                )}
+                {canSignforgeRefresh && (
+                  <button
+                    type="button"
+                    onClick={handleSignforgeRefreshStatus}
+                    disabled={!!actionLoading}
+                    className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:opacity-50"
+                  >
+                    {actionLoading === 'signforge-status' ? 'Checking…' : 'Refresh SignForge status'}
+                  </button>
+                )}
+              </div>
+              <div className="ml-auto flex flex-wrap items-center justify-end gap-2">
+                {canApprove && (
+                  <button
+                    type="button"
+                    onClick={handleApprove}
+                    disabled={!!actionLoading}
+                    className="rounded-xl bg-green-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-green-700 disabled:opacity-50"
+                  >
+                    {actionLoading === 'approve' ? 'Sending…' : 'Send to resident'}
+                  </button>
+                )}
+                {canPublish && (
+                  <button
+                    type="button"
+                    onClick={handlePublish}
+                    disabled={!!actionLoading}
+                    className="rounded-xl bg-[#2563eb] px-4 py-2 text-sm font-semibold text-white transition hover:brightness-110 disabled:opacity-50"
+                  >
+                    {actionLoading === 'publish' ? 'Sending…' : 'Send to resident'}
+                  </button>
+                )}
+              </div>
             </div>
           )}
         </div>

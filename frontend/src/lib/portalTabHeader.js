@@ -6,7 +6,11 @@
 export const PORTAL_TAB_HEADER_ROW_CLS = 'mb-5 flex flex-wrap items-center gap-3'
 
 export const PORTAL_TAB_H2_CLS =
-  'mr-auto w-full text-2xl font-black text-slate-900 sm:w-auto'
+  'mr-auto w-full text-2xl font-black tracking-tight text-slate-900 sm:w-auto'
+
+/** Same type scale as tab titles, for sticky side panels / in-page sections (no mr-auto). */
+export const PORTAL_SECTION_TITLE_CLS =
+  'text-2xl font-black tracking-tight text-slate-900'
 
 export const PORTAL_TAB_TOOLBAR_CLS =
   'flex w-full min-w-0 flex-wrap items-center gap-2 sm:ml-auto sm:w-auto sm:flex-nowrap'

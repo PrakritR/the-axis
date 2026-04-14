@@ -29,7 +29,7 @@ export function PortalOpsCard({ title, description, action, children, className 
       {(title || description || action) ? (
         <div className="flex flex-wrap items-start justify-between gap-4 border-b border-slate-200 px-5 py-4 sm:px-7">
           <div>
-            {title ? <h2 className="text-xl font-black text-slate-900 sm:text-2xl">{title}</h2> : null}
+            {title ? <h2 className="text-2xl font-black tracking-tight text-slate-900">{title}</h2> : null}
             {description ? <p className="mt-1 text-sm text-slate-500">{description}</p> : null}
           </div>
           {action}

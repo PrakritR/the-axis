@@ -2526,7 +2526,7 @@ function ResidentDashboardHome({
     () => visibleWorkOrders.filter((r) => isWorkOrderOpen(r)).length,
     [visibleWorkOrders],
   )
-  const workOrderCardValue = visibleWorkOrders.length === 0 ? 'None' : openWoCount > 0 ? 'In Progress' : 'Done'
+  const workOrderCardValue = openWoCount === 0 ? 'none' : 'In Progress'
   const leaseStatus = approvedLease?.Status ? String(approvedLease.Status).trim() : null
   const leaseTermLabel = getLeaseTermLabel(resident)
   const leaseSigningUrl = resolveLeaseSigningUrl(resident)

@@ -561,17 +561,6 @@ export default function ResidentPortalInbox({ resident }) {
       <div className={PORTAL_TAB_HEADER_ROW_CLS}>
         <h2 className={PORTAL_TAB_H2_CLS}>Inbox</h2>
         <div className={PORTAL_TAB_TOOLBAR_CLS}>
-          <button
-            type="button"
-            onClick={() => {
-              setComposeOpen(true)
-              setSelectedThreadId(null)
-              setThread([])
-            }}
-            className={PORTAL_TAB_PRIMARY_CLS}
-          >
-            New message
-          </button>
           <div className={PORTAL_TAB_SELECT_WRAP_CLS}>
             <select
               value={channelFilter}
@@ -589,6 +578,17 @@ export default function ResidentPortalInbox({ resident }) {
               ▾
             </span>
           </div>
+          <button
+            type="button"
+            onClick={() => {
+              setComposeOpen(true)
+              setSelectedThreadId(null)
+              setThread([])
+            }}
+            className={PORTAL_TAB_PRIMARY_CLS}
+          >
+            New message
+          </button>
           <button type="button" onClick={() => loadAll()} className={PORTAL_TAB_REFRESH_CLS}>
             Refresh
           </button>

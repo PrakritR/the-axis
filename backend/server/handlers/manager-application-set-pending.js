@@ -66,12 +66,13 @@ async function getApplication(recordId) {
   return mapRecord(data)
 }
 
-async function rejectApplicationRecord(recordId) {
+async function setApplicationPending(recordId) {
   const enc = encodeURIComponent(APPLICATIONS_TABLE)
-  const data = await airtablePatch(`${APPS_AIRTABLE_BASE_URL}/${enc}/${recordId}`, {
+  const fields = {
     Approved: null,
-    [APPLICATION_REJECTED_FIELD]: true,
-  })
+    [APPLICATION_REJECTED_FIELD]: null,
+  }
+  const data = await airtablePatch(`${APPS_AIRTABLE_BASE_URL}/${enc}/${recordId}`, fields)
   return mapRecord(data)
 }
 
@@ -107,23 +108,23 @@ export default async function handler(req, res) {
       return res.status(403).json({ error: 'Access denied: this application belongs to a different manager.' })
     }
 
-    const rejectedApplication = await rejectApplicationRecord(recordId)
-    const residentSync = await markMatchingResidentsRejected(rejectedApplication)
+    const application = await setApplicationPending(recordId)
+    const residentSync = await markMatchingResidentsRejected(application)
     const leaseCleanup = await deleteLeaseDraftsForApplicationId(recordId)
 
     return res.status(200).json({
-      application: rejectedApplication,
+      application,
       residentRecordsUpdated: residentSync.updatedIds,
       leaseDraftsRemoved: leaseCleanup.deletedIds,
       message:
         residentSync.updatedIds.length > 0
-          ? `Application rejected. Resident profile updated (${residentSync.updatedIds.length}).`
-          : 'Application rejected.',
+          ? `Application moved to pending. Resident profiles updated (${residentSync.updatedIds.length}).`
+          : 'Application moved to pending.',
     })
   } catch (err) {
-    console.error('[manager-reject-application]', err)
+    console.error('[manager-application-set-pending]', err)
     return res.status(500).json({
-      error: err.message || 'Could not reject application.',
+      error: err.message || 'Could not move application to pending.',
     })
   }
 }

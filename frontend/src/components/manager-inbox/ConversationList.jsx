@@ -45,7 +45,7 @@ export default function ConversationList({
         />
 
         <div
-          className="grid grid-cols-2 gap-1.5 min-[400px]:grid-cols-4"
+          className="flex flex-wrap gap-2"
           role="tablist"
           aria-label="Inbox folders"
         >
@@ -59,20 +59,21 @@ export default function ConversationList({
                 role="tab"
                 aria-selected={active}
                 onClick={() => onFilterChange(id)}
-                className={`rounded-full px-3 py-1 text-[11px] font-semibold transition ${
+                className={`inline-flex min-h-[42px] min-w-0 shrink-0 items-center gap-2 whitespace-nowrap rounded-2xl border px-4 py-2.5 text-sm font-semibold transition ${
                   active
-                    ? 'bg-[#2563eb] text-white shadow-sm'
-                    : 'border border-slate-200 bg-white text-slate-600 hover:bg-slate-50'
+                    ? 'border-[#2563eb] bg-[#2563eb] text-white shadow-sm'
+                    : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50'
                 }`}
               >
-                {label} <span className={active ? 'text-white/80' : 'text-slate-400'}>{count}</span>
+                <span>{label}</span>
+                <span className={`tabular-nums ${active ? 'text-white/90' : 'text-slate-400'}`}>{count}</span>
               </button>
             )
           })}
         </div>
 
         {hasChannelFilter ? (
-          <div className="flex flex-wrap items-center gap-1.5 border-t border-slate-100 pt-2">
+          <div className="flex flex-wrap items-center gap-2 border-t border-slate-100 pt-3">
             {channelTabs.map(([id, label]) => {
               const active = channelFilter === id
               return (
@@ -80,10 +81,10 @@ export default function ConversationList({
                   key={id}
                   type="button"
                   onClick={() => onChannelFilterChange(id)}
-                  className={`rounded-full px-2.5 py-0.5 text-[11px] font-semibold transition ${
+                  className={`inline-flex min-h-[40px] items-center whitespace-nowrap rounded-2xl border px-4 py-2 text-sm font-semibold transition ${
                     active
-                      ? 'bg-slate-800 text-white'
-                      : 'text-slate-500 hover:bg-slate-100 hover:text-slate-700'
+                      ? 'border-slate-800 bg-slate-800 text-white'
+                      : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:bg-slate-50'
                   }`}
                 >
                   {label}

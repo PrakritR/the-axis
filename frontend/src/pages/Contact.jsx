@@ -707,6 +707,12 @@ function SoftwareMeetingScheduler() {
 
   return (
     <div className="space-y-6">
+      <p className="rounded-2xl border border-slate-100 bg-slate-50/90 px-4 py-3 text-sm text-slate-600">
+        Available times come from each team member&apos;s Axis admin calendar: they can add open slots on specific dates
+        in <strong className="font-semibold text-slate-800">Admin portal → Calendar</strong>, or set repeating hours in
+        <strong className="font-semibold text-slate-800"> My Meeting Availability</strong> on their profile. When you book
+        here, the meeting is saved to their calendar and removed from the public list.
+      </p>
       <div>
         <label className="mb-1.5 block text-xs font-semibold text-slate-700">Choose admin</label>
         <select

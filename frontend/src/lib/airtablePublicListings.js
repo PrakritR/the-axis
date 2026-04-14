@@ -313,9 +313,9 @@ function buildSharedSpacesListFromRecord(rec, meta) {
 
     if (!name && !type && !accessList.length) continue
 
-    const title = name || type || `Shared space ${i}`
     const m = mediaRows[i - 1] && typeof mediaRows[i - 1] === 'object' ? mediaRows[i - 1] : {}
-    const descText = trimStr(m.description || m.notes || '')
+    const title = name || trimStr(m.title) || type || `Shared space ${i}`
+    const descText = trimStr(m.description || m.notes || m.type || '')
     const accessDisplay = formatSharedSpaceAccessDisplay(accessList, roomCount)
     const typeLine = type && type !== name ? type : ''
     const descriptionParts = [descText, typeLine].filter(Boolean)

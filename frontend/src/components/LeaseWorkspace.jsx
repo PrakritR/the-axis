@@ -433,7 +433,7 @@ export default function LeaseWorkspace({ draft: initialDraft, isAdmin, manager, 
           {!isAdmin ? (
             <div className={cardCls}>
               <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">Manager Actions</div>
-              <h3 className="mt-1 text-base font-black text-slate-900">Manager Review</h3>
+              <h3 className="mt-1 text-base font-black text-slate-900">Your lease actions</h3>
               <p className="mt-2 text-sm text-slate-500">
                 Keep one current PDF, send notes to admin if needed, and send the lease to the resident when it is ready.
               </p>

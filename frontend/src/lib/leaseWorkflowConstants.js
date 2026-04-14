@@ -10,15 +10,15 @@
 export const LEASE_WORKFLOW_STATUS_CONFIG = {
   // ── New workflow statuses ──
   'Submitted to Admin': {
-    label: 'With Admin',
-    short: 'With Admin',
+    label: 'Admin Review',
+    short: 'Admin Review',
     bg: 'bg-blue-50',
     text: 'text-blue-700',
     border: 'border-blue-200',
     dot: 'bg-blue-500',
     adminActionNeeded: true,
     managerActionNeeded: false,
-    description: 'Lease is with admin for review',
+    description: 'Manager requested changes; lease is with admin for review',
   },
   'Admin In Review': {
     label: 'Admin Reviewing',

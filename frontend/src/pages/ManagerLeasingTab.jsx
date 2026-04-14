@@ -149,7 +149,6 @@ const LEASE_PILL_SELECT_CHEVRON = (
 )
 
 const STATUS_FILTER_ITEMS = [
-  { id: 'all', label: 'All Leases', match: () => true },
   {
     id: 'draft_ready',
     label: 'Draft Ready',
@@ -189,7 +188,7 @@ export default function ManagerLeasingTab({ manager, allowedPropertyNames }) {
   const [activeVersion, setActiveVersion] = useState(null)
   const [showChangeBox, setShowChangeBox] = useState(false)
   const [changeRequestText, setChangeRequestText] = useState('')
-  const [statusFilter, setStatusFilter] = useState('all')
+  const [statusFilter, setStatusFilter] = useState('draft_ready')
   const [propertyFilter, setPropertyFilter] = useState('')
   const [unreadCount, setUnreadCount] = useState(0)
 
@@ -347,7 +346,7 @@ export default function ManagerLeasingTab({ manager, allowedPropertyNames }) {
 
   const statusCounts = useMemo(() => {
     return STATUS_FILTER_ITEMS.reduce((acc, f) => {
-      acc[f.id] = f.id === 'all' ? drafts.length : drafts.filter(d => f.match(d['Status'] || '')).length
+      acc[f.id] = drafts.filter((d) => f.match(d['Status'] || '')).length
       return acc
     }, {})
   }, [drafts])
@@ -435,6 +434,56 @@ export default function ManagerLeasingTab({ manager, allowedPropertyNames }) {
     }
   }
 
+  const canDownloadGeneratedPdf = useMemo(() => {
+    if (!activeDraft?.id) return false
+    try {
+      const j = JSON.parse(activeDraft['Lease JSON'] || '{}')
+      if (j && typeof j === 'object' && Object.keys(j).length > 0) return true
+    } catch {
+      /* ignore */
+    }
+    return Boolean(String(activeDraft['AI Draft Content'] || '').trim())
+  }, [activeDraft])
+
+  async function handleDownloadGeneratedPdf() {
+    if (!activeDraft?.id || !canDownloadGeneratedPdf) return
+    setActionBusy('download-pdf')
+    try {
+      const res = await fetch('/api/portal?action=lease-download-generated-pdf', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          leaseDraftId: activeDraft.id,
+          managerRecordId: manager?.id || manager?.airtableRecordId || '',
+        }),
+      })
+      if (!res.ok) {
+        const ct = String(res.headers.get('Content-Type') || '')
+        if (ct.includes('application/json')) {
+          const errBody = await res.json().catch(() => ({}))
+          throw new Error(errBody.error || `Download failed (${res.status})`)
+        }
+        const text = await res.text().catch(() => '')
+        throw new Error(text || `Download failed (${res.status})`)
+      }
+      const blob = await res.blob()
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `axis-generated-lease-${String(activeDraft['Property'] || 'lease').replace(/\s+/g, '-')}.pdf`
+      a.rel = 'noopener'
+      document.body.appendChild(a)
+      a.click()
+      a.remove()
+      URL.revokeObjectURL(url)
+      toast.success('Downloaded generated lease PDF')
+    } catch (err) {
+      toast.error(err.message || 'Could not download PDF')
+    } finally {
+      setActionBusy('')
+    }
+  }
+
   return (
     <div className="space-y-5">
       {/* Header */}
@@ -442,7 +491,7 @@ export default function ManagerLeasingTab({ manager, allowedPropertyNames }) {
         <div>
           <h1 className="text-2xl font-black text-slate-900">Leases</h1>
         </div>
-        <div className="flex w-full min-w-0 flex-wrap items-center gap-2 sm:w-auto sm:flex-nowrap">
+        <div className="flex w-full min-w-0 flex-wrap items-center justify-end gap-2 sm:ml-auto sm:w-auto sm:flex-nowrap">
           <div className={LEASE_PILL_SELECT_WRAP_CLS}>
             <select
               value={propertyFilter}
@@ -484,7 +533,7 @@ export default function ManagerLeasingTab({ manager, allowedPropertyNames }) {
 
       {/* Filter pills */}
       <div className="overflow-x-auto">
-        <div className="grid min-w-[760px] grid-cols-5 gap-2 rounded-[28px] border border-slate-200 bg-slate-50 p-2">
+        <div className="grid min-w-[620px] grid-cols-4 gap-2 rounded-[28px] border border-slate-200 bg-slate-50 p-2">
         {STATUS_FILTER_ITEMS.map(f => (
           <button
             key={f.id}
@@ -572,14 +621,13 @@ export default function ManagerLeasingTab({ manager, allowedPropertyNames }) {
               <h3 className="text-2xl font-black text-slate-900">Lease Draft</h3>
               <StatusPill status={activeDraft?.Status || 'Draft Generated'} />
             </div>
-            <div className="flex flex-wrap items-center gap-2">
+            <div className="flex w-full min-w-0 flex-wrap items-center gap-2">
               <button
                 type="button"
-                onClick={handleSendToResident}
-                disabled={actionBusy === 'send' || detailLoading || !activeDraft?.id}
-                className="rounded-full bg-axis px-4 py-2 text-sm font-semibold text-white transition hover:brightness-105 disabled:opacity-50"
+                onClick={() => setShowChangeBox((v) => !v)}
+                className="rounded-full border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:border-slate-400"
               >
-                {actionBusy === 'send' ? 'Sending...' : 'Send to Resident'}
+                Request change from admin
               </button>
               <button
                 type="button"
@@ -590,10 +638,26 @@ export default function ManagerLeasingTab({ manager, allowedPropertyNames }) {
               </button>
               <button
                 type="button"
-                onClick={() => setShowChangeBox((v) => !v)}
-                className="rounded-full border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:border-slate-400"
+                onClick={handleDownloadGeneratedPdf}
+                disabled={
+                  actionBusy === 'download-pdf' || detailLoading || !activeDraft?.id || !canDownloadGeneratedPdf
+                }
+                className="rounded-full border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:border-slate-400 disabled:opacity-50"
+                title={
+                  canDownloadGeneratedPdf
+                    ? 'Download PDF generated from Lease JSON or AI draft (not your uploaded file)'
+                    : 'Generate the lease first'
+                }
               >
-                Request change from admin
+                {actionBusy === 'download-pdf' ? 'Preparing…' : 'Download PDF'}
+              </button>
+              <button
+                type="button"
+                onClick={handleSendToResident}
+                disabled={actionBusy === 'send' || detailLoading || !activeDraft?.id}
+                className="ml-auto rounded-full bg-axis px-4 py-2 text-sm font-semibold text-white transition hover:brightness-105 disabled:opacity-50"
+              >
+                {actionBusy === 'send' ? 'Sending...' : 'Send to Resident'}
               </button>
             </div>
           </div>

@@ -733,11 +733,19 @@ export function serializeManagerAddPropertyToAirtableFields(params) {
     })
     .filter(Boolean)
 
+  /** One entry per shared space so listing UI can show details even when description is blank. */
   const sharedSpacesDetail = sharedTrimmed.map((row) => {
-    const notes = String(row?.description || '').trim()
-    return notes ? { notes, description: notes } : {}
+    const desc = String(row?.description || '').trim()
+    const title = String(row?.name || '').trim()
+    let st = String(row?.type || '').trim()
+    if (st === 'Other') st = String(row?.typeOther || '').trim() || 'Other'
+    return {
+      title,
+      type: st,
+      description: desc,
+      notes: desc,
+    }
   })
-  /** Always persist one meta slot per shared space so indices match `Shared Space N` columns even when details are blank. */
   const hasSharedSpacesMeta = sc > 0
 
   const bathroomTotalDecimal = computeDecimalBathroomTotal(bathrooms)

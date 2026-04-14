@@ -868,7 +868,16 @@ export default function ManagerInboxPage({
         toast.error('Select an admin contact.')
         return
       }
-      threadKey = managementAdminThreadKey(em)
+      // Manager portal: keep all Axis-bound mail in the same thread as "Axis internal team" (site manager key).
+      if (!adminFullInbox) {
+        if (!axisThreadKey) {
+          toast.error('Inbox is not ready yet — try again in a moment.')
+          return
+        }
+        threadKey = axisThreadKey
+      } else {
+        threadKey = managementAdminThreadKey(em)
+      }
     } else {
       return
     }
@@ -920,7 +929,7 @@ export default function ManagerInboxPage({
         ? threadKey
         : kind === 'resident'
           ? managerInboxResidentThreadId(ridForSelect)
-          : threadKey
+          : MANAGER_INBOX_AXIS
       setSelectedThreadId(selectionId)
       const next = await getMessagesByThreadKey(threadKey)
       setThread(
@@ -1185,17 +1194,6 @@ export default function ManagerInboxPage({
       <div className={PORTAL_TAB_HEADER_ROW_CLS}>
         <h2 className={PORTAL_TAB_H2_CLS}>Inbox</h2>
         <div className={PORTAL_TAB_TOOLBAR_CLS}>
-          <button
-            type="button"
-            onClick={() => {
-              setComposeOpen(true)
-              setSelectedThreadId(null)
-              setThread([])
-            }}
-            className={PORTAL_TAB_PRIMARY_CLS}
-          >
-            New message
-          </button>
           <div className={PORTAL_TAB_SELECT_WRAP_CLS}>
             <select
               value={channelFilter}
@@ -1211,6 +1209,17 @@ export default function ManagerInboxPage({
               ▾
             </span>
           </div>
+          <button
+            type="button"
+            onClick={() => {
+              setComposeOpen(true)
+              setSelectedThreadId(null)
+              setThread([])
+            }}
+            className={PORTAL_TAB_PRIMARY_CLS}
+          >
+            New message
+          </button>
           <button type="button" onClick={() => loadAll()} className={PORTAL_TAB_REFRESH_CLS}>
             Refresh
           </button>

@@ -15,6 +15,22 @@ const APPLICATIONS_TABLE =
   process.env.AIRTABLE_APPLICATIONS_TABLE ||
   'Applications'
 
+const APPLICATION_REJECTED_FIELD = String(
+  process.env.VITE_AIRTABLE_APPLICATION_REJECTED_FIELD ||
+    process.env.AIRTABLE_APPLICATION_REJECTED_FIELD ||
+    'Rejected',
+).trim() || 'Rejected'
+
+function applicationApprovedForLeaseDraft(app) {
+  if (!app || typeof app !== 'object') return false
+  if (app[APPLICATION_REJECTED_FIELD] === true || app[APPLICATION_REJECTED_FIELD] === 1) return false
+  if (app.Approved === false || app.Approved === 0) return false
+  if (app.Approved === true || app.Approved === 1) return true
+  const status = String(app['Approval Status'] || app['Application Status'] || '').trim().toLowerCase()
+  if (['rejected', 'declined', 'denied', 'pending', 'under review'].includes(status)) return false
+  return status === 'approved' || status === 'accept' || status === 'accepted'
+}
+
 function airtableHeaders() {
   return {
     Authorization: `Bearer ${AIRTABLE_TOKEN}`,
@@ -50,6 +66,12 @@ export default async function handler(req, res) {
     }
     const data = await appRes.json()
     const application = { id: data.id, ...data.fields }
+
+    if (!applicationApprovedForLeaseDraft(application)) {
+      return res.status(400).json({
+        error: 'Lease drafts are only created for approved applications.',
+      })
+    }
 
     const { draft, created } = await createLeaseDraftFromApplication({
       application,

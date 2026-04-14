@@ -22,6 +22,23 @@ const APPS_TABLE =
   process.env.AIRTABLE_APPLICATIONS_TABLE ||
   'Applications'
 
+const APPLICATION_REJECTED_FIELD = String(
+  process.env.VITE_AIRTABLE_APPLICATION_REJECTED_FIELD ||
+    process.env.AIRTABLE_APPLICATION_REJECTED_FIELD ||
+    'Rejected',
+).trim() || 'Rejected'
+
+/** Only generate leases when the Applications row is clearly approved (not pending/rejected). */
+function applicationApprovedForLeaseGeneration(app) {
+  if (!app || typeof app !== 'object') return false
+  if (app[APPLICATION_REJECTED_FIELD] === true || app[APPLICATION_REJECTED_FIELD] === 1) return false
+  if (app.Approved === false || app.Approved === 0) return false
+  if (app.Approved === true || app.Approved === 1) return true
+  const status = String(app['Approval Status'] || app['Application Status'] || '').trim().toLowerCase()
+  if (['rejected', 'declined', 'denied', 'pending', 'under review'].includes(status)) return false
+  return status === 'approved' || status === 'accept' || status === 'accepted'
+}
+
 function airtableHeaders() {
   return {
     Authorization: `Bearer ${AIRTABLE_TOKEN}`,
@@ -453,6 +470,11 @@ export async function generateLeaseFromTemplate({
   const recordId = normalizeRecordId(applicationRecordId)
   if (!recordId) throw new Error('applicationRecordId is required')
 
+  const app = await getApplication(recordId)
+  if (!applicationApprovedForLeaseGeneration(app)) {
+    throw new Error('Lease drafts can only be generated for approved applications.')
+  }
+
   const existing = await findExistingDraft(recordId)
   if (existing) {
     const parsed = tryParseLeaseJson(existing)
@@ -460,8 +482,6 @@ export async function generateLeaseFromTemplate({
       return { draft: existing, created: false }
     }
   }
-
-  const app = await getApplication(recordId)
   const resolvedOwnerId = ownerId || String(app['Owner ID'] || '').trim()
   const propertyRecord = await getPropertyByName(app['Property Name'])
   const leaseData = buildLeaseData(app, propertyRecord, overrides)

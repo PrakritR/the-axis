@@ -13,6 +13,7 @@ import generateLeaseDraft from './handlers/generate-lease-draft.js'
 import managerAuth from './handlers/manager-auth.js'
 import managerApproveApplication from './handlers/manager-approve-application.js'
 import managerRejectApplication from './handlers/manager-reject-application.js'
+import managerApplicationSetPending from './handlers/manager-application-set-pending.js'
 import managerBillingPortal from './handlers/manager-billing-portal.js'
 import managerCreateAccount from './handlers/manager-create-account.js'
 import managerCreateSubscriptionSession from './handlers/manager-create-subscription-session.js'
@@ -30,12 +31,14 @@ import leaseAdminRespond from './handlers/lease-admin-respond.js'
 import leaseManagerReview from './handlers/lease-manager-review.js'
 import leaseAddComment from './handlers/lease-add-comment.js'
 import leaseMarkNotificationsRead from './handlers/lease-mark-notifications-read.js'
+import leaseDownloadGeneratedPdf from './handlers/lease-download-generated-pdf.js'
 
 const handlers = {
   'application-create-lease-draft': applicationCreateLeaseDraft,
   'manager-auth': managerAuth,
   'manager-approve-application': managerApproveApplication,
   'manager-reject-application': managerRejectApplication,
+  'manager-application-set-pending': managerApplicationSetPending,
   'manager-create-account': managerCreateAccount,
   'manager-lookup': managerLookup,
   'manager-subscription-complete': managerSubscriptionComplete,
@@ -54,6 +57,7 @@ const handlers = {
   'lease-manager-review': leaseManagerReview,
   'lease-add-comment': leaseAddComment,
   'lease-mark-notifications-read': leaseMarkNotificationsRead,
+  'lease-download-generated-pdf': leaseDownloadGeneratedPdf,
 }
 
 // These actions don't require an authenticated manager session

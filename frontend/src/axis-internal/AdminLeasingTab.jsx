@@ -41,7 +41,6 @@ async function callPortalAction(action, body) {
 }
 
 const ADMIN_STATUS_FILTER_ITEMS = [
-  { id: 'all', label: 'All Leases', match: () => true },
   {
     id: 'draft_ready',
     label: 'Draft Ready',
@@ -70,7 +69,7 @@ export default function AdminLeasingTab({ adminUser, accounts = [] }) {
   const [drafts, setDrafts] = useState([])
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState('')
-  const [statusFilter, setStatusFilter] = useState('all')
+  const [statusFilter, setStatusFilter] = useState('draft_ready')
   const [selectedDraftId, setSelectedDraftId] = useState('')
   const [activeDraft, setActiveDraft] = useState(null)
   const [detailLoading, setDetailLoading] = useState(false)
@@ -117,7 +116,7 @@ export default function AdminLeasingTab({ adminUser, accounts = [] }) {
 
   const statusCounts = useMemo(() => {
     return ADMIN_STATUS_FILTER_ITEMS.reduce((acc, item) => {
-      acc[item.id] = item.id === 'all' ? drafts.length : drafts.filter((draft) => item.match(draft['Status'] || '')).length
+      acc[item.id] = drafts.filter((draft) => item.match(draft['Status'] || '')).length
       return acc
     }, {})
   }, [drafts])
@@ -213,15 +212,13 @@ export default function AdminLeasingTab({ adminUser, accounts = [] }) {
 
   return (
     <div className="space-y-5">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-black text-slate-900">Leases</h1>
-        </div>
+      <div className="flex flex-wrap items-center gap-3">
+        <h1 className="mr-auto text-2xl font-black tracking-tight text-slate-900">Leases</h1>
         <button
           type="button"
           onClick={loadDrafts}
           disabled={loading}
-          className="rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-50 disabled:opacity-50"
+          className="h-[42px] shrink-0 rounded-full border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-600 transition hover:bg-slate-50 disabled:opacity-50"
         >
           {loading ? 'Loading…' : 'Refresh'}
         </button>
@@ -234,7 +231,7 @@ export default function AdminLeasingTab({ adminUser, accounts = [] }) {
       ) : null}
 
       <div className="overflow-x-auto">
-        <div className="grid min-w-[760px] grid-cols-5 gap-2 rounded-[28px] border border-slate-200 bg-slate-50 p-2">
+        <div className="grid min-w-[620px] grid-cols-4 gap-2 rounded-[28px] border border-slate-200 bg-slate-50 p-2">
           {ADMIN_STATUS_FILTER_ITEMS.map((item) => (
             <button
               key={item.id}
