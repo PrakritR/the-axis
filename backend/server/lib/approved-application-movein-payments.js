@@ -2,6 +2,10 @@
  * When a manager approves an application, create pending Payments rows for security deposit,
  * first month rent, and first month utilities (idempotent via Notes markers).
  */
+import {
+  applicationApprovedUnitNumber,
+  DEFAULT_AXIS_APPLICATION_APPROVED_ROOM,
+} from '../../../shared/application-airtable-fields.js'
 import { computeMoveInChargesFromApplication } from '../handlers/generate-lease-from-template.js'
 import {
   SUBMITTED_MOVEIN_DEPOSIT_MARKER_PREFIX,
@@ -17,6 +21,12 @@ const CORE_AIRTABLE_BASE_URL = `https://api.airtable.com/v0/${CORE_BASE_ID}`
 const RESIDENT_PROFILE_TABLE = 'Resident Profile'
 const PAYMENTS_TABLE =
   process.env.VITE_AIRTABLE_PAYMENTS_TABLE || process.env.AIRTABLE_PAYMENTS_TABLE || 'Payments'
+
+const APPLICATION_APPROVED_ROOM_FIELD = String(
+  process.env.VITE_AIRTABLE_APPLICATION_APPROVED_ROOM_FIELD ||
+    process.env.AIRTABLE_APPLICATION_APPROVED_ROOM_FIELD ||
+    DEFAULT_AXIS_APPLICATION_APPROVED_ROOM,
+).trim() || DEFAULT_AXIS_APPLICATION_APPROVED_ROOM
 
 export const APPROVED_MOVEIN_DEPOSIT_MARKER_PREFIX = 'AXIS_APPROVED_MOVEIN_DEPOSIT:'
 export const APPROVED_MOVEIN_FIRST_RENT_MARKER_PREFIX = 'AXIS_APPROVED_MOVEIN_FIRST_RENT:'
@@ -200,7 +210,9 @@ export async function createApprovedApplicationMoveInPayments({ application, res
 
   const due = dueDateFromLeaseStart(leaseData.leaseStart)
   const propName = String(leaseData.propertyName || application['Property Name'] || '').trim()
-  const roomNum = String(leaseData.roomNumber || application['Room Number'] || '').trim()
+  const roomNum = String(
+    leaseData.roomNumber || applicationApprovedUnitNumber(application, APPLICATION_APPROVED_ROOM_FIELD) || '',
+  ).trim()
 
   const deposit = Math.round(Number(leaseData.securityDeposit) * 100) / 100
   const rent = Math.round(Number(leaseData.monthlyRent) * 100) / 100

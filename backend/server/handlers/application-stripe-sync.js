@@ -6,7 +6,12 @@
  * delayed or the client needs to reconcile immediately after embedded checkout.
  */
 import Stripe from 'stripe'
-import { airtableAuthHeaders, applicationsTableUrl, getApplicationsAirtableEnv } from '../lib/applications-airtable-env.js'
+import {
+  airtableAuthHeaders,
+  airtableErrorMessageFromBody,
+  applicationsTableUrl,
+  getApplicationsAirtableEnv,
+} from '../lib/applications-airtable-env.js'
 
 function isPaidCheckbox(value) {
   if (value === true) return true
@@ -95,7 +100,12 @@ export default async function handler(req, res) {
   if (!patchRes.ok) {
     const t = await patchRes.text()
     console.error('[application-stripe-sync] Airtable PATCH failed', patchRes.status, t.slice(0, 500))
-    return res.status(500).json({ error: 'Could not update Application Paid in Airtable.' })
+    const airtableDetail = airtableErrorMessageFromBody(t)
+    return res.status(500).json({
+      error: 'Could not update Application Paid in Airtable.',
+      airtableStatus: patchRes.status,
+      ...(airtableDetail ? { airtableDetail } : {}),
+    })
   }
 
   return res.status(200).json({ ok: true, paid: true, checkoutSessionId: session.id })

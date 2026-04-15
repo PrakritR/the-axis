@@ -39,7 +39,7 @@ import {
   seedInternalStaffManagerSession,
 } from '../lib/developerPortal'
 import {
-  applicationLeaseRoomNumber,
+  applicationApprovedUnitNumber,
   DEFAULT_AXIS_APPLICATION_APPROVED_ROOM,
 } from '../../../shared/application-airtable-fields.js'
 import { ApplicationDetailPanel } from '../lib/applicationDetailPanel.jsx'
@@ -527,11 +527,15 @@ function residentHandoffRoomLabel(resident, applications) {
     return tb - ta
   })
 
-  const fromApp = applicationLeaseRoomNumber(matches[0], approvedField)
+  const fromApp = applicationApprovedUnitNumber(matches[0], approvedField)
   return String(fromApp || '').trim() || profileUnit
 }
 
-function PortalHandoffCard({ accounts, residents, applications, user }) {
+function residentHandoffDisplayName(r) {
+  return String(r?.Name || r?.['Resident Name'] || r?.Email || r?.id || '').trim() || 'Resident'
+}
+
+function PortalHandoffCard({ accounts, residents, applications, residentsLoading }) {
   const [selectedManagerId, setSelectedManagerId] = useState('')
   const [selectedResidentId, setSelectedResidentId] = useState('')
 
@@ -560,7 +564,7 @@ function PortalHandoffCard({ accounts, residents, applications, user }) {
     return String(a.id || '').localeCompare(String(b.id || ''))
   })
   const sortedResidents = [...residents].sort((a, b) =>
-    String(a.Name || '').localeCompare(String(b.Name || ''), undefined, { sensitivity: 'base' }),
+    residentHandoffDisplayName(a).localeCompare(residentHandoffDisplayName(b), undefined, { sensitivity: 'base' }),
   )
 
   return (
@@ -608,14 +612,18 @@ function PortalHandoffCard({ accounts, residents, applications, user }) {
                 const roomLabel = residentHandoffRoomLabel(r, applications)
                 return (
                   <option key={r.id} value={r.id}>
-                    {r.Name || r.Email || r.id}
+                    {residentHandoffDisplayName(r)}
                     {r.House ? ` · ${r.House}` : ''}
                     {roomLabel ? ` ${roomLabel}` : ''}
                   </option>
                 )
               })}
               {sortedResidents.length === 0 ? (
-                <option disabled value="">Loading residents…</option>
+                <option disabled value="">
+                  {residentsLoading
+                    ? 'Loading residents…'
+                    : 'No resident profiles found — confirm the Airtable token can read Resident Profile (or refresh).'}
+                </option>
               ) : null}
             </select>
             <button
@@ -725,7 +733,14 @@ export default function AdminPortal() {
   const [selectedApprovalId, setSelectedApprovalId] = useState(null)
   const [selectedApplicationId, setSelectedApplicationId] = useState(null)
   const [residents, setResidents] = useState([])
-  const [dataLoading, setDataLoading] = useState(false)
+  const [dataLoading, setDataLoading] = useState(() => {
+    if (!isAdminPortalAirtableConfigured()) return false
+    try {
+      return Boolean(sessionStorage.getItem(AXIS_ADMIN_SESSION_KEY))
+    } catch {
+      return false
+    }
+  })
   const [approvalBusy, setApprovalBusy] = useState(false)
   const [applicationReviewBusy, setApplicationReviewBusy] = useState(false)
   const [unopenedThreadCount, setUnopenedThreadCount] = useState(0)
@@ -794,12 +809,14 @@ export default function AdminPortal() {
     setSession(u)
     sessionStorage.setItem(AXIS_ADMIN_SESSION_KEY, JSON.stringify(u))
     if (u) markDeveloperPortalActive()
+    if (u && isAdminPortalAirtableConfigured()) setDataLoading(true)
   }
 
   function handleSignOut() {
     sessionStorage.removeItem(AXIS_ADMIN_SESSION_KEY)
     clearDeveloperPortalFlags()
     setSession(null)
+    setDataLoading(false)
     window.location.replace('/portal')
   }
 
@@ -1050,7 +1067,12 @@ export default function AdminPortal() {
                 </span>
               </label>
               {showPortalHandoff ? (
-                <PortalHandoffCard accounts={accounts} residents={residents} applications={applications} user={user} />
+                <PortalHandoffCard
+                  accounts={accounts}
+                  residents={residents}
+                  applications={applications}
+                  residentsLoading={dataLoading}
+                />
               ) : null}
             </div>
           ) : null}
@@ -1084,13 +1106,13 @@ export default function AdminPortal() {
                 </div>
               ) : null}
               {leaseChangesNeededCount > 0 ? (
-                <div className="flex flex-wrap items-center gap-3 rounded-2xl border border-sky-200 bg-sky-50 px-4 py-3">
-                  <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[#2563eb] text-xs font-black text-white">
+                <div className="flex flex-wrap items-center gap-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3">
+                  <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-amber-500 text-xs font-black text-white">
                     {leaseChangesNeededCount}
                   </span>
                   <div className="min-w-0 flex-1">
-                    <p className="text-sm font-bold text-slate-900">Leases need review</p>
-                    <p className="text-xs text-slate-600">
+                    <p className="text-sm font-bold text-amber-900">Leases need review</p>
+                    <p className="text-xs text-amber-800">
                       {`${leaseChangesNeededCount} lease${leaseChangesNeededCount === 1 ? '' : 's'} in the admin review queue (submitted, in review, or ready for signature).`}
                     </p>
                   </div>
@@ -1105,7 +1127,7 @@ export default function AdminPortal() {
                         }
                         setTab('leasing')
                       }}
-                      className="rounded-xl bg-[#2563eb] px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-blue-700"
+                      className="rounded-xl bg-amber-600 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-amber-700"
                     >
                       Open Leases
                     </button>

@@ -29,8 +29,10 @@ const TABLES = {
 const ADMIN_PROFILE_TABLE_NAME =
   String(import.meta.env.VITE_AIRTABLE_ADMIN_PROFILE_TABLE || 'Admin Profile').trim() || 'Admin Profile'
 
-const RESIDENT_PROFILE_TABLE = 'Resident Profile'
+const RESIDENT_PROFILE_TABLE =
+  String(import.meta.env.VITE_AIRTABLE_RESIDENT_PROFILE_TABLE || 'Resident Profile').trim() || 'Resident Profile'
 
+/** Prefer a tight field list; Airtable 422s if any name is wrong, so we retry with fewer names then full rows. */
 const RESIDENT_PROFILE_LIST_FIELDS = [
   'Name',
   'Email',
@@ -38,6 +40,8 @@ const RESIDENT_PROFILE_LIST_FIELDS = [
   'Unit Number',
   'Approved',
 ]
+
+const RESIDENT_PROFILE_LIST_FIELDS_FALLBACK = ['Name', 'Email', 'House']
 
 function headers() {
   return {
@@ -116,7 +120,18 @@ async function listTableRecordsWithFields(tableName, fieldNames) {
 }
 
 async function fetchResidentProfileRecords() {
-  return listTableRecordsWithFields(RESIDENT_PROFILE_TABLE, RESIDENT_PROFILE_LIST_FIELDS)
+  const table = RESIDENT_PROFILE_TABLE
+  for (const fields of [RESIDENT_PROFILE_LIST_FIELDS, RESIDENT_PROFILE_LIST_FIELDS_FALLBACK]) {
+    try {
+      return await listTableRecordsWithFields(table, fields)
+    } catch (e) {
+      console.warn(
+        '[adminPortalAirtable] Resident Profile partial fields request failed; will retry',
+        e?.message || e,
+      )
+    }
+  }
+  return listAllRecords(table)
 }
 
 function residentHouseMatchesScope(houseField, allowedNamesLower) {
@@ -628,10 +643,17 @@ export async function adminUnapproveApplication(recordId) {
 /** Load all resident profiles for CEO/admin portal handoff. */
 export async function loadResidentsForAdmin() {
   if (!isAdminPortalAirtableConfigured()) return []
-  const out = await fetchResidentProfileRecords()
-  return out.sort((a, b) =>
-    String(a.Name || '').localeCompare(String(b.Name || ''), undefined, { sensitivity: 'base' }),
-  )
+  try {
+    const out = await fetchResidentProfileRecords()
+    return out.sort((a, b) =>
+      String(a.Name || a['Resident Name'] || '').localeCompare(String(b.Name || b['Resident Name'] || ''), undefined, {
+        sensitivity: 'base',
+      }),
+    )
+  } catch (e) {
+    console.error('[adminPortalAirtable] loadResidentsForAdmin', e?.message || e)
+    return []
+  }
 }
 
 /**
@@ -644,10 +666,17 @@ export async function loadResidentsForManagerPortalInbox(allowedPropertyNames) {
     (allowedPropertyNames || []).map((n) => String(n).trim().toLowerCase()).filter(Boolean),
   )
   if (!allowed.size) return []
-  const rows = await fetchResidentProfileRecords()
+  let rows = []
+  try {
+    rows = await fetchResidentProfileRecords()
+  } catch {
+    return []
+  }
   const filtered = rows.filter((r) => residentHouseMatchesScope(r.House, allowed))
   return filtered.sort((a, b) =>
-    String(a.Name || '').localeCompare(String(b.Name || ''), undefined, { sensitivity: 'base' }),
+    String(a.Name || a['Resident Name'] || '').localeCompare(String(b.Name || b['Resident Name'] || ''), undefined, {
+      sensitivity: 'base',
+    }),
   )
 }
 

@@ -6,6 +6,10 @@
  */
 import { createLeaseDraftFromApplication } from './generate-lease-draft.js'
 import { isApplicationApprovedForLease } from '../lib/application-approval-lease-guard.js'
+import {
+  applicationHasApprovedUnitAssigned,
+  DEFAULT_AXIS_APPLICATION_APPROVED_ROOM,
+} from '../../../shared/application-airtable-fields.js'
 
 const AIRTABLE_TOKEN = process.env.AIRTABLE_TOKEN || process.env.VITE_AIRTABLE_TOKEN
 const BASE_ID =
@@ -15,6 +19,12 @@ const APPLICATIONS_TABLE =
   process.env.VITE_AIRTABLE_APPLICATIONS_TABLE ||
   process.env.AIRTABLE_APPLICATIONS_TABLE ||
   'Applications'
+
+const APPLICATION_APPROVED_ROOM_FIELD = String(
+  process.env.VITE_AIRTABLE_APPLICATION_APPROVED_ROOM_FIELD ||
+    process.env.AIRTABLE_APPLICATION_APPROVED_ROOM_FIELD ||
+    DEFAULT_AXIS_APPLICATION_APPROVED_ROOM,
+).trim() || DEFAULT_AXIS_APPLICATION_APPROVED_ROOM
 
 function airtableHeaders() {
   return {
@@ -55,6 +65,12 @@ export default async function handler(req, res) {
     if (!isApplicationApprovedForLease(application)) {
       return res.status(400).json({
         error: 'Lease drafts are only created for approved applications.',
+      })
+    }
+    if (!applicationHasApprovedUnitAssigned(application, APPLICATION_APPROVED_ROOM_FIELD)) {
+      return res.status(400).json({
+        error:
+          'Set the approved unit/room on the application before creating a lease draft — the lease must match the manager-assigned unit.',
       })
     }
 

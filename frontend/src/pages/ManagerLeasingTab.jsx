@@ -47,6 +47,11 @@ import {
   normalizePropertyFilterKey,
   sortRowsByPropertyGroupThenUpdatedDesc,
 } from '../lib/portalPropertyTableOrder.js'
+import {
+  applicationApprovedUnitNumber,
+  applicationHasApprovedUnitAssigned,
+  DEFAULT_AXIS_APPLICATION_APPROVED_ROOM,
+} from '../../../shared/application-airtable-fields.js'
 
 const AIRTABLE_TOKEN = import.meta.env.VITE_AIRTABLE_TOKEN
 const CORE_BASE_ID = import.meta.env.VITE_AIRTABLE_BASE_ID || 'appol57LKtMKaQ75T'
@@ -64,6 +69,9 @@ const MGR_PILL_REFRESH_CLS =
   'h-[42px] shrink-0 rounded-full border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-600 transition hover:bg-slate-50 disabled:opacity-50'
 const APPS_BASE_ID = import.meta.env.VITE_AIRTABLE_APPLICATIONS_BASE_ID || CORE_BASE_ID
 const APPLICATIONS_TABLE = (import.meta.env.VITE_AIRTABLE_APPLICATIONS_TABLE || 'Applications').trim() || 'Applications'
+const APPLICATION_APPROVED_ROOM_FIELD =
+  String(import.meta.env.VITE_AIRTABLE_APPLICATION_APPROVED_ROOM_FIELD || DEFAULT_AXIS_APPLICATION_APPROVED_ROOM).trim() ||
+  DEFAULT_AXIS_APPLICATION_APPROVED_ROOM
 const AT_BASE = `https://api.airtable.com/v0/${CORE_BASE_ID}`
 const APPS_BASE = `https://api.airtable.com/v0/${APPS_BASE_ID}`
 
@@ -158,7 +166,7 @@ function toSyntheticLeaseDraftFromApplication(app) {
     'Resident Name': app['Signer Full Name'] || app.Name || '—',
     'Resident Email': app['Signer Email'] || '',
     'Property': app['Property Name'] || '',
-    'Unit': app['Room Number'] || '',
+    'Unit': applicationApprovedUnitNumber(app, APPLICATION_APPROVED_ROOM_FIELD) || '',
     'Lease Term': app['Lease Term'] || '',
     'Current Version': 1,
     'Updated At': app['Approved At'] || app.created_at || new Date().toISOString(),
@@ -249,7 +257,11 @@ export default function ManagerLeasingTab({ manager, allowedPropertyNames }) {
         ? approvedApps.filter((a) => allowed.has(String(a['Property Name'] || '')))
         : approvedApps
       // Airtable {Approved}=TRUE() can be out of sync with status text; only show placeholder leases when fully approved.
-      const approvedForLeaseUi = approvedScoped.filter((a) => deriveApplicationApprovalState(a) === 'approved')
+      const approvedForLeaseUi = approvedScoped.filter(
+        (a) =>
+          deriveApplicationApprovalState(a) === 'approved' &&
+          applicationHasApprovedUnitAssigned(a, APPLICATION_APPROVED_ROOM_FIELD),
+      )
       const existingAppIds = new Set(
         scopedAfterAppGate
           .map((d) => String(d['Application Record ID'] || '').trim())

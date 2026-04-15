@@ -24,15 +24,20 @@ function withResolvedApplicationRoomKeys(groups) {
   ).trim()
   return groups.map((g) => {
     if (g.title !== 'Property & lease') return g
-    return {
-      ...g,
-      fields: [
-        ...g.fields,
-        [room2, '2nd choice (optional)'],
-        [room3, '3rd choice (optional)'],
-        [appr, 'Approved room'],
-      ],
+    const out = []
+    let insertedApproved = false
+    for (const pair of g.fields) {
+      out.push(pair)
+      if (pair[0] === 'Property Address') {
+        out.push([appr, 'Approved unit / room (authoritative for lease & resident portal)'])
+        insertedApproved = true
+      }
     }
+    if (!insertedApproved) {
+      out.push([appr, 'Approved unit / room (authoritative for lease & resident portal)'])
+    }
+    out.push([room2, '2nd choice (optional)'], [room3, '3rd choice (optional)'])
+    return { ...g, fields: out }
   })
 }
 
@@ -228,7 +233,7 @@ export const APPLICATION_FIELD_GROUPS = [
     fields: [
       ['Property Name', 'Property'],
       ['Property Address', 'Address'],
-      ['Room Number', 'Room / unit'],
+      ['Room Number', 'Room choice (1st preference)'],
       ['Lease Term', 'Lease term'],
       ['Month to Month', 'Month-to-month'],
       ['Lease Start Date', 'Lease start'],
@@ -498,7 +503,7 @@ export function ApplicationDetailPanel({ application, partnerLabel, onClose, adm
         {arm && resolvedApprovalState === 'pending' ? (
           <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
             <label htmlFor="axis-approved-room" className="block text-xs font-semibold uppercase tracking-wide text-slate-600">
-              Approved room (required)
+              Approved unit / room (required — this is what the lease and resident profile use)
             </label>
             {arm.choices?.length ? (
               <select
@@ -525,6 +530,16 @@ export function ApplicationDetailPanel({ application, partnerLabel, onClose, adm
                 onChange={(e) => arm.onChange(e.target.value)}
               />
             )}
+            {String(raw['Room Number'] || '').trim() ? (
+              <button
+                type="button"
+                disabled={reviewBusy}
+                className="mt-2 text-left text-sm font-semibold text-[#2563eb] hover:text-slate-900 disabled:opacity-50"
+                onClick={() => arm.onChange(String(raw['Room Number'] || '').trim())}
+              >
+                Use same as 1st choice ({String(raw['Room Number']).trim()})
+              </button>
+            ) : null}
           </div>
         ) : null}
       </div>

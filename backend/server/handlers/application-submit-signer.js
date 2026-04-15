@@ -1,8 +1,9 @@
 /**
  * POST /api/portal?action=application-submit-signer
  *
- * Public. PATCHes an existing Applications row after verifying:
- *  - Application Paid is true in Airtable (set only by Stripe webhook), OR
+ * Public. PATCHes an existing Applications row. Payment is not required first:
+ * applicants submit the full form, then pay the fee in the UI; Stripe webhook
+ * sets Application Paid. This handler still sets Application Paid when:
  *  - promo waive (FEEWAIVE), OR
  *  - Application Fee Due (USD) on the row is 0 (no Stripe checkout).
  *
@@ -66,12 +67,6 @@ export default async function handler(req, res) {
   const feeRequired = Number.isFinite(recordFeeNum) ? recordFeeNum > 0 : defaultFeeUsd > 0
 
   const paid = isPaidInAirtable(row.fields?.[env.paidField])
-  if (feeRequired && !paid && !promoOk) {
-    return res.status(402).json({
-      error:
-        'Stripe has not confirmed your application fee yet. Wait a few seconds after payment, then try Submit again. If this persists, contact leasing.',
-    })
-  }
 
   const existingSig = String(row.fields?.[env.signatureField] || row.fields?.['Signer Signature'] || '').trim()
   const incomingSig = String(fields['Signer Signature'] || fields[env.signatureField] || '').trim()

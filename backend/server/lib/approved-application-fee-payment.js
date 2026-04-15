@@ -2,6 +2,10 @@
  * When a manager approves an application, record a paid "Application fee" line on each
  * linked Resident Profile's Payments tab (idempotent via Notes marker).
  */
+import {
+  applicationApprovedUnitNumber,
+  DEFAULT_AXIS_APPLICATION_APPROVED_ROOM,
+} from '../../../shared/application-airtable-fields.js'
 import { resolveExpectedApplicationFeeUsd } from './stripe-application-fee-usd.js'
 import { SUBMITTED_APP_FEE_MARKER_PREFIX } from './submitted-application-fee-payment.js'
 
@@ -13,6 +17,12 @@ const CORE_AIRTABLE_BASE_URL = `https://api.airtable.com/v0/${CORE_BASE_ID}`
 const RESIDENT_PROFILE_TABLE = 'Resident Profile'
 const PAYMENTS_TABLE =
   process.env.VITE_AIRTABLE_PAYMENTS_TABLE || process.env.AIRTABLE_PAYMENTS_TABLE || 'Payments'
+
+const APPLICATION_APPROVED_ROOM_FIELD = String(
+  process.env.VITE_AIRTABLE_APPLICATION_APPROVED_ROOM_FIELD ||
+    process.env.AIRTABLE_APPLICATION_APPROVED_ROOM_FIELD ||
+    DEFAULT_AXIS_APPLICATION_APPROVED_ROOM,
+).trim() || DEFAULT_AXIS_APPLICATION_APPROVED_ROOM
 
 export const APPROVED_APP_FEE_MARKER_PREFIX = 'AXIS_APPROVED_APPLICATION_FEE:'
 
@@ -149,7 +159,9 @@ export async function createApprovedApplicationFeePayments({ application, reside
       const resRow = await fetchResidentRecord(rid)
       const resName = String(resRow.Name || application['Signer Full Name'] || '').trim()
       const prop = String(resRow.House || application['Property Name'] || '').trim()
-      const unit = String(resRow['Unit Number'] || application['Room Number'] || '').trim()
+      const unit = String(
+        resRow['Unit Number'] || applicationApprovedUnitNumber(application, APPLICATION_APPROVED_ROOM_FIELD) || '',
+      ).trim()
 
       if (submittedRow?.id) {
         // Update the existing submitted-time row: add Resident link + approval marker

@@ -23,6 +23,23 @@ import PortalShell, { DataTable, StatusPill } from '../components/PortalShell'
 import { PortalNavGlyph } from '../components/portalNavIcons.jsx'
 import { HOUSING_CONTACT_MESSAGE, HOUSING_CONTACT_SCHEDULE } from '../lib/housingSite'
 import {
+  applicationApprovedUnitNumber,
+  DEFAULT_AXIS_APPLICATION_APPROVED_ROOM,
+} from '../../../shared/application-airtable-fields.js'
+
+const APPLICATION_APPROVED_UNIT_FIELD =
+  String(import.meta.env.VITE_AIRTABLE_APPLICATION_APPROVED_ROOM_FIELD ?? '').trim() || DEFAULT_AXIS_APPLICATION_APPROVED_ROOM
+
+const APPLICATION_PAID_FIELD =
+  String(import.meta.env.VITE_AIRTABLE_APPLICATION_PAID_FIELD ?? '').trim() || 'Application Paid'
+
+function applicationPaidCheckboxTruthy(value) {
+  if (value === true) return true
+  if (value === false || value == null) return false
+  const s = String(value).trim().toLowerCase()
+  return s === 'yes' || s === 'true' || s === '1' || s === 'checked'
+}
+import {
   airtableReady,
   createResident,
   createWorkOrder,
@@ -1003,6 +1020,12 @@ export function ResidentAuthForm({ onLogin, footer = null, variant = 'default' }
         setActivationError('Email does not match the application. Use the email you applied with.')
         return
       }
+      if (!applicationPaidCheckboxTruthy(app[APPLICATION_PAID_FIELD])) {
+        setActivationError(
+          'Your application fee is not recorded as paid yet. Pay from your Apply confirmation page (or use a fee-waive code when you submit), wait a minute if you already paid, then create your account here.',
+        )
+        return
+      }
       const rawAppInput = activateForm.applicationId.trim()
       const applicationRecordId = rawAppInput.startsWith('APP-') ? rawAppInput.slice(4) : rawAppInput
       const applicationLink =
@@ -1012,6 +1035,7 @@ export function ResidentAuthForm({ onLogin, footer = null, variant = 'default' }
 
       const existing = await getResidentByEmail(activateForm.email.trim())
       const activationGate = deriveApplicationApprovalState(app)
+      const approvedUnitForProfile = applicationApprovedUnitNumber(app, APPLICATION_APPROVED_UNIT_FIELD)
       const approvalPatchFromApp =
         activationGate === 'approved'
           ? { Approved: true, 'Application Approval': 'Approved' }
@@ -1029,6 +1053,9 @@ export function ResidentAuthForm({ onLogin, footer = null, variant = 'default' }
           Status: 'Active',
           'Lease Term': existing['Lease Term'] || app['Lease Term'] || '',
           ...approvalPatchFromApp,
+        }
+        if (approvedUnitForProfile) {
+          patch['Unit Number'] = approvedUnitForProfile
         }
         if (applicationLink && !(Array.isArray(existing.Applications) && existing.Applications.length)) {
           patch.Applications = applicationLink
@@ -1051,7 +1078,7 @@ export function ResidentAuthForm({ onLogin, footer = null, variant = 'default' }
         Password: activateForm.password,
         Phone: app['Signer Phone Number'] || '',
         House: app['Property Name'] || '',
-        'Unit Number': app['Room Number'] || '',
+        'Unit Number': approvedUnitForProfile || '',
         'Lease Term': app['Lease Term'] || '',
         'Lease Start Date': app['Lease Start Date'] || null,
         'Lease End Date': app['Lease End Date'] || null,
@@ -1158,7 +1185,7 @@ export function ResidentAuthForm({ onLogin, footer = null, variant = 'default' }
             </div>
           ) : null}
           <PortalNotice>
-            Use the email and Application ID from your application. You can create an account anytime; sign-in stays locked until a manager approves your application.{' '}
+            Use the email and Application ID from your application. Your application fee must show as paid in our records before you can create an account; after that, sign-in stays limited until a manager approves your application.{' '}
             <span className="font-mono font-semibold text-slate-800">APP-rec…</span>
           </PortalNotice>
           <PortalField label="Application ID" required>

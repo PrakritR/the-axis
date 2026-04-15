@@ -146,6 +146,7 @@ import {
   DEFAULT_AXIS_APPLICATION_APPROVED_ROOM,
   DEFAULT_AXIS_APPLICATION_ROOM_CHOICE_2,
   DEFAULT_AXIS_APPLICATION_ROOM_CHOICE_3,
+  applicationApprovedUnitNumber,
   applicationLeaseRoomNumber,
 } from '../../../shared/application-airtable-fields.js'
 import {
@@ -180,6 +181,15 @@ const MANAGER_PILL_SELECT_CHEVRON = (
 )
 const MANAGER_PILL_REFRESH_CLS =
   'h-[42px] shrink-0 rounded-full border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-600 transition hover:bg-slate-50 disabled:opacity-50'
+
+/** Display id for Applications / work orders — avoids `APP-APP-rec…` when the formula already prefixes `APP-`. */
+function formatAxisApplicationPublicId(raw) {
+  const s = String(raw ?? '').trim()
+  if (!s) return ''
+  if (/^app-/i.test(s)) return s
+  if (s.startsWith('rec')) return `APP-${s}`
+  return `APP-${s}`
+}
 
 // ─── Records API config — split by Airtable base to match the rest of the app ─
 const AIRTABLE_TOKEN = import.meta.env.VITE_AIRTABLE_TOKEN
@@ -4285,8 +4295,6 @@ function WorkOrdersTabPanel({ manager, allowedPropertyNames, allowedPropertyIds 
       normalizeWorkOrderScheduleDateKey(nextRecord?.['Scheduled Visit Date']) ||
       normalizeWorkOrderScheduleDateKey(nextRecord?.['Scheduled Date'])
     setScheduledVisitDate(sm?.date || fallback || '')
-    setWoChargeAmount('')
-    setWoChargeTitle('')
   }
 
   const scheduledKeyForCleaningRepair = useMemo(() => {
@@ -4467,7 +4475,7 @@ function WorkOrdersTabPanel({ manager, allowedPropertyNames, allowedPropertyIds 
         const app = applicationsById.get(appId)
         const name = String(app?.['Signer Full Name'] || app?.Name || '').trim() || 'Applicant'
         const prop = String(app?.['Property Name'] || '').trim()
-        const aid = app?.['Application ID'] != null && String(app['Application ID']).trim() !== '' ? `APP-${String(app['Application ID']).trim()}` : ''
+        const aid = formatAxisApplicationPublicId(app?.['Application ID'])
         const label = [name, prop || null, aid || null].filter(Boolean).join(' · ')
         map.set(appId, label || `Application ${appId.slice(0, 11)}…`)
       }
@@ -5445,9 +5453,11 @@ function ApplicationsPanel({ allowedPropertyNames, manager }) {
 
   async function handleDecision(recordId, approved, opts = {}) {
     if (approved) {
+      const row = scopedRows.find((a) => a.id === recordId)
+      const firstChoice = String(row?.['Room Number'] ?? '').trim()
       const ar = String(opts.approvedRoom ?? approveAssignedRoom ?? '').trim()
-      if (!ar) {
-        toast.error('Select or enter the approved room before approving.')
+      if (!ar && !firstChoice) {
+        toast.error('Select or enter the approved unit/room, or add a 1st choice room on the application.')
         return
       }
     }
@@ -5579,7 +5589,7 @@ function ApplicationsPanel({ allowedPropertyNames, manager }) {
         'Resident Name': row['Signer Full Name'] || '',
         'Property Name': row['Property Name'] || '',
         'Room Number': row['Room Number'] || '',
-        Notes: `Refunded application fee after ${state} decision (APP-${String(row['Application ID'] || row.id)})`,
+        Notes: `Refunded application fee after ${state} decision (${formatAxisApplicationPublicId(row['Application ID'] || row.id)})`,
       })
 
       toast.success(`Application fee refund logged (${money(amount)})`)
@@ -5706,22 +5716,29 @@ function ApplicationsPanel({ allowedPropertyNames, manager }) {
                   key: 'summary',
                   label: 'Summary',
                   headerClassName: 'w-[40%]',
-                  render: (app) => (
+                  render: (app) => {
+                    const st = deriveApplicationApprovalState(app)
+                    const approvedUnit = applicationApprovedUnitNumber(app, approvedRoomKey)
+                    return (
                     <div className="flex flex-wrap gap-1.5">
                       {app['Property Name'] ? (
                         <span className="rounded-full border border-slate-200 bg-white px-2.5 py-0.5 text-[11px] font-semibold text-slate-600">{app['Property Name']}</span>
                       ) : null}
-                      {app['Room Number'] ? (
-                        <span className="rounded-full border border-slate-200 bg-white px-2.5 py-0.5 text-[11px] font-semibold text-slate-600">Room {app['Room Number']}</span>
+                      {st === 'approved' && approvedUnit ? (
+                        <span className="rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-0.5 text-[11px] font-semibold text-emerald-800">Approved unit: {approvedUnit}</span>
+                      ) : null}
+                      {st === 'approved' && !approvedUnit ? (
+                        <span className="rounded-full border border-amber-200 bg-amber-50 px-2.5 py-0.5 text-[11px] font-semibold text-amber-900">No approved unit</span>
                       ) : null}
                       {app['Lease Term'] ? (
                         <span className="rounded-full border border-slate-200 bg-white px-2.5 py-0.5 text-[11px] font-semibold text-slate-600">{app['Lease Term']}</span>
                       ) : null}
                       {app['Application ID'] ? (
-                        <span className="rounded-full border border-slate-200 bg-white px-2.5 py-0.5 text-[11px] font-mono font-semibold text-slate-600">APP-{String(app['Application ID'])}</span>
+                        <span className="rounded-full border border-slate-200 bg-white px-2.5 py-0.5 text-[11px] font-mono font-semibold text-slate-600">{formatAxisApplicationPublicId(app['Application ID'])}</span>
                       ) : null}
                     </div>
-                  ),
+                    )
+                  },
                 },
                 {
                   key: 'status',

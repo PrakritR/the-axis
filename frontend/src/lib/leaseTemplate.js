@@ -5,6 +5,14 @@
  */
 
 import { properties } from '../data/properties'
+import {
+  applicationApprovedUnitNumber,
+  DEFAULT_AXIS_APPLICATION_APPROVED_ROOM,
+} from '../../../shared/application-airtable-fields.js'
+
+const APPROVED_UNIT_AIRTABLE_KEY =
+  String(import.meta.env.VITE_AIRTABLE_APPLICATION_APPROVED_ROOM_FIELD || '').trim() ||
+  DEFAULT_AXIS_APPLICATION_APPROVED_ROOM
 
 function fmt(date) {
   if (!date) return '___________'
@@ -104,7 +112,7 @@ function getAmenities(propertyName) {
  */
 export function buildLease(app, overrides = {}) {
   const propertyName = app['Property Name'] || ''
-  const roomNumber = app['Room Number'] || ''
+  const roomNumber = applicationApprovedUnitNumber(app, APPROVED_UNIT_AIRTABLE_KEY) || ''
   const propertyAddress = app['Property Address'] || ''
   const tenantName = app['Signer Full Name'] || ''
   const tenantEmail = app['Signer Email'] || ''

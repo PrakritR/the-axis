@@ -148,6 +148,7 @@ export default async function handler(req, res) {
 
     const approvedRoomRaw = String(req.body?.approvedRoom ?? '').trim()
     const fallbackFirstChoice = String(existing['Room Number'] ?? '').trim()
+    /** Prefer explicit manager pick; if omitted, use applicant 1st choice so lease/resident stay aligned. */
     const approvedRoomToStore = approvedRoomRaw || fallbackFirstChoice
 
     const approvalExtras =
@@ -164,7 +165,7 @@ export default async function handler(req, res) {
       if (!approvedRoomToStore) {
         return res.status(400).json({
           error:
-            'Assign an approved room before approving (application has no first-choice room and none was sent).',
+            'Assign an approved unit/room before approving (no first-choice room on file and none was sent in the request).',
         })
       }
       approvedApplication = await approveApplication(recordId, existing, approvalExtras)

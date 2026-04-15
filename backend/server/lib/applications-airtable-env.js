@@ -4,7 +4,16 @@
 
 export function getApplicationsAirtableEnv() {
   const token = process.env.AIRTABLE_TOKEN || process.env.VITE_AIRTABLE_TOKEN
-  const baseId = process.env.VITE_AIRTABLE_BASE_ID || process.env.AIRTABLE_APPLICATIONS_BASE_ID || process.env.AIRTABLE_BASE_ID || 'appol57LKtMKaQ75T'
+  /** Same resolution as lease-admin-respond / ManagerLeasingTab: Applications may live in a dedicated base. */
+  const coreBaseId =
+    String(process.env.VITE_AIRTABLE_BASE_ID || process.env.AIRTABLE_BASE_ID || 'appol57LKtMKaQ75T').trim() ||
+    'appol57LKtMKaQ75T'
+  const baseId =
+    String(
+      process.env.VITE_AIRTABLE_APPLICATIONS_BASE_ID ||
+        process.env.AIRTABLE_APPLICATIONS_BASE_ID ||
+        coreBaseId,
+    ).trim() || coreBaseId
   const table =
     String(process.env.VITE_AIRTABLE_APPLICATIONS_TABLE || process.env.AIRTABLE_APPLICATIONS_TABLE || 'Applications').trim() ||
     'Applications'
@@ -27,4 +36,14 @@ export function airtableAuthHeaders(token) {
 
 export function applicationsTableUrl(env) {
   return `https://api.airtable.com/v0/${env.baseId}/${encodeURIComponent(env.table)}`
+}
+
+/** Best-effort parse of Airtable REST error JSON for operator-facing messages. */
+export function airtableErrorMessageFromBody(text) {
+  try {
+    const m = JSON.parse(String(text || ''))?.error?.message
+    return typeof m === 'string' && m.trim() ? m.trim() : ''
+  } catch {
+    return ''
+  }
 }

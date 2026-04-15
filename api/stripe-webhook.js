@@ -3,7 +3,7 @@
  * Uses raw body for signature verification — keep this file separate from api/[route].js.
  */
 import { buffer } from 'node:stream/consumers'
-import stripeWebhook from '../backend/server/handlers/stripe-webhook.js'
+import stripeWebhook, { readStripeSignatureHeader } from '../backend/server/handlers/stripe-webhook.js'
 
 export const config = {
   api: {
@@ -13,6 +13,8 @@ export const config = {
 
 export default async function handler(req, res) {
   try {
+    // Read signature before consuming the body so nothing depends on `req` staying intact afterward.
+    const stripeSignature = readStripeSignatureHeader(req)
     const buf = await buffer(req)
     const headers = req.headers && typeof req.headers === 'object' ? req.headers : {}
     const rawHeaders = Array.isArray(req.rawHeaders) ? req.rawHeaders : undefined
@@ -24,6 +26,7 @@ export default async function handler(req, res) {
         body: buf,
         headers,
         rawHeaders,
+        stripeSignature,
       },
       res,
     )

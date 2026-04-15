@@ -1,3 +1,17 @@
+import {
+  applicationHasApprovedUnitAssigned,
+  DEFAULT_AXIS_APPLICATION_APPROVED_ROOM,
+} from '../../../shared/application-airtable-fields.js'
+
+function applicationApprovedRoomFieldName() {
+  try {
+    const v = String(import.meta.env?.VITE_AIRTABLE_APPLICATION_APPROVED_ROOM_FIELD || '').trim()
+    return v || DEFAULT_AXIS_APPLICATION_APPROVED_ROOM
+  } catch {
+    return DEFAULT_AXIS_APPLICATION_APPROVED_ROOM
+  }
+}
+
 /**
  * Checkbox name used to persist rejection. Checked = appears in Airtable API; unchecked is omitted.
  * (The `Approved` checkbox is also omitted when unchecked, so "rejected" cannot be stored as Approved=false alone.)
@@ -125,5 +139,6 @@ export function leaseDraftPassesApplicationApprovalGate(draft, applicationByReco
   if (!applicationByRecordId || typeof applicationByRecordId.get !== 'function') return true
   const app = applicationByRecordId.get(appId)
   if (!app) return true
-  return deriveApplicationApprovalState(app) === 'approved'
+  if (deriveApplicationApprovalState(app) !== 'approved') return false
+  return applicationHasApprovedUnitAssigned(app, applicationApprovedRoomFieldName())
 }

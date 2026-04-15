@@ -20,8 +20,10 @@ import {
 } from '../../../shared/lease-access-requirements.js'
 import {
   applicationLeaseRoomNumber,
+  applicationHasApprovedUnitAssigned,
   DEFAULT_AXIS_APPLICATION_APPROVED_ROOM,
 } from '../../../shared/application-airtable-fields.js'
+import { isApplicationApprovedForLease } from '../lib/application-approval-lease-guard.js'
 
 const AIRTABLE_TOKEN = process.env.AIRTABLE_TOKEN || process.env.VITE_AIRTABLE_TOKEN
 const BASE_ID =
@@ -350,6 +352,9 @@ export async function createLeaseDraftFromApplication({
   generatedBy,
   generatedByRole,
 }) {
+  if (!isApplicationApprovedForLease(application)) {
+    throw new Error('Lease drafts are only created for approved applications.')
+  }
   const propertyName = String(application?.['Property Name'] || '').trim()
   const propertyRecord = await findPropertyByName(propertyName)
   const approvedRoomField = String(
@@ -358,6 +363,11 @@ export async function createLeaseDraftFromApplication({
       DEFAULT_AXIS_APPLICATION_APPROVED_ROOM,
   ).trim() || DEFAULT_AXIS_APPLICATION_APPROVED_ROOM
   const unitFromApp = applicationLeaseRoomNumber(application, approvedRoomField)
+  if (!applicationHasApprovedUnitAssigned(application, approvedRoomField)) {
+    throw new Error(
+      'Set the approved unit/room on the application before generating a lease — the lease uses that assignment, not the applicant’s first choice.',
+    )
+  }
 
   return createLeaseDraft({
     residentName: String(application?.['Signer Full Name'] || '').trim(),

@@ -3,6 +3,11 @@
  * (resident portal reads Approved / Application Approval on Resident Profile).
  */
 
+import {
+  applicationApprovedUnitNumber,
+  DEFAULT_AXIS_APPLICATION_APPROVED_ROOM,
+} from '../../../shared/application-airtable-fields.js'
+
 const AIRTABLE_TOKEN = process.env.AIRTABLE_TOKEN || process.env.VITE_AIRTABLE_TOKEN
 const CORE_BASE_ID =
   process.env.VITE_AIRTABLE_BASE_ID || process.env.AIRTABLE_BASE_ID || 'appol57LKtMKaQ75T'
@@ -14,6 +19,12 @@ const APPLICATION_REJECTED_FIELD = String(
     process.env.AIRTABLE_APPLICATION_REJECTED_FIELD ||
     'Rejected',
 ).trim() || 'Rejected'
+
+const APPLICATION_APPROVED_ROOM_FIELD = String(
+  process.env.VITE_AIRTABLE_APPLICATION_APPROVED_ROOM_FIELD ||
+    process.env.AIRTABLE_APPLICATION_APPROVED_ROOM_FIELD ||
+    DEFAULT_AXIS_APPLICATION_APPROVED_ROOM,
+).trim() || DEFAULT_AXIS_APPLICATION_APPROVED_ROOM
 
 function airtableHeaders() {
   return {
@@ -104,6 +115,7 @@ export async function markMatchingResidentsApproved(application, ownerId) {
   }
 
   const updatedIds = []
+  const approvedUnit = applicationApprovedUnitNumber(application, APPLICATION_APPROVED_ROOM_FIELD)
   for (const r of rows) {
     try {
       const fields = {
@@ -113,15 +125,22 @@ export async function markMatchingResidentsApproved(application, ownerId) {
       if (ownerId && !String(r['Owner ID'] || '').trim()) {
         fields['Owner ID'] = ownerId
       }
+      if (approvedUnit) {
+        fields['Unit Number'] = approvedUnit
+      }
       await patchResidentRecord(r.id, fields)
       updatedIds.push(r.id)
     } catch (firstErr) {
       try {
-        await patchResidentRecord(r.id, { Approved: true, 'Application Approval': 'Approved' })
+        await patchResidentRecord(r.id, {
+          Approved: true,
+          'Application Approval': 'Approved',
+          ...(approvedUnit ? { 'Unit Number': approvedUnit } : {}),
+        })
         updatedIds.push(r.id)
       } catch (err) {
         try {
-          await patchResidentRecord(r.id, { Approved: true })
+          await patchResidentRecord(r.id, { Approved: true, ...(approvedUnit ? { 'Unit Number': approvedUnit } : {}) })
           updatedIds.push(r.id)
         } catch (err2) {
           console.warn('[application-resident-sync] resident approve patch failed', r.id, firstErr, err, err2)

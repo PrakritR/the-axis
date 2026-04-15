@@ -5,7 +5,12 @@
  * Called from api/stripe-webhook.js with req.body as raw Buffer for signature verification.
  */
 import Stripe from 'stripe'
-import { airtableAuthHeaders, applicationsTableUrl, getApplicationsAirtableEnv } from '../lib/applications-airtable-env.js'
+import {
+  airtableAuthHeaders,
+  airtableErrorMessageFromBody,
+  applicationsTableUrl,
+  getApplicationsAirtableEnv,
+} from '../lib/applications-airtable-env.js'
 import { resolveExpectedApplicationFeeUsd } from '../lib/stripe-application-fee-usd.js'
 
 function resolveExpectedApplicationFeeCents() {
@@ -18,17 +23,24 @@ function resolveExpectedApplicationFeeCents() {
  */
 export function readStripeSignatureHeader(req) {
   const want = 'stripe-signature'
+  const direct = String(req?.stripeSignature || '').trim()
+  if (direct) return direct
+
   const h = req?.headers
   if (h && typeof h === 'object') {
-    if (typeof h.get === 'function') {
-      const v = h.get('stripe-signature') || h.get('Stripe-Signature')
-      if (v) return String(v)
-    }
-    for (const [k, v] of Object.entries(h)) {
-      if (String(k).toLowerCase() === want) {
-        if (Array.isArray(v)) return v.map(String).join(', ')
-        return v != null ? String(v) : ''
+    try {
+      if (typeof h.get === 'function') {
+        const v = h.get('stripe-signature') || h.get('Stripe-Signature')
+        if (v) return String(v)
       }
+      for (const [k, v] of Object.entries(h)) {
+        if (String(k).toLowerCase() === want) {
+          if (Array.isArray(v)) return v.map(String).join(', ')
+          return v != null ? String(v) : ''
+        }
+      }
+    } catch {
+      /* ignore odd header objects */
     }
   }
   const rh = req?.rawHeaders
@@ -117,7 +129,12 @@ export default async function handler(req, res) {
   if (!patchRes.ok) {
     const t = await patchRes.text()
     console.error('[stripe-webhook] Airtable PATCH failed', patchRes.status, t.slice(0, 500))
-    return res.status(500).json({ error: 'Could not update Application Paid in Airtable.' })
+    const airtableDetail = airtableErrorMessageFromBody(t)
+    return res.status(500).json({
+      error: 'Could not update Application Paid in Airtable.',
+      airtableStatus: patchRes.status,
+      ...(airtableDetail ? { airtableDetail } : {}),
+    })
   }
 
   return res.status(200).json({ received: true, applicationRecordId, checkoutSessionId: session.id })

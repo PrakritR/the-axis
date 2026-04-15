@@ -12,6 +12,7 @@ import { resolveLeaseDetails } from '../lib/axis-properties.js'
 import { isApplicationApprovedForLease } from '../lib/application-approval-lease-guard.js'
 import {
   applicationLeaseRoomNumber,
+  applicationHasApprovedUnitAssigned,
   DEFAULT_AXIS_APPLICATION_APPROVED_ROOM,
 } from '../../../shared/application-airtable-fields.js'
 
@@ -116,6 +117,14 @@ function tryParseLeaseJson(fields) {
   } catch {
     return null
   }
+}
+
+/** Compare draft `Unit` / lease JSON to approved application unit (digits or whole string). */
+function leaseUnitComparableSlot(raw) {
+  const s = String(raw || '').trim()
+  if (!s) return ''
+  const m = s.match(/(\d+)/)
+  return m ? m[1] : s.toLowerCase()
 }
 
 // ─── Lease data builder (mirrors leaseTemplate.js — server-safe, no ESM imports) ─
@@ -374,7 +383,7 @@ function buildLeaseData(app, propertyRecord, overrides = {}) {
 
   const propertyName = app['Property Name'] || ''
   const effectiveRoomLabel = applicationLeaseRoomNumber(app, APPLICATION_APPROVED_ROOM_FIELD)
-  const appForRoomPricing = { ...app, 'Room Number': effectiveRoomLabel || app['Room Number'] }
+  const appForRoomPricing = { ...app, 'Room Number': effectiveRoomLabel }
   const roomRaw = String(appForRoomPricing['Room Number'] || '').trim()
   const roomDigits = roomRaw.match(/(\d+)/)?.[1] || roomRaw
   const roomNumber = roomDigits || ''
@@ -539,12 +548,25 @@ export async function generateLeaseFromTemplate({
   if (!isApplicationApprovedForLease(app)) {
     throw new Error('Lease drafts can only be generated for approved applications.')
   }
+  if (!applicationHasApprovedUnitAssigned(app, APPLICATION_APPROVED_ROOM_FIELD)) {
+    throw new Error(
+      'Set the approved unit/room on the application before generating a lease — the lease uses that assignment, not the applicant’s first choice.',
+    )
+  }
+
+  const approvedUnit = applicationLeaseRoomNumber(app, APPLICATION_APPROVED_ROOM_FIELD)
 
   const existing = await findExistingDraft(recordId)
   if (existing) {
     const parsed = tryParseLeaseJson(existing)
     if (!forceRegenerate && parsed) {
-      return { draft: existing, created: false }
+      const draftUnitRaw = String(existing['Unit'] ?? parsed.roomNumber ?? '').trim()
+      const needRegen =
+        !draftUnitRaw ||
+        leaseUnitComparableSlot(draftUnitRaw) !== leaseUnitComparableSlot(approvedUnit)
+      if (!needRegen) {
+        return { draft: existing, created: false }
+      }
     }
   }
   const resolvedOwnerId = ownerId || String(app['Owner ID'] || '').trim()
@@ -593,6 +615,9 @@ export async function generateLeaseFromTemplate({
 export async function computeMoveInChargesFromApplication(application, overrides = {}) {
   if (!application || typeof application !== 'object') {
     throw new Error('Application record required.')
+  }
+  if (!applicationHasApprovedUnitAssigned(application, APPLICATION_APPROVED_ROOM_FIELD)) {
+    throw new Error('Approved unit/room must be set on the application before computing move-in charges.')
   }
   const propertyRecord = await getPropertyByName(application['Property Name'])
   return buildLeaseData(application, propertyRecord, overrides)
