@@ -65,7 +65,6 @@ import {
   findRentPaymentForBillingMonth,
   findUtilitiesPaymentForBillingMonth,
   getPaymentKind,
-  isPostpayRoomCleaningPaymentRecord,
   iterRecurringBillingMonthKeys,
   listDashboardDuePaymentLines,
   longMonthLabel,
@@ -2238,7 +2237,6 @@ function PaymentsPanel({ resident, onResidentUpdated, highlightCategory, onPayme
     return tableSourcePayments.filter((p) => {
       if (payFilter === 'fees') return getPaymentKind(p) === 'fee'
       if (payFilter === 'paid') return paymentStatusForRecord(p) === 'Paid'
-      if (isPostpayRoomCleaningPaymentRecord(p)) return false
       return balanceForRecord(p) > 0
     })
   }, [tableSourcePayments, payFilter, paymentStatusForRecord, balanceForRecord])
@@ -2402,9 +2400,7 @@ function PaymentsPanel({ resident, onResidentUpdated, highlightCategory, onPayme
             'Due or upcoming',
             moveInRowsCombined.filter((r) => r.balance > 0).length +
               monthlyRecurringRowVMs.filter((r) => r.balance > 0).length +
-              tableSourcePayments.filter(
-                (p) => balanceForRecord(p) > 0 && !isPostpayRoomCleaningPaymentRecord(p),
-              ).length,
+              tableSourcePayments.filter((p) => balanceForRecord(p) > 0).length,
           ],
           [
             'paid',
