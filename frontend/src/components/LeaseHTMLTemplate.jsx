@@ -8,6 +8,7 @@
  *   leaseData  - object from buildLease() / parsed "Lease JSON" field
  *   signedBy   - optional string: signed name (shown in signature block when signed)
  *   signedAt   - optional ISO string: signing timestamp
+ *   managerSignedBy / managerSignedAt / managerSignatureImageUrl — optional landlord counter-signature (Lease Drafts)
  *   printMode  - if true, uses a minimal white wrapper suitable for window.print()
  */
 
@@ -45,7 +46,15 @@ function P({ children }) {
   return <p className="text-sm leading-relaxed text-slate-700">{children}</p>
 }
 
-export default function LeaseHTMLTemplate({ leaseData = {}, signedBy, signedAt, printMode = false }) {
+export default function LeaseHTMLTemplate({
+  leaseData = {},
+  signedBy,
+  signedAt,
+  managerSignedBy,
+  managerSignedAt,
+  managerSignatureImageUrl,
+  printMode = false,
+}) {
   const d = leaseData
 
   const termDesc = d.isMonthToMonth
@@ -55,6 +64,13 @@ export default function LeaseHTMLTemplate({ leaseData = {}, signedBy, signedAt, 
   const signedDate = signedAt
     ? new Date(signedAt).toLocaleDateString('en-US', { month: '2-digit', day: '2-digit', year: 'numeric' })
     : null
+
+  const managerSignedDate = managerSignedAt
+    ? new Date(managerSignedAt).toLocaleDateString('en-US', { month: '2-digit', day: '2-digit', year: 'numeric' })
+    : null
+
+  const managerSig = String(managerSignedBy || '').trim()
+  const managerImg = String(managerSignatureImageUrl || '').trim()
 
   return (
     <div
@@ -453,11 +469,38 @@ export default function LeaseHTMLTemplate({ leaseData = {}, signedBy, signedAt, 
             {/* Landlord */}
             <div className="rounded-2xl border border-slate-200 bg-slate-50/60 px-5 py-4">
               <p className="mb-3 text-[10px] font-bold uppercase tracking-[0.14em] text-slate-400">Landlord / Manager</p>
-              <div className="h-10 border-b border-slate-300" />
-              <p className="mt-1 text-xs text-slate-500">Signature</p>
-              <p className="mt-4 text-sm font-semibold text-slate-800">{d.landlordName || LANDLORD_NAME}</p>
-              <p className="text-xs text-slate-500">Printed Name</p>
-              <p className="mt-3 text-xs text-slate-500">Date: {d.agreementDate || '___________'}</p>
+              {managerSig || managerImg ? (
+                <>
+                  {managerImg ? (
+                    <div className="flex min-h-10 items-end border-b border-emerald-300 pb-1">
+                      <img
+                        src={managerImg}
+                        alt=""
+                        className="max-h-20 max-w-full object-contain object-left-bottom"
+                      />
+                    </div>
+                  ) : (
+                    <div className="flex h-10 items-end border-b border-emerald-300 pb-1">
+                      <span className="font-serif text-lg italic text-slate-900">{managerSig}</span>
+                    </div>
+                  )}
+                  <p className="mt-1 text-xs text-slate-500">Signature</p>
+                  <p className="mt-4 text-sm font-semibold text-slate-800">{d.landlordName || LANDLORD_NAME}</p>
+                  <p className="text-xs text-slate-500">Printed Name</p>
+                  <p className="mt-3 text-xs text-slate-500">Date: {managerSignedDate || d.agreementDate || '___________'}</p>
+                  <p className="mt-2 rounded-lg bg-emerald-50 px-3 py-1.5 text-[11px] font-semibold text-emerald-800">
+                    Manager signed{managerSignedDate ? ` — ${managerSignedDate}` : ''}
+                  </p>
+                </>
+              ) : (
+                <>
+                  <div className="h-10 border-b border-slate-300" />
+                  <p className="mt-1 text-xs text-slate-500">Signature</p>
+                  <p className="mt-4 text-sm font-semibold text-slate-800">{d.landlordName || LANDLORD_NAME}</p>
+                  <p className="text-xs text-slate-500">Printed Name</p>
+                  <p className="mt-3 text-xs text-slate-500">Date: {d.agreementDate || '___________'}</p>
+                </>
+              )}
             </div>
 
             {/* Resident */}

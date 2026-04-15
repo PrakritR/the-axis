@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import toast from 'react-hot-toast'
 import LeaseHTMLTemplate from '../components/LeaseHTMLTemplate.jsx'
+import { pickManagerSignatureFromDraft } from '../../../shared/lease-manager-signature-fields.js'
 import { PortalEmptyVisual } from '../components/portalNavIcons.jsx'
 import { DataTable } from '../components/PortalShell'
 import { getStatusConfig, fmtTs, parseManagerEditNotes } from '../lib/leaseWorkflowConstants.js'
@@ -315,6 +316,8 @@ export default function AdminLeasingTab({ adminUser, accounts = [] }) {
       return {}
     }
   }, [activeDraft])
+
+  const managerSigDetail = useMemo(() => pickManagerSignatureFromDraft(activeDraft, import.meta.env), [activeDraft])
 
   const managerEditRequestSummary = useMemo(() => {
     const parsed = parseManagerEditNotes(activeDraft?.['Manager Edit Notes'])
@@ -804,6 +807,9 @@ export default function AdminLeasingTab({ adminUser, accounts = [] }) {
                   leaseData={leaseJson}
                   signedBy={activeDraft?.['Signed By']}
                   signedAt={activeDraft?.['Signed At']}
+                  managerSignedBy={managerSigDetail.text || undefined}
+                  managerSignedAt={managerSigDetail.at || undefined}
+                  managerSignatureImageUrl={managerSigDetail.image || undefined}
                 />
               </div>
             ) : (

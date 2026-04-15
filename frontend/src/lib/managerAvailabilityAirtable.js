@@ -129,24 +129,52 @@ export async function listManagerAvailabilityForProperty(propertyRecordId, prope
   const pname = String(propertyName || '').trim().toLowerCase()
   if (!pid && !pname) return []
   const f = managerFieldNames()
-  try {
-    if (pid) {
-      const esc = pid.replace(/"/g, '\\"')
-      const formula = `{${f.propertyRecordId}} = "${esc}"`
-      const rows = await listManagerAvailabilityRows(formula)
-      if (rows.length) return rows
-    }
-  } catch {
-    /* fall through */
-  }
-  const all = await listManagerAvailabilityRows('')
-  return all.filter((row) => {
+  const matches = (row) => {
     const rid = airtableFieldScalar(row[f.propertyRecordId])
     if (pid && rid === pid) return true
     const pn = String(row[f.propertyName] || '').trim().toLowerCase()
     if (pname && pn === pname) return true
     return false
-  })
+  }
+  try {
+    // Always filter from the full table. filterByFormula on linked-record fields can return an
+    // incomplete set in some bases; returning early caused only a subset of intervals to reload.
+    const all = await listManagerAvailabilityRows('')
+    return all.filter(matches)
+  } catch {
+    return []
+  }
+}
+
+function cleanManagerAvailabilityFields(fields) {
+  return Object.fromEntries(
+    Object.entries(fields || {}).filter(([, v]) => v !== undefined && v !== '' && v !== null),
+  )
+}
+
+/** Up to 10 records per Airtable request; preserves order. */
+export async function createManagerAvailabilityRecordsBatch(fieldsArray) {
+  const token = import.meta.env.VITE_AIRTABLE_TOKEN
+  if (!token) throw new Error('Airtable token not configured.')
+  const table = encodeURIComponent(managerTableName())
+  const list = Array.isArray(fieldsArray) ? fieldsArray : []
+  const out = []
+  const BATCH = 10
+  for (let i = 0; i < list.length; i += BATCH) {
+    const slice = list.slice(i, i + BATCH)
+    const records = slice.map((fields) => ({ fields: cleanManagerAvailabilityFields(fields) }))
+    if (!records.length) continue
+    const res = await fetch(`${baseUrl()}/${table}`, {
+      method: 'POST',
+      headers: headers(token),
+      body: JSON.stringify({ records, typecast: true }),
+    })
+    const body = await res.text()
+    if (!res.ok) throw new Error(body.slice(0, 500) || `Batch create failed (${res.status})`)
+    const parsed = JSON.parse(body)
+    for (const r of parsed.records || []) out.push(mapRecord(r))
+  }
+  return out
 }
 
 function linkFieldValueForWrite(rawId) {
@@ -161,20 +189,8 @@ function linkFieldValueForWrite(rawId) {
 
 /** @param {Record<string, unknown>} fields */
 export async function createManagerAvailabilityRecord(fields) {
-  const token = import.meta.env.VITE_AIRTABLE_TOKEN
-  if (!token) throw new Error('Airtable token not configured.')
-  const table = encodeURIComponent(managerTableName())
-  const clean = Object.fromEntries(
-    Object.entries(fields || {}).filter(([, v]) => v !== undefined && v !== '' && v !== null),
-  )
-  const res = await fetch(`${baseUrl()}/${table}`, {
-    method: 'POST',
-    headers: headers(token),
-    body: JSON.stringify({ fields: clean, typecast: true }),
-  })
-  const body = await res.text()
-  if (!res.ok) throw new Error(body.slice(0, 400) || `Create failed (${res.status})`)
-  return mapRecord(JSON.parse(body))
+  const batch = await createManagerAvailabilityRecordsBatch([fields])
+  return batch[0]
 }
 
 export async function deleteManagerAvailabilityRecord(recordId) {

@@ -409,6 +409,132 @@ function escapeFormulaString(value) {
   return String(value).replace(/\\/g, '\\\\').replace(/'/g, "\\'")
 }
 
+function generateAxisGroupApplicationId() {
+  const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
+  let s = ''
+  for (let i = 0; i < 12; i += 1) s += alphabet[Math.floor(Math.random() * alphabet.length)]
+  return `AXISGRP-${s}`
+}
+
+/** Normalize pasted group IDs (case/spacing; optional missing prefix). */
+function normalizeGroupApplicationId(raw) {
+  let s = String(raw || '').trim().toUpperCase().replace(/\s+/g, '')
+  if (!s) return ''
+  if (s.startsWith('#')) s = s.slice(1).trim()
+  if (s.startsWith('AXISGRP-')) return s
+  if (/^[A-Z0-9]{8,20}$/.test(s)) return `AXISGRP-${s}`
+  return s
+}
+
+/**
+ * Joining applicants must reference a group created by the first applicant (stored in Additional Notes).
+ * @returns {Promise<{ ok: boolean, message?: string }>}
+ */
+async function verifyGroupApplicationJoin(groupIdRaw) {
+  const gid = normalizeGroupApplicationId(groupIdRaw)
+  if (!gid || !AIRTABLE_TOKEN) return { ok: false, message: 'Enter a valid Group ID.' }
+  if (!/^AXISGRP-[A-Z0-9]{8,20}$/.test(gid)) {
+    return { ok: false, message: 'Group ID should look like AXISGRP- plus letters/numbers.' }
+  }
+  const needleId = `AXIS_GROUP_APP_ID:${gid}`
+  const needleRole = 'AXIS_GROUP_ROLE:first'
+  const formula = `AND(FIND('${escapeFormulaString(needleId)}', {Additional Notes}), FIND('${escapeFormulaString(needleRole)}', {Additional Notes}))`
+  const url = new URL(`https://api.airtable.com/v0/${AIRTABLE_BASE_ID}/${encodeURIComponent(APPLICATIONS_TABLE)}`)
+  url.searchParams.set('maxRecords', '5')
+  url.searchParams.append('fields[]', 'Additional Notes')
+  url.searchParams.set('filterByFormula', formula)
+  try {
+    const res = await fetch(url.toString(), { headers: { Authorization: `Bearer ${AIRTABLE_TOKEN}` } })
+    if (!res.ok) return { ok: false, message: 'Could not verify Group ID. Try again or contact leasing.' }
+    const data = await res.json()
+    if (!data.records?.length) {
+      return {
+        ok: false,
+        message:
+          'No matching group found. The first roommate must submit first, then share the Group ID from their confirmation email/screen.',
+      }
+    }
+    return { ok: true }
+  } catch {
+    return { ok: false, message: 'Could not verify Group ID. Check your connection and try again.' }
+  }
+}
+
+/** Appends structured household + room-preference lines (managers read Additional Notes). */
+function buildAxisApplicationMetaNotes(signer, resolvedGroupApplicationId) {
+  const blocks = []
+  const userNotes = String(signer.notes || '').trim()
+
+  if (signer.applyAsGroup === 'Yes') {
+    const gid = String(resolvedGroupApplicationId || '').trim()
+    blocks.push('--- Household group (Axis) ---')
+    blocks.push(`Applying as a group: Yes`)
+    blocks.push(
+      `Group applicant role: ${signer.groupApplicantRole === 'first' ? 'First to apply (primary)' : 'Joining with Group ID'}`,
+    )
+    if (signer.groupApplicantRole === 'first') {
+      blocks.push(`Expected number of people in group: ${String(signer.groupSize || '').trim()}`)
+    }
+    if (gid) {
+      blocks.push(`GROUP ID (share with roommates): ${gid}`)
+      blocks.push(`AXIS_GROUP_APP_ID:${gid}`)
+      blocks.push(`AXIS_GROUP_ROLE:${signer.groupApplicantRole === 'first' ? 'first' : 'member'}`)
+      if (signer.groupApplicantRole === 'first') {
+        blocks.push(`AXIS_GROUP_SIZE:${String(signer.groupSize || '').trim()}`)
+      }
+    }
+    blocks.push('--- End household group ---')
+    blocks.push('')
+  } else {
+    blocks.push('Applying as a group: No')
+    blocks.push('')
+  }
+
+  if (signer.roomChoice2 || signer.roomChoice3) {
+    blocks.push('--- Room preferences ---')
+    blocks.push(`1st choice: ${signer.roomNumber || '—'}`)
+    if (signer.roomChoice2) blocks.push(`2nd choice: ${signer.roomChoice2}`)
+    if (signer.roomChoice3) blocks.push(`3rd choice: ${signer.roomChoice3}`)
+    blocks.push('--- End room preferences ---')
+    blocks.push('')
+  }
+
+  if (userNotes) {
+    blocks.push('--- Applicant notes ---')
+    blocks.push(userNotes)
+  }
+
+  return blocks.join('\n').trim()
+}
+
+/**
+ * When env lists your Airtable field names, duplicate group / room-preference data into those columns.
+ * (Otherwise only {@link buildAxisApplicationMetaNotes} is sent — dedicated columns stay empty.)
+ * Use a plain text field for the Axis group id; formula columns cannot be written by the API.
+ */
+function optionalApplicationsTableSignerExtras(signer, resolvedGroupApplicationId) {
+  const groupCheckboxField = String(import.meta.env.VITE_AIRTABLE_APPLICATION_GROUP_CHECKBOX_FIELD || '').trim()
+  const groupSizeField = String(import.meta.env.VITE_AIRTABLE_APPLICATION_GROUP_SIZE_FIELD || '').trim()
+  const axisGroupIdField = String(import.meta.env.VITE_AIRTABLE_APPLICATION_AXIS_GROUP_ID_FIELD || '').trim()
+  const roomChoice2Field = String(import.meta.env.VITE_AIRTABLE_APPLICATION_ROOM_CHOICE_2_FIELD || '').trim()
+  const roomChoice3Field = String(import.meta.env.VITE_AIRTABLE_APPLICATION_ROOM_CHOICE_3_FIELD || '').trim()
+
+  const out = {}
+  if (groupCheckboxField) {
+    out[groupCheckboxField] = signer.applyAsGroup === 'Yes'
+  }
+  if (groupSizeField && signer.applyAsGroup === 'Yes' && signer.groupApplicantRole === 'first') {
+    const n = String(signer.groupSize || '').trim()
+    if (n) out[groupSizeField] = n
+  }
+  if (axisGroupIdField && signer.applyAsGroup === 'Yes' && String(resolvedGroupApplicationId || '').trim()) {
+    out[axisGroupIdField] = String(resolvedGroupApplicationId).trim()
+  }
+  if (roomChoice2Field && signer.roomChoice2) out[roomChoice2Field] = signer.roomChoice2
+  if (roomChoice3Field && signer.roomChoice3) out[roomChoice3Field] = signer.roomChoice3
+  return out
+}
+
 function normalizeRoomKey(value) {
   return String(value || '')
     .replace(/^Unit\s+/i, 'Room ')
@@ -476,6 +602,12 @@ function defaultSigner() {
     propertyName: '',
     propertyAddress: '',
     roomNumber: '',
+    roomChoice2: '',
+    roomChoice3: '',
+    applyAsGroup: '',
+    groupApplicantRole: '',
+    groupSize: '',
+    groupIdInput: '',
     leaseStartDate: '',
     leaseEndDate: '',
     leaseTerm: LEASE_TERMS[0],
@@ -816,12 +948,17 @@ function buildCosignerNotes(form) {
 }
 
 function buildMailtoFallback(type, signer, cosigner) {
-  const lines = type === 'signer'
+  const lines = (type === 'signer'
     ? [
         `Submission Type: Signer`,
         `Property Name: ${signer.propertyName}`,
         `Property Address Applying For: ${signer.propertyAddress || 'Not provided'}`,
-        `Room Number: ${signer.roomNumber || 'Not specified'}`,
+        `Room Number (1st choice): ${signer.roomNumber || 'Not specified'}`,
+        signer.roomChoice2 ? `Room 2nd choice: ${signer.roomChoice2}` : null,
+        signer.roomChoice3 ? `Room 3rd choice: ${signer.roomChoice3}` : null,
+        signer.applyAsGroup === 'Yes'
+          ? `Group application: Yes — role ${signer.groupApplicantRole || '?'}${signer.groupSize ? ` — size ${signer.groupSize}` : ''}${signer.groupIdInput ? ` — group id input ${signer.groupIdInput}` : ''}`
+          : 'Group application: No',
         `Lease Term: ${signer.leaseTerm}`,
         `Lease Start Date: ${signer.leaseStartDate || 'Not provided'}`,
         `Lease End Date: ${signer.leaseEndDate || 'Not provided'}`,
@@ -881,6 +1018,7 @@ function buildMailtoFallback(type, signer, cosigner) {
         `Date Signed: ${cosigner.dateSigned}`,
         `Notes: ${buildCosignerNotes(cosigner)}`,
       ]
+  ).filter(Boolean)
 
   const subject = type === 'signer'
     ? `Application — ${signer.fullName} for ${signer.propertyName}`
@@ -893,6 +1031,31 @@ function buildMailtoFallback(type, signer, cosigner) {
 // Step definitions — each has a title and a per-step validator
 // ---------------------------------------------------------------------------
 const SIGNER_STEPS = [
+  {
+    title: 'Group application',
+    validate: (s) => {
+      const e = {}
+      if (!s.applyAsGroup) e.applyAsGroup = 'Please select Yes or No'
+      if (s.applyAsGroup === 'Yes') {
+        if (!s.groupApplicantRole) e.groupApplicantRole = 'Choose whether you are the first person to apply or joining later'
+        if (s.groupApplicantRole === 'first') {
+          const n = parseInt(String(s.groupSize || '').trim(), 10)
+          if (!Number.isFinite(n) || n < 2 || n > 30) e.groupSize = 'Enter how many people are applying together (2–30)'
+        }
+        if (s.groupApplicantRole === 'member') {
+          if (!String(s.groupIdInput || '').trim()) {
+            e.groupIdInput = 'Paste the Group ID the first applicant received after submitting'
+          } else {
+            const norm = normalizeGroupApplicationId(s.groupIdInput)
+            if (!/^AXISGRP-[A-Z0-9]{8,20}$/.test(norm)) {
+              e.groupIdInput = 'Use the full Group ID (starts with AXISGRP-) from the first applicant'
+            }
+          }
+        }
+      }
+      return e
+    },
+  },
   {
     title: 'Co-Signer',
     validate: (s) => {
@@ -907,7 +1070,14 @@ const SIGNER_STEPS = [
       const e = {}
       const isMonthToMonth = s.leaseTerm === 'Month-to-Month (+$25/mo)'
       if (!s.propertyName) e.propertyName = 'Select a property'
-      if (!s.roomNumber) e.roomNumber = 'Select a room'
+      if (!s.roomNumber) e.roomNumber = 'Select your first-choice room'
+      if (s.roomChoice2 && s.roomChoice2 === s.roomNumber) e.roomChoice2 = 'Must be different from your first choice'
+      if (s.roomChoice3) {
+        if (!s.roomChoice2) e.roomChoice3 = 'Select a second choice before a third'
+        else if (s.roomChoice3 === s.roomNumber || s.roomChoice3 === s.roomChoice2) {
+          e.roomChoice3 = 'Third choice must differ from first and second'
+        }
+      }
       if (!s.leaseStartDate) e.leaseStartDate = 'Lease start date is required'
       if (!isMonthToMonth && !s.leaseEndDate) e.leaseEndDate = 'Lease end date is required'
       if (s.leaseStartDate && s.leaseEndDate && new Date(s.leaseEndDate) <= new Date(s.leaseStartDate)) {
@@ -1148,6 +1318,7 @@ export default function Apply() {
   const [fieldErrors, setFieldErrors] = useState({})
   const [roomConflictWarning, setRoomConflictWarning] = useState(false)
   const [roomConflictAcknowledged, setRoomConflictAcknowledged] = useState(false)
+  const [groupVerifyBusy, setGroupVerifyBusy] = useState(false)
   // Lease signing flow
   const [signedLeases, setSignedLeases] = useState(new Set())
   const [leaseStep, setLeaseStep] = useState(storedSubmission?.leaseStep || 'account')
@@ -1352,11 +1523,13 @@ export default function Apply() {
       const next = { ...prev, [key]: value }
       if (key === 'propertyName') {
         next.roomNumber = ''
+        next.roomChoice2 = ''
+        next.roomChoice3 = ''
         next.propertyAddress = propertyOptions.find((property) => property.name === value)?.address || ''
         setRoomConflictWarning(false)
         setRoomConflictAcknowledged(false)
       }
-      if (['propertyName', 'roomNumber', 'leaseStartDate', 'leaseEndDate', 'leaseTerm'].includes(key)) {
+      if (['propertyName', 'roomNumber', 'roomChoice2', 'roomChoice3', 'leaseStartDate', 'leaseEndDate', 'leaseTerm'].includes(key)) {
         setRoomConflictWarning(false)
         setRoomConflictAcknowledged(false)
       }
@@ -1375,7 +1548,35 @@ export default function Apply() {
     const current = steps[step]
     const data = applicationType === 'cosigner' ? cosigner : signer
 
-    if (applicationType === 'signer' && step === 1) {
+    const errs = current.validate(data)
+    if (Object.keys(errs).length > 0) {
+      setFieldErrors(errs)
+      setTimeout(() => {
+        const el = document.querySelector('[data-field-error]')
+        if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      }, 50)
+      return
+    }
+
+    if (applicationType === 'signer' && step === 0 && signer.applyAsGroup === 'Yes' && signer.groupApplicantRole === 'member') {
+      setGroupVerifyBusy(true)
+      setFieldErrors({})
+      try {
+        const res = await verifyGroupApplicationJoin(signer.groupIdInput)
+        if (!res.ok) {
+          setFieldErrors({ groupIdInput: res.message || 'Could not verify Group ID.' })
+          setTimeout(() => {
+            const el = document.querySelector('[data-field-error]')
+            if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+          }, 50)
+          return
+        }
+      } finally {
+        setGroupVerifyBusy(false)
+      }
+    }
+
+    if (applicationType === 'signer' && step === 2) {
       const isMonthToMonth = signer.leaseTerm === 'Month-to-Month (+$25/mo)'
       const hasDatesForConflictCheck = Boolean(signer.leaseStartDate && (isMonthToMonth || signer.leaseEndDate))
       if (signer.propertyName && signer.roomNumber && hasDatesForConflictCheck) {
@@ -1396,15 +1597,6 @@ export default function Apply() {
       }
     }
 
-    const errs = current.validate(data)
-    if (Object.keys(errs).length > 0) {
-      setFieldErrors(errs)
-      setTimeout(() => {
-        const el = document.querySelector('[data-field-error]')
-        if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' })
-      }, 50)
-      return
-    }
     setFieldErrors({})
     setStep((s) => s + 1)
     window.scrollTo({ top: 0, behavior: 'smooth' })
@@ -1433,6 +1625,7 @@ export default function Apply() {
 
     try {
       let savedRecord = null
+      let resolvedGroupApplicationId = ''
       if (applicationType === 'signer') {
         const feeDueUsd = getApplicationFeeDollars(signer.propertyName, applicationFeeOverrides)
         if (feeDueUsd > 0 && !(feePrePaid || promoApplied || promoOverride)) {
@@ -1457,6 +1650,15 @@ export default function Apply() {
         if (isDuplicate) {
           throw new Error(`An application has already been submitted with the email address "${signer.email}". If you believe this is an error, please contact leasing directly.`)
         }
+
+        if (signer.applyAsGroup === 'Yes') {
+          if (signer.groupApplicantRole === 'first') {
+            resolvedGroupApplicationId = generateAxisGroupApplicationId()
+          } else if (signer.groupApplicantRole === 'member') {
+            resolvedGroupApplicationId = normalizeGroupApplicationId(signer.groupIdInput)
+          }
+        }
+        const additionalNotesPayload = buildAxisApplicationMetaNotes(signer, resolvedGroupApplicationId)
 
         const fields = {
           // Identity
@@ -1523,7 +1725,8 @@ export default function Apply() {
           'Signer Consent for Credit and Background Check': signer.consent,
           'Signer Signature': signer.signature,
           'Signer Date Signed': signer.dateSigned,
-          'Additional Notes': signer.notes || '',
+          'Additional Notes': additionalNotesPayload,
+          ...optionalApplicationsTableSignerExtras(signer, resolvedGroupApplicationId),
         }
 
         savedRecord = await submitApplicationRecord(APPLICATIONS_TABLE, fields)
@@ -1581,6 +1784,9 @@ export default function Apply() {
             propertyName: signer.propertyName,
             roomNumber: signer.roomNumber,
             hasCosigner: signer.hasCosigner,
+            applyAsGroup: signer.applyAsGroup,
+            groupApplicantRole: signer.groupApplicantRole || '',
+            groupApplicationId: signer.applyAsGroup === 'Yes' ? resolvedGroupApplicationId : '',
             appId: formatApplicationId(savedRecord),
             submittedRecord: savedRecord || null,
             roomPrice: getRoomMonthlyRent(signer.propertyName, signer.roomNumber),
@@ -1849,6 +2055,25 @@ export default function Apply() {
             </div>
           )}
 
+          {isSigner && submissionSummary?.groupApplicationId ? (
+            <div className="mt-6 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+              <div className="border-b border-slate-100 bg-slate-50 px-6 py-3">
+                <span className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">Household Group ID</span>
+              </div>
+              <div className="px-6 py-5">
+                <p className="text-sm leading-6 text-slate-600">
+                  {submissionSummary?.applyAsGroup === 'Yes' && submissionSummary?.groupApplicantRole === 'first'
+                    ? 'Share this Group ID with every roommate who still needs to apply. Each person completes their own application and selects “joining with Group ID” on step 1.'
+                    : 'We linked this application to your household group. Keep this ID for your records.'}
+                </p>
+                <div className="mt-4 flex flex-wrap items-center justify-between gap-4">
+                  <span className="font-mono text-xl font-black tracking-tight text-slate-900 break-all">{submissionSummary.groupApplicationId}</span>
+                  <CopyButton text={submissionSummary.groupApplicationId} />
+                </div>
+              </div>
+            </div>
+          ) : null}
+
           {isSigner && (
             <div className="mt-8">
               <h2 className="mb-5 text-lg font-bold text-slate-900">Move-In Steps</h2>
@@ -2074,6 +2299,105 @@ export default function Apply() {
         <form onSubmit={handleSubmit} className="space-y-6">
 
           {applicationType === 'signer' && step === 0 && (
+              <Section title="Group application">
+                <p className="text-sm leading-6 text-slate-500">
+                  Applying with roommates? One person should submit first; everyone else joins with the same <strong>Group ID</strong> they receive.
+                </p>
+                <Field label="Are you applying as part of a household group?" required error={fieldErrors.applyAsGroup}>
+                  <div className="flex flex-wrap gap-3">
+                    {['Yes', 'No'].map((opt) => (
+                      <button
+                        key={opt}
+                        type="button"
+                        onClick={() => {
+                          setSigner((prev) => ({
+                            ...prev,
+                            applyAsGroup: opt,
+                            ...(opt === 'No'
+                              ? { groupApplicantRole: '', groupSize: '', groupIdInput: '' }
+                              : {}),
+                          }))
+                          setFieldErrors((prev) => {
+                            const n = { ...prev }
+                            delete n.applyAsGroup
+                            delete n.groupApplicantRole
+                            delete n.groupSize
+                            delete n.groupIdInput
+                            return n
+                          })
+                        }}
+                        className={`rounded-full px-6 py-2.5 text-sm font-semibold transition ${signer.applyAsGroup === opt ? 'bg-axis text-white shadow-[0_4px_12px_rgba(37,99,235,0.20)]' : 'border border-slate-200 bg-white text-slate-700 hover:border-slate-400'}`}
+                      >
+                        {opt}
+                      </button>
+                    ))}
+                  </div>
+                </Field>
+
+                {signer.applyAsGroup === 'Yes' && (
+                  <>
+                    <Field label="Are you the first person in your group to submit this application?" required error={fieldErrors.groupApplicantRole}>
+                      <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:gap-3">
+                        {[
+                          { value: 'first', label: 'Yes — I am first (I will get a Group ID to share)' },
+                          { value: 'member', label: 'No — someone already applied first (I have a Group ID)' },
+                        ].map(({ value, label }) => (
+                          <button
+                            key={value}
+                            type="button"
+                            onClick={() => updateSigner('groupApplicantRole', value)}
+                            className={`rounded-xl border px-4 py-3 text-left text-sm font-semibold transition sm:max-w-md ${
+                              signer.groupApplicantRole === value
+                                ? 'border-axis bg-axis/10 text-axis'
+                                : 'border-slate-200 bg-white text-slate-700 hover:border-slate-400'
+                            }`}
+                          >
+                            {label}
+                          </button>
+                        ))}
+                      </div>
+                    </Field>
+
+                    {signer.groupApplicantRole === 'first' && (
+                      <Field label="How many people are in your group (including you)?" required error={fieldErrors.groupSize} hint="Everyone who will live together should submit their own application using this Group ID.">
+                        <input
+                          type="number"
+                          min={2}
+                          max={30}
+                          inputMode="numeric"
+                          className={inputCls}
+                          value={signer.groupSize}
+                          onChange={(e) => updateSigner('groupSize', e.target.value)}
+                          placeholder="e.g. 3"
+                        />
+                      </Field>
+                    )}
+
+                    {signer.groupApplicantRole === 'member' && (
+                      <Field
+                        label="Group ID from the first applicant"
+                        required
+                        error={fieldErrors.groupIdInput}
+                        hint="The first person to apply sees this after they submit — it starts with AXISGRP-."
+                      >
+                        <input
+                          className={`${inputCls} font-mono`}
+                          value={signer.groupIdInput}
+                          onChange={(e) => updateSigner('groupIdInput', e.target.value)}
+                          placeholder="AXISGRP-…"
+                          autoComplete="off"
+                        />
+                      </Field>
+                    )}
+                  </>
+                )}
+
+                {groupVerifyBusy ? (
+                  <p className="mt-3 text-sm text-slate-500">Checking Group ID…</p>
+                ) : null}
+              </Section>
+          )}
+          {applicationType === 'signer' && step === 1 && (
               <Section title="Co-Signer">
                 <p className="text-sm leading-6 text-slate-500">Will someone be co-signing this application with you?</p>
                 <div className="flex gap-3">
@@ -2092,11 +2416,16 @@ export default function Apply() {
                 {signer.hasCosigner === 'Yes' && (
                   <div className="rounded-xl border border-axis/20 bg-axis/5 px-4 py-3 text-sm text-axis">
                     After you submit, you'll receive an <strong>Application ID</strong>. Share it with your co-signer — they'll need it to link their form to yours.
+                    {signer.applyAsGroup === 'Yes' ? (
+                      <span className="mt-2 block">
+                        If you are the <strong>first</strong> roommate to apply, you will also get a <strong>Group ID</strong> — share that with everyone else in your household so their applications stay linked.
+                      </span>
+                    ) : null}
                   </div>
                 )}
               </Section>
           )}
-          {applicationType === 'signer' && step === 1 && (
+          {applicationType === 'signer' && step === 2 && (
               <Section title="Property Information">
                 <Field label="Property Name" required>
                   <select required className={selectCls} value={signer.propertyName} onChange={(e) => updateSigner('propertyName', e.target.value)}>
@@ -2107,20 +2436,56 @@ export default function Apply() {
                   </select>
                 </Field>
 
-                <div className="grid gap-5 sm:grid-cols-2">
-                  <Field label="Room Number" required error={fieldErrors.roomNumber}>
-                    <select required className={selectCls} value={signer.roomNumber} onChange={(e) => updateSigner('roomNumber', e.target.value)} disabled={!selectedProperty}>
-                      <option value="">{selectedProperty ? 'Select a room…' : 'Choose a property first'}</option>
-                      {(selectedProperty?.rooms || []).map((room) => {
-                        const isOccupied = signedLeases.has(`${signer.propertyName}:${room.name}`)
-                        return (
-                          <option key={room.name} value={room.name} disabled={isOccupied}>
-                            {room.name}{isOccupied ? ' — Currently leased' : ''}
-                          </option>
-                        )
-                      })}
-                    </select>
-                  </Field>
+                <div className="grid gap-5 lg:grid-cols-2">
+                  <div className="space-y-4 lg:col-span-2">
+                    <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Room preferences</p>
+                    <div className="grid gap-4 sm:grid-cols-3">
+                      <Field label="1st choice room" required error={fieldErrors.roomNumber}>
+                        <select required className={selectCls} value={signer.roomNumber} onChange={(e) => updateSigner('roomNumber', e.target.value)} disabled={!selectedProperty}>
+                          <option value="">{selectedProperty ? 'Select a room…' : 'Choose a property first'}</option>
+                          {(selectedProperty?.rooms || []).map((room) => {
+                            const isOccupied = signedLeases.has(`${signer.propertyName}:${room.name}`)
+                            return (
+                              <option key={room.name} value={room.name} disabled={isOccupied}>
+                                {room.name}{isOccupied ? ' — Currently leased' : ''}
+                              </option>
+                            )
+                          })}
+                        </select>
+                      </Field>
+                      <Field label="2nd choice (optional)" error={fieldErrors.roomChoice2}>
+                        <select className={selectCls} value={signer.roomChoice2} onChange={(e) => updateSigner('roomChoice2', e.target.value)} disabled={!selectedProperty}>
+                          <option value="">No second choice</option>
+                          {(selectedProperty?.rooms || [])
+                            .filter((room) => room.name !== signer.roomNumber && room.name !== signer.roomChoice3)
+                            .map((room) => {
+                              const isOccupied = signedLeases.has(`${signer.propertyName}:${room.name}`)
+                              return (
+                                <option key={room.name} value={room.name} disabled={isOccupied}>
+                                  {room.name}{isOccupied ? ' — Currently leased' : ''}
+                                </option>
+                              )
+                            })}
+                        </select>
+                      </Field>
+                      <Field label="3rd choice (optional)" error={fieldErrors.roomChoice3}>
+                        <select className={selectCls} value={signer.roomChoice3} onChange={(e) => updateSigner('roomChoice3', e.target.value)} disabled={!selectedProperty}>
+                          <option value="">No third choice</option>
+                          {(selectedProperty?.rooms || [])
+                            .filter((room) => room.name !== signer.roomNumber && room.name !== signer.roomChoice2)
+                            .map((room) => {
+                              const isOccupied = signedLeases.has(`${signer.propertyName}:${room.name}`)
+                              return (
+                                <option key={room.name} value={room.name} disabled={isOccupied}>
+                                  {room.name}{isOccupied ? ' — Currently leased' : ''}
+                                </option>
+                              )
+                            })}
+                        </select>
+                      </Field>
+                    </div>
+                    <p className="text-xs text-slate-500">Your first choice is used for availability and processing; 2nd and 3rd help us place household groups when possible.</p>
+                  </div>
                   <Field label="Lease Term" required>
                     <select required className={selectCls} value={signer.leaseTerm} onChange={(e) => updateSigner('leaseTerm', e.target.value)}>
                       {LEASE_TERMS.map((term) => (
@@ -2153,7 +2518,7 @@ export default function Apply() {
                 )}
               </Section>
           )}
-          {applicationType === 'signer' && step === 2 && (
+          {applicationType === 'signer' && step === 3 && (
               <Section title="Signer Information">
                 <div className="grid gap-5 sm:grid-cols-2">
                   <Field label="Full Name" required error={fieldErrors.fullName}>
@@ -2181,7 +2546,7 @@ export default function Apply() {
                 </Field>
               </Section>
           )}
-          {applicationType === 'signer' && step === 3 && (
+          {applicationType === 'signer' && step === 4 && (
               <Section title="Current Address">
                 <p className="text-sm text-slate-500 -mt-1 mb-2">This is the address where you currently live.</p>
                 <Field label="Street Address" required error={fieldErrors.currentAddress}>
@@ -2232,7 +2597,7 @@ export default function Apply() {
                 </div>
               </Section>
           )}
-          {applicationType === 'signer' && step === 4 && (
+          {applicationType === 'signer' && step === 5 && (
               <Section title="Previous Address">
                 <p className="text-sm text-slate-500 -mt-1 mb-3">Only required if you have lived at your current address for <strong>less than 1 year</strong>. If you have been at your current address for 1 year or more, check the box below to skip this section.</p>
                 <label className="flex items-center gap-2 mb-4 text-sm text-slate-700 cursor-pointer select-none">
@@ -2289,7 +2654,7 @@ export default function Apply() {
                 </>}
               </Section>
           )}
-          {applicationType === 'signer' && step === 5 && (
+          {applicationType === 'signer' && step === 6 && (
               <Section title="Employment & Income">
                 <label className="flex items-center gap-2 mb-4 text-sm text-slate-700 cursor-pointer select-none">
                   <input type="checkbox" className="h-4 w-4 rounded border-slate-300 text-axis focus:ring-axis" checked={signer.noEmployment} onChange={(e) => updateSigner('noEmployment', e.target.checked)} />
@@ -2336,7 +2701,7 @@ export default function Apply() {
                 </Field>
               </Section>
           )}
-          {applicationType === 'signer' && step === 6 && (
+          {applicationType === 'signer' && step === 7 && (
               <Section title="References">
                 <p className="text-sm leading-6 text-slate-500">Provide at least one personal or professional reference (not a family member).</p>
                 <div className="grid gap-5 sm:grid-cols-3">
@@ -2363,7 +2728,7 @@ export default function Apply() {
                 </div>
               </Section>
           )}
-          {applicationType === 'signer' && step === 7 && (
+          {applicationType === 'signer' && step === 8 && (
               <Section title="Additional Information">
                 <div className="grid gap-5 sm:grid-cols-2">
                   <Field label="Number of Occupants" required error={fieldErrors.occupants}>
@@ -2375,7 +2740,7 @@ export default function Apply() {
                 </div>
               </Section>
           )}
-          {applicationType === 'signer' && step === 8 && (
+          {applicationType === 'signer' && step === 9 && (
               <Section title="Financial Background / Legal">
                 <div className="grid gap-5 sm:grid-cols-3">
                   <Field label="Eviction History" required error={fieldErrors.evictionHistory}>
@@ -2406,7 +2771,7 @@ export default function Apply() {
                 </Field>
               </Section>
           )}
-          {applicationType === 'signer' && step === 9 && (
+          {applicationType === 'signer' && step === 10 && (
               <Section title="Signature">
                 <div className="grid gap-5 sm:grid-cols-2">
                   <Field label="Signer Signature" required error={fieldErrors.signature}>
@@ -2626,8 +2991,13 @@ export default function Apply() {
               </button>
             )}
             {!isLastStep ? (
-              <button type="button" onClick={handleNext} className="flex-1 rounded-full bg-[linear-gradient(180deg,#2f76ff_0%,#2450eb_100%)] py-3 text-sm font-semibold text-white shadow-[0_8px_24px_rgba(37,99,235,0.22)] hover:brightness-105 transition">
-                Continue
+              <button
+                type="button"
+                onClick={() => void handleNext()}
+                disabled={groupVerifyBusy}
+                className="flex-1 rounded-full bg-[linear-gradient(180deg,#2f76ff_0%,#2450eb_100%)] py-3 text-sm font-semibold text-white shadow-[0_8px_24px_rgba(37,99,235,0.22)] transition hover:brightness-105 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {groupVerifyBusy ? 'Verifying…' : 'Continue'}
               </button>
             ) : applicationType === 'signer' ? (
               <button

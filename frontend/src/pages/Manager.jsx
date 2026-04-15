@@ -52,7 +52,7 @@ import {
 import {
   listManagerAvailabilityForProperty,
   listManagerAvailabilityForManagerEmail,
-  createManagerAvailabilityRecord,
+  createManagerAvailabilityRecordsBatch,
   createAdminMeetingAvailabilityRecord,
   deleteManagerAvailabilityRecord,
   deleteAdminMeetingAvailabilityRecord,
@@ -72,6 +72,7 @@ import {
   workOrderLinkedPropertyRecordIds,
   resolveResidentRecordIdForWorkOrderBilling,
   getAllPaymentsRecords,
+  getLeaseDraftsForResident,
   getPaymentsForResident,
   updatePaymentRecord,
   createPaymentRecord,
@@ -98,7 +99,14 @@ import {
   workOrderShouldCreatePaymentWhenScheduled,
 } from '../lib/roomCleaningWorkOrder.js'
 import { residentLeasingThreadVisibleToManager } from '../lib/portalInboxResidentScope.js'
-import { getPaymentKind } from '../lib/residentPaymentsShared.js'
+import {
+  classifyResidentPaymentLine,
+  formatPaymentNotesForDisplay,
+  getPaymentKind,
+  isPostpayRoomCleaningPaymentRecord,
+  listDashboardDuePaymentLines,
+  managerPaymentLineDisplayTitle,
+} from '../lib/residentPaymentsShared.js'
 import {
   buildPropertyWizardInitialValues,
   PROPERTY_EDIT_REQUEST_FIELD,
@@ -125,10 +133,11 @@ import AddPropertyWizard from '../components/AddPropertyWizard'
 import { PropertyDetailPanel } from '../lib/propertyDetailPanel.jsx'
 import { ApplicationDetailPanel, applicationViewModelFromAirtableRow } from '../lib/applicationDetailPanel.jsx'
 import LeaseHTMLTemplate from '../components/LeaseHTMLTemplate.jsx'
+import LeaseManagerSignPanel from '../components/LeaseManagerSignPanel.jsx'
+import { pickManagerSignatureFromDraft } from '../../../shared/lease-manager-signature-fields.js'
 import {
   PortalOpsCard,
   PortalOpsEmptyState,
-  PortalOpsMetric,
   PortalOpsStatusBadge,
 } from '../components/PortalOpsUI'
 import {
@@ -136,6 +145,10 @@ import {
   applicationRejectedFieldName,
   leaseDraftPassesApplicationApprovalGate,
 } from '../lib/applicationApprovalState.js'
+import {
+  paymentsIndicateFirstMonthRentPaid,
+  paymentsIndicateSecurityDepositPaid,
+} from '../../../shared/lease-access-requirements.js'
 import ManagerLeasingTab from './ManagerLeasingTab.jsx'
 // ─── Session ──────────────────────────────────────────────────────────────────
 export const MANAGER_SESSION_KEY = 'axis_manager'
@@ -720,6 +733,14 @@ function paymentComputedStatus(record) {
   return 'unpaid'
 }
 
+/** Pending tab: match resident “Due or upcoming” — hide post-pay WO room-cleaning lines (Fees & extras on resident). */
+function isManagerPendingPrimaryRow(record) {
+  const st = paymentComputedStatus(record)
+  if (st === 'waiver') return false
+  if (!['unpaid', 'due_soon', 'partial'].includes(st)) return false
+  return !isPostpayRoomCleaningPaymentRecord(record)
+}
+
 function paymentStatusLabel(status) {
   switch (status) {
     case 'paid': return 'Paid'
@@ -740,6 +761,15 @@ function paymentStatusTone(status) {
     case 'waiver': return 'blue'
     default: return 'slate'
   }
+}
+
+function managerToneForResidentPaymentLabel(st) {
+  const s = String(st || '').trim()
+  if (s === 'Paid') return 'emerald'
+  if (s === 'Partial') return 'axis'
+  if (s === 'Due Soon') return 'amber'
+  if (s === 'Overdue') return 'red'
+  return 'slate'
 }
 
 function paymentResidentLabel(record) {
@@ -952,6 +982,13 @@ function propertyTourAvailabilityText(property) {
   return explicit || fromNotes
 }
 
+function propertyTourManagerDisplayName(property) {
+  if (!property) return ''
+  const col = String(property['Tour Manager'] || '').trim()
+  if (col) return col
+  return extractNoteValue(property['Notes'] || '', 'Tour Manager')
+}
+
 function managerAvailabilityRowIsActive(row, activeField) {
   const v = row?.[activeField]
   if (v === false || v === 0 || String(v || '').toLowerCase() === 'false') return false
@@ -1129,6 +1166,38 @@ function formatTimeRangeLabel(range) {
   return `${displayTimeFromMinutes(range.start)} – ${displayTimeFromMinutes(range.end)}`
 }
 
+/** e.g. "750-840" minute spans from property tour text → readable range */
+function formatTourAvailabilityNumericSegmentForUi(token) {
+  const raw = String(token || '').trim()
+  const m = raw.match(/^(\d+)-(\d+)$/)
+  if (!m) return raw
+  const a = Number(m[1])
+  const b = Number(m[2])
+  if (!Number.isFinite(a) || !Number.isFinite(b) || b <= a) return raw
+  return formatTimeRangeLabel({ start: a, end: b })
+}
+
+function parsedTourAvailabilityLinesForSidebar(rawText) {
+  const lines = []
+  for (const line of String(rawText || '').split(/\n|;/)) {
+    const trimmed = line.trim()
+    if (!trimmed) continue
+    const m = trimmed.match(/^(Mon|Tue|Wed|Thu|Fri|Sat|Sun)\s*[:\-]\s*(.+)$/i)
+    if (!m) {
+      lines.push({ dayLabel: '', body: trimmed })
+      continue
+    }
+    const dayLabel = m[1].charAt(0).toUpperCase() + m[1].slice(1, 3).toLowerCase()
+    const pieces = m[2]
+      .split(',')
+      .map((x) => x.trim())
+      .filter(Boolean)
+      .map(formatTourAvailabilityNumericSegmentForUi)
+    lines.push({ dayLabel, body: pieces.join(' · ') })
+  }
+  return lines
+}
+
 function normalizeTimeRanges(ranges) {
   const parsed = (ranges || [])
     .map((range) => {
@@ -1146,7 +1215,7 @@ function normalizeTimeRanges(ranges) {
   const merged = []
   for (const range of parsed) {
     const prev = merged[merged.length - 1]
-    if (prev && range.start <= prev.end) prev.end = Math.max(prev.end, range.end)
+    if (prev && range.start < prev.end) prev.end = Math.max(prev.end, range.end)
     else merged.push({ ...range })
   }
   return merged
@@ -1939,33 +2008,46 @@ function AvailabilityEditorPanel({
   onCancelDraft,
   saveButtonLabel,
   availabilityHint,
+  hidePropertyPicker = false,
+  selectedPropertyRecord = null,
 }) {
   const hasApprovedPick = Array.isArray(propertyOptions) && propertyOptions.length > 0
   const disabled = availSaving || isManagerInternalPreview(manager) || !selectedPropertyId
+  const tourManagerLine = useMemo(() => propertyTourManagerDisplayName(selectedPropertyRecord), [selectedPropertyRecord])
+  const tourParsedLines = useMemo(
+    () => parsedTourAvailabilityLinesForSidebar(propertyTourAvailabilityText(selectedPropertyRecord)),
+    [selectedPropertyRecord],
+  )
+  const showTourSummary =
+    Boolean(selectedPropertyRecord) && (Boolean(String(tourManagerLine || '').trim()) || tourParsedLines.length > 0)
 
   return (
     <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm lg:sticky lg:top-6">
       <h2 className={PORTAL_SECTION_TITLE_CLS}>Availability editor</h2>
-      <label className="mt-4 block text-xs font-semibold text-slate-700">
-        Property
-        <div className={`${MANAGER_PILL_SELECT_WRAP_CLS} mt-1.5 max-w-full`}>
-          <select
-            value={selectedPropertyId}
-            onChange={(e) => onSelectProperty(e.target.value)}
-            disabled={!hasApprovedPick}
-            className={MANAGER_PILL_SELECT_CLS}
-          >
-            {!hasApprovedPick ? (
-              <option value=""></option>
-            ) : (
-              propertyOptions.map((option) => (
-                <option key={option.id} value={option.id}>{option.label}</option>
-              ))
-            )}
-          </select>
-          {MANAGER_PILL_SELECT_CHEVRON}
-        </div>
-      </label>
+      {!hidePropertyPicker ? (
+        <label className="mt-4 block text-xs font-semibold text-slate-700">
+          Property
+          <div className={`${MANAGER_PILL_SELECT_WRAP_CLS} mt-1.5 max-w-full`}>
+            <select
+              value={selectedPropertyId}
+              onChange={(e) => onSelectProperty(e.target.value)}
+              disabled={!hasApprovedPick}
+              className={MANAGER_PILL_SELECT_CLS}
+            >
+              {!hasApprovedPick ? (
+                <option value=""></option>
+              ) : (
+                propertyOptions.map((option) => (
+                  <option key={option.id} value={option.id}>
+                    {option.label}
+                  </option>
+                ))
+              )}
+            </select>
+            {MANAGER_PILL_SELECT_CHEVRON}
+          </div>
+        </label>
+      ) : null}
 
       {isManagerInternalPreview(manager) ? (
         <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950">
@@ -1983,6 +2065,32 @@ function AvailabilityEditorPanel({
 
       {availabilityHint ? (
         <p className="mt-3 text-xs leading-relaxed text-slate-500">{availabilityHint}</p>
+      ) : null}
+
+      {showTourSummary ? (
+        <div className="mt-4 rounded-2xl border border-emerald-200/80 bg-emerald-50/50 px-4 py-3">
+          <div className="text-[10px] font-bold uppercase tracking-[0.12em] text-emerald-800/90">Tour on this property</div>
+          {tourManagerLine ? (
+            <div className="mt-2 text-sm font-semibold text-slate-900">
+              <span className="text-slate-500">Tour manager · </span>
+              {tourManagerLine}
+            </div>
+          ) : null}
+          {tourParsedLines.length ? (
+            <ul className="mt-2 space-y-1.5 text-xs leading-snug text-slate-800">
+              {tourParsedLines.map((row, idx) => (
+                <li key={`tour-line-${idx}`} className="flex gap-2">
+                  {row.dayLabel ? (
+                    <span className="w-9 shrink-0 font-bold tabular-nums text-emerald-900">{row.dayLabel}</span>
+                  ) : null}
+                  <span className="min-w-0 flex-1">{row.body}</span>
+                </li>
+              ))}
+            </ul>
+          ) : tourManagerLine ? null : (
+            <p className="mt-2 text-xs text-slate-600">No tour window text on the property yet.</p>
+          )}
+        </div>
       ) : null}
 
       {typeof onRepeatWeeklyChange === 'function' ? (
@@ -2009,7 +2117,10 @@ function AvailabilityEditorPanel({
       </div>
 
       <div className="mt-6">
-        <div className="mb-3 text-sm font-bold text-slate-900">Items on this date</div>
+        <div className="mb-3 text-sm font-bold text-slate-900">Scheduling (tours &amp; visits)</div>
+        <p className="mb-2 text-[11px] leading-snug text-slate-500">
+          Confirmed bookings and work orders live in the Scheduling table — not in Manager Availability.
+        </p>
         {scheduledItems?.length ? (
           <div className="space-y-2">
             {scheduledItems.map((item) => (
@@ -4723,6 +4834,13 @@ function ManagerPaymentsPanel({ allowedPropertyNames }) {
   const [waiveAmount, setWaiveAmount] = useState('')
   const [waiveReason, setWaiveReason] = useState('')
   const [waiveSaving, setWaiveSaving] = useState(false)
+  const [residentPaymentBundle, setResidentPaymentBundle] = useState({
+    loading: false,
+    resident: null,
+    payments: [],
+    drafts: [],
+    error: '',
+  })
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -4819,7 +4937,7 @@ function ManagerPaymentsPanel({ allowedPropertyNames }) {
   const pendingRentAmount = useMemo(
     () =>
       paymentRows
-        .filter((row) => ['unpaid', 'due_soon', 'partial'].includes(row.__computedStatus))
+        .filter((row) => isManagerPendingPrimaryRow(row))
         .reduce((sum, row) => sum + paymentBalanceDue(row), 0),
     [paymentRows],
   )
@@ -4833,14 +4951,14 @@ function ManagerPaymentsPanel({ allowedPropertyNames }) {
     [paymentRows],
   )
   const pendingLineCount = useMemo(
-    () => paymentRows.filter((row) => ['unpaid', 'due_soon', 'partial'].includes(row.__computedStatus)).length,
+    () => paymentRows.filter((row) => isManagerPendingPrimaryRow(row)).length,
     [paymentRows],
   )
 
   const filteredForList = useMemo(() => {
     let list = paymentRows
     if (filter === 'pending') {
-      list = list.filter((row) => ['unpaid', 'due_soon', 'partial'].includes(row.__computedStatus))
+      list = list.filter((row) => isManagerPendingPrimaryRow(row))
     } else if (filter !== 'all') {
       list = list.filter((row) => row.__computedStatus === filter)
     }
@@ -4864,6 +4982,45 @@ function ManagerPaymentsPanel({ allowedPropertyNames }) {
     [filteredForList, paymentRows, selectedId],
   )
 
+  const selectedResidentRecordId = selectedRow ? paymentResidentRecordId(selectedRow) : ''
+
+  useEffect(() => {
+    if (!selectedResidentRecordId) {
+      setResidentPaymentBundle({ loading: false, resident: null, payments: [], drafts: [], error: '' })
+      return
+    }
+    let cancelled = false
+    setResidentPaymentBundle((b) => ({ ...b, loading: true, error: '' }))
+    Promise.all([
+      getResidentById(selectedResidentRecordId),
+      getPaymentsForResident({ id: selectedResidentRecordId }),
+      getLeaseDraftsForResident(selectedResidentRecordId, '').catch(() => []),
+    ])
+      .then(([resident, payments, drafts]) => {
+        if (cancelled) return
+        setResidentPaymentBundle({
+          loading: false,
+          resident: resident || null,
+          payments: Array.isArray(payments) ? payments : [],
+          drafts: Array.isArray(drafts) ? drafts : [],
+          error: '',
+        })
+      })
+      .catch((err) => {
+        if (cancelled) return
+        setResidentPaymentBundle({
+          loading: false,
+          resident: null,
+          payments: [],
+          drafts: [],
+          error: err?.message || 'Could not load resident payments',
+        })
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [selectedResidentRecordId])
+
   const residentDetailRows = useMemo(() => {
     if (!selectedRow) return []
     const rid = paymentResidentRecordId(selectedRow)
@@ -4882,6 +5039,39 @@ function ManagerPaymentsPanel({ allowedPropertyNames }) {
     () => residentDetailRows.filter((row) => getPaymentKind(row) === 'fee'),
     [residentDetailRows],
   )
+
+  const feeRowsExcludingPostpayCleaning = useMemo(
+    () => extraChargeRows.filter((row) => !isPostpayRoomCleaningPaymentRecord(row)),
+    [extraChargeRows],
+  )
+
+  const postpayCleaningRows = useMemo(
+    () => residentDetailRows.filter((row) => isPostpayRoomCleaningPaymentRecord(row) && paymentBalanceDue(row) > 0),
+    [residentDetailRows],
+  )
+
+  const portalDueLinesForSelectedResident = useMemo(() => {
+    if (!residentPaymentBundle.payments.length) return []
+    return listDashboardDuePaymentLines(residentPaymentBundle.payments)
+  }, [residentPaymentBundle.payments])
+
+  const moveInLedgerHints = useMemo(() => {
+    if (residentPaymentBundle.loading || !residentPaymentBundle.resident) return []
+    const payments = residentPaymentBundle.payments
+    if (!Array.isArray(payments) || payments.length === 0) return []
+    const hints = []
+    if (!paymentsIndicateSecurityDepositPaid(payments)) {
+      hints.push(
+        'Security deposit is not recorded as paid in Payments yet — confirm against the lease or resident portal move-in checklist.',
+      )
+    }
+    if (!paymentsIndicateFirstMonthRentPaid(payments)) {
+      hints.push(
+        'First month rent is not recorded as paid yet — residents often pay this before monthly rent lines appear.',
+      )
+    }
+    return hints
+  }, [residentPaymentBundle.loading, residentPaymentBundle.resident, residentPaymentBundle.payments])
 
   function findScopedPaymentById(id) {
     return allScopedRows.find((row) => row.id === id) || rentRows.find((row) => row.id === id) || null
@@ -5127,7 +5317,8 @@ function ManagerPaymentsPanel({ allowedPropertyNames }) {
                     <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-[0.14em] text-slate-400">Property</th>
                     <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-[0.14em] text-slate-400">Room</th>
                     <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-[0.14em] text-slate-400">Resident</th>
-                    <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-[0.14em] text-slate-400">Monthly Rent</th>
+                    <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-[0.14em] text-slate-400">Charge</th>
+                    <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-[0.14em] text-slate-400">Line amount</th>
                     <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-[0.14em] text-slate-400">Amount Paid</th>
                     <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-[0.14em] text-slate-400">Balance Due</th>
                     <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-[0.14em] text-slate-400">Due Date</th>
@@ -5146,6 +5337,7 @@ function ManagerPaymentsPanel({ allowedPropertyNames }) {
                         <td className="px-4 py-4 text-sm font-semibold text-slate-900">{paymentPropertyLabel(row) || 'House not set'}</td>
                         <td className="px-4 py-4 text-sm text-slate-600">{paymentRoomLabel(row)}</td>
                         <td className="px-4 py-4 text-sm text-slate-600">{paymentResidentLabel(row)}</td>
+                        <td className="max-w-[200px] px-4 py-4 text-sm font-medium text-slate-800">{managerPaymentLineDisplayTitle(row)}</td>
                         <td className="px-4 py-4 text-sm text-slate-600">{money(paymentAmountDue(row))}</td>
                         <td className="px-4 py-4 text-sm text-slate-600">{money(paymentAmountPaid(row))}</td>
                         <td className="px-4 py-4 text-sm text-slate-600">{money(paymentBalanceDue(row))}</td>
@@ -5165,91 +5357,187 @@ function ManagerPaymentsPanel({ allowedPropertyNames }) {
         </div>
 
         {selectedRow ? (
-          <PortalOpsCard
-            title={paymentResidentLabel(selectedRow)}
-            description={`${paymentPropertyLabel(selectedRow) || 'House not set'} · ${paymentRoomLabel(selectedRow)}`}
-            action={
-              paymentComputedStatus(selectedRow) !== 'paid' ? (
+          <div className="scroll-mt-28 overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm lg:scroll-mt-8">
+            <div className="flex flex-wrap items-start justify-between gap-3 border-b border-slate-100 px-5 py-4">
+              <div className="min-w-0">
+                <h3 className="text-2xl font-black text-slate-900">{paymentResidentLabel(selectedRow)}</h3>
+                <p className="mt-1 text-sm text-slate-600">
+                  {paymentPropertyLabel(selectedRow) || 'House not set'} · {paymentRoomLabel(selectedRow)}
+                </p>
+              </div>
+              {paymentComputedStatus(selectedRow) !== 'paid' ? (
                 <button
                   type="button"
                   disabled={busy[selectedRow.id]}
                   onClick={() => markPaid(selectedRow.id)}
-                  className="rounded-full bg-axis px-4 py-2 text-sm font-semibold text-white transition hover:brightness-105 disabled:opacity-50"
+                  className="shrink-0 rounded-full bg-axis px-4 py-2 text-sm font-semibold text-white transition hover:brightness-105 disabled:opacity-50"
                 >
-                  {busy[selectedRow.id] ? 'Updating…' : 'Mark Paid'}
+                  {busy[selectedRow.id] ? 'Updating…' : 'Mark paid'}
                 </button>
-              ) : null
-            }
-          >
-            <div className="grid gap-4 sm:grid-cols-2">
-              <PortalOpsMetric label="Rent amount" value={money(paymentAmountDue(selectedRow))} hint={selectedRow.Month || 'Current billing period'} />
-              <PortalOpsMetric label="Remaining balance" value={money(paymentBalanceDue(selectedRow))} hint={`Due ${fmtDate(selectedRow['Due Date'])}`} tone={paymentStatusTone(paymentComputedStatus(selectedRow))} />
+              ) : null}
             </div>
 
-            <div className="mt-5">
-              <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">Payment history</div>
-              <div className="mt-3 space-y-3">
-                {residentDetailRows.filter((row) => getPaymentKind(row) === 'rent').slice(0, 6).map((row) => {
-                  const computed = paymentComputedStatus(row)
-                  return (
-                    <div key={row.id} className="flex flex-wrap items-center justify-between gap-3 rounded-3xl border border-slate-200 px-4 py-4">
-                      <div>
-                        <div className="text-sm font-bold text-slate-900">{row.Month || 'Rent payment'}</div>
-                        <div className="mt-1 text-sm text-slate-500">Due {fmtDate(row['Due Date'])}</div>
+            <div className="min-w-0 space-y-6 px-5 py-5 sm:px-6">
+              <div className="rounded-2xl border border-slate-100 bg-slate-50/90 px-4 py-4">
+                <div className="text-[11px] font-bold uppercase tracking-[0.14em] text-slate-400">Selected charge</div>
+                <div className="mt-2 text-lg font-black text-slate-900">{managerPaymentLineDisplayTitle(selectedRow)}</div>
+                <dl className="mt-4 grid gap-3 text-sm sm:grid-cols-2">
+                  <div>
+                    <dt className="text-xs font-semibold uppercase tracking-wide text-slate-500">Line total</dt>
+                    <dd className="mt-0.5 font-bold text-slate-900">{money(paymentAmountDue(selectedRow))}</dd>
+                  </div>
+                  <div>
+                    <dt className="text-xs font-semibold uppercase tracking-wide text-slate-500">Balance due</dt>
+                    <dd className="mt-0.5 font-bold text-slate-900">{money(paymentBalanceDue(selectedRow))}</dd>
+                  </div>
+                  <div>
+                    <dt className="text-xs font-semibold uppercase tracking-wide text-slate-500">Due date</dt>
+                    <dd className="mt-0.5 text-slate-800">{fmtDate(selectedRow['Due Date'])}</dd>
+                  </div>
+                  <div>
+                    <dt className="text-xs font-semibold uppercase tracking-wide text-slate-500">Classification</dt>
+                    <dd className="mt-0.5 capitalize text-slate-800">
+                      {String(classifyResidentPaymentLine(selectedRow)).replace(/_/g, ' ')}
+                    </dd>
+                  </div>
+                </dl>
+              </div>
+
+              <div>
+                <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">Due on resident dashboard</div>
+                <p className="mt-1 text-xs text-slate-500">
+                  Same open-balance Airtable lines as the resident home dashboard (excludes work-order room cleaning — see below).
+                </p>
+                {residentPaymentBundle.loading ? (
+                  <p className="mt-3 text-sm text-slate-500">Loading resident ledger…</p>
+                ) : residentPaymentBundle.error ? (
+                  <p className="mt-3 text-sm text-amber-800">{residentPaymentBundle.error}</p>
+                ) : !selectedResidentRecordId ? (
+                  <p className="mt-3 text-sm text-slate-500">Link this payment to a resident in Airtable to load the full ledger.</p>
+                ) : portalDueLinesForSelectedResident.length === 0 ? (
+                  <p className="mt-3 text-sm text-slate-500">
+                    No open balance lines in this view. Move-in placeholders (e.g. deposit before a row exists) still appear in the resident
+                    Payments tab.
+                  </p>
+                ) : (
+                  <div className="mt-3 space-y-2">
+                    {portalDueLinesForSelectedResident.map((line) => (
+                      <div
+                        key={line.id}
+                        className="flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-slate-100 bg-white px-3 py-3"
+                      >
+                        <div className="min-w-0 text-sm font-semibold text-slate-900">{line.label}</div>
+                        <div className="flex shrink-0 items-center gap-2">
+                          <span className="text-sm font-bold text-slate-900">{money(line.balance)}</span>
+                          <PortalOpsStatusBadge tone={managerToneForResidentPaymentLabel(line.status)}>{line.status}</PortalOpsStatusBadge>
+                        </div>
                       </div>
-                      <div className="flex items-center gap-3">
-                        <div className="text-sm font-bold text-slate-900">{money(paymentBalanceDue(row))}</div>
-                        <PortalOpsStatusBadge tone={paymentStatusTone(computed)}>
-                          {paymentStatusLabel(computed)}
-                        </PortalOpsStatusBadge>
-                      </div>
-                    </div>
-                  )
-                })}
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {moveInLedgerHints.length > 0 ? (
+                <div className="rounded-2xl border border-amber-100 bg-amber-50/90 px-4 py-3 text-sm text-amber-950">
+                  <div className="text-[11px] font-bold uppercase tracking-[0.14em] text-amber-900/90">Move-in ledger hints</div>
+                  <ul className="mt-2 list-disc space-y-1 pl-5">
+                    {moveInLedgerHints.map((hint, idx) => (
+                      <li key={`move-in-hint-${idx}`}>{hint}</li>
+                    ))}
+                  </ul>
+                </div>
+              ) : null}
+
+              {postpayCleaningRows.length > 0 ? (
+                <div>
+                  <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">Work order room cleaning</div>
+                  <p className="mt-1 text-xs text-slate-500">Shown here for managers; residents pay it under Payments → Fees & extras.</p>
+                  <div className="mt-2 space-y-2">
+                    {postpayCleaningRows.map((row) => {
+                      const computed = paymentComputedStatus(row)
+                      return (
+                        <div
+                          key={row.id}
+                          className="flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-slate-100 bg-white px-3 py-3"
+                        >
+                          <div className="min-w-0">
+                            <div className="text-sm font-semibold text-slate-900">{managerPaymentLineDisplayTitle(row)}</div>
+                            <div className="mt-0.5 text-xs text-slate-500">Due {fmtDate(row['Due Date'])}</div>
+                          </div>
+                          <div className="flex shrink-0 items-center gap-2">
+                            <span className="text-sm font-bold text-slate-900">{money(paymentBalanceDue(row))}</span>
+                            <PortalOpsStatusBadge tone={paymentStatusTone(computed)}>{paymentStatusLabel(computed)}</PortalOpsStatusBadge>
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+                </div>
+              ) : null}
+
+              <div>
+                <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">Rent & utilities schedule</div>
+                <div className="mt-3 space-y-2">
+                  {residentDetailRows.filter((row) => getPaymentKind(row) === 'rent').length === 0 ? (
+                    <p className="text-sm text-slate-500">No rent or utilities lines for this resident yet.</p>
+                  ) : (
+                    residentDetailRows
+                      .filter((row) => getPaymentKind(row) === 'rent')
+                      .slice(0, 8)
+                      .map((row) => {
+                        const computed = paymentComputedStatus(row)
+                        return (
+                          <div
+                            key={row.id}
+                            className="flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-slate-100 bg-white px-3 py-3"
+                          >
+                            <div className="min-w-0">
+                              <div className="text-sm font-semibold text-slate-900">{managerPaymentLineDisplayTitle(row)}</div>
+                              <div className="mt-0.5 text-xs text-slate-500">Due {fmtDate(row['Due Date'])}</div>
+                            </div>
+                            <div className="flex shrink-0 items-center gap-2">
+                              <span className="text-sm font-bold text-slate-900">{money(paymentBalanceDue(row))}</span>
+                              <PortalOpsStatusBadge tone={paymentStatusTone(computed)}>{paymentStatusLabel(computed)}</PortalOpsStatusBadge>
+                            </div>
+                          </div>
+                        )
+                      })
+                  )}
+                </div>
+              </div>
+
+              <div>
+                <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">Fines & extra charges</div>
+                {feeRowsExcludingPostpayCleaning.length === 0 ? (
+                  <p className="mt-3 text-sm text-slate-500">No fee lines on file for this resident.</p>
+                ) : (
+                  <div className="mt-3 space-y-2">
+                    {feeRowsExcludingPostpayCleaning.map((row) => {
+                      const note = formatPaymentNotesForDisplay(row.Notes)
+                      const computed = paymentComputedStatus(row)
+                      return (
+                        <div
+                          key={row.id}
+                          className="flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-slate-100 bg-white px-3 py-3"
+                        >
+                          <div className="min-w-0">
+                            <div className="text-sm font-semibold text-slate-900">{managerPaymentLineDisplayTitle(row)}</div>
+                            <div className="mt-0.5 text-xs text-slate-500">{note}</div>
+                          </div>
+                          <div className="flex shrink-0 items-center gap-2">
+                            <span className="text-sm font-bold text-slate-900">{money(paymentBalanceDue(row) || paymentAmountDue(row))}</span>
+                            <PortalOpsStatusBadge tone={paymentStatusTone(computed)}>{paymentStatusLabel(computed)}</PortalOpsStatusBadge>
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+                )}
               </div>
             </div>
 
-            <div className="mt-5">
-              <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">Fines & extra charges</div>
-              {extraChargeRows.length === 0 ? (
-                <div className="mt-3 flex items-center gap-2 text-sm text-slate-500">
-                  <svg
-                    className="h-5 w-5 shrink-0 text-slate-400"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth={1.5}
-                    viewBox="0 0 24 24"
-                    aria-hidden
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      d="M9 14.25h6m-6 3h6m2.25 3.75H6.75a2.25 2.25 0 0 1-2.25-2.25V5.25A2.25 2.25 0 0 1 6.75 3h10.5A2.25 2.25 0 0 1 19.5 5.25v13.5A2.25 2.25 0 0 1 17.25 21Zm-8.25-12h6a.75.75 0 0 0 .75-.75v-1.5a.75.75 0 0 0-.75-.75h-6a.75.75 0 0 0-.75.75v1.5c0 .414.336.75.75.75Z"
-                    />
-                  </svg>
-                  <span>No fees or utilities charges right now</span>
-                </div>
-              ) : (
-                <div className="mt-3 space-y-3">
-                  {extraChargeRows.map((row) => (
-                    <div key={row.id} className="flex flex-wrap items-center justify-between gap-3 rounded-3xl border border-slate-200 px-4 py-4">
-                      <div>
-                        <div className="text-sm font-bold text-slate-900">{row.Month || row.Type || 'Extra charge'}</div>
-                        <div className="mt-1 text-sm text-slate-500">{row.Notes || 'Additional charge'}</div>
-                      </div>
-                      <div className="flex items-center gap-3">
-                        <div className="text-sm font-bold text-slate-900">{money(paymentBalanceDue(row) || paymentAmountDue(row))}</div>
-                        <PortalOpsStatusBadge tone={paymentStatusTone(paymentComputedStatus(row))}>
-                          {paymentStatusLabel(paymentComputedStatus(row))}
-                        </PortalOpsStatusBadge>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-
-            <form onSubmit={submitFeeWaive} className="mt-6 rounded-3xl border border-dashed border-violet-200 bg-violet-50/50 p-4">
+            <form onSubmit={submitFeeWaive} className="border-t border-slate-100 px-5 py-5 sm:px-6">
+              <div className="rounded-3xl border border-dashed border-violet-200 bg-violet-50/50 p-4">
               <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-violet-700">Fee waive</div>
               <p className="mt-2 text-xs text-slate-600">
                 Record a waiver for tracking — it does not count as a rent/deposit payment. Linked to this resident
@@ -5284,9 +5572,11 @@ function ManagerPaymentsPanel({ allowedPropertyNames }) {
               >
                 {waiveSaving ? 'Saving…' : 'Record fee waive'}
               </button>
+              </div>
             </form>
 
-            <form onSubmit={submitFine} className="mt-6 rounded-3xl border border-dashed border-slate-200 bg-slate-50/80 p-4">
+            <form onSubmit={submitFine} className="border-t border-slate-100 px-5 py-5 sm:px-6">
+              <div className="rounded-3xl border border-dashed border-slate-200 bg-slate-50/80 p-4">
               <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">Add fine / extra charge</div>
               <p className="mt-2 text-xs text-slate-500">
                 Creates an unpaid fee line linked to this resident. Residents see it on Payments → Fees and extras.
@@ -5338,8 +5628,9 @@ function ManagerPaymentsPanel({ allowedPropertyNames }) {
               >
                 {fineSaving ? 'Saving…' : 'Create charge'}
               </button>
+              </div>
             </form>
-          </PortalOpsCard>
+          </div>
         ) : null}
       </div>
     </div>
@@ -6358,8 +6649,8 @@ export function CalendarTabPanel({ manager, allowedPropertyNames, loadAllSchedul
         return !isRecVal(row) && normalizeDateKey(row[f.date]) === dk
       })
       await Promise.all(toDelete.map((row) => deleteManagerAvailabilityRecord(row.id)))
-      for (const range of ranges) {
-        const fields = buildManagerAvailabilityRecordFields({
+      const fieldsList = ranges.map((range) =>
+        buildManagerAvailabilityRecordFields({
           propertyName: propName,
           propertyRecordId: propId,
           managerEmail: mgrEmail,
@@ -6370,9 +6661,9 @@ export function CalendarTabPanel({ manager, allowedPropertyNames, loadAllSchedul
           endHHmm: formatHHmmFromMinutes(range.end),
           isRecurring: repeatWeekly,
           source: 'manager_portal',
-        })
-        await createManagerAvailabilityRecord(fields)
-      }
+        }),
+      )
+      await createManagerAvailabilityRecordsBatch(fieldsList)
       const refreshed = await listManagerAvailabilityForProperty(propId, propName)
       const selProp = String(propName || '').trim().toLowerCase()
       const tourRows = (schedulingRowsForView || []).filter((row) => {
@@ -6664,17 +6955,6 @@ export function CalendarTabPanel({ manager, allowedPropertyNames, loadAllSchedul
     return () => window.clearTimeout(t)
   }, [weeklyFreeByProperty, selectedPropertyId, selectedDateKey, loadAllSchedulingRows, saveTourDirtyIfNeeded, maTableOk])
 
-  /** Debounced persist for Manager Availability (structured table) — matches legacy Notes autosave UX. */
-  useEffect(() => {
-    if (loadAllSchedulingRows || !maTableOk) return
-    if (!maDirtyRef.current) return
-    if (!selectedPropertyId) return
-    const t = window.setTimeout(() => {
-      void saveMaRef.current()
-    }, 750)
-    return () => window.clearTimeout(t)
-  }, [pendingRanges, repeatWeekly, selectedPropertyId, selectedDateKey, loadAllSchedulingRows, maTableOk])
-
   adminAutosaveCtxRef.current = {
     manager,
     selectedDateKey,
@@ -6845,7 +7125,7 @@ export function CalendarTabPanel({ manager, allowedPropertyNames, loadAllSchedul
 
       {!loadAllSchedulingRows ? (
         <div className="mb-4 flex flex-wrap items-center gap-x-6 gap-y-2 rounded-2xl border border-slate-200 bg-white px-4 py-3 text-xs font-semibold text-slate-700 shadow-sm">
-          <span className="text-[10px] font-bold uppercase tracking-[0.12em] text-slate-500">Legend</span>
+          <span className="text-[10px] font-bold uppercase tracking-[0.12em] text-slate-500">Manager availability</span>
           <span className="inline-flex items-center gap-2">
             <span className="h-3 w-10 rounded bg-emerald-400 ring-1 ring-emerald-600/30" aria-hidden />
             Manager free
@@ -6859,7 +7139,8 @@ export function CalendarTabPanel({ manager, allowedPropertyNames, loadAllSchedul
             Work order
           </span>
           <span className="min-w-0 text-[11px] font-normal leading-snug text-slate-500">
-            Open hours use Manager Availability + property tour text; bookings stay in Scheduling.
+            Green blocks follow Manager Availability (and property tour windows when that table is off). Tour bookings stay
+            in Scheduling (violet).
           </span>
         </div>
       ) : null}
@@ -7001,9 +7282,11 @@ export function CalendarTabPanel({ manager, allowedPropertyNames, loadAllSchedul
             saveButtonLabel={maTableOk ? 'Save availability to Airtable' : undefined}
             availabilityHint={
               maTableOk
-                ? 'Save updates only the selected date unless “Apply every week” is on. That checkbox resets when you pick another day so you do not accidentally save recurring rules. Week view days outside the month grid are included. If Fridays (etc.) still repeat, delete old recurring rows in Airtable — see scripts/airtable/manager-availability-clear-recurring.js in the repo. The property list puts houses with Manager Availability rows (and tour text on the property) first.'
-                : 'Tour hours are saved on the property (Tour Availability / Notes) when the Manager Availability table is off. The property list still prioritizes homes with availability data from the property record.'
+                ? 'Drag the timeline to add manager free blocks, then Save (or switch day — unsaved changes save first). “Apply every week” repeats on this weekday from the selected date forward; it resets when you change days. Confirmed tours still come from Scheduling.'
+                : 'When Manager Availability is off, tour windows are edited from the property record (Tour Availability / Notes). Save writes that text; Scheduling still holds real tour bookings.'
             }
+            hidePropertyPicker
+            selectedPropertyRecord={selectedProperty}
             scheduledItems={scheduledItemsForSelectedDay}
             availSaving={availSaving}
             manager={manager}
@@ -7650,6 +7933,8 @@ function LeaseEditor({ draftId, manager, onBack, embedded = false }) {
     }
   }, [draft])
 
+  const managerSigOnDraft = useMemo(() => pickManagerSignatureFromDraft(draft, import.meta.env), [draft])
+
   const loadDraft = useCallback(async () => {
     setLoading(true)
     try {
@@ -7942,6 +8227,9 @@ function LeaseEditor({ draftId, manager, onBack, embedded = false }) {
                   leaseData={leaseDataForPreview}
                   signedBy={draft?.Status === 'Signed' ? draft?.['Signature Text'] : undefined}
                   signedAt={draft?.Status === 'Signed' ? draft?.['Signed At'] : undefined}
+                  managerSignedBy={managerSigOnDraft.text || undefined}
+                  managerSignedAt={managerSigOnDraft.at || undefined}
+                  managerSignatureImageUrl={managerSigOnDraft.image || undefined}
                 />
               </div>
             </div>
@@ -7950,6 +8238,28 @@ function LeaseEditor({ draftId, manager, onBack, embedded = false }) {
               <strong>No structured lease data yet.</strong> Open the linked application → Details → use{' '}
               <strong>Generate Lease</strong> / <strong>Regenerate Lease</strong> to fill <strong>Lease JSON</strong>, then refresh this page.
             </div>
+          ) : null}
+
+          {leaseDataForPreview && draft && manager ? (
+            <LeaseManagerSignPanel
+              draft={draft}
+              manager={manager}
+              onSaved={async (id, fields) => {
+                const updated = await patchLeaseDraft(id, fields)
+                setDraft(updated)
+                try {
+                  await logAudit({
+                    leaseDraftId: id,
+                    actionType: 'Manager Signed',
+                    performedBy: manager.name,
+                    performedByRole: manager.role,
+                    notes: 'Manager saved landlord counter-signature on lease draft',
+                  })
+                } catch {
+                  /* non-fatal */
+                }
+              }}
+            />
           ) : null}
 
           {canEdit ? (

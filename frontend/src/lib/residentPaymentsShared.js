@@ -36,6 +36,81 @@ export function getPaymentKind(payment) {
   return 'rent'
 }
 
+/** Post-pay room cleaning fee created when a cleaning WO is scheduled (internal tag in Notes). */
+const POSTPAY_ROOM_CLEANING_PAYMENT_MARKER = 'AXIS_ROOM_CLEANING_PAYMENT_FOR_WO:'
+
+export function isPostpayRoomCleaningPaymentRecord(p) {
+  return String(p?.Notes || '').includes(POSTPAY_ROOM_CLEANING_PAYMENT_MARKER)
+}
+
+/** Strip internal AXIS_* tags from manager/resident-facing copy. */
+export function formatPaymentNotesForDisplay(notes) {
+  let s = String(notes || '').trim()
+  if (!s) return ''
+  s = s.replace(new RegExp(`${POSTPAY_ROOM_CLEANING_PAYMENT_MARKER}\\S*`, 'g'), '').trim()
+  s = s.replace(/AXIS_ROOM_CLEANING_[A-Z0-9_]+:?\S*/g, '').trim()
+  s = s.replace(/\s+/g, ' ').trim()
+  return s || '—'
+}
+
+/** Short title for Payments rows (manager table + detail). */
+export function managerPaymentLineDisplayTitle(p) {
+  if (!p || typeof p !== 'object') return 'Charge'
+  if (isPostpayRoomCleaningPaymentRecord(p)) return 'Room cleaning (work order)'
+  const cls = classifyResidentPaymentLine(p)
+  if (cls === 'deposit') return 'Security deposit'
+  if (cls === 'hold_fee') return 'Room hold fee'
+  if (cls === 'first_rent') return 'First month rent'
+  if (cls === 'first_utilities') return 'First month utilities'
+  if (cls === 'monthly_rent') return String(p.Month || p.Type || 'Monthly rent').trim() || 'Monthly rent'
+  if (cls === 'monthly_utilities') return String(p.Month || p.Type || 'Monthly utilities').trim() || 'Monthly utilities'
+  if (cls === 'fee') return String(p.Month || p.Type || 'Fee / extra').trim() || 'Fee / extra'
+  if (cls === 'fee_waive') return 'Fee waiver'
+  const month = String(p.Month || '').trim()
+  const typ = String(p.Type || '').trim()
+  if (month && typ) return `${typ} — ${month}`.slice(0, 80)
+  if (month) return month.slice(0, 80)
+  if (typ) return typ.slice(0, 80)
+  return 'Rent'
+}
+
+function dashboardPaymentDueLineLabel(p) {
+  const typ = String(p?.Type || '').trim()
+  const month = String(p?.Month || '').trim()
+  if (typ && month) return `${typ} — ${month}`.slice(0, 80)
+  if (month) return month.slice(0, 80)
+  if (typ) return typ.slice(0, 80)
+  return 'Payment'
+}
+
+/**
+ * Payment rows with balance due for dashboard / manager “same as resident” summaries.
+ * Omits fee waivers and post-pay room-cleaning WO lines (those belong under Fees & extras).
+ */
+export function listDashboardDuePaymentLines(payments) {
+  const list = Array.isArray(payments) ? payments : []
+  const rows = []
+  for (const p of list) {
+    if (!p || typeof p !== 'object' || isFeeWaivePaymentRecord(p)) continue
+    if (isPostpayRoomCleaningPaymentRecord(p)) continue
+    const st = computedResidentPaymentStatusLabel(p)
+    if (st === 'Paid') continue
+    const bal = balanceFor(p)
+    if (bal <= 0) continue
+    const due = parsePaymentDueDate(p['Due Date'])
+    const dueTs = due && !Number.isNaN(due.getTime()) ? due.getTime() : Number.POSITIVE_INFINITY
+    rows.push({
+      id: String(p.id || ''),
+      label: dashboardPaymentDueLineLabel(p),
+      balance: bal,
+      status: st,
+      dueTs,
+    })
+  }
+  rows.sort((a, b) => a.dueTs - b.dueTs || a.label.localeCompare(b.label, undefined, { sensitivity: 'base' }))
+  return rows
+}
+
 /**
  * Finer line classification for move-in vs recurring.
  * Fixes: plain Type "Utilities" was always treated as first-month utilities.

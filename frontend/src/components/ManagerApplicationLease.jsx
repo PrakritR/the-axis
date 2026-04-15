@@ -9,9 +9,10 @@
  *   managerName    - current manager's display name
  */
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import toast from 'react-hot-toast'
 import LeaseHTMLTemplate from './LeaseHTMLTemplate'
+import { pickManagerSignatureFromDraft } from '../../../shared/lease-manager-signature-fields.js'
 import { publishLeaseDraft, generateLeaseFromApplication } from '../lib/airtable'
 
 /** Hide legacy Airtable value "Changes Needed" — same queue as other pre-publish drafts. */
@@ -108,6 +109,7 @@ export default function ManagerApplicationLease({ applicationId, managerName }) 
   const isSigned = status === 'Signed'
   const isPublished = status === 'Published'
   const isDraft = status === 'Draft Generated'
+  const managerSigOnDraft = useMemo(() => pickManagerSignatureFromDraft(draft, import.meta.env), [draft])
 
   if (loading) {
     return (
@@ -221,6 +223,9 @@ export default function ManagerApplicationLease({ applicationId, managerName }) 
               leaseData={leaseData}
               signedBy={isSigned ? draft?.['Signature Text'] : undefined}
               signedAt={isSigned ? draft?.['Signed At'] : undefined}
+              managerSignedBy={managerSigOnDraft.text || undefined}
+              managerSignedAt={managerSigOnDraft.at || undefined}
+              managerSignatureImageUrl={managerSigOnDraft.image || undefined}
             />
           </div>
         </div>

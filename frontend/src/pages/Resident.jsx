@@ -49,6 +49,7 @@ import {
 import { applicationRejectedFieldName, deriveApplicationApprovalState } from '../lib/applicationApprovalState.js'
 import { anyLeaseDraftAllowsSignWithoutMoveInPay } from '../lib/leaseMoveInOverride.js'
 import { isResidentLeaseBodyViewable, isResidentLeaseSignable } from '../lib/residentLeaseAccess.js'
+import { pickManagerSignatureFromDraft } from '../../../shared/lease-manager-signature-fields.js'
 import {
   evaluateLeaseAccessPrereqs,
   isFeeWaivePaymentRecord,
@@ -64,7 +65,9 @@ import {
   findRentPaymentForBillingMonth,
   findUtilitiesPaymentForBillingMonth,
   getPaymentKind,
+  isPostpayRoomCleaningPaymentRecord,
   iterRecurringBillingMonthKeys,
+  listDashboardDuePaymentLines,
   longMonthLabel,
   reconcilePaymentStatusesInAirtable,
   rentDueDayFromResident,
@@ -728,44 +731,6 @@ function buildResidentRentSnapshot(payments, resident) {
         }
       : null
   return { unpaidTotal, overdueTotal, paidTotal, nextDue, rentPayments }
-}
-
-/** Single-line label for dashboard due list (all payment kinds with balance > 0). */
-function dashboardPaymentDueLineLabel(p) {
-  const typ = String(p?.Type || '').trim()
-  const month = String(p?.Month || '').trim()
-  if (typ && month) return `${typ} — ${month}`.slice(0, 80)
-  if (month) return month.slice(0, 80)
-  if (typ) return typ.slice(0, 80)
-  return 'Payment'
-}
-
-/**
- * All Airtable payment rows with balance due (resident portal dashboard).
- * Sorted by due date (missing dates last).
- */
-function buildResidentDashboardDuePaymentLines(payments) {
-  const list = Array.isArray(payments) ? payments : []
-  const rows = []
-  for (const p of list) {
-    if (!p || typeof p !== 'object' || isFeeWaivePaymentRecord(p)) continue
-    const st = residentPaymentLineStatus(p)
-    if (st === 'Paid') continue
-    const bal = residentBalance(p)
-    if (bal <= 0) continue
-    const due = parseDisplayDate(p['Due Date'])
-    const dueTs =
-      due && !Number.isNaN(due.getTime()) ? due.getTime() : Number.POSITIVE_INFINITY
-    rows.push({
-      id: String(p.id || ''),
-      label: dashboardPaymentDueLineLabel(p),
-      balance: bal,
-      status: st,
-      dueTs,
-    })
-  }
-  rows.sort((a, b) => a.dueTs - b.dueTs || a.label.localeCompare(b.label, undefined, { sensitivity: 'base' }))
-  return rows
 }
 
 function dashboardPaymentStatusTone(status) {
@@ -2273,6 +2238,7 @@ function PaymentsPanel({ resident, onResidentUpdated, highlightCategory, onPayme
     return tableSourcePayments.filter((p) => {
       if (payFilter === 'fees') return getPaymentKind(p) === 'fee'
       if (payFilter === 'paid') return paymentStatusForRecord(p) === 'Paid'
+      if (isPostpayRoomCleaningPaymentRecord(p)) return false
       return balanceForRecord(p) > 0
     })
   }, [tableSourcePayments, payFilter, paymentStatusForRecord, balanceForRecord])
@@ -2436,7 +2402,9 @@ function PaymentsPanel({ resident, onResidentUpdated, highlightCategory, onPayme
             'Due or upcoming',
             moveInRowsCombined.filter((r) => r.balance > 0).length +
               monthlyRecurringRowVMs.filter((r) => r.balance > 0).length +
-              tableSourcePayments.filter((p) => balanceForRecord(p) > 0).length,
+              tableSourcePayments.filter(
+                (p) => balanceForRecord(p) > 0 && !isPostpayRoomCleaningPaymentRecord(p),
+              ).length,
           ],
           [
             'paid',
@@ -2731,6 +2699,10 @@ function LeasingPanel({ resident, payments, onOpenPayments, onNavigateTab, onLea
   const moveInPrereqsMet = leaseAccessEval.met
 
   const leaseStatus = activeLeaseDraft?.Status ? String(activeLeaseDraft.Status).trim() : ''
+  const managerSigOnActiveDraft = useMemo(
+    () => pickManagerSignatureFromDraft(activeLeaseDraft, import.meta.env),
+    [activeLeaseDraft],
+  )
   const leaseIsSigned = leaseStatus === 'Signed'
   const holdPath = residentOptedRoomHoldWithoutSigningLease(resident) ? 'hold' : 'lease'
 
@@ -2965,41 +2937,48 @@ function LeasingPanel({ resident, payments, onOpenPayments, onNavigateTab, onLea
                   headerClassName: 'text-right',
                   cellClassName: 'text-right',
                   render: (d) => {
-                    const isFocused = activeLeaseDraft?.id === d.id
-                    if (!isFocused) {
+                    const isThisActive = activeLeaseDraft?.id === d.id
+                    const showingFormatted = Boolean(showLeaseText && isThisActive && leaseBodyAllowed)
+                    if (showingFormatted) {
                       return (
                         <button
                           type="button"
-                          onClick={() => {
-                            setSelectedLeaseDraftId(d.id)
-                            setShowLeaseText(false)
-                          }}
-                          className="rounded-full border border-slate-200 bg-white px-4 py-1.5 text-xs font-semibold text-[#2563eb] transition hover:bg-slate-50"
-                        >
-                          Details
-                        </button>
-                      )
-                    }
-                    if (selectedLeaseDraftId && selectedLeaseDraftId === d.id) {
-                      return (
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setSelectedLeaseDraftId(null)
-                            setShowLeaseText(false)
-                          }}
+                          onClick={() => setShowLeaseText(false)}
                           className="rounded-full border border-slate-200 bg-white px-4 py-1.5 text-xs font-semibold text-slate-600 transition hover:bg-slate-50"
                         >
-                          Use latest
+                          Hide
                         </button>
                       )
                     }
-                    return <span className="text-xs font-medium text-slate-400">Viewing</span>
+                    return (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSelectedLeaseDraftId(d.id)
+                          setShowLeaseText(true)
+                        }}
+                        className="rounded-full border border-slate-200 bg-white px-4 py-1.5 text-xs font-semibold text-[#2563eb] transition hover:bg-slate-50"
+                      >
+                        Details
+                      </button>
+                    )
                   },
                 },
               ]}
               rows={leaseDraftTableRows}
             />
+            {leaseDrafts.length > 1 && selectedLeaseDraftId ? (
+              <button
+                type="button"
+                onClick={() => {
+                  setSelectedLeaseDraftId(null)
+                  setShowLeaseText(false)
+                }}
+                className="mt-2 text-xs font-semibold text-slate-500 underline decoration-slate-300 underline-offset-2 hover:text-slate-800"
+              >
+                Use the latest draft automatically
+              </button>
+            ) : null}
           </div>
         ) : null}
 
@@ -3018,144 +2997,147 @@ function LeasingPanel({ resident, payments, onOpenPayments, onNavigateTab, onLea
                 still owe any move-in charges shown in Payments unless your lease says otherwise.
               </div>
             ) : null}
-            <div className="flex flex-wrap items-start justify-between gap-3">
-              <div className="min-w-0 flex-1">
-                <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-[#2563eb]">Lease Document</div>
-                <div className="mt-2 flex flex-wrap items-center gap-2">
-                  <span className={`inline-flex rounded-full border px-2.5 py-0.5 text-[11px] font-bold ${
-                    leaseStatus === 'Signed' ? 'border-emerald-200 bg-emerald-50 text-emerald-800' :
-                    leaseStatus === 'Published' || leaseStatus === 'Ready for Signature' ? 'border-blue-200 bg-blue-50 text-blue-800' :
-                    'border-slate-200 bg-slate-100 text-slate-600'
-                  }`}>
-                    {residentLeaseStatusDisplay(leaseStatus)}
-                  </span>
+            <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+              <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 bg-slate-50 px-4 py-3 sm:px-5">
+                <div className="min-w-0 flex-1">
+                  <div className="text-[11px] font-bold uppercase tracking-[0.14em] text-slate-500">Formatted lease agreement</div>
+                  <div className="mt-1.5 flex flex-wrap items-center gap-2">
+                    <span
+                      className={`inline-flex rounded-full border px-2.5 py-0.5 text-[11px] font-bold ${
+                        leaseStatus === 'Signed'
+                          ? 'border-emerald-200 bg-emerald-50 text-emerald-800'
+                          : leaseStatus === 'Published' || leaseStatus === 'Ready for Signature'
+                            ? 'border-blue-200 bg-blue-50 text-blue-800'
+                            : 'border-slate-200 bg-slate-100 text-slate-600'
+                      }`}
+                    >
+                      {residentLeaseStatusDisplay(leaseStatus)}
+                    </span>
+                    {currentLeasePdf?.['File Name'] ? (
+                      <span className="truncate text-xs font-medium text-slate-500" title={currentLeasePdf['File Name']}>
+                        PDF · {currentLeasePdf['File Name']}
+                      </span>
+                    ) : null}
+                  </div>
                 </div>
-                {currentLeasePdf?.['File Name'] ? (
-                  <p className="mt-2 text-xs font-medium text-slate-500">Current PDF: {currentLeasePdf['File Name']}</p>
-                ) : null}
-              </div>
-              <div className="flex flex-wrap gap-2">
-                {currentLeasePdf?.['PDF URL'] ? (
-                  <a
-                    href={currentLeasePdf['PDF URL']}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="shrink-0 rounded-full border border-slate-200 bg-white px-5 py-2.5 text-sm font-semibold text-[#2563eb] transition hover:bg-slate-50"
-                  >
-                    Open PDF
-                  </a>
-                ) : null}
-                <button
-                  type="button"
-                  onClick={() => setShowLeaseText((v) => !v)}
-                  disabled={!leaseBodyAllowed}
-                  title={leaseBodyAllowed ? '' : 'Available once your manager sends your lease for signature'}
-                  className="shrink-0 rounded-full bg-[linear-gradient(180deg,#2f76ff_0%,#2450eb_100%)] px-5 py-2.5 text-sm font-semibold text-white transition hover:brightness-105 disabled:cursor-not-allowed disabled:opacity-40"
-                >
-                  {showLeaseText ? 'Hide' : 'View lease'}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => window.print()}
-                  disabled={!leaseBodyAllowed}
-                  title={leaseBodyAllowed ? '' : 'Available once your manager sends your lease for signature'}
-                  className="shrink-0 rounded-full border border-slate-200 bg-white px-5 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
-                >
-                  Print
-                </button>
-                {typeof onNavigateTab === 'function' ? (
-                  <button
-                    type="button"
-                    onClick={() => onNavigateTab('inbox')}
-                    className="shrink-0 rounded-full border border-slate-200 bg-white px-5 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
-                  >
-                    Message manager
-                  </button>
-                ) : null}
-              </div>
-            </div>
-            {!leaseBodyAllowed && (
-              <p className="mt-3 text-sm text-slate-500">
-                {leaseStatus === 'Draft Generated'
-                  ? 'Your lease is being drafted. The full document will appear here once your manager sends it.'
-                  : 'Your lease is still being prepared. The full document will appear here once it is sent to you.'}
-              </p>
-            )}
-            {currentLeasePdf?.['PDF URL'] ? (
-              <div className="mt-4 overflow-hidden rounded-[20px] border border-slate-200 bg-white shadow-sm">
-                <iframe title="Resident lease PDF" src={currentLeasePdf['PDF URL']} className="h-[420px] w-full bg-white" />
-              </div>
-            ) : null}
-            {showLeaseText && leaseBodyAllowed && (() => {
-              let leaseData = null
-              try {
-                const raw = activeLeaseDraft?.['Lease JSON']
-                leaseData = raw ? JSON.parse(raw) : null
-              } catch { /* use null */ }
-
-              const isSigned = leaseStatus === 'Signed'
-              const showSignPanel = isResidentLeaseSignable(leaseStatus)
-              const signedBy = isSigned ? (activeLeaseDraft?.['Signature Text'] || '') : undefined
-              const signedAt = isSigned ? (activeLeaseDraft?.['Signed At'] || '') : undefined
-
-              return (
-                <div className="mt-5">
-                  <div className="mb-3 flex justify-end">
+                <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
+                  {currentLeasePdf?.['PDF URL'] ? (
+                    <a
+                      href={currentLeasePdf['PDF URL']}
+                      download={String(currentLeasePdf['File Name'] || 'lease-agreement.pdf')
+                        .replace(/[^\w.\-]+/g, '_')
+                        .replace(/^_+|_+$/g, '') || 'lease-agreement.pdf'}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="shrink-0 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-[#2563eb] transition hover:bg-slate-50"
+                    >
+                      Download
+                    </a>
+                  ) : null}
+                  {leaseBodyAllowed ? (
                     <button
                       type="button"
                       onClick={() => window.print()}
-                      className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 transition hover:bg-slate-50"
+                      className="shrink-0 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 transition hover:bg-slate-50"
                     >
-                      Print / Download PDF
+                      Print / PDF
                     </button>
-                  </div>
-
-                  {leaseData ? (
-                    <LeaseHTMLTemplate
-                      leaseData={leaseData}
-                      signedBy={signedBy}
-                      signedAt={signedAt}
-                    />
-                  ) : (
-                    <div className="overflow-hidden rounded-[20px] border border-slate-200 bg-white">
-                      <div className="max-h-[500px] overflow-y-auto p-6">
-                        <pre className="whitespace-pre-wrap font-mono text-sm leading-7 text-slate-800">{leasePreview}</pre>
-                      </div>
-                    </div>
-                  )}
-
-                  {showSignPanel && leaseData ? (
-                    <LeaseSignPanel
-                      leaseDraftId={activeLeaseDraft.id}
-                      tenantName={leaseData.tenantName || resident.Name}
-                      residentRecordId={resident.id}
-                      onSigned={(sig) => {
-                        setLeaseDrafts((prev) =>
-                          prev.map((d) =>
-                            d.id === activeLeaseDraft.id
-                              ? { ...d, Status: 'Signed', 'Signature Text': sig, 'Signed At': new Date().toISOString() }
-                              : d
-                          )
-                        )
-                      }}
-                    />
-                  ) : null}
-
-                  {isSigned ? (
-                    <div className="mt-4 rounded-2xl border border-emerald-200 bg-emerald-50/60 px-5 py-3 text-center">
-                      <p className="text-sm font-semibold text-emerald-800">
-                        Lease signed — {signedBy}
-                      </p>
-                      {signedAt ? (
-                        <p className="mt-0.5 text-xs text-emerald-700">
-                          {new Date(signedAt).toLocaleString()}
-                        </p>
-                      ) : null}
-                    </div>
                   ) : null}
                 </div>
-              )
-            })()}
+              </div>
+              <div className="px-4 py-3 sm:px-5">
+                {!leaseBodyAllowed ? (
+                  <p className="text-sm text-slate-500">
+                    {leaseStatus === 'Draft Generated'
+                      ? 'Your lease is being drafted. Use Details above when your manager publishes it.'
+                      : 'Your lease is still being prepared. The full agreement will open from Details when it is sent to you.'}
+                  </p>
+                ) : !showLeaseText ? (
+                  <p className="text-sm text-slate-600">
+                    Click <span className="font-semibold text-slate-800">Details</span> on a row above to open the full
+                    lease and signing options. Questions? Use <span className="font-semibold text-slate-800">Inbox</span>{' '}
+                    in the main menu to message your manager.
+                  </p>
+                ) : null}
+              </div>
+              {showLeaseText && leaseBodyAllowed
+                ? (() => {
+                    let leaseData = null
+                    try {
+                      const raw = activeLeaseDraft?.['Lease JSON']
+                      leaseData = raw ? JSON.parse(raw) : null
+                    } catch {
+                      /* use null */
+                    }
+
+                    const isSigned = leaseStatus === 'Signed'
+                    const showSignPanel = isResidentLeaseSignable(leaseStatus)
+                    const signedBy = isSigned ? (activeLeaseDraft?.['Signature Text'] || '') : undefined
+                    const signedAt = isSigned ? (activeLeaseDraft?.['Signed At'] || '') : undefined
+
+                    return (
+                      <div className="border-t border-slate-100 px-3 pb-4 sm:px-4">
+                        <div className="max-h-[min(80vh,880px)] overflow-y-auto overflow-x-hidden rounded-[20px] border border-slate-200 bg-white p-2 shadow-sm">
+                          {leaseData ? (
+                            <LeaseHTMLTemplate
+                              leaseData={leaseData}
+                              signedBy={signedBy}
+                              signedAt={signedAt}
+                              managerSignedBy={managerSigOnActiveDraft.text || undefined}
+                              managerSignedAt={managerSigOnActiveDraft.at || undefined}
+                              managerSignatureImageUrl={managerSigOnActiveDraft.image || undefined}
+                            />
+                          ) : (
+                            <div className="max-h-[500px] overflow-y-auto p-6">
+                              <pre className="whitespace-pre-wrap font-mono text-sm leading-7 text-slate-800">{leasePreview}</pre>
+                            </div>
+                          )}
+                        </div>
+
+                        {showSignPanel && leaseData ? (
+                          <div className="mt-4">
+                            <LeaseSignPanel
+                              leaseDraftId={activeLeaseDraft.id}
+                              tenantName={leaseData.tenantName || resident.Name}
+                              residentRecordId={resident.id}
+                              onSigned={(sig) => {
+                                setLeaseDrafts((prev) =>
+                                  prev.map((d) =>
+                                    d.id === activeLeaseDraft.id
+                                      ? {
+                                          ...d,
+                                          Status: 'Signed',
+                                          'Signature Text': sig,
+                                          'Signed At': new Date().toISOString(),
+                                        }
+                                      : d,
+                                  ),
+                                )
+                              }}
+                            />
+                          </div>
+                        ) : null}
+
+                        {isSigned ? (
+                          <div className="mt-4 rounded-2xl border border-emerald-200 bg-emerald-50/60 px-5 py-3 text-center">
+                            <p className="text-sm font-semibold text-emerald-800">Lease signed — {signedBy}</p>
+                            {signedAt ? (
+                              <p className="mt-0.5 text-xs text-emerald-700">{new Date(signedAt).toLocaleString()}</p>
+                            ) : null}
+                          </div>
+                        ) : null}
+                      </div>
+                    )
+                  })()
+                : null}
+              {currentLeasePdf?.['PDF URL'] ? (
+                <div className="border-t border-slate-100 px-4 pb-4 sm:px-5">
+                  <div className="overflow-hidden rounded-[20px] border border-slate-200 bg-white shadow-sm">
+                    <iframe title="Resident lease PDF" src={currentLeasePdf['PDF URL']} className="h-[420px] w-full bg-white" />
+                  </div>
+                </div>
+              ) : null}
+            </div>
           </div>
         ) : null}
 
@@ -3249,7 +3231,7 @@ function ResidentDashboardHome({
   inboxUnopenedCount,
 }) {
   const snapshot = useMemo(() => buildResidentRentSnapshot(payments, resident), [payments, resident])
-  const duePaymentLines = useMemo(() => buildResidentDashboardDuePaymentLines(payments), [payments])
+  const duePaymentLines = useMemo(() => listDashboardDuePaymentLines(payments), [payments])
   const totalDueFromRows = useMemo(
     () => duePaymentLines.reduce((sum, row) => sum + row.balance, 0),
     [duePaymentLines],

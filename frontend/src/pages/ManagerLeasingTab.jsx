@@ -13,6 +13,7 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import toast from 'react-hot-toast'
 import LeaseHTMLTemplate from '../components/LeaseHTMLTemplate.jsx'
+import { pickManagerSignatureFromDraft } from '../../../shared/lease-manager-signature-fields.js'
 import { PortalEmptyVisual } from '../components/portalNavIcons.jsx'
 import { DataTable } from '../components/PortalShell'
 import { getStatusConfig, fmtTs } from '../lib/leaseWorkflowConstants.js'
@@ -380,6 +381,8 @@ export default function ManagerLeasingTab({ manager, allowedPropertyNames }) {
       return {}
     }
   }, [activeDraft])
+
+  const managerSigDetail = useMemo(() => pickManagerSignatureFromDraft(activeDraft, import.meta.env), [activeDraft])
 
   async function handleSendToResident() {
     if (!activeDraft?.id) return
@@ -846,6 +849,9 @@ export default function ManagerLeasingTab({ manager, allowedPropertyNames }) {
                   leaseData={leaseJson}
                   signedBy={activeDraft?.['Signed By']}
                   signedAt={activeDraft?.['Signed At']}
+                  managerSignedBy={managerSigDetail.text || undefined}
+                  managerSignedAt={managerSigDetail.at || undefined}
+                  managerSignatureImageUrl={managerSigDetail.image || undefined}
                 />
               </div>
             ) : (

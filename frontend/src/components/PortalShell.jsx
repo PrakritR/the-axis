@@ -164,16 +164,13 @@ export default function PortalShell({
                 key={item.id}
                 type="button"
                 onClick={() => onNavigate(item.id)}
-                className={`flex w-full flex-col items-center gap-1.5 rounded-xl px-2 py-3 text-center text-sm font-semibold transition ${
+                className={`flex w-full items-center rounded-xl px-3 py-2.5 text-left text-sm font-semibold transition ${
                   active
                     ? 'bg-[linear-gradient(180deg,#2f76ff_0%,#2450eb_100%)] text-white shadow-[0_4px_16px_rgba(37,99,235,0.35)]'
                     : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
                 }`}
               >
-                <span className={portalNavIconBackdropClass({ active, variant: 'sidebar' })}>
-                  <PortalNavGlyph tabId={item.id} className="h-5 w-5 shrink-0 opacity-95" />
-                </span>
-                <span className="block w-full truncate px-0.5 text-xs font-semibold leading-tight">{item.label}</span>
+                <span className="block w-full truncate leading-snug">{item.label}</span>
               </button>
             )
           })}

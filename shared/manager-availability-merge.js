@@ -314,7 +314,8 @@ export function normalizeMergedRanges(ranges) {
   const merged = []
   for (const range of parsed) {
     const prev = merged[merged.length - 1]
-    if (prev && range.start <= prev.end) prev.end = Math.max(prev.end, range.end)
+    // Strict overlap: touching intervals [a,b) and [b,c) stay separate so multiple saved rows reload intact.
+    if (prev && range.start < prev.end) prev.end = Math.max(prev.end, range.end)
     else merged.push({ ...range })
   }
   return merged
