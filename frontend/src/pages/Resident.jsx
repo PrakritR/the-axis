@@ -423,16 +423,53 @@ function residentRoomHoldFeeUsd(resident) {
   return Number.isFinite(env) && env > 0 ? env : 100
 }
 
-/** Airtable checkbox (or text) — resident chose to hold a room before signing the lease. */
-function roomHoldWithoutLeaseFieldName() {
-  const f = String(import.meta.env.VITE_RESIDENT_ROOM_HOLD_WITHOUT_LEASE_FIELD || 'Room Hold Without Lease').trim()
-  return f || 'Room Hold Without Lease'
+/** Checkbox (or truthy text) on Residents — hold bed before signing lease. Order: env override, then common Airtable names. */
+function roomHoldWithoutLeaseFieldCandidates() {
+  const fromEnv = String(import.meta.env.VITE_RESIDENT_ROOM_HOLD_WITHOUT_LEASE_FIELD || '').trim()
+  const defaults = [
+    'Room Hold Without Lease',
+    'Hold Room Without Lease',
+    'Hold Room Without Signing Lease',
+  ]
+  const ordered = [...(fromEnv ? [fromEnv] : []), ...defaults]
+  return [...new Set(ordered.map((x) => String(x || '').trim()).filter(Boolean))]
+}
+
+function airtableResponseIsUnknownFieldName(err) {
+  const raw = err?.message != null ? String(err.message) : String(err)
+  try {
+    const j = JSON.parse(raw)
+    return j?.error?.type === 'UNKNOWN_FIELD_NAME'
+  } catch {
+    return /UNKNOWN_FIELD_NAME/i.test(raw) || /Unknown field name/i.test(raw)
+  }
+}
+
+/**
+ * PATCH resident hold-path flag; tries each field name until Airtable accepts one.
+ * @returns {Promise<object>} mapped resident record
+ */
+async function updateResidentRoomHoldPathFlag(residentId, wantHold) {
+  const candidates = roomHoldWithoutLeaseFieldCandidates()
+  let lastErr = null
+  for (const field of candidates) {
+    try {
+      return await updateResident(residentId, { [field]: wantHold })
+    } catch (e) {
+      lastErr = e
+      if (airtableResponseIsUnknownFieldName(e)) continue
+      throw e
+    }
+  }
+  const tried = candidates.map((f) => `"${f}"`).join(', ')
+  throw new Error(
+    `No matching Residents field for the move-in path. Tried: ${tried}. Add a checkbox field in Airtable (for example "Room Hold Without Lease") or set VITE_RESIDENT_ROOM_HOLD_WITHOUT_LEASE_FIELD to your field's exact name.`,
+  )
 }
 
 function residentOptedRoomHoldWithoutSigningLease(resident) {
   if (!resident || typeof resident !== 'object') return false
-  const primary = roomHoldWithoutLeaseFieldName()
-  const keys = [primary, 'Room Hold Without Lease', 'Hold Room Without Lease'].filter((k, i, a) => k && a.indexOf(k) === i)
+  const keys = roomHoldWithoutLeaseFieldCandidates()
   for (const key of keys) {
     const v = resident[key]
     if (v === true || v === 1) return true
@@ -2661,8 +2698,7 @@ function LeasingPanel({ resident, payments, onOpenPayments, onNavigateTab, onLea
       setHoldPathBusy(true)
       setHoldPathError('')
       try {
-        const field = roomHoldWithoutLeaseFieldName()
-        await updateResident(resident.id, { [field]: wantHold })
+        await updateResidentRoomHoldPathFlag(resident.id, wantHold)
         if (wantHold) {
           const list = Array.isArray(payments) ? payments : []
           const hasHold = list.some((p) => classifyResidentPaymentLine(p) === 'hold_fee')
