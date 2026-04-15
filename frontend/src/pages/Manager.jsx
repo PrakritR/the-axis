@@ -103,6 +103,12 @@ import {
   ensurePostpayRoomCleaningFeePayment,
   workOrderShouldCreatePaymentWhenScheduled,
 } from '../lib/roomCleaningWorkOrder.js'
+import {
+  readWorkOrderCostFromRecord,
+  workOrderManagerChargeFieldName,
+  ensureWorkOrderManagerChargePayment,
+  createResidentManualPaymentLine,
+} from '../lib/workOrderPayments.js'
 import { residentLeasingThreadVisibleToManager } from '../lib/portalInboxResidentScope.js'
 import {
   isPaymentRowDueOnResidentHome,
@@ -3932,6 +3938,51 @@ function workOrderLinkedId(woField) {
   return ''
 }
 
+function parseWorkOrderCostInputString(s) {
+  const n = Number.parseFloat(String(s ?? '').trim().replace(/[^0-9.-]/g, ''))
+  return Number.isFinite(n) && n >= 0 ? n : 0
+}
+
+async function updateWorkOrderWithScheduledFallback(recordId, payload) {
+  try {
+    return await updateWorkOrder(recordId, payload)
+  } catch (err) {
+    const msg = String(err?.message || '')
+    const m = msg.match(/Unknown field name:\s*"([^"]+)"/i)
+    if (m?.[1] === 'Scheduled Date' && payload['Scheduled Date']) {
+      const { 'Scheduled Date': _sd, ...rest } = payload
+      return updateWorkOrder(recordId, rest)
+    }
+    throw err
+  }
+}
+
+/** Persists status/schedule fields and a positive cost when the base has a matching Work Orders column. */
+async function updateWorkOrderFieldsAndCost(recordId, fields, costString) {
+  const costNum = parseWorkOrderCostInputString(costString)
+  if (!Number.isFinite(costNum) || costNum <= 0) {
+    return updateWorkOrderWithScheduledFallback(recordId, fields)
+  }
+  const costFields = [
+    workOrderManagerChargeFieldName(),
+    'Cost',
+    'Work Order Cost',
+    'Billable Amount',
+    'Charge',
+  ]
+  const uniq = [...new Set(costFields.filter(Boolean))]
+  for (const cf of uniq) {
+    try {
+      return await updateWorkOrderWithScheduledFallback(recordId, { ...fields, [cf]: costNum })
+    } catch (err) {
+      const unk = String(err?.message || '').match(/Unknown field name:\s*"([^"]+)"/i)?.[1]
+      if (unk === cf) continue
+      throw err
+    }
+  }
+  return updateWorkOrderWithScheduledFallback(recordId, fields)
+}
+
 function parseCalendarDay(val) {
   if (!val) return null
   const m = String(val).match(/^(\d{4}-\d{2}-\d{2})/)
@@ -4276,6 +4327,7 @@ function WorkOrdersTabPanel({ manager, allowedPropertyNames, allowedPropertyIds 
   const [loadError, setLoadError] = useState('')
   const [saving, setSaving] = useState(false)
   const [scheduledVisitDate, setScheduledVisitDate] = useState('')
+  const [workOrderCost, setWorkOrderCost] = useState('')
   /** One repair attempt per WO id per session — backfills Payments when WO was scheduled without a fee row. */
   const cleaningPaymentRepairAttemptedRef = useRef(new Set())
   const woDetailPhotoUrls = useMemo(() => workOrderPhotoAttachmentUrls(record), [record])
@@ -4295,6 +4347,8 @@ function WorkOrdersTabPanel({ manager, allowedPropertyNames, allowedPropertyIds 
       normalizeWorkOrderScheduleDateKey(nextRecord?.['Scheduled Visit Date']) ||
       normalizeWorkOrderScheduleDateKey(nextRecord?.['Scheduled Date'])
     setScheduledVisitDate(sm?.date || fallback || '')
+    const c = readWorkOrderCostFromRecord(nextRecord)
+    setWorkOrderCost(c > 0 ? String(c) : '')
   }
 
   const scheduledKeyForCleaningRepair = useMemo(() => {
@@ -4576,24 +4630,45 @@ function WorkOrdersTabPanel({ manager, allowedPropertyNames, allowedPropertyIds 
         fields['Scheduled Date'] = ''
       }
 
-      let nextRecord
-      try {
-        nextRecord = await updateWorkOrder(record.id, fields)
-      } catch (err) {
-        const msg = String(err?.message || '')
-        const m = msg.match(/Unknown field name:\s*"([^"]+)"/i)
-        if (m?.[1] === 'Scheduled Date' && fields['Scheduled Date']) {
-          const { 'Scheduled Date': _sd, ...rest } = fields
-          nextRecord = await updateWorkOrder(record.id, rest)
-        } else {
-          throw err
-        }
-      }
+      const nextRecord = await updateWorkOrderFieldsAndCost(record.id, fields, workOrderCost)
       setRecord(nextRecord)
       applyRecordToForm(nextRecord)
       await loadList()
 
       const mergedWorkOrder = { ...record, ...nextRecord }
+      const chargeAmount = parseWorkOrderCostInputString(workOrderCost)
+      let woChargeCreated = false
+      if (chargeAmount > 0) {
+        const billingRid = resolveResidentRecordIdForWorkOrderBilling(mergedWorkOrder, residentsById)
+        if (billingRid) {
+          try {
+            const resRec = residentsById.get(billingRid) || { id: billingRid }
+            const payments = await getPaymentsForResident({ id: billingRid })
+            const chargeRes = await ensureWorkOrderManagerChargePayment({
+              workOrder: mergedWorkOrder,
+              costUsd: chargeAmount,
+              billingResidentId: billingRid,
+              residentProfile: resRec,
+              paymentsPrefetch: payments,
+            })
+            if (chargeRes.created) {
+              window.dispatchEvent(new CustomEvent('axis:payments-changed'))
+              woChargeCreated = true
+            }
+          } catch (chargeErr) {
+            console.error('[WorkOrdersTabPanel] work order charge payment', chargeErr)
+            toast.error(
+              String(chargeErr?.message || '').slice(0, 140) ||
+                'Could not add work order charge to Payments. Add a Cost field on Work Orders or check the Payments table.',
+            )
+          }
+        } else {
+          toast.error(
+            'Set a resident link on this work order before billing a work order charge (or add submitter email).',
+          )
+        }
+      }
+
       let successMsg = isScheduling ? 'Work order scheduled' : 'Work order saved'
       if (isScheduling && dateStr && mergedWorkOrder?.id && workOrderShouldCreatePaymentWhenScheduled(mergedWorkOrder)) {
         const billingRid = resolveResidentRecordIdForWorkOrderBilling(mergedWorkOrder, residentsById)
@@ -4628,6 +4703,10 @@ function WorkOrdersTabPanel({ manager, allowedPropertyNames, allowedPropertyIds 
         }
       }
 
+      if (woChargeCreated) {
+        successMsg = `${successMsg} Work order charge added to resident Payments.`
+      }
+
       toast.success(successMsg)
     } catch (err) {
       toast.error(err.message || 'Could not save work order')
@@ -4644,11 +4723,39 @@ function WorkOrdersTabPanel({ manager, allowedPropertyNames, allowedPropertyIds 
         Status: 'Completed',
         Resolved: true,
       }
-      const nextRecord = await updateWorkOrder(record.id, fields)
+      const nextRecord = await updateWorkOrderFieldsAndCost(record.id, fields, workOrderCost)
       setRecord(nextRecord)
       applyRecordToForm(nextRecord)
       await loadList()
-      toast.success('Work order marked completed')
+
+      const mergedWorkOrder = { ...record, ...nextRecord }
+      const chargeAmount = parseWorkOrderCostInputString(workOrderCost)
+      let completionMsg = 'Work order marked completed'
+      if (chargeAmount > 0) {
+        const billingRid = resolveResidentRecordIdForWorkOrderBilling(mergedWorkOrder, residentsById)
+        if (billingRid) {
+          try {
+            const resRec = residentsById.get(billingRid) || { id: billingRid }
+            const payments = await getPaymentsForResident({ id: billingRid })
+            const chargeRes = await ensureWorkOrderManagerChargePayment({
+              workOrder: mergedWorkOrder,
+              costUsd: chargeAmount,
+              billingResidentId: billingRid,
+              residentProfile: resRec,
+              paymentsPrefetch: payments,
+            })
+            if (chargeRes.created) {
+              window.dispatchEvent(new CustomEvent('axis:payments-changed'))
+              completionMsg = 'Work order completed — charge added to resident Payments.'
+            }
+          } catch (chargeErr) {
+            console.error('[WorkOrdersTabPanel] work order charge on complete', chargeErr)
+            toast.error(String(chargeErr?.message || '').slice(0, 140) || 'Could not add charge to Payments.')
+          }
+        }
+      }
+
+      toast.success(completionMsg)
     } catch (err) {
       toast.error(err?.message || 'Could not mark work order complete')
     } finally {
@@ -4881,6 +4988,26 @@ function WorkOrdersTabPanel({ manager, allowedPropertyNames, allowedPropertyIds 
                     {residentPreferredTimeWindowLabel(record) || 'Not provided'}
                   </div>
                 </div>
+                <div className="sm:col-span-2">
+                  <label className="mb-2 block text-xs font-semibold uppercase tracking-[0.14em] text-slate-400">
+                    Billable cost (USD)
+                  </label>
+                  <input
+                    type="number"
+                    min={0}
+                    step={0.01}
+                    inputMode="decimal"
+                    placeholder="0 — add amount to bill resident"
+                    value={workOrderCost}
+                    onChange={(e) => setWorkOrderCost(e.target.value)}
+                    className={fieldCls}
+                  />
+                  <p className="mt-1.5 text-xs text-slate-500">
+                    If greater than zero, Save or Mark completed adds one unpaid line to that resident’s Payments (same
+                    portal as rent). Add a <span className="font-mono">Cost</span> column on Work Orders in Airtable to
+                    store this value (or set <span className="font-mono">VITE_AIRTABLE_WORK_ORDER_COST_FIELD</span>).
+                  </p>
+                </div>
               </div>
 
               <button
@@ -4900,10 +5027,14 @@ function WorkOrdersTabPanel({ manager, allowedPropertyNames, allowedPropertyIds 
 }
 
 // ─── ManagerPaymentsPanel ─────────────────────────────────────────────────────
-function ManagerPaymentsPanel({ allowedPropertyNames }) {
+function ManagerPaymentsPanel({ allowedPropertyNames, allowedPropertyIds }) {
   const scopeLower = useMemo(
     () => new Set((allowedPropertyNames || []).map((n) => String(n).trim().toLowerCase()).filter(Boolean)),
     [allowedPropertyNames],
+  )
+  const scopeIds = useMemo(
+    () => new Set((allowedPropertyIds || []).map((id) => String(id).trim()).filter(Boolean)),
+    [allowedPropertyIds],
   )
   const [rentRows, setRentRows] = useState([])
   const [allScopedRows, setAllScopedRows] = useState([])
@@ -4914,6 +5045,17 @@ function ManagerPaymentsPanel({ allowedPropertyNames }) {
   const [expandedPaymentId, setExpandedPaymentId] = useState('')
   const [payPropertyFilter, setPayPropertyFilter] = useState('')
   const [payResidentFilter, setPayResidentFilter] = useState('')
+  const [manualResidents, setManualResidents] = useState([])
+  const [manualResidentId, setManualResidentId] = useState('')
+  const [manualAmount, setManualAmount] = useState('')
+  const [manualType, setManualType] = useState('Fee')
+  const [manualNotes, setManualNotes] = useState('')
+  const [manualDueDate, setManualDueDate] = useState(() => {
+    const d = new Date()
+    d.setDate(d.getDate() + 14)
+    return d.toISOString().slice(0, 10)
+  })
+  const [manualSubmitting, setManualSubmitting] = useState(false)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -4944,6 +5086,36 @@ function ManagerPaymentsPanel({ allowedPropertyNames }) {
   useEffect(() => {
     load()
   }, [load])
+
+  useEffect(() => {
+    const onPay = () => load()
+    window.addEventListener('axis:payments-changed', onPay)
+    return () => window.removeEventListener('axis:payments-changed', onPay)
+  }, [load])
+
+  useEffect(() => {
+    let cancelled = false
+    ;(async () => {
+      try {
+        const all = await listAllResidentsRecords()
+        if (cancelled) return
+        const scoped = (all || []).filter((r) => residentBelongsToManagerScope(r, scopeLower, scopeIds))
+        scoped.sort((a, b) =>
+          String(a.Name || a['Resident Name'] || '').localeCompare(
+            String(b.Name || b['Resident Name'] || ''),
+            undefined,
+            { sensitivity: 'base' },
+          ),
+        )
+        setManualResidents(scoped)
+      } catch {
+        if (!cancelled) setManualResidents([])
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [scopeLower, scopeIds])
 
   const payPropertyChoices = useMemo(() => {
     const fromRows = buildPropertyFilterOptionsFromRows(rentRows, {
@@ -5108,6 +5280,40 @@ function ManagerPaymentsPanel({ allowedPropertyNames }) {
     }
   }
 
+  async function submitManualPayment(e) {
+    e.preventDefault()
+    const rid = String(manualResidentId || '').trim()
+    if (!rid) {
+      toast.error('Choose a resident.')
+      return
+    }
+    setManualSubmitting(true)
+    try {
+      const profile = manualResidents.find((r) => String(r.id) === rid) || null
+      await createResidentManualPaymentLine({
+        billingResidentId: rid,
+        amountUsd: manualAmount,
+        typeLabel: manualType,
+        notes: manualNotes,
+        dueDateIso: manualDueDate,
+        residentProfile: profile,
+      })
+      toast.success('Payment line added for that resident.')
+      setManualAmount('')
+      setManualNotes('')
+      setManualType('Fee')
+      const d = new Date()
+      d.setDate(d.getDate() + 14)
+      setManualDueDate(d.toISOString().slice(0, 10))
+      await load()
+      window.dispatchEvent(new CustomEvent('axis:payments-changed'))
+    } catch (err) {
+      toast.error(err.message || 'Could not add payment.')
+    } finally {
+      setManualSubmitting(false)
+    }
+  }
+
   async function removePaymentRow(row) {
     const id = row?.id
     if (!id) return
@@ -5178,6 +5384,83 @@ function ManagerPaymentsPanel({ allowedPropertyNames }) {
         <button type="button" onClick={load} className={MANAGER_PILL_REFRESH_CLS}>
           Refresh
         </button>
+      </div>
+
+      <div className="mb-6 rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+        <h3 className="text-sm font-black text-slate-900">Add payment for a resident</h3>
+        <p className="mt-1 text-xs text-slate-500">
+          Creates one unpaid line on the resident’s Payments tab (same as work order billing). Residents pay from their
+          portal when you use Stripe checkout links there, or mark paid manually below.
+        </p>
+        <form onSubmit={submitManualPayment} className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="sm:col-span-2">
+            <label className="mb-1 block text-[11px] font-bold uppercase tracking-[0.12em] text-slate-400">Resident</label>
+            <select
+              value={manualResidentId}
+              onChange={(e) => setManualResidentId(e.target.value)}
+              className="h-[42px] w-full rounded-xl border border-slate-200 bg-white px-3 text-sm font-medium text-slate-800 outline-none focus:border-[#2563eb] focus:ring-2 focus:ring-[#2563eb]/20"
+            >
+              <option value="">— Select resident —</option>
+              {manualResidents.map((r) => (
+                <option key={r.id} value={r.id}>
+                  {String(r.Name || r['Resident Name'] || r.Email || r.id).trim()}
+                  {residentDisplayPropertyName(r) ? ` · ${residentDisplayPropertyName(r)}` : ''}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className="mb-1 block text-[11px] font-bold uppercase tracking-[0.12em] text-slate-400">Amount (USD)</label>
+            <input
+              type="number"
+              min={0.01}
+              step={0.01}
+              required
+              value={manualAmount}
+              onChange={(e) => setManualAmount(e.target.value)}
+              className="h-[42px] w-full rounded-xl border border-slate-200 bg-white px-3 text-sm outline-none focus:border-[#2563eb] focus:ring-2 focus:ring-[#2563eb]/20"
+              placeholder="0.00"
+            />
+          </div>
+          <div>
+            <label className="mb-1 block text-[11px] font-bold uppercase tracking-[0.12em] text-slate-400">Due date</label>
+            <input
+              type="date"
+              value={manualDueDate}
+              onChange={(e) => setManualDueDate(e.target.value)}
+              className="h-[42px] w-full rounded-xl border border-slate-200 bg-white px-3 text-sm outline-none focus:border-[#2563eb] focus:ring-2 focus:ring-[#2563eb]/20"
+            />
+          </div>
+          <div>
+            <label className="mb-1 block text-[11px] font-bold uppercase tracking-[0.12em] text-slate-400">Type / label</label>
+            <input
+              type="text"
+              value={manualType}
+              onChange={(e) => setManualType(e.target.value)}
+              className="h-[42px] w-full rounded-xl border border-slate-200 bg-white px-3 text-sm outline-none focus:border-[#2563eb] focus:ring-2 focus:ring-[#2563eb]/20"
+              placeholder="e.g. Fee, Repair, Parking"
+            />
+          </div>
+          <div className="sm:col-span-2 lg:col-span-3">
+            <label className="mb-1 block text-[11px] font-bold uppercase tracking-[0.12em] text-slate-400">Notes (optional)</label>
+            <input
+              type="text"
+              value={manualNotes}
+              onChange={(e) => setManualNotes(e.target.value)}
+              className="h-[42px] w-full rounded-xl border border-slate-200 bg-white px-3 text-sm outline-none focus:border-[#2563eb] focus:ring-2 focus:ring-[#2563eb]/20"
+              placeholder="Visible on the payment line"
+            />
+          </div>
+          <div className="flex items-end">
+            <button
+              type="submit"
+              disabled={manualSubmitting}
+              className="h-[42px] w-full rounded-xl bg-[#2563eb] px-4 text-sm font-semibold text-white transition hover:brightness-110 disabled:opacity-50"
+            >
+              {manualSubmitting ? 'Adding…' : 'Add payment'}
+            </button>
+          </div>
+        </form>
       </div>
 
       {paymentsLoadError ? (
@@ -7512,7 +7795,7 @@ function ManagerDashboard({ manager: managerProp, openDraftId, onOpenDraft, onCl
             <HouseManagementPanel manager={manager} onPropertiesChange={handlePropertiesChange} />
           </div>
         ) : dashView === 'payments' ? (
-          <ManagerPaymentsPanel allowedPropertyNames={scopedPropertyOptions} />
+          <ManagerPaymentsPanel allowedPropertyNames={scopedPropertyOptions} allowedPropertyIds={scopedPropertyIds} />
         ) : dashView === 'workorders' ? (
           <WorkOrdersTabPanel manager={manager} allowedPropertyNames={scopedPropertyOptions} allowedPropertyIds={scopedPropertyIds} />
         ) : dashView === 'calendar' ? (

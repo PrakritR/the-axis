@@ -141,6 +141,10 @@ function collectRoomRentAmountsFromRecord(rec, meta) {
  */
 export function computeListingRentLabel(rec, meta) {
   const leasing = normalizeLeasingFromMeta(meta?.leasing)
+  const listedRoomRent = Number(meta?.financials?.monthlyRoomRent)
+  if (Number.isFinite(listedRoomRent) && listedRoomRent > 0) {
+    return `$${listedRoomRent.toLocaleString('en-US')}/month`
+  }
   const fh = parseFloat(String(leasing.fullHousePrice || '').replace(/[^\d.]/g, ''))
   const pr = parseFloat(String(leasing.promoPrice || '').replace(/[^\d.]/g, ''))
   if (Number.isFinite(fh) && fh > 0 && Number.isFinite(pr) && pr > 0) {
@@ -571,6 +575,71 @@ function formatMoneyLabelFromNumber(n) {
   return `$${n.toLocaleString('en-US', { maximumFractionDigits: n % 1 !== 0 ? 2 : 0 })}`
 }
 
+function listingPricingBulletsFromFinancials(rec, meta) {
+  const fin = meta?.financials && typeof meta.financials === 'object' ? meta.financials : {}
+  if (!boolFromMetaFlag(fin.showFeesOnListing)) return []
+
+  const bullets = []
+  const mr = Number(fin.monthlyRoomRent)
+  if (Number.isFinite(mr) && mr > 0) {
+    bullets.push(`Typical room rent from ${formatMoneyLabelFromNumber(mr)}/month (confirm on lease).`)
+  }
+
+  const utilCol = String(
+    rec['Utilities Fee'] ?? rec['Utilities'] ?? rec['House Utilities'] ?? '',
+  ).trim()
+  const utilNum = Number(fin.utilityFee ?? fin.utilities)
+  if (utilCol) bullets.push(`Utilities: ${utilCol}`)
+  else if (Number.isFinite(utilNum) && utilNum > 0) {
+    bullets.push(`Utility fee about ${formatMoneyLabelFromNumber(utilNum)}/month (see lease for what is included).`)
+  }
+
+  const hold = Number(fin.holdingDeposit)
+  if (Number.isFinite(hold) && hold > 0) bullets.push(`Holding deposit: ${formatMoneyLabelFromNumber(hold)}`)
+
+  const mif = Number(fin.moveInFee)
+  if (Number.isFinite(mif) && mif > 0) bullets.push(`Move-in fee: ${formatMoneyLabelFromNumber(mif)}`)
+
+  const appFeeNum = Number(rec[PROPERTY_AIR.applicationFee])
+  if (Number.isFinite(appFeeNum) && appFeeNum >= 0) {
+    bullets.push(
+      appFeeNum === 0 ? 'No application fee' : `Application fee: ${formatMoneyLabelFromNumber(appFeeNum)}`,
+    )
+  }
+
+  const sdRaw = rec[PROPERTY_AIR.securityDeposit] ?? rec['Security Deposit']
+  const sdStr = sdRaw != null && String(sdRaw).trim() !== '' ? String(sdRaw).trim() : ''
+  if (sdStr) bullets.push(`Security deposit: ${sdStr}`)
+
+  const late = Number(fin.lateRentFee)
+  if (Number.isFinite(late) && late > 0) bullets.push(`Late rent fee: ${formatMoneyLabelFromNumber(late)}`)
+
+  if (boolFromMetaFlag(fin.petsAllowed)) {
+    const pd = Number(fin.petDeposit)
+    const pr = Number(fin.petRent)
+    if (Number.isFinite(pd) && pd > 0) bullets.push(`Pet deposit: ${formatMoneyLabelFromNumber(pd)}`)
+    if (Number.isFinite(pr) && pr > 0) bullets.push(`Pet rent: ${formatMoneyLabelFromNumber(pr)}/month`)
+  }
+
+  if (boolFromMetaFlag(fin.conditionalDepositRequired)) {
+    const cd = Number(fin.conditionalDeposit)
+    if (Number.isFinite(cd) && cd > 0) {
+      const note = String(fin.conditionalDepositNote || '').trim()
+      bullets.push(
+        note
+          ? `Additional deposit (when applicable): ${formatMoneyLabelFromNumber(cd)} — ${note}`
+          : `Additional deposit (when applicable): ${formatMoneyLabelFromNumber(cd)}`,
+      )
+    }
+  }
+
+  return bullets.slice(0, 10)
+}
+
+function boolFromMetaFlag(v) {
+  return v === true || v === 1 || v === '1' || String(v || '').trim().toLowerCase() === 'true'
+}
+
 /**
  * Fee / deposit strings for marketing cards and property pages (Airtable + meta).
  * Kept in one place so home listings match full listing pages.
@@ -596,9 +665,13 @@ export function financialDisplayFieldsFromAirtableRecord(rec, meta) {
       ? `${formatMoneyLabelFromNumber(adminFeeNum)} administrative (non-refundable)`
       : ''
 
-  const utilitiesFee = String(
+  let utilitiesFee = String(
     rec['Utilities Fee'] ?? rec['Utilities'] ?? rec['House Utilities'] ?? meta?.financials?.utilities ?? '',
   ).trim()
+  const utilMetaNum = Number(meta?.financials?.utilityFee ?? meta?.financials?.utilities)
+  if (!utilitiesFee && Number.isFinite(utilMetaNum) && utilMetaNum > 0) {
+    utilitiesFee = `${formatMoneyLabelFromNumber(utilMetaNum)}/month`
+  }
 
   const sdRaw = rec[PROPERTY_AIR.securityDeposit] ?? rec['Security Deposit']
   const securityDeposit =
@@ -611,6 +684,12 @@ export function financialDisplayFieldsFromAirtableRecord(rec, meta) {
         : formatMoneyLabelFromNumber(appFeeNum)
       : formatMoneyLabelFromNumber(DEFAULT_APPLICATION_FEE_USD)
 
+  const showFeesOnListing = boolFromMetaFlag(meta?.financials?.showFeesOnListing)
+  const listingPricingBullets = listingPricingBulletsFromFinancials(rec, meta)
+  const pricingNotesForListing = showFeesOnListing
+    ? String(meta?.financials?.pricingNotes || '').trim()
+    : ''
+
   return {
     applicationFee,
     applicationFeeDisplay,
@@ -618,6 +697,9 @@ export function financialDisplayFieldsFromAirtableRecord(rec, meta) {
     administrationFeeDisplay,
     utilitiesFee,
     securityDeposit,
+    showFeesOnListing,
+    listingPricingBullets,
+    pricingNotesForListing,
   }
 }
 

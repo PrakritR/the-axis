@@ -11,6 +11,8 @@
  *   (numeric rent & ISO availability read from `Room N Rent` / `Room N Availability` when those columns exist).
  * - `leasing["Leasing Packages"]` — bundle rows when floor packages are used (no dedicated table yet).
  * - `financials.moveInCharges`, `financials.administrationFee` (non-deposit move-in admin; separate from `Security Deposit` column).
+ * - `financials.monthlyRoomRent`, `utilityFee`, `holdingDeposit`, `moveInFee`, `lateRentFee`, pet/conditional flags & amounts,
+ *   `pricingNotes`, `showFeesOnListing` (manager “Pricing & Fees” wizard; public UI when `showFeesOnListing` is true).
  * - `leasing.guestPolicy`, `leasing.additionalLeaseTerms` — optional text merged into generated lease Section 6.
  * - `listingAvailabilityWindows`, `listingVideos`, `bathroomTotalDecimal`, `sharedSpacesDetail`
  *   (each entry may include `imageUrls[]`; photos may also use `axis-ss{n}-` filenames on Photos like laundry),

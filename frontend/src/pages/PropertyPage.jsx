@@ -952,7 +952,10 @@ export default function PropertyPage(){
       String(p.securityDeposit || '').trim().length > 0 ||
       String(p.utilitiesFee || '').trim().length > 0 ||
       String(p.petsPolicy || '').trim().length > 0 ||
-      Boolean(p.administrationFeeDisplay)
+      Boolean(p.administrationFeeDisplay) ||
+      Boolean(p.showFeesOnListing) ||
+      (Array.isArray(p.listingPricingBullets) && p.listingPricingBullets.length > 0) ||
+      String(p.pricingNotesForListing || '').trim().length > 0
     const hasLocation =
       Boolean(String(p.address || '').trim()) ||
       Boolean(p._fromAirtable && p.location && typeof p.location.lat === 'number' && typeof p.location.lng === 'number')
@@ -1550,6 +1553,25 @@ export default function PropertyPage(){
                   </tbody>
                 </table>
               </div>
+
+              {p.showFeesOnListing && (p.listingPricingBullets?.length > 0 || p.pricingNotesForListing) ? (
+                <div className="mt-8 rounded-xl border border-slate-200 bg-slate-50/80 px-4 py-5 sm:px-6">
+                  <h3 className="text-sm font-black uppercase tracking-[0.12em] text-slate-600">Pricing transparency</h3>
+                  <p className="mt-1 text-xs text-slate-600">
+                    Provided by the property manager for this listing. Confirm final amounts in your lease.
+                  </p>
+                  {p.listingPricingBullets?.length > 0 ? (
+                    <ul className="mt-4 list-disc space-y-2 pl-5 text-sm font-medium text-slate-800">
+                      {p.listingPricingBullets.map((line, idx) => (
+                        <li key={idx}>{line}</li>
+                      ))}
+                    </ul>
+                  ) : null}
+                  {p.pricingNotesForListing ? (
+                    <p className="mt-4 text-sm leading-relaxed text-slate-700">{p.pricingNotesForListing}</p>
+                  ) : null}
+                </div>
+              ) : null}
 
               {(p.securityDeposit || p.administrationFeeDisplay || p.applicationFeeDisplay || p.moveInChargesDisplay) ? (
                 <div className="mt-8 rounded-2xl border border-stone-200 bg-[#faf8f5] px-4 py-5 sm:px-6">

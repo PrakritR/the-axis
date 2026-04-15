@@ -166,6 +166,22 @@ export default function PropertyCard({ p }) {
             </ul>
           </div>
 
+          {p.showFeesOnListing && (p.listingPricingBullets?.length > 0 || p.pricingNotesForListing) ? (
+            <div>
+              <h4 className="text-[10px] font-bold uppercase tracking-[0.14em] text-slate-500">Pricing details</h4>
+              {p.listingPricingBullets?.length > 0 ? (
+                <ul className="mt-2 list-disc space-y-1.5 pl-4 marker:text-slate-300">
+                  {p.listingPricingBullets.map((line, idx) => (
+                    <li key={idx} className="text-slate-700">{line}</li>
+                  ))}
+                </ul>
+              ) : null}
+              {p.pricingNotesForListing ? (
+                <p className="mt-2 text-xs leading-relaxed text-slate-600">{p.pricingNotesForListing}</p>
+              ) : null}
+            </div>
+          ) : null}
+
           <div>
             <h4 className="text-[10px] font-bold uppercase tracking-[0.14em] text-slate-500">Application process</h4>
             <ol className="mt-2 list-decimal space-y-1.5 pl-4 marker:font-semibold marker:text-slate-400">

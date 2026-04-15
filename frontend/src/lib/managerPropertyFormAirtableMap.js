@@ -144,6 +144,71 @@ export function emptyMoveInChargeRow() {
   }
 }
 
+/** Wizard “Pricing & Fees” step — persisted under `meta.financials` in Other Info (plus native Application Fee / Security Deposit). */
+export function emptyPricingFees() {
+  return {
+    monthlyRoomRent: '',
+    utilityFee: '',
+    holdingDeposit: '',
+    moveInFee: '',
+    lateRentFee: '',
+    petsAllowed: false,
+    petDeposit: '',
+    petRent: '',
+    conditionalDepositRequired: false,
+    conditionalDeposit: '',
+    conditionalDepositNote: '',
+    pricingNotes: '',
+    showFeesOnListing: false,
+  }
+}
+
+/**
+ * Merge wizard pricing fields into axis meta `financials` (camelCase keys).
+ * @param {Record<string, unknown> | null | undefined} pricingFees
+ * @returns {Record<string, unknown>}
+ */
+export function pricingFeesToFinancialsMeta(pricingFees) {
+  const pf = pricingFees && typeof pricingFees === 'object' ? pricingFees : {}
+  const out = {}
+  const mrr = optionalCurrency(pf.monthlyRoomRent)
+  if (mrr !== undefined) out.monthlyRoomRent = mrr
+
+  const uf = optionalCurrency(pf.utilityFee)
+  if (uf !== undefined) out.utilityFee = uf
+
+  const hd = optionalCurrency(pf.holdingDeposit)
+  if (hd !== undefined) out.holdingDeposit = hd
+
+  const mif = optionalCurrency(pf.moveInFee)
+  if (mif !== undefined) out.moveInFee = mif
+
+  const lrf = optionalCurrency(pf.lateRentFee)
+  if (lrf !== undefined) out.lateRentFee = lrf
+
+  out.petsAllowed = Boolean(pf.petsAllowed)
+  if (out.petsAllowed) {
+    const pd = optionalCurrency(pf.petDeposit)
+    if (pd !== undefined) out.petDeposit = pd
+    const pr = optionalCurrency(pf.petRent)
+    if (pr !== undefined) out.petRent = pr
+  }
+
+  out.conditionalDepositRequired = Boolean(pf.conditionalDepositRequired)
+  if (out.conditionalDepositRequired) {
+    const cd = optionalCurrency(pf.conditionalDeposit)
+    if (cd !== undefined) out.conditionalDeposit = cd
+    const note = String(pf.conditionalDepositNote || '').trim()
+    if (note) out.conditionalDepositNote = note
+  }
+
+  out.showFeesOnListing = Boolean(pf.showFeesOnListing)
+  const pn = String(pf.pricingNotes || '').trim()
+  if (pn) out.pricingNotes = pn
+
+  return out
+}
+
 /**
  * @param {{ leaseAccessRequirement?: string, moveInChargeRows?: { name?: string, amount?: string|number, requiredBeforeSigning?: boolean }[] }} p
  * @returns {{ requiredBeforeSigningSummary: string, feesRequiredBeforeSigning: string }}
@@ -668,6 +733,32 @@ export function buildPropertyWizardInitialValues(property) {
     record[PROPERTY_AIR.leaseAccessRequirement] ??
     meta?.leaseAccessRequirement ??
     ''
+  const fin = meta?.financials && typeof meta.financials === 'object' ? meta.financials : {}
+  const firstRoomRent =
+    rooms[0] && String(rooms[0].rent || '').trim() !== '' ? String(rooms[0].rent) : ''
+  const monthlyFromMeta =
+    fin.monthlyRoomRent != null && String(fin.monthlyRoomRent).trim() !== ''
+      ? String(fin.monthlyRoomRent)
+      : ''
+  const pricingFees = {
+    ...emptyPricingFees(),
+    monthlyRoomRent: monthlyFromMeta || firstRoomRent,
+    utilityFee: String(fin.utilityFee ?? fin.utilities ?? '').trim() ? String(fin.utilityFee ?? fin.utilities) : '',
+    holdingDeposit: fin.holdingDeposit != null && String(fin.holdingDeposit).trim() !== '' ? String(fin.holdingDeposit) : '',
+    moveInFee: fin.moveInFee != null && String(fin.moveInFee).trim() !== '' ? String(fin.moveInFee) : '',
+    lateRentFee: fin.lateRentFee != null && String(fin.lateRentFee).trim() !== '' ? String(fin.lateRentFee) : '',
+    petsAllowed: boolFromRaw(fin.petsAllowed),
+    petDeposit: fin.petDeposit != null && String(fin.petDeposit).trim() !== '' ? String(fin.petDeposit) : '',
+    petRent: fin.petRent != null && String(fin.petRent).trim() !== '' ? String(fin.petRent) : '',
+    conditionalDepositRequired: boolFromRaw(fin.conditionalDepositRequired),
+    conditionalDeposit:
+      fin.conditionalDeposit != null && String(fin.conditionalDeposit).trim() !== ''
+        ? String(fin.conditionalDeposit)
+        : '',
+    conditionalDepositNote: String(fin.conditionalDepositNote || ''),
+    pricingNotes: String(fin.pricingNotes || ''),
+    showFeesOnListing: boolFromRaw(fin.showFeesOnListing),
+  }
   return {
     basics: {
       name: stringOrEmpty(record[PROPERTY_AIR.propertyName] || record.Name),
@@ -703,6 +794,7 @@ export function buildPropertyWizardInitialValues(property) {
       fee: String(record[PROPERTY_AIR.parkingFee] ?? ''),
     },
     otherInfo: userText,
+    pricingFees,
     leasing: {
       fullHousePrice: stringOrEmpty(
         record[PROPERTY_AIR.fullHousePrice] != null && String(record[PROPERTY_AIR.fullHousePrice]).trim() !== ''
@@ -792,6 +884,7 @@ export function serializeManagerAddPropertyToAirtableFields(params) {
     otherInfo = '',
     managerRecordId,
     leasing = null,   // wizard shape; serialized to meta using PROPERTIES_LEASING_* keys
+    pricingFees = null,
   } = params
 
   const rc = clampInt(roomCount, 1, MAX_ROOM_SLOTS)
@@ -1072,6 +1165,7 @@ export function serializeManagerAddPropertyToAirtableFields(params) {
   if (moveInChargeRowsClean.length) financialsParts.moveInChargeList = moveInChargeRowsClean
   if (moveInTotal > 0) financialsParts.moveInCharges = moveInTotal
   if (administrationFeeSaved !== undefined) financialsParts.administrationFee = administrationFeeSaved
+  Object.assign(financialsParts, pricingFeesToFinancialsMeta(pricingFees))
   const financialsMeta = Object.keys(financialsParts).length > 0 ? financialsParts : null
 
   /** When leasing $ / copy columns exist, do not duplicate those values inside Other Info. */

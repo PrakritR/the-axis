@@ -93,7 +93,6 @@ import {
   rentDueDayFromResident,
 } from '../lib/residentPaymentsShared.js'
 import {
-  ROOM_CLEANING_FEE_USD,
   ensurePostpayRoomCleaningFeePayment,
   residentPostpayCleaningDescriptionSuffix,
   workOrderShouldCreatePaymentWhenScheduled,
@@ -1408,13 +1407,6 @@ function WorkOrdersPanel({
                   <option key={option}>{option}</option>
                 ))}
               </select>
-              {form.category === 'Cleaning' ? (
-                <p className="mt-2 text-xs leading-relaxed text-slate-600">
-                  One-time room cleaning: submit this request for your manager. When they set a visit date, a{' '}
-                  <span className="font-semibold">{formatMoney(ROOM_CLEANING_FEE_USD)}</span> unpaid charge appears
-                  under Payments (pay with card there). It is due within seven days after the scheduled visit date.
-                </p>
-              ) : null}
             </div>
             <div>
               <label className="mb-2 block text-sm font-semibold text-slate-700">Priority</label>
@@ -1427,6 +1419,14 @@ function WorkOrdersPanel({
                   <option key={option}>{option}</option>
                 ))}
               </select>
+            </div>
+            <div className="sm:col-span-2">
+              <p className="rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-xs leading-relaxed text-slate-600">
+                Submit this request for your manager to review. Depending on the issue, a charge may apply if work is
+                scheduled or completed. If a payment is required, it will appear under{' '}
+                <span className="font-semibold text-slate-800">Payments</span> (you can pay by card there). Amount and
+                due date are set per request when applicable—check Payments for details.
+              </p>
             </div>
             <div>
               <label className="mb-2 block text-sm font-semibold text-slate-700">Preferred time window</label>

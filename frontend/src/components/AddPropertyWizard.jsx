@@ -30,6 +30,7 @@ import {
   emptySharedSpaceRow,
   emptyListingAvailabilityWindow,
   emptyMoveInChargeRow,
+  emptyPricingFees,
   adjustRoomAccessLabels,
   clampInt,
   MAX_ROOM_SLOTS,
@@ -99,7 +100,7 @@ function isLikelyRoomGalleryFile(file) {
 }
 
 // ─── Validation ───────────────────────────────────────────────────────────────
-function validateBasics(basics, appFee) {
+function validateBasics(basics) {
   const e = {}
   const name = String(basics.name || '').trim()
   if (!name) e.name = 'Property name is required'
@@ -112,16 +113,6 @@ function validateBasics(basics, appFee) {
     e.propertyTypeOther = 'Describe the property type'
 
   if (!basics.pets) e.pets = 'Pet policy is required'
-
-  const afStr = String(appFee ?? '')
-  if (afStr === '') e.applicationFee = 'Required — enter 0 if no fee'
-  else if (!Number.isFinite(Number(afStr)) || Number(afStr) < 0)
-    e.applicationFee = 'Enter a valid number (0 or more)'
-
-  const sdStr = String(basics.securityDeposit ?? '')
-  if (sdStr === '') e.securityDeposit = 'Required — enter 0 if none'
-  else if (!Number.isFinite(Number(sdStr)) || Number(sdStr) < 0)
-    e.securityDeposit = 'Enter a valid number (0 or more)'
 
   const adminStr = String(basics.administrationFee ?? '').trim()
   if (adminStr !== '' && (!Number.isFinite(Number(adminStr)) || Number(adminStr) < 0))
@@ -239,17 +230,56 @@ function validatePricing(leasing) {
   return e
 }
 
+function validatePricingFees(pricingFees, appFee, basics) {
+  const e = {}
+  const pf = pricingFees && typeof pricingFees === 'object' ? pricingFees : { ...emptyPricingFees() }
+
+  const mrrStr = String(pf.monthlyRoomRent ?? '')
+  if (mrrStr.trim() === '') e.monthlyRoomRent = 'Required'
+  else if (!Number.isFinite(Number(mrrStr)) || Number(mrrStr) < 0) e.monthlyRoomRent = 'Enter 0 or more'
+
+  const afStr = String(appFee ?? '')
+  if (afStr === '') e.applicationFee = 'Required — enter 0 if no fee'
+  else if (!Number.isFinite(Number(afStr)) || Number(afStr) < 0) e.applicationFee = 'Enter a valid number (0 or more)'
+
+  const sdStr = String(basics.securityDeposit ?? '')
+  if (sdStr === '') e.securityDeposit = 'Required — enter 0 if none'
+  else if (!Number.isFinite(Number(sdStr)) || Number(sdStr) < 0) e.securityDeposit = 'Enter a valid number (0 or more)'
+
+  function checkNonNeg(key) {
+    const s = String(pf[key] ?? '').trim()
+    if (s === '') return
+    if (!Number.isFinite(Number(s)) || Number(s) < 0) e[key] = 'Enter 0 or more'
+  }
+  checkNonNeg('utilityFee')
+  checkNonNeg('holdingDeposit')
+  checkNonNeg('moveInFee')
+  checkNonNeg('lateRentFee')
+  if (pf.petsAllowed) {
+    checkNonNeg('petDeposit')
+    checkNonNeg('petRent')
+  }
+  if (pf.conditionalDepositRequired) {
+    checkNonNeg('conditionalDeposit')
+  }
+  return e
+}
+
 function getStepErrors(stepIdx, state) {
-  const { basics, appFee, rooms, bathrooms, kitchens, sharedSpaces, laundry, parking, leasing } = state
+  const { basics, appFee, rooms, bathrooms, kitchens, sharedSpaces, laundry, parking, leasing, pricingFees } = state
   switch (stepIdx) {
-    case 0: return validateBasics(basics, appFee)
+    case 0: return validateBasics(basics)
     case 1: return validateRooms(rooms)
     case 2: return validateBathrooms(bathrooms)
     case 3: return validateKitchens(kitchens)
     case 4: return validateSharedSpaces(sharedSpaces)
     case 5: return validateLaundryParking(laundry, parking)
     case 6: return {}
-    case 7: return validatePricing(leasing)
+    case 7: {
+      const a = validatePricing(leasing)
+      const b = validatePricingFees(pricingFees, appFee, basics)
+      return { ...a, ...b }
+    }
     default: return {}
   }
 }
@@ -389,6 +419,10 @@ export default function AddPropertyWizard({
             }))
           : [],
       },
+      pricingFees: {
+        ...emptyPricingFees(),
+        ...(payload?.pricingFees && typeof payload.pricingFees === 'object' ? payload.pricingFees : {}),
+      },
     }
   }, [initialValues])
 
@@ -420,13 +454,17 @@ export default function AddPropertyWizard({
     leaseInformation: initialState.leasing.leaseInformation,
     bundles: initialState.leasing.bundles,
   })
+  const [pricingFees, setPricingFees] = useState(() => ({
+    ...emptyPricingFees(),
+    ...initialState.pricingFees,
+  }))
   const imageInputRef = useRef(null)
   const dropRef = useRef(null)
 
   // ── Derived ──────────────────────────────────────────────────────────────────
   const rc = clampInt(rooms.length, 1, MAX_ROOM_SLOTS)
   const roomOptions = Array.from({ length: rc }, (_, i) => `Room ${i + 1}`)
-  const formState = { basics, appFee, rooms, bathrooms, kitchens, sharedSpaces, laundry, parking, leasing }
+  const formState = { basics, appFee, rooms, bathrooms, kitchens, sharedSpaces, laundry, parking, leasing, pricingFees }
 
   function addMoveInChargeRow() {
     setBasics((b) => ({
@@ -458,7 +496,7 @@ export default function AddPropertyWizard({
     () => attempted ? getStepErrors(step, formState) : {},
     // deps: all form state + step + attempted flag
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [attempted, step, basics, appFee, rooms, bathrooms, kitchens, sharedSpaces, laundry, parking, leasing],
+    [attempted, step, basics, appFee, rooms, bathrooms, kitchens, sharedSpaces, laundry, parking, leasing, pricingFees],
   )
   const stepIsValid = Object.keys(getStepErrors(step, formState)).length === 0
 
@@ -484,6 +522,7 @@ export default function AddPropertyWizard({
       return []
     })
     setLeasing(initialState.leasing)
+    setPricingFees({ ...emptyPricingFees(), ...initialState.pricingFees })
   }
 
   function handleClose() {
@@ -553,6 +592,7 @@ export default function AddPropertyWizard({
         otherInfo,
         managerRecordId: manager?.id,
         leasing,
+        pricingFees,
       })
 
       const created = submitProperty
@@ -1054,59 +1094,27 @@ export default function AddPropertyWizard({
           )}
         </div>
 
-        {/* Fees & lease access */}
+        {/* Administrative move-in (application & security deposit are on the Pricing & Fees step) */}
         <div className="rounded-2xl border border-slate-200 bg-slate-50/60 p-4 space-y-4">
-          <SectionHeading>Fees</SectionHeading>
+          <SectionHeading>Administrative fee</SectionHeading>
           <p className="text-xs text-slate-500">
-            Application fee and security deposit are required (enter 0 if none). Administrative fee is separate from the
-            security deposit — leave blank or 0 if none; when set, it flows into the lease draft as a non-deposit charge.
+            Separate from the security deposit. Leave blank or 0 if none; when set, it flows into the lease draft as a
+            non-deposit charge. Application fee and security deposit are set in the last step under Pricing &amp; Fees.
           </p>
-          <div className="grid gap-4 sm:grid-cols-2">
-            <div>
-              <label className={LBL}>Application fee ($) <Req /></label>
-              <input
-                className={ic('applicationFee')}
-                type="number"
-                min="0"
-                step="any"
-                inputMode="decimal"
-                value={appFee}
-                onChange={ev => setAppFee(ev.target.value)}
-                onWheel={blurNumberInputOnWheel}
-                placeholder="0"
-              />
-              <FieldError msg={e.applicationFee} />
-            </div>
-            <div>
-              <label className={LBL}>Security deposit ($) <Req /></label>
-              <input
-                className={ic('securityDeposit')}
-                type="number"
-                min="0"
-                step="any"
-                inputMode="decimal"
-                value={basics.securityDeposit}
-                onChange={ev => setBasics(b => ({ ...b, securityDeposit: ev.target.value }))}
-                onWheel={blurNumberInputOnWheel}
-                placeholder="0"
-              />
-              <FieldError msg={e.securityDeposit} />
-            </div>
-            <div className="sm:col-span-2">
-              <label className={LBL}>Administrative fee ($) <span className="font-normal text-slate-400">(optional)</span></label>
-              <input
-                className={ic('administrationFee')}
-                type="number"
-                min="0"
-                step="any"
-                inputMode="decimal"
-                value={basics.administrationFee}
-                onChange={ev => setBasics(b => ({ ...b, administrationFee: ev.target.value }))}
-                onWheel={blurNumberInputOnWheel}
-                placeholder="0 — not part of security deposit"
-              />
-              <FieldError msg={e.administrationFee} />
-            </div>
+          <div>
+            <label className={LBL}>Administrative fee ($) <span className="font-normal text-slate-400">(optional)</span></label>
+            <input
+              className={ic('administrationFee')}
+              type="number"
+              min="0"
+              step="any"
+              inputMode="decimal"
+              value={basics.administrationFee}
+              onChange={ev => setBasics(b => ({ ...b, administrationFee: ev.target.value }))}
+              onWheel={blurNumberInputOnWheel}
+              placeholder="0 — not part of security deposit"
+            />
+            <FieldError msg={e.administrationFee} />
           </div>
         </div>
 
@@ -2075,8 +2083,257 @@ export default function AddPropertyWizard({
 
   function renderPricing() {
     const e = currentErrors
+    const pf = pricingFees
     return (
       <div className="space-y-5">
+        <div className="rounded-2xl border border-slate-200 bg-white p-4 sm:p-5 space-y-5">
+          <div>
+            <SectionHeading>Pricing &amp; Fees</SectionHeading>
+            <p className="mt-1 text-xs text-slate-500">
+              Core amounts for marketing and lease prep. Optional fields can stay blank.
+            </p>
+          </div>
+
+          <div className="rounded-xl border border-slate-100 bg-slate-50/70 p-4 space-y-4">
+            <div className="text-xs font-bold uppercase tracking-wide text-slate-500">1 · Monthly costs</div>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div>
+                <label className={LBL}>Monthly room rent ($) <Req /></label>
+                <input
+                  className={ic('monthlyRoomRent')}
+                  type="number"
+                  min="0"
+                  step="any"
+                  inputMode="decimal"
+                  value={pf.monthlyRoomRent}
+                  onChange={(ev) => setPricingFees((p) => ({ ...p, monthlyRoomRent: ev.target.value }))}
+                  onWheel={blurNumberInputOnWheel}
+                  placeholder="e.g. 850"
+                />
+                <FieldError msg={e.monthlyRoomRent} />
+              </div>
+              <div>
+                <label className={LBL}>Utility fee ($/mo) <span className="font-normal text-slate-400">(optional)</span></label>
+                <input
+                  className={ic('utilityFee')}
+                  type="number"
+                  min="0"
+                  step="any"
+                  inputMode="decimal"
+                  value={pf.utilityFee}
+                  onChange={(ev) => setPricingFees((p) => ({ ...p, utilityFee: ev.target.value }))}
+                  onWheel={blurNumberInputOnWheel}
+                  placeholder="0"
+                />
+                <FieldError msg={e.utilityFee} />
+              </div>
+            </div>
+          </div>
+
+          <div className="rounded-xl border border-slate-100 bg-slate-50/70 p-4 space-y-4">
+            <div className="text-xs font-bold uppercase tracking-wide text-slate-500">2 · Upfront costs</div>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div>
+                <label className={LBL}>Application fee ($) <Req /></label>
+                <input
+                  className={ic('applicationFee')}
+                  type="number"
+                  min="0"
+                  step="any"
+                  inputMode="decimal"
+                  value={appFee}
+                  onChange={(ev) => setAppFee(ev.target.value)}
+                  onWheel={blurNumberInputOnWheel}
+                  placeholder="0"
+                />
+                <FieldError msg={e.applicationFee} />
+              </div>
+              <div>
+                <label className={LBL}>Holding deposit ($) <span className="font-normal text-slate-400">(optional)</span></label>
+                <input
+                  className={ic('holdingDeposit')}
+                  type="number"
+                  min="0"
+                  step="any"
+                  inputMode="decimal"
+                  value={pf.holdingDeposit}
+                  onChange={(ev) => setPricingFees((p) => ({ ...p, holdingDeposit: ev.target.value }))}
+                  onWheel={blurNumberInputOnWheel}
+                  placeholder="0"
+                />
+                <FieldError msg={e.holdingDeposit} />
+              </div>
+              <div>
+                <label className={LBL}>Move-in fee ($) <span className="font-normal text-slate-400">(optional)</span></label>
+                <input
+                  className={ic('moveInFee')}
+                  type="number"
+                  min="0"
+                  step="any"
+                  inputMode="decimal"
+                  value={pf.moveInFee}
+                  onChange={(ev) => setPricingFees((p) => ({ ...p, moveInFee: ev.target.value }))}
+                  onWheel={blurNumberInputOnWheel}
+                  placeholder="0"
+                />
+                <FieldError msg={e.moveInFee} />
+              </div>
+              <div>
+                <label className={LBL}>Security deposit ($) <Req /></label>
+                <input
+                  className={ic('securityDeposit')}
+                  type="number"
+                  min="0"
+                  step="any"
+                  inputMode="decimal"
+                  value={basics.securityDeposit}
+                  onChange={(ev) => setBasics((b) => ({ ...b, securityDeposit: ev.target.value }))}
+                  onWheel={blurNumberInputOnWheel}
+                  placeholder="0"
+                />
+                <FieldError msg={e.securityDeposit} />
+              </div>
+            </div>
+          </div>
+
+          <div className="rounded-xl border border-slate-100 bg-slate-50/70 p-4 space-y-4">
+            <div className="text-xs font-bold uppercase tracking-wide text-slate-500">3 · Optional fees</div>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div className="sm:col-span-2">
+                <label className={LBL}>Late rent fee ($) <span className="font-normal text-slate-400">(optional)</span></label>
+                <input
+                  className={ic('lateRentFee')}
+                  type="number"
+                  min="0"
+                  step="any"
+                  inputMode="decimal"
+                  value={pf.lateRentFee}
+                  onChange={(ev) => setPricingFees((p) => ({ ...p, lateRentFee: ev.target.value }))}
+                  onWheel={blurNumberInputOnWheel}
+                  placeholder="0"
+                />
+                <FieldError msg={e.lateRentFee} />
+              </div>
+              <label className="flex cursor-pointer items-start gap-3 rounded-xl border border-slate-200 bg-white px-3 py-3 sm:col-span-2">
+                <input
+                  type="checkbox"
+                  className="mt-0.5 h-4 w-4 shrink-0 rounded border-slate-300 text-[#2563eb]"
+                  checked={Boolean(pf.petsAllowed)}
+                  onChange={(ev) =>
+                    setPricingFees((p) => ({
+                      ...p,
+                      petsAllowed: ev.target.checked,
+                      ...(ev.target.checked ? {} : { petDeposit: '', petRent: '' }),
+                    }))
+                  }
+                />
+                <span className="text-sm font-semibold text-slate-800">Pets allowed (extra fees below)</span>
+              </label>
+              {pf.petsAllowed ? (
+                <>
+                  <div>
+                    <label className={LBL}>Pet deposit ($)</label>
+                    <input
+                      className={ic('petDeposit')}
+                      type="number"
+                      min="0"
+                      step="any"
+                      inputMode="decimal"
+                      value={pf.petDeposit}
+                      onChange={(ev) => setPricingFees((p) => ({ ...p, petDeposit: ev.target.value }))}
+                      onWheel={blurNumberInputOnWheel}
+                      placeholder="0"
+                    />
+                    <FieldError msg={e.petDeposit} />
+                  </div>
+                  <div>
+                    <label className={LBL}>Pet rent ($/mo)</label>
+                    <input
+                      className={ic('petRent')}
+                      type="number"
+                      min="0"
+                      step="any"
+                      inputMode="decimal"
+                      value={pf.petRent}
+                      onChange={(ev) => setPricingFees((p) => ({ ...p, petRent: ev.target.value }))}
+                      onWheel={blurNumberInputOnWheel}
+                      placeholder="0"
+                    />
+                    <FieldError msg={e.petRent} />
+                  </div>
+                </>
+              ) : null}
+              <label className="flex cursor-pointer items-start gap-3 rounded-xl border border-slate-200 bg-white px-3 py-3 sm:col-span-2">
+                <input
+                  type="checkbox"
+                  className="mt-0.5 h-4 w-4 shrink-0 rounded border-slate-300 text-[#2563eb]"
+                  checked={Boolean(pf.conditionalDepositRequired)}
+                  onChange={(ev) =>
+                    setPricingFees((p) => ({
+                      ...p,
+                      conditionalDepositRequired: ev.target.checked,
+                      ...(ev.target.checked ? {} : { conditionalDeposit: '', conditionalDepositNote: '' }),
+                    }))
+                  }
+                />
+                <span className="text-sm font-semibold text-slate-800">Conditional deposit required</span>
+              </label>
+              {pf.conditionalDepositRequired ? (
+                <>
+                  <div>
+                    <label className={LBL}>Conditional deposit ($)</label>
+                    <input
+                      className={ic('conditionalDeposit')}
+                      type="number"
+                      min="0"
+                      step="any"
+                      inputMode="decimal"
+                      value={pf.conditionalDeposit}
+                      onChange={(ev) => setPricingFees((p) => ({ ...p, conditionalDeposit: ev.target.value }))}
+                      onWheel={blurNumberInputOnWheel}
+                      placeholder="0"
+                    />
+                    <FieldError msg={e.conditionalDeposit} />
+                  </div>
+                  <div className="sm:col-span-2">
+                    <label className={LBL}>When it applies <span className="font-normal text-slate-400">(optional)</span></label>
+                    <textarea
+                      className={`${OK_INPUT} min-h-[72px] resize-y`}
+                      rows={2}
+                      value={pf.conditionalDepositNote}
+                      onChange={(ev) => setPricingFees((p) => ({ ...p, conditionalDepositNote: ev.target.value }))}
+                      placeholder="e.g. Credit score under 650 or no rental history"
+                    />
+                  </div>
+                </>
+              ) : null}
+            </div>
+          </div>
+
+          <div className="rounded-xl border border-slate-100 bg-slate-50/70 p-4 space-y-4">
+            <div className="text-xs font-bold uppercase tracking-wide text-slate-500">4 · Listing display</div>
+            <label className="flex cursor-pointer items-start gap-3 rounded-xl border border-slate-200 bg-white px-3 py-3">
+              <input
+                type="checkbox"
+                className="mt-0.5 h-4 w-4 shrink-0 rounded border-slate-300 text-[#2563eb]"
+                checked={Boolean(pf.showFeesOnListing)}
+                onChange={(ev) => setPricingFees((p) => ({ ...p, showFeesOnListing: ev.target.checked }))}
+              />
+              <span className="text-sm font-semibold text-slate-800">Show these fees on the public listing</span>
+            </label>
+            <div>
+              <label className={LBL}>Pricing notes <span className="font-normal text-slate-400">(optional)</span></label>
+              <textarea
+                className={`${OK_INPUT} min-h-[88px] resize-y`}
+                rows={3}
+                value={pf.pricingNotes}
+                onChange={(ev) => setPricingFees((p) => ({ ...p, pricingNotes: ev.target.value }))}
+                placeholder="Short context for applicants (shown on listing when enabled)"
+              />
+            </div>
+          </div>
+        </div>
+
         {/* Full house pricing */}
         <div className="rounded-2xl border border-slate-200 bg-slate-50/80 p-4 space-y-4">
           <SectionHeading>Full property pricing <span className="font-normal normal-case text-slate-400">(optional)</span></SectionHeading>

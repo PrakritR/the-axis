@@ -77,6 +77,23 @@ AIRTABLE_SCHEDULING_NOTES_FIELD=Notes
 
 Ensure single select **Status** includes at least: Draft Generated, Ready for Signature, Published, Signed (plus your workflow states).
 
+## 7) Property **Pricing & Fees** (manager wizard)
+
+The add/edit property wizard stores optional marketing amounts under **Other Info** as JSON (marker `---AXIS_LISTING_META_JSON---`), object path **`financials`**, camelCase keys:
+
+- `monthlyRoomRent` (number), `utilityFee`, `holdingDeposit`, `moveInFee`, `lateRentFee`
+- `petsAllowed` (boolean), `petDeposit`, `petRent` (when pets allowed)
+- `conditionalDepositRequired` (boolean), `conditionalDeposit`, `conditionalDepositNote`
+- `pricingNotes` (string), `showFeesOnListing` (boolean)
+
+**Application Fee** and **Security Deposit** stay in native Properties columns (`Application Fee`, `Security Deposit`) — the app writes the same values into meta-driven listing copy when “Show fees on listing” is on.
+
+**You do not have to add new Airtable columns** for this feature if `Other Info` already exists (long text). To backfill old rows, use Scripting: read `Other Info`, `JSON.parse` after the marker, merge `financials`, `JSON.stringify`, write back.
+
+Optional native columns (only if you want reporting outside JSON): Currency fields named exactly e.g. `Utility Fee`, `Holding Deposit` — the public listing currently reads utility from meta or those names when present; extend `financialDisplayFieldsFromAirtableRecord` if you add more native columns.
+
+---
+
 Add checkbox:
 
 ```text
