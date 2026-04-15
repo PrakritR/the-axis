@@ -3,6 +3,11 @@
  * first month rent, and first month utilities (idempotent via Notes markers).
  */
 import { computeMoveInChargesFromApplication } from '../handlers/generate-lease-from-template.js'
+import {
+  SUBMITTED_MOVEIN_DEPOSIT_MARKER_PREFIX,
+  SUBMITTED_MOVEIN_FIRST_RENT_MARKER_PREFIX,
+  SUBMITTED_MOVEIN_FIRST_UTIL_MARKER_PREFIX,
+} from './submitted-application-movein-payments.js'
 
 const AIRTABLE_TOKEN = process.env.AIRTABLE_TOKEN || process.env.VITE_AIRTABLE_TOKEN
 const CORE_BASE_ID =
@@ -50,6 +55,40 @@ async function airtablePost(url, body) {
   return res.json()
 }
 
+async function airtablePatchRecord(recordId, fields) {
+  const enc = encodeURIComponent(PAYMENTS_TABLE)
+  const url = `${CORE_AIRTABLE_BASE_URL}/${enc}/${encodeURIComponent(recordId)}`
+  const res = await fetch(url, {
+    method: 'PATCH',
+    headers: airtableHeaders(),
+    body: JSON.stringify({ fields, typecast: true }),
+  })
+  if (!res.ok) {
+    const text = await res.text()
+    throw new Error(text.slice(0, 400))
+  }
+  return res.json()
+}
+
+function submittedMarkerForMoveInKey(key, appId) {
+  const prefixes = {
+    deposit: SUBMITTED_MOVEIN_DEPOSIT_MARKER_PREFIX,
+    first_rent: SUBMITTED_MOVEIN_FIRST_RENT_MARKER_PREFIX,
+    first_util: SUBMITTED_MOVEIN_FIRST_UTIL_MARKER_PREFIX,
+  }
+  const p = prefixes[key]
+  return p ? `${p}${appId}` : ''
+}
+
+async function findFirstPaymentByNotesSubstring(markerSubstring) {
+  if (!markerSubstring) return null
+  const enc = encodeURIComponent(PAYMENTS_TABLE)
+  const formula = `FIND("${escapeFormulaValue(markerSubstring)}", {Notes}) > 0`
+  const url = `${CORE_AIRTABLE_BASE_URL}/${enc}?filterByFormula=${encodeURIComponent(formula)}&maxRecords=1`
+  const data = await airtableGet(url)
+  return data.records?.[0] || null
+}
+
 async function fetchResidentRecord(residentRecordId) {
   const enc = encodeURIComponent(RESIDENT_PROFILE_TABLE)
   const data = await airtableGet(`${CORE_AIRTABLE_BASE_URL}/${enc}/${encodeURIComponent(residentRecordId)}`)
@@ -58,10 +97,76 @@ async function fetchResidentRecord(residentRecordId) {
 
 async function moveInRowExists(residentRecordId, markerContains) {
   const enc = encodeURIComponent(PAYMENTS_TABLE)
-  const formula = `AND(FIND("${escapeFormulaValue(residentRecordId)}", ARRAYJOIN({Resident})) > 0, FIND("${escapeFormulaValue(markerContains)}", {Notes}) > 0)`
+  const rid = escapeFormulaValue(residentRecordId)
+  const mk = escapeFormulaValue(markerContains)
+  // Single-link Resident often matches `{Resident} = "rec…"`; multi-link needs ARRAYJOIN + FIND.
+  const formula = `AND(OR({Resident} = "${rid}", FIND("${rid}", ARRAYJOIN({Resident})) > 0), FIND("${mk}", {Notes}) > 0)`
   const url = `${CORE_AIRTABLE_BASE_URL}/${enc}?filterByFormula=${encodeURIComponent(formula)}&maxRecords=1`
   const data = await airtableGet(url)
   return (data.records?.length ?? 0) > 0
+}
+
+async function airtableDelete(url) {
+  const res = await fetch(url, { method: 'DELETE', headers: airtableHeaders() })
+  if (!res.ok) {
+    const text = await res.text()
+    throw new Error(text.slice(0, 400))
+  }
+  return true
+}
+
+/**
+ * When an application returns to pending/rejected, remove unpaid Axis move-in lines
+ * (same markers as createApprovedApplicationMoveInPayments) so a later re-approval
+ * does not stack duplicates. Paid rows are kept.
+ *
+ * @param {string} applicationRecordId
+ * @returns {Promise<{ deletedIds: string[], error?: string }>}
+ */
+export async function deleteUnpaidApprovedMoveInPaymentsForApplication(applicationRecordId) {
+  const deletedIds = []
+  const appId = String(applicationRecordId || '').trim()
+  if (!AIRTABLE_TOKEN || !appId.startsWith('rec')) {
+    return { deletedIds, error: !AIRTABLE_TOKEN ? 'token not configured' : 'bad application id' }
+  }
+
+  const mkD = `${APPROVED_MOVEIN_DEPOSIT_MARKER_PREFIX}${appId}`
+  const mkR = `${APPROVED_MOVEIN_FIRST_RENT_MARKER_PREFIX}${appId}`
+  const mkU = `${APPROVED_MOVEIN_FIRST_UTIL_MARKER_PREFIX}${appId}`
+  const skD = `${SUBMITTED_MOVEIN_DEPOSIT_MARKER_PREFIX}${appId}`
+  const skR = `${SUBMITTED_MOVEIN_FIRST_RENT_MARKER_PREFIX}${appId}`
+  const skU = `${SUBMITTED_MOVEIN_FIRST_UTIL_MARKER_PREFIX}${appId}`
+  const formula = `AND(OR(FIND("${escapeFormulaValue(mkD)}", {Notes}) > 0, FIND("${escapeFormulaValue(mkR)}", {Notes}) > 0, FIND("${escapeFormulaValue(mkU)}", {Notes}) > 0, FIND("${escapeFormulaValue(skD)}", {Notes}) > 0, FIND("${escapeFormulaValue(skR)}", {Notes}) > 0, FIND("${escapeFormulaValue(skU)}", {Notes}) > 0), NOT(OR({Status} = "Paid", {Status} = "Partial", {Status} = "Posted")))`
+
+  const enc = encodeURIComponent(PAYMENTS_TABLE)
+  let offset = ''
+  try {
+    for (;;) {
+      const qs = new URLSearchParams({
+        filterByFormula: formula,
+        pageSize: '100',
+      })
+      if (offset) qs.set('offset', offset)
+      const data = await airtableGet(`${CORE_AIRTABLE_BASE_URL}/${enc}?${qs.toString()}`)
+      const records = data.records || []
+      for (const rec of records) {
+        const id = String(rec?.id || '').trim()
+        if (!id) continue
+        try {
+          await airtableDelete(`${CORE_AIRTABLE_BASE_URL}/${enc}/${encodeURIComponent(id)}`)
+          deletedIds.push(id)
+        } catch (err) {
+          console.warn('[approved-application-movein-payments] delete row failed', id, err?.message || err)
+        }
+      }
+      if (!data.offset) break
+      offset = data.offset
+    }
+  } catch (err) {
+    return { deletedIds, error: err?.message || String(err) }
+  }
+
+  return { deletedIds }
 }
 
 function dueDateFromLeaseStart(leaseStart) {
@@ -112,7 +217,8 @@ export async function createApprovedApplicationMoveInPayments({ application, res
   const markerRent = `${APPROVED_MOVEIN_FIRST_RENT_MARKER_PREFIX}${appId}`
   const markerUtil = `${APPROVED_MOVEIN_FIRST_UTIL_MARKER_PREFIX}${appId}`
 
-  for (const rid of ids) {
+  for (let ri = 0; ri < ids.length; ri++) {
+    const rid = ids[ri]
     try {
       const resRow = await fetchResidentRecord(rid)
       const resName = String(resRow.Name || application['Signer Full Name'] || '').trim()
@@ -147,6 +253,40 @@ export async function createApprovedApplicationMoveInPayments({ application, res
       ].filter(Boolean)
 
       for (const spec of rows) {
+        if (ri === 0) {
+          const subTag = submittedMarkerForMoveInKey(spec.key, appId)
+          const subRec = await findFirstPaymentByNotesSubstring(subTag)
+          if (subRec?.id) {
+            try {
+              const prevNotes = String(subRec.fields?.Notes || '')
+              const approvedTag = spec.existsMarker
+              const nextNotes = prevNotes.includes(approvedTag)
+                ? prevNotes
+                : `${prevNotes} Approved move-in line. ${approvedTag}`.trim()
+              await airtablePatchRecord(subRec.id, {
+                Resident: [rid],
+                Amount: spec.amount,
+                Balance: spec.amount,
+                Status: 'Unpaid',
+                'Due Date': due,
+                Type: spec.Type,
+                Category: 'Rent',
+                Month: spec.Month,
+                Notes: nextNotes,
+                'Resident Name': resName || undefined,
+                'Property Name': prop || undefined,
+                'Room Number': unit || undefined,
+              })
+              createdIds.push(subRec.id)
+              continue
+            } catch (claimErr) {
+              console.warn('[approved-application-movein-payments] claim submitted row failed', subRec.id, claimErr)
+              skipped.push(`${rid}:${spec.key}:claim_failed`)
+              continue
+            }
+          }
+        }
+
         if (await moveInRowExists(rid, spec.existsMarker)) {
           skipped.push(`${rid}:${spec.key}`)
           continue

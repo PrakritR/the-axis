@@ -1,6 +1,7 @@
 import { resolveManagerTenant, canEnforceTenant } from '../middleware/resolveManagerTenant.js'
 import { markMatchingResidentsRejected } from '../lib/application-resident-sync.js'
 import { deleteLeaseDraftsForApplicationId } from '../lib/lease-draft-cleanup.js'
+import { deleteUnpaidApprovedMoveInPaymentsForApplication } from '../lib/approved-application-movein-payments.js'
 
 const AIRTABLE_TOKEN = process.env.AIRTABLE_TOKEN || process.env.VITE_AIRTABLE_TOKEN
 const CORE_BASE_ID =
@@ -111,11 +112,18 @@ export default async function handler(req, res) {
     const application = await setApplicationPending(recordId)
     const residentSync = await markMatchingResidentsRejected(application)
     const leaseCleanup = await deleteLeaseDraftsForApplicationId(recordId)
+    let moveInCleanup = { deletedIds: [], error: '' }
+    try {
+      moveInCleanup = await deleteUnpaidApprovedMoveInPaymentsForApplication(recordId)
+    } catch (e) {
+      moveInCleanup = { deletedIds: [], error: e?.message || String(e) }
+    }
 
     return res.status(200).json({
       application,
       residentRecordsUpdated: residentSync.updatedIds,
       leaseDraftsRemoved: leaseCleanup.deletedIds,
+      moveInPaymentsRemoved: moveInCleanup.deletedIds,
       message:
         residentSync.updatedIds.length > 0
           ? `Application moved to pending. Resident profiles updated (${residentSync.updatedIds.length}).`

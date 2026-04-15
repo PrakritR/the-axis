@@ -525,9 +525,6 @@ export function ApplicationDetailPanel({ application, partnerLabel, onClose, adm
                 onChange={(e) => arm.onChange(e.target.value)}
               />
             )}
-            <p className="mt-2 text-xs text-slate-500">
-              Saved to Airtable on approve and used for the lease draft (defaults to first choice if unchanged).
-            </p>
           </div>
         ) : null}
       </div>

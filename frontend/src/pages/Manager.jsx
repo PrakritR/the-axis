@@ -77,11 +77,10 @@ import {
   getApplicationsForOwner,
   resolveResidentRecordIdForWorkOrderBilling,
   getAllPaymentsRecords,
-  getLeaseDraftsForResident,
   getPaymentsForResident,
   updatePaymentRecord,
   createPaymentRecord,
-  getResidentById,
+  deletePaymentRecord,
   AIRTABLE_PAYMENTS_BASE_ID,
   createRoomRecord,
   uploadPropertyImage,
@@ -99,17 +98,13 @@ import {
 } from '../lib/airtable'
 import {
   ROOM_CLEANING_FEE_USD,
+  dueDateIsoForRoomCleaningPayment,
   ensurePostpayRoomCleaningFeePayment,
   workOrderShouldCreatePaymentWhenScheduled,
 } from '../lib/roomCleaningWorkOrder.js'
 import { residentLeasingThreadVisibleToManager } from '../lib/portalInboxResidentScope.js'
 import {
-  classifyResidentPaymentLine,
-  formatPaymentNotesForDisplay,
-  getPaymentKind,
   isPaymentRowDueOnResidentHome,
-  isPostpayRoomCleaningPaymentRecord,
-  listDashboardDuePaymentLines,
   managerPaymentLineDisplayTitle,
 } from '../lib/residentPaymentsShared.js'
 import {
@@ -782,15 +777,6 @@ function paymentStatusTone(status) {
     case 'waiver': return 'blue'
     default: return 'slate'
   }
-}
-
-function managerToneForResidentPaymentLabel(st) {
-  const s = String(st || '').trim()
-  if (s === 'Paid') return 'emerald'
-  if (s === 'Partial') return 'axis'
-  if (s === 'Due Soon') return 'amber'
-  if (s === 'Overdue') return 'red'
-  return 'slate'
 }
 
 function paymentResidentLabel(record) {
@@ -4229,8 +4215,6 @@ function WorkOrdersTabPanel({ manager, allowedPropertyNames, allowedPropertyIds 
   const [loadError, setLoadError] = useState('')
   const [saving, setSaving] = useState(false)
   const [scheduledVisitDate, setScheduledVisitDate] = useState('')
-  const [woChargeAmount, setWoChargeAmount] = useState('')
-  const [woChargeTitle, setWoChargeTitle] = useState('')
   /** One repair attempt per WO id per session — backfills Payments when WO was scheduled without a fee row. */
   const cleaningPaymentRepairAttemptedRef = useRef(new Set())
   const woDetailPhotoUrls = useMemo(() => workOrderPhotoAttachmentUrls(record), [record])
@@ -4586,57 +4570,6 @@ function WorkOrdersTabPanel({ manager, allowedPropertyNames, allowedPropertyIds 
       }
 
       toast.success(successMsg)
-
-      // If the manager entered a charge amount, create a Payment row for this work order.
-      const chargeAmt = Number(String(woChargeAmount).replace(/[^0-9.]/g, ''))
-      if (Number.isFinite(chargeAmt) && chargeAmt > 0) {
-        const billingRid = resolveResidentRecordIdForWorkOrderBilling(mergedWorkOrder, residentsById)
-        if (billingRid) {
-          try {
-            const resRec = residentsById.get(billingRid) || {}
-            const prop = String(
-              mergedWorkOrder['Property Name'] || mergedWorkOrder.House || mergedWorkOrder.Property ||
-              resRec.House || '',
-            ).trim()
-            const unit = String(
-              mergedWorkOrder['Room Number'] || mergedWorkOrder['Unit Number'] ||
-              mergedWorkOrder.Unit || resRec['Unit Number'] || '',
-            ).trim()
-            const resName = String(
-              mergedWorkOrder['Resident Name'] || resRec.Name || '',
-            ).trim()
-            const title = woChargeTitle.trim() || 'Work order charge'
-            const dueDate = dateStr || new Date().toISOString().slice(0, 10)
-            const woMarker = `AXIS_WO_CHARGE:${mergedWorkOrder.id}`
-            await createPaymentRecord({
-              Resident: [billingRid],
-              Amount: chargeAmt,
-              Balance: chargeAmt,
-              Status: 'Unpaid',
-              'Due Date': dueDate,
-              Type: 'Fee',
-              Category: 'Fee',
-              Month: title,
-              Notes: `Work order charge: ${title}. ${woMarker}`,
-              'Resident Name': resName || undefined,
-              'Property Name': prop || undefined,
-              'Room Number': unit || undefined,
-            })
-            setWoChargeAmount('')
-            setWoChargeTitle('')
-            toast.success(`$${chargeAmt} charge added to Payments for this resident`)
-          } catch (chargeErr) {
-            toast.error(
-              String(chargeErr?.message || '').slice(0, 120) ||
-                'Charge could not be added to Payments — add it manually.',
-            )
-          }
-        } else {
-          toast.error(
-            'Charge entered but no resident could be linked. Ensure a Resident Profile is linked to this work order.',
-          )
-        }
-      }
     } catch (err) {
       toast.error(err.message || 'Could not save work order')
     } finally {
@@ -4891,43 +4824,6 @@ function WorkOrdersTabPanel({ manager, allowedPropertyNames, allowedPropertyIds 
                 </div>
               </div>
 
-              <div className="rounded-2xl border border-amber-100 bg-amber-50/60 px-4 py-4">
-                <div className="mb-3 text-[11px] font-bold uppercase tracking-[0.14em] text-amber-700">
-                  Payment — charge resident (optional)
-                </div>
-                <div className="grid gap-3 sm:grid-cols-2">
-                  <div>
-                    <label className="mb-1.5 block text-xs font-semibold text-slate-600">
-                      Charge description
-                    </label>
-                    <input
-                      type="text"
-                      value={woChargeTitle}
-                      onChange={(e) => setWoChargeTitle(e.target.value)}
-                      placeholder="e.g. Parts replacement, Labour"
-                      className={fieldCls}
-                    />
-                  </div>
-                  <div>
-                    <label className="mb-1.5 block text-xs font-semibold text-slate-600">
-                      Amount ($)
-                    </label>
-                    <input
-                      type="number"
-                      min="0"
-                      step="0.01"
-                      value={woChargeAmount}
-                      onChange={(e) => setWoChargeAmount(e.target.value)}
-                      placeholder="0.00"
-                      className={fieldCls}
-                    />
-                  </div>
-                </div>
-                <p className="mt-2 text-xs text-amber-700/80">
-                  If filled, a pending payment will be added to the resident's Payments tab when you save.
-                </p>
-              </div>
-
               <button
                 type="submit"
                 disabled={saving}
@@ -4959,21 +4855,6 @@ function ManagerPaymentsPanel({ allowedPropertyNames }) {
   const [expandedPaymentId, setExpandedPaymentId] = useState('')
   const [payPropertyFilter, setPayPropertyFilter] = useState('')
   const [payResidentFilter, setPayResidentFilter] = useState('')
-  const [fineTitle, setFineTitle] = useState('')
-  const [fineAmount, setFineAmount] = useState('')
-  const [fineDue, setFineDue] = useState('')
-  const [fineNotes, setFineNotes] = useState('')
-  const [fineSaving, setFineSaving] = useState(false)
-  const [waiveAmount, setWaiveAmount] = useState('')
-  const [waiveReason, setWaiveReason] = useState('')
-  const [waiveSaving, setWaiveSaving] = useState(false)
-  const [residentPaymentBundle, setResidentPaymentBundle] = useState({
-    loading: false,
-    resident: null,
-    payments: [],
-    drafts: [],
-    error: '',
-  })
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -5115,79 +4996,6 @@ function ManagerPaymentsPanel({ allowedPropertyNames }) {
     [filteredForList, paymentRows, expandedPaymentId],
   )
 
-  const selectedResidentRecordId = selectedRow ? paymentResidentRecordId(selectedRow) : ''
-
-  useEffect(() => {
-    if (!selectedResidentRecordId) {
-      setResidentPaymentBundle({ loading: false, resident: null, payments: [], drafts: [], error: '' })
-      return
-    }
-    let cancelled = false
-    setResidentPaymentBundle((b) => ({ ...b, loading: true, error: '' }))
-    Promise.all([
-      getResidentById(selectedResidentRecordId),
-      getPaymentsForResident({ id: selectedResidentRecordId }),
-      getLeaseDraftsForResident(selectedResidentRecordId, '').catch(() => []),
-    ])
-      .then(([resident, payments, drafts]) => {
-        if (cancelled) return
-        setResidentPaymentBundle({
-          loading: false,
-          resident: resident || null,
-          payments: Array.isArray(payments) ? payments : [],
-          drafts: Array.isArray(drafts) ? drafts : [],
-          error: '',
-        })
-      })
-      .catch((err) => {
-        if (cancelled) return
-        setResidentPaymentBundle({
-          loading: false,
-          resident: null,
-          payments: [],
-          drafts: [],
-          error: err?.message || 'Could not load resident payments',
-        })
-      })
-    return () => {
-      cancelled = true
-    }
-  }, [selectedResidentRecordId])
-
-  const residentDetailRows = useMemo(() => {
-    if (!selectedRow) return []
-    const rid = paymentResidentRecordId(selectedRow)
-    if (rid) {
-      return allScopedRows
-        .filter((row) => paymentResidentRecordId(row) === rid)
-        .sort((a, b) => new Date(b['Due Date'] || b.created_at || 0) - new Date(a['Due Date'] || a.created_at || 0))
-    }
-    const residentName = paymentResidentLabel(selectedRow)
-    return allScopedRows
-      .filter((row) => paymentResidentLabel(row) === residentName)
-      .sort((a, b) => new Date(b['Due Date'] || b.created_at || 0) - new Date(a['Due Date'] || a.created_at || 0))
-  }, [allScopedRows, selectedRow])
-
-  const extraChargeRows = useMemo(
-    () => residentDetailRows.filter((row) => getPaymentKind(row) === 'fee'),
-    [residentDetailRows],
-  )
-
-  const feeRowsExcludingPostpayCleaning = useMemo(
-    () => extraChargeRows.filter((row) => !isPostpayRoomCleaningPaymentRecord(row)),
-    [extraChargeRows],
-  )
-
-  const postpayCleaningRows = useMemo(
-    () => residentDetailRows.filter((row) => isPostpayRoomCleaningPaymentRecord(row) && paymentBalanceDue(row) > 0),
-    [residentDetailRows],
-  )
-
-  const portalDueLinesForSelectedResident = useMemo(() => {
-    if (!residentPaymentBundle.payments.length) return []
-    return listDashboardDuePaymentLines(residentPaymentBundle.payments)
-  }, [residentPaymentBundle.payments])
-
   function findScopedPaymentById(id) {
     return allScopedRows.find((row) => row.id === id) || rentRows.find((row) => row.id === id) || null
   }
@@ -5241,110 +5049,28 @@ function ManagerPaymentsPanel({ allowedPropertyNames }) {
     }
   }
 
-  async function submitFeeWaive(event) {
-    event.preventDefault()
-    if (!selectedRow) return
-    const residentId = paymentResidentRecordId(selectedRow)
-    if (!residentId) {
-      toast.error('This payment row has no linked resident. Link Resident on the payment in Airtable, then try again')
-      return
-    }
-    const amt = Number(String(waiveAmount).replace(/[^0-9.]/g, ''))
-    if (!Number.isFinite(amt) || amt <= 0) {
-      toast.error('Enter a valid waiver amount')
-      return
-    }
-    const reason = String(waiveReason || '').trim()
-    if (!reason) {
-      toast.error('Add a short reason for this waiver')
-      return
-    }
-    setWaiveSaving(true)
+  async function removePaymentRow(row) {
+    const id = row?.id
+    if (!id) return
+    const paid = isManagerPaidTabRow(row) || paymentComputedStatus(row) === 'paid'
+    const msg = paid
+      ? 'This line looks paid/settled. Delete it from Airtable anyway? This cannot be undone.'
+      : 'Delete this payment line from Airtable? This cannot be undone.'
+    if (!window.confirm(msg)) return
+    setBusy((b) => ({ ...b, [`del_${id}`]: true }))
     try {
-      let propertyName = paymentPropertyLabel(selectedRow)
-      let roomNumber = String(selectedRow['Room Number'] ?? selectedRow.Room ?? selectedRow.Unit ?? selectedRow['Unit / Room'] ?? '').trim()
-      if (!propertyName || !roomNumber) {
-        const profile = await getResidentById(residentId).catch(() => null)
-        if (profile) {
-          if (!propertyName) propertyName = String(profile.House || '').trim()
-          if (!roomNumber) roomNumber = String(profile['Unit Number'] || '').trim()
-        }
-      }
-      const fields = {
-        Resident: [residentId],
-        Amount: amt,
-        Balance: 0,
-        Status: 'Posted',
-        Type: 'Fee Waive',
-        Category: 'Waiver',
-        Month: 'Fee waiver',
-        Notes: reason,
-        'Property Name': propertyName || undefined,
-        'Room Number': roomNumber || undefined,
-        'Resident Name': paymentResidentLabel(selectedRow) || undefined,
-      }
-      await createPaymentRecord(fields)
-      toast.success('Fee waive recorded')
-      setWaiveAmount('')
-      setWaiveReason('')
+      await deletePaymentRecord(id)
+      if (expandedPaymentId === id) setExpandedPaymentId('')
       await load()
+      toast.success('Payment deleted')
     } catch (err) {
-      toast.error(err.message || 'Could not record waiver')
+      toast.error(err.message || 'Delete failed')
     } finally {
-      setWaiveSaving(false)
-    }
-  }
-
-  async function submitFine(event) {
-    event.preventDefault()
-    if (!selectedRow) return
-    const residentId = paymentResidentRecordId(selectedRow)
-    if (!residentId) {
-      toast.error('This payment row has no linked resident. Link Resident on the payment in Airtable, then try again')
-      return
-    }
-    const amt = Number(String(fineAmount).replace(/[^0-9.]/g, ''))
-    if (!Number.isFinite(amt) || amt <= 0) {
-      toast.error('Enter a valid amount')
-      return
-    }
-    const title = fineTitle.trim() || 'Fine / extra charge'
-    setFineSaving(true)
-    try {
-      let propertyName = paymentPropertyLabel(selectedRow)
-      let roomNumber = String(selectedRow['Room Number'] ?? selectedRow.Room ?? selectedRow.Unit ?? selectedRow['Unit / Room'] ?? '').trim()
-      if (!propertyName || !roomNumber) {
-        const profile = await getResidentById(residentId).catch(() => null)
-        if (profile) {
-          if (!propertyName) propertyName = String(profile.House || '').trim()
-          if (!roomNumber) roomNumber = String(profile['Unit Number'] || '').trim()
-        }
-      }
-      const fields = {
-        Resident: [residentId],
-        Amount: amt,
-        Balance: amt,
-        Status: 'Unpaid',
-        Type: 'Fine',
-        Category: 'Fee',
-        Month: title,
-        Notes: fineNotes.trim() || undefined,
-        'Due Date': fineDue.trim() || undefined,
-        'Property Name': propertyName || undefined,
-        'Room Number': roomNumber || undefined,
-        'Resident Name': paymentResidentLabel(selectedRow) || undefined,
-      }
-      await createPaymentRecord(fields)
-      toast.success('Fine posted for this resident')
-      setFineTitle('')
-      setFineAmount('')
-      setFineDue('')
-      setFineNotes('')
-      await load()
-    } catch (err) {
-      toast.error(err.message || 'Could not create charge')
-    } finally {
-      setFineSaving(false)
+      setBusy((b) => {
+        const n = { ...b }
+        delete n[`del_${id}`]
+        return n
+      })
     }
   }
 
@@ -5468,7 +5194,9 @@ function ManagerPaymentsPanel({ allowedPropertyNames }) {
                     <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-[0.14em] text-slate-400">Balance Due</th>
                     <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-[0.14em] text-slate-400">Due Date</th>
                     <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-[0.14em] text-slate-400">Status</th>
-                    <th className="px-4 py-3 text-right text-[11px] font-bold uppercase tracking-[0.14em] text-slate-400">Action</th>
+                    <th className="min-w-[140px] px-4 py-3 text-right text-[11px] font-bold uppercase tracking-[0.14em] text-slate-400">
+                      Actions
+                    </th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
@@ -5492,14 +5220,27 @@ function ManagerPaymentsPanel({ allowedPropertyNames }) {
                             {paymentStatusLabel(computed)}
                           </PortalOpsStatusBadge>
                         </td>
-                        <td className="px-4 py-4 text-right">
-                          <button
-                            type="button"
-                            onClick={() => setExpandedPaymentId((id) => (id === row.id ? '' : row.id))}
-                            className="whitespace-nowrap text-sm font-semibold text-[#2563eb] hover:underline"
-                          >
-                            {expandedPaymentId === row.id ? 'Hide' : 'Details'}
-                          </button>
+                        <td className="min-w-[140px] whitespace-nowrap px-4 py-4 text-right">
+                          <div className="flex flex-wrap items-center justify-end gap-x-2 gap-y-1">
+                            <button
+                              type="button"
+                              onClick={() => setExpandedPaymentId((id) => (id === row.id ? '' : row.id))}
+                              className="text-sm font-semibold text-[#2563eb] hover:underline"
+                            >
+                              {expandedPaymentId === row.id ? 'Hide' : 'Details'}
+                            </button>
+                            <span className="select-none text-slate-300" aria-hidden="true">
+                              |
+                            </span>
+                            <button
+                              type="button"
+                              disabled={Boolean(busy[`del_${row.id}`])}
+                              onClick={() => removePaymentRow(row)}
+                              className="text-sm font-semibold text-red-600 hover:underline disabled:opacity-50"
+                            >
+                              {busy[`del_${row.id}`] ? 'Deleting…' : 'Delete'}
+                            </button>
+                          </div>
                         </td>
                       </tr>
                     )
@@ -5538,248 +5279,6 @@ function ManagerPaymentsPanel({ allowedPropertyNames }) {
                 </div>
               ) : null}
             </div>
-
-            <div className="min-w-0 space-y-6 px-5 py-5 sm:px-6">
-              <div className="rounded-2xl border border-slate-100 bg-slate-50/90 px-4 py-4">
-                <div className="flex items-center gap-2">
-                  <div className="text-[11px] font-bold uppercase tracking-[0.14em] text-slate-400">Selected charge</div>
-                  {String(selectedRow.Notes || '').includes('Paid via Zelle') && (
-                    <span className="rounded-full border border-[#6600cc]/25 bg-[#6600cc]/8 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-[#6600cc]">
-                      Zelle
-                    </span>
-                  )}
-                  {String(selectedRow.Notes || '').includes('promo code: FEEWAIVE') && (
-                    <span className="rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-emerald-700">
-                      Fee waived
-                    </span>
-                  )}
-                </div>
-                <div className="mt-2 text-lg font-black text-slate-900">{managerPaymentLineDisplayTitle(selectedRow)}</div>
-                <dl className="mt-4 grid gap-3 text-sm sm:grid-cols-2">
-                  <div>
-                    <dt className="text-xs font-semibold uppercase tracking-wide text-slate-500">Line total</dt>
-                    <dd className="mt-0.5 font-bold text-slate-900">{money(paymentAmountDue(selectedRow))}</dd>
-                  </div>
-                  <div>
-                    <dt className="text-xs font-semibold uppercase tracking-wide text-slate-500">Balance due</dt>
-                    <dd className="mt-0.5 font-bold text-slate-900">{money(paymentBalanceDue(selectedRow))}</dd>
-                  </div>
-                  <div>
-                    <dt className="text-xs font-semibold uppercase tracking-wide text-slate-500">Due date</dt>
-                    <dd className="mt-0.5 text-slate-800">{fmtDate(selectedRow['Due Date'])}</dd>
-                  </div>
-                  <div>
-                    <dt className="text-xs font-semibold uppercase tracking-wide text-slate-500">Classification</dt>
-                    <dd className="mt-0.5 capitalize text-slate-800">
-                      {String(classifyResidentPaymentLine(selectedRow)).replace(/_/g, ' ')}
-                    </dd>
-                  </div>
-                </dl>
-              </div>
-
-              <div>
-                <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">Resident · due now</div>
-                {residentPaymentBundle.loading ? (
-                  <p className="mt-3 text-sm text-slate-500">Loading…</p>
-                ) : residentPaymentBundle.error ? (
-                  <p className="mt-3 text-sm text-amber-800">{residentPaymentBundle.error}</p>
-                ) : !selectedResidentRecordId ? (
-                  <p className="mt-3 text-sm text-slate-500">Link Resident on this payment in Airtable.</p>
-                ) : portalDueLinesForSelectedResident.length === 0 ? (
-                  <p className="mt-3 text-sm text-slate-500">Nothing due in portal for this resident.</p>
-                ) : (
-                  <div className="mt-3 space-y-2">
-                    {portalDueLinesForSelectedResident.map((line) => (
-                      <div
-                        key={line.id}
-                        className="flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-slate-100 bg-white px-3 py-3"
-                      >
-                        <div className="min-w-0 text-sm font-semibold text-slate-900">{line.label}</div>
-                        <div className="flex shrink-0 items-center gap-2">
-                          <span className="text-sm font-bold text-slate-900">{money(line.balance)}</span>
-                          <PortalOpsStatusBadge tone={managerToneForResidentPaymentLabel(line.status)}>{line.status}</PortalOpsStatusBadge>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-
-              {postpayCleaningRows.length > 0 ? (
-                <div>
-                  <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">Room cleaning (work order)</div>
-                  <div className="mt-2 space-y-2">
-                    {postpayCleaningRows.map((row) => {
-                      const computed = paymentComputedStatus(row)
-                      return (
-                        <div
-                          key={row.id}
-                          className="flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-slate-100 bg-white px-3 py-3"
-                        >
-                          <div className="min-w-0">
-                            <div className="text-sm font-semibold text-slate-900">{managerPaymentLineDisplayTitle(row)}</div>
-                            <div className="mt-0.5 text-xs text-slate-500">Due {fmtDate(row['Due Date'])}</div>
-                          </div>
-                          <div className="flex shrink-0 items-center gap-2">
-                            <span className="text-sm font-bold text-slate-900">{money(paymentBalanceDue(row))}</span>
-                            <PortalOpsStatusBadge tone={paymentStatusTone(computed)}>{paymentStatusLabel(computed)}</PortalOpsStatusBadge>
-                          </div>
-                        </div>
-                      )
-                    })}
-                  </div>
-                </div>
-              ) : null}
-
-              <div>
-                <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">Rent & utilities</div>
-                <div className="mt-3 space-y-2">
-                  {residentDetailRows.filter((row) => getPaymentKind(row) === 'rent').length === 0 ? (
-                    <p className="text-sm text-slate-500">No rent/utilities lines.</p>
-                  ) : (
-                    residentDetailRows
-                      .filter((row) => getPaymentKind(row) === 'rent')
-                      .slice(0, 8)
-                      .map((row) => {
-                        const computed = paymentComputedStatus(row)
-                        return (
-                          <div
-                            key={row.id}
-                            className="flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-slate-100 bg-white px-3 py-3"
-                          >
-                            <div className="min-w-0">
-                              <div className="text-sm font-semibold text-slate-900">{managerPaymentLineDisplayTitle(row)}</div>
-                              <div className="mt-0.5 text-xs text-slate-500">Due {fmtDate(row['Due Date'])}</div>
-                            </div>
-                            <div className="flex shrink-0 items-center gap-2">
-                              <span className="text-sm font-bold text-slate-900">{money(paymentBalanceDue(row))}</span>
-                              <PortalOpsStatusBadge tone={paymentStatusTone(computed)}>{paymentStatusLabel(computed)}</PortalOpsStatusBadge>
-                            </div>
-                          </div>
-                        )
-                      })
-                  )}
-                </div>
-              </div>
-
-              <div>
-                <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">Fees & extras</div>
-                {feeRowsExcludingPostpayCleaning.length === 0 ? (
-                  <p className="mt-3 text-sm text-slate-500">None.</p>
-                ) : (
-                  <div className="mt-3 space-y-2">
-                    {feeRowsExcludingPostpayCleaning.map((row) => {
-                      const note = formatPaymentNotesForDisplay(row.Notes)
-                      const computed = paymentComputedStatus(row)
-                      return (
-                        <div
-                          key={row.id}
-                          className="flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-slate-100 bg-white px-3 py-3"
-                        >
-                          <div className="min-w-0">
-                            <div className="text-sm font-semibold text-slate-900">{managerPaymentLineDisplayTitle(row)}</div>
-                            <div className="mt-0.5 text-xs text-slate-500">{note}</div>
-                          </div>
-                          <div className="flex shrink-0 items-center gap-2">
-                            <span className="text-sm font-bold text-slate-900">{money(paymentBalanceDue(row) || paymentAmountDue(row))}</span>
-                            <PortalOpsStatusBadge tone={paymentStatusTone(computed)}>{paymentStatusLabel(computed)}</PortalOpsStatusBadge>
-                          </div>
-                        </div>
-                      )
-                    })}
-                  </div>
-                )}
-              </div>
-            </div>
-
-            <form onSubmit={submitFeeWaive} className="border-t border-slate-100 px-5 py-5 sm:px-6">
-              <div className="rounded-3xl border border-dashed border-violet-200 bg-violet-50/50 p-4">
-              <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-violet-700">Fee waive</div>
-              <p className="mt-2 text-xs text-slate-600">Accounting only — not a rent/deposit payment.</p>
-              <div className="mt-4 grid gap-3 sm:grid-cols-2">
-                <label className="block">
-                  <span className="mb-1 block text-xs font-semibold text-slate-600">Amount (USD)</span>
-                  <input
-                    value={waiveAmount}
-                    onChange={(e) => setWaiveAmount(e.target.value)}
-                    inputMode="decimal"
-                    placeholder="0"
-                    className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-violet-500 focus:ring-2 focus:ring-violet-500/20"
-                  />
-                </label>
-                <label className="block sm:col-span-2">
-                  <span className="mb-1 block text-xs font-semibold text-slate-600">Reason / notes</span>
-                  <textarea
-                    value={waiveReason}
-                    onChange={(e) => setWaiveReason(e.target.value)}
-                    rows={2}
-                    placeholder="Why this fee is waived"
-                    className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-violet-500 focus:ring-2 focus:ring-violet-500/20"
-                  />
-                </label>
-              </div>
-              <button
-                type="submit"
-                disabled={waiveSaving || !paymentResidentRecordId(selectedRow)}
-                className="mt-4 rounded-full bg-violet-600 px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-violet-700 disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                {waiveSaving ? 'Saving…' : 'Record fee waive'}
-              </button>
-              </div>
-            </form>
-
-            <form onSubmit={submitFine} className="border-t border-slate-100 px-5 py-5 sm:px-6">
-              <div className="rounded-3xl border border-dashed border-slate-200 bg-slate-50/80 p-4">
-              <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">Add fine / extra charge</div>
-              <div className="mt-4 grid gap-3 sm:grid-cols-2">
-                <label className="block sm:col-span-2">
-                  <span className="mb-1 block text-xs font-semibold text-slate-600">Title</span>
-                  <input
-                    value={fineTitle}
-                    onChange={(e) => setFineTitle(e.target.value)}
-                    placeholder="e.g. Late fee, cleaning charge"
-                    className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-axis focus:ring-2 focus:ring-axis/20"
-                  />
-                </label>
-                <label className="block">
-                  <span className="mb-1 block text-xs font-semibold text-slate-600">Amount (USD)</span>
-                  <input
-                    value={fineAmount}
-                    onChange={(e) => setFineAmount(e.target.value)}
-                    inputMode="decimal"
-                    placeholder="0"
-                    className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-axis focus:ring-2 focus:ring-axis/20"
-                  />
-                </label>
-                <label className="block">
-                  <span className="mb-1 block text-xs font-semibold text-slate-600">Due date (optional)</span>
-                  <input
-                    type="date"
-                    value={fineDue}
-                    onChange={(e) => setFineDue(e.target.value)}
-                    className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-axis focus:ring-2 focus:ring-axis/20"
-                  />
-                </label>
-                <label className="block sm:col-span-2">
-                  <span className="mb-1 block text-xs font-semibold text-slate-600">Notes (optional)</span>
-                  <textarea
-                    value={fineNotes}
-                    onChange={(e) => setFineNotes(e.target.value)}
-                    rows={2}
-                    placeholder="Internal or resident-facing context"
-                    className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-axis focus:ring-2 focus:ring-axis/20"
-                  />
-                </label>
-              </div>
-              <button
-                type="submit"
-                disabled={fineSaving || !paymentResidentRecordId(selectedRow)}
-                className="mt-4 rounded-full bg-axis px-5 py-2.5 text-sm font-semibold text-white transition hover:brightness-105 disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                {fineSaving ? 'Saving…' : 'Create charge'}
-              </button>
-              </div>
-            </form>
           </div>
         ) : null}
             </>

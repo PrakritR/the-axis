@@ -38,6 +38,10 @@ import {
   seedDeveloperManagerSession,
   seedInternalStaffManagerSession,
 } from '../lib/developerPortal'
+import {
+  applicationLeaseRoomNumber,
+  DEFAULT_AXIS_APPLICATION_APPROVED_ROOM,
+} from '../../../shared/application-airtable-fields.js'
 import { ApplicationDetailPanel } from '../lib/applicationDetailPanel.jsx'
 import { PropertyDetailPanel } from '../lib/propertyDetailPanel.jsx'
 import { AXIS_ADMIN_SESSION_KEY, AXIS_ADMIN_SHOW_PORTAL_HANDOFF_KEY } from './adminSessionConstants'
@@ -496,7 +500,35 @@ function residentApprovedForProperty(resident) {
   return statusRaw === 'approved' || statusRaw === 'active' || statusRaw === 'live'
 }
 
-function PortalHandoffCard({ accounts, residents, user }) {
+/** Prefer Approved Room from the latest approved application when signer email matches (profile unit can lag). */
+function residentHandoffRoomLabel(resident, applications) {
+  const profileUnit = String(resident?.['Unit Number'] || '').trim()
+  const email = String(resident?.Email || '').trim().toLowerCase()
+  if (!email || !Array.isArray(applications) || applications.length === 0) return profileUnit
+
+  const approvedField =
+    String(import.meta.env.VITE_AIRTABLE_APPLICATION_APPROVED_ROOM_FIELD || '').trim() ||
+    DEFAULT_AXIS_APPLICATION_APPROVED_ROOM
+
+  const matches = applications.filter((app) => {
+    const appr = app.Approved === true || app.Approved === 1
+    if (!appr) return false
+    const signer = String(app['Signer Email'] || '').trim().toLowerCase()
+    return signer && signer === email
+  })
+  if (!matches.length) return profileUnit
+
+  matches.sort((a, b) => {
+    const tb = new Date(b['Approved At'] || b.updated_at || b.created_at || 0).getTime()
+    const ta = new Date(a['Approved At'] || a.updated_at || a.created_at || 0).getTime()
+    return tb - ta
+  })
+
+  const fromApp = applicationLeaseRoomNumber(matches[0], approvedField)
+  return String(fromApp || '').trim() || profileUnit
+}
+
+function PortalHandoffCard({ accounts, residents, applications, user }) {
   const [selectedManagerId, setSelectedManagerId] = useState('')
   const [selectedResidentId, setSelectedResidentId] = useState('')
 
@@ -569,13 +601,16 @@ function PortalHandoffCard({ accounts, residents, user }) {
               className="min-w-0 w-0 max-w-full flex-1 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 outline-none focus:border-sky-400 focus:ring-1 focus:ring-sky-400/30"
             >
               <option value="">— choose resident —</option>
-              {sortedResidents.map((r) => (
-                <option key={r.id} value={r.id}>
-                  {r.Name || r.Email || r.id}
-                  {r.House ? ` · ${r.House}` : ''}
-                  {r['Unit Number'] ? ` ${r['Unit Number']}` : ''}
-                </option>
-              ))}
+              {sortedResidents.map((r) => {
+                const roomLabel = residentHandoffRoomLabel(r, applications)
+                return (
+                  <option key={r.id} value={r.id}>
+                    {r.Name || r.Email || r.id}
+                    {r.House ? ` · ${r.House}` : ''}
+                    {roomLabel ? ` ${roomLabel}` : ''}
+                  </option>
+                )
+              })}
               {sortedResidents.length === 0 ? (
                 <option disabled value="">Loading residents…</option>
               ) : null}
@@ -1012,7 +1047,7 @@ export default function AdminPortal() {
                 </span>
               </label>
               {showPortalHandoff ? (
-                <PortalHandoffCard accounts={accounts} residents={residents} user={user} />
+                <PortalHandoffCard accounts={accounts} residents={residents} applications={applications} user={user} />
               ) : null}
             </div>
           ) : null}

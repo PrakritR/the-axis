@@ -155,6 +155,10 @@ export default async function handler(req, res) {
         ? { [APPLICATION_APPROVED_ROOM_FIELD]: approvedRoomToStore }
         : {}
 
+    /** Avoid duplicate fee/move-in rows when the manager re-hits approve on an already-approved application. */
+    const applicationAlreadyFullyApproved =
+      isApplicationApprovedForLease(existing) && (existing.Approved === true || existing.Approved === 1)
+
     let approvedApplication = existing
     if (!isApplicationApprovedForLease(existing) || existing.Approved !== true) {
       if (!approvedRoomToStore) {
@@ -179,23 +183,25 @@ export default async function handler(req, res) {
     }
 
     let applicationFeePayments = { createdIds: [], skipped: [] }
-    try {
-      applicationFeePayments = await createApprovedApplicationFeePayments({
-        application: approvedApplication,
-        residentRecordIds: feeResidentIds,
-      })
-    } catch (feeErr) {
-      console.warn('[manager-approve-application] application fee payment rows:', feeErr?.message || feeErr)
-    }
-
     let moveInPayments = { createdIds: [], skipped: [] }
-    try {
-      moveInPayments = await createApprovedApplicationMoveInPayments({
-        application: approvedApplication,
-        residentRecordIds: feeResidentIds,
-      })
-    } catch (moveErr) {
-      console.warn('[manager-approve-application] move-in payment rows:', moveErr?.message || moveErr)
+    if (!applicationAlreadyFullyApproved) {
+      try {
+        applicationFeePayments = await createApprovedApplicationFeePayments({
+          application: approvedApplication,
+          residentRecordIds: feeResidentIds,
+        })
+      } catch (feeErr) {
+        console.warn('[manager-approve-application] application fee payment rows:', feeErr?.message || feeErr)
+      }
+
+      try {
+        moveInPayments = await createApprovedApplicationMoveInPayments({
+          application: approvedApplication,
+          residentRecordIds: feeResidentIds,
+        })
+      } catch (moveErr) {
+        console.warn('[manager-approve-application] move-in payment rows:', moveErr?.message || moveErr)
+      }
     }
 
     // Generate lease draft from template (no AI). Skips gracefully if it fails.

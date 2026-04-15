@@ -748,6 +748,15 @@ export async function deleteWorkOrderForResident(workOrderId, resident) {
   if (!owned) {
     throw new Error('You can only delete your own work orders.')
   }
+  const wo = residentWorkOrders.find((w) => String(w.id || '').trim() === id)
+  if (wo) {
+    try {
+      const { cleanupPaymentsWhenWorkOrderDeleted } = await import('./roomCleaningWorkOrder.js')
+      await cleanupPaymentsWhenWorkOrderDeleted(wo, resident)
+    } catch (e) {
+      console.warn('[deleteWorkOrderForResident] linked payment cleanup failed', e?.message || e)
+    }
+  }
   await request(`${tableUrl(TABLES.workOrders)}/${id}`, { method: 'DELETE' })
 }
 
@@ -2483,6 +2492,41 @@ export async function submitResidentLeaseChangeRequest({
     leaseDraftId: draftId,
     message: `${resident?.Name || 'Resident'} requested lease changes: ${preview}`,
     actionType: 'resident-requested-changes',
+  }).catch(() => null)
+
+  return getLeaseDraftById(draftId)
+}
+
+/**
+ * Resident reports an issue or asks for a change — adds a lease thread comment,
+ * notifies the house manager, and does **not** change lease workflow status
+ * (signing can continue unless the manager updates the draft separately).
+ */
+export async function submitResidentLeaseIssueReport({ draft, resident, message }) {
+  const draftId = String(draft?.id || '').trim()
+  const text = String(message || '').trim()
+  if (!/^rec[a-zA-Z0-9]{14,}$/.test(draftId)) throw new Error('Invalid lease draft ID.')
+  if (!text) throw new Error('Please describe the issue or change you need.')
+
+  await addLeaseCommentRecord({
+    leaseDraftId: draftId,
+    authorName: resident?.Name || resident?.Email || 'Resident',
+    authorRole: 'Resident',
+    authorRecordId: resident?.id || '',
+    message: `**Request to manager:**\n\n${text}`,
+  })
+
+  const preview = text.length > 220 ? `${text.slice(0, 220)}…` : text
+  await createLeaseNotification({
+    recipientRecordId: draft?.['Owner ID'] || '',
+    recipientRole: 'manager',
+    leaseDraftId: draftId,
+    message: `${resident?.Name || 'Resident'} flagged a lease question: ${preview}`,
+    actionType: 'resident-lease-issue',
+  }).catch(() => null)
+
+  await updateLeaseDraftRecord(draftId, {
+    'Updated At': new Date().toISOString(),
   }).catch(() => null)
 
   return getLeaseDraftById(draftId)

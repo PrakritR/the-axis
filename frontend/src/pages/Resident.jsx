@@ -31,6 +31,8 @@ import {
   getApprovedLeaseForResident,
   getCurrentLeaseVersion,
   getLeaseDraftsForResident,
+  submitResidentLeaseIssueReport,
+  uploadLeaseVersionPdfFile,
   getPropertyByName,
   getPaymentsForResident,
   createPaymentRecord,
@@ -2710,6 +2712,12 @@ function LeasingPanel({ resident, payments, onOpenPayments, onNavigateTab, onLea
   const [extendNotice, setExtendNotice] = useState('')
   const [currentLeasePdf, setCurrentLeasePdf] = useState(null)
   const [propertyForLeaseAccess, setPropertyForLeaseAccess] = useState(null)
+  const [leaseToolbarNotice, setLeaseToolbarNotice] = useState('')
+  const [leaseIssueOpen, setLeaseIssueOpen] = useState(false)
+  const [leaseIssueText, setLeaseIssueText] = useState('')
+  const [leaseIssueBusy, setLeaseIssueBusy] = useState(false)
+  const [leaseUploadBusy, setLeaseUploadBusy] = useState(false)
+  const leasePdfFileInputRef = useRef(null)
 
   useEffect(() => {
     const house = String(resident.House || '').trim()
@@ -2888,11 +2896,104 @@ function LeasingPanel({ resident, payments, onOpenPayments, onNavigateTab, onLea
     if (!activeLeaseDraft) return ''
     if (!leaseBodyAllowed) {
       return leaseStatus === 'Draft Generated'
-        ? 'Lease is being drafted — check back after your manager publishes it.'
+        ? 'Lease is being prepared — check back after your manager publishes it.'
         : 'Lease not ready yet — your manager will send it soon.'
     }
     return leaseContent || `Axis Resident Lease\n\nProperty: ${resident.House || '—'}\nUnit: ${resident['Unit Number'] || '—'}\nTerm: ${leaseTermLabel}\nMove-in: ${moveInLabel}\nMove-out: ${moveOutLabel}\nSecurity Deposit: ${depositPreviewLabel}\n\nPay move-in charges in Payments before signing.`
   }, [activeLeaseDraft, leaseBodyAllowed, leaseStatus, leaseContent, resident.House, resident['Unit Number'], leaseTermLabel, moveInLabel, moveOutLabel, depositPreviewLabel])
+
+  const leaseHasGeneratedPdfSource = useMemo(() => {
+    if (!activeLeaseDraft) return false
+    try {
+      const j = JSON.parse(activeLeaseDraft['Lease JSON'] || '{}')
+      if (j && typeof j === 'object' && Object.keys(j).length > 0) return true
+    } catch {
+      /* ignore */
+    }
+    return Boolean(String(activeLeaseDraft['AI Draft Content'] || '').trim())
+  }, [activeLeaseDraft])
+
+  const handleResidentDownloadGeneratedPdf = useCallback(async () => {
+    if (!activeLeaseDraft?.id) return
+    setLeaseToolbarNotice('')
+    try {
+      const res = await fetch('/api/portal?action=lease-resident-download-generated-pdf', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          leaseDraftId: activeLeaseDraft.id,
+          residentRecordId: resident.id,
+          residentEmail: resident.Email || '',
+        }),
+      })
+      if (!res.ok) {
+        const j = await res.json().catch(() => ({}))
+        throw new Error(j.error || `Download failed (${res.status})`)
+      }
+      const blob = await res.blob()
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      const prop = String(activeLeaseDraft.Property || 'lease').replace(/\s+/g, '-').slice(0, 48)
+      a.download = `axis-generated-lease-${prop}.pdf`
+      a.rel = 'noopener'
+      document.body.appendChild(a)
+      a.click()
+      a.remove()
+      URL.revokeObjectURL(url)
+      setLeaseToolbarNotice('Download started.')
+    } catch (e) {
+      setLeaseToolbarNotice(e?.message || 'Could not download PDF.')
+    }
+  }, [activeLeaseDraft, resident.id, resident.Email])
+
+  const handleLeasePdfUpload = useCallback(
+    async (event) => {
+      const file = event.target.files?.[0]
+      event.target.value = ''
+      if (!file || !activeLeaseDraft?.id) return
+      setLeaseUploadBusy(true)
+      setLeaseToolbarNotice('')
+      try {
+        await uploadLeaseVersionPdfFile({
+          leaseDraftId: activeLeaseDraft.id,
+          file,
+          uploaderName: resident.Name || resident.Email || 'Resident',
+          uploaderRole: 'Resident',
+        })
+        const pdf = await getCurrentLeaseVersion(activeLeaseDraft.id)
+        setCurrentLeasePdf(pdf)
+        setLeaseToolbarNotice('PDF uploaded.')
+      } catch (e) {
+        setLeaseToolbarNotice(e?.message || 'Upload failed.')
+      } finally {
+        setLeaseUploadBusy(false)
+      }
+    },
+    [activeLeaseDraft, resident.Name, resident.Email],
+  )
+
+  const handleSubmitLeaseIssue = useCallback(async () => {
+    const msg = leaseIssueText.trim()
+    if (!msg || !activeLeaseDraft) return
+    setLeaseIssueBusy(true)
+    setLeaseToolbarNotice('')
+    try {
+      await submitResidentLeaseIssueReport({
+        draft: activeLeaseDraft,
+        resident,
+        message: msg,
+      })
+      setLeaseIssueText('')
+      setLeaseIssueOpen(false)
+      setLeaseToolbarNotice('Your manager has been notified.')
+      await loadLeaseDrafts()
+    } catch (e) {
+      setLeaseToolbarNotice(e?.message || 'Could not send request.')
+    } finally {
+      setLeaseIssueBusy(false)
+    }
+  }, [leaseIssueText, activeLeaseDraft, resident, loadLeaseDrafts])
 
   useEffect(() => {
     let cancelled = false
@@ -2957,9 +3058,12 @@ function LeasingPanel({ resident, payments, onOpenPayments, onNavigateTab, onLea
       <div className="mb-5 rounded-2xl border border-slate-200 bg-white px-4 py-4 text-sm text-slate-800 shadow-sm">
         <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-slate-500">Move-in path</p>
         <p className="mt-2 leading-relaxed text-slate-700">
-          Room hold: <span className="font-semibold">{formatMoney(residentRoomHoldFeeUsd(resident))}</span> in Payments if
-          you only hold the bed. It <span className="font-semibold">credits toward your deposit</span>. Otherwise choose{' '}
-          <span className="font-semibold">Sign lease</span> for normal move-in.
+          If you do not sign the lease, the room is not held and someone else can claim it.
+        </p>
+        <p className="mt-2 leading-relaxed text-slate-700">
+          If you pay the room hold fee of{' '}
+          <span className="font-semibold">{formatMoney(residentRoomHoldFeeUsd(resident))}</span>, we will hold the room for
+          72 hours.
         </p>
         {leaseIsSigned ? (
           <p className="mt-3 text-sm text-slate-600">Lease signed — finish any balance in Payments.</p>
@@ -3003,8 +3107,8 @@ function LeasingPanel({ resident, payments, onOpenPayments, onNavigateTab, onLea
           <div className="mt-4 rounded-xl border border-sky-200 bg-sky-50/90 px-3 py-3 text-slate-800">
             <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-sky-900">Room hold</p>
             <p className="mt-2 leading-relaxed">
-              Pay <span className="font-semibold">{formatMoney(residentRoomHoldFeeUsd(resident))}</span> in Payments — it
-              credits to your deposit. May be <span className="font-semibold">non-refundable</span> if you miss deadlines.
+              Pay the room hold fee in Payments — your room is held for 72 hours after we receive payment. May be{' '}
+              <span className="font-semibold">non-refundable</span> if you miss deadlines.
             </p>
             <button
               type="button"
@@ -3040,10 +3144,9 @@ function LeasingPanel({ resident, payments, onOpenPayments, onNavigateTab, onLea
 
         {!leaseLoading && leaseDrafts.length > 0 ? (
           <div>
-            <p className="mb-2 text-[11px] font-bold uppercase tracking-[0.14em] text-slate-400">Lease drafts</p>
             <DataTable
               emptyIcon={false}
-              empty="No lease drafts yet."
+              empty="No leases to show yet."
               columns={[
                 {
                   key: 'status',
@@ -3109,7 +3212,7 @@ function LeasingPanel({ resident, payments, onOpenPayments, onNavigateTab, onLea
                 }}
                 className="mt-2 text-xs font-semibold text-slate-500 underline decoration-slate-300 underline-offset-2 hover:text-slate-800"
               >
-                Use the latest draft automatically
+                Use the latest lease automatically
               </button>
             ) : null}
           </div>
@@ -3117,11 +3220,12 @@ function LeasingPanel({ resident, payments, onOpenPayments, onNavigateTab, onLea
 
         {!leaseLoading && leaseDrafts.length === 0 ? (
           <div className="rounded-[24px] border border-slate-200 bg-slate-50 px-5 py-5 text-center text-sm text-slate-600">
-            No lease draft yet — your manager will add one here.
+            No lease yet — your manager will add one here.
           </div>
         ) : null}
 
         {!leaseLoading && moveInPrereqsMet && activeLeaseDraft ? (
+          <>
           <div className="rounded-[24px] border border-[#2563eb]/20 bg-[linear-gradient(135deg,#eff6ff_0%,#ffffff_100%)] p-5">
             {signWithoutMoveInPayOverride && (!securityDepositPaid || !firstMonthRentPaid) ? (
               <div className="mb-3 rounded-lg border border-sky-200 bg-white/90 px-3 py-2 text-xs text-sky-950">
@@ -3160,6 +3264,23 @@ function LeasingPanel({ resident, payments, onOpenPayments, onNavigateTab, onLea
                   </div>
                 </div>
                 <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
+                  <input
+                    ref={leasePdfFileInputRef}
+                    type="file"
+                    accept="application/pdf,.pdf"
+                    className="hidden"
+                    onChange={handleLeasePdfUpload}
+                  />
+                  {leaseBodyAllowed ? (
+                    <button
+                      type="button"
+                      disabled={leaseUploadBusy}
+                      onClick={() => leasePdfFileInputRef.current?.click()}
+                      className="shrink-0 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-[#2563eb] transition hover:bg-slate-50 disabled:opacity-50"
+                    >
+                      {leaseUploadBusy ? 'Uploading…' : 'Upload PDF'}
+                    </button>
+                  ) : null}
                   {leaseBodyAllowed && currentLeasePdf?.['PDF URL'] ? (
                     <a
                       href={currentLeasePdf['PDF URL']}
@@ -3170,8 +3291,29 @@ function LeasingPanel({ resident, payments, onOpenPayments, onNavigateTab, onLea
                       rel="noreferrer"
                       className="shrink-0 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-[#2563eb] transition hover:bg-slate-50"
                     >
-                      Download
+                      Download PDF
                     </a>
+                  ) : null}
+                  {leaseBodyAllowed && leaseHasGeneratedPdfSource ? (
+                    <button
+                      type="button"
+                      onClick={handleResidentDownloadGeneratedPdf}
+                      className="shrink-0 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-[#2563eb] transition hover:bg-slate-50"
+                    >
+                      Download generated PDF
+                    </button>
+                  ) : null}
+                  {leaseBodyAllowed ? (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setLeaseIssueText('')
+                        setLeaseIssueOpen(true)
+                      }}
+                      className="shrink-0 rounded-full border border-amber-200 bg-amber-50 px-3 py-1.5 text-xs font-semibold text-amber-900 transition hover:bg-amber-100"
+                    >
+                      Request change from manager
+                    </button>
                   ) : null}
                   {leaseBodyAllowed ? (
                     <button
@@ -3179,14 +3321,17 @@ function LeasingPanel({ resident, payments, onOpenPayments, onNavigateTab, onLea
                       onClick={() => window.print()}
                       className="shrink-0 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 transition hover:bg-slate-50"
                     >
-                      Print / PDF
+                      Print
                     </button>
                   ) : null}
                 </div>
               </div>
+              {leaseToolbarNotice ? (
+                <div className="border-b border-slate-100 bg-slate-50 px-4 py-2 text-xs text-slate-700 sm:px-5">{leaseToolbarNotice}</div>
+              ) : null}
               {leaseBodyAllowed && !showLeaseText ? (
                 <div className="border-b border-slate-100 px-4 py-2.5 text-xs text-slate-500 sm:px-5">
-                  Tap <span className="font-semibold text-slate-700">Details</span> on the draft above to read or sign. Questions →{' '}
+                  Tap <span className="font-semibold text-slate-700">Details</span> on a row above to read or sign. Questions →{' '}
                   <button
                     type="button"
                     onClick={() => onNavigateTab?.('inbox')}
@@ -3276,6 +3421,59 @@ function LeasingPanel({ resident, payments, onOpenPayments, onNavigateTab, onLea
               ) : null}
             </div>
           </div>
+
+          {leaseIssueOpen ? (
+            <div
+              className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-900/40 p-4"
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="resident-lease-issue-title"
+              onClick={(e) => {
+                if (e.target === e.currentTarget) {
+                  setLeaseIssueOpen(false)
+                  setLeaseIssueText('')
+                }
+              }}
+            >
+              <div className="w-full max-w-lg rounded-2xl border border-slate-200 bg-white p-5 shadow-xl">
+                <h3 id="resident-lease-issue-title" className="text-lg font-black text-slate-900">
+                  Request change from manager
+                </h3>
+                <p className="mt-1 text-sm text-slate-600">
+                  Describe typos, missing terms, or questions. Your house manager will see this in the lease thread.
+                </p>
+                <textarea
+                  value={leaseIssueText}
+                  onChange={(e) => setLeaseIssueText(e.target.value)}
+                  rows={5}
+                  placeholder="What needs to be fixed or clarified?"
+                  className="mt-4 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-900 outline-none focus:border-[#2563eb] focus:ring-2 focus:ring-[#2563eb]/20"
+                />
+                <div className="mt-4 flex flex-wrap justify-end gap-2">
+                  <button
+                    type="button"
+                    disabled={leaseIssueBusy}
+                    onClick={() => {
+                      setLeaseIssueOpen(false)
+                      setLeaseIssueText('')
+                    }}
+                    className="rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:opacity-50"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    disabled={leaseIssueBusy || !leaseIssueText.trim()}
+                    onClick={handleSubmitLeaseIssue}
+                    className="rounded-full bg-[#2563eb] px-4 py-2 text-sm font-semibold text-white transition hover:bg-blue-700 disabled:opacity-50"
+                  >
+                    {leaseIssueBusy ? 'Sending…' : 'Send to manager'}
+                  </button>
+                </div>
+              </div>
+            </div>
+          ) : null}
+          </>
         ) : null}
 
         {canRequestLeaseExtension ? (
@@ -3402,7 +3600,7 @@ function ResidentDashboardHome({
         ? 'Lease signed'
         : approvedLease
           ? residentLeaseStatusDisplay(leaseStatus || 'In progress')
-          : 'Lease document not on file yet'
+          : ''
 
   return (
     <div className="space-y-6">
@@ -3515,14 +3713,16 @@ function ResidentDashboardHome({
           >
             {leaseDurationHeadline}
           </span>
-          <p
-            className={classNames(
-              'text-sm',
-              lock ? 'text-slate-600' : leaseNeedsSigning ? 'text-amber-800/90' : 'text-slate-600',
-            )}
-          >
-            {leaseCardSubline}
-          </p>
+          {leaseCardSubline ? (
+            <p
+              className={classNames(
+                'text-sm',
+                lock ? 'text-slate-600' : leaseNeedsSigning ? 'text-amber-800/90' : 'text-slate-600',
+              )}
+            >
+              {leaseCardSubline}
+            </p>
+          ) : null}
           {leaseStatus === 'Signed' ? (
             <button
               type="button"
@@ -3588,7 +3788,7 @@ function ResidentDashboardHome({
               paymentCardUrgent ? 'text-red-600' : 'text-blue-600',
             )}
           >
-            {paymentCardUrgent ? 'Payments · Overdue' : 'Payments · Due'}
+            {paymentCardUrgent ? 'Total payment overdue' : 'Total payment due'}
           </span>
           <span
             className={classNames('text-3xl font-black tabular-nums', paymentCardUrgent ? 'text-red-700' : 'text-blue-700')}
@@ -3609,16 +3809,6 @@ function ResidentDashboardHome({
                 </li>
               ) : null}
             </ul>
-          ) : null}
-          {!lock && duePaymentLines.length === 1 ? (
-            <p className="mt-2 border-t border-slate-200/90 pt-2 text-left text-[11px] font-medium leading-snug text-slate-700">
-              {duePaymentLines[0].label}
-            </p>
-          ) : null}
-          {!lock && fallbackDueFromSnapshot && duePaymentLines.length === 0 ? (
-            <p className="mt-2 border-t border-slate-200/90 pt-2 text-left text-[11px] font-medium leading-snug text-slate-700">
-              {String(snapshot.nextDue.month || 'Amount due').trim()}
-            </p>
           ) : null}
         </button>
 

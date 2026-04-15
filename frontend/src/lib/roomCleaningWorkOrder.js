@@ -7,7 +7,7 @@
  *   Due date = scheduled visit + 7 days (pay within one week after the scheduled cleaning).
  */
 
-import { createPaymentRecord, getPaymentsForResident } from './airtable.js'
+import { createPaymentRecord, deletePaymentRecord, getPaymentsForResident } from './airtable.js'
 import { computedResidentPaymentStatusLabel } from './residentPaymentsShared.js'
 import { workOrderScheduledMeta } from './workOrderShared.js'
 
@@ -145,6 +145,61 @@ export async function ensurePostpayRoomCleaningFeePayment({
 
 export function paymentNotesTagForCleaningWorkOrder(woId) {
   return `${ROOM_CLEANING_PAYMENT_FOR_WO}${String(woId || '').trim()}`
+}
+
+/**
+ * When a work order is removed, delete linked **non-paid** room-cleaning payment rows:
+ * - Post-pay fee rows tagged with {@link paymentNotesTagForCleaningWorkOrder}
+ * - Prepaid cleaning rows referenced by {@link ROOM_CLEANING_WO_FOR_PAYMENT} in the WO body
+ *
+ * @param {Record<string, unknown>} workOrder
+ * @param {{ id?: string }} residentProfile — Resident Profile used for Payments lookup
+ * @returns {Promise<{ deletedIds: string[] }>}
+ */
+export async function cleanupPaymentsWhenWorkOrderDeleted(workOrder, residentProfile) {
+  const deletedIds = []
+  const woId = String(workOrder?.id || '').trim()
+  const rid = String(residentProfile?.id || '').trim()
+  if (!woId || !rid) return { deletedIds }
+
+  const payments = await getPaymentsForResident({ id: rid }).catch(() => [])
+  const list = Array.isArray(payments) ? payments : []
+
+  const postPayTag = paymentNotesTagForCleaningWorkOrder(woId)
+  for (const p of list) {
+    if (!p?.id) continue
+    const notes = String(p.Notes || '')
+    if (!notes.includes(postPayTag)) continue
+    if (computedResidentPaymentStatusLabel(p) === 'Paid') continue
+    try {
+      await deletePaymentRecord(p.id)
+      deletedIds.push(p.id)
+    } catch (err) {
+      console.warn('[cleanupPaymentsWhenWorkOrderDeleted] post-pay row', p.id, err?.message || err)
+    }
+  }
+
+  const blob = `${String(workOrder?.Description || '')}\n${String(workOrder?.['Management Notes'] || '')}`
+  const prefix = ROOM_CLEANING_WO_FOR_PAYMENT
+  const idx = blob.indexOf(prefix)
+  if (idx >= 0) {
+    const rest = blob.slice(idx + prefix.length)
+    const m = rest.match(/rec[a-zA-Z0-9]{14,}/)
+    if (m) {
+      const pid = m[0]
+      const pay = list.find((x) => String(x?.id || '').trim() === pid)
+      if (pay && isRoomCleaningPrepaidPayment(pay) && computedResidentPaymentStatusLabel(pay) !== 'Paid') {
+        try {
+          await deletePaymentRecord(pid)
+          deletedIds.push(pid)
+        } catch (err) {
+          console.warn('[cleanupPaymentsWhenWorkOrderDeleted] prepaid row', pid, err?.message || err)
+        }
+      }
+    }
+  }
+
+  return { deletedIds }
 }
 
 export function isRoomCleaningPrepaidPayment(p) {

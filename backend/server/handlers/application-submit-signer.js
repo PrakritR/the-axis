@@ -11,6 +11,7 @@
 import { airtableAuthHeaders, applicationsTableUrl, getApplicationsAirtableEnv } from '../lib/applications-airtable-env.js'
 import { resolveExpectedApplicationFeeUsd } from '../lib/stripe-application-fee-usd.js'
 import { createSubmittedApplicationFeePayment } from '../lib/submitted-application-fee-payment.js'
+import { createSubmittedApplicationMoveInPayments } from '../lib/submitted-application-movein-payments.js'
 
 function isPaidInAirtable(value) {
   if (value === true) return true
@@ -97,6 +98,12 @@ export default async function handler(req, res) {
 
   const saved = JSON.parse(text)
 
+  const mergedApplication = {
+    id: applicationRecordId,
+    ...(saved.fields || {}),
+    ...patchFields,
+  }
+
   // Fire-and-forget: record the fee status in the Payments table so both the
   // manager and (after approval) the resident can see it.
   const effectiveFee = Number.isFinite(recordFeeNum) ? recordFeeNum : resolveExpectedApplicationFeeUsd()
@@ -110,6 +117,9 @@ export default async function handler(req, res) {
     propertyName: String(fields['Property Name'] || '').trim() || undefined,
     roomNumber: String(fields['Room Number'] || '').trim() || undefined,
   }).catch(() => { /* non-critical */ })
+
+  // Pending move-in lines (deposit / first rent / utilities) — same math as lease draft; no Resident until approval.
+  createSubmittedApplicationMoveInPayments({ application: mergedApplication }).catch(() => { /* non-critical */ })
 
   return res.status(200).json(saved)
 }
