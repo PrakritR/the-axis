@@ -107,4 +107,4 @@ Table `Blocked Tour Dates` with at least: `Property ID`, `Property Name`, `Date`
 
 ## 9) **Room cleaning / work orders** ($10 fee marker)
 
-Work order creation from the resident portal uses `frontend/src/lib/roomCleaningWorkOrder.js` (fee amount and note markers). No extra Airtable table; ensure **Work Orders** accepts the fields your portal PATCHes (Status, Management Notes, etc. per schema doc).
+`frontend/src/lib/roomCleaningWorkOrder.js` defines fee amount and markers. **Current flow:** resident chooses **Cleaning** under **Create new work order**; when the manager sets **Scheduled Date**, the manager portal creates an **Unpaid** Payments row (tag `AXIS_ROOM_CLEANING_PAYMENT_FOR_WO:` + work order id in Notes). Legacy prepaid rows may still use `AXIS_ROOM_CLEANING_PREPAID` / `AXIS_ROOM_CLEANING_WO_FOR_PAYMENT:` — those are not double-billed on schedule. Ensure **Work Orders** `Category` single select includes **Cleaning** (typecast may add it).

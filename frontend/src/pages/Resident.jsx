@@ -68,18 +68,19 @@ import {
   reconcilePaymentStatusesInAirtable,
   rentDueDayFromResident,
 } from '../lib/residentPaymentsShared.js'
-import {
-  ROOM_CLEANING_FEE_USD,
-  ROOM_CLEANING_PAYMENT_MARKER,
-  nextPaidRoomCleaningWithoutWorkOrder,
-  roomCleaningPrepaidUnpaid,
-  roomCleaningWorkOrderDescriptionBody,
-} from '../lib/roomCleaningWorkOrder.js'
+import { ROOM_CLEANING_FEE_USD, residentPostpayCleaningDescriptionSuffix } from '../lib/roomCleaningWorkOrder.js'
 
 const SESSION_KEY = 'axis_resident'
 
-/** "Cleaning" is only via the prepaid room-cleaning flow below — not the general work order form. */
-const requestCategories = ['Plumbing', 'Electrical', 'Heating / Cooling', 'Appliance', 'General Maintenance', 'Other']
+const requestCategories = [
+  'Plumbing',
+  'Electrical',
+  'Heating / Cooling',
+  'Appliance',
+  'General Maintenance',
+  'Other',
+  'Cleaning',
+]
 const urgencyOptions = ['Low', 'Medium', 'Urgent']
 const preferredTimeWindowOptions = ['Morning', 'Afternoon', 'Evening']
 
@@ -974,7 +975,6 @@ export function ResidentAuthForm({ onLogin, footer = null, variant = 'default' }
 function WorkOrdersPanel({
   resident,
   requests: requestsProp,
-  payments: paymentsProp = [],
   onRequestCreated,
   onWorkOrderUpdated,
   onRefresh,
@@ -982,16 +982,11 @@ function WorkOrdersPanel({
   onOpenPayments,
 }) {
   const requests = Array.isArray(requestsProp) ? requestsProp : []
-  const payments = Array.isArray(paymentsProp) ? paymentsProp : []
   const [woFilter, setWoFilter] = useState('open')
   const [refreshing, setRefreshing] = useState(false)
   const [deleteBusyId, setDeleteBusyId] = useState('')
   const [showForm, setShowForm] = useState(false)
   const [selectedId, setSelectedId] = useState(null)
-  const [cleaningAck, setCleaningAck] = useState(false)
-  const [cleaningBusy, setCleaningBusy] = useState(false)
-  const [cleaningError, setCleaningError] = useState('')
-  const [cleaningSuccess, setCleaningSuccess] = useState('')
   const [form, setForm] = useState({
     title: '',
     category: requestCategories[0],
@@ -1043,84 +1038,10 @@ function WorkOrdersPanel({
     [filteredRequests, selectedId],
   )
 
-  const cleaningUnpaid = useMemo(() => roomCleaningPrepaidUnpaid(payments), [payments])
-  const cleaningPaidSubmit = useMemo(
-    () => nextPaidRoomCleaningWithoutWorkOrder(payments, requests),
-    [payments, requests],
-  )
-
   const fieldCls = 'w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm outline-none transition focus:border-slate-900 focus:ring-2 focus:ring-slate-900/10'
-
-  async function handleCreateRoomCleaningCharge() {
-    if (!cleaningAck) return
-    if (cleaningUnpaid) {
-      setCleaningError('You already have a room cleaning charge open. Pay it in Payments first.')
-      return
-    }
-    setCleaningBusy(true)
-    setCleaningError('')
-    setCleaningSuccess('')
-    try {
-      const due = new Date().toISOString().slice(0, 10)
-      const prop = String(resident.House || '').trim()
-      const unit = String(resident['Unit Number'] || '').trim()
-      const name = String(resident.Name || '').trim()
-      await createPaymentRecord({
-        Resident: [resident.id],
-        Amount: ROOM_CLEANING_FEE_USD,
-        Balance: ROOM_CLEANING_FEE_USD,
-        Status: 'Unpaid',
-        Type: 'Room cleaning fee',
-        Category: 'Fee',
-        Month: 'One-time room cleaning (prepaid)',
-        Notes: `${ROOM_CLEANING_PAYMENT_MARKER} One-time room cleaning for ${[prop, unit].filter(Boolean).join(' · ') || 'your unit'}.`,
-        'Due Date': due,
-        'Property Name': prop || undefined,
-        'Room Number': unit || undefined,
-        'Resident Name': name || undefined,
-      })
-      setCleaningAck(false)
-      setCleaningSuccess(`Added ${formatMoney(ROOM_CLEANING_FEE_USD)} to Payments. Pay there to send the cleaning request to your manager.`)
-      await onDataRefresh?.()
-    } catch (err) {
-      setCleaningError(err?.message || 'Could not add the charge.')
-    } finally {
-      setCleaningBusy(false)
-    }
-  }
-
-  async function handleSubmitRoomCleaningWorkOrder() {
-    const pay = cleaningPaidSubmit
-    if (!pay?.id) return
-    setCleaningBusy(true)
-    setCleaningError('')
-    setCleaningSuccess('')
-    try {
-      await createWorkOrder({
-        resident,
-        title: 'Room cleaning (prepaid)',
-        category: 'Cleaning',
-        urgency: 'Low',
-        preferredEntry: preferredTimeWindowOptions[0],
-        preferredTimeWindow: preferredTimeWindowOptions[0],
-        description: roomCleaningWorkOrderDescriptionBody(pay.id, resident),
-        photoFile: null,
-      })
-      setCleaningSuccess('Cleaning request sent to your manager. They can schedule once they see it in work orders.')
-      await onDataRefresh?.()
-    } catch (err) {
-      setCleaningError(err?.message || 'Could not submit cleaning request.')
-    } finally {
-      setCleaningBusy(false)
-    }
-  }
 
   async function handleSubmit(event) {
     event.preventDefault()
-    if (form.category === 'Cleaning') {
-      setError('Room cleaning requests use the “Room cleaning” section above after you pay the fee in Payments.')
-      return
-    }
     setSubmitting(true)
     setError('')
     setSuccess('')
@@ -1129,6 +1050,10 @@ function WorkOrdersPanel({
         if (!photo.type.startsWith('image/')) throw new Error('Please upload an image file.')
         if (photo.size > 10 * 1024 * 1024) throw new Error('Keep the photo under 10 MB.')
       }
+      const desc =
+        form.category === 'Cleaning'
+          ? `${String(form.description || '').trim()}${residentPostpayCleaningDescriptionSuffix()}`
+          : form.description
       const created = await createWorkOrder({
         resident,
         title: form.title,
@@ -1136,7 +1061,7 @@ function WorkOrdersPanel({
         urgency: form.urgency === 'Medium' ? 'Routine' : form.urgency,
         preferredEntry: form.preferredTimeWindow,
         preferredTimeWindow: form.preferredTimeWindow,
-        description: form.description,
+        description: desc,
         photoFile: photo || null,
       })
       setForm({ title: '', category: requestCategories[0], urgency: urgencyOptions[1], preferredTimeWindow: preferredTimeWindowOptions[0], description: '' })
@@ -1215,69 +1140,6 @@ function WorkOrdersPanel({
         ))}
       </div>
 
-      <div className="mb-6 rounded-3xl border border-teal-200 bg-teal-50/80 px-5 py-4 shadow-sm">
-        <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-teal-900">Room cleaning</p>
-        <p className="mt-2 text-sm leading-relaxed text-teal-950/90">
-          Request a <span className="font-semibold">one-time cleaning of your room</span>. We add a{' '}
-          <span className="font-semibold">{formatMoney(ROOM_CLEANING_FEE_USD)}</span> line under{' '}
-          <span className="font-semibold">Payments → Fees &amp; extras</span>. After that charge is{' '}
-          <span className="font-semibold">paid</span>, you can submit the work order here so your manager receives it and
-          can schedule.
-        </p>
-        {cleaningError ? (
-          <p className="mt-2 text-sm font-medium text-red-700">{cleaningError}</p>
-        ) : null}
-        {cleaningSuccess ? (
-          <p className="mt-2 text-sm font-medium text-emerald-800">{cleaningSuccess}</p>
-        ) : null}
-        {cleaningUnpaid ? (
-          <div className="mt-3 flex flex-wrap items-center gap-2">
-            <p className="text-sm font-semibold text-teal-950">You have an unpaid room cleaning charge.</p>
-            {typeof onOpenPayments === 'function' ? (
-              <button
-                type="button"
-                onClick={() => onOpenPayments()}
-                className="rounded-full border border-teal-300 bg-white px-4 py-2 text-xs font-semibold text-teal-900 transition hover:bg-teal-100/80"
-              >
-                Open Payments
-              </button>
-            ) : null}
-          </div>
-        ) : cleaningPaidSubmit ? (
-          <div className="mt-3 space-y-2">
-            <p className="text-sm font-semibold text-teal-950">Payment received — send the cleaning request to your manager.</p>
-            <button
-              type="button"
-              disabled={cleaningBusy}
-              onClick={() => void handleSubmitRoomCleaningWorkOrder()}
-              className="rounded-full bg-teal-800 px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-teal-900 disabled:opacity-50"
-            >
-              {cleaningBusy ? 'Submitting…' : 'Submit cleaning work order'}
-            </button>
-          </div>
-        ) : (
-          <div className="mt-3 space-y-3">
-            <label className="flex cursor-pointer items-start gap-2 text-sm text-teal-950">
-              <input
-                type="checkbox"
-                checked={cleaningAck}
-                onChange={(e) => setCleaningAck(e.target.checked)}
-                className="mt-0.5 h-4 w-4 shrink-0 rounded border-teal-400 text-teal-800"
-              />
-              <span>Yes, I want a one-time room cleaning and agree to the {formatMoney(ROOM_CLEANING_FEE_USD)} charge.</span>
-            </label>
-            <button
-              type="button"
-              disabled={cleaningBusy || !cleaningAck}
-              onClick={() => void handleCreateRoomCleaningCharge()}
-              className="rounded-full border border-teal-400 bg-white px-5 py-2.5 text-sm font-semibold text-teal-900 transition hover:bg-teal-100/80 disabled:cursor-not-allowed disabled:opacity-45"
-            >
-              {cleaningBusy ? 'Working…' : `Add ${formatMoney(ROOM_CLEANING_FEE_USD)} to Payments`}
-            </button>
-          </div>
-        )}
-      </div>
-
         {showForm ? (
           <form onSubmit={handleSubmit} className="mt-6 grid gap-4 border-t border-slate-100 pt-6 sm:grid-cols-2">
             <div className="sm:col-span-2">
@@ -1301,6 +1163,13 @@ function WorkOrdersPanel({
                   <option key={option}>{option}</option>
                 ))}
               </select>
+              {form.category === 'Cleaning' ? (
+                <p className="mt-2 text-xs leading-relaxed text-slate-600">
+                  One-time room cleaning: submit this request for your manager. When they set a visit date, a{' '}
+                  <span className="font-semibold">{formatMoney(ROOM_CLEANING_FEE_USD)}</span> fee will appear under
+                  Payments for you to pay.
+                </p>
+              ) : null}
             </div>
             <div>
               <label className="mb-2 block text-sm font-semibold text-slate-700">Priority</label>
@@ -3583,7 +3452,6 @@ function Dashboard({ resident, onResidentUpdated, onSignOut }) {
             <PanelErrorBoundary>
               <WorkOrdersPanel
                 resident={resident}
-                payments={payments}
                 requests={visibleWorkOrders}
                 onRequestCreated={loadData}
                 onWorkOrderUpdated={loadData}

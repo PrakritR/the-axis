@@ -1,13 +1,43 @@
 /**
- * One-time room cleaning: resident pays a fixed fee in Payments first; only then a Work Order
- * is created for managers. Markers are stored in Payments.Notes and Work Orders.Description.
+ * Room cleaning work orders:
+ * - **Legacy prepaid:** Payments row first (AXIS_ROOM_CLEANING_PREPAID), then WO with AXIS_ROOM_CLEANING_WO_FOR_PAYMENT:rec…
+ * - **Post-pay (resident portal):** Resident submits WO from Create work order → Category Cleaning;
+ *   Description includes AXIS_ROOM_CLEANING_BILL_ON_SCHEDULE. When manager sets Scheduled Date,
+ *   portal creates a Payments row tagged AXIS_ROOM_CLEANING_PAYMENT_FOR_WO:rec….
  */
 
 import { computedResidentPaymentStatusLabel } from './residentPaymentsShared.js'
 
 export const ROOM_CLEANING_PAYMENT_MARKER = 'AXIS_ROOM_CLEANING_PREPAID'
 export const ROOM_CLEANING_WO_FOR_PAYMENT = 'AXIS_ROOM_CLEANING_WO_FOR_PAYMENT:'
+/** Appended to Description when resident requests cleaning via main work order form (bill after manager schedules). */
+export const ROOM_CLEANING_BILL_ON_SCHEDULE_MARKER = 'AXIS_ROOM_CLEANING_BILL_ON_SCHEDULE'
+/** Payments.Notes contains this + work order record id when fee was created on schedule. */
+export const ROOM_CLEANING_PAYMENT_FOR_WO = 'AXIS_ROOM_CLEANING_PAYMENT_FOR_WO:'
 export const ROOM_CLEANING_FEE_USD = 10
+
+/** Suffix appended server-side style on resident submit (Category Cleaning). */
+export function residentPostpayCleaningDescriptionSuffix() {
+  return `\n\n${ROOM_CLEANING_BILL_ON_SCHEDULE_MARKER}`
+}
+
+export function isPrepaidLinkedRoomCleaningWorkOrder(wo) {
+  const d = String(wo?.Description || '')
+  return d.includes(ROOM_CLEANING_WO_FOR_PAYMENT)
+}
+
+/** True when scheduling this WO should create a resident Payment row (post-pay flow). */
+export function workOrderShouldCreatePaymentWhenScheduled(wo) {
+  const cat = String(wo?.Category || '').trim().toLowerCase()
+  if (cat !== 'cleaning') return false
+  if (isPrepaidLinkedRoomCleaningWorkOrder(wo)) return false
+  const d = String(wo?.Description || '')
+  return d.includes(ROOM_CLEANING_BILL_ON_SCHEDULE_MARKER)
+}
+
+export function paymentNotesTagForCleaningWorkOrder(woId) {
+  return `${ROOM_CLEANING_PAYMENT_FOR_WO}${String(woId || '').trim()}`
+}
 
 export function isRoomCleaningPrepaidPayment(p) {
   if (!p || typeof p !== 'object') return false

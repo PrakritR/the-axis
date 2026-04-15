@@ -66,6 +66,7 @@ import {
   workOrderLinkedResidentRecordIds,
   workOrderLinkedPropertyRecordIds,
   getAllPaymentsRecords,
+  getPaymentsForResident,
   updatePaymentRecord,
   createPaymentRecord,
   getResidentById,
@@ -85,6 +86,11 @@ import {
   deleteBlockedTourDate,
   getApplicationsForOwner,
 } from '../lib/airtable'
+import {
+  ROOM_CLEANING_FEE_USD,
+  paymentNotesTagForCleaningWorkOrder,
+  workOrderShouldCreatePaymentWhenScheduled,
+} from '../lib/roomCleaningWorkOrder.js'
 import { residentLeasingThreadVisibleToManager } from '../lib/portalInboxResidentScope.js'
 import { getPaymentKind } from '../lib/residentPaymentsShared.js'
 import {
@@ -4169,7 +4175,49 @@ function WorkOrdersTabPanel({ allowedPropertyNames, allowedPropertyIds }) {
       setRecord(nextRecord)
       applyRecordToForm(nextRecord)
       await loadList()
-      toast.success(isScheduling ? 'Work order scheduled' : 'Work order saved')
+
+      let successMsg = isScheduling ? 'Work order scheduled' : 'Work order saved'
+      if (isScheduling && dateStr && nextRecord?.id && workOrderShouldCreatePaymentWhenScheduled(nextRecord)) {
+        const resRec = residentRecordForWorkOrder(nextRecord)
+        const rid = String(resRec?.id || '').trim() || workOrderLinkedResidentRecordIds(nextRecord)[0] || ''
+        if (rid) {
+          try {
+            const payments = await getPaymentsForResident({ id: rid })
+            const tag = paymentNotesTagForCleaningWorkOrder(nextRecord.id)
+            const already = (payments || []).some((p) => String(p.Notes || '').includes(tag))
+            if (!already) {
+              const prop = String(resRec?.House || workOrderPropertyLabel(nextRecord) || '').trim()
+              const unit = String(resRec?.['Unit Number'] || '').trim()
+              const name = String(resRec?.Name || resRec?.['Resident Name'] || '').trim()
+              await createPaymentRecord({
+                Resident: [rid],
+                Amount: ROOM_CLEANING_FEE_USD,
+                Balance: ROOM_CLEANING_FEE_USD,
+                Status: 'Unpaid',
+                Type: 'Room cleaning fee',
+                Category: 'Fee',
+                Month: 'One-time room cleaning',
+                Notes: `${tag} Scheduled visit ${dateStr}. ${String(nextRecord.Title || 'Room cleaning').trim()}`,
+                'Due Date': dateStr,
+                'Property Name': prop || undefined,
+                'Room Number': unit || undefined,
+                'Resident Name': name || undefined,
+              })
+              successMsg = `Work order scheduled — added $${ROOM_CLEANING_FEE_USD} room cleaning fee to Payments (due ${dateStr}).`
+            }
+          } catch (payErr) {
+            console.error('[WorkOrdersTabPanel] cleaning payment on schedule', payErr)
+            toast.success(successMsg)
+            toast.error(
+              String(payErr?.message || '').slice(0, 120) ||
+                'Cleaning fee could not be added to Payments — add it manually or retry.',
+            )
+            return
+          }
+        }
+      }
+
+      toast.success(successMsg)
     } catch (err) {
       toast.error(err.message || 'Could not save work order')
     } finally {
