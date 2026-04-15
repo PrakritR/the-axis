@@ -6,6 +6,35 @@ import {
 } from './applicationApprovalState.js'
 import { parseAxisListingMetaBlock } from './axisListingMeta.js'
 import { normalizeLeasingFromMeta } from './managerPropertyFormAirtableMap.js'
+import {
+  DEFAULT_AXIS_APPLICATION_APPROVED_ROOM,
+  DEFAULT_AXIS_APPLICATION_ROOM_CHOICE_2,
+  DEFAULT_AXIS_APPLICATION_ROOM_CHOICE_3,
+} from '../../../shared/application-airtable-fields.js'
+
+function withResolvedApplicationRoomKeys(groups) {
+  const room2 = String(
+    import.meta.env.VITE_AIRTABLE_APPLICATION_ROOM_CHOICE_2_FIELD || DEFAULT_AXIS_APPLICATION_ROOM_CHOICE_2,
+  ).trim()
+  const room3 = String(
+    import.meta.env.VITE_AIRTABLE_APPLICATION_ROOM_CHOICE_3_FIELD || DEFAULT_AXIS_APPLICATION_ROOM_CHOICE_3,
+  ).trim()
+  const appr = String(
+    import.meta.env.VITE_AIRTABLE_APPLICATION_APPROVED_ROOM_FIELD || DEFAULT_AXIS_APPLICATION_APPROVED_ROOM,
+  ).trim()
+  return groups.map((g) => {
+    if (g.title !== 'Property & lease') return g
+    return {
+      ...g,
+      fields: [
+        ...g.fields,
+        [room2, '2nd choice (optional)'],
+        [room3, '3rd choice (optional)'],
+        [appr, 'Approved room'],
+      ],
+    }
+  })
+}
 
 export function formatApplicationDetailValue(val) {
   if (val === null || val === undefined) return null
@@ -296,7 +325,7 @@ export function applicationViewModelFromAirtableRow(row) {
 }
 
 /**
- * @param {{ application: { id: string, _airtable: object, applicantName: string, propertyName: string, status: string, approvalPending?: boolean }, partnerLabel?: string, onClose: () => void, adminReview?: { busy: boolean, onApprove: () => void, onReject: () => void, onUnapprove?: () => void, onRefund?: () => void } | null, afterSections?: React.ReactNode }} props
+ * @param {{ application: { id: string, _airtable: object, applicantName: string, propertyName: string, status: string, approvalPending?: boolean }, partnerLabel?: string, onClose: () => void, adminReview?: { busy: boolean, onApprove: () => void, onReject: () => void, onUnapprove?: () => void, onRefund?: () => void, approvedRoomAssignment?: { value: string, onChange: (v: string) => void, choices: { value: string, label: string }[] } } | null, afterSections?: React.ReactNode }} props
  */
 export function ApplicationDetailPanel({ application, partnerLabel, onClose, adminReview = null, afterSections = null }) {
   const raw = application?._airtable
@@ -308,7 +337,7 @@ export function ApplicationDetailPanel({ application, partnerLabel, onClose, adm
   const shownKeys = new Set(['id', 'created_at'])
   const sections = []
 
-  for (const group of APPLICATION_FIELD_GROUPS) {
+  for (const group of withResolvedApplicationRoomKeys(APPLICATION_FIELD_GROUPS)) {
     const items = []
     for (const [key, label] of group.fields) {
       shownKeys.add(key)
@@ -395,72 +424,112 @@ export function ApplicationDetailPanel({ application, partnerLabel, onClose, adm
       })()
     : null
 
+  const arm = adminReview?.approvedRoomAssignment
+
   return (
     <div className="rounded-[24px] border border-slate-200 bg-white p-6 shadow-sm space-y-5">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div className="min-w-0">
-          <h2 className="text-lg font-black text-slate-900">{application.applicantName}</h2>
-          <p className="mt-1 text-sm text-slate-600">
-            {application.propertyName}
-            {partnerLabel && partnerLabel !== '—' ? ` · ${partnerLabel}` : ''}
-          </p>
-          <div className="mt-2 flex flex-wrap items-center gap-2">
-            <StatusPill tone="blue">{application.status}</StatusPill>
-            {resolvedApprovalState === 'pending' ? (
-              <span className="text-xs font-medium text-amber-700">
-                {adminReview ? 'Pending review (manager or admin)' : 'Pending manager review'}
-              </span>
+      <div className="space-y-4">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div className="min-w-0">
+            <h2 className="text-lg font-black text-slate-900">{application.applicantName}</h2>
+            <p className="mt-1 text-sm text-slate-600">
+              {application.propertyName}
+              {partnerLabel && partnerLabel !== '—' ? ` · ${partnerLabel}` : ''}
+            </p>
+            <div className="mt-2 flex flex-wrap items-center gap-2">
+              <StatusPill tone="blue">{application.status}</StatusPill>
+              {resolvedApprovalState === 'pending' ? (
+                <span className="text-xs font-medium text-amber-700">
+                  {adminReview ? 'Pending review (manager or admin)' : 'Pending manager review'}
+                </span>
+              ) : null}
+            </div>
+          </div>
+          <div className="ml-auto flex flex-wrap items-center justify-end gap-2">
+            {adminReview && resolvedApprovalState === 'pending' ? (
+              <>
+                <button
+                  type="button"
+                  disabled={reviewBusy}
+                  className="rounded-xl bg-emerald-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
+                  onClick={adminReview.onApprove}
+                >
+                  Approve application
+                </button>
+                <button
+                  type="button"
+                  disabled={reviewBusy}
+                  className="rounded-xl border border-red-200 bg-red-50 px-4 py-2 text-sm font-semibold text-red-800 disabled:opacity-50"
+                  onClick={adminReview.onReject}
+                >
+                  Reject
+                </button>
+              </>
             ) : null}
+
+            {adminReview && (resolvedApprovalState === 'approved' || resolvedApprovalState === 'rejected') && adminReview.onUnapprove ? (
+              <button
+                type="button"
+                disabled={reviewBusy}
+                className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-2 text-sm font-semibold text-amber-800 disabled:opacity-50"
+                onClick={adminReview.onUnapprove}
+              >
+                Send back to pending
+              </button>
+            ) : null}
+
+            {adminReview && resolvedApprovalState !== 'approved' && adminReview.onRefund ? (
+              <button
+                type="button"
+                disabled={reviewBusy}
+                className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 disabled:opacity-50"
+                onClick={adminReview.onRefund}
+              >
+                Refund application fee
+              </button>
+            ) : null}
+
+            <button type="button" className="shrink-0 text-sm font-semibold text-slate-500 hover:text-slate-800" onClick={onClose}>
+              Close
+            </button>
           </div>
         </div>
-        <div className="ml-auto flex flex-wrap items-center justify-end gap-2">
-          {adminReview && resolvedApprovalState === 'pending' ? (
-            <>
-              <button
-                type="button"
+
+        {arm && resolvedApprovalState === 'pending' ? (
+          <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+            <label htmlFor="axis-approved-room" className="block text-xs font-semibold uppercase tracking-wide text-slate-600">
+              Approved room (required)
+            </label>
+            {arm.choices?.length ? (
+              <select
+                id="axis-approved-room"
                 disabled={reviewBusy}
-                className="rounded-xl bg-emerald-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
-                onClick={adminReview.onApprove}
+                className="mt-2 w-full max-w-md rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-900 outline-none focus:border-[#2563eb] focus:ring-2 focus:ring-[#2563eb]/20 disabled:opacity-50"
+                value={arm.value}
+                onChange={(e) => arm.onChange(e.target.value)}
               >
-                Approve application
-              </button>
-              <button
-                type="button"
+                {arm.choices.map((c) => (
+                  <option key={c.value} value={c.value}>
+                    {c.label}
+                  </option>
+                ))}
+              </select>
+            ) : (
+              <input
+                id="axis-approved-room"
+                type="text"
                 disabled={reviewBusy}
-                className="rounded-xl border border-red-200 bg-red-50 px-4 py-2 text-sm font-semibold text-red-800 disabled:opacity-50"
-                onClick={adminReview.onReject}
-              >
-                Reject
-              </button>
-            </>
-          ) : null}
-
-          {adminReview && (resolvedApprovalState === 'approved' || resolvedApprovalState === 'rejected') && adminReview.onUnapprove ? (
-            <button
-              type="button"
-              disabled={reviewBusy}
-              className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-2 text-sm font-semibold text-amber-800 disabled:opacity-50"
-              onClick={adminReview.onUnapprove}
-            >
-              Send back to pending
-            </button>
-          ) : null}
-
-          {adminReview && resolvedApprovalState !== 'approved' && adminReview.onRefund ? (
-            <button
-              type="button"
-              disabled={reviewBusy}
-              className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 disabled:opacity-50"
-              onClick={adminReview.onRefund}
-            >
-              Refund application fee
-            </button>
-          ) : null}
-
-          <button type="button" className="shrink-0 text-sm font-semibold text-slate-500 hover:text-slate-800" onClick={onClose}>
-            Close
-          </button>
-        </div>
+                className="mt-2 w-full max-w-md rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-900 outline-none focus:border-[#2563eb] focus:ring-2 focus:ring-[#2563eb]/20 disabled:opacity-50"
+                placeholder="e.g. Room 2"
+                value={arm.value}
+                onChange={(e) => arm.onChange(e.target.value)}
+              />
+            )}
+            <p className="mt-2 text-xs text-slate-500">
+              Saved to Airtable on approve and used for the lease draft (defaults to first choice if unchanged).
+            </p>
+          </div>
+        ) : null}
       </div>
 
       <dl className="space-y-0 border-t border-slate-100 pt-4">

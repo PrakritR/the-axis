@@ -18,6 +18,10 @@ import {
   paymentsIndicateFirstMonthRentPaid,
   paymentsIndicateSecurityDepositPaid,
 } from '../../../shared/lease-access-requirements.js'
+import {
+  applicationLeaseRoomNumber,
+  DEFAULT_AXIS_APPLICATION_APPROVED_ROOM,
+} from '../../../shared/application-airtable-fields.js'
 
 const AIRTABLE_TOKEN = process.env.AIRTABLE_TOKEN || process.env.VITE_AIRTABLE_TOKEN
 const BASE_ID =
@@ -348,12 +352,19 @@ export async function createLeaseDraftFromApplication({
 }) {
   const propertyName = String(application?.['Property Name'] || '').trim()
   const propertyRecord = await findPropertyByName(propertyName)
+  const approvedRoomField = String(
+    process.env.VITE_AIRTABLE_APPLICATION_APPROVED_ROOM_FIELD ||
+      process.env.AIRTABLE_APPLICATION_APPROVED_ROOM_FIELD ||
+      DEFAULT_AXIS_APPLICATION_APPROVED_ROOM,
+  ).trim() || DEFAULT_AXIS_APPLICATION_APPROVED_ROOM
+  const unitFromApp = applicationLeaseRoomNumber(application, approvedRoomField)
+
   return createLeaseDraft({
     residentName: String(application?.['Signer Full Name'] || '').trim(),
     residentEmail: String(application?.['Signer Email'] || '').trim(),
     residentRecordId: String(application?.Resident?.[0] || '').trim(),
     property: propertyName,
-    unit: String(application?.['Room Number'] || '').trim(),
+    unit: String(unitFromApp || '').trim(),
     leaseStartDate: application?.['Lease Start Date'] || '',
     leaseEndDate: application?.['Lease End Date'] || '',
     rentAmount: application?.['Rent Amount'] || application?.Rent || 0,
