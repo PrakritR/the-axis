@@ -9,7 +9,7 @@ import {
   uploadLeaseVersionPdfFile,
   getCurrentLeaseVersion,
   getLeaseCommentsForDraft,
-  updateLeaseDraftRecord,
+  patchLeaseDraftRecordPreferServer,
 } from '../lib/airtable.js'
 import {
   leaseDraftAllowsSignWithoutMoveInPay,
@@ -364,6 +364,14 @@ export default function AdminLeasingTab({ adminUser, accounts = [] }) {
     return leaseComments.filter((c) => !leaseCommentDuplicatesManagerSummary(c, managerEditDedupeBody))
   }, [leaseComments, managerEditDedupeBody])
 
+  /** Backend may set Airtable `Resolved` when the lease is sent back to the manager. */
+  const leaseCommentsForThread = useMemo(
+    () => leaseCommentsWithoutManagerDupes.filter((c) => !c['Resolved']),
+    [leaseCommentsWithoutManagerDupes],
+  )
+
+  const isLeaseWithResident = String(activeDraft?.Status || '').trim() === 'Published'
+
   const unifiedChangeThreadCount = useMemo(() => {
     const summaryHasRow =
       Boolean(managerEditRequestSummary) &&
@@ -371,8 +379,8 @@ export default function AdminLeasingTab({ adminUser, accounts = [] }) {
         (managerEditRequestSummary.fieldLines || []).length > 0) &&
       Boolean(managerEditBodyForDedupe(managerEditRequestSummary))
     const summaryCount = summaryHasRow ? 1 : 0
-    return summaryCount + leaseCommentsWithoutManagerDupes.length
-  }, [managerEditRequestSummary, leaseCommentsWithoutManagerDupes])
+    return summaryCount + leaseCommentsForThread.length
+  }, [managerEditRequestSummary, leaseCommentsForThread])
 
   const openLeaseDetails = useCallback(async (draft) => {
     if (!draft?.id) return
@@ -414,7 +422,7 @@ export default function AdminLeasingTab({ adminUser, accounts = [] }) {
         adminRecordId,
         adminName,
         newStatus: 'Sent Back to Manager',
-        adminNotes: 'Lease sent to manager for review.',
+        adminNotes: '',
       })
       toast.success('Sent to manager')
       const full = await getLeaseDraftById(activeDraft.id).catch(() => activeDraft)
@@ -436,7 +444,11 @@ export default function AdminLeasingTab({ adminUser, accounts = [] }) {
     const field = leaseSignWithoutMoveInPayFieldName()
     setActionBusy('sign-override')
     try {
-      const updated = await updateLeaseDraftRecord(activeDraft.id, { [field]: Boolean(nextChecked) })
+      const updated = await patchLeaseDraftRecordPreferServer(
+        activeDraft.id,
+        { [field]: Boolean(nextChecked) },
+        { managerRecordId: '' },
+      )
       setActiveDraft({ ...activeDraft, ...updated, [field]: Boolean(nextChecked) })
       await loadDrafts()
       toast.success(
@@ -809,7 +821,7 @@ export default function AdminLeasingTab({ adminUser, accounts = [] }) {
           ) : null}
 
           <div className="min-w-0 space-y-5 overflow-x-auto px-4 py-5 sm:px-6">
-            {!detailLoading && unifiedChangeThreadCount > 0 ? (
+            {!detailLoading && unifiedChangeThreadCount > 0 && !isLeaseWithResident ? (
               <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4">
                 <div className="flex items-center justify-between gap-2">
                   <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-500">Change requests &amp; messages</div>
@@ -817,12 +829,9 @@ export default function AdminLeasingTab({ adminUser, accounts = [] }) {
                     {unifiedChangeThreadCount}
                   </span>
                 </div>
-                <p className="mt-1 text-xs text-slate-500">
-                  Manager notes from the draft appear first; lease comments follow (duplicates of the same request are hidden).
-                </p>
                 <div className="mt-4 space-y-3">
                   <ManagerEditRequestBubble summary={managerEditRequestSummary} />
-                  {leaseCommentsWithoutManagerDupes.map((c) => (
+                  {leaseCommentsForThread.map((c) => (
                     <AdminLeaseCommentBubble key={c.id} comment={c} />
                   ))}
                 </div>

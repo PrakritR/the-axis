@@ -60,6 +60,23 @@ async function atPost(table, fields) {
   return res.json()
 }
 
+/** Best-effort: mark thread rows resolved when lease returns to manager (optional Airtable checkbox `Resolved` on Lease Comments). */
+async function markLeaseCommentsResolved(leaseDraftId) {
+  const id = String(leaseDraftId || '').trim()
+  if (!id) return
+  try {
+    const url = new URL(`${BASE_URL}/${encodeURIComponent('Lease Comments')}`)
+    url.searchParams.set('filterByFormula', `{Lease Draft ID} = "${id.replace(/"/g, '\\"')}"`)
+    const data = await atGet(url.toString())
+    for (const rec of data.records || []) {
+      if (!rec?.id) continue
+      await atPatch('Lease Comments', rec.id, { Resolved: true }).catch(() => {})
+    }
+  } catch {
+    /* non-fatal */
+  }
+}
+
 async function logAudit({ leaseDraftId, actionType, performedBy, performedByRole, notes = '' }) {
   try {
     await atPost('Audit Log', {
@@ -218,8 +235,15 @@ export default async function handler(req, res) {
     if (updatedFields.residentName) draftUpdate['Resident Name'] = updatedFields.residentName
     if (updatedFields.property)     draftUpdate['Property']       = updatedFields.property
     if (updatedFields.unit)         draftUpdate['Unit']           = updatedFields.unit
+    if (newStatus === 'Sent Back to Manager') {
+      draftUpdate['Manager Edit Notes'] = ''
+    }
 
     await atPatch('Lease Drafts', leaseDraftId, draftUpdate)
+
+    if (newStatus === 'Sent Back to Manager') {
+      await markLeaseCommentsResolved(leaseDraftId)
+    }
 
     // Build readable comment
     const changeLines = []
@@ -241,13 +265,17 @@ export default async function handler(req, res) {
       commentMessage += `\n\n**New lease version uploaded:** v${newVersionNumber} — ${newVersion?.fileName || 'lease.pdf'}`
     }
 
-    await addComment({
-      leaseDraftId,
-      authorName: adminName,
-      authorRole: 'Admin',
-      authorRecordId: adminRecordId || '',
-      message: commentMessage,
-    })
+    const skipThreadComment =
+      newStatus === 'Sent Back to Manager' && !String(adminNotes || '').trim()
+    if (!skipThreadComment) {
+      await addComment({
+        leaseDraftId,
+        authorName: adminName,
+        authorRole: 'Admin',
+        authorRecordId: adminRecordId || '',
+        message: commentMessage,
+      })
+    }
 
     const notificationMsg = newStatus === 'Sent Back to Manager'
       ? `Admin sent updated lease — please review and approve or request further changes`

@@ -26,7 +26,7 @@ import {
   uploadLeaseVersionPdfFile,
   getCurrentLeaseVersion,
   getApplicationsForOwner,
-  updateLeaseDraftRecord,
+  patchLeaseDraftRecordPreferServer,
 } from '../lib/airtable'
 import {
   leaseDraftAllowsSignWithoutMoveInPay,
@@ -476,7 +476,11 @@ export default function ManagerLeasingTab({ manager, allowedPropertyNames }) {
     const field = leaseSignWithoutMoveInPayFieldName()
     setActionBusy('sign-override')
     try {
-      const updated = await updateLeaseDraftRecord(activeDraft.id, { [field]: Boolean(nextChecked) })
+      const updated = await patchLeaseDraftRecordPreferServer(
+        activeDraft.id,
+        { [field]: Boolean(nextChecked) },
+        { managerRecordId: manager?.airtableRecordId || manager?.id || '' },
+      )
       setActiveDraft({ ...activeDraft, ...updated, [field]: Boolean(nextChecked) })
       await loadDrafts()
       toast.success(

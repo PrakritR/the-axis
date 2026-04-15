@@ -1971,6 +1971,50 @@ export async function updateLeaseDraftRecord(leaseDraftId, fields) {
   return mapRecord(data)
 }
 
+/**
+ * Prefer PATCH via POST /api/portal?action=lease-draft-patch (server Airtable token on Vercel).
+ * Falls back to {@link updateLeaseDraftRecord} when the route is missing or fails and a browser token exists.
+ *
+ * @param {string} leaseDraftId
+ * @param {Record<string, unknown>} fields — whitelisted keys on the server (e.g. Allow Sign Without Move-In Pay)
+ * @param {{ managerRecordId?: string }} [options] — manager Airtable id for tenant enforcement; omit for internal admin
+ */
+export async function patchLeaseDraftRecordPreferServer(leaseDraftId, fields, options = {}) {
+  const id = String(leaseDraftId || '').trim()
+  if (!/^rec[a-zA-Z0-9]{14,}$/.test(id)) throw new Error('Invalid lease draft ID.')
+  const cleaned = Object.fromEntries(Object.entries(fields || {}).filter(([, value]) => value !== undefined))
+  if (Object.keys(cleaned).length === 0) throw new Error('No lease draft fields to update.')
+  const managerRecordId = String(options.managerRecordId || '').trim()
+  const runDirect = () => updateLeaseDraftRecord(id, cleaned)
+
+  try {
+    const res = await fetch(`/api/portal?action=lease-draft-patch`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ leaseDraftId: id, fields: cleaned, managerRecordId }),
+    })
+    const data = await res.json().catch(() => ({}))
+    if (res.ok && data.record?.id) {
+      return { id: data.record.id, ...data.record }
+    }
+    if (res.status === 403) {
+      throw new Error(data.error || 'Access denied.')
+    }
+    if (!(res.status === 404 || res.status === 405 || res.status >= 500)) {
+      throw new Error(data.error || `Request failed (${res.status})`)
+    }
+  } catch (e) {
+    if (!(e instanceof TypeError)) throw e
+  }
+
+  if (!API_KEY) {
+    throw new Error(
+      'Could not update lease draft. Configure VITE_AIRTABLE_TOKEN in the build or use hosting that provides /api/portal.',
+    )
+  }
+  return runDirect()
+}
+
 export async function getLeaseCommentsForDraft(leaseDraftId) {
   const id = String(leaseDraftId || '').trim()
   if (!/^rec[a-zA-Z0-9]{14,}$/.test(id)) return []

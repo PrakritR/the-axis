@@ -32,6 +32,7 @@ import leaseManagerReview from './handlers/lease-manager-review.js'
 import leaseAddComment from './handlers/lease-add-comment.js'
 import leaseMarkNotificationsRead from './handlers/lease-mark-notifications-read.js'
 import leaseDownloadGeneratedPdf from './handlers/lease-download-generated-pdf.js'
+import leaseDraftPatch from './handlers/lease-draft-patch.js'
 
 const handlers = {
   'application-create-lease-draft': applicationCreateLeaseDraft,
@@ -58,6 +59,7 @@ const handlers = {
   'lease-add-comment': leaseAddComment,
   'lease-mark-notifications-read': leaseMarkNotificationsRead,
   'lease-download-generated-pdf': leaseDownloadGeneratedPdf,
+  'lease-draft-patch': leaseDraftPatch,
 }
 
 // These actions don't require an authenticated manager session
