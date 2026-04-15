@@ -81,7 +81,7 @@ Add checkbox:
 
 ```text
 Add checkbox field "Allow Sign Without Move-In Pay" to Lease Drafts.
-When checked, resident portal can open the lease before security deposit + first month rent are paid (see leaseMoveInOverride.js).
+When checked, residents may **sign** a **Published** (or Ready for Signature) lease before security deposit + first month rent are paid; they do not see the full lease body while the draft is still in manager/admin review (see leaseMoveInOverride.js).
 ```
 
 Resident view/sign rules also accept **Ready for Signature** alongside **Published** (`residentLeaseAccess.js`, `sign-lease-draft.js`).

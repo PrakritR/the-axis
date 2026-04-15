@@ -49,6 +49,8 @@ import {
   normalizeWeekdayAbbr,
   recordIsGlobalAdminRow,
   slotLabelFromRange,
+  expandMinuteRangesToCanonicalTourSlotLabels,
+  parseTourTimeSlotLabelToMinutesRange,
 } from '../../../shared/manager-availability-merge.js'
 import {
   listManagerAvailabilityForProperty,
@@ -58,7 +60,7 @@ import {
   deleteManagerAvailabilityRecord,
   deleteAdminMeetingAvailabilityRecord,
   buildAdminMeetingAvailabilityRecordFields,
-  buildManagerAvailabilityRecordFields,
+  buildManagerAvailabilitySlotRowFields,
   formatHHmmFromMinutes,
   listAdminMeetingAvailabilityRows,
   listManagerAvailabilityRows,
@@ -1042,34 +1044,6 @@ function splitCalendarStripBookings(dayBookings) {
   return { tours, workOrders }
 }
 
-function buildTourNotesText(existingNotes, metadata) {
-  const labels = ['Tour Manager', 'Tour Availability', 'Tour Notes']
-  let stripped = String(existingNotes || '').trim()
-  labels.forEach((label) => {
-    const escaped = label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-    stripped = stripped.replace(new RegExp(`(?:^|\\n)${escaped}:\\s*[\\s\\S]*?(?=(?:\\n[A-Za-z][A-Za-z ]*:)|$)`, 'gi'), '')
-  })
-  stripped = stripped.replace(/^\n+|\n+$/g, '').trim()
-
-  const parts = []
-  if (metadata.manager) parts.push(`Tour Manager: ${metadata.manager}`)
-  if (metadata.availability) parts.push(`Tour Availability: ${metadata.availability}`)
-  if (metadata.notes) parts.push(`Tour Notes: ${metadata.notes}`)
-  if (stripped) parts.push(stripped)
-  return parts.join('\n')
-}
-
-function encodeTourAvailabilityFromWeeklyFree(weeklyArrays) {
-  const lines = []
-  for (const day of TOUR_DAYS) {
-    const ranges = timeRangesFromWeeklyFree(weeklyArrays, day)
-    if (!ranges.length) continue
-    const parts = ranges.map((r) => `${Math.round(r.start)}-${Math.round(r.end)}`)
-    lines.push(`${day}: ${parts.join(', ')}`)
-  }
-  return lines.join('\n')
-}
-
 function formatHalfHourIndexLabel(idx) {
   const minTotal = TOUR_GRID_START_MIN + idx * TOUR_GRID_STEP_MIN
   const h = Math.floor(minTotal / 60)
@@ -2011,9 +1985,12 @@ function AvailabilityEditorPanel({
   availabilityHint,
   hidePropertyPicker = false,
   selectedPropertyRecord = null,
+  /** When false, tour timeline edits are disabled (calendar no longer persists to property Notes). */
+  structuredAvailabilityEnabled = true,
 }) {
   const hasApprovedPick = Array.isArray(propertyOptions) && propertyOptions.length > 0
-  const disabled = availSaving || isManagerInternalPreview(manager) || !selectedPropertyId
+  const disabled =
+    availSaving || isManagerInternalPreview(manager) || !selectedPropertyId || !structuredAvailabilityEnabled
   const tourManagerLine = useMemo(() => propertyTourManagerDisplayName(selectedPropertyRecord), [selectedPropertyRecord])
   const tourParsedLines = useMemo(
     () => parsedTourAvailabilityLinesForSidebar(propertyTourAvailabilityText(selectedPropertyRecord)),
@@ -2392,45 +2369,6 @@ function resolvePayloadKeyForUnknownField(payload, unknownRaw) {
     if (k.toLowerCase() === lower) return k
   }
   return ''
-}
-
-/**
- * Persist tour grid to Properties.
- * Tries dedicated columns first (no Notes) so bases without a Notes column succeed; then optional Notes merge.
- */
-async function patchPropertyTourAvailability(propertyRecord, tourText, manager) {
-  const id = String(propertyRecord?.id || '').trim()
-  if (!id) throw new Error('Missing property id.')
-  const notesVal = String(propertyRecord?.['Notes'] ?? '')
-  const mergedNotes = buildTourNotesText(notesVal, {
-    manager: String(propertyRecord['Tour Manager'] || manager?.name || manager?.email || '').trim(),
-    availability: tourText,
-    notes: extractMultilineNoteValue(notesVal, 'Tour Notes') || '',
-  })
-  const starters = [
-    { 'Tour Availability': tourText },
-    { 'Calendar Availability': tourText },
-    { 'Tour Availability': tourText, Notes: mergedNotes },
-    { 'Calendar Availability': tourText, Notes: mergedNotes },
-    { Notes: mergedNotes },
-  ]
-  let lastErr = null
-  for (const starter of starters) {
-    let payload = { ...starter }
-    for (let attempt = 0; attempt < 12 && Object.keys(payload).length > 0; attempt++) {
-      try {
-        return await updatePropertyAdmin(id, payload)
-      } catch (e) {
-        lastErr = e
-        const unknownRaw = airtableUnknownFieldFromError(e)
-        const key = resolvePayloadKeyForUnknownField(payload, unknownRaw)
-        if (!key) break
-        const { [key]: _drop, ...rest } = payload
-        payload = rest
-      }
-    }
-  }
-  throw lastErr || new Error('Could not save tour availability.')
 }
 
 function buildManagerListingPatch(property, listed) {
@@ -4086,7 +4024,6 @@ function ManagerDashboardHomePanel({
           className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-4 shadow-sm"
         >
           <p className="text-sm font-bold text-amber-950">Action needed</p>
-          <p className="mt-0.5 text-xs text-amber-900/85">Open the matching tab to take care of these.</p>
           <ul className="mt-3 space-y-2">
             {actionApps ? (
               <li className="flex flex-wrap items-center justify-between gap-2 rounded-xl bg-white/60 px-3 py-2 text-sm text-amber-950">
@@ -6417,33 +6354,14 @@ export function CalendarTabPanel({ manager, allowedPropertyNames, loadAllSchedul
       availabilityDirtyRef.current = false
       return true
     }
-    const p2 = propertiesRef.current.find((p) => p.id === pending.propertyId)
-    const m2 = managerRef.current
-    if (!p2 || isManagerInternalPreview(m2)) {
-      availabilityDirtyRef.current = false
-      tourDirtyPayloadRef.current = null
-      return true
-    }
-    setAvailSaving(true)
-    try {
-      const tourText = encodeTourAvailabilityFromWeeklyFree(pending.weeklyFree)
-      const updated = await patchPropertyTourAvailability(p2, tourText, m2)
-      const parsedFree = weeklyFreeArraysFromTourText(tourText)
-      setWeeklyFreeByProperty((prev) => ({ ...prev, [pending.propertyId]: parsedFree }))
-      setProperties((prev) => prev.map((p) => (p.id === p2.id ? { ...p, ...updated } : p)))
-      toast.success('Saved', { id: 'calendar-avail-autosave', duration: 1800 })
-      tourDirtyPayloadRef.current = null
-      availabilityDirtyRef.current = false
-      await refreshSchedulingRowsOnly()
-      dispatchAxisSchedulingChanged({ reason: 'property-tour-availability' })
-      return true
-    } catch (err) {
-      toast.error(err.message || 'Could not save availability')
-      return false
-    } finally {
-      setAvailSaving(false)
-    }
-  }, [refreshSchedulingRowsOnly])
+    availabilityDirtyRef.current = false
+    tourDirtyPayloadRef.current = null
+    toast.error(
+      'Tour availability is no longer saved to property Notes. Enable the Manager Availability Airtable table (remove VITE_USE_MANAGER_AVAILABILITY_TABLE=false) and use Save on the timeline.',
+      { id: 'calendar-avail-legacy-blocked', duration: 6000 },
+    )
+    return true
+  }, [])
 
   const persistAdminMeetingAvailability = useCallback(
     async (dayKey, ranges, existingRows) => {
@@ -6708,20 +6626,27 @@ export function CalendarTabPanel({ manager, allowedPropertyNames, loadAllSchedul
         return !isRecVal(row) && normalizeDateKey(row[f.date]) === dk
       })
       await Promise.all(toDelete.map((row) => deleteManagerAvailabilityRecord(row.id)))
-      const fieldsList = ranges.map((range) =>
-        buildManagerAvailabilityRecordFields({
-          propertyName: propName,
-          propertyRecordId: propId,
-          managerEmail: mgrEmail,
-          managerRecordId: mgrId,
-          dateKey: dk,
-          weekdayAbbr: abbr,
-          startHHmm: formatHHmmFromMinutes(range.start),
-          endHHmm: formatHHmmFromMinutes(range.end),
-          isRecurring: repeatWeekly,
-          source: 'manager_portal',
-        }),
-      )
+      const slotLabels = expandMinuteRangesToCanonicalTourSlotLabels(ranges)
+      const fieldsList = []
+      for (const label of slotLabels) {
+        const pr = parseTourTimeSlotLabelToMinutesRange(label)
+        if (!pr || pr.end <= pr.start) continue
+        fieldsList.push(
+          buildManagerAvailabilitySlotRowFields({
+            propertyName: propName,
+            propertyRecordId: propId,
+            managerEmail: mgrEmail,
+            managerRecordId: mgrId,
+            dateKey: dk,
+            weekdayAbbr: abbr,
+            slotStartMinutes: pr.start,
+            slotLabel: label,
+            status: 'available',
+            isRecurring: repeatWeekly,
+            source: 'manager_portal',
+          }),
+        )
+      }
       await createManagerAvailabilityRecordsBatch(fieldsList)
       const refreshed = await listManagerAvailabilityForProperty(propId, propName)
       const selProp = String(propName || '').trim().toLowerCase()
@@ -7284,6 +7209,7 @@ export function CalendarTabPanel({ manager, allowedPropertyNames, loadAllSchedul
         />
         {!loadAllSchedulingRows && (
           <AvailabilityEditorPanel
+            structuredAvailabilityEnabled={maTableOk}
             ranges={
               maTableOk
                 ? pendingRanges
@@ -7294,38 +7220,8 @@ export function CalendarTabPanel({ manager, allowedPropertyNames, loadAllSchedul
               if (maTableOk) {
                 maDirtyRef.current = true
                 setPendingRanges(normalizeTimeRanges(ranges))
-                return
               }
-              availabilityDirtyRef.current = true
-              const abbr = weekdayAbbrFromDateKey(selectedDateKey)
-              const pid = selectedPropertyId
-              setWeeklyFreeByProperty((prev) => {
-                const base = prev[pid] || emptyWeeklyFreeArrays()
-                const nextForProp = weeklyFreeWithDayRanges(base, abbr, ranges)
-                tourDirtyPayloadRef.current = { propertyId: pid, weeklyFree: nextForProp }
-                return { ...prev, [pid]: nextForProp }
-              })
             }}
-            onCopyHoursToWholeWeek={
-              maTableOk
-                ? undefined
-                : () => {
-                    if (!selectedPropertyId) return
-                    availabilityDirtyRef.current = true
-                    const abbr = weekdayAbbrFromDateKey(selectedDateKey)
-                    const pid = selectedPropertyId
-                    setWeeklyFreeByProperty((prev) => {
-                      const base = prev[pid] || emptyWeeklyFreeArrays()
-                      const nextForProp = weeklyFreeCopySourceDayToAllDays(base, abbr)
-                      tourDirtyPayloadRef.current = { propertyId: pid, weeklyFree: nextForProp }
-                      return {
-                        ...prev,
-                        [pid]: nextForProp,
-                      }
-                    })
-                    toast.success('Copied to Mon–Sun')
-                  }
-            }
             onSave={() => void (maTableOk ? saveManagerAvailabilityToAirtable() : saveTourDirtyIfNeeded())}
             repeatWeekly={maTableOk ? repeatWeekly : false}
             onRepeatWeeklyChange={maTableOk ? (v) => setRepeatWeekly(v) : undefined}
@@ -7341,8 +7237,8 @@ export function CalendarTabPanel({ manager, allowedPropertyNames, loadAllSchedul
             saveButtonLabel={maTableOk ? 'Save availability to Airtable' : undefined}
             availabilityHint={
               maTableOk
-                ? 'Drag the timeline to add manager free blocks, then Save (or switch day — unsaved changes save first). “Apply every week” repeats on this weekday from the selected date forward; it resets when you change days. Confirmed tours still come from Scheduling.'
-                : 'When Manager Availability is off, tour windows are edited from the property record (Tour Availability / Notes). Save writes that text; Scheduling still holds real tour bookings.'
+                ? 'Drag the timeline to add manager free blocks, then Save (or switch day — unsaved changes save first). “Apply every week” repeats on this weekday from the selected date forward; it resets when you change days. Each saved window is stored as 30-minute rows in Manager Availability with a Time Slot value (e.g. 7:00am-7:30am). Confirmed tours still come from Scheduling.'
+                : 'The calendar no longer writes tour hours to property Notes. Enable the Manager Availability Airtable table (see docs: remove VITE_USE_MANAGER_AVAILABILITY_TABLE=false) to edit slots here.'
             }
             hidePropertyPicker
             selectedPropertyRecord={selectedProperty}

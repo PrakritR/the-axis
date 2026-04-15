@@ -10,7 +10,8 @@ export function getApplicationsAirtableEnv() {
     'Applications'
   const paidField = String(process.env.AIRTABLE_APPLICATION_PAID_FIELD || 'Application Paid').trim() || 'Application Paid'
   const sessionField = String(process.env.AIRTABLE_STRIPE_CHECKOUT_SESSION_FIELD || 'Stripe Checkout Session').trim()
-  const feeDueField = String(process.env.AIRTABLE_APPLICATION_FEE_DUE_USD_FIELD || 'Application Fee Due (USD)').trim()
+  // Only send a fee-due amount when this env is set to your column’s exact name (avoids INVALID_VALUE / unknown field on bases without the column).
+  const feeDueField = String(process.env.AIRTABLE_APPLICATION_FEE_DUE_USD_FIELD ?? '').trim()
   return { token, baseId, table, paidField, sessionField, feeDueField }
 }
 

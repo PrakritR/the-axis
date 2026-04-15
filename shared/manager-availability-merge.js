@@ -27,6 +27,10 @@ export const DEFAULT_MA_FIELD_NAMES = {
   weekday: 'Weekday',
   startTime: 'Start Time',
   endTime: 'End Time',
+  /** Single select on Manager Availability — set via env when the column exists (e.g. `Time Slot`). */
+  timeSlot: '',
+  /** Single select — set via env when the column exists (e.g. `Status` with options `available` / `booked`). */
+  status: '',
   isRecurring: 'Is Recurring',
   active: 'Active',
   timezone: 'Timezone',
@@ -82,6 +86,8 @@ export function buildManagerAvailabilityConfig(env = {}) {
         'VITE_MANAGER_AVAIL_FIELD_RECURRENCE_START',
         DEFAULT_MA_FIELD_NAMES.recurrenceStart,
       ),
+      timeSlot: pick('MANAGER_AVAIL_FIELD_TIME_SLOT', 'VITE_MANAGER_AVAIL_FIELD_TIME_SLOT', DEFAULT_MA_FIELD_NAMES.timeSlot),
+      status: pick('MANAGER_AVAIL_FIELD_STATUS', 'VITE_MANAGER_AVAIL_FIELD_STATUS', DEFAULT_MA_FIELD_NAMES.status),
     },
   }
 }
@@ -180,6 +186,101 @@ export function displayTimeFromMinutes(minutes) {
 
 export function slotLabelFromRange(startMin, endMin) {
   return `${displayTimeFromMinutes(startMin)} - ${displayTimeFromMinutes(endMin)}`
+}
+
+/** 12-hour clock fragment like `7:00am` or `12:30pm` (lowercase am/pm, no space before suffix). */
+export function formatTourSlotClockFragment(totalMinutes) {
+  const m = Math.max(0, Math.min(24 * 60, Math.round(totalMinutes)))
+  const h24 = Math.floor(m / 60)
+  const mm = m % 60
+  const isPm = h24 >= 12
+  let h12 = h24 % 12
+  if (h12 === 0) h12 = 12
+  return `${h12}:${String(mm).padStart(2, '0')}${isPm ? 'pm' : 'am'}`
+}
+
+/**
+ * Canonical Airtable single-select value for one 30-minute window, e.g. `7:00am-7:30am`.
+ * Must match options in the `Time Slot` column exactly.
+ */
+export function canonicalTourHalfHourSlotLabelFromStartMinutes(startMin) {
+  const a = Math.max(0, Math.min(24 * 60 - 30, Math.round(startMin)))
+  const b = a + 30
+  return `${formatTourSlotClockFragment(a)}-${formatTourSlotClockFragment(b)}`
+}
+
+/** All 48 half-hour labels for one calendar day (12:00am-12:30am … 11:30pm-12:00am). */
+export function allCanonicalTourHalfHourSlotLabels() {
+  const out = []
+  for (let t = 0; t < 24 * 60; t += 30) {
+    out.push(canonicalTourHalfHourSlotLabelFromStartMinutes(t))
+  }
+  return out
+}
+
+const CANONICAL_TOUR_SLOT_LABEL_SET = new Set(allCanonicalTourHalfHourSlotLabels())
+
+export function isCanonicalTourHalfHourSlotLabel(label) {
+  return CANONICAL_TOUR_SLOT_LABEL_SET.has(String(label || '').trim())
+}
+
+/**
+ * Parse a `Time Slot` cell or legacy text into start/end minutes. Accepts canonical `7:00am-7:30am`
+ * and display-style `7:00 AM - 7:30 AM`.
+ * @returns {{ start: number, end: number } | null}
+ */
+export function parseTourTimeSlotLabelToMinutesRange(raw) {
+  const s = String(raw || '').trim()
+  if (!s) return null
+  const compact = s.replace(/\s+/g, '').replace(/[–—]/g, '-')
+  const m1 = compact.match(
+    /^(\d{1,2}):(\d{2})(am|pm)-(\d{1,2}):(\d{2})(am|pm)$/i,
+  )
+  if (m1) {
+    const toMin = (hh, mi, ap) => {
+      let h = Number(hh)
+      const mm = Number(mi)
+      if (!Number.isFinite(h) || !Number.isFinite(mm)) return null
+      const apu = String(ap).toUpperCase()
+      if (apu === 'PM' && h !== 12) h += 12
+      if (apu === 'AM' && h === 12) h = 0
+      return h * 60 + mm
+    }
+    const start = toMin(m1[1], m1[2], m1[3])
+    const end = toMin(m1[4], m1[5], m1[6])
+    if (start == null || end == null || end <= start) return null
+    return { start, end }
+  }
+  const loose = normalizeRangeLabelLoose(s)
+  if (!loose) return null
+  const p2 = loose.split(/\s*-\s*/)
+  if (p2.length !== 2) return null
+  const a = parseTimeToMinutes(p2[0]) ?? parseClockToMinutes(p2[0].toUpperCase())
+  const b = parseTimeToMinutes(p2[1]) ?? parseClockToMinutes(p2[1].toUpperCase())
+  if (!Number.isFinite(a) || !Number.isFinite(b) || b <= a) return null
+  return { start: a, end: b }
+}
+
+/**
+ * Expand merged minute ranges into canonical 30-minute slot labels (deduped, sorted by time).
+ * @param {{ start: number, end: number }[]} ranges
+ * @returns {string[]}
+ */
+export function expandMinuteRangesToCanonicalTourSlotLabels(ranges) {
+  const merged = normalizeMergedRanges(ranges || [])
+  const out = new Set()
+  for (const r of merged) {
+    if (!r || !Number.isFinite(r.start) || !Number.isFinite(r.end) || r.end <= r.start) continue
+    for (let t = r.start; t + 30 <= r.end; t += 30) {
+      const label = canonicalTourHalfHourSlotLabelFromStartMinutes(t)
+      if (CANONICAL_TOUR_SLOT_LABEL_SET.has(label)) out.add(label)
+    }
+  }
+  return [...out].sort((a, b) => {
+    const ra = parseTourTimeSlotLabelToMinutesRange(a)
+    const rb = parseTourTimeSlotLabelToMinutesRange(b)
+    return (ra?.start ?? 0) - (rb?.start ?? 0)
+  })
 }
 
 function dayAbbrForDateKey(dateKey) {
@@ -301,6 +402,14 @@ function minutesFromAvailabilityTimeField(raw) {
 
 export function intervalFromMaRecord(fields, f) {
   if (!isActiveRecord(fields, f.active)) return null
+  const slotField = String(f.timeSlot || '').trim()
+  if (slotField) {
+    const raw = airtableFieldScalar(fields[slotField])
+    if (raw) {
+      const parsed = parseTourTimeSlotLabelToMinutesRange(raw)
+      if (parsed && parsed.end > parsed.start) return parsed
+    }
+  }
   const start = minutesFromAvailabilityTimeField(fields[f.startTime])
   const end = minutesFromAvailabilityTimeField(fields[f.endTime])
   if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) return null

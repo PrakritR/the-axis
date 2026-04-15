@@ -6,6 +6,7 @@
  * Stripe metadata will carry application_record_id for the webhook.
  */
 import { airtableAuthHeaders, applicationsTableUrl, getApplicationsAirtableEnv } from '../lib/applications-airtable-env.js'
+import { airtableCreateWithUnknownFieldRetry } from '../lib/airtable-write-retry.js'
 import { resolveExpectedApplicationFeeUsd } from '../lib/stripe-application-fee-usd.js'
 
 function escapeFormulaString(value) {
@@ -57,6 +58,8 @@ export default async function handler(req, res) {
     }
 
     const fields = {
+      // Many bases use "Name" as the primary field; omit if unknown via create retry.
+      Name: fullName,
       'Signer Email': email,
       'Signer Full Name': fullName,
       [env.paidField]: false,
@@ -65,20 +68,48 @@ export default async function handler(req, res) {
     if (roomNumber) fields['Room Number'] = roomNumber
     if (env.feeDueField && feeDue >= 0) fields[env.feeDueField] = feeDue
 
-    const createRes = await fetch(baseUrl, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify({ fields, typecast: true }),
-    })
-    const text = await createRes.text()
-    if (!createRes.ok) {
-      console.error('[application-register-payment]', createRes.status, text.slice(0, 500))
-      return res.status(502).json({
-        error:
-          'Could not create application payment row in Airtable. Ensure required fields allow a minimal draft (Signer Email, Application Paid checkbox, optional fee-due field).',
+    let created
+    try {
+      created = await airtableCreateWithUnknownFieldRetry({
+        baseId: env.baseId,
+        token: env.token,
+        tableName: env.table,
+        fields,
       })
+    } catch (e1) {
+      const paidVariants = [false, 0, 'No', 'Unpaid', 'Pending', 'Incomplete']
+      const base = {
+        Name: fullName,
+        'Signer Email': email,
+        'Signer Full Name': fullName,
+      }
+      if (propertyName) base['Property Name'] = propertyName
+      if (roomNumber) base['Room Number'] = roomNumber
+      if (env.feeDueField && feeDue >= 0) base[env.feeDueField] = feeDue
+      let last = e1
+      for (const pv of paidVariants) {
+        try {
+          const attempt = { ...base, [env.paidField]: pv }
+          created = await airtableCreateWithUnknownFieldRetry({
+            baseId: env.baseId,
+            token: env.token,
+            tableName: env.table,
+            fields: attempt,
+          })
+          last = null
+          break
+        } catch (e2) {
+          last = e2
+        }
+      }
+      if (last) {
+        console.error('[application-register-payment]', String(last?.message || last).slice(0, 500))
+        return res.status(502).json({
+          error:
+            'Could not create application payment row in Airtable. Ensure required fields allow a minimal draft (Signer Email, Application Paid checkbox, optional fee-due field).',
+        })
+      }
     }
-    const created = JSON.parse(text)
     return res.status(200).json({ applicationRecordId: created.id, reused: false })
   } catch (err) {
     console.error('[application-register-payment]', err)

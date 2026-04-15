@@ -287,6 +287,47 @@ export function buildManagerAvailabilityRecordFields({
   return fields
 }
 
+/**
+ * One Manager Availability row = one 30-minute bookable slot (canonical `Time Slot` label).
+ * Also sets Start/End to the same window for sorting and bases that omit `Time Slot`.
+ */
+export function buildManagerAvailabilitySlotRowFields({
+  propertyName,
+  propertyRecordId,
+  managerEmail,
+  managerRecordId,
+  dateKey,
+  weekdayAbbr,
+  slotStartMinutes,
+  slotLabel,
+  status = 'available',
+  isRecurring,
+  source = 'manager_portal',
+  timezone,
+}) {
+  const startM = Math.max(0, Math.min(24 * 60 - 30, Math.round(Number(slotStartMinutes))))
+  const endM = startM + 30
+  const base = buildManagerAvailabilityRecordFields({
+    propertyName,
+    propertyRecordId,
+    managerEmail,
+    managerRecordId,
+    dateKey,
+    weekdayAbbr,
+    startHHmm: formatHHmmFromMinutes(startM),
+    endHHmm: formatHHmmFromMinutes(endM),
+    isRecurring,
+    source,
+    timezone,
+  })
+  const f = managerFieldNames()
+  const ts = String(f.timeSlot || '').trim()
+  if (ts && String(slotLabel || '').trim()) base[ts] = String(slotLabel).trim()
+  const st = String(f.status || '').trim()
+  if (st) base[st] = String(status || 'available').trim()
+  return base
+}
+
 /** Same field names as manager tour rows; use with admin table + empty property fields. */
 export function buildAdminMeetingAvailabilityRecordFields(opts) {
   return buildManagerAvailabilityRecordFields({ ...opts, source: opts.source || 'admin_portal' })

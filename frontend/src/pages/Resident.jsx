@@ -86,8 +86,8 @@ const requestCategories = [
   'Heating / Cooling',
   'Appliance',
   'General Maintenance',
-  'Other',
   'Cleaning',
+  'Other',
 ]
 const urgencyOptions = ['Low', 'Medium', 'Urgent']
 const preferredTimeWindowOptions = ['Morning', 'Afternoon', 'Evening']
@@ -453,36 +453,136 @@ function airtableResponseIsUnknownFieldName(err) {
   }
 }
 
+function airtableResponseIsInvalidValueForColumn(err) {
+  const raw = err?.message != null ? String(err.message) : String(err)
+  try {
+    const j = JSON.parse(raw)
+    return j?.error?.type === 'INVALID_VALUE_FOR_COLUMN'
+  } catch {
+    return /INVALID_VALUE_FOR_COLUMN/i.test(raw)
+  }
+}
+
+/** Parse comma-separated PATCH values from env (e.g. single-select option labels). */
+function roomHoldEnvValueList(envKey) {
+  const raw = String(import.meta.env[envKey] || '').trim()
+  if (!raw) return []
+  const out = []
+  for (const part of raw.split(',')) {
+    const t = String(part || '').trim()
+    if (!t) continue
+    const lower = t.toLowerCase()
+    if (lower === 'null') {
+      out.push(null)
+      continue
+    }
+    if (lower === 'true') {
+      out.push(true)
+      continue
+    }
+    if (lower === 'false') {
+      out.push(false)
+      continue
+    }
+    if (/^-?\d+$/.test(t)) {
+      const n = parseInt(t, 10)
+      out.push(Number.isFinite(n) ? n : t)
+      continue
+    }
+    out.push(t)
+  }
+  return out
+}
+
+function uniquePatchValues(values) {
+  const out = []
+  const seen = new Set()
+  for (const v of values) {
+    const key =
+      v === null ? '\0null' : typeof v === 'boolean' ? `b:${v}` : typeof v === 'number' ? `n:${v}` : `s:${String(v)}`
+    if (seen.has(key)) continue
+    seen.add(key)
+    out.push(v)
+  }
+  return out
+}
+
+/** Values to PATCH for hold path: checkbox booleans first, then common single-select / text literals. Env overrides are tried first. */
+function roomHoldWithoutLeaseValueCandidates(wantHold) {
+  const envKey = wantHold
+    ? 'VITE_RESIDENT_ROOM_HOLD_WITHOUT_LEASE_TRUE_VALUES'
+    : 'VITE_RESIDENT_ROOM_HOLD_WITHOUT_LEASE_FALSE_VALUES'
+  const fromEnv = roomHoldEnvValueList(envKey)
+  const builtIns = wantHold
+    ? [
+        true,
+        1,
+        'Yes',
+        'Hold only',
+        'Room hold only',
+        'Hold room only',
+        'Hold',
+        'Room hold',
+        'Hold without lease',
+      ]
+    : [false, 0, 'No', 'Signing lease', 'Lease', 'Normal move-in', 'Signing the lease', '', null]
+  return uniquePatchValues([...fromEnv, ...builtIns])
+}
+
 /**
- * PATCH resident hold-path flag; tries each field name until Airtable accepts one.
+ * PATCH resident hold-path flag; tries field names and value shapes until Airtable accepts one.
  * @returns {Promise<object>} mapped resident record
  */
 async function updateResidentRoomHoldPathFlag(residentId, wantHold) {
   const candidates = roomHoldWithoutLeaseFieldCandidates()
+  const values = roomHoldWithoutLeaseValueCandidates(wantHold)
   let lastErr = null
   for (const field of candidates) {
-    try {
-      return await updateResident(residentId, { [field]: wantHold })
-    } catch (e) {
-      lastErr = e
-      if (airtableResponseIsUnknownFieldName(e)) continue
-      throw e
+    let unknownField = false
+    for (const value of values) {
+      try {
+        return await updateResident(residentId, { [field]: value })
+      } catch (e) {
+        lastErr = e
+        if (airtableResponseIsUnknownFieldName(e)) {
+          unknownField = true
+          break
+        }
+        if (airtableResponseIsInvalidValueForColumn(e)) continue
+        throw e
+      }
     }
+    if (unknownField) continue
   }
-  const tried = candidates.map((f) => `"${f}"`).join(', ')
-  throw new Error(
-    `No matching Residents field for the move-in path. Tried: ${tried}. Add a checkbox field in Airtable (for example "Room Hold Without Lease") or set VITE_RESIDENT_ROOM_HOLD_WITHOUT_LEASE_FIELD to your field's exact name.`,
-  )
+  const triedFields = candidates.map((f) => `"${f}"`).join(', ')
+  const hint =
+    'Use a Checkbox field, or a Single select whose options match one of the values we try (booleans, Yes/No, Hold only / Signing lease). You can set VITE_RESIDENT_ROOM_HOLD_WITHOUT_LEASE_TRUE_VALUES and VITE_RESIDENT_ROOM_HOLD_WITHOUT_LEASE_FALSE_VALUES to your exact option labels (comma-separated).'
+  const tail = lastErr?.message ? ` ${String(lastErr.message).slice(0, 280)}` : ''
+  throw new Error(`Could not save move-in path. Tried fields: ${triedFields}. ${hint}${tail}`)
 }
 
 function residentOptedRoomHoldWithoutSigningLease(resident) {
   if (!resident || typeof resident !== 'object') return false
   const keys = roomHoldWithoutLeaseFieldCandidates()
+  const holdTokens = new Set([
+    'true',
+    'yes',
+    'y',
+    '1',
+    'checked',
+    'hold only',
+    'room hold only',
+    'hold room only',
+    'hold',
+    'room hold',
+    'hold without lease',
+    'hold room without lease',
+  ])
   for (const key of keys) {
     const v = resident[key]
     if (v === true || v === 1) return true
     const s = String(v ?? '').trim().toLowerCase()
-    if (s === 'true' || s === 'yes' || s === 'checked' || s === 'hold only' || s === 'room hold only') return true
+    if (holdTokens.has(s)) return true
   }
   return false
 }
@@ -1504,6 +1604,13 @@ function ProfilePanel({ resident, onUpdated }) {
 
         {!isEditing ? (
           <div className="mt-6 grid gap-5 sm:grid-cols-2">
+            <div className="sm:col-span-2">
+              <p className="mb-1.5 text-sm font-semibold text-slate-700">Resident ID</p>
+              <div className={`${readonlyCls} font-mono text-sm tracking-tight`}>
+                {String(resident.id || '').trim() || '—'}
+              </div>
+              <p className="mt-1.5 text-xs text-slate-500">Your Axis / Airtable resident record id (for support and linking).</p>
+            </div>
             <div>
               <p className="mb-1.5 text-sm font-semibold text-slate-700">Full name</p>
               <div className={readonlyCls}>{name || '—'}</div>
@@ -1519,6 +1626,10 @@ function ProfilePanel({ resident, onUpdated }) {
           </div>
         ) : (
           <form onSubmit={handleSubmit} className="mt-6 grid gap-5 sm:grid-cols-2">
+            <div className="sm:col-span-2 rounded-2xl border border-slate-100 bg-slate-50 px-4 py-3">
+              <p className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">Resident ID</p>
+              <p className="mt-1 break-all font-mono text-sm font-medium text-slate-900">{String(resident.id || '').trim() || '—'}</p>
+            </div>
             <div>
               <label className="mb-1.5 block text-sm font-semibold text-slate-700">Full name</label>
               <input
@@ -2770,6 +2881,13 @@ function LeasingPanel({ resident, payments, onOpenPayments, onNavigateTab, onLea
         cancelled = true
       }
     }
+    const st = String(activeLeaseDraft.Status || '').trim()
+    if (!isResidentLeaseBodyViewable(st, activeLeaseDraft)) {
+      setCurrentLeasePdf(null)
+      return () => {
+        cancelled = true
+      }
+    }
     getCurrentLeaseVersion(activeLeaseDraft.id)
       .then((pdf) => {
         if (!cancelled) setCurrentLeasePdf(pdf || null)
@@ -2780,7 +2898,7 @@ function LeasingPanel({ resident, payments, onOpenPayments, onNavigateTab, onLea
     return () => {
       cancelled = true
     }
-  }, [activeLeaseDraft?.id])
+  }, [activeLeaseDraft?.id, activeLeaseDraft?.Status])
 
   function handleRequestExtension() {
     if (extendMode === 'date') {
@@ -2818,8 +2936,11 @@ function LeasingPanel({ resident, payments, onOpenPayments, onNavigateTab, onLea
       <div className="mb-5 rounded-2xl border border-slate-200 bg-white px-4 py-4 text-sm text-slate-800 shadow-sm">
         <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-slate-500">Move-in path</p>
         <p className="mt-2 leading-relaxed text-slate-700">
-          The room hold fee only applies if you need to hold a bed before you are ready to sign the lease. When you choose
-          that path, we also reduce your quoted security deposit by the hold amount (it credits toward the deposit).
+          The room hold is{' '}
+          <span className="font-semibold">{formatMoney(residentRoomHoldFeeUsd(resident))}</span> (typically $100 unless
+          your property sets another amount). Only if you choose{' '}
+          <span className="font-semibold">Hold room only (not signing yet)</span> will the room hold payment line appear
+          under Payments, and your quoted security deposit is reduced by that same amount — it credits toward the deposit.
         </p>
         {leaseIsSigned ? (
           <p className="mt-3 text-sm text-slate-600">Your lease is signed — use Payments for any remaining move-in charges.</p>
@@ -2863,10 +2984,10 @@ function LeasingPanel({ resident, payments, onOpenPayments, onNavigateTab, onLea
           <div className="mt-4 rounded-xl border border-sky-200 bg-sky-50/90 px-3 py-3 text-slate-800">
             <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-sky-900">Room hold fee</p>
             <p className="mt-2 leading-relaxed">
-              Your hold fee is <span className="font-semibold">{formatMoney(residentRoomHoldFeeUsd(resident))}</span>. It
-              credits toward your security deposit — the deposit line in Payments already reflects this credit. This fee may
-              be <span className="font-semibold">non-refundable</span> if the lease and deposit are not completed on time
-              — see your housing notice.
+              Your hold fee is <span className="font-semibold">{formatMoney(residentRoomHoldFeeUsd(resident))}</span>{' '}
+              (default $100). It credits toward your security deposit — the deposit line in Payments already reflects this
+              credit. This fee may be <span className="font-semibold">non-refundable</span> if the lease and deposit are
+              not completed on time — see your housing notice.
             </p>
             <button
               type="button"
@@ -2986,13 +3107,6 @@ function LeasingPanel({ resident, payments, onOpenPayments, onNavigateTab, onLea
 
         {!leaseLoading && moveInPrereqsMet && activeLeaseDraft ? (
           <div className="rounded-[24px] border border-[#2563eb]/20 bg-[linear-gradient(135deg,#eff6ff_0%,#ffffff_100%)] p-5">
-            {signWithoutMoveInPayOverride && (!securityDepositPaid || !firstMonthRentPaid) ? (
-              <div className="mb-4 rounded-2xl border border-blue-200 bg-blue-50/90 px-4 py-3 text-sm text-blue-950">
-                <span className="font-semibold">Move-in payment waived for signing.</span>{' '}
-                Your manager enabled access to the lease before security deposit and first month rent are paid. You
-                still owe any move-in charges shown in Payments unless your lease says otherwise.
-              </div>
-            ) : null}
             <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
               <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 bg-slate-50 px-4 py-3 sm:px-5">
                 <div className="min-w-0 flex-1">
@@ -3017,7 +3131,7 @@ function LeasingPanel({ resident, payments, onOpenPayments, onNavigateTab, onLea
                   </div>
                 </div>
                 <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
-                  {currentLeasePdf?.['PDF URL'] ? (
+                  {leaseBodyAllowed && currentLeasePdf?.['PDF URL'] ? (
                     <a
                       href={currentLeasePdf['PDF URL']}
                       download={String(currentLeasePdf['File Name'] || 'lease-agreement.pdf')
@@ -3040,21 +3154,6 @@ function LeasingPanel({ resident, payments, onOpenPayments, onNavigateTab, onLea
                     </button>
                   ) : null}
                 </div>
-              </div>
-              <div className="px-4 py-3 sm:px-5">
-                {!leaseBodyAllowed ? (
-                  <p className="text-sm text-slate-500">
-                    {leaseStatus === 'Draft Generated'
-                      ? 'Your lease is being drafted. Use Details above when your manager publishes it.'
-                      : 'Your lease is still being prepared. The full agreement will open from Details when it is sent to you.'}
-                  </p>
-                ) : !showLeaseText ? (
-                  <p className="text-sm text-slate-600">
-                    Click <span className="font-semibold text-slate-800">Details</span> on a row above to open the full
-                    lease and signing options. Questions? Use <span className="font-semibold text-slate-800">Inbox</span>{' '}
-                    in the main menu to message your manager.
-                  </p>
-                ) : null}
               </div>
               {showLeaseText && leaseBodyAllowed
                 ? (() => {

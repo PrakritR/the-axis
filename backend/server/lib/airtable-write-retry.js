@@ -14,6 +14,18 @@ function parseUnknownFieldNameFromBody(bodyText) {
   }
 }
 
+/** Airtable REST: INVALID_VALUE_FOR_COLUMN — wrong type or select option. */
+function parseInvalidValueFieldNameFromBody(bodyText) {
+  try {
+    const msg = String(JSON.parse(bodyText)?.error?.message || '')
+    const m =
+      msg.match(/Field\s+"([^"]+)"\s+cannot accept/i) || msg.match(/Field\s+'([^']+)'\s+cannot accept/i)
+    return m ? String(m[1]).trim() : ''
+  } catch {
+    return ''
+  }
+}
+
 function deleteFieldCaseInsensitive(fields, rawUnknown) {
   const u = String(rawUnknown || '').trim().toLowerCase()
   if (!u) return fields
@@ -47,8 +59,10 @@ export async function airtableCreateWithUnknownFieldRetry({ baseId, token, table
       return JSON.parse(body)
     }
     const unknown = parseUnknownFieldNameFromBody(body)
-    if (!unknown) break
-    const next = deleteFieldCaseInsensitive(payload, unknown)
+    const invalidCol = unknown ? '' : parseInvalidValueFieldNameFromBody(body)
+    const removable = unknown || invalidCol
+    if (!removable) break
+    const next = deleteFieldCaseInsensitive(payload, removable)
     if (Object.keys(next).length === Object.keys(payload).length) break
     payload = next
   }

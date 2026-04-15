@@ -364,7 +364,9 @@ Same as section 1.12; used by `generate-lease-draft`, SignForge webhook, and the
 | **Manager Record ID** | Optional linked record id from Manager Profile. |
 | **Date** | For one-time blocks: `YYYY-MM-DD` (date only). Empty when row is recurring weekly. |
 | **Weekday** | For recurring rows: `Sun`–`Sat` (or full name; app normalizes). |
-| **Start Time** / **End Time** | Same-day local times, e.g. `8:30 AM` and `11:30 AM`, or `08:30` / `11:30`. |
+| **Start Time** / **End Time** | Same-day local times, e.g. `8:30 AM` and `11:30 AM`, or `08:30` / `11:30`. The manager calendar **saves one row per 30-minute slice** (each row’s window is exactly 30 minutes). |
+| **Time Slot** | Optional **single select**; when present, set **`MANAGER_AVAIL_FIELD_TIME_SLOT`** / **`VITE_MANAGER_AVAIL_FIELD_TIME_SLOT`** to this field’s exact name. Option labels must match the app’s canonical values (half-hour only), e.g. `7:00am-7:30am`, `7:30am-8:00am`, … `11:30pm-12:00am` — 48 options for the day. |
+| **Status** | Optional **single select**; manager saves `available`. Use **`MANAGER_AVAIL_FIELD_STATUS`** when the column exists (suggested options: `available`, `booked`). |
 | **Is Recurring** | Checkbox: true = weekly rule for **Weekday** from **Recurrence Start** onward. |
 | **Recurrence Start** | Optional date; weekly rule applies only on/after this calendar date. |
 | **Active** | Checkbox; inactive rows are ignored. |
@@ -374,6 +376,8 @@ Same as section 1.12; used by `generate-lease-draft`, SignForge webhook, and the
 | **Created At** / **Updated At** | Optional; not required for slot math. |
 
 **Merge rules (tours):** For a given property + date, **date-specific** active rows override **recurring** rows for that weekday. Tour booking subtracts **`Scheduling`** tour rows for that property+day. If **any** active row exists for that property+manager, **legacy** `Tour Availability` text on the property is not used for that scope. Clear mistaken weekly rules with `scripts/airtable/manager-availability-clear-recurring.js`.
+
+**Manager portal calendar:** Saving tour availability writes **only** to this table (one Airtable record per 30-minute slot). It does **not** PATCH `Properties.Notes`, `Tour Availability`, or dynamic date-named columns on the property.
 
 **Env field renames:** `MANAGER_AVAIL_FIELD_*` / `VITE_MANAGER_AVAIL_FIELD_*` in `.env.example`.
 

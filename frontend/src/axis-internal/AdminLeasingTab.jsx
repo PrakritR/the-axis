@@ -193,8 +193,8 @@ export default function AdminLeasingTab({ adminUser, accounts = [] }) {
   const [loadError, setLoadError] = useState('')
   const [statusFilter, setStatusFilter] = useState('draft_ready')
   const [managerFilter, setManagerFilter] = useState('')
-  /** @type {'updated_desc'|'updated_asc'|'property_asc'|'property_desc'|'resident_asc'|'manager_asc'|'manager_desc'} */
-  const [leaseSort, setLeaseSort] = useState('updated_desc')
+  /** @type {'property_asc'|'property_desc'} */
+  const [leasePropertySort, setLeasePropertySort] = useState('property_asc')
   const leaseDraftDetailRef = useRef(null)
   const [selectedDraftId, setSelectedDraftId] = useState('')
   const [activeDraft, setActiveDraft] = useState(null)
@@ -271,36 +271,16 @@ export default function AdminLeasingTab({ adminUser, accounts = [] }) {
     const propKey = (d) => String(d['Property'] || '').trim().toLowerCase()
     const residentKey = (d) => String(d['Resident Name'] || '').trim().toLowerCase()
     const updatedMs = (d) => new Date(d['Updated At'] || d.created_at || 0).getTime()
-    const managerKey = (d) =>
-      String(managerNameMap.get(String(d['Owner ID'] || '').trim()) || '').trim().toLowerCase()
     const cmp = (a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' })
     const sorted = [...rows]
-    switch (leaseSort) {
-      case 'property_asc':
-        sorted.sort((a, b) => cmp(propKey(a), propKey(b)) || updatedMs(b) - updatedMs(a))
-        break
-      case 'property_desc':
-        sorted.sort((a, b) => cmp(propKey(b), propKey(a)) || updatedMs(b) - updatedMs(a))
-        break
-      case 'resident_asc':
-        sorted.sort((a, b) => cmp(residentKey(a), residentKey(b)) || updatedMs(b) - updatedMs(a))
-        break
-      case 'manager_asc':
-        sorted.sort((a, b) => cmp(managerKey(a), managerKey(b)) || cmp(propKey(a), propKey(b)) || updatedMs(b) - updatedMs(a))
-        break
-      case 'manager_desc':
-        sorted.sort((a, b) => cmp(managerKey(b), managerKey(a)) || cmp(propKey(a), propKey(b)) || updatedMs(b) - updatedMs(a))
-        break
-      case 'updated_asc':
-        sorted.sort((a, b) => updatedMs(a) - updatedMs(b) || cmp(propKey(a), propKey(b)))
-        break
-      case 'updated_desc':
-      default:
-        sorted.sort((a, b) => updatedMs(b) - updatedMs(a) || cmp(propKey(a), propKey(b)))
-        break
+    const tie = (a, b) => cmp(residentKey(a), residentKey(b)) || updatedMs(b) - updatedMs(a)
+    if (leasePropertySort === 'property_desc') {
+      sorted.sort((a, b) => cmp(propKey(b), propKey(a)) || tie(a, b))
+    } else {
+      sorted.sort((a, b) => cmp(propKey(a), propKey(b)) || tie(a, b))
     }
     return sorted
-  }, [drafts, statusFilter, managerFilter, leaseSort, managerNameMap])
+  }, [drafts, statusFilter, managerFilter, leasePropertySort])
 
   const statusCounts = useMemo(() => {
     return ADMIN_STATUS_FILTER_ITEMS.reduce((acc, item) => {
@@ -531,22 +511,33 @@ export default function AdminLeasingTab({ adminUser, accounts = [] }) {
           <h1 className="text-2xl font-black text-slate-900">Leases</h1>
         </div>
         <div className="flex w-full min-w-0 flex-wrap items-center justify-end gap-2 sm:ml-auto sm:w-auto sm:flex-nowrap">
-          <div className={LEASE_PILL_SELECT_WRAP_CLS}>
-            <select
-              value={leaseSort}
-              onChange={(e) => setLeaseSort(e.target.value)}
-              className={LEASE_PILL_SELECT_CLS}
-              aria-label="Sort leases"
+          <div
+            role="group"
+            aria-label="Sort lease list by property"
+            className="flex h-[42px] shrink-0 items-stretch gap-1 rounded-full border border-slate-200 bg-slate-50 p-1"
+          >
+            <button
+              type="button"
+              onClick={() => setLeasePropertySort('property_asc')}
+              className={`min-w-[6.5rem] flex-1 rounded-full px-2 text-sm font-semibold transition sm:min-w-[7.5rem] sm:flex-none sm:px-3 ${
+                leasePropertySort === 'property_asc'
+                  ? 'bg-white text-slate-900 shadow-sm ring-2 ring-[#2563eb]/20'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
             >
-              <option value="updated_desc">Sort: Updated (newest)</option>
-              <option value="updated_asc">Sort: Updated (oldest)</option>
-              <option value="manager_asc">Sort: Manager (A–Z)</option>
-              <option value="manager_desc">Sort: Manager (Z–A)</option>
-              <option value="property_asc">Sort: Property (A–Z)</option>
-              <option value="property_desc">Sort: Property (Z–A)</option>
-              <option value="resident_asc">Sort: Resident (A–Z)</option>
-            </select>
-            {LEASE_PILL_SELECT_CHEVRON}
+              Property A–Z
+            </button>
+            <button
+              type="button"
+              onClick={() => setLeasePropertySort('property_desc')}
+              className={`min-w-[6.5rem] flex-1 rounded-full px-2 text-sm font-semibold transition sm:min-w-[7.5rem] sm:flex-none sm:px-3 ${
+                leasePropertySort === 'property_desc'
+                  ? 'bg-white text-slate-900 shadow-sm ring-2 ring-[#2563eb]/20'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              Property Z–A
+            </button>
           </div>
           <div className={LEASE_PILL_SELECT_WRAP_CLS}>
             <select

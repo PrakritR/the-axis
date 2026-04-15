@@ -1,6 +1,7 @@
 /**
- * Manager/admin can set a checkbox on **Lease Drafts** so residents may open
- * and sign the lease before paying security deposit + first month rent.
+ * Manager/admin can set a checkbox on **Lease Drafts** so residents may **sign** (once the draft
+ * is `Published` / `Ready for Signature`) before paying security deposit + first month rent.
+ * It does **not** show the lease while the draft is still in manager/admin review.
  *
  * Default Airtable field: `Allow Sign Without Move-In Pay`
  * Override with `VITE_AIRTABLE_LEASE_SIGN_WITHOUT_PAY_FIELD` if your base uses another name.

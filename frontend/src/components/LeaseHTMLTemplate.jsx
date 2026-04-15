@@ -136,6 +136,22 @@ export default function LeaseHTMLTemplate({
             <strong> {d.roomLabel || `Room ${d.roomNumber || '___________'}`}</strong> located at <strong>{d.fullAddress || '___________'}</strong>
             (&quot;Premises&quot;). Resident shall have access to all common areas of the dwelling as a shared co-tenant.
           </P>
+          <P>
+            <strong>1.1 Delivery of possession.</strong> Landlord shall use commercially reasonable efforts to deliver
+            possession of the Premises on the lease commencement date. If possession cannot be delivered on that date due
+            to events beyond Landlord&apos;s reasonable control (including holdover by a prior occupant, casualty, or
+            government order), the lease start date shall be postponed until possession is available, rent shall abate until
+            possession is delivered, and neither party shall be liable to the other for delay except that Resident may
+            terminate this Agreement by written notice if possession is not delivered within fourteen (14) calendar days
+            after the originally scheduled start date, in which case any prepaid rent and deposit shall be refunded as
+            required by law.
+          </P>
+          <P>
+            <strong>1.2 Municipal compliance.</strong> This Agreement shall be interpreted consistently with the Washington
+            Residential Landlord-Tenant Act (RCW Chapter 59.18). If the Premises are located within the City of Seattle, the
+            parties agree that applicable Seattle rental regulations (including notice, just-cause, relocation, or
+            habitability rules) shall apply to the minimum extent required by law.
+          </P>
         </Section>
 
         {/* 2 */}
@@ -145,6 +161,17 @@ export default function LeaseHTMLTemplate({
             {d.isMonthToMonth
               ? ` Either party may terminate this Agreement by providing at least ${TERMINATION_NOTICE_DAYS} days' written notice prior to the end of a rental period, as required by RCW 59.18.200.`
               : ` At the expiration of the fixed term, this Agreement shall automatically convert to a month-to-month tenancy unless either party provides written notice of non-renewal at least ${TERMINATION_NOTICE_DAYS} days before the end of the term, or a new written agreement is signed.`}
+          </P>
+          <P>
+            <strong>2.1 Early termination and mitigation.</strong> If Resident vacates before the end of the term without
+            Landlord&apos;s written consent, Resident remains liable for <em>actual damages</em> recoverable under Washington law,
+            not for any penalty labeled as liquidated damages unless separately agreed in writing and enforceable. Landlord
+            has a duty to mitigate damages by making reasonable, good-faith efforts to re-rent the Premises at fair market
+            terms. Resident&apos;s liability for rent after default or early departure continues only until the earlier of the
+            lease expiration date or the date a replacement tenant acceptable to Landlord (under the same or reasonably
+            similar terms) begins paying rent, subject to mitigation. Landlord may recover reasonable, documented re-leasing
+            costs (such as advertising and tenant screening) to the extent permitted by RCW Chapter 59.18 and general
+            contract law.
           </P>
         </Section>
 
@@ -171,8 +198,28 @@ export default function LeaseHTMLTemplate({
           </P>
           <P>
             If rent is not received by the {LATE_GRACE_DAYS}th day of the month, a late fee of{' '}
-            <strong>{LATE_FEE}</strong> shall be assessed. Acceptance of a late payment does not constitute a waiver of
-            Landlord's right to assess future late fees or pursue any other remedy under this Agreement or Washington law.
+            <strong>{LATE_FEE}</strong> shall be assessed. The late fee is agreed in writing as permitted by RCW 59.18.140
+            and shall not be assessed unless the fee amount and trigger date are stated in this Agreement. Acceptance of a
+            late payment does not waive Landlord&apos;s right to assess future late fees or pursue other remedies.
+          </P>
+          <P>
+            <strong>3.1 Application of payments.</strong> Unless otherwise required by law, any payment from Resident shall
+            be applied in the following order: (a) amounts owed for damage to the Premises or common areas beyond ordinary
+            wear and tear; (b) unpaid allocated utilities, utility fees, or similar charges; (c) late fees, NSF fees, and
+            other lawful charges; (d) past-due rent, oldest invoice first; (e) current month&apos;s rent.
+          </P>
+          <P>
+            <strong>3.2 Returned payments and NSF.</strong> If any check, ACH debit, or electronic payment is dishonored,
+            reversed, or returned unpaid, Resident shall immediately pay the original amount plus Landlord&apos;s actual bank or
+            processing fees and a reasonable returned-payment fee not to exceed the maximum allowed under RCW 62A.3-421 or
+            other applicable law, whichever is lower. Repeated returned payments may cause Landlord to require certified funds
+            or another payment method.
+          </P>
+          <P>
+            <strong>3.3 Utility billing and allocation.</strong> Where Resident owes a monthly utilities fee or allocated
+            utility charges, such amounts are due on the same date as rent unless otherwise stated in writing. Failure to pay
+            allocated utilities when due constitutes a monetary default subject to the same notice and cure procedures as
+            rent to the extent allowed by Washington law.
           </P>
           {d.proratedDays > 0 ? (
             <P>
@@ -197,6 +244,14 @@ export default function LeaseHTMLTemplate({
             expressly designated as such in writing at collection, and shall be applied only to rent for the final month
             of tenancy after proper termination notice, subject to Washington law.
           </P>
+          {(d.adminFee || 0) > 0 ? (
+            <P>
+              <strong>3.4 Administrative or screening fees.</strong> If an administrative fee or application-related fee is
+              listed in the Agreement Summary, Resident acknowledges it was disclosed before payment and represents
+              Landlord&apos;s reasonable actual costs to the extent permitted by law; such fees are not part of the security
+              deposit unless expressly labeled as deposit.
+            </P>
+          ) : null}
         </Section>
 
         {/* 4 */}
@@ -210,6 +265,25 @@ export default function LeaseHTMLTemplate({
             The deposit may be applied to unpaid rent, damages beyond normal wear and tear, cleaning costs, and any other
             amounts owed under this Agreement. Within 21 days of Resident's departure, Landlord shall return the deposit
             or provide a written itemized statement of deductions, as required by RCW 59.18.280.
+          </P>
+          <P>
+            <strong>4.1 Move-in condition and checklist (Property Condition Addendum).</strong> Within seven (7) calendar days after move-in, Landlord and
+            Resident shall complete a written move-in inspection checklist describing the condition of the Premises and any
+            furnishings (this checklist is the Property Condition Addendum for purposes of deposit accounting). Resident shall return a signed copy to Landlord. The checklist, together with any photographs or
+            videos reasonably taken at move-in, establishes the baseline condition for determining whether deductions from the
+            security deposit at move-out are lawful. If Resident refuses to participate in a scheduled inspection, Landlord
+            may complete the checklist in good faith and provide a copy to Resident.
+          </P>
+          <P>
+            <strong>4.2 Forwarding address.</strong> Upon vacating, Resident shall provide Landlord in writing a valid
+            forwarding address where deposit accounting and refund may be sent. Failure to provide a forwarding address does
+            not relieve Landlord of the obligation to comply with RCW 59.18.280, but Resident bears the risk of misdelivery if
+            the address is incomplete or inaccurate.
+          </P>
+          <P>
+            <strong>4.3 Itemized deductions.</strong> Any deduction from the deposit shall be listed in writing with a
+            plain-language description of each charge and supporting documentation where reasonably available. Deductions may
+            not include ordinary wear and tear consistent with RCW 59.18.260.
           </P>
         </Section>
 
@@ -229,6 +303,17 @@ export default function LeaseHTMLTemplate({
               not to add or change any utilities without prior written consent of Landlord.
             </P>
           )}
+          <P>
+            <strong>5.1 Utility transfer.</strong> If Landlord ever requires a specific utility account to be transferred to
+            Resident&apos;s name (for example, for a separately metered service), Resident shall establish service within three
+            (3) business days of written notice and shall not allow termination for non-payment that affects habitability of
+            other residents.
+          </P>
+          <P>
+            <strong>5.2 Non-payment of allocated utilities.</strong> Allocated charges shown on a written ledger or invoice
+            are due by the date stated on the invoice or, if none, with the next rent installment. Continued non-payment after
+            written notice may be treated as a material default to the extent permitted by RCW Chapter 59.18.
+          </P>
           <P>
             Resident is responsible for personal streaming services, phone plans, and any other personal communications
             services not explicitly listed above.
@@ -255,6 +340,11 @@ export default function LeaseHTMLTemplate({
             Resident shall not permit any other person to occupy the Premises as a primary residence without the prior written
             consent of Landlord. Guests staying more than 7 consecutive nights or more than 14 nights in any 30-day period
             require written approval.
+          </P>
+          <P>
+            <strong>6.1 Guest policy enforcement.</strong> A guest who exceeds the limits above without approval may be
+            treated as an unauthorized occupant. Landlord may require removal of the guest or, if the guest remains after
+            written notice, pursue remedies for breach consistent with RCW Chapter 59.18.
           </P>
           <P>
             The Premises shall be used solely for lawful residential purposes consistent with a shared co-living household.
@@ -310,6 +400,20 @@ export default function LeaseHTMLTemplate({
             Landlord is not responsible for the loss, theft, or damage to Resident's personal property. Resident is strongly
             encouraged to obtain renters' insurance to protect personal belongings.
           </P>
+          <P>
+            <strong>8.1 Limitation of landlord liability.</strong> Except for damages arising from Landlord&apos;s gross negligence
+            or willful misconduct, or as otherwise required by RCW Chapter 59.18, Landlord&apos;s aggregate liability for any
+            claim arising from this tenancy shall not exceed the amount of rent actually paid by Resident during the twelve
+            (12) months preceding the claim. Landlord shall not be liable for interruption of utilities caused by utility
+            companies, weather, or other events outside Landlord&apos;s reasonable control after Landlord has made good-faith
+            efforts to restore service.
+          </P>
+          <P>
+            <strong>8.2 Indemnification.</strong> Resident shall indemnify, defend, and hold harmless Landlord and Landlord&apos;s
+            agents from claims, losses, and reasonable attorneys&apos; fees arising from Resident&apos;s or Resident&apos;s guests&apos;
+            negligence, intentional misconduct, illegal activity, or breach of this Agreement, except to the extent caused by
+            Landlord&apos;s negligence or willful misconduct.
+          </P>
         </Section>
 
         {/* 9 */}
@@ -338,6 +442,25 @@ export default function LeaseHTMLTemplate({
             requested). Resident shall not perform any repairs or alterations without Landlord's prior written approval.
             Resident shall be liable for damage caused by Resident's negligence or intentional acts.
           </P>
+          <P>
+            <strong>9.1 Smoke detection devices (RCW 43.44.110).</strong> Landlord certifies that the dwelling is equipped
+            with smoke detection devices as required by RCW 43.44.110. Resident shall not remove or disable smoke alarms.
+            Resident shall test devices as directed by the manufacturer, replace batteries or power sources as required, and
+            promptly notify Landlord of any malfunction.
+          </P>
+          <P>
+            <strong>9.2 Carbon monoxide alarms (RCW 19.27.530).</strong> Where required by RCW 19.27.530 and applicable
+            building codes for the dwelling type, Landlord shall provide approved carbon monoxide alarms in required
+            locations. Resident shall not remove or disable CO alarms, shall test as directed, and shall report malfunctions
+            promptly.
+          </P>
+          <P>
+            <strong>9.3 Domestic hot water temperature.</strong> Landlord shall maintain the domestic hot water system so that
+            water delivered at fixtures is not scalding, consistent with applicable Washington State codes (including
+            tempering or limiting settings where required, commonly not to exceed approximately 120°F at the tank or as
+            directed by code). Resident shall not alter water heater thermostats, mixing valves, or tempering devices without
+            written permission.
+          </P>
         </Section>
 
         {/* 10 */}
@@ -352,7 +475,14 @@ export default function LeaseHTMLTemplate({
           <P>
             <strong>Keys and access devices:</strong> Resident shall safeguard all keys, fobs, and codes. Lost or
             unreturned keys or fobs may be replaced or re-keyed at Resident&apos;s expense for Landlord&apos;s reasonable
-            actual cost.
+            actual cost, not to exceed the documented invoice from a licensed locksmith or vendor where applicable.
+          </P>
+          <P>
+            <strong>10.1 Lockouts and self-help prohibited.</strong> Landlord shall not exclude Resident from the Premises,
+            change locks, or interrupt utilities for the purpose of evicting Resident without a court order, except as
+            expressly permitted for emergency repairs or lawful lock changes that provide Resident immediate replacement keys
+            at no charge if Landlord caused the lockout in error. If Resident is locked out due to lost keys, Landlord may
+            charge a reasonable after-hours access fee consistent with actual cost.
           </P>
         </Section>
 
@@ -395,16 +525,34 @@ export default function LeaseHTMLTemplate({
             Resident shall return all keys, access fobs, and parking passes to Landlord.
           </P>
           <P>
-            If Resident breaks the lease prior to the end of the fixed term without Landlord&apos;s written consent,
-            Resident shall be liable for actual damages and unpaid obligations permitted by Washington law, including
-            unpaid rent through the earlier of the end of the lease term or the date a new qualified tenant takes
-            possession
+            <strong>14.1 Cleaning at move-out.</strong> Resident shall leave the private room broom-clean and free of trash
+            and personal property. If professional cleaning of the private room is required due to unreasonable dirt,
+            debris, stains, or odors beyond ordinary wear and tear, Landlord may deduct the reasonable cost from the deposit
+            with itemization. If the property&apos;s standard includes recurring professional cleaning of common areas, Resident
+            remains responsible for Resident&apos;s proportionate share through the vacate date as stated in the Agreement
+            Summary or house rules.
+          </P>
+          <P>
+            <strong>14.2 Abandoned personal property (RCW 59.18.310).</strong> Personal property left in the Premises after
+            vacating may be stored and disposed of in accordance with RCW 59.18.310 and related Washington law, including
+            written notice to Resident at the last known address, reasonable storage, sale or donation, and application of
+            proceeds to storage and removal costs.
+          </P>
+          <P>
+            If Resident breaks the lease prior to the end of the fixed term without Landlord&apos;s written consent, Resident
+            shall be liable for <em>actual damages</em> and unpaid obligations permitted by Washington law only, including
+            unpaid rent through the earlier of the end of the lease term or the date a replacement tenant acceptable to
+            Landlord begins paying rent, subject to Landlord&apos;s duty to mitigate. Resident shall also pay reasonable,
+            documented re-leasing costs to the extent allowed by law
             {(d.breakLeaseFeeAmount || 0) > 0 && d.breakLeaseFee ? (
               <>
-                , and a stated lease-break fee of <strong>{d.breakLeaseFee}</strong>
+                . In addition, the parties agree to a stated lease-break fee of <strong>{d.breakLeaseFee}</strong> only if that
+                fee represents a reasonable estimate of actual administrative and turnover costs and is not an unlawful penalty.
               </>
-            ) : null}
-            .
+            ) : (
+              <>.</>
+            )}{' '}
+            No other &quot;penalty&quot; for early termination shall apply except as permitted by RCW Chapter 59.18.
           </P>
         </Section>
 
@@ -412,9 +560,18 @@ export default function LeaseHTMLTemplate({
         <Section number="15" title="Default and Landlord Remedies">
           <P>
             If Resident fails to pay rent when due or violates any material term of this Agreement, Landlord may serve
-            appropriate written notice as required by Washington law (RCW 59.12) and pursue unlawful detainer proceedings
-            or other remedies available at law or in equity. Landlord's acceptance of partial rent does not waive Landlord's
-            right to pursue collection of the full amount owed.
+            written notices to pay or comply and vacate using the forms and notice periods required by Washington law,
+            including RCW 59.12 and RCW Chapter 59.18 (which may include, for certain rental defaults, a notice period of
+            not less than fourteen (14) calendar days where applicable, or other periods for different breaches or tenancy
+            types). Following expiration of any required cure period without cure, Landlord may pursue unlawful detainer
+            (eviction) in King County District Court or other court of competent jurisdiction consistent with Washington
+            procedure.
+          </P>
+          <P>
+            <strong>15.1 Non-waiver.</strong> Landlord&apos;s acceptance of partial or late rent, or Landlord&apos;s failure to object
+            to a particular breach, does not waive Landlord&apos;s right to insist on strict performance thereafter, to collect all
+            sums owing, or to terminate the tenancy as permitted after proper notice. Any waiver must be in writing signed by
+            Landlord.
           </P>
         </Section>
 
@@ -430,9 +587,27 @@ export default function LeaseHTMLTemplate({
         {/* 17 */}
         <Section number="17" title="General Provisions">
           <P>
-            If any provision of this Agreement is found to be unenforceable, the remaining provisions shall remain in full
-            force and effect. Landlord's failure to enforce any provision shall not constitute a waiver of that provision.
-            This Agreement may not be amended except by a written instrument signed by both parties.
+            <strong>17.1 Severability.</strong> If any provision of this Agreement is held invalid or unenforceable, the
+            remainder shall remain in full force and effect, and the parties request that any court reform the invalid
+            provision to the minimum extent necessary to achieve substantially the same lawful effect.
+          </P>
+          <P>
+            <strong>17.2 Lead-based paint disclosure (pre-1978 housing).</strong> If any residential structure on the property
+            was built before January 1, 1978, Landlord has provided Resident with the EPA pamphlet &quot;Protect Your Family from
+            Lead in Your Home&quot; and any disclosure required under 42 U.S.C. 4852d and 40 C.F.R. Part 745 (Residential Lead-Based
+            Paint Hazard Reduction Act). Resident acknowledges receipt of the pamphlet and any completed disclosure form prior
+            to signing this Agreement. If the dwelling was constructed in 1978 or later, this subsection does not apply.
+          </P>
+          <P>
+            <strong>17.3 Attorney fees.</strong> In any action to interpret or enforce this Agreement or to recover the
+            Premises, the prevailing party may recover reasonable attorneys&apos; fees and court costs if and to the extent
+            authorized by RCW 59.18.290 (including certain exclusion, holdover, or wrongful-possession claims), other statutes,
+            or court rule.
+          </P>
+          <P>
+            Landlord&apos;s failure to enforce any provision on a particular occasion shall not waive the right to enforce that
+            provision on a later occasion, except as stated in Section 15.1. This Agreement may not be amended except by a
+            written instrument signed by both parties.
           </P>
           <P>
             All notices required or permitted under this Agreement shall be in writing and delivered by hand, first-class
@@ -444,8 +619,14 @@ export default function LeaseHTMLTemplate({
         <Section number="18" title="Governing Law">
           <P>
             This Agreement shall be governed by the laws of the State of Washington, including the Washington Residential
-            Landlord-Tenant Act (RCW Chapter 59.18). Any dispute arising out of this Agreement shall be resolved in
-            King County, Washington.
+            Landlord-Tenant Act (RCW Chapter 59.18). Venue for any legal action arising from this Agreement shall lie in the
+            courts of King County, Washington, and Resident consents to personal jurisdiction there, unless another venue is
+            required by mandatory law based on where the Premises are located.
+          </P>
+          <P>
+            <strong>18.1 Local ordinances.</strong> If the Premises are within the City of Seattle (or any other jurisdiction
+            with rental housing ordinances), any conflicting term of this Agreement shall give way to mandatory local law only
+            to the extent required.
           </P>
         </Section>
 
