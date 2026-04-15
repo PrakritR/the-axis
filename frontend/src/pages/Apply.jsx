@@ -1626,7 +1626,7 @@ export default function Apply() {
 
   async function handleSubmit(event, options = {}) {
     event.preventDefault()
-    const { promoOverride = false } = options
+    const { promoOverride = false, feePaidViaStripe = false } = options
     // Final step validation before submit
     const current = steps[step]
     const data = applicationType === 'cosigner' ? cosigner : signer
@@ -1644,7 +1644,7 @@ export default function Apply() {
       let resolvedGroupApplicationId = ''
       if (applicationType === 'signer') {
         const feeDueUsd = getSignerStripeApplicationFeeUsd(signer.propertyName, applicationFeeOverrides)
-        if (feeDueUsd > 0 && !(feePrePaid || promoApplied || promoOverride)) {
+        if (feeDueUsd > 0 && !(feePrePaid || promoApplied || promoOverride || feePaidViaStripe)) {
           throw new Error('Application fee must be paid before submitting.')
         }
 
@@ -1810,7 +1810,7 @@ export default function Apply() {
             leaseStep: 'account',
             leaseSigned: false,
             moveInPaid: false,
-            appFeePaid: feePrePaid,
+            appFeePaid: feePrePaid || feePaidViaStripe || promoApplied || promoOverride,
             promoApplied: promoApplied || promoOverride,
           }
         : {
@@ -1985,7 +1985,8 @@ export default function Apply() {
       setPrePaymentLoading(false)
       setFeePrePaid(true)
       setAppFeePaid(true)
-      await handleSubmit({ preventDefault: () => {} })
+      // `feePrePaid` state is async — pass explicit flag so submit gate sees payment as done.
+      await handleSubmit({ preventDefault: () => {} }, { feePaidViaStripe: true })
       return
     }
 
