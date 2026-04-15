@@ -191,9 +191,8 @@ export default function AdminLeasingTab({ adminUser, accounts = [] }) {
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState('')
   const [statusFilter, setStatusFilter] = useState('draft_ready')
-  const [propertyFilter, setPropertyFilter] = useState('')
   const [managerFilter, setManagerFilter] = useState('')
-  /** @type {'updated_desc'|'updated_asc'|'property_asc'|'property_desc'|'resident_asc'|'resident_desc'|'manager_asc'|'manager_desc'} */
+  /** @type {'updated_desc'|'updated_asc'|'property_asc'|'property_desc'|'resident_asc'|'manager_asc'|'manager_desc'} */
   const [leaseSort, setLeaseSort] = useState('updated_desc')
   const leaseDraftDetailRef = useRef(null)
   const [selectedDraftId, setSelectedDraftId] = useState('')
@@ -244,19 +243,6 @@ export default function AdminLeasingTab({ adminUser, accounts = [] }) {
     return map
   }, [accounts])
 
-  const propertyChoices = useMemo(() => {
-    const map = new Map()
-    for (const d of drafts) {
-      const display = String(d['Property'] || '').trim()
-      if (!display) continue
-      const value = display.toLowerCase()
-      if (!map.has(value)) map.set(value, display)
-    }
-    return [...map.entries()]
-      .sort((a, b) => a[1].localeCompare(b[1], undefined, { sensitivity: 'base' }))
-      .map(([value, display]) => ({ value, display }))
-  }, [drafts])
-
   const managerChoices = useMemo(() => {
     const byId = new Map()
     for (const d of drafts) {
@@ -271,11 +257,6 @@ export default function AdminLeasingTab({ adminUser, accounts = [] }) {
   }, [drafts, managerNameMap])
 
   useEffect(() => {
-    if (!propertyFilter) return
-    if (!propertyChoices.some((c) => c.value === propertyFilter)) setPropertyFilter('')
-  }, [propertyFilter, propertyChoices])
-
-  useEffect(() => {
     if (!managerFilter) return
     if (!managerChoices.some((c) => c.value === managerFilter)) setManagerFilter('')
   }, [managerFilter, managerChoices])
@@ -283,11 +264,6 @@ export default function AdminLeasingTab({ adminUser, accounts = [] }) {
   const visibleDrafts = useMemo(() => {
     const filterFn = ADMIN_STATUS_FILTER_ITEMS.find((item) => item.id === statusFilter)?.match ?? (() => true)
     let rows = drafts.filter((draft) => filterFn(draft['Status'] || ''))
-    if (propertyFilter) {
-      rows = rows.filter(
-        (d) => String(d['Property'] || '').trim().toLowerCase() === propertyFilter,
-      )
-    }
     if (managerFilter) {
       rows = rows.filter((d) => String(d['Owner ID'] || '').trim() === managerFilter)
     }
@@ -308,9 +284,6 @@ export default function AdminLeasingTab({ adminUser, accounts = [] }) {
       case 'resident_asc':
         sorted.sort((a, b) => cmp(residentKey(a), residentKey(b)) || updatedMs(b) - updatedMs(a))
         break
-      case 'resident_desc':
-        sorted.sort((a, b) => cmp(residentKey(b), residentKey(a)) || updatedMs(b) - updatedMs(a))
-        break
       case 'manager_asc':
         sorted.sort((a, b) => cmp(managerKey(a), managerKey(b)) || cmp(propKey(a), propKey(b)) || updatedMs(b) - updatedMs(a))
         break
@@ -326,7 +299,7 @@ export default function AdminLeasingTab({ adminUser, accounts = [] }) {
         break
     }
     return sorted
-  }, [drafts, statusFilter, propertyFilter, managerFilter, leaseSort, managerNameMap])
+  }, [drafts, statusFilter, managerFilter, leaseSort, managerNameMap])
 
   const statusCounts = useMemo(() => {
     return ADMIN_STATUS_FILTER_ITEMS.reduce((acc, item) => {
@@ -567,7 +540,6 @@ export default function AdminLeasingTab({ adminUser, accounts = [] }) {
               <option value="property_asc">Sort: Property (A–Z)</option>
               <option value="property_desc">Sort: Property (Z–A)</option>
               <option value="resident_asc">Sort: Resident (A–Z)</option>
-              <option value="resident_desc">Sort: Resident (Z–A)</option>
             </select>
             {LEASE_PILL_SELECT_CHEVRON}
           </div>
@@ -580,22 +552,6 @@ export default function AdminLeasingTab({ adminUser, accounts = [] }) {
             >
               <option value="">All managers</option>
               {managerChoices.map(({ value, display }) => (
-                <option key={value} value={value}>
-                  {display}
-                </option>
-              ))}
-            </select>
-            {LEASE_PILL_SELECT_CHEVRON}
-          </div>
-          <div className={LEASE_PILL_SELECT_WRAP_CLS}>
-            <select
-              value={propertyFilter}
-              onChange={(e) => setPropertyFilter(e.target.value)}
-              className={LEASE_PILL_SELECT_CLS}
-              aria-label="Filter leases by property"
-            >
-              <option value="">All properties</option>
-              {propertyChoices.map(({ value, display }) => (
                 <option key={value} value={value}>
                   {display}
                 </option>

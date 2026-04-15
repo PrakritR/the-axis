@@ -14,6 +14,7 @@ import {
   paymentsIndicateFirstMonthRentPaid,
   paymentsIndicateSecurityDepositPaid,
 } from '../../../shared/lease-access-requirements.js'
+import { leaseDraftAllowsSignWithoutMoveInPay } from '../../../shared/lease-sign-without-move-in-pay.js'
 
 const AIRTABLE_TOKEN = process.env.AIRTABLE_TOKEN || process.env.VITE_AIRTABLE_TOKEN
 const CORE_BASE_ID =
@@ -82,22 +83,6 @@ async function listPaymentsForResidentRecordId(residentRecordId) {
   }
 }
 
-function truthyAirtableCheckbox(v) {
-  if (v === true || v === 1) return true
-  if (v === false || v === 0 || v == null) return false
-  const s = String(v).trim().toLowerCase()
-  return ['yes', 'true', '1', 'on'].includes(s)
-}
-
-function leaseDraftAllowsSignWithoutMoveInPayServer(draft) {
-  const envName = String(process.env.VITE_AIRTABLE_LEASE_SIGN_WITHOUT_PAY_FIELD || '').trim()
-  const keys = [envName, 'Allow Sign Without Move-In Pay'].filter((k, i, a) => k && a.indexOf(k) === i)
-  for (const k of keys) {
-    if (truthyAirtableCheckbox(draft[k])) return true
-  }
-  return false
-}
-
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*')
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS')
@@ -151,7 +136,10 @@ export default async function handler(req, res) {
     const snap = normalizeLeaseAccessRequirement(propertyRecord?.['Lease Access Requirement'])
     const sdP = paymentsIndicateSecurityDepositPaid(payments)
     const fmP = paymentsIndicateFirstMonthRentPaid(payments)
-    const override = leaseDraftAllowsSignWithoutMoveInPayServer(draft)
+    const override = leaseDraftAllowsSignWithoutMoveInPay(
+      draft,
+      process.env.VITE_AIRTABLE_LEASE_SIGN_WITHOUT_PAY_FIELD,
+    )
     const accessEval = evaluateLeaseAccessPrereqs({
       requirement: snap,
       securityDepositPaid: sdP,

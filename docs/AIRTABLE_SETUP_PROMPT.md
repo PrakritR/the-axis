@@ -267,7 +267,7 @@ Most of this section lives in `VITE_AIRTABLE_BASE_ID` / `AIRTABLE_BASE_ID` along
 
 | Piece | Role | Independent? |
 |-------|------|--------------|
-| **`Scheduling`** | Stores **booked** tours (`Type` = Tour), **booked** meetings (`Type` = Meeting), work-order calendar rows, and (legacy) admin **open** slots as `Type` = Meeting Availability when you have not split availability tables. | Bookings are always here on the main base. |
+| **`Scheduling`** | Stores **booked** tours (`Type` = Tour), **booked** meetings (`Type` = Meeting), work-order calendar rows, and (legacy) admin **open** slots as `Type` = Meeting Availability when you have not split availability tables. **Public setup:** visitors book tours and admin meetings via **`POST /api/forms?action=tour`** and **`POST /api/forms?action=meeting`** (same logic as `/api/tour` and `/api/meeting`), which **insert rows here**. | Bookings are always here on the main base (override table name with **`AIRTABLE_SCHEDULING_TABLE`** if your base differs). |
 | **Manager tour availability table** (§2.7) | Open time **windows** for **property tours** (per manager + property; recurring or one-off). | Yes — only `tour.js` + manager property calendar read/write this table. |
 | **Admin meeting availability table** (§2.8) | Open time **windows** for **Contact Axis / admin meetings** (global rows: no property). | Yes — only `meeting.js` + admin calendar read/write this table when env names a **different** table than §2.7. |
 | **`Properties` / `Notes`** | Legacy weekly tour text (`Tour Availability:` block) if no structured manager rows exist for that property. | Tour-specific; ignored once structured manager rows exist for that property+manager. |
@@ -296,7 +296,11 @@ Most of this section lives in `VITE_AIRTABLE_BASE_ID` / `AIRTABLE_BASE_ID` along
 
 ### 2.2 `Scheduling`
 
-**Used by:** `POST /api/tour` — tour/meeting requests.
+**Used by:**
+
+- **`POST /api/forms?action=tour`** — public property tour requests (Contact page, property marketing, tour popup, Apply prefetch). Handler: `server/handlers/tour.js`.
+- **`POST /api/forms?action=meeting`** — public “Contact Axis” admin meeting requests. Handler: `server/handlers/meeting.js`.
+- Same handlers answer **`POST /api/tour`** and **`POST /api/meeting`** if you call those routes directly.
 
 **Fields written:**
 
@@ -441,7 +445,8 @@ Using the repo the-axis, implement or verify Airtable:
 - Manager + lease/audit/properties: `src/pages/Manager.jsx`
 - Work order schedule meta (shared): `src/lib/workOrderShared.js`
 - Apply payloads: `src/pages/Apply.jsx`
-- Tour POST/GET: `server/handlers/tour.js`
+- Tour POST/GET: `backend/server/handlers/tour.js` (public entry: `backend/server/forms-gateway.js` → `?action=tour`)
+- Meeting POST/GET: `backend/server/handlers/meeting.js` (public entry: `backend/server/forms-gateway.js` → `?action=meeting`)
 - Availability merge + slots: `shared/manager-availability-merge.js`, `server/handlers/tour.js`, `server/handlers/meeting.js`, `frontend/src/lib/managerAvailabilityAirtable.js`
 - Airtable Scripting prompts: `scripts/airtable/AIRTABLE_EXTENSION_SCRIPTS.md`
 - AI lease create: `server/handlers/generate-lease-draft.js`

@@ -107,6 +107,23 @@ export async function listAdminMeetingAvailabilityRows(filterFormula = '') {
   return rows
 }
 
+/**
+ * All Manager Availability rows for a manager email (for calendar property ordering + dashboards).
+ * Uses the configured `Manager Email` field in a filterByFormula.
+ */
+export async function listManagerAvailabilityForManagerEmail(managerEmail) {
+  const em = String(managerEmail || '').trim().toLowerCase()
+  if (!em) return []
+  const f = managerFieldNames()
+  const esc = em.replace(/"/g, '\\"')
+  const formula = `LOWER(TRIM({${f.managerEmail}})) = "${esc}"`
+  try {
+    return await listManagerAvailabilityRows(formula)
+  } catch {
+    return []
+  }
+}
+
 export async function listManagerAvailabilityForProperty(propertyRecordId, propertyName = '') {
   const pid = String(propertyRecordId || '').trim()
   const pname = String(propertyName || '').trim().toLowerCase()

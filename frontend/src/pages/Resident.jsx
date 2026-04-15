@@ -423,6 +423,31 @@ function residentRoomHoldFeeUsd(resident) {
   return Number.isFinite(env) && env > 0 ? env : 100
 }
 
+/** Airtable checkbox (or text) — resident chose to hold a room before signing the lease. */
+function roomHoldWithoutLeaseFieldName() {
+  const f = String(import.meta.env.VITE_RESIDENT_ROOM_HOLD_WITHOUT_LEASE_FIELD || 'Room Hold Without Lease').trim()
+  return f || 'Room Hold Without Lease'
+}
+
+function residentOptedRoomHoldWithoutSigningLease(resident) {
+  if (!resident || typeof resident !== 'object') return false
+  const primary = roomHoldWithoutLeaseFieldName()
+  const keys = [primary, 'Room Hold Without Lease', 'Hold Room Without Lease'].filter((k, i, a) => k && a.indexOf(k) === i)
+  for (const key of keys) {
+    const v = resident[key]
+    if (v === true || v === 1) return true
+    const s = String(v ?? '').trim().toLowerCase()
+    if (s === 'true' || s === 'yes' || s === 'checked' || s === 'hold only' || s === 'room hold only') return true
+  }
+  return false
+}
+
+/** Hold fee credits toward security deposit when the resident is on the hold-without-lease path. */
+function residentRoomHoldCreditTowardDepositUsd(resident) {
+  if (!residentOptedRoomHoldWithoutSigningLease(resident)) return 0
+  return residentRoomHoldFeeUsd(resident)
+}
+
 /** Newest signed lease draft (for payments: rent / utilities / deposit match the signed unit). */
 function pickSignedLeaseDraft(drafts) {
   if (!Array.isArray(drafts) || drafts.length === 0) return null
@@ -447,12 +472,15 @@ function residentPaymentsPricing(resident, signedLeaseDraft) {
     const depositDirect =
       parseResidentMoney(resident['Security Deposit Amount'] ?? resident['Security Deposit']) ||
       getStaticSecurityDeposit(profileHouse)
+    const holdCredit = residentRoomHoldCreditTowardDepositUsd(resident)
+    const securityDeposit =
+      holdCredit > 0 && depositDirect > 0 ? Math.max(0, depositDirect - holdCredit) : depositDirect
     return {
       propertyName: profileHouse,
       unitNumber: profileUnit,
       monthlyRent: getRoomMonthlyRent(profileHouse, profileUnit),
       utilitiesFee: getMonthlyUtilitiesAmount(profileHouse, resident),
-      securityDeposit: depositDirect,
+      securityDeposit,
     }
   }
 
@@ -481,6 +509,11 @@ function residentPaymentsPricing(resident, signedLeaseDraft) {
     securityDeposit =
       parseResidentMoney(resident['Security Deposit Amount'] ?? resident['Security Deposit']) ||
       getStaticSecurityDeposit(prop || profileHouse)
+  }
+
+  const holdCredit = residentRoomHoldCreditTowardDepositUsd(resident)
+  if (holdCredit > 0 && securityDeposit > 0) {
+    securityDeposit = Math.max(0, securityDeposit - holdCredit)
   }
 
   return {
@@ -1717,14 +1750,22 @@ function PaymentsPanel({ resident, onResidentUpdated, highlightCategory, onPayme
   )
 
   const tableSourcePayments = useMemo(() => {
+    const showHoldInMoveIn = residentOptedRoomHoldWithoutSigningLease(resident)
     return sortedPayments.filter((p) => {
       if (depositPaymentRecord && p.id === depositPaymentRecord.id) return false
       if (firstRentPaymentRecord && p.id === firstRentPaymentRecord.id) return false
       if (firstUtilitiesPaymentRecord && p.id === firstUtilitiesPaymentRecord.id) return false
-      if (holdFeePaymentRecord && p.id === holdFeePaymentRecord.id) return false
+      if (showHoldInMoveIn && holdFeePaymentRecord && p.id === holdFeePaymentRecord.id) return false
       return true
     })
-  }, [sortedPayments, depositPaymentRecord, firstRentPaymentRecord, firstUtilitiesPaymentRecord, holdFeePaymentRecord])
+  }, [
+    sortedPayments,
+    depositPaymentRecord,
+    firstRentPaymentRecord,
+    firstUtilitiesPaymentRecord,
+    holdFeePaymentRecord,
+    resident,
+  ])
 
   const buildRowFromPayment = useCallback(
     (payment, overrides = {}) => {
@@ -1809,6 +1850,11 @@ function PaymentsPanel({ resident, onResidentUpdated, highlightCategory, onPayme
     }
     if (payPricing.securityDeposit <= 0) return null
     const moveIn = resident['Lease Start Date'] ? formatDate(resident['Lease Start Date']) : ''
+    const holdCredit = residentRoomHoldCreditTowardDepositUsd(resident)
+    const depositHint =
+      holdCredit > 0
+        ? `Amount reflects a ${formatMoney(holdCredit)} credit from your room hold fee toward the deposit`
+        : 'Typically due at or before move-in unless your lease says otherwise'
     return {
       id: 'synth-security-deposit',
       title: 'Initial security deposit',
@@ -1819,7 +1865,7 @@ function PaymentsPanel({ resident, onResidentUpdated, highlightCategory, onPayme
       displayAmount: payPricing.securityDeposit,
       balance: payPricing.securityDeposit,
       statusLabel: 'Unpaid',
-      statusHint: 'Typically due at or before move-in unless your lease says otherwise',
+      statusHint: depositHint,
       metaRows: [
         { label: 'Due date', value: moveIn || '—' },
         { label: 'Amount to pay', value: formatMoney(payPricing.securityDeposit) },
@@ -1837,10 +1883,12 @@ function PaymentsPanel({ resident, onResidentUpdated, highlightCategory, onPayme
     payPricing.propertyName,
     payPricing.securityDeposit,
     payPricing.unitNumber,
+    resident,
     resident['Lease Start Date'],
   ])
 
   const holdFeeRow = useMemo(() => {
+    if (!residentOptedRoomHoldWithoutSigningLease(resident)) return null
     const amount = residentRoomHoldFeeUsd(resident)
     if (amount <= 0) return null
     if (holdFeePaymentRecord) {
@@ -1880,7 +1928,7 @@ function PaymentsPanel({ resident, onResidentUpdated, highlightCategory, onPayme
     holdFeePaymentRecord,
     payPricing.propertyName,
     payPricing.unitNumber,
-    resident.id,
+    resident,
     resident['Lease Start Date'],
   ])
 
@@ -2104,7 +2152,11 @@ function PaymentsPanel({ resident, onResidentUpdated, highlightCategory, onPayme
     if (highlightCategory === 'hold') {
       setPayDetailId(
         holdFeePaymentRecord?.id ||
-          (!holdFeePaid && residentRoomHoldFeeUsd(resident) > 0 ? 'synth-room-hold-unpaid' : null),
+          (!holdFeePaid &&
+          residentOptedRoomHoldWithoutSigningLease(resident) &&
+          residentRoomHoldFeeUsd(resident) > 0
+            ? 'synth-room-hold-unpaid'
+            : null),
       )
       return
     }
@@ -2480,11 +2532,14 @@ function pickLeaseDraftForPaymentsPricing(drafts) {
   return pickSignedLeaseDraft(drafts) || pickBestLeaseDraft(drafts) || null
 }
 
-function LeasingPanel({ resident, payments, onOpenPayments, onNavigateTab }) {
+function LeasingPanel({ resident, payments, onOpenPayments, onNavigateTab, onLeaseDataRefresh }) {
   const leaseTermLabel = getLeaseTermLabel(resident)
   const isMonthToMonth = leaseTermLabel.toLowerCase().includes('month-to-month')
   const moveInLabel = resident['Lease Start Date'] ? formatDate(resident['Lease Start Date']) : '—'
   const moveOutLabel = resident['Lease End Date'] ? formatDate(resident['Lease End Date']) : (isMonthToMonth ? 'No fixed end date' : '—')
+
+  const [holdPathBusy, setHoldPathBusy] = useState(false)
+  const [holdPathError, setHoldPathError] = useState('')
 
   const [leaseDrafts, setLeaseDrafts] = useState([])
   const [leaseLoading, setLeaseLoading] = useState(true)
@@ -2539,16 +2594,15 @@ function LeasingPanel({ resident, payments, onOpenPayments, onNavigateTab }) {
     }
   }, [leaseDrafts, selectedLeaseDraftId])
 
+  const payPricingLeasePanel = useMemo(
+    () => residentPaymentsPricing(resident, pickLeaseDraftForPaymentsPricing(leaseDrafts)),
+    [resident, leaseDrafts],
+  )
+
   const depositPreviewLabel = useMemo(() => {
-    const raw =
-      resident['Security Deposit Amount'] ??
-      resident['Security Deposit'] ??
-      getStaticSecurityDeposit(resident.House)
-    if (raw == null || raw === '') return '—'
-    if (typeof raw === 'number' && Number.isFinite(raw) && raw > 0) return formatMoney(raw)
-    const n = parseInt(String(raw).replace(/[^0-9]/g, ''), 10)
-    return Number.isFinite(n) && n > 0 ? formatMoney(n) : '—'
-  }, [resident.House, resident['Security Deposit'], resident['Security Deposit Amount']])
+    if (payPricingLeasePanel.securityDeposit > 0) return formatMoney(payPricingLeasePanel.securityDeposit)
+    return '—'
+  }, [payPricingLeasePanel.securityDeposit])
 
   const firstMonthRentPaid = useMemo(
     () => paymentsIndicateFirstMonthRentPaid(Array.isArray(payments) ? payments : []),
@@ -2597,9 +2651,56 @@ function LeasingPanel({ resident, payments, onOpenPayments, onNavigateTab }) {
 
   const leaseStatus = activeLeaseDraft?.Status ? String(activeLeaseDraft.Status).trim() : ''
   const leaseIsSigned = leaseStatus === 'Signed'
+  const holdPath = residentOptedRoomHoldWithoutSigningLease(resident) ? 'hold' : 'lease'
+
+  const saveLeaseHoldPreference = useCallback(
+    async (next) => {
+      const wantHold = next === 'hold'
+      if (wantHold === residentOptedRoomHoldWithoutSigningLease(resident)) return
+      if (leaseIsSigned) return
+      setHoldPathBusy(true)
+      setHoldPathError('')
+      try {
+        const field = roomHoldWithoutLeaseFieldName()
+        await updateResident(resident.id, { [field]: wantHold })
+        if (wantHold) {
+          const list = Array.isArray(payments) ? payments : []
+          const hasHold = list.some((p) => classifyResidentPaymentLine(p) === 'hold_fee')
+          const amt = residentRoomHoldFeeUsd(resident)
+          if (!hasHold && amt > 0) {
+            const rawDue = resident['Lease Start Date']
+            const dueStr =
+              rawDue != null && String(rawDue).trim()
+                ? String(rawDue).trim().slice(0, 10)
+                : new Date().toISOString().slice(0, 10)
+            await createPaymentRecord({
+              Resident: [resident.id],
+              Amount: amt,
+              Balance: amt,
+              Status: 'Unpaid',
+              Type: 'Room Hold Fee',
+              Month: 'Room hold fee',
+              Notes: 'Room hold without signing lease (resident portal)',
+              'Due Date': dueStr,
+              'Property Name': String(resident.House || '').trim() || undefined,
+              'Room Number': String(resident['Unit Number'] || '').trim() || undefined,
+              'Resident Name': String(resident.Name || '').trim() || undefined,
+            })
+          }
+        }
+        await onLeaseDataRefresh?.()
+      } catch (e) {
+        setHoldPathError(e?.message || 'Could not save your choice')
+      } finally {
+        setHoldPathBusy(false)
+      }
+    },
+    [resident, payments, leaseIsSigned, onLeaseDataRefresh],
+  )
+
   /** Extension only after move-in charges are satisfied and the lease is signed. */
   const canRequestLeaseExtension = leaseIsSigned && securityDepositPaid && firstMonthRentPaid
-  const leaseBodyAllowed = isResidentLeaseBodyViewable(leaseStatus)
+  const leaseBodyAllowed = isResidentLeaseBodyViewable(leaseStatus, activeLeaseDraft)
   const leaseContent = leaseBodyAllowed
     ? (activeLeaseDraft?.['Manager Edited Content'] || activeLeaseDraft?.['AI Draft Content'] || '')
     : ''
@@ -2666,20 +2767,68 @@ function LeasingPanel({ resident, payments, onOpenPayments, onNavigateTab }) {
         </button>
       </div>
 
-      <div className="mb-5 rounded-2xl border border-sky-200 bg-sky-50/95 px-4 py-4 text-sm text-slate-800 shadow-sm">
-        <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-sky-900">Room hold · Payments</p>
-        <p className="mt-2 leading-relaxed">
-          To hold a room, there is a <span className="font-semibold">$100 hold fee</span> that will be credited toward your
-          rent or security deposit. Please note that this fee is <span className="font-semibold">non-refundable</span> if
-          the lease agreement and deposit are not completed within <span className="font-semibold">48 hours</span>.
+      <div className="mb-5 rounded-2xl border border-slate-200 bg-white px-4 py-4 text-sm text-slate-800 shadow-sm">
+        <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-slate-500">Move-in path</p>
+        <p className="mt-2 leading-relaxed text-slate-700">
+          The room hold fee only applies if you need to hold a bed before you are ready to sign the lease. When you choose
+          that path, we also reduce your quoted security deposit by the hold amount (it credits toward the deposit).
         </p>
-        <button
-          type="button"
-          onClick={() => onOpenPayments('hold')}
-          className="mt-3 text-sm font-semibold text-[#2563eb] underline decoration-sky-400 underline-offset-2 hover:decoration-[#2563eb]"
-        >
-          Open Payments to pay the hold or move-in charges
-        </button>
+        {leaseIsSigned ? (
+          <p className="mt-3 text-sm text-slate-600">Your lease is signed — use Payments for any remaining move-in charges.</p>
+        ) : (
+          <>
+            <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:gap-3">
+              <button
+                type="button"
+                disabled={holdPathBusy}
+                onClick={() => saveLeaseHoldPreference('lease')}
+                className={classNames(
+                  'flex-1 rounded-2xl border px-4 py-3 text-sm font-semibold transition',
+                  holdPath === 'lease'
+                    ? 'border-[#2563eb]/40 bg-white text-slate-900 shadow-sm ring-2 ring-[#2563eb]/25'
+                    : 'border-slate-200 bg-slate-50 text-slate-600 hover:border-slate-300 hover:bg-white',
+                  holdPathBusy && 'cursor-wait opacity-60',
+                )}
+              >
+                Signing the lease (normal move-in)
+              </button>
+              <button
+                type="button"
+                disabled={holdPathBusy}
+                onClick={() => saveLeaseHoldPreference('hold')}
+                className={classNames(
+                  'flex-1 rounded-2xl border px-4 py-3 text-sm font-semibold transition',
+                  holdPath === 'hold'
+                    ? 'border-[#2563eb]/40 bg-white text-slate-900 shadow-sm ring-2 ring-[#2563eb]/25'
+                    : 'border-slate-200 bg-slate-50 text-slate-600 hover:border-slate-300 hover:bg-white',
+                  holdPathBusy && 'cursor-wait opacity-60',
+                )}
+              >
+                Hold room only (not signing yet)
+              </button>
+            </div>
+            {holdPathBusy ? <p className="mt-2 text-xs text-slate-500">Saving…</p> : null}
+            {holdPathError ? <p className="mt-2 text-xs font-medium text-red-600">{holdPathError}</p> : null}
+          </>
+        )}
+        {residentOptedRoomHoldWithoutSigningLease(resident) ? (
+          <div className="mt-4 rounded-xl border border-sky-200 bg-sky-50/90 px-3 py-3 text-slate-800">
+            <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-sky-900">Room hold fee</p>
+            <p className="mt-2 leading-relaxed">
+              Your hold fee is <span className="font-semibold">{formatMoney(residentRoomHoldFeeUsd(resident))}</span>. It
+              credits toward your security deposit — the deposit line in Payments already reflects this credit. This fee may
+              be <span className="font-semibold">non-refundable</span> if the lease and deposit are not completed on time
+              — see your housing notice.
+            </p>
+            <button
+              type="button"
+              onClick={() => onOpenPayments('hold')}
+              className="mt-3 text-sm font-semibold text-[#2563eb] underline decoration-sky-400 underline-offset-2 hover:decoration-[#2563eb]"
+            >
+              Open Payments to pay the hold fee
+            </button>
+          </div>
+        ) : null}
       </div>
 
       <div className="space-y-5 rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
@@ -3308,6 +3457,21 @@ function Dashboard({ resident, onResidentUpdated, onSignOut }) {
   )
   const homeLabel = [resident.House, normalizeUnitLabel(resident['Unit Number'] || '')].filter(Boolean).join(' · ') || 'Not assigned'
 
+  const refreshResidentAndPayments = useCallback(async () => {
+    const id = String(resident?.id || '').trim()
+    if (!id) return
+    try {
+      const [nextResident, pays] = await Promise.all([
+        getResidentById(id),
+        getPaymentsForResident({ id }).catch(() => []),
+      ])
+      if (nextResident) onResidentUpdated(nextResident)
+      setPayments(Array.isArray(pays) ? pays : [])
+    } catch {
+      /* non-fatal */
+    }
+  }, [resident, onResidentUpdated])
+
   const loadData = useCallback(async () => {
     setLoading(true)
     try {
@@ -3477,6 +3641,7 @@ function Dashboard({ resident, onResidentUpdated, onSignOut }) {
                 handleNavigate('payments')
               }}
               onNavigateTab={handleNavigate}
+              onLeaseDataRefresh={refreshResidentAndPayments}
             />
           ) : (
             isRejected ? <ResidentRejectedGate /> : <ResidentPendingApprovalGate />

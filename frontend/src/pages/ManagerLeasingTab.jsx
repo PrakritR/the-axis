@@ -205,8 +205,7 @@ export default function ManagerLeasingTab({ manager, allowedPropertyNames }) {
   const [showChangeBox, setShowChangeBox] = useState(false)
   const [changeRequestText, setChangeRequestText] = useState('')
   const [statusFilter, setStatusFilter] = useState('draft_ready')
-  const [propertyFilter, setPropertyFilter] = useState('')
-  /** @type {'updated_desc'|'updated_asc'|'property_asc'|'property_desc'|'resident_asc'|'resident_desc'} */
+  /** @type {'updated_desc'|'updated_asc'|'property_asc'|'property_desc'|'resident_asc'} */
   const [leaseSort, setLeaseSort] = useState('updated_desc')
   const [unreadCount, setUnreadCount] = useState(0)
   const leaseDraftDetailRef = useRef(null)
@@ -338,43 +337,9 @@ export default function ManagerLeasingTab({ manager, allowedPropertyNames }) {
     return () => window.removeEventListener('axis:lease-drafts-changed', onDraftsChanged)
   }, [loadDrafts])
 
-  const propertyChoices = useMemo(() => {
-    const map = new Map()
-    const allowed = Array.isArray(allowedPropertyNames)
-      ? allowedPropertyNames
-      : allowedPropertyNames instanceof Set
-        ? [...allowedPropertyNames]
-        : []
-    for (const name of allowed || []) {
-      const display = String(name || '').trim()
-      if (!display) continue
-      const value = display.toLowerCase()
-      if (!map.has(value)) map.set(value, display)
-    }
-    for (const d of drafts) {
-      const display = String(d['Property'] || '').trim()
-      if (!display) continue
-      const value = display.toLowerCase()
-      if (!map.has(value)) map.set(value, display)
-    }
-    return [...map.entries()]
-      .sort((a, b) => a[1].localeCompare(b[1], undefined, { sensitivity: 'base' }))
-      .map(([value, display]) => ({ value, display }))
-  }, [drafts, allowedPropertyNames])
-
-  useEffect(() => {
-    if (!propertyFilter) return
-    if (!propertyChoices.some((c) => c.value === propertyFilter)) setPropertyFilter('')
-  }, [propertyFilter, propertyChoices])
-
   const visibleDrafts = useMemo(() => {
     const filterFn = STATUS_FILTER_ITEMS.find(f => f.id === statusFilter)?.match ?? (() => true)
     let rows = drafts.filter((d) => filterFn(d['Status'] || ''))
-    if (propertyFilter) {
-      rows = rows.filter(
-        (d) => String(d['Property'] || '').trim().toLowerCase() === propertyFilter,
-      )
-    }
     const propKey = (d) => String(d['Property'] || '').trim().toLowerCase()
     const residentKey = (d) => String(d['Resident Name'] || '').trim().toLowerCase()
     const updatedMs = (d) => new Date(d['Updated At'] || d.created_at || 0).getTime()
@@ -390,9 +355,6 @@ export default function ManagerLeasingTab({ manager, allowedPropertyNames }) {
       case 'resident_asc':
         sorted.sort((a, b) => cmp(residentKey(a), residentKey(b)) || updatedMs(b) - updatedMs(a))
         break
-      case 'resident_desc':
-        sorted.sort((a, b) => cmp(residentKey(b), residentKey(a)) || updatedMs(b) - updatedMs(a))
-        break
       case 'updated_asc':
         sorted.sort((a, b) => updatedMs(a) - updatedMs(b) || cmp(propKey(a), propKey(b)))
         break
@@ -402,7 +364,7 @@ export default function ManagerLeasingTab({ manager, allowedPropertyNames }) {
         break
     }
     return sorted
-  }, [drafts, statusFilter, propertyFilter, leaseSort])
+  }, [drafts, statusFilter, leaseSort])
 
   const statusCounts = useMemo(() => {
     return STATUS_FILTER_ITEMS.reduce((acc, f) => {
@@ -597,23 +559,6 @@ export default function ManagerLeasingTab({ manager, allowedPropertyNames }) {
               <option value="property_asc">Sort: Property (A–Z)</option>
               <option value="property_desc">Sort: Property (Z–A)</option>
               <option value="resident_asc">Sort: Resident (A–Z)</option>
-              <option value="resident_desc">Sort: Resident (Z–A)</option>
-            </select>
-            {LEASE_PILL_SELECT_CHEVRON}
-          </div>
-          <div className={LEASE_PILL_SELECT_WRAP_CLS}>
-            <select
-              value={propertyFilter}
-              onChange={(e) => setPropertyFilter(e.target.value)}
-              className={LEASE_PILL_SELECT_CLS}
-              aria-label="Filter leases by property"
-            >
-              <option value="">All properties</option>
-              {propertyChoices.map(({ value, display }) => (
-                <option key={value} value={value}>
-                  {display}
-                </option>
-              ))}
             </select>
             {LEASE_PILL_SELECT_CHEVRON}
           </div>

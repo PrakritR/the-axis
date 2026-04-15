@@ -1,9 +1,11 @@
 /**
  * GET  /api/tour  → returns Properties rows that are approved/live (same rules as manager portal scope)
- * POST /api/tour  → saves a tour or meeting booking to Scheduling table
+ * POST /api/tour  → saves a tour or meeting booking to the Scheduling Airtable table
+ * Same handler is used by POST /api/forms?action=tour (public Contact / property / tour popup).
  */
 
 import { airtableCreateWithUnknownFieldRetry } from '../lib/airtable-write-retry.js'
+import { schedulingAirtableTableName } from '../lib/airtable-scheduling-table.js'
 import {
   availabilityAirtableBaseId,
   buildManagerAvailabilityConfig,
@@ -15,7 +17,7 @@ import {
 const AIRTABLE_BASE_ID =
   process.env.VITE_AIRTABLE_BASE_ID || process.env.AIRTABLE_BASE_ID || 'appol57LKtMKaQ75T'
 const AIRTABLE_TOKEN = process.env.AIRTABLE_TOKEN || process.env.VITE_AIRTABLE_TOKEN
-const SCHEDULING_TABLE = 'Scheduling'
+const SCHEDULING_TABLE = schedulingAirtableTableName()
 const STATUS_BLOCKED_VALUES = new Set(['declined', 'rejected', 'cancelled', 'canceled'])
 
 const FALLBACK_PROPERTIES = [

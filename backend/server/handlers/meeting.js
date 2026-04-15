@@ -1,9 +1,11 @@
 /**
  * GET  /api/meeting  → admin directory + meeting availability + booked slots
- * POST /api/meeting  → books a meeting against admin availability
+ * POST /api/meeting  → books a meeting against admin availability (writes Scheduling row, Type Meeting)
+ * Same handler is used by POST /api/forms?action=meeting (public Contact Axis flow).
  */
 
 import { airtableCreateWithUnknownFieldRetry } from '../lib/airtable-write-retry.js'
+import { schedulingAirtableTableName } from '../lib/airtable-scheduling-table.js'
 import {
   availabilityAirtableBaseId,
   buildAdminMeetingAvailabilityConfig,
@@ -16,7 +18,7 @@ const AIRTABLE_BASE_ID =
   process.env.VITE_AIRTABLE_BASE_ID || process.env.AIRTABLE_BASE_ID || 'appol57LKtMKaQ75T'
 const AIRTABLE_TOKEN = process.env.AIRTABLE_TOKEN || process.env.VITE_AIRTABLE_TOKEN
 const ADMIN_PROFILE_TABLE = process.env.AIRTABLE_ADMIN_PROFILE_TABLE || 'Admin Profile'
-const SCHEDULING_TABLE = 'Scheduling'
+const SCHEDULING_TABLE = schedulingAirtableTableName()
 const STATUS_BLOCKED_VALUES = new Set(['declined', 'rejected', 'cancelled', 'canceled'])
 const AVAILABILITY_TYPE_VALUES = new Set(['availability', 'meeting availability'])
 

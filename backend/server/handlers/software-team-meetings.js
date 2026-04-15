@@ -1,13 +1,15 @@
 /**
  * POST /api/software-team-meetings
  * body: { password } — must match process.env.AXIS_SOFTWARE_TEAM_SECRET
- * Returns { meetings } from Scheduling (Demo + Software Meeting).
+ * Returns { meetings } from the Scheduling Airtable table (Demo + Software Meeting).
  */
+
+import { schedulingAirtableTableName } from '../lib/airtable-scheduling-table.js'
 
 const AIRTABLE_BASE_ID =
   process.env.VITE_AIRTABLE_BASE_ID || process.env.AIRTABLE_BASE_ID || 'appol57LKtMKaQ75T'
 const AIRTABLE_TOKEN = process.env.AIRTABLE_TOKEN || process.env.VITE_AIRTABLE_TOKEN
-const SCHEDULING_TABLE = 'Scheduling'
+const SCHEDULING_TABLE = schedulingAirtableTableName()
 
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*')

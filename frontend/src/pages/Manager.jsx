@@ -27,7 +27,11 @@ import {
 } from '../lib/workOrderShared.js'
 import { readJsonResponse } from '../lib/readJsonResponse'
 import { PORTAL_TAB_H2_CLS, PORTAL_SECTION_TITLE_CLS } from '../lib/portalTabHeader'
-import { CALENDAR_EVENT_TYPES, eventFromSchedulingRow, normalizeEventType } from '../lib/calendarEventModel'
+import {
+  CALENDAR_EVENT_TYPES,
+  eventFromSchedulingRow,
+  normalizeEventType,
+} from '../lib/calendarEventModel'
 import {
   AXIS_SCHEDULING_CHANGED_EVENT,
   dispatchAxisSchedulingChanged,
@@ -47,6 +51,7 @@ import {
 } from '../../../shared/manager-availability-merge.js'
 import {
   listManagerAvailabilityForProperty,
+  listManagerAvailabilityForManagerEmail,
   createManagerAvailabilityRecord,
   createAdminMeetingAvailabilityRecord,
   deleteManagerAvailabilityRecord,
@@ -946,6 +951,58 @@ function propertyTourAvailabilityText(property) {
   return explicit || fromNotes
 }
 
+function managerAvailabilityRowIsActive(row, activeField) {
+  const v = row?.[activeField]
+  if (v === false || v === 0 || String(v || '').toLowerCase() === 'false') return false
+  return true
+}
+
+/**
+ * Sort key for manager calendar property dropdown: prefer properties with Manager Availability rows,
+ * then Properties-section tour text (`Tour Availability` / Notes), then name.
+ */
+function propertyManagerCalendarPriorityScore(property, managerAvailRows, fieldsConfig) {
+  if (!property || !fieldsConfig) return 0
+  const pid = String(property.id || '').trim()
+  const pname = propertyRecordName(property).trim().toLowerCase()
+  let score = 0
+  for (const row of managerAvailRows || []) {
+    if (!managerAvailabilityRowIsActive(row, fieldsConfig.active)) continue
+    const rid = airtableFieldScalar(row[fieldsConfig.propertyRecordId])
+    const rpn = String(row[fieldsConfig.propertyName] || '').trim().toLowerCase()
+    const matches =
+      (pid && rid === pid) ||
+      (pname && rpn && (pname === rpn || pname.includes(rpn) || rpn.includes(pname)))
+    if (matches) score += 4
+  }
+  if (String(propertyTourAvailabilityText(property) || '').trim()) score += 1
+  return score
+}
+
+function sortPropertiesByManagerCalendarPriority(list, managerAvailRows, env) {
+  const cfg = buildManagerAvailabilityConfig(env).fields
+  return [...(list || [])].sort((a, b) => {
+    const sa = propertyManagerCalendarPriorityScore(a, managerAvailRows, cfg)
+    const sb = propertyManagerCalendarPriorityScore(b, managerAvailRows, cfg)
+    if (sb !== sa) return sb - sa
+    return propertyRecordName(a).localeCompare(propertyRecordName(b), undefined, { sensitivity: 'base' })
+  })
+}
+
+/** Split Scheduling-derived rows for month mini-strip / day timeline (tours vs work orders). */
+function splitCalendarStripBookings(dayBookings) {
+  const tours = []
+  const workOrders = []
+  for (const row of dayBookings || []) {
+    if (row?._workOrder || normalizeEventType(row?.Type) === CALENDAR_EVENT_TYPES.WORK_ORDER) {
+      workOrders.push(row)
+    } else if (normalizeEventType(row?.Type) === CALENDAR_EVENT_TYPES.TOUR) {
+      tours.push(row)
+    }
+  }
+  return { tours, workOrders }
+}
+
 function buildTourNotesText(existingNotes, metadata) {
   const labels = ['Tour Manager', 'Tour Availability', 'Tour Notes']
   let stripped = String(existingNotes || '').trim()
@@ -1445,37 +1502,54 @@ function timelineBlockStyle(start, end) {
   }
 }
 
-/** Mini day column: left = weekly free slots (emerald), right = bookings (tour vs work order colors). */
+/** Mini day column: free (emerald) | tours (violet) | work orders (amber). */
 function MonthDayMiniStrip({ ranges, dayBookings, blocked }) {
+  const { tours, workOrders } = splitCalendarStripBookings(dayBookings)
   return (
     <div
       className="relative mt-1 h-[72px] w-full overflow-hidden rounded-xl border border-slate-200/80 bg-slate-100/80"
       aria-hidden
     >
       {blocked ? <div className="absolute inset-0 z-20 rounded-xl bg-red-200/50" /> : null}
-      {!blocked &&
-        (ranges || []).map((range) => (
-          <div
-            key={`a-${range.start}-${range.end}`}
-            className="absolute left-0.5 z-[1] w-[42%] rounded-sm bg-emerald-400/90 shadow-sm ring-1 ring-emerald-600/25"
-            style={timelineBlockStyle(range.start, range.end)}
-          />
-        ))}
-      {!blocked &&
-        (dayBookings || []).map((row) => {
-          const parsed = parsePreferredTimeRange(row['Preferred Time'])
-          if (!parsed) return null
-          return (
-            <div
-              key={row.id}
-              className={classNames(
-                'absolute right-0.5 z-[2] w-[48%] rounded-sm border shadow-sm',
-                bookingEventStripClass(row),
-              )}
-              style={timelineBlockStyle(parsed.start, parsed.end)}
-            />
-          )
-        })}
+      {!blocked ? (
+        <>
+          <div className="absolute inset-y-0 left-0 z-[1] w-[32%]">
+            {(ranges || []).map((range) => (
+              <div
+                key={`a-${range.start}-${range.end}`}
+                className="absolute left-0 right-0 rounded-sm bg-emerald-400/90 shadow-sm ring-1 ring-emerald-600/25"
+                style={timelineBlockStyle(range.start, range.end)}
+              />
+            ))}
+          </div>
+          <div className="absolute inset-y-0 left-[33%] z-[2] w-[33%]">
+            {tours.map((row) => {
+              const parsed = parsePreferredTimeRange(row['Preferred Time'])
+              if (!parsed) return null
+              return (
+                <div
+                  key={row.id}
+                  className="absolute left-0 right-0 rounded-sm border border-violet-600 bg-violet-400/95 shadow-sm"
+                  style={timelineBlockStyle(parsed.start, parsed.end)}
+                />
+              )
+            })}
+          </div>
+          <div className="absolute inset-y-0 right-0 z-[2] w-[32%]">
+            {workOrders.map((row) => {
+              const parsed = parsePreferredTimeRange(row['Preferred Time'])
+              if (!parsed) return null
+              return (
+                <div
+                  key={row.id}
+                  className="absolute left-0 right-0 rounded-sm border border-amber-600 bg-amber-400/95 shadow-sm"
+                  style={timelineBlockStyle(parsed.start, parsed.end)}
+                />
+              )
+            })}
+          </div>
+        </>
+      ) : null}
     </div>
   )
 }
@@ -1596,6 +1670,7 @@ function AvailabilityCalendar({ view, anchorDate, selectedDateKey, onSelectDate,
     const dateKey = dateKeyFromDate(anchorDate)
     const ranges = dayRanges(dateKey)
     const dayBookings = bookings(dateKey)
+    const { tours: dayTourRows, workOrders: dayWorkOrderRows } = splitCalendarStripBookings(dayBookings)
     const timelineHours = Array.from(
       { length: TOUR_GRID_END_HOUR - TOUR_GRID_START_HOUR + 1 },
       (_, idx) => TOUR_GRID_START_HOUR + idx,
@@ -1623,38 +1698,53 @@ function AvailabilityCalendar({ view, anchorDate, selectedDateKey, onSelectDate,
                   style={{ top: `${(h / totalHours) * 100}%` }}
                 />
               ))}
-              {ranges.map((range) => (
-                <div
-                  key={`avail-${range.start}-${range.end}`}
-                  className="absolute left-3 right-3 rounded-2xl bg-emerald-100/90 px-4 py-3 text-sm font-semibold text-emerald-900 shadow-sm ring-1 ring-emerald-200"
-                  style={timelineBlockStyle(range.start, range.end)}
-                >
-                  {formatTimeRangeLabel(range)}
-                </div>
-              ))}
-              {dayBookings.map((row, idx) => {
-                const parsed = parsePreferredTimeRange(row['Preferred Time'])
-                if (!parsed) return null
-                return (
+              <div className="absolute inset-y-0 left-2 z-[1] w-[28%]">
+                {ranges.map((range) => (
                   <div
-                    key={row.id}
-                    className={classNames(
-                      'absolute rounded-2xl border-2 px-3 py-2 text-sm font-semibold shadow-md',
-                      bookingBadgeTone(row),
-                    )}
-                    style={{
-                      ...timelineBlockStyle(parsed.start, parsed.end),
-                      left: idx % 2 === 0 ? '0.75rem' : '50%',
-                      right: idx % 2 === 0 ? '50%' : '0.75rem',
-                    }}
+                    key={`avail-${range.start}-${range.end}`}
+                    className="absolute left-0 right-0 rounded-xl bg-emerald-100/95 px-2 py-1.5 text-[11px] font-semibold text-emerald-950 shadow-sm ring-1 ring-emerald-300"
+                    style={timelineBlockStyle(range.start, range.end)}
                   >
-                    <div>{bookingLabel(row)}</div>
-                    <div className="mt-0.5 text-[11px] font-medium opacity-90">
-                      {[row.Name || 'Guest', row['Preferred Time'], row.Property].filter(Boolean).join(' · ')}
-                    </div>
+                    <span className="line-clamp-3 leading-tight">{formatTimeRangeLabel(range)}</span>
                   </div>
-                )
-              })}
+                ))}
+              </div>
+              <div className="absolute inset-y-0 left-[30%] z-[2] w-[34%]">
+                {dayTourRows.map((row) => {
+                  const parsed = parsePreferredTimeRange(row['Preferred Time'])
+                  if (!parsed) return null
+                  return (
+                    <div
+                      key={row.id}
+                      className="absolute left-0 right-0 rounded-xl border-2 border-violet-500 bg-violet-50 px-2 py-1.5 text-[11px] font-semibold text-violet-950 shadow-md"
+                      style={timelineBlockStyle(parsed.start, parsed.end)}
+                    >
+                      <div className="font-bold">Tour</div>
+                      <div className="mt-0.5 line-clamp-3 font-medium leading-tight opacity-95">
+                        {[row.Name || 'Guest', row['Preferred Time']].filter(Boolean).join(' · ')}
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+              <div className="absolute inset-y-0 right-2 z-[2] w-[34%]">
+                {dayWorkOrderRows.map((row) => {
+                  const parsed = parsePreferredTimeRange(row['Preferred Time'])
+                  if (!parsed) return null
+                  return (
+                    <div
+                      key={row.id}
+                      className="absolute left-0 right-0 rounded-xl border-2 border-amber-500 bg-amber-50 px-2 py-1.5 text-[11px] font-semibold text-amber-950 shadow-md"
+                      style={timelineBlockStyle(parsed.start, parsed.end)}
+                    >
+                      <div className="font-bold">Work order</div>
+                      <div className="mt-0.5 line-clamp-3 font-medium leading-tight opacity-95">
+                        {[row.Name || 'Visit', row.Property, row['Preferred Time']].filter(Boolean).join(' · ')}
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
             </div>
           </div>
         </div>
@@ -5524,6 +5614,8 @@ export function CalendarTabPanel({ manager, allowedPropertyNames, loadAllSchedul
   /** Structured Manager Availability table (per-date + weekly recurring). Falls back to legacy property text when unset/disabled. */
   const [maTableOk, setMaTableOk] = useState(false)
   const [maRecords, setMaRecords] = useState([])
+  /** All Manager Availability rows for this manager — property dropdown sort (structured table + Properties tour text). */
+  const [managerAvailRowsForSort, setManagerAvailRowsForSort] = useState([])
   const [pendingRanges, setPendingRanges] = useState([])
   const [repeatWeekly, setRepeatWeekly] = useState(false)
   const maDirtyRef = useRef(false)
@@ -5660,13 +5752,18 @@ export function CalendarTabPanel({ manager, allowedPropertyNames, loadAllSchedul
     availabilityDirtyRef.current = false
     tourDirtyPayloadRef.current = null
     try {
-      const [sched, props, workOrders] = await Promise.all([
+      const [sched, props, workOrders, maRowsForSort] = await Promise.all([
         loadAllSchedulingRows
           ? fetchAllSchedulingRows()
           : fetchSchedulingForManagerScope({ managerEmail: manager?.email, propertyNames: allowedPropertyNames || [] }),
         fetchPropertiesAdmin(),
         getAllWorkOrders().catch(() => []),
+        !loadAllSchedulingRows
+          ? listManagerAvailabilityForManagerEmail(manager?.email).catch(() => [])
+          : Promise.resolve([]),
       ])
+      if (!loadAllSchedulingRows) setManagerAvailRowsForSort(Array.isArray(maRowsForSort) ? maRowsForSort : [])
+      else setManagerAvailRowsForSort([])
       const allowedLower = loadAllSchedulingRows
         ? null
         : new Set(
@@ -5675,17 +5772,24 @@ export function CalendarTabPanel({ manager, allowedPropertyNames, loadAllSchedul
       const workOrderRows = workOrdersToCalendarRows(workOrders, allowedLower)
       setSchedulingRows([...sched, ...workOrderRows])
       setProperties(props)
-      let approvedAssigned = props
-        .filter((p) => {
-          if (loadAllSchedulingRows) return isPropertyRecordApproved(p)
-          return (
-            propertyEligibleForManagerCalendarScheduling(p, manager) ||
-            propertyNameInAllowedScope(p, allowedPropertyNames)
-          )
-        })
-        .sort((a, b) =>
+      let approvedAssigned = props.filter((p) => {
+        if (loadAllSchedulingRows) return isPropertyRecordApproved(p)
+        return (
+          propertyEligibleForManagerCalendarScheduling(p, manager) ||
+          propertyNameInAllowedScope(p, allowedPropertyNames)
+        )
+      })
+      if (!loadAllSchedulingRows) {
+        approvedAssigned = sortPropertiesByManagerCalendarPriority(
+          approvedAssigned,
+          Array.isArray(maRowsForSort) ? maRowsForSort : [],
+          import.meta.env,
+        )
+      } else {
+        approvedAssigned = [...approvedAssigned].sort((a, b) =>
           propertyRecordName(a).localeCompare(propertyRecordName(b), undefined, { sensitivity: 'base' }),
         )
+      }
 
       // Email-based fallback: if the normal assignment checks found nothing and we have a
       // manager email, match on the Manager Email / Site Manager Email field directly.
@@ -5693,27 +5797,29 @@ export function CalendarTabPanel({ manager, allowedPropertyNames, loadAllSchedul
       if (approvedAssigned.length === 0 && !loadAllSchedulingRows && manager?.email) {
         const em = String(manager.email || '').trim().toLowerCase()
         if (em) {
-          const emailFallback = props
-            .filter((p) => {
-              const me = String(p['Manager Email'] || '').trim().toLowerCase()
-              const sme = String(p['Site Manager Email'] || '').trim().toLowerCase()
-              return (me && me === em) || (sme && sme === em)
-            })
-            .sort((a, b) =>
-              propertyRecordName(a).localeCompare(propertyRecordName(b), undefined, { sensitivity: 'base' }),
+          const emailFallback = props.filter((p) => {
+            const me = String(p['Manager Email'] || '').trim().toLowerCase()
+            const sme = String(p['Site Manager Email'] || '').trim().toLowerCase()
+            return (me && me === em) || (sme && sme === em)
+          })
+          if (emailFallback.length > 0) {
+            approvedAssigned = sortPropertiesByManagerCalendarPriority(
+              emailFallback,
+              Array.isArray(maRowsForSort) ? maRowsForSort : [],
+              import.meta.env,
             )
-          if (emailFallback.length > 0) approvedAssigned = emailFallback
+          }
         }
       }
 
       // Last-resort fallback: if still empty (data not yet linked), show all named properties
       // so the manager can still set availability.
       if (approvedAssigned.length === 0 && !loadAllSchedulingRows) {
-        approvedAssigned = props
-          .filter((p) => Boolean(propertyRecordName(p)))
-          .sort((a, b) =>
-            propertyRecordName(a).localeCompare(propertyRecordName(b), undefined, { sensitivity: 'base' }),
-          )
+        approvedAssigned = sortPropertiesByManagerCalendarPriority(
+          props.filter((p) => Boolean(propertyRecordName(p))),
+          Array.isArray(maRowsForSort) ? maRowsForSort : [],
+          import.meta.env,
+        )
       }
 
       const byProperty = {}
@@ -5787,6 +5893,7 @@ export function CalendarTabPanel({ manager, allowedPropertyNames, loadAllSchedul
       propertyEligibleForManagerCalendarScheduling(p, manager) ||
       propertyNameInAllowedScope(p, allowedPropertyNames)
     ))
+    const sortMgr = (list) => sortPropertiesByManagerCalendarPriority(list, managerAvailRowsForSort, import.meta.env)
     // Email fallback (same logic as load())
     if (primary.length === 0 && manager?.email) {
       const em = String(manager.email || '').trim().toLowerCase()
@@ -5796,26 +5903,15 @@ export function CalendarTabPanel({ manager, allowedPropertyNames, loadAllSchedul
           const sme = String(p['Site Manager Email'] || '').trim().toLowerCase()
           return (me && me === em) || (sme && sme === em)
         })
-        if (fallback.length > 0) {
-          return fallback.sort((a, b) =>
-            propertyRecordName(a).localeCompare(propertyRecordName(b), undefined, { sensitivity: 'base' }),
-          )
-        }
+        if (fallback.length > 0) return sortMgr(fallback)
       }
     }
-    // Last-resort fallback: show all named properties
-    const results = primary.sort((a, b) =>
-      propertyRecordName(a).localeCompare(propertyRecordName(b), undefined, { sensitivity: 'base' }),
-    )
+    const results = sortMgr(primary)
     if (results.length === 0) {
-      return properties
-        .filter((p) => Boolean(propertyRecordName(p)))
-        .sort((a, b) =>
-          propertyRecordName(a).localeCompare(propertyRecordName(b), undefined, { sensitivity: 'base' }),
-        )
+      return sortMgr(properties.filter((p) => Boolean(propertyRecordName(p))))
     }
     return results
-  }, [properties, manager, loadAllSchedulingRows, allowedPropertyNames])
+  }, [properties, manager, loadAllSchedulingRows, allowedPropertyNames, managerAvailRowsForSort])
 
   const selectedProperty = useMemo(
     () => approvedAssignedProperties.find((p) => p.id === selectedPropertyId) || null,
@@ -6179,6 +6275,12 @@ export function CalendarTabPanel({ manager, allowedPropertyNames, loadAllSchedul
       maDirtyRef.current = false
       setPendingRanges(mergedAfter)
       toast.success(repeatWeekly ? 'Weekly availability saved' : 'Availability saved')
+      try {
+        const maSort = await listManagerAvailabilityForManagerEmail(mgrEmail)
+        setManagerAvailRowsForSort(Array.isArray(maSort) ? maSort : [])
+      } catch {
+        /* non-fatal */
+      }
       await refreshSchedulingRowsOnly()
       dispatchAxisSchedulingChanged({ reason: 'manager-availability' })
       return true
@@ -6610,6 +6712,27 @@ export function CalendarTabPanel({ manager, allowedPropertyNames, loadAllSchedul
         </div>
       </div>
 
+      {!loadAllSchedulingRows ? (
+        <div className="mb-4 flex flex-wrap items-center gap-x-6 gap-y-2 rounded-2xl border border-slate-200 bg-white px-4 py-3 text-xs font-semibold text-slate-700 shadow-sm">
+          <span className="text-[10px] font-bold uppercase tracking-[0.12em] text-slate-500">Legend</span>
+          <span className="inline-flex items-center gap-2">
+            <span className="h-3 w-10 rounded bg-emerald-400 ring-1 ring-emerald-600/30" aria-hidden />
+            Manager free
+          </span>
+          <span className="inline-flex items-center gap-2">
+            <span className="h-3 w-10 rounded bg-violet-400 ring-1 ring-violet-600/30" aria-hidden />
+            Tour (Scheduling)
+          </span>
+          <span className="inline-flex items-center gap-2">
+            <span className="h-3 w-10 rounded bg-amber-400 ring-1 ring-amber-600/30" aria-hidden />
+            Work order
+          </span>
+          <span className="min-w-0 text-[11px] font-normal leading-snug text-slate-500">
+            Open hours use Manager Availability + property tour text; bookings stay in Scheduling.
+          </span>
+        </div>
+      ) : null}
+
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-white px-4 py-3 shadow-sm">
         <div className="text-sm font-semibold text-slate-800">
           {view === 'month'
@@ -6747,8 +6870,8 @@ export function CalendarTabPanel({ manager, allowedPropertyNames, loadAllSchedul
             saveButtonLabel={maTableOk ? 'Save availability to Airtable' : undefined}
             availabilityHint={
               maTableOk
-                ? 'Save updates only the selected date unless “Apply every week” is on. That checkbox resets when you pick another day so you do not accidentally save recurring rules. Week view days outside the month grid are included. If Fridays (etc.) still repeat, delete old recurring rows in Airtable — see scripts/airtable/manager-availability-clear-recurring.js in the repo.'
-                : undefined
+                ? 'Save updates only the selected date unless “Apply every week” is on. That checkbox resets when you pick another day so you do not accidentally save recurring rules. Week view days outside the month grid are included. If Fridays (etc.) still repeat, delete old recurring rows in Airtable — see scripts/airtable/manager-availability-clear-recurring.js in the repo. The property list puts houses with Manager Availability rows (and tour text on the property) first.'
+                : 'Tour hours are saved on the property (Tour Availability / Notes) when the Manager Availability table is off. The property list still prioritizes homes with availability data from the property record.'
             }
             scheduledItems={scheduledItemsForSelectedDay}
             availSaving={availSaving}
