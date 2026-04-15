@@ -1464,8 +1464,6 @@ export default function Apply() {
   const [leaseSignatureInput, setLeaseSignatureInput] = useState('')
   const [leaseSigningLoading, setLeaseSigningLoading] = useState(false)
   const [leaseSigningError, setLeaseSigningError] = useState('')
-  const [moveInPaymentLoading, setMoveInPaymentLoading] = useState(false)
-  const [moveInPaymentError, setMoveInPaymentError] = useState('')
   // Application fee / promo
   const [appFeePaid, setAppFeePaid] = useState(storedSubmission?.appFeePaid || false)
   const [promoInput, setPromoInput] = useState(storedDraft?.promoInput || '')
@@ -2089,78 +2087,6 @@ export default function Apply() {
     }
   }
 
-  /** Re-open Stripe after submit (e.g. user closed the dialog or returns later). */
-  async function openPostSubmitApplicationFeeFromSummary() {
-    const recordId = String(submissionSummary?.submittedRecord?.id || submittedRecord?.id || '').trim()
-    const propertyName = submissionSummary?.propertyName || signer.propertyName
-    const roomNumber = submissionSummary?.roomNumber || signer.roomNumber
-    const applicantEmail = submissionSummary?.email || signer.email
-    const applicantName = String(
-      submissionSummary?.submittedRecord?.fields?.['Signer Full Name'] || signer.fullName || submissionSummary?.firstName || 'Applicant',
-    ).trim()
-    let amt = Number(submissionSummary?.applicationFeeUsd)
-    if (!Number.isFinite(amt) || amt <= 0) {
-      amt = getSignerStripeApplicationFeeUsd(propertyName, applicationFeeOverrides)
-    }
-    if (!recordId.startsWith('rec') || amt <= 0) return
-    setPrePaymentError('')
-    const priorSessionId =
-      typeof window !== 'undefined'
-        ? String(window.sessionStorage.getItem(APPLICATION_FEE_CHECKOUT_SESSION_KEY) || '').trim()
-        : ''
-    if (priorSessionId.startsWith('cs_')) {
-      setPrePaymentLoading(true)
-      try {
-        await syncApplicationStripeSession(recordId, priorSessionId)
-        const ok = await pollApplicationPaid(recordId, {
-          sessionId: priorSessionId,
-          maxAttempts: 24,
-          requirePaidOnly: true,
-        })
-        if (ok) {
-          setAppFeePaid(true)
-          setSubmissionSummary((prev) => {
-            if (!prev) return prev
-            const next = { ...prev, appFeePaid: true }
-            try {
-              window.sessionStorage.setItem(APPLICATION_SUBMISSION_STORAGE_KEY, JSON.stringify(next))
-            } catch {
-              /* ignore */
-            }
-            return next
-          })
-          try {
-            window.sessionStorage.removeItem(APPLICATION_FEE_CHECKOUT_SESSION_KEY)
-          } catch {
-            /* ignore */
-          }
-          setPrePaymentLoading(false)
-          return
-        }
-      } catch {
-        /* fall through to new checkout */
-      }
-      setPrePaymentLoading(false)
-    }
-    setEmbeddedCheckout({
-      flow: 'application_fee',
-      postSubmit: true,
-      title: 'Application Fee',
-      request: {
-        residentName: applicantName,
-        residentEmail: applicantEmail,
-        propertyName,
-        unitNumber: roomNumber,
-        amount: amt,
-        description: `Application fee — ${propertyName || 'Axis housing'}`,
-        category: 'application_fee',
-        applicationRecordId: recordId,
-        successPath: '/apply?payment=fee_success',
-        cancelPath: '/apply?payment=fee_cancelled',
-      },
-    })
-  }
-
   async function handlePromoApplyAndSubmit() {
     const current = steps[step]
     const errs = current.validate(signer)
@@ -2224,57 +2150,9 @@ export default function Apply() {
     }
   }
 
-  async function handleMoveInPaymentCheckout() {
-    const applicantName = submissionSummary?.firstName ? `${submissionSummary.firstName}` : signer.fullName
-    const applicantEmail = submissionSummary?.email || signer.email
-    const propertyName = submissionSummary?.propertyName || signer.propertyName
-    const unitNumber = submissionSummary?.roomNumber || signer.roomNumber
-    const recordId = submissionSummary?.submittedRecord?.id || submittedRecord?.id || ''
-    const monthlyRent = submissionSummary?.roomPrice || getRoomMonthlyRent(propertyName, unitNumber)
-    const deposit = getSecurityDeposit(propertyName, monthlyRent)
-    const utilities = getUtilitiesFee(propertyName)
-    const items = [
-      { name: "First month's rent", amount: monthlyRent },
-      { name: 'Security deposit', amount: deposit },
-      { name: 'Utilities', amount: utilities },
-    ].filter((item) => Number(item.amount) > 0)
-    const total = items.reduce((sum, item) => sum + Number(item.amount || 0), 0)
-
-    if (total <= 0) {
-      setMoveInPaymentError('Could not determine rent amount. Please contact leasing to complete payment.')
-      return
-    }
-
-    setLeaseStep('payment')
-
-    setMoveInPaymentLoading(true)
-    setMoveInPaymentError('')
-    setEmbeddedCheckout({
-      flow: 'move_in_payment',
-      title: 'Move-In Charges',
-      request: {
-        residentId: recordId,
-        residentName: applicantName,
-        residentEmail: applicantEmail,
-        propertyName,
-        unitNumber,
-        items,
-        amount: total,
-        description: `Move-in charges for ${unitNumber} at ${propertyName}`,
-        category: 'move_in_payment',
-        paymentRecordId: recordId,
-        successPath: '/apply?payment=success',
-        cancelPath: '/apply?payment=cancelled',
-      },
-    })
-  }
-
   function handleEmbeddedCheckoutClose() {
     if (embeddedCheckout?.flow === 'application_fee') {
       setPrePaymentLoading(false)
-    }
-    if (embeddedCheckout?.flow === 'move_in_payment') {
-      setMoveInPaymentLoading(false)
     }
     setEmbeddedCheckout(null)
   }
@@ -2302,7 +2180,7 @@ export default function Apply() {
           : ''
       if (!recId.startsWith('rec')) {
         setPrePaymentError(
-          'We could not link this payment to your application. Use “Pay application fee” on this page or contact leasing.',
+          'We could not link this payment to your application. Complete the application fee from the Resident Portal under Payments, or contact leasing.',
         )
         return
       }
@@ -2317,7 +2195,7 @@ export default function Apply() {
         })
         if (!paid) {
           setPrePaymentError(
-            'Stripe is still confirming your payment. Wait a few seconds, then tap “Pay application fee” again — you will not be charged twice.',
+            'Stripe is still confirming your payment. Wait a few seconds, then complete payment from the Resident Portal under Payments if it still shows unpaid — you will not be charged twice.',
           )
           return
         }
@@ -2344,7 +2222,6 @@ export default function Apply() {
     }
 
     if (flow === 'move_in_payment') {
-      setMoveInPaymentLoading(false)
       setMoveInPaid(true)
       setLeaseStep('lease')
     }
@@ -2361,12 +2238,15 @@ export default function Apply() {
       Number.isFinite(submittedFeeUsd) && submittedFeeUsd >= 0
         ? submittedFeeUsd
         : getSignerStripeApplicationFeeUsd(propertyName, applicationFeeOverrides)
-    const showSubmittedFeePay = isSigner && !appFeePaid && inferredSubmittedApplicationFee > 0
+    const feeWaivedByPromo = Boolean(submissionSummary?.promoApplied)
+    const needsAppFeeReminder =
+      isSigner && !feeWaivedByPromo && inferredSubmittedApplicationFee > 0 && !appFeePaid
     const monthlyRent = submissionSummary?.roomPrice || getRoomMonthlyRent(propertyName, roomNumber)
     const deposit = getSecurityDeposit(propertyName, monthlyRent)
     const utilities = getUtilitiesFee(propertyName)
-    const moveInTotal = (monthlyRent || 0) + deposit + utilities
-    const moveInDone = moveInPaid
+    const moveInStripeDone = moveInPaid
+    const pastMoveInStep = leaseStep === 'lease' || leaseStep === 'complete' || leaseSigned
+    const step2Done = moveInStripeDone || pastMoveInStep
 
     function clearStoredSubmission() {
       if (typeof window !== 'undefined') {
@@ -2378,9 +2258,9 @@ export default function Apply() {
       setSubmittedRecord(null)
     }
 
-    // Step index: 0=account 1=payment 2=lease/complete
+    // Step index: 0=account 1=move-in info (portal) 2=lease/complete
     const stepIndex = leaseStep === 'account' ? 0 : leaseStep === 'payment' ? 1 : 2
-    const allDone = moveInDone && leaseSigned
+    const allDone = leaseSigned
 
     function StepDot({ n, done, active }) {
       return (
@@ -2407,7 +2287,7 @@ export default function Apply() {
           <h1 className="text-center text-3xl font-black tracking-tight text-slate-900 sm:text-4xl">Application received</h1>
           <p className="mt-3 text-center text-base leading-7 text-slate-500">
             {isSigner
-              ? 'Thanks for applying! A manager will review your application and approve it — usually within 1–2 business days. You\'ll only be able to create your resident portal account and access your lease after your application is approved.'
+              ? 'Thanks for applying! A manager will review your application — usually within 1–2 business days. You can create your resident portal account right away with your Application ID; some features stay limited until you are approved.'
               : "Thanks! Your co-signer form has been linked to the signer's application."}
           </p>
 
@@ -2458,8 +2338,8 @@ export default function Apply() {
               <div className="mb-6 flex items-center gap-0">
                 <StepDot n={1} done={stepIndex > 0} active={stepIndex === 0} />
                 <div className={`h-0.5 flex-1 transition-all ${stepIndex > 0 ? 'bg-axis' : 'bg-slate-200'}`} />
-                <StepDot n={2} done={moveInDone} active={stepIndex === 1} />
-                <div className={`h-0.5 flex-1 transition-all ${moveInDone ? 'bg-axis' : 'bg-slate-200'}`} />
+                <StepDot n={2} done={step2Done} active={stepIndex === 1 && !pastMoveInStep} />
+                <div className={`h-0.5 flex-1 transition-all ${pastMoveInStep || leaseSigned ? 'bg-axis' : 'bg-slate-200'}`} />
                 <StepDot n={3} done={leaseSigned} active={stepIndex === 2 && !leaseSigned} />
               </div>
 
@@ -2474,41 +2354,20 @@ export default function Apply() {
                 </div>
                 {stepIndex === 0 && (
                   <div className="border-t border-slate-100 px-5 pb-5 pt-4">
-                    {showSubmittedFeePay ? (
-                      <div className="mb-4 space-y-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
-                        <p className="font-semibold">Application fee due</p>
-                        <p className="leading-6">
-                          Pay your non-refundable application fee to finish setup. After Stripe confirms payment, you can create your resident portal account below (same email as on this application).
-                        </p>
-                        {prePaymentError ? <p className="text-xs text-red-700">{prePaymentError}</p> : null}
-                        <button
-                          type="button"
-                          onClick={() => void openPostSubmitApplicationFeeFromSummary()}
-                          disabled={prePaymentLoading || feeConfirmBusy}
-                          className="rounded-full bg-axis px-5 py-2.5 text-sm font-semibold text-white transition hover:opacity-90 disabled:opacity-50"
-                        >
-                          {prePaymentLoading || feeConfirmBusy ? 'Please wait…' : `Pay $${inferredSubmittedApplicationFee.toLocaleString()} application fee`}
-                        </button>
-                      </div>
-                    ) : null}
+                    {prePaymentError ? <p className="mb-3 text-xs text-red-700">{prePaymentError}</p> : null}
                     <p className="mb-4 text-sm leading-6 text-slate-600">
-                      {appFeePaid || !isSigner
-                        ? 'Once a manager approves your application, use your Application ID to create your resident portal account. Your name, email, and room details will be pre-loaded automatically.'
-                        : 'After your application fee shows as paid, use your Application ID below to create your resident portal account.'}
+                      Use your Application ID and the same email you applied with. Your name, email, and room details load automatically when you create your account.
+                      {needsAppFeeReminder
+                        ? ' If an application fee applies, complete it from the secure payment window that opened after you submitted, or anytime under Payments in the Resident Portal after your account exists.'
+                        : ''}
                     </p>
                     <div className="flex flex-col gap-3 sm:flex-row">
-                      {showSubmittedFeePay ? (
-                        <span className="inline-block rounded-full bg-slate-400 px-6 py-3 text-center text-sm font-semibold text-white cursor-not-allowed">
-                          Create Resident Account (pay fee first)
-                        </span>
-                      ) : (
                       <a
                         href={`/portal?appId=${encodeURIComponent(fullAppId)}`}
                         className="inline-block rounded-full bg-axis px-6 py-3 text-center text-sm font-semibold text-white transition hover:opacity-90"
                       >
-                        Create Resident Account
+                        {needsAppFeeReminder ? 'Create Resident Account (pay fee first)' : 'Create Resident Account'}
                       </a>
-                      )}
                       <button type="button" onClick={() => setLeaseStep('payment')}
                         className="rounded-full border border-slate-200 bg-white px-6 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-50">
                         I already have an account →
@@ -2518,54 +2377,46 @@ export default function Apply() {
                 )}
               </div>
 
-              {/* Step 2: Pay Move-In Costs */}
-              <div className={`mt-3 overflow-hidden rounded-2xl border transition-all ${stepIndex === 1 && !allDone ? 'border-axis/40 bg-white shadow-md' : moveInDone ? 'border-axis/20 bg-axis/5' : 'border-slate-100 bg-slate-50 opacity-60'}`}>
+              {/* Step 2: Move-in charges (complete in portal) */}
+              <div className={`mt-3 overflow-hidden rounded-2xl border transition-all ${stepIndex === 1 && !pastMoveInStep ? 'border-axis/40 bg-white shadow-md' : moveInStripeDone ? 'border-axis/20 bg-axis/5' : pastMoveInStep ? 'border-slate-100 bg-slate-50' : 'border-slate-100 bg-slate-50 opacity-60'}`}>
                 <div className="flex items-center gap-3 px-5 py-4">
-                  <StepDot n={2} done={moveInDone} active={stepIndex === 1 && !moveInDone} />
+                  <StepDot n={2} done={step2Done} active={stepIndex === 1 && !pastMoveInStep} />
                   <div>
-                    <div className="font-semibold text-slate-900">Pay Move-In Fee & Security Deposit</div>
-                    <div className="text-xs text-slate-500">Complete your required move-in charges through Stripe</div>
+                    <div className="font-semibold text-slate-900">Move-In Fee &amp; Security Deposit</div>
+                    <div className="text-xs text-slate-500">Pay from the Resident Portal after your account is set up</div>
                   </div>
                 </div>
-                {moveInDone ? (
+                {moveInStripeDone ? (
                   <div className="border-t border-axis/10 px-5 py-4">
-                    <p className="text-sm font-semibold text-axis">Move-in payment complete — lease signing is unlocked.</p>
+                    <p className="text-sm font-semibold text-axis">Move-in payment recorded — you can continue to lease signing.</p>
                   </div>
                 ) : stepIndex === 1 && (
                   <div className="border-t border-slate-100 px-5 pb-5 pt-4">
-                    {paymentStatus === 'cancelled' && (
-                      <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-700">
-                        Payment was cancelled. You can retry below.
-                      </div>
-                    )}
+                    <p className="mb-4 text-sm leading-6 text-slate-600">
+                      First month&apos;s rent, security deposit, and utilities are paid in the{' '}
+                      <strong>Resident Portal</strong> under <strong>Payments</strong> (not on this page). Your manager can adjust amounts if needed.
+                    </p>
                     <div className="mb-4 space-y-2 rounded-xl border border-slate-200 bg-slate-50 p-4">
                       <div className="flex justify-between text-sm">
-                        <span className="text-slate-600">First month's rent</span>
+                        <span className="text-slate-600">First month&apos;s rent (estimate)</span>
                         <span className="font-semibold text-slate-900">{monthlyRent ? `$${monthlyRent.toLocaleString()}` : '—'}</span>
                       </div>
                       <div className="flex justify-between text-sm">
-                        <span className="text-slate-600">Security deposit</span>
+                        <span className="text-slate-600">Security deposit (estimate)</span>
                         <span className="font-semibold text-slate-900">{deposit ? `$${deposit.toLocaleString()}` : '—'}</span>
                       </div>
                       <div className="flex justify-between text-sm">
-                        <span className="text-slate-600">Utilities</span>
+                        <span className="text-slate-600">Utilities (estimate)</span>
                         <span className="font-semibold text-slate-900">{utilities ? `$${utilities.toLocaleString()}` : '—'}</span>
                       </div>
-                      <div className="flex justify-between border-t border-slate-200 pt-2 text-sm">
-                        <span className="font-bold text-slate-900">Total due today</span>
-                        <span className="font-black text-slate-900">{moveInTotal ? `$${moveInTotal.toLocaleString()}` : '—'}</span>
-                      </div>
                     </div>
-                    {moveInPaymentError && (
-                      <p className="mb-3 rounded-xl bg-red-50 px-4 py-2.5 text-sm text-red-700">{moveInPaymentError}</p>
-                    )}
-                    <button type="button" onClick={handleMoveInPaymentCheckout} disabled={moveInPaymentLoading}
-                      className="rounded-full bg-axis px-6 py-3 text-sm font-semibold text-white transition hover:opacity-90 disabled:opacity-50">
-                      {moveInPaymentLoading ? 'Opening checkout…' : `Pay $${moveInTotal ? moveInTotal.toLocaleString() : '…'}`}
+                    <button
+                      type="button"
+                      onClick={() => setLeaseStep('lease')}
+                      className="rounded-full bg-axis px-6 py-3 text-sm font-semibold text-white transition hover:opacity-90"
+                    >
+                      Continue to lease signing →
                     </button>
-                    {!moveInTotal && (
-                      <p className="mt-3 text-xs text-slate-400">Contact leasing to complete payment if amounts are not shown.</p>
-                    )}
                   </div>
                 )}
               </div>
@@ -2576,12 +2427,12 @@ export default function Apply() {
                   <StepDot n={3} done={leaseSigned} active={stepIndex === 2 && !leaseSigned} />
                   <div>
                     <div className="font-semibold text-slate-900">Sign Your Lease</div>
-                    <div className="text-xs text-slate-500">This unlocks right after your move-in charges are paid</div>
+                    <div className="text-xs text-slate-500">Continue from step 2 when you are ready — pay move-in charges in the portal</div>
                   </div>
                 </div>
-                {!moveInDone ? (
+                {stepIndex < 2 && !leaseSigned ? (
                   <div className="border-t border-slate-100 px-5 py-4">
-                    <p className="text-sm text-slate-500">Pay your move-in fee and security deposit first, then you can sign your lease.</p>
+                    <p className="text-sm text-slate-500">Use the steps above first, then sign your lease here.</p>
                   </div>
                 ) : leaseSigned ? (
                   <div className="border-t border-axis/10 px-5 py-4">

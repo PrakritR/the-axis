@@ -98,8 +98,6 @@ import {
   deleteBlockedTourDate,
 } from '../lib/airtable'
 import {
-  ROOM_CLEANING_FEE_USD,
-  dueDateIsoForRoomCleaningPayment,
   ensurePostpayRoomCleaningFeePayment,
   workOrderShouldCreatePaymentWhenScheduled,
 } from '../lib/roomCleaningWorkOrder.js'
@@ -154,6 +152,7 @@ import {
   DEFAULT_AXIS_APPLICATION_ROOM_CHOICE_3,
   applicationApprovedUnitNumber,
   applicationLeaseRoomNumber,
+  normalizeApplicationOccupancyKey,
 } from '../../../shared/application-airtable-fields.js'
 import {
   PortalOpsCard,
@@ -4480,9 +4479,7 @@ function WorkOrdersTabPanel({ manager, allowedPropertyNames, allowedPropertyIds 
         })
         cleaningPaymentRepairAttemptedRef.current.add(record.id)
         if (result.created) {
-          toast.success(
-            `Added $${ROOM_CLEANING_FEE_USD} room cleaning fee to resident Payments (due ${scheduledKeyForCleaningRepair}).`,
-          )
+          window.dispatchEvent(new CustomEvent('axis:payments-changed'))
         }
       } catch (e) {
         console.warn('[WorkOrdersTabPanel] cleaning fee repair', e)
@@ -4637,7 +4634,6 @@ function WorkOrdersTabPanel({ manager, allowedPropertyNames, allowedPropertyIds 
 
       const mergedWorkOrder = { ...record, ...nextRecord }
       const chargeAmount = parseWorkOrderCostInputString(workOrderCost)
-      let woChargeCreated = false
       if (chargeAmount > 0) {
         const billingRid = resolveResidentRecordIdForWorkOrderBilling(mergedWorkOrder, residentsById)
         if (billingRid) {
@@ -4653,7 +4649,6 @@ function WorkOrdersTabPanel({ manager, allowedPropertyNames, allowedPropertyIds 
             })
             if (chargeRes.created) {
               window.dispatchEvent(new CustomEvent('axis:payments-changed'))
-              woChargeCreated = true
             }
           } catch (chargeErr) {
             console.error('[WorkOrdersTabPanel] work order charge payment', chargeErr)
@@ -4684,8 +4679,7 @@ function WorkOrdersTabPanel({ manager, allowedPropertyNames, allowedPropertyIds 
               scheduledDateIso: dateStr,
             })
             if (result.created) {
-              const payBy = dueDateIsoForRoomCleaningPayment(dateStr)
-              successMsg = `Work order scheduled — added $${ROOM_CLEANING_FEE_USD} room cleaning fee to Payments (pay by ${payBy}).`
+              window.dispatchEvent(new CustomEvent('axis:payments-changed'))
             }
           } catch (payErr) {
             console.error('[WorkOrdersTabPanel] cleaning payment on schedule', payErr)
@@ -4701,10 +4695,6 @@ function WorkOrdersTabPanel({ manager, allowedPropertyNames, allowedPropertyIds 
             'Could not link this cleaning request to a resident profile for billing. Add a Resident Profile link on the work order or ensure portal submitter email is present.',
           )
         }
-      }
-
-      if (woChargeCreated) {
-        successMsg = `${successMsg} Work order charge added to resident Payments.`
       }
 
       toast.success(successMsg)
@@ -4746,7 +4736,6 @@ function WorkOrdersTabPanel({ manager, allowedPropertyNames, allowedPropertyIds 
             })
             if (chargeRes.created) {
               window.dispatchEvent(new CustomEvent('axis:payments-changed'))
-              completionMsg = 'Work order completed — charge added to resident Payments.'
             }
           } catch (chargeErr) {
             console.error('[WorkOrdersTabPanel] work order charge on complete', chargeErr)
@@ -5056,6 +5045,7 @@ function ManagerPaymentsPanel({ allowedPropertyNames, allowedPropertyIds }) {
     return d.toISOString().slice(0, 10)
   })
   const [manualSubmitting, setManualSubmitting] = useState(false)
+  const [addPaymentModalOpen, setAddPaymentModalOpen] = useState(false)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -5305,6 +5295,7 @@ function ManagerPaymentsPanel({ allowedPropertyNames, allowedPropertyIds }) {
       const d = new Date()
       d.setDate(d.getDate() + 14)
       setManualDueDate(d.toISOString().slice(0, 10))
+      setAddPaymentModalOpen(false)
       await load()
       window.dispatchEvent(new CustomEvent('axis:payments-changed'))
     } catch (err) {
@@ -5381,87 +5372,140 @@ function ManagerPaymentsPanel({ allowedPropertyNames, allowedPropertyIds }) {
             </div>
           </div>
         ) : null}
-        <button type="button" onClick={load} className={MANAGER_PILL_REFRESH_CLS}>
-          Refresh
-        </button>
+        <div className="flex w-full shrink-0 flex-wrap items-center justify-end gap-2 sm:ml-auto sm:w-auto">
+          <button
+            type="button"
+            onClick={() => setAddPaymentModalOpen(true)}
+            disabled={Boolean(paymentsLoadError) || loading}
+            className="h-[42px] shrink-0 rounded-full bg-[#2563eb] px-4 text-sm font-semibold text-white transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            Add payment
+          </button>
+          <button type="button" onClick={load} className={MANAGER_PILL_REFRESH_CLS}>
+            Refresh
+          </button>
+        </div>
       </div>
 
-      <div className="mb-6 rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
-        <h3 className="text-sm font-black text-slate-900">Add payment for a resident</h3>
-        <p className="mt-1 text-xs text-slate-500">
-          Creates one unpaid line on the resident’s Payments tab (same as work order billing). Residents pay from their
-          portal when you use Stripe checkout links there, or mark paid manually below.
-        </p>
-        <form onSubmit={submitManualPayment} className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          <div className="sm:col-span-2">
-            <label className="mb-1 block text-[11px] font-bold uppercase tracking-[0.12em] text-slate-400">Resident</label>
-            <select
-              value={manualResidentId}
-              onChange={(e) => setManualResidentId(e.target.value)}
-              className="h-[42px] w-full rounded-xl border border-slate-200 bg-white px-3 text-sm font-medium text-slate-800 outline-none focus:border-[#2563eb] focus:ring-2 focus:ring-[#2563eb]/20"
-            >
-              <option value="">— Select resident —</option>
-              {manualResidents.map((r) => (
-                <option key={r.id} value={r.id}>
-                  {String(r.Name || r['Resident Name'] || r.Email || r.id).trim()}
-                  {residentDisplayPropertyName(r) ? ` · ${residentDisplayPropertyName(r)}` : ''}
-                </option>
-              ))}
-            </select>
+      {addPaymentModalOpen ? (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
+          role="presentation"
+          onClick={() => {
+            if (!manualSubmitting) setAddPaymentModalOpen(false)
+          }}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="add-payment-modal-title"
+            className="max-h-[90vh] w-full max-w-3xl overflow-y-auto rounded-3xl border border-slate-200 bg-white p-5 shadow-2xl sm:p-6"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="mb-4 flex items-start justify-between gap-3">
+              <div className="min-w-0 pr-2">
+                <h3 id="add-payment-modal-title" className="text-sm font-black text-slate-900">
+                  Add payment for a resident
+                </h3>
+                <p className="mt-1 text-xs text-slate-500">
+                  Creates one unpaid line on the resident’s Payments tab (same as work order billing). Residents pay from
+                  their portal when you use Stripe checkout links there, or you mark paid below.
+                </p>
+              </div>
+              <button
+                type="button"
+                disabled={manualSubmitting}
+                onClick={() => setAddPaymentModalOpen(false)}
+                className="mt-0.5 shrink-0 rounded-xl p-2 text-slate-400 transition hover:bg-slate-100 hover:text-slate-700 disabled:opacity-50"
+                aria-label="Close"
+              >
+                <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+            <form onSubmit={submitManualPayment} className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+              <div className="sm:col-span-2">
+                <label className="mb-1 block text-[11px] font-bold uppercase tracking-[0.12em] text-slate-400">
+                  Resident
+                </label>
+                <select
+                  value={manualResidentId}
+                  onChange={(e) => setManualResidentId(e.target.value)}
+                  className="h-[42px] w-full rounded-xl border border-slate-200 bg-white px-3 text-sm font-medium text-slate-800 outline-none focus:border-[#2563eb] focus:ring-2 focus:ring-[#2563eb]/20"
+                >
+                  <option value="">— Select resident —</option>
+                  {manualResidents.map((r) => (
+                    <option key={r.id} value={r.id}>
+                      {String(r.Name || r['Resident Name'] || r.Email || r.id).trim()}
+                      {residentDisplayPropertyName(r) ? ` · ${residentDisplayPropertyName(r)}` : ''}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="mb-1 block text-[11px] font-bold uppercase tracking-[0.12em] text-slate-400">
+                  Amount (USD)
+                </label>
+                <input
+                  type="number"
+                  min={0.01}
+                  step={0.01}
+                  required
+                  value={manualAmount}
+                  onChange={(e) => setManualAmount(e.target.value)}
+                  className="h-[42px] w-full rounded-xl border border-slate-200 bg-white px-3 text-sm outline-none focus:border-[#2563eb] focus:ring-2 focus:ring-[#2563eb]/20"
+                  placeholder="0.00"
+                />
+              </div>
+              <div>
+                <label className="mb-1 block text-[11px] font-bold uppercase tracking-[0.12em] text-slate-400">
+                  Due date
+                </label>
+                <input
+                  type="date"
+                  value={manualDueDate}
+                  onChange={(e) => setManualDueDate(e.target.value)}
+                  className="h-[42px] w-full rounded-xl border border-slate-200 bg-white px-3 text-sm outline-none focus:border-[#2563eb] focus:ring-2 focus:ring-[#2563eb]/20"
+                />
+              </div>
+              <div>
+                <label className="mb-1 block text-[11px] font-bold uppercase tracking-[0.12em] text-slate-400">
+                  Type / label
+                </label>
+                <input
+                  type="text"
+                  value={manualType}
+                  onChange={(e) => setManualType(e.target.value)}
+                  className="h-[42px] w-full rounded-xl border border-slate-200 bg-white px-3 text-sm outline-none focus:border-[#2563eb] focus:ring-2 focus:ring-[#2563eb]/20"
+                  placeholder="e.g. Fee, Repair, Parking"
+                />
+              </div>
+              <div className="sm:col-span-2 lg:col-span-3">
+                <label className="mb-1 block text-[11px] font-bold uppercase tracking-[0.12em] text-slate-400">
+                  Notes (optional)
+                </label>
+                <input
+                  type="text"
+                  value={manualNotes}
+                  onChange={(e) => setManualNotes(e.target.value)}
+                  className="h-[42px] w-full rounded-xl border border-slate-200 bg-white px-3 text-sm outline-none focus:border-[#2563eb] focus:ring-2 focus:ring-[#2563eb]/20"
+                  placeholder="Visible on the payment line"
+                />
+              </div>
+              <div className="flex items-end">
+                <button
+                  type="submit"
+                  disabled={manualSubmitting}
+                  className="h-[42px] w-full rounded-xl bg-[#2563eb] px-4 text-sm font-semibold text-white transition hover:brightness-110 disabled:opacity-50"
+                >
+                  {manualSubmitting ? 'Adding…' : 'Add payment'}
+                </button>
+              </div>
+            </form>
           </div>
-          <div>
-            <label className="mb-1 block text-[11px] font-bold uppercase tracking-[0.12em] text-slate-400">Amount (USD)</label>
-            <input
-              type="number"
-              min={0.01}
-              step={0.01}
-              required
-              value={manualAmount}
-              onChange={(e) => setManualAmount(e.target.value)}
-              className="h-[42px] w-full rounded-xl border border-slate-200 bg-white px-3 text-sm outline-none focus:border-[#2563eb] focus:ring-2 focus:ring-[#2563eb]/20"
-              placeholder="0.00"
-            />
-          </div>
-          <div>
-            <label className="mb-1 block text-[11px] font-bold uppercase tracking-[0.12em] text-slate-400">Due date</label>
-            <input
-              type="date"
-              value={manualDueDate}
-              onChange={(e) => setManualDueDate(e.target.value)}
-              className="h-[42px] w-full rounded-xl border border-slate-200 bg-white px-3 text-sm outline-none focus:border-[#2563eb] focus:ring-2 focus:ring-[#2563eb]/20"
-            />
-          </div>
-          <div>
-            <label className="mb-1 block text-[11px] font-bold uppercase tracking-[0.12em] text-slate-400">Type / label</label>
-            <input
-              type="text"
-              value={manualType}
-              onChange={(e) => setManualType(e.target.value)}
-              className="h-[42px] w-full rounded-xl border border-slate-200 bg-white px-3 text-sm outline-none focus:border-[#2563eb] focus:ring-2 focus:ring-[#2563eb]/20"
-              placeholder="e.g. Fee, Repair, Parking"
-            />
-          </div>
-          <div className="sm:col-span-2 lg:col-span-3">
-            <label className="mb-1 block text-[11px] font-bold uppercase tracking-[0.12em] text-slate-400">Notes (optional)</label>
-            <input
-              type="text"
-              value={manualNotes}
-              onChange={(e) => setManualNotes(e.target.value)}
-              className="h-[42px] w-full rounded-xl border border-slate-200 bg-white px-3 text-sm outline-none focus:border-[#2563eb] focus:ring-2 focus:ring-[#2563eb]/20"
-              placeholder="Visible on the payment line"
-            />
-          </div>
-          <div className="flex items-end">
-            <button
-              type="submit"
-              disabled={manualSubmitting}
-              className="h-[42px] w-full rounded-xl bg-[#2563eb] px-4 text-sm font-semibold text-white transition hover:brightness-110 disabled:opacity-50"
-            >
-              {manualSubmitting ? 'Adding…' : 'Add payment'}
-            </button>
-          </div>
-        </form>
-      </div>
+        </div>
+      ) : null}
 
       {paymentsLoadError ? (
         <div
@@ -5748,6 +5792,28 @@ function ApplicationsPanel({ allowedPropertyNames, manager }) {
     try {
       if (approved) {
         const approvedRoom = String(opts.approvedRoom ?? approveAssignedRoom ?? '').trim()
+        const row = scopedRows.find((a) => a.id === recordId)
+        const firstChoice = String(row?.['Room Number'] ?? '').trim()
+        const roomToApprove = approvedRoom || firstChoice
+        const propKey = String(row?.['Property Name'] ?? '').trim().toLowerCase()
+        const unitKey = normalizeApplicationOccupancyKey(roomToApprove)
+        if (propKey && unitKey) {
+          for (const o of scopedRows) {
+            if (o.id === recordId) continue
+            if (deriveApplicationApprovalState(o) !== 'approved') continue
+            const op = String(o['Property Name'] ?? '').trim().toLowerCase()
+            if (op !== propKey) continue
+            const assigned =
+              String(applicationLeaseRoomNumber(o, approvedRoomKey) || '').trim() ||
+              String(o['Room Number'] ?? '').trim()
+            if (normalizeApplicationOccupancyKey(assigned) === unitKey) {
+              toast.error(
+                'Another application is already approved for this property and unit. Change the approved unit or reject the other application first.',
+              )
+              return
+            }
+          }
+        }
         const res = await fetch('/api/portal?action=manager-approve-application', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },

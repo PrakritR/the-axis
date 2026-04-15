@@ -5,9 +5,14 @@ import { createApprovedApplicationFeePayments } from '../lib/approved-applicatio
 import { createApprovedApplicationMoveInPayments } from '../lib/approved-application-movein-payments.js'
 import {
   applicationStatusLooksPipelinePending,
+  deriveApplicationLeaseGateState,
   isApplicationApprovedForLease,
 } from '../lib/application-approval-lease-guard.js'
-import { DEFAULT_AXIS_APPLICATION_APPROVED_ROOM } from '../../../shared/application-airtable-fields.js'
+import {
+  DEFAULT_AXIS_APPLICATION_APPROVED_ROOM,
+  applicationLeaseRoomNumber,
+  normalizeApplicationOccupancyKey,
+} from '../../../shared/application-airtable-fields.js'
 
 const AIRTABLE_TOKEN = process.env.AIRTABLE_TOKEN || process.env.VITE_AIRTABLE_TOKEN
 /** Prefer explicit apps base; otherwise same base as Lease Drafts / portal (manager list uses CORE base). */
@@ -56,10 +61,70 @@ async function airtablePatch(url, fields) {
   return res.json()
 }
 
+/** Airtable API error body often JSON with error.type UNKNOWN_FIELD_NAME. */
+function unknownFieldNameFromPatchError(message) {
+  const raw = String(message || '')
+  try {
+    const j = JSON.parse(raw)
+    const m = j?.error?.message
+    if (typeof m === 'string') {
+      const match = m.match(/Unknown field name:\s*"([^"]+)"/i)
+      return match ? match[1] : null
+    }
+  } catch {
+    /* not JSON */
+  }
+  const match = raw.match(/Unknown field name:\s*"([^"]+)"/i)
+  return match ? match[1] : null
+}
+
+/**
+ * Column names to try when writing manager-assigned unit (bases differ: Approved Unit Room vs Approved Room).
+ * Env wins; then repo default; then legacy name.
+ */
+function approvedRoomWriteFieldCandidates() {
+  const fromEnv = String(
+    process.env.VITE_AIRTABLE_APPLICATION_APPROVED_ROOM_FIELD ||
+      process.env.AIRTABLE_APPLICATION_APPROVED_ROOM_FIELD ||
+      '',
+  ).trim()
+  const ordered = [fromEnv, DEFAULT_AXIS_APPLICATION_APPROVED_ROOM, 'Approved Room'].filter(Boolean)
+  return [...new Set(ordered)]
+}
+
 function normalizeRecordId(raw) {
   const value = String(raw || '').trim()
   if (!value) return ''
   return value.startsWith('APP-') ? value.slice(4) : value
+}
+
+function escapeFormulaValue(value) {
+  return String(value).replace(/"/g, '\\"')
+}
+
+/** Unit shown on an already-approved row (assigned column, else 1st choice). */
+function effectiveUnitForOccupancyConflict(app) {
+  const u = String(applicationLeaseRoomNumber(app, DEFAULT_AXIS_APPLICATION_APPROVED_ROOM) || '').trim()
+  if (u) return u
+  return String(app?.['Room Number'] ?? '').trim()
+}
+
+async function listApplicationsForOwner(ownerId) {
+  const id = String(ownerId || '').trim()
+  if (!id.startsWith('rec')) return []
+  const enc = encodeURIComponent(APPLICATIONS_TABLE)
+  const root = `${APPS_AIRTABLE_BASE_URL}/${enc}`
+  const all = []
+  let offset = null
+  do {
+    const url = new URL(root)
+    url.searchParams.set('filterByFormula', `{Owner ID} = "${escapeFormulaValue(id)}"`)
+    if (offset) url.searchParams.set('offset', offset)
+    const data = await airtableGet(url.toString())
+    ;(data.records || []).forEach((r) => all.push(mapRecord(r)))
+    offset = data.offset || null
+  } while (offset)
+  return all
 }
 
 async function getApplication(recordId) {
@@ -73,12 +138,6 @@ const APPLICATION_REJECTED_FIELD = String(
     process.env.AIRTABLE_APPLICATION_REJECTED_FIELD ||
     'Rejected',
 ).trim() || 'Rejected'
-
-const APPLICATION_APPROVED_ROOM_FIELD = String(
-  process.env.VITE_AIRTABLE_APPLICATION_APPROVED_ROOM_FIELD ||
-    process.env.AIRTABLE_APPLICATION_APPROVED_ROOM_FIELD ||
-    DEFAULT_AXIS_APPLICATION_APPROVED_ROOM,
-).trim() || DEFAULT_AXIS_APPLICATION_APPROVED_ROOM
 
 async function approveApplication(recordId, existingFields, extraFields = {}) {
   const now = new Date().toISOString()
@@ -151,11 +210,6 @@ export default async function handler(req, res) {
     /** Prefer explicit manager pick; if omitted, use applicant 1st choice so lease/resident stay aligned. */
     const approvedRoomToStore = approvedRoomRaw || fallbackFirstChoice
 
-    const approvalExtras =
-      approvedRoomToStore && APPLICATION_APPROVED_ROOM_FIELD
-        ? { [APPLICATION_APPROVED_ROOM_FIELD]: approvedRoomToStore }
-        : {}
-
     /** Avoid duplicate fee/move-in rows when the manager re-hits approve on an already-approved application. */
     const applicationAlreadyFullyApproved =
       isApplicationApprovedForLease(existing) && (existing.Approved === true || existing.Approved === 1)
@@ -168,7 +222,46 @@ export default async function handler(req, res) {
             'Assign an approved unit/room before approving (no first-choice room on file and none was sent in the request).',
         })
       }
-      approvedApplication = await approveApplication(recordId, existing, approvalExtras)
+
+      const ownerForList = String(tenant?.ownerId || existing['Owner ID'] || '').trim()
+      const propKey = String(existing['Property Name'] ?? '').trim().toLowerCase()
+      const candidateKey = normalizeApplicationOccupancyKey(approvedRoomToStore)
+      if (ownerForList.startsWith('rec') && propKey && candidateKey) {
+        const siblings = await listApplicationsForOwner(ownerForList)
+        for (const o of siblings) {
+          if (String(o.id) === String(recordId)) continue
+          if (deriveApplicationLeaseGateState(o) !== 'approved') continue
+          const op = String(o['Property Name'] ?? '').trim().toLowerCase()
+          if (op !== propKey) continue
+          const ou = normalizeApplicationOccupancyKey(effectiveUnitForOccupancyConflict(o))
+          if (ou && ou === candidateKey) {
+            return res.status(409).json({
+              error:
+                'Another application is already approved for this property and unit. Change the approved unit or reject the other application first.',
+            })
+          }
+        }
+      }
+
+      const roomFields = approvedRoomWriteFieldCandidates()
+      let lastApproveErr = null
+      let wroteRoom = false
+      for (const fieldName of roomFields) {
+        const approvalExtras = { [fieldName]: approvedRoomToStore }
+        try {
+          approvedApplication = await approveApplication(recordId, existing, approvalExtras)
+          wroteRoom = true
+          break
+        } catch (approveErr) {
+          lastApproveErr = approveErr
+          const unk = unknownFieldNameFromPatchError(approveErr?.message)
+          if (unk === fieldName) continue
+          throw approveErr
+        }
+      }
+      if (!wroteRoom) {
+        throw lastApproveErr || new Error('Could not write approved unit to the Applications table.')
+      }
     }
     const ownerId = tenant?.ownerId || String(approvedApplication['Owner ID'] || '').trim()
     const residentSync = await markMatchingResidentsApproved(approvedApplication, ownerId)

@@ -1422,15 +1422,55 @@ export async function sendMessage({
 // ---------------------------------------------------------------------------
 // Payments
 // ---------------------------------------------------------------------------
+
+/**
+ * Linked-record field on the **Payments** table that points at the resident profile row.
+ * Defaults to `Resident`. Set `VITE_AIRTABLE_PAYMENTS_RESIDENT_LINK_FIELD` if your base uses e.g. `Resident Profile`
+ * so portal filters and creates stay aligned.
+ */
+export function paymentsResidentLinkFieldName() {
+  const raw = import.meta.env.VITE_AIRTABLE_PAYMENTS_RESIDENT_LINK_FIELD
+  const t = raw !== undefined ? String(raw).trim() : ''
+  return t || 'Resident'
+}
+
+function paymentsResidentFieldFormulaRef() {
+  const name = paymentsResidentLinkFieldName().replace(/[}]/g, '')
+  return `{${name}}`
+}
+
+/**
+ * Fields object for PATCH/POST on Payments: sets the configured resident link field to `[residentRecordId]`.
+ */
+export function buildPaymentResidentLinkFields(residentRecordId) {
+  const rid = String(residentRecordId || '').trim()
+  if (!rid) return {}
+  const f = paymentsResidentLinkFieldName()
+  return { [f]: [rid] }
+}
+
+/** Map Airtable Payments rows so `record.Resident` is always the linked profile id array when the base uses another link column name. */
+export function normalizePaymentsMappedRecord(mapped) {
+  if (!mapped || typeof mapped !== 'object') return mapped
+  const f = paymentsResidentLinkFieldName()
+  if (f === 'Resident') return mapped
+  const fromLink = mapped[f]
+  if (!Array.isArray(fromLink) || fromLink.length === 0) return mapped
+  const first = String(fromLink[0] ?? '').trim()
+  if (!/^rec[a-zA-Z0-9]{14,}$/.test(first)) return mapped
+  return { ...mapped, Resident: fromLink }
+}
+
 export async function getPaymentsForResident(resident) {
-  const formula = `FIND("${escapeFormulaValue(resident.id)}", ARRAYJOIN({Resident})) > 0`
+  const fieldRef = paymentsResidentFieldFormulaRef()
+  const formula = `FIND("${escapeFormulaValue(resident.id)}", ARRAYJOIN(${fieldRef})) > 0`
   const data = await request(
     buildPaymentsUrl({
       filterByFormula: formula,
       sort: [{ field: 'Due Date', direction: 'desc' }],
     }),
   )
-  return (data.records || []).map(mapRecord)
+  return (data.records || []).map((r) => normalizePaymentsMappedRecord(mapRecord(r)))
 }
 
 /** All payment rows (paginated) — manager portal rent overview. */
@@ -1441,7 +1481,7 @@ export async function getAllPaymentsRecords() {
     const params = {}
     if (offset) params.offset = offset
     const data = await request(buildPaymentsUrl(params))
-    ;(data.records || []).forEach((r) => allRecords.push(mapRecord(r)))
+    ;(data.records || []).forEach((r) => allRecords.push(normalizePaymentsMappedRecord(mapRecord(r))))
     offset = data.offset || null
   } while (offset)
   return allRecords
@@ -1458,7 +1498,7 @@ export async function updatePaymentRecord(recordId, fields) {
     method: 'PATCH',
     body: JSON.stringify({ fields: cleaned, typecast: true }),
   })
-  return mapRecord(data)
+  return normalizePaymentsMappedRecord(mapRecord(data))
 }
 
 /** Notes marker for room-hold fee rows created from the resident portal (one row per resident; idempotent). */
@@ -1477,14 +1517,15 @@ export async function listResidentPortalRoomHoldPaymentRecords(residentRecordId)
   const rid = String(residentRecordId || '').trim()
   if (!/^rec[a-zA-Z0-9]{14,}$/.test(rid)) return []
   const legacySub = 'room hold without signing lease (resident portal)'
-  const formula = `AND(FIND("${escapeFormulaValue(rid)}", ARRAYJOIN({Resident})) > 0, OR(FIND("${escapeFormulaValue(AXIS_ROOM_HOLD_WITHOUT_LEASE_MARKER_PREFIX)}", {Notes}) > 0, AND({Type} = "Room Hold Fee", FIND("${escapeFormulaValue(legacySub)}", LOWER({Notes})) > 0)))`
+  const fieldRef = paymentsResidentFieldFormulaRef()
+  const formula = `AND(FIND("${escapeFormulaValue(rid)}", ARRAYJOIN(${fieldRef})) > 0, OR(FIND("${escapeFormulaValue(AXIS_ROOM_HOLD_WITHOUT_LEASE_MARKER_PREFIX)}", {Notes}) > 0, AND({Type} = "Room Hold Fee", FIND("${escapeFormulaValue(legacySub)}", LOWER({Notes})) > 0)))`
   const data = await request(
     buildPaymentsUrl({
       filterByFormula: formula,
       maxRecords: 20,
     }),
   )
-  return (data.records || []).map(mapRecord)
+  return (data.records || []).map((r) => normalizePaymentsMappedRecord(mapRecord(r)))
 }
 
 export async function deletePaymentRecord(recordId) {
@@ -1504,7 +1545,7 @@ export async function createPaymentRecord(fields) {
     method: 'POST',
     body: JSON.stringify({ fields: cleaned, typecast: true }),
   })
-  return mapRecord(data)
+  return normalizePaymentsMappedRecord(mapRecord(data))
 }
 
 export async function getPropertyByName(propertyName) {

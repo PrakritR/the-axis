@@ -30,15 +30,6 @@ import {
 const APPLICATION_APPROVED_UNIT_FIELD =
   String(import.meta.env.VITE_AIRTABLE_APPLICATION_APPROVED_ROOM_FIELD ?? '').trim() || DEFAULT_AXIS_APPLICATION_APPROVED_ROOM
 
-const APPLICATION_PAID_FIELD =
-  String(import.meta.env.VITE_AIRTABLE_APPLICATION_PAID_FIELD ?? '').trim() || 'Application Paid'
-
-function applicationPaidCheckboxTruthy(value) {
-  if (value === true) return true
-  if (value === false || value == null) return false
-  const s = String(value).trim().toLowerCase()
-  return s === 'yes' || s === 'true' || s === '1' || s === 'checked'
-}
 import {
   airtableReady,
   createResident,
@@ -50,6 +41,7 @@ import {
   getLeaseDraftsForResident,
   getPropertyByName,
   getPaymentsForResident,
+  buildPaymentResidentLinkFields,
   createPaymentRecord,
   updatePaymentRecord,
   deletePaymentRecord,
@@ -1019,12 +1011,6 @@ export function ResidentAuthForm({ onLogin, footer = null, variant = 'default' }
         setActivationError('Email does not match the application. Use the email you applied with.')
         return
       }
-      if (!applicationPaidCheckboxTruthy(app[APPLICATION_PAID_FIELD])) {
-        setActivationError(
-          'Your application fee is not recorded as paid yet. Pay from your Apply confirmation page (or use a fee-waive code when you submit), wait a minute if you already paid, then create your account here.',
-        )
-        return
-      }
       const rawAppInput = activateForm.applicationId.trim()
       const applicationRecordId = rawAppInput.startsWith('APP-') ? rawAppInput.slice(4) : rawAppInput
       const applicationLink =
@@ -1184,7 +1170,7 @@ export function ResidentAuthForm({ onLogin, footer = null, variant = 'default' }
             </div>
           ) : null}
           <PortalNotice>
-            Use the email and Application ID from your application. Your application fee must show as paid in our records before you can create an account; after that, sign-in stays limited until a manager approves your application.{' '}
+            Use the email and Application ID from your application. You can create your account before paying—if an application fee applies, complete it from the payment prompt after you apply or anytime under <strong>Payments</strong> in the portal. Sign-in may stay limited until a manager approves your application.{' '}
             <span className="font-mono font-semibold text-slate-800">APP-rec…</span>
           </PortalNotice>
           <PortalField label="Application ID" required>
@@ -2928,7 +2914,7 @@ function LeasingPanel({ resident, payments, onOpenPayments, onNavigateTab, onLea
                 ? String(rawDue).trim().slice(0, 10)
                 : new Date().toISOString().slice(0, 10)
             await createPaymentRecord({
-              Resident: [resident.id],
+              ...buildPaymentResidentLinkFields(resident.id),
               Amount: amt,
               Balance: amt,
               Status: 'Unpaid',

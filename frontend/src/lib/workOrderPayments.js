@@ -3,7 +3,7 @@
  * Idempotent per work order via Notes marker.
  */
 
-import { createPaymentRecord, getPaymentsForResident } from './airtable.js'
+import { buildPaymentResidentLinkFields, createPaymentRecord, getPaymentsForResident } from './airtable.js'
 
 function paymentPropertyNameFromResident(res) {
   const explicit = String(res?.['Property Name'] || '').trim()
@@ -115,7 +115,7 @@ export async function ensureWorkOrderManagerChargePayment({
   const dueStr = due.toISOString().slice(0, 10)
 
   await createPaymentRecordStrippingUnknownFields({
-    Resident: [rid],
+    ...buildPaymentResidentLinkFields(rid),
     Amount: Math.round(cost * 100) / 100,
     Balance: Math.round(cost * 100) / 100,
     Status: 'Unpaid',
@@ -159,7 +159,7 @@ export async function createResidentManualPaymentLine({
   const extra = String(notes || '').trim()
 
   await createPaymentRecordStrippingUnknownFields({
-    Resident: [rid],
+    ...buildPaymentResidentLinkFields(rid),
     Amount: Math.round(amt * 100) / 100,
     Balance: Math.round(amt * 100) / 100,
     Status: 'Unpaid',

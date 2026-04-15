@@ -7,7 +7,12 @@
  *   Due date = scheduled visit + 7 days (pay within one week after the scheduled cleaning).
  */
 
-import { createPaymentRecord, deletePaymentRecord, getPaymentsForResident } from './airtable.js'
+import {
+  buildPaymentResidentLinkFields,
+  createPaymentRecord,
+  deletePaymentRecord,
+  getPaymentsForResident,
+} from './airtable.js'
 import { computedResidentPaymentStatusLabel } from './residentPaymentsShared.js'
 import { workOrderScheduledMeta } from './workOrderShared.js'
 
@@ -126,7 +131,7 @@ export async function ensurePostpayRoomCleaningFeePayment({
   const dueStr = dueDateIsoForRoomCleaningPayment(dateStr)
 
   await createPaymentRecordStrippingUnknownFields({
-    Resident: [rid],
+    ...buildPaymentResidentLinkFields(rid),
     Amount: ROOM_CLEANING_FEE_USD,
     Balance: ROOM_CLEANING_FEE_USD,
     Status: 'Unpaid',

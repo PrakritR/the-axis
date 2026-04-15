@@ -41,3 +41,15 @@ export function applicationLeaseRoomNumber(app, approvedRoomField = DEFAULT_AXIS
 export function applicationHasApprovedUnitAssigned(app, approvedRoomField = DEFAULT_AXIS_APPLICATION_APPROVED_ROOM) {
   return Boolean(String(applicationLeaseRoomNumber(app, approvedRoomField) || '').trim())
 }
+
+/**
+ * Normalize unit/room labels so "Room 3", "room 3", "Unit 3" match when detecting double-booking
+ * (two approved applications for the same property and unit).
+ */
+export function normalizeApplicationOccupancyKey(roomLabel) {
+  return String(roomLabel || '')
+    .trim()
+    .toLowerCase()
+    .replace(/^unit\s+/i, '')
+    .replace(/\s+/g, '')
+}

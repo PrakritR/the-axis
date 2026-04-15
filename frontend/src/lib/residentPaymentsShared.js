@@ -4,6 +4,7 @@
  */
 
 import { isFeeWaivePaymentRecord } from '../../../shared/lease-access-requirements.js'
+import { buildPaymentResidentLinkFields } from './airtable.js'
 
 function paymentRawBlob(payment) {
   if (!payment || typeof payment !== 'object') return ''
@@ -444,7 +445,7 @@ export async function finalizeResidentPaymentAfterStripeSuccess(
   }
 
   return createPaymentRecord({
-    Resident: [rid],
+    ...buildPaymentResidentLinkFields(rid),
     'Resident Name': resName || undefined,
     'Property Name': prop || undefined,
     'Room Number': unit || undefined,
