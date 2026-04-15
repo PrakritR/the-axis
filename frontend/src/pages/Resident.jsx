@@ -3170,31 +3170,37 @@ function ResidentDashboardHome({
 }) {
   const snapshot = useMemo(() => buildResidentRentSnapshot(payments, resident), [payments, resident])
   const hasOverdueRent = snapshot.overdueTotal > 0
-  const paymentCardValue = hasOverdueRent
-    ? formatMoney(snapshot.overdueTotal)
-    : snapshot.nextDue
-      ? formatMoney(snapshot.nextDue.balance)
-      : '—'
+  const lock = Boolean(portalFeaturesLocked)
+  const paymentCardValue = lock
+    ? '—'
+    : hasOverdueRent
+      ? formatMoney(snapshot.overdueTotal)
+      : snapshot.nextDue
+        ? formatMoney(snapshot.nextDue.balance)
+        : '—'
   const openWoCount = useMemo(
     () => visibleWorkOrders.filter((r) => isWorkOrderOpen(r)).length,
     [visibleWorkOrders],
   )
-  const workOrderCardValue = openWoCount === 0 ? 'none' : 'In Progress'
+  const workOrderCardValue = lock ? '—' : openWoCount === 0 ? 'none' : 'In Progress'
   const leaseStatus = approvedLease?.Status ? String(approvedLease.Status).trim() : null
   const leaseTermLabel = getLeaseTermLabel(resident)
   const leaseSigningUrl = resolveLeaseSigningUrl(resident)
   const leaseNeedsSigning = Boolean(leaseStatus && leaseStatus !== 'Signed')
   const firstName = String(resident?.Name || '').split(' ')[0] || 'Resident'
   const homeLabel = [resident.House, normalizeUnitLabel(resident['Unit Number'] || '')].filter(Boolean).join(' · ') || null
-  const leaseDurationHeadline = leaseTermLabel.trim() || '—'
-  const lock = Boolean(portalFeaturesLocked)
-  const leaseCardSubline = leaseNeedsSigning
-    ? 'Sign your lease to finish onboarding'
-    : leaseStatus === 'Signed'
-      ? 'Lease signed'
-      : approvedLease
-        ? residentLeaseStatusDisplay(leaseStatus || 'In progress')
-        : 'Lease document not on file yet'
+  const leaseDurationHeadline = lock ? '—' : leaseTermLabel.trim() || '—'
+  const leaseCardSubline = lock
+    ? applicationRejected
+      ? 'Not available for this account'
+      : 'Available after your application is approved'
+    : leaseNeedsSigning
+      ? 'Sign your lease to finish onboarding'
+      : leaseStatus === 'Signed'
+        ? 'Lease signed'
+        : approvedLease
+          ? residentLeaseStatusDisplay(leaseStatus || 'In progress')
+          : 'Lease document not on file yet'
 
   return (
     <div className="space-y-6">
@@ -3270,39 +3276,53 @@ function ResidentDashboardHome({
       {/* Metric cards — Lease → Payments → Work orders → Your home */}
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <div
-          className={`flex flex-col gap-2 rounded-3xl border p-5 text-left transition ${
-            lock ? 'opacity-60' : 'hover:shadow-sm'
-          } ${
-            leaseNeedsSigning
-              ? 'border-amber-200 bg-amber-50 hover:border-amber-300'
-              : leaseStatus === 'Signed'
-                ? 'border-emerald-200 bg-emerald-50 hover:border-emerald-300'
-                : 'border-blue-100 bg-blue-50 hover:border-blue-200'
-          }`}
+          className={classNames(
+            'flex flex-col gap-2 rounded-3xl border p-5 text-left transition',
+            lock ? 'cursor-default border-slate-200 bg-slate-50 opacity-80' : 'hover:shadow-sm',
+            !lock &&
+              (leaseNeedsSigning
+                ? 'border-amber-200 bg-amber-50 hover:border-amber-300'
+                : leaseStatus === 'Signed'
+                  ? 'border-emerald-200 bg-emerald-50 hover:border-emerald-300'
+                  : 'border-blue-100 bg-blue-50 hover:border-blue-200'),
+          )}
         >
           <span
-            className={`text-[10px] font-bold uppercase tracking-[0.14em] ${
-              leaseNeedsSigning
-                ? 'text-amber-700'
-                : leaseStatus === 'Signed'
-                  ? 'text-emerald-600'
-                  : 'text-blue-600'
-            }`}
+            className={classNames(
+              'text-[10px] font-bold uppercase tracking-[0.14em]',
+              lock
+                ? 'text-slate-500'
+                : leaseNeedsSigning
+                  ? 'text-amber-700'
+                  : leaseStatus === 'Signed'
+                    ? 'text-emerald-600'
+                    : 'text-blue-600',
+            )}
           >
             Lease
           </span>
           <span
-            className={`text-3xl font-black leading-tight ${
-              leaseNeedsSigning
-                ? 'text-amber-800'
-                : leaseStatus === 'Signed'
-                  ? 'text-emerald-700'
-                  : 'text-blue-700'
-            }`}
+            className={classNames(
+              'text-3xl font-black leading-tight',
+              lock
+                ? 'text-slate-600'
+                : leaseNeedsSigning
+                  ? 'text-amber-800'
+                  : leaseStatus === 'Signed'
+                    ? 'text-emerald-700'
+                    : 'text-blue-700',
+            )}
           >
             {leaseDurationHeadline}
           </span>
-          <p className={`text-sm ${leaseNeedsSigning ? 'text-amber-800/90' : 'text-slate-600'}`}>{leaseCardSubline}</p>
+          <p
+            className={classNames(
+              'text-sm',
+              lock ? 'text-slate-600' : leaseNeedsSigning ? 'text-amber-800/90' : 'text-slate-600',
+            )}
+          >
+            {leaseCardSubline}
+          </p>
           {leaseStatus === 'Signed' ? (
             <button
               type="button"
@@ -3520,9 +3540,20 @@ function Dashboard({ resident, onResidentUpdated, onSignOut }) {
     }
   }, [applicationRecordIds])
 
+  const accessState = useMemo(
+    () => residentPortalAccessState(resident, linkedApplicationApprovalState),
+    [resident, linkedApplicationApprovalState],
+  )
+  const applicationUnlocked = accessState === 'approved'
+  const isRejected = accessState === 'rejected'
+
   useEffect(() => {
     const email = String(resident?.Email || '').trim()
     if (!email || !portalInboxAirtableConfigured()) return
+    if (accessState !== 'approved') {
+      setInboxUnopenedCount(0)
+      return
+    }
     let cancelled = false
     async function fetchUnopenedCount() {
       try {
@@ -3551,11 +3582,8 @@ function Dashboard({ resident, onResidentUpdated, onSignOut }) {
     }
     fetchUnopenedCount()
     return () => { cancelled = true }
-  }, [resident])
+  }, [resident, accessState])
 
-  const accessState = residentPortalAccessState(resident, linkedApplicationApprovalState)
-  const applicationUnlocked = accessState === 'approved'
-  const isRejected = accessState === 'rejected'
   const RESTRICTED_TAB_IDS = new Set(['leasing', 'payments', 'workorders', 'inbox'])
   const restrictNavTabs = accessState !== 'approved'
 

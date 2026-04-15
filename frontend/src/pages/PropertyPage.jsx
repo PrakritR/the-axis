@@ -1294,7 +1294,13 @@ export default function PropertyPage(){
                   <div className="flex items-end justify-between gap-4">
                     <h3 className="font-editorial text-2xl font-black leading-tight text-slate-900 sm:text-3xl">Bathrooms</h3>
                     <div className="shrink-0 text-sm text-slate-500">
-                      {(p.bathroomsList || []).length} bathroom{(p.bathroomsList || []).length !== 1 ? 's' : ''}
+                      {(() => {
+                        const n =
+                          typeof p.baths === 'number' && Number.isFinite(p.baths) && p.baths > 0
+                            ? p.baths
+                            : (p.bathroomsList || []).length
+                        return `${formatBathroomCountForDisplay(n)} bathroom${n === 1 ? '' : 's'}`
+                      })()}
                     </div>
                   </div>
                   <div className="mt-6 w-full min-w-0 max-w-full overflow-hidden rounded-xl border border-slate-200 bg-white">

@@ -404,13 +404,16 @@ export function parseBodyTriplet(raw) {
 }
 
 /**
- * Sum bath equivalents from manager wizard rows (full ≈ 1, half / powder ≈ 0.5).
- * @param {{ kind?: string, label?: string, description?: string }[]} bathrooms
+ * Bath equivalent from one fixture row: full ≈ 1, half / powder ≈ 0.5, three-quarter ≈ 0.75.
+ * Uses kind, label, and description so "Half bath" in the label line still counts correctly.
  */
-function bathroomKindToWeight(kindRaw) {
-  const k = String(kindRaw || '').trim().toLowerCase()
-  if (!k) return 1
-  if (/\bpowder\b/.test(k) || /\bhalf\b/.test(k)) return 0.5
+function bathroomFixtureToWeight(kindRaw, labelRaw, descRaw) {
+  const blob = `${kindRaw || ''} ${labelRaw || ''} ${descRaw || ''}`.toLowerCase()
+  if (!blob.trim()) return 1
+  if (/\bthree[-\s]?quarter\b|\b3\s*\/\s*4\b|¾|\bthree quarter\b/.test(blob)) return 0.75
+  if (/\bpowder\b/.test(blob)) return 0.5
+  if (/\bhalf\s*bath\b|\bhalf\s*bathroom\b/.test(blob)) return 0.5
+  if (/\bhalf\b/.test(blob) && (/\bbath\b|\bbathroom\b|\bwc\b/.test(blob))) return 0.5
   return 1
 }
 
@@ -419,15 +422,14 @@ export function computeDecimalBathroomTotal(bathrooms) {
   let sum = 0
   let any = false
   for (const row of rows) {
-    const kind = String(row?.kind || '').trim().toLowerCase()
     const hasBody =
-      kind ||
+      String(row?.kind || '').trim() ||
       String(row?.label || '').trim() ||
       String(row?.description || '').trim() ||
       (Array.isArray(row?.access) && row.access.length > 0)
     if (!hasBody) continue
     any = true
-    sum += bathroomKindToWeight(kind)
+    sum += bathroomFixtureToWeight(row?.kind, row?.label, row?.description)
   }
   return any ? sum : 0
 }
@@ -447,7 +449,7 @@ export function computeDecimalBathroomTotalFromAirtableRecord(record) {
     const hasBody = kind || String(parsed.label || '').trim() || String(parsed.description || '').trim()
     if (!hasBody) continue
     any = true
-    sum += bathroomKindToWeight(kind)
+    sum += bathroomFixtureToWeight(parsed.kind, parsed.label, parsed.description)
   }
   return any ? sum : 0
 }
