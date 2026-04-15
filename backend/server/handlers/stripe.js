@@ -4,6 +4,7 @@
  *   body.action = 'portal'   → create Stripe billing portal session
  */
 
+import { randomUUID } from 'node:crypto'
 import { resolveExpectedApplicationFeeUsd } from '../lib/stripe-application-fee-usd.js'
 
 const STRIPE_API = 'https://api.stripe.com/v1'
@@ -113,7 +114,11 @@ async function handleCheckout(req, res, secretKey) {
 
   const stripeRes = await fetch(`${STRIPE_API}/checkout/sessions`, {
     method: 'POST',
-    headers: { Authorization: `Bearer ${secretKey}`, 'Content-Type': 'application/x-www-form-urlencoded' },
+    headers: {
+      Authorization: `Bearer ${secretKey}`,
+      'Content-Type': 'application/x-www-form-urlencoded',
+      'Idempotency-Key': randomUUID(),
+    },
     body: form.toString(),
   })
 
@@ -149,7 +154,11 @@ async function handlePortal(req, res, secretKey) {
 
   const stripeRes = await fetch(`${STRIPE_API}/billing_portal/sessions`, {
     method: 'POST',
-    headers: { Authorization: `Bearer ${secretKey}`, 'Content-Type': 'application/x-www-form-urlencoded' },
+    headers: {
+      Authorization: `Bearer ${secretKey}`,
+      'Content-Type': 'application/x-www-form-urlencoded',
+      'Idempotency-Key': randomUUID(),
+    },
     body: body.toString(),
   })
 
