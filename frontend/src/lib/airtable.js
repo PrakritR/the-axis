@@ -554,6 +554,43 @@ export function stripWorkOrderPortalSubmitterLine(description) {
   return String(description || '').replace(/^portal_submitter_email:[^\n]+\n\n?/i, '')
 }
 
+/** Email embedded when Work Orders link to a placeholder resident row (see WORK_ORDER_RESIDENT_PLACEHOLDER_ID). */
+export function workOrderPortalSubmitterEmailFromDescription(workOrder) {
+  const d = String(workOrder?.Description || '')
+  const m =
+    d.match(/^portal_submitter_email:\s*([^\s\n@]+@[^\s\n]+)/im) || d.match(/^portal_submitter_email:\s*(\S+)/im)
+  return m ? String(m[1]).trim().toLowerCase() : ''
+}
+
+/**
+ * Resident record id to attach Payments for a scheduled cleaning fee — prefers real profile
+ * (matched by portal submitter email) over placeholder linked-record ids.
+ */
+export function resolveResidentRecordIdForWorkOrderBilling(workOrder, residentsById) {
+  const map = residentsById instanceof Map ? residentsById : new Map()
+  const email = workOrderPortalSubmitterEmailFromDescription(workOrder)
+  if (email) {
+    for (const r of map.values()) {
+      const em = String(r?.Email || '').trim().toLowerCase()
+      if (em === email) {
+        const id = String(r?.id || '').trim()
+        if (id) return id
+      }
+    }
+  }
+  const placeholder = WORK_ORDER_RESIDENT_PLACEHOLDER_ID
+  const ids = workOrderLinkedResidentRecordIds(workOrder)
+  for (const rid of ids) {
+    if (placeholder && rid === placeholder) continue
+    if (rid && map.has(rid)) return rid
+  }
+  for (const rid of ids) {
+    if (placeholder && rid === placeholder) continue
+    if (rid) return rid
+  }
+  return ''
+}
+
 function workOrderPortalSubmitterDescriptionTag(email) {
   const e = String(email || '').trim().toLowerCase()
   if (!e) return ''

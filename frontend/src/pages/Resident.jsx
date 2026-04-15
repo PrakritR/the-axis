@@ -68,7 +68,12 @@ import {
   reconcilePaymentStatusesInAirtable,
   rentDueDayFromResident,
 } from '../lib/residentPaymentsShared.js'
-import { ROOM_CLEANING_FEE_USD, residentPostpayCleaningDescriptionSuffix } from '../lib/roomCleaningWorkOrder.js'
+import {
+  ROOM_CLEANING_FEE_USD,
+  ensurePostpayRoomCleaningFeePayment,
+  residentPostpayCleaningDescriptionSuffix,
+  workOrderShouldCreatePaymentWhenScheduled,
+} from '../lib/roomCleaningWorkOrder.js'
 
 const SESSION_KEY = 'axis_resident'
 
@@ -3539,6 +3544,27 @@ function Dashboard({ resident, onResidentUpdated, onSignOut }) {
       setRequests(nextRequests)
       setPayments(nextPayments)
       setApprovedLease(lease)
+
+      try {
+        let payRows = Array.isArray(nextPayments) ? nextPayments : []
+        let createdAny = false
+        for (const wo of nextRequests || []) {
+          if (!workOrderShouldCreatePaymentWhenScheduled(wo)) continue
+          const { created } = await ensurePostpayRoomCleaningFeePayment({
+            workOrder: wo,
+            billingResidentId: resident.id,
+            residentProfile: resident,
+            paymentsPrefetch: payRows,
+          })
+          if (created) {
+            createdAny = true
+            payRows = await getPaymentsForResident(resident).catch(() => payRows)
+          }
+        }
+        if (createdAny) setPayments(payRows)
+      } catch {
+        /* non-fatal: billing backfill should not block portal load */
+      }
     } finally {
       setLoading(false)
     }

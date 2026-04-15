@@ -70,6 +70,7 @@ import {
   listAllResidentsRecords,
   workOrderLinkedResidentRecordIds,
   workOrderLinkedPropertyRecordIds,
+  resolveResidentRecordIdForWorkOrderBilling,
   getAllPaymentsRecords,
   getPaymentsForResident,
   updatePaymentRecord,
@@ -93,7 +94,7 @@ import {
 } from '../lib/airtable'
 import {
   ROOM_CLEANING_FEE_USD,
-  paymentNotesTagForCleaningWorkOrder,
+  ensurePostpayRoomCleaningFeePayment,
   workOrderShouldCreatePaymentWhenScheduled,
 } from '../lib/roomCleaningWorkOrder.js'
 import { residentLeasingThreadVisibleToManager } from '../lib/portalInboxResidentScope.js'
@@ -4398,33 +4399,21 @@ function WorkOrdersTabPanel({ allowedPropertyNames, allowedPropertyIds }) {
       applyRecordToForm(nextRecord)
       await loadList()
 
+      const mergedWorkOrder = { ...record, ...nextRecord }
       let successMsg = isScheduling ? 'Work order scheduled' : 'Work order saved'
-      if (isScheduling && dateStr && nextRecord?.id && workOrderShouldCreatePaymentWhenScheduled(nextRecord)) {
-        const resRec = residentRecordForWorkOrder(nextRecord)
-        const rid = String(resRec?.id || '').trim() || workOrderLinkedResidentRecordIds(nextRecord)[0] || ''
-        if (rid) {
+      if (isScheduling && dateStr && mergedWorkOrder?.id && workOrderShouldCreatePaymentWhenScheduled(mergedWorkOrder)) {
+        const billingRid = resolveResidentRecordIdForWorkOrderBilling(mergedWorkOrder, residentsById)
+        if (billingRid) {
           try {
-            const payments = await getPaymentsForResident({ id: rid })
-            const tag = paymentNotesTagForCleaningWorkOrder(nextRecord.id)
-            const already = (payments || []).some((p) => String(p.Notes || '').includes(tag))
-            if (!already) {
-              const prop = String(resRec?.House || workOrderPropertyLabel(nextRecord) || '').trim()
-              const unit = String(resRec?.['Unit Number'] || '').trim()
-              const name = String(resRec?.Name || resRec?.['Resident Name'] || '').trim()
-              await createPaymentRecord({
-                Resident: [rid],
-                Amount: ROOM_CLEANING_FEE_USD,
-                Balance: ROOM_CLEANING_FEE_USD,
-                Status: 'Unpaid',
-                Type: 'Room cleaning fee',
-                Category: 'Fee',
-                Month: 'One-time room cleaning',
-                Notes: `${tag} Scheduled visit ${dateStr}. ${String(nextRecord.Title || 'Room cleaning').trim()}`,
-                'Due Date': dateStr,
-                'Property Name': prop || undefined,
-                'Room Number': unit || undefined,
-                'Resident Name': name || undefined,
-              })
+            const resRec = residentsById.get(billingRid) || { id: billingRid }
+            const payments = await getPaymentsForResident({ id: billingRid })
+            const result = await ensurePostpayRoomCleaningFeePayment({
+              workOrder: mergedWorkOrder,
+              billingResidentId: billingRid,
+              residentProfile: resRec,
+              paymentsPrefetch: payments,
+            })
+            if (result.created) {
               successMsg = `Work order scheduled — added $${ROOM_CLEANING_FEE_USD} room cleaning fee to Payments (due ${dateStr}).`
             }
           } catch (payErr) {
@@ -4436,6 +4425,10 @@ function WorkOrdersTabPanel({ allowedPropertyNames, allowedPropertyIds }) {
             )
             return
           }
+        } else {
+          toast.error(
+            'Could not link this cleaning request to a resident profile for billing. Add a Resident Profile link on the work order or ensure portal submitter email is present.',
+          )
         }
       }
 

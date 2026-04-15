@@ -6,7 +6,9 @@
  *   portal creates a Payments row tagged AXIS_ROOM_CLEANING_PAYMENT_FOR_WO:rec….
  */
 
+import { createPaymentRecord, getPaymentsForResident } from './airtable.js'
 import { computedResidentPaymentStatusLabel } from './residentPaymentsShared.js'
+import { workOrderScheduledMeta } from './workOrderShared.js'
 
 export const ROOM_CLEANING_PAYMENT_MARKER = 'AXIS_ROOM_CLEANING_PREPAID'
 export const ROOM_CLEANING_WO_FOR_PAYMENT = 'AXIS_ROOM_CLEANING_WO_FOR_PAYMENT:'
@@ -28,11 +30,97 @@ export function isPrepaidLinkedRoomCleaningWorkOrder(wo) {
 
 /** True when scheduling this WO should create a resident Payment row (post-pay flow). */
 export function workOrderShouldCreatePaymentWhenScheduled(wo) {
-  const cat = String(wo?.Category || '').trim().toLowerCase()
-  if (cat !== 'cleaning') return false
+  if (!wo || typeof wo !== 'object') return false
   if (isPrepaidLinkedRoomCleaningWorkOrder(wo)) return false
   const d = String(wo?.Description || '')
-  return d.includes(ROOM_CLEANING_BILL_ON_SCHEDULE_MARKER)
+  if (!d.includes(ROOM_CLEANING_BILL_ON_SCHEDULE_MARKER)) return false
+  const cat = String(wo?.Category || '').trim().toLowerCase()
+  if (!cat) return true
+  if (cat === 'cleaning' || cat === 'room cleaning' || cat.includes('cleaning')) return true
+  return false
+}
+
+function unknownPaymentFieldFromAirtableError(err) {
+  const raw = String(err?.message || '')
+  try {
+    const j = JSON.parse(raw)
+    const m = j?.error?.message
+    const match = typeof m === 'string' ? m.match(/Unknown field name:\s*"([^"]+)"/i) : null
+    return match ? match[1] : null
+  } catch {
+    const match = raw.match(/Unknown field name:\s*"([^"]+)"/i)
+    return match ? match[1] : null
+  }
+}
+
+async function createPaymentRecordStrippingUnknownFields(fields) {
+  let f = { ...fields }
+  for (let attempt = 0; attempt < 16; attempt += 1) {
+    try {
+      return await createPaymentRecord(f)
+    } catch (e) {
+      const u = unknownPaymentFieldFromAirtableError(e)
+      if (u && Object.prototype.hasOwnProperty.call(f, u)) {
+        const next = { ...f }
+        delete next[u]
+        f = next
+        continue
+      }
+      throw e
+    }
+  }
+  throw new Error('Could not create payment row (too many unknown fields).')
+}
+
+/**
+ * Creates the $10 post-pay room cleaning fee row if the work order is scheduled, eligible, and not already billed.
+ * @returns {Promise<{ created: boolean, reason?: string }>}
+ */
+export async function ensurePostpayRoomCleaningFeePayment({
+  workOrder,
+  billingResidentId,
+  residentProfile,
+  paymentsPrefetch,
+}) {
+  const woId = String(workOrder?.id || '').trim()
+  const rid = String(billingResidentId || '').trim()
+  if (!woId || !rid) return { created: false, reason: 'missing_ids' }
+  if (!workOrderShouldCreatePaymentWhenScheduled(workOrder)) return { created: false, reason: 'not_eligible' }
+
+  const sm = workOrderScheduledMeta(workOrder)
+  const dateStr = sm?.date || ''
+  if (!dateStr) return { created: false, reason: 'no_schedule_date' }
+
+  const tag = paymentNotesTagForCleaningWorkOrder(woId)
+  const payments =
+    paymentsPrefetch != null
+      ? paymentsPrefetch
+      : await getPaymentsForResident({ id: rid }).catch(() => [])
+  if ((Array.isArray(payments) ? payments : []).some((p) => String(p.Notes || '').includes(tag))) {
+    return { created: false, reason: 'already_exists' }
+  }
+
+  const res = residentProfile && typeof residentProfile === 'object' ? residentProfile : {}
+  const prop = String(res.House || '').trim()
+  const unit = String(res['Unit Number'] || '').trim()
+  const name = String(res.Name || res['Resident Name'] || '').trim()
+
+  await createPaymentRecordStrippingUnknownFields({
+    Resident: [rid],
+    Amount: ROOM_CLEANING_FEE_USD,
+    Balance: ROOM_CLEANING_FEE_USD,
+    Status: 'Unpaid',
+    Type: 'Room cleaning fee',
+    Category: 'Fee',
+    Month: 'One-time room cleaning',
+    Notes: `${tag} Scheduled visit ${dateStr}. ${String(workOrder.Title || 'Room cleaning').trim()}`,
+    'Due Date': dateStr,
+    'Property Name': prop || undefined,
+    'Room Number': unit || undefined,
+    'Resident Name': name || undefined,
+  })
+
+  return { created: true }
 }
 
 export function paymentNotesTagForCleaningWorkOrder(woId) {
