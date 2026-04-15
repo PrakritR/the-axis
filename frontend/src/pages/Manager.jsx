@@ -63,7 +63,7 @@ import {
   buildManagerAvailabilitySlotRowFields,
   formatHHmmFromMinutes,
   listAdminMeetingAvailabilityRows,
-  listManagerAvailabilityRows,
+  isManagerAvailabilityTableReachable,
 } from '../lib/managerAvailabilityAirtable.js'
 import ManagerInboxPage from '../components/manager-inbox/ManagerInboxPage'
 import {
@@ -3471,6 +3471,7 @@ function HouseManagementPanel({ manager, onPropertiesChange }) {
 
         {addOpen ? (
           <AddPropertyWizard
+            key="add-property-wizard"
             manager={manager}
             onClose={() => setAddOpen(false)}
             onCreated={(created) => {
@@ -3487,6 +3488,7 @@ function HouseManagementPanel({ manager, onPropertiesChange }) {
 
         {editWizardProperty ? (
           <AddPropertyWizard
+            key={`edit-property-${editWizardProperty.id}`}
             mode="edit"
             initialValues={buildPropertyWizardInitialValues(editWizardProperty)}
             manager={manager}
@@ -3665,6 +3667,10 @@ function ManagerProfilePanel({ manager, onManagerUpdate }) {
   )
 }
 
+function blurNumberInputOnWheel(ev) {
+  ev?.currentTarget?.blur?.()
+}
+
 // ─── GenerateDraftModal ───────────────────────────────────────────────────────
 // Prefers /api/generate-lease-from-template when Application Record ID is provided
 // so lease financials and room details come from exact Airtable property data.
@@ -3816,15 +3822,15 @@ function GenerateDraftModal({ manager, propertyOptions, onClose, onGenerated }) 
                 </div>
                 <div>
                   <label className={labelCls}>Monthly Rent ($)</label>
-                  <input type="number" value={form.rentAmount} onChange={set('rentAmount')} min="0" step="1" placeholder="750" className={inputCls} />
+                  <input type="number" value={form.rentAmount} onChange={set('rentAmount')} onWheel={blurNumberInputOnWheel} min="0" step="any" inputMode="decimal" placeholder="750" className={inputCls} />
                 </div>
                 <div>
                   <label className={labelCls}>Security Deposit ($)</label>
-                  <input type="number" value={form.depositAmount} onChange={set('depositAmount')} min="0" step="1" placeholder="600" className={inputCls} />
+                  <input type="number" value={form.depositAmount} onChange={set('depositAmount')} onWheel={blurNumberInputOnWheel} min="0" step="any" inputMode="decimal" placeholder="600" className={inputCls} />
                 </div>
                 <div>
                   <label className={labelCls}>Utilities Fee ($/mo)</label>
-                  <input type="number" value={form.utilitiesFee} onChange={set('utilitiesFee')} min="0" step="1" placeholder="150" className={inputCls} />
+                  <input type="number" value={form.utilitiesFee} onChange={set('utilitiesFee')} onWheel={blurNumberInputOnWheel} min="0" step="any" inputMode="decimal" placeholder="150" className={inputCls} />
                 </div>
               </div>
             </div>
@@ -6021,6 +6027,7 @@ export function CalendarTabPanel({ manager, allowedPropertyNames, loadAllSchedul
   const [blockSaving, setBlockSaving] = useState(false)
   /** Structured Manager Availability table (per-date + weekly recurring). Falls back to legacy property text when unset/disabled. */
   const [maTableOk, setMaTableOk] = useState(false)
+  const [maDisabledByEnv, setMaDisabledByEnv] = useState(false)
   const [maRecords, setMaRecords] = useState([])
   /** All Manager Availability rows for this manager — property dropdown sort (structured table + Properties tour text). */
   const [managerAvailRowsForSort, setManagerAvailRowsForSort] = useState([])
@@ -6072,16 +6079,19 @@ export function CalendarTabPanel({ manager, allowedPropertyNames, loadAllSchedul
 
   useEffect(() => {
     if (loadAllSchedulingRows) return
-    const off = String(import.meta.env.VITE_USE_MANAGER_AVAILABILITY_TABLE || '').trim().toLowerCase()
-    if (off === 'false' || off === '0' || off === 'none') {
+    const raw = String(import.meta.env.VITE_USE_MANAGER_AVAILABILITY_TABLE || '').trim().toLowerCase()
+    const envOff = raw === 'false' || raw === '0' || raw === 'none' || raw === 'off'
+    if (envOff) {
+      setMaDisabledByEnv(true)
       setMaTableOk(false)
       return
     }
+    setMaDisabledByEnv(false)
     let cancelled = false
     ;(async () => {
       try {
-        await listManagerAvailabilityRows('')
-        if (!cancelled) setMaTableOk(true)
+        const ok = await isManagerAvailabilityTableReachable()
+        if (!cancelled) setMaTableOk(ok)
       } catch {
         if (!cancelled) setMaTableOk(false)
       }
@@ -6349,11 +6359,13 @@ export function CalendarTabPanel({ manager, allowedPropertyNames, loadAllSchedul
     availabilityDirtyRef.current = false
     tourDirtyPayloadRef.current = null
     toast.error(
-      'Tour availability is no longer saved to property Notes. Enable the Manager Availability Airtable table (remove VITE_USE_MANAGER_AVAILABILITY_TABLE=false) and use Save on the timeline.',
+      maDisabledByEnv
+        ? 'Manager Availability is off (VITE_USE_MANAGER_AVAILABILITY_TABLE=false). Set true or remove the line, restart locally, and on Vercel update env then redeploy.'
+        : 'Tour blocks are not saved without the Manager Availability Airtable table. Add the table and env from docs/AIRTABLE_SETUP_PROMPT.md §2.7, then Save.',
       { id: 'calendar-avail-legacy-blocked', duration: 6000 },
     )
     return true
-  }, [])
+  }, [maTableOk, maDisabledByEnv])
 
   const persistAdminMeetingAvailability = useCallback(
     async (dayKey, ranges, existingRows) => {
@@ -7230,7 +7242,9 @@ export function CalendarTabPanel({ manager, allowedPropertyNames, loadAllSchedul
             availabilityHint={
               maTableOk
                 ? 'Drag the timeline to add manager free blocks, then Save (or switch day — unsaved changes save first). “Apply every week” repeats on this weekday from the selected date forward; it resets when you change days. Each saved window is stored as 30-minute rows in Manager Availability with a Time Slot value (e.g. 7:00am-7:30am). Confirmed tours still come from Scheduling.'
-                : 'The calendar no longer writes tour hours to property Notes. Enable the Manager Availability Airtable table (see docs: remove VITE_USE_MANAGER_AVAILABILITY_TABLE=false) to edit slots here.'
+                : maDisabledByEnv
+                  ? 'Editing is disabled because VITE_USE_MANAGER_AVAILABILITY_TABLE is false. Set it to true (or unset) in .env, restart the dev server, and on Vercel change the variable then redeploy. See docs/AIRTABLE_SETUP_PROMPT.md §2.7.'
+                  : 'The Manager Availability table could not be reached (missing table, wrong MANAGER_AVAILABILITY_TABLE / base ID, or token permissions). Fix Airtable per docs/AIRTABLE_SETUP_PROMPT.md §2.7 and refresh.'
             }
             hidePropertyPicker
             selectedPropertyRecord={selectedProperty}

@@ -64,6 +64,26 @@ async function fetchMaPage(tableLabel, filterFormula, offset) {
   return JSON.parse(text)
 }
 
+/**
+ * True when the configured Manager Availability table exists and is listable.
+ * Unlike {@link listManagerAvailabilityRows} with an empty filter, a missing table
+ * yields false here (list returns [] on 404 for backward compatibility).
+ */
+export async function isManagerAvailabilityTableReachable() {
+  const token = import.meta.env.VITE_AIRTABLE_TOKEN
+  if (!token) return false
+  try {
+    await fetchMaPage(managerTableName(), undefined, null)
+    return true
+  } catch (e) {
+    if (e.status === 404 || /TABLE_NAME_NOT_FOUND|Could not find table|UNKNOWN_TABLE/i.test(String(e.body || e.message))) {
+      return false
+    }
+    if (e.status === 401 || e.status === 403) return false
+    throw e
+  }
+}
+
 /** All rows (paginated). Optional Airtable formula — omitted if empty. */
 export async function listManagerAvailabilityRows(filterFormula = '') {
   const token = import.meta.env.VITE_AIRTABLE_TOKEN

@@ -68,6 +68,11 @@ const ACCEPT_PROPERTY_IMAGES =
   'image/*,image/avif,image/heic,image/heif,image/webp,image/jxl,image/jp2,.avif,.heif,.heic,.webp,.jxl,.jp2,.png,.jpg,.jpeg,.gif,.bmp,.tif,.tiff,.svg,.ico,.raw,.cr2,.cr3,.nef,.arw,.dng'
 const ACCEPT_PROPERTY_IMAGES_AND_VIDEOS = `${ACCEPT_PROPERTY_IMAGES},video/*,.mp4,.mov,.webm,.mkv,.m4v,.avi`
 
+/** Scroll wheel on focused `type="number"` nudges the value — blur so wheel scrolls the page instead. */
+function blurNumberInputOnWheel(ev) {
+  ev?.currentTarget?.blur?.()
+}
+
 function isLikelyImageUpload(file) {
   if (!file || !file.name) return false
   const t = String(file.type || '').toLowerCase()
@@ -276,7 +281,7 @@ export default function AddPropertyWizard({
         amenities: Array.isArray(basics.amenities) ? [...basics.amenities] : [],
         amenitiesOther: String(basics.amenitiesOther || ''),
         pets: String(basics.pets || ''),
-        securityDeposit: String(basics.securityDeposit || ''),
+        securityDeposit: basics.securityDeposit == null || basics.securityDeposit === '' ? '' : String(basics.securityDeposit),
         moveInCharges: String(basics.moveInCharges || ''),
         leaseAccessRequirement: String(
           basics.leaseAccessRequirement || LEASE_ACCESS_REQUIREMENT.SECURITY_AND_FIRST,
@@ -299,10 +304,20 @@ export default function AddPropertyWizard({
             }))
           : [],
       },
-      appFee: String(payload?.appFee || ''),
+      appFee: payload?.appFee == null || payload.appFee === '' ? '' : String(payload.appFee),
       rooms:
         Array.isArray(payload?.rooms) && payload.rooms.length
-          ? payload.rooms.map((row) => ({ ...emptyRoomRow(), ...row, media: [] }))
+          ? payload.rooms.map((row) => {
+              const merged = { ...emptyRoomRow(), ...row, media: [] }
+              return {
+                ...merged,
+                rent: merged.rent != null && merged.rent !== '' ? String(merged.rent) : '',
+                utilitiesCost:
+                  merged.utilitiesCost != null && merged.utilitiesCost !== ''
+                    ? String(merged.utilitiesCost)
+                    : '',
+              }
+            })
           : [emptyRoomRow()],
       bathrooms: Array.isArray(payload?.bathrooms)
         ? payload.bathrooms.map((row) => ({
@@ -896,9 +911,11 @@ export default function AddPropertyWizard({
                 className={ic('applicationFee')}
                 type="number"
                 min="0"
-                step="1"
+                step="any"
+                inputMode="decimal"
                 value={appFee}
                 onChange={ev => setAppFee(ev.target.value)}
+                onWheel={blurNumberInputOnWheel}
                 placeholder="0"
               />
               <FieldError msg={e.applicationFee} />
@@ -909,9 +926,11 @@ export default function AddPropertyWizard({
                 className={ic('securityDeposit')}
                 type="number"
                 min="0"
-                step="1"
+                step="any"
+                inputMode="decimal"
                 value={basics.securityDeposit}
                 onChange={ev => setBasics(b => ({ ...b, securityDeposit: ev.target.value }))}
+                onWheel={blurNumberInputOnWheel}
                 placeholder="0"
               />
               <FieldError msg={e.securityDeposit} />
@@ -978,10 +997,12 @@ export default function AddPropertyWizard({
                   <input
                     type="number"
                     min="0"
-                    step="1"
+                    step="any"
+                    inputMode="decimal"
                     className={ic(`mir${idx}_amt`)}
                     value={row.amount}
                     onChange={(ev) => updateMoveInChargeRow(idx, { amount: ev.target.value })}
+                    onWheel={blurNumberInputOnWheel}
                     placeholder="0"
                   />
                   <FieldError msg={e[`mir${idx}_amt`]} />
@@ -1096,9 +1117,11 @@ export default function AddPropertyWizard({
                   className={ic(`r${idx}_rent`)}
                   type="number"
                   min="0"
-                  step="1"
+                  step="any"
+                  inputMode="decimal"
                   value={room.rent}
                   onChange={ev => updateRoom(idx, { rent: ev.target.value })}
+                  onWheel={blurNumberInputOnWheel}
                   placeholder="e.g. 950"
                 />
                 <FieldError msg={e[`r${idx}_rent`]} />
@@ -1172,9 +1195,11 @@ export default function AddPropertyWizard({
                   className={OK_INPUT}
                   type="number"
                   min="0"
-                  step="1"
+                  step="any"
+                  inputMode="decimal"
                   value={room.utilitiesCost}
                   onChange={ev => updateRoom(idx, { utilitiesCost: ev.target.value })}
+                  onWheel={blurNumberInputOnWheel}
                   placeholder="0"
                 />
               </div>
@@ -1637,9 +1662,11 @@ export default function AddPropertyWizard({
                   className={OK_INPUT}
                   type="number"
                   min="0"
-                  step="1"
+                  step="any"
+                  inputMode="decimal"
                   value={parking.fee}
                   onChange={ev => setParking(p => ({ ...p, fee: ev.target.value }))}
+                  onWheel={blurNumberInputOnWheel}
                   placeholder="0"
                 />
               </div>
@@ -1728,9 +1755,11 @@ export default function AddPropertyWizard({
                 className={ic('fullHousePrice')}
                 type="number"
                 min="0"
-                step="1"
+                step="any"
+                inputMode="decimal"
                 value={leasing.fullHousePrice}
                 onChange={ev => setLeasing(L => ({ ...L, fullHousePrice: ev.target.value }))}
+                onWheel={blurNumberInputOnWheel}
                 placeholder="e.g. 6200"
               />
               <FieldError msg={e.fullHousePrice} />
@@ -1741,9 +1770,11 @@ export default function AddPropertyWizard({
                 className={OK_INPUT}
                 type="number"
                 min="0"
-                step="1"
+                step="any"
+                inputMode="decimal"
                 value={leasing.promoPrice}
                 onChange={ev => setLeasing(L => ({ ...L, promoPrice: ev.target.value }))}
+                onWheel={blurNumberInputOnWheel}
                 placeholder="e.g. 5800"
               />
             </div>
@@ -1781,7 +1812,17 @@ export default function AddPropertyWizard({
                 </div>
                 <div>
                   <label className={LBL}>Monthly rent ($) <Req /></label>
-                  <input className={ic(`bnd${bidx}_price`)} type="number" min="0" step="1" value={b.price} onChange={ev => updateBundle(bidx, { price: ev.target.value })} placeholder="e.g. 3100" />
+                  <input
+                    className={ic(`bnd${bidx}_price`)}
+                    type="number"
+                    min="0"
+                    step="any"
+                    inputMode="decimal"
+                    value={b.price}
+                    onChange={ev => updateBundle(bidx, { price: ev.target.value })}
+                    onWheel={blurNumberInputOnWheel}
+                    placeholder="e.g. 3100"
+                  />
                   <FieldError msg={e[`bnd${bidx}_price`]} />
                 </div>
                 <div className="sm:col-span-2">
