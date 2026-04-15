@@ -33,12 +33,14 @@ import {
   dispatchAxisSchedulingChanged,
 } from '../lib/portalCalendarSync.js'
 import {
+  airtableFieldScalar,
   availabilityTablesAreSplit,
   buildAdminMeetingAvailabilityConfig,
   buildGlobalAdminFreeRangesMapByDate,
   buildManagerAvailabilityConfig,
   intervalFromMaRecord,
   mergePropertyAvailabilityRanges,
+  normalizeDateKey,
   normalizeWeekdayAbbr,
   recordIsGlobalAdminRow,
   slotLabelFromRange,
@@ -6067,15 +6069,18 @@ export function CalendarTabPanel({ manager, allowedPropertyNames, loadAllSchedul
     try {
       const toDelete = maRecords.filter((row) => {
         if (!isActiveVal(row)) return false
+        const rowPropId = airtableFieldScalar(row[f.propertyRecordId])
+        const rowPropName = String(row[f.propertyName] || '').trim().toLowerCase()
         const matchesProp =
-          String(row[f.propertyRecordId] || '').trim() === propId ||
-          String(row[f.propertyName] || '').trim().toLowerCase() === propName.trim().toLowerCase()
+          (propId && rowPropId === propId) ||
+          (propName.trim().toLowerCase() && rowPropName === propName.trim().toLowerCase())
+        const rowMgrId = airtableFieldScalar(row[f.managerRecordId])
+        const rowMgrEmail = String(row[f.managerEmail] || '').trim().toLowerCase()
         const matchesMgr =
-          String(row[f.managerEmail] || '').trim().toLowerCase() === mgrEmail ||
-          (mgrId && String(row[f.managerRecordId] || '').trim() === mgrId)
+          rowMgrEmail === mgrEmail || (mgrId && rowMgrId === mgrId)
         if (!matchesProp || !matchesMgr) return false
         if (repeatWeekly) return isRecVal(row) && normalizeWeekdayAbbr(row[f.weekday]) === abbr
-        return !isRecVal(row) && String(row[f.date] || '').trim().slice(0, 10) === dk
+        return !isRecVal(row) && normalizeDateKey(row[f.date]) === dk
       })
       await Promise.all(toDelete.map((row) => deleteManagerAvailabilityRecord(row.id)))
       for (const range of ranges) {
@@ -6190,8 +6195,7 @@ export function CalendarTabPanel({ manager, allowedPropertyNames, loadAllSchedul
           String(row[f.isRecurring] || '').toLowerCase() === 'true' ||
           String(row[f.isRecurring] || '').toLowerCase() === 'yes'
         if (isRec) return normalizeWeekdayAbbr(row[f.weekday]) === wkSel
-        const dk = String(row[f.date] || '').trim().slice(0, 10)
-        return dk === selectedDateKey
+        return normalizeDateKey(row[f.date]) === selectedDateKey
       })
     }
     return (schedulingRows || []).filter((row) => {

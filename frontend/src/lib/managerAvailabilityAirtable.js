@@ -4,6 +4,7 @@
  */
 
 import {
+  airtableFieldScalar,
   availabilityAirtableBaseId,
   buildAdminMeetingAvailabilityConfig,
   buildManagerAvailabilityConfig,
@@ -123,7 +124,7 @@ export async function listManagerAvailabilityForProperty(propertyRecordId, prope
   }
   const all = await listManagerAvailabilityRows('')
   return all.filter((row) => {
-    const rid = String(row[f.propertyRecordId] || '').trim()
+    const rid = airtableFieldScalar(row[f.propertyRecordId])
     if (pid && rid === pid) return true
     const pn = String(row[f.propertyName] || '').trim().toLowerCase()
     if (pname && pn === pname) return true
@@ -131,12 +132,24 @@ export async function listManagerAvailabilityForProperty(propertyRecordId, prope
   })
 }
 
+function linkFieldValueForWrite(rawId) {
+  const id = String(rawId || '').trim()
+  if (!id) return ''
+  const on = String(import.meta.env.VITE_MANAGER_AVAILABILITY_LINK_FIELD_IDS || '')
+    .trim()
+    .toLowerCase()
+  if (on === '1' || on === 'true' || on === 'yes') return [id]
+  return id
+}
+
 /** @param {Record<string, unknown>} fields */
 export async function createManagerAvailabilityRecord(fields) {
   const token = import.meta.env.VITE_AIRTABLE_TOKEN
   if (!token) throw new Error('Airtable token not configured.')
   const table = encodeURIComponent(managerTableName())
-  const clean = Object.fromEntries(Object.entries(fields || {}).filter(([, v]) => v !== undefined && v !== ''))
+  const clean = Object.fromEntries(
+    Object.entries(fields || {}).filter(([, v]) => v !== undefined && v !== '' && v !== null),
+  )
   const res = await fetch(`${baseUrl()}/${table}`, {
     method: 'POST',
     headers: headers(token),
@@ -167,7 +180,9 @@ export async function createAdminMeetingAvailabilityRecord(fields) {
   const token = import.meta.env.VITE_AIRTABLE_TOKEN
   if (!token) throw new Error('Airtable token not configured.')
   const table = encodeURIComponent(adminTableName())
-  const clean = Object.fromEntries(Object.entries(fields || {}).filter(([, v]) => v !== undefined && v !== ''))
+  const clean = Object.fromEntries(
+    Object.entries(fields || {}).filter(([, v]) => v !== undefined && v !== '' && v !== null),
+  )
   const res = await fetch(`${baseUrl()}/${table}`, {
     method: 'POST',
     headers: headers(token),
@@ -210,9 +225,9 @@ export function buildManagerAvailabilityRecordFields({
   const f = managerFieldNames()
   const fields = {
     [f.propertyName]: String(propertyName || '').trim(),
-    [f.propertyRecordId]: String(propertyRecordId || '').trim(),
+    [f.propertyRecordId]: linkFieldValueForWrite(propertyRecordId),
     [f.managerEmail]: String(managerEmail || '').trim().toLowerCase(),
-    [f.managerRecordId]: String(managerRecordId || '').trim(),
+    [f.managerRecordId]: linkFieldValueForWrite(managerRecordId),
     [f.startTime]: String(startHHmm || '').trim(),
     [f.endTime]: String(endHHmm || '').trim(),
     [f.isRecurring]: Boolean(isRecurring),

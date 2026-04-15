@@ -112,8 +112,25 @@ export function availabilityTablesAreSplit(env = {}) {
   return Boolean(a && b && a !== b)
 }
 
+/**
+ * Normalize Airtable cell values for Manager Availability fields.
+ * Linked-record columns return string[]; we use the first id for comparisons and parsing.
+ */
+export function airtableFieldScalar(value) {
+  if (value == null) return ''
+  if (Array.isArray(value)) {
+    for (const x of value) {
+      if (x != null && String(x).trim()) return String(x).trim()
+    }
+    return ''
+  }
+  if (typeof value === 'number' && Number.isFinite(value)) return String(value)
+  return String(value).trim()
+}
+
 export function normalizeDateKey(value) {
-  const m = String(value || '').trim().match(/^(\d{4}-\d{2}-\d{2})/)
+  const s = airtableFieldScalar(value)
+  const m = s.match(/^(\d{4}-\d{2}-\d{2})/)
   return m ? m[1] : ''
 }
 
@@ -133,7 +150,7 @@ function parseClockToMinutes(value) {
   return hour * 60 + minute
 }
 
-/** Accepts "HH:mm", "H:mm", "9:30 AM" */
+/** Accepts "HH:mm", "HH:mm:ss", "H:mm", "9:30 AM" */
 export function parseTimeToMinutes(raw) {
   const s = String(raw || '').trim()
   if (!s) return null
@@ -141,6 +158,12 @@ export function parseTimeToMinutes(raw) {
   if (hm) {
     const hh = Number(hm[1])
     const mm = Number(hm[2])
+    if (Number.isFinite(hh) && Number.isFinite(mm) && hh >= 0 && hh <= 23 && mm >= 0 && mm <= 59) return hh * 60 + mm
+  }
+  const hms = s.match(/^(\d{1,2}):(\d{2}):(\d{2})$/)
+  if (hms) {
+    const hh = Number(hms[1])
+    const mm = Number(hms[2])
     if (Number.isFinite(hh) && Number.isFinite(mm) && hh >= 0 && hh <= 23 && mm >= 0 && mm <= 59) return hh * 60 + mm
   }
   return parseClockToMinutes(s)
@@ -167,7 +190,7 @@ function dayAbbrForDateKey(dateKey) {
 
 /** Normalize weekday field to Mon/Tue/… */
 export function normalizeWeekdayAbbr(raw) {
-  const s = String(raw || '').trim()
+  const s = airtableFieldScalar(raw)
   if (!s) return ''
   const lower = s.toLowerCase()
   const full = DOW_FULL.find((x) => x.toLowerCase() === lower)
@@ -242,7 +265,7 @@ export function legacyFreeRangesForDate(rawAvailability, dateKey) {
 
 function recordMatchesProperty(fields, f, propertyNameNorm, propertyRecordId) {
   const pname = String(fields[f.propertyName] || '').trim().toLowerCase()
-  const prec = String(fields[f.propertyRecordId] || '').trim()
+  const prec = airtableFieldScalar(fields[f.propertyRecordId])
   if (propertyRecordId && prec && prec === String(propertyRecordId).trim()) return true
   if (propertyNameNorm && pname && pname === propertyNameNorm) return true
   return false
@@ -251,7 +274,7 @@ function recordMatchesProperty(fields, f, propertyNameNorm, propertyRecordId) {
 function recordMatchesManager(fields, f, managerEmailNorm, managerRecordId) {
   if (!managerEmailNorm && !managerRecordId) return true
   const em = String(fields[f.managerEmail] || '').trim().toLowerCase()
-  const rid = String(fields[f.managerRecordId] || '').trim()
+  const rid = airtableFieldScalar(fields[f.managerRecordId])
   if (managerRecordId && rid && rid === String(managerRecordId).trim()) return true
   if (managerEmailNorm && em && em === managerEmailNorm) return true
   return false
@@ -260,7 +283,7 @@ function recordMatchesManager(fields, f, managerEmailNorm, managerRecordId) {
 /** Global admin rows: no property set (used for Contact Axis software meetings). */
 export function recordIsGlobalAdminRow(fields, f) {
   const pname = String(fields[f.propertyName] || '').trim()
-  const prec = String(fields[f.propertyRecordId] || '').trim()
+  const prec = airtableFieldScalar(fields[f.propertyRecordId])
   return !pname && !prec
 }
 
@@ -268,10 +291,18 @@ export function recordIsGlobalAdminRow(fields, f) {
  * Map Airtable row (fields object) to normalized interval or null.
  * @param {Record<string, unknown>} fields
  */
+function minutesFromAvailabilityTimeField(raw) {
+  if (typeof raw === 'number' && Number.isFinite(raw)) {
+    const n = Math.round(raw)
+    if (n >= 0 && n < 24 * 60) return n
+  }
+  return parseTimeToMinutes(airtableFieldScalar(raw))
+}
+
 export function intervalFromMaRecord(fields, f) {
   if (!isActiveRecord(fields, f.active)) return null
-  const start = parseTimeToMinutes(fields[f.startTime])
-  const end = parseTimeToMinutes(fields[f.endTime])
+  const start = minutesFromAvailabilityTimeField(fields[f.startTime])
+  const end = minutesFromAvailabilityTimeField(fields[f.endTime])
   if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) return null
   return { start, end }
 }
