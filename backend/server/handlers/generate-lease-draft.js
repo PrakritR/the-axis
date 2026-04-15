@@ -158,17 +158,18 @@ Generate the full lease agreement with ALL of the following numbered sections. E
 7. SHARED SPACES AND HOUSE RULES
 8. FURNISHINGS AND PERSONAL PROPERTY
 9. MAINTENANCE AND REPAIRS
-10. ENTRY BY LANDLORD
-11. PETS AND SMOKING POLICY
-12. SUBLETTING AND ASSIGNMENT
-13. ALTERATIONS AND IMPROVEMENTS
-14. MOVE-OUT AND SURRENDER OF PREMISES
-15. DEFAULT AND LANDLORD REMEDIES
-16. QUIET ENJOYMENT
-17. GENERAL PROVISIONS
-18. GOVERNING LAW (Washington State)
-19. ENTIRE AGREEMENT AND AMENDMENTS
-20. SIGNATURES
+10. SMOKE DETECTORS (use heading **2.12 SMOKE DETECTORS** for this section)
+11. ENTRY BY LANDLORD
+12. PETS AND SMOKING POLICY
+13. SUBLETTING AND ASSIGNMENT
+14. ALTERATIONS AND IMPROVEMENTS
+15. MOVE-OUT AND SURRENDER OF PREMISES
+16. DEFAULT AND LANDLORD REMEDIES
+17. QUIET ENJOYMENT
+18. GENERAL PROVISIONS
+19. GOVERNING LAW (Washington State)
+20. ENTIRE AGREEMENT AND AMENDMENTS
+21. SIGNATURES
 
 Important requirements:
 - Use the provided property, unit, dates, rent, deposit, and utilities values exactly.
@@ -183,6 +184,7 @@ Washington-specific content you MUST include (use these rules; do not contradict
 - **Landlord entry to the resident's private room (non-emergency):** At least **24 hours' written notice** before entry for inspection, repair, or showing, per RCW 59.18.150. **Emergency entry** (imminent threat to life, health, safety, or property) may occur without prior notice when reasonably necessary. Landlord may enter **common areas** without the same notice when appropriate for legitimate management purposes.
 - **Rent / money:** Address **security deposit** (RCW 59.18.260), return/itemization (RCW 59.18.280), late fees, payment methods. Include an explicit **prepaid / last month's rent** clause: if none is collected, state that; if collected, state it is not a deposit unless designated as such and applies only to the final month as allowed by law.
 - **Maintenance:** Landlord habitability (RCW 59.18.060). **Plumbing and water:** resident must report leaks, backups, and loss of pressure immediately; no grease/chemicals in drains; resident may shut fixture supply if safe in a burst leak. After written notice of serious defects, reference **RCW 59.18.070** repair timelines. Emergencies: 911 when appropriate, then notify landlord.
+- **Smoke detectors (Section 10; heading must be 2.12 SMOKE DETECTORS):** Include substantially this language (you may merge minor wording for flow but do not omit RCW 43.44.110 or the certification/acknowledgment): Resident acknowledges and the landlord certifies that the property is equipped with smoke detectors as required by RCW 43.44.110. It is the Resident's responsibility to maintain the smoke detection device(s) in proper operating condition in accordance with the manufacturer's recommendations, including providing it with working batteries or other power source as the manufacturer requires, testing as directed, and promptly notifying management of any malfunction or inoperable device. The Resident must not remove or disable smoke detectors.
 - **Utilities:** Shared utilities / flat fee if applicable; resident may not transfer accounts without consent.
 - **Insurance:** Recommend **renters insurance** for personal property.
 - **Keys / access:** Lost or unreturned keys/fobs — replacement at resident's reasonable actual cost.
