@@ -22,6 +22,20 @@ function toFormBody(values) {
   return params
 }
 
+const APPLICATION_FEE_STRIPE_CATEGORY = 'application_fee'
+
+/**
+ * Applicant application-fee checkouts: charge this many USD on Stripe (client `amount` is ignored).
+ * Set `STRIPE_APPLICATION_FEE_USD` to override (e.g. `50`); omit or invalid → **1** USD.
+ */
+function resolveApplicationFeeUsdForStripe() {
+  const raw = process.env.STRIPE_APPLICATION_FEE_USD
+  if (raw === undefined || raw === null || String(raw).trim() === '') return 1
+  const n = Number(raw)
+  if (!Number.isFinite(n) || n <= 0) return 1
+  return Math.min(9999, n)
+}
+
 async function handleCheckout(req, res, secretKey) {
   const {
     residentId,
@@ -39,8 +53,8 @@ async function handleCheckout(req, res, secretKey) {
     embedded = false,
   } = req.body || {}
 
-  const amountNumber = Number(amount)
-  const normalizedItems = Array.isArray(items)
+  let amountNumber = Number(amount)
+  let normalizedItems = Array.isArray(items)
     ? items
         .map((item) => ({
           name: item?.name || item?.description || description,
@@ -50,6 +64,12 @@ async function handleCheckout(req, res, secretKey) {
         }))
         .filter((item) => item.name && Number.isFinite(item.amount) && item.amount > 0 && item.quantity > 0)
     : []
+
+  if (category === APPLICATION_FEE_STRIPE_CATEGORY) {
+    amountNumber = resolveApplicationFeeUsdForStripe()
+    normalizedItems = []
+  }
+
   const hasItems = normalizedItems.length > 0
 
   if (!residentEmail || (!description && !hasItems) || (!hasItems && (!Number.isFinite(amountNumber) || amountNumber <= 0))) {

@@ -5793,7 +5793,7 @@ function ApplicationsPanel({ allowedPropertyNames, manager }) {
       const rawFee = Number(
         row['Application Fee Paid'] ?? row['Application Fee'] ?? row['Fee Paid'] ?? row['Paid Amount'] ?? 0,
       )
-      const amount = Number.isFinite(rawFee) && rawFee > 0 ? rawFee : 50
+      const amount = Number.isFinite(rawFee) && rawFee > 0 ? rawFee : 1
 
       const now = new Date()
       const dueDate = now.toISOString().slice(0, 10)

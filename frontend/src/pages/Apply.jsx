@@ -150,6 +150,22 @@ function getApplicationFeeDollars(propertyName, serverOverrides = {}) {
   return getApplicationFeeFromMarketing(propertyName)
 }
 
+/**
+ * USD charged for the signer application fee (Stripe + submit gate). If the property has no fee
+ * (`getApplicationFeeDollars` is 0), returns 0. Otherwise defaults to **$1** unless
+ * `VITE_STRIPE_APPLICATION_FEE_USD` is set — keep in sync with `STRIPE_APPLICATION_FEE_USD` on the server.
+ */
+function getSignerStripeApplicationFeeUsd(propertyName, serverOverrides) {
+  const base = getApplicationFeeDollars(propertyName, serverOverrides)
+  if (base <= 0) return 0
+  const raw = import.meta.env.VITE_STRIPE_APPLICATION_FEE_USD
+  if (raw !== undefined && raw !== null && String(raw).trim() !== '') {
+    const n = Number(raw)
+    if (Number.isFinite(n) && n > 0) return Math.min(MAX_APPLICATION_FEE_USD, n)
+  }
+  return 1
+}
+
 // Marketing fallback when API data is unavailable.
 const MARKETING_PROPERTY_OPTIONS = properties
   .map((property) => {
@@ -1443,7 +1459,7 @@ export default function Apply() {
   }, [applicationType, propertyOptions, signer.propertyName, signer.roomNumber])
 
   const signerApplicationFeeUsd = useMemo(
-    () => getApplicationFeeDollars(signer.propertyName, applicationFeeOverrides),
+    () => getSignerStripeApplicationFeeUsd(signer.propertyName, applicationFeeOverrides),
     [signer.propertyName, applicationFeeOverrides],
   )
 
@@ -1627,7 +1643,7 @@ export default function Apply() {
       let savedRecord = null
       let resolvedGroupApplicationId = ''
       if (applicationType === 'signer') {
-        const feeDueUsd = getApplicationFeeDollars(signer.propertyName, applicationFeeOverrides)
+        const feeDueUsd = getSignerStripeApplicationFeeUsd(signer.propertyName, applicationFeeOverrides)
         if (feeDueUsd > 0 && !(feePrePaid || promoApplied || promoOverride)) {
           throw new Error('Application fee must be paid before submitting.')
         }
@@ -1837,7 +1853,7 @@ export default function Apply() {
       setFieldErrors(errs)
       return
     }
-    const amount = getApplicationFeeDollars(signer.propertyName, applicationFeeOverrides)
+    const amount = getSignerStripeApplicationFeeUsd(signer.propertyName, applicationFeeOverrides)
     if (amount <= 0) {
       setPrePaymentLoading(false)
       return
