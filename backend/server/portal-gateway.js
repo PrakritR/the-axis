@@ -33,6 +33,9 @@ import leaseAddComment from './handlers/lease-add-comment.js'
 import leaseMarkNotificationsRead from './handlers/lease-mark-notifications-read.js'
 import leaseDownloadGeneratedPdf from './handlers/lease-download-generated-pdf.js'
 import leaseDraftPatch from './handlers/lease-draft-patch.js'
+import applicationRegisterPayment from './handlers/application-register-payment.js'
+import applicationPaymentStatus from './handlers/application-payment-status.js'
+import applicationSubmitSigner from './handlers/application-submit-signer.js'
 
 const handlers = {
   'application-create-lease-draft': applicationCreateLeaseDraft,
@@ -60,6 +63,9 @@ const handlers = {
   'lease-mark-notifications-read': leaseMarkNotificationsRead,
   'lease-download-generated-pdf': leaseDownloadGeneratedPdf,
   'lease-draft-patch': leaseDraftPatch,
+  'application-register-payment': applicationRegisterPayment,
+  'application-payment-status': applicationPaymentStatus,
+  'application-submit-signer': applicationSubmitSigner,
 }
 
 // These actions don't require an authenticated manager session
@@ -68,6 +74,9 @@ const NO_AUTH_ACTIONS = new Set([
   'manager-create-account',
   'manager-lookup',
   'manager-start-free-tier',
+  'application-register-payment',
+  'application-payment-status',
+  'application-submit-signer',
 ])
 
 export default async function portalGateway(req, res) {

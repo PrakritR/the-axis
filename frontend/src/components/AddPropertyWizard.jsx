@@ -59,12 +59,6 @@ const STEPS = [
 const DEFAULT_LEASE_INFO =
   '3-month, 9-month, 12-month, and month-to-month (+$25/month). Start and end dates are flexible unless noted otherwise.'
 
-const LEASE_ACCESS_SELECT_OPTIONS = [
-  LEASE_ACCESS_REQUIREMENT.SECURITY_DEPOSIT,
-  LEASE_ACCESS_REQUIREMENT.SECURITY_AND_FIRST,
-  LEASE_ACCESS_REQUIREMENT.NONE,
-]
-
 /** OS/file pickers often omit MIME for AVIF/HEIC/WebP; accept when type or filename looks like an image. */
 const IMAGE_FILENAME_EXT_RE = /\.(avif|heic|heif|webp|jpe?g|png|gif|bmp|tif|tiff|jp2|jxl|ico|svg|raw|cr2|cr3|nef|arw|dng|orf|rw2)(\?|$)/i
 const VIDEO_FILENAME_EXT_RE = /\.(mp4|mov|webm|mkv|m4v|avi|mpg|mpeg|wmv|3gp|ogv)(\?|$)/i
@@ -118,10 +112,6 @@ function validateBasics(basics, appFee) {
   if (sdStr === '') e.securityDeposit = 'Required — enter 0 if none'
   else if (!Number.isFinite(Number(sdStr)) || Number(sdStr) < 0)
     e.securityDeposit = 'Enter a valid number (0 or more)'
-
-  if (!String(basics.leaseAccessRequirement || '').trim()) {
-    e.leaseAccessRequirement = 'Select a lease access requirement'
-  }
 
   const mir = Array.isArray(basics.moveInChargeRows) ? basics.moveInChargeRows : []
   mir.forEach((row, i) => {
@@ -929,28 +919,6 @@ export default function AddPropertyWizard({
           </div>
         </div>
 
-        <div className="rounded-2xl border border-slate-200 bg-white p-4 space-y-4">
-          <SectionHeading>Lease access requirements</SectionHeading>
-          <p className="text-xs text-slate-500">
-            Controls what residents must pay before they can open and sign the lease in the resident portal.
-          </p>
-          <div>
-            <label className={LBL}>Lease access requirement <Req /></label>
-            <select
-              className={ic('leaseAccessRequirement')}
-              value={basics.leaseAccessRequirement}
-              onChange={(ev) => setBasics((b) => ({ ...b, leaseAccessRequirement: ev.target.value }))}
-            >
-              {LEASE_ACCESS_SELECT_OPTIONS.map((opt) => (
-                <option key={opt} value={opt}>
-                  {opt}
-                </option>
-              ))}
-            </select>
-            <FieldError msg={e.leaseAccessRequirement} />
-          </div>
-        </div>
-
         <div className="rounded-2xl border border-slate-200 bg-slate-50/60 p-4 space-y-4">
           <SectionHeading>Move-in charges</SectionHeading>
           <p className="text-xs text-slate-500">
@@ -1071,15 +1039,6 @@ export default function AddPropertyWizard({
                 </label>
               )
             })}
-          </div>
-          <div>
-            <label className={`${LBL} mt-1`}>Other amenities</label>
-            <input
-              className={OK_INPUT}
-              value={basics.amenitiesOther}
-              onChange={ev => setBasics(b => ({ ...b, amenitiesOther: ev.target.value }))}
-              placeholder="Comma-separated extras, e.g. Hot tub, Guest parking"
-            />
           </div>
         </div>
       </div>
@@ -1901,7 +1860,7 @@ export default function AddPropertyWizard({
         )}
 
         {/* Step content */}
-        <div ref={scrollRef} className="mt-6 max-h-[min(70vh,640px)] overflow-y-auto pr-1">
+        <div ref={scrollRef} className="mt-6 pr-1">
           {stepRenders[step]?.()}
         </div>
 

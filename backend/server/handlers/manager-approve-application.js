@@ -1,6 +1,7 @@
 import { generateLeaseFromTemplate } from './generate-lease-from-template.js'
 import { resolveManagerTenant, canEnforceTenant } from '../middleware/resolveManagerTenant.js'
-import { markMatchingResidentsApproved } from '../lib/application-resident-sync.js'
+import { listResidentsMatchingApplication, markMatchingResidentsApproved } from '../lib/application-resident-sync.js'
+import { createApprovedApplicationFeePayments } from '../lib/approved-application-fee-payment.js'
 import {
   applicationStatusLooksPipelinePending,
   isApplicationApprovedForLease,
@@ -143,6 +144,26 @@ export default async function handler(req, res) {
     const ownerId = tenant?.ownerId || String(approvedApplication['Owner ID'] || '').trim()
     const residentSync = await markMatchingResidentsApproved(approvedApplication, ownerId)
 
+    let feeResidentIds = Array.isArray(residentSync.updatedIds) ? [...residentSync.updatedIds] : []
+    if (!feeResidentIds.length) {
+      try {
+        const rows = await listResidentsMatchingApplication(recordId, approvedApplication['Signer Email'])
+        feeResidentIds = rows.map((r) => r.id).filter((id) => String(id || '').startsWith('rec'))
+      } catch {
+        feeResidentIds = []
+      }
+    }
+
+    let applicationFeePayments = { createdIds: [], skipped: [] }
+    try {
+      applicationFeePayments = await createApprovedApplicationFeePayments({
+        application: approvedApplication,
+        residentRecordIds: feeResidentIds,
+      })
+    } catch (feeErr) {
+      console.warn('[manager-approve-application] application fee payment rows:', feeErr?.message || feeErr)
+    }
+
     // Generate lease draft from template (no AI). Skips gracefully if it fails.
     let draft = null
     let created = false
@@ -165,6 +186,8 @@ export default async function handler(req, res) {
       draft,
       createdLeaseDraft: created,
       residentRecordsUpdated: residentSync.updatedIds,
+      applicationFeePaymentIds: applicationFeePayments.createdIds,
+      applicationFeePaymentsSkipped: applicationFeePayments.skipped,
       message: created
         ? 'Application approved and lease draft generated.'
         : 'Application approved.',

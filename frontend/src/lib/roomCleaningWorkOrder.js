@@ -33,11 +33,8 @@ export function workOrderShouldCreatePaymentWhenScheduled(wo) {
   if (!wo || typeof wo !== 'object') return false
   if (isPrepaidLinkedRoomCleaningWorkOrder(wo)) return false
   const d = String(wo?.Description || '')
-  if (!d.includes(ROOM_CLEANING_BILL_ON_SCHEDULE_MARKER)) return false
-  const cat = String(wo?.Category || '').trim().toLowerCase()
-  if (!cat) return true
-  if (cat === 'cleaning' || cat === 'room cleaning' || cat.includes('cleaning')) return true
-  return false
+  // Marker is only appended by the resident post-pay flow — bill regardless of Category single-select.
+  return d.includes(ROOM_CLEANING_BILL_ON_SCHEDULE_MARKER)
 }
 
 function unknownPaymentFieldFromAirtableError(err) {
@@ -74,6 +71,7 @@ async function createPaymentRecordStrippingUnknownFields(fields) {
 
 /**
  * Creates the $10 post-pay room cleaning fee row if the work order is scheduled, eligible, and not already billed.
+ * @param {{ scheduledDateIso?: string }} opts — YYYY-MM-DD from manager form when Airtable schedule fields vary by base.
  * @returns {Promise<{ created: boolean, reason?: string }>}
  */
 export async function ensurePostpayRoomCleaningFeePayment({
@@ -81,6 +79,7 @@ export async function ensurePostpayRoomCleaningFeePayment({
   billingResidentId,
   residentProfile,
   paymentsPrefetch,
+  scheduledDateIso,
 }) {
   const woId = String(workOrder?.id || '').trim()
   const rid = String(billingResidentId || '').trim()
@@ -88,7 +87,7 @@ export async function ensurePostpayRoomCleaningFeePayment({
   if (!workOrderShouldCreatePaymentWhenScheduled(workOrder)) return { created: false, reason: 'not_eligible' }
 
   const sm = workOrderScheduledMeta(workOrder)
-  const dateStr = sm?.date || ''
+  const dateStr = String(scheduledDateIso || sm?.date || '').trim()
   if (!dateStr) return { created: false, reason: 'no_schedule_date' }
 
   const tag = paymentNotesTagForCleaningWorkOrder(woId)

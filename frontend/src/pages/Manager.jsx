@@ -24,6 +24,7 @@ import { HOUSING_CONTACT_MESSAGE } from '../lib/housingSite'
 import {
   workOrderScheduledMeta,
   workOrderPhotoAttachmentUrls,
+  normalizeWorkOrderScheduleDateKey,
 } from '../lib/workOrderShared.js'
 import { readJsonResponse } from '../lib/readJsonResponse'
 import { PORTAL_TAB_H2_CLS, PORTAL_SECTION_TITLE_CLS } from '../lib/portalTabHeader'
@@ -4262,6 +4263,8 @@ function WorkOrdersTabPanel({ allowedPropertyNames, allowedPropertyIds }) {
   const [loadError, setLoadError] = useState('')
   const [saving, setSaving] = useState(false)
   const [scheduledVisitDate, setScheduledVisitDate] = useState('')
+  /** One repair attempt per WO id per session — backfills Payments when WO was scheduled without a fee row. */
+  const cleaningPaymentRepairAttemptedRef = useRef(new Set())
   const woDetailPhotoUrls = useMemo(() => workOrderPhotoAttachmentUrls(record), [record])
   const tomorrowIso = useMemo(() => {
     const next = new Date()
@@ -4275,8 +4278,22 @@ function WorkOrdersTabPanel({ allowedPropertyNames, allowedPropertyIds }) {
 
   function applyRecordToForm(nextRecord) {
     const sm = workOrderScheduledMeta(nextRecord)
-    setScheduledVisitDate(sm?.date || '')
+    const fallback =
+      normalizeWorkOrderScheduleDateKey(nextRecord?.['Scheduled Visit Date']) ||
+      normalizeWorkOrderScheduleDateKey(nextRecord?.['Scheduled Date'])
+    setScheduledVisitDate(sm?.date || fallback || '')
   }
+
+  const scheduledKeyForCleaningRepair = useMemo(() => {
+    if (!record) return ''
+    const sm = workOrderScheduledMeta(record)
+    return (
+      sm?.date ||
+      normalizeWorkOrderScheduleDateKey(record['Scheduled Visit Date']) ||
+      normalizeWorkOrderScheduleDateKey(record['Scheduled Date']) ||
+      ''
+    )
+  }, [record])
 
   function submittedAt(row) {
     return new Date(row?.['Date Submitted'] || row?.created_at || 0).getTime()
@@ -4350,6 +4367,47 @@ function WorkOrdersTabPanel({ allowedPropertyNames, allowedPropertyIds }) {
   useEffect(() => {
     loadList()
   }, [loadList])
+
+  /** If a post-pay cleaning WO is already Scheduled but has no fee row (e.g. Category mismatch or date-only field), create it once. */
+  useEffect(() => {
+    if (!record?.id) return
+    if (String(record.Status || '').trim().toLowerCase() !== 'scheduled') return
+    if (!workOrderShouldCreatePaymentWhenScheduled(record)) return
+    if (!scheduledKeyForCleaningRepair) return
+    if (cleaningPaymentRepairAttemptedRef.current.has(record.id)) return
+
+    const billingRid = resolveResidentRecordIdForWorkOrderBilling(record, residentsById)
+    if (!billingRid) return
+
+    let cancelled = false
+    ;(async () => {
+      try {
+        const payments = await getPaymentsForResident({ id: billingRid })
+        if (cancelled) return
+        const resRec = residentsById.get(billingRid) || { id: billingRid }
+        const merged = { ...record, 'Scheduled Date': scheduledKeyForCleaningRepair }
+        const result = await ensurePostpayRoomCleaningFeePayment({
+          workOrder: merged,
+          billingResidentId: billingRid,
+          residentProfile: resRec,
+          paymentsPrefetch: payments,
+          scheduledDateIso: scheduledKeyForCleaningRepair,
+        })
+        cleaningPaymentRepairAttemptedRef.current.add(record.id)
+        if (result.created) {
+          toast.success(
+            `Added $${ROOM_CLEANING_FEE_USD} room cleaning fee to resident Payments (due ${scheduledKeyForCleaningRepair}).`,
+          )
+        }
+      } catch (e) {
+        console.warn('[WorkOrdersTabPanel] cleaning fee repair', e)
+        cleaningPaymentRepairAttemptedRef.current.add(record.id)
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [record, scheduledKeyForCleaningRepair, residentsById])
 
   const woBucketCounts = useMemo(() => {
     const counts = { open: 0, scheduled: 0, in_progress: 0, completed: 0 }
@@ -4523,6 +4581,7 @@ function WorkOrdersTabPanel({ allowedPropertyNames, allowedPropertyIds }) {
               billingResidentId: billingRid,
               residentProfile: resRec,
               paymentsPrefetch: payments,
+              scheduledDateIso: dateStr,
             })
             if (result.created) {
               successMsg = `Work order scheduled — added $${ROOM_CLEANING_FEE_USD} room cleaning fee to Payments (due ${dateStr}).`

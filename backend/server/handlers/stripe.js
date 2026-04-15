@@ -4,6 +4,8 @@
  *   body.action = 'portal'   → create Stripe billing portal session
  */
 
+import { resolveExpectedApplicationFeeUsd } from '../lib/stripe-application-fee-usd.js'
+
 const STRIPE_API = 'https://api.stripe.com/v1'
 
 function getBaseUrl(req) {
@@ -22,19 +24,14 @@ function toFormBody(values) {
   return params
 }
 
-const APPLICATION_FEE_STRIPE_CATEGORY = 'application_fee'
-
-/**
- * Applicant application-fee checkouts: charge this many USD on Stripe (client `amount` is ignored).
- * Set `STRIPE_APPLICATION_FEE_USD` to override (e.g. `50`); omit or invalid → **1** USD.
- */
-function resolveApplicationFeeUsdForStripe() {
-  const raw = process.env.STRIPE_APPLICATION_FEE_USD
-  if (raw === undefined || raw === null || String(raw).trim() === '') return 1
-  const n = Number(raw)
-  if (!Number.isFinite(n) || n <= 0) return 1
-  return Math.min(9999, n)
+/** Stripe substitutes `{CHECKOUT_SESSION_ID}` when redirecting after embedded checkout. */
+function embeddedCheckoutReturnUrl(baseUrl) {
+  const u = String(baseUrl || '')
+  if (u.includes('{CHECKOUT_SESSION_ID}')) return u
+  return `${u}${u.includes('?') ? '&' : '?'}session_id={CHECKOUT_SESSION_ID}`
 }
+
+const APPLICATION_FEE_STRIPE_CATEGORY = 'application_fee'
 
 async function handleCheckout(req, res, secretKey) {
   const {
@@ -48,6 +45,7 @@ async function handleCheckout(req, res, secretKey) {
     description,
     category = 'rent',
     paymentRecordId,
+    applicationRecordId,
     successPath = '/resident?payment=success',
     cancelPath = '/resident?payment=cancelled',
     embedded = false,
@@ -66,8 +64,11 @@ async function handleCheckout(req, res, secretKey) {
     : []
 
   if (category === APPLICATION_FEE_STRIPE_CATEGORY) {
-    amountNumber = resolveApplicationFeeUsdForStripe()
+    amountNumber = resolveExpectedApplicationFeeUsd()
     normalizedItems = []
+    if (!Number.isFinite(amountNumber) || amountNumber <= 0) {
+      return res.status(400).json({ error: 'Application fee is not charged in this environment; complete the form without card payment.' })
+    }
   }
 
   const hasItems = normalizedItems.length > 0
@@ -76,14 +77,15 @@ async function handleCheckout(req, res, secretKey) {
     return res.status(400).json({ error: 'Missing required payment fields.' })
   }
 
-  const successUrl = `${getBaseUrl(req)}${successPath}`
+  const successBase = `${getBaseUrl(req)}${successPath}`
+  const successUrl = embedded ? embeddedCheckoutReturnUrl(successBase) : successBase
   const cancelUrl = `${getBaseUrl(req)}${cancelPath}`
 
   const form = toFormBody({
     mode: 'payment',
     ...(embedded
       ? { ui_mode: 'embedded_page', return_url: successUrl }
-      : { success_url: successUrl, cancel_url: cancelUrl }),
+      : { success_url: successBase, cancel_url: cancelUrl }),
     customer_email: residentEmail,
     customer_creation: 'always',
     'metadata[resident_id]': residentId,
@@ -92,6 +94,9 @@ async function handleCheckout(req, res, secretKey) {
     'metadata[unit_number]': unitNumber,
     'metadata[payment_category]': category,
     'metadata[payment_record_id]': paymentRecordId,
+    ...(category === APPLICATION_FEE_STRIPE_CATEGORY && applicationRecordId
+      ? { 'metadata[application_record_id]': String(applicationRecordId).trim() }
+      : {}),
   })
 
   const lineItems = hasItems

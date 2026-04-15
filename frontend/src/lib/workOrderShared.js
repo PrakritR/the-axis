@@ -121,6 +121,7 @@ export function workOrderScheduledMeta(record) {
 
   const dateCandidates = [
     rec['Scheduled Date'],
+    rec['Scheduled Visit Date'],
     rec['Schedule Date'],
     rec['Visit Date'],
     rec['Appointment Date'],

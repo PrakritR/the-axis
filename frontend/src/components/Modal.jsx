@@ -16,7 +16,7 @@ export default function Modal({ children, onClose }){
       }}
     >
       <div className="absolute inset-0 bg-black/50" onClick={onClose}></div>
-      <div className="relative z-10 bg-white rounded-[28px] shadow-2xl max-w-3xl w-full p-5 sm:p-6 overflow-y-auto max-h-full">
+      <div className="relative z-10 mx-auto w-full max-w-3xl self-center rounded-[28px] bg-white p-5 shadow-2xl sm:p-6 max-h-[min(92dvh,52rem)] overflow-y-auto">
         <button
           type="button"
           onClick={onClose}

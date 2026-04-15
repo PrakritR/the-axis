@@ -57,6 +57,8 @@ export function formatPaymentNotesForDisplay(notes) {
 export function managerPaymentLineDisplayTitle(p) {
   if (!p || typeof p !== 'object') return 'Charge'
   if (isPostpayRoomCleaningPaymentRecord(p)) return 'Room cleaning (work order)'
+  const rawBlob = paymentRawBlob(p)
+  if (/application\s*fee/i.test(rawBlob) && !/refund/i.test(rawBlob)) return 'Application fee'
   const cls = classifyResidentPaymentLine(p)
   if (cls === 'deposit') return 'Security deposit'
   if (cls === 'hold_fee') return 'Room hold fee'

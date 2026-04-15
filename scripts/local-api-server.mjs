@@ -87,6 +87,24 @@ const server = http.createServer(async (req, nodeRes) => {
       return
     }
 
+    // Stripe signature verification requires the raw body (not JSON-parsed).
+    if (url.pathname === '/api/stripe-webhook' && req.method === 'POST') {
+      const chunks = []
+      for await (const chunk of req) chunks.push(chunk)
+      const buf = Buffer.concat(chunks)
+      const { default: stripeWebhook } = await import('../backend/server/handlers/stripe-webhook.js')
+      const vercelReq = {
+        method: req.method,
+        url: url.pathname + url.search,
+        query: Object.fromEntries(url.searchParams.entries()),
+        headers: req.headers,
+        body: buf,
+      }
+      const vercelRes = createVercelRes(nodeRes)
+      await stripeWebhook(vercelReq, vercelRes)
+      return
+    }
+
     let body
     if (req.method !== 'GET' && req.method !== 'HEAD') {
       body = await readJsonBody(req)

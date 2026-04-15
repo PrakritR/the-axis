@@ -34,6 +34,11 @@ export function EmbeddedStripeCheckout({ open, title, checkoutRequest, apiEndpoi
   const [error, setError] = useState('')
   const [ready, setReady] = useState(false)
   const requestKey = useMemo(() => JSON.stringify(checkoutRequest || {}), [checkoutRequest])
+  /** Parent callbacks change every render; refs keep Stripe from remounting on each parent paint. */
+  const onCompleteRef = useRef(onComplete)
+  const onCloseRef = useRef(onClose)
+  onCompleteRef.current = onComplete
+  onCloseRef.current = onClose
 
   useEffect(() => {
     if (!open) return undefined
@@ -68,9 +73,8 @@ export function EmbeddedStripeCheckout({ open, title, checkoutRequest, apiEndpoi
 
         const embedded = await stripe.initEmbeddedCheckout({
           fetchClientSecret: async () => data.client_secret,
-          // Parent keeps checkout context on a ref — do not pass session-create response as “payment result”.
           onComplete: () => {
-            onComplete?.()
+            onCompleteRef.current?.()
           },
         })
 
@@ -100,7 +104,7 @@ export function EmbeddedStripeCheckout({ open, title, checkoutRequest, apiEndpoi
       }
       if (containerRef.current) containerRef.current.innerHTML = ''
     }
-  }, [open, requestKey, checkoutRequest, onComplete])
+  }, [open, requestKey, apiEndpoint])
 
   if (!open) return null
 
@@ -114,7 +118,7 @@ export function EmbeddedStripeCheckout({ open, title, checkoutRequest, apiEndpoi
           </div>
           <button
             type="button"
-            onClick={onClose}
+            onClick={() => onCloseRef.current?.()}
             className="rounded-full border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-600 transition hover:bg-slate-50"
           >
             Close
