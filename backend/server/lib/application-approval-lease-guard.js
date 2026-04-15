@@ -40,7 +40,24 @@ export function applicationStatusLooksPipelinePending(status) {
 }
 
 function normalizeStatusPiece(value) {
-  return String(value || '').trim().toLowerCase()
+  if (value == null || value === '') return ''
+  if (typeof value === 'object' && value !== null && 'name' in value) {
+    return String(value.name || '').trim().toLowerCase()
+  }
+  if (Array.isArray(value)) {
+    const parts = value
+      .map((v) => (typeof v === 'object' && v != null && 'name' in v ? v.name : v))
+      .filter((x) => x != null && String(x).trim() !== '')
+    return parts.map((p) => String(p).trim().toLowerCase()).join(' ')
+  }
+  return String(value).trim().toLowerCase()
+}
+
+function applicationApprovedCheckbox(raw) {
+  const a = raw?.Approved
+  if (a === true || a === 1) return true
+  const s = String(a ?? '').trim().toLowerCase()
+  return s === 'true' || s === '1' || s === 'yes' || s === 'checked'
 }
 
 function statusPieceRejected(s) {
@@ -69,6 +86,8 @@ export function deriveApplicationLeaseGateState(app) {
   for (const s of pieces) {
     if (statusPieceApproved(s)) return 'approved'
   }
+  if (applicationApprovedCheckbox(app)) return 'approved'
+
   for (const s of pieces) {
     if (applicationStatusLooksPipelinePending(s)) return 'pending'
   }

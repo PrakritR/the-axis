@@ -240,13 +240,31 @@ function isApprovalGranted(value) {
   return ['true', '1', 'yes', 'approved'].includes(normalized)
 }
 
-/** Linked Applications record ids on Resident Profile (apply / manager-approve pipeline). */
+/** Airtable record id pattern for linked Applications rows. */
+function isApplicationRecordId(s) {
+  return /^rec[a-zA-Z0-9]{14}/.test(String(s || '').trim())
+}
+
+/**
+ * Linked Applications record ids on Resident Profile (apply / manager-approve pipeline).
+ * Supports plural `Applications`, singular `Application`, and occasional bases that use other keys.
+ */
 function residentApplicationsRecordIds(resident) {
-  const apps = resident?.Applications
-  if (!Array.isArray(apps)) return []
-  return apps
-    .map((id) => String(id || '').trim())
-    .filter((s) => s.startsWith('rec') && s.length >= 11)
+  const ids = []
+  const buckets = [resident?.Applications, resident?.Application, resident?.['Application Record']]
+  for (const apps of buckets) {
+    if (Array.isArray(apps)) {
+      for (const id of apps) {
+        const s = String(id || '').trim()
+        if (isApplicationRecordId(s)) ids.push(s)
+      }
+    } else if (apps && typeof apps === 'object' && apps.id && isApplicationRecordId(apps.id)) {
+      ids.push(String(apps.id).trim())
+    } else if (typeof apps === 'string' && isApplicationRecordId(apps)) {
+      ids.push(apps.trim())
+    }
+  }
+  return [...new Set(ids)]
 }
 
 function residentApplicationUnlocked(resident) {
@@ -297,6 +315,12 @@ function residentPortalAccessState(resident, linkedAppState) {
   // Applications row is stale, unreadable from the client, or status columns disagree.
   if (isApprovalGranted(resident?.['Application Approval'])) return 'approved'
   if (linkedAppState === 'pending') return 'pending'
+  // Linked application(s) exist but we could not load them from Airtable (token/base/table).
+  // Do not deadlock: fall back to profile flags written at approval time.
+  if (residentApplicationsRecordIds(resident).length > 0 && linkedAppState == null) {
+    if (isApprovalGranted(resident?.Approved)) return 'approved'
+    return 'pending'
+  }
   return residentApplicationUnlocked(resident) ? 'approved' : 'pending'
 }
 
@@ -4154,9 +4178,18 @@ function Dashboard({ resident, onResidentUpdated, onSignOut }) {
     let cancelled = false
     ;(async () => {
       try {
-        const app = await getApplicationById(applicationRecordIds[0])
+        const apps = await Promise.all(applicationRecordIds.map((id) => getApplicationById(id)))
         if (cancelled) return
-        setLinkedApplicationApprovalState(app ? deriveApplicationApprovalState(app) : null)
+        const valid = apps.filter(Boolean)
+        if (!valid.length) {
+          setLinkedApplicationApprovalState(null)
+          return
+        }
+        const states = valid.map((row) => deriveApplicationApprovalState(row))
+        let aggregate = 'pending'
+        if (states.includes('approved')) aggregate = 'approved'
+        else if (states.length && states.every((s) => s === 'rejected')) aggregate = 'rejected'
+        setLinkedApplicationApprovalState(aggregate)
       } catch {
         if (!cancelled) setLinkedApplicationApprovalState(null)
       }
