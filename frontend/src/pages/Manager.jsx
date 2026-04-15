@@ -6498,7 +6498,7 @@ export function CalendarTabPanel({ manager, allowedPropertyNames, loadAllSchedul
   }, [schedulingRowsForView, bookedByDate, loadAllSchedulingRows])
 
   return (
-    <div className="mb-10">
+    <div className="pb-2">
       <div className="mb-5 flex flex-wrap items-center gap-3">
         <h2 className={PORTAL_TAB_H2_CLS}>Calendar</h2>
         <div className="flex w-full min-w-0 flex-wrap items-center justify-end gap-2 sm:ml-auto sm:w-auto sm:flex-nowrap">
@@ -7166,6 +7166,7 @@ function ManagerDashboard({ manager: managerProp, openDraftId, onOpenDraft, onCl
         activeId={dashView}
         onNavigate={setDashView}
         onSignOut={onSignOut}
+        pinMainScroll={dashView === 'calendar'}
         sidebarFooterExtra={
           <button
             type="button"

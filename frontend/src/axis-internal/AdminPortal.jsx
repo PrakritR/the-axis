@@ -995,6 +995,7 @@ export default function AdminPortal() {
       activeId={tab}
       onNavigate={setTab}
       onSignOut={handleSignOut}
+      pinMainScroll={tab === 'calendar'}
     >
       {tab === 'dashboard' && (
         <div className="min-w-0 space-y-6">

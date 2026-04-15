@@ -79,6 +79,8 @@ function PortalMobileBottomNav({ navItems, activeId, onNavigate }) {
  *
  * @param {'left' | 'right'} [sidebarPosition='left']
  * @param {'sidebar' | 'none'} [desktopNav='sidebar']
+ * @param {boolean} [pinMainScroll=false] When true, main column uses `overscroll-y-none` so touch/trackpad
+ *   cannot rubber-band past the footer (used for Calendar tab with tall grids).
  */
 export default function PortalShell({
   brandTitle,
@@ -90,10 +92,12 @@ export default function PortalShell({
   sidebarPosition = 'left',
   sidebarFooterExtra,
   desktopNav = 'sidebar',
+  pinMainScroll = false,
   children,
 }) {
   const isRight = sidebarPosition === 'right'
   const showDesktopSidebar = desktopNav === 'sidebar'
+  const mainOverscrollClass = pinMainScroll ? 'overscroll-y-none' : 'overscroll-y-contain'
 
   // Height of the portal area = full viewport minus the fixed site header.
   // --portal-inset is set on the parent <main> in App.jsx.
@@ -202,7 +206,9 @@ export default function PortalShell({
 
         {/* Page content scrolls; footer pinned to bottom of column when content is short */}
         <div className={`flex min-h-0 flex-1 flex-col overflow-hidden ${portalMobileBottomInsetClass}`}>
-          <main className={`min-h-0 flex-1 overflow-y-auto overscroll-y-contain [-webkit-overflow-scrolling:touch] ${portalMainPaddingClass}`}>
+          <main
+            className={`min-h-0 flex-1 overflow-y-auto ${mainOverscrollClass} [-webkit-overflow-scrolling:touch] ${portalMainPaddingClass}`}
+          >
             <div className={portalContentWidthClass}>{children}</div>
           </main>
           <PortalShellFooter brandTitle={brandTitle} brandSubtitle={brandSubtitle} />
