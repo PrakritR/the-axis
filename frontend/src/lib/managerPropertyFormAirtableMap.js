@@ -279,6 +279,8 @@ export function emptyRoomRow() {
     unavailable: false,
     furnished: '',
     utilitiesCost: '',
+    /** Array of included utility names e.g. ['Water', 'Gas', 'Trash'] */
+    utilitiesIncludes: [],
     utilities: '',
     notes: '',
     /** Bathroom / access only — not mixed with furniture (stored in axis meta `roomsDetail`). */
@@ -527,6 +529,7 @@ export function buildPropertyWizardInitialValues(property) {
       unavailable,
       furnished: stringOrEmpty(detail.furnished || record[roomFurnishedField(n)]),
       utilitiesCost: stringOrEmpty(detail.utilitiesCost || record[roomUtilitiesCostField(n)]),
+      utilitiesIncludes: Array.isArray(detail.utilitiesIncludes) ? detail.utilitiesIncludes : [],
       utilities: stringOrEmpty(detail.utilities || (n === 1 ? record[ROOM_1_UTILITIES_FIELD] : '')),
       notes: stringOrEmpty(detail.notes),
       bathroomSetup: stringOrEmpty(detail.bathroomSetup),
@@ -884,8 +887,12 @@ export function serializeManagerAddPropertyToAirtableFields(params) {
       if (uc !== undefined) fields[roomUtilitiesCostField(i)] = uc
 
       if (i === 1) {
-        const u1 = String(row.utilities || '').trim()
-        if (u1) fields[ROOM_1_UTILITIES_FIELD] = u1
+        // Combine the structured "includes" list with the free-text description
+        const includes = Array.isArray(row.utilitiesIncludes) ? row.utilitiesIncludes.filter(Boolean) : []
+        const includesLine = includes.length ? `Included: ${includes.join(', ')}` : ''
+        const descLine = String(row.utilities || '').trim()
+        const combined = [includesLine, descLine].filter(Boolean).join('. ')
+        if (combined) fields[ROOM_1_UTILITIES_FIELD] = combined
       }
     }
 
@@ -898,6 +905,7 @@ export function serializeManagerAddPropertyToAirtableFields(params) {
           bathroomSetup: String(row.bathroomSetup || '').trim(),
           furnitureIncluded: String(row.furnitureIncluded || '').trim(),
           additionalFeatures: String(row.additionalFeatures || '').trim(),
+          utilitiesIncludes: Array.isArray(row.utilitiesIncludes) ? row.utilitiesIncludes : [],
           unavailable: Boolean(row.unavailable),
         })
       } else {
@@ -913,6 +921,7 @@ export function serializeManagerAddPropertyToAirtableFields(params) {
           unavailable: Boolean(row.unavailable),
           furnished: String(row.furnished || '').trim(),
           utilitiesCost: String(row.utilitiesCost ?? '').trim(),
+          utilitiesIncludes: Array.isArray(row.utilitiesIncludes) ? row.utilitiesIncludes : [],
           utilities: String(row.utilities || '').trim(),
         })
       }

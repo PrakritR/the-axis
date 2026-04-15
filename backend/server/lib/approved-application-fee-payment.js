@@ -3,6 +3,7 @@
  * linked Resident Profile's Payments tab (idempotent via Notes marker).
  */
 import { resolveExpectedApplicationFeeUsd } from './stripe-application-fee-usd.js'
+import { SUBMITTED_APP_FEE_MARKER_PREFIX } from './submitted-application-fee-payment.js'
 
 const AIRTABLE_TOKEN = process.env.AIRTABLE_TOKEN || process.env.VITE_AIRTABLE_TOKEN
 const CORE_BASE_ID =
@@ -76,6 +77,36 @@ async function feePaymentAlreadyExists(residentRecordId, applicationRecordId) {
 }
 
 /**
+ * Find the payment row created at submission time (by submitted-application-fee-payment.js)
+ * so we can update it with the Resident link rather than creating a duplicate.
+ */
+async function findSubmittedFeeRow(applicationRecordId) {
+  const submittedMarker = `${SUBMITTED_APP_FEE_MARKER_PREFIX}${applicationRecordId}`
+  const enc = encodeURIComponent(PAYMENTS_TABLE)
+  const formula = `FIND("${escapeFormulaValue(submittedMarker)}", {Notes}) > 0`
+  const url = `${CORE_AIRTABLE_BASE_URL}/${enc}?filterByFormula=${encodeURIComponent(formula)}&maxRecords=1`
+  try {
+    const data = await airtableGet(url)
+    return data.records?.[0] || null
+  } catch {
+    return null
+  }
+}
+
+async function airtablePatch(url, body) {
+  const res = await fetch(url, {
+    method: 'PATCH',
+    headers: airtableHeaders(),
+    body: JSON.stringify(body),
+  })
+  if (!res.ok) {
+    const text = await res.text()
+    throw new Error(text.slice(0, 400))
+  }
+  return res.json()
+}
+
+/**
  * @param {{ application: Record<string, unknown>, residentRecordIds: string[] }} p
  * @returns {Promise<{ createdIds: string[], skipped: string[], error?: string }>}
  */
@@ -99,11 +130,15 @@ export async function createApprovedApplicationFeePayments({ application, reside
   const ids = Array.isArray(residentRecordIds) ? [...new Set(residentRecordIds.filter((x) => String(x || '').startsWith('rec')))] : []
 
   const today = new Date().toISOString().slice(0, 10)
-  const marker = `${APPROVED_APP_FEE_MARKER_PREFIX}${appId}`
-  const notes = `Application fee (recorded as paid when application was approved). ${marker}`
+  const approvedMarker = `${APPROVED_APP_FEE_MARKER_PREFIX}${appId}`
+  const notes = `Application fee (recorded as paid when application was approved). ${approvedMarker}`
 
   const encPay = encodeURIComponent(PAYMENTS_TABLE)
   const payUrl = `${CORE_AIRTABLE_BASE_URL}/${encPay}`
+
+  // Try to find the row that was created at submission time and upgrade it with
+  // the Resident link, so it shows up in the resident's portal without a duplicate.
+  const submittedRow = await findSubmittedFeeRow(appId).catch(() => null)
 
   for (const rid of ids) {
     try {
@@ -116,26 +151,53 @@ export async function createApprovedApplicationFeePayments({ application, reside
       const prop = String(resRow.House || application['Property Name'] || '').trim()
       const unit = String(resRow['Unit Number'] || application['Room Number'] || '').trim()
 
-      const created = await airtablePost(payUrl, {
-        fields: {
-          Resident: [rid],
-          Amount: feeUsd,
-          'Amount Paid': feeUsd,
-          Balance: 0,
-          Status: 'Paid',
-          'Paid Date': today,
-          'Due Date': today,
-          Type: 'Application fee',
-          Category: 'Fee',
-          Month: 'Application fee',
-          Notes: notes,
-          'Resident Name': resName || undefined,
-          'Property Name': prop || undefined,
-          'Room Number': unit || undefined,
-        },
-        typecast: true,
-      })
-      if (created?.id) createdIds.push(created.id)
+      if (submittedRow?.id) {
+        // Update the existing submitted-time row: add Resident link + approval marker
+        const existingNotes = String(submittedRow.fields?.Notes || '')
+        const updatedNotes = existingNotes.includes(approvedMarker)
+          ? existingNotes
+          : `${existingNotes} ${approvedMarker}`.trim()
+        const updated = await airtablePatch(
+          `${CORE_AIRTABLE_BASE_URL}/${encodeURIComponent(PAYMENTS_TABLE)}/${submittedRow.id}`,
+          {
+            fields: {
+              Resident: [rid],
+              Status: 'Paid',
+              'Amount Paid': feeUsd,
+              Balance: 0,
+              'Paid Date': today,
+              Notes: updatedNotes,
+              'Resident Name': resName || undefined,
+              'Property Name': prop || undefined,
+              'Room Number': unit || undefined,
+            },
+            typecast: true,
+          },
+        )
+        if (updated?.id) createdIds.push(updated.id)
+      } else {
+        // No submitted-time row exists — create fresh
+        const created = await airtablePost(payUrl, {
+          fields: {
+            Resident: [rid],
+            Amount: feeUsd,
+            'Amount Paid': feeUsd,
+            Balance: 0,
+            Status: 'Paid',
+            'Paid Date': today,
+            'Due Date': today,
+            Type: 'Application fee',
+            Category: 'Fee',
+            Month: 'Application fee',
+            Notes: notes,
+            'Resident Name': resName || undefined,
+            'Property Name': prop || undefined,
+            'Room Number': unit || undefined,
+          },
+          typecast: true,
+        })
+        if (created?.id) createdIds.push(created.id)
+      }
     } catch (err) {
       console.warn('[approved-application-fee-payment] skip resident', rid, err?.message || err)
       skipped.push(rid)

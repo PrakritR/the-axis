@@ -63,12 +63,15 @@ const ADMIN_STATUS_FILTER_ITEMS = [
   {
     id: 'draft_ready',
     label: 'Manager Review',
-    match: (status) => ['Draft Generated', 'Under Review', 'Changes Needed', 'Approved', 'Sent Back to Manager'].includes(String(status || '').trim()),
+    match: (status) =>
+      ['Draft Generated', 'Under Review', 'Changes Needed', 'Approved', 'Sent Back to Manager', 'Changes Made'].includes(
+        String(status || '').trim(),
+      ),
   },
   {
     id: 'admin_review',
     label: 'Admin Review',
-    match: (status) => ['Submitted to Admin', 'Admin In Review', 'Changes Made', 'Manager Approved', 'Ready for Signature'].includes(String(status || '').trim()),
+    match: (status) => ['Submitted to Admin', 'Admin In Review', 'Manager Approved', 'Ready for Signature'].includes(String(status || '').trim()),
   },
   { id: 'sent', label: 'With Resident', match: (status) => String(status || '').trim() === 'Published' },
   { id: 'signed', label: 'Signed', match: (status) => String(status || '').trim() === 'Signed' },
@@ -211,6 +214,8 @@ export default function AdminLeasingTab({ adminUser, accounts = [] }) {
   const [pdfFile, setPdfFile] = useState(null)
   const [activeVersion, setActiveVersion] = useState(null)
   const [leaseComments, setLeaseComments] = useState([])
+  const [commentText, setCommentText] = useState('')
+  const [commentSubmitting, setCommentSubmitting] = useState(false)
 
   const adminRecordId = adminUser?.airtableRecordId || adminUser?.id || ''
   const adminName = adminUser?.name || adminUser?.email || 'Admin'
@@ -392,12 +397,36 @@ export default function AdminLeasingTab({ adminUser, accounts = [] }) {
       setLeaseComments(Array.isArray(comments) ? comments : [])
       setShowUploadForm(false)
       setPdfFile(null)
+      setCommentText('')
     } catch (err) {
       toast.error(err.message || 'Could not open lease details')
     } finally {
       setDetailLoading(false)
     }
   }, [selectedDraftId])
+
+  async function handleAddAdminComment(event) {
+    event.preventDefault()
+    const message = commentText.trim()
+    if (!message || !activeDraft?.id) return
+    setCommentSubmitting(true)
+    try {
+      await callPortalAction('lease-add-comment', {
+        leaseDraftId: activeDraft.id,
+        authorName: adminName,
+        authorRole: 'Admin',
+        authorRecordId: adminRecordId,
+        message,
+      })
+      setCommentText('')
+      const updated = await getLeaseCommentsForDraft(activeDraft.id).catch(() => [])
+      setLeaseComments(Array.isArray(updated) ? updated : [])
+    } catch (err) {
+      toast.error(err.message || 'Could not add comment')
+    } finally {
+      setCommentSubmitting(false)
+    }
+  }
 
   async function handleSendToManager() {
     if (!activeDraft?.id) return
@@ -796,7 +825,7 @@ export default function AdminLeasingTab({ adminUser, accounts = [] }) {
 
           {activeVersion?.['PDF URL'] ? (
             <div className="border-b border-slate-100 bg-emerald-50 px-5 py-3 flex items-center gap-3">
-              <span className="text-xs font-semibold text-emerald-700">PDF uploaded</span>
+              <span className="text-xs font-semibold text-emerald-700">Current lease PDF</span>
               <a
                 href={activeVersion['PDF URL']}
                 target="_blank"
@@ -806,26 +835,47 @@ export default function AdminLeasingTab({ adminUser, accounts = [] }) {
                 View / Download PDF
               </a>
               {activeVersion['File Name'] ? <span className="text-xs text-slate-500 truncate max-w-[200px]">{activeVersion['File Name']}</span> : null}
+              <span className="text-xs text-slate-400 ml-auto">Upload a new PDF to replace this one</span>
             </div>
           ) : null}
 
           <div className="min-w-0 space-y-5 overflow-x-auto px-4 py-5 sm:px-6">
-            {!detailLoading && unifiedChangeThreadCount > 0 && !isLeaseWithResident ? (
-              <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4">
-                <div className="flex items-center justify-between gap-2">
-                  <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-500">Change requests &amp; messages</div>
+            <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4">
+              <div className="flex items-center justify-between gap-2">
+                <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-500">Change requests &amp; messages</div>
+                {unifiedChangeThreadCount > 0 && (
                   <span className="rounded-full bg-white px-2 py-0.5 text-xs font-semibold text-slate-600 shadow-sm">
                     {unifiedChangeThreadCount}
                   </span>
-                </div>
+                )}
+              </div>
+              {!detailLoading && (
                 <div className="mt-4 space-y-3">
                   <ManagerEditRequestBubble summary={managerEditRequestSummary} />
                   {leaseCommentsForThread.map((c) => (
                     <AdminLeaseCommentBubble key={c.id} comment={c} />
                   ))}
+                  {unifiedChangeThreadCount === 0 && (
+                    <p className="text-xs text-slate-400">No messages yet.</p>
+                  )}
                 </div>
-              </div>
-            ) : null}
+              )}
+              <form onSubmit={handleAddAdminComment} className="mt-4 flex gap-2 border-t border-slate-200 pt-3">
+                <input
+                  value={commentText}
+                  onChange={(e) => setCommentText(e.target.value)}
+                  placeholder="Add a comment for the manager…"
+                  className="flex-1 rounded-2xl border border-slate-200 bg-white px-4 py-2 text-sm outline-none focus:border-[#2563eb] focus:ring-2 focus:ring-[#2563eb]/20"
+                />
+                <button
+                  type="submit"
+                  disabled={commentSubmitting || !commentText.trim()}
+                  className="rounded-2xl bg-[#2563eb] px-4 py-2 text-sm font-semibold text-white transition hover:bg-blue-700 disabled:opacity-40"
+                >
+                  {commentSubmitting ? 'Sending…' : 'Send'}
+                </button>
+              </form>
+            </div>
 
             {detailLoading ? (
               <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-6 text-sm text-slate-500">Loading lease details...</div>

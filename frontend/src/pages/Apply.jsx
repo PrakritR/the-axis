@@ -7,6 +7,10 @@ import {
   DEFAULT_APPLICATION_FEE_USD,
   clampPositiveApplicationFeeUsd,
 } from '../../../shared/stripe-application-fee-defaults.js'
+import {
+  DEFAULT_AXIS_APPLICATION_ROOM_CHOICE_2,
+  DEFAULT_AXIS_APPLICATION_ROOM_CHOICE_3,
+} from '../../../shared/application-airtable-fields.js'
 import { readJsonResponse } from '../lib/readJsonResponse'
 import { errorFromAirtableApiBody } from '../lib/airtablePermissionError'
 
@@ -541,8 +545,12 @@ function optionalApplicationsTableSignerExtras(signer, resolvedGroupApplicationI
   const groupCheckboxField = String(import.meta.env.VITE_AIRTABLE_APPLICATION_GROUP_CHECKBOX_FIELD || '').trim()
   const groupSizeField = String(import.meta.env.VITE_AIRTABLE_APPLICATION_GROUP_SIZE_FIELD || '').trim()
   const axisGroupIdField = String(import.meta.env.VITE_AIRTABLE_APPLICATION_AXIS_GROUP_ID_FIELD || '').trim()
-  const roomChoice2Field = String(import.meta.env.VITE_AIRTABLE_APPLICATION_ROOM_CHOICE_2_FIELD || '').trim()
-  const roomChoice3Field = String(import.meta.env.VITE_AIRTABLE_APPLICATION_ROOM_CHOICE_3_FIELD || '').trim()
+  const roomChoice2Field = String(
+    import.meta.env.VITE_AIRTABLE_APPLICATION_ROOM_CHOICE_2_FIELD || DEFAULT_AXIS_APPLICATION_ROOM_CHOICE_2,
+  ).trim()
+  const roomChoice3Field = String(
+    import.meta.env.VITE_AIRTABLE_APPLICATION_ROOM_CHOICE_3_FIELD || DEFAULT_AXIS_APPLICATION_ROOM_CHOICE_3,
+  ).trim()
 
   const out = {}
   if (groupCheckboxField) {
@@ -830,9 +838,10 @@ async function registerApplicationPaymentDraft({ email, fullName, propertyName, 
 /**
  * Ask the server to read Stripe Checkout and PATCH Airtable when payment is paid.
  * Safe to call repeatedly while Stripe transitions from processing → paid.
+ * Returns true when the server confirmed the session is paid (and Airtable was updated).
  */
 async function syncApplicationStripeSession(applicationRecordId, sessionId) {
-  if (!applicationRecordId?.startsWith('rec') || !sessionId?.startsWith('cs_')) return
+  if (!applicationRecordId?.startsWith('rec') || !sessionId?.startsWith('cs_')) return false
   try {
     const res = await fetch('/api/portal?action=application-stripe-sync', {
       method: 'POST',
@@ -848,8 +857,10 @@ async function syncApplicationStripeSession(applicationRecordId, sessionId) {
     if (!res.ok && import.meta.env.DEV) {
       console.warn('[apply] application-stripe-sync', res.status, data?.error || data)
     }
+    return res.ok && data?.paid === true
   } catch (e) {
     if (import.meta.env.DEV) console.warn('[apply] application-stripe-sync', e?.message || e)
+    return false
   }
 }
 
@@ -865,7 +876,8 @@ async function pollApplicationPaid(applicationRecordId, { maxAttempts = 60, inte
   for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
     const sid = checkoutSessionIdForPoll(sessionId)
     if (sid) {
-      await syncApplicationStripeSession(applicationRecordId, sid)
+      const syncConfirmedPaid = await syncApplicationStripeSession(applicationRecordId, sid)
+      if (syncConfirmedPaid) return true
     }
     try {
       const r = await fetch(
@@ -2105,6 +2117,44 @@ export default function Apply() {
     if (amount <= 0) {
       setPrePaymentLoading(false)
       return
+    }
+
+    // If a prior payment attempt exists, verify it before opening a new checkout.
+    // This prevents double-charging when the poll timed out but Stripe did charge the card.
+    const priorSessionId = typeof window !== 'undefined'
+      ? String(window.sessionStorage.getItem(APPLICATION_FEE_CHECKOUT_SESSION_KEY) || '').trim()
+      : ''
+    const priorRecId = typeof window !== 'undefined'
+      ? String(window.sessionStorage.getItem(APPLICATION_RECORD_ID_KEY) || '').trim()
+      : ''
+    if (priorSessionId.startsWith('cs_') && priorRecId.startsWith('rec')) {
+      setPrePaymentLoading(true)
+      setPrePaymentError('')
+      try {
+        const syncPaid = await syncApplicationStripeSession(priorRecId, priorSessionId)
+        if (!syncPaid) {
+          const r = await fetch(
+            `/api/portal?action=application-payment-status&applicationRecordId=${encodeURIComponent(priorRecId)}`,
+          )
+          const data = await readJsonResponse(r)
+          if (r.ok && (data.paid || data.submitted)) {
+            try { window.sessionStorage.removeItem(APPLICATION_FEE_CHECKOUT_SESSION_KEY) } catch { /* ignore */ }
+            setAppFeePaid(true)
+            setPrePaymentLoading(false)
+            return
+          }
+        } else {
+          try { window.sessionStorage.removeItem(APPLICATION_FEE_CHECKOUT_SESSION_KEY) } catch { /* ignore */ }
+          setAppFeePaid(true)
+          setPrePaymentLoading(false)
+          return
+        }
+      } catch {
+        /* ignore — fall through to fresh checkout */
+      }
+      // Prior session not confirmed paid; clear it and proceed to a new checkout
+      try { window.sessionStorage.removeItem(APPLICATION_FEE_CHECKOUT_SESSION_KEY) } catch { /* ignore */ }
+      setPrePaymentLoading(false)
     }
 
     setPrePaymentLoading(true)

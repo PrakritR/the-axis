@@ -10,6 +10,10 @@
 import { resolveManagerTenant, canEnforceTenant } from '../middleware/resolveManagerTenant.js'
 import { resolveLeaseDetails } from '../lib/axis-properties.js'
 import { isApplicationApprovedForLease } from '../lib/application-approval-lease-guard.js'
+import {
+  applicationLeaseRoomNumber,
+  DEFAULT_AXIS_APPLICATION_APPROVED_ROOM,
+} from '../../../shared/application-airtable-fields.js'
 
 const AIRTABLE_TOKEN = process.env.AIRTABLE_TOKEN || process.env.VITE_AIRTABLE_TOKEN
 const CORE_BASE_ID =
@@ -22,6 +26,12 @@ const APPS_TABLE =
   process.env.VITE_AIRTABLE_APPLICATIONS_TABLE ||
   process.env.AIRTABLE_APPLICATIONS_TABLE ||
   'Applications'
+
+const APPLICATION_APPROVED_ROOM_FIELD = String(
+  process.env.VITE_AIRTABLE_APPLICATION_APPROVED_ROOM_FIELD ||
+    process.env.AIRTABLE_APPLICATION_APPROVED_ROOM_FIELD ||
+    DEFAULT_AXIS_APPLICATION_APPROVED_ROOM,
+).trim() || DEFAULT_AXIS_APPLICATION_APPROVED_ROOM
 
 function airtableHeaders() {
   return {
@@ -334,7 +344,9 @@ function resolveSecurityDeposit(app, propertyRecord, monthlyRent, overrides, axi
 
 function buildLeaseData(app, propertyRecord, overrides = {}) {
   const propertyName = app['Property Name'] || ''
-  const roomRaw = String(app['Room Number'] || '').trim()
+  const effectiveRoomLabel = applicationLeaseRoomNumber(app, APPLICATION_APPROVED_ROOM_FIELD)
+  const appForRoomPricing = { ...app, 'Room Number': effectiveRoomLabel || app['Room Number'] }
+  const roomRaw = String(appForRoomPricing['Room Number'] || '').trim()
   const roomDigits = roomRaw.match(/(\d+)/)?.[1] || roomRaw
   const roomNumber = roomDigits || ''
   const roomLabel = roomRaw
@@ -358,16 +370,16 @@ function buildLeaseData(app, propertyRecord, overrides = {}) {
   const isMonthToMonth = Boolean(app['Month to Month'])
   const cosignerName = app['cosignerName'] || app['Co-Signer Name'] || ''
 
-  let monthlyRent = resolveMonthlyRent(app, propertyRecord, overrides, axisDetails.rent)
+  let monthlyRent = resolveMonthlyRent(appForRoomPricing, propertyRecord, overrides, axisDetails.rent)
   /** Apply flow: Month-to-Month option is +$25/mo over listed room rent */
   if (monthlyRent > 0 && (app['Month to Month'] === true || app['Month to Month'] === 1)) {
     monthlyRent += 25
   }
 
-  const utilityFee = resolveUtilityFee(app, propertyRecord, overrides, axisDetails.utilitiesFee)
-  const roomUtilitiesSummary = resolveRoomUtilitySummary(app, propertyRecord)
-  const roomFurnished = resolveRoomFurnished(app, propertyRecord)
-  const roomFurnitureIncluded = resolveRoomFurnitureIncluded(app, propertyRecord)
+  const utilityFee = resolveUtilityFee(appForRoomPricing, propertyRecord, overrides, axisDetails.utilitiesFee)
+  const roomUtilitiesSummary = resolveRoomUtilitySummary(appForRoomPricing, propertyRecord)
+  const roomFurnished = resolveRoomFurnished(appForRoomPricing, propertyRecord)
+  const roomFurnitureIncluded = resolveRoomFurnitureIncluded(appForRoomPricing, propertyRecord)
   const securityDeposit = resolveSecurityDeposit(app, propertyRecord, monthlyRent, overrides, axisDetails.securityDeposit)
   let adminFee = 0
   if (overrides.adminFee != null && overrides.adminFee !== '') {

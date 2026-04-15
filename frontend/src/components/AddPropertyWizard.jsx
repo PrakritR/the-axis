@@ -1319,15 +1319,46 @@ export default function AddPropertyWizard({
               </div>
 
               {idx === 0 && (
-                <div className="sm:col-span-2">
-                  <label className={LBL}>Utilities description <span className="font-normal text-slate-400">(Room 1 only — optional)</span></label>
-                  <textarea
-                    className={`${OK_INPUT} min-h-[56px] resize-y`}
-                    value={room.utilities}
-                    onChange={ev => updateRoom(idx, { utilities: ev.target.value })}
-                    placeholder="e.g. Water + gas included, tenant pays electric"
-                    rows={2}
-                  />
+                <div className="sm:col-span-2 space-y-3">
+                  <div>
+                    <label className={LBL}>Utilities included <span className="font-normal text-slate-400">(Room 1 only — optional)</span></label>
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      {['Water', 'Gas', 'Electric', 'Internet', 'Trash', 'Laundry'].map(util => {
+                        const checked = Array.isArray(room.utilitiesIncludes) && room.utilitiesIncludes.includes(util)
+                        return (
+                          <button
+                            key={util}
+                            type="button"
+                            onClick={() => {
+                              const current = Array.isArray(room.utilitiesIncludes) ? room.utilitiesIncludes : []
+                              updateRoom(idx, {
+                                utilitiesIncludes: checked
+                                  ? current.filter(u => u !== util)
+                                  : [...current, util],
+                              })
+                            }}
+                            className={`rounded-full border px-3 py-1.5 text-xs font-semibold transition ${
+                              checked
+                                ? 'border-[#2563eb]/40 bg-[#2563eb]/10 text-[#2563eb]'
+                                : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300'
+                            }`}
+                          >
+                            {checked ? '✓ ' : ''}{util}
+                          </button>
+                        )
+                      })}
+                    </div>
+                  </div>
+                  <div>
+                    <label className={LBL}>Utilities details <span className="font-normal text-slate-400">(optional)</span></label>
+                    <textarea
+                      className={`${OK_INPUT} min-h-[56px] resize-y`}
+                      value={room.utilities}
+                      onChange={ev => updateRoom(idx, { utilities: ev.target.value })}
+                      placeholder="e.g. Flat $175/mo covers water, gas, and trash. Tenant pays electric."
+                      rows={2}
+                    />
+                  </div>
                 </div>
               )}
 

@@ -28,6 +28,7 @@ import {
   getCurrentLeaseVersion,
   getApplicationsForOwner,
   patchLeaseDraftRecordPreferServer,
+  getLeaseCommentsForDraft,
 } from '../lib/airtable'
 import {
   leaseDraftAllowsSignWithoutMoveInPay,
@@ -178,12 +179,15 @@ const STATUS_FILTER_ITEMS = [
   {
     id: 'draft_ready',
     label: 'Manager Review',
-    match: (s) => ['Draft Generated', 'Under Review', 'Changes Needed', 'Approved', 'Sent Back to Manager'].includes(String(s || '').trim()),
+    match: (s) =>
+      ['Draft Generated', 'Under Review', 'Changes Needed', 'Approved', 'Sent Back to Manager', 'Changes Made'].includes(
+        String(s || '').trim(),
+      ),
   },
   {
     id: 'admin_review',
     label: 'Admin Review',
-    match: (s) => ['Submitted to Admin', 'Admin In Review', 'Changes Made', 'Manager Approved', 'Ready for Signature'].includes(String(s || '').trim()),
+    match: (s) => ['Submitted to Admin', 'Admin In Review', 'Manager Approved', 'Ready for Signature'].includes(String(s || '').trim()),
   },
   { id: 'sent', label: 'With Resident', match: (s) => String(s || '').trim() === 'Published' },
   { id: 'signed', label: 'Signed', match: (s) => String(s || '').trim() === 'Signed' },
@@ -214,6 +218,9 @@ export default function ManagerLeasingTab({ manager, allowedPropertyNames }) {
   const [activeVersion, setActiveVersion] = useState(null)
   const [showChangeBox, setShowChangeBox] = useState(false)
   const [changeRequestText, setChangeRequestText] = useState('')
+  const [leaseComments, setLeaseComments] = useState([])
+  const [commentText, setCommentText] = useState('')
+  const [commentSubmitting, setCommentSubmitting] = useState(false)
   const [statusFilter, setStatusFilter] = useState('draft_ready')
   const [leasePropertyFilter, setLeasePropertyFilter] = useState(ALL_PROPERTIES_FILTER)
   const [unreadCount, setUnreadCount] = useState(0)
@@ -281,6 +288,7 @@ export default function ManagerLeasingTab({ manager, allowedPropertyNames }) {
       setActiveDraft(null)
       setShowUploadForm(false)
       setShowChangeBox(false)
+      setLeaseComments([])
       return
     }
     setDetailLoading(true)
@@ -303,17 +311,20 @@ export default function ManagerLeasingTab({ manager, allowedPropertyNames }) {
         resolvedDraft = data.draft
         await loadDrafts()
       }
-      const [full, version] = await Promise.all([
+      const [full, version, comments] = await Promise.all([
         getLeaseDraftById(resolvedDraft.id).catch(() => resolvedDraft),
         getCurrentLeaseVersion(resolvedDraft.id).catch(() => null),
+        getLeaseCommentsForDraft(resolvedDraft.id).catch(() => []),
       ])
       setSelectedDraftId(String(full?.id || resolvedDraft.id))
       setActiveDraft(full)
       setActiveVersion(version)
+      setLeaseComments(Array.isArray(comments) ? comments : [])
       setShowUploadForm(false)
       setShowChangeBox(false)
       setPdfFile(null)
       setChangeRequestText('')
+      setCommentText('')
     } catch (err) {
       toast.error(err.message || 'Could not open lease details')
     } finally {
@@ -501,6 +512,29 @@ export default function ManagerLeasingTab({ manager, allowedPropertyNames }) {
       toast.error(err.message || 'Could not send change request')
     } finally {
       setActionBusy('')
+    }
+  }
+
+  async function handleAddComment(event) {
+    event.preventDefault()
+    const message = commentText.trim()
+    if (!message || !activeDraft?.id) return
+    setCommentSubmitting(true)
+    try {
+      await callPortalAction('lease-add-comment', {
+        leaseDraftId: activeDraft.id,
+        authorName: manager?.name || manager?.email || 'Manager',
+        authorRole: 'Manager',
+        authorRecordId: manager?.id || manager?.airtableRecordId || '',
+        message,
+      })
+      setCommentText('')
+      const updated = await getLeaseCommentsForDraft(activeDraft.id).catch(() => [])
+      setLeaseComments(Array.isArray(updated) ? updated : [])
+    } catch (err) {
+      toast.error(err.message || 'Could not add comment')
+    } finally {
+      setCommentSubmitting(false)
     }
   }
 
@@ -830,9 +864,56 @@ export default function ManagerLeasingTab({ manager, allowedPropertyNames }) {
             </div>
           ) : null}
 
+          <div className="border-b border-slate-100 bg-slate-50 px-5 py-4">
+              <div className="flex items-center gap-2 mb-3">
+                <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-500">Messages &amp; comments</div>
+                {leaseComments.length > 0 && (
+                  <span className="rounded-full bg-white px-2 py-0.5 text-xs font-semibold text-slate-600 shadow-sm">{leaseComments.length}</span>
+                )}
+              </div>
+              {leaseComments.length === 0 ? (
+                <p className="text-xs text-slate-400">No messages yet.</p>
+              ) : (
+                <div className="space-y-3 mb-4">
+                  {leaseComments.map((c) => {
+                    const role = String(c['Author Role'] || 'Unknown').trim()
+                    const roleTone = role === 'Admin' ? 'bg-blue-100 text-blue-700' : role === 'Resident' ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-200 text-slate-700'
+                    const isMe = role === 'Manager'
+                    return (
+                      <div key={c.id} className={`flex gap-3 ${isMe ? 'flex-row-reverse' : ''}`}>
+                        <div className={`max-w-[85%] rounded-2xl px-4 py-3 ${isMe ? 'bg-[#2563eb] text-white' : 'bg-white border border-slate-200 text-slate-800 shadow-sm'}`}>
+                          <div className={`mb-1 flex flex-wrap items-center gap-2 text-[11px] font-semibold ${isMe ? 'text-blue-100' : 'text-slate-500'}`}>
+                            <span className={isMe ? 'text-white' : 'text-slate-800'}>{c['Author Name'] || role}</span>
+                            <span className={`rounded-full px-2 py-0.5 ${isMe ? 'bg-white/15 text-white' : roleTone}`}>{role}</span>
+                            <span>{fmtTs(c['Timestamp'])}</span>
+                          </div>
+                          <p className="whitespace-pre-wrap text-sm">{c['Message']}</p>
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+              <form onSubmit={handleAddComment} className="flex gap-2 border-t border-slate-200 pt-3">
+                <input
+                  value={commentText}
+                  onChange={(e) => setCommentText(e.target.value)}
+                  placeholder="Add a comment for admin…"
+                  className="flex-1 rounded-2xl border border-slate-200 bg-white px-4 py-2 text-sm outline-none focus:border-[#2563eb] focus:ring-2 focus:ring-[#2563eb]/20"
+                />
+                <button
+                  type="submit"
+                  disabled={commentSubmitting || !commentText.trim()}
+                  className="rounded-2xl bg-[#2563eb] px-4 py-2 text-sm font-semibold text-white transition hover:bg-blue-700 disabled:opacity-40"
+                >
+                  {commentSubmitting ? 'Sending…' : 'Send'}
+                </button>
+              </form>
+          </div>
+
           {activeVersion?.['PDF URL'] ? (
             <div className="border-b border-slate-100 bg-emerald-50 px-5 py-3 flex items-center gap-3">
-              <span className="text-xs font-semibold text-emerald-700">PDF uploaded</span>
+              <span className="text-xs font-semibold text-emerald-700">Current lease PDF</span>
               <a
                 href={activeVersion['PDF URL']}
                 target="_blank"
@@ -842,6 +923,7 @@ export default function ManagerLeasingTab({ manager, allowedPropertyNames }) {
                 View / Download PDF
               </a>
               {activeVersion['File Name'] ? <span className="text-xs text-slate-500 truncate max-w-[200px]">{activeVersion['File Name']}</span> : null}
+              <span className="text-xs text-slate-400 ml-auto">Upload a new PDF to replace this one</span>
             </div>
           ) : null}
 

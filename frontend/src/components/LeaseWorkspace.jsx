@@ -22,19 +22,37 @@ async function callPortalAction(action, body) {
 
 function queueLabel(status) {
   const normalized = String(status || '').trim()
-  if (['Draft Generated', 'Under Review', 'Changes Needed', 'Approved', 'Sent Back to Manager'].includes(normalized)) return 'Manager Review'
-  if (['Submitted to Admin', 'Admin In Review', 'Changes Made', 'Manager Approved', 'Ready for Signature'].includes(normalized)) return 'Admin Review'
+  if (
+    ['Draft Generated', 'Under Review', 'Changes Needed', 'Approved', 'Sent Back to Manager', 'Changes Made'].includes(
+      normalized,
+    )
+  ) {
+    return 'Manager Review'
+  }
+  if (['Submitted to Admin', 'Admin In Review', 'Manager Approved', 'Ready for Signature'].includes(normalized)) {
+    return 'Admin Review'
+  }
   if (normalized === 'Published') return 'With Resident'
   if (normalized === 'Signed') return 'Signed'
   return normalized || 'Manager Review'
 }
 
 function statusIsDraftReady(status) {
-  return ['Draft Generated', 'Under Review', 'Changes Needed', 'Approved', 'Sent Back to Manager'].includes(String(status || '').trim())
+  return [
+    'Draft Generated',
+    'Under Review',
+    'Changes Needed',
+    'Approved',
+    'Sent Back to Manager',
+    /** After admin marks changes; manager must be able to re-submit like "Sent Back to Manager" */
+    'Changes Made',
+  ].includes(String(status || '').trim())
 }
 
 function statusIsAdminReview(status) {
-  return ['Submitted to Admin', 'Admin In Review', 'Changes Made', 'Manager Approved', 'Ready for Signature'].includes(String(status || '').trim())
+  return ['Submitted to Admin', 'Admin In Review', 'Manager Approved', 'Ready for Signature'].includes(
+    String(status || '').trim(),
+  )
 }
 
 function StatusBadge({ status }) {

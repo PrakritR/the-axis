@@ -41,8 +41,10 @@ async function atPost(table, fields) {
  */
 async function notifyOtherParty({ leaseDraftId, authorRole, authorName, leaseDraftFields }) {
   try {
+    const ownerId = leaseDraftFields?.['Owner ID']
+
     if (authorRole === 'Manager') {
-      // Notify all enabled admins
+      // Manager comment → notify all enabled admins
       const url = new URL(`${BASE_URL}/${encodeURIComponent('Admin Profile')}`)
       url.searchParams.set('filterByFormula', '{Enabled}')
       url.searchParams.set('fields[]', 'Email')
@@ -53,22 +55,34 @@ async function notifyOtherParty({ leaseDraftId, authorRole, authorName, leaseDra
             'Recipient Record ID': r.id,
             'Recipient Role': 'admin',
             'Lease Draft ID': leaseDraftId,
-            'Message': `${authorName} commented on a lease`,
+            'Message': `${authorName} (Manager) commented on a lease`,
             'Action Type': 'comment-added',
             'Is Read': false,
             'Created At': new Date().toISOString(),
           })
         } catch {}
       }
-    } else {
-      // Notify the manager (Owner ID of the draft)
-      const ownerId = leaseDraftFields?.['Owner ID']
+    } else if (authorRole === 'Admin') {
+      // Admin comment → notify the manager
       if (ownerId) {
         await atPost('Lease Notifications', {
           'Recipient Record ID': ownerId,
           'Recipient Role': 'manager',
           'Lease Draft ID': leaseDraftId,
-          'Message': `Admin commented on your lease`,
+          'Message': `${authorName} (Admin) commented on your lease`,
+          'Action Type': 'comment-added',
+          'Is Read': false,
+          'Created At': new Date().toISOString(),
+        })
+      }
+    } else if (authorRole === 'Resident') {
+      // Resident comment → notify the manager
+      if (ownerId) {
+        await atPost('Lease Notifications', {
+          'Recipient Record ID': ownerId,
+          'Recipient Role': 'manager',
+          'Lease Draft ID': leaseDraftId,
+          'Message': `${authorName} (Resident) commented on their lease`,
           'Action Type': 'comment-added',
           'Is Read': false,
           'Created At': new Date().toISOString(),

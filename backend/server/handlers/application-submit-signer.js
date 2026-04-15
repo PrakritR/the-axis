@@ -10,6 +10,7 @@
  */
 import { airtableAuthHeaders, applicationsTableUrl, getApplicationsAirtableEnv } from '../lib/applications-airtable-env.js'
 import { resolveExpectedApplicationFeeUsd } from '../lib/stripe-application-fee-usd.js'
+import { createSubmittedApplicationFeePayment } from '../lib/submitted-application-fee-payment.js'
 
 function isPaidInAirtable(value) {
   if (value === true) return true
@@ -95,5 +96,20 @@ export default async function handler(req, res) {
   }
 
   const saved = JSON.parse(text)
+
+  // Fire-and-forget: record the fee status in the Payments table so both the
+  // manager and (after approval) the resident can see it.
+  const effectiveFee = Number.isFinite(recordFeeNum) ? recordFeeNum : resolveExpectedApplicationFeeUsd()
+  createSubmittedApplicationFeePayment({
+    applicationRecordId,
+    feeUsd: effectiveFee,
+    paid: paid || promoOk || !feeRequired,
+    waived: promoOk,
+    promoCode: promoOk ? promoCode : undefined,
+    signerFullName: String(fields['Signer Full Name'] || fields['Name'] || '').trim() || undefined,
+    propertyName: String(fields['Property Name'] || '').trim() || undefined,
+    roomNumber: String(fields['Room Number'] || '').trim() || undefined,
+  }).catch(() => { /* non-critical */ })
+
   return res.status(200).json(saved)
 }

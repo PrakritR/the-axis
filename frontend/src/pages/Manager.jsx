@@ -141,6 +141,12 @@ import LeaseHTMLTemplate from '../components/LeaseHTMLTemplate.jsx'
 import LeaseManagerSignPanel from '../components/LeaseManagerSignPanel.jsx'
 import { pickManagerSignatureFromDraft } from '../../../shared/lease-manager-signature-fields.js'
 import {
+  DEFAULT_AXIS_APPLICATION_APPROVED_ROOM,
+  DEFAULT_AXIS_APPLICATION_ROOM_CHOICE_2,
+  DEFAULT_AXIS_APPLICATION_ROOM_CHOICE_3,
+  applicationLeaseRoomNumber,
+} from '../../../shared/application-airtable-fields.js'
+import {
   PortalOpsCard,
   PortalOpsEmptyState,
   PortalOpsStatusBadge,
@@ -200,8 +206,17 @@ const LEASE_FLOW_CARDS = [
     id: 'draft_ready',
     label: 'Manager Review',
     match: (status) =>
-      ['Draft Generated', 'Under Review', 'Changes Needed', 'Approved', 'Sent Back to Manager'].includes(status),
-    activeStatuses: ['Draft Generated', 'Under Review', 'Changes Needed', 'Approved', 'Sent Back to Manager'],
+      ['Draft Generated', 'Under Review', 'Changes Needed', 'Approved', 'Sent Back to Manager', 'Changes Made'].includes(
+        status,
+      ),
+    activeStatuses: [
+      'Draft Generated',
+      'Under Review',
+      'Changes Needed',
+      'Approved',
+      'Sent Back to Manager',
+      'Changes Made',
+    ],
     cls: 'border-amber-200 bg-amber-50 text-amber-700',
   },
   {
@@ -224,7 +239,9 @@ function leaseDraftMatchesQueueFilter(status, filterValue) {
   const normalized = String(status || '').trim()
   if (!filterValue) return true
   if (filterValue === '__draft_ready__') {
-    return ['Draft Generated', 'Under Review', 'Changes Needed', 'Approved'].includes(normalized)
+    return ['Draft Generated', 'Under Review', 'Changes Needed', 'Approved', 'Sent Back to Manager', 'Changes Made'].includes(
+      normalized,
+    )
   }
   if (filterValue === '__sent_to_resident__') return normalized === 'Published'
   if (filterValue === '__signed__') return normalized === 'Signed'
@@ -233,14 +250,14 @@ function leaseDraftMatchesQueueFilter(status, filterValue) {
 
 function leaseUiStatusLabel(status) {
   const normalized = String(status || '').trim()
-  if (['Draft Generated', 'Under Review', 'Changes Needed', 'Approved', 'Sent Back to Manager'].includes(normalized)) {
-    return 'Manager Review'
-  }
   if (
-    ['Submitted to Admin', 'Admin In Review', 'Changes Made', 'Manager Approved', 'Ready for Signature'].includes(
+    ['Draft Generated', 'Under Review', 'Changes Needed', 'Approved', 'Sent Back to Manager', 'Changes Made'].includes(
       normalized,
     )
   ) {
+    return 'Manager Review'
+  }
+  if (['Submitted to Admin', 'Admin In Review', 'Manager Approved', 'Ready for Signature'].includes(normalized)) {
     return 'Admin review'
   }
   if (normalized === 'Published') return 'With resident'
@@ -4212,6 +4229,8 @@ function WorkOrdersTabPanel({ manager, allowedPropertyNames, allowedPropertyIds 
   const [loadError, setLoadError] = useState('')
   const [saving, setSaving] = useState(false)
   const [scheduledVisitDate, setScheduledVisitDate] = useState('')
+  const [woChargeAmount, setWoChargeAmount] = useState('')
+  const [woChargeTitle, setWoChargeTitle] = useState('')
   /** One repair attempt per WO id per session — backfills Payments when WO was scheduled without a fee row. */
   const cleaningPaymentRepairAttemptedRef = useRef(new Set())
   const woDetailPhotoUrls = useMemo(() => workOrderPhotoAttachmentUrls(record), [record])
@@ -4231,6 +4250,8 @@ function WorkOrdersTabPanel({ manager, allowedPropertyNames, allowedPropertyIds 
       normalizeWorkOrderScheduleDateKey(nextRecord?.['Scheduled Visit Date']) ||
       normalizeWorkOrderScheduleDateKey(nextRecord?.['Scheduled Date'])
     setScheduledVisitDate(sm?.date || fallback || '')
+    setWoChargeAmount('')
+    setWoChargeTitle('')
   }
 
   const scheduledKeyForCleaningRepair = useMemo(() => {
@@ -4565,6 +4586,57 @@ function WorkOrdersTabPanel({ manager, allowedPropertyNames, allowedPropertyIds 
       }
 
       toast.success(successMsg)
+
+      // If the manager entered a charge amount, create a Payment row for this work order.
+      const chargeAmt = Number(String(woChargeAmount).replace(/[^0-9.]/g, ''))
+      if (Number.isFinite(chargeAmt) && chargeAmt > 0) {
+        const billingRid = resolveResidentRecordIdForWorkOrderBilling(mergedWorkOrder, residentsById)
+        if (billingRid) {
+          try {
+            const resRec = residentsById.get(billingRid) || {}
+            const prop = String(
+              mergedWorkOrder['Property Name'] || mergedWorkOrder.House || mergedWorkOrder.Property ||
+              resRec.House || '',
+            ).trim()
+            const unit = String(
+              mergedWorkOrder['Room Number'] || mergedWorkOrder['Unit Number'] ||
+              mergedWorkOrder.Unit || resRec['Unit Number'] || '',
+            ).trim()
+            const resName = String(
+              mergedWorkOrder['Resident Name'] || resRec.Name || '',
+            ).trim()
+            const title = woChargeTitle.trim() || 'Work order charge'
+            const dueDate = dateStr || new Date().toISOString().slice(0, 10)
+            const woMarker = `AXIS_WO_CHARGE:${mergedWorkOrder.id}`
+            await createPaymentRecord({
+              Resident: [billingRid],
+              Amount: chargeAmt,
+              Balance: chargeAmt,
+              Status: 'Unpaid',
+              'Due Date': dueDate,
+              Type: 'Fee',
+              Category: 'Fee',
+              Month: title,
+              Notes: `Work order charge: ${title}. ${woMarker}`,
+              'Resident Name': resName || undefined,
+              'Property Name': prop || undefined,
+              'Room Number': unit || undefined,
+            })
+            setWoChargeAmount('')
+            setWoChargeTitle('')
+            toast.success(`$${chargeAmt} charge added to Payments for this resident`)
+          } catch (chargeErr) {
+            toast.error(
+              String(chargeErr?.message || '').slice(0, 120) ||
+                'Charge could not be added to Payments — add it manually.',
+            )
+          }
+        } else {
+          toast.error(
+            'Charge entered but no resident could be linked. Ensure a Resident Profile is linked to this work order.',
+          )
+        }
+      }
     } catch (err) {
       toast.error(err.message || 'Could not save work order')
     } finally {
@@ -4819,12 +4891,49 @@ function WorkOrdersTabPanel({ manager, allowedPropertyNames, allowedPropertyIds 
                 </div>
               </div>
 
+              <div className="rounded-2xl border border-amber-100 bg-amber-50/60 px-4 py-4">
+                <div className="mb-3 text-[11px] font-bold uppercase tracking-[0.14em] text-amber-700">
+                  Payment — charge resident (optional)
+                </div>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <div>
+                    <label className="mb-1.5 block text-xs font-semibold text-slate-600">
+                      Charge description
+                    </label>
+                    <input
+                      type="text"
+                      value={woChargeTitle}
+                      onChange={(e) => setWoChargeTitle(e.target.value)}
+                      placeholder="e.g. Parts replacement, Labour"
+                      className={fieldCls}
+                    />
+                  </div>
+                  <div>
+                    <label className="mb-1.5 block text-xs font-semibold text-slate-600">
+                      Amount ($)
+                    </label>
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={woChargeAmount}
+                      onChange={(e) => setWoChargeAmount(e.target.value)}
+                      placeholder="0.00"
+                      className={fieldCls}
+                    />
+                  </div>
+                </div>
+                <p className="mt-2 text-xs text-amber-700/80">
+                  If filled, a pending payment will be added to the resident's Payments tab when you save.
+                </p>
+              </div>
+
               <button
                 type="submit"
                 disabled={saving}
                 className="rounded-full bg-axis px-5 py-3 text-sm font-semibold text-white transition hover:brightness-105 disabled:opacity-50"
               >
-                {saving ? 'Scheduling…' : 'Schedule'}
+                {saving ? 'Saving…' : 'Save'}
               </button>
             </form>
           </PortalOpsCard>
@@ -5100,6 +5209,33 @@ function ManagerPaymentsPanel({ allowedPropertyNames }) {
       setBusy((b) => {
         const n = { ...b }
         delete n[id]
+        return n
+      })
+    }
+  }
+
+  async function markPaidWithZelle(id) {
+    setBusy((b) => ({ ...b, [`zelle_${id}`]: true }))
+    try {
+      const row = findScopedPaymentById(id) || {}
+      const existingNotes = String(row.Notes || '').trim()
+      const zelleNote = 'Paid via Zelle'
+      const updatedNotes = existingNotes ? `${existingNotes}\n${zelleNote}` : zelleNote
+      await updatePaymentRecord(id, {
+        Status: 'Paid',
+        'Paid Date': new Date().toISOString().slice(0, 10),
+        'Amount Paid': paymentAmountDue(row),
+        Balance: 0,
+        Notes: updatedNotes,
+      })
+      await load()
+      toast.success('Marked as paid via Zelle')
+    } catch (err) {
+      toast.error(err.message || 'Update failed')
+    } finally {
+      setBusy((b) => {
+        const n = { ...b }
+        delete n[`zelle_${id}`]
         return n
       })
     }
@@ -5382,20 +5518,42 @@ function ManagerPaymentsPanel({ allowedPropertyNames }) {
                 </p>
               </div>
               {paymentComputedStatus(selectedRow) !== 'paid' ? (
-                <button
-                  type="button"
-                  disabled={busy[selectedRow.id]}
-                  onClick={() => markPaid(selectedRow.id)}
-                  className="shrink-0 rounded-full bg-axis px-4 py-2 text-sm font-semibold text-white transition hover:brightness-105 disabled:opacity-50"
-                >
-                  {busy[selectedRow.id] ? 'Updating…' : 'Mark paid'}
-                </button>
+                <div className="flex shrink-0 flex-wrap gap-2">
+                  <button
+                    type="button"
+                    disabled={busy[selectedRow.id]}
+                    onClick={() => markPaid(selectedRow.id)}
+                    className="rounded-full bg-axis px-4 py-2 text-sm font-semibold text-white transition hover:brightness-105 disabled:opacity-50"
+                  >
+                    {busy[selectedRow.id] ? 'Updating…' : 'Mark paid'}
+                  </button>
+                  <button
+                    type="button"
+                    disabled={busy[`zelle_${selectedRow.id}`]}
+                    onClick={() => markPaidWithZelle(selectedRow.id)}
+                    className="rounded-full border border-[#6600cc]/30 bg-[#6600cc]/8 px-4 py-2 text-sm font-semibold text-[#6600cc] transition hover:bg-[#6600cc]/15 disabled:opacity-50"
+                  >
+                    {busy[`zelle_${selectedRow.id}`] ? 'Updating…' : 'Paid with Zelle'}
+                  </button>
+                </div>
               ) : null}
             </div>
 
             <div className="min-w-0 space-y-6 px-5 py-5 sm:px-6">
               <div className="rounded-2xl border border-slate-100 bg-slate-50/90 px-4 py-4">
-                <div className="text-[11px] font-bold uppercase tracking-[0.14em] text-slate-400">Selected charge</div>
+                <div className="flex items-center gap-2">
+                  <div className="text-[11px] font-bold uppercase tracking-[0.14em] text-slate-400">Selected charge</div>
+                  {String(selectedRow.Notes || '').includes('Paid via Zelle') && (
+                    <span className="rounded-full border border-[#6600cc]/25 bg-[#6600cc]/8 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-[#6600cc]">
+                      Zelle
+                    </span>
+                  )}
+                  {String(selectedRow.Notes || '').includes('promo code: FEEWAIVE') && (
+                    <span className="rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-emerald-700">
+                      Fee waived
+                    </span>
+                  )}
+                </div>
                 <div className="mt-2 text-lg font-black text-slate-900">{managerPaymentLineDisplayTitle(selectedRow)}</div>
                 <dl className="mt-4 grid gap-3 text-sm sm:grid-cols-2">
                   <div>
@@ -5639,8 +5797,65 @@ function ApplicationsPanel({ allowedPropertyNames, manager }) {
   const [propertyFilter, setPropertyFilter] = useState('')
   const [statusFilter, setStatusFilter] = useState('pending')
   const [approving, setApproving] = useState({}) // recordId -> 'approving' | 'rejecting'
+  /** Manager-selected room written to Airtable on approve (see Approved Room field). */
+  const [approveAssignedRoom, setApproveAssignedRoom] = useState('')
 
   const [loadError, setLoadError] = useState('')
+
+  const roomChoice2Key = useMemo(
+    () =>
+      String(import.meta.env.VITE_AIRTABLE_APPLICATION_ROOM_CHOICE_2_FIELD || DEFAULT_AXIS_APPLICATION_ROOM_CHOICE_2).trim(),
+    [],
+  )
+  const roomChoice3Key = useMemo(
+    () =>
+      String(import.meta.env.VITE_AIRTABLE_APPLICATION_ROOM_CHOICE_3_FIELD || DEFAULT_AXIS_APPLICATION_ROOM_CHOICE_3).trim(),
+    [],
+  )
+  const approvedRoomKey = useMemo(
+    () =>
+      String(import.meta.env.VITE_AIRTABLE_APPLICATION_APPROVED_ROOM_FIELD || DEFAULT_AXIS_APPLICATION_APPROVED_ROOM).trim(),
+    [],
+  )
+
+  const buildApprovalRoomChoices = useCallback(
+    (row) => {
+      if (!row) return []
+      const seen = new Set()
+      const out = []
+      const push = (v, labelPrefix) => {
+        const s = String(v || '').trim()
+        if (!s || seen.has(s)) return
+        seen.add(s)
+        out.push({ value: s, label: `${labelPrefix}: ${s}` })
+      }
+      push(row['Room Number'], '1st choice')
+      push(row[roomChoice2Key], '2nd choice')
+      push(row[roomChoice3Key], '3rd choice')
+      return out
+    },
+    [roomChoice2Key, roomChoice3Key],
+  )
+
+  useEffect(() => {
+    if (!detailAppId) {
+      setApproveAssignedRoom('')
+      return
+    }
+    const row = scopedRows.find((a) => a.id === detailAppId)
+    if (!row) {
+      setApproveAssignedRoom('')
+      return
+    }
+    const st = deriveApplicationApprovalState(row)
+    const choices = buildApprovalRoomChoices(row)
+    const first = String(row['Room Number'] || '').trim()
+    const nextDefault =
+      st === 'pending'
+        ? (first || choices[0]?.value || '')
+        : applicationLeaseRoomNumber(row, approvedRoomKey)
+    setApproveAssignedRoom(nextDefault)
+  }, [detailAppId, scopedRows, buildApprovalRoomChoices, approvedRoomKey])
 
   const scopeSet = useMemo(() => new Set((allowedPropertyNames || []).map((n) => String(n).trim().toLowerCase()).filter(Boolean)), [allowedPropertyNames])
 
@@ -5678,10 +5893,18 @@ function ApplicationsPanel({ allowedPropertyNames, manager }) {
     [filteredRows],
   )
 
-  async function handleDecision(recordId, approved) {
+  async function handleDecision(recordId, approved, opts = {}) {
+    if (approved) {
+      const ar = String(opts.approvedRoom ?? approveAssignedRoom ?? '').trim()
+      if (!ar) {
+        toast.error('Select or enter the approved room before approving.')
+        return
+      }
+    }
     setApproving(a => ({ ...a, [recordId]: approved ? 'approving' : 'rejecting' }))
     try {
       if (approved) {
+        const approvedRoom = String(opts.approvedRoom ?? approveAssignedRoom ?? '').trim()
         const res = await fetch('/api/portal?action=manager-approve-application', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -5690,6 +5913,7 @@ function ApplicationsPanel({ allowedPropertyNames, manager }) {
             managerName: manager?.name || manager?.email || 'Axis Manager',
             managerRole: manager?.role || 'Manager',
             managerRecordId: manager?.id || '',
+            approvedRoom,
           }),
         })
         const data = await readJsonResponse(res)
@@ -5982,6 +6206,8 @@ function ApplicationsPanel({ allowedPropertyNames, manager }) {
                 {(() => {
                   const row = scopedRows.find((a) => a.id === detailAppId)
                   const vm = row ? applicationViewModelFromAirtableRow(row) : null
+                  const roomChoices = row ? buildApprovalRoomChoices(row) : []
+                  const pending = row && deriveApplicationApprovalState(row) === 'pending'
                   return vm ? (
                     <ApplicationDetailPanel
                       application={vm}
@@ -5993,6 +6219,13 @@ function ApplicationsPanel({ allowedPropertyNames, manager }) {
                         onReject: () => handleDecision(detailAppId, false),
                         onUnapprove: () => handleSendBackToPending(detailAppId),
                         onRefund: () => handleRefundApplicationFee(detailAppId),
+                        approvedRoomAssignment: pending
+                          ? {
+                              value: approveAssignedRoom,
+                              onChange: setApproveAssignedRoom,
+                              choices: roomChoices,
+                            }
+                          : undefined,
                       }}
                     />
                   ) : null

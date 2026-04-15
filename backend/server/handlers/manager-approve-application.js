@@ -7,6 +7,7 @@ import {
   applicationStatusLooksPipelinePending,
   isApplicationApprovedForLease,
 } from '../lib/application-approval-lease-guard.js'
+import { DEFAULT_AXIS_APPLICATION_APPROVED_ROOM } from '../../../shared/application-airtable-fields.js'
 
 const AIRTABLE_TOKEN = process.env.AIRTABLE_TOKEN || process.env.VITE_AIRTABLE_TOKEN
 /** Prefer explicit apps base; otherwise same base as Lease Drafts / portal (manager list uses CORE base). */
@@ -73,13 +74,20 @@ const APPLICATION_REJECTED_FIELD = String(
     'Rejected',
 ).trim() || 'Rejected'
 
-async function approveApplication(recordId, existingFields) {
+const APPLICATION_APPROVED_ROOM_FIELD = String(
+  process.env.VITE_AIRTABLE_APPLICATION_APPROVED_ROOM_FIELD ||
+    process.env.AIRTABLE_APPLICATION_APPROVED_ROOM_FIELD ||
+    DEFAULT_AXIS_APPLICATION_APPROVED_ROOM,
+).trim() || DEFAULT_AXIS_APPLICATION_APPROVED_ROOM
+
+async function approveApplication(recordId, existingFields, extraFields = {}) {
   const now = new Date().toISOString()
   const enc = encodeURIComponent(APPLICATIONS_TABLE)
   const fields = {
     Approved: true,
     'Approved At': now,
     [APPLICATION_REJECTED_FIELD]: null,
+    ...extraFields,
   }
   // Clear stale "Pending" / pipeline labels so lease guards and UI stay aligned with Approved.
   if (existingFields && typeof existingFields === 'object') {
@@ -138,9 +146,24 @@ export default async function handler(req, res) {
       return res.status(403).json({ error: 'Access denied: this application belongs to a different manager.' })
     }
 
+    const approvedRoomRaw = String(req.body?.approvedRoom ?? '').trim()
+    const fallbackFirstChoice = String(existing['Room Number'] ?? '').trim()
+    const approvedRoomToStore = approvedRoomRaw || fallbackFirstChoice
+
+    const approvalExtras =
+      approvedRoomToStore && APPLICATION_APPROVED_ROOM_FIELD
+        ? { [APPLICATION_APPROVED_ROOM_FIELD]: approvedRoomToStore }
+        : {}
+
     let approvedApplication = existing
     if (!isApplicationApprovedForLease(existing) || existing.Approved !== true) {
-      approvedApplication = await approveApplication(recordId, existing)
+      if (!approvedRoomToStore) {
+        return res.status(400).json({
+          error:
+            'Assign an approved room before approving (application has no first-choice room and none was sent).',
+        })
+      }
+      approvedApplication = await approveApplication(recordId, existing, approvalExtras)
     }
     const ownerId = tenant?.ownerId || String(approvedApplication['Owner ID'] || '').trim()
     const residentSync = await markMatchingResidentsApproved(approvedApplication, ownerId)
@@ -163,6 +186,16 @@ export default async function handler(req, res) {
       })
     } catch (feeErr) {
       console.warn('[manager-approve-application] application fee payment rows:', feeErr?.message || feeErr)
+    }
+
+    let moveInPayments = { createdIds: [], skipped: [] }
+    try {
+      moveInPayments = await createApprovedApplicationMoveInPayments({
+        application: approvedApplication,
+        residentRecordIds: feeResidentIds,
+      })
+    } catch (moveErr) {
+      console.warn('[manager-approve-application] move-in payment rows:', moveErr?.message || moveErr)
     }
 
     // Generate lease draft from template (no AI). Skips gracefully if it fails.

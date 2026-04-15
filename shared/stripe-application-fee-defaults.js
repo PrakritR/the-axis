@@ -5,7 +5,7 @@
 export const STRIPE_APPLICATION_FEE_MIN_USD = 0.5
 
 /** When env omits a fee, server + Apply use this (must be >= STRIPE_APPLICATION_FEE_MIN_USD when charging). */
-export const DEFAULT_APPLICATION_FEE_USD = 0.5
+export const DEFAULT_APPLICATION_FEE_USD = 50
 
 /** Enforce Stripe USD floor for any positive fee (whole dollars from marketing are unchanged). */
 export function clampPositiveApplicationFeeUsd(n) {

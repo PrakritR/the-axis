@@ -38,9 +38,9 @@ export const LEASE_WORKFLOW_STATUS_CONFIG = {
     text: 'text-violet-700',
     border: 'border-violet-200',
     dot: 'bg-violet-500',
-    adminActionNeeded: true,
-    managerActionNeeded: false,
-    description: 'Admin updated the lease',
+    adminActionNeeded: false,
+    managerActionNeeded: true,
+    description: 'Admin updated the lease — manager can review, comment, and send another request or publish',
   },
   'Sent Back to Manager': {
     label: 'Back with Manager',
@@ -152,11 +152,14 @@ export const MANAGER_CAN_SUBMIT_REQUEST = new Set([
   'Under Review',
   'Changes Needed',
   'Sent Back to Manager',
+  /** Admin used "Mark Changes Made" — same as send-back: manager may request further edits */
+  'Changes Made',
 ])
 
 /** Statuses where the manager can approve or request more changes */
 export const MANAGER_CAN_REVIEW_ADMIN_UPDATE = new Set([
   'Sent Back to Manager',
+  'Changes Made',
 ])
 
 /** Statuses that are "active" in the back-and-forth workflow tab */
