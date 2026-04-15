@@ -16,7 +16,11 @@
 import React, { useMemo, useRef, useState } from 'react'
 import toast from 'react-hot-toast'
 import Modal from './Modal'
-import { uploadPropertyImage } from '../lib/airtable'
+import {
+  patchPropertySharedSpaceDetailImageUrls,
+  pickLastPropertyPhotoUrlFromUploadResponse,
+  uploadPropertyImage,
+} from '../lib/airtable'
 import {
   serializeManagerAddPropertyToAirtableFields,
   emptyRoomRow,
@@ -42,6 +46,7 @@ import {
   KITCHEN_TYPE_OPTIONS,
   MOVE_IN_CHARGE_NAME_OPTIONS,
   LEASE_ACCESS_REQUIREMENT,
+  nativeRoomColumnValidationMessage,
 } from '../lib/managerPropertyFormAirtableMap.js'
 
 // ─── Wizard step metadata ─────────────────────────────────────────────────────
@@ -145,7 +150,10 @@ function validateBasics(basics, appFee) {
 
 function validateRooms(rooms) {
   const e = {}
-  if (!rooms.length) { e._global = 'At least one room is required'; return e }
+  if (!rooms.length) {
+    e._global = 'At least one room is required'
+    return e
+  }
   rooms.forEach((room, i) => {
     const rentStr = String(room.rent ?? '')
     if (rentStr === '') e[`r${i}_rent`] = 'Monthly rent is required'
@@ -158,6 +166,8 @@ function validateRooms(rooms) {
     if ((room.furnished === 'Yes' || room.furnished === 'Partial') && !String(room.furnitureIncluded || '').trim())
       e[`r${i}_furnInc`] = 'List what furniture is included'
   })
+  const nativeMsg = nativeRoomColumnValidationMessage(rooms.length)
+  if (nativeMsg) e._global = e._global ? `${e._global}\n\n${nativeMsg}` : nativeMsg
   return e
 }
 
@@ -327,7 +337,14 @@ export default function AddPropertyWizard({
           }))
         : [],
       kitchens: Array.isArray(payload?.kitchens) ? payload.kitchens.map((row) => ({ ...emptyKitchenRow(), ...row })) : [],
-      sharedSpaces: Array.isArray(payload?.sharedSpaces) ? payload.sharedSpaces.map((row) => ({ ...emptySharedSpaceRow(), ...row })) : [],
+      sharedSpaces: Array.isArray(payload?.sharedSpaces)
+        ? payload.sharedSpaces.map((row) => ({
+            ...emptySharedSpaceRow(),
+            ...row,
+            media: Array.isArray(row.media) ? row.media : [],
+            imageUrls: Array.isArray(row.imageUrls) ? [...row.imageUrls] : [],
+          }))
+        : [],
       laundry: {
         enabled: Boolean(payload?.laundry?.enabled),
         rows: Array.isArray(payload?.laundry?.rows)
@@ -499,6 +516,10 @@ export default function AddPropertyWizard({
         ...laundry,
         rows: (laundry.rows || []).map(({ media, ...rest }) => rest),
       }
+      const sharedPayload = sharedSpaces.map(({ media, ...rest }) => ({
+        ...rest,
+        imageUrls: Array.isArray(rest.imageUrls) ? [...rest.imageUrls] : [],
+      }))
       const fields = serializeManagerAddPropertyToAirtableFields({
         basics,
         roomCount: rc,
@@ -509,7 +530,7 @@ export default function AddPropertyWizard({
         rooms: roomsPayload,
         bathrooms: bathroomsPayload,
         kitchens,
-        sharedSpaces,
+        sharedSpaces: sharedPayload,
         applicationFee: appFee,
         otherInfo,
         managerRecordId: manager?.id,
@@ -556,6 +577,31 @@ export default function AddPropertyWizard({
         }
       }
 
+      const urlsBySlot = {}
+      for (let si = 0; si < sharedSpaces.length; si++) {
+        const urls = []
+        for (const item of sharedSpaces[si].media || []) {
+          try {
+            const f = item.file
+            if (!f) continue
+            const renamed = new File([f], `axis-ss${si + 1}-${f.name}`, { type: f.type || 'application/octet-stream' })
+            const json = await uploadPropertyImage(created.id, renamed)
+            const u = pickLastPropertyPhotoUrlFromUploadResponse(json)
+            if (u) urls.push(u)
+          } catch {
+            /* non-fatal */
+          }
+        }
+        if (urls.length) urlsBySlot[si] = urls
+      }
+      if (Object.keys(urlsBySlot).length) {
+        try {
+          await patchPropertySharedSpaceDetailImageUrls(created.id, urlsBySlot)
+        } catch {
+          /* non-fatal — photos still on property; meta merge failed */
+        }
+      }
+
       toast.success(wizardMode === 'edit' ? 'Changes submitted — pending admin approval' : 'Submitted — pending admin approval')
       onCreated(created)
       resetForm()
@@ -563,7 +609,9 @@ export default function AddPropertyWizard({
     } catch (err) {
       const raw = err?.message || 'Could not save property'
       const friendly = raw.includes('UNKNOWN_FIELD_NAME')
-        ? 'A field name does not match Airtable — check the field mapping file.'
+        ? /Room\s+\d+\s+Rent/i.test(raw)
+          ? 'Airtable rejected a room rent column (unknown field). Add matching "Room N Rent" columns in Airtable or set VITE_AIRTABLE_PROPERTY_ROOM_NATIVE_COLUMN_LIMIT to the highest N that exists, or set VITE_AIRTABLE_WRITE_ROOM_COLUMNS=false.'
+          : 'A field name does not match Airtable — check managerPropertyFormAirtableMap.js and your base.'
         : raw.includes('INVALID_VALUE_FOR_COLUMN')
         ? 'One or more field values are in the wrong format for Airtable.'
         : raw.includes('INVALID_PERMISSIONS')
@@ -706,11 +754,56 @@ export default function AddPropertyWizard({
           ...src,
           name: '',
           access: Array.isArray(src.access) ? [...src.access] : [],
+          media: [],
+          imageUrls: Array.isArray(src.imageUrls) ? [...src.imageUrls] : [],
         },
       ]
     })
   }
-  function removeSpace(idx) { setSharedSpaces(prev => prev.filter((_, i) => i !== idx)) }
+  function removeSpace(idx) {
+    setSharedSpaces((prev) => {
+      const row = prev[idx]
+      for (const m of row?.media || []) {
+        if (m?.preview && m.file) URL.revokeObjectURL(m.preview)
+      }
+      return prev.filter((_, i) => i !== idx)
+    })
+  }
+
+  function addSharedSpaceMedia(spaceIdx, fileList) {
+    const valid = Array.from(fileList || []).filter(isLikelyImageUpload)
+    if (!valid.length) return
+    const entries = valid.map((file) => ({
+      id: `${Date.now()}-${Math.random()}`,
+      file,
+      preview: URL.createObjectURL(file),
+    }))
+    setSharedSpaces((prev) =>
+      prev.map((s, i) => (i === spaceIdx ? { ...s, media: [...(s.media || []), ...entries] } : s)),
+    )
+  }
+  function removeSharedSpaceMedia(spaceIdx, mediaId) {
+    setSharedSpaces((prev) =>
+      prev.map((s, i) => {
+        if (i !== spaceIdx) return s
+        const removed = (s.media || []).find((m) => m.id === mediaId)
+        if (removed?.preview && removed.file) URL.revokeObjectURL(removed.preview)
+        return { ...s, media: (s.media || []).filter((m) => m.id !== mediaId) }
+      }),
+    )
+  }
+  function moveSharedSpaceMedia(spaceIdx, mediaIdx, delta) {
+    setSharedSpaces((prev) =>
+      prev.map((s, i) => {
+        if (i !== spaceIdx) return s
+        const list = [...(s.media || [])]
+        const j = mediaIdx + delta
+        if (j < 0 || j >= list.length) return s
+        ;[list[mediaIdx], list[j]] = [list[j], list[mediaIdx]]
+        return { ...s, media: list }
+      }),
+    )
+  }
 
   // ── Laundry helpers ───────────────────────────────────────────────────────────
   function updateLaundryRow(idx, patch) {
@@ -1508,6 +1601,87 @@ export default function AddPropertyWizard({
                   </button>
                 </div>
                 <RoomChips access={space.access} onChange={access => updateSpace(idx, { access })} />
+              </div>
+              <div className="sm:col-span-2">
+                <label className={LBL}>
+                  Shared space photos <span className="font-normal text-slate-400">(optional, listing)</span>
+                </label>
+                <p className="mb-2 text-[11px] text-slate-500">
+                  Shown on the property page for this space. Use clear filenames; uploads are tagged per space.
+                </p>
+                <label className="flex cursor-pointer flex-col items-center justify-center rounded-2xl border-2 border-dashed border-slate-200 bg-slate-50/60 px-4 py-5 text-center text-xs text-slate-500 transition hover:border-[#2563eb]/50 hover:bg-blue-50/20">
+                  <input
+                    type="file"
+                    accept={ACCEPT_PROPERTY_IMAGES}
+                    multiple
+                    className="hidden"
+                    onChange={(ev) => {
+                      addSharedSpaceMedia(idx, ev.target.files)
+                      ev.target.value = ''
+                    }}
+                  />
+                  Drag & drop or click to add photos for this shared space
+                </label>
+                {(space.imageUrls || []).length > 0 && (
+                  <div className="mt-2">
+                    <div className="mb-1 text-[10px] font-bold uppercase tracking-wide text-slate-400">Saved on listing</div>
+                    <div className="flex flex-wrap gap-2">
+                      {(space.imageUrls || []).map((url, ui) => (
+                        <div key={`${url}-${ui}`} className="relative h-20 w-20 overflow-hidden rounded-xl border border-slate-200 bg-slate-100">
+                          <img src={url} alt="" className="h-full w-full object-cover" />
+                          <button
+                            type="button"
+                            onClick={() =>
+                              updateSpace(idx, {
+                                imageUrls: (space.imageUrls || []).filter((_, j) => j !== ui),
+                              })
+                            }
+                            className="absolute right-0.5 top-0.5 rounded-full bg-white/90 px-1.5 text-[10px] font-bold text-red-600 shadow"
+                          >
+                            ✕
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {(space.media || []).length > 0 && (
+                  <div className="mt-2">
+                    <div className="mb-1 text-[10px] font-bold uppercase tracking-wide text-slate-400">New uploads (with submit)</div>
+                    <div className="flex flex-wrap gap-2">
+                      {(space.media || []).map((m, mi) => (
+                        <div key={m.id} className="relative h-20 w-20 overflow-hidden rounded-xl border border-slate-200 bg-slate-100">
+                          <img src={m.preview} alt="" className="h-full w-full object-cover" />
+                          <button
+                            type="button"
+                            onClick={() => removeSharedSpaceMedia(idx, m.id)}
+                            className="absolute right-0.5 top-0.5 rounded-full bg-white/90 px-1.5 text-[10px] font-bold text-red-600 shadow"
+                          >
+                            ✕
+                          </button>
+                          <div className="absolute bottom-0.5 left-0.5 flex gap-0.5">
+                            <button
+                              type="button"
+                              disabled={mi <= 0}
+                              onClick={() => moveSharedSpaceMedia(idx, mi, -1)}
+                              className="rounded bg-white/90 px-1 text-[10px] font-bold text-slate-700 shadow disabled:opacity-30"
+                            >
+                              ↑
+                            </button>
+                            <button
+                              type="button"
+                              disabled={mi >= (space.media || []).length - 1}
+                              onClick={() => moveSharedSpaceMedia(idx, mi, 1)}
+                              className="rounded bg-white/90 px-1 text-[10px] font-bold text-slate-700 shadow disabled:opacity-30"
+                            >
+                              ↓
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
           </div>

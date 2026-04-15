@@ -21,6 +21,39 @@ export const MAX_SHARED_SPACE_SLOTS = 13
 export const MAX_LAUNDRY_SLOTS = 5
 /** Property-level marketing windows (Basics step) — stored in axis meta `listingAvailabilityWindows`. */
 export const MAX_LISTING_AVAILABILITY_WINDOWS = 8
+
+/**
+ * When set (e.g. 9), only `Room 1 Rent` … `Room N Rent` and related native columns are written for i ≤ N.
+ * Extra rooms keep rent/availability only in `roomsDetail` inside Other Info meta (avoids Airtable UNKNOWN_FIELD_NAME).
+ */
+export function getNativeRoomColumnWriteLimit() {
+  const raw =
+    typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.VITE_AIRTABLE_PROPERTY_ROOM_NATIVE_COLUMN_LIMIT
+      ? String(import.meta.env.VITE_AIRTABLE_PROPERTY_ROOM_NATIVE_COLUMN_LIMIT).trim()
+      : ''
+  if (!raw) return MAX_ROOM_SLOTS
+  const n = Number(raw)
+  if (!Number.isFinite(n) || n < 1) return MAX_ROOM_SLOTS
+  return Math.min(MAX_ROOM_SLOTS, Math.floor(n))
+}
+
+export function isWriteNativeRoomColumnsEnabled() {
+  const raw = String(
+    typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.VITE_AIRTABLE_WRITE_ROOM_COLUMNS
+      ? import.meta.env.VITE_AIRTABLE_WRITE_ROOM_COLUMNS
+      : '',
+  ).toLowerCase()
+  return !(raw === '0' || raw === 'false' || raw === 'no')
+}
+
+/** Non-empty message when room count exceeds configured native column slots (blocks submit). */
+export function nativeRoomColumnValidationMessage(roomCount) {
+  const rc = Math.floor(Number(roomCount) || 0)
+  if (!isWriteNativeRoomColumnsEnabled() || rc <= 0) return ''
+  const limit = getNativeRoomColumnWriteLimit()
+  if (rc <= limit) return ''
+  return `This project only writes native Airtable "Room N Rent" (and related) columns for rooms 1–${limit}. You have ${rc} rooms. Add columns through Room ${rc} in Airtable, set VITE_AIRTABLE_PROPERTY_ROOM_NATIVE_COLUMN_LIMIT to match what exists, or set VITE_AIRTABLE_WRITE_ROOM_COLUMNS=false to store all room rent in listing meta only.`
+}
 // Rooms Sharing Bathroom only exists for bathrooms 1–5 in Airtable
 export const MAX_BATHROOM_SHARING_SLOTS = 5
 
@@ -284,7 +317,7 @@ export function emptyLaundryRow() {
 }
 
 export function emptySharedSpaceRow() {
-  return { name: '', type: '', typeOther: '', description: '', access: [] }
+  return { name: '', type: '', typeOther: '', description: '', access: [], media: [], imageUrls: [] }
 }
 
 export function emptyListingAvailabilityWindow() {
@@ -337,7 +370,10 @@ function sharedSpaceRowHasContent(row) {
   if (String(row.typeOther || '').trim()) return true
   if (String(row.description || '').trim()) return true
   const acc = Array.isArray(row.access) ? row.access.filter(Boolean) : []
-  return acc.length > 0
+  if (acc.length > 0) return true
+  if (Array.isArray(row.imageUrls) && row.imageUrls.some((u) => String(u || '').trim())) return true
+  if (Array.isArray(row.media) && row.media.some((m) => m?.file)) return true
+  return false
 }
 
 function optionalCurrency(raw) {
@@ -542,6 +578,18 @@ export function buildPropertyWizardInitialValues(property) {
   for (let i = 1; i <= sharedCount; i++) {
     const type = stringOrEmpty(record[sharedSpaceTypeField(i)])
     const metaRow = sharedMetaRows[i - 1] && typeof sharedMetaRows[i - 1] === 'object' ? sharedMetaRows[i - 1] : {}
+    const fromMeta = (Array.isArray(metaRow.imageUrls) ? metaRow.imageUrls : [])
+      .map((u) => String(u || '').trim())
+      .filter(Boolean)
+    const prefix = `axis-ss${i}-`.toLowerCase()
+    const fromPhotos = []
+    for (const att of photosRaw) {
+      const fn = String(att?.filename || att?.name || '').toLowerCase()
+      if (!fn.startsWith(prefix)) continue
+      const url = typeof att === 'string' ? att : att?.url
+      if (url) fromPhotos.push(String(url).trim())
+    }
+    const imageUrls = [...new Set([...fromMeta, ...fromPhotos])]
     sharedSpaces.push({
       ...emptySharedSpaceRow(),
       name: '',
@@ -549,6 +597,8 @@ export function buildPropertyWizardInitialValues(property) {
       typeOther: SHARED_SPACE_TYPE_OPTIONS.includes(type) ? '' : type,
       description: stringOrEmpty(metaRow.description || metaRow.notes),
       access: splitRoomAccess(record[sharedSpaceAccessField(i)]),
+      media: [],
+      imageUrls,
     })
   }
 
@@ -809,11 +859,13 @@ export function serializeManagerAddPropertyToAirtableFields(params) {
   if (ba) fields[PROPERTY_AIR.bathroomAccess] = ba
 
   const roomsDetail = []
+  const nativeRoomLimit = getNativeRoomColumnWriteLimit()
   // ── Rooms ─────────────────────────────────────────────────────────────────────
   for (let i = 1; i <= rc; i++) {
     const row = rooms[i - 1] || emptyRoomRow()
+    const writeNativeThisIndex = writeRoomColumns && i <= nativeRoomLimit
 
-    if (writeRoomColumns) {
+    if (writeNativeThisIndex) {
       const rentFieldName = roomRentField(i)
       if (rentFieldName) {
         const rent = optionalCurrency(row.rent)
@@ -836,15 +888,32 @@ export function serializeManagerAddPropertyToAirtableFields(params) {
     }
 
     if (writeRoomColumns) {
-      /** Keep labels + rich text in JSON for tours/listings; rent/dates live in `Room N *` columns. */
-      roomsDetail.push({
-        label: String(row.label || '').trim() || `Room ${i}`,
-        notes: String(row.notes || '').trim(),
-        bathroomSetup: String(row.bathroomSetup || '').trim(),
-        furnitureIncluded: String(row.furnitureIncluded || '').trim(),
-        additionalFeatures: String(row.additionalFeatures || '').trim(),
-        unavailable: Boolean(row.unavailable),
-      })
+      if (writeNativeThisIndex) {
+        /** Labels + rich text in JSON; rent/dates in native `Room N *` columns for this slot. */
+        roomsDetail.push({
+          label: String(row.label || '').trim() || `Room ${i}`,
+          notes: String(row.notes || '').trim(),
+          bathroomSetup: String(row.bathroomSetup || '').trim(),
+          furnitureIncluded: String(row.furnitureIncluded || '').trim(),
+          additionalFeatures: String(row.additionalFeatures || '').trim(),
+          unavailable: Boolean(row.unavailable),
+        })
+      } else {
+        /** Slots above native column limit: keep money + dates only in meta (no native Room N Rent fields). */
+        roomsDetail.push({
+          label: String(row.label || '').trim() || `Room ${i}`,
+          notes: String(row.notes || '').trim(),
+          bathroomSetup: String(row.bathroomSetup || '').trim(),
+          furnitureIncluded: String(row.furnitureIncluded || '').trim(),
+          additionalFeatures: String(row.additionalFeatures || '').trim(),
+          rent: String(row.rent ?? '').trim(),
+          availability: row.unavailable ? 'Unavailable' : String(row.availability || '').trim(),
+          unavailable: Boolean(row.unavailable),
+          furnished: String(row.furnished || '').trim(),
+          utilitiesCost: String(row.utilitiesCost ?? '').trim(),
+          utilities: String(row.utilities || '').trim(),
+        })
+      }
     } else {
       roomsDetail.push({
         label: String(row.label || '').trim(),
@@ -901,11 +970,15 @@ export function serializeManagerAddPropertyToAirtableFields(params) {
     let st = String(row?.type || '').trim()
     if (st === 'Other') st = String(row?.typeOther || '').trim() || 'Other'
     const title = st || 'Shared space'
+    const imageUrls = (Array.isArray(row?.imageUrls) ? row.imageUrls : [])
+      .map((u) => String(u || '').trim())
+      .filter(Boolean)
     return {
       title,
       type: st,
       description: desc,
       notes: desc,
+      ...(imageUrls.length ? { imageUrls } : {}),
     }
   })
   const hasSharedSpacesMeta = sc > 0

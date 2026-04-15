@@ -336,7 +336,9 @@ function buildSharedSpacesListFromRecord(rec, meta) {
     const typeLine = type && type !== legacyName ? type : ''
     const descriptionParts = [descText, typeLine].filter(Boolean)
     const description = descriptionParts.join(' — ') || (typeLine || 'Shared area')
-    const imageUrls = (Array.isArray(m.imageUrls) ? m.imageUrls : []).map(trimStr).filter(Boolean)
+    const fromMeta = (Array.isArray(m.imageUrls) ? m.imageUrls : []).map(trimStr).filter(Boolean)
+    const fromPhotos = attachmentUrlsWithFilenamePrefix(rec?.Photos, `axis-ss${i}-`.toLowerCase())
+    const imageUrls = [...new Set([...fromMeta, ...fromPhotos])]
     const vidRaw = Array.isArray(m.videos) ? m.videos : []
     const videos = vidRaw
       .map((v, j) => {

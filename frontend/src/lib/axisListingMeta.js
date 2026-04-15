@@ -10,7 +10,8 @@
  *   (numeric rent & ISO availability read from `Room N Rent` / `Room N Availability` when those columns exist).
  * - `leasing["Leasing Packages"]` — bundle rows when floor packages are used (no dedicated table yet).
  * - `financials.moveInCharges` — optional until a column exists.
- * - `listingAvailabilityWindows`, `listingVideos`, `bathroomTotalDecimal`, `sharedSpacesDetail`,
+ * - `listingAvailabilityWindows`, `listingVideos`, `bathroomTotalDecimal`, `sharedSpacesDetail`
+ *   (each entry may include `imageUrls[]`; photos may also use `axis-ss{n}-` filenames on Photos like laundry),
  *   `laundryDetail[]` (per laundry slot: extra description for listings; photos use `axis-l{n}-` filenames on Photos),
  *   optional `bathroomsDetail[]` (per bathroom slot notes / `imageUrls`); bathroom photos may also use `axis-b{n}-` on Photos), etc.
  *

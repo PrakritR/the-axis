@@ -2,6 +2,7 @@ import {
   airtablePermissionDeniedMessage,
   responseBodyIndicatesAirtablePermissionDenied,
 } from './airtablePermissionError.js'
+import { mergeAxisListingMetaIntoOtherInfo, parseAxisListingMetaBlock } from './axisListingMeta.js'
 import { workOrderPhotoAttachmentFieldNamesOrdered } from './workOrderShared.js'
 
 /** Single Airtable base for the whole app (portal, applications, tour, lease drafts, payments, etc.). */
@@ -1540,6 +1541,55 @@ export async function uploadPropertyImage(propertyId, file) {
   return response.json()
 }
 
+/** URL of the last Photos attachment after a content upload (shape varies by Airtable API version). */
+export function pickLastPropertyPhotoUrlFromUploadResponse(resp) {
+  try {
+    const photos = resp?.fields?.Photos ?? resp?.Photos
+    if (!Array.isArray(photos) || !photos.length) return ''
+    const last = photos[photos.length - 1]
+    if (typeof last === 'string') return last.trim()
+    return String(last?.url || '').trim()
+  } catch {
+    return ''
+  }
+}
+
+/**
+ * Merge uploaded image URLs into `sharedSpacesDetail[slotIndex].imageUrls` inside Other Info meta.
+ * Call after {@link uploadPropertyImage} for each shared-space file (`axis-ss{n}-…` filenames on Photos).
+ */
+export async function patchPropertySharedSpaceDetailImageUrls(propertyId, urlsBySlotIndex) {
+  const id = String(propertyId || '').trim()
+  if (!/^rec[a-zA-Z0-9]{14,}$/.test(id)) throw new Error('Invalid property id.')
+  if (!urlsBySlotIndex || typeof urlsBySlotIndex !== 'object') return null
+  const entries = Object.entries(urlsBySlotIndex).filter(([, v]) => Array.isArray(v) && v.some((u) => String(u || '').trim()))
+  if (!entries.length) return null
+
+  const data = await request(`${BASE_URL}/${encodeURIComponent(TABLES.properties)}/${encodeURIComponent(id)}`)
+  const rec = mapRecord(data)
+  const rawOther = String(rec['Other Info'] ?? '')
+  const { userText, meta } = parseAxisListingMetaBlock(rawOther)
+  const m = meta && typeof meta === 'object' ? { ...meta } : {}
+  const detail = Array.isArray(m.sharedSpacesDetail) ? [...m.sharedSpacesDetail] : []
+  for (const [slotKey, urls] of entries) {
+    const idx = Number(slotKey)
+    if (!Number.isFinite(idx) || idx < 0) continue
+    const add = urls.map((u) => String(u || '').trim()).filter(Boolean)
+    if (!add.length) continue
+    const cur = detail[idx] && typeof detail[idx] === 'object' ? { ...detail[idx] } : { title: `Shared space ${idx + 1}` }
+    const prev = Array.isArray(cur.imageUrls) ? cur.imageUrls.map((u) => String(u || '').trim()).filter(Boolean) : []
+    cur.imageUrls = [...new Set([...prev, ...add])]
+    detail[idx] = cur
+  }
+  m.sharedSpacesDetail = detail
+  const nextOther = mergeAxisListingMetaIntoOtherInfo(userText, m)
+  const updated = await request(`${BASE_URL}/${encodeURIComponent(TABLES.properties)}/${encodeURIComponent(id)}`, {
+    method: 'PATCH',
+    body: JSON.stringify({ fields: { 'Other Info': nextOther }, typecast: true }),
+  })
+  return mapRecord(updated)
+}
+
 // ---------------------------------------------------------------------------
 // Documents
 // ---------------------------------------------------------------------------
@@ -2254,10 +2304,10 @@ export async function uploadLeaseVersionPdfFile({
   const draft = await getLeaseDraftById(draftId)
   const current = await getCurrentLeaseVersion(draftId)
   const versionNumber = Number(current?.['Version Number'] || draft?.['Current Version'] || 1) || 1
+  const existingPdfUrl = String(current?.['PDF URL'] || '').trim()
   const fields = {
     'Lease Draft ID': draftId,
     'Version Number': versionNumber,
-    'PDF URL': current?.['PDF URL'] || '',
     'File Name': nextFileName || `lease-v${versionNumber}.pdf`,
     'Uploader Name': String(uploaderName || '').trim() || 'Axis',
     'Uploader Role': String(uploaderRole || '').trim() || 'Manager',
@@ -2265,6 +2315,7 @@ export async function uploadLeaseVersionPdfFile({
     'Notes': String(notes || '').trim(),
     'Is Current': true,
   }
+  if (existingPdfUrl) fields['PDF URL'] = existingPdfUrl
 
   let saved = null
   if (current?.id) {

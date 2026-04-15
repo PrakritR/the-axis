@@ -2936,11 +2936,11 @@ function LeasingPanel({ resident, payments, onOpenPayments, onNavigateTab, onLea
       <div className="mb-5 rounded-2xl border border-slate-200 bg-white px-4 py-4 text-sm text-slate-800 shadow-sm">
         <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-slate-500">Move-in path</p>
         <p className="mt-2 leading-relaxed text-slate-700">
-          The room hold is{' '}
-          <span className="font-semibold">{formatMoney(residentRoomHoldFeeUsd(resident))}</span> (typically $100 unless
-          your property sets another amount). Only if you choose{' '}
-          <span className="font-semibold">Hold room only (not signing yet)</span> will the room hold payment line appear
-          under Payments, and your quoted security deposit is reduced by that same amount — it credits toward the deposit.
+          The room hold is typically <span className="font-semibold">$100</span> (unless your property sets a different
+          amount — yours is <span className="font-semibold">{formatMoney(residentRoomHoldFeeUsd(resident))}</span>). If
+          you choose <span className="font-semibold">Hold room only</span> (without signing yet), that payment appears
+          under Payments. The amount you pay is applied toward your security deposit, so the total deposit you owe goes
+          down by the same amount.
         </p>
         {leaseIsSigned ? (
           <p className="mt-3 text-sm text-slate-600">Your lease is signed — use Payments for any remaining move-in charges.</p>
@@ -2973,7 +2973,7 @@ function LeasingPanel({ resident, payments, onOpenPayments, onNavigateTab, onLea
                   holdPathBusy && 'cursor-wait opacity-60',
                 )}
               >
-                Hold room only (not signing yet)
+                Hold room only
               </button>
             </div>
             {holdPathBusy ? <p className="mt-2 text-xs text-slate-500">Saving…</p> : null}
