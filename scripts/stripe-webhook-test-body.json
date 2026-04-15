@@ -1,0 +1,1 @@
+{"id":"evt_cli_smoke","object":"event","api_version":"2024-06-20","type":"checkout.session.completed","data":{"object":{"id":"cs_test_smoke","metadata":{}}}}

@@ -12,6 +12,34 @@ function resolveExpectedApplicationFeeCents() {
   return Math.round(resolveExpectedApplicationFeeUsd() * 100)
 }
 
+/**
+ * Stripe-Signature must be read reliably on Vercel: `req.headers` can be missing or a Web `Headers`
+ * instance (bracket access fails). Fall back to Node's `rawHeaders` when needed.
+ */
+export function readStripeSignatureHeader(req) {
+  const want = 'stripe-signature'
+  const h = req?.headers
+  if (h && typeof h === 'object') {
+    if (typeof h.get === 'function') {
+      const v = h.get('stripe-signature') || h.get('Stripe-Signature')
+      if (v) return String(v)
+    }
+    for (const [k, v] of Object.entries(h)) {
+      if (String(k).toLowerCase() === want) {
+        if (Array.isArray(v)) return v.map(String).join(', ')
+        return v != null ? String(v) : ''
+      }
+    }
+  }
+  const rh = req?.rawHeaders
+  if (Array.isArray(rh)) {
+    for (let i = 0; i < rh.length - 1; i += 2) {
+      if (String(rh[i]).toLowerCase() === want) return String(rh[i + 1] ?? '')
+    }
+  }
+  return ''
+}
+
 export default async function handler(req, res) {
   res.setHeader('Content-Type', 'application/json')
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' })
@@ -22,7 +50,7 @@ export default async function handler(req, res) {
     return res.status(500).json({ error: 'STRIPE_WEBHOOK_SECRET and STRIPE_SECRET_KEY must be set on the server.' })
   }
 
-  const sig = req.headers['stripe-signature']
+  const sig = readStripeSignatureHeader(req)
   if (!sig) return res.status(400).json({ error: 'Missing Stripe-Signature header.' })
 
   const buf = Buffer.isBuffer(req.body) ? req.body : Buffer.from(String(req.body || ''), 'utf8')

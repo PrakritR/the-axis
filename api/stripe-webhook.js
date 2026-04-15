@@ -14,7 +14,19 @@ export const config = {
 export default async function handler(req, res) {
   try {
     const buf = await buffer(req)
-    return await stripeWebhook({ ...req, body: buf }, res)
+    const headers = req.headers && typeof req.headers === 'object' ? req.headers : {}
+    const rawHeaders = Array.isArray(req.rawHeaders) ? req.rawHeaders : undefined
+    return await stripeWebhook(
+      {
+        method: req.method,
+        url: req.url,
+        query: req.query,
+        body: buf,
+        headers,
+        rawHeaders,
+      },
+      res,
+    )
   } catch (err) {
     console.error('[api/stripe-webhook]', err)
     if (!res.headersSent) {

@@ -98,6 +98,7 @@ const server = http.createServer(async (req, nodeRes) => {
         url: url.pathname + url.search,
         query: Object.fromEntries(url.searchParams.entries()),
         headers: req.headers,
+        rawHeaders: req.rawHeaders,
         body: buf,
       }
       const vercelRes = createVercelRes(nodeRes)
