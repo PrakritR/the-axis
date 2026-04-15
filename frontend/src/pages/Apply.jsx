@@ -3,6 +3,10 @@ import { Seo } from '../lib/seo'
 import { properties } from '../data/properties'
 import { signLease, getSignedLeases } from '../lib/airtable'
 import { EmbeddedStripeCheckout } from '../components/EmbeddedStripeCheckout'
+import {
+  DEFAULT_APPLICATION_FEE_USD,
+  clampPositiveApplicationFeeUsd,
+} from '../../../shared/stripe-application-fee-defaults.js'
 import { readJsonResponse } from '../lib/readJsonResponse'
 import { errorFromAirtableApiBody } from '../lib/airtablePermissionError'
 
@@ -116,8 +120,6 @@ function getUtilitiesFee(propertyName) {
   return 0
 }
 
-/** Default when no per-property fee; keep in sync with `STRIPE_APPLICATION_FEE_USD` on the server. */
-const DEFAULT_APPLICATION_FEE_USD = 0.01
 const MAX_APPLICATION_FEE_USD = 9999
 
 /** Parse `applicationFee` from marketing `properties.js`. Returns null → use default USD amount. */
@@ -166,9 +168,11 @@ function getSignerStripeApplicationFeeUsd(propertyName, serverOverrides) {
   const raw = import.meta.env.VITE_STRIPE_APPLICATION_FEE_USD
   if (raw !== undefined && raw !== null && String(raw).trim() !== '') {
     const n = Number(raw)
-    if (Number.isFinite(n) && n > 0) return Math.min(MAX_APPLICATION_FEE_USD, n)
+    if (Number.isFinite(n) && n > 0) {
+      return clampPositiveApplicationFeeUsd(Math.min(MAX_APPLICATION_FEE_USD, n))
+    }
   }
-  return Math.min(MAX_APPLICATION_FEE_USD, DEFAULT_APPLICATION_FEE_USD)
+  return clampPositiveApplicationFeeUsd(Math.min(MAX_APPLICATION_FEE_USD, DEFAULT_APPLICATION_FEE_USD))
 }
 
 // Marketing fallback when API data is unavailable.
