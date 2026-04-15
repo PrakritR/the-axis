@@ -6982,10 +6982,24 @@ function ManagerDashboard({ manager: managerProp, openDraftId, onOpenDraft, onCl
         }
         let unopened = 0
         for (const [tk, list] of byTk) {
-          if (tk.startsWith('internal:site-manager:') && tk !== managerSiteKey) continue
-          if (tk === HOUSING_PUBLIC_ADMIN_GENERAL_THREAD) continue
+          if (tk.startsWith('internal:site-manager:')) {
+            if (tk !== managerSiteKey && !tk.startsWith(`${managerSiteKey}:t:`)) continue
+          }
+          if (
+            tk === HOUSING_PUBLIC_ADMIN_GENERAL_THREAD ||
+            tk.startsWith(`${HOUSING_PUBLIC_ADMIN_GENERAL_THREAD}:t:`)
+          ) {
+            continue
+          }
           if (tk.startsWith('internal:admin-public:property:')) {
-            if (!allowedAdminPropertyKeys.has(tk)) continue
+            let propAllowed = false
+            for (const prefix of allowedAdminPropertyKeys) {
+              if (tk === prefix || tk.startsWith(`${prefix}:t:`)) {
+                propAllowed = true
+                break
+              }
+            }
+            if (!propAllowed) continue
           } else if (tk.startsWith('internal:admin-public:')) {
             continue
           }

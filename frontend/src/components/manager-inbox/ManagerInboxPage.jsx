@@ -6,11 +6,17 @@ import {
   sendMessage,
   getMessagesByThreadKey,
   siteManagerThreadKey,
+  siteManagerConversationThreadKey,
+  managementAdminConversationThreadKey,
   residentLeasingThreadKey,
   residentAdminThreadKey,
+  nextResidentLeasingThreadKey,
+  nextResidentAdminThreadKey,
   parseResidentLeasingThreadKey,
   parseResidentAdminThreadKey,
   portalInboxThreadKeyFromRecord,
+  portalInboxThreadIdentityForGrouping,
+  messageMatchesSiteManagerAxisLane,
   PORTAL_INBOX_CHANNEL_INTERNAL,
   portalInboxAirtableConfigured,
   fetchInboxThreadStateMap,
@@ -21,7 +27,6 @@ import {
   getPortalInboxSubjectFieldName,
   HOUSING_PUBLIC_ADMIN_GENERAL_THREAD,
   housingPublicAdminPropertyThread,
-  managementAdminThreadKey,
 } from '../../lib/airtable'
 import {
   isAdminPortalAirtableConfigured,
@@ -86,9 +91,24 @@ function fmtDateTime(val) {
   }
 }
 
-const MANAGER_INBOX_AXIS = 'inbox:axis'
-
 const MANAGER_INBOX_THREAD_STATE_LS = 'axis_manager_inbox_thread_state_v1'
+
+/** Strip per-compose `:t:<uuid>` suffix from thread keys for display labels only. */
+function stripPortalUniqueThreadSuffix(threadKey) {
+  const t = String(threadKey || '')
+  const seg = ':t:'
+  const idx = t.indexOf(seg)
+  if (idx === -1) return t
+  return t.slice(0, idx)
+}
+
+/** Manager portal: selected row is the Axis site-manager lane (legacy base key or per-compose `…:t:…`). */
+function selectedThreadIsSiteManagerAxisLane(selectedThreadId, axisThreadKey) {
+  const s = String(selectedThreadId || '')
+  const ax = String(axisThreadKey || '').trim()
+  if (!ax) return false
+  return s === ax || s.startsWith(`${ax}:t:`)
+}
 
 function managerInboxResidentThreadId(residentRecordId) {
   return `resident:${String(residentRecordId || '').trim()}`
@@ -177,16 +197,17 @@ function threadSearchHaystack(sorted, subjectKey, participantLabel, subjectLine)
 function adminRecipientLabelForThreadId(threadId) {
   const t = String(threadId || '')
   if (t.startsWith('internal:mgmt-admin:')) {
-    return `Manager · ${t.slice('internal:mgmt-admin:'.length)}`
+    return `Manager · ${stripPortalUniqueThreadSuffix(t.slice('internal:mgmt-admin:'.length))}`
   }
   if (t.startsWith('internal:site-manager:')) {
-    return `Site manager · ${t.slice('internal:site-manager:'.length)}`
+    return `Site manager · ${stripPortalUniqueThreadSuffix(t.slice('internal:site-manager:'.length))}`
   }
-  if (t === HOUSING_PUBLIC_ADMIN_GENERAL_THREAD) {
+  if (t === HOUSING_PUBLIC_ADMIN_GENERAL_THREAD || t.startsWith(`${HOUSING_PUBLIC_ADMIN_GENERAL_THREAD}:t:`)) {
     return 'Website · General inquiry'
   }
   if (t.startsWith('internal:admin-public:property:')) {
-    return `Website · Property (${t.slice('internal:admin-public:property:'.length)})`
+    const rest = stripPortalUniqueThreadSuffix(t.slice('internal:admin-public:property:'.length))
+    return `Website · Property (${rest})`
   }
   if (t.startsWith('internal:admin-public:')) {
     return `Website · ${t.slice('internal:admin-public:'.length)}`
@@ -223,12 +244,12 @@ function getResidentEmailFromAllMsgs(allMsgs, resId, myEmail, threadKeyFn) {
   return m ? String(m['Sender Email'] || '').trim() : ''
 }
 
-function managerComposerToLabel(selectedThreadId, adminFullInbox) {
+function managerComposerToLabel(selectedThreadId, adminFullInbox, axisThreadKey) {
   if (adminFullInbox && selectedThreadId) return adminRecipientLabelForThreadId(selectedThreadId)
   if (String(selectedThreadId || '').startsWith('internal:admin-public:')) {
     return adminRecipientLabelForThreadId(selectedThreadId)
   }
-  if (selectedThreadId === MANAGER_INBOX_AXIS) return 'Axis internal team'
+  if (selectedThreadIsSiteManagerAxisLane(selectedThreadId, axisThreadKey)) return 'Axis internal team'
   if (managerInboxResidentIdFromSelection(selectedThreadId)) return 'Resident (leasing thread)'
   return ''
 }
@@ -236,12 +257,12 @@ function managerComposerToLabel(selectedThreadId, adminFullInbox) {
 function adminPortalThreadTitle(threadKey) {
   const t = String(threadKey)
   if (t.startsWith('internal:mgmt-admin:')) {
-    return `Manager · ${t.slice('internal:mgmt-admin:'.length)}`
+    return `Manager · ${stripPortalUniqueThreadSuffix(t.slice('internal:mgmt-admin:'.length))}`
   }
   if (t.startsWith('internal:site-manager:')) {
-    return `Site manager · ${t.slice('internal:site-manager:'.length)}`
+    return `Site manager · ${stripPortalUniqueThreadSuffix(t.slice('internal:site-manager:'.length))}`
   }
-  if (t === 'internal:admin-public:general') {
+  if (t === 'internal:admin-public:general' || t.startsWith('internal:admin-public:general:t:')) {
     return 'Website · General inquiry'
   }
   if (t.startsWith('internal:admin-public:property:')) {
@@ -265,7 +286,7 @@ function managerInboxStateKeyForSelection(selectedThreadId, axisThreadKey, admin
   }
   const t = String(selectedThreadId || '')
   if (t.startsWith('internal:admin-public:')) return t
-  if (selectedThreadId === MANAGER_INBOX_AXIS) return axisThreadKey || ''
+  if (selectedThreadIsSiteManagerAxisLane(selectedThreadId, axisThreadKey)) return t
   if (t.startsWith('internal:resident-leasing:')) return t
   const resId = managerInboxParseResidentThreadId(selectedThreadId)
   if (resId) return residentLeasingThreadKey(resId)
@@ -287,7 +308,7 @@ function mergeMessageIntoInboxList(prevList, saved) {
   return sortInboxMessagesAsc([...filtered, saved])
 }
 
-function inboxParticipantsLine(selectedThreadId, adminFullInbox) {
+function inboxParticipantsLine(selectedThreadId, adminFullInbox, axisThreadKey) {
   if (!selectedThreadId) return ''
   const t = String(selectedThreadId)
   if (adminFullInbox) {
@@ -298,7 +319,7 @@ function inboxParticipantsLine(selectedThreadId, adminFullInbox) {
     if (t.startsWith('internal:admin-public:')) return 'Public ↔ Admin'
     return 'Portal thread'
   }
-  if (selectedThreadId === MANAGER_INBOX_AXIS) return 'You ↔ Axis internal team'
+  if (selectedThreadIsSiteManagerAxisLane(selectedThreadId, axisThreadKey)) return 'You ↔ Axis internal team'
   if (String(selectedThreadId).startsWith('internal:admin-public:')) return 'Website ↔ Manager'
   if (managerInboxResidentIdFromSelection(selectedThreadId)) return 'You ↔ Resident (leasing)'
   return ''
@@ -374,12 +395,6 @@ export default function ManagerInboxPage({
     if (!portalInboxAirtableConfigured() || !managerEmail) return ''
     return siteManagerThreadKey(managerEmail)
   }, [managerEmail])
-
-  /** Site-manager thread messages — derived from full fetch so contact-page sends always match list + preview. */
-  const axisMsgs = useMemo(() => {
-    if (!axisThreadKey) return []
-    return allMsgs.filter((m) => portalInboxThreadKeyFromRecord(m) === axisThreadKey)
-  }, [allMsgs, axisThreadKey])
 
   const mergePortalSavedMessage = useCallback((saved) => {
     if (!saved?.id) return
@@ -559,7 +574,7 @@ export default function ManagerInboxPage({
     if (adminFullInbox) {
       const byKey = new Map()
       for (const m of allMsgs) {
-        const tk = portalInboxThreadKeyFromRecord(m)
+        const tk = portalInboxThreadIdentityForGrouping(m)
         if (!tk || !String(tk).startsWith('internal:')) continue
         if (!byKey.has(tk)) byKey.set(tk, [])
         byKey.get(tk).push(m)
@@ -591,29 +606,38 @@ export default function ManagerInboxPage({
 
     const rows = []
     if (axisThreadKey) {
-      const sortedAxis = [...axisMsgs].sort((a, b) => msgTime(a) - msgTime(b))
-      const last = sortedAxis[sortedAxis.length - 1]
-      const lastMsgTs = last ? msgTime(last) : 0
-      const participantLabel = 'Axis internal team'
-      const subjectLine =
-        threadSubjectFromMessages(sortedAxis, subjectFieldName) || 'Axis support'
-      rows.push({
-        id: MANAGER_INBOX_AXIS,
-        stateKey: axisThreadKey,
-        participantLabel,
-        subjectLine,
-        preview: threadBodyPreviewFromMessage(last),
-        searchText: threadSearchHaystack(sortedAxis, subjectFieldName, participantLabel, subjectLine),
-        time: last ? fmtDateTime(last.Timestamp || last.created_at) : '',
-        ts: lastMsgTs,
-        lastMsgTs,
-        lastSenderEmail: last ? portalSenderEmailFromMessage(last) : '',
-      })
+      const axisByKey = new Map()
+      for (const m of allMsgs) {
+        if (!messageMatchesSiteManagerAxisLane(m, managerEmail)) continue
+        const tk = portalInboxThreadIdentityForGrouping(m)
+        if (!axisByKey.has(tk)) axisByKey.set(tk, [])
+        axisByKey.get(tk).push(m)
+      }
+      for (const [tk, axisMsgs] of axisByKey) {
+        const sortedAxis = [...axisMsgs].sort((a, b) => msgTime(a) - msgTime(b))
+        const last = sortedAxis[sortedAxis.length - 1]
+        const lastMsgTs = last ? msgTime(last) : 0
+        const participantLabel = 'Axis internal team'
+        const subjectLine =
+          threadSubjectFromMessages(sortedAxis, subjectFieldName) || 'Axis support'
+        rows.push({
+          id: tk,
+          stateKey: tk,
+          participantLabel,
+          subjectLine,
+          preview: threadBodyPreviewFromMessage(last),
+          searchText: threadSearchHaystack(sortedAxis, subjectFieldName, participantLabel, subjectLine),
+          time: last ? fmtDateTime(last.Timestamp || last.created_at) : '',
+          ts: lastMsgTs,
+          lastMsgTs,
+          lastSenderEmail: last ? portalSenderEmailFromMessage(last) : '',
+        })
+      }
     }
 
     const residentByKey = new Map()
     for (const m of allMsgs) {
-      const tk = portalInboxThreadKeyFromRecord(m)
+      const tk = portalInboxThreadIdentityForGrouping(m)
       if (!tk || !tk.startsWith('internal:resident-leasing:')) continue
       if (!residentByKey.has(tk)) residentByKey.set(tk, [])
       residentByKey.get(tk).push(m)
@@ -646,9 +670,16 @@ export default function ManagerInboxPage({
     if (allowedPropertyInquiryKeys.size > 0) {
       const publicByKey = new Map()
       for (const m of allMsgs) {
-        const tk = portalInboxThreadKeyFromRecord(m)
+        const tk = portalInboxThreadIdentityForGrouping(m)
         if (!tk || !tk.startsWith('internal:admin-public:property:')) continue
-        if (!allowedPropertyInquiryKeys.has(tk)) continue
+        let allowed = false
+        for (const prefix of allowedPropertyInquiryKeys) {
+          if (tk === prefix || tk.startsWith(`${prefix}:t:`)) {
+            allowed = true
+            break
+          }
+        }
+        if (!allowed) continue
         if (!publicByKey.has(tk)) publicByKey.set(tk, [])
         publicByKey.get(tk).push(m)
       }
@@ -679,8 +710,8 @@ export default function ManagerInboxPage({
   }, [
     adminFullInbox,
     allMsgs,
-    axisMsgs,
     axisThreadKey,
+    managerEmail,
     inboxScopeLower,
     subjectFieldName,
     allowedPropertyInquiryKeys,
@@ -882,8 +913,12 @@ export default function ManagerInboxPage({
     async function run() {
       setThreadLoading(true)
       try {
-        if (selectedThreadId === MANAGER_INBOX_AXIS) {
-          const next = await getMessagesByThreadKey(axisThreadKey)
+        if (
+          !adminFullInbox &&
+          axisThreadKey &&
+          selectedThreadIsSiteManagerAxisLane(selectedThreadId, axisThreadKey)
+        ) {
+          const next = await getMessagesByThreadKey(String(selectedThreadId))
           if (!cancelled) {
             setThread(
               [...next].sort(
@@ -977,14 +1012,14 @@ export default function ManagerInboxPage({
           toast.error('Select a manager.')
           return
         }
-        threadKey = siteManagerThreadKey(em)
+        threadKey = siteManagerConversationThreadKey(em)
       } else if (kind === 'resident') {
         const id = composeResidentRecordId.trim()
         if (!/^rec[a-zA-Z0-9]{14,}$/.test(id)) {
           toast.error('Select a resident from the list.')
           return
         }
-        threadKey = residentAdminThreadKey(id)
+        threadKey = nextResidentAdminThreadKey(id)
       } else {
         return
       }
@@ -994,22 +1029,21 @@ export default function ManagerInboxPage({
         toast.error('Select a resident from the list to start a conversation.')
         return
       }
-      threadKey = residentLeasingThreadKey(id)
+      threadKey = nextResidentLeasingThreadKey(id)
     } else if (kind === 'admin') {
       const em = composeAdminEmail.trim().toLowerCase()
       if (!em.includes('@')) {
         toast.error('Select an admin contact.')
         return
       }
-      // Manager portal: keep all Axis-bound mail in the same thread as "Axis internal team" (site manager key).
       if (!adminFullInbox) {
-        if (!axisThreadKey) {
+        if (!managerEmail) {
           toast.error('Inbox is not ready yet — try again in a moment.')
           return
         }
-        threadKey = axisThreadKey
+        threadKey = siteManagerConversationThreadKey(managerEmail)
       } else {
-        threadKey = managementAdminThreadKey(em)
+        threadKey = managementAdminConversationThreadKey(em)
       }
     } else {
       return
@@ -1059,12 +1093,7 @@ export default function ManagerInboxPage({
       setComposeResidentRecordId('')
       setComposeKind(adminFullInbox ? 'manager' : 'resident')
       await loadAll()
-      const selectionId = adminFullInbox
-        ? threadKey
-        : kind === 'resident'
-          ? threadKey
-          : MANAGER_INBOX_AXIS
-      setSelectedThreadId(selectionId)
+      setSelectedThreadId(threadKey)
       const next = await getMessagesByThreadKey(threadKey)
       setThread(
         [...next].sort(
@@ -1142,12 +1171,12 @@ export default function ManagerInboxPage({
           senderName: managerEmail,
           subject: notifySubj,
         })
-      } else if (selectedThreadId === MANAGER_INBOX_AXIS) {
+      } else if (selectedThreadIsSiteManagerAxisLane(selectedThreadId, axisThreadKey)) {
         const saved = await sendMessage({
           senderEmail: managerEmail,
           message: bodyOut,
           isAdmin: false,
-          threadKey: axisThreadKey,
+          threadKey: String(selectedThreadId),
           channel: PORTAL_INBOX_CHANNEL_INTERNAL,
           subject: showSubjectField ? subjResolved : '',
         })
@@ -1185,8 +1214,8 @@ export default function ManagerInboxPage({
               new Date(a.Timestamp || a.created_at || 0) - new Date(b.Timestamp || b.created_at || 0),
           ),
         )
-      } else if (selectedThreadId === MANAGER_INBOX_AXIS) {
-        const next = await getMessagesByThreadKey(axisThreadKey)
+      } else if (selectedThreadIsSiteManagerAxisLane(selectedThreadId, axisThreadKey)) {
+        const next = await getMessagesByThreadKey(String(selectedThreadId))
         setThread(
           [...next].sort(
             (a, b) =>
@@ -1318,7 +1347,7 @@ export default function ManagerInboxPage({
     ? selectedThreadId
       ? adminPortalThreadTitle(selectedThreadId)
       : 'Inbox'
-    : selectedThreadId === MANAGER_INBOX_AXIS
+    : selectedThreadIsSiteManagerAxisLane(selectedThreadId, axisThreadKey)
       ? 'Axis team'
       : String(selectedThreadId || '').startsWith('internal:admin-public:')
         ? adminPortalThreadTitle(selectedThreadId)
@@ -1328,7 +1357,7 @@ export default function ManagerInboxPage({
 
   const readingSubtitle = adminFullInbox
     ? ''
-    : selectedThreadId === MANAGER_INBOX_AXIS
+    : selectedThreadIsSiteManagerAxisLane(selectedThreadId, axisThreadKey)
       ? 'Axis support'
       : String(selectedThreadId || '').startsWith('internal:admin-public:')
         ? 'Website inquiry'
@@ -1355,11 +1384,11 @@ export default function ManagerInboxPage({
                 : 'No conversations'
 
   const composerPlaceholder =
-    adminFullInbox || selectedThreadId !== MANAGER_INBOX_AXIS ? 'Write a reply…' : 'Message Axis…'
+    'Write a reply…'
 
   const composerToLabel = useMemo(() => {
     if (!selectedThreadId) return ''
-    return managerComposerToLabel(selectedThreadId, adminFullInbox)
+    return managerComposerToLabel(selectedThreadId, adminFullInbox, axisThreadKey)
   }, [selectedThreadId, adminFullInbox])
 
   return (
@@ -1607,7 +1636,7 @@ export default function ManagerInboxPage({
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div className="min-w-0 flex-1">
                   <h3 className="text-lg font-black tracking-tight text-slate-900 md:text-xl">{headerSubject}</h3>
-                  <p className="mt-1 text-sm text-slate-600">{inboxParticipantsLine(selectedThreadId, adminFullInbox)}</p>
+                  <p className="mt-1 text-sm text-slate-600">{inboxParticipantsLine(selectedThreadId, adminFullInbox, axisThreadKey)}</p>
                   {readingSubtitle ? <p className="mt-0.5 text-xs text-slate-400">{readingSubtitle}</p> : null}
                   {selectedInTrash ? (
                     <p className="mt-2 text-xs font-medium text-amber-800">In trash — restore from the list or menu</p>
@@ -1691,7 +1720,7 @@ export default function ManagerInboxPage({
                 messages={thread}
                 loading={threadLoading}
                 selectedThreadId={selectedThreadId}
-                isAxisThread={selectedThreadId === MANAGER_INBOX_AXIS}
+                isAxisThread={selectedThreadIsSiteManagerAxisLane(selectedThreadId, axisThreadKey)}
                 formatTime={fmtDateTime}
                 messageSubjectKey={subjectFieldName}
                 hideInlineSubject={Boolean(activeThreadSubject && subjectFieldName)}

@@ -974,6 +974,52 @@ export function siteManagerThreadKey(managerEmail) {
   return `internal:site-manager:${e}`
 }
 
+/** Appended to base portal thread keys so each **new compose** is a distinct conversation (replies reuse the full key). */
+const PORTAL_INBOX_UNIQUE_THREAD_SEG = ':t:'
+
+export function portalInboxNewThreadSegment() {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return `${PORTAL_INBOX_UNIQUE_THREAD_SEG}${crypto.randomUUID()}`
+  }
+  return `${PORTAL_INBOX_UNIQUE_THREAD_SEG}${Date.now()}-${Math.random().toString(36).slice(2, 12)}`
+}
+
+/** New manager ↔ Axis (site-manager lane) conversation — do not reuse {@link siteManagerThreadKey} for new compose. */
+export function siteManagerConversationThreadKey(managerEmail) {
+  const base = siteManagerThreadKey(managerEmail)
+  if (!base) return ''
+  return `${base}${portalInboxNewThreadSegment()}`
+}
+
+/** New admin ↔ manager (management lane) conversation. */
+export function managementAdminConversationThreadKey(managementEmail) {
+  const base = managementAdminThreadKey(managementEmail)
+  if (!base) return ''
+  return `${base}${portalInboxNewThreadSegment()}`
+}
+
+/**
+ * True when a Messages row belongs to this manager's Axis site-manager inbox lane
+ * (legacy single key {@link siteManagerThreadKey} or a per-compose `…:t:…` thread).
+ */
+export function messageMatchesSiteManagerAxisLane(record, managerEmail) {
+  const axis = siteManagerThreadKey(managerEmail)
+  if (!axis) return false
+  const tk = String(portalInboxThreadKeyFromRecord(record) || '').trim()
+  if (!tk) return false
+  return tk === axis || tk.startsWith(`${axis}${PORTAL_INBOX_UNIQUE_THREAD_SEG}`)
+}
+
+/**
+ * Stable grouping id for inbox lists. Rows without a Thread Key never merge with each other or with keyed threads.
+ */
+export function portalInboxThreadIdentityForGrouping(record) {
+  const tk = String(portalInboxThreadKeyFromRecord(record) || '').trim()
+  if (tk) return tk
+  const id = String(record?.id || '').trim()
+  return id ? `orphan:message:${id}` : 'orphan:message:unknown'
+}
+
 const RESIDENT_LEASING_PREFIX = 'internal:resident-leasing:'
 /** Appended segment so a new Messages thread can start after the resident trashes the prior one (`:s:` + unix ms). */
 const RESIDENT_THREAD_SEGMENT = ':s:'
@@ -1043,6 +1089,18 @@ export const HOUSING_PUBLIC_ADMIN_GENERAL_THREAD = 'internal:admin-public:genera
 export function housingPublicAdminPropertyThread(propertyRecordId) {
   const id = String(propertyRecordId || 'unknown').replace(/[^a-zA-Z0-9]/g, '')
   return `internal:admin-public:property:${id || 'unknown'}`
+}
+
+/** New public property inquiry to Admin (each submit = new thread). */
+export function housingPublicAdminPropertyConversationThread(propertyRecordId) {
+  const base = housingPublicAdminPropertyThread(propertyRecordId)
+  if (!base) return ''
+  return `${base}${portalInboxNewThreadSegment()}`
+}
+
+/** New general public inquiry to Admin (no property selected). */
+export function housingPublicAdminGeneralConversationThread() {
+  return `${HOUSING_PUBLIC_ADMIN_GENERAL_THREAD}${portalInboxNewThreadSegment()}`
 }
 
 /** Build an Airtable Form URL with prefill_* params (field names must match the form). */

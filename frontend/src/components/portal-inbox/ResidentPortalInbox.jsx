@@ -11,6 +11,7 @@ import {
   portalInboxThreadKeyFromRecord,
   PORTAL_INBOX_CHANNEL_INTERNAL,
   portalInboxAirtableConfigured,
+  portalInboxThreadIdentityForGrouping,
   fetchInboxThreadStateMap,
   inboxThreadStateAirtableEnabled,
   markInboxThreadRead,
@@ -46,17 +47,11 @@ import { displayMessageForResidentPortal } from '../PortalInboxThreadView.jsx'
 const RESIDENT_INBOX_THREAD_STATE_LS = 'axis_resident_inbox_thread_state_v1'
 
 /**
- * Pick Messages thread key for send: reuse non-trashed explicit thread, else latest
- * non-trashed segment for the lane, else a brand-new `:s:` key when the default is trashed.
+ * Pick Messages thread key for send:
+ * - **Reply** (`explicitSelectedKey`): reuse that thread key if not trashed; otherwise start fresh.
+ * - **New compose** (no selection): always a new `:s:` segment — never attach to an existing thread by default.
  */
-function resolveResidentOutboundThreadKey({
-  laneBaseKey,
-  nextSegmentKey,
-  inboxStateMap,
-  flatMessages,
-  explicitSelectedKey,
-  msgTime,
-}) {
+function resolveResidentOutboundThreadKey({ nextSegmentKey, inboxStateMap, explicitSelectedKey }) {
   const trashed = (k) => Boolean(inboxStateMap.get(k)?.trashed)
 
   if (explicitSelectedKey) {
@@ -65,27 +60,6 @@ function resolveResidentOutboundThreadKey({
     return nextSegmentKey()
   }
 
-  const byKey = new Map()
-  for (const m of flatMessages || []) {
-    const tk = String(portalInboxThreadKeyFromRecord(m) || '').trim()
-    if (!tk) continue
-    if (tk !== laneBaseKey && !tk.startsWith(`${laneBaseKey}:s:`)) continue
-    if (!byKey.has(tk)) byKey.set(tk, [])
-    byKey.get(tk).push(m)
-  }
-  let latestKey = ''
-  let latestTs = -1
-  for (const [tk, arr] of byKey) {
-    const last = [...arr].sort((a, b) => msgTime(a) - msgTime(b)).pop()
-    const ts = msgTime(last)
-    if (ts >= latestTs) {
-      latestTs = ts
-      latestKey = tk
-    }
-  }
-  if (latestKey && !trashed(latestKey)) return latestKey
-  if (latestKey && trashed(latestKey)) return nextSegmentKey()
-  if (!trashed(laneBaseKey)) return laneBaseKey
   return nextSegmentKey()
 }
 
@@ -262,7 +236,7 @@ export default function ResidentPortalInbox({ resident }) {
     const addLane = (lanePrefix, defaultParticipantLabel) => {
       const byKey = new Map()
       for (const m of lanePrefix === leasingKey ? leasingMsgs : adminMsgs) {
-        const tk = String(portalInboxThreadKeyFromRecord(m) || '').trim()
+        const tk = portalInboxThreadIdentityForGrouping(m)
         if (!tk) continue
         if (tk !== lanePrefix && !tk.startsWith(`${lanePrefix}:s:`)) continue
         if (!byKey.has(tk)) byKey.set(tk, [])
@@ -526,16 +500,11 @@ export default function ResidentPortalInbox({ resident }) {
       toast.error('Enter a subject.')
       return
     }
-    const laneBase = composeTo === 'admin' ? adminKey : leasingKey
-    const flat = composeTo === 'admin' ? adminMsgs : leasingMsgs
     const threadKey = resolveResidentOutboundThreadKey({
-      laneBaseKey: laneBase,
       nextSegmentKey: () =>
         composeTo === 'admin' ? nextResidentAdminThreadKey(resident.id) : nextResidentLeasingThreadKey(resident.id),
       inboxStateMap,
-      flatMessages: flat,
       explicitSelectedKey: null,
-      msgTime,
     })
     const bodyOut = mergeSubjectIntoMessageIfNeeded(composeBody.trim(), subjResolved, showSubjectField)
     setComposeSending(true)
@@ -577,7 +546,6 @@ export default function ResidentPortalInbox({ resident }) {
     const laneBase = selectedThreadId.startsWith('internal:resident-admin')
       ? adminKey
       : leasingKey
-    const flat = selectedThreadId.startsWith('internal:resident-admin') ? adminMsgs : leasingMsgs
     const threadSubj = threadSubjectFromMessages(thread, subjectFieldName)
     const notifySubj = replySubject.trim() || threadSubj || 'Axis portal message'
     const subjResolved = showSubjectField ? replySubject.trim() : ''
@@ -587,13 +555,10 @@ export default function ResidentPortalInbox({ resident }) {
       showSubjectField,
     )
     const threadKey = resolveResidentOutboundThreadKey({
-      laneBaseKey: laneBase,
       nextSegmentKey: () =>
         laneBase === adminKey ? nextResidentAdminThreadKey(resident.id) : nextResidentLeasingThreadKey(resident.id),
       inboxStateMap,
-      flatMessages: flat,
       explicitSelectedKey: selectedThreadId,
-      msgTime,
     })
     setSending(true)
     try {

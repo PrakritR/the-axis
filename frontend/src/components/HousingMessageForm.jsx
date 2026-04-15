@@ -5,12 +5,12 @@ import {
   normalizeHousingMessageCategoryId,
 } from '../lib/housingSite'
 import {
-  HOUSING_PUBLIC_ADMIN_GENERAL_THREAD,
-  housingPublicAdminPropertyThread,
+  housingPublicAdminPropertyConversationThread,
+  housingPublicAdminGeneralConversationThread,
   PORTAL_INBOX_CHANNEL_INTERNAL,
   portalInboxAirtableConfigured,
   sendMessage,
-  siteManagerThreadKey,
+  siteManagerConversationThreadKey,
 } from '../lib/airtable'
 import { errorFromAirtableApiBody } from '../lib/airtablePermissionError'
 
@@ -31,21 +31,24 @@ function looksLikeEmail(s) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(s || '').trim())
 }
 
-/** Routes public housing messages: admin inbox vs site-manager thread (Manager portal “Axis HQ”). */
+/** Routes public housing messages: each submit gets a new Thread Key (never merged by property/email alone). */
 function housingMessageThreadKey(selectedProperty) {
   if (!selectedProperty) {
-    return { threadKey: HOUSING_PUBLIC_ADMIN_GENERAL_THREAD, routeLine: 'Portal route: Admin · general inquiry (no property selected)' }
+    return {
+      threadKey: housingPublicAdminGeneralConversationThread(),
+      routeLine: 'Portal route: Admin · general inquiry (no property selected)',
+    }
   }
   const mgrEmail = [selectedProperty.managerEmail, selectedProperty.manager].find((x) => looksLikeEmail(x))
   if (mgrEmail) {
     const e = String(mgrEmail).trim().toLowerCase()
     return {
-      threadKey: siteManagerThreadKey(e),
+      threadKey: siteManagerConversationThreadKey(e),
       routeLine: `Portal route: Site manager inbox (${e})`,
     }
   }
   return {
-    threadKey: housingPublicAdminPropertyThread(selectedProperty.id),
+    threadKey: housingPublicAdminPropertyConversationThread(selectedProperty.id),
     routeLine:
       'Portal route: Admin · property inquiry (add a “Site Manager Email” field or Notes line “Site Manager Email: …” on this property to route to the manager portal)',
   }
