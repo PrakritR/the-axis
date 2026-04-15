@@ -127,3 +127,106 @@ export function formatBathroomCountForDisplay(n) {
   if (Number.isInteger(rounded)) return String(rounded)
   return String(rounded)
 }
+
+function startOfLocalDay(d) {
+  const x = new Date(d)
+  if (Number.isNaN(x.getTime())) return null
+  x.setHours(0, 0, 0, 0)
+  return x
+}
+
+function parseMonthDayYearListing(value, fallbackYear) {
+  const match = String(value || '')
+    .trim()
+    .match(/^([A-Za-z]+)\s+(\d{1,2})(?:,\s*(\d{4}))?$/)
+  if (!match) return null
+  const [, monthName, day, explicitYear] = match
+  const year = Number(explicitYear || fallbackYear)
+  const parsed = new Date(`${monthName} ${day}, ${year}`)
+  if (Number.isNaN(parsed.getTime())) return null
+  parsed.setHours(0, 0, 0, 0)
+  return parsed
+}
+
+/**
+ * Parse move-in / availability values from Airtable or wizard (ISO date, ISO datetime, M/D/YYYY).
+ * @param {unknown} raw
+ * @returns {Date | null} local calendar day at noon (stable parse), then callers may normalize to midnight
+ */
+export function parseListingMoveInDate(raw) {
+  const s = String(raw ?? '').trim()
+  if (!s) return null
+  const low = s.toLowerCase()
+  if (low === 'unavailable') return null
+
+  let m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(s)
+  if (m) {
+    const d = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]), 12, 0, 0, 0)
+    return Number.isNaN(d.getTime()) ? null : d
+  }
+  if (/^\d{4}-\d{2}-\d{2}T/.test(s)) {
+    const d = new Date(s)
+    if (Number.isNaN(d.getTime())) return null
+    d.setHours(12, 0, 0, 0)
+    return d
+  }
+  m = /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/.exec(s)
+  if (m) {
+    const d = new Date(Number(m[3]), Number(m[1]) - 1, Number(m[2]), 12, 0, 0, 0)
+    return Number.isNaN(d.getTime()) ? null : d
+  }
+  return null
+}
+
+export function formatListingMoveInDateForDisplay(d) {
+  if (!d || Number.isNaN(d.getTime())) return ''
+  const x = new Date(d)
+  x.setHours(12, 0, 0, 0)
+  return x.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })
+}
+
+/**
+ * All "available after/starting &lt;date&gt;" move-in starts in a listing phrase (open-ended windows).
+ * Dates are start-of local day so they align with {@link isAvailabilityActive} on the property page.
+ * @param {string} text
+ * @returns {Date[]}
+ */
+export function parseAvailabilityAfterStartingPhrases(text) {
+  const normalized = String(text || '')
+    .replace(/\u2013/g, '-')
+    .replace(/\s+/g, ' ')
+    .trim()
+  if (!normalized) return []
+
+  const seen = new Set()
+  const out = []
+
+  const reLong = /(?:after|starting)\s+([A-Za-z]+ \d{1,2}, \d{4})/gi
+  let m
+  while ((m = reLong.exec(normalized)) !== null) {
+    const d = parseMonthDayYearListing(m[1], new Date().getFullYear())
+    const day = d ? startOfLocalDay(d) : null
+    if (day) {
+      const key = day.getTime()
+      if (!seen.has(key)) {
+        seen.add(key)
+        out.push(day)
+      }
+    }
+  }
+
+  const reIso = /(?:after|starting)\s+(\d{4}-\d{2}-\d{2})/gi
+  while ((m = reIso.exec(normalized)) !== null) {
+    const parsed = parseListingMoveInDate(m[1])
+    const day = parsed ? startOfLocalDay(parsed) : null
+    if (day) {
+      const key = day.getTime()
+      if (!seen.has(key)) {
+        seen.add(key)
+        out.push(day)
+      }
+    }
+  }
+
+  return out.sort((a, b) => a.getTime() - b.getTime())
+}

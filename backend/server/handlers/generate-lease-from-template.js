@@ -322,6 +322,28 @@ function resolveRoomFurnitureIncluded(app, propertyRecord) {
   return ''
 }
 
+function propertyLeaseInformationFromRecord(propertyRecord) {
+  if (!propertyRecord || typeof propertyRecord !== 'object') return ''
+  const tryKeys = ['lease infomration', 'Lease Information', 'lease information']
+  for (const k of tryKeys) {
+    if (Object.prototype.hasOwnProperty.call(propertyRecord, k)) {
+      const v = propertyRecord[k]
+      if (v != null && String(v).trim()) return String(v).trim()
+    }
+  }
+  for (const key of Object.keys(propertyRecord)) {
+    const norm = String(key || '')
+      .trim()
+      .toLowerCase()
+      .replace(/\s+/g, ' ')
+    if (norm === 'lease infomration' || norm === 'lease information') {
+      const v = propertyRecord[key]
+      if (v != null && String(v).trim()) return String(v).trim()
+    }
+  }
+  return ''
+}
+
 function resolveSecurityDeposit(app, propertyRecord, monthlyRent, overrides, axisDefault = null) {
   if (overrides.deposit != null && overrides.deposit !== '') {
     const o = parseMoneyLike(overrides.deposit)
@@ -343,6 +365,13 @@ function resolveSecurityDeposit(app, propertyRecord, monthlyRent, overrides, axi
 }
 
 function buildLeaseData(app, propertyRecord, overrides = {}) {
+  const propertyMeta =
+    propertyRecord && typeof propertyRecord === 'object' ? parseAxisListingMetaFromRecord(propertyRecord) : null
+  const leasingFromMeta =
+    propertyMeta?.leasing && typeof propertyMeta.leasing === 'object' ? propertyMeta.leasing : {}
+  const guestPolicy = String(leasingFromMeta.guestPolicy || '').trim()
+  const additionalLeaseTerms = String(leasingFromMeta.additionalLeaseTerms || '').trim()
+
   const propertyName = app['Property Name'] || ''
   const effectiveRoomLabel = applicationLeaseRoomNumber(app, APPLICATION_APPROVED_ROOM_FIELD)
   const appForRoomPricing = { ...app, 'Room Number': effectiveRoomLabel || app['Room Number'] }
@@ -381,6 +410,15 @@ function buildLeaseData(app, propertyRecord, overrides = {}) {
   const roomFurnished = resolveRoomFurnished(appForRoomPricing, propertyRecord)
   const roomFurnitureIncluded = resolveRoomFurnitureIncluded(appForRoomPricing, propertyRecord)
   const securityDeposit = resolveSecurityDeposit(app, propertyRecord, monthlyRent, overrides, axisDetails.securityDeposit)
+  let applicationFee = 0
+  if (overrides.applicationFee != null && overrides.applicationFee !== '') {
+    const o = parseMoneyLike(overrides.applicationFee)
+    if (o != null && o >= 0) applicationFee = o
+  } else {
+    const fromProp = parseMoneyLike(propertyRecord?.['Application Fee'])
+    if (fromProp != null && fromProp >= 0) applicationFee = fromProp
+  }
+
   let adminFee = 0
   if (overrides.adminFee != null && overrides.adminFee !== '') {
     const o = parseMoneyLike(overrides.adminFee)
@@ -390,7 +428,11 @@ function buildLeaseData(app, propertyRecord, overrides = {}) {
       app['Admin Fee'] ?? app['Administration Fee'] ?? app['Move-in Admin Fee'] ?? app['Administrative Fee'],
     )
     if (fromApp != null && fromApp > 0) adminFee = fromApp
-    else if (typeof axisDetails.adminFee === 'number' && axisDetails.adminFee > 0) adminFee = axisDetails.adminFee
+    else {
+      const fromProperty = parseMoneyLike(propertyMeta?.financials?.administrationFee)
+      if (fromProperty != null && fromProperty > 0) adminFee = fromProperty
+      else if (typeof axisDetails.adminFee === 'number' && axisDetails.adminFee > 0) adminFee = axisDetails.adminFee
+    }
   }
 
   let lastMonthRent = 0
@@ -448,6 +490,7 @@ function buildLeaseData(app, propertyRecord, overrides = {}) {
     monthlyRent,
     utilityFee,
     securityDeposit,
+    applicationFee,
     lastMonthRent,
     adminFee,
     proratedDays,
@@ -460,6 +503,7 @@ function buildLeaseData(app, propertyRecord, overrides = {}) {
     roomFurnished,
     roomFurnitureIncluded,
     securityDepositFmt: fmtMoney(securityDeposit),
+    applicationFeeFmt: fmtMoney(applicationFee),
     lastMonthRentFmt: fmtMoney(lastMonthRent),
     adminFeeFmt: fmtMoney(adminFee),
     proratedRentFmt: fmtMoney(proratedRent),
@@ -473,6 +517,9 @@ function buildLeaseData(app, propertyRecord, overrides = {}) {
     bathroomNote: axisDetails.bathroomNote || '',
     bathroomGroup: axisDetails.bathroomGroup || '',
     amenities: axisDetails.amenities || [],
+    guestPolicy,
+    additionalLeaseTerms,
+    propertyLeaseInformation: propertyLeaseInformationFromRecord(propertyRecord),
   }
 }
 

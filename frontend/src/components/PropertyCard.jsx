@@ -3,6 +3,15 @@ import { Link } from 'react-router-dom'
 import { motion, useMotionValue, useSpring, useTransform } from 'framer-motion'
 import Carousel from './Carousel'
 import { getPropertyRentRange } from '../lib/pricing'
+import { DEFAULT_APPLICATION_FEE_USD } from '../../../shared/stripe-application-fee-defaults.js'
+
+function utilitiesLineForCard(raw) {
+  const s = String(raw || '').trim()
+  if (!s) return ''
+  if (/(\/mo\b|\/month|per\s*month)/i.test(s)) return s
+  if (/^\$[\d,]+(\.\d{1,2})?$/.test(s)) return `${s}/month`
+  return s
+}
 
 function IconBed() {
   return (
@@ -40,6 +49,16 @@ export default function PropertyCard({ p }) {
   function onMouseLeave() { mouseX.set(0); mouseY.set(0) }
 
   const rentRange = getPropertyRentRange(p)
+  const applicationFeeLine =
+    p.applicationFeeDisplay ||
+    (p.applicationFee
+      ? `${p.applicationFee} application fee (non-refundable once submitted)`
+      : `$${DEFAULT_APPLICATION_FEE_USD} application fee (non-refundable once submitted)`)
+  const utilitiesLine = utilitiesLineForCard(p.utilitiesFee)
+  const depositLine =
+    p.securityDeposit && String(p.securityDeposit).trim()
+      ? `${String(p.securityDeposit).trim()} security deposit (refundable per lease and Washington law)`
+      : '$500 security deposit (typical; confirm on full listing)'
 
   return (
     <motion.div
@@ -97,6 +116,77 @@ export default function PropertyCard({ p }) {
             ))}
           </div>
         )}
+
+        <div className="mt-4 space-y-4 border-t border-slate-100 pt-4 text-xs leading-relaxed text-slate-600">
+          <div>
+            <h4 className="text-[10px] font-bold uppercase tracking-[0.14em] text-slate-500">Fees</h4>
+            <ul className="mt-2 list-disc space-y-1.5 pl-4 marker:text-slate-300">
+              <li>
+                <span className="font-semibold text-slate-800">Application — </span>
+                {applicationFeeLine}
+              </li>
+              {utilitiesLine ? (
+                <li>
+                  <span className="font-semibold text-slate-800">Utilities — </span>
+                  {utilitiesLine} — see full listing for what is included.
+                </li>
+              ) : null}
+              {p.administrationFeeDisplay ? (
+                <li>
+                  <span className="font-semibold text-slate-800">Administrative — </span>
+                  {p.administrationFeeDisplay}
+                </li>
+              ) : null}
+              {p.cleaningFee ? (
+                <li>
+                  <span className="font-semibold text-slate-800">Cleaning / turnover — </span>
+                  {p.cleaningFee}
+                </li>
+              ) : null}
+            </ul>
+          </div>
+
+          <div>
+            <h4 className="text-[10px] font-bold uppercase tracking-[0.14em] text-slate-500">Move-in costs</h4>
+            <ul className="mt-2 list-disc space-y-1.5 pl-4 marker:text-slate-300">
+              <li>
+                <span className="font-semibold text-slate-800">Deposit — </span>
+                {depositLine}
+              </li>
+              <li>
+                <span className="font-semibold text-slate-800">At lease signing — </span>
+                First month&apos;s rent plus security deposit; utilities billed monthly with rent unless noted otherwise.
+              </li>
+              {p.moveInChargesDisplay ? (
+                <li>
+                  <span className="font-semibold text-slate-800">Other — </span>
+                  {p.moveInChargesDisplay}
+                </li>
+              ) : null}
+            </ul>
+          </div>
+
+          <div>
+            <h4 className="text-[10px] font-bold uppercase tracking-[0.14em] text-slate-500">Application process</h4>
+            <ol className="mt-2 list-decimal space-y-1.5 pl-4 marker:font-semibold marker:text-slate-400">
+              <li>
+                Open the{' '}
+                <Link to={`/properties/${p.slug}`} className="font-semibold text-[#2563eb] underline-offset-2 hover:underline">
+                  full listing
+                </Link>
+                , pick a room under floor plans, then review lease options.
+              </li>
+              <li>
+                Use{' '}
+                <Link to={`/apply?property=${encodeURIComponent(p.slug)}`} className="font-semibold text-[#2563eb] underline-offset-2 hover:underline">
+                  Apply
+                </Link>
+                {' '}to submit the form and pay the application fee online in the same step.
+              </li>
+              <li>We usually respond within about two to three business days by email with next steps.</li>
+            </ol>
+          </div>
+        </div>
 
         <div className="mt-5 flex flex-col gap-3 sm:flex-row sm:items-center">
           <Link

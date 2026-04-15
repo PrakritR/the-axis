@@ -14,6 +14,11 @@ import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import toast from 'react-hot-toast'
 import LeaseHTMLTemplate from '../components/LeaseHTMLTemplate.jsx'
 import { pickManagerSignatureFromDraft } from '../../../shared/lease-manager-signature-fields.js'
+import {
+  isLeaseDraftSignedStatus,
+  pickResidentSignatureTextFromDraft,
+  pickResidentSignedAtFromDraft,
+} from '../../../shared/lease-resident-signature-display.js'
 import { PortalEmptyVisual } from '../components/portalNavIcons.jsx'
 import { DataTable } from '../components/PortalShell'
 import { getStatusConfig, fmtTs } from '../lib/leaseWorkflowConstants.js'
@@ -29,6 +34,7 @@ import {
   getApplicationsForOwner,
   patchLeaseDraftRecordPreferServer,
   getLeaseCommentsForDraft,
+  countUnreadLeaseNotificationsForManager,
 } from '../lib/airtable'
 import {
   leaseDraftAllowsSignWithoutMoveInPay,
@@ -156,21 +162,6 @@ function toSyntheticLeaseDraftFromApplication(app) {
     'Lease Term': app['Lease Term'] || '',
     'Current Version': 1,
     'Updated At': app['Approved At'] || app.created_at || new Date().toISOString(),
-  }
-}
-
-async function fetchUnreadNotificationCount(recipientRecordId) {
-  if (!recipientRecordId) return 0
-  try {
-    const url = new URL(`${AT_BASE}/Lease%20Notifications`)
-    url.searchParams.set('filterByFormula', `AND({Recipient Record ID}="${recipientRecordId}",NOT({Is Read}))`)
-    url.searchParams.set('fields[]', 'Is Read')
-    const res = await fetch(url.toString(), { headers: { Authorization: `Bearer ${AIRTABLE_TOKEN}` } })
-    if (!res.ok) return 0
-    const data = await res.json()
-    return (data.records || []).length
-  } catch {
-    return 0
   }
 }
 
@@ -325,12 +316,26 @@ export default function ManagerLeasingTab({ manager, allowedPropertyNames }) {
       setPdfFile(null)
       setChangeRequestText('')
       setCommentText('')
+
+      const openedId = String(full?.id || resolvedDraft.id || '').trim()
+      const mgrRecipient = String(manager?.airtableRecordId || manager?.id || ownerId || '').trim()
+      if (openedId.startsWith('rec') && mgrRecipient.startsWith('rec')) {
+        callPortalAction('lease-mark-notifications-read', {
+          recipientRecordId: mgrRecipient,
+          leaseDraftId: openedId,
+        })
+          .catch(() => {})
+          .finally(() => {
+            countUnreadLeaseNotificationsForManager(mgrRecipient).then(setUnreadCount)
+            window.dispatchEvent(new CustomEvent('axis:lease-notifications-changed'))
+          })
+      }
     } catch (err) {
       toast.error(err.message || 'Could not open lease details')
     } finally {
       setDetailLoading(false)
     }
-  }, [selectedDraftId, manager, loadDrafts])
+  }, [selectedDraftId, manager, loadDrafts, ownerId])
 
   useEffect(() => {
     loadDrafts()
@@ -346,7 +351,7 @@ export default function ManagerLeasingTab({ manager, allowedPropertyNames }) {
   }, [selectedDraftId, detailLoading, activeDraft?.id])
 
   useEffect(() => {
-    fetchUnreadNotificationCount(ownerId).then(setUnreadCount)
+    countUnreadLeaseNotificationsForManager(ownerId).then(setUnreadCount)
   }, [ownerId])
 
   useEffect(() => {
@@ -405,6 +410,18 @@ export default function ManagerLeasingTab({ manager, allowedPropertyNames }) {
 
   const managerSigDetail = useMemo(() => pickManagerSignatureFromDraft(activeDraft, import.meta.env), [activeDraft])
 
+  const residentSigForPreview = useMemo(() => {
+    if (!activeDraft || !isLeaseDraftSignedStatus(activeDraft.Status)) {
+      return { signedBy: undefined, signedAt: undefined }
+    }
+    const text = pickResidentSignatureTextFromDraft(activeDraft)
+    const at = pickResidentSignedAtFromDraft(activeDraft)
+    return {
+      signedBy: text || undefined,
+      signedAt: at || undefined,
+    }
+  }, [activeDraft])
+
   async function handleSendToResident() {
     if (!activeDraft?.id) return
     setActionBusy('send')
@@ -433,6 +450,7 @@ export default function ManagerLeasingTab({ manager, allowedPropertyNames }) {
         file: pdfFile,
         uploaderName: manager?.name || manager?.email || 'Manager',
         uploaderRole: 'Manager',
+        uploaderRecordId: manager?.airtableRecordId || manager?.id || '',
       })
       toast.success('PDF uploaded')
       setShowUploadForm(false)
@@ -934,8 +952,8 @@ export default function ManagerLeasingTab({ manager, allowedPropertyNames }) {
               <div className="min-w-0 max-w-full">
                 <LeaseHTMLTemplate
                   leaseData={leaseJson}
-                  signedBy={activeDraft?.['Signed By']}
-                  signedAt={activeDraft?.['Signed At']}
+                  signedBy={residentSigForPreview.signedBy}
+                  signedAt={residentSigForPreview.signedAt}
                   managerSignedBy={managerSigDetail.text || undefined}
                   managerSignedAt={managerSigDetail.at || undefined}
                   managerSignatureImageUrl={managerSigDetail.image || undefined}

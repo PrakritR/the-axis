@@ -71,6 +71,11 @@ function getSecDeposit(propertyName, monthlyRent) {
   return 0
 }
 
+function getApplicationFee(propertyName) {
+  const prop = findPropRecord(propertyName)
+  return parseMoneyStr(prop?.applicationFee) ?? 0
+}
+
 function getBathroomNote(propertyName, roomNumber) {
   const prop = findPropRecord(propertyName)
   if (!prop || !roomNumber) return ''
@@ -112,6 +117,10 @@ export function buildLease(app, overrides = {}) {
   const monthlyRent = overrides.rent || getRoomRent(propertyName, roomNumber) || 0
   const utilityFee = overrides.utilityFee ?? getUtilityFee(propertyName)
   const securityDeposit = overrides.deposit ?? getSecDeposit(propertyName, monthlyRent)
+  const applicationFee =
+    overrides.applicationFee != null && String(overrides.applicationFee).trim() !== ''
+      ? parseMoneyStr(String(overrides.applicationFee)) ?? 0
+      : getApplicationFee(propertyName)
   const adminFee =
     overrides.adminFee != null && String(overrides.adminFee).trim() !== ''
       ? parseMoneyStr(String(overrides.adminFee)) ?? 0
@@ -181,6 +190,7 @@ export function buildLease(app, overrides = {}) {
     monthlyRent,
     utilityFee,
     securityDeposit,
+    applicationFee,
     adminFee,
     proratedDays,
     proratedRent,
@@ -191,6 +201,7 @@ export function buildLease(app, overrides = {}) {
     monthlyRentFmt: fmtMoney(monthlyRent),
     utilityFeeFmt: fmtMoney(utilityFee),
     securityDepositFmt: fmtMoney(securityDeposit),
+    applicationFeeFmt: fmtMoney(applicationFee),
     lastMonthRentFmt: fmtMoney(lastMonthRent),
     adminFeeFmt: fmtMoney(adminFee),
     proratedRentFmt: fmtMoney(proratedRent),

@@ -6,6 +6,7 @@ import PropertyCard from '../components/PropertyCard'
 import { properties } from '../data/properties'
 import { fetchApprovedPropertiesForMarketing } from '../lib/airtable'
 import { mapAirtableRecordToHomeProperty } from '../lib/airtablePublicListings'
+import { parseAvailabilityAfterStartingPhrases } from '../lib/listingRoomDisplay.js'
 import { Seo, buildWebsiteSchema } from '../lib/seo'
 import scrollToTop from '../utils/scrollToTop'
 
@@ -108,10 +109,10 @@ function isAvailableOn(available, date) {
     const s = new Date(m[1]), e = new Date(m[2])
     if (!isNaN(s) && !isNaN(e) && date >= s && date <= e) return true
   }
-  // "after [date]"
-  for (const m of a.matchAll(/after (\w+ \d+,?\s*\d{4})/g)) {
-    const d = new Date(m[1])
-    if (!isNaN(d) && date >= d) return true
+  const day = new Date(date)
+  day.setHours(0, 0, 0, 0)
+  for (const start of parseAvailabilityAfterStartingPhrases(available)) {
+    if (day >= start) return true
   }
   return false
 }
@@ -132,10 +133,12 @@ function isAvailableForRange(available, startDate, endDate) {
     const s = new Date(m[1]), e = new Date(m[2])
     if (!isNaN(s) && !isNaN(e) && start >= s && end <= e) return true
   }
-  // "after [date]": open-ended, so the whole range is fine as long as start >= d
-  for (const m of a.matchAll(/after (\w+ \d+,?\s*\d{4})/g)) {
-    const d = new Date(m[1])
-    if (!isNaN(d) && start >= d) return true
+  const startDay = new Date(start)
+  startDay.setHours(0, 0, 0, 0)
+  const opens = parseAvailabilityAfterStartingPhrases(available)
+  if (opens.length) {
+    const earliest = opens[0]
+    if (startDay >= earliest) return true
   }
   return false
 }

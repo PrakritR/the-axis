@@ -32,6 +32,10 @@ import leaseManagerReview from './handlers/lease-manager-review.js'
 import leaseAddComment from './handlers/lease-add-comment.js'
 import leaseMarkNotificationsRead from './handlers/lease-mark-notifications-read.js'
 import leaseDownloadGeneratedPdf from './handlers/lease-download-generated-pdf.js'
+import leaseResidentDownloadGeneratedPdf from './handlers/lease-resident-download-generated-pdf.js'
+import leaseResidentAddComment from './handlers/lease-resident-add-comment.js'
+import leaseResidentUploadPdf from './handlers/lease-resident-upload-pdf.js'
+import leaseResidentListComments from './handlers/lease-resident-list-comments.js'
 import leaseDraftPatch from './handlers/lease-draft-patch.js'
 import applicationRegisterPayment from './handlers/application-register-payment.js'
 import applicationPaymentStatus from './handlers/application-payment-status.js'
@@ -63,6 +67,10 @@ const handlers = {
   'lease-add-comment': leaseAddComment,
   'lease-mark-notifications-read': leaseMarkNotificationsRead,
   'lease-download-generated-pdf': leaseDownloadGeneratedPdf,
+  'lease-resident-download-generated-pdf': leaseResidentDownloadGeneratedPdf,
+  'lease-resident-add-comment': leaseResidentAddComment,
+  'lease-resident-upload-pdf': leaseResidentUploadPdf,
+  'lease-resident-list-comments': leaseResidentListComments,
   'lease-draft-patch': leaseDraftPatch,
   'application-register-payment': applicationRegisterPayment,
   'application-payment-status': applicationPaymentStatus,
@@ -80,6 +88,11 @@ const NO_AUTH_ACTIONS = new Set([
   'application-payment-status',
   'application-stripe-sync',
   'application-submit-signer',
+  /** Resident portal: proves access via residentRecordId + residentEmail in POST body */
+  'lease-resident-download-generated-pdf',
+  'lease-resident-add-comment',
+  'lease-resident-upload-pdf',
+  'lease-resident-list-comments',
 ])
 
 export default async function portalGateway(req, res) {

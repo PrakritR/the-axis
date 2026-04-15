@@ -7,7 +7,11 @@ import MapView from '../components/Map.jsx'
 import { properties } from '../data/properties'
 import { fetchPropertyRecordById, propertyListingVisibleForMarketing, fetchBlockedTourDatesByName } from '../lib/airtable'
 import { mapAirtableRecordToPropertyPage, marketingSlugForAirtablePropertyId } from '../lib/airtablePublicListings'
-import { formatBathroomCountForDisplay, partitionRoomListingFields } from '../lib/listingRoomDisplay.js'
+import {
+  formatBathroomCountForDisplay,
+  parseAvailabilityAfterStartingPhrases,
+  partitionRoomListingFields,
+} from '../lib/listingRoomDisplay.js'
 import { Seo, buildPropertySchema } from '../lib/seo'
 import { getStartingRent } from '../lib/pricing'
 import Modal from '../components/Modal'
@@ -398,14 +402,9 @@ function buildAvailabilityWindows(text) {
 
   const windows = []
 
-  const afterRegex = /after ([A-Za-z]+ \d{1,2}, \d{4})/gi
-  let afterMatch
-  while ((afterMatch = afterRegex.exec(normalized)) !== null) {
-    const afterDate = parseMonthDayYear(afterMatch[1])
-    const start = afterDate ? new Date(afterDate.getTime() + 86400000) : null
-    if (start) {
-      windows.push({ start, end: null })
-    }
+  // Move-in on or after the stated calendar day (matches listing copy from airtablePublicListings).
+  for (const start of parseAvailabilityAfterStartingPhrases(normalized)) {
+    windows.push({ start, end: null })
   }
 
   const rangeRegex = /([A-Za-z]+ \d{1,2}(?:,\s*\d{4})?)\s*-\s*([A-Za-z]+ \d{1,2}, \d{4})/gi
@@ -952,7 +951,8 @@ export default function PropertyPage(){
       String(p.applicationFee || '').trim().length > 0 ||
       String(p.securityDeposit || '').trim().length > 0 ||
       String(p.utilitiesFee || '').trim().length > 0 ||
-      String(p.petsPolicy || '').trim().length > 0
+      String(p.petsPolicy || '').trim().length > 0 ||
+      Boolean(p.administrationFeeDisplay)
     const hasLocation =
       Boolean(String(p.address || '').trim()) ||
       Boolean(p._fromAirtable && p.location && typeof p.location.lat === 'number' && typeof p.location.lng === 'number')
@@ -1313,7 +1313,7 @@ export default function PropertyPage(){
                       <div className="sm:col-span-3">Bathroom</div>
                       <div className="sm:col-span-4">Details</div>
                       <div className="sm:col-span-3">Room access</div>
-                      <div className="sm:col-span-2 sm:text-right">Photos</div>
+                      <div className="sm:col-span-2 sm:text-right">Media</div>
                     </div>
                     <div className="divide-y divide-slate-100 px-4 sm:px-6">
                       {(p.bathroomsList || []).map((row, rowIdx) => (
@@ -1330,7 +1330,15 @@ export default function PropertyPage(){
                               onClick={() => setActiveBathroom(row)}
                               className="inline-flex items-center rounded-full border border-slate-300 px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:border-axis hover:text-axis"
                             >
-                              {(row.images || []).length > 0 ? `${row.images.length} photo${row.images.length !== 1 ? 's' : ''}` : 'Details'}
+                              {(() => {
+                                const nImg = (row.images || []).length
+                                const nVid = (row.videos || []).length
+                                if (!nImg && !nVid) return 'Details'
+                                const parts = []
+                                if (nImg) parts.push(`${nImg} photo${nImg !== 1 ? 's' : ''}`)
+                                if (nVid) parts.push(`${nVid} video${nVid !== 1 ? 's' : ''}`)
+                                return parts.join(', ')
+                              })()}
                             </button>
                           </div>
                         </div>
@@ -1482,6 +1490,19 @@ export default function PropertyPage(){
                       </th>
                       <td className="align-top px-4 py-3.5 font-semibold text-slate-900 sm:px-5 sm:py-4">{p.securityDeposit || '—'}</td>
                     </tr>
+                    {p.administrationFeeDisplay ? (
+                      <tr className="border-b border-slate-100">
+                        <th
+                          scope="row"
+                          className="align-top bg-slate-50/80 px-4 py-3.5 text-xs font-bold uppercase tracking-wide text-slate-500 sm:px-5 sm:py-4"
+                        >
+                          Administrative costs
+                        </th>
+                        <td className="align-top px-4 py-3.5 font-semibold text-slate-900 sm:px-5 sm:py-4">
+                          {p.administrationFeeDisplay}
+                        </td>
+                      </tr>
+                    ) : null}
                     {p.utilitiesFee ? (
                       <tr className="border-b border-slate-100">
                         <th
@@ -1529,6 +1550,65 @@ export default function PropertyPage(){
                   </tbody>
                 </table>
               </div>
+
+              {(p.securityDeposit || p.administrationFeeDisplay || p.applicationFeeDisplay || p.moveInChargesDisplay) ? (
+                <div className="mt-8 rounded-2xl border border-stone-200 bg-[#faf8f5] px-4 py-5 sm:px-6">
+                  <h3 className="text-sm font-black uppercase tracking-[0.12em] text-stone-600">Fee overview</h3>
+                  <p className="mt-1 text-xs text-stone-600">
+                    Typical move-in and recurring charges for this listing. Final amounts are confirmed in your lease.
+                  </p>
+                  <div className="mt-5 grid gap-4 md:grid-cols-3">
+                    <div className="rounded-xl border border-stone-200/90 bg-white px-4 py-4 shadow-sm">
+                      <h4 className="text-[10px] font-bold uppercase tracking-[0.12em] text-stone-500">Move-in costs</h4>
+                      <ul className="mt-3 space-y-3 text-sm text-stone-800">
+                        {p.securityDeposit ? (
+                          <li>
+                            <span className="font-bold">Security deposit (refundable)</span>
+                            <div className="mt-0.5 font-black tabular-nums text-stone-900">{p.securityDeposit}</div>
+                            <p className="mt-1 text-[11px] font-medium text-stone-500">Held per Washington law; not a fee.</p>
+                          </li>
+                        ) : null}
+                        {p.administrationFeeDisplay ? (
+                          <li>
+                            <span className="font-bold">Administrative costs (non-refundable)</span>
+                            <div className="mt-0.5 font-black tabular-nums text-stone-900">{p.administrationFeeDisplay}</div>
+                            <p className="mt-1 text-[11px] font-medium text-stone-500">Processing / admin — separate from the security deposit.</p>
+                          </li>
+                        ) : null}
+                        {p.applicationFeeDisplay ? (
+                          <li>
+                            <span className="font-bold">Application fee</span>
+                            <div className="mt-0.5 font-semibold text-stone-900">{p.applicationFeeDisplay}</div>
+                          </li>
+                        ) : null}
+                        {p.moveInChargesDisplay ? (
+                          <li>
+                            <span className="font-bold">Other move-in charges</span>
+                            <div className="mt-0.5 font-semibold text-stone-900">{p.moveInChargesDisplay}</div>
+                          </li>
+                        ) : null}
+                        {!p.securityDeposit && !p.administrationFeeDisplay && !p.applicationFeeDisplay && !p.moveInChargesDisplay ? (
+                          <li className="text-xs text-stone-500">See table above for details.</li>
+                        ) : null}
+                      </ul>
+                    </div>
+                    <div className="rounded-xl border border-stone-200/90 bg-white px-4 py-4 shadow-sm">
+                      <h4 className="text-[10px] font-bold uppercase tracking-[0.12em] text-stone-500">Other fees</h4>
+                      <ul className="mt-3 list-disc space-y-2 pl-4 text-xs leading-relaxed text-stone-600">
+                        <li>Late rent may incur a fee if not received by the due date stated in the lease.</li>
+                        <li>Returned payments / NSF: actual bank fees as allowed by law.</li>
+                        <li>Early move-out: damages and mitigation per lease — not an automatic penalty.</li>
+                      </ul>
+                    </div>
+                    <div className="rounded-xl border border-stone-200/90 bg-white px-4 py-4 shadow-sm">
+                      <h4 className="text-[10px] font-bold uppercase tracking-[0.12em] text-stone-500">Pets &amp; add-ons</h4>
+                      <p className="mt-3 text-xs leading-relaxed text-stone-600">
+                        {String(p.petsPolicy || '').trim() || 'Pet policy and optional add-ons (parking, storage, etc.) vary by property — confirm with Axis before applying.'}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              ) : null}
 
               {Array.isArray(p.leasingPackages) && p.leasingPackages.length > 0 ? (
                 <div className="mt-10">
@@ -1782,6 +1862,16 @@ export default function PropertyPage(){
                     ) : null}
                   </div>
                 </div>
+                {Array.isArray(activeBathroom.videos) && activeBathroom.videos.length > 0 ? (
+                  <div className="mt-5 space-y-3">
+                    {activeBathroom.videos.map((v) => (
+                      <div key={v.src} className="overflow-hidden rounded-[18px] border border-slate-200 bg-black">
+                        <video src={v.src} className="h-56 w-full object-contain" controls playsInline />
+                        {v.label ? <div className="bg-slate-900 px-3 py-2 text-xs font-semibold text-white">{v.label}</div> : null}
+                      </div>
+                    ))}
+                  </div>
+                ) : null}
                 {Array.isArray(activeBathroom.images) && activeBathroom.images.length > 0 ? (
                   <div className="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-2">
                     {activeBathroom.images.map((src) => (
@@ -1790,11 +1880,13 @@ export default function PropertyPage(){
                       </div>
                     ))}
                   </div>
-                ) : (
+                ) : null}
+                {(!activeBathroom.images || activeBathroom.images.length === 0) &&
+                (!activeBathroom.videos || activeBathroom.videos.length === 0) ? (
                   <div className="mt-5 h-64 overflow-hidden rounded-[18px] border border-slate-200">
-                    <PropertyMediaPlaceholder className="h-full w-full" compact label="Photos coming soon" />
+                    <PropertyMediaPlaceholder className="h-full w-full" compact label="Photos and videos coming soon" />
                   </div>
-                )}
+                ) : null}
               </div>
             </Modal>
           )}

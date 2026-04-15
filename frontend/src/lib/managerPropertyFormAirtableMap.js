@@ -120,6 +120,8 @@ export const PROPERTY_AIR = {
   requiredBeforeSigningSummary: 'Required Before Signing Summary',
   moveInChargesJson: 'Move In Charges JSON',
   feesRequiredBeforeSigning: 'Fees Required Before Signing',
+  /** Long text — property-specific lease clauses / manager notes for drafts (Airtable column name as created in base). */
+  leaseInformation: 'lease infomration',
 }
 
 /** Preset charge names for structured move-in charges (dropdown + Other). */
@@ -296,7 +298,7 @@ export function emptyBathroomRow() {
 }
 
 export function emptyKitchenRow() {
-  return { label: '', kind: '', description: '', access: [] }
+  return { label: '', kind: '', description: '', access: [], media: [] }
 }
 
 /** When a room row is removed, renumber `Room N` chip selections on other steps. */
@@ -568,12 +570,21 @@ export function buildPropertyWizardInitialValues(property) {
   for (let i = 1; i <= kitchenCount; i++) {
     const desc = String(record[kitchenDescriptionField(i)] || '')
     const parsed = parseBodyTriplet(desc)
+    const prefix = `axis-k${i}-`.toLowerCase()
+    const media = []
+    for (const att of photosRaw) {
+      const fn = String(att?.filename || att?.name || '').toLowerCase()
+      if (!fn.startsWith(prefix)) continue
+      const url = typeof att === 'string' ? att : att?.url
+      if (url) media.push({ id: url, preview: url })
+    }
     kitchens.push({
       ...emptyKitchenRow(),
       label: parsed.label,
       kind: parsed.kind,
       description: parsed.description,
       access: splitRoomAccess(record[kitchenRoomsSharingField(i)]),
+      media,
     })
   }
 
@@ -669,6 +680,7 @@ export function buildPropertyWizardInitialValues(property) {
       securityDeposit: String(
         record[PROPERTY_AIR.securityDeposit] ?? meta?.financials?.securityDeposit ?? '',
       ),
+      administrationFee: String(meta?.financials?.administrationFee ?? ''),
       /** @deprecated legacy single number — prefer moveInChargeRows */
       moveInCharges: String(meta?.financials?.moveInCharges ?? ''),
       leaseAccessRequirement: normalizeLeaseAccessRequirement(leaseAccessRaw),
@@ -709,6 +721,9 @@ export function buildPropertyWizardInitialValues(property) {
           ? String(record[PROPERTY_AIR.leaseLengthInformation])
           : leasingNorm.leaseLengthInfo,
       ),
+      leaseInformation: stringOrEmpty(
+        record[PROPERTY_AIR.leaseInformation] ?? record['lease infomration'] ?? leasingNorm.leaseInformation,
+      ),
       bundles: Array.isArray(leasingNorm.bundles)
         ? leasingNorm.bundles.map((bundle) => ({
             name: String(bundle.name || ''),
@@ -716,6 +731,9 @@ export function buildPropertyWizardInitialValues(property) {
             rooms: Array.isArray(bundle.rooms) ? bundle.rooms.filter(Boolean) : [],
           }))
         : [],
+      guestPolicy: stringOrEmpty(leasingNorm.guestPolicy),
+      additionalLeaseTerms: stringOrEmpty(leasingNorm.additionalLeaseTerms),
+      leaseInformation: stringOrEmpty(leasingNorm.leaseInformation),
     },
   }
 }
@@ -723,7 +741,7 @@ export function buildPropertyWizardInitialValues(property) {
 /**
  * Read `leasing` from parsed axis meta (Other Info JSON).
  * Supports current Properties field names and legacy camelCase keys.
- * @returns {{ fullHousePrice: string, promoPrice: string, leaseLengthInfo: string, bundles: { name: string, price: string, rooms: string[] }[] }}
+ * @returns {{ fullHousePrice: string, promoPrice: string, leaseLengthInfo: string, bundles: { name: string, price: string, rooms: string[] }[], guestPolicy: string, additionalLeaseTerms: string, leaseInformation: string }}
  */
 export function normalizeLeasingFromMeta(leasing) {
   const L = leasing && typeof leasing === 'object' ? leasing : {}
@@ -747,6 +765,9 @@ export function normalizeLeasingFromMeta(leasing) {
     promoPrice: pick(MK.promotionalFullHousePrice, 'promoPrice'),
     leaseLengthInfo: pick(MK.leaseLengthInformation, 'leaseLengthInfo'),
     bundles,
+    guestPolicy: String(L.guestPolicy ?? '').trim(),
+    additionalLeaseTerms: String(L.additionalLeaseTerms ?? '').trim(),
+    leaseInformation: String(L.leaseInformation ?? '').trim(),
   }
 }
 
@@ -757,7 +778,7 @@ export function normalizeLeasingFromMeta(leasing) {
  */
 export function serializeManagerAddPropertyToAirtableFields(params) {
   const {
-    basics,          // { name, address, propertyType, propertyTypeOther?, amenities[], amenitiesOther?, pets, securityDeposit, moveInCharges, listingAvailabilityWindows? }
+    basics,          // { name, address, propertyType, propertyTypeOther?, amenities[], amenitiesOther?, pets, securityDeposit, administrationFee?, moveInCharges, listingAvailabilityWindows? }
     roomCount,
     bathroomCount,
     kitchenCount,
@@ -1008,6 +1029,16 @@ export function serializeManagerAddPropertyToAirtableFields(params) {
         })
       : null
 
+  const kitchensRowsForMeta = Array.isArray(kitchens) ? kitchens : []
+  const kitchensDetail =
+    kc > 0
+      ? Array.from({ length: kc }, (_, idx) => {
+          const row = kitchensRowsForMeta[idx] || emptyKitchenRow()
+          const d = String(row?.description || '').trim()
+          return { description: d, notes: d }
+        })
+      : null
+
   const bathroomTotalDecimal = computeDecimalBathroomTotal(bathrooms)
 
   const lacFull = normalizeLeaseAccessRequirement(basics?.leaseAccessRequirement)
@@ -1036,13 +1067,12 @@ export function serializeManagerAddPropertyToAirtableFields(params) {
     const v = optionalCurrency(row.amount)
     if (v !== undefined) moveInTotal += v
   }
-  const financialsMeta =
-    moveInChargeRowsClean.length || moveInTotal > 0
-      ? {
-          ...(moveInChargeRowsClean.length ? { moveInChargeList: moveInChargeRowsClean } : {}),
-          ...(moveInTotal > 0 ? { moveInCharges: moveInTotal } : {}),
-        }
-      : null
+  const administrationFeeSaved = optionalCurrency(basics.administrationFee)
+  const financialsParts = {}
+  if (moveInChargeRowsClean.length) financialsParts.moveInChargeList = moveInChargeRowsClean
+  if (moveInTotal > 0) financialsParts.moveInCharges = moveInTotal
+  if (administrationFeeSaved !== undefined) financialsParts.administrationFee = administrationFeeSaved
+  const financialsMeta = Object.keys(financialsParts).length > 0 ? financialsParts : null
 
   /** When leasing $ / copy columns exist, do not duplicate those values inside Other Info. */
   const leasingMeta = {}
@@ -1054,6 +1084,10 @@ export function serializeManagerAddPropertyToAirtableFields(params) {
     leasingMeta[MK.leaseLengthInformation] = String(leasingObj.leaseLengthInfo || '').trim()
     leasingMeta[MK.leasingPackages] = leasingPackagesForMeta
   }
+  const guestPolicySaved = String(leasingObj.guestPolicy || '').trim()
+  if (guestPolicySaved) leasingMeta.guestPolicy = guestPolicySaved
+  const additionalLeaseTermsSaved = String(leasingObj.additionalLeaseTerms || '').trim()
+  if (additionalLeaseTermsSaved) leasingMeta.additionalLeaseTerms = additionalLeaseTermsSaved
 
   const axisMeta = {
     ...(ptRaw === 'Other' && ptOther ? { propertyTypeOther: ptOther } : {}),
@@ -1061,6 +1095,7 @@ export function serializeManagerAddPropertyToAirtableFields(params) {
     roomsDetail,
     ...(hasSharedSpacesMeta ? { sharedSpacesDetail } : {}),
     ...(laundryDetail && laundryDetail.some((x) => String(x?.description || '').trim()) ? { laundryDetail } : {}),
+    ...(kc > 0 && kitchensDetail ? { kitchensDetail } : {}),
     ...(bathroomTotalDecimal > 0 ? { bathroomTotalDecimal } : {}),
     ...(financialsMeta ? { financials: financialsMeta } : {}),
     ...(Object.keys(leasingMeta).length > 0 ? { leasing: leasingMeta } : {}),
@@ -1078,6 +1113,8 @@ export function serializeManagerAddPropertyToAirtableFields(params) {
     const lli = String(leasingObj.leaseLengthInfo || '').trim()
     if (lli) fields[PROPERTY_AIR.leaseLengthInformation] = lli
   }
+
+  fields[PROPERTY_AIR.leaseInformation] = String(leasingObj?.leaseInformation ?? '').trim()
 
   // ── Bathrooms ─────────────────────────────────────────────────────────────────
   for (let i = 1; i <= bc; i++) {

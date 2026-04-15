@@ -32,12 +32,27 @@ function statusImpliesPipelineNotComplete(status) {
   return false
 }
 
+function normalizeStatusPiece(value) {
+  return String(value || '').trim().toLowerCase()
+}
+
+function statusPieceRejected(s) {
+  return s === 'rejected' || s === 'reject' || s === 'declined' || s === 'denied'
+}
+
+function statusPieceApproved(s) {
+  return s === 'approved' || s === 'accept' || s === 'accepted'
+}
+
 /**
  * Map an Applications table row to pending | approved | rejected.
- * Uses optional `Approval Status` / `Application Status` when set.
+ * Reads **both** `Approval Status` and `Application Status`. If either field clearly says
+ * approved while the other still says pending/submitted (common Airtable drift), treat as
+ * approved so the resident portal and lease gates match manager intent.
  * `Rejected` checkbox (see applicationRejectedFieldName) is the reliable store for rejection.
- * If status is still in the pipeline (pending, submitted, …), stays pending even when `Approved` is true
- * — must match `backend/server/lib/application-approval-lease-guard.js` for lease creation.
+ * If a status field is still in the pipeline (pending, submitted, …), that field blocks only
+ * after we have checked both for explicit approved/rejected — must stay aligned with
+ * `backend/server/lib/application-approval-lease-guard.js`.
  */
 export function deriveApplicationApprovalState(raw) {
   if (!raw || typeof raw !== 'object') return 'pending'
@@ -46,14 +61,20 @@ export function deriveApplicationApprovalState(raw) {
   const rejectedFlag = raw[rejKey]
   if (rejectedFlag === true || rejectedFlag === 1) return 'rejected'
 
-  const status = String(raw['Approval Status'] || raw['Application Status'] || '').trim().toLowerCase()
+  const pieces = [
+    normalizeStatusPiece(raw['Approval Status']),
+    normalizeStatusPiece(raw['Application Status']),
+  ].filter(Boolean)
 
-  if (status === 'approved' || status === 'accept' || status === 'accepted') return 'approved'
-  if (status === 'rejected' || status === 'reject' || status === 'declined' || status === 'denied') {
-    return 'rejected'
+  for (const s of pieces) {
+    if (statusPieceRejected(s)) return 'rejected'
   }
-
-  if (statusImpliesPipelineNotComplete(status)) return 'pending'
+  for (const s of pieces) {
+    if (statusPieceApproved(s)) return 'approved'
+  }
+  for (const s of pieces) {
+    if (statusImpliesPipelineNotComplete(s)) return 'pending'
+  }
 
   const a = raw.Approved
   if (a === true || a === 1) return 'approved'

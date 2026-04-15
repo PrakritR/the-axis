@@ -1,3 +1,4 @@
+import { DEFAULT_APPLICATION_FEE_USD } from '../../../shared/stripe-application-fee-defaults.js'
 import { parseAxisListingMetaBlock } from './axisListingMeta.js'
 import {
   PROPERTY_AIR,
@@ -26,7 +27,9 @@ import {
 } from './managerPropertyFormAirtableMap.js'
 import {
   formatBathroomCountForDisplay,
+  formatListingMoveInDateForDisplay,
   formatSharedSpaceAccessDisplay,
+  parseListingMoveInDate,
   partitionRoomListingFields,
 } from './listingRoomDisplay.js'
 import {
@@ -181,11 +184,9 @@ function availabilityDisplayFromDetail(detail, rec, roomIndexOneBased) {
       : ''
   const a = fromDetail || fromCol
   if (!a) return 'Available now'
-  if (/^\d{4}-\d{2}-\d{2}$/.test(a)) {
-    const d = new Date(`${a}T12:00:00`)
-    if (!Number.isNaN(d.getTime())) {
-      return `Available after ${d.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}`
-    }
+  const parsed = parseListingMoveInDate(a)
+  if (parsed) {
+    return `Available starting ${formatListingMoveInDateForDisplay(parsed)}`
   }
   return a
 }
@@ -321,6 +322,64 @@ function attachmentUrlsWithFilenamePrefix(photos, prefixLower) {
   return out
 }
 
+const VIDEO_FILENAME_RE = /\.(mp4|mpe?g|mov|webm|m4v|mkv|avi|ogv)(\?|#|$)/i
+
+function attachmentUrlLooksVideo(url, filename, mimeType) {
+  const u = String(url || '').toLowerCase()
+  const fn = String(filename || '').toLowerCase()
+  const mt = String(mimeType || '').toLowerCase()
+  if (mt.startsWith('video/')) return true
+  if (VIDEO_FILENAME_RE.test(u) || VIDEO_FILENAME_RE.test(fn)) return true
+  return false
+}
+
+/**
+ * Split sectional uploads (`axis-b1-…`, `axis-k1-…`, etc.) into image URLs vs video URLs for listing UI.
+ * @returns {{ images: string[], videos: { src: string, label: string }[] }}
+ */
+function attachmentMediaPartitioned(photos, prefixLower, videoLabelBase) {
+  const images = []
+  const videos = []
+  const arr = Array.isArray(photos) ? photos : []
+  let vidIdx = 0
+  for (const att of arr) {
+    const fn = String(att?.filename || att?.name || '').toLowerCase()
+    if (!fn.startsWith(prefixLower)) continue
+    const url =
+      typeof att === 'string'
+        ? att
+        : att?.url || att?.thumbnails?.large?.url || att?.thumbnails?.full?.url
+    if (!url) continue
+    const u = String(url).trim()
+    const mime = typeof att === 'object' ? att?.type : ''
+    if (attachmentUrlLooksVideo(u, att?.filename || att?.name, mime)) {
+      vidIdx += 1
+      videos.push({ src: u, label: `${videoLabelBase} video ${vidIdx}` })
+    } else {
+      images.push(u)
+    }
+  }
+  return { images, videos }
+}
+
+function videoRowsFromMeta(vidRaw, titleBase) {
+  const rows = Array.isArray(vidRaw) ? vidRaw : []
+  const out = []
+  rows.forEach((v, j) => {
+    const o = v && typeof v === 'object' ? v : {}
+    const src = trimStr(o.url || o.src)
+    const label = trimStr(o.label || o.title) || `${titleBase} video ${j + 1}`
+    if (!src) return
+    out.push({
+      src,
+      label,
+      placeholder: !!o.placeholder,
+      placeholderText: o.placeholderText,
+    })
+  })
+  return out
+}
+
 function buildSharedSpacesListFromRecord(rec, meta) {
   const roomCount = clampInt(rec[PROPERTY_AIR.roomCount] ?? 0, 0, MAX_ROOM_SLOTS)
   const sc = clampInt(rec[PROPERTY_AIR.sharedSpaceCount] ?? 0, 0, MAX_SHARED_SPACE_SLOTS)
@@ -376,6 +435,7 @@ function buildSharedSpacesListFromRecord(rec, meta) {
     })
   }
 
+  const kitchenMetaRows = Array.isArray(meta?.kitchensDetail) ? meta.kitchensDetail : []
   const kc = clampInt(rec[PROPERTY_AIR.kitchenCount] ?? 0, 0, MAX_KITCHEN_SLOTS)
   for (let i = 1; i <= kc; i++) {
     const parsed = parseBodyTriplet(rec[kitchenDescriptionField(i)])
@@ -388,12 +448,23 @@ function buildSharedSpacesListFromRecord(rec, meta) {
     const descParts = [kind, descExtra].filter(Boolean)
     const descText = descParts.join(' — ')
     const accessDisplay = formatSharedSpaceAccessDisplay(accessList, roomCount)
+    const km = kitchenMetaRows[i - 1] && typeof kitchenMetaRows[i - 1] === 'object' ? kitchenMetaRows[i - 1] : {}
+    const metaNote = trimStr(km.description || km.notes || '')
+    const description = [descText, metaNote].filter(Boolean).join(' · ') || 'Shared kitchen'
+    const { images: fromPhotos, videos: fromPhotoVideos } = attachmentMediaPartitioned(
+      photoAtts,
+      `axis-k${i}-`.toLowerCase(),
+      title,
+    )
+    const fromMeta = (Array.isArray(km.imageUrls) ? km.imageUrls : []).map(trimStr).filter(Boolean)
+    const images = [...new Set([...fromMeta, ...fromPhotos])]
+    const videos = [...fromPhotoVideos, ...videoRowsFromMeta(km.videos, title)]
     out.push({
       title,
-      description: descText || 'Shared kitchen',
+      description,
       accessLabel: accessDisplay,
-      images: [],
-      videos: [],
+      images,
+      videos,
     })
   }
 
@@ -475,14 +546,20 @@ function buildBathroomsListFromRecord(rec, meta) {
     const bm = bathroomMetaRows[i - 1] && typeof bathroomMetaRows[i - 1] === 'object' ? bathroomMetaRows[i - 1] : {}
     const metaNote = trimStr(bm.description || bm.notes || '')
     const description = [descText, metaNote].filter(Boolean).join(' · ') || 'Bathroom'
-    const fromPhotos = attachmentUrlsWithFilenamePrefix(photos, `axis-b${i}-`.toLowerCase())
+    const { images: fromPhotos, videos: fromPhotoVideos } = attachmentMediaPartitioned(
+      photos,
+      `axis-b${i}-`.toLowerCase(),
+      title,
+    )
     const fromMeta = (Array.isArray(bm.imageUrls) ? bm.imageUrls : []).map(trimStr).filter(Boolean)
     const images = [...new Set([...fromPhotos, ...fromMeta])]
+    const videos = [...fromPhotoVideos, ...videoRowsFromMeta(bm.videos, title)]
     out.push({
       title,
       description,
       accessLabel: accessDisplay,
       images,
+      videos,
     })
   }
   return out
@@ -492,6 +569,56 @@ function formatMoneyLabelFromNumber(n) {
   if (!Number.isFinite(n) || n < 0) return ''
   if (n === 0) return '$0'
   return `$${n.toLocaleString('en-US', { maximumFractionDigits: n % 1 !== 0 ? 2 : 0 })}`
+}
+
+/**
+ * Fee / deposit strings for marketing cards and property pages (Airtable + meta).
+ * Kept in one place so home listings match full listing pages.
+ */
+export function financialDisplayFieldsFromAirtableRecord(rec, meta) {
+  const appFeeNum = Number(rec[PROPERTY_AIR.applicationFee])
+  const applicationFeeDisplay =
+    Number.isFinite(appFeeNum) && appFeeNum >= 0
+      ? appFeeNum === 0
+        ? 'No application fee'
+        : `${formatMoneyLabelFromNumber(appFeeNum)} application fee`
+      : `${formatMoneyLabelFromNumber(DEFAULT_APPLICATION_FEE_USD)} application fee`
+
+  const moveInNum = Number(meta?.financials?.moveInCharges)
+  const moveInChargesDisplay =
+    Number.isFinite(moveInNum) && moveInNum > 0
+      ? `${formatMoneyLabelFromNumber(moveInNum)} other move-in charges (see lease)`
+      : ''
+
+  const adminFeeNum = Number(meta?.financials?.administrationFee)
+  const administrationFeeDisplay =
+    Number.isFinite(adminFeeNum) && adminFeeNum > 0
+      ? `${formatMoneyLabelFromNumber(adminFeeNum)} administrative (non-refundable)`
+      : ''
+
+  const utilitiesFee = String(
+    rec['Utilities Fee'] ?? rec['Utilities'] ?? rec['House Utilities'] ?? meta?.financials?.utilities ?? '',
+  ).trim()
+
+  const sdRaw = rec[PROPERTY_AIR.securityDeposit] ?? rec['Security Deposit']
+  const securityDeposit =
+    sdRaw != null && String(sdRaw).trim() !== '' ? String(sdRaw).trim() : '$500'
+
+  const applicationFee =
+    Number.isFinite(appFeeNum) && appFeeNum >= 0
+      ? appFeeNum === 0
+        ? '$0'
+        : formatMoneyLabelFromNumber(appFeeNum)
+      : formatMoneyLabelFromNumber(DEFAULT_APPLICATION_FEE_USD)
+
+  return {
+    applicationFee,
+    applicationFeeDisplay,
+    moveInChargesDisplay,
+    administrationFeeDisplay,
+    utilitiesFee,
+    securityDeposit,
+  }
 }
 
 export function mapAirtableRecordToHomeProperty(rec) {
@@ -508,6 +635,7 @@ export function mapAirtableRecordToHomeProperty(rec) {
   const videos = listingVideosFromRecord(rec, meta)
   const rent = computeListingRentLabel(rec, meta)
   const roomPlans = buildRoomPlansFromAirtableRecord(rec, meta)
+  const financials = financialDisplayFieldsFromAirtableRecord(rec, meta)
   return {
     slug,
     name,
@@ -523,6 +651,7 @@ export function mapAirtableRecordToHomeProperty(rec) {
     roomPlans,
     location: resolvePropertyLocation(rec),
     tags: ['Shared Housing', 'Seattle', 'Shared Living'],
+    ...financials,
     _fromAirtable: true,
     airtableRecordId: rec.id,
   }
@@ -568,18 +697,6 @@ export function mapAirtableRecordToPropertyPage(rec) {
   const bathroomsList = buildBathroomsListFromRecord(rec, meta)
   const availabilitySummary = formatListingAvailabilitySummary(meta?.listingAvailabilityWindows)
 
-  const appFeeNum = Number(rec[PROPERTY_AIR.applicationFee])
-  const applicationFeeDisplay =
-    Number.isFinite(appFeeNum) && appFeeNum >= 0
-      ? appFeeNum === 0
-        ? 'No application fee'
-        : `${formatMoneyLabelFromNumber(appFeeNum)} application fee`
-      : '$1 application fee'
-
-  const moveInNum = Number(meta?.financials?.moveInCharges)
-  const moveInChargesDisplay =
-    Number.isFinite(moveInNum) && moveInNum > 0 ? `${formatMoneyLabelFromNumber(moveInNum)} other move-in charges (see lease)` : ''
-
   return {
     ...base,
     rent: base.rent,
@@ -590,23 +707,11 @@ export function mapAirtableRecordToPropertyPage(rec) {
     communityAmenities: Array.isArray(rec.Amenities) ? rec.Amenities : [],
     unitAmenities: [],
     policies: String(leasing.leaseLengthInfo || '').trim() || 'Contact Axis for lease options.',
-    applicationFee:
-      Number.isFinite(appFeeNum) && appFeeNum >= 0
-        ? appFeeNum === 0
-          ? '$0'
-          : formatMoneyLabelFromNumber(appFeeNum)
-        : '$1',
-    applicationFeeDisplay,
-    moveInChargesDisplay,
     listingAvailabilitySummary: availabilitySummary,
     leasingPackages,
     leaseTerms: [],
     cleaningFee: '',
-    utilitiesFee: String(
-      rec['Utilities Fee'] ?? rec['Utilities'] ?? rec['House Utilities'] ?? meta?.financials?.utilities ?? '',
-    ).trim(),
     petsPolicy: String(rec[PROPERTY_AIR.pets] ?? rec.Pets ?? '').trim(),
-    securityDeposit: String(rec['Security Deposit'] != null ? rec['Security Deposit'] : '$500'),
     sharedSpacesList,
     bathroomsList,
   }

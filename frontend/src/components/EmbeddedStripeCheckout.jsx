@@ -111,29 +111,31 @@ export function EmbeddedStripeCheckout({ open, title, checkoutRequest, apiEndpoi
   if (!open) return null
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-950/55 px-4 py-6 backdrop-blur-sm">
-      <div className="w-full max-w-4xl overflow-hidden rounded-[28px] border border-slate-200 bg-white shadow-2xl">
-        <div className="flex items-center justify-between gap-4 border-b border-slate-200 px-5 py-4 sm:px-6">
-          <div>
-            <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">Secure Payment</div>
-            <h3 className="mt-1 text-xl font-black text-slate-900">{title}</h3>
-          </div>
-          <button
-            type="button"
-            onClick={() => onCloseRef.current?.()}
-            className="rounded-full border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-600 transition hover:bg-slate-50"
-          >
-            Close
-          </button>
-        </div>
-        <div className="px-5 py-5 sm:px-6 sm:py-6">
-          {loading ? <p className="text-sm text-slate-500">Loading secure checkout…</p> : null}
-          {error ? (
-            <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-              {error}
+    <div className="fixed inset-0 z-[100] overflow-y-auto bg-slate-950/55 px-4 py-6 backdrop-blur-sm">
+      <div className="flex min-h-[100dvh] justify-center items-start py-2 sm:items-center sm:py-4">
+        <div className="my-auto flex w-full max-w-4xl max-h-[calc(100dvh-3rem)] flex-col overflow-hidden rounded-[28px] border border-slate-200 bg-white shadow-2xl">
+          <div className="flex shrink-0 items-center justify-between gap-4 border-b border-slate-200 px-5 py-4 sm:px-6">
+            <div className="min-w-0">
+              <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">Secure Payment</div>
+              <h3 className="mt-1 text-xl font-black text-slate-900">{title}</h3>
             </div>
-          ) : null}
-          <div ref={containerRef} className={ready ? 'min-h-[420px]' : 'min-h-0'} />
+            <button
+              type="button"
+              onClick={() => onCloseRef.current?.()}
+              className="shrink-0 rounded-full border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-600 transition hover:bg-slate-50"
+            >
+              Close
+            </button>
+          </div>
+          <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 py-5 sm:px-6 sm:py-6">
+            {loading ? <p className="text-sm text-slate-500">Loading secure checkout…</p> : null}
+            {error ? (
+              <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+                {error}
+              </div>
+            ) : null}
+            <div ref={containerRef} className={ready ? 'min-h-[min(420px,50dvh)]' : 'min-h-0'} />
+          </div>
         </div>
       </div>
     </div>

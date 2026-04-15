@@ -4,6 +4,7 @@ import {
   getCurrentLeaseVersion,
   getLeaseCommentsForDraft,
   getLeaseDraftById,
+  leaseVersionDisplayUploadTime,
   publishLeaseDraft,
   upsertCurrentLeaseVersion,
 } from '../lib/airtable'
@@ -100,8 +101,8 @@ function PdfCard({ currentPdf, showReplaceForm, pdfUrl, setPdfUrl, pdfFileName, 
           <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">Current PDF</div>
           <h3 className="mt-1 text-base font-black text-slate-900">{currentPdf?.['File Name'] || 'No PDF uploaded yet'}</h3>
           <p className="mt-1 text-xs text-slate-500">
-            {currentPdf?.['Upload Date']
-              ? `Last updated ${fmtTs(currentPdf['Upload Date'])}`
+            {leaseVersionDisplayUploadTime(currentPdf)
+              ? `Last updated ${fmtTs(leaseVersionDisplayUploadTime(currentPdf))}`
               : 'Upload one current PDF and it will replace the file shown here.'}
           </p>
         </div>
@@ -230,6 +231,9 @@ export default function LeaseWorkspace({ draft: initialDraft, isAdmin, manager, 
         fileName: pdfFileName,
         uploaderName: isAdmin ? (adminUser?.name || 'Admin') : (manager?.name || 'Manager'),
         uploaderRole: isAdmin ? 'Admin' : 'Manager',
+        uploaderRecordId: isAdmin
+          ? (adminUser?.airtableRecordId || adminUser?.id || '')
+          : (manager?.id || manager?.airtableRecordId || ''),
       })
       toast.success('Current PDF updated')
       await refreshAll()

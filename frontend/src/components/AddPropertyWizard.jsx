@@ -123,6 +123,10 @@ function validateBasics(basics, appFee) {
   else if (!Number.isFinite(Number(sdStr)) || Number(sdStr) < 0)
     e.securityDeposit = 'Enter a valid number (0 or more)'
 
+  const adminStr = String(basics.administrationFee ?? '').trim()
+  if (adminStr !== '' && (!Number.isFinite(Number(adminStr)) || Number(adminStr) < 0))
+    e.administrationFee = 'Enter a valid number (0 or more)'
+
   const mir = Array.isArray(basics.moveInChargeRows) ? basics.moveInChargeRows : []
   mir.forEach((row, i) => {
     const name = String(row?.name || '').trim()
@@ -292,6 +296,8 @@ export default function AddPropertyWizard({
         amenitiesOther: String(basics.amenitiesOther || ''),
         pets: String(basics.pets || ''),
         securityDeposit: basics.securityDeposit == null || basics.securityDeposit === '' ? '' : String(basics.securityDeposit),
+        administrationFee:
+          basics.administrationFee == null || basics.administrationFee === '' ? '' : String(basics.administrationFee),
         moveInCharges: String(basics.moveInCharges || ''),
         leaseAccessRequirement: String(
           basics.leaseAccessRequirement || LEASE_ACCESS_REQUIREMENT.SECURITY_AND_FIRST,
@@ -336,7 +342,13 @@ export default function AddPropertyWizard({
             media: Array.isArray(row.media) ? row.media : [],
           }))
         : [],
-      kitchens: Array.isArray(payload?.kitchens) ? payload.kitchens.map((row) => ({ ...emptyKitchenRow(), ...row })) : [],
+      kitchens: Array.isArray(payload?.kitchens)
+        ? payload.kitchens.map((row) => ({
+            ...emptyKitchenRow(),
+            ...row,
+            media: Array.isArray(row.media) ? row.media : [],
+          }))
+        : [],
       sharedSpaces: Array.isArray(payload?.sharedSpaces)
         ? payload.sharedSpaces.map((row) => ({
             ...emptySharedSpaceRow(),
@@ -366,6 +378,9 @@ export default function AddPropertyWizard({
         fullHousePrice: String(payload?.leasing?.fullHousePrice || ''),
         promoPrice: String(payload?.leasing?.promoPrice || ''),
         leaseLengthInfo: String(payload?.leasing?.leaseLengthInfo || DEFAULT_LEASE_INFO),
+        guestPolicy: String(payload?.leasing?.guestPolicy || ''),
+        additionalLeaseTerms: String(payload?.leasing?.additionalLeaseTerms || ''),
+        leaseInformation: String(payload?.leasing?.leaseInformation || ''),
         bundles: Array.isArray(payload?.leasing?.bundles)
           ? payload.leasing.bundles.map((row) => ({
               name: String(row?.name || ''),
@@ -400,6 +415,9 @@ export default function AddPropertyWizard({
     fullHousePrice: initialState.leasing.fullHousePrice,
     promoPrice: initialState.leasing.promoPrice,
     leaseLengthInfo: initialState.leasing.leaseLengthInfo,
+    guestPolicy: initialState.leasing.guestPolicy,
+    additionalLeaseTerms: initialState.leasing.additionalLeaseTerms,
+    leaseInformation: initialState.leasing.leaseInformation,
     bundles: initialState.leasing.bundles,
   })
   const imageInputRef = useRef(null)
@@ -529,7 +547,7 @@ export default function AddPropertyWizard({
         parking,
         rooms: roomsPayload,
         bathrooms: bathroomsPayload,
-        kitchens,
+        kitchens: kitchens.map(({ media, ...rest }) => rest),
         sharedSpaces: sharedPayload,
         applicationFee: appFee,
         otherInfo,
@@ -572,6 +590,16 @@ export default function AddPropertyWizard({
             const f = item.file
             if (!f) continue
             const renamed = new File([f], `axis-b${bi + 1}-${f.name}`, { type: f.type || 'application/octet-stream' })
+            await uploadPropertyImage(created.id, renamed)
+          } catch { /* non-fatal */ }
+        }
+      }
+      for (let ki = 0; ki < kitchens.length; ki++) {
+        for (const item of kitchens[ki].media || []) {
+          try {
+            const f = item.file
+            if (!f) continue
+            const renamed = new File([f], `axis-k${ki + 1}-${f.name}`, { type: f.type || 'application/octet-stream' })
             await uploadPropertyImage(created.id, renamed)
           } catch { /* non-fatal */ }
         }
@@ -701,7 +729,7 @@ export default function AddPropertyWizard({
   }
 
   function addBathroomMedia(bathIdx, fileList) {
-    const valid = Array.from(fileList || []).filter(isLikelyImageUpload)
+    const valid = Array.from(fileList || []).filter(isLikelyRoomGalleryFile)
     if (!valid.length) return
     const entries = valid.map((file) => ({ id: `${Date.now()}-${Math.random()}`, file, preview: URL.createObjectURL(file) }))
     setBathrooms((prev) =>
@@ -733,11 +761,44 @@ export default function AddPropertyWizard({
         {
           ...src,
           access: Array.isArray(src.access) ? [...src.access] : [],
+          media: [],
         },
       ]
     })
   }
-  function removeKitchen(idx) { setKitchens(prev => prev.filter((_, i) => i !== idx)) }
+  function removeKitchen(idx) {
+    setKitchens((prev) => {
+      const row = prev[idx]
+      for (const m of row?.media || []) {
+        if (m?.preview && m?.file) URL.revokeObjectURL(m.preview)
+      }
+      return prev.filter((_, i) => i !== idx)
+    })
+  }
+
+  function addKitchenMedia(kitIdx, fileList) {
+    const valid = Array.from(fileList || []).filter(isLikelyRoomGalleryFile)
+    if (!valid.length) return
+    const entries = valid.map((file) => ({
+      id: `${Date.now()}-${Math.random()}`,
+      file,
+      preview: URL.createObjectURL(file),
+    }))
+    setKitchens((prev) =>
+      prev.map((k, i) => (i === kitIdx ? { ...k, media: [...(k.media || []), ...entries] } : k)),
+    )
+  }
+
+  function removeKitchenMedia(kitIdx, mediaId) {
+    setKitchens((prev) =>
+      prev.map((k, i) => {
+        if (i !== kitIdx) return k
+        const removed = (k.media || []).find((m) => m.id === mediaId)
+        if (removed?.preview && removed.file) URL.revokeObjectURL(removed.preview)
+        return { ...k, media: (k.media || []).filter((m) => m.id !== mediaId) }
+      }),
+    )
+  }
 
   // ── Shared space helpers ──────────────────────────────────────────────────────
   function updateSpace(idx, patch) {
@@ -996,7 +1057,10 @@ export default function AddPropertyWizard({
         {/* Fees & lease access */}
         <div className="rounded-2xl border border-slate-200 bg-slate-50/60 p-4 space-y-4">
           <SectionHeading>Fees</SectionHeading>
-          <p className="text-xs text-slate-500">Application fee and security deposit are required. Enter 0 if not applicable.</p>
+          <p className="text-xs text-slate-500">
+            Application fee and security deposit are required (enter 0 if none). Administrative fee is separate from the
+            security deposit — leave blank or 0 if none; when set, it flows into the lease draft as a non-deposit charge.
+          </p>
           <div className="grid gap-4 sm:grid-cols-2">
             <div>
               <label className={LBL}>Application fee ($) <Req /></label>
@@ -1027,6 +1091,21 @@ export default function AddPropertyWizard({
                 placeholder="0"
               />
               <FieldError msg={e.securityDeposit} />
+            </div>
+            <div className="sm:col-span-2">
+              <label className={LBL}>Administrative fee ($) <span className="font-normal text-slate-400">(optional)</span></label>
+              <input
+                className={ic('administrationFee')}
+                type="number"
+                min="0"
+                step="any"
+                inputMode="decimal"
+                value={basics.administrationFee}
+                onChange={ev => setBasics(b => ({ ...b, administrationFee: ev.target.value }))}
+                onWheel={blurNumberInputOnWheel}
+                placeholder="0 — not part of security deposit"
+              />
+              <FieldError msg={e.administrationFee} />
             </div>
           </div>
         </div>
@@ -1457,12 +1536,21 @@ export default function AddPropertyWizard({
                 <FieldError msg={e[`b${idx}_access`]} />
               </div>
               <div className="sm:col-span-2">
-                <label className={`${LBL} mb-2`}>Photos for this bathroom</label>
-                <p className="mb-2 text-[11px] text-slate-500">Shown on the public listing (same as laundry photos).</p>
+                <label className={`${LBL} mb-2`}>Photos / videos for this bathroom</label>
+                <p className="mb-2 text-[11px] text-slate-500">
+                  Shown on the public listing. Videos upload with the same <code className="rounded bg-slate-100 px-1">axis-b#-</code>{' '}
+                  prefix as photos.
+                </p>
                 <div className="flex flex-wrap gap-2">
                   {(bath.media || []).map((m) => (
                     <div key={m.id} className="relative h-20 w-20 overflow-hidden rounded-lg border border-slate-200 bg-slate-50">
-                      <img src={m.preview} alt="" className="h-full w-full object-cover" />
+                      {m.file?.type?.startsWith('video/') ? (
+                        <div className="flex h-full items-center justify-center text-[10px] font-semibold text-slate-500">
+                          Video
+                        </div>
+                      ) : (
+                        <img src={m.preview} alt="" className="h-full w-full object-cover" />
+                      )}
                       <button
                         type="button"
                         onClick={() => removeBathroomMedia(idx, m.id)}
@@ -1476,7 +1564,7 @@ export default function AddPropertyWizard({
                 <label className="mt-2 flex cursor-pointer flex-col items-center justify-center rounded-xl border border-dashed border-slate-300 bg-slate-50/80 px-3 py-4 text-center text-xs font-semibold text-slate-600 transition hover:border-[#2563eb]/50 hover:bg-slate-50">
                   <input
                     type="file"
-                    accept={ACCEPT_PROPERTY_IMAGES}
+                    accept={ACCEPT_PROPERTY_IMAGES_AND_VIDEOS}
                     multiple
                     className="hidden"
                     onChange={(ev) => {
@@ -1484,7 +1572,7 @@ export default function AddPropertyWizard({
                       ev.target.value = ''
                     }}
                   />
-                  Drag & drop or click to add bathroom photos
+                  Drag & drop or click to add photos or videos
                 </label>
               </div>
             </div>
@@ -1555,6 +1643,45 @@ export default function AddPropertyWizard({
                 </div>
                 <RoomChips access={kit.access} onChange={access => updateKitchen(idx, { access })} />
                 <FieldError msg={e[`k${idx}_access`]} />
+              </div>
+              <div className="sm:col-span-2">
+                <label className={`${LBL} mb-2`}>Photos / videos for this kitchen</label>
+                <p className="mb-2 text-[11px] text-slate-500">
+                  Optional — shown on the listing under shared spaces. Files are saved as <code className="rounded bg-slate-100 px-1">axis-k#-filename</code>.
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  {(kit.media || []).map((m) => (
+                    <div key={m.id} className="relative h-20 w-20 overflow-hidden rounded-lg border border-slate-200 bg-slate-50">
+                      {m.file?.type?.startsWith('video/') ? (
+                        <div className="flex h-full items-center justify-center text-[10px] font-semibold text-slate-500">
+                          Video
+                        </div>
+                      ) : (
+                        <img src={m.preview} alt="" className="h-full w-full object-cover" />
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => removeKitchenMedia(idx, m.id)}
+                        className="absolute right-0.5 top-0.5 rounded bg-black/60 px-1 text-[10px] font-bold text-white hover:bg-black/80"
+                      >
+                        ×
+                      </button>
+                    </div>
+                  ))}
+                </div>
+                <label className="mt-2 flex cursor-pointer flex-col items-center justify-center rounded-xl border border-dashed border-slate-300 bg-slate-50/80 px-3 py-4 text-center text-xs font-semibold text-slate-600 transition hover:border-[#2563eb]/50 hover:bg-slate-50">
+                  <input
+                    type="file"
+                    accept={ACCEPT_PROPERTY_IMAGES_AND_VIDEOS}
+                    multiple
+                    className="hidden"
+                    onChange={(ev) => {
+                      addKitchenMedia(idx, ev.target.files)
+                      ev.target.value = ''
+                    }}
+                  />
+                  Drag & drop or click to add photos or videos
+                </label>
               </div>
             </div>
           </div>
@@ -1997,6 +2124,49 @@ export default function AddPropertyWizard({
             rows={3}
           />
           <FieldError msg={e.leaseLengthInfo} />
+        </div>
+
+        <div className="rounded-2xl border border-slate-200 bg-white p-4 space-y-3">
+          <SectionHeading>Lease draft details</SectionHeading>
+          <p className="text-xs text-slate-500">
+            Captured on the property record and merged into generated leases when present. Use plain language; you can
+            refine wording in the manager lease editor after the draft is created.
+          </p>
+          <div>
+            <label className={LBL}>Guest policy</label>
+            <textarea
+              className={ic('guestPolicy')}
+              value={leasing.guestPolicy}
+              onChange={(ev) => setLeasing((L) => ({ ...L, guestPolicy: ev.target.value }))}
+              rows={3}
+              placeholder="e.g. Overnight guests up to 3 nights/month with house notice; longer stays require written approval."
+            />
+          </div>
+          <div>
+            <label className={LBL}>Other lease terms for this property</label>
+            <textarea
+              className={ic('additionalLeaseTerms')}
+              value={leasing.additionalLeaseTerms}
+              onChange={(ev) => setLeasing((L) => ({ ...L, additionalLeaseTerms: ev.target.value }))}
+              rows={3}
+              placeholder="e.g. Smoking policy, quiet hours, subletting, parking for guests — optional."
+            />
+          </div>
+        </div>
+
+        <div className="rounded-2xl border border-slate-200 bg-white p-4 space-y-3">
+          <SectionHeading>Lease information</SectionHeading>
+          <p className="text-xs text-slate-500">
+            Long-form clauses and edits for this home. Stored on the property record (Airtable field <strong>lease infomration</strong>
+            ) and merged into generated structured leases as Addendum F. You can also edit this text from the lease review screen.
+          </p>
+          <textarea
+            className={ic('leaseInformation')}
+            value={leasing.leaseInformation}
+            onChange={(ev) => setLeasing((L) => ({ ...L, leaseInformation: ev.target.value }))}
+            rows={8}
+            placeholder="e.g. Parking rules, storage, rent concessions, or full replacement lease language you want appended to the agreement."
+          />
         </div>
 
         {/* Leasing bundles */}

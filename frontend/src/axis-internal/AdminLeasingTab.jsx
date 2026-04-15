@@ -2,6 +2,11 @@ import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import toast from 'react-hot-toast'
 import LeaseHTMLTemplate from '../components/LeaseHTMLTemplate.jsx'
 import { pickManagerSignatureFromDraft } from '../../../shared/lease-manager-signature-fields.js'
+import {
+  isLeaseDraftSignedStatus,
+  pickResidentSignatureTextFromDraft,
+  pickResidentSignedAtFromDraft,
+} from '../../../shared/lease-resident-signature-display.js'
 import { PortalEmptyVisual } from '../components/portalNavIcons.jsx'
 import { DataTable } from '../components/PortalShell'
 import { getStatusConfig, fmtTs, parseManagerEditNotes } from '../lib/leaseWorkflowConstants.js'
@@ -217,6 +222,18 @@ export default function AdminLeasingTab({ adminUser, accounts = [] }) {
   const [commentText, setCommentText] = useState('')
   const [commentSubmitting, setCommentSubmitting] = useState(false)
 
+  useEffect(() => {
+    try {
+      const v = String(sessionStorage.getItem('axis-admin-open-leasing-filter') || '').trim()
+      if (v && ADMIN_STATUS_FILTER_ITEMS.some((item) => item.id === v)) {
+        setStatusFilter(v)
+        sessionStorage.removeItem('axis-admin-open-leasing-filter')
+      }
+    } catch {
+      /* ignore */
+    }
+  }, [])
+
   const adminRecordId = adminUser?.airtableRecordId || adminUser?.id || ''
   const adminName = adminUser?.name || adminUser?.email || 'Admin'
 
@@ -333,6 +350,18 @@ export default function AdminLeasingTab({ adminUser, accounts = [] }) {
   }, [activeDraft])
 
   const managerSigDetail = useMemo(() => pickManagerSignatureFromDraft(activeDraft, import.meta.env), [activeDraft])
+
+  const residentSigForPreview = useMemo(() => {
+    if (!activeDraft || !isLeaseDraftSignedStatus(activeDraft.Status)) {
+      return { signedBy: undefined, signedAt: undefined }
+    }
+    const text = pickResidentSignatureTextFromDraft(activeDraft)
+    const at = pickResidentSignedAtFromDraft(activeDraft)
+    return {
+      signedBy: text || undefined,
+      signedAt: at || undefined,
+    }
+  }, [activeDraft])
 
   const managerEditRequestSummary = useMemo(() => {
     const parsed = parseManagerEditNotes(activeDraft?.['Manager Edit Notes'])
@@ -496,6 +525,7 @@ export default function AdminLeasingTab({ adminUser, accounts = [] }) {
         file: pdfFile,
         uploaderName: adminName,
         uploaderRole: 'Admin',
+        uploaderRecordId: adminRecordId,
       })
       toast.success('PDF uploaded')
       setShowUploadForm(false)
@@ -883,8 +913,8 @@ export default function AdminLeasingTab({ adminUser, accounts = [] }) {
               <div className="min-w-0 max-w-full">
                 <LeaseHTMLTemplate
                   leaseData={leaseJson}
-                  signedBy={activeDraft?.['Signed By']}
-                  signedAt={activeDraft?.['Signed At']}
+                  signedBy={residentSigForPreview.signedBy}
+                  signedAt={residentSigForPreview.signedAt}
                   managerSignedBy={managerSigDetail.text || undefined}
                   managerSignedAt={managerSigDetail.at || undefined}
                   managerSignatureImageUrl={managerSigDetail.image || undefined}

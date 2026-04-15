@@ -88,13 +88,16 @@ async function fetchAdminCalendarEventsCount() {
   return total
 }
 
-async function fetchAdminLeaseChangesNeededCount() {
+async function fetchAdminLeaseReviewQueueCount() {
   if (!AIRTABLE_TOKEN) return 0
   let total = 0
   let offset = null
   do {
     const url = new URL(`${CORE_AIRTABLE_BASE_URL}/Lease%20Drafts`)
-    url.searchParams.set('filterByFormula', 'OR({Status}="Submitted to Admin",{Status}="Manager Approved")')
+    url.searchParams.set(
+      'filterByFormula',
+      'OR({Status}="Submitted to Admin",{Status}="Admin In Review",{Status}="Manager Approved",{Status}="Ready for Signature")',
+    )
     if (offset) url.searchParams.set('offset', offset)
     const res = await fetch(url.toString(), {
       headers: {
@@ -760,7 +763,7 @@ export default function AdminPortal() {
         loadAdminPortalDataset(),
         loadResidentsForAdmin().catch(() => []),
         fetchAdminCalendarEventsCount().catch(() => 0),
-        fetchAdminLeaseChangesNeededCount().catch(() => 0),
+        fetchAdminLeaseReviewQueueCount().catch(() => 0),
       ])
       setProperties(next.properties)
       setAccounts(next.accounts)
@@ -1053,29 +1056,62 @@ export default function AdminPortal() {
           ) : null}
 
           {/* Action-needed banner */}
-          {propertiesAwaitingAdminAttention > 0 ? (
-            <div className="flex flex-wrap items-center gap-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3">
-              <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-amber-400 text-xs font-black text-white">
-                {propertiesAwaitingAdminAttention}
-              </span>
-              <div className="min-w-0 flex-1">
-                <p className="text-sm font-bold text-amber-900">Action needed</p>
-                <p className="text-xs text-amber-800">
-                  {`${pendingReviewProperties.length} propert${pendingReviewProperties.length === 1 ? 'y' : 'ies'} pending review`}
-                </p>
-              </div>
-              <div className="flex gap-2">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setTab('properties')
-                    setPropertiesSection('pending')
-                  }}
-                  className="rounded-xl bg-amber-500 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-amber-600"
-                >
-                  Review properties
-                </button>
-              </div>
+          {(propertiesAwaitingAdminAttention > 0 || leaseChangesNeededCount > 0) ? (
+            <div className="space-y-2">
+              {propertiesAwaitingAdminAttention > 0 ? (
+                <div className="flex flex-wrap items-center gap-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3">
+                  <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-amber-400 text-xs font-black text-white">
+                    {propertiesAwaitingAdminAttention}
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-bold text-amber-900">Action needed</p>
+                    <p className="text-xs text-amber-800">
+                      {`${pendingReviewProperties.length} propert${pendingReviewProperties.length === 1 ? 'y' : 'ies'} pending review`}
+                    </p>
+                  </div>
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setTab('properties')
+                        setPropertiesSection('pending')
+                      }}
+                      className="rounded-xl bg-amber-500 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-amber-600"
+                    >
+                      Review properties
+                    </button>
+                  </div>
+                </div>
+              ) : null}
+              {leaseChangesNeededCount > 0 ? (
+                <div className="flex flex-wrap items-center gap-3 rounded-2xl border border-sky-200 bg-sky-50 px-4 py-3">
+                  <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[#2563eb] text-xs font-black text-white">
+                    {leaseChangesNeededCount}
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-bold text-slate-900">Leases need review</p>
+                    <p className="text-xs text-slate-600">
+                      {`${leaseChangesNeededCount} lease${leaseChangesNeededCount === 1 ? '' : 's'} in the admin review queue (submitted, in review, or ready for signature).`}
+                    </p>
+                  </div>
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        try {
+                          sessionStorage.setItem('axis-admin-open-leasing-filter', 'admin_review')
+                        } catch {
+                          /* ignore */
+                        }
+                        setTab('leasing')
+                      }}
+                      className="rounded-xl bg-[#2563eb] px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-blue-700"
+                    >
+                      Open Leases
+                    </button>
+                  </div>
+                </div>
+              ) : null}
             </div>
           ) : null}
 
@@ -1104,10 +1140,17 @@ export default function AdminPortal() {
             {/* Leases changes needed */}
             <button
               type="button"
-              onClick={() => setTab('leasing')}
+              onClick={() => {
+                try {
+                  sessionStorage.setItem('axis-admin-open-leasing-filter', 'admin_review')
+                } catch {
+                  /* ignore */
+                }
+                setTab('leasing')
+              }}
               className="flex flex-col gap-1 rounded-3xl border border-sky-200/90 bg-sky-50 p-5 text-left transition hover:border-sky-300 hover:bg-sky-100/80 hover:shadow-sm"
             >
-              <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-sky-800">Leases · Changes needed</span>
+              <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-sky-800">Leases · Admin review</span>
               <span className="text-3xl font-black tabular-nums text-slate-900">{leaseChangesNeededCount}</span>
             </button>
 

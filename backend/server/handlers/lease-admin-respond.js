@@ -18,9 +18,23 @@
  *                     Current Version on the draft is incremented.
  */
 
+import {
+  isLeaseVersionUploaderOrDateUnknownField,
+  leaseVersionDocUploaderPayload,
+  stripLeaseVersionUploaderFieldVariants,
+} from '../../../shared/lease-version-airtable-uploader-fields.js'
+
 const AIRTABLE_TOKEN = process.env.AIRTABLE_TOKEN || process.env.VITE_AIRTABLE_TOKEN
 const BASE_ID = process.env.VITE_AIRTABLE_BASE_ID || process.env.AIRTABLE_BASE_ID || 'appol57LKtMKaQ75T'
 const BASE_URL = `https://api.airtable.com/v0/${BASE_ID}`
+const APPS_BASE_ID =
+  process.env.VITE_AIRTABLE_APPLICATIONS_BASE_ID ||
+  process.env.AIRTABLE_APPLICATIONS_BASE_ID ||
+  BASE_ID
+const APPS_TABLE =
+  (process.env.VITE_AIRTABLE_APPLICATIONS_TABLE || process.env.AIRTABLE_APPLICATIONS_TABLE || 'Applications').trim() ||
+  'Applications'
+const APPS_BASE_URL = `https://api.airtable.com/v0/${APPS_BASE_ID}`
 
 const VALID_STATUSES = new Set([
   'Admin In Review',
@@ -58,6 +72,37 @@ async function atPost(table, fields) {
   })
   if (!res.ok) { const t = await res.text(); throw new Error(t) }
   return res.json()
+}
+
+function airtableUnknownFieldNameFromErrorText(text) {
+  const raw = String(text || '').trim()
+  try {
+    const j = JSON.parse(raw)
+    const m = j?.error?.message
+    if (typeof m !== 'string') return null
+    const match = m.match(/Unknown field name:\s*"([^"]+)"/i)
+    return match ? match[1] : null
+  } catch {
+    return null
+  }
+}
+
+async function atPostLeaseVersionsWithUploaderFallback(versionFields, adminRecordId) {
+  try {
+    return await atPost('Lease Versions', versionFields)
+  } catch (e) {
+    const unknown = airtableUnknownFieldNameFromErrorText(e.message)
+    if (!unknown || !isLeaseVersionUploaderOrDateUnknownField(unknown)) throw e
+    const stripped = stripLeaseVersionUploaderFieldVariants(versionFields)
+    const iso = versionFields['Upload Date'] || new Date().toISOString()
+    const name = versionFields['Uploader Name'] || 'Admin'
+    const rid = String(adminRecordId || versionFields['Uploaded By Record ID'] || '').trim()
+    const doc = {
+      ...stripped,
+      ...leaseVersionDocUploaderPayload({ name, isoTime: iso, uploaderRecordId: rid }),
+    }
+    return await atPost('Lease Versions', doc)
+  }
 }
 
 /** Best-effort: mark thread rows resolved when lease returns to manager (optional Airtable checkbox `Resolved` on Lease Comments). */
@@ -107,6 +152,25 @@ async function addComment({ leaseDraftId, authorName, authorRole, authorRecordId
   }
 }
 
+function firstLinkedOrString(raw) {
+  if (Array.isArray(raw) && raw.length) return String(raw[0] || '').trim()
+  return String(raw || '').trim()
+}
+
+/** Manager Airtable record id for Lease Notifications — draft Owner ID, else Applications.Owner ID. */
+async function resolveManagerOwnerIdForNotification(draftFields) {
+  const direct = String(draftFields?.['Owner ID'] || '').trim()
+  if (direct) return direct
+  const appRecId = firstLinkedOrString(draftFields?.['Application Record ID'])
+  if (!appRecId.startsWith('rec')) return ''
+  try {
+    const app = await atGet(`${APPS_BASE_URL}/${encodeURIComponent(APPS_TABLE)}/${appRecId}`)
+    return String(app?.fields?.['Owner ID'] || '').trim()
+  } catch {
+    return ''
+  }
+}
+
 async function notifyManager({ managerOwnerId, leaseDraftId, message, actionType }) {
   if (!managerOwnerId) return
   try {
@@ -151,7 +215,6 @@ export default async function handler(req, res) {
     // Fetch the current draft to get Lease JSON and Owner ID for notification
     const currentDraft = await atGet(`${BASE_URL}/${encodeURIComponent('Lease Drafts')}/${leaseDraftId}`)
     const currentFields = currentDraft.fields || {}
-    const ownerIdForNotification = currentFields['Owner ID'] || ''
 
     // Merge updated fields into Lease JSON when structured lease data is provided
     let updatedLeaseJson = null
@@ -203,18 +266,21 @@ export default async function handler(req, res) {
         try { Object.assign(leaseDataForSnapshot, JSON.parse(updatedLeaseJson)) } catch {}
       }
 
-      await atPost('Lease Versions', {
-        'Lease Draft ID': leaseDraftId,
-        'Version Number': newVersionNumber,
-        'PDF URL': newVersion.pdfUrl || '',
-        'File Name': newVersion.fileName || `lease-v${newVersionNumber}.pdf`,
-        'Uploader Name': adminName,
-        'Uploader Role': 'Admin',
-        'Upload Date': new Date().toISOString(),
-        'Notes': newVersion.notes || adminNotes,
-        'Fields Snapshot': JSON.stringify(leaseDataForSnapshot),
-        'Is Current': true,
-      })
+      await atPostLeaseVersionsWithUploaderFallback(
+        {
+          'Lease Draft ID': leaseDraftId,
+          'Version Number': newVersionNumber,
+          'PDF URL': newVersion.pdfUrl || '',
+          'File Name': newVersion.fileName || `lease-v${newVersionNumber}.pdf`,
+          'Uploader Name': adminName,
+          'Uploader Role': 'Admin',
+          'Upload Date': new Date().toISOString(),
+          'Notes': newVersion.notes || adminNotes,
+          'Fields Snapshot': JSON.stringify(leaseDataForSnapshot),
+          'Is Current': true,
+        },
+        adminRecordId,
+      )
     }
 
     // Persist admin response notes as JSON
@@ -280,6 +346,8 @@ export default async function handler(req, res) {
     const notificationMsg = newStatus === 'Sent Back to Manager'
       ? `Admin sent updated lease — please review and approve or request further changes`
       : `Admin updated lease status to: ${newStatus}`
+
+    const ownerIdForNotification = await resolveManagerOwnerIdForNotification(currentFields)
 
     await notifyManager({
       managerOwnerId: ownerIdForNotification,

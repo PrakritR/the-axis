@@ -13,6 +13,11 @@ import { useState, useEffect, useMemo } from 'react'
 import toast from 'react-hot-toast'
 import LeaseHTMLTemplate from './LeaseHTMLTemplate'
 import { pickManagerSignatureFromDraft } from '../../../shared/lease-manager-signature-fields.js'
+import {
+  isLeaseDraftSignedStatus,
+  pickResidentSignatureTextFromDraft,
+  pickResidentSignedAtFromDraft,
+} from '../../../shared/lease-resident-signature-display.js'
 import { publishLeaseDraft, generateLeaseFromApplication } from '../lib/airtable'
 
 /** Hide legacy Airtable value "Changes Needed" — same queue as other pre-publish drafts. */
@@ -106,10 +111,18 @@ export default function ManagerApplicationLease({ applicationId, managerName }) 
   }
 
   const status = draft?.Status
-  const isSigned = status === 'Signed'
+  const isSigned = isLeaseDraftSignedStatus(status)
   const isPublished = status === 'Published'
   const isDraft = status === 'Draft Generated'
   const managerSigOnDraft = useMemo(() => pickManagerSignatureFromDraft(draft, import.meta.env), [draft])
+
+  const residentSigDisplay = useMemo(() => {
+    if (!draft || !isLeaseDraftSignedStatus(draft.Status)) return { text: '', at: '' }
+    return {
+      text: pickResidentSignatureTextFromDraft(draft),
+      at: pickResidentSignedAtFromDraft(draft),
+    }
+  }, [draft])
 
   if (loading) {
     return (
@@ -194,13 +207,13 @@ export default function ManagerApplicationLease({ applicationId, managerName }) 
       </div>
 
       {/* Signed signature detail */}
-      {isSigned && draft?.['Signature Text'] ? (
+      {isSigned && residentSigDisplay.text ? (
         <div className="rounded-2xl border border-emerald-200 bg-emerald-50/60 px-5 py-3">
           <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-emerald-600">E-Signature on file</p>
-          <p className="mt-1 font-serif text-lg italic text-slate-800">{draft['Signature Text']}</p>
-          {draft['Signed At'] ? (
+          <p className="mt-1 font-serif text-lg italic text-slate-800">{residentSigDisplay.text}</p>
+          {residentSigDisplay.at ? (
             <p className="mt-0.5 text-xs text-emerald-700">
-              Signed {new Date(draft['Signed At']).toLocaleString()}
+              Signed {new Date(residentSigDisplay.at).toLocaleString()}
             </p>
           ) : null}
         </div>
@@ -221,8 +234,8 @@ export default function ManagerApplicationLease({ applicationId, managerName }) 
           <div className="max-h-[min(70vh,900px)] overflow-y-auto overflow-x-hidden rounded-2xl border border-slate-200 bg-white shadow-inner">
             <LeaseHTMLTemplate
               leaseData={leaseData}
-              signedBy={isSigned ? draft?.['Signature Text'] : undefined}
-              signedAt={isSigned ? draft?.['Signed At'] : undefined}
+              signedBy={isSigned ? residentSigDisplay.text || undefined : undefined}
+              signedAt={isSigned ? residentSigDisplay.at || undefined : undefined}
               managerSignedBy={managerSigOnDraft.text || undefined}
               managerSignedAt={managerSigOnDraft.at || undefined}
               managerSignatureImageUrl={managerSigOnDraft.image || undefined}

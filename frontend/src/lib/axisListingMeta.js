@@ -10,11 +10,13 @@
  *   optional `imageUrls[]` (listing also picks `axis-r{n}-*` files on the property Photos attachment field).
  *   (numeric rent & ISO availability read from `Room N Rent` / `Room N Availability` when those columns exist).
  * - `leasing["Leasing Packages"]` — bundle rows when floor packages are used (no dedicated table yet).
- * - `financials.moveInCharges` — optional until a column exists.
+ * - `financials.moveInCharges`, `financials.administrationFee` (non-deposit move-in admin; separate from `Security Deposit` column).
+ * - `leasing.guestPolicy`, `leasing.additionalLeaseTerms` — optional text merged into generated lease Section 6.
  * - `listingAvailabilityWindows`, `listingVideos`, `bathroomTotalDecimal`, `sharedSpacesDetail`
  *   (each entry may include `imageUrls[]`; photos may also use `axis-ss{n}-` filenames on Photos like laundry),
  *   `laundryDetail[]` (per laundry slot: extra description for listings; photos use `axis-l{n}-` filenames on Photos),
- *   optional `bathroomsDetail[]` (per bathroom slot notes / `imageUrls`); bathroom photos may also use `axis-b{n}-` on Photos), etc.
+ *   optional `bathroomsDetail[]` (per bathroom slot notes / `imageUrls` / `videos`); bathroom media may also use `axis-b{n}-*` on Photos.
+ *   optional `kitchensDetail[]` — per kitchen slot notes; kitchen photos/videos use `axis-k{n}-*` on Photos, etc.
  *
  * `meta.leasing` uses Properties-style field names — see PROPERTIES_LEASING_META_KEYS
  * and PROPERTIES_LEASING_PACKAGE_KEYS in managerPropertyFormAirtableMap.js.

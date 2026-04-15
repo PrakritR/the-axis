@@ -31,8 +31,6 @@ import {
   getApprovedLeaseForResident,
   getCurrentLeaseVersion,
   getLeaseDraftsForResident,
-  submitResidentLeaseIssueReport,
-  uploadLeaseVersionPdfFile,
   getPropertyByName,
   getPaymentsForResident,
   createPaymentRecord,
@@ -53,6 +51,7 @@ import {
 } from '../lib/airtable'
 import { applicationRejectedFieldName, deriveApplicationApprovalState } from '../lib/applicationApprovalState.js'
 import { anyLeaseDraftAllowsSignWithoutMoveInPay } from '../lib/leaseMoveInOverride.js'
+import { fmtTs } from '../lib/leaseWorkflowConstants.js'
 import { isResidentLeaseBodyViewable, isResidentLeaseSignable } from '../lib/residentLeaseAccess.js'
 import { pickManagerSignatureFromDraft } from '../../../shared/lease-manager-signature-fields.js'
 import {
@@ -294,6 +293,9 @@ function residentPortalAccessState(resident, linkedAppState) {
   if (isResidentApplicationRejected(resident)) return 'rejected'
   if (linkedAppState === 'rejected') return 'rejected'
   if (linkedAppState === 'approved') return 'approved'
+  // Approve API sets `Application Approval` on Resident Profile; trust it when the linked
+  // Applications row is stale, unreadable from the client, or status columns disagree.
+  if (isApprovalGranted(resident?.['Application Approval'])) return 'approved'
   if (linkedAppState === 'pending') return 'pending'
   return residentApplicationUnlocked(resident) ? 'approved' : 'pending'
 }
@@ -985,6 +987,14 @@ export function ResidentAuthForm({ onLogin, footer = null, variant = 'default' }
           : null
 
       const existing = await getResidentByEmail(activateForm.email.trim())
+      const activationGate = deriveApplicationApprovalState(app)
+      const approvalPatchFromApp =
+        activationGate === 'approved'
+          ? { Approved: true, 'Application Approval': 'Approved' }
+          : activationGate === 'rejected'
+            ? { Approved: false, 'Application Approval': 'Rejected' }
+            : {}
+
       if (existing) {
         if (existing.Password) {
           setActivationError('An account with this email already exists. Please sign in.')
@@ -994,6 +1004,7 @@ export function ResidentAuthForm({ onLogin, footer = null, variant = 'default' }
           Password: activateForm.password,
           Status: 'Active',
           'Lease Term': existing['Lease Term'] || app['Lease Term'] || '',
+          ...approvalPatchFromApp,
         }
         if (applicationLink && !(Array.isArray(existing.Applications) && existing.Applications.length)) {
           patch.Applications = applicationLink
@@ -1021,7 +1032,7 @@ export function ResidentAuthForm({ onLogin, footer = null, variant = 'default' }
         'Lease Start Date': app['Lease Start Date'] || null,
         'Lease End Date': app['Lease End Date'] || null,
         Status: 'Active',
-        Approved: false,
+        ...(Object.keys(approvalPatchFromApp).length ? approvalPatchFromApp : { Approved: false }),
         ...(applicationLink ? { Applications: applicationLink } : {}),
         ...(app['Application ID'] != null ? { 'Application ID': app['Application ID'] } : {}),
       })
@@ -2693,6 +2704,17 @@ function pickLeaseDraftForPaymentsPricing(drafts) {
   return pickSignedLeaseDraft(drafts) || pickBestLeaseDraft(drafts) || null
 }
 
+async function postResidentPortalAction(action, body) {
+  const res = await fetch(`/api/portal?action=${encodeURIComponent(action)}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body || {}),
+  })
+  const json = await res.json().catch(() => ({}))
+  if (!res.ok) throw new Error(json.error || `Request failed (${res.status})`)
+  return json
+}
+
 function LeasingPanel({ resident, payments, onOpenPayments, onNavigateTab, onLeaseDataRefresh }) {
   const leaseTermLabel = getLeaseTermLabel(resident)
   const isMonthToMonth = leaseTermLabel.toLowerCase().includes('month-to-month')
@@ -2717,6 +2739,8 @@ function LeasingPanel({ resident, payments, onOpenPayments, onNavigateTab, onLea
   const [leaseIssueText, setLeaseIssueText] = useState('')
   const [leaseIssueBusy, setLeaseIssueBusy] = useState(false)
   const [leaseUploadBusy, setLeaseUploadBusy] = useState(false)
+  const [leaseThreadComments, setLeaseThreadComments] = useState([])
+  const [leaseThreadLoading, setLeaseThreadLoading] = useState(false)
   const leasePdfFileInputRef = useRef(null)
 
   useEffect(() => {
@@ -2915,6 +2939,12 @@ function LeasingPanel({ resident, payments, onOpenPayments, onNavigateTab, onLea
 
   const handleResidentDownloadGeneratedPdf = useCallback(async () => {
     if (!activeLeaseDraft?.id) return
+    const rid = String(resident.id || '').trim()
+    const em = String(resident.Email || '').trim().toLowerCase()
+    if (!rid.startsWith('rec') || !em) {
+      setLeaseToolbarNotice('Missing resident id or email — cannot download.')
+      return
+    }
     setLeaseToolbarNotice('')
     try {
       const res = await fetch('/api/portal?action=lease-resident-download-generated-pdf', {
@@ -2922,13 +2952,21 @@ function LeasingPanel({ resident, payments, onOpenPayments, onNavigateTab, onLea
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           leaseDraftId: activeLeaseDraft.id,
-          residentRecordId: resident.id,
-          residentEmail: resident.Email || '',
+          residentRecordId: rid,
+          residentEmail: em,
         }),
       })
       if (!res.ok) {
-        const j = await res.json().catch(() => ({}))
-        throw new Error(j.error || `Download failed (${res.status})`)
+        const ct = String(res.headers.get('Content-Type') || '')
+        let msg = `Download failed (${res.status})`
+        if (ct.includes('application/json')) {
+          const j = await res.json().catch(() => ({}))
+          msg = String(j.error || msg)
+        } else {
+          const text = await res.text().catch(() => '')
+          msg = text ? text.slice(0, 280) : msg
+        }
+        throw new Error(msg)
       }
       const blob = await res.blob()
       const url = URL.createObjectURL(blob)
@@ -2947,49 +2985,148 @@ function LeasingPanel({ resident, payments, onOpenPayments, onNavigateTab, onLea
     }
   }, [activeLeaseDraft, resident.id, resident.Email])
 
+  const handleDownloadAttachedPdf = useCallback(async () => {
+    const pdfUrl = String(currentLeasePdf?.['PDF URL'] || '').trim()
+    if (!pdfUrl) return
+    setLeaseToolbarNotice('')
+    try {
+      const res = await fetch(pdfUrl, { mode: 'cors' })
+      if (!res.ok) throw new Error('Could not fetch PDF')
+      const blob = await res.blob()
+      const name =
+        String(currentLeasePdf['File Name'] || 'lease-agreement.pdf')
+          .replace(/[^\w.\-]+/g, '_')
+          .replace(/^_+|_+$/g, '') || 'lease-agreement.pdf'
+      const blobUrl = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = blobUrl
+      a.download = name
+      a.rel = 'noopener'
+      document.body.appendChild(a)
+      a.click()
+      a.remove()
+      URL.revokeObjectURL(blobUrl)
+      setLeaseToolbarNotice('Download started.')
+    } catch {
+      window.open(pdfUrl, '_blank', 'noopener,noreferrer')
+      setLeaseToolbarNotice('Opened PDF in a new tab.')
+    }
+  }, [currentLeasePdf])
+
   const handleLeasePdfUpload = useCallback(
     async (event) => {
       const file = event.target.files?.[0]
       event.target.value = ''
       if (!file || !activeLeaseDraft?.id) return
+      const rid = String(resident.id || '').trim()
+      const em = String(resident.Email || '').trim().toLowerCase()
+      if (!rid.startsWith('rec') || !em) {
+        setLeaseToolbarNotice('Missing resident id or email — cannot upload.')
+        return
+      }
       setLeaseUploadBusy(true)
       setLeaseToolbarNotice('')
       try {
-        await uploadLeaseVersionPdfFile({
-          leaseDraftId: activeLeaseDraft.id,
-          file,
-          uploaderName: resident.Name || resident.Email || 'Resident',
-          uploaderRole: 'Resident',
+        const dataUrl = await new Promise((resolve, reject) => {
+          const reader = new FileReader()
+          reader.onload = () => resolve(reader.result)
+          reader.onerror = () => reject(new Error('Could not read file.'))
+          reader.readAsDataURL(file)
         })
-        const pdf = await getCurrentLeaseVersion(activeLeaseDraft.id)
-        setCurrentLeasePdf(pdf)
+        const base64 = String(dataUrl).split(',')[1] || ''
+        const uploadResult = await postResidentPortalAction('lease-resident-upload-pdf', {
+          leaseDraftId: activeLeaseDraft.id,
+          residentRecordId: rid,
+          residentEmail: em,
+          fileName: file.name,
+          fileBase64: base64,
+        })
+        if (uploadResult?.pdfUrl) {
+          setCurrentLeasePdf({
+            id: uploadResult.leaseVersionId,
+            'PDF URL': uploadResult.pdfUrl,
+            'File Name': uploadResult.fileName || file.name,
+            'Version Number': uploadResult.versionNumber,
+            'Is Current': true,
+          })
+        } else {
+          const pdf = await getCurrentLeaseVersion(activeLeaseDraft.id).catch(() => null)
+          if (pdf) setCurrentLeasePdf(pdf)
+        }
         setLeaseToolbarNotice('PDF uploaded.')
+        await loadLeaseDrafts()
       } catch (e) {
         setLeaseToolbarNotice(e?.message || 'Upload failed.')
       } finally {
         setLeaseUploadBusy(false)
       }
     },
-    [activeLeaseDraft, resident.Name, resident.Email],
+    [activeLeaseDraft, resident.id, resident.Email, loadLeaseDrafts],
   )
 
-  const handleSubmitLeaseIssue = useCallback(async () => {
+  useEffect(() => {
+    if (!leaseIssueOpen || !activeLeaseDraft?.id) {
+      setLeaseThreadComments([])
+      return
+    }
+    const rid = String(resident.id || '').trim()
+    const em = String(resident.Email || '').trim().toLowerCase()
+    if (!rid.startsWith('rec') || !em) {
+      setLeaseThreadComments([])
+      return
+    }
+    let cancelled = false
+    setLeaseThreadLoading(true)
+    postResidentPortalAction('lease-resident-list-comments', {
+      leaseDraftId: activeLeaseDraft.id,
+      residentRecordId: rid,
+      residentEmail: em,
+    })
+      .then((json) => {
+        const rows = Array.isArray(json?.comments) ? json.comments : []
+        if (!cancelled) setLeaseThreadComments(rows)
+      })
+      .catch(() => {
+        if (!cancelled) setLeaseThreadComments([])
+      })
+      .finally(() => {
+        if (!cancelled) setLeaseThreadLoading(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [leaseIssueOpen, activeLeaseDraft?.id, resident.id, resident.Email])
+
+  const handleSendLeaseThreadMessage = useCallback(async () => {
     const msg = leaseIssueText.trim()
-    if (!msg || !activeLeaseDraft) return
+    if (!msg || !activeLeaseDraft?.id) return
+    const rid = String(resident.id || '').trim()
+    const em = String(resident.Email || '').trim().toLowerCase()
+    if (!rid.startsWith('rec') || !em) {
+      setLeaseToolbarNotice('Missing resident id or email — cannot send.')
+      return
+    }
     setLeaseIssueBusy(true)
     setLeaseToolbarNotice('')
     try {
-      await submitResidentLeaseIssueReport({
-        draft: activeLeaseDraft,
-        resident,
+      await postResidentPortalAction('lease-resident-add-comment', {
+        leaseDraftId: activeLeaseDraft.id,
+        residentRecordId: rid,
+        residentEmail: em,
+        authorName: resident.Name || resident.Email || 'Resident',
         message: msg,
       })
       setLeaseIssueText('')
-      setLeaseIssueOpen(false)
-      setLeaseToolbarNotice('Your manager has been notified.')
+      setLeaseToolbarNotice('Message sent.')
+      const json = await postResidentPortalAction('lease-resident-list-comments', {
+        leaseDraftId: activeLeaseDraft.id,
+        residentRecordId: rid,
+        residentEmail: em,
+      })
+      setLeaseThreadComments(Array.isArray(json?.comments) ? json.comments : [])
       await loadLeaseDrafts()
     } catch (e) {
-      setLeaseToolbarNotice(e?.message || 'Could not send request.')
+      setLeaseToolbarNotice(e?.message || 'Could not send message.')
     } finally {
       setLeaseIssueBusy(false)
     }
@@ -3282,17 +3419,13 @@ function LeasingPanel({ resident, payments, onOpenPayments, onNavigateTab, onLea
                     </button>
                   ) : null}
                   {leaseBodyAllowed && currentLeasePdf?.['PDF URL'] ? (
-                    <a
-                      href={currentLeasePdf['PDF URL']}
-                      download={String(currentLeasePdf['File Name'] || 'lease-agreement.pdf')
-                        .replace(/[^\w.\-]+/g, '_')
-                        .replace(/^_+|_+$/g, '') || 'lease-agreement.pdf'}
-                      target="_blank"
-                      rel="noreferrer"
+                    <button
+                      type="button"
+                      onClick={handleDownloadAttachedPdf}
                       className="shrink-0 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-[#2563eb] transition hover:bg-slate-50"
                     >
                       Download PDF
-                    </a>
+                    </button>
                   ) : null}
                   {leaseBodyAllowed && leaseHasGeneratedPdfSource ? (
                     <button
@@ -3435,40 +3568,90 @@ function LeasingPanel({ resident, payments, onOpenPayments, onNavigateTab, onLea
                 }
               }}
             >
-              <div className="w-full max-w-lg rounded-2xl border border-slate-200 bg-white p-5 shadow-xl">
-                <h3 id="resident-lease-issue-title" className="text-lg font-black text-slate-900">
-                  Request change from manager
-                </h3>
-                <p className="mt-1 text-sm text-slate-600">
-                  Describe typos, missing terms, or questions. Your house manager will see this in the lease thread.
-                </p>
-                <textarea
-                  value={leaseIssueText}
-                  onChange={(e) => setLeaseIssueText(e.target.value)}
-                  rows={5}
-                  placeholder="What needs to be fixed or clarified?"
-                  className="mt-4 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-900 outline-none focus:border-[#2563eb] focus:ring-2 focus:ring-[#2563eb]/20"
-                />
-                <div className="mt-4 flex flex-wrap justify-end gap-2">
-                  <button
-                    type="button"
-                    disabled={leaseIssueBusy}
-                    onClick={() => {
-                      setLeaseIssueOpen(false)
-                      setLeaseIssueText('')
-                    }}
-                    className="rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:opacity-50"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="button"
-                    disabled={leaseIssueBusy || !leaseIssueText.trim()}
-                    onClick={handleSubmitLeaseIssue}
-                    className="rounded-full bg-[#2563eb] px-4 py-2 text-sm font-semibold text-white transition hover:bg-blue-700 disabled:opacity-50"
-                  >
-                    {leaseIssueBusy ? 'Sending…' : 'Send to manager'}
-                  </button>
+              <div className="flex max-h-[min(90vh,720px)] w-full max-w-lg flex-col rounded-2xl border border-slate-200 bg-white shadow-xl">
+                <div className="shrink-0 border-b border-slate-100 px-5 py-4">
+                  <h3 id="resident-lease-issue-title" className="text-lg font-black text-slate-900">
+                    Lease messages
+                  </h3>
+                  <p className="mt-1 text-sm text-slate-600">
+                    Conversation with your property manager about this lease (same thread as the manager portal).
+                  </p>
+                </div>
+                <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
+                  {leaseThreadLoading ? (
+                    <p className="text-sm text-slate-500">Loading messages…</p>
+                  ) : leaseThreadComments.length === 0 ? (
+                    <p className="text-sm text-slate-500">No messages yet. Add a note below if something needs to change.</p>
+                  ) : (
+                    <div className="space-y-3">
+                      {leaseThreadComments.map((c) => {
+                        const role = String(c['Author Role'] || 'Unknown').trim()
+                        const roleTone =
+                          role === 'Admin'
+                            ? 'bg-blue-100 text-blue-700'
+                            : role === 'Manager'
+                              ? 'bg-slate-200 text-slate-700'
+                              : 'bg-emerald-100 text-emerald-700'
+                        const isMe = role === 'Resident'
+                        return (
+                          <div key={c.id} className={`flex gap-3 ${isMe ? 'flex-row-reverse' : ''}`}>
+                            <div
+                              className={`max-w-[90%] rounded-2xl px-4 py-3 ${
+                                isMe
+                                  ? 'bg-[#2563eb] text-white'
+                                  : 'border border-slate-200 bg-white text-slate-800 shadow-sm'
+                              }`}
+                            >
+                              <div
+                                className={`mb-1 flex flex-wrap items-center gap-2 text-[11px] font-semibold ${
+                                  isMe ? 'text-blue-100' : 'text-slate-500'
+                                }`}
+                              >
+                                <span className={isMe ? 'text-white' : 'text-slate-800'}>
+                                  {c['Author Name'] || role}
+                                </span>
+                                <span className={`rounded-full px-2 py-0.5 ${isMe ? 'bg-white/15 text-white' : roleTone}`}>
+                                  {role}
+                                </span>
+                                <span className={isMe ? 'text-blue-100' : ''}>{fmtTs(c['Timestamp'])}</span>
+                              </div>
+                              <p className="whitespace-pre-wrap text-sm">{c['Message']}</p>
+                            </div>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  )}
+                </div>
+                <div className="shrink-0 border-t border-slate-100 px-5 py-4">
+                  <textarea
+                    value={leaseIssueText}
+                    onChange={(e) => setLeaseIssueText(e.target.value)}
+                    rows={3}
+                    placeholder="Add a message to the thread…"
+                    className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-900 outline-none focus:border-[#2563eb] focus:ring-2 focus:ring-[#2563eb]/20"
+                  />
+                  <div className="mt-3 flex flex-wrap justify-end gap-2">
+                    <button
+                      type="button"
+                      disabled={leaseIssueBusy}
+                      onClick={() => {
+                        setLeaseIssueOpen(false)
+                        setLeaseIssueText('')
+                      }}
+                      className="rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:opacity-50"
+                    >
+                      Close
+                    </button>
+                    <button
+                      type="button"
+                      disabled={leaseIssueBusy || !leaseIssueText.trim()}
+                      onClick={handleSendLeaseThreadMessage}
+                      className="rounded-full bg-[#2563eb] px-4 py-2 text-sm font-semibold text-white transition hover:bg-blue-700 disabled:opacity-50"
+                    >
+                      {leaseIssueBusy ? 'Sending…' : 'Send'}
+                    </button>
+                  </div>
                 </div>
               </div>
             </div>
@@ -3973,7 +4156,7 @@ function Dashboard({ resident, onResidentUpdated, onSignOut }) {
       try {
         const app = await getApplicationById(applicationRecordIds[0])
         if (cancelled) return
-        setLinkedApplicationApprovalState(app ? deriveApplicationApprovalState(app) : 'pending')
+        setLinkedApplicationApprovalState(app ? deriveApplicationApprovalState(app) : null)
       } catch {
         if (!cancelled) setLinkedApplicationApprovalState(null)
       }

@@ -117,10 +117,15 @@ export async function markMatchingResidentsApproved(application, ownerId) {
       updatedIds.push(r.id)
     } catch (firstErr) {
       try {
-        await patchResidentRecord(r.id, { Approved: true })
+        await patchResidentRecord(r.id, { Approved: true, 'Application Approval': 'Approved' })
         updatedIds.push(r.id)
       } catch (err) {
-        console.warn('[application-resident-sync] resident approve patch failed', r.id, firstErr, err)
+        try {
+          await patchResidentRecord(r.id, { Approved: true })
+          updatedIds.push(r.id)
+        } catch (err2) {
+          console.warn('[application-resident-sync] resident approve patch failed', r.id, firstErr, err, err2)
+        }
       }
     }
   }

@@ -75,6 +75,7 @@ import {
   workOrderLinkedPropertyRecordIds,
   workOrderLinkedApplicationRecordIds,
   getApplicationsForOwner,
+  countUnreadLeaseNotificationsForManager,
   resolveResidentRecordIdForWorkOrderBilling,
   getAllPaymentsRecords,
   getPaymentsForResident,
@@ -109,6 +110,7 @@ import {
 } from '../lib/residentPaymentsShared.js'
 import {
   buildPropertyWizardInitialValues,
+  PROPERTY_AIR,
   PROPERTY_EDIT_REQUEST_FIELD,
 } from '../lib/managerPropertyFormAirtableMap.js'
 import {
@@ -135,6 +137,11 @@ import { ApplicationDetailPanel, applicationViewModelFromAirtableRow } from '../
 import LeaseHTMLTemplate from '../components/LeaseHTMLTemplate.jsx'
 import LeaseManagerSignPanel from '../components/LeaseManagerSignPanel.jsx'
 import { pickManagerSignatureFromDraft } from '../../../shared/lease-manager-signature-fields.js'
+import {
+  isLeaseDraftSignedStatus,
+  pickResidentSignatureTextFromDraft,
+  pickResidentSignedAtFromDraft,
+} from '../../../shared/lease-resident-signature-display.js'
 import {
   DEFAULT_AXIS_APPLICATION_APPROVED_ROOM,
   DEFAULT_AXIS_APPLICATION_ROOM_CHOICE_2,
@@ -2332,6 +2339,28 @@ async function patchLeaseDraft(recordId, fields) {
   return mapRecord(data)
 }
 
+function pickPropertyLeaseInformationFromRecord(rec) {
+  if (!rec || typeof rec !== 'object') return ''
+  for (const k of ['lease infomration', 'Lease Information', 'lease information']) {
+    const v = rec[k]
+    if (v != null && String(v).trim()) return String(v).trim()
+  }
+  return ''
+}
+
+/** Load one Properties row by exact Property Name (for lease editor + property lease field). */
+async function fetchPropertyRecordForLeaseEditor(propertyName) {
+  const name = String(propertyName || '').trim()
+  if (!name) return null
+  const esc = name.replace(/\\/g, '\\\\').replace(/"/g, '\\"')
+  const url = new URL(`${CORE_AIRTABLE_BASE_URL}/Properties`)
+  url.searchParams.set('filterByFormula', `{Property Name}="${esc}"`)
+  url.searchParams.set('maxRecords', '1')
+  const data = await atRequest(url.toString())
+  const rec = data.records?.[0]
+  return rec ? mapRecord(rec) : null
+}
+
 async function fetchPropertiesAdmin() {
   const rows = []
   let offset = null
@@ -4006,6 +4035,7 @@ function ManagerDashboardHomePanel({
   const s = stats || {}
   const pendingApps = statsLoading ? '—' : s.pendingApps ?? 0
   const leasePending = statsLoading ? '—' : s.leasePending ?? 0
+  const leaseAdminUnread = statsLoading ? 0 : Number(s.leaseNotifyUnread ?? 0) || 0
   const paymentsTotalLines = statsLoading ? '—' : s.paymentsTotalLines ?? 0
   const paymentsOverdue = statsLoading ? '—' : s.paymentsOverdue ?? 0
   const openWo = statsLoading ? '—' : s.openWo ?? 0
@@ -4014,10 +4044,11 @@ function ManagerDashboardHomePanel({
   const firstName = String(manager?.name || '').split(' ')[0] || null
 
   const actionLease = !statsLoading && typeof leasePending === 'number' && leasePending > 0
+  const actionLeaseAdmin = !statsLoading && leaseAdminUnread > 0
   const actionApps = !statsLoading && typeof pendingApps === 'number' && pendingApps > 0
   const actionPaymentsOverdue = !statsLoading && typeof paymentsOverdue === 'number' && paymentsOverdue > 0
   const actionWo = !statsLoading && typeof openWo === 'number' && openWo > 0
-  const showActionBanner = actionLease || actionApps || actionWo
+  const showActionBanner = actionLease || actionLeaseAdmin || actionApps || actionWo
 
   return (
     <div className="space-y-6">
@@ -4085,6 +4116,21 @@ function ManagerDashboardHomePanel({
                 </button>
               </li>
             ) : null}
+            {actionLeaseAdmin ? (
+              <li className="flex flex-wrap items-center justify-between gap-2 rounded-xl bg-white/60 px-3 py-2 text-sm text-amber-950">
+                <span>
+                  <span className="font-semibold tabular-nums">{leaseAdminUnread}</span>
+                  {` unread lease update${leaseAdminUnread === 1 ? '' : 's'} from admin (messages or status changes)`}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => onNavigate('leases')}
+                  className="shrink-0 rounded-lg bg-amber-600 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-amber-700"
+                >
+                  Open leases
+                </button>
+              </li>
+            ) : null}
             {actionWo ? (
               <li className="flex flex-wrap items-center justify-between gap-2 rounded-xl bg-white/60 px-3 py-2 text-sm text-amber-950">
                 <span>
@@ -4131,6 +4177,11 @@ function ManagerDashboardHomePanel({
         >
           <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-blue-600">Leases · Action needed</span>
           <span className="text-3xl font-black tabular-nums text-blue-700">{leasePending}</span>
+          {!statsLoading && leaseAdminUnread > 0 ? (
+            <span className="text-xs font-semibold text-orange-700">
+              {leaseAdminUnread} admin notice{leaseAdminUnread === 1 ? '' : 's'} unread
+            </span>
+          ) : null}
         </button>
 
         <button
@@ -7161,12 +7212,14 @@ function ManagerDashboard({ manager: managerProp, openDraftId, onOpenDraft, onCl
     setOverviewDataWarnings([])
     const names = managerScope.approvedNames
 
+    const mgrRecordId = String(manager?.airtableRecordId || manager?.id || '').trim()
     Promise.allSettled([
       fetchApplications({}),
       fetchLeaseDrafts({}),
       getAllWorkOrders(),
       getAllPaymentsRecords(),
       listAllResidentsRecords(),
+      mgrRecordId.startsWith('rec') ? countUnreadLeaseNotificationsForManager(mgrRecordId) : Promise.resolve(0),
     ])
       .then((results) => {
         if (cancelled) return
@@ -7176,11 +7229,16 @@ function ManagerDashboard({ manager: managerProp, openDraftId, onOpenDraft, onCl
         const woRaw = results[2].status === 'fulfilled' ? results[2].value : null
         const payRaw = results[3].status === 'fulfilled' ? results[3].value : null
         const residentsRaw = results[4].status === 'fulfilled' ? results[4].value : null
+        const leaseNotifyUnread =
+          results[5].status === 'fulfilled' ? Number(results[5].value) || 0 : 0
         if (results[0].status === 'rejected') warnings.push(`Applications: ${formatDataLoadError(results[0].reason)}`)
         if (results[1].status === 'rejected') warnings.push(`Lease drafts: ${formatDataLoadError(results[1].reason)}`)
         if (results[2].status === 'rejected') warnings.push(`Work orders: ${formatDataLoadError(results[2].reason)}`)
         if (results[3].status === 'rejected') warnings.push(`Payments: ${formatDataLoadError(results[3].reason)}`)
         if (results[4].status === 'rejected') warnings.push(`Residents: ${formatDataLoadError(results[4].reason)}`)
+        if (results[5].status === 'rejected') {
+          warnings.push(`Lease notifications: ${formatDataLoadError(results[5].reason)}`)
+        }
         setOverviewDataWarnings(warnings)
 
         if (!appsRaw && !drRaw && !woRaw && !payRaw) {
@@ -7222,6 +7280,7 @@ function ManagerDashboard({ manager: managerProp, openDraftId, onOpenDraft, onCl
         setOverviewStats({
           pendingApps,
           leasePending,
+          leaseNotifyUnread,
           paymentsTotalLines,
           paymentsOverdue,
           openWo,
@@ -7234,7 +7293,30 @@ function ManagerDashboard({ manager: managerProp, openDraftId, onOpenDraft, onCl
     return () => {
       cancelled = true
     }
-  }, [dashView, managerScope.approvedNames, approvedNamesLower, mergedPropertyNamesLower, workOrderScopePropertyIds])
+  }, [
+    dashView,
+    managerScope.approvedNames,
+    approvedNamesLower,
+    mergedPropertyNamesLower,
+    workOrderScopePropertyIds,
+    manager?.id,
+    manager?.airtableRecordId,
+  ])
+
+  /** Keep dashboard lease-notification badge in sync after leasing tab marks notices read. */
+  useEffect(() => {
+    const mgrRecordId = String(manager?.airtableRecordId || manager?.id || '').trim()
+    if (!mgrRecordId.startsWith('rec')) return
+    const onLeaseNotify = () => {
+      countUnreadLeaseNotificationsForManager(mgrRecordId).then((n) => {
+        setOverviewStats((prev) =>
+          prev && typeof prev === 'object' ? { ...prev, leaseNotifyUnread: n } : prev,
+        )
+      })
+    }
+    window.addEventListener('axis:lease-notifications-changed', onLeaseNotify)
+    return () => window.removeEventListener('axis:lease-notifications-changed', onLeaseNotify)
+  }, [manager?.airtableRecordId, manager?.id])
 
   // Unopened threads for dashboard badge (aligned with ManagerInboxPage: scope + site-manager + property website inquiries)
   useEffect(() => {
@@ -7609,6 +7691,9 @@ function LeaseEditor({ draftId, manager, onBack, embedded = false }) {
   const [saving, setSaving] = useState(false)
   const [actionLoading, setActionLoading] = useState('') // 'approve' | 'publish' | 'signforge' | 'signforge-status'
   const leaseFileInputRef = useRef(null)
+  const [propertyRecordForLease, setPropertyRecordForLease] = useState(null)
+  const [propertyLeaseText, setPropertyLeaseText] = useState('')
+  const [propertyLeaseSaving, setPropertyLeaseSaving] = useState(false)
 
   const leaseDataForPreview = useMemo(() => {
     if (!draft) return null
@@ -7616,13 +7701,28 @@ function LeaseEditor({ draftId, manager, onBack, embedded = false }) {
       const raw = draft['Lease JSON']
       if (raw == null || !String(raw).trim()) return null
       const o = JSON.parse(String(raw))
-      return o && typeof o === 'object' ? o : null
+      if (!o || typeof o !== 'object') return null
+      const extra = String(propertyLeaseText || '').trim()
+      if (!extra) return o
+      return { ...o, propertyLeaseInformation: extra }
     } catch {
       return null
     }
-  }, [draft])
+  }, [draft, propertyLeaseText])
 
   const managerSigOnDraft = useMemo(() => pickManagerSignatureFromDraft(draft, import.meta.env), [draft])
+
+  const residentSigForPreview = useMemo(() => {
+    if (!draft || !isLeaseDraftSignedStatus(draft.Status)) {
+      return { signedBy: undefined, signedAt: undefined }
+    }
+    const text = pickResidentSignatureTextFromDraft(draft)
+    const at = pickResidentSignedAtFromDraft(draft)
+    return {
+      signedBy: text || undefined,
+      signedAt: at || undefined,
+    }
+  }, [draft])
 
   const loadDraft = useCallback(async () => {
     setLoading(true)
@@ -7657,6 +7757,38 @@ function LeaseEditor({ draftId, manager, onBack, embedded = false }) {
 
   useEffect(() => { loadDraft() }, [loadDraft])
 
+  useEffect(() => {
+    let cancelled = false
+    async function run() {
+      if (!draft) {
+        setPropertyRecordForLease(null)
+        setPropertyLeaseText('')
+        return
+      }
+      const pn = String(draft.Property || '').trim()
+      if (!pn) {
+        setPropertyRecordForLease(null)
+        setPropertyLeaseText('')
+        return
+      }
+      try {
+        const rec = await fetchPropertyRecordForLeaseEditor(pn)
+        if (cancelled) return
+        setPropertyRecordForLease(rec)
+        setPropertyLeaseText(pickPropertyLeaseInformationFromRecord(rec))
+      } catch {
+        if (!cancelled) {
+          setPropertyRecordForLease(null)
+          setPropertyLeaseText('')
+        }
+      }
+    }
+    run()
+    return () => {
+      cancelled = true
+    }
+  }, [draft?.id, draft?.Property])
+
   function handleLeaseTextFileSelected(ev) {
     const input = ev.target
     const f = input.files?.[0]
@@ -7676,6 +7808,34 @@ function LeaseEditor({ draftId, manager, onBack, embedded = false }) {
     reader.onerror = () => toast.error('Could not read that file')
     reader.readAsText(f)
     input.value = ''
+  }
+
+  async function handleSavePropertyLeaseInformation() {
+    if (!propertyRecordForLease?.id) return
+    setPropertyLeaseSaving(true)
+    try {
+      await updatePropertyAdmin(propertyRecordForLease.id, {
+        [PROPERTY_AIR.leaseInformation]: propertyLeaseText,
+      })
+      toast.success('Property lease information saved')
+    } catch (err) {
+      toast.error('Save failed: ' + (err.message || String(err)))
+    } finally {
+      setPropertyLeaseSaving(false)
+    }
+  }
+
+  function handleAppendPropertyLeaseToPlainText() {
+    const block = String(propertyLeaseText || '').trim()
+    if (!block) {
+      toast.error('Nothing to append — enter property lease information first.')
+      return
+    }
+    setEditorContent((c) => {
+      const cur = String(c || '').trim()
+      return cur ? `${cur}\n\n${block}` : block
+    })
+    toast.success('Appended to plain-text lease — click Save when ready')
   }
 
   // ── Save edits ────────────────────────────────────────────────────────────
@@ -7914,8 +8074,8 @@ function LeaseEditor({ draftId, manager, onBack, embedded = false }) {
               <div className="max-h-[min(80vh,880px)] overflow-y-auto overflow-x-hidden bg-white p-2">
                 <LeaseHTMLTemplate
                   leaseData={leaseDataForPreview}
-                  signedBy={draft?.Status === 'Signed' ? draft?.['Signature Text'] : undefined}
-                  signedAt={draft?.Status === 'Signed' ? draft?.['Signed At'] : undefined}
+                  signedBy={residentSigForPreview.signedBy}
+                  signedAt={residentSigForPreview.signedAt}
                   managerSignedBy={managerSigOnDraft.text || undefined}
                   managerSignedAt={managerSigOnDraft.at || undefined}
                   managerSignatureImageUrl={managerSigOnDraft.image || undefined}
@@ -7953,6 +8113,48 @@ function LeaseEditor({ draftId, manager, onBack, embedded = false }) {
 
           {canEdit ? (
             <>
+              {propertyRecordForLease?.id ? (
+                <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+                  <div className="text-[11px] font-bold uppercase tracking-[0.14em] text-slate-400">
+                    Property lease information
+                  </div>
+                  <p className="mt-1 text-xs text-slate-500">
+                    Edits the property field <strong>lease infomration</strong> in Airtable. The preview above includes this text as{' '}
+                    <strong>Addendum F</strong> immediately. To bake it into saved <strong>Lease JSON</strong> for residents, click{' '}
+                    <strong>Regenerate Lease</strong> on the linked application after saving.
+                  </p>
+                  <textarea
+                    value={propertyLeaseText}
+                    onChange={(ev) => setPropertyLeaseText(ev.target.value)}
+                    rows={10}
+                    placeholder="Clauses, concessions, parking rules, or other property-specific lease language…"
+                    className="mt-3 w-full resize-y rounded-2xl border border-slate-200 bg-slate-50 p-3 text-sm text-slate-800 placeholder:text-slate-400 focus:border-[#2563eb] focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#2563eb]/20"
+                  />
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      onClick={handleSavePropertyLeaseInformation}
+                      disabled={propertyLeaseSaving || !!actionLoading}
+                      className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-800 transition hover:bg-slate-50 disabled:opacity-50"
+                    >
+                      {propertyLeaseSaving ? 'Saving…' : 'Save to property'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleAppendPropertyLeaseToPlainText}
+                      disabled={!!actionLoading}
+                      className="rounded-xl border border-slate-300 bg-slate-50 px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-100 disabled:opacity-50"
+                    >
+                      Append to plain-text lease
+                    </button>
+                  </div>
+                </div>
+              ) : String(draft?.Property || '').trim() ? (
+                <div className="rounded-2xl border border-amber-200 bg-amber-50/80 px-4 py-3 text-sm text-amber-950">
+                  Could not load the property record for <strong>{String(draft.Property).trim()}</strong>. Check that the name matches{' '}
+                  <strong>Property Name</strong> in Airtable exactly.
+                </div>
+              ) : null}
               <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
                 <div className="text-[11px] font-bold uppercase tracking-[0.14em] text-slate-400">Upload your lease</div>
                 <p className="mt-1 text-xs text-slate-500">

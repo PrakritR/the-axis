@@ -2,6 +2,14 @@ import {
   airtablePermissionDeniedMessage,
   responseBodyIndicatesAirtablePermissionDenied,
 } from './airtablePermissionError.js'
+import {
+  isLeaseVersionUploaderOrDateUnknownField,
+  leaseVersionDocUploaderPayload,
+  leaseVersionLegacyUploaderPayload,
+  stripLeaseVersionUploaderFieldVariants,
+} from '../../../shared/lease-version-airtable-uploader-fields.js'
+
+export { leaseVersionDisplayUploadTime } from '../../../shared/lease-version-airtable-uploader-fields.js'
 import { mergeAxisListingMetaIntoOtherInfo, parseAxisListingMetaBlock } from './axisListingMeta.js'
 import { getConfiguredPropertyPhotosFieldName } from './propertyListingPhotos.js'
 import { workOrderPhotoAttachmentFieldNamesOrdered } from './workOrderShared.js'
@@ -797,6 +805,61 @@ function isUnknownAttachmentFieldError(message) {
 }
 
 const LEASE_VERSION_ATTACHMENT_FIELDS = ['PDF File', 'PDF', 'Attachment', 'File']
+
+async function writeLeaseVersionCreateOrPatch({ recordId, coreFields, uploaderMeta }) {
+  const { name, role, isoTime, recordId: uploaderRecordId } = uploaderMeta
+  const path = recordId
+    ? `${BASE_URL}/${encodeURIComponent('Lease Versions')}/${recordId}`
+    : `${BASE_URL}/${encodeURIComponent('Lease Versions')}`
+  const method = recordId ? 'PATCH' : 'POST'
+  const run = async (fields) =>
+    mapRecord(
+      await request(path, {
+        method,
+        body: JSON.stringify({ fields, typecast: true }),
+      }),
+    )
+  const firstFields = {
+    ...coreFields,
+    ...leaseVersionLegacyUploaderPayload({ name, role, isoTime }),
+  }
+  try {
+    return await run(firstFields)
+  } catch (err) {
+    const unknown = airtableUnknownFieldNameFromErrorMessage(err.message)
+    if (!unknown || !isLeaseVersionUploaderOrDateUnknownField(unknown)) throw err
+    const nextFields = {
+      ...stripLeaseVersionUploaderFieldVariants(firstFields),
+      ...leaseVersionDocUploaderPayload({ name, isoTime, uploaderRecordId }),
+    }
+    return await run(nextFields)
+  }
+}
+
+async function patchLeaseVersionFinalizeFields({ recordId, corePatch, uploaderMeta }) {
+  const isoTime = new Date().toISOString()
+  const path = `${BASE_URL}/${encodeURIComponent('Lease Versions')}/${recordId}`
+  const firstFields = { ...corePatch, 'Upload Date': isoTime }
+  const run = async (fields) =>
+    mapRecord(
+      await request(path, {
+        method: 'PATCH',
+        body: JSON.stringify({ fields, typecast: true }),
+      }),
+    )
+  try {
+    return await run(firstFields)
+  } catch (err) {
+    const unknown = airtableUnknownFieldNameFromErrorMessage(err.message)
+    if (!unknown || !isLeaseVersionUploaderOrDateUnknownField(unknown)) throw err
+    const { name, role, recordId: uploaderRecordId } = uploaderMeta
+    const nextFields = {
+      ...stripLeaseVersionUploaderFieldVariants(firstFields),
+      ...leaseVersionDocUploaderPayload({ name, isoTime, uploaderRecordId }),
+    }
+    return await run(nextFields)
+  }
+}
 
 /**
  * Fields on Work Orders that link back to the application (optional on many bases).
@@ -2271,6 +2334,23 @@ export async function addLeaseCommentRecord({
   return mapRecord(data)
 }
 
+/** Count unread Lease Notifications for a manager profile record (paginates past 100 rows). */
+export async function countUnreadLeaseNotificationsForManager(managerRecordId) {
+  const id = String(managerRecordId || '').trim()
+  if (!/^rec[a-zA-Z0-9]{14,}$/.test(id)) return 0
+  const formula = `AND({Recipient Record ID}="${escapeFormulaValue(id)}", NOT({Is Read}))`
+  let total = 0
+  let offset = null
+  do {
+    const url = new URL(buildUrl('Lease Notifications', { filterByFormula: formula }))
+    if (offset) url.searchParams.set('offset', offset)
+    const data = await request(url.toString())
+    total += (data.records || []).length
+    offset = data.offset || null
+  } while (offset)
+  return total
+}
+
 export async function createLeaseNotification({ recipientRecordId, recipientRole, leaseDraftId, message, actionType = 'comment-added' }) {
   const recipientId = String(recipientRecordId || '').trim()
   const draftId = String(leaseDraftId || '').trim()
@@ -2313,6 +2393,7 @@ export async function upsertCurrentLeaseVersion({
   notes = '',
   uploaderName,
   uploaderRole,
+  uploaderRecordId = '',
 }) {
   const draftId = String(leaseDraftId || '').trim()
   const nextPdfUrl = String(pdfUrl || '').trim()
@@ -2322,32 +2403,26 @@ export async function upsertCurrentLeaseVersion({
   const draft = await getLeaseDraftById(draftId)
   const current = await getCurrentLeaseVersion(draftId)
   const versionNumber = Number(current?.['Version Number'] || draft?.['Current Version'] || 1) || 1
-  const fields = {
+  const isoTime = new Date().toISOString()
+  const coreFields = {
     'Lease Draft ID': draftId,
     'Version Number': versionNumber,
     'PDF URL': nextPdfUrl,
     'File Name': String(fileName || '').trim() || `lease-v${versionNumber}.pdf`,
-    'Uploader Name': String(uploaderName || '').trim() || 'Axis',
-    'Uploader Role': String(uploaderRole || '').trim() || 'Manager',
-    'Upload Date': new Date().toISOString(),
     'Notes': String(notes || '').trim(),
     'Is Current': true,
   }
 
-  let saved = null
-  if (current?.id) {
-    const data = await request(`${BASE_URL}/${encodeURIComponent('Lease Versions')}/${current.id}`, {
-      method: 'PATCH',
-      body: JSON.stringify({ fields, typecast: true }),
-    })
-    saved = mapRecord(data)
-  } else {
-    const data = await request(`${BASE_URL}/${encodeURIComponent('Lease Versions')}`, {
-      method: 'POST',
-      body: JSON.stringify({ fields, typecast: true }),
-    })
-    saved = mapRecord(data)
-  }
+  const saved = await writeLeaseVersionCreateOrPatch({
+    recordId: current?.id || null,
+    coreFields,
+    uploaderMeta: {
+      name: uploaderName,
+      role: uploaderRole,
+      isoTime,
+      recordId: uploaderRecordId,
+    },
+  })
 
   await updateLeaseDraftRecord(draftId, {
     'Current Version': versionNumber,
@@ -2363,6 +2438,7 @@ export async function uploadLeaseVersionPdfFile({
   notes = '',
   uploaderName,
   uploaderRole,
+  uploaderRecordId = '',
 }) {
   const draftId = String(leaseDraftId || '').trim()
   const nextFile = file
@@ -2377,32 +2453,28 @@ export async function uploadLeaseVersionPdfFile({
   const current = await getCurrentLeaseVersion(draftId)
   const versionNumber = Number(current?.['Version Number'] || draft?.['Current Version'] || 1) || 1
   const existingPdfUrl = String(current?.['PDF URL'] || '').trim()
-  const fields = {
+  const isoTime = new Date().toISOString()
+  const coreFields = {
     'Lease Draft ID': draftId,
     'Version Number': versionNumber,
     'File Name': nextFileName || `lease-v${versionNumber}.pdf`,
-    'Uploader Name': String(uploaderName || '').trim() || 'Axis',
-    'Uploader Role': String(uploaderRole || '').trim() || 'Manager',
-    'Upload Date': new Date().toISOString(),
     'Notes': String(notes || '').trim(),
     'Is Current': true,
   }
-  if (existingPdfUrl) fields['PDF URL'] = existingPdfUrl
+  if (existingPdfUrl) coreFields['PDF URL'] = existingPdfUrl
 
-  let saved = null
-  if (current?.id) {
-    const data = await request(`${BASE_URL}/${encodeURIComponent('Lease Versions')}/${current.id}`, {
-      method: 'PATCH',
-      body: JSON.stringify({ fields, typecast: true }),
-    })
-    saved = mapRecord(data)
-  } else {
-    const data = await request(`${BASE_URL}/${encodeURIComponent('Lease Versions')}`, {
-      method: 'POST',
-      body: JSON.stringify({ fields, typecast: true }),
-    })
-    saved = mapRecord(data)
+  const uploaderMeta = {
+    name: uploaderName,
+    role: uploaderRole,
+    isoTime,
+    recordId: uploaderRecordId,
   }
+
+  const saved = await writeLeaseVersionCreateOrPatch({
+    recordId: current?.id || null,
+    coreFields,
+    uploaderMeta,
+  })
 
   let uploadedUrl = ''
   let lastFieldError = null
@@ -2427,18 +2499,15 @@ export async function uploadLeaseVersionPdfFile({
     throw lastFieldError || new Error('Could not upload PDF file. Add a PDF attachment field to Lease Versions.')
   }
 
-  const finalized = await request(`${BASE_URL}/${encodeURIComponent('Lease Versions')}/${saved.id}`, {
-    method: 'PATCH',
-    body: JSON.stringify({
-      fields: {
-        'PDF URL': uploadedUrl,
-        'File Name': nextFileName || saved['File Name'] || `lease-v${versionNumber}.pdf`,
-        'Upload Date': new Date().toISOString(),
-        'Notes': String(notes || '').trim(),
-        'Is Current': true,
-      },
-      typecast: true,
-    }),
+  const finalized = await patchLeaseVersionFinalizeFields({
+    recordId: saved.id,
+    corePatch: {
+      'PDF URL': uploadedUrl,
+      'File Name': nextFileName || saved['File Name'] || `lease-v${versionNumber}.pdf`,
+      'Notes': String(notes || '').trim(),
+      'Is Current': true,
+    },
+    uploaderMeta,
   })
 
   await updateLeaseDraftRecord(draftId, {
@@ -2446,7 +2515,7 @@ export async function uploadLeaseVersionPdfFile({
     'Updated At': new Date().toISOString(),
   }).catch(() => null)
 
-  return mapRecord(finalized)
+  return finalized
 }
 
 export async function submitResidentLeaseChangeRequest({
@@ -2477,6 +2546,7 @@ export async function submitResidentLeaseChangeRequest({
       notes: text,
       uploaderName: resident?.Name || resident?.Email || 'Resident',
       uploaderRole: 'Resident',
+      uploaderRecordId: resident?.id || '',
     })
   }
 

@@ -1,3 +1,9 @@
+import {
+  buildMoveInFeeScheduleRows,
+  buildOtherFeeScheduleRows,
+  buildPetFeeScheduleNote,
+} from '../../../shared/lease-fee-schedule.js'
+
 /**
  * LeaseHTMLTemplate.jsx
  *
@@ -46,6 +52,79 @@ function P({ children }) {
   return <p className="text-sm leading-relaxed text-slate-700">{children}</p>
 }
 
+function FeeScheduleBlock({ leaseData: d }) {
+  const moveIn = buildMoveInFeeScheduleRows(d)
+  const other = buildOtherFeeScheduleRows(d, { lateFee: LATE_FEE, lateGraceDays: LATE_GRACE_DAYS })
+  const pet = buildPetFeeScheduleNote()
+
+  return (
+    <div className="mb-8 rounded-2xl border border-stone-200 bg-[#faf8f5] px-4 py-5 sm:px-6">
+      <p className="mb-1 text-[11px] font-bold uppercase tracking-[0.14em] text-stone-500">Fee schedule</p>
+      <p className="mb-4 text-xs leading-relaxed text-stone-600">
+        Categorized overview of typical charges. Exact amounts for this lease appear in the Agreement Summary above.
+      </p>
+      <div className="grid gap-4 md:grid-cols-3">
+        <div className="rounded-xl border border-stone-200/90 bg-white px-4 py-4 shadow-sm">
+          <h4 className="text-[10px] font-bold uppercase tracking-[0.12em] text-stone-500">Move-in costs</h4>
+          <div className="mt-3 space-y-4">
+            {moveIn.length ? (
+              moveIn.map((r, i) => (
+                <div key={i} className="border-b border-stone-100 pb-3 last:border-0 last:pb-0">
+                  <div className="flex flex-wrap items-baseline justify-between gap-2">
+                    <span className="text-sm font-bold text-stone-900">{r.title}</span>
+                    <span className="text-base font-black tabular-nums text-stone-900">{r.amount}</span>
+                  </div>
+                  <ul className="mt-1.5 list-none space-y-0.5 pl-0">
+                    {r.lines.map((line, j) => (
+                      <li key={j} className="text-[11px] text-stone-600">
+                        {line}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ))
+            ) : (
+              <p className="text-xs text-stone-500">See Agreement Summary for this tenancy&apos;s move-in line items.</p>
+            )}
+          </div>
+        </div>
+        <div className="rounded-xl border border-stone-200/90 bg-white px-4 py-4 shadow-sm">
+          <h4 className="text-[10px] font-bold uppercase tracking-[0.12em] text-stone-500">Other fees</h4>
+          <div className="mt-3 space-y-4">
+            {other.map((r, i) => (
+              <div key={i} className="border-b border-stone-100 pb-3 last:border-0 last:pb-0">
+                <div className="flex flex-wrap items-baseline justify-between gap-2">
+                  <span className="text-sm font-bold text-stone-900">{r.title}</span>
+                  <span className="text-sm font-black tabular-nums text-stone-900">{r.amount}</span>
+                </div>
+                <ul className="mt-1.5 list-none space-y-0.5 pl-0">
+                  {r.lines.map((line, j) => (
+                    <li key={j} className="text-[11px] text-stone-600">
+                      {line}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ))}
+          </div>
+        </div>
+        <div className="rounded-xl border border-stone-200/90 bg-white px-4 py-4 shadow-sm">
+          <h4 className="text-[10px] font-bold uppercase tracking-[0.12em] text-stone-500">{pet.title}</h4>
+          <ul className="mt-3 list-disc space-y-1.5 pl-4 text-xs leading-relaxed text-stone-600">
+            {pet.lines.map((line, j) => (
+              <li key={j}>{line}</li>
+            ))}
+          </ul>
+        </div>
+      </div>
+      <p className="mt-4 border-t border-stone-200/80 pt-3 text-center text-xs text-stone-700">
+        <span className="font-semibold">Total move-in (this lease):</span>{' '}
+        <span className="font-black tabular-nums text-stone-900">{d.totalMoveInFmt || '—'}</span>
+      </p>
+    </div>
+  )
+}
+
 export default function LeaseHTMLTemplate({
   leaseData = {},
   signedBy,
@@ -61,13 +140,17 @@ export default function LeaseHTMLTemplate({
     ? `month-to-month commencing ${d.leaseStartFmt || '___________'}`
     : `fixed term from ${d.leaseStartFmt || '___________'} through ${d.leaseEndFmt || '___________'}`
 
-  const signedDate = signedAt
-    ? new Date(signedAt).toLocaleDateString('en-US', { month: '2-digit', day: '2-digit', year: 'numeric' })
-    : null
+  function formatSignatureDate(raw) {
+    if (raw == null || raw === '') return null
+    const s = Array.isArray(raw) ? String(raw[0] ?? '').trim() : String(raw).trim()
+    if (!s) return null
+    const dt = new Date(s)
+    if (Number.isNaN(dt.getTime())) return s.length <= 32 ? s : `${s.slice(0, 32)}…`
+    return dt.toLocaleDateString('en-US', { month: '2-digit', day: '2-digit', year: 'numeric' })
+  }
 
-  const managerSignedDate = managerSignedAt
-    ? new Date(managerSignedAt).toLocaleDateString('en-US', { month: '2-digit', day: '2-digit', year: 'numeric' })
-    : null
+  const signedDate = formatSignatureDate(signedAt)
+  const managerSignedDate = formatSignatureDate(managerSignedAt)
 
   const managerSig = String(managerSignedBy || '').trim()
   const managerImg = String(managerSignatureImageUrl || '').trim()
@@ -110,7 +193,8 @@ export default function LeaseHTMLTemplate({
             label="Last Month's Rent (prepaid)"
             value={(d.lastMonthRent || 0) > 0 ? d.lastMonthRentFmt : 'Not collected at move-in'}
           />
-          {(d.adminFee || 0) > 0 ? <Row label="Admin Fee" value={d.adminFeeFmt} /> : null}
+          {(d.applicationFee || 0) > 0 ? <Row label="Application fee" value={d.applicationFeeFmt} /> : null}
+          {(d.adminFee || 0) > 0 ? <Row label="Administrative fee" value={d.adminFeeFmt} /> : null}
           {d.proratedDays > 0 ? (
             <>
               <Row label={`Prorated Rent (${d.proratedDays} days)`} value={d.proratedRentFmt} />
@@ -120,6 +204,8 @@ export default function LeaseHTMLTemplate({
           <Row label="Total Move-In" value={d.totalMoveInFmt} />
         </div>
       </div>
+
+      <FeeScheduleBlock leaseData={d} />
 
       <div className="divide-y divide-slate-100">
 
@@ -265,6 +351,13 @@ export default function LeaseHTMLTemplate({
         <Section number="4" title="Security Deposit">
           <P>
             Resident shall pay a security deposit of <strong>{d.securityDepositFmt || '$0.00'}</strong> prior to or upon move-in.
+            {(d.adminFee || 0) > 0 ? (
+              <>
+                {' '}
+                Separately, an administrative fee of <strong>{d.adminFeeFmt || '$0.00'}</strong> is due prior to or upon move-in; it
+                is not part of the security deposit and is not held as a deposit under RCW 59.18.260.
+              </>
+            ) : null}{' '}
             The security deposit shall be held in accordance with RCW 59.18.260. Landlord shall provide a written receipt
             and identify the financial institution where the deposit is held.
           </P>
@@ -365,6 +458,16 @@ export default function LeaseHTMLTemplate({
 
         {/* 6 */}
         <Section number="6" title="Occupancy and Permitted Use">
+          {String(d.guestPolicy || '').trim() ? (
+            <P>
+              <strong>Property-specific guest policy.</strong> {String(d.guestPolicy).trim()}
+            </P>
+          ) : null}
+          {String(d.additionalLeaseTerms || '').trim() ? (
+            <P>
+              <strong>Additional property-specific terms.</strong> {String(d.additionalLeaseTerms).trim()}
+            </P>
+          ) : null}
           <P>
             The Premises shall be occupied solely by <strong>{d.tenantName || '___________'}</strong> as a private residence.
             Resident shall not permit any other person to occupy the Premises as a primary residence without the prior written
@@ -729,6 +832,17 @@ export default function LeaseHTMLTemplate({
             residents&apos; breach does not excuse Resident&apos;s performance unless Landlord fails to enforce material rules after
             documented written notice where Landlord has legal authority to cure the third-party conduct.
           </P>
+
+          {String(d.propertyLeaseInformation || '').trim() ? (
+            <>
+              <h3 className="mb-2 mt-5 text-[12px] font-black uppercase tracking-[0.1em] text-slate-800">
+                Addendum F — Property-specific lease information
+              </h3>
+              <P>
+                <span className="whitespace-pre-wrap">{String(d.propertyLeaseInformation).trim()}</span>
+              </P>
+            </>
+          ) : null}
         </div>
 
         {/* 20 — Signatures */}
@@ -789,7 +903,7 @@ export default function LeaseHTMLTemplate({
                   <p className="text-xs text-slate-500">Printed Name</p>
                   <p className="mt-3 text-xs text-slate-500">Date: {signedDate || '___________'}</p>
                   <p className="mt-2 rounded-lg bg-emerald-50 px-3 py-1.5 text-[11px] font-semibold text-emerald-700">
-                    Electronically signed — {signedDate}
+                    Electronically signed{signedDate ? ` — ${signedDate}` : ''}
                   </p>
                 </>
               ) : (

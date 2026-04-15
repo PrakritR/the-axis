@@ -39,6 +39,18 @@ export function applicationStatusLooksPipelinePending(status) {
   return false
 }
 
+function normalizeStatusPiece(value) {
+  return String(value || '').trim().toLowerCase()
+}
+
+function statusPieceRejected(s) {
+  return s === 'rejected' || s === 'reject' || s === 'declined' || s === 'denied'
+}
+
+function statusPieceApproved(s) {
+  return s === 'approved' || s === 'accept' || s === 'accepted'
+}
+
 /** @returns {'pending' | 'approved' | 'rejected'} */
 export function deriveApplicationLeaseGateState(app) {
   if (!app || typeof app !== 'object') return 'pending'
@@ -46,14 +58,20 @@ export function deriveApplicationLeaseGateState(app) {
   const rejKey = applicationRejectedFieldName()
   if (app[rejKey] === true || app[rejKey] === 1) return 'rejected'
 
-  const status = String(app['Approval Status'] || app['Application Status'] || '').trim().toLowerCase()
+  const pieces = [
+    normalizeStatusPiece(app['Approval Status']),
+    normalizeStatusPiece(app['Application Status']),
+  ].filter(Boolean)
 
-  if (status === 'approved' || status === 'accept' || status === 'accepted') return 'approved'
-  if (status === 'rejected' || status === 'reject' || status === 'declined' || status === 'denied') {
-    return 'rejected'
+  for (const s of pieces) {
+    if (statusPieceRejected(s)) return 'rejected'
   }
-
-  if (applicationStatusLooksPipelinePending(status)) return 'pending'
+  for (const s of pieces) {
+    if (statusPieceApproved(s)) return 'approved'
+  }
+  for (const s of pieces) {
+    if (applicationStatusLooksPipelinePending(s)) return 'pending'
+  }
 
   const a = app.Approved
   if (a === true || a === 1) return 'approved'

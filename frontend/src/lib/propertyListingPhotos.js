@@ -1,6 +1,6 @@
 /**
  * Property listing photos: Airtable attachment field resolution, hero vs sectional
- * (`axis-r*`, `axis-l*`, `axis-b*`, `axis-ss*`), and per-room URLs.
+ * (`axis-r*`, `axis-l*`, `axis-b*`, `axis-k*`, `axis-ss*`), and per-room URLs.
  */
 
 const FALLBACK_PHOTO_FIELD_KEYS = ['Photos', 'Images', 'Property Photos']
@@ -42,7 +42,13 @@ export function photosAttachmentsFromRecord(rec) {
 /** True when filename is a sectional upload (not general listing / hero). */
 export function isAxisSectionalListingPhotoFilename(filename) {
   const base = String(filename || '').split(/[/\\]/).pop() || ''
-  return /^axis-r\d+/i.test(base) || /^axis-l\d+/i.test(base) || /^axis-b\d+/i.test(base) || /^axis-ss\d+/i.test(base)
+  return (
+    /^axis-r\d+/i.test(base) ||
+    /^axis-l\d+/i.test(base) ||
+    /^axis-b\d+/i.test(base) ||
+    /^axis-k\d+/i.test(base) ||
+    /^axis-ss\d+/i.test(base)
+  )
 }
 
 /**

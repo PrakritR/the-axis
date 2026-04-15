@@ -7,6 +7,12 @@
  *   buildLeasePdfHtml({ title, subtitle, bodyText }) — legacy fallback: wraps plain text
  */
 
+import {
+  buildMoveInFeeScheduleRows,
+  buildOtherFeeScheduleRows,
+  buildPetFeeScheduleNote,
+} from '../../../shared/lease-fee-schedule.js'
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 export function escapeHtml(text) {
@@ -118,6 +124,79 @@ const PDF_CSS = `
     font-size: 10pt;
     font-weight: 600;
     color: #0f172a;
+  }
+
+  /* Fee schedule (fee-guide style) */
+  .fee-schedule-wrap {
+    border: 1px solid #d6d3d1;
+    background: #faf8f5;
+    padding: 14px 16px;
+    margin-bottom: 20px;
+    border-radius: 3px;
+  }
+  .fee-schedule-title {
+    font-family: Arial, Helvetica, sans-serif;
+    font-size: 8pt;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.14em;
+    color: #78716c;
+    margin-bottom: 8px;
+  }
+  .fee-schedule-note {
+    font-size: 8.5pt;
+    color: #57534e;
+    margin: 0 0 12px 0;
+    line-height: 1.45;
+  }
+  .fee-cols {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 10px;
+  }
+  .fee-col {
+    border: 1px solid #e7e5e4;
+    background: #fff;
+    padding: 10px 12px;
+    border-radius: 2px;
+  }
+  .fee-col h4 {
+    font-family: Arial, Helvetica, sans-serif;
+    font-size: 7.5pt;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: #78716c;
+    margin: 0 0 8px 0;
+  }
+  .fee-item {
+    border-bottom: 1px solid #f5f5f4;
+    padding-bottom: 8px;
+    margin-bottom: 8px;
+  }
+  .fee-item:last-child {
+    border-bottom: none;
+    margin-bottom: 0;
+    padding-bottom: 0;
+  }
+  .fee-item-head {
+    display: flex;
+    justify-content: space-between;
+    gap: 6px;
+    align-items: baseline;
+  }
+  .fee-item-title { font-size: 9.5pt; font-weight: 700; color: #1c1917; }
+  .fee-item-amt { font-size: 10pt; font-weight: 800; color: #1c1917; }
+  .fee-item-lines { margin: 4px 0 0 0; padding: 0; list-style: none; }
+  .fee-item-lines li { font-size: 8pt; color: #57534e; margin-bottom: 2px; }
+  .fee-pet-list { margin: 6px 0 0 16px; padding: 0; }
+  .fee-total-foot {
+    text-align: center;
+    font-size: 9pt;
+    color: #44403c;
+    border-top: 1px solid #e7e5e4;
+    margin-top: 12px;
+    padding-top: 10px;
   }
 
   /* ── Sections ── */
@@ -253,6 +332,7 @@ export function buildStructuredLeasePdfHtml(leaseData = {}, opts = {}) {
   const depositFmt      = e(d.securityDepositFmt || fmtMoney(d.securityDeposit))
   const adminFeeFmt     = e(d.adminFeeFmt     || fmtMoney(d.adminFee))
   const utilityFeeNum = Number(d.utilityFee ?? d.utilitiesFee ?? 0) || 0
+  const applicationFeeNum = Number(d.applicationFee ?? 0) || 0
   const adminFeeNum = Number(d.adminFee ?? 0) || 0
   const proratedUtilNum = Number(d.proratedUtility ?? 0) || 0
   const breakLeaseAmt = Number(d.breakLeaseFeeAmount ?? 0) || 0
@@ -276,7 +356,10 @@ export function buildStructuredLeasePdfHtml(leaseData = {}, opts = {}) {
       "Last Month's Rent (prepaid)",
       (d.lastMonthRent || 0) > 0 ? e(d.lastMonthRentFmt || fmtMoney(d.lastMonthRent)) : 'Not collected at move-in',
     ],
-    ...(adminFeeNum > 0 ? [['Admin Fee', adminFeeFmt]] : []),
+    ...(applicationFeeNum > 0
+      ? [['Application fee', e(d.applicationFeeFmt || fmtMoney(d.applicationFee))]]
+      : []),
+    ...(adminFeeNum > 0 ? [['Administrative fee', adminFeeFmt]] : []),
     ...(d.proratedDays > 0
       ? [
           [`Prorated Rent (${d.proratedDays} days)`, e(d.proratedRentFmt || fmtMoney(d.proratedRent))],
@@ -295,6 +378,43 @@ export function buildStructuredLeasePdfHtml(leaseData = {}, opts = {}) {
         <span class="summary-val">${val}</span>
       </div>`
   }
+
+  const feeItemsBlock = (rows) =>
+    rows
+      .map(
+        (r) => `
+      <div class="fee-item">
+        <div class="fee-item-head">
+          <span class="fee-item-title">${e(r.title)}</span>
+          <span class="fee-item-amt">${e(r.amount)}</span>
+        </div>
+        <ul class="fee-item-lines">${r.lines.map((l) => `<li>${e(l)}</li>`).join('')}</ul>
+      </div>`,
+      )
+      .join('')
+
+  const moveInScheduleRows = buildMoveInFeeScheduleRows(d)
+  const otherScheduleRows = buildOtherFeeScheduleRows(d, { lateFee: LATE_FEE, lateGraceDays: LATE_GRACE_DAYS })
+  const petScheduleNote = buildPetFeeScheduleNote()
+  const moveInColHtml =
+    moveInScheduleRows.length > 0
+      ? feeItemsBlock(moveInScheduleRows)
+      : `<p style="font-size:8.5pt;color:#78716c;margin:0;">See Agreement Summary for this tenancy&rsquo;s move-in line items.</p>`
+  const petColHtml = `<h4>${e(petScheduleNote.title)}</h4><ul class="fee-pet-list">${petScheduleNote.lines
+    .map((l) => `<li>${e(l)}</li>`)
+    .join('')}</ul>`
+
+  const feeScheduleHtml = `
+  <div class="fee-schedule-wrap">
+    <div class="fee-schedule-title">Fee schedule</div>
+    <p class="fee-schedule-note">Categorized overview of typical charges. Exact amounts for this lease appear in the Agreement Summary above.</p>
+    <div class="fee-cols">
+      <div class="fee-col"><h4>Move-in costs</h4>${moveInColHtml}</div>
+      <div class="fee-col"><h4>Other fees</h4>${feeItemsBlock(otherScheduleRows)}</div>
+      <div class="fee-col">${petColHtml}</div>
+    </div>
+    <div class="fee-total-foot"><strong>Total move-in (this lease):</strong> ${e(d.totalMoveInFmt || fmtMoney(d.totalMoveIn))}</div>
+  </div>`
 
   // ── Amenities list
   const amenities = Array.isArray(d.amenities) && d.amenities.length
@@ -317,6 +437,20 @@ export function buildStructuredLeasePdfHtml(leaseData = {}, opts = {}) {
     d.roomFurnished    ? `<p><strong>Furnished status for this room:</strong> ${e(d.roomFurnished)}</p>` : '',
     d.roomFurnitureIncluded ? `<p><strong>Furniture included:</strong> ${e(d.roomFurnitureIncluded)}</p>` : '',
   ].join('')
+
+  const guestPolicyLease = String(d.guestPolicy || '').trim()
+  const guestPolicyBlock = guestPolicyLease
+    ? `<p><strong>Property-specific guest policy.</strong> ${e(guestPolicyLease)}</p>`
+    : ''
+  const addTermsLease = String(d.additionalLeaseTerms || '').trim()
+  const additionalLeaseTermsBlock = addTermsLease
+    ? `<p><strong>Additional property-specific terms.</strong> ${e(addTermsLease)}</p>`
+    : ''
+
+  const propLeaseInfo = String(d.propertyLeaseInformation || '').trim()
+  const propertyLeaseAddendumParagraph = propLeaseInfo
+    ? `<p><strong>Addendum F &mdash; Property-specific lease information.</strong> The following terms are incorporated by reference from the property listing record:<br/><span style="white-space:pre-wrap">${e(propLeaseInfo)}</span></p>`
+    : ''
 
   // ── Prorated paragraph
   const proratedHtml =
@@ -409,6 +543,8 @@ export function buildStructuredLeasePdfHtml(leaseData = {}, opts = {}) {
     <div class="summary-label">Agreement Summary</div>
     <div class="summary-grid">${summaryHtml}</div>
   </div>
+
+  ${feeScheduleHtml}
 
   <!-- Sections -->
   <div class="sections">
@@ -507,7 +643,11 @@ export function buildStructuredLeasePdfHtml(leaseData = {}, opts = {}) {
     <!-- 4 -->
     <div class="section">
       <div class="section-title">4. Security Deposit</div>
-      <p>Resident shall pay a security deposit of <strong>${depositFmt}</strong> prior to or upon move-in.
+      <p>Resident shall pay a security deposit of <strong>${depositFmt}</strong> prior to or upon move-in.${
+        adminFeeNum > 0
+          ? ` Separately, an administrative fee of <strong>${adminFeeFmt}</strong> is due prior to or upon move-in; it is not part of the security deposit and is not held as a deposit under RCW 59.18.260.`
+          : ''
+      }
       The security deposit shall be held in accordance with RCW 59.18.260. Landlord shall provide a written receipt
       and identify the financial institution where the deposit is held.</p>
       <p>The deposit may be applied to unpaid rent, damages beyond normal wear and tear, cleaning costs, and any other
@@ -564,6 +704,8 @@ export function buildStructuredLeasePdfHtml(leaseData = {}, opts = {}) {
     <!-- 6 -->
     <div class="section">
       <div class="section-title">6. Occupancy and Permitted Use</div>
+      ${guestPolicyBlock}
+      ${additionalLeaseTermsBlock}
       <p>The Premises shall be occupied solely by <strong>${tenantName}</strong> as a private residence.
       Resident shall not permit any other person to occupy the Premises as a primary residence without the prior written
       consent of Landlord. Guests staying more than 7 consecutive nights or more than 14 nights in any 30-day period
@@ -796,6 +938,7 @@ export function buildStructuredLeasePdfHtml(leaseData = {}, opts = {}) {
       <p><strong>Addendum C &mdash; Mold, moisture, and ventilation.</strong> Resident shall use bathroom/kitchen ventilation when cooking or showering, wipe standing condensation, keep textiles off damp surfaces, and report leaks or mold within twenty-four (24) hours. Resident shall not paint over or conceal mold. Landlord shall respond to building-system leaks consistent with RCW 59.18.070 where applicable.</p>
       <p><strong>Addendum D &mdash; Extended tenant maintenance.</strong> Resident shall replace HVAC filters on schedule provided by Landlord (or at least every ninety (90) days if disposable 1&quot; filters); keep refrigerator coils reasonably dust-free; run garbage disposals only with cold water; clear hair from accessible drain stoppers; report running toilets promptly; and comply with posted recycling/compost rules.</p>
       <p><strong>Addendum E &mdash; Rules and nuisance enforcement.</strong> Violations of quiet hours, harassment, or repeated unreasonable noise may result in written cure notices and, if not cured, termination procedures permitted by RCW 59.18.180 after proper notice. Other residents&rsquo; breach does not excuse Resident&rsquo;s performance unless Landlord fails to enforce material rules after documented written notice where Landlord has legal authority to cure third-party conduct.</p>
+      ${propertyLeaseAddendumParagraph}
     </div>
 
     <!-- 20 — Signatures -->
