@@ -51,6 +51,7 @@ import { anyLeaseDraftAllowsSignWithoutMoveInPay } from '../lib/leaseMoveInOverr
 import { isResidentLeaseBodyViewable, isResidentLeaseSignable } from '../lib/residentLeaseAccess.js'
 import {
   evaluateLeaseAccessPrereqs,
+  isFeeWaivePaymentRecord,
   normalizeLeaseAccessRequirement,
   paymentsIndicateFirstMonthRentPaid,
   paymentsIndicateSecurityDepositPaid,
@@ -727,6 +728,44 @@ function buildResidentRentSnapshot(payments, resident) {
         }
       : null
   return { unpaidTotal, overdueTotal, paidTotal, nextDue, rentPayments }
+}
+
+/** Single-line label for dashboard due list (all payment kinds with balance > 0). */
+function dashboardPaymentDueLineLabel(p) {
+  const typ = String(p?.Type || '').trim()
+  const month = String(p?.Month || '').trim()
+  if (typ && month) return `${typ} — ${month}`.slice(0, 80)
+  if (month) return month.slice(0, 80)
+  if (typ) return typ.slice(0, 80)
+  return 'Payment'
+}
+
+/**
+ * All Airtable payment rows with balance due (resident portal dashboard).
+ * Sorted by due date (missing dates last).
+ */
+function buildResidentDashboardDuePaymentLines(payments) {
+  const list = Array.isArray(payments) ? payments : []
+  const rows = []
+  for (const p of list) {
+    if (!p || typeof p !== 'object' || isFeeWaivePaymentRecord(p)) continue
+    const st = residentPaymentLineStatus(p)
+    if (st === 'Paid') continue
+    const bal = residentBalance(p)
+    if (bal <= 0) continue
+    const due = parseDisplayDate(p['Due Date'])
+    const dueTs =
+      due && !Number.isNaN(due.getTime()) ? due.getTime() : Number.POSITIVE_INFINITY
+    rows.push({
+      id: String(p.id || ''),
+      label: dashboardPaymentDueLineLabel(p),
+      balance: bal,
+      status: st,
+      dueTs,
+    })
+  }
+  rows.sort((a, b) => a.dueTs - b.dueTs || a.label.localeCompare(b.label, undefined, { sensitivity: 'base' }))
+  return rows
 }
 
 function dashboardPaymentStatusTone(status) {
@@ -3210,15 +3249,22 @@ function ResidentDashboardHome({
   inboxUnopenedCount,
 }) {
   const snapshot = useMemo(() => buildResidentRentSnapshot(payments, resident), [payments, resident])
+  const duePaymentLines = useMemo(() => buildResidentDashboardDuePaymentLines(payments), [payments])
+  const totalDueFromRows = useMemo(
+    () => duePaymentLines.reduce((sum, row) => sum + row.balance, 0),
+    [duePaymentLines],
+  )
+  const hasOverdueAny = useMemo(
+    () => duePaymentLines.some((row) => row.status === 'Overdue'),
+    [duePaymentLines],
+  )
   const hasOverdueRent = snapshot.overdueTotal > 0
   const lock = Boolean(portalFeaturesLocked)
-  const paymentCardValue = lock
-    ? '—'
-    : hasOverdueRent
-      ? formatMoney(snapshot.overdueTotal)
-      : snapshot.nextDue
-        ? formatMoney(snapshot.nextDue.balance)
-        : '—'
+  const fallbackDueFromSnapshot =
+    !lock && totalDueFromRows === 0 && snapshot.nextDue && snapshot.nextDue.balance > 0
+  const paymentCardTotal = lock ? 0 : fallbackDueFromSnapshot ? snapshot.nextDue.balance : totalDueFromRows
+  const paymentCardValue = lock ? '—' : paymentCardTotal > 0 ? formatMoney(paymentCardTotal) : '—'
+  const paymentCardUrgent = hasOverdueAny || hasOverdueRent
   const openWoCount = useMemo(
     () => visibleWorkOrders.filter((r) => isWorkOrderOpen(r)).length,
     [visibleWorkOrders],
@@ -3276,11 +3322,11 @@ function ResidentDashboardHome({
         </div>
       ) : null}
 
-      {!lock && hasOverdueRent ? (
+      {!lock && paymentCardUrgent ? (
         <div role="status" className="rounded-2xl border border-red-200 bg-red-50 px-5 py-4 shadow-sm">
-          <p className="text-sm font-bold text-red-950">Rent overdue</p>
+          <p className="text-sm font-bold text-red-950">Payment overdue</p>
           <p className="mt-1 text-sm text-red-900/90">
-            You have a balance past due. Open Payments to review amounts and pay now.
+            One or more charges are past due. Open Payments to review each line item and pay now.
           </p>
           <button
             type="button"
@@ -3412,23 +3458,55 @@ function ResidentDashboardHome({
           disabled={lock}
           onClick={() => {
             if (lock) return
-            setPaymentFocus(hasOverdueRent ? 'overdue' : '')
+            setPaymentFocus(paymentCardUrgent ? 'overdue' : '')
             onNavigate('payments')
           }}
           className={classNames(
             'flex flex-col gap-1 rounded-3xl border p-5 text-left transition hover:shadow-sm',
-            hasOverdueRent
+            paymentCardUrgent
               ? 'border-red-100 bg-red-50 hover:border-red-200'
               : 'border-blue-100 bg-blue-50 hover:border-blue-200',
             lock && 'cursor-not-allowed opacity-60',
           )}
         >
-          <span className={classNames('text-[10px] font-bold uppercase tracking-[0.14em]', hasOverdueRent ? 'text-red-600' : 'text-blue-600')}>
-            {hasOverdueRent ? 'Payments · Overdue' : 'Payments · Due'}
+          <span
+            className={classNames(
+              'text-[10px] font-bold uppercase tracking-[0.14em]',
+              paymentCardUrgent ? 'text-red-600' : 'text-blue-600',
+            )}
+          >
+            {paymentCardUrgent ? 'Payments · Overdue' : 'Payments · Due'}
           </span>
-          <span className={classNames('text-3xl font-black tabular-nums', hasOverdueRent ? 'text-red-700' : 'text-blue-700')}>
+          <span
+            className={classNames('text-3xl font-black tabular-nums', paymentCardUrgent ? 'text-red-700' : 'text-blue-700')}
+          >
             {paymentCardValue}
           </span>
+          {!lock && duePaymentLines.length > 1 ? (
+            <ul className="mt-2 max-h-32 space-y-1 overflow-y-auto border-t border-slate-200/90 pt-2 text-left text-[11px] leading-snug text-slate-700">
+              {duePaymentLines.slice(0, 8).map((row, idx) => (
+                <li key={row.id || `${row.label}-${idx}`} className="flex items-baseline justify-between gap-2">
+                  <span className="min-w-0 flex-1 truncate font-medium text-slate-800">{row.label}</span>
+                  <span className="shrink-0 font-black tabular-nums text-slate-900">{formatMoney(row.balance)}</span>
+                </li>
+              ))}
+              {duePaymentLines.length > 8 ? (
+                <li className="pt-0.5 text-[10px] font-semibold text-slate-500">
+                  +{duePaymentLines.length - 8} more in Payments
+                </li>
+              ) : null}
+            </ul>
+          ) : null}
+          {!lock && duePaymentLines.length === 1 ? (
+            <p className="mt-2 border-t border-slate-200/90 pt-2 text-left text-[11px] font-medium leading-snug text-slate-700">
+              {duePaymentLines[0].label}
+            </p>
+          ) : null}
+          {!lock && fallbackDueFromSnapshot && duePaymentLines.length === 0 ? (
+            <p className="mt-2 border-t border-slate-200/90 pt-2 text-left text-[11px] font-medium leading-snug text-slate-700">
+              {String(snapshot.nextDue.month || 'Amount due').trim()}
+            </p>
+          ) : null}
         </button>
 
         <button
