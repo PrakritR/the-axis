@@ -71,10 +71,12 @@ export function EmbeddedStripeCheckout({ open, title, checkoutRequest, apiEndpoi
         if (!response.ok) throw new Error(data.error || 'Unable to start checkout.')
         if (!data.client_secret) throw new Error('Stripe did not return an embedded checkout client secret.')
 
+        const checkoutSessionId = data.id ? String(data.id) : ''
+
         const embedded = await stripe.initEmbeddedCheckout({
           fetchClientSecret: async () => data.client_secret,
           onComplete: () => {
-            onCompleteRef.current?.()
+            onCompleteRef.current?.({ sessionId: checkoutSessionId })
           },
         })
 

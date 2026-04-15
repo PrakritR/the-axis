@@ -35,6 +35,7 @@ import leaseDownloadGeneratedPdf from './handlers/lease-download-generated-pdf.j
 import leaseDraftPatch from './handlers/lease-draft-patch.js'
 import applicationRegisterPayment from './handlers/application-register-payment.js'
 import applicationPaymentStatus from './handlers/application-payment-status.js'
+import applicationStripeSync from './handlers/application-stripe-sync.js'
 import applicationSubmitSigner from './handlers/application-submit-signer.js'
 
 const handlers = {
@@ -65,6 +66,7 @@ const handlers = {
   'lease-draft-patch': leaseDraftPatch,
   'application-register-payment': applicationRegisterPayment,
   'application-payment-status': applicationPaymentStatus,
+  'application-stripe-sync': applicationStripeSync,
   'application-submit-signer': applicationSubmitSigner,
 }
 
@@ -76,6 +78,7 @@ const NO_AUTH_ACTIONS = new Set([
   'manager-start-free-tier',
   'application-register-payment',
   'application-payment-status',
+  'application-stripe-sync',
   'application-submit-signer',
 ])
 

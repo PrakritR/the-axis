@@ -1,9 +1,12 @@
 /**
  * POST /api/portal?action=application-register-payment
  *
- * Public (no manager session). Creates or reuses an Applications row with
- * Application Paid = false before the applicant opens Stripe Checkout.
- * Stripe metadata will carry application_record_id for the webhook.
+ * Public (no manager session). Creates or reuses an Applications row before Stripe Checkout.
+ * Reuses the same Airtable row for an email while the application is still incomplete
+ * (no signer signature), including after a successful payment — avoids duplicate rows that
+ * strand payment on one record while the UI holds another id.
+ *
+ * Stripe metadata carries application_record_id for the webhook.
  */
 import { airtableAuthHeaders, applicationsTableUrl, getApplicationsAirtableEnv } from '../lib/applications-airtable-env.js'
 import { airtableCreateWithUnknownFieldRetry } from '../lib/airtable-write-retry.js'
@@ -11,6 +14,13 @@ import { resolveExpectedApplicationFeeUsd } from '../lib/stripe-application-fee-
 
 function escapeFormulaString(value) {
   return String(value).replace(/\\/g, '\\\\').replace(/'/g, "\\'")
+}
+
+function isPaidInAirtable(value) {
+  if (value === true) return true
+  if (value === false || value == null) return false
+  const s = String(value).trim().toLowerCase()
+  return s === 'yes' || s === 'true' || s === '1' || s === 'checked'
 }
 
 export default async function handler(req, res) {
@@ -29,7 +39,7 @@ export default async function handler(req, res) {
   const fullName = String(req.body?.fullName || '').trim() || 'Pending payment'
   const propertyName = String(req.body?.propertyName || '').trim()
   const roomNumber = String(req.body?.roomNumber || '').trim()
-  const feeDue = Math.round(resolveExpectedApplicationFeeUsd())
+  const feeDue = Math.round(resolveExpectedApplicationFeeUsd() * 100) / 100
 
   if (!email || !email.includes('@')) {
     return res.status(400).json({ error: 'A valid email is required.' })
@@ -39,26 +49,34 @@ export default async function handler(req, res) {
   const headers = airtableAuthHeaders(env.token)
 
   try {
-    const findUrl = new URL(baseUrl)
-    findUrl.searchParams.set(
-      'filterByFormula',
-      `AND(LOWER({Signer Email}) = '${escapeFormulaString(email)}', NOT({${escapeFormulaString(env.paidField)}}))`,
-    )
-    findUrl.searchParams.set('maxRecords', '1')
-    findUrl.searchParams.append('fields[]', env.paidField)
-    findUrl.searchParams.append('fields[]', 'Signer Email')
+    /** Prefer newest incomplete row (no signature) for this email — includes paid + unsigned. */
+    const listUrl = new URL(baseUrl)
+    listUrl.searchParams.set('filterByFormula', `LOWER({Signer Email})='${escapeFormulaString(email)}'`)
+    listUrl.searchParams.set('maxRecords', '50')
+    listUrl.searchParams.append('fields[]', env.paidField)
+    listUrl.searchParams.append('fields[]', 'Signer Email')
+    listUrl.searchParams.append('fields[]', env.signatureField)
 
-    const findRes = await fetch(findUrl.toString(), { headers })
-    if (findRes.ok) {
-      const findData = await findRes.json()
-      const existing = findData.records?.[0]
-      if (existing?.id) {
-        return res.status(200).json({ applicationRecordId: existing.id, reused: true })
-      }
+    const listRes = await fetch(listUrl.toString(), { headers })
+    let existing = null
+    if (listRes.ok) {
+      const listData = await listRes.json()
+      const recs = Array.isArray(listData.records) ? listData.records : []
+      const incomplete = recs.filter((r) => !String(r.fields?.[env.signatureField] || '').trim())
+      incomplete.sort((a, b) => new Date(b.createdTime || 0) - new Date(a.createdTime || 0))
+      existing = incomplete[0] || null
+    }
+
+    if (existing?.id) {
+      const alreadyPaid = isPaidInAirtable(existing.fields?.[env.paidField])
+      return res.status(200).json({
+        applicationRecordId: existing.id,
+        reused: true,
+        alreadyPaid: alreadyPaid,
+      })
     }
 
     const fields = {
-      // Many bases use "Name" as the primary field; omit if unknown via create retry.
       Name: fullName,
       'Signer Email': email,
       'Signer Full Name': fullName,
@@ -110,7 +128,7 @@ export default async function handler(req, res) {
         })
       }
     }
-    return res.status(200).json({ applicationRecordId: created.id, reused: false })
+    return res.status(200).json({ applicationRecordId: created.id, reused: false, alreadyPaid: false })
   } catch (err) {
     console.error('[application-register-payment]', err)
     return res.status(500).json({ error: err?.message || 'Registration failed.' })

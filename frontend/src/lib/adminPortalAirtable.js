@@ -355,18 +355,22 @@ export async function loadAdminPortalDataset() {
     const email = String(raw.Email || '').trim().toLowerCase()
     const linkedProps = propertyRows.filter((p) => propertyRowAssignedToManagerRow(p, raw))
     const propertyCount = linkedProps.length
-    const houseNames = linkedProps.map((p) => propertyRecordName(p)).filter(Boolean)
-    const houseNamesSorted = [...houseNames].sort((a, b) =>
-      a.localeCompare(b, undefined, { sensitivity: 'base' }),
-    )
-    const houseSortKey = (houseNamesSorted[0] || '').toLowerCase()
-    const managedHousesLabel = houseNamesSorted.length ? houseNamesSorted.join(', ') : '—'
+    const linkedPropsByRecency = [...linkedProps].sort((a, b) => {
+      const ta = new Date(a['Updated At'] || a.createdTime || a.created_at || 0).getTime()
+      const tb = new Date(b['Updated At'] || b.createdTime || b.created_at || 0).getTime()
+      if (tb !== ta) return tb - ta
+      return String(a.id || '').localeCompare(String(b.id || ''))
+    })
+    const houseNames = linkedPropsByRecency.map((p) => propertyRecordName(p)).filter(Boolean)
+    const houseSortKey = (houseNames[0] || '').trim().toLowerCase()
+    const managedHousesLabel = houseNames.length ? houseNames.join(', ') : '—'
     const active =
       raw.Active === true ||
       raw.Active === 1 ||
       ['true', '1', 'yes', 'active'].includes(String(raw.Active || '').trim().toLowerCase())
     const tier = String(raw.tier ?? raw.Tier ?? '').trim().toLowerCase()
     const verified = active || tier === 'free'
+    const updatedMs = new Date(raw['Updated At'] || raw.createdTime || raw.created_at || 0).getTime()
     return {
       id: raw.id,
       _airtable: raw,
@@ -378,11 +382,13 @@ export async function loadAdminPortalDataset() {
       enabled: active,
       houseSortKey,
       managedHousesLabel,
+      updatedMs: Number.isFinite(updatedMs) ? updatedMs : 0,
     }
   })
 
   const applications = applicationRows.map((raw) => {
     const approvalState = deriveApplicationApprovalState(raw)
+    const updatedMs = new Date(raw['Updated At'] || raw.createdTime || raw.created_at || 0).getTime()
     return {
       id: raw.id,
       _airtable: raw,
@@ -392,6 +398,7 @@ export async function loadAdminPortalDataset() {
       approvalState,
       status: applicationDisplayLabelFromApprovalState(approvalState),
       approvalPending: approvalState === 'pending',
+      updatedMs: Number.isFinite(updatedMs) ? updatedMs : 0,
     }
   })
 

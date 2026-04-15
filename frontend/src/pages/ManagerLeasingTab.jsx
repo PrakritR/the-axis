@@ -33,6 +33,13 @@ import {
   leaseDraftAllowsSignWithoutMoveInPay,
   leaseSignWithoutMoveInPayFieldName,
 } from '../lib/leaseMoveInOverride.js'
+import {
+  ALL_PROPERTIES_FILTER,
+  buildPropertyFilterOptionsFromRows,
+  filterRowsByPropertyKey,
+  normalizePropertyFilterKey,
+  sortRowsByPropertyGroupThenUpdatedDesc,
+} from '../lib/portalPropertyTableOrder.js'
 
 const AIRTABLE_TOKEN = import.meta.env.VITE_AIRTABLE_TOKEN
 const CORE_BASE_ID = import.meta.env.VITE_AIRTABLE_BASE_ID || 'appol57LKtMKaQ75T'
@@ -196,8 +203,8 @@ export default function ManagerLeasingTab({ manager, allowedPropertyNames }) {
   const [showChangeBox, setShowChangeBox] = useState(false)
   const [changeRequestText, setChangeRequestText] = useState('')
   const [statusFilter, setStatusFilter] = useState('draft_ready')
-  /** @type {'property_asc'|'property_desc'} */
-  const [leasePropertySort, setLeasePropertySort] = useState('property_asc')
+  const [leasePropertyFilter, setLeasePropertyFilter] = useState(ALL_PROPERTIES_FILTER)
+  const [leaseTableSearch, setLeaseTableSearch] = useState('')
   const [unreadCount, setUnreadCount] = useState(0)
   const leaseDraftDetailRef = useRef(null)
 
@@ -328,22 +335,43 @@ export default function ManagerLeasingTab({ manager, allowedPropertyNames }) {
     return () => window.removeEventListener('axis:lease-drafts-changed', onDraftsChanged)
   }, [loadDrafts])
 
+  const leasePropertyOptions = useMemo(() => {
+    const filterFn = STATUS_FILTER_ITEMS.find((f) => f.id === statusFilter)?.match ?? (() => true)
+    const rows = drafts.filter((d) => filterFn(d['Status'] || ''))
+    return buildPropertyFilterOptionsFromRows(rows, {
+      getPropertyDisplay: (d) => d['Property'] || '',
+      getUpdatedMs: (d) => new Date(d['Updated At'] || d.created_at || 0).getTime(),
+    })
+  }, [drafts, statusFilter])
+
   const visibleDrafts = useMemo(() => {
-    const filterFn = STATUS_FILTER_ITEMS.find(f => f.id === statusFilter)?.match ?? (() => true)
+    const filterFn = STATUS_FILTER_ITEMS.find((f) => f.id === statusFilter)?.match ?? (() => true)
     let rows = drafts.filter((d) => filterFn(d['Status'] || ''))
-    const propKey = (d) => String(d['Property'] || '').trim().toLowerCase()
-    const residentKey = (d) => String(d['Resident Name'] || '').trim().toLowerCase()
-    const updatedMs = (d) => new Date(d['Updated At'] || d.created_at || 0).getTime()
-    const cmp = (a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' })
-    const sorted = [...rows]
-    const tie = (a, b) => cmp(residentKey(a), residentKey(b)) || updatedMs(b) - updatedMs(a)
-    if (leasePropertySort === 'property_desc') {
-      sorted.sort((a, b) => cmp(propKey(b), propKey(a)) || tie(a, b))
-    } else {
-      sorted.sort((a, b) => cmp(propKey(a), propKey(b)) || tie(a, b))
+    rows = filterRowsByPropertyKey(rows, leasePropertyFilter, (d) =>
+      normalizePropertyFilterKey(d['Property'] || ''),
+    )
+    const q = leaseTableSearch.trim().toLowerCase()
+    if (q) {
+      rows = rows.filter((d) => {
+        const hay = `${d['Property'] || ''} ${d['Resident Name'] || ''} ${d['Resident Email'] || ''} ${d['Unit'] || ''}`.toLowerCase()
+        return hay.includes(q)
+      })
     }
-    return sorted
-  }, [drafts, statusFilter, leasePropertySort])
+    const updatedMs = (d) => new Date(d['Updated At'] || d.created_at || 0).getTime()
+    return sortRowsByPropertyGroupThenUpdatedDesc(rows, {
+      getPropertyKey: (d) => normalizePropertyFilterKey(d['Property'] || ''),
+      getUpdatedMs: updatedMs,
+      tieBreaker: (a, b) =>
+        String(a['Resident Name'] || '').localeCompare(String(b['Resident Name'] || ''), undefined, {
+          sensitivity: 'base',
+        }),
+    })
+  }, [drafts, statusFilter, leasePropertyFilter, leaseTableSearch])
+
+  useEffect(() => {
+    if (!leasePropertyFilter) return
+    if (!leasePropertyOptions.some((o) => o.value === leasePropertyFilter)) setLeasePropertyFilter(ALL_PROPERTIES_FILTER)
+  }, [leasePropertyOptions, leasePropertyFilter])
 
   const statusCounts = useMemo(() => {
     return STATUS_FILTER_ITEMS.reduce((acc, f) => {
@@ -530,34 +558,38 @@ export default function ManagerLeasingTab({ manager, allowedPropertyNames }) {
           <h1 className="text-2xl font-black text-slate-900">Leases</h1>
         </div>
         <div className="flex w-full min-w-0 flex-wrap items-center justify-end gap-2 sm:ml-auto sm:w-auto sm:flex-nowrap">
-          <div
-            role="group"
-            aria-label="Sort lease list by property"
-            className="flex h-[42px] shrink-0 items-stretch gap-1 rounded-full border border-slate-200 bg-slate-50 p-1"
-          >
-            <button
-              type="button"
-              onClick={() => setLeasePropertySort('property_asc')}
-              className={`min-w-[6.5rem] flex-1 rounded-full px-2 text-sm font-semibold transition sm:min-w-[7.5rem] sm:flex-none sm:px-3 ${
-                leasePropertySort === 'property_asc'
-                  ? 'bg-white text-slate-900 shadow-sm ring-2 ring-[#2563eb]/20'
-                  : 'text-slate-600 hover:text-slate-900'
-              }`}
-            >
-              Property A–Z
-            </button>
-            <button
-              type="button"
-              onClick={() => setLeasePropertySort('property_desc')}
-              className={`min-w-[6.5rem] flex-1 rounded-full px-2 text-sm font-semibold transition sm:min-w-[7.5rem] sm:flex-none sm:px-3 ${
-                leasePropertySort === 'property_desc'
-                  ? 'bg-white text-slate-900 shadow-sm ring-2 ring-[#2563eb]/20'
-                  : 'text-slate-600 hover:text-slate-900'
-              }`}
-            >
-              Property Z–A
-            </button>
+          <div className="flex h-[42px] min-w-0 max-w-full items-stretch overflow-hidden rounded-full border border-slate-200 bg-white sm:max-w-[min(100%,320px)]">
+            <span className="flex shrink-0 items-center border-r border-slate-100 bg-slate-50/80 px-3 text-[10px] font-bold uppercase tracking-[0.1em] text-slate-500">
+              Select property
+            </span>
+            <div className="relative min-w-0 flex-1">
+              <select
+                id="mgr-lease-property-filter"
+                value={leasePropertyFilter}
+                onChange={(e) => setLeasePropertyFilter(e.target.value)}
+                className="h-full w-full min-w-0 cursor-pointer appearance-none border-0 bg-transparent py-2 pl-3 pr-9 text-sm font-medium text-slate-800 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-[#2563eb]/25"
+                aria-label="Select property filter"
+              >
+                <option value={ALL_PROPERTIES_FILTER}>All properties (grouped)</option>
+                {leasePropertyOptions.map(({ value, label }) => (
+                  <option key={value} value={value}>
+                    {label}
+                  </option>
+                ))}
+              </select>
+              <span className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400" aria-hidden>
+                ▾
+              </span>
+            </div>
           </div>
+          <input
+            type="search"
+            value={leaseTableSearch}
+            onChange={(e) => setLeaseTableSearch(e.target.value)}
+            placeholder="Search…"
+            aria-label="Search leases by property, resident, or unit"
+            className="h-[42px] w-full min-w-0 flex-1 rounded-full border border-slate-200 bg-white px-4 text-sm text-slate-800 placeholder:text-slate-400 focus:border-[#2563eb] focus:outline-none focus:ring-2 focus:ring-[#2563eb]/20 sm:max-w-[220px]"
+          />
           {unreadCount > 0 && (
             <span className="flex items-center gap-1.5 rounded-full bg-orange-100 px-3 py-1 text-xs font-bold text-orange-700">
               <span className="h-1.5 w-1.5 rounded-full bg-orange-500" />
@@ -612,7 +644,11 @@ export default function ManagerLeasingTab({ manager, allowedPropertyNames }) {
             <div className="text-sm font-semibold text-slate-700">
               {drafts.length === 0
                 ? 'No leases yet'
-                : `No leases in ${STATUS_FILTER_ITEMS.find((f) => f.id === statusFilter)?.label || 'this view'}`}
+                : leasePropertyFilter && leasePropertyOptions.length > 0
+                  ? 'No leases for the selected property in this view.'
+                  : leaseTableSearch.trim()
+                    ? 'No leases match your search.'
+                    : `No leases in ${STATUS_FILTER_ITEMS.find((f) => f.id === statusFilter)?.label || 'this view'}`}
             </div>
           </div>
         ) : (

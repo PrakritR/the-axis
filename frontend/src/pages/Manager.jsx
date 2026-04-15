@@ -153,6 +153,12 @@ import {
   paymentsIndicateSecurityDepositPaid,
 } from '../../../shared/lease-access-requirements.js'
 import ManagerLeasingTab from './ManagerLeasingTab.jsx'
+import {
+  ALL_PROPERTIES_FILTER,
+  buildPropertyFilterOptionsFromRows,
+  sortRowsByPropertyGroupThenUpdatedDesc,
+  normalizePropertyFilterKey,
+} from '../lib/portalPropertyTableOrder.js'
 // ─── Session ──────────────────────────────────────────────────────────────────
 export const MANAGER_SESSION_KEY = 'axis_manager'
 const MANAGER_ONBOARDING_KEY = 'axis_manager_onboarding'
@@ -1026,7 +1032,7 @@ function sortPropertiesByManagerCalendarPriority(list, managerAvailRows, env) {
     const sa = propertyManagerCalendarPriorityScore(a, managerAvailRows, cfg)
     const sb = propertyManagerCalendarPriorityScore(b, managerAvailRows, cfg)
     if (sb !== sa) return sb - sa
-    return propertyRecordName(a).localeCompare(propertyRecordName(b), undefined, { sensitivity: 'base' })
+    return String(a.id || '').localeCompare(String(b.id || ''))
   })
 }
 
@@ -4194,7 +4200,6 @@ function WorkOrdersTabPanel({ allowedPropertyNames, allowedPropertyIds }) {
   const [quickFilter, setQuickFilter] = useState('open')
   const [propertyFilter, setPropertyFilter] = useState('')
   const [residentFilter, setResidentFilter] = useState('')
-  const [sortBy, setSortBy] = useState('resident')
   const [residentsById, setResidentsById] = useState(new Map())
   const [record, setRecord] = useState(null)
   const [loadError, setLoadError] = useState('')
@@ -4356,22 +4361,21 @@ function WorkOrdersTabPanel({ allowedPropertyNames, allowedPropertyIds }) {
   }, [list])
 
   const propertyChoices = useMemo(() => {
-    const map = new Map()
+    const fromRows = buildPropertyFilterOptionsFromRows(list, {
+      getPropertyDisplay: (row) => propertyLabelForWorkOrder(row),
+      getUpdatedMs: (row) => submittedAt(row),
+    })
+    const have = new Set(fromRows.map((o) => o.value))
+    const extra = []
     for (const name of allowedPropertyNames || []) {
       const display = String(name || '').trim()
-      if (!display) continue
-      const value = display.toLowerCase()
-      if (!map.has(value)) map.set(value, display)
+      const value = normalizePropertyFilterKey(display)
+      if (!value || have.has(value)) continue
+      have.add(value)
+      extra.push({ value, label: display })
     }
-    for (const row of list) {
-      const display = String(propertyLabelForWorkOrder(row)).trim()
-      if (!display) continue
-      const value = display.toLowerCase()
-      if (!map.has(value)) map.set(value, display)
-    }
-    return [...map.entries()]
-      .sort((a, b) => a[1].localeCompare(b[1], undefined, { sensitivity: 'base' }))
-      .map(([value, display]) => ({ value, display }))
+    extra.sort((a, b) => String(a.label).localeCompare(String(b.label), undefined, { sensitivity: 'base' }))
+    return [...fromRows, ...extra]
   }, [list, allowedPropertyNames, propertyLabelForWorkOrder])
 
   const residentChoices = useMemo(() => {
@@ -4411,20 +4415,19 @@ function WorkOrdersTabPanel({ allowedPropertyNames, allowedPropertyIds }) {
     rows = rows.filter((row) => managerWorkOrderBucket(row) === quickFilter)
     if (propertyFilter) rows = rows.filter((row) => String(propertyLabelForWorkOrder(row)).trim().toLowerCase() === propertyFilter)
     if (residentFilter) rows = rows.filter((row) => String(residentLabelForWorkOrder(row)).trim().toLowerCase() === residentFilter)
-    return [...rows].sort((a, b) => {
-      if (sortBy === 'property') {
-        const cmp = String(propertyLabelForWorkOrder(a)).localeCompare(String(propertyLabelForWorkOrder(b)), undefined, { sensitivity: 'base' })
-        if (cmp !== 0) return cmp
-        return submittedAt(b) - submittedAt(a)
-      }
-      if (sortBy === 'resident') {
-        const cmp = String(residentLabelForWorkOrder(a)).localeCompare(String(residentLabelForWorkOrder(b)), undefined, { sensitivity: 'base' })
-        if (cmp !== 0) return cmp
-        return submittedAt(b) - submittedAt(a)
-      }
-      return submittedAt(b) - submittedAt(a)
+    return sortRowsByPropertyGroupThenUpdatedDesc(rows, {
+      getPropertyKey: (row) => normalizePropertyFilterKey(propertyLabelForWorkOrder(row)),
+      getUpdatedMs: (row) => submittedAt(row),
+      tieBreaker: (a, b) => {
+        const r =
+          String(residentLabelForWorkOrder(a)).localeCompare(String(residentLabelForWorkOrder(b)), undefined, {
+            sensitivity: 'base',
+          })
+        if (r !== 0) return r
+        return String(a.id || '').localeCompare(String(b.id || ''))
+      },
     })
-  }, [list, quickFilter, propertyFilter, residentFilter, sortBy, propertyLabelForWorkOrder, residentLabelForWorkOrder])
+  }, [list, quickFilter, propertyFilter, residentFilter, propertyLabelForWorkOrder, residentLabelForWorkOrder])
 
   useEffect(() => {
     if (filteredList.length === 0) {
@@ -4571,16 +4574,24 @@ function WorkOrdersTabPanel({ allowedPropertyNames, allowedPropertyIds }) {
     <div className="mb-10">
       <div className="mb-5 flex flex-wrap items-center gap-3">
         <h2 className="mr-auto text-2xl font-black text-slate-900">Work orders</h2>
-        <select
-          value={propertyFilter}
-          onChange={(e) => setPropertyFilter(e.target.value)}
-          className="rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition focus:border-[#2563eb] focus:outline-none focus:ring-2 focus:ring-[#2563eb]/20"
-        >
-          <option value="">All properties</option>
-          {propertyChoices.map(({ value, display }) => (
-            <option key={value} value={value}>{display}</option>
-          ))}
-        </select>
+        <div className="flex h-[42px] min-w-0 max-w-[min(100%,280px)] items-stretch overflow-hidden rounded-2xl border border-slate-200 bg-white">
+          <span className="flex shrink-0 items-center border-r border-slate-100 bg-slate-50/80 px-2.5 text-[10px] font-bold uppercase tracking-[0.08em] text-slate-500">
+            Property
+          </span>
+          <select
+            value={propertyFilter}
+            onChange={(e) => setPropertyFilter(e.target.value)}
+            className="min-w-0 flex-1 cursor-pointer border-0 bg-transparent px-3 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-[#2563eb]/20"
+            aria-label="Select property"
+          >
+            <option value={ALL_PROPERTIES_FILTER}>All properties (grouped)</option>
+            {propertyChoices.map(({ value, label }) => (
+              <option key={value} value={value}>
+                {label}
+              </option>
+            ))}
+          </select>
+        </div>
         <select
           value={residentFilter}
           onChange={(e) => setResidentFilter(e.target.value)}
@@ -4590,14 +4601,6 @@ function WorkOrdersTabPanel({ allowedPropertyNames, allowedPropertyIds }) {
           {residentChoices.map(({ value, display }) => (
             <option key={value} value={value}>{display}</option>
           ))}
-        </select>
-        <select
-          value={sortBy}
-          onChange={(e) => setSortBy(e.target.value)}
-          className="rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition focus:border-[#2563eb] focus:outline-none focus:ring-2 focus:ring-[#2563eb]/20"
-        >
-          <option value="property">Sort by property</option>
-          <option value="resident">Sort by resident</option>
         </select>
         <button
           onClick={loadList}
@@ -4869,38 +4872,31 @@ function ManagerPaymentsPanel({ allowedPropertyNames }) {
   }, [load])
 
   const payPropertyChoices = useMemo(() => {
-    const map = new Map()
+    const fromRows = buildPropertyFilterOptionsFromRows(rentRows, {
+      getPropertyDisplay: (row) => paymentPropertyLabel(row),
+      getUpdatedMs: (row) => new Date(row['Due Date'] || row.created_at || 0).getTime(),
+    })
+    const have = new Set(fromRows.map((o) => o.value))
+    const extra = []
     for (const name of allowedPropertyNames || []) {
       const display = String(name || '').trim()
-      if (!display) continue
-      const value = display.toLowerCase()
-      if (!map.has(value)) map.set(value, display)
+      const value = normalizePropertyFilterKey(display)
+      if (!value || have.has(value)) continue
+      have.add(value)
+      extra.push({ value, label: display })
     }
-    for (const row of rentRows) {
-      const display = String(paymentPropertyLabel(row) || '').trim()
-      if (!display) continue
-      const value = display.toLowerCase()
-      if (!map.has(value)) map.set(value, display)
-    }
-    return [...map.entries()]
-      .sort((a, b) => a[1].localeCompare(b[1], undefined, { sensitivity: 'base' }))
-      .map(([value, display]) => ({ value, display }))
+    extra.sort((a, b) => String(a.label).localeCompare(String(b.label), undefined, { sensitivity: 'base' }))
+    return [...fromRows, ...extra]
   }, [rentRows, allowedPropertyNames])
 
   const payResidentChoices = useMemo(() => {
     const rows = payPropertyFilter
       ? rentRows.filter((r) => String(paymentPropertyLabel(r) || '').trim().toLowerCase() === payPropertyFilter)
       : rentRows
-    const map = new Map()
-    for (const row of rows) {
-      const display = String(paymentResidentLabel(row) || '').trim()
-      if (!display) continue
-      const value = display.toLowerCase()
-      if (!map.has(value)) map.set(value, display)
-    }
-    return [...map.entries()]
-      .sort((a, b) => a[1].localeCompare(b[1], undefined, { sensitivity: 'base' }))
-      .map(([value, display]) => ({ value, display }))
+    return buildPropertyFilterOptionsFromRows(rows, {
+      getPropertyDisplay: (row) => paymentResidentLabel(row),
+      getUpdatedMs: (row) => new Date(row['Due Date'] || row.created_at || 0).getTime(),
+    }).map(({ value, label }) => ({ value, display: label }))
   }, [rentRows, payPropertyFilter])
 
   useEffect(() => {
@@ -4958,10 +4954,10 @@ function ManagerPaymentsPanel({ allowedPropertyNames }) {
     } else if (filter !== 'all') {
       list = list.filter((row) => row.__computedStatus === filter)
     }
-    return [...list].sort((a, b) => {
-      const propertyCmp = String(paymentPropertyLabel(a)).localeCompare(String(paymentPropertyLabel(b)), undefined, { sensitivity: 'base' })
-      if (propertyCmp !== 0) return propertyCmp
-      return comparePaymentByRoom(a, b)
+    return sortRowsByPropertyGroupThenUpdatedDesc(list, {
+      getPropertyKey: (row) => normalizePropertyFilterKey(paymentPropertyLabel(row)),
+      getUpdatedMs: (row) => new Date(row['Due Date'] || row.created_at || 0).getTime(),
+      tieBreaker: (a, b) => comparePaymentByRoom(a, b),
     })
   }, [filter, paymentRows])
 
@@ -5213,12 +5209,12 @@ function ManagerPaymentsPanel({ allowedPropertyNames }) {
               onChange={(e) => setPayPropertyFilter(e.target.value)}
               disabled={loading}
               className="rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition focus:border-[#2563eb] focus:outline-none focus:ring-2 focus:ring-[#2563eb]/20 disabled:opacity-60"
-              aria-label="Filter by property"
+              aria-label="Select property"
             >
-              <option value="">All properties</option>
-              {payPropertyChoices.map(({ value, display }) => (
+              <option value={ALL_PROPERTIES_FILTER}>All properties (grouped)</option>
+              {payPropertyChoices.map(({ value, label }) => (
                 <option key={value} value={value}>
-                  {display}
+                  {label}
                 </option>
               ))}
             </select>
@@ -6198,9 +6194,7 @@ export function CalendarTabPanel({ manager, allowedPropertyNames, loadAllSchedul
           import.meta.env,
         )
       } else {
-        approvedAssigned = [...approvedAssigned].sort((a, b) =>
-          propertyRecordName(a).localeCompare(propertyRecordName(b), undefined, { sensitivity: 'base' }),
-        )
+        approvedAssigned = [...approvedAssigned].sort((a, b) => String(a.id || '').localeCompare(String(b.id || '')))
       }
 
       // Email-based fallback: if the normal assignment checks found nothing and we have a
@@ -6297,9 +6291,7 @@ export function CalendarTabPanel({ manager, allowedPropertyNames, loadAllSchedul
     if (loadAllSchedulingRows) {
       return properties
         .filter((p) => isPropertyRecordApproved(p))
-        .sort((a, b) =>
-          propertyRecordName(a).localeCompare(propertyRecordName(b), undefined, { sensitivity: 'base' }),
-        )
+        .sort((a, b) => String(a.id || '').localeCompare(String(b.id || '')))
     }
     const primary = properties.filter((p) => (
       propertyEligibleForManagerCalendarScheduling(p, manager) ||

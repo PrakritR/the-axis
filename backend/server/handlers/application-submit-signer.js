@@ -71,9 +71,17 @@ export default async function handler(req, res) {
     })
   }
 
+  const existingSig = String(row.fields?.[env.signatureField] || row.fields?.['Signer Signature'] || '').trim()
+  const incomingSig = String(fields['Signer Signature'] || fields[env.signatureField] || '').trim()
+  if (existingSig && incomingSig && existingSig === incomingSig) {
+    return res.status(200).json({ id: row.id, fields: row.fields, idempotent: true })
+  }
+
   const patchFields = { ...fields }
   delete patchFields[env.paidField]
   if (env.sessionField) delete patchFields[env.sessionField]
+  if (promoOk) patchFields[env.paidField] = true
+  if (!feeRequired) patchFields[env.paidField] = true
 
   const patchRes = await fetch(getUrl, {
     method: 'PATCH',

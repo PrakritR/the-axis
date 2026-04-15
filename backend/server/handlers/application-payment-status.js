@@ -38,7 +38,9 @@ export default async function handler(req, res) {
     }
     const data = await r.json()
     const paid = isPaidCheckbox(data.fields?.[env.paidField])
-    return res.status(200).json({ paid, applicationRecordId: data.id })
+    const sig = String(data.fields?.[env.signatureField] || '').trim()
+    const submitted = sig.length > 0
+    return res.status(200).json({ paid, submitted, applicationRecordId: data.id })
   } catch (err) {
     console.error('[application-payment-status]', err)
     return res.status(500).json({ error: err?.message || 'Lookup failed.' })

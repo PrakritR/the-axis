@@ -15,6 +15,8 @@ const APPLICATION_DRAFT_STORAGE_KEY = 'axis_application_draft'
 const PRE_SUBMIT_KEY = 'axis_apply_prepay'
 /** Airtable Applications record id (rec…); set before Stripe, cleared after successful submit. */
 const APPLICATION_RECORD_ID_KEY = 'axis_application_record_id'
+/** Stripe Checkout Session id after return_url (embedded); used to sync payment if webhook is slow. */
+const APPLICATION_FEE_CHECKOUT_SESSION_KEY = 'axis_application_fee_checkout_session_id'
 
 const HISTORY_OPTIONS = ['No', 'Yes']
 const LEASE_TERMS = [
@@ -114,7 +116,8 @@ function getUtilitiesFee(propertyName) {
   return 0
 }
 
-const DEFAULT_APPLICATION_FEE_USD = 1
+/** Default when no per-property fee; keep in sync with `STRIPE_APPLICATION_FEE_USD` on the server. */
+const DEFAULT_APPLICATION_FEE_USD = 0.01
 const MAX_APPLICATION_FEE_USD = 9999
 
 /** Parse `applicationFee` from marketing `properties.js`. Returns null → use default USD amount. */
@@ -147,15 +150,15 @@ function getApplicationFeeDollars(propertyName, serverOverrides = {}) {
   if (!propertyName) return DEFAULT_APPLICATION_FEE_USD
   const key = String(propertyName).trim()
   if (serverOverrides && typeof serverOverrides[key] === 'number' && Number.isFinite(serverOverrides[key])) {
-    return Math.min(MAX_APPLICATION_FEE_USD, Math.max(0, Math.round(serverOverrides[key])))
+    return Math.min(MAX_APPLICATION_FEE_USD, Math.max(0, Math.round(serverOverrides[key] * 100) / 100))
   }
   return getApplicationFeeFromMarketing(propertyName)
 }
 
 /**
  * USD charged for the signer application fee (Stripe + submit gate). If the property has no fee
- * (`getApplicationFeeDollars` is 0), returns 0. Otherwise defaults to **$1** unless
- * `VITE_STRIPE_APPLICATION_FEE_USD` is set — keep in sync with `STRIPE_APPLICATION_FEE_USD` on the server.
+ * (`getApplicationFeeDollars` is 0), returns 0. Otherwise uses `VITE_STRIPE_APPLICATION_FEE_USD` when set,
+ * else `DEFAULT_APPLICATION_FEE_USD` — keep in sync with `STRIPE_APPLICATION_FEE_USD` on the server.
  */
 function getSignerStripeApplicationFeeUsd(propertyName, serverOverrides) {
   const base = getApplicationFeeDollars(propertyName, serverOverrides)
@@ -165,7 +168,7 @@ function getSignerStripeApplicationFeeUsd(propertyName, serverOverrides) {
     const n = Number(raw)
     if (Number.isFinite(n) && n > 0) return Math.min(MAX_APPLICATION_FEE_USD, n)
   }
-  return 1
+  return Math.min(MAX_APPLICATION_FEE_USD, DEFAULT_APPLICATION_FEE_USD)
 }
 
 // Marketing fallback when API data is unavailable.
@@ -820,13 +823,32 @@ async function registerApplicationPaymentDraft({ email, fullName, propertyName, 
   return data
 }
 
-async function pollApplicationPaid(applicationRecordId, { maxAttempts = 55, intervalMs = 900 } = {}) {
+async function syncApplicationStripeSession(applicationRecordId, sessionId) {
+  if (!applicationRecordId?.startsWith('rec') || !sessionId?.startsWith('cs_')) return
+  try {
+    await fetch('/api/portal?action=application-stripe-sync', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ applicationRecordId, sessionId }),
+    })
+  } catch {
+    /* non-fatal — polling / webhook may still update Airtable */
+  }
+}
+
+/** Poll until Airtable shows paid or already submitted (webhook or sync). */
+async function pollApplicationPaid(applicationRecordId, { maxAttempts = 55, intervalMs = 900, sessionId } = {}) {
+  if (sessionId) await syncApplicationStripeSession(applicationRecordId, sessionId)
   for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
-    const r = await fetch(
-      `/api/portal?action=application-payment-status&applicationRecordId=${encodeURIComponent(applicationRecordId)}`,
-    )
-    const data = await readJsonResponse(r)
-    if (r.ok && data.paid) return true
+    try {
+      const r = await fetch(
+        `/api/portal?action=application-payment-status&applicationRecordId=${encodeURIComponent(applicationRecordId)}`,
+      )
+      const data = await readJsonResponse(r)
+      if (r.ok && (data.paid || data.submitted)) return true
+    } catch {
+      /* keep polling — transient API / deploy issues */
+    }
     await new Promise((resolve) => setTimeout(resolve, intervalMs))
   }
   return false
@@ -1402,6 +1424,8 @@ export default function Apply() {
   // Pre-submission payment (fee paid before the application record is saved)
   const [prePaymentLoading, setPrePaymentLoading] = useState(false)
   const [prePaymentError, setPrePaymentError] = useState('')
+  /** After Stripe embedded completes: server sync + poll before final PATCH. */
+  const [feeConfirmBusy, setFeeConfirmBusy] = useState(false)
   const [embeddedCheckout, setEmbeddedCheckout] = useState(null)
   /** After Stripe return_url to fee_prepaid: wait for property list, then auto-submit. */
   const [deferFeePrepaidAutoSubmit, setDeferFeePrepaidAutoSubmit] = useState(false)
@@ -1421,6 +1445,34 @@ export default function Apply() {
 
   /** Property Name → Application Fee (USD) from Airtable Properties, when returned by tour API */
   const [applicationFeeOverrides, setApplicationFeeOverrides] = useState({})
+
+  /** Reconcile fee state after refresh (webhook may have updated Airtable). */
+  useEffect(() => {
+    if (typeof window === 'undefined' || submitted || applicationType !== 'signer') return
+    const recId = String(window.sessionStorage.getItem(APPLICATION_RECORD_ID_KEY) || '').trim()
+    if (!recId.startsWith('rec')) return
+    let cancelled = false
+    ;(async () => {
+      try {
+        const r = await fetch(
+          `/api/portal?action=application-payment-status&applicationRecordId=${encodeURIComponent(recId)}`,
+        )
+        const data = await readJsonResponse(r)
+        if (cancelled || !r.ok) return
+        if (data.paid) setAppFeePaid(true)
+        if (data.submitted) {
+          setPrePaymentError(
+            'This application is already on file as submitted. Check your email for confirmation or contact Axis leasing with your Application record ID.',
+          )
+        }
+      } catch {
+        /* ignore */
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [submitted, applicationType])
 
   useEffect(() => {
     let cancelled = false
@@ -1462,7 +1514,7 @@ export default function Apply() {
           if (!name) continue
           const v = p.applicationFee
           if (typeof v === 'number' && Number.isFinite(v)) {
-            map[name] = Math.min(MAX_APPLICATION_FEE_USD, Math.max(0, Math.round(v)))
+            map[name] = Math.min(MAX_APPLICATION_FEE_USD, Math.max(0, Math.round(v * 100) / 100))
           }
         }
         setApplicationFeeOverrides(map)
@@ -1561,12 +1613,21 @@ export default function Apply() {
 
   // Restore form state after Stripe embedded return_url (?payment=fee_prepaid&session_id=…)
   useEffect(() => {
-    const status = new URLSearchParams(window.location.search).get('payment')
+    const params = new URLSearchParams(window.location.search)
+    const status = params.get('payment')
     if (status !== 'fee_prepaid') return
+    const stripeSessionId = String(params.get('session_id') || '').trim()
     const pending = typeof window !== 'undefined'
       ? JSON.parse(window.sessionStorage.getItem(PRE_SUBMIT_KEY) || 'null')
       : null
     if (!pending || submitted) return
+    if (stripeSessionId.startsWith('cs_')) {
+      try {
+        window.sessionStorage.setItem(APPLICATION_FEE_CHECKOUT_SESSION_KEY, stripeSessionId)
+      } catch {
+        /* ignore */
+      }
+    }
     window.sessionStorage.removeItem(PRE_SUBMIT_KEY)
     window.history.replaceState({}, '', '/apply')
     setSigner(pending.signer)
@@ -1580,6 +1641,10 @@ export default function Apply() {
     if (!deferFeePrepaidAutoSubmit || submitted || submitting) return
     if (!Array.isArray(propertyOptions) || propertyOptions.length === 0) return
     setDeferFeePrepaidAutoSubmit(false)
+    const stripeSessionId =
+      typeof window !== 'undefined'
+        ? String(window.sessionStorage.getItem(APPLICATION_FEE_CHECKOUT_SESSION_KEY) || '').trim()
+        : ''
     ;(async () => {
       const recId =
         typeof window !== 'undefined'
@@ -1591,15 +1656,27 @@ export default function Apply() {
         )
         return
       }
-      const paid = await pollApplicationPaid(recId)
-      if (!paid) {
-        setPrePaymentError(
-          'Stripe is still confirming your payment. Wait a minute, refresh the page, then tap Submit — you will not be charged twice.',
-        )
-        return
+      setFeeConfirmBusy(true)
+      try {
+        const paid = await pollApplicationPaid(recId, {
+          sessionId: stripeSessionId.startsWith('cs_') ? stripeSessionId : undefined,
+        })
+        if (!paid) {
+          setPrePaymentError(
+            'Stripe is still confirming your payment. Wait a minute, refresh the page, then tap Submit — you will not be charged twice.',
+          )
+          return
+        }
+        setAppFeePaid(true)
+        await handleSubmit({ preventDefault: () => {} }, { applicationRecordId: recId })
+      } finally {
+        try {
+          window.sessionStorage.removeItem(APPLICATION_FEE_CHECKOUT_SESSION_KEY)
+        } catch {
+          /* ignore */
+        }
+        setFeeConfirmBusy(false)
       }
-      setAppFeePaid(true)
-      await handleSubmit({ preventDefault: () => {} }, { applicationRecordId: recId })
     })()
   }, [deferFeePrepaidAutoSubmit, propertyOptions, submitted, submitting]) // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -1722,6 +1799,37 @@ export default function Apply() {
 
         if (needsPaidStripe && !applicationRecordId.startsWith('rec')) {
           throw new Error('Pay the application fee first using the Pay button at the bottom of this step.')
+        }
+
+        if (needsPaidStripe && applicationRecordId.startsWith('rec')) {
+          let stPaid = appFeePaid
+          let stSubmitted = false
+          try {
+            const stRes = await fetch(
+              `/api/portal?action=application-payment-status&applicationRecordId=${encodeURIComponent(applicationRecordId)}`,
+            )
+            const stData = await readJsonResponse(stRes)
+            if (stRes.ok) {
+              stPaid = Boolean(stData.paid)
+              stSubmitted = Boolean(stData.submitted)
+            }
+          } catch {
+            /* ignore */
+          }
+          if (stSubmitted) {
+            throw new Error(
+              'This application is already submitted. Refresh the page to see your confirmation, or contact Axis leasing.',
+            )
+          }
+          if (!stPaid) {
+            const polled = await pollApplicationPaid(applicationRecordId, { maxAttempts: 28, intervalMs: 800 })
+            if (!polled) {
+              throw new Error(
+                'Payment is still processing. Wait a few seconds and tap Submit again — you will not be charged twice. If this persists, contact leasing.',
+              )
+            }
+          }
+          setAppFeePaid(true)
         }
 
         if (!needsPaidStripe && !applicationRecordId.startsWith('rec')) {
@@ -1980,6 +2088,12 @@ export default function Apply() {
       } catch {
         /* ignore */
       }
+      if (reg.alreadyPaid) {
+        setAppFeePaid(true)
+        setPrePaymentLoading(false)
+        setPrePaymentError('')
+        return
+      }
     } catch (e) {
       setPrePaymentLoading(false)
       setPrePaymentError(e.message || 'Could not start payment.')
@@ -2138,12 +2252,20 @@ export default function Apply() {
     setEmbeddedCheckout(null)
   }
 
-  async function handleEmbeddedCheckoutComplete() {
+  async function handleEmbeddedCheckoutComplete(detail) {
     const flow = embeddedCheckout?.flow
     setEmbeddedCheckout(null)
 
     if (flow === 'application_fee') {
       setPrePaymentLoading(false)
+      const sid = String(detail?.sessionId || '').trim()
+      if (sid.startsWith('cs_')) {
+        try {
+          window.sessionStorage.setItem(APPLICATION_FEE_CHECKOUT_SESSION_KEY, sid)
+        } catch {
+          /* ignore */
+        }
+      }
       const recId =
         typeof window !== 'undefined'
           ? String(window.sessionStorage.getItem(APPLICATION_RECORD_ID_KEY) || '').trim()
@@ -2154,19 +2276,31 @@ export default function Apply() {
         )
         return
       }
-      const paid = await pollApplicationPaid(recId)
-      if (!paid) {
-        setPrePaymentError(
-          'Stripe is still confirming your payment (usually a few seconds). Close this message, wait briefly, then tap Submit on the form — you will not be charged twice.',
-        )
-        return
-      }
-      setAppFeePaid(true)
-      const ok = await handleSubmit({ preventDefault: () => {} }, { applicationRecordId: recId })
-      if (!ok) {
-        setPrePaymentError(
-          'Payment went through, but we could not save your application. Read the red message on the form, fix any issues, then use Submit again (Stripe will not charge twice for the same checkout). Contact leasing if you need help.',
-        )
+      setFeeConfirmBusy(true)
+      try {
+        const paid = await pollApplicationPaid(recId, {
+          sessionId: sid.startsWith('cs_') ? sid : undefined,
+        })
+        if (!paid) {
+          setPrePaymentError(
+            'Stripe is still confirming your payment (usually a few seconds). Close this message, wait briefly, then tap Submit on the form — you will not be charged twice.',
+          )
+          return
+        }
+        setAppFeePaid(true)
+        const ok = await handleSubmit({ preventDefault: () => {} }, { applicationRecordId: recId })
+        if (!ok) {
+          setPrePaymentError(
+            'Payment went through, but we could not save your application. Read the red message on the form, fix any issues, then use Submit again (Stripe will not charge twice for the same checkout). Contact leasing if you need help.',
+          )
+        }
+      } finally {
+        try {
+          window.sessionStorage.removeItem(APPLICATION_FEE_CHECKOUT_SESSION_KEY)
+        } catch {
+          /* ignore */
+        }
+        setFeeConfirmBusy(false)
       }
       return
     }
@@ -3203,20 +3337,25 @@ export default function Apply() {
                 onClick={() => {
                   if (promoInput.trim()) handlePromoApplyAndSubmit()
                   else if (signerApplicationFeeUsd <= 0) handleSubmit({ preventDefault: () => {} })
+                  else if (appFeePaid) handleSubmit({ preventDefault: () => {} })
                   else handlePrePaymentCheckout()
                 }}
-                disabled={prePaymentLoading || submitting}
+                disabled={prePaymentLoading || submitting || feeConfirmBusy}
                 className="flex-1 rounded-full bg-axis py-3 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-60 transition"
               >
                 {submitting
-                  ? 'Submitting…'
-                  : prePaymentLoading
-                    ? 'Opening payment…'
-                    : promoInput.trim()
-                      ? 'Submit Application'
-                      : signerApplicationFeeUsd <= 0
+                  ? 'Finalizing submission…'
+                  : feeConfirmBusy
+                    ? 'Confirming payment…'
+                    : prePaymentLoading
+                      ? 'Opening payment…'
+                      : promoInput.trim()
                         ? 'Submit Application'
-                        : `Pay $${signerApplicationFeeUsd.toLocaleString()} & Submit`}
+                        : signerApplicationFeeUsd <= 0
+                          ? 'Submit Application'
+                          : appFeePaid
+                            ? 'Submit Application'
+                            : `Pay $${signerApplicationFeeUsd.toLocaleString()} & Submit`}
               </button>
             ) : (
               <button type="submit" disabled={submitting} className="flex-1 rounded-full bg-axis py-3 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-60 transition">

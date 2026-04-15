@@ -5,6 +5,12 @@ import Modal from '../components/Modal'
 import PortalShell, { StatCard, StatusPill, DataTable } from '../components/PortalShell'
 import { PortalEmptyVisual } from '../components/portalNavIcons.jsx'
 import {
+  ALL_PROPERTIES_FILTER,
+  buildPropertyFilterOptionsFromRows,
+  normalizePropertyFilterKey,
+  sortRowsByPropertyGroupThenUpdatedDesc,
+} from '../lib/portalPropertyTableOrder.js'
+import {
   adminApproveProperty,
   adminPatchApplication,
   adminRejectApplication,
@@ -470,46 +476,6 @@ function AdminPropertyInternalNotesEditor({ recordId, savedValue, formDisabled, 
   )
 }
 
-function sortAccountsByMode(list, mode) {
-  const copy = [...list]
-  const house = (a) => String(a.houseSortKey || '')
-  const acct = (a) => String(a.businessName || a.name || a.email || '').toLowerCase()
-  if (mode === 'house_asc') {
-    copy.sort(
-      (a, b) =>
-        house(a).localeCompare(house(b), undefined, { sensitivity: 'base' }) || acct(a).localeCompare(acct(b)),
-    )
-  } else if (mode === 'house_desc') {
-    copy.sort(
-      (a, b) =>
-        house(b).localeCompare(house(a), undefined, { sensitivity: 'base' }) || acct(a).localeCompare(acct(b)),
-    )
-  } else if (mode === 'account_asc') {
-    copy.sort((a, b) => acct(a).localeCompare(acct(b)))
-  }
-  return copy
-}
-
-function sortApplicationsByMode(list, mode) {
-  const copy = [...list]
-  const prop = (r) => String(r.propertyName || '').toLowerCase()
-  const app = (r) => String(r.applicantName || '').toLowerCase()
-  if (mode === 'house_asc') {
-    copy.sort(
-      (a, b) =>
-        prop(a).localeCompare(prop(b), undefined, { sensitivity: 'base' }) || app(a).localeCompare(app(b)),
-    )
-  } else if (mode === 'house_desc') {
-    copy.sort(
-      (a, b) =>
-        prop(b).localeCompare(prop(a), undefined, { sensitivity: 'base' }) || app(a).localeCompare(app(b)),
-    )
-  } else if (mode === 'applicant_asc') {
-    copy.sort((a, b) => app(a).localeCompare(app(b)) || prop(a).localeCompare(prop(b)))
-  }
-  return copy
-}
-
 const loginInputCls =
   'mt-1 w-full rounded-xl border border-slate-600 bg-slate-900/40 px-3 py-2.5 text-sm text-white placeholder:text-slate-500 outline-none focus:border-sky-400 focus:ring-1 focus:ring-sky-500/40'
 
@@ -553,9 +519,11 @@ function PortalHandoffCard({ accounts, residents, user }) {
   }
 
   const activeManagers = accounts.filter((a) => a.enabled)
-  const sortedManagers = [...activeManagers].sort((a, b) =>
-    String(a.name || '').localeCompare(String(b.name || ''), undefined, { sensitivity: 'base' }),
-  )
+  const sortedManagers = [...activeManagers].sort((a, b) => {
+    const dt = (b.updatedMs || 0) - (a.updatedMs || 0)
+    if (dt !== 0) return dt
+    return String(a.id || '').localeCompare(String(b.id || ''))
+  })
   const sortedResidents = [...residents].sort((a, b) =>
     String(a.Name || '').localeCompare(String(b.Name || ''), undefined, { sensitivity: 'base' }),
   )
@@ -710,8 +678,6 @@ export default function AdminPortal() {
   useEffect(() => { window.location.hash = tab }, [tab])
   /** Within Properties: pending | request_change | approved | unlisted | rejected */
   const [propertiesSection, setPropertiesSection] = useState('pending')
-  /** Within Applications: all | pending | approved | rejected */
-  const [applicationsFilter, setApplicationsFilter] = useState('all')
   const [managersFilter, setManagersFilter] = useState('current')
   const [selectedManagerAccountId, setSelectedManagerAccountId] = useState(null)
   const [managerActionBusy, setManagerActionBusy] = useState(false)
@@ -724,15 +690,12 @@ export default function AdminPortal() {
   const [dataLoading, setDataLoading] = useState(false)
   const [approvalBusy, setApprovalBusy] = useState(false)
   const [applicationReviewBusy, setApplicationReviewBusy] = useState(false)
-  const [managerTableSort, setManagerTableSort] = useState('house_asc')
-  const [applicationsTableSort, setApplicationsTableSort] = useState('house_asc')
   const [unopenedThreadCount, setUnopenedThreadCount] = useState(0)
   const [calendarEventsCount, setCalendarEventsCount] = useState(0)
   const [leaseChangesNeededCount, setLeaseChangesNeededCount] = useState(0)
   const [propertiesSearch, setPropertiesSearch] = useState('')
   const [managersSearch, setManagersSearch] = useState('')
-  const [applicationsManagerFilter, setApplicationsManagerFilter] = useState('')
-  const [applicationsHouseFilter, setApplicationsHouseFilter] = useState('')
+  const [managersPropertyKeyFilter, setManagersPropertyKeyFilter] = useState(ALL_PROPERTIES_FILTER)
   const [requestEditsModalOpen, setRequestEditsModalOpen] = useState(false)
   const [requestEditsNotes, setRequestEditsNotes] = useState('')
   const [showPortalHandoff, setShowPortalHandoff] = useState(() => {
@@ -879,13 +842,14 @@ export default function AdminPortal() {
   )
   const unlistedProperties = useMemo(() => properties.filter((p) => p.status === 'unlisted'), [properties])
   const rejectedProperties = useMemo(() => properties.filter((p) => p.status === 'rejected'), [properties])
-  const pendingApps = useMemo(
-    () => applications.filter((a) => a.approvalPending).length,
-    [applications],
-  )
   const sortedAccounts = useMemo(
-    () => sortAccountsByMode(accounts, managerTableSort),
-    [accounts, managerTableSort],
+    () =>
+      sortRowsByPropertyGroupThenUpdatedDesc(accounts, {
+        getPropertyKey: (a) => normalizePropertyFilterKey(a.houseSortKey || ''),
+        getUpdatedMs: (a) => Number(a.updatedMs) || 0,
+        tieBreaker: (a, b) => String(a.id || '').localeCompare(String(b.id || '')),
+      }),
+    [accounts],
   )
   const filteredAccounts = useMemo(
     () => managersFilter === 'current'
@@ -893,16 +857,14 @@ export default function AdminPortal() {
       : sortedAccounts.filter((a) => a.enabled === false),
     [sortedAccounts, managersFilter],
   )
-  const sortedApplications = useMemo(
-    () => sortApplicationsByMode(applications, applicationsTableSort),
-    [applications, applicationsTableSort],
-  )
-  const filteredApplications = useMemo(() => {
-    if (applicationsFilter === 'pending') return sortedApplications.filter((a) => a.approvalPending)
-    if (applicationsFilter === 'approved') return sortedApplications.filter((a) => a.approvalState === 'approved')
-    if (applicationsFilter === 'rejected') return sortedApplications.filter((a) => a.approvalState === 'rejected')
-    return sortedApplications
-  }, [sortedApplications, applicationsFilter])
+  const accountsAfterPropertyFilter = useMemo(() => {
+    if (!managersPropertyKeyFilter) return filteredAccounts
+    return filteredAccounts.filter((a) => {
+      const label = String(a.managedHousesLabel || '')
+      if (!label || label === '—') return false
+      return label.split(/[,\n]/).some((part) => normalizePropertyFilterKey(part) === managersPropertyKeyFilter)
+    })
+  }, [filteredAccounts, managersPropertyKeyFilter])
 
   const searchedPendingReview = useMemo(() => {
     const q = propertiesSearch.trim().toLowerCase()
@@ -949,33 +911,35 @@ export default function AdminPortal() {
   }, [rejectedProperties, propertiesSearch])
   const searchedAccounts = useMemo(() => {
     const q = managersSearch.trim().toLowerCase()
-    if (!q) return filteredAccounts
-    return filteredAccounts.filter((a) => `${a.businessName || ''} ${a.name || ''} ${a.email || ''} ${a.managedHousesLabel || ''}`.toLowerCase().includes(q))
-  }, [filteredAccounts, managersSearch])
-  const searchedApplications = useMemo(() => {
-    let result = filteredApplications
-    if (applicationsManagerFilter) result = result.filter((a) => a.ownerId === applicationsManagerFilter)
-    if (applicationsHouseFilter) result = result.filter((a) => a.propertyName === applicationsHouseFilter)
-    return result
-  }, [filteredApplications, applicationsManagerFilter, applicationsHouseFilter])
+    if (!q) return accountsAfterPropertyFilter
+    return accountsAfterPropertyFilter.filter((a) => `${a.businessName || ''} ${a.name || ''} ${a.email || ''} ${a.managedHousesLabel || ''}`.toLowerCase().includes(q))
+  }, [accountsAfterPropertyFilter, managersSearch])
 
-  const applicationHouseOptions = useMemo(() => {
-    const set = new Set()
-    for (const p of properties) {
-      const name = String(p?.name || '').trim()
-      if (name) set.add(name)
+  const managersPropertySelectOptions = useMemo(
+    () =>
+      buildPropertyFilterOptionsFromRows(properties, {
+        getPropertyDisplay: (p) => p.name || p.address || '',
+        getUpdatedMs: (p) => new Date(p.submittedAt || 0).getTime(),
+      }),
+    [properties],
+  )
+
+  useEffect(() => {
+    if (!managersPropertyKeyFilter) return
+    if (!managersPropertySelectOptions.some((o) => o.value === managersPropertyKeyFilter)) {
+      setManagersPropertyKeyFilter(ALL_PROPERTIES_FILTER)
     }
-    for (const r of residents) {
-      if (!residentApprovedForProperty(r)) continue
-      const house = String(r?.House || r?.['Property Name'] || '').trim()
-      if (house) set.add(house)
+  }, [managersPropertySelectOptions, managersPropertyKeyFilter])
+
+  const managersTableEmpty = useMemo(() => {
+    if (accountsAfterPropertyFilter.length === 0) {
+      return managersPropertyKeyFilter
+        ? 'No managers linked to this property.'
+        : `No ${managersFilter === 'current' ? 'active' : 'past'} managers`
     }
-    for (const a of applications) {
-      const house = String(a?.propertyName || '').trim()
-      if (house) set.add(house)
-    }
-    return [...set].sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }))
-  }, [properties, residents, applications])
+    if (searchedAccounts.length === 0) return 'No matches for your search.'
+    return ''
+  }, [accountsAfterPropertyFilter.length, managersPropertyKeyFilter, managersFilter, searchedAccounts.length])
 
   const ownerLabel = (ownerId) => accounts.find((a) => a.id === ownerId)?.businessName || accounts.find((a) => a.id === ownerId)?.name || ownerId
 
@@ -1622,7 +1586,11 @@ export default function AdminPortal() {
                     <button
                       key={key}
                       type="button"
-                      onClick={() => { setManagersFilter(key); setSelectedManagerAccountId(null) }}
+                      onClick={() => {
+                        setManagersFilter(key)
+                        setSelectedManagerAccountId(null)
+                        setManagersPropertyKeyFilter(ALL_PROPERTIES_FILTER)
+                      }}
                       className={`rounded-2xl border px-4 py-3 text-left transition ${
                         managersFilter === key
                           ? 'border-[#2563eb]/30 bg-white text-slate-900 shadow-[0_10px_24px_rgba(37,99,235,0.14)]'
@@ -1635,8 +1603,41 @@ export default function AdminPortal() {
                   ))}
                 </div>
               </div>
+              <div className="flex w-full min-w-0 flex-wrap items-center justify-end gap-2">
+                <div className="flex h-[42px] min-w-0 max-w-full items-stretch overflow-hidden rounded-full border border-slate-200 bg-white sm:max-w-[min(100%,320px)]">
+                  <span className="flex shrink-0 items-center border-r border-slate-100 bg-slate-50/80 px-3 text-[10px] font-bold uppercase tracking-[0.1em] text-slate-500">
+                    Select property
+                  </span>
+                  <div className="relative min-w-0 flex-1">
+                    <select
+                      value={managersPropertyKeyFilter}
+                      onChange={(e) => setManagersPropertyKeyFilter(e.target.value)}
+                      className="h-full w-full min-w-0 cursor-pointer appearance-none border-0 bg-transparent py-2 pl-3 pr-9 text-sm font-medium text-slate-800 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-[#2563eb]/25"
+                      aria-label="Select property filter"
+                    >
+                      <option value={ALL_PROPERTIES_FILTER}>All properties (grouped)</option>
+                      {managersPropertySelectOptions.map(({ value, label }) => (
+                        <option key={value} value={value}>
+                          {label}
+                        </option>
+                      ))}
+                    </select>
+                    <span className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400" aria-hidden>
+                      ▾
+                    </span>
+                  </div>
+                </div>
+                <input
+                  type="search"
+                  value={managersSearch}
+                  onChange={(e) => setManagersSearch(e.target.value)}
+                  placeholder="Search…"
+                  aria-label="Search managers by name, email, or property"
+                  className="h-[42px] w-full min-w-0 flex-1 rounded-full border border-slate-200 bg-white px-4 text-sm text-slate-800 placeholder:text-slate-400 focus:border-[#2563eb] focus:outline-none focus:ring-2 focus:ring-[#2563eb]/20 sm:max-w-[220px]"
+                />
+              </div>
               <DataTable
-                empty={`No ${managersFilter === 'current' ? 'active' : 'past'} managers`}
+                empty={managersTableEmpty || `No ${managersFilter === 'current' ? 'active' : 'past'} managers`}
                 columns={[
                   { key: 'n', label: 'Account', render: (d) => <><div className="font-semibold">{d.businessName || d.name}</div><div className="text-xs text-slate-500">{d.email}</div></> },
                   { key: 'h', label: 'House / property', render: (d) => <span className="text-slate-700">{d.managedHousesLabel || '—'}</span> },

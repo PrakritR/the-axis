@@ -57,11 +57,19 @@ export default async function handler(req, res) {
     return res.status(400).json({ error: 'Unsupported currency.' })
   }
 
+  if (String(session.payment_status || '') !== 'paid') {
+    console.warn('[stripe-webhook] checkout.session.completed but not paid', session.id, session.payment_status)
+    return res.status(200).json({ received: true, skipped: 'session not paid', payment_status: session.payment_status })
+  }
+
   const expectedCents = resolveExpectedApplicationFeeCents()
   const total = session.amount_total
-  if (typeof total === 'number' && expectedCents > 0 && total < expectedCents) {
-    console.error('[stripe-webhook] amount too low', { total, expectedCents, session: session.id })
-    return res.status(400).json({ error: 'Payment amount below expected application fee.' })
+  if (typeof total === 'number' && expectedCents > 0 && total > 0 && total < expectedCents) {
+    console.warn('[stripe-webhook] amount below list price (coupon or custom line item?)', {
+      total,
+      expectedCents,
+      session: session.id,
+    })
   }
 
   const env = getApplicationsAirtableEnv()
