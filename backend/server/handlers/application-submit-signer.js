@@ -9,7 +9,13 @@
  *
  * Client sends the same `fields` shape as the legacy direct-Airtable POST.
  */
-import { airtableAuthHeaders, applicationsTableUrl, getApplicationsAirtableEnv } from '../lib/applications-airtable-env.js'
+import {
+  airtableAuthHeaders,
+  airtableErrorMessageFromBody,
+  applicationsTableUrl,
+  getApplicationsAirtableEnv,
+  isAirtableModelOrPermissionsError,
+} from '../lib/applications-airtable-env.js'
 import { resolveExpectedApplicationFeeUsd } from '../lib/stripe-application-fee-usd.js'
 import { createSubmittedApplicationFeePayment } from '../lib/submitted-application-fee-payment.js'
 import { createSubmittedApplicationMoveInPayments } from '../lib/submitted-application-movein-payments.js'
@@ -47,11 +53,32 @@ export default async function handler(req, res) {
 
   const getUrl = `${applicationsTableUrl(env)}/${encodeURIComponent(applicationRecordId)}`
   const getRes = await fetch(getUrl, { headers: airtableAuthHeaders(env.token) })
+  const getBody = await getRes.text()
   if (!getRes.ok) {
-    const t = await getRes.text()
-    return res.status(404).json({ error: `Application not found: ${t.slice(0, 200)}` })
+    if (isAirtableModelOrPermissionsError(getBody)) {
+      console.error('[application-submit-signer] Airtable Applications not accessible', {
+        baseId: env.baseId,
+        table: env.table,
+        httpStatus: getRes.status,
+      })
+      return res.status(503).json({
+        error:
+          'We could not connect to the application database (Airtable permissions or wrong base/table on the server). Try again later, use the email option on this page, or contact leasing. If you deploy this app: grant the server token access to the Applications table and set AIRTABLE_APPLICATIONS_BASE_ID / AIRTABLE_APPLICATIONS_TABLE if the table is not in the main base.',
+      })
+    }
+    const detail = airtableErrorMessageFromBody(getBody)
+    if (getRes.status === 404) {
+      return res.status(404).json({
+        error: detail
+          ? `Application not found (${detail}). This can happen if the draft was created in another environment — start a new application or contact leasing.`
+          : 'Application not found. This can happen if the draft was created in another environment — start a new application or contact leasing.',
+      })
+    }
+    return res.status(502).json({
+      error: detail || 'Could not load your application draft. Please try again.',
+    })
   }
-  const row = await getRes.json()
+  const row = JSON.parse(getBody)
 
   const recordEmail = String(row.fields?.['Signer Email'] || '').trim().toLowerCase()
   const submittedEmail = String(fields['Signer Email'] || '').trim().toLowerCase()
@@ -87,8 +114,21 @@ export default async function handler(req, res) {
   })
   const text = await patchRes.text()
   if (!patchRes.ok) {
+    if (isAirtableModelOrPermissionsError(text)) {
+      console.error('[application-submit-signer] PATCH blocked — Airtable Applications not accessible', {
+        baseId: env.baseId,
+        table: env.table,
+        httpStatus: patchRes.status,
+      })
+      return res.status(503).json({
+        error:
+          'We could not save to the application database (Airtable permissions or wrong base/table on the server). Try again later, use the email option on this page, or contact leasing.',
+      })
+    }
     console.error('[application-submit-signer]', patchRes.status, text.slice(0, 600))
-    return res.status(502).json({ error: 'Could not save application to Airtable.' })
+    return res.status(502).json({
+      error: airtableErrorMessageFromBody(text) || 'Could not save application to Airtable.',
+    })
   }
 
   const saved = JSON.parse(text)

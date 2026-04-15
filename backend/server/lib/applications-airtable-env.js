@@ -47,3 +47,14 @@ export function airtableErrorMessageFromBody(text) {
     return ''
   }
 }
+
+/** Wrong base/table name, or PAT lacks `data.records:read` on that base. */
+export function isAirtableModelOrPermissionsError(responseBodyText) {
+  const raw = String(responseBodyText || '')
+  if (raw.includes('INVALID_PERMISSIONS_OR_MODEL_NOT_FOUND')) return true
+  try {
+    return JSON.parse(raw)?.error?.type === 'INVALID_PERMISSIONS_OR_MODEL_NOT_FOUND'
+  } catch {
+    return false
+  }
+}
