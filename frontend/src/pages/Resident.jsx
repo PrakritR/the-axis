@@ -35,6 +35,9 @@ import {
   getPaymentsForResident,
   createPaymentRecord,
   updatePaymentRecord,
+  deletePaymentRecord,
+  listResidentPortalRoomHoldPaymentRecords,
+  buildResidentPortalRoomHoldNotes,
   getResidentByEmail,
   getResidentById,
   getWorkOrdersForResident,
@@ -1344,8 +1347,8 @@ function WorkOrdersPanel({
               {form.category === 'Cleaning' ? (
                 <p className="mt-2 text-xs leading-relaxed text-slate-600">
                   One-time room cleaning: submit this request for your manager. When they set a visit date, a{' '}
-                  <span className="font-semibold">{formatMoney(ROOM_CLEANING_FEE_USD)}</span> fee will appear under
-                  Payments for you to pay.
+                  <span className="font-semibold">{formatMoney(ROOM_CLEANING_FEE_USD)}</span> unpaid charge appears
+                  under Payments (pay with card there). It is due within seven days after the scheduled visit date.
                 </p>
               ) : null}
             </div>
@@ -2822,11 +2825,20 @@ function LeasingPanel({ resident, payments, onOpenPayments, onNavigateTab, onLea
       setHoldPathError('')
       try {
         await updateResidentRoomHoldPathFlag(resident.id, wantHold)
+        const portalHolds = await listResidentPortalRoomHoldPaymentRecords(resident.id)
+        const isDeletableHoldRow = (p) => {
+          const st = String(p?.Status || '').trim().toLowerCase()
+          if (st === 'paid') return false
+          const bal = Number(p?.Balance)
+          const paid = Number(p?.['Amount Paid'])
+          if (Number.isFinite(bal) && bal <= 0) return false
+          if (Number.isFinite(paid) && paid > 0) return false
+          return true
+        }
         if (wantHold) {
-          const list = Array.isArray(payments) ? payments : []
-          const hasHold = list.some((p) => classifyResidentPaymentLine(p) === 'hold_fee')
           const amt = residentRoomHoldFeeUsd(resident)
-          if (!hasHold && amt > 0) {
+          const unpaid = portalHolds.filter(isDeletableHoldRow)
+          if (amt > 0 && unpaid.length === 0) {
             const rawDue = resident['Lease Start Date']
             const dueStr =
               rawDue != null && String(rawDue).trim()
@@ -2839,12 +2851,21 @@ function LeasingPanel({ resident, payments, onOpenPayments, onNavigateTab, onLea
               Status: 'Unpaid',
               Type: 'Room Hold Fee',
               Month: 'Room hold fee',
-              Notes: 'Room hold without signing lease (resident portal)',
+              Notes: buildResidentPortalRoomHoldNotes(resident.id),
               'Due Date': dueStr,
               'Property Name': String(resident.House || '').trim() || undefined,
               'Room Number': String(resident['Unit Number'] || '').trim() || undefined,
               'Resident Name': String(resident.Name || '').trim() || undefined,
             })
+          }
+        } else {
+          for (const p of portalHolds) {
+            if (!isDeletableHoldRow(p)) continue
+            try {
+              await deletePaymentRecord(p.id)
+            } catch (delErr) {
+              console.warn('[Resident] could not delete room hold payment', p.id, delErr)
+            }
           }
         }
         await onLeaseDataRefresh?.()
@@ -2854,7 +2875,7 @@ function LeasingPanel({ resident, payments, onOpenPayments, onNavigateTab, onLea
         setHoldPathBusy(false)
       }
     },
-    [resident, payments, leaseIsSigned, onLeaseDataRefresh],
+    [resident, leaseIsSigned, onLeaseDataRefresh],
   )
 
   /** Extension only after move-in charges are satisfied and the lease is signed. */
@@ -2867,10 +2888,10 @@ function LeasingPanel({ resident, payments, onOpenPayments, onNavigateTab, onLea
     if (!activeLeaseDraft) return ''
     if (!leaseBodyAllowed) {
       return leaseStatus === 'Draft Generated'
-        ? 'Your lease is being drafted. Full terms will appear here once your manager publishes your lease'
-        : 'Your lease is still being prepared. The full document will appear here once it is sent to you'
+        ? 'Lease is being drafted — check back after your manager publishes it.'
+        : 'Lease not ready yet — your manager will send it soon.'
     }
-    return leaseContent || `Axis Resident Lease\n\nProperty: ${resident.House || '—'}\nUnit: ${resident['Unit Number'] || '—'}\nTerm: ${leaseTermLabel}\nMove-in: ${moveInLabel}\nMove-out: ${moveOutLabel}\nSecurity Deposit: ${depositPreviewLabel}\n\nPay security deposit and first month rent before signing.`
+    return leaseContent || `Axis Resident Lease\n\nProperty: ${resident.House || '—'}\nUnit: ${resident['Unit Number'] || '—'}\nTerm: ${leaseTermLabel}\nMove-in: ${moveInLabel}\nMove-out: ${moveOutLabel}\nSecurity Deposit: ${depositPreviewLabel}\n\nPay move-in charges in Payments before signing.`
   }, [activeLeaseDraft, leaseBodyAllowed, leaseStatus, leaseContent, resident.House, resident['Unit Number'], leaseTermLabel, moveInLabel, moveOutLabel, depositPreviewLabel])
 
   useEffect(() => {
@@ -2903,11 +2924,11 @@ function LeasingPanel({ resident, payments, onOpenPayments, onNavigateTab, onLea
   function handleRequestExtension() {
     if (extendMode === 'date') {
       if (!extendToDate) return
-      setExtendNotice(`Extension request prepared to ${extendToDate}. Please send this in Inbox to your manager.`)
+      setExtendNotice(`Draft: extend to ${extendToDate}. Send in Inbox.`)
     } else {
       const n = parseInt(extendByMonths, 10)
       if (!n || n < 1) return
-      setExtendNotice(`Extension request prepared for +${n} month${n === 1 ? '' : 's'}. Please send this in Inbox to your manager.`)
+      setExtendNotice(`Draft: +${n} month${n === 1 ? '' : 's'}. Send in Inbox.`)
     }
   }
 
@@ -2936,14 +2957,12 @@ function LeasingPanel({ resident, payments, onOpenPayments, onNavigateTab, onLea
       <div className="mb-5 rounded-2xl border border-slate-200 bg-white px-4 py-4 text-sm text-slate-800 shadow-sm">
         <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-slate-500">Move-in path</p>
         <p className="mt-2 leading-relaxed text-slate-700">
-          The room hold is typically <span className="font-semibold">$100</span> (unless your property sets a different
-          amount — yours is <span className="font-semibold">{formatMoney(residentRoomHoldFeeUsd(resident))}</span>). If
-          you choose <span className="font-semibold">Hold room only</span> (without signing yet), that payment appears
-          under Payments. The amount you pay is applied toward your security deposit, so the total deposit you owe goes
-          down by the same amount.
+          Room hold: <span className="font-semibold">{formatMoney(residentRoomHoldFeeUsd(resident))}</span> in Payments if
+          you only hold the bed. It <span className="font-semibold">credits toward your deposit</span>. Otherwise choose{' '}
+          <span className="font-semibold">Sign lease</span> for normal move-in.
         </p>
         {leaseIsSigned ? (
-          <p className="mt-3 text-sm text-slate-600">Your lease is signed — use Payments for any remaining move-in charges.</p>
+          <p className="mt-3 text-sm text-slate-600">Lease signed — finish any balance in Payments.</p>
         ) : (
           <>
             <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:gap-3">
@@ -2959,7 +2978,7 @@ function LeasingPanel({ resident, payments, onOpenPayments, onNavigateTab, onLea
                   holdPathBusy && 'cursor-wait opacity-60',
                 )}
               >
-                Signing the lease (normal move-in)
+                Sign lease (normal move-in)
               </button>
               <button
                 type="button"
@@ -2982,19 +3001,17 @@ function LeasingPanel({ resident, payments, onOpenPayments, onNavigateTab, onLea
         )}
         {residentOptedRoomHoldWithoutSigningLease(resident) ? (
           <div className="mt-4 rounded-xl border border-sky-200 bg-sky-50/90 px-3 py-3 text-slate-800">
-            <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-sky-900">Room hold fee</p>
+            <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-sky-900">Room hold</p>
             <p className="mt-2 leading-relaxed">
-              Your hold fee is <span className="font-semibold">{formatMoney(residentRoomHoldFeeUsd(resident))}</span>{' '}
-              (default $100). It credits toward your security deposit — the deposit line in Payments already reflects this
-              credit. This fee may be <span className="font-semibold">non-refundable</span> if the lease and deposit are
-              not completed on time — see your housing notice.
+              Pay <span className="font-semibold">{formatMoney(residentRoomHoldFeeUsd(resident))}</span> in Payments — it
+              credits to your deposit. May be <span className="font-semibold">non-refundable</span> if you miss deadlines.
             </p>
             <button
               type="button"
               onClick={() => onOpenPayments('hold')}
               className="mt-3 text-sm font-semibold text-[#2563eb] underline decoration-sky-400 underline-offset-2 hover:decoration-[#2563eb]"
             >
-              Open Payments to pay the hold fee
+              Pay hold fee
             </button>
           </div>
         ) : null}
@@ -3007,24 +3024,23 @@ function LeasingPanel({ resident, payments, onOpenPayments, onNavigateTab, onLea
 
         {!leaseLoading && !moveInPrereqsMet ? (
           <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950 shadow-sm">
-            <p className="font-semibold text-amber-950">Lease document not available yet</p>
+            <p className="font-semibold text-amber-950">Lease locked</p>
             <p className="mt-1 leading-relaxed text-amber-900/90">
-              {leaseAccessEval.blockReason ||
-                'Complete the payments your property requires before viewing and signing. If your manager enabled signing without move-in payments, this unlocks automatically.'}
+              {leaseAccessEval.blockReason || 'Pay required move-in items to view and sign.'}
             </p>
             <button
               type="button"
               onClick={() => onOpenPayments('pending')}
               className="mt-3 text-sm font-semibold text-amber-950 underline decoration-amber-800/50 underline-offset-2 hover:decoration-amber-950"
             >
-              Go to Payments
+              Payments
             </button>
           </div>
         ) : null}
 
         {!leaseLoading && leaseDrafts.length > 0 ? (
           <div>
-            <p className="mb-2 text-[11px] font-bold uppercase tracking-[0.14em] text-slate-400">Your lease drafts</p>
+            <p className="mb-2 text-[11px] font-bold uppercase tracking-[0.14em] text-slate-400">Lease drafts</p>
             <DataTable
               emptyIcon={false}
               empty="No lease drafts yet."
@@ -3101,16 +3117,29 @@ function LeasingPanel({ resident, payments, onOpenPayments, onNavigateTab, onLea
 
         {!leaseLoading && leaseDrafts.length === 0 ? (
           <div className="rounded-[24px] border border-slate-200 bg-slate-50 px-5 py-5 text-center text-sm text-slate-600">
-            Your manager will post your lease here when it is ready.
+            No lease draft yet — your manager will add one here.
           </div>
         ) : null}
 
         {!leaseLoading && moveInPrereqsMet && activeLeaseDraft ? (
           <div className="rounded-[24px] border border-[#2563eb]/20 bg-[linear-gradient(135deg,#eff6ff_0%,#ffffff_100%)] p-5">
+            {signWithoutMoveInPayOverride && (!securityDepositPaid || !firstMonthRentPaid) ? (
+              <div className="mb-3 rounded-lg border border-sky-200 bg-white/90 px-3 py-2 text-xs text-sky-950">
+                Signing allowed before deposit + first month are paid. Other charges may still be due in{' '}
+                <button
+                  type="button"
+                  onClick={() => onOpenPayments('pending')}
+                  className="font-semibold text-[#2563eb] underline decoration-sky-400 underline-offset-2 hover:decoration-[#2563eb]"
+                >
+                  Payments
+                </button>
+                .
+              </div>
+            ) : null}
             <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
               <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 bg-slate-50 px-4 py-3 sm:px-5">
                 <div className="min-w-0 flex-1">
-                  <div className="text-[11px] font-bold uppercase tracking-[0.14em] text-slate-500">Formatted lease agreement</div>
+                  <div className="text-[11px] font-bold uppercase tracking-[0.14em] text-slate-500">Lease document</div>
                   <div className="mt-1.5 flex flex-wrap items-center gap-2">
                     <span
                       className={`inline-flex rounded-full border px-2.5 py-0.5 text-[11px] font-bold ${
@@ -3155,6 +3184,19 @@ function LeasingPanel({ resident, payments, onOpenPayments, onNavigateTab, onLea
                   ) : null}
                 </div>
               </div>
+              {leaseBodyAllowed && !showLeaseText ? (
+                <div className="border-b border-slate-100 px-4 py-2.5 text-xs text-slate-500 sm:px-5">
+                  Tap <span className="font-semibold text-slate-700">Details</span> on the draft above to read or sign. Questions →{' '}
+                  <button
+                    type="button"
+                    onClick={() => onNavigateTab?.('inbox')}
+                    className="font-semibold text-[#2563eb] underline decoration-sky-400 underline-offset-2 hover:decoration-[#2563eb]"
+                  >
+                    Inbox
+                  </button>
+                  .
+                </div>
+              ) : null}
               {showLeaseText && leaseBodyAllowed
                 ? (() => {
                     let leaseData = null
@@ -3290,11 +3332,7 @@ function LeasingPanel({ resident, payments, onOpenPayments, onNavigateTab, onLea
         ) : (
           <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 text-sm text-slate-600">
             <p className="font-semibold text-slate-800">Lease extension</p>
-            <p className="mt-1 leading-relaxed">
-              Extension requests are not available until your lease is <span className="font-medium text-slate-800">signed</span> and
-              your <span className="font-medium text-slate-800">security deposit</span> and{' '}
-              <span className="font-medium text-slate-800">first month rent</span> are paid.
-            </p>
+            <p className="mt-1 leading-relaxed">After your lease is signed and deposit + first month are paid.</p>
           </div>
         )}
 
@@ -3380,9 +3418,7 @@ function ResidentDashboardHome({
           className="rounded-2xl border border-amber-200 bg-amber-50 px-5 py-4 shadow-sm"
         >
           <p className="text-sm font-bold text-amber-950">Sign your lease</p>
-          <p className="mt-1 text-sm text-amber-900/90">
-            Your lease is ready. Complete signing to finish onboarding and keep your move-in on track.
-          </p>
+          <p className="mt-1 text-sm text-amber-900/90">Lease is ready — open it to sign.</p>
           <button
             type="button"
             onClick={() => {

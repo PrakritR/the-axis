@@ -827,23 +827,46 @@ async function registerApplicationPaymentDraft({ email, fullName, propertyName, 
   return data
 }
 
+/**
+ * Ask the server to read Stripe Checkout and PATCH Airtable when payment is paid.
+ * Safe to call repeatedly while Stripe transitions from processing → paid.
+ */
 async function syncApplicationStripeSession(applicationRecordId, sessionId) {
   if (!applicationRecordId?.startsWith('rec') || !sessionId?.startsWith('cs_')) return
   try {
-    await fetch('/api/portal?action=application-stripe-sync', {
+    const res = await fetch('/api/portal?action=application-stripe-sync', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ applicationRecordId, sessionId }),
     })
-  } catch {
-    /* non-fatal — polling / webhook may still update Airtable */
+    let data = {}
+    try {
+      data = await readJsonResponse(res)
+    } catch {
+      /* empty/HTML body — deploy or proxy issue */
+    }
+    if (!res.ok && import.meta.env.DEV) {
+      console.warn('[apply] application-stripe-sync', res.status, data?.error || data)
+    }
+  } catch (e) {
+    if (import.meta.env.DEV) console.warn('[apply] application-stripe-sync', e?.message || e)
   }
 }
 
+function checkoutSessionIdForPoll(explicit) {
+  if (explicit?.startsWith('cs_')) return explicit
+  if (typeof window === 'undefined') return undefined
+  const stored = String(window.sessionStorage.getItem(APPLICATION_FEE_CHECKOUT_SESSION_KEY) || '').trim()
+  return stored.startsWith('cs_') ? stored : undefined
+}
+
 /** Poll until Airtable shows paid or already submitted (webhook or sync). */
-async function pollApplicationPaid(applicationRecordId, { maxAttempts = 55, intervalMs = 900, sessionId } = {}) {
-  if (sessionId) await syncApplicationStripeSession(applicationRecordId, sessionId)
+async function pollApplicationPaid(applicationRecordId, { maxAttempts = 60, intervalMs = 800, sessionId } = {}) {
   for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+    const sid = checkoutSessionIdForPoll(sessionId)
+    if (sid) {
+      await syncApplicationStripeSession(applicationRecordId, sid)
+    }
     try {
       const r = await fetch(
         `/api/portal?action=application-payment-status&applicationRecordId=${encodeURIComponent(applicationRecordId)}`,
@@ -1671,14 +1694,14 @@ export default function Apply() {
           )
           return
         }
-        setAppFeePaid(true)
-        await handleSubmit({ preventDefault: () => {} }, { applicationRecordId: recId })
-      } finally {
         try {
           window.sessionStorage.removeItem(APPLICATION_FEE_CHECKOUT_SESSION_KEY)
         } catch {
           /* ignore */
         }
+        setAppFeePaid(true)
+        await handleSubmit({ preventDefault: () => {} }, { applicationRecordId: recId })
+      } finally {
         setFeeConfirmBusy(false)
       }
     })()
@@ -1826,7 +1849,15 @@ export default function Apply() {
             )
           }
           if (!stPaid) {
-            const polled = await pollApplicationPaid(applicationRecordId, { maxAttempts: 28, intervalMs: 800 })
+            const storedSid =
+              typeof window !== 'undefined'
+                ? String(window.sessionStorage.getItem(APPLICATION_FEE_CHECKOUT_SESSION_KEY) || '').trim()
+                : ''
+            const polled = await pollApplicationPaid(applicationRecordId, {
+              maxAttempts: 28,
+              intervalMs: 800,
+              sessionId: storedSid.startsWith('cs_') ? storedSid : undefined,
+            })
             if (!polled) {
               throw new Error(
                 'Payment is still processing. Wait a few seconds and tap Submit again — you will not be charged twice. If this persists, contact leasing.',
@@ -2291,6 +2322,11 @@ export default function Apply() {
           )
           return
         }
+        try {
+          window.sessionStorage.removeItem(APPLICATION_FEE_CHECKOUT_SESSION_KEY)
+        } catch {
+          /* ignore */
+        }
         setAppFeePaid(true)
         const ok = await handleSubmit({ preventDefault: () => {} }, { applicationRecordId: recId })
         if (!ok) {
@@ -2299,11 +2335,6 @@ export default function Apply() {
           )
         }
       } finally {
-        try {
-          window.sessionStorage.removeItem(APPLICATION_FEE_CHECKOUT_SESSION_KEY)
-        } catch {
-          /* ignore */
-        }
         setFeeConfirmBusy(false)
       }
       return

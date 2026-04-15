@@ -127,7 +127,7 @@ export function evaluateLeaseAccessPrereqs({
     if (securityDepositPaid) return { met: true, blockReason: '' }
     return {
       met: false,
-      blockReason: 'Security deposit must be paid before you can view or sign the lease.',
+      blockReason: 'Pay your security deposit to unlock the lease.',
     }
   }
   if (securityDepositPaid && firstMonthRentPaid) return { met: true, blockReason: '' }
@@ -136,6 +136,6 @@ export function evaluateLeaseAccessPrereqs({
   if (!firstMonthRentPaid) parts.push('first month rent')
   return {
     met: false,
-    blockReason: `Pay ${parts.join(' and ')} before viewing or signing the lease.`,
+    blockReason: `Pay ${parts.join(' and ')} to unlock the lease.`,
   }
 }

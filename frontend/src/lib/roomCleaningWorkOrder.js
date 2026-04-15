@@ -1,9 +1,10 @@
 /**
  * Room cleaning work orders:
  * - **Legacy prepaid:** Payments row first (AXIS_ROOM_CLEANING_PREPAID), then WO with AXIS_ROOM_CLEANING_WO_FOR_PAYMENT:rec…
- * - **Post-pay (resident portal):** Resident submits WO from Create work order → Category Cleaning;
- *   Description includes AXIS_ROOM_CLEANING_BILL_ON_SCHEDULE. When manager sets Scheduled Date,
- *   portal creates a Payments row tagged AXIS_ROOM_CLEANING_PAYMENT_FOR_WO:rec….
+ * - **Post-pay:** When a visit date exists, create an Unpaid Payments row (Stripe checkout from Payments tab).
+ *   - Resident flow: Description includes AXIS_ROOM_CLEANING_BILL_ON_SCHEDULE (Category Cleaning).
+ *   - Manager flow: Category Cleaning (single select or string) — no marker required.
+ *   Due date = scheduled visit + 7 days (pay within one week after the scheduled cleaning).
  */
 
 import { createPaymentRecord, getPaymentsForResident } from './airtable.js'
@@ -17,6 +18,25 @@ export const ROOM_CLEANING_BILL_ON_SCHEDULE_MARKER = 'AXIS_ROOM_CLEANING_BILL_ON
 /** Payments.Notes contains this + work order record id when fee was created on schedule. */
 export const ROOM_CLEANING_PAYMENT_FOR_WO = 'AXIS_ROOM_CLEANING_PAYMENT_FOR_WO:'
 export const ROOM_CLEANING_FEE_USD = 10
+
+/** YYYY-MM-DD: payment due one week after the scheduled cleaning visit. */
+export function dueDateIsoForRoomCleaningPayment(scheduledDateIso) {
+  const dateStr = String(scheduledDateIso || '').trim().slice(0, 10)
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) return new Date().toISOString().slice(0, 10)
+  const d = new Date(`${dateStr}T12:00:00`)
+  if (Number.isNaN(d.getTime())) return new Date().toISOString().slice(0, 10)
+  d.setDate(d.getDate() + 7)
+  return d.toISOString().slice(0, 10)
+}
+
+function workOrderCategoryLabel(wo) {
+  if (!wo || typeof wo !== 'object') return ''
+  const raw = wo.Category ?? wo['Work Order Category'] ?? wo['Category (single select)']
+  if (raw == null) return ''
+  if (typeof raw === 'string') return raw
+  if (typeof raw === 'object' && raw.name != null) return String(raw.name)
+  return String(raw)
+}
 
 /** Suffix appended server-side style on resident submit (Category Cleaning). */
 export function residentPostpayCleaningDescriptionSuffix() {
@@ -103,6 +123,7 @@ export async function ensurePostpayRoomCleaningFeePayment({
   const prop = String(res.House || '').trim()
   const unit = String(res['Unit Number'] || '').trim()
   const name = String(res.Name || res['Resident Name'] || '').trim()
+  const dueStr = dueDateIsoForRoomCleaningPayment(dateStr)
 
   await createPaymentRecordStrippingUnknownFields({
     Resident: [rid],
@@ -112,8 +133,8 @@ export async function ensurePostpayRoomCleaningFeePayment({
     Type: 'Room cleaning fee',
     Category: 'Fee',
     Month: 'One-time room cleaning',
-    Notes: `${tag} Scheduled visit ${dateStr}. ${String(workOrder.Title || 'Room cleaning').trim()}`,
-    'Due Date': dateStr,
+    Notes: `${tag} Scheduled visit ${dateStr}. Pay by ${dueStr} (within 7 days after visit). ${String(workOrder.Title || 'Room cleaning').trim()}`,
+    'Due Date': dueStr,
     'Property Name': prop || undefined,
     'Room Number': unit || undefined,
     'Resident Name': name || undefined,

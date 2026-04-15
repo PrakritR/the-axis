@@ -3,6 +3,7 @@ import {
   responseBodyIndicatesAirtablePermissionDenied,
 } from './airtablePermissionError.js'
 import { mergeAxisListingMetaIntoOtherInfo, parseAxisListingMetaBlock } from './axisListingMeta.js'
+import { getConfiguredPropertyPhotosFieldName } from './propertyListingPhotos.js'
 import { workOrderPhotoAttachmentFieldNamesOrdered } from './workOrderShared.js'
 
 /** Single Airtable base for the whole app (portal, applications, tour, lease drafts, payments, etc.). */
@@ -658,6 +659,31 @@ export function workOrderLinkedPropertyRecordIds(recordOrRaw) {
     } else if (typeof val === 'string' && /^rec[a-zA-Z0-9]{14,}$/.test(val.trim())) {
       ids.push(val.trim())
     }
+  }
+  return [...new Set(ids)]
+}
+
+/** Linked Applications record IDs on a Work Orders row (env: VITE_AIRTABLE_WORK_ORDER_APPLICATION_LINK_FIELD, default "Application"). */
+export function workOrderLinkedApplicationRecordIds(recordOrRaw) {
+  const rec =
+    recordOrRaw &&
+    typeof recordOrRaw === 'object' &&
+    recordOrRaw.fields &&
+    typeof recordOrRaw.fields === 'object'
+      ? recordOrRaw.fields
+      : recordOrRaw || {}
+  const raw = String(import.meta.env.VITE_AIRTABLE_WORK_ORDER_APPLICATION_LINK_FIELD ?? '').trim()
+  if (raw.toLowerCase() === 'none') return []
+  const fieldName = raw || 'Application'
+  const val = rec[fieldName]
+  const ids = []
+  if (Array.isArray(val)) {
+    for (const x of val) {
+      const s = String(x).trim()
+      if (/^rec[a-zA-Z0-9]{14,}$/.test(s)) ids.push(s)
+    }
+  } else if (typeof val === 'string' && /^rec[a-zA-Z0-9]{14,}$/.test(val.trim())) {
+    ids.push(val.trim())
   }
   return [...new Set(ids)]
 }
@@ -1363,6 +1389,41 @@ export async function updatePaymentRecord(recordId, fields) {
   return mapRecord(data)
 }
 
+/** Notes marker for room-hold fee rows created from the resident portal (one row per resident; idempotent). */
+export const AXIS_ROOM_HOLD_WITHOUT_LEASE_MARKER_PREFIX = 'AXIS_ROOM_HOLD_WITHOUT_LEASE:'
+
+export function buildResidentPortalRoomHoldNotes(residentRecordId) {
+  const rid = String(residentRecordId || '').trim()
+  const marker = `${AXIS_ROOM_HOLD_WITHOUT_LEASE_MARKER_PREFIX}${rid}`
+  return `Room hold without signing lease (resident portal). ${marker}`
+}
+
+/**
+ * Payments rows for “hold without lease” from the portal: marker in Notes, or legacy Type + Notes match.
+ */
+export async function listResidentPortalRoomHoldPaymentRecords(residentRecordId) {
+  const rid = String(residentRecordId || '').trim()
+  if (!/^rec[a-zA-Z0-9]{14,}$/.test(rid)) return []
+  const legacySub = 'room hold without signing lease (resident portal)'
+  const formula = `AND(FIND("${escapeFormulaValue(rid)}", ARRAYJOIN({Resident})) > 0, OR(FIND("${escapeFormulaValue(AXIS_ROOM_HOLD_WITHOUT_LEASE_MARKER_PREFIX)}", {Notes}) > 0, AND({Type} = "Room Hold Fee", FIND("${escapeFormulaValue(legacySub)}", LOWER({Notes})) > 0)))`
+  const data = await request(
+    buildPaymentsUrl({
+      filterByFormula: formula,
+      maxRecords: 20,
+    }),
+  )
+  return (data.records || []).map(mapRecord)
+}
+
+export async function deletePaymentRecord(recordId) {
+  const id = String(recordId || '').trim()
+  if (!/^rec[a-zA-Z0-9]{14,}$/.test(id)) {
+    throw new Error('Invalid payment record ID.')
+  }
+  await request(`${paymentsTableUrl()}/${id}`, { method: 'DELETE' })
+  return { id, deleted: true }
+}
+
 /** Create a Payments row (e.g. manager-posted fine). `fields` must match your Airtable Payments table. */
 export async function createPaymentRecord(fields) {
   const cleaned = Object.fromEntries(Object.entries(fields || {}).filter(([, v]) => v !== undefined))
@@ -1523,8 +1584,9 @@ export async function uploadPropertyImage(propertyId, file) {
   formData.append('file', file, file.name)
   formData.append('filename', file.name)
   formData.append('contentType', inferPropertyPhotoContentType(file))
+  const photosField = getConfiguredPropertyPhotosFieldName()
   const response = await fetch(
-    `https://content.airtable.com/v0/${BASE_ID}/${encodeURIComponent(TABLES.properties)}/${propertyId}/${encodeURIComponent('Photos')}/uploadAttachment`,
+    `https://content.airtable.com/v0/${BASE_ID}/${encodeURIComponent(TABLES.properties)}/${propertyId}/${encodeURIComponent(photosField)}/uploadAttachment`,
     {
       method: 'POST',
       headers: { Authorization: `Bearer ${API_KEY}` },
@@ -1541,10 +1603,11 @@ export async function uploadPropertyImage(propertyId, file) {
   return response.json()
 }
 
-/** URL of the last Photos attachment after a content upload (shape varies by Airtable API version). */
+/** URL of the last property photo attachment after a content upload (shape varies by Airtable API version). */
 export function pickLastPropertyPhotoUrlFromUploadResponse(resp) {
+  const field = getConfiguredPropertyPhotosFieldName()
   try {
-    const photos = resp?.fields?.Photos ?? resp?.Photos
+    const photos = resp?.fields?.[field] ?? resp?.[field] ?? resp?.fields?.Photos ?? resp?.Photos
     if (!Array.isArray(photos) || !photos.length) return ''
     const last = photos[photos.length - 1]
     if (typeof last === 'string') return last.trim()

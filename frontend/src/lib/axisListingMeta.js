@@ -6,7 +6,8 @@
  * `Lease Length Information` (see `serializeManagerAddPropertyToAirtableFields`).
  *
  * What typically remains here after a save:
- * - `roomsDetail[]` — room **labels**, notes, bathroom/furniture feature text, `unavailable` flag
+ * - `roomsDetail[]` — room **labels**, notes, bathroom/furniture feature text, `unavailable` flag,
+ *   optional `imageUrls[]` (listing also picks `axis-r{n}-*` files on the property Photos attachment field).
  *   (numeric rent & ISO availability read from `Room N Rent` / `Room N Availability` when those columns exist).
  * - `leasing["Leasing Packages"]` — bundle rows when floor packages are used (no dedicated table yet).
  * - `financials.moveInCharges` — optional until a column exists.

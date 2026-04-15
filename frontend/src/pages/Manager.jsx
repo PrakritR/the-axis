@@ -73,6 +73,8 @@ import {
   listAllResidentsRecords,
   workOrderLinkedResidentRecordIds,
   workOrderLinkedPropertyRecordIds,
+  workOrderLinkedApplicationRecordIds,
+  getApplicationsForOwner,
   resolveResidentRecordIdForWorkOrderBilling,
   getAllPaymentsRecords,
   getLeaseDraftsForResident,
@@ -94,7 +96,6 @@ import {
   fetchBlockedTourDates,
   createBlockedTourDate,
   deleteBlockedTourDate,
-  getApplicationsForOwner,
 } from '../lib/airtable'
 import {
   ROOM_CLEANING_FEE_USD,
@@ -106,6 +107,7 @@ import {
   classifyResidentPaymentLine,
   formatPaymentNotesForDisplay,
   getPaymentKind,
+  isPaymentRowDueOnResidentHome,
   isPostpayRoomCleaningPaymentRecord,
   listDashboardDuePaymentLines,
   managerPaymentLineDisplayTitle,
@@ -148,10 +150,6 @@ import {
   applicationRejectedFieldName,
   leaseDraftPassesApplicationApprovalGate,
 } from '../lib/applicationApprovalState.js'
-import {
-  paymentsIndicateFirstMonthRentPaid,
-  paymentsIndicateSecurityDepositPaid,
-} from '../../../shared/lease-access-requirements.js'
 import ManagerLeasingTab from './ManagerLeasingTab.jsx'
 import {
   ALL_PROPERTIES_FILTER,
@@ -508,10 +506,6 @@ function paymentInScope(p, approvedNamesLowerSet) {
   return approvedNamesLowerSet.has(label) || [...approvedNamesLowerSet].some((ns) => label.includes(ns))
 }
 
-function isRentPaymentRecord(p) {
-  return getPaymentKind(p) === 'rent'
-}
-
 function isPaymentOverdueRecord(p) {
   if (String(p.Status || '').trim().toLowerCase() === 'paid') return false
   if (String(p.Status || '').trim().toLowerCase() === 'overdue') return true
@@ -742,12 +736,13 @@ function paymentComputedStatus(record) {
   return 'unpaid'
 }
 
-/** Pending tab: match resident “Due or upcoming” — hide post-pay WO room-cleaning lines (Fees & extras on resident). */
-function isManagerPendingPrimaryRow(record) {
-  const st = paymentComputedStatus(record)
-  if (st === 'waiver') return false
-  if (!['unpaid', 'due_soon', 'partial'].includes(st)) return false
-  return !isPostpayRoomCleaningPaymentRecord(record)
+/** Paid tab: fully settled lines only (excludes zero-balance ghosts; fee waivers are not “payments”). */
+function isManagerPaidTabRow(record) {
+  if (isFeeWaivePaymentRow(record)) return false
+  if (paymentComputedStatus(record) !== 'paid') return false
+  if (paymentAmountPaid(record) > 0) return true
+  const st = String(record?.Status || '').trim().toLowerCase()
+  return st === 'paid' || st === 'complete' || st === 'completed'
 }
 
 function paymentStatusLabel(status) {
@@ -4008,7 +4003,8 @@ function ManagerDashboardHomePanel({
   const s = stats || {}
   const pendingApps = statsLoading ? '—' : s.pendingApps ?? 0
   const leasePending = statsLoading ? '—' : s.leasePending ?? 0
-  const rentOverdue = statsLoading ? '—' : s.rentOverdue ?? 0
+  const paymentsTotalLines = statsLoading ? '—' : s.paymentsTotalLines ?? 0
+  const paymentsOverdue = statsLoading ? '—' : s.paymentsOverdue ?? 0
   const openWo = statsLoading ? '—' : s.openWo ?? 0
   const upcomingEvents = statsLoading ? '—' : s.upcomingEvents ?? 0
 
@@ -4016,9 +4012,9 @@ function ManagerDashboardHomePanel({
 
   const actionLease = !statsLoading && typeof leasePending === 'number' && leasePending > 0
   const actionApps = !statsLoading && typeof pendingApps === 'number' && pendingApps > 0
-  const actionRent = !statsLoading && typeof rentOverdue === 'number' && rentOverdue > 0
+  const actionPaymentsOverdue = !statsLoading && typeof paymentsOverdue === 'number' && paymentsOverdue > 0
   const actionWo = !statsLoading && typeof openWo === 'number' && openWo > 0
-  const showActionBanner = actionLease || actionApps || actionRent || actionWo
+  const showActionBanner = actionLease || actionApps || actionWo
 
   return (
     <div className="space-y-6">
@@ -4028,6 +4024,25 @@ function ManagerDashboardHomePanel({
           {firstName ? `WELCOME ${firstName}` : 'DASHBOARD'}
         </h2>
       </div>
+
+      {actionPaymentsOverdue ? (
+        <div role="alert" className="rounded-2xl border border-red-200 bg-red-50 px-4 py-4 shadow-sm">
+          <p className="text-sm font-bold text-red-950">Overdue payments</p>
+          <div className="mt-2 flex flex-wrap items-center justify-between gap-2 rounded-xl bg-white/70 px-3 py-2 text-sm text-red-950">
+            <span>
+              <span className="font-semibold tabular-nums">{paymentsOverdue}</span>
+              {` charge${paymentsOverdue === 1 ? '' : 's'} past due`}
+            </span>
+            <button
+              type="button"
+              onClick={() => onNavigate('payments')}
+              className="shrink-0 rounded-lg bg-red-600 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-red-700"
+            >
+              Open payments
+            </button>
+          </div>
+        </div>
+      ) : null}
 
       {showActionBanner ? (
         <div
@@ -4064,21 +4079,6 @@ function ManagerDashboardHomePanel({
                   className="shrink-0 rounded-lg bg-amber-600 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-amber-700"
                 >
                   Open leases
-                </button>
-              </li>
-            ) : null}
-            {actionRent ? (
-              <li className="flex flex-wrap items-center justify-between gap-2 rounded-xl bg-white/60 px-3 py-2 text-sm text-amber-950">
-                <span>
-                  <span className="font-semibold tabular-nums">{rentOverdue}</span>
-                  {` overdue rent payment${rentOverdue === 1 ? '' : 's'}`}
-                </span>
-                <button
-                  type="button"
-                  onClick={() => onNavigate('payments')}
-                  className="shrink-0 rounded-lg bg-amber-600 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-amber-700"
-                >
-                  View payments
                 </button>
               </li>
             ) : null}
@@ -4144,8 +4144,8 @@ function ManagerDashboardHomePanel({
           onClick={() => onNavigate('payments')}
           className="flex flex-col gap-1 rounded-3xl border border-blue-100 bg-blue-50 p-5 text-left transition hover:border-blue-200 hover:shadow-sm"
         >
-          <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-blue-600">Payments · Overdue</span>
-          <span className="text-3xl font-black tabular-nums text-blue-700">{rentOverdue}</span>
+          <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-blue-600">Payments · Total lines</span>
+          <span className="text-3xl font-black tabular-nums text-blue-700">{paymentsTotalLines}</span>
         </button>
 
         <button
@@ -4191,7 +4191,7 @@ function ManagerDashboardHomePanel({
   )
 }
 
-function WorkOrdersTabPanel({ allowedPropertyNames, allowedPropertyIds }) {
+function WorkOrdersTabPanel({ manager, allowedPropertyNames, allowedPropertyIds }) {
   const scopeLower = useMemo(
     () => new Set((allowedPropertyNames || []).map((n) => String(n).trim().toLowerCase()).filter(Boolean)),
     [allowedPropertyNames],
@@ -4205,7 +4205,8 @@ function WorkOrdersTabPanel({ allowedPropertyNames, allowedPropertyIds }) {
   const [listError, setListError] = useState('')
   const [quickFilter, setQuickFilter] = useState('open')
   const [propertyFilter, setPropertyFilter] = useState('')
-  const [residentFilter, setResidentFilter] = useState('')
+  const [applicationFilter, setApplicationFilter] = useState('')
+  const [applicationsById, setApplicationsById] = useState(new Map())
   const [residentsById, setResidentsById] = useState(new Map())
   const [record, setRecord] = useState(null)
   const [loadError, setLoadError] = useState('')
@@ -4292,13 +4293,24 @@ function WorkOrdersTabPanel({ allowedPropertyNames, allowedPropertyIds }) {
     setListLoading(true)
     setListError('')
     try {
-      const [all, residents] = await Promise.all([getAllWorkOrders(), listAllResidentsRecords()])
+      const ownerId = String(manager?.id || manager?.airtableRecordId || '').trim()
+      const [all, residents, apps] = await Promise.all([
+        getAllWorkOrders(),
+        listAllResidentsRecords(),
+        ownerId ? getApplicationsForOwner(ownerId).catch(() => []) : Promise.resolve([]),
+      ])
       const nextResidentsById = new Map()
       for (const resident of residents || []) {
         const id = String(resident?.id || '').trim()
         if (id) nextResidentsById.set(id, resident)
       }
       setResidentsById(nextResidentsById)
+      const nextAppsById = new Map()
+      for (const app of apps || []) {
+        const id = String(app?.id || '').trim()
+        if (id) nextAppsById.set(id, app)
+      }
+      setApplicationsById(nextAppsById)
       const scopedResidentIds = buildManagerScopedResidentIdSet(residents, scopeLower, scopeIds)
       setList(all.filter((row) => workOrderInScope(row, scopeLower, scopeIds, scopedResidentIds)))
     } catch (err) {
@@ -4310,18 +4322,25 @@ function WorkOrdersTabPanel({ allowedPropertyNames, allowedPropertyIds }) {
     } finally {
       setListLoading(false)
     }
-  }, [scopeLower, scopeIds])
+  }, [scopeLower, scopeIds, manager?.id, manager?.airtableRecordId])
 
   useEffect(() => {
     loadList()
   }, [loadList])
 
-  /** If a post-pay cleaning WO is already Scheduled but has no fee row (e.g. Category mismatch or date-only field), create it once. */
+  /** If a post-pay cleaning WO has a visit date but no fee row yet, create it once (Scheduled or Completed). */
   useEffect(() => {
     if (!record?.id) return
-    if (String(record.Status || '').trim().toLowerCase() !== 'scheduled') return
     if (!workOrderShouldCreatePaymentWhenScheduled(record)) return
     if (!scheduledKeyForCleaningRepair) return
+    const bucket = managerWorkOrderBucket(record)
+    const st = String(record.Status || '').trim().toLowerCase()
+    const eligible =
+      bucket === 'scheduled' ||
+      st === 'scheduled' ||
+      st.includes('schedule') ||
+      (bucket === 'completed' && Boolean(scheduledKeyForCleaningRepair))
+    if (!eligible) return
     if (cleaningPaymentRepairAttemptedRef.current.has(record.id)) return
 
     const billingRid = resolveResidentRecordIdForWorkOrderBilling(record, residentsById)
@@ -4384,27 +4403,23 @@ function WorkOrdersTabPanel({ allowedPropertyNames, allowedPropertyIds }) {
     return [...fromRows, ...extra]
   }, [list, allowedPropertyNames, propertyLabelForWorkOrder])
 
-  const residentChoices = useMemo(() => {
+  const applicationChoices = useMemo(() => {
     const map = new Map()
-    const scopedIds = buildManagerScopedResidentIdSet([...residentsById.values()], scopeLower, scopeIds)
-    for (const rid of scopedIds) {
-      const res = residentsById.get(rid)
-      if (!res) continue
-      const display = String(res?.Name || res?.['Resident Name'] || '').trim()
-      if (!display) continue
-      const value = display.toLowerCase()
-      if (!map.has(value)) map.set(value, display)
-    }
     for (const row of list) {
-      const display = String(residentLabelForWorkOrder(row)).trim()
-      if (!display) continue
-      const value = display.toLowerCase()
-      if (!map.has(value)) map.set(value, display)
+      for (const appId of workOrderLinkedApplicationRecordIds(row)) {
+        if (!appId || map.has(appId)) continue
+        const app = applicationsById.get(appId)
+        const name = String(app?.['Signer Full Name'] || app?.Name || '').trim() || 'Applicant'
+        const prop = String(app?.['Property Name'] || '').trim()
+        const aid = app?.['Application ID'] != null && String(app['Application ID']).trim() !== '' ? `APP-${String(app['Application ID']).trim()}` : ''
+        const label = [name, prop || null, aid || null].filter(Boolean).join(' · ')
+        map.set(appId, label || `Application ${appId.slice(0, 11)}…`)
+      }
     }
     return [...map.entries()]
       .sort((a, b) => a[1].localeCompare(b[1], undefined, { sensitivity: 'base' }))
-      .map(([value, display]) => ({ value, display }))
-  }, [list, residentLabelForWorkOrder, residentsById, scopeLower, scopeIds])
+      .map(([value, label]) => ({ value, label }))
+  }, [list, applicationsById])
 
   useEffect(() => {
     if (!propertyFilter) return
@@ -4412,15 +4427,17 @@ function WorkOrdersTabPanel({ allowedPropertyNames, allowedPropertyIds }) {
   }, [propertyChoices, propertyFilter])
 
   useEffect(() => {
-    if (!residentFilter) return
-    if (!residentChoices.some((choice) => choice.value === residentFilter)) setResidentFilter('')
-  }, [residentChoices, residentFilter])
+    if (!applicationFilter) return
+    if (!applicationChoices.some((choice) => choice.value === applicationFilter)) setApplicationFilter('')
+  }, [applicationChoices, applicationFilter])
 
   const filteredList = useMemo(() => {
     let rows = list
     rows = rows.filter((row) => managerWorkOrderBucket(row) === quickFilter)
     if (propertyFilter) rows = rows.filter((row) => String(propertyLabelForWorkOrder(row)).trim().toLowerCase() === propertyFilter)
-    if (residentFilter) rows = rows.filter((row) => String(residentLabelForWorkOrder(row)).trim().toLowerCase() === residentFilter)
+    if (applicationFilter) {
+      rows = rows.filter((row) => workOrderLinkedApplicationRecordIds(row).includes(applicationFilter))
+    }
     return sortRowsByPropertyGroupThenUpdatedDesc(rows, {
       getPropertyKey: (row) => normalizePropertyFilterKey(propertyLabelForWorkOrder(row)),
       getUpdatedMs: (row) => submittedAt(row),
@@ -4433,7 +4450,7 @@ function WorkOrdersTabPanel({ allowedPropertyNames, allowedPropertyIds }) {
         return String(a.id || '').localeCompare(String(b.id || ''))
       },
     })
-  }, [list, quickFilter, propertyFilter, residentFilter, propertyLabelForWorkOrder, residentLabelForWorkOrder])
+  }, [list, quickFilter, propertyFilter, applicationFilter, propertyLabelForWorkOrder, residentLabelForWorkOrder])
 
   useEffect(() => {
     if (filteredList.length === 0) {
@@ -4441,11 +4458,9 @@ function WorkOrdersTabPanel({ allowedPropertyNames, allowedPropertyIds }) {
       return
     }
     setRecord((current) => {
-      if (current) {
-        const match = filteredList.find((row) => row.id === current.id)
-        if (match) return match
-      }
-      return filteredList[0]
+      if (!current?.id) return null
+      const match = filteredList.find((row) => row.id === current.id)
+      return match || null
     })
   }, [filteredList])
 
@@ -4530,7 +4545,8 @@ function WorkOrdersTabPanel({ allowedPropertyNames, allowedPropertyIds }) {
               scheduledDateIso: dateStr,
             })
             if (result.created) {
-              successMsg = `Work order scheduled — added $${ROOM_CLEANING_FEE_USD} room cleaning fee to Payments (due ${dateStr}).`
+              const payBy = dueDateIsoForRoomCleaningPayment(dateStr)
+              successMsg = `Work order scheduled — added $${ROOM_CLEANING_FEE_USD} room cleaning fee to Payments (pay by ${payBy}).`
             }
           } catch (payErr) {
             console.error('[WorkOrdersTabPanel] cleaning payment on schedule', payErr)
@@ -4579,41 +4595,44 @@ function WorkOrdersTabPanel({ allowedPropertyNames, allowedPropertyIds }) {
   return (
     <div className="mb-10">
       <div className="mb-5 flex flex-wrap items-center gap-3">
-        <h2 className="mr-auto text-2xl font-black text-slate-900">Work orders</h2>
-        <div className="flex h-[42px] min-w-0 max-w-[min(100%,280px)] items-stretch overflow-hidden rounded-2xl border border-slate-200 bg-white">
-          <span className="flex shrink-0 items-center border-r border-slate-100 bg-slate-50/80 px-2.5 text-[10px] font-bold uppercase tracking-[0.08em] text-slate-500">
-            Property
-          </span>
-          <select
-            value={propertyFilter}
-            onChange={(e) => setPropertyFilter(e.target.value)}
-            className="min-w-0 flex-1 cursor-pointer border-0 bg-transparent px-3 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-[#2563eb]/20"
-            aria-label="Select property"
-          >
-            <option value={ALL_PROPERTIES_FILTER}>All properties (grouped)</option>
-            {propertyChoices.map(({ value, label }) => (
-              <option key={value} value={value}>
-                {label}
-              </option>
-            ))}
-          </select>
+        <h2 className="mr-auto w-full text-2xl font-black text-slate-900 sm:w-auto">Work orders</h2>
+        <div className="flex w-full min-w-0 flex-wrap items-center gap-2 sm:ml-auto sm:w-auto sm:flex-nowrap">
+          <div className={MANAGER_PILL_SELECT_WRAP_CLS}>
+            <select
+              value={propertyFilter || ALL_PROPERTIES_FILTER}
+              onChange={(e) => setPropertyFilter(e.target.value)}
+              className={MANAGER_PILL_SELECT_CLS}
+              aria-label="Select property"
+            >
+              <option value={ALL_PROPERTIES_FILTER}>All your properties</option>
+              {propertyChoices.map(({ value, label }) => (
+                <option key={value} value={value}>
+                  {label}
+                </option>
+              ))}
+            </select>
+            {MANAGER_PILL_SELECT_CHEVRON}
+          </div>
+          <div className={MANAGER_PILL_SELECT_WRAP_CLS}>
+            <select
+              value={applicationFilter}
+              onChange={(e) => setApplicationFilter(e.target.value)}
+              className={MANAGER_PILL_SELECT_CLS}
+              aria-label="Filter by application"
+            >
+              <option value="">All applications</option>
+              {applicationChoices.map(({ value, label }) => (
+                <option key={value} value={value}>
+                  {label}
+                </option>
+              ))}
+            </select>
+            {MANAGER_PILL_SELECT_CHEVRON}
+          </div>
+          <button type="button" onClick={loadList} className={MANAGER_PILL_REFRESH_CLS}>
+            Refresh
+          </button>
         </div>
-        <select
-          value={residentFilter}
-          onChange={(e) => setResidentFilter(e.target.value)}
-          className="rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition focus:border-[#2563eb] focus:outline-none focus:ring-2 focus:ring-[#2563eb]/20"
-        >
-          <option value="">All residents</option>
-          {residentChoices.map(({ value, display }) => (
-            <option key={value} value={value}>{display}</option>
-          ))}
-        </select>
-        <button
-          onClick={loadList}
-          className="rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-600 transition hover:bg-slate-50"
-        >
-          Refresh
-        </button>
       </div>
 
       {listError ? (
@@ -4645,11 +4664,9 @@ function WorkOrdersTabPanel({ allowedPropertyNames, allowedPropertyIds }) {
         ))}
       </div>
 
-      <div className="space-y-6">
+      <div className="overflow-hidden rounded-3xl border border-slate-200 bg-white">
         {listLoading ? (
-          <div className="rounded-3xl border border-dashed border-slate-200 bg-slate-50/80 px-6 py-16 text-center text-sm text-slate-500">
-            Loading work orders…
-          </div>
+          <div className="px-6 py-16 text-center text-sm text-slate-500">Loading work orders…</div>
         ) : (
           <DataTable
             empty={list.length === 0 ? 'No work orders yet' : 'Nothing matches this filter'}
@@ -4715,7 +4732,7 @@ function WorkOrdersTabPanel({ allowedPropertyNames, allowedPropertyIds }) {
                     onClick={() => setRecord((current) => (current?.id === d.id ? null : d))}
                     className="text-sm font-semibold text-[#2563eb] hover:underline"
                   >
-                    {record?.id === d.id ? 'Hide details' : 'Details'}
+                    {record?.id === d.id ? 'Hide' : 'Details'}
                   </button>
                 ),
               },
@@ -4725,6 +4742,7 @@ function WorkOrdersTabPanel({ allowedPropertyNames, allowedPropertyIds }) {
         )}
 
         {record ? (
+          <div className="border-t border-slate-100 px-4 py-5 sm:px-6">
           <PortalOpsCard
             title={safePortalText(record.Title, 'Work order')}
             description={`${propertyLabelForWorkOrder(record)} · ${residentLabelForWorkOrder(record)}`}
@@ -4810,6 +4828,7 @@ function WorkOrdersTabPanel({ allowedPropertyNames, allowedPropertyIds }) {
               </button>
             </form>
           </PortalOpsCard>
+          </div>
         ) : null}
       </div>
     </div>
@@ -4828,7 +4847,7 @@ function ManagerPaymentsPanel({ allowedPropertyNames }) {
   const [filter, setFilter] = useState('pending')
   const [busy, setBusy] = useState({})
   const [paymentsLoadError, setPaymentsLoadError] = useState('')
-  const [selectedId, setSelectedId] = useState('')
+  const [expandedPaymentId, setExpandedPaymentId] = useState('')
   const [payPropertyFilter, setPayPropertyFilter] = useState('')
   const [payResidentFilter, setPayResidentFilter] = useState('')
   const [fineTitle, setFineTitle] = useState('')
@@ -4935,7 +4954,7 @@ function ManagerPaymentsPanel({ allowedPropertyNames }) {
   const pendingRentAmount = useMemo(
     () =>
       paymentRows
-        .filter((row) => isManagerPendingPrimaryRow(row))
+        .filter((row) => isPaymentRowDueOnResidentHome(row))
         .reduce((sum, row) => sum + paymentBalanceDue(row), 0),
     [paymentRows],
   )
@@ -4945,18 +4964,20 @@ function ManagerPaymentsPanel({ allowedPropertyNames }) {
     [paymentRows],
   )
   const paidLineCount = useMemo(
-    () => paymentRows.filter((row) => row.__computedStatus === 'paid').length,
+    () => paymentRows.filter((row) => isManagerPaidTabRow(row)).length,
     [paymentRows],
   )
   const pendingLineCount = useMemo(
-    () => paymentRows.filter((row) => isManagerPendingPrimaryRow(row)).length,
+    () => paymentRows.filter((row) => isPaymentRowDueOnResidentHome(row)).length,
     [paymentRows],
   )
 
   const filteredForList = useMemo(() => {
     let list = paymentRows
     if (filter === 'pending') {
-      list = list.filter((row) => isManagerPendingPrimaryRow(row))
+      list = list.filter((row) => isPaymentRowDueOnResidentHome(row))
+    } else if (filter === 'paid') {
+      list = list.filter((row) => isManagerPaidTabRow(row))
     } else if (filter !== 'all') {
       list = list.filter((row) => row.__computedStatus === filter)
     }
@@ -4969,15 +4990,20 @@ function ManagerPaymentsPanel({ allowedPropertyNames }) {
 
   useEffect(() => {
     if (filteredForList.length === 0) {
-      setSelectedId('')
+      setExpandedPaymentId('')
       return
     }
-    setSelectedId((current) => (current && filteredForList.some((row) => row.id === current) ? current : filteredForList[0].id))
+    setExpandedPaymentId((current) =>
+      current && filteredForList.some((row) => row.id === current) ? current : '',
+    )
   }, [filteredForList])
 
   const selectedRow = useMemo(
-    () => filteredForList.find((row) => row.id === selectedId) || paymentRows.find((row) => row.id === selectedId) || null,
-    [filteredForList, paymentRows, selectedId],
+    () =>
+      filteredForList.find((row) => row.id === expandedPaymentId) ||
+      paymentRows.find((row) => row.id === expandedPaymentId) ||
+      null,
+    [filteredForList, paymentRows, expandedPaymentId],
   )
 
   const selectedResidentRecordId = selectedRow ? paymentResidentRecordId(selectedRow) : ''
@@ -5052,24 +5078,6 @@ function ManagerPaymentsPanel({ allowedPropertyNames }) {
     if (!residentPaymentBundle.payments.length) return []
     return listDashboardDuePaymentLines(residentPaymentBundle.payments)
   }, [residentPaymentBundle.payments])
-
-  const moveInLedgerHints = useMemo(() => {
-    if (residentPaymentBundle.loading || !residentPaymentBundle.resident) return []
-    const payments = residentPaymentBundle.payments
-    if (!Array.isArray(payments) || payments.length === 0) return []
-    const hints = []
-    if (!paymentsIndicateSecurityDepositPaid(payments)) {
-      hints.push(
-        'Security deposit is not recorded as paid in Payments yet — confirm against the lease or resident portal move-in checklist.',
-      )
-    }
-    if (!paymentsIndicateFirstMonthRentPaid(payments)) {
-      hints.push(
-        'First month rent is not recorded as paid yet — residents often pay this before monthly rent lines appear.',
-      )
-    }
-    return hints
-  }, [residentPaymentBundle.loading, residentPaymentBundle.resident, residentPaymentBundle.payments])
 
   function findScopedPaymentById(id) {
     return allScopedRows.find((row) => row.id === id) || rentRows.find((row) => row.id === id) || null
@@ -5207,43 +5215,46 @@ function ManagerPaymentsPanel({ allowedPropertyNames }) {
   return (
     <div className="mb-10">
       <div className="mb-5 flex flex-wrap items-center gap-3">
-        <h2 className="mr-auto text-2xl font-black text-slate-900">Payments</h2>
+        <h2 className="mr-auto w-full text-2xl font-black text-slate-900 sm:w-auto">Payments</h2>
         {!paymentsLoadError ? (
-          <>
-            <select
-              value={payPropertyFilter}
-              onChange={(e) => setPayPropertyFilter(e.target.value)}
-              disabled={loading}
-              className="rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition focus:border-[#2563eb] focus:outline-none focus:ring-2 focus:ring-[#2563eb]/20 disabled:opacity-60"
-              aria-label="Select property"
-            >
-              <option value={ALL_PROPERTIES_FILTER}>All properties (grouped)</option>
-              {payPropertyChoices.map(({ value, label }) => (
-                <option key={value} value={value}>
-                  {label}
-                </option>
-              ))}
-            </select>
-            <select
-              value={payResidentFilter}
-              onChange={(e) => setPayResidentFilter(e.target.value)}
-              disabled={loading}
-              className="rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition focus:border-[#2563eb] focus:outline-none focus:ring-2 focus:ring-[#2563eb]/20 disabled:opacity-60"
-              aria-label="Filter by resident"
-            >
-              <option value="">All residents</option>
-              {payResidentChoices.map(({ value, display }) => (
-                <option key={value} value={value}>
-                  {display}
-                </option>
-              ))}
-            </select>
-          </>
+          <div className="flex w-full min-w-0 flex-wrap items-center gap-2 sm:ml-auto sm:w-auto sm:flex-nowrap">
+            <div className={MANAGER_PILL_SELECT_WRAP_CLS}>
+              <select
+                value={payPropertyFilter}
+                onChange={(e) => setPayPropertyFilter(e.target.value)}
+                disabled={loading}
+                className={MANAGER_PILL_SELECT_CLS}
+                aria-label="Select property"
+              >
+                <option value={ALL_PROPERTIES_FILTER}>All your properties</option>
+                {payPropertyChoices.map(({ value, label }) => (
+                  <option key={value} value={value}>
+                    {label}
+                  </option>
+                ))}
+              </select>
+              {MANAGER_PILL_SELECT_CHEVRON}
+            </div>
+            <div className={MANAGER_PILL_SELECT_WRAP_CLS}>
+              <select
+                value={payResidentFilter}
+                onChange={(e) => setPayResidentFilter(e.target.value)}
+                disabled={loading}
+                className={MANAGER_PILL_SELECT_CLS}
+                aria-label="Filter by resident"
+              >
+                <option value="">All residents</option>
+                {payResidentChoices.map(({ value, display }) => (
+                  <option key={value} value={value}>
+                    {display}
+                  </option>
+                ))}
+              </select>
+              {MANAGER_PILL_SELECT_CHEVRON}
+            </div>
+          </div>
         ) : null}
-        <button
-          onClick={load}
-          className="rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-600 transition hover:bg-slate-50"
-        >
+        <button type="button" onClick={load} className={MANAGER_PILL_REFRESH_CLS}>
           Refresh
         </button>
       </div>
@@ -5293,8 +5304,7 @@ function ManagerPaymentsPanel({ allowedPropertyNames }) {
         ))}
       </div>
 
-      <div className={classNames('grid gap-6', selectedId ? 'xl:grid-cols-[minmax(0,1.2fr)_minmax(360px,0.8fr)]' : '')}>
-        <div className="overflow-hidden rounded-3xl border border-slate-200 bg-white">
+      <div className="overflow-hidden rounded-3xl border border-slate-200 bg-white">
           {loading ? (
             <div className="px-6 py-16 text-center text-sm text-slate-500">Loading payments…</div>
           ) : rentRows.length === 0 ? (
@@ -5308,6 +5318,7 @@ function ManagerPaymentsPanel({ allowedPropertyNames }) {
               <div className="text-sm font-semibold text-slate-700">Nothing matches this filter</div>
             </div>
           ) : (
+            <>
             <div className="overflow-x-auto">
               <table className="min-w-full text-left">
                 <thead className="border-b border-slate-200 bg-slate-50">
@@ -5321,6 +5332,7 @@ function ManagerPaymentsPanel({ allowedPropertyNames }) {
                     <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-[0.14em] text-slate-400">Balance Due</th>
                     <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-[0.14em] text-slate-400">Due Date</th>
                     <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-[0.14em] text-slate-400">Status</th>
+                    <th className="px-4 py-3 text-right text-[11px] font-bold uppercase tracking-[0.14em] text-slate-400">Action</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
@@ -5329,8 +5341,7 @@ function ManagerPaymentsPanel({ allowedPropertyNames }) {
                     return (
                       <tr
                         key={row.id}
-                        onClick={() => setSelectedId(row.id)}
-                        className={classNames('cursor-pointer transition hover:bg-slate-50', selectedId === row.id ? 'bg-axis/5' : '')}
+                        className={classNames('transition hover:bg-slate-50', expandedPaymentId === row.id ? 'bg-axis/5' : '')}
                       >
                         <td className="px-4 py-4 text-sm font-semibold text-slate-900">{paymentPropertyLabel(row) || 'House not set'}</td>
                         <td className="px-4 py-4 text-sm text-slate-600">{paymentRoomLabel(row)}</td>
@@ -5345,17 +5356,24 @@ function ManagerPaymentsPanel({ allowedPropertyNames }) {
                             {paymentStatusLabel(computed)}
                           </PortalOpsStatusBadge>
                         </td>
+                        <td className="px-4 py-4 text-right">
+                          <button
+                            type="button"
+                            onClick={() => setExpandedPaymentId((id) => (id === row.id ? '' : row.id))}
+                            className="whitespace-nowrap text-sm font-semibold text-[#2563eb] hover:underline"
+                          >
+                            {expandedPaymentId === row.id ? 'Hide' : 'Details'}
+                          </button>
+                        </td>
                       </tr>
                     )
                   })}
                 </tbody>
               </table>
             </div>
-          )}
-        </div>
 
         {selectedRow ? (
-          <div className="scroll-mt-28 overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm lg:scroll-mt-8">
+          <div className="scroll-mt-28 border-t border-slate-100 lg:scroll-mt-8">
             <div className="flex flex-wrap items-start justify-between gap-3 border-b border-slate-100 px-5 py-4">
               <div className="min-w-0">
                 <h3 className="text-2xl font-black text-slate-900">{paymentResidentLabel(selectedRow)}</h3>
@@ -5402,21 +5420,15 @@ function ManagerPaymentsPanel({ allowedPropertyNames }) {
               </div>
 
               <div>
-                <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">Due on resident dashboard</div>
-                <p className="mt-1 text-xs text-slate-500">
-                  Same open-balance Airtable lines as the resident home dashboard (excludes work-order room cleaning — see below).
-                </p>
+                <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">Resident · due now</div>
                 {residentPaymentBundle.loading ? (
-                  <p className="mt-3 text-sm text-slate-500">Loading resident ledger…</p>
+                  <p className="mt-3 text-sm text-slate-500">Loading…</p>
                 ) : residentPaymentBundle.error ? (
                   <p className="mt-3 text-sm text-amber-800">{residentPaymentBundle.error}</p>
                 ) : !selectedResidentRecordId ? (
-                  <p className="mt-3 text-sm text-slate-500">Link this payment to a resident in Airtable to load the full ledger.</p>
+                  <p className="mt-3 text-sm text-slate-500">Link Resident on this payment in Airtable.</p>
                 ) : portalDueLinesForSelectedResident.length === 0 ? (
-                  <p className="mt-3 text-sm text-slate-500">
-                    No open balance lines in this view. Move-in placeholders (e.g. deposit before a row exists) still appear in the resident
-                    Payments tab.
-                  </p>
+                  <p className="mt-3 text-sm text-slate-500">Nothing due in portal for this resident.</p>
                 ) : (
                   <div className="mt-3 space-y-2">
                     {portalDueLinesForSelectedResident.map((line) => (
@@ -5435,21 +5447,9 @@ function ManagerPaymentsPanel({ allowedPropertyNames }) {
                 )}
               </div>
 
-              {moveInLedgerHints.length > 0 ? (
-                <div className="rounded-2xl border border-amber-100 bg-amber-50/90 px-4 py-3 text-sm text-amber-950">
-                  <div className="text-[11px] font-bold uppercase tracking-[0.14em] text-amber-900/90">Move-in ledger hints</div>
-                  <ul className="mt-2 list-disc space-y-1 pl-5">
-                    {moveInLedgerHints.map((hint, idx) => (
-                      <li key={`move-in-hint-${idx}`}>{hint}</li>
-                    ))}
-                  </ul>
-                </div>
-              ) : null}
-
               {postpayCleaningRows.length > 0 ? (
                 <div>
-                  <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">Work order room cleaning</div>
-                  <p className="mt-1 text-xs text-slate-500">Shown here for managers; residents pay it under Payments → Fees & extras.</p>
+                  <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">Room cleaning (work order)</div>
                   <div className="mt-2 space-y-2">
                     {postpayCleaningRows.map((row) => {
                       const computed = paymentComputedStatus(row)
@@ -5474,10 +5474,10 @@ function ManagerPaymentsPanel({ allowedPropertyNames }) {
               ) : null}
 
               <div>
-                <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">Rent & utilities schedule</div>
+                <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">Rent & utilities</div>
                 <div className="mt-3 space-y-2">
                   {residentDetailRows.filter((row) => getPaymentKind(row) === 'rent').length === 0 ? (
-                    <p className="text-sm text-slate-500">No rent or utilities lines for this resident yet.</p>
+                    <p className="text-sm text-slate-500">No rent/utilities lines.</p>
                   ) : (
                     residentDetailRows
                       .filter((row) => getPaymentKind(row) === 'rent')
@@ -5505,9 +5505,9 @@ function ManagerPaymentsPanel({ allowedPropertyNames }) {
               </div>
 
               <div>
-                <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">Fines & extra charges</div>
+                <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">Fees & extras</div>
                 {feeRowsExcludingPostpayCleaning.length === 0 ? (
-                  <p className="mt-3 text-sm text-slate-500">No fee lines on file for this resident.</p>
+                  <p className="mt-3 text-sm text-slate-500">None.</p>
                 ) : (
                   <div className="mt-3 space-y-2">
                     {feeRowsExcludingPostpayCleaning.map((row) => {
@@ -5537,10 +5537,7 @@ function ManagerPaymentsPanel({ allowedPropertyNames }) {
             <form onSubmit={submitFeeWaive} className="border-t border-slate-100 px-5 py-5 sm:px-6">
               <div className="rounded-3xl border border-dashed border-violet-200 bg-violet-50/50 p-4">
               <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-violet-700">Fee waive</div>
-              <p className="mt-2 text-xs text-slate-600">
-                Record a waiver for tracking — it does not count as a rent/deposit payment. Linked to this resident
-                {paymentPropertyLabel(selectedRow) ? ` · ${paymentPropertyLabel(selectedRow)}` : ''}.
-              </p>
+              <p className="mt-2 text-xs text-slate-600">Accounting only — not a rent/deposit payment.</p>
               <div className="mt-4 grid gap-3 sm:grid-cols-2">
                 <label className="block">
                   <span className="mb-1 block text-xs font-semibold text-slate-600">Amount (USD)</span>
@@ -5576,9 +5573,6 @@ function ManagerPaymentsPanel({ allowedPropertyNames }) {
             <form onSubmit={submitFine} className="border-t border-slate-100 px-5 py-5 sm:px-6">
               <div className="rounded-3xl border border-dashed border-slate-200 bg-slate-50/80 p-4">
               <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">Add fine / extra charge</div>
-              <p className="mt-2 text-xs text-slate-500">
-                Creates an unpaid fee line linked to this resident. Residents see it on Payments → Fees and extras.
-              </p>
               <div className="mt-4 grid gap-3 sm:grid-cols-2">
                 <label className="block sm:col-span-2">
                   <span className="mb-1 block text-xs font-semibold text-slate-600">Title</span>
@@ -5630,6 +5624,8 @@ function ManagerPaymentsPanel({ allowedPropertyNames }) {
             </form>
           </div>
         ) : null}
+            </>
+          )}
       </div>
     </div>
   )
@@ -7480,14 +7476,13 @@ function ManagerDashboard({ manager: managerProp, openDraftId, onOpenDraft, onCl
                 workOrderInScope(w, mergedPropertyNamesLower, workOrderScopePropertyIds, scopedResidentIds),
               )
             : []
-        const rentRows =
-          approvedNamesLower.size && payRaw
-            ? payRaw.filter((p) => paymentInScope(p, approvedNamesLower) && isRentPaymentRecord(p))
-            : []
+        const payScoped =
+          approvedNamesLower.size && payRaw ? payRaw.filter((p) => paymentInScope(p, approvedNamesLower)) : []
 
         const pendingApps = apps.filter((a) => deriveApplicationApprovalState(a) === 'pending').length
         const leasePending = dr.filter((d) => LEASE_STATUSES_NEEDING_ACTION.has(String(d.Status || '').trim())).length
-        const rentOverdue = rentRows.filter((p) => isPaymentOverdueRecord(p)).length
+        const paymentsTotalLines = payScoped.length
+        const paymentsOverdue = payScoped.filter((p) => paymentComputedStatus(p) === 'overdue').length
         const openWo = wo.filter((w) => !workOrderIsResolvedRecord(w)).length
         const todayKey = dateKeyFromDate(new Date())
         const upcomingEvents = buildCalendarEvents(dr, wo, apps).filter((ev) => ev.date >= todayKey).length
@@ -7495,7 +7490,8 @@ function ManagerDashboard({ manager: managerProp, openDraftId, onOpenDraft, onCl
         setOverviewStats({
           pendingApps,
           leasePending,
-          rentOverdue,
+          paymentsTotalLines,
+          paymentsOverdue,
           openWo,
           upcomingEvents,
         })

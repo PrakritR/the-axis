@@ -6,6 +6,7 @@
 
 import { mergeAxisListingMetaIntoOtherInfo } from './axisListingMeta.js'
 import { parseAxisListingMetaBlock } from './axisListingMeta.js'
+import { photosAttachmentsFromRecord, urlsForRoomListing } from './propertyListingPhotos.js'
 import {
   LEASE_ACCESS_REQUIREMENT,
   normalizeLeaseAccessRequirement,
@@ -505,6 +506,7 @@ export function buildPropertyWizardInitialValues(property) {
 
   const fallbackRoomCount = roomDetails.length > 0 ? roomDetails.length : 1
   const roomCount = clampInt(record[PROPERTY_AIR.roomCount] ?? fallbackRoomCount, 1, MAX_ROOM_SLOTS)
+  const photosRaw = photosAttachmentsFromRecord(record)
   const rooms = Array.from({ length: roomCount }, (_, idx) => {
     const n = idx + 1
     const detail = roomDetails[idx] && typeof roomDetails[idx] === 'object' ? roomDetails[idx] : {}
@@ -515,6 +517,8 @@ export function buildPropertyWizardInitialValues(property) {
     const unavailable =
       detail.unavailable === true ||
       String(availabilityRaw || '').trim().toLowerCase() === 'unavailable'
+    const roomImageUrls = urlsForRoomListing(n, photosRaw, detail)
+    const roomMedia = roomImageUrls.map((url) => ({ id: url, preview: url }))
     return {
       ...emptyRoomRow(),
       label: stringOrEmpty(detail.label),
@@ -528,11 +532,9 @@ export function buildPropertyWizardInitialValues(property) {
       bathroomSetup: stringOrEmpty(detail.bathroomSetup),
       furnitureIncluded: stringOrEmpty(detail.furnitureIncluded),
       additionalFeatures: stringOrEmpty(detail.additionalFeatures),
-      media: [],
+      media: roomMedia,
     }
   })
-
-  const photosRaw = Array.isArray(record.Photos) ? record.Photos : []
 
   const bathrooms = []
   const bathroomCount = clampInt(record[PROPERTY_AIR.bathroomCount] ?? 0, 0, MAX_BATHROOM_SLOTS)

@@ -86,6 +86,18 @@ function dashboardPaymentDueLineLabel(p) {
 }
 
 /**
+ * True when this Airtable payment row would appear on the resident home “due” list (open balance, not WO cleaning).
+ * Manager Payments “Pending” filter uses the same rule so both portals match.
+ */
+export function isPaymentRowDueOnResidentHome(p) {
+  if (!p || typeof p !== 'object' || isFeeWaivePaymentRecord(p)) return false
+  if (isPostpayRoomCleaningPaymentRecord(p)) return false
+  if (computedResidentPaymentStatusLabel(p) === 'Paid') return false
+  if (balanceFor(p) <= 0) return false
+  return true
+}
+
+/**
  * Payment rows with balance due for dashboard / manager “same as resident” summaries.
  * Omits fee waivers and post-pay room-cleaning WO lines (those belong under Fees & extras).
  */
@@ -93,12 +105,9 @@ export function listDashboardDuePaymentLines(payments) {
   const list = Array.isArray(payments) ? payments : []
   const rows = []
   for (const p of list) {
-    if (!p || typeof p !== 'object' || isFeeWaivePaymentRecord(p)) continue
-    if (isPostpayRoomCleaningPaymentRecord(p)) continue
-    const st = computedResidentPaymentStatusLabel(p)
-    if (st === 'Paid') continue
+    if (!isPaymentRowDueOnResidentHome(p)) continue
     const bal = balanceFor(p)
-    if (bal <= 0) continue
+    const st = computedResidentPaymentStatusLabel(p)
     const due = parsePaymentDueDate(p['Due Date'])
     const dueTs = due && !Number.isNaN(due.getTime()) ? due.getTime() : Number.POSITIVE_INFINITY
     rows.push({

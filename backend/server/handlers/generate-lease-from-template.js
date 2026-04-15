@@ -527,6 +527,18 @@ export async function generateLeaseFromTemplate({
   return { draft: { id: record.id, ...record.fields }, created: true }
 }
 
+/**
+ * Monthly rent, utilities, deposit, and lease start for an application — same math as lease draft generation.
+ * Used when creating pending move-in payment rows on approval (no lease draft required).
+ */
+export async function computeMoveInChargesFromApplication(application, overrides = {}) {
+  if (!application || typeof application !== 'object') {
+    throw new Error('Application record required.')
+  }
+  const propertyRecord = await getPropertyByName(application['Property Name'])
+  return buildLeaseData(application, propertyRecord, overrides)
+}
+
 // ─── HTTP handler ─────────────────────────────────────────────────────────────
 
 export default async function handler(req, res) {

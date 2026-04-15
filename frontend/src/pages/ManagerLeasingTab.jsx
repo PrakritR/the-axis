@@ -43,6 +43,18 @@ import {
 
 const AIRTABLE_TOKEN = import.meta.env.VITE_AIRTABLE_TOKEN
 const CORE_BASE_ID = import.meta.env.VITE_AIRTABLE_BASE_ID || 'appol57LKtMKaQ75T'
+
+/** Match Manager / Applications toolbar — rounded property + refresh */
+const MGR_PILL_SELECT_WRAP_CLS = 'relative min-w-0 flex-1 sm:min-w-[220px] sm:flex-none'
+const MGR_PILL_SELECT_CLS =
+  'h-[42px] w-full min-w-0 cursor-pointer appearance-none rounded-full border border-slate-200 bg-white py-2.5 pl-4 pr-10 text-sm font-medium text-slate-800 transition focus:border-[#2563eb] focus:outline-none focus:ring-2 focus:ring-[#2563eb]/20 disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-400'
+const MGR_PILL_SELECT_CHEVRON = (
+  <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-slate-400" aria-hidden>
+    ▾
+  </span>
+)
+const MGR_PILL_REFRESH_CLS =
+  'h-[42px] shrink-0 rounded-full border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-600 transition hover:bg-slate-50 disabled:opacity-50'
 const APPS_BASE_ID = import.meta.env.VITE_AIRTABLE_APPLICATIONS_BASE_ID || CORE_BASE_ID
 const APPLICATIONS_TABLE = (import.meta.env.VITE_AIRTABLE_APPLICATIONS_TABLE || 'Applications').trim() || 'Applications'
 const AT_BASE = `https://api.airtable.com/v0/${CORE_BASE_ID}`
@@ -204,7 +216,6 @@ export default function ManagerLeasingTab({ manager, allowedPropertyNames }) {
   const [changeRequestText, setChangeRequestText] = useState('')
   const [statusFilter, setStatusFilter] = useState('draft_ready')
   const [leasePropertyFilter, setLeasePropertyFilter] = useState(ALL_PROPERTIES_FILTER)
-  const [leaseTableSearch, setLeaseTableSearch] = useState('')
   const [unreadCount, setUnreadCount] = useState(0)
   const leaseDraftDetailRef = useRef(null)
 
@@ -350,13 +361,6 @@ export default function ManagerLeasingTab({ manager, allowedPropertyNames }) {
     rows = filterRowsByPropertyKey(rows, leasePropertyFilter, (d) =>
       normalizePropertyFilterKey(d['Property'] || ''),
     )
-    const q = leaseTableSearch.trim().toLowerCase()
-    if (q) {
-      rows = rows.filter((d) => {
-        const hay = `${d['Property'] || ''} ${d['Resident Name'] || ''} ${d['Resident Email'] || ''} ${d['Unit'] || ''}`.toLowerCase()
-        return hay.includes(q)
-      })
-    }
     const updatedMs = (d) => new Date(d['Updated At'] || d.created_at || 0).getTime()
     return sortRowsByPropertyGroupThenUpdatedDesc(rows, {
       getPropertyKey: (d) => normalizePropertyFilterKey(d['Property'] || ''),
@@ -366,7 +370,7 @@ export default function ManagerLeasingTab({ manager, allowedPropertyNames }) {
           sensitivity: 'base',
         }),
     })
-  }, [drafts, statusFilter, leasePropertyFilter, leaseTableSearch])
+  }, [drafts, statusFilter, leasePropertyFilter])
 
   useEffect(() => {
     if (!leasePropertyFilter) return
@@ -552,56 +556,34 @@ export default function ManagerLeasingTab({ manager, allowedPropertyNames }) {
 
   return (
     <div className="space-y-5">
-      {/* Header */}
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-black text-slate-900">Leases</h1>
-        </div>
-        <div className="flex w-full min-w-0 flex-wrap items-center justify-end gap-2 sm:ml-auto sm:w-auto sm:flex-nowrap">
-          <div className="flex h-[42px] min-w-0 max-w-full items-stretch overflow-hidden rounded-full border border-slate-200 bg-white sm:max-w-[min(100%,320px)]">
-            <span className="flex shrink-0 items-center border-r border-slate-100 bg-slate-50/80 px-3 text-[10px] font-bold uppercase tracking-[0.1em] text-slate-500">
-              Select property
-            </span>
-            <div className="relative min-w-0 flex-1">
-              <select
-                id="mgr-lease-property-filter"
-                value={leasePropertyFilter}
-                onChange={(e) => setLeasePropertyFilter(e.target.value)}
-                className="h-full w-full min-w-0 cursor-pointer appearance-none border-0 bg-transparent py-2 pl-3 pr-9 text-sm font-medium text-slate-800 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-[#2563eb]/25"
-                aria-label="Select property filter"
-              >
-                <option value={ALL_PROPERTIES_FILTER}>All properties (grouped)</option>
-                {leasePropertyOptions.map(({ value, label }) => (
-                  <option key={value} value={value}>
-                    {label}
-                  </option>
-                ))}
-              </select>
-              <span className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400" aria-hidden>
-                ▾
-              </span>
-            </div>
+      {/* Header — aligned with Applications */}
+      <div className="mb-5 flex flex-wrap items-center gap-3">
+        <h2 className="mr-auto w-full text-2xl font-black text-slate-900 sm:w-auto">Leases</h2>
+        <div className="flex w-full min-w-0 flex-wrap items-center gap-2 sm:ml-auto sm:w-auto sm:flex-nowrap">
+          <div className={MGR_PILL_SELECT_WRAP_CLS}>
+            <select
+              id="mgr-lease-property-filter"
+              value={leasePropertyFilter}
+              onChange={(e) => setLeasePropertyFilter(e.target.value)}
+              className={MGR_PILL_SELECT_CLS}
+              aria-label="Select property filter"
+            >
+              <option value={ALL_PROPERTIES_FILTER}>All your properties</option>
+              {leasePropertyOptions.map(({ value, label }) => (
+                <option key={value} value={value}>
+                  {label}
+                </option>
+              ))}
+            </select>
+            {MGR_PILL_SELECT_CHEVRON}
           </div>
-          <input
-            type="search"
-            value={leaseTableSearch}
-            onChange={(e) => setLeaseTableSearch(e.target.value)}
-            placeholder="Search…"
-            aria-label="Search leases by property, resident, or unit"
-            className="h-[42px] w-full min-w-0 flex-1 rounded-full border border-slate-200 bg-white px-4 text-sm text-slate-800 placeholder:text-slate-400 focus:border-[#2563eb] focus:outline-none focus:ring-2 focus:ring-[#2563eb]/20 sm:max-w-[220px]"
-          />
           {unreadCount > 0 && (
             <span className="flex items-center gap-1.5 rounded-full bg-orange-100 px-3 py-1 text-xs font-bold text-orange-700">
               <span className="h-1.5 w-1.5 rounded-full bg-orange-500" />
               {unreadCount} unread
             </span>
           )}
-          <button
-            type="button"
-            onClick={loadDrafts}
-            disabled={loading}
-            className="h-[42px] shrink-0 rounded-full border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-600 transition hover:bg-slate-50 disabled:opacity-50"
-          >
+          <button type="button" onClick={loadDrafts} disabled={loading} className={MGR_PILL_REFRESH_CLS}>
             {loading ? 'Loading…' : 'Refresh'}
           </button>
         </div>
@@ -634,7 +616,7 @@ export default function ManagerLeasingTab({ manager, allowedPropertyNames }) {
         </div>
       </div>
 
-      {/* Table */}
+      {/* Table + detail (Applications-style single card) */}
       <div className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm">
         {loading ? (
           <div className="px-6 py-16 text-center text-sm text-slate-500">Loading leases…</div>
@@ -646,71 +628,67 @@ export default function ManagerLeasingTab({ manager, allowedPropertyNames }) {
                 ? 'No leases yet'
                 : leasePropertyFilter && leasePropertyOptions.length > 0
                   ? 'No leases for the selected property in this view.'
-                  : leaseTableSearch.trim()
-                    ? 'No leases match your search.'
-                    : `No leases in ${STATUS_FILTER_ITEMS.find((f) => f.id === statusFilter)?.label || 'this view'}`}
+                  : `No leases in ${STATUS_FILTER_ITEMS.find((f) => f.id === statusFilter)?.label || 'this view'}`}
             </div>
           </div>
         ) : (
-          <DataTable
-            empty="No leases in this view"
-            columns={[
-              {
-                key: 'property',
-                label: 'Property',
-                headerClassName: 'w-[30%]',
-                render: (draft) => (
-                  <>
-                    <div className="font-semibold text-slate-900">{draft['Property'] || 'Property not set'}</div>
-                    <div className="text-xs text-slate-500">{draft['Resident Name'] || 'Resident not set'}</div>
-                  </>
-                ),
-              },
-              {
-                key: 'summary',
-                label: 'Summary',
-                headerClassName: 'w-[40%]',
-                render: (draft) => (
-                  <div className="flex flex-wrap gap-1.5">
-                    {draft['Unit'] ? <span className="rounded-full border border-slate-200 bg-white px-2.5 py-0.5 text-[11px] font-semibold text-slate-600">Room {draft['Unit']}</span> : null}
-                    {draft['Lease Term'] ? <span className="rounded-full border border-slate-200 bg-white px-2.5 py-0.5 text-[11px] font-semibold text-slate-600">{draft['Lease Term']}</span> : null}
-                    <span className="rounded-full border border-slate-200 bg-white px-2.5 py-0.5 text-[11px] font-semibold text-slate-600">{draft['Current Version'] ? `v${draft['Current Version']}` : 'v1'}</span>
-                    <span className="rounded-full border border-slate-200 bg-white px-2.5 py-0.5 text-[11px] font-semibold text-slate-600">Updated {fmtTs(draft['Updated At'] || draft['created_at'])}</span>
-                  </div>
-                ),
-              },
-              {
-                key: 'status',
-                label: 'Status',
-                headerClassName: 'w-[16%] text-center',
-                cellClassName: 'text-center',
-                render: (draft) => <StatusPill status={draft['Status'] || 'Draft Generated'} />,
-              },
-              {
-                key: 'actions',
-                label: 'Action',
-                headerClassName: 'w-[14%] text-right',
-                cellClassName: 'text-right',
-                render: (draft) => (
-                  <button
-                    type="button"
-                    className="whitespace-nowrap text-sm font-semibold text-[#2563eb]"
-                    onClick={() => openLeaseDetails(draft)}
-                  >
-                    {selectedDraftId === draft.id ? 'Hide' : 'Details'}
-                  </button>
-                ),
-              },
-            ]}
-            rows={visibleDrafts.map((draft) => ({ key: draft.id, data: draft }))}
-          />
-        )}
-      </div>
-
-      {selectedDraftId ? (
+          <>
+            <DataTable
+              empty="No leases in this view"
+              columns={[
+                {
+                  key: 'property',
+                  label: 'Property',
+                  headerClassName: 'w-[30%]',
+                  render: (draft) => (
+                    <>
+                      <div className="font-semibold text-slate-900">{draft['Property'] || 'Property not set'}</div>
+                      <div className="text-xs text-slate-500">{draft['Resident Name'] || 'Resident not set'}</div>
+                    </>
+                  ),
+                },
+                {
+                  key: 'summary',
+                  label: 'Summary',
+                  headerClassName: 'w-[40%]',
+                  render: (draft) => (
+                    <div className="flex flex-wrap gap-1.5">
+                      {draft['Unit'] ? <span className="rounded-full border border-slate-200 bg-white px-2.5 py-0.5 text-[11px] font-semibold text-slate-600">Room {draft['Unit']}</span> : null}
+                      {draft['Lease Term'] ? <span className="rounded-full border border-slate-200 bg-white px-2.5 py-0.5 text-[11px] font-semibold text-slate-600">{draft['Lease Term']}</span> : null}
+                      <span className="rounded-full border border-slate-200 bg-white px-2.5 py-0.5 text-[11px] font-semibold text-slate-600">{draft['Current Version'] ? `v${draft['Current Version']}` : 'v1'}</span>
+                      <span className="rounded-full border border-slate-200 bg-white px-2.5 py-0.5 text-[11px] font-semibold text-slate-600">Updated {fmtTs(draft['Updated At'] || draft['created_at'])}</span>
+                    </div>
+                  ),
+                },
+                {
+                  key: 'status',
+                  label: 'Status',
+                  headerClassName: 'w-[16%] text-center',
+                  cellClassName: 'text-center',
+                  render: (draft) => <StatusPill status={draft['Status'] || 'Draft Generated'} />,
+                },
+                {
+                  key: 'actions',
+                  label: 'Action',
+                  headerClassName: 'w-[14%] text-right',
+                  cellClassName: 'text-right',
+                  render: (draft) => (
+                    <button
+                      type="button"
+                      className="whitespace-nowrap text-sm font-semibold text-[#2563eb]"
+                      onClick={() => openLeaseDetails(draft)}
+                    >
+                      {selectedDraftId === draft.id ? 'Hide' : 'Details'}
+                    </button>
+                  ),
+                },
+              ]}
+              rows={visibleDrafts.map((draft) => ({ key: draft.id, data: draft }))}
+            />
+            {selectedDraftId ? (
         <div
           ref={leaseDraftDetailRef}
-          className="scroll-mt-28 overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm lg:scroll-mt-8"
+          className="scroll-mt-28 border-t border-slate-100 lg:scroll-mt-8"
         >
           <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 px-5 py-4">
             <div className="flex flex-wrap items-center gap-2">
@@ -886,7 +864,10 @@ export default function ManagerLeasingTab({ manager, allowedPropertyNames }) {
             )}
           </div>
         </div>
-      ) : null}
+            ) : null}
+          </>
+        )}
+      </div>
     </div>
   )
 }

@@ -163,15 +163,16 @@ export default function LeaseHTMLTemplate({
               : ` At the expiration of the fixed term, this Agreement shall automatically convert to a month-to-month tenancy unless either party provides written notice of non-renewal at least ${TERMINATION_NOTICE_DAYS} days before the end of the term, or a new written agreement is signed.`}
           </P>
           <P>
-            <strong>2.1 Early termination and mitigation.</strong> If Resident vacates before the end of the term without
-            Landlord&apos;s written consent, Resident remains liable for <em>actual damages</em> recoverable under Washington law,
-            not for any penalty labeled as liquidated damages unless separately agreed in writing and enforceable. Landlord
-            has a duty to mitigate damages by making reasonable, good-faith efforts to re-rent the Premises at fair market
-            terms. Resident&apos;s liability for rent after default or early departure continues only until the earlier of the
-            lease expiration date or the date a replacement tenant acceptable to Landlord (under the same or reasonably
-            similar terms) begins paying rent, subject to mitigation. Landlord may recover reasonable, documented re-leasing
-            costs (such as advertising and tenant screening) to the extent permitted by RCW Chapter 59.18 and general
-            contract law.
+            <strong>2.1 Early termination, mitigation, and lease-break costs.</strong> If Resident vacates before the end of the term without
+            Landlord&apos;s prior written consent, Resident remains liable for <em>actual damages</em> permitted by Washington law and
+            this Agreement — not for unlawful penalties. Landlord shall make reasonable, good-faith efforts to <strong>mitigate</strong> by
+            re-renting the Premises at fair market terms. Resident&apos;s liability for unpaid <strong>base rent and utilities charges</strong>{' '}
+            continues until the <strong>earlier of</strong> (a) the scheduled lease end date, or (b) the date a replacement tenant acceptable to
+            Landlord (same or reasonably similar material terms) begins paying rent, <em>minus</em> any rent actually received from a
+            replacement (rent differential after mitigation). Resident shall also pay <strong>reasonable, documented re-leasing costs</strong>{' '}
+            (advertising, tenant screening, reasonable administrative processing) and <strong>reasonable documented turnover repairs</strong> beyond
+            ordinary wear and tear, each itemized under RCW 59.18.280 principles where applicable to deposit accounting or as unpaid charges.
+            Any stated lease-break fee must represent a reasonable estimate of actual administrative/turnover cost, not a penalty.
           </P>
         </Section>
 
@@ -252,6 +253,12 @@ export default function LeaseHTMLTemplate({
               deposit unless expressly labeled as deposit.
             </P>
           ) : null}
+          <P>
+            <strong>3.5 Statutory notices and pass-through costs.</strong> If Washington law permits recovery of specific statutory
+            notice preparation, filing, or service costs in connection with a lawful remedy, Resident shall pay only those
+            amounts actually incurred and permitted by statute, with documentation upon request. No fee shall be assessed that
+            is prohibited as a penalty or unconscionable charge under RCW Chapter 59.18 or related law.
+          </P>
         </Section>
 
         {/* 4 */}
@@ -267,12 +274,15 @@ export default function LeaseHTMLTemplate({
             or provide a written itemized statement of deductions, as required by RCW 59.18.280.
           </P>
           <P>
-            <strong>4.1 Move-in condition and checklist (Property Condition Addendum).</strong> Within seven (7) calendar days after move-in, Landlord and
-            Resident shall complete a written move-in inspection checklist describing the condition of the Premises and any
-            furnishings (this checklist is the Property Condition Addendum for purposes of deposit accounting). Resident shall return a signed copy to Landlord. The checklist, together with any photographs or
-            videos reasonably taken at move-in, establishes the baseline condition for determining whether deductions from the
-            security deposit at move-out are lawful. If Resident refuses to participate in a scheduled inspection, Landlord
-            may complete the checklist in good faith and provide a copy to Resident.
+            <strong>4.1 Move-in condition and checklist (Property Condition Addendum).</strong> Landlord and Resident shall complete a
+            written <strong>move-in inspection checklist</strong> describing the condition of the Premises and any furnishings (the
+            Property Condition Addendum). Resident shall return a signed checklist to Landlord within <strong>fourteen (14) calendar days</strong>{' '}
+            after obtaining possession (or complete a joint walkthrough on a mutually agreed date within that window). The
+            checklist, together with dated photographs or short videos reasonably taken at move-in, establishes the baseline for
+            determining whether deposit deductions at move-out reflect damage or uncleanliness <strong>beyond documented move-in
+            condition</strong>, consistent with RCW 59.18.260 and RCW 59.18.280. If Resident fails to return the checklist, Landlord may
+            document condition in good faith and provide a copy; failure to document pre-existing conditions does not authorize
+            deductions for conditions Landlord knew or should have known existed at move-in.
           </P>
           <P>
             <strong>4.2 Forwarding address.</strong> Upon vacating, Resident shall provide Landlord in writing a valid
@@ -284,6 +294,18 @@ export default function LeaseHTMLTemplate({
             <strong>4.3 Itemized deductions.</strong> Any deduction from the deposit shall be listed in writing with a
             plain-language description of each charge and supporting documentation where reasonably available. Deductions may
             not include ordinary wear and tear consistent with RCW 59.18.260.
+          </P>
+          <P>
+            <strong>4.4 Deposit deduction categories and cleaning standards.</strong> Deductions may include only lawful categories,
+            including: unpaid rent or other charges expressly permitted under this Agreement; damage to the Premises or
+            Landlord-owned furnishings <strong>beyond ordinary wear and tear</strong>; reasonable cleaning charges to restore the private
+            room to a <strong>rent-ready, professionally clean</strong> standard if left with unreasonable dirt, debris, stains, or odors;
+            carpet or upholstery cleaning only for <strong>tenant-caused</strong> staining or damage (not normal traffic wear); lost keys,
+            fobs, or access devices at documented replacement cost; pest remediation attributable to Resident&apos;s conduct or
+            neglect after notice. Hourly repair labor shall be billed at Landlord&apos;s <strong>documented</strong> reasonable internal rate or
+            vendor invoice, not to exceed prevailing market rates for comparable work. For single-line items over{' '}
+            <strong>$250</strong>, Landlord shall provide an estimate or invoice where practicable before withholding from deposit when timing
+            allows under RCW 59.18.280.
           </P>
         </Section>
 
@@ -313,6 +335,14 @@ export default function LeaseHTMLTemplate({
             <strong>5.2 Non-payment of allocated utilities.</strong> Allocated charges shown on a written ledger or invoice
             are due by the date stated on the invoice or, if none, with the next rent installment. Continued non-payment after
             written notice may be treated as a material default to the extent permitted by RCW Chapter 59.18.
+          </P>
+          <P>
+            <strong>5.3 Adjustment of utilities fee or allocation.</strong> If Resident pays a recurring utilities or household-services
+            component, Landlord may change the amount or allocation method with at least <strong>thirty (30) days&apos; prior written notice</strong>,
+            except where a shorter period is required by law or an emergency tariff increase. If a proposed change is not
+            permitted by law or is rejected by Resident, Resident&apos;s exclusive remedy is to terminate the tenancy with notice
+            required by RCW 59.18.200 (where applicable) or as otherwise required by law — not to withhold rent without a lawful
+            defense.
           </P>
           <P>
             Resident is responsible for personal streaming services, phone plans, and any other personal communications
@@ -414,6 +444,13 @@ export default function LeaseHTMLTemplate({
             negligence, intentional misconduct, illegal activity, or breach of this Agreement, except to the extent caused by
             Landlord&apos;s negligence or willful misconduct.
           </P>
+          <P>
+            <strong>8.3 Personal safety; crime; third parties.</strong> Landlord does not warrant or guarantee the security of persons or
+            property. Resident acknowledges that criminal or harmful conduct may occur without Landlord&apos;s knowledge or control.
+            Except as required by RCW Chapter 59.18 or other mandatory law, Landlord shall not be liable for injury or loss caused
+            by third parties, other residents, or guests. Resident is encouraged to secure valuables, lock doors, and maintain
+            renters insurance with liability coverage.
+          </P>
         </Section>
 
         {/* 9 */}
@@ -460,6 +497,11 @@ export default function LeaseHTMLTemplate({
             tempering or limiting settings where required, commonly not to exceed approximately 120°F at the tank or as
             directed by code). Resident shall not alter water heater thermostats, mixing valves, or tempering devices without
             written permission.
+          </P>
+          <P>
+            <strong>9.4 Fire safety and egress.</strong> Resident shall keep all means of egress clear, shall not disable or prop open
+            self-closing doors on fire-rated paths, shall not use barbecues or open flames indoors or on balconies except as
+            law and Landlord permit, and shall follow building fire-safety notices posted by Landlord or required by code.
           </P>
         </Section>
 
@@ -599,10 +641,10 @@ export default function LeaseHTMLTemplate({
             to signing this Agreement. If the dwelling was constructed in 1978 or later, this subsection does not apply.
           </P>
           <P>
-            <strong>17.3 Attorney fees.</strong> In any action to interpret or enforce this Agreement or to recover the
-            Premises, the prevailing party may recover reasonable attorneys&apos; fees and court costs if and to the extent
-            authorized by RCW 59.18.290 (including certain exclusion, holdover, or wrongful-possession claims), other statutes,
-            or court rule.
+            <strong>17.3 Attorney fees.</strong> In any action to interpret or enforce this Agreement, recover possession, or
+            collect sums lawfully owing after default, the <strong>prevailing party</strong> may recover reasonable attorneys&apos; fees and court
+            costs <strong>only if and to the extent</strong> authorized by RCW 59.18.290, other applicable Washington statutes, or court rule.
+            Nothing herein guarantees fee recovery in any particular dispute.
           </P>
           <P>
             Landlord&apos;s failure to enforce any provision on a particular occasion shall not waive the right to enforce that
@@ -638,6 +680,56 @@ export default function LeaseHTMLTemplate({
             written or oral.
           </P>
         </Section>
+
+        {/* Part II — Addenda (incorporated) */}
+        <div className="mb-8 mt-10 border-t-2 border-slate-800 pt-8">
+          <h2 className="mb-1 text-center text-[13px] font-black uppercase tracking-[0.14em] text-slate-900">
+            Part II — Addenda
+          </h2>
+          <P>
+            The following addenda are <strong>incorporated by reference</strong> into Part I and have the same force and effect as the
+            numbered sections above. If a term in an addendum conflicts with a statutory requirement, the statute controls.
+          </P>
+
+          <h3 className="mb-2 mt-6 text-[12px] font-black uppercase tracking-[0.1em] text-slate-800">Addendum A — Property condition baseline</h3>
+          <P>
+            Reinforces Section 4.1: the signed checklist and dated media establish the lawful baseline for deposit disputes. Resident
+            shall not alter or damage smoke or CO pathways when hanging décor.
+          </P>
+
+          <h3 className="mb-2 mt-5 text-[12px] font-black uppercase tracking-[0.1em] text-slate-800">Addendum B — Bed bugs and cooperation</h3>
+          <P>
+            Resident shall report suspected bed-bug activity immediately in writing. Resident shall cooperate with inspection and
+            certified treatment protocols (including preparation steps, bagging laundry, and access). If an infestation is
+            reasonably attributable to Resident&apos;s conduct, guests, or failure to follow prevention steps after written notice,
+            Resident shall pay <strong>reasonable, documented</strong> treatment costs to the extent permitted by law, in addition to other
+            remedies.
+          </P>
+
+          <h3 className="mb-2 mt-5 text-[12px] font-black uppercase tracking-[0.1em] text-slate-800">Addendum C — Mold, moisture, and ventilation</h3>
+          <P>
+            Resident shall use bathroom/kitchen ventilation when cooking or showering, wipe standing condensation, keep textiles and
+            furniture off damp surfaces, and report leaks or mold conditions within twenty-four (24) hours. Resident shall not paint
+            over or conceal mold. Landlord shall respond to building-system leaks and concealed moisture in a manner consistent with
+            RCW 59.18.070 where applicable.
+          </P>
+
+          <h3 className="mb-2 mt-5 text-[12px] font-black uppercase tracking-[0.1em] text-slate-800">Addendum D — Extended tenant maintenance</h3>
+          <P>
+            Resident shall replace HVAC filters on schedule provided by Landlord (or at least every ninety (90) days if disposable
+            1&quot; filters); keep refrigerator coils reasonably dust-free; run garbage disposals only with cold water and avoid fibrous
+            or starchy bulk; clear hair from accessible drain stoppers; report running toilets promptly; and comply with recycling
+            and compost rules posted for the household.
+          </P>
+
+          <h3 className="mb-2 mt-5 text-[12px] font-black uppercase tracking-[0.1em] text-slate-800">Addendum E — Rules and nuisance enforcement</h3>
+          <P>
+            Violations of quiet hours, harassment, illegal substances where prohibited, or repeated unreasonable noise may result in
+            written cure notices and, if not cured, termination procedures permitted by RCW 59.18.180 after proper notice. Other
+            residents&apos; breach does not excuse Resident&apos;s performance unless Landlord fails to enforce material rules after
+            documented written notice where Landlord has legal authority to cure the third-party conduct.
+          </P>
+        </div>
 
         {/* 20 — Signatures */}
         <div className="pt-6">

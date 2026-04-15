@@ -126,79 +126,110 @@ function buildLeasePrompt({
   utilitiesFee,
   leaseTerm,
 }) {
-  return `You are a professional real estate attorney drafting a residential lease agreement for Axis Seattle Housing, LLC — a residential rental housing operator in Seattle, WA.
-
-Generate a complete, professionally formatted residential lease agreement with the following details:
-
-PARTIES:
+  const facts = `FACTS (use exactly; do not invent amounts, dates, or amenities):
 - Landlord: Axis Seattle Housing, LLC
-- Tenant/Resident: ${residentName}
-- Tenant Email: ${residentEmail || 'On file with management'}
+- Resident: ${residentName}
+- Resident email: ${residentEmail || 'On file with management'}
+- Property: ${property}, Seattle, WA
+- Room / unit: ${unit || 'As assigned by management'}
+- Lease type: ${leaseTerm || 'Fixed term'}
+- Commencement: ${leaseStartDate}
+- Expiration / continuation: ${leaseEndDate || 'Month-to-month after initial term unless otherwise agreed in writing'}
+- Monthly rent: $${rentAmount || '0'}/month
+- Security deposit: $${depositAmount || '0'}
+- Monthly utilities / household services fee (if any): $${utilitiesFee || '0'}/month (describe as shared-household allocation; do not invent inclusions beyond typical utilities/Wi-Fi unless stated)`
 
-PROPERTY:
-- Property Address: ${property}, Seattle, WA
-- Unit/Room: ${unit || 'As assigned by management'}
+  return `${facts}
 
-LEASE TERMS:
-- Lease Type: ${leaseTerm || 'Fixed Term'}
-- Commencement Date: ${leaseStartDate}
-- Expiration Date: ${leaseEndDate || 'Month-to-month continuation after initial term'}
-- Monthly Rent: $${rentAmount || '0'}/month
-- Security Deposit: $${depositAmount || '0'}
-- Monthly Utilities Fee: $${utilitiesFee || '0'}/month (covers water, electricity, gas, high-speed WiFi)
+You are drafting a Washington State residential tenancy for **shared housing** (private room + common areas). The output must be suitable for professional property management: **legally careful**, **readable**, and **split into two parts** — do not mash addenda into unreadable walls of text.
 
-Generate the full lease agreement with ALL of the following numbered sections. Each section must have a clear heading and substantive content:
+## OUTPUT FORMAT (mandatory)
 
-1. PARTIES AND PREMISES
-2. LEASE TERM
-3. RENT AND PAYMENT TERMS
-4. SECURITY DEPOSIT
-5. UTILITIES AND SERVICES INCLUDED
-6. OCCUPANCY AND PERMITTED USE
-7. SHARED SPACES AND HOUSE RULES
-8. FURNISHINGS AND PERSONAL PROPERTY
-9. MAINTENANCE AND REPAIRS
-10. SMOKE DETECTORS (use heading **2.12 SMOKE DETECTORS** for this section)
-11. ENTRY BY LANDLORD
-12. PETS AND SMOKING POLICY
-13. SUBLETTING AND ASSIGNMENT
-14. ALTERATIONS AND IMPROVEMENTS
-15. MOVE-OUT AND SURRENDER OF PREMISES
-16. DEFAULT AND LANDLORD REMEDIES
-17. QUIET ENJOYMENT
-18. GENERAL PROVISIONS
-19. GOVERNING LAW (Washington State)
-20. ENTIRE AGREEMENT AND AMENDMENTS
-21. SIGNATURES
+1. Start with a centered title: **RESIDENTIAL LEASE AGREEMENT**
+2. Subtitle line: **Axis Seattle Housing, LLC · State of Washington**
+3. **PART I — CORE lease** — numbered sections 1 through 22 (headings like "1. Parties and Premises"). Use short paragraphs and bold lead-ins where helpful.
+4. A horizontal rule or clear "PART II — ADDENDA" divider.
+5. **PART II — Addenda** — each addendum lettered **ADDENDUM A** through **ADDENDUM K** with its own heading and substantive clauses (not one-liners).
+6. End with **SIGNATURES** using EXACTLY these placeholders (do not fill):
+   Tenant Signature: [RESIDENT SIGNATURE]
+   Tenant Printed Name: [RESIDENT PRINT NAME]
+   Date: [DATE SIGNED]
+   Landlord/Manager Signature: [MANAGER SIGNATURE]
+   Landlord/Manager Printed Name: [MANAGER PRINT NAME]
+   Date: [DATE SIGNED]
 
-Important requirements:
-- Use the provided property, unit, dates, rent, deposit, and utilities values exactly.
-- Do not invent room number, rent, fees, dates, or amenities.
-- If any required factual value is missing, keep a clear placeholder like [MISSING DATA] instead of guessing.
-- Reference Washington State Residential Landlord-Tenant Act (RCW Chapter 59.18) where applicable
-- Include specific clauses about shared housing etiquette, common areas, and co-tenant responsibilities
-- Make the language clear, complete, and legally professional
+If any fact above is missing for a clause, use **[MISSING DATA]** — do not guess.
 
-Washington-specific content you MUST include (use these rules; do not contradict them):
-- **Lease termination (month-to-month / notice to end tenancy):** For periods governed by RCW 59.18.200, tenant notice to terminate is **20 days** before the end of a rental period — NOT 24 hours. Do not use "20 days" for landlord entry to the private room.
-- **Landlord entry to the resident's private room (non-emergency):** At least **24 hours' written notice** before entry for inspection, repair, or showing, per RCW 59.18.150. **Emergency entry** (imminent threat to life, health, safety, or property) may occur without prior notice when reasonably necessary. Landlord may enter **common areas** without the same notice when appropriate for legitimate management purposes.
-- **Rent / money:** Address **security deposit** (RCW 59.18.260), return/itemization (RCW 59.18.280), late fees, payment methods. Include an explicit **prepaid / last month's rent** clause: if none is collected, state that; if collected, state it is not a deposit unless designated as such and applies only to the final month as allowed by law.
-- **Maintenance:** Landlord habitability (RCW 59.18.060). **Plumbing and water:** resident must report leaks, backups, and loss of pressure immediately; no grease/chemicals in drains; resident may shut fixture supply if safe in a burst leak. After written notice of serious defects, reference **RCW 59.18.070** repair timelines. Emergencies: 911 when appropriate, then notify landlord.
-- **Smoke detectors (Section 10; heading must be 2.12 SMOKE DETECTORS):** Include substantially this language (you may merge minor wording for flow but do not omit RCW 43.44.110 or the certification/acknowledgment): Resident acknowledges and the landlord certifies that the property is equipped with smoke detectors as required by RCW 43.44.110. It is the Resident's responsibility to maintain the smoke detection device(s) in proper operating condition in accordance with the manufacturer's recommendations, including providing it with working batteries or other power source as the manufacturer requires, testing as directed, and promptly notifying management of any malfunction or inoperable device. The Resident must not remove or disable smoke detectors.
-- **Utilities:** Shared utilities / flat fee if applicable; resident may not transfer accounts without consent.
-- **Insurance:** Recommend **renters insurance** for personal property.
-- **Keys / access:** Lost or unreturned keys/fobs — replacement at resident's reasonable actual cost.
-- **Noise / guests / shared kitchen and bathrooms:** Co-living conduct rules; quiet hours.
-- **Pets, smoking, cannabis** where relevant to Washington.
-- **Subletting, alterations, default/remedies, governing law (Washington), entire agreement, signatures** as in the section list above.
-- For the signatures section, use EXACTLY these placeholders (do not fill them in):
-  Tenant Signature: [RESIDENT SIGNATURE]
-  Tenant Printed Name: [RESIDENT PRINT NAME]
-  Date: [DATE SIGNED]
-  Landlord/Manager Signature: [MANAGER SIGNATURE]
-  Landlord/Manager Printed Name: [MANAGER PRINT NAME]
-  Date: [DATE SIGNED]
-- Begin the document with the title "RESIDENTIAL LEASE AGREEMENT" centered at the top`
+## PART I — Required core sections (minimum)
+
+1. **Parties and Premises** — landlord, resident, co-living description, Seattle/WA situs, integration with addenda.
+2. **Lease Term** — fixed vs month-to-month; **RCW 59.18.200**: **20 days'** written notice before the end of a rental period for tenant termination where that statute applies (never confuse 20 days with landlord entry notice).
+3. **Rent and Payment** — due date, methods, **RCW 59.18.140** late fee (must be in writing in the lease; no unconscionable fees). **Payment allocation order** (e.g. damage → utilities → fees → past rent → current rent) unless law requires otherwise. **Returned payment / NSF**: actual bank fees plus **reasonable** returned-payment fee capped by **RCW 62A.3-421** or lower. **Fee stacking**: state that lawful fees do not compound unlawfully; late fee applies only to delinquent **rent** as statute contemplates. Optional **notice preparation / statutory notice pass-through** only to the extent expressly allowed by Washington law (if uncertain, say "only if permitted by statute" rather than inventing a dollar amount).
+4. **Security Deposit** — **RCW 59.18.260** (receipt, holding, wrongful retention), **RCW 59.18.280** (21-day itemized statement after tenancy ends). Tie deposit to **written baseline condition** (see Addendum A). Deductions may not include **ordinary wear and tear**.
+5. **Utilities & services** — if a flat utilities fee is stated, explain allocation, billing with rent, **non-payment as monetary default** after proper notice where allowed, **no account transfer** without landlord consent, and **adjustment**: landlord may change the monthly utilities component with **not less than thirty (30) days' prior written notice** where lawful (if a change is not permitted, say resident may terminate with statutory notice instead of accepting — phrase in a Washington-compliant way).
+6. **Occupancy & guests** — single primary resident; guest limits; unauthorized occupants.
+7. **Shared spaces & house rules** — kitchen/bath/laundry etiquette; trash; cannabis smoking outdoors only where lawful; noise.
+8. **Furnishings & personal property** — landlord vs resident property; no removal of landlord furnishings.
+9. **Maintenance & repairs** — **RCW 59.18.060** habitability; **RCW 59.18.070** timelines after written notice where applicable; resident reporting; **no grease/chemicals** in drains; emergencies (911 + notify landlord). **Tenant maintenance**: HVAC filters per schedule, promptly report leaks, keep drains clear, reset breakers/GFCIs only when safe, pest reporting.
+10. **Safety devices & disclosures** — include a subsection titled **SMOKE DETECTORS (RCW 43.44.110)** with substantially this language (may merge sentences but do not omit concepts): Resident acknowledges and the landlord certifies that the property is equipped with smoke detectors as required by RCW 43.44.110. Resident shall maintain devices per manufacturer (batteries/power, testing), notify management of malfunctions, and **not remove or disable** smoke detectors. Add **carbon monoxide alarms** where required (**RCW 19.27.530** / code). Add **domestic hot water** / anti-scald (code-compliant tempering; resident shall not adjust water heater controls without permission). Add **general fire safety**: no obstruction of egress, no misuse of extension cords, no open flame hazards except as law allows.
+11. **Lead-based paint** — if building may be pre-1978, include federal **42 U.S.C. §4852d / 40 C.F.R. Part 745** pamphlet receipt and disclosure; if unknown, say disclosure completed to best of landlord knowledge or attach **[MISSING DATA]** for year built.
+12. **Entry** — **RCW 59.18.150**: **24 hours' written notice** for non-emergency entry to the **private room**; emergencies without prior notice when reasonably necessary; common-area entry for management without same notice when appropriate.
+13. **Pets, smoking, cannabis** — Washington-appropriate; default no pets without written consent.
+14. **Assignment / subletting** — prior written consent; unauthorized subletting as breach.
+15. **Alterations** — no alterations without written consent.
+16. **Insurance** — strongly recommend **renters insurance** (liability + personal property); landlord not insurer of resident contents.
+17. **Liability & indemnity** — to the extent permitted by Washington law: limitation of landlord liability except for gross negligence/willful misconduct or where statute forbids limitation; **no duty as to crime by third parties** (no guaranty of security); resident indemnity for resident/guest-caused claims **except** landlord negligence/willful misconduct; **survival** of key provisions.
+18. **Move-out & surrender** — broom-clean; keys/fobs; **professional cleaning** standard if left unreasonably dirty; carpet cleaning only for **tenant-caused** damage/stains beyond wear and tear, with itemization.
+19. **Early termination / lease break** — **duty to mitigate** under Washington law; resident liable for **actual damages** and **unpaid lawful charges** through the earlier of (a) lease end or (b) date a **replacement tenant** acceptable to landlord begins paying rent; **documented re-leasing costs** (advertising, screening, reasonable admin). Optional **reasonable administrative lease-break fee** only if framed as **reasonable estimate of actual turnover costs** and not a penalty — if you include a dollar amount and none is provided in facts, use **[LEASE BREAK FEE TBD]**.
+20. **Default & remedies** — pay-or-vacate / comply notices under **RCW 59.12** and **RCW 59.18** as applicable; no unlawful self-help lockouts or utility shutoff for eviction purposes.
+21. **Quiet enjoyment** — statutory covenant where applicable.
+22. **Legal enforcement** — **Severability** (reform-to-minimum-extent clause). **No oral modification**; integrated agreement **with addenda**. **Attorneys' fees**: prevailing party to the extent allowed by **RCW 59.18.290** and other applicable Washington law (do not promise fees in consumer contexts where prohibited). **Venue**: King County, Washington (or county where premises sit if different — if property is Seattle, King County is appropriate). **Waiver**: no waiver unless in writing; course of dealing does not waive.
+
+## PART II — Addenda (each required; letter as shown)
+
+**ADDENDUM A — Property Condition & Move-In Inspection (Deposit Baseline)**  
+Joint move-in inspection; **Property Condition Checklist**; resident may submit **written list of existing deficiencies within fourteen (14) calendar days** after possession; integration with **RCW 59.18.260 / 59.18.280** deposit accounting; photographs encouraged.
+
+**ADDENDUM B — Deposit Deductions, Cleaning & Repair Standards**  
+Itemized categories: unpaid rent/charges; damage beyond wear/tear; **reasonable** cleaning to restore to **rent-ready** standard; **carpet** only for tenant-caused damage; **lost keys/fobs** at documented cost; **after-hours lockout** fees at actual cost if posted; **hourly repair labor** billed at landlord's **documented** internal rate or vendor invoice **not to exceed prevailing reasonable market rates** (no padded "penalty" rates). Estimates for work above a reasonable threshold (e.g. $250) when practicable.
+
+**ADDENDUM C — Utilities, Billing & Household Services**  
+Flat fee mechanics; true-up if lawfully allowed; **30-day notice** for changes; dispute process (written notice + meeting); cooperation with energy audits.
+
+**ADDENDUM D — Bed Bugs**  
+Reporting; cooperation with inspection/treatment; **tenant-caused** treatment costs if infestation attributable to resident conduct; withholding treatment = breach.
+
+**ADDENDUM E — Mold, Moisture & Ventilation**  
+Moisture control (bathroom fans, wiping condensation, reporting leaks within 24 hours); **no painting over mold**; landlord response for building-system moisture; tenant responsibility for tenant-caused humidity.
+
+**ADDENDUM F — Pests (General), Garbage & Sanitation**  
+Integrated pest management cooperation; secured food/trash; fines only as lawful charges with notice.
+
+**ADDENDUM G — Rules, Nuisance & Conduct**  
+Detailed quiet hours; harassment zero tolerance; common-area scheduling; parking/bike rules placeholder; **noise/nuisance** enforcement steps (notice + cure).
+
+**ADDENDUM H — Cosigner / Guaranty** (if no cosigner, state "Not used for this tenancy" in one sentence)
+
+**ADDENDUM I — Renters Insurance & Liability Limits**  
+Minimum suggested liability coverage **[e.g. $100,000]** as recommendation only unless otherwise required by landlord policy in writing; additional interest / named additional insured optional.
+
+**ADDENDUM J — Emergency & Mass Communication**  
+Contact tree; shelter-in-place; city alert systems (informational).
+
+**ADDENDUM K — Entire Agreement Order of Precedence**  
+Core + addenda; if conflict, safer interpretation for habitability/statutory rights wins.
+
+## Washington compliance reminders (do not contradict)
+
+- **RCW 59.18.200** — **20-day** tenant notice to end month-to-month / periodic tenancy (not for landlord private-room entry).
+- **RCW 59.18.150** — **24-hour** written notice for non-emergency entry to resident's **private room**.
+- Deposits: **RCW 59.18.260**, return/itemization **RCW 59.18.280** (21 days after tenancy ends and possession delivered).
+- Late fees **RCW 59.18.140** — agreed in writing in the lease; reasonable.
+- No **penalty** early-termination charges disguised as liquidated damages—tie to **actual damages + mitigation**.
+
+Tone: modern, clear, **Axis-branded** professionalism — not archaic ALL-CAPS spam. Use bullet lists inside addenda where it improves clarity.
+
+Generate the full document now.`
 }
 
 export async function createLeaseDraft({
@@ -247,7 +278,7 @@ export async function createLeaseDraft({
 
   const aiResponse = await client.messages.create({
     model: 'claude-opus-4-6',
-    max_tokens: 4096,
+    max_tokens: 16384,
     messages: [{ role: 'user', content: leasePrompt }],
   })
 

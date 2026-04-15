@@ -699,6 +699,11 @@ function FloorPlanCard({plan, onDetail}){
                     Tour
                   </span>
                 )}
+                {Array.isArray(r.images) && r.images.length > 0 ? (
+                  <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold text-slate-600">
+                    {r.images.length} photo{r.images.length !== 1 ? 's' : ''}
+                  </span>
+                ) : null}
               </div>
               {(r.floorTitle || r.bathroomSetup || r.details) && (
                 <div className="mt-0.5 space-y-1">
@@ -1672,6 +1677,18 @@ export default function PropertyPage(){
                     text={modalPlan.room.bathroomVideoPlaceholderText || 'Bathroom tour coming soon.'}
                   />
                 )}
+                {Array.isArray(modalPlan.room.images) && modalPlan.room.images.length > 0 ? (
+                  <div className="mt-5">
+                    <div className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-400">Room photos</div>
+                    <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
+                      {modalPlan.room.images.map((src) => (
+                        <div key={src} className="overflow-hidden rounded-[18px] border border-slate-200">
+                          <img src={src} alt={`${modalPlan.room.name} photo`} className="h-56 w-full object-cover" />
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ) : null}
                 {includedItems.length > 0 ? (
                   <div className="mt-4 rounded-[18px] border border-blue-100 bg-blue-50 px-4 py-3">
                     <div className="text-xs font-semibold uppercase tracking-[0.14em] text-blue-600">In this room</div>

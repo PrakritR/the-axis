@@ -2,6 +2,7 @@ import { generateLeaseFromTemplate } from './generate-lease-from-template.js'
 import { resolveManagerTenant, canEnforceTenant } from '../middleware/resolveManagerTenant.js'
 import { listResidentsMatchingApplication, markMatchingResidentsApproved } from '../lib/application-resident-sync.js'
 import { createApprovedApplicationFeePayments } from '../lib/approved-application-fee-payment.js'
+import { createApprovedApplicationMoveInPayments } from '../lib/approved-application-movein-payments.js'
 import {
   applicationStatusLooksPipelinePending,
   isApplicationApprovedForLease,
@@ -188,6 +189,8 @@ export default async function handler(req, res) {
       residentRecordsUpdated: residentSync.updatedIds,
       applicationFeePaymentIds: applicationFeePayments.createdIds,
       applicationFeePaymentsSkipped: applicationFeePayments.skipped,
+      moveInPaymentIds: moveInPayments.createdIds,
+      moveInPaymentsSkipped: moveInPayments.skipped,
       message: created
         ? 'Application approved and lease draft generated.'
         : 'Application approved.',

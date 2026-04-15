@@ -1,8 +1,15 @@
 import React from 'react'
 import { formatApplicationDetailValue } from './applicationDetailPanel.jsx'
 import { parseAxisListingMetaBlock } from './axisListingMeta.js'
-import { normalizeLeasingFromMeta } from './managerPropertyFormAirtableMap.js'
-import { PROPERTY_EDIT_REQUEST_FIELD } from './managerPropertyFormAirtableMap.js'
+import {
+  normalizeLeasingFromMeta,
+  PROPERTY_EDIT_REQUEST_FIELD,
+  PROPERTY_AIR,
+  PROPERTIES_LEASING_META_KEYS,
+  MAX_LAUNDRY_SLOTS,
+  laundryTypeField,
+  laundryRoomsSharingField,
+} from './managerPropertyFormAirtableMap.js'
 
 const MAX_ROOMS = 20
 const MAX_BATHROOMS = 10
@@ -68,6 +75,30 @@ function humanizeMetaKey(key) {
     .trim()
   if (!s) return 'Field'
   return s.charAt(0).toUpperCase() + s.slice(1)
+}
+
+/** Pretty-print Move In Charges JSON for the property detail panel. */
+function formatMoveInChargesJsonDisplay(raw) {
+  const str = String(raw ?? '').trim()
+  if (!str) return null
+  try {
+    const parsed = JSON.parse(str)
+    if (!Array.isArray(parsed) || parsed.length === 0) {
+      return JSON.stringify(parsed, null, 2)
+    }
+    const lines = parsed.map((row, i) => {
+      if (!row || typeof row !== 'object') return `• Row ${i + 1}: (invalid)`
+      const name = String(row.name ?? '').trim() || 'Charge'
+      const amt = String(row.amount ?? '').trim()
+      const req = Boolean(row.requiredBeforeSigning)
+      const amtPart = amt !== '' ? (Number.isFinite(Number(amt)) ? `$${amt}` : amt) : '—'
+      const reqPart = req ? 'required before signing' : 'not required before signing'
+      return `• ${name} — ${amtPart} — ${reqPart}`
+    })
+    return lines.join('\n')
+  } catch {
+    return str
+  }
 }
 
 function metaPropertyListingItems(meta) {
@@ -197,8 +228,13 @@ export const PROPERTY_FIELD_GROUPS = [
     title: 'Listing',
     fields: [
       ['Name', 'Property name'],
+      [PROPERTY_AIR.propertyName, 'Property name (Airtable)'],
+      [PROPERTY_AIR.propertyType, 'Property type'],
       ['Address', 'Address'],
       ['Housing Type', 'Housing type'],
+      [PROPERTIES_LEASING_META_KEYS.leaseLengthInformation, 'Lease length information'],
+      [PROPERTIES_LEASING_META_KEYS.fullHousePrice, 'Full house price'],
+      [PROPERTIES_LEASING_META_KEYS.promotionalFullHousePrice, 'Promotional full house price'],
       ['Description', 'Description'],
       ['Amenities', 'Amenities'],
       ['Pets', 'Pets'],
@@ -259,8 +295,19 @@ export const PROPERTY_FIELD_GROUPS = [
   {
     title: 'Management',
     fields: [
+      [PROPERTY_AIR.managerProfile, 'Manager profile'],
+      ['Owner ID', 'Owner ID'],
       ['Manager Email', 'Manager email'],
       ['Site Manager Email', 'Site manager email'],
+    ],
+  },
+  {
+    title: 'Lease signing & move-in',
+    fields: [
+      [PROPERTY_AIR.leaseAccessRequirement, 'Lease access requirement'],
+      [PROPERTY_AIR.requiredBeforeSigningSummary, 'Required before signing (summary)'],
+      [PROPERTY_AIR.feesRequiredBeforeSigning, 'Fees required before signing'],
+      [PROPERTY_AIR.moveInChargesJson, 'Move-in charge lines'],
     ],
   },
   {
@@ -294,6 +341,12 @@ export function PropertyDetailPanel({ property, ownerLabel }) {
       let value = raw[key]
       if (key === 'Other Info' && typeof value === 'string') {
         value = parseAxisListingMetaBlock(value).userText
+      }
+      if (key === PROPERTY_AIR.moveInChargesJson) {
+        const pretty = formatMoveInChargesJsonDisplay(value)
+        const v = pretty || fmt(value)
+        if (v) items.push({ label, value: v })
+        continue
       }
       const v = fmt(value)
       if (v) items.push({ label, value: v })
@@ -378,6 +431,23 @@ export function PropertyDetailPanel({ property, ownerLabel }) {
   }
   if (kitchenItems.length) sections.push({ title: 'Kitchens', items: kitchenItems })
 
+  // ── Dynamic laundry sections (Laundry 1 Type, Rooms Sharing Laundry 1, …) ─
+  const laundryItems = []
+  for (let n = 1; n <= MAX_LAUNDRY_SLOTS; n++) {
+    const typeKey = laundryTypeField(n)
+    const shareKey = laundryRoomsSharingField(n)
+    const hasAny =
+      (raw[typeKey] != null && raw[typeKey] !== '') || (raw[shareKey] != null && raw[shareKey] !== '')
+    if (!hasAny) continue
+    shownKeys.add(typeKey)
+    shownKeys.add(shareKey)
+    const typeV = fmt(raw[typeKey])
+    const shareV = fmt(raw[shareKey])
+    if (typeV) laundryItems.push({ label: `Laundry ${n} type`, value: typeV })
+    if (shareV) laundryItems.push({ label: `Rooms sharing laundry ${n}`, value: shareV })
+  }
+  if (laundryItems.length) sections.push({ title: 'Laundry (by unit)', items: laundryItems })
+
   // ── Shared spaces ──────────────────────────────────────────────────────────
   shownKeys.add('Number of Shared Spaces')
   const spaceCount = Number(raw['Number of Shared Spaces']) || 0
@@ -404,7 +474,7 @@ export function PropertyDetailPanel({ property, ownerLabel }) {
   for (const key of Object.keys(raw).sort((a, b) => a.localeCompare(b))) {
     if (shownKeys.has(key)) continue
     const v = fmt(raw[key])
-    if (v) otherItems.push({ label: key, value: v })
+    if (v) otherItems.push({ label: humanizeMetaKey(key), value: v })
   }
   sections.push(...parsedExtraSections)
   if (otherItems.length) sections.push({ title: 'Other fields', items: otherItems })
@@ -455,7 +525,7 @@ export function PropertyDetailPanel({ property, ownerLabel }) {
                 className="grid gap-1 border-b border-slate-100 py-2.5 last:border-b-0 sm:grid-cols-[minmax(0,200px)_1fr] sm:gap-4"
               >
                 <dt className="text-xs font-semibold text-slate-500">{row.label}</dt>
-                <dd className="text-sm text-slate-900 whitespace-pre-wrap break-words">{row.value}</dd>
+                <dd className="break-words text-sm leading-relaxed text-slate-900 whitespace-pre-wrap">{row.value}</dd>
               </div>
             ))}
           </dl>

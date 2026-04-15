@@ -29,6 +29,11 @@ import {
   formatSharedSpaceAccessDisplay,
   partitionRoomListingFields,
 } from './listingRoomDisplay.js'
+import {
+  photosAttachmentsFromRecord,
+  primaryGalleryUrlsFromAttachments,
+  urlsForRoomListing,
+} from './propertyListingPhotos.js'
 
 /** URL slug for an approved Airtable property (stable, unique). */
 export function marketingSlugForAirtablePropertyId(recordId) {
@@ -208,6 +213,7 @@ function buildRoomPlansFromAirtableRecord(rec, meta) {
 
   if (roomCount <= 0) return []
 
+  const photoAtts = photosAttachmentsFromRecord(rec)
   const flat = []
   for (let i = 0; i < roomCount; i++) {
     const n = i + 1
@@ -217,6 +223,7 @@ function buildRoomPlansFromAirtableRecord(rec, meta) {
     const price = formatRentForListing(rentRaw) || 'Contact for pricing'
     const available = availabilityDisplayFromDetail(detail, rec, n)
     const { bathroomSetup, featureTags } = partitionRoomListingFields(detail)
+    const images = urlsForRoomListing(n, photoAtts, detail)
 
     flat.push({
       name: label,
@@ -226,6 +233,7 @@ function buildRoomPlansFromAirtableRecord(rec, meta) {
       featureTags,
       /** @deprecated listing subtitle — bathroom only; use `bathroomSetup` */
       details: bathroomSetup || undefined,
+      images,
       videoPlaceholder: true,
       videoPlaceholderText: `${label} tour coming soon.`,
     })
@@ -304,8 +312,11 @@ function attachmentUrlsWithFilenamePrefix(photos, prefixLower) {
   for (const att of arr) {
     const fn = String(att?.filename || att?.name || '').toLowerCase()
     if (!fn.startsWith(prefixLower)) continue
-    const url = typeof att === 'string' ? att : att?.url
-    if (url) out.push(url)
+    const url =
+      typeof att === 'string'
+        ? att
+        : att?.url || att?.thumbnails?.large?.url || att?.thumbnails?.full?.url
+    if (url) out.push(String(url).trim())
   }
   return out
 }
@@ -314,6 +325,7 @@ function buildSharedSpacesListFromRecord(rec, meta) {
   const roomCount = clampInt(rec[PROPERTY_AIR.roomCount] ?? 0, 0, MAX_ROOM_SLOTS)
   const sc = clampInt(rec[PROPERTY_AIR.sharedSpaceCount] ?? 0, 0, MAX_SHARED_SPACE_SLOTS)
   const mediaRows = Array.isArray(meta?.sharedSpacesDetail) ? meta.sharedSpacesDetail : []
+  const photoAtts = photosAttachmentsFromRecord(rec)
 
   const out = []
   for (let i = 1; i <= sc; i++) {
@@ -337,7 +349,7 @@ function buildSharedSpacesListFromRecord(rec, meta) {
     const descriptionParts = [descText, typeLine].filter(Boolean)
     const description = descriptionParts.join(' — ') || (typeLine || 'Shared area')
     const fromMeta = (Array.isArray(m.imageUrls) ? m.imageUrls : []).map(trimStr).filter(Boolean)
-    const fromPhotos = attachmentUrlsWithFilenamePrefix(rec?.Photos, `axis-ss${i}-`.toLowerCase())
+    const fromPhotos = attachmentUrlsWithFilenamePrefix(photoAtts, `axis-ss${i}-`.toLowerCase())
     const imageUrls = [...new Set([...fromMeta, ...fromPhotos])]
     const vidRaw = Array.isArray(m.videos) ? m.videos : []
     const videos = vidRaw
@@ -399,7 +411,7 @@ function buildSharedSpacesListFromRecord(rec, meta) {
       const extra = trimStr(lm.description || lm.notes || '')
       const descParts = [lt, extra].filter(Boolean)
       const description = descParts.join(' — ') || 'Shared laundry'
-      const fromPhotos = attachmentUrlsWithFilenamePrefix(rec?.Photos, `axis-l${i}-`.toLowerCase())
+      const fromPhotos = attachmentUrlsWithFilenamePrefix(photoAtts, `axis-l${i}-`.toLowerCase())
       const fromMeta = (Array.isArray(lm.imageUrls) ? lm.imageUrls : []).map(trimStr).filter(Boolean)
       const images = [...new Set([...fromPhotos, ...fromMeta])]
       out.push({
@@ -445,7 +457,7 @@ function buildBathroomsListFromRecord(rec, meta) {
   const roomCount = clampInt(rec[PROPERTY_AIR.roomCount] ?? 0, 0, MAX_ROOM_SLOTS)
   const bc = clampInt(rec[PROPERTY_AIR.bathroomCount] ?? 0, 0, MAX_BATHROOM_SLOTS)
   const bathroomMetaRows = Array.isArray(meta?.bathroomsDetail) ? meta.bathroomsDetail : []
-  const photos = Array.isArray(rec?.Photos) ? rec.Photos : []
+  const photos = photosAttachmentsFromRecord(rec)
   const out = []
   for (let i = 1; i <= bc; i++) {
     const parsed = parseBodyTriplet(rec[bathroomDescriptionField(i)])
@@ -483,8 +495,8 @@ function formatMoneyLabelFromNumber(n) {
 }
 
 export function mapAirtableRecordToHomeProperty(rec) {
-  const photos = Array.isArray(rec?.Photos) ? rec.Photos : []
-  const urls = photos.map((a) => (typeof a === 'string' ? a : a?.url)).filter(Boolean)
+  const photoAtts = photosAttachmentsFromRecord(rec)
+  const urls = primaryGalleryUrlsFromAttachments(photoAtts)
   const name = String(rec['Property Name'] || rec.Name || 'Axis listing').trim()
   const slug = marketingSlugForAirtablePropertyId(rec.id)
   const beds = Number(rec['Room Count']) || 0
