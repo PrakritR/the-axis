@@ -1706,13 +1706,21 @@ export default function Apply() {
           )
           return
         }
-        try {
-          window.sessionStorage.removeItem(APPLICATION_FEE_CHECKOUT_SESSION_KEY)
-        } catch {
-          /* ignore */
-        }
         setAppFeePaid(true)
-        await handleSubmit({ preventDefault: () => {} }, { applicationRecordId: recId })
+        const ok = await handleSubmit(
+          { preventDefault: () => {} },
+          {
+            applicationRecordId: recId,
+            checkoutSessionId: stripeSessionId.startsWith('cs_') ? stripeSessionId : '',
+          },
+        )
+        if (ok) {
+          try {
+            window.sessionStorage.removeItem(APPLICATION_FEE_CHECKOUT_SESSION_KEY)
+          } catch {
+            /* ignore */
+          }
+        }
       } finally {
         setFeeConfirmBusy(false)
       }
@@ -1811,7 +1819,12 @@ export default function Apply() {
 
   async function handleSubmit(event, options = {}) {
     event.preventDefault()
-    const { promoOverride = false, applicationRecordId: applicationRecordIdFromOptions = '' } = options
+    const {
+      promoOverride = false,
+      applicationRecordId: applicationRecordIdFromOptions = '',
+      /** Stripe Checkout Session id (`cs_…`) — pass through after embedded pay so submit can sync Airtable even if sessionStorage was cleared. */
+      checkoutSessionId: checkoutSessionIdFromOptions = '',
+    } = options
     // Final step validation before submit
     const current = steps[step]
     const data = applicationType === 'cosigner' ? cosigner : signer
@@ -1861,14 +1874,20 @@ export default function Apply() {
             )
           }
           if (!stPaid) {
+            const explicitSid = String(checkoutSessionIdFromOptions || '').trim()
             const storedSid =
               typeof window !== 'undefined'
                 ? String(window.sessionStorage.getItem(APPLICATION_FEE_CHECKOUT_SESSION_KEY) || '').trim()
                 : ''
+            const sessionForPoll = explicitSid.startsWith('cs_')
+              ? explicitSid
+              : storedSid.startsWith('cs_')
+                ? storedSid
+                : undefined
             const polled = await pollApplicationPaid(applicationRecordId, {
               maxAttempts: 28,
               intervalMs: 800,
-              sessionId: storedSid.startsWith('cs_') ? storedSid : undefined,
+              sessionId: sessionForPoll,
             })
             if (!polled) {
               throw new Error(
@@ -2372,13 +2391,21 @@ export default function Apply() {
           )
           return
         }
-        try {
-          window.sessionStorage.removeItem(APPLICATION_FEE_CHECKOUT_SESSION_KEY)
-        } catch {
-          /* ignore */
-        }
         setAppFeePaid(true)
-        const ok = await handleSubmit({ preventDefault: () => {} }, { applicationRecordId: recId })
+        const ok = await handleSubmit(
+          { preventDefault: () => {} },
+          {
+            applicationRecordId: recId,
+            checkoutSessionId: sid.startsWith('cs_') ? sid : '',
+          },
+        )
+        if (ok) {
+          try {
+            window.sessionStorage.removeItem(APPLICATION_FEE_CHECKOUT_SESSION_KEY)
+          } catch {
+            /* ignore */
+          }
+        }
         if (!ok) {
           setPrePaymentError(
             'Payment went through, but we could not save your application. Read the red message on the form, fix any issues, then use Submit again (Stripe will not charge twice for the same checkout). Contact leasing if you need help.',
