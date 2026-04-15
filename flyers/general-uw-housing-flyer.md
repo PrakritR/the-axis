@@ -15,7 +15,7 @@ Comfortable, student-friendly housing in the University District with easy acces
 - Select premium rooms available up to **$900/month**
 
 ## Typical Fees
-- Application Fee: **$50**
+- Application Fee: **$1**
 - Cleaning Fee: **$25**
 
 ## Contact / Tour Requests

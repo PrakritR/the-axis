@@ -112,7 +112,7 @@ function getUtilitiesFee(propertyName) {
   return 0
 }
 
-const DEFAULT_APPLICATION_FEE_USD = 50
+const DEFAULT_APPLICATION_FEE_USD = 1
 const MAX_APPLICATION_FEE_USD = 9999
 
 /** Parse `applicationFee` from marketing `properties.js`. Returns null → use default USD amount. */

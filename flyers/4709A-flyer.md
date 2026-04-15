@@ -17,7 +17,7 @@
 - WiFi + easy transit access
 
 ## Fees
-- Application Fee: **$50**
+- Application Fee: **$1**
 - Cleaning Fee: **$25**
 
 ## Contact / Tour Requests

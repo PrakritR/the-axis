@@ -178,7 +178,7 @@ const _REMOVED_PROPERTIES = [
     communityAmenities: [...SHARED_COMMUNITY_AMENITIES, 'Street Parking'],
     unitAmenities: STANDARD_UNIT_AMENITIES,
     policies: 'Four lease options available: 3-month, 9-month, and 12-month, plus month-to-month with an extra $25/month charge. Start and end dates are flexible — you choose the window that works for you.',
-    applicationFee: '$50',
+    applicationFee: '$1',
     cleaningFee: '$25',
     utilitiesFee: '$175',
     leaseTerms: leaseTerms({
@@ -303,7 +303,7 @@ const _REMOVED_PROPERTIES = [
     communityAmenities: [...SHARED_COMMUNITY_AMENITIES, 'Street Parking'],
     unitAmenities: STANDARD_UNIT_AMENITIES,
     policies: 'Four lease options available: 3-month, 9-month, and 12-month, plus month-to-month with an extra $25/month charge. Start and end dates are flexible — you choose the window that works for you.',
-    applicationFee: '$50',
+    applicationFee: '$1',
     cleaningFee: '$25',
     utilitiesFee: '$175',
     leaseTerms: leaseTerms({
@@ -420,7 +420,7 @@ const _REMOVED_PROPERTIES = [
       academicNote: 'A standard 9-month lease option with fixed dates.',
       fullYearNote: 'The one-year option. Start date is flexible. Non-standard start dates carry a +$25/month surcharge.',
     }),
-    applicationFee: '$50',
+    applicationFee: '$1',
     cleaningFee: '$25',
     utilitiesFee: '$175',
     securityDeposit: '$600',

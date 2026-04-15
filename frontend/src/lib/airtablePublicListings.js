@@ -560,7 +560,7 @@ export function mapAirtableRecordToPropertyPage(rec) {
       ? appFeeNum === 0
         ? 'No application fee'
         : `${formatMoneyLabelFromNumber(appFeeNum)} application fee`
-      : '$50 application fee'
+      : '$1 application fee'
 
   const moveInNum = Number(meta?.financials?.moveInCharges)
   const moveInChargesDisplay =
@@ -581,7 +581,7 @@ export function mapAirtableRecordToPropertyPage(rec) {
         ? appFeeNum === 0
           ? '$0'
           : formatMoneyLabelFromNumber(appFeeNum)
-        : '$50',
+        : '$1',
     applicationFeeDisplay,
     moveInChargesDisplay,
     listingAvailabilitySummary: availabilitySummary,

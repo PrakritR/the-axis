@@ -21,7 +21,7 @@ function buildSystemPrompt() {
     return `### ${p.name} (${p.address})
 - Type: ${p.type} | ${p.beds} bedrooms, ${p.baths} baths
 - Rent range: ${p.rent}
-- Application fee: ${p.applicationFee || '$50'}
+- Application fee: ${p.applicationFee || '$1'}
 - Utilities: ${p.utilitiesFee || '$175'}/mo — covers bi-monthly cleaning, WiFi, water & trash${p.securityDeposit ? `\n- Security deposit: ${p.securityDeposit}` : ''}
 - Policies: ${p.policies || 'Contact leasing for details'}
 
@@ -80,7 +80,7 @@ ${propDetails}
 - Furnished rooms: desk, bed, heating, AC
 
 ## Application
-- Apply at /apply · $50 application fee
+- Apply at /apply · $1 application fee
 - Tours & contact: /contact or call 510-309-8345
 
 ## Neighborhood & Location (Seattle)
@@ -105,7 +105,7 @@ ${propDetails}
 - **Rent:** Per room (see property details above)
 - **Utilities:** $175/mo flat — covers bi-monthly cleaning, WiFi, water & trash. No separate cleaning or furnishing fees.
 - **Security deposit:** $500 (4709A & 4709B) or $600 (5259 Brooklyn)
-- **Application fee:** $50 (collected at move-in, not upfront)
+- **Application fee:** $1 (collected at move-in, not upfront)
 - **Move-in total due:** First month's rent + security deposit
 - **Example (5259 Brooklyn, Room 6–9 at $800/mo):** $800 rent + $175 utilities = $975/mo total. Move-in: $800 + $500 deposit = $1,300 due day one.
 - Custom/flexible start dates: add +$25/mo surcharge
@@ -186,7 +186,7 @@ function getLocalFallbackReply(question) {
 
   // Apply
   if (t.includes('apply') || t.includes('application') || t.includes('how do i') || t.includes('sign up') || t.includes('process'))
-    return 'Apply on the [Apply page](/apply) — $50 fee collected at move-in, not upfront. We respond within 2 business days.'
+    return 'Apply on the [Apply page](/apply) — $1 fee collected at move-in, not upfront. We respond within 2 business days.'
 
   // Tour
   if (t.includes('tour') || t.includes('visit') || t.includes('see') || t.includes('view') || t.includes('show'))
@@ -214,7 +214,7 @@ function getLocalFallbackReply(question) {
 
   // Deposit / move-in costs
   if (t.includes('deposit') || t.includes('move-in') || t.includes('move in') || t.includes('upfront') || t.includes('first month'))
-    return 'Move-in day: first month\'s rent + $500 deposit (or $600 at 5259 Brooklyn). Application fee ($50) is due at move-in, not upfront.'
+    return 'Move-in day: first month\'s rent + $500 deposit (or $600 at 5259 Brooklyn). Application fee ($1) is due at move-in, not upfront.'
 
   // Lease terms
   if (t.includes('lease') || t.includes('term') || t.includes('summer') || t.includes('academic') || t.includes('month') || t.includes('long') || t.includes('duration'))
