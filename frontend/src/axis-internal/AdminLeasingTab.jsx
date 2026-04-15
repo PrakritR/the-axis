@@ -417,12 +417,14 @@ export default function AdminLeasingTab({ adminUser, accounts = [] }) {
     const field = leaseSignWithoutMoveInPayFieldName()
     setActionBusy('sign-override')
     try {
-      const updated = await patchLeaseDraftRecordPreferServer(
+      await patchLeaseDraftRecordPreferServer(
         activeDraft.id,
         { [field]: Boolean(nextChecked) },
         { managerRecordId: '' },
       )
-      setActiveDraft({ ...activeDraft, ...updated, [field]: Boolean(nextChecked) })
+      const full = await getLeaseDraftById(activeDraft.id).catch(() => null)
+      if (full) setActiveDraft(full)
+      else setActiveDraft({ ...activeDraft, [field]: Boolean(nextChecked) })
       await loadDrafts()
       toast.success(
         nextChecked

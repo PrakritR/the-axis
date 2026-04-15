@@ -226,6 +226,15 @@ export async function deleteAdminMeetingAvailabilityRecord(recordId) {
   }
 }
 
+/** IANA zone for the device creating the row (avoids hard-coded Pacific vs manager location). */
+export function getBrowserIanaTimeZone() {
+  try {
+    return Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'
+  } catch {
+    return 'UTC'
+  }
+}
+
 /** Build Airtable fields object for one availability interval. */
 export function buildManagerAvailabilityRecordFields({
   propertyName,
@@ -238,6 +247,7 @@ export function buildManagerAvailabilityRecordFields({
   endHHmm,
   isRecurring,
   source = 'manager_portal',
+  timezone,
 }) {
   const f = managerFieldNames()
   const fields = {
@@ -249,7 +259,7 @@ export function buildManagerAvailabilityRecordFields({
     [f.endTime]: String(endHHmm || '').trim(),
     [f.isRecurring]: Boolean(isRecurring),
     [f.active]: true,
-    [f.timezone]: 'America/Los_Angeles',
+    [f.timezone]: String(timezone || getBrowserIanaTimeZone()).trim() || 'UTC',
     [f.source]: String(source || 'manager_portal').trim(),
   }
   if (isRecurring) {

@@ -11,21 +11,23 @@
  */
 
 import { canEnforceTenant } from '../middleware/resolveManagerTenant.js'
+import { leaseSignWithoutMoveInPayPatchWhitelist } from '../../../shared/lease-sign-without-move-in-pay.js'
 
 const AIRTABLE_TOKEN = process.env.AIRTABLE_TOKEN || process.env.VITE_AIRTABLE_TOKEN
 const BASE_ID = process.env.VITE_AIRTABLE_BASE_ID || process.env.AIRTABLE_BASE_ID || 'appol57LKtMKaQ75T'
 const BASE_URL = `https://api.airtable.com/v0/${BASE_ID}`
 
-const DEFAULT_SIGN_FIELD = 'Allow Sign Without Move-In Pay'
-
-function signWithoutFieldName() {
-  const raw = String(process.env.VITE_AIRTABLE_LEASE_SIGN_WITHOUT_PAY_FIELD || '').trim()
-  return raw || DEFAULT_SIGN_FIELD
+/** Prefer server-only env so Vercel does not need a duplicate `VITE_*` name for PATCH whitelist. */
+function signWithoutPreferredEnvRaw() {
+  return String(
+    process.env.AIRTABLE_LEASE_SIGN_WITHOUT_PAY_FIELD ||
+      process.env.VITE_AIRTABLE_LEASE_SIGN_WITHOUT_PAY_FIELD ||
+      '',
+  ).trim()
 }
 
 function allowedFieldKeys() {
-  const primary = signWithoutFieldName()
-  return new Set([primary, DEFAULT_SIGN_FIELD].filter((k, i, a) => a.indexOf(k) === i))
+  return new Set(leaseSignWithoutMoveInPayPatchWhitelist(signWithoutPreferredEnvRaw()))
 }
 
 function atHeaders() {
@@ -90,8 +92,10 @@ export default async function handler(req, res) {
       return res.status(403).json({ error: 'Access denied.' })
     }
 
-    const patched = await atPatch('Lease Drafts', id, cleaned)
-    const out = { id: patched.id, ...(patched.fields || {}) }
+    await atPatch('Lease Drafts', id, cleaned)
+    // Re-fetch so the client always gets the full row (PATCH responses can omit unchanged fields in some setups).
+    const fresh = await atGet(`${BASE_URL}/${encodeURIComponent('Lease Drafts')}/${id}`)
+    const out = { id: fresh.id, ...(fresh.fields || {}) }
     return res.status(200).json({ ok: true, record: out })
   } catch (err) {
     console.error('[lease-draft-patch]', err)

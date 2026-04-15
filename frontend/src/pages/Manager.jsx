@@ -841,9 +841,9 @@ function updateTourAvailabilityLines(currentAvailability, day, slot) {
   return nextLines.filter(Boolean).join('\n')
 }
 
-/** Availability editor window: 6:00 AM – 8:00 PM. */
+/** Availability / calendar time grid: 6:00 AM – 9:00 PM (scrollable). */
 const TOUR_GRID_START_HOUR = 6
-const TOUR_GRID_END_HOUR = 20
+const TOUR_GRID_END_HOUR = 21
 const TOUR_GRID_STEP_MIN = 30
 const TOUR_GRID_START_MIN = TOUR_GRID_START_HOUR * 60
 const TOUR_GRID_END_MIN = TOUR_GRID_END_HOUR * 60
@@ -1621,6 +1621,9 @@ function AvailabilityCalendar({ view, anchorDate, selectedDateKey, onSelectDate,
 
   const dayRanges = (key) => {
     if (dayFreeOverrides != null) {
+      if (!Object.prototype.hasOwnProperty.call(dayFreeOverrides, key)) {
+        return []
+      }
       const o = dayFreeOverrides[key]
       return Array.isArray(o) ? normalizeTimeRanges(o) : []
     }
@@ -1678,7 +1681,7 @@ function AvailabilityCalendar({ view, anchorDate, selectedDateKey, onSelectDate,
     const totalHours = TOUR_GRID_END_HOUR - TOUR_GRID_START_HOUR
     return (
       <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
-        <div className="rounded-3xl border border-slate-200 bg-slate-50/70 p-4">
+        <div className="max-h-[min(78vh,900px)] overflow-y-auto overflow-x-hidden rounded-3xl border border-slate-200 bg-slate-50/70 p-4">
           <div className="grid grid-cols-[52px_minmax(0,1fr)] gap-2">
             <div className="relative" style={{ height: TIMELINE_HEIGHT_PX }}>
               {timelineHours.map((hour) => {
@@ -1753,13 +1756,142 @@ function AvailabilityCalendar({ view, anchorDate, selectedDateKey, onSelectDate,
   }
 
   if (view === 'week') {
+    const timelineHours = Array.from(
+      { length: TOUR_GRID_END_HOUR - TOUR_GRID_START_HOUR + 1 },
+      (_, idx) => TOUR_GRID_START_HOUR + idx,
+    )
+    const totalHours = TOUR_GRID_END_HOUR - TOUR_GRID_START_HOUR
+    const todayKey = dateKeyFromDate(new Date())
     return (
-      <div className="flex flex-col gap-3">
-        {weekDays.map((day) => renderDayCard(
-          dateKeyFromDate(day),
-          day.toLocaleDateString('en-US', { weekday: 'long' }),
-          day.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
-        ))}
+      <div className="rounded-3xl border border-slate-200 bg-white shadow-sm">
+        <div className="max-h-[min(78vh,900px)] overflow-auto">
+          <div
+            className="grid min-w-[720px] gap-0"
+            style={{ gridTemplateColumns: `52px repeat(7, minmax(96px, 1fr))` }}
+          >
+            <div className="sticky left-0 z-30 border-b border-r border-slate-200 bg-white" />
+            {weekDays.map((day) => {
+              const dk = dateKeyFromDate(day)
+              const selected = selectedDateKey === dk
+              return (
+                <button
+                  key={dk}
+                  type="button"
+                  onClick={() => onSelectDate(dk)}
+                  className={classNames(
+                    'border-b border-r border-slate-200 px-1 py-2.5 text-center transition',
+                    selected ? 'bg-[#2563eb]/10 ring-1 ring-inset ring-[#2563eb]/25' : 'bg-slate-50/90 hover:bg-slate-100',
+                    dk === todayKey && !selected ? 'bg-sky-50/80' : '',
+                  )}
+                >
+                  <div className="text-[10px] font-bold uppercase tracking-wide text-slate-500">
+                    {day.toLocaleDateString('en-US', { weekday: 'short' })}
+                  </div>
+                  <div className="mt-0.5 text-sm font-black tabular-nums text-slate-900">
+                    {day.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                  </div>
+                </button>
+              )
+            })}
+
+            <div
+              className="sticky left-0 z-20 border-r border-slate-200 bg-white"
+              style={{ height: TIMELINE_HEIGHT_PX }}
+            >
+              <div className="relative h-full">
+                {timelineHours.map((hour) => {
+                  const top = `${((hour - TOUR_GRID_START_HOUR) / totalHours) * 100}%`
+                  return (
+                    <div
+                      key={hour}
+                      className="absolute left-0 right-1 -translate-y-1/2 text-right text-[10px] font-semibold tabular-nums text-slate-500"
+                      style={{ top }}
+                    >
+                      {displayTimeFromMinutes(hour * 60)}
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+
+            {weekDays.map((day) => {
+              const dk = dateKeyFromDate(day)
+              const ranges = dayRanges(dk)
+              const dayBookings = bookings(dk)
+              const { tours: colTours, workOrders: colWo } = splitCalendarStripBookings(dayBookings)
+              const blocked = isBlocked(dk)
+              const selected = selectedDateKey === dk
+              return (
+                <div
+                  key={`col-${dk}`}
+                  className={classNames(
+                    'relative border-r border-slate-200',
+                    selected ? 'bg-[#2563eb]/[0.04]' : 'bg-white',
+                  )}
+                  style={{ height: TIMELINE_HEIGHT_PX }}
+                >
+                  <button
+                    type="button"
+                    className="absolute inset-0 z-0 cursor-pointer"
+                    aria-label={`Select ${dk}`}
+                    onClick={() => onSelectDate(dk)}
+                  />
+                  {Array.from({ length: totalHours + 1 }, (_, h) => (
+                    <div
+                      key={`g-${dk}-${h}`}
+                      className="pointer-events-none absolute left-0 right-0 border-t border-slate-100"
+                      style={{ top: `${(h / totalHours) * 100}%` }}
+                    />
+                  ))}
+                  {blocked ? (
+                    <div className="pointer-events-none absolute inset-0 z-30 rounded-none bg-red-200/40" />
+                  ) : null}
+                  <div className="pointer-events-none absolute inset-y-0 left-[4%] z-[1] w-[28%]">
+                    {ranges.map((range) => (
+                      <div
+                        key={`a-${dk}-${range.start}-${range.end}`}
+                        className="absolute left-0 right-0 rounded-md bg-emerald-100/95 px-0.5 py-0.5 text-[8px] font-bold leading-tight text-emerald-950 shadow-sm ring-1 ring-emerald-300/80"
+                        style={timelineBlockStyle(range.start, range.end)}
+                      >
+                        <span className="line-clamp-2">{formatTimeRangeLabel(range)}</span>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="pointer-events-none absolute inset-y-0 left-[32%] z-[2] w-[34%]">
+                    {colTours.map((row) => {
+                      const parsed = parsePreferredTimeRange(row['Preferred Time'])
+                      if (!parsed) return null
+                      return (
+                        <div
+                          key={row.id}
+                          className="absolute left-0 right-0 rounded-md border border-violet-500 bg-violet-50 px-0.5 py-0.5 text-[8px] font-bold text-violet-950 shadow-sm"
+                          style={timelineBlockStyle(parsed.start, parsed.end)}
+                        >
+                          <span className="line-clamp-2">Tour</span>
+                        </div>
+                      )
+                    })}
+                  </div>
+                  <div className="pointer-events-none absolute inset-y-0 right-[4%] z-[2] w-[34%]">
+                    {colWo.map((row) => {
+                      const parsed = parsePreferredTimeRange(row['Preferred Time'])
+                      if (!parsed) return null
+                      return (
+                        <div
+                          key={row.id}
+                          className="absolute left-0 right-0 rounded-md border border-amber-500 bg-amber-50 px-0.5 py-0.5 text-[8px] font-bold text-amber-950 shadow-sm"
+                          style={timelineBlockStyle(parsed.start, parsed.end)}
+                        >
+                          <span className="line-clamp-2">WO</span>
+                        </div>
+                      )
+                    })}
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        </div>
       </div>
     )
   }
@@ -5598,8 +5730,8 @@ function ApplicationsPanel({ allowedPropertyNames, manager }) {
 
 // ─── CalendarTabPanel ─────────────────────────────────────────────────────────
 export function CalendarTabPanel({ manager, allowedPropertyNames, loadAllSchedulingRows = false }) {
-  const [view, setView] = useState('month')
-  const [anchorDate, setAnchorDate] = useState(() => new Date())
+  const [view, setView] = useState('week')
+  const [anchorDate, setAnchorDate] = useState(() => startOfWeekSunday(new Date()))
   const [selectedDateKey, setSelectedDateKey] = useState(() => dateKeyFromDate(new Date()))
   const [schedulingRows, setSchedulingRows] = useState([])
   const [loading, setLoading] = useState(true)
@@ -6173,7 +6305,13 @@ export function CalendarTabPanel({ manager, allowedPropertyNames, loadAllSchedul
       keys.add(dateKeyFromDate(addDaysDate(ws, i)))
     }
     const sel = String(selectedDateKey || '').trim().slice(0, 10)
-    if (sel) keys.add(sel)
+    if (sel) {
+      keys.add(sel)
+      const wsSel = startOfWeekSunday(dateFromCalendarKey(sel))
+      for (let i = 0; i < 7; i += 1) {
+        keys.add(dateKeyFromDate(addDaysDate(wsSel, i)))
+      }
+    }
     const out = {}
     for (const key of keys) {
       if (!key) continue

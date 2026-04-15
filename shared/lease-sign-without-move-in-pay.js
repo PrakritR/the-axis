@@ -11,6 +11,24 @@ export function leaseSignWithoutMoveInPayFieldNamePreferred(rawEnvValue) {
   return trimmed || DEFAULT_LEASE_SIGN_WITHOUT_PAY_FIELD
 }
 
+/**
+ * Airtable column names the app may PATCH for the sign-without-move-in toggle.
+ * Must stay in sync with {@link leaseDraftAllowsSignWithoutMoveInPay} explicit keys.
+ */
+export function leaseSignWithoutMoveInPayPatchWhitelist(rawPreferredEnv) {
+  const primary = leaseSignWithoutMoveInPayFieldNamePreferred(rawPreferredEnv)
+  const names = [
+    primary,
+    DEFAULT_LEASE_SIGN_WITHOUT_PAY_FIELD,
+    'Skip Move-In Pay Gate',
+    'Allow lease signing without paying',
+    'Allow Lease Signing Without Paying',
+    'Allow sign without paying',
+    'Allow Sign Without Paying',
+  ]
+  return [...new Set(names.filter(Boolean))]
+}
+
 function normFieldKeySlug(name) {
   return String(name || '')
     .toLowerCase()
@@ -48,16 +66,7 @@ function fieldNameLooksLikeSignWithoutMoveInGate(slug) {
  */
 export function leaseDraftAllowsSignWithoutMoveInPay(draft, rawPreferredEnv) {
   if (!draft || typeof draft !== 'object') return false
-  const primary = leaseSignWithoutMoveInPayFieldNamePreferred(rawPreferredEnv)
-  const explicitKeys = [
-    primary,
-    DEFAULT_LEASE_SIGN_WITHOUT_PAY_FIELD,
-    'Skip Move-In Pay Gate',
-    'Allow lease signing without paying',
-    'Allow Lease Signing Without Paying',
-    'Allow sign without paying',
-    'Allow Sign Without Paying',
-  ].filter((k, i, a) => Boolean(k) && a.indexOf(k) === i)
+  const explicitKeys = leaseSignWithoutMoveInPayPatchWhitelist(rawPreferredEnv)
 
   for (const key of explicitKeys) {
     const v = draft[key]
