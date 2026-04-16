@@ -850,6 +850,16 @@ function paymentResidentRecordId(record) {
   return /^rec[a-zA-Z0-9]{14,}$/.test(id) ? id : ''
 }
 
+/** Resident filter value is either a `rec…` id (from roster / linked payment) or a normalized name key from legacy rows. */
+function paymentRowMatchesResidentFilter(p, filterVal) {
+  const fv = String(filterVal || '').trim()
+  if (!fv) return true
+  if (/^rec[a-zA-Z0-9]{14,}$/.test(fv)) {
+    return paymentResidentRecordId(p) === fv
+  }
+  return normalizePropertyFilterKey(paymentResidentLabel(p)) === fv
+}
+
 function paymentRoomLabel(record) {
   return formatPaymentRoomTitle(record)
 }
@@ -5136,15 +5146,50 @@ function ManagerPaymentsPanel({ allowedPropertyNames, allowedPropertyIds }) {
     return [...fromRows, ...extra]
   }, [rentRows, allowedPropertyNames])
 
+  const manualResidentsForPropertyFilter = useMemo(() => {
+    const list = Array.isArray(manualResidents) ? manualResidents : []
+    if (!payPropertyFilter) return list
+    return list.filter(
+      (r) => normalizePropertyFilterKey(residentDisplayPropertyName(r)) === payPropertyFilter,
+    )
+  }, [manualResidents, payPropertyFilter])
+
   const payResidentChoices = useMemo(() => {
     const rows = payPropertyFilter
       ? rentRows.filter((r) => String(paymentPropertyLabel(r) || '').trim().toLowerCase() === payPropertyFilter)
       : rentRows
-    return buildPropertyFilterOptionsFromRows(rows, {
-      getPropertyDisplay: (row) => paymentResidentLabel(row),
-      getUpdatedMs: (row) => new Date(row['Due Date'] || row.created_at || 0).getTime(),
-    }).map(({ value, label }) => ({ value, display: label }))
-  }, [rentRows, payPropertyFilter])
+
+    const byValue = new Map()
+    const notSetKey = normalizePropertyFilterKey('Resident not set')
+
+    for (const row of rows) {
+      const label = paymentResidentLabel(row)
+      const nk = normalizePropertyFilterKey(label)
+      if (!nk || nk === notSetKey) continue
+      const rid = paymentResidentRecordId(row)
+      const value = rid || nk
+      const display = label
+      const ts = new Date(row['Due Date'] || row.created_at || 0).getTime()
+      const prev = byValue.get(value)
+      if (!prev || ts > prev.ts) byValue.set(value, { value, display, ts })
+    }
+
+    for (const r of manualResidentsForPropertyFilter) {
+      const rid = String(r?.id || '').trim()
+      if (!/^rec[a-zA-Z0-9]{14,}$/.test(rid)) continue
+      const name = String(r.Name || r['Resident Name'] || '').trim()
+      const email = String(r.Email || '').trim().toLowerCase()
+      const display = name && email ? `${name} (${email})` : name || email || 'Resident'
+      const ts = 0
+      if (!byValue.has(rid)) byValue.set(rid, { value: rid, display, ts })
+    }
+
+    return [...byValue.values()]
+      .sort((a, b) =>
+        String(a.display).localeCompare(String(b.display), undefined, { sensitivity: 'base' }),
+      )
+      .map(({ value, display }) => ({ value, display }))
+  }, [rentRows, payPropertyFilter, manualResidentsForPropertyFilter])
 
   useEffect(() => {
     if (!payResidentFilter) return
@@ -5156,7 +5201,7 @@ function ManagerPaymentsPanel({ allowedPropertyNames, allowedPropertyIds }) {
     () => {
       let filtered = rentRows
       if (payPropertyFilter) filtered = filtered.filter((p) => String(paymentPropertyLabel(p)).trim().toLowerCase() === payPropertyFilter)
-      if (payResidentFilter) filtered = filtered.filter((p) => String(paymentResidentLabel(p)).trim().toLowerCase() === payResidentFilter)
+      if (payResidentFilter) filtered = filtered.filter((p) => paymentRowMatchesResidentFilter(p, payResidentFilter))
       return filtered.map((row) => ({ ...row, __computedStatus: paymentComputedStatus(row) }))
     },
     [rentRows, payPropertyFilter, payResidentFilter],
