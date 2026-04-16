@@ -534,9 +534,39 @@ function paymentPropertyLabel(p) {
   return String(p['Property Name'] || p.Property || p['House'] || '').trim()
 }
 
-function paymentInScope(p, approvedNamesLowerSet) {
+/** Linked property record ids on a Payments row (House / Property / Properties). */
+function paymentLinkedPropertyRecordIds(p) {
+  if (!p || typeof p !== 'object') return []
+  const out = []
+  for (const key of ['House', 'Property', 'Properties']) {
+    const v = p[key]
+    if (Array.isArray(v)) {
+      for (const x of v) {
+        const s = String(x ?? '').trim()
+        if (/^rec[a-zA-Z0-9]{14,}$/.test(s)) out.push(s)
+      }
+    } else if (typeof v === 'string' && /^rec[a-zA-Z0-9]{14,}$/.test(v.trim())) {
+      out.push(v.trim())
+    }
+  }
+  return [...new Set(out)]
+}
+
+/**
+ * @param {Record<string, unknown>} p
+ * @param {Set<string>} approvedNamesLowerSet
+ * @param {Set<string>} [scopePropertyIds] — property `rec` ids from manager scope (matches linked fields on Payments)
+ */
+function paymentInScope(p, approvedNamesLowerSet, scopePropertyIds) {
+  const ids = scopePropertyIds instanceof Set ? scopePropertyIds : new Set()
+  if (ids?.size) {
+    for (const pid of paymentLinkedPropertyRecordIds(p)) {
+      if (ids.has(pid)) return true
+    }
+  }
+  if (!approvedNamesLowerSet?.size) return false
   const label = paymentPropertyLabel(p).trim().toLowerCase()
-  if (!label || !approvedNamesLowerSet?.size) return false
+  if (!label) return false
   return approvedNamesLowerSet.has(label) || [...approvedNamesLowerSet].some((ns) => label.includes(ns))
 }
 
@@ -4451,7 +4481,7 @@ function WorkOrdersTabPanel({ manager, allowedPropertyNames, allowedPropertyIds 
     let cancelled = false
     ;(async () => {
       try {
-        const payments = await getPaymentsForResident({ id: billingRid })
+        const payments = await getPaymentsForResident(residentsById.get(billingRid) || { id: billingRid })
         if (cancelled) return
         const resRec = residentsById.get(billingRid) || { id: billingRid }
         const merged = { ...record, 'Scheduled Date': scheduledKeyForCleaningRepair }
@@ -4624,7 +4654,7 @@ function WorkOrdersTabPanel({ manager, allowedPropertyNames, allowedPropertyIds 
         if (billingRid) {
           try {
             const resRec = residentsById.get(billingRid) || { id: billingRid }
-            const payments = await getPaymentsForResident({ id: billingRid })
+            const payments = await getPaymentsForResident(residentsById.get(billingRid) || { id: billingRid })
             const chargeRes = await ensureWorkOrderManagerChargePayment({
               workOrder: mergedWorkOrder,
               costUsd: chargeAmount,
@@ -4655,7 +4685,7 @@ function WorkOrdersTabPanel({ manager, allowedPropertyNames, allowedPropertyIds 
         if (billingRid) {
           try {
             const resRec = residentsById.get(billingRid) || { id: billingRid }
-            const payments = await getPaymentsForResident({ id: billingRid })
+            const payments = await getPaymentsForResident(residentsById.get(billingRid) || { id: billingRid })
             const result = await ensurePostpayRoomCleaningFeePayment({
               workOrder: mergedWorkOrder,
               billingResidentId: billingRid,
@@ -4711,7 +4741,7 @@ function WorkOrdersTabPanel({ manager, allowedPropertyNames, allowedPropertyIds 
         if (billingRid) {
           try {
             const resRec = residentsById.get(billingRid) || { id: billingRid }
-            const payments = await getPaymentsForResident({ id: billingRid })
+            const payments = await getPaymentsForResident(residentsById.get(billingRid) || { id: billingRid })
             const chargeRes = await ensureWorkOrderManagerChargePayment({
               workOrder: mergedWorkOrder,
               costUsd: chargeAmount,
@@ -5030,7 +5060,10 @@ function ManagerPaymentsPanel({ allowedPropertyNames, allowedPropertyIds }) {
     setPaymentsLoadError('')
     try {
       const all = await getAllPaymentsRecords()
-      const scopedAll = scopeLower.size ? all.filter((p) => paymentInScope(p, scopeLower)) : []
+      const scopedAll =
+        scopeLower.size || scopeIds.size
+          ? all.filter((p) => paymentInScope(p, scopeLower, scopeIds))
+          : []
       const allSorted = [...scopedAll].sort(
         (a, b) =>
           new Date(b['Due Date'] || b.created_at || 0) - new Date(a['Due Date'] || a.created_at || 0),
@@ -5049,7 +5082,7 @@ function ManagerPaymentsPanel({ allowedPropertyNames, allowedPropertyIds }) {
     } finally {
       setLoading(false)
     }
-  }, [scopeLower])
+  }, [scopeLower, scopeIds])
 
   useEffect(() => {
     load()
@@ -7639,7 +7672,9 @@ function ManagerDashboard({ manager: managerProp, openDraftId, onOpenDraft, onCl
               )
             : []
         const payScoped =
-          approvedNamesLower.size && payRaw ? payRaw.filter((p) => paymentInScope(p, approvedNamesLower)) : []
+          payRaw && (approvedNamesLower.size || workOrderScopePropertyIds.size)
+            ? payRaw.filter((p) => paymentInScope(p, approvedNamesLower, workOrderScopePropertyIds))
+            : []
 
         const pendingApps = apps.filter((a) => deriveApplicationApprovalState(a) === 'pending').length
         const leasePending = dr.filter((d) => LEASE_STATUSES_NEEDING_ACTION.has(String(d.Status || '').trim())).length

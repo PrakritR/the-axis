@@ -4123,10 +4123,8 @@ function Dashboard({ resident, onResidentUpdated, onSignOut }) {
     const id = String(resident?.id || '').trim()
     if (!id) return
     try {
-      const [nextResident, pays] = await Promise.all([
-        getResidentById(id),
-        getPaymentsForResident({ id }).catch(() => []),
-      ])
+      const nextResident = await getResidentById(id).catch(() => null)
+      const pays = await getPaymentsForResident(nextResident || resident || { id }).catch(() => [])
       if (nextResident) onResidentUpdated(nextResident)
       setPayments(Array.isArray(pays) ? pays : [])
     } catch {

@@ -1462,9 +1462,23 @@ export function normalizePaymentsMappedRecord(mapped) {
 }
 
 export async function getPaymentsForResident(resident) {
+  const rid = String(resident?.id || '').trim()
+  if (!rid) return []
+
+  /** Work-order / manager paths often pass `{ id }` only — load profile so email clause + filters work. */
+  let res = resident && typeof resident === 'object' ? { ...resident, id: rid } : { id: rid }
+  if (!String(res.Email || '').trim()) {
+    try {
+      const full = await getResidentById(rid)
+      if (full && typeof full === 'object') res = { ...full, ...res, id: full.id || rid }
+    } catch {
+      /* keep id-only */
+    }
+  }
+
   const fieldRef = paymentsResidentFieldFormulaRef()
-  const escapedId = escapeFormulaValue(resident.id)
-  const residentEmail = String(resident.Email || '').trim().toLowerCase()
+  const escapedId = escapeFormulaValue(rid)
+  const residentEmail = String(res.Email || '').trim().toLowerCase()
 
   // Use OR conditions to handle all field storage patterns:
   //  1. Linked-record field (single): {Resident} = "recXXX" — Airtable matches linked records
@@ -1473,22 +1487,41 @@ export async function getPaymentsForResident(resident) {
   //     as comma-joined strings.
   //  3. Resident Email text field: fallback for payments where the Resident link was stripped
   //     (e.g. by createPaymentRecordStrippingUnknownFields) but email was saved.
-  const clauses = [
+  const baseClauses = [
     `${fieldRef} = "${escapedId}"`,
     `FIND("${escapedId}", ARRAYJOIN(${fieldRef})) > 0`,
   ]
-  if (residentEmail) {
-    clauses.push(`LOWER({Resident Email}) = "${escapeFormulaValue(residentEmail)}"`)
-  }
-  const formula = clauses.length === 1 ? clauses[0] : `OR(${clauses.join(', ')})`
 
-  const data = await request(
-    buildPaymentsUrl({
-      filterByFormula: formula,
-      sort: [{ field: 'Due Date', direction: 'desc' }],
-    }),
-  )
-  return (data.records || []).map((r) => normalizePaymentsMappedRecord(mapRecord(r)))
+  const buildFormula = (includeEmailClause) => {
+    const clauses = [...baseClauses]
+    if (includeEmailClause && residentEmail) {
+      clauses.push(`LOWER({Resident Email}) = "${escapeFormulaValue(residentEmail)}"`)
+    }
+    return clauses.length === 1 ? clauses[0] : `OR(${clauses.join(', ')})`
+  }
+
+  const run = async (formula) =>
+    request(
+      buildPaymentsUrl({
+        filterByFormula: formula,
+        sort: [{ field: 'Due Date', direction: 'desc' }],
+      }),
+    )
+
+  try {
+    const data = await run(buildFormula(true))
+    return (data.records || []).map((r) => normalizePaymentsMappedRecord(mapRecord(r)))
+  } catch (e) {
+    const msg = String(e?.message || '')
+    const maybeMissingEmailField =
+      /resident email/i.test(msg) &&
+      (/unknown field/i.test(msg) || /not\s+recognized/i.test(msg) || /invalid_filter_by_formula/i.test(msg))
+    if (residentEmail && maybeMissingEmailField) {
+      const data = await run(buildFormula(false))
+      return (data.records || []).map((r) => normalizePaymentsMappedRecord(mapRecord(r)))
+    }
+    throw e
+  }
 }
 
 /** All payment rows (paginated) — manager portal rent overview. */
@@ -1536,7 +1569,9 @@ export async function listResidentPortalRoomHoldPaymentRecords(residentRecordId)
   if (!/^rec[a-zA-Z0-9]{14,}$/.test(rid)) return []
   const legacySub = 'room hold without signing lease (resident portal)'
   const fieldRef = paymentsResidentFieldFormulaRef()
-  const formula = `AND(FIND("${escapeFormulaValue(rid)}", ARRAYJOIN(${fieldRef})) > 0, OR(FIND("${escapeFormulaValue(AXIS_ROOM_HOLD_WITHOUT_LEASE_MARKER_PREFIX)}", {Notes}) > 0, AND({Type} = "Room Hold Fee", FIND("${escapeFormulaValue(legacySub)}", LOWER({Notes})) > 0)))`
+  const escRid = escapeFormulaValue(rid)
+  const linkClause = `OR(${fieldRef} = "${escRid}", FIND("${escRid}", ARRAYJOIN(${fieldRef})) > 0)`
+  const formula = `AND(${linkClause}, OR(FIND("${escapeFormulaValue(AXIS_ROOM_HOLD_WITHOUT_LEASE_MARKER_PREFIX)}", {Notes}) > 0, AND({Type} = "Room Hold Fee", FIND("${escapeFormulaValue(legacySub)}", LOWER({Notes})) > 0)))`
   const data = await request(
     buildPaymentsUrl({
       filterByFormula: formula,

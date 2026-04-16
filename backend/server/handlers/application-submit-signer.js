@@ -149,6 +149,7 @@ export default async function handler(req, res) {
     waived: promoOk,
     promoCode: promoOk ? promoCode : undefined,
     signerFullName: String(fields['Signer Full Name'] || fields['Name'] || '').trim() || undefined,
+    signerEmail: String(fields['Signer Email'] || '').trim().toLowerCase() || undefined,
     propertyName: String(fields['Property Name'] || '').trim() || undefined,
     roomNumber: String(fields['Room Number'] || '').trim() || undefined,
   }).catch(() => { /* non-critical */ })

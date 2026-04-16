@@ -101,7 +101,9 @@ export async function ensureWorkOrderManagerChargePayment({
 
   const tag = paymentNotesTagForWorkOrderCharge(woId)
   const payments =
-    paymentsPrefetch != null ? paymentsPrefetch : await getPaymentsForResident({ id: rid }).catch(() => [])
+    paymentsPrefetch != null
+      ? paymentsPrefetch
+      : await getPaymentsForResident(res && res.id ? res : { id: rid }).catch(() => [])
   if ((Array.isArray(payments) ? payments : []).some((p) => String(p.Notes || '').includes(tag))) {
     return { created: false, reason: 'already_exists' }
   }

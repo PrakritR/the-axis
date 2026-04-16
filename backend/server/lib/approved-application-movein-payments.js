@@ -113,8 +113,8 @@ async function moveInRowExists(residentRecordId, markerContains) {
   const enc = encodeURIComponent(PAYMENTS_TABLE)
   const rid = escapeFormulaValue(residentRecordId)
   const mk = escapeFormulaValue(markerContains)
-  // Single-link Resident often matches `{Resident} = "rec…"`; multi-link needs ARRAYJOIN + FIND.
-  const formula = `AND(OR({Resident} = "${rid}", FIND("${rid}", ARRAYJOIN({Resident})) > 0), FIND("${mk}", {Notes}) > 0)`
+  const lf = PAYMENTS_RESIDENT_LINK_FIELD
+  const formula = `AND(OR({${lf}} = "${rid}", FIND("${rid}", ARRAYJOIN({${lf}})) > 0), FIND("${mk}", {Notes}) > 0)`
   const url = `${CORE_AIRTABLE_BASE_URL}/${enc}?filterByFormula=${encodeURIComponent(formula)}&maxRecords=1`
   const data = await airtableGet(url)
   return (data.records?.length ?? 0) > 0

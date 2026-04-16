@@ -101,7 +101,9 @@ async function fetchResidentRecord(residentRecordId) {
 async function feePaymentAlreadyExists(residentRecordId, applicationRecordId) {
   const marker = `${APPROVED_APP_FEE_MARKER_PREFIX}${applicationRecordId}`
   const enc = encodeURIComponent(PAYMENTS_TABLE)
-  const formula = `AND(FIND("${escapeFormulaValue(residentRecordId)}", ARRAYJOIN({Resident})) > 0, FIND("${escapeFormulaValue(marker)}", {Notes}) > 0)`
+  const rid = escapeFormulaValue(residentRecordId)
+  const lf = PAYMENTS_RESIDENT_LINK_FIELD
+  const formula = `AND(OR({${lf}} = "${rid}", FIND("${rid}", ARRAYJOIN({${lf}})) > 0), FIND("${escapeFormulaValue(marker)}", {Notes}) > 0)`
   const url = `${CORE_AIRTABLE_BASE_URL}/${enc}?filterByFormula=${encodeURIComponent(formula)}&maxRecords=1`
   const data = await airtableGet(url)
   return (data.records?.length ?? 0) > 0

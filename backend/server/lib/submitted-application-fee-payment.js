@@ -48,6 +48,7 @@ async function feeRowExists(applicationRecordId) {
  *   waived: boolean,
  *   promoCode?: string,
  *   signerFullName?: string,
+ *   signerEmail?: string,
  *   propertyName?: string,
  *   roomNumber?: string,
  * }} params
@@ -59,6 +60,7 @@ export async function createSubmittedApplicationFeePayment({
   waived,
   promoCode,
   signerFullName,
+  signerEmail,
   propertyName,
   roomNumber,
 }) {
@@ -90,6 +92,8 @@ export async function createSubmittedApplicationFeePayment({
       Notes: notes,
     }
     if (signerFullName) fields['Resident Name'] = signerFullName
+    const em = String(signerEmail || '').trim().toLowerCase()
+    if (em) fields['Resident Email'] = em
     if (propertyName) fields['Property Name'] = propertyName
     if (roomNumber) fields['Room Number'] = roomNumber
 

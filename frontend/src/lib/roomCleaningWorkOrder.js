@@ -119,7 +119,7 @@ export async function ensurePostpayRoomCleaningFeePayment({
   const payments =
     paymentsPrefetch != null
       ? paymentsPrefetch
-      : await getPaymentsForResident({ id: rid }).catch(() => [])
+      : await getPaymentsForResident(res && res.id ? res : { id: rid }).catch(() => [])
   if ((Array.isArray(payments) ? payments : []).some((p) => String(p.Notes || '').includes(tag))) {
     return { created: false, reason: 'already_exists' }
   }
@@ -179,7 +179,9 @@ export async function cleanupPaymentsWhenWorkOrderDeleted(workOrder, residentPro
   const rid = String(residentProfile?.id || '').trim()
   if (!woId || !rid) return { deletedIds }
 
-  const payments = await getPaymentsForResident({ id: rid }).catch(() => [])
+  const payments = await getPaymentsForResident(residentProfile && residentProfile.id ? residentProfile : { id: rid }).catch(
+    () => [],
+  )
   const list = Array.isArray(payments) ? payments : []
 
   const postPayTag = paymentNotesTagForCleaningWorkOrder(woId)

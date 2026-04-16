@@ -92,6 +92,7 @@ export async function createSubmittedApplicationMoveInPayments({ application }) 
   const propName = String(leaseData.propertyName || application['Property Name'] || '').trim()
   const roomNum = String(leaseData.roomNumber || application['Room Number'] || '').trim()
   const resName = String(application['Signer Full Name'] || application.Name || '').trim()
+  const resEmail = String(application['Signer Email'] || application.Email || '').trim().toLowerCase()
 
   const deposit = Math.round(Number(leaseData.securityDeposit) * 100) / 100
   const rent = Math.round(Number(leaseData.monthlyRent) * 100) / 100
@@ -148,6 +149,7 @@ export async function createSubmittedApplicationMoveInPayments({ application }) 
           Month: spec.Month,
           Notes: spec.Notes,
           'Resident Name': resName || undefined,
+          'Resident Email': resEmail || undefined,
           'Property Name': propName || undefined,
           'Room Number': roomNum || undefined,
         },
