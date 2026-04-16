@@ -80,3 +80,8 @@ create policy "residents_own_messages" on work_order_messages
 -- owner_profiles: see supabase/migrations/20260416120400_create_owner_profiles.sql
 -- (Stripe Connect–ready booleans + stripe_connect_account_id; backend/server/lib/owner-profiles-service.js)
 -- HTTP: GET|POST|PATCH /api/owner-profiles — backend/server/handlers/owner-profiles.js
+
+-- File metadata (Supabase Storage): supabase/migrations/20260416121000_create_file_metadata_tables.sql
+-- Buckets: leases | application documents | work-order-images (private); property-images | room-image | bathroom-images | shared-space-image (public)
+-- API: POST /api/file-storage — backend/server/handlers/file-storage.js
+-- Helpers: backend/server/lib/storage/supabase-storage-*.js, internal-file-metadata-service.js, internal-file-permissions.js

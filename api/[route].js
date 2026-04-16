@@ -33,6 +33,12 @@ import syncAppUser from '../backend/server/handlers/sync-app-user.js'
 import adminProfiles from '../backend/server/handlers/admin-profiles.js'
 import managerProfiles from '../backend/server/handlers/manager-profiles.js'
 import ownerProfiles from '../backend/server/handlers/owner-profiles.js'
+import residentProfiles from '../backend/server/handlers/resident-profiles.js'
+import properties from '../backend/server/handlers/properties.js'
+import rooms from '../backend/server/handlers/rooms.js'
+import applications from '../backend/server/handlers/applications.js'
+import payments from '../backend/server/handlers/payments.js'
+import fileStorage from '../backend/server/handlers/file-storage.js'
 
 const routes = {
   'admin-portal-auth': adminPortalAuth,
@@ -58,6 +64,12 @@ const routes = {
   'manager-subscription-complete': managerSubscriptionComplete,
   'notify-message': notifyMessage,
   'owner-profiles': ownerProfiles,
+  'resident-profiles': residentProfiles,
+  properties,
+  rooms,
+  applications,
+  payments,
+  'file-storage': fileStorage,
   'send-lease-invite': sendLeaseInvite,
   'signforge-webhook': signforgeWebhook,
   'sync-app-user': syncAppUser,
