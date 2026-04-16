@@ -1686,6 +1686,45 @@ export default function PropertyPage(){
                 </div>
               ) : null}
 
+              <div className="mt-8 rounded-xl border border-slate-200 bg-white px-4 py-5 sm:px-6">
+                <h3 className="text-xs font-black uppercase tracking-[0.14em] text-slate-500">Application process</h3>
+                <ol className="mt-3 list-decimal space-y-2.5 pl-5 text-sm leading-relaxed text-slate-700 marker:font-semibold marker:text-slate-400">
+                  <li>
+                    {sectionNavTabs.some(([id]) => id === 'floor-plans') ? (
+                      <>
+                        Open{' '}
+                        <button
+                          type="button"
+                          className="font-semibold text-[#2563eb] underline-offset-2 hover:underline"
+                          onClick={() => {
+                            setActiveTab('floor-plans')
+                            scrollToId('floor-plans')
+                          }}
+                        >
+                          Floor plans
+                        </button>
+                        {' '}
+                        to pick a room, then review lease length and fees in this section.
+                      </>
+                    ) : (
+                      <>Review rooms and pricing on this page, then confirm lease length and fees in the table above.</>
+                    )}
+                  </li>
+                  <li>
+                    Use{' '}
+                    <Link
+                      to={`/apply?property=${encodeURIComponent(slug)}`}
+                      className="font-semibold text-[#2563eb] underline-offset-2 hover:underline"
+                    >
+                      Apply
+                    </Link>
+                    {' '}
+                    to submit the form and pay the application fee online in the same step.
+                  </li>
+                  <li>We usually respond within about two to three business days by email with next steps.</li>
+                </ol>
+              </div>
+
               {Array.isArray(p.leasingPackages) && p.leasingPackages.length > 0 ? (
                 <div className="mt-10">
                   <h3 className="text-sm font-black uppercase tracking-[0.14em] text-slate-500">Room &amp; full-house bundles</h3>
