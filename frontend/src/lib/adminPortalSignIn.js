@@ -1,6 +1,5 @@
 /**
- * Admin portal sign-in: Supabase Auth (email/password) + email allowlist.
- * Does not grant portal access until the signed-in email passes {@link isEmailAllowedForAdminPortal}.
+ * Admin portal sign-in: same Supabase flow as `pages/Login.jsx`, then email allowlist.
  *
  * @param {string} identifier - Email
  * @param {string} password
@@ -11,52 +10,70 @@ import { isEmailAllowedForAdminPortal } from './adminPortalAuthAllowlist.js'
 
 const NOT_AUTHORIZED = 'This account is not authorized for the admin portal'
 
-function authErrorMessage(err) {
-  const msg = String(err?.message || '').toLowerCase()
-  if (msg.includes('invalid login') || msg.includes('invalid email') || msg.includes('wrong password')) {
-    return 'Invalid email or password.'
-  }
-  return err?.message || 'Invalid email or password.'
-}
-
+/**
+ * Same sign-in call shape as the shared `/login` page (`Login.jsx`):
+ * `signInWithPassword({ email, password })` with no client-side email lowercasing.
+ */
 export async function authenticateAdminPortal(identifier, password) {
-  const id = String(identifier || '').trim().toLowerCase()
-  const pw = String(password || '')
-  if (!id || !pw) {
+  const email = String(identifier || '').trim()
+  const passwordValue = String(password || '')
+
+  if (!email || !passwordValue) {
     return { ok: false, error: 'Enter your email and password.' }
   }
-  if (!id.includes('@')) {
+  if (!email.includes('@')) {
     return { ok: false, error: 'Sign in with an email address.' }
   }
 
-  const { data, error } = await supabase.auth.signInWithPassword({ email: id, password: pw })
+  try {
+    const { data, error: authError } = await supabase.auth.signInWithPassword({
+      email,
+      password: passwordValue,
+    })
 
-  if (error || !data?.user?.email) {
-    await supabase.auth.signOut().catch(() => {})
-    return { ok: false, error: authErrorMessage(error) }
-  }
+    // Match Login.jsx: only `authError` indicates failure (do not infer failure from `data` shape).
+    if (authError) {
+      return {
+        ok: false,
+        error: authError.message || 'Sign in failed. Check your email and password.',
+      }
+    }
 
-  const signedInEmail = String(data.user.email).trim().toLowerCase()
+    const user = data?.user ?? data?.session?.user ?? null
+    const signedInEmail = String(user?.email || '').trim().toLowerCase()
 
-  if (!isEmailAllowedForAdminPortal(signedInEmail)) {
-    await supabase.auth.signOut()
-    return { ok: false, error: NOT_AUTHORIZED }
-  }
+    if (!user || !signedInEmail) {
+      return {
+        ok: false,
+        error: 'Sign in failed. Check your email and password.',
+      }
+    }
 
-  const meta = data.user.user_metadata || {}
-  const name =
-    String(meta.full_name || meta.name || meta.display_name || '').trim() ||
-    signedInEmail.split('@')[0] ||
-    signedInEmail
+    if (!isEmailAllowedForAdminPortal(signedInEmail)) {
+      await supabase.auth.signOut()
+      return { ok: false, error: NOT_AUTHORIZED }
+    }
 
-  return {
-    ok: true,
-    user: {
-      email: signedInEmail,
-      name,
-      role: 'admin',
-      id: data.user.id,
-      supabaseUserId: data.user.id,
-    },
+    const meta = user.user_metadata || {}
+    const name =
+      String(meta.full_name || meta.name || meta.display_name || '').trim() ||
+      signedInEmail.split('@')[0] ||
+      signedInEmail
+
+    return {
+      ok: true,
+      user: {
+        email: signedInEmail,
+        name,
+        role: 'admin',
+        id: user.id,
+        supabaseUserId: user.id,
+      },
+    }
+  } catch (err) {
+    return {
+      ok: false,
+      error: err?.message || 'An unexpected error occurred.',
+    }
   }
 }
