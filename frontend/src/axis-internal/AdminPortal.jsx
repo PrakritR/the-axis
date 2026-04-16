@@ -31,6 +31,7 @@ import {
   updateAdminMeetingAvailability,
 } from '../lib/adminPortalAirtable.js'
 import { readJsonResponse } from '../lib/readJsonResponse'
+import { supabase } from '../lib/supabase'
 import { authenticateAdminPortal } from '../lib/adminPortalSignIn'
 import {
   markDeveloperPortalActive,
@@ -812,11 +813,12 @@ export default function AdminPortal() {
     if (u && isAdminPortalAirtableConfigured()) setDataLoading(true)
   }
 
-  function handleSignOut() {
+  async function handleSignOut() {
     sessionStorage.removeItem(AXIS_ADMIN_SESSION_KEY)
     clearDeveloperPortalFlags()
     setSession(null)
     setDataLoading(false)
+    await supabase.auth.signOut().catch(() => {})
     window.location.replace('/portal')
   }
 

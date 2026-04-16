@@ -1,10 +1,26 @@
 /**
+ * Admin portal sign-in: Supabase Auth (email/password) + email allowlist.
+ * Does not grant portal access until the signed-in email passes {@link isEmailAllowedForAdminPortal}.
+ *
  * @param {string} identifier - Email
  * @param {string} password
  * @returns {Promise<{ ok: true, user: object } | { ok: false, error: string }>}
  */
+import { supabase } from './supabase'
+import { isEmailAllowedForAdminPortal } from './adminPortalAuthAllowlist.js'
+
+const NOT_AUTHORIZED = 'This account is not authorized for the admin portal'
+
+function authErrorMessage(err) {
+  const msg = String(err?.message || '').toLowerCase()
+  if (msg.includes('invalid login') || msg.includes('invalid email') || msg.includes('wrong password')) {
+    return 'Invalid email or password.'
+  }
+  return err?.message || 'Invalid email or password.'
+}
+
 export async function authenticateAdminPortal(identifier, password) {
-  const id = String(identifier || '').trim()
+  const id = String(identifier || '').trim().toLowerCase()
   const pw = String(password || '')
   if (!id || !pw) {
     return { ok: false, error: 'Enter your email and password.' }
@@ -12,47 +28,35 @@ export async function authenticateAdminPortal(identifier, password) {
   if (!id.includes('@')) {
     return { ok: false, error: 'Sign in with an email address.' }
   }
-  const em = id.toLowerCase()
 
-  const tryAdminProfile = async () => {
-    try {
-      const r = await fetch('/api/admin-portal-auth', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          action: 'admin-profile-login',
-          email: em,
-          password: pw,
-        }),
-      })
-      const data = await r.json().catch(() => ({}))
-      if (r.ok && data.ok && data.user?.role) {
-        return data.user
-      }
-    } catch {
-      /* offline or no API */
-    }
-    return null
+  const { data, error } = await supabase.auth.signInWithPassword({ email: id, password: pw })
+
+  if (error || !data?.user?.email) {
+    await supabase.auth.signOut().catch(() => {})
+    return { ok: false, error: authErrorMessage(error) }
   }
 
-  const profileUser = await tryAdminProfile()
-  if (profileUser) {
-    return { ok: true, user: profileUser }
+  const signedInEmail = String(data.user.email).trim().toLowerCase()
+
+  if (!isEmailAllowedForAdminPortal(signedInEmail)) {
+    await supabase.auth.signOut()
+    return { ok: false, error: NOT_AUTHORIZED }
   }
 
-  try {
-    const r = await fetch('/api/admin-portal-auth', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: 'admin-login', email: em, password: pw }),
-    })
-    const data = await r.json().catch(() => ({}))
-    if (r.ok && data.ok && data.user?.role === 'admin') {
-      return { ok: true, user: data.user }
-    }
-  } catch {
-    /* fall through */
-  }
+  const meta = data.user.user_metadata || {}
+  const name =
+    String(meta.full_name || meta.name || meta.display_name || '').trim() ||
+    signedInEmail.split('@')[0] ||
+    signedInEmail
 
-  return { ok: false, error: 'Invalid email or password.' }
+  return {
+    ok: true,
+    user: {
+      email: signedInEmail,
+      name,
+      role: 'admin',
+      id: data.user.id,
+      supabaseUserId: data.user.id,
+    },
+  }
 }
