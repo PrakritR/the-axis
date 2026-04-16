@@ -31,6 +31,7 @@ import meeting from '../backend/server/handlers/meeting.js'
 import tour from '../backend/server/handlers/tour.js'
 import syncAppUser from '../backend/server/handlers/sync-app-user.js'
 import adminProfiles from '../backend/server/handlers/admin-profiles.js'
+import managerProfiles from '../backend/server/handlers/manager-profiles.js'
 
 const routes = {
   'admin-portal-auth': adminPortalAuth,
@@ -46,6 +47,7 @@ const routes = {
   'send-lease-to-resident': sendLeaseToResident,
   'sign-lease-draft': signLeaseDraft,
   'manager-auth': managerAuth,
+  'manager-profiles': managerProfiles,
   'manager-approve-application': managerApproveApplication,
   'manager-billing-portal': managerBillingPortal,
   'manager-create-account': managerCreateAccount,

@@ -72,3 +72,7 @@ create policy "residents_own_messages" on work_order_messages
 -- admin_profiles: see supabase/migrations/20260416120200_create_admin_profiles.sql
 -- (app_user_id -> app_users.id, unique app_user_id; backend/server/lib/admin-profiles-service.js)
 -- HTTP: GET|POST|PATCH /api/admin-profiles (Bearer JWT, admin role, service-role writes) — backend/server/handlers/admin-profiles.js
+
+-- manager_profiles: see supabase/migrations/20260416120300_create_manager_profiles.sql
+-- (app_user_id -> app_users.id, tier Standard|Premium; backend/server/lib/manager-profiles-service.js)
+-- HTTP: GET|POST|PATCH /api/manager-profiles — backend/server/handlers/manager-profiles.js
