@@ -398,6 +398,8 @@ export async function finalizeResidentPaymentAfterStripeSuccess(
     description,
     propertyName,
     unitNumber,
+    stripeCheckoutSessionId,
+    stripePaymentIntentId,
   } = checkoutPayload || {}
 
   const amt = Math.round(Number(amount) * 100) / 100
@@ -410,13 +412,17 @@ export async function finalizeResidentPaymentAfterStripeSuccess(
   const prop = String(propertyName || resolveHouseText(resident.House) || '').trim()
   const unit = String(unitNumber || resident['Unit Number'] || '').trim()
 
+  const stripeRef = String(stripePaymentIntentId || stripeCheckoutSessionId || '').trim()
+
   if (paymentRecordId && /^rec[a-zA-Z0-9]{14,}$/.test(String(paymentRecordId).trim())) {
-    return updatePaymentRecord(String(paymentRecordId).trim(), {
+    const fields = {
       Status: 'Paid',
       'Paid Date': todayIsoDate(),
       'Amount Paid': amt,
       Balance: 0,
-    })
+    }
+    if (stripeRef) fields['Stripe Payment ID'] = stripeRef
+    return updatePaymentRecord(String(paymentRecordId).trim(), fields)
   }
 
   let type = 'Rent'
@@ -463,7 +469,7 @@ export async function finalizeResidentPaymentAfterStripeSuccess(
     month = month || 'Fee payment'
   }
 
-  return createPaymentRecord({
+  const createFields = {
     ...buildPaymentResidentLinkFields(rid),
     'Resident Name': resName || undefined,
     'Resident Email': resEmail || undefined,
@@ -478,5 +484,7 @@ export async function finalizeResidentPaymentAfterStripeSuccess(
     Type: type,
     Month: month,
     Notes: description ? String(description).slice(0, 4000) : undefined,
-  })
+  }
+  if (stripeRef) createFields['Stripe Payment ID'] = stripeRef
+  return createPaymentRecord(createFields)
 }

@@ -1449,6 +1449,24 @@ export function buildPaymentResidentLinkFields(residentRecordId) {
   return { [f]: [rid] }
 }
 
+/**
+ * Linked-record field on **Payments** pointing at Properties (optional).
+ * Defaults to `Property`. Set `VITE_AIRTABLE_PAYMENTS_PROPERTY_LINK_FIELD` if your base differs.
+ */
+export function paymentsPropertyLinkFieldName() {
+  const raw = import.meta.env.VITE_AIRTABLE_PAYMENTS_PROPERTY_LINK_FIELD
+  const t = raw !== undefined ? String(raw).trim() : ''
+  return t || 'Property'
+}
+
+/** Include when creating/updating Payments rows so manager filters by property link stay accurate. */
+export function buildPaymentPropertyLinkFields(propertyRecordId) {
+  const pid = String(propertyRecordId || '').trim()
+  if (!/^rec[a-zA-Z0-9]{14,}$/.test(pid)) return {}
+  const f = paymentsPropertyLinkFieldName()
+  return { [f]: [pid] }
+}
+
 /** Map Airtable Payments rows so `record.Resident` is always the linked profile id array when the base uses another link column name. */
 export function normalizePaymentsMappedRecord(mapped) {
   if (!mapped || typeof mapped !== 'object') return mapped

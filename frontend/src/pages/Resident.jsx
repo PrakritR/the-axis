@@ -84,6 +84,7 @@ import {
   reconcilePaymentStatusesInAirtable,
   rentDueDayFromResident,
 } from '../lib/residentPaymentsShared.js'
+import { ensureResidentPaymentLedgerMaterialized } from '../lib/residentPaymentsLedgerMaterialize.js'
 import {
   ensurePostpayRoomCleaningFeePayment,
   residentPostpayCleaningDescriptionSuffix,
@@ -1782,6 +1783,7 @@ function PaymentsPanel({ resident, onResidentUpdated, highlightCategory, onPayme
   const [leaseDraftsForPayments, setLeaseDraftsForPayments] = useState([])
   const pendingStripeCheckoutRef = useRef(null)
   const paymentStatusReconcileSigRef = useRef('')
+  const ledgerMaterializeKeyRef = useRef('')
 
   useEffect(() => {
     setPayDetailId(null)
@@ -1789,6 +1791,10 @@ function PaymentsPanel({ resident, onResidentUpdated, highlightCategory, onPayme
 
   useEffect(() => {
     paymentStatusReconcileSigRef.current = ''
+  }, [resident.id])
+
+  useEffect(() => {
+    ledgerMaterializeKeyRef.current = ''
   }, [resident.id])
 
   const loadPayments = useCallback(() => {
@@ -1929,6 +1935,54 @@ function PaymentsPanel({ resident, onResidentUpdated, highlightCategory, onPayme
       ),
     [sortedPayments, paymentStatusForRecord],
   )
+
+  /** Materialize recurring rent/utilities into Airtable so Manager Portal sees the same rows as residents. */
+  useEffect(() => {
+    if (loading) return
+    const horizon = String(import.meta.env.VITE_PAYMENT_SCHEDULE_HORIZON_MONTHS || '12')
+    const key = [
+      resident.id,
+      String(resident['Lease Start Date'] || ''),
+      String(resident['Lease End Date'] || ''),
+      String(payPricing.monthlyRent || ''),
+      String(payPricing.utilitiesFee || ''),
+      String(payPricing.propertyName || ''),
+      firstMonthRentPaid ? '1' : '0',
+      firstMonthUtilitiesPaid ? '1' : '0',
+      horizon,
+    ].join('|')
+    if (ledgerMaterializeKeyRef.current === key) return
+    ledgerMaterializeKeyRef.current = key
+    let cancelled = false
+    ;(async () => {
+      try {
+        const n = await ensureResidentPaymentLedgerMaterialized({
+          resident,
+          sortedPayments,
+          payPricing,
+          firstMonthRentPaid,
+          firstMonthUtilitiesPaid,
+        })
+        if (cancelled || !n) return
+        const fresh = await getPaymentsForResident(resident)
+        if (!cancelled) setPayments(Array.isArray(fresh) ? fresh : [])
+      } catch {
+        /* non-fatal */
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [
+    loading,
+    resident,
+    sortedPayments,
+    payPricing.monthlyRent,
+    payPricing.utilitiesFee,
+    payPricing.propertyName,
+    firstMonthRentPaid,
+    firstMonthUtilitiesPaid,
+  ])
 
   const holdFeePaymentRecord = useMemo(
     () => sortedPayments.find((p) => classifyResidentPaymentLine(p) === 'hold_fee') || null,
@@ -2506,11 +2560,14 @@ function PaymentsPanel({ resident, onResidentUpdated, highlightCategory, onPayme
     setEmbeddedCheckout(null)
   }, [])
 
-  const handleEmbeddedCheckoutComplete = useCallback(async () => {
+  const handleEmbeddedCheckoutComplete = useCallback(async (detail) => {
     setActionLoading('')
     setEmbeddedCheckout(null)
-    const checkoutPayload = pendingStripeCheckoutRef.current
+    const pending = pendingStripeCheckoutRef.current
     pendingStripeCheckoutRef.current = null
+    const checkoutPayload = pending
+      ? { ...pending, stripeCheckoutSessionId: String(detail?.sessionId || '').trim() || undefined }
+      : null
     setLoading(true)
     try {
       if (checkoutPayload) {
@@ -2698,7 +2755,7 @@ function PaymentsPanel({ resident, onResidentUpdated, highlightCategory, onPayme
             title={embeddedCheckout?.title || 'Secure Payment'}
             checkoutRequest={embeddedCheckout?.request}
             onClose={handleEmbeddedCheckoutClose}
-            onComplete={handleEmbeddedCheckoutComplete}
+            onComplete={(detail) => void handleEmbeddedCheckoutComplete(detail)}
           />
         </>
       )}

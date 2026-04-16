@@ -28,6 +28,12 @@ const APPLICATION_APPROVED_ROOM_FIELD = String(
 const PAYMENTS_RESIDENT_LINK_FIELD =
   String(process.env.VITE_AIRTABLE_PAYMENTS_RESIDENT_LINK_FIELD || process.env.AIRTABLE_PAYMENTS_RESIDENT_LINK_FIELD || 'Resident').trim() || 'Resident'
 
+const PAYMENTS_PROPERTY_LINK_FIELD =
+  String(process.env.VITE_AIRTABLE_PAYMENTS_PROPERTY_LINK_FIELD || process.env.AIRTABLE_PAYMENTS_PROPERTY_LINK_FIELD || 'Property').trim() || 'Property'
+
+const PROPERTIES_TABLE =
+  String(process.env.VITE_AIRTABLE_PROPERTIES_TABLE || process.env.AIRTABLE_PROPERTIES_TABLE || 'Properties').trim() || 'Properties'
+
 /**
  * Resident Profile `House` field may be a linked-record array of property record IDs.
  * Return the first human-readable (non-record-ID) string value, or the fallback.
@@ -96,6 +102,20 @@ async function fetchResidentRecord(residentRecordId) {
   const enc = encodeURIComponent(RESIDENT_PROFILE_TABLE)
   const data = await airtableGet(`${CORE_AIRTABLE_BASE_URL}/${enc}/${encodeURIComponent(residentRecordId)}`)
   return { id: data.id, ...data.fields }
+}
+
+async function fetchPropertyRecordIdForFeePayment(propertyName) {
+  const name = String(propertyName || '').trim()
+  if (!name || !AIRTABLE_TOKEN) return ''
+  const enc = encodeURIComponent(PROPERTIES_TABLE)
+  const formula = `{Property Name} = "${escapeFormulaValue(name)}"`
+  const url = `${CORE_AIRTABLE_BASE_URL}/${enc}?filterByFormula=${encodeURIComponent(formula)}&maxRecords=1`
+  try {
+    const data = await airtableGet(url)
+    return String(data.records?.[0]?.id || '').trim()
+  } catch {
+    return ''
+  }
 }
 
 async function feePaymentAlreadyExists(residentRecordId, applicationRecordId) {
@@ -169,6 +189,10 @@ export async function createApprovedApplicationFeePayments({ application, reside
   const encPay = encodeURIComponent(PAYMENTS_TABLE)
   const payUrl = `${CORE_AIRTABLE_BASE_URL}/${encPay}`
 
+  const pf = PAYMENTS_PROPERTY_LINK_FIELD
+  const propNameForLink = String(application['Property Name'] || '').trim()
+  const propertyRecordId = propNameForLink ? await fetchPropertyRecordIdForFeePayment(propNameForLink) : ''
+
   // Try to find the row that was created at submission time and upgrade it with
   // the Resident link, so it shows up in the resident's portal without a duplicate.
   const submittedRow = await findSubmittedFeeRow(appId).catch(() => null)
@@ -195,45 +219,53 @@ export async function createApprovedApplicationFeePayments({ application, reside
         const updatedNotes = existingNotes.includes(approvedMarker)
           ? existingNotes
           : `${existingNotes} ${approvedMarker}`.trim()
+        const patchFields = {
+          [PAYMENTS_RESIDENT_LINK_FIELD]: [rid],
+          Status: 'Paid',
+          'Amount Paid': feeUsd,
+          Balance: 0,
+          'Paid Date': today,
+          Notes: updatedNotes,
+          'Resident Name': resName || undefined,
+          'Resident Email': resEmail || undefined,
+          'Property Name': prop || undefined,
+          'Room Number': unit || undefined,
+          Kind: 'Application fee',
+          'Line Item Type': 'Application',
+        }
+        if (propertyRecordId) patchFields[pf] = [propertyRecordId]
         const updated = await airtablePatch(
           `${CORE_AIRTABLE_BASE_URL}/${encodeURIComponent(PAYMENTS_TABLE)}/${submittedRow.id}`,
           {
-            fields: {
-              [PAYMENTS_RESIDENT_LINK_FIELD]: [rid],
-              Status: 'Paid',
-              'Amount Paid': feeUsd,
-              Balance: 0,
-              'Paid Date': today,
-              Notes: updatedNotes,
-              'Resident Name': resName || undefined,
-              'Resident Email': resEmail || undefined,
-              'Property Name': prop || undefined,
-              'Room Number': unit || undefined,
-            },
+            fields: patchFields,
             typecast: true,
           },
         )
         if (updated?.id) createdIds.push(updated.id)
       } else {
         // No submitted-time row exists — create fresh
+        const postFields = {
+          [PAYMENTS_RESIDENT_LINK_FIELD]: [rid],
+          Amount: feeUsd,
+          'Amount Paid': feeUsd,
+          Balance: 0,
+          Status: 'Paid',
+          'Paid Date': today,
+          'Due Date': today,
+          Type: 'Application fee',
+          Category: 'Fee',
+          Month: 'Application fee',
+          Notes: notes,
+          'Resident Name': resName || undefined,
+          'Resident Email': resEmail || undefined,
+          'Property Name': prop || undefined,
+          'Room Number': unit || undefined,
+          Kind: 'Application fee',
+          'Line Item Type': 'Application',
+        }
+        if (propertyRecordId) postFields[pf] = [propertyRecordId]
         const created = await airtablePost(payUrl, {
-          fields: {
-            [PAYMENTS_RESIDENT_LINK_FIELD]: [rid],
-            Amount: feeUsd,
-            'Amount Paid': feeUsd,
-            Balance: 0,
-            Status: 'Paid',
-            'Paid Date': today,
-            'Due Date': today,
-            Type: 'Application fee',
-            Category: 'Fee',
-            Month: 'Application fee',
-            Notes: notes,
-            'Resident Name': resName || undefined,
-            'Resident Email': resEmail || undefined,
-            'Property Name': prop || undefined,
-            'Room Number': unit || undefined,
-          },
+          fields: postFields,
           typecast: true,
         })
         if (created?.id) createdIds.push(created.id)

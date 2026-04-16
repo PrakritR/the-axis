@@ -12,6 +12,7 @@ import {
   SUBMITTED_MOVEIN_FIRST_RENT_MARKER_PREFIX,
   SUBMITTED_MOVEIN_FIRST_UTIL_MARKER_PREFIX,
 } from './submitted-application-movein-payments.js'
+import { adminFeeFromDepositMarker } from '../../../shared/payments-ledger-markers.js'
 
 const AIRTABLE_TOKEN = process.env.AIRTABLE_TOKEN || process.env.VITE_AIRTABLE_TOKEN
 const CORE_BASE_ID =
@@ -31,6 +32,12 @@ const APPLICATION_APPROVED_ROOM_FIELD = String(
 /** Airtable field name that links a Payments row to a Resident Profile record. */
 const PAYMENTS_RESIDENT_LINK_FIELD =
   String(process.env.VITE_AIRTABLE_PAYMENTS_RESIDENT_LINK_FIELD || process.env.AIRTABLE_PAYMENTS_RESIDENT_LINK_FIELD || 'Resident').trim() || 'Resident'
+
+const PAYMENTS_PROPERTY_LINK_FIELD =
+  String(process.env.VITE_AIRTABLE_PAYMENTS_PROPERTY_LINK_FIELD || process.env.AIRTABLE_PAYMENTS_PROPERTY_LINK_FIELD || 'Property').trim() || 'Property'
+
+const PROPERTIES_TABLE =
+  String(process.env.VITE_AIRTABLE_PROPERTIES_TABLE || process.env.AIRTABLE_PROPERTIES_TABLE || 'Properties').trim() || 'Properties'
 
 export const APPROVED_MOVEIN_DEPOSIT_MARKER_PREFIX = 'AXIS_APPROVED_MOVEIN_DEPOSIT:'
 export const APPROVED_MOVEIN_FIRST_RENT_MARKER_PREFIX = 'AXIS_APPROVED_MOVEIN_FIRST_RENT:'
@@ -150,7 +157,8 @@ export async function deleteUnpaidApprovedMoveInPaymentsForApplication(applicati
   const skD = `${SUBMITTED_MOVEIN_DEPOSIT_MARKER_PREFIX}${appId}`
   const skR = `${SUBMITTED_MOVEIN_FIRST_RENT_MARKER_PREFIX}${appId}`
   const skU = `${SUBMITTED_MOVEIN_FIRST_UTIL_MARKER_PREFIX}${appId}`
-  const formula = `AND(OR(FIND("${escapeFormulaValue(mkD)}", {Notes}) > 0, FIND("${escapeFormulaValue(mkR)}", {Notes}) > 0, FIND("${escapeFormulaValue(mkU)}", {Notes}) > 0, FIND("${escapeFormulaValue(skD)}", {Notes}) > 0, FIND("${escapeFormulaValue(skR)}", {Notes}) > 0, FIND("${escapeFormulaValue(skU)}", {Notes}) > 0), NOT(OR({Status} = "Paid", {Status} = "Partial", {Status} = "Posted")))`
+  const mkAdmin = adminFeeFromDepositMarker(appId)
+  const formula = `AND(OR(FIND("${escapeFormulaValue(mkD)}", {Notes}) > 0, FIND("${escapeFormulaValue(mkR)}", {Notes}) > 0, FIND("${escapeFormulaValue(mkU)}", {Notes}) > 0, FIND("${escapeFormulaValue(skD)}", {Notes}) > 0, FIND("${escapeFormulaValue(skR)}", {Notes}) > 0, FIND("${escapeFormulaValue(skU)}", {Notes}) > 0, FIND("${escapeFormulaValue(mkAdmin)}", {Notes}) > 0), NOT(OR({Status} = "Paid", {Status} = "Partial", {Status} = "Posted")))`
 
   const enc = encodeURIComponent(PAYMENTS_TABLE)
   let offset = ''
@@ -206,6 +214,123 @@ function dueDateFromLeaseStart(leaseStart) {
   return new Date().toISOString().slice(0, 10)
 }
 
+async function fetchPropertyRecordIdForPayments(propertyName) {
+  const name = String(propertyName || '').trim()
+  if (!name || !AIRTABLE_TOKEN) return ''
+  const enc = encodeURIComponent(PROPERTIES_TABLE)
+  const formula = `{Property Name} = "${escapeFormulaValue(name)}"`
+  const url = `${CORE_AIRTABLE_BASE_URL}/${enc}?filterByFormula=${encodeURIComponent(formula)}&maxRecords=1`
+  try {
+    const data = await airtableGet(url)
+    return String(data.records?.[0]?.id || '').trim()
+  } catch {
+    return ''
+  }
+}
+
+function moveInKindForSpec(spec) {
+  if (spec.key === 'deposit') return 'Security deposit'
+  if (spec.key === 'first_rent') return 'First month rent'
+  if (spec.key === 'first_util') return 'First month utilities'
+  return 'Move-in'
+}
+
+async function findAdministrativeFeeChargeForApplication(applicationRecordId) {
+  const marker = adminFeeFromDepositMarker(applicationRecordId)
+  const enc = encodeURIComponent(PAYMENTS_TABLE)
+  const formula = `AND(FIND("${escapeFormulaValue(marker)}", {Notes}) > 0, {Type} = "Administrative fee")`
+  const url = `${CORE_AIRTABLE_BASE_URL}/${enc}?filterByFormula=${encodeURIComponent(formula)}&maxRecords=1`
+  try {
+    const data = await airtableGet(url)
+    return data.records?.[0] || null
+  } catch {
+    return null
+  }
+}
+
+async function applyAdminFeeSplitFromSecurityDeposit({
+  paymentsPostUrl,
+  applicationRecordId,
+  depositRecordId,
+  adminFeeUsd,
+  residentRecordId,
+  propertyName,
+  roomNumber,
+  resName,
+  resEmail,
+  propertyRecordId,
+  dueDate,
+}) {
+  const appId = String(applicationRecordId || '').trim()
+  const depId = String(depositRecordId || '').trim()
+  if (!appId.startsWith('rec') || !depId.startsWith('rec')) return
+
+  const marker = adminFeeFromDepositMarker(appId)
+  const existingFee = await findAdministrativeFeeChargeForApplication(appId)
+  if (existingFee?.id) return
+
+  const enc = encodeURIComponent(PAYMENTS_TABLE)
+  let depFields = {}
+  try {
+    const dep = await airtableGet(`${CORE_AIRTABLE_BASE_URL}/${enc}/${encodeURIComponent(depId)}`)
+    depFields = dep.fields || {}
+  } catch (err) {
+    console.warn('[approved-application-movein-payments] admin fee split: could not read deposit', err?.message || err)
+    return
+  }
+
+  const prevNotes = String(depFields.Notes || '').trim()
+  const allocationHint = `reclassified to administrative fee line (application ${appId})`
+  if (prevNotes.includes(allocationHint) && !existingFee?.id) {
+    console.warn(
+      '[approved-application-movein-payments] deposit notes show a prior admin allocation but no fee row; skipping split to avoid double reduction',
+    )
+    return
+  }
+
+  const amount = Math.round(Number(depFields.Amount) * 100) / 100
+  const balanceRaw = Number(depFields.Balance)
+  const balance = Number.isFinite(balanceRaw) ? Math.max(0, Math.round(balanceRaw * 100) / 100) : Math.max(0, amount)
+  const admin = Math.max(0, Math.round(Number(adminFeeUsd) * 100) / 100)
+  const alloc = Math.min(admin, balance, amount)
+  if (!(alloc > 0)) return
+
+  const newAmount = Math.round((amount - alloc) * 100) / 100
+  const newBalance = Math.max(0, Math.min(balance, Math.round(newAmount * 100) / 100))
+  const adjFragment = `Administrative allocation: ${alloc} reclassified to administrative fee line (application ${appId}).`
+  const nextNotes = prevNotes.includes(adjFragment.trim()) ? prevNotes : `${prevNotes} ${adjFragment}`.trim()
+
+  await airtablePatchRecord(depId, {
+    Amount: newAmount,
+    Balance: newBalance,
+    Notes: nextNotes,
+  })
+
+  const lf = PAYMENTS_RESIDENT_LINK_FIELD
+  const pf = PAYMENTS_PROPERTY_LINK_FIELD
+  const fields = {
+    [lf]: [residentRecordId],
+    Amount: alloc,
+    Balance: alloc,
+    Status: 'Unpaid',
+    'Due Date': dueDate,
+    Type: 'Administrative fee',
+    Category: 'Fee',
+    Kind: 'Administrative costs',
+    'Line Item Type': 'Move-in allocation',
+    Month: 'Administrative fee',
+    Notes: `Administrative fee (portion of security deposit at approval). ${marker}`,
+    'Resident Name': resName || undefined,
+    'Resident Email': resEmail || undefined,
+    'Property Name': propertyName || undefined,
+    'Room Number': roomNumber || undefined,
+  }
+  if (propertyRecordId && /^rec[a-zA-Z0-9]{14,}$/.test(String(propertyRecordId))) {
+    fields[pf] = [propertyRecordId]
+  }
+  await airtablePost(paymentsPostUrl, { fields, typecast: true })
+}
+
 /**
  * @param {{ application: Record<string, unknown>, residentRecordIds: string[] }} p
  * @returns {Promise<{ createdIds: string[], skipped: string[], error?: string }>}
@@ -250,8 +375,12 @@ export async function createApprovedApplicationMoveInPayments({ application, res
   const markerRent = `${APPROVED_MOVEIN_FIRST_RENT_MARKER_PREFIX}${appId}`
   const markerUtil = `${APPROVED_MOVEIN_FIRST_UTIL_MARKER_PREFIX}${appId}`
 
+  const propertyRecordId = await fetchPropertyRecordIdForPayments(propName)
+  const pf = PAYMENTS_PROPERTY_LINK_FIELD
+
   for (let ri = 0; ri < ids.length; ri++) {
     const rid = ids[ri]
+    let primaryDepositRecordId = null
     try {
       const resRow = await fetchResidentRecord(rid)
       const resName = String(resRow.Name || application['Signer Full Name'] || '').trim()
@@ -299,7 +428,7 @@ export async function createApprovedApplicationMoveInPayments({ application, res
               const nextNotes = prevNotes.includes(approvedTag)
                 ? prevNotes
                 : `${prevNotes} Approved move-in line. ${approvedTag}`.trim()
-              await airtablePatchRecord(subRec.id, {
+              const claimFields = {
                 [PAYMENTS_RESIDENT_LINK_FIELD]: [rid],
                 Amount: spec.amount,
                 Balance: spec.amount,
@@ -307,14 +436,19 @@ export async function createApprovedApplicationMoveInPayments({ application, res
                 'Due Date': due,
                 Type: spec.Type,
                 Category: 'Rent',
+                Kind: moveInKindForSpec(spec),
+                'Line Item Type': 'Move-in',
                 Month: spec.Month,
                 Notes: nextNotes,
                 'Resident Name': resName || undefined,
                 'Resident Email': resEmail || undefined,
                 'Property Name': prop || undefined,
                 'Room Number': unit || undefined,
-              })
+              }
+              if (propertyRecordId) claimFields[pf] = [propertyRecordId]
+              await airtablePatchRecord(subRec.id, claimFields)
               createdIds.push(subRec.id)
+              if (spec.key === 'deposit') primaryDepositRecordId = subRec.id
               continue
             } catch (claimErr) {
               console.warn('[approved-application-movein-payments] claim submitted row failed', subRec.id, claimErr)
@@ -326,27 +460,61 @@ export async function createApprovedApplicationMoveInPayments({ application, res
 
         if (await moveInRowExists(rid, spec.existsMarker)) {
           skipped.push(`${rid}:${spec.key}`)
+          if (ri === 0 && spec.key === 'deposit') {
+            const hit = await findFirstPaymentByNotesSubstring(spec.existsMarker)
+            if (hit?.id) primaryDepositRecordId = hit.id
+          }
           continue
         }
+        const postFields = {
+          [PAYMENTS_RESIDENT_LINK_FIELD]: [rid],
+          Amount: spec.amount,
+          Balance: spec.amount,
+          Status: 'Unpaid',
+          'Due Date': due,
+          Type: spec.Type,
+          Category: 'Rent',
+          Kind: moveInKindForSpec(spec),
+          'Line Item Type': 'Move-in',
+          Month: spec.Month,
+          Notes: spec.Notes,
+          'Resident Name': resName || undefined,
+          'Resident Email': resEmail || undefined,
+          'Property Name': prop || undefined,
+          'Room Number': unit || undefined,
+        }
+        if (propertyRecordId) postFields[pf] = [propertyRecordId]
         const created = await airtablePost(payUrl, {
-          fields: {
-            [PAYMENTS_RESIDENT_LINK_FIELD]: [rid],
-            Amount: spec.amount,
-            Balance: spec.amount,
-            Status: 'Unpaid',
-            'Due Date': due,
-            Type: spec.Type,
-            Category: 'Rent',
-            Month: spec.Month,
-            Notes: spec.Notes,
-            'Resident Name': resName || undefined,
-            'Resident Email': resEmail || undefined,
-            'Property Name': prop || undefined,
-            'Room Number': unit || undefined,
-          },
+          fields: postFields,
           typecast: true,
         })
-        if (created?.id) createdIds.push(created.id)
+        if (created?.id) {
+          createdIds.push(created.id)
+          if (ri === 0 && spec.key === 'deposit') primaryDepositRecordId = created.id
+        }
+      }
+
+      if (ri === 0) {
+        const admin = Math.round(Number(leaseData.adminFee) * 100) / 100
+        if (admin > 0 && primaryDepositRecordId) {
+          try {
+            await applyAdminFeeSplitFromSecurityDeposit({
+              paymentsPostUrl: payUrl,
+              applicationRecordId: appId,
+              depositRecordId: primaryDepositRecordId,
+              adminFeeUsd: admin,
+              residentRecordId: rid,
+              propertyName: prop,
+              roomNumber: unit,
+              resName,
+              resEmail,
+              propertyRecordId,
+              dueDate: due,
+            })
+          } catch (adminErr) {
+            console.warn('[approved-application-movein-payments] admin fee split failed', adminErr?.message || adminErr)
+          }
+        }
       }
     } catch (err) {
       console.warn('[approved-application-movein-payments] skip resident', rid, err?.message || err)
