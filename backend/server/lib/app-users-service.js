@@ -57,6 +57,19 @@ export async function getAppUserByAuthUserId(authUserId) {
 }
 
 /**
+ * @param {string} email - matches app_users.email (stored lowercase)
+ * @returns {Promise<object | null>}
+ */
+export async function getAppUserByEmail(email) {
+  const em = String(email || '').trim().toLowerCase()
+  if (!em) return null
+  const client = requireServiceClient()
+  const { data, error } = await client.from('app_users').select('*').eq('email', em).maybeSingle()
+  if (error) throw new Error(error.message || 'Failed to load app_users')
+  return data || null
+}
+
+/**
  * Insert or update the profile row for a Supabase Auth user (by auth_user_id).
  * Does not disable is_active unless explicitly passed false.
  *

@@ -6,7 +6,11 @@
  * @module
  */
 
-import { requireServiceClient } from './app-users-service.js'
+import {
+  getAppUserByAuthUserId,
+  getAppUserByEmail,
+  requireServiceClient,
+} from './app-users-service.js'
 
 /** @readonly */
 export const APP_USER_ROLE_VALUES = ['admin', 'manager', 'owner', 'resident']
@@ -86,4 +90,48 @@ export async function appUserHasRole(appUserId, role) {
     .maybeSingle()
   if (error) throw new Error(error.message || 'Failed to check app_user_roles')
   return Boolean(data?.id)
+}
+
+/**
+ * Resolve app_users by Supabase auth id, then upsert the role row (deduped by unique app_user_id + role).
+ *
+ * @param {{ authUserId: string, role: string, isPrimary?: boolean }} args
+ * @returns {Promise<object>} persisted app_user_roles row
+ */
+export async function assignRoleByAuthUserId(args) {
+  const authUserId = String(args.authUserId || '').trim()
+  if (!authUserId) throw new Error('assignRoleByAuthUserId: authUserId is required.')
+  const user = await getAppUserByAuthUserId(authUserId)
+  if (!user?.id) {
+    throw new Error(
+      'No app_users row for this auth user. Sign in once (auth sync) or run ensureAppUserByAuthId before seeding roles.',
+    )
+  }
+  return assignRoleToAppUser({
+    appUserId: user.id,
+    role: args.role,
+    isPrimary: args.isPrimary,
+  })
+}
+
+/**
+ * Resolve app_users by email, then upsert the role row.
+ *
+ * @param {{ email: string, role: string, isPrimary?: boolean }} args
+ * @returns {Promise<object>} persisted app_user_roles row
+ */
+export async function assignRoleByEmail(args) {
+  const email = String(args.email || '').trim()
+  if (!email) throw new Error('assignRoleByEmail: email is required.')
+  const user = await getAppUserByEmail(email)
+  if (!user?.id) {
+    throw new Error(
+      `No app_users row for email "${email}". Sign in once with /login or portal auth sync so app_users exists, then re-run.`,
+    )
+  }
+  return assignRoleToAppUser({
+    appUserId: user.id,
+    role: args.role,
+    isPrimary: args.isPrimary,
+  })
 }

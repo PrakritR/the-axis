@@ -66,3 +66,5 @@ create policy "residents_own_messages" on work_order_messages
 
 -- app_user_roles: see supabase/migrations/20260416120100_create_app_user_roles.sql
 -- (app_user_id -> app_users.id, role in admin|manager|owner|resident, unique (app_user_id, role))
+-- Example SQL to grant admin: supabase/seed-examples/assign_admin_role_by_email.sql
+-- Or: ADMIN_SEED_EMAIL=... npm run seed:admin-role
