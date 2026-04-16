@@ -87,6 +87,35 @@ const server = http.createServer(async (req, nodeRes) => {
       return
     }
 
+    // Canonical Stripe webhook URL (stub — same path as Vercel `api/stripe/webhook.js`).
+    if (url.pathname === '/api/stripe/webhook') {
+      if (req.method === 'GET' || req.method === 'HEAD') {
+        nodeRes.setHeader('Content-Type', 'application/json; charset=utf-8')
+        nodeRes.setHeader('Allow', 'POST')
+        nodeRes.statusCode = 405
+        nodeRes.end(JSON.stringify({ message: 'Webhook endpoint ready', detail: 'POST only' }))
+        return
+      }
+      if (req.method === 'POST') {
+        const chunks = []
+        for await (const chunk of req) chunks.push(chunk)
+        nodeRes.setHeader('Content-Type', 'application/json; charset=utf-8')
+        nodeRes.statusCode = 200
+        nodeRes.end(
+          JSON.stringify({
+            received: true,
+            message: 'Stripe webhook route live — full verification pending',
+          }),
+        )
+        return
+      }
+      nodeRes.setHeader('Content-Type', 'application/json; charset=utf-8')
+      nodeRes.setHeader('Allow', 'POST')
+      nodeRes.statusCode = 405
+      nodeRes.end(JSON.stringify({ error: 'Method not allowed' }))
+      return
+    }
+
     // Stripe signature verification requires the raw body (not JSON-parsed).
     if (url.pathname === '/api/stripe-webhook' && req.method === 'POST') {
       const { default: stripeWebhook, readStripeSignatureHeader } = await import(
