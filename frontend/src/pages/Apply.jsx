@@ -13,6 +13,8 @@ import {
 } from '../../../shared/application-airtable-fields.js'
 import { readJsonResponse } from '../lib/readJsonResponse'
 import { errorFromAirtableApiBody } from '../lib/airtablePermissionError'
+import { supabase } from '../lib/supabase'
+import { syncAppUserFromSupabaseSession } from '../lib/authAppUserSync'
 
 const AIRTABLE_BASE_ID = import.meta.env.VITE_AIRTABLE_BASE_ID || 'appol57LKtMKaQ75T'
 const APPLICATIONS_TABLE = import.meta.env.VITE_AIRTABLE_APPLICATIONS_TABLE || 'Applications'
@@ -24,6 +26,13 @@ const APPLICATION_DRAFT_STORAGE_KEY = 'axis_application_draft'
 const APPLICATION_RECORD_ID_KEY = 'axis_application_record_id'
 /** Stripe Checkout Session id after return_url (embedded); used to sync payment if webhook is slow. */
 const APPLICATION_FEE_CHECKOUT_SESSION_KEY = 'axis_application_fee_checkout_session_id'
+/** Internal Postgres `applications.id` (UUID) when using application-submit-internal. */
+const INTERNAL_APPLICATION_UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
+function isInternalAxisApplicationId(id) {
+  return INTERNAL_APPLICATION_UUID_RE.test(String(id || '').trim())
+}
 
 const HISTORY_OPTIONS = ['No', 'Yes']
 const LEASE_TERMS = [
@@ -840,12 +849,17 @@ async function registerApplicationPaymentDraft({ email, fullName, propertyName, 
  * Returns true when the server confirmed the session is paid (and Airtable was updated).
  */
 async function syncApplicationStripeSession(applicationRecordId, sessionId) {
-  if (!applicationRecordId?.startsWith('rec') || !sessionId?.startsWith('cs_')) return false
+  if (!sessionId?.startsWith('cs_')) return false
+  const rid = String(applicationRecordId || '').trim()
+  if (!rid.startsWith('rec') && !isInternalAxisApplicationId(rid)) return false
   try {
+    const body = isInternalAxisApplicationId(rid)
+      ? { applicationId: rid, sessionId }
+      : { applicationRecordId: rid, sessionId }
     const res = await fetch('/api/portal?action=application-stripe-sync', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ applicationRecordId, sessionId }),
+      body: JSON.stringify(body),
     })
     let data = {}
     try {
@@ -920,6 +934,57 @@ async function submitSignerApplicationThroughPortal({ applicationRecordId, field
     throw new Error(data.error || `Application save failed (${res.status}).`)
   }
   return data
+}
+
+/**
+ * Supabase-authenticated path: POST application-submit-internal (Postgres).
+ * Returns null when the caller should fall back to Airtable (legacy draft + submit-signer).
+ */
+async function trySubmitSignerApplicationInternal({ applicationRecordId, fields, promoWaive, promoCode }) {
+  const { data: sessionData } = await supabase.auth.getSession()
+  const accessToken = sessionData?.session?.access_token
+  if (!accessToken) return null
+
+  try {
+    await syncAppUserFromSupabaseSession()
+  } catch {
+    /* non-fatal — server may still accept JWT */
+  }
+
+  const trimmedId = String(applicationRecordId || '').trim()
+  const applicationId = isInternalAxisApplicationId(trimmedId) ? trimmedId : undefined
+
+  const propertyName = String(fields['Property Name'] || '').trim()
+  const roomName = String(fields['Room Number'] || '').trim()
+
+  const res = await fetch('/api/portal?action=application-submit-internal', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      applicationId,
+      fields,
+      promoWaive: Boolean(promoWaive),
+      promoCode: String(promoCode || ''),
+      propertyName,
+      roomName,
+    }),
+  })
+  const data = await readJsonResponse(res)
+  if (res.ok && data?.ok && data.applicationId) {
+    return {
+      id: data.applicationId,
+      fields,
+      feePaid: Boolean(data.feePaid),
+      source: 'internal',
+    }
+  }
+  if ([401, 409, 422].includes(res.status) || data?.fallback === 'airtable') {
+    return null
+  }
+  throw new Error(data?.error || `Application save failed (${res.status}).`)
 }
 
 async function checkDuplicateApplication(email) {
@@ -1656,7 +1721,7 @@ export default function Apply() {
     const sid = String(params.get('session_id') || '').trim()
     if (!sid.startsWith('cs_')) return
     const recId = String(submissionSummary?.submittedRecord?.id || submittedRecord?.id || '').trim()
-    if (!recId.startsWith('rec')) {
+    if (!recId.startsWith('rec') && !isInternalAxisApplicationId(recId)) {
       window.history.replaceState({}, '', '/apply')
       return
     }
@@ -1823,22 +1888,11 @@ export default function Apply() {
           applicationRecordId = String(window.sessionStorage.getItem(APPLICATION_RECORD_ID_KEY) || '').trim()
         }
 
-        if (!applicationRecordId.startsWith('rec')) {
-          const reg = await registerApplicationPaymentDraft({
-            email: signer.email,
-            fullName: signer.fullName,
-            propertyName: signer.propertyName,
-            roomNumber: signer.roomNumber,
-          })
-          applicationRecordId = reg.applicationRecordId
-          try {
-            window.sessionStorage.setItem(APPLICATION_RECORD_ID_KEY, applicationRecordId)
-          } catch {
-            /* ignore */
-          }
-        }
-
-        if (applicationRecordId.startsWith('rec')) {
+        // Airtable `rec…` draft is created only when falling back to legacy submit (see below).
+        if (
+          applicationRecordId &&
+          (applicationRecordId.startsWith('rec') || isInternalAxisApplicationId(applicationRecordId))
+        ) {
           try {
             const stRes = await fetch(
               `/api/portal?action=application-payment-status&applicationRecordId=${encodeURIComponent(applicationRecordId)}`,
@@ -1952,15 +2006,68 @@ export default function Apply() {
           ...optionalApplicationsTableSignerExtras(signer, resolvedGroupApplicationId),
         }
 
-        const savedRow = await submitSignerApplicationThroughPortal({
+        const promoWaive = Boolean(promoApplied || promoOverride)
+        const promoCode = promoWaive ? 'FEEWAIVE' : ''
+
+        const internalSaved = await trySubmitSignerApplicationInternal({
           applicationRecordId,
           fields,
-          promoWaive: promoApplied || promoOverride,
-          promoCode: promoApplied || promoOverride ? 'FEEWAIVE' : '',
+          promoWaive,
+          promoCode,
         })
-        savedRecord = { id: savedRow.id, fields: savedRow.fields }
-        setSubmittedRecord(savedRecord)
-        openApplicationFeeAfterSubmit = feeChargedLater
+
+        if (internalSaved) {
+          savedRecord = { id: internalSaved.id, fields: internalSaved.fields }
+          try {
+            window.sessionStorage.setItem(APPLICATION_RECORD_ID_KEY, internalSaved.id)
+          } catch {
+            /* ignore */
+          }
+          setSubmittedRecord(savedRecord)
+          openApplicationFeeAfterSubmit = internalSaved.feePaid ? false : feeChargedLater
+        } else {
+          if (!applicationRecordId.startsWith('rec')) {
+            const reg = await registerApplicationPaymentDraft({
+              email: signer.email,
+              fullName: signer.fullName,
+              propertyName: signer.propertyName,
+              roomNumber: signer.roomNumber,
+            })
+            applicationRecordId = reg.applicationRecordId
+            try {
+              window.sessionStorage.setItem(APPLICATION_RECORD_ID_KEY, applicationRecordId)
+            } catch {
+              /* ignore */
+            }
+          }
+
+          if (applicationRecordId.startsWith('rec')) {
+            try {
+              const stRes = await fetch(
+                `/api/portal?action=application-payment-status&applicationRecordId=${encodeURIComponent(applicationRecordId)}`,
+              )
+              const stData = await readJsonResponse(stRes)
+              if (stRes.ok && Boolean(stData.submitted)) {
+                throw new Error(
+                  'This application is already submitted. Refresh the page to see your confirmation, or contact Axis leasing.',
+                )
+              }
+            } catch (e) {
+              if (e instanceof Error && e.message.includes('already submitted')) throw e
+              /* ignore lookup errors */
+            }
+          }
+
+          const savedRow = await submitSignerApplicationThroughPortal({
+            applicationRecordId,
+            fields,
+            promoWaive,
+            promoCode,
+          })
+          savedRecord = { id: savedRow.id, fields: savedRow.fields }
+          setSubmittedRecord(savedRecord)
+          openApplicationFeeAfterSubmit = feeChargedLater
+        }
       } else if (applicationType === 'cosigner') {
         if (!cosigner.consent) {
           throw new Error('The co-signer must consent to the credit and background check before submitting.')
@@ -2044,7 +2151,7 @@ export default function Apply() {
         window.sessionStorage.setItem(APPLICATION_SUBMISSION_STORAGE_KEY, JSON.stringify(summary))
         window.localStorage.removeItem(APPLICATION_DRAFT_STORAGE_KEY)
       }
-      if (applicationType === 'signer' && savedRecord?.id) {
+      if (applicationType === 'signer' && savedRecord?.id?.startsWith?.('rec')) {
         void fetch('/api/portal?action=application-create-lease-draft', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -2110,20 +2217,8 @@ export default function Apply() {
     setPromoApplied(true)
     setPrePaymentError('')
     try {
-      const reg = await registerApplicationPaymentDraft({
-        email: signer.email,
-        fullName: signer.fullName,
-        propertyName: signer.propertyName,
-        roomNumber: signer.roomNumber,
-      })
-      try {
-        window.sessionStorage.setItem(APPLICATION_RECORD_ID_KEY, reg.applicationRecordId)
-      } catch {
-        /* ignore */
-      }
       await handleSubmit({ preventDefault: () => {} }, {
         promoOverride: true,
-        applicationRecordId: reg.applicationRecordId,
       })
     } catch (e) {
       setPromoApplied(false)
@@ -2173,12 +2268,14 @@ export default function Apply() {
           /* ignore */
         }
       }
-      const recId = recordIdFromRequest.startsWith('rec')
+      const recId = isInternalAxisApplicationId(recordIdFromRequest)
         ? recordIdFromRequest
-        : typeof window !== 'undefined'
-          ? String(window.sessionStorage.getItem(APPLICATION_RECORD_ID_KEY) || '').trim()
-          : ''
-      if (!recId.startsWith('rec')) {
+        : recordIdFromRequest.startsWith('rec')
+          ? recordIdFromRequest
+          : typeof window !== 'undefined'
+            ? String(window.sessionStorage.getItem(APPLICATION_RECORD_ID_KEY) || '').trim()
+            : ''
+      if (!recId.startsWith('rec') && !isInternalAxisApplicationId(recId)) {
         setPrePaymentError(
           'We could not link this payment to your application. Complete the application fee from the Resident Portal under Payments, or contact leasing.',
         )

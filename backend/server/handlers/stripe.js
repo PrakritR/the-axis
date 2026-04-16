@@ -16,6 +16,11 @@ import { resolveExpectedApplicationFeeUsd } from '../lib/stripe-application-fee-
 import { resolveStripeCardServiceFeeUsd, stripeCardServiceFeeLineLabel } from '../lib/stripe-card-service-fee-usd.js'
 
 const STRIPE_API = 'https://api.stripe.com/v1'
+
+/** Internal Postgres application id (Stripe metadata for fee sync / webhooks). */
+const INTERNAL_APPLICATION_UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
 const AIRTABLE_TOKEN = process.env.AIRTABLE_TOKEN || process.env.VITE_AIRTABLE_TOKEN
 const BASE_ID = process.env.VITE_AIRTABLE_BASE_ID || process.env.AIRTABLE_BASE_ID || 'appol57LKtMKaQ75T'
 const PROPERTIES_TABLE = encodeURIComponent(process.env.VITE_AIRTABLE_PROPERTIES_TABLE || 'Properties')
@@ -172,7 +177,14 @@ async function handleCheckout(req, res, secretKey) {
     'metadata[payment_category]': category,
     'metadata[payment_record_id]': paymentRecordId,
     ...(category === APPLICATION_FEE_STRIPE_CATEGORY && applicationRecordId
-      ? { 'metadata[application_record_id]': String(applicationRecordId).trim() }
+      ? (() => {
+          const rid = String(applicationRecordId).trim()
+          const out = { 'metadata[application_record_id]': rid }
+          if (INTERNAL_APPLICATION_UUID_RE.test(rid)) {
+            out['metadata[application_id]'] = rid
+          }
+          return out
+        })()
       : {}),
     // Third-party managed: route to owner's Stripe Connect account
     ...(ownershipRouting
