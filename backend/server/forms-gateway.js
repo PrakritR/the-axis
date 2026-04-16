@@ -1,10 +1,8 @@
 /**
  * GET/POST /api/forms?action=<name>
  *
- * **tour** / **meeting** — public site (Contact, property pages, tour popup) uses these actions.
- * Handlers create rows in the Airtable **Scheduling** table (`Type` = Tour or Meeting). See
- * `server/handlers/tour.js` and `server/handlers/meeting.js` (table name overridable via
- * `AIRTABLE_SCHEDULING_TABLE`).
+ * **tour** — may write Airtable Scheduling (legacy) or Postgres `scheduled_events` depending on flow.
+ * **meeting** — Postgres only (`scheduled_events`, `event_type` = meeting); see `server/handlers/meeting.js`.
  *
  * actions: tour | meeting | software-team-meetings
  */

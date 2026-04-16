@@ -1,0 +1,124 @@
+import { authenticateSupabaseBearerRequest, bearerTokenFromRequest } from '../lib/supabase-bearer-auth.js'
+import {
+  bootstrapManagerAccountFromAuthUser,
+  buildManagerSession,
+  getManagerByEmail,
+  managerAirtableConfigured,
+  deriveManagerId,
+  updateManager,
+  assertManagerCanSignIn,
+} from '../lib/manager-account-service.js'
+
+function cors(res) {
+  res.setHeader('Access-Control-Allow-Origin', '*')
+  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS')
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization')
+}
+
+function userFullName(user) {
+  const meta = user?.user_metadata || {}
+  return (
+    (typeof meta.full_name === 'string' && meta.full_name.trim()) ||
+    (typeof meta.name === 'string' && meta.name.trim()) ||
+    null
+  )
+}
+
+async function handleSupabaseManagerAuth(req, res) {
+  const auth = await authenticateSupabaseBearerRequest(req)
+  if (!auth.ok) {
+    return res.status(auth.status).json({ error: auth.error })
+  }
+
+  const email = String(auth.user.email || '').trim().toLowerCase()
+  if (!email) {
+    return res.status(400).json({ error: 'Authenticated user has no email.' })
+  }
+
+  try {
+    const { manager, appUser } = await bootstrapManagerAccountFromAuthUser({
+      authUserId: auth.user.id,
+      email,
+      fullName: userFullName(auth.user),
+      managerId: req.body?.managerId,
+      secretKey: process.env.STRIPE_SECRET_KEY || '',
+    })
+
+    return res.status(200).json({
+      ok: true,
+      manager: buildManagerSession({ manager, appUser, authUserId: auth.user.id }),
+    })
+  } catch (err) {
+    const message = err?.message || 'Authentication failed. Please try again.'
+    const status =
+      message.includes('inactive') || message.includes('required before you can sign in') ? 403
+      : message.includes('No manager subscription record') || message.includes('does not match') ? 403
+      : 500
+    return res.status(status).json({ error: message })
+  }
+}
+
+async function handleLegacyManagerAuth(req, res) {
+  if (!managerAirtableConfigured()) {
+    return res.status(500).json({ error: 'Server configuration error: data connection not set.' })
+  }
+
+  const secretKey = process.env.STRIPE_SECRET_KEY
+  const { email, password } = req.body || {}
+  const normalizedEmail = String(email || '').trim().toLowerCase()
+
+  if (!normalizedEmail || !password) {
+    return res.status(400).json({ error: 'Email and password are required.' })
+  }
+
+  try {
+    let manager = await getManagerByEmail(normalizedEmail)
+
+    if (!manager || manager.Password !== password) {
+      return res.status(401).json({ error: 'Invalid email or password.' })
+    }
+
+    const derivedManagerId = deriveManagerId(manager.id)
+    if (manager['Manager ID'] !== derivedManagerId) {
+      manager = await updateManager(manager.id, { 'Manager ID': derivedManagerId })
+    }
+
+    if (manager.Active === false || manager.Active === 0) {
+      return res.status(403).json({ error: 'This account is inactive. Please contact your administrator.' })
+    }
+
+    try {
+      await assertManagerCanSignIn(manager, secretKey)
+    } catch (gateErr) {
+      if (gateErr?.code === 'STRIPE_REQUIRED') {
+        return res.status(500).json({ error: gateErr.message })
+      }
+      if (gateErr?.code === 'SUBSCRIPTION_REQUIRED') {
+        return res.status(403).json({ error: gateErr.message })
+      }
+      throw gateErr
+    }
+
+    return res.status(200).json({
+      manager: buildManagerSession({ manager }),
+    })
+  } catch (err) {
+    console.error('Manager auth error:', err)
+    return res.status(500).json({ error: 'Authentication failed. Please try again.' })
+  }
+}
+
+export default async function handler(req, res) {
+  cors(res)
+  if (req.method === 'OPTIONS') return res.status(204).end()
+
+  if (req.method !== 'POST') {
+    return res.status(405).json({ error: 'Method not allowed' })
+  }
+
+  if (bearerTokenFromRequest(req)) {
+    return handleSupabaseManagerAuth(req, res)
+  }
+
+  return handleLegacyManagerAuth(req, res)
+}

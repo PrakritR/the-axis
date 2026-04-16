@@ -565,9 +565,11 @@ function stringOrEmpty(v) {
 }
 
 /**
- * Convert a Properties Airtable record into AddPropertyWizard-compatible initial state.
+ * @param {{ photosRawOverride?: { url?: string, filename?: string, name?: string }[] }} [options]
+ *        When set (e.g. from GET /api/listing-public-media), slot-based room/bath/kitchen media is derived from these
+ *        objects instead of Airtable attachment fields. Legacy `rec…` rows omit this and use Photos on the record.
  */
-export function buildPropertyWizardInitialValues(property) {
+export function buildPropertyWizardInitialValues(property, options = {}) {
   const record = property && typeof property === 'object' ? property : {}
   const { userText, meta } = parseAxisListingMetaBlock(String(record[PROPERTY_AIR.otherInfo] || ''))
   const leasingNorm = normalizeLeasingFromMeta(meta?.leasing)
@@ -575,7 +577,9 @@ export function buildPropertyWizardInitialValues(property) {
 
   const fallbackRoomCount = roomDetails.length > 0 ? roomDetails.length : 1
   const roomCount = clampInt(record[PROPERTY_AIR.roomCount] ?? fallbackRoomCount, 1, MAX_ROOM_SLOTS)
-  const photosRaw = photosAttachmentsFromRecord(record)
+  const photosRaw = Array.isArray(options.photosRawOverride)
+    ? options.photosRawOverride
+    : photosAttachmentsFromRecord(record)
   const rooms = Array.from({ length: roomCount }, (_, idx) => {
     const n = idx + 1
     const detail = roomDetails[idx] && typeof roomDetails[idx] === 'object' ? roomDetails[idx] : {}
@@ -828,6 +832,25 @@ export function buildPropertyWizardInitialValues(property) {
       houseRules: stringOrEmpty(leasingNorm.houseRules),
     },
   }
+}
+
+/**
+ * Map GET /api/listing-public-media `property_images` rows into the attachment-like shape
+ * used by {@link photosAttachmentsFromRecord} consumers (filename prefixes `axis-r1-`, etc.).
+ * @param {Array<{ public_url?: string, file_name?: string }>} propertyImages
+ */
+export function photosRawFromListingPublicMedia(propertyImages) {
+  return (Array.isArray(propertyImages) ? propertyImages : [])
+    .map((row) => {
+      const url = String(row?.public_url || '').trim()
+      const fileName = String(row?.file_name || '').trim()
+      return {
+        url,
+        filename: fileName,
+        name: fileName,
+      }
+    })
+    .filter((x) => x.url)
 }
 
 /**

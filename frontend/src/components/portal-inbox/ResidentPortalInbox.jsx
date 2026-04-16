@@ -39,6 +39,7 @@ import {
   PORTAL_TAB_SELECT_CLS,
   PORTAL_TAB_SELECT_CHEVRON_CLS,
 } from '../../lib/portalTabHeader.js'
+import { PortalNotice } from '../PortalAuthUI'
 import ConversationList from '../manager-inbox/ConversationList'
 import ConversationThread from '../manager-inbox/ConversationThread'
 import MessageComposer from '../manager-inbox/MessageComposer'
@@ -596,9 +597,14 @@ export default function ResidentPortalInbox({ resident }) {
 
   if (!portalInboxAirtableConfigured()) {
     return (
-      <p className="text-sm text-slate-500">
-        Connect the Messages table and thread key in your environment to use inbox.
-      </p>
+      <div className="space-y-3">
+        <PortalNotice tone="neutral">
+          <strong className="font-semibold text-slate-800">Inbox (legacy)</strong>{' '}
+          Resident messages still use the Airtable-backed portal inbox. Internal Postgres messaging for residents is not
+          enabled in this build. Configure the Messages table and thread keys per your deployment docs to restore inbox,
+          or implement an internal thread API later.
+        </PortalNotice>
+      </div>
     )
   }
 

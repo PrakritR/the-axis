@@ -1,77 +1,32 @@
 /**
- * GET  /api/meeting  → admin directory + meeting availability + booked slots
- * POST /api/meeting  → books a meeting against admin availability (writes Scheduling row, Type Meeting)
+ * GET  /api/meeting  → admin directory + meeting availability + booked slots (Postgres only)
+ * POST /api/meeting  → books a meeting (scheduled_events, event_type meeting)
  * Same handler is used by POST /api/forms?action=meeting (public Contact Axis flow).
  */
 
-import { airtableCreateWithUnknownFieldRetry } from '../lib/airtable-write-retry.js'
-import { schedulingAirtableTableName } from '../lib/airtable-scheduling-table.js'
+import { getAppUserByEmail, getAppUserById, listActiveAdminsForMeetingDirectory, getSupabaseServiceClient } from '../lib/app-users-service.js'
+import { appUserHasRole } from '../lib/app-user-roles-service.js'
+import { createScheduledEvent, hasOverlappingManagerBooking, listBookedMeetingLabelsByManagerDateRange } from '../lib/scheduled-events-service.js'
 import {
-  availabilityAirtableBaseId,
+  utcRangeFromDateAndMinutes,
+  parseTimeRangeToMinutes,
+  normalizeRangeLabel,
+} from '../lib/internal-tour-booking.js'
+import {
   buildAdminMeetingAvailabilityConfig,
   buildGlobalAdminSlotsByDate,
-  mergeGlobalAdminAvailabilityRanges,
-  rangesToSlotLabels,
 } from '../../../shared/manager-availability-merge.js'
+import {
+  getAvailabilityForAdmin,
+  mapAdminMeetingDbRowsToVirtualMaRecords,
+  validateMeetingSlotAgainstAvailability,
+} from '../lib/admin-meeting-availability-service.js'
 
-const AIRTABLE_BASE_ID =
-  process.env.VITE_AIRTABLE_BASE_ID || process.env.AIRTABLE_BASE_ID || 'appol57LKtMKaQ75T'
-const AIRTABLE_TOKEN = process.env.AIRTABLE_TOKEN || process.env.VITE_AIRTABLE_TOKEN
-const ADMIN_PROFILE_TABLE = process.env.AIRTABLE_ADMIN_PROFILE_TABLE || 'Admin Profile'
-const SCHEDULING_TABLE = schedulingAirtableTableName()
-const STATUS_BLOCKED_VALUES = new Set(['declined', 'rejected', 'cancelled', 'canceled'])
-const AVAILABILITY_TYPE_VALUES = new Set(['availability', 'meeting availability'])
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
 function normalizeDateKey(value) {
   const match = String(value || '').trim().match(/^(\d{4}-\d{2}-\d{2})/)
   return match ? match[1] : ''
-}
-
-function displayTime(minutes) {
-  const hrs24 = Math.floor(minutes / 60)
-  const mins = Math.max(0, minutes % 60)
-  let hrs12 = hrs24 % 12
-  if (hrs12 === 0) hrs12 = 12
-  const ampm = hrs24 >= 12 ? 'PM' : 'AM'
-  return `${hrs12}:${String(mins).padStart(2, '0')} ${ampm}`
-}
-
-function parseClockToMinutes(value) {
-  const m = String(value || '').trim().toUpperCase().match(/^(\d{1,2})(?::(\d{2}))?\s*(AM|PM)$/)
-  if (!m) return null
-  let hour = Number(m[1]) % 12
-  const minute = Number(m[2] || '0')
-  if (!Number.isFinite(hour) || !Number.isFinite(minute) || minute < 0 || minute > 59) return null
-  if (m[3] === 'PM') hour += 12
-  return hour * 60 + minute
-}
-
-function parseTimeRangeToMinutes(value) {
-  const parts = String(value || '')
-    .split(/\s*[\-–]\s*/)
-    .map((part) => part.trim())
-    .filter(Boolean)
-  if (parts.length !== 2) return null
-  const start = parseClockToMinutes(parts[0])
-  const end = parseClockToMinutes(parts[1])
-  if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) return null
-  return { start, end }
-}
-
-function normalizeRangeLabel(value) {
-  const parsed = parseTimeRangeToMinutes(value)
-  if (!parsed) return ''
-  return `${displayTime(parsed.start)} - ${displayTime(parsed.end)}`
-}
-
-function rangesOverlap(a, b) {
-  return a.start < b.end && b.start < a.end
-}
-
-function dayAbbrForDateKey(dateKey) {
-  const d = new Date(`${dateKey}T00:00:00`)
-  if (Number.isNaN(d.getTime())) return ''
-  return ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][d.getDay()] || ''
 }
 
 function extractMultilineNoteValue(notes, label) {
@@ -86,150 +41,25 @@ function extractMultilineNoteValue(notes, label) {
   return block.trim()
 }
 
-function parseAvailabilityTokens(rawAvailability) {
-  const out = {}
-  String(rawAvailability || '')
-    .split(/\n|;/)
-    .map((line) => line.trim())
-    .filter(Boolean)
-    .forEach((line) => {
-      const m = line.match(/^(Mon|Tue|Wed|Thu|Fri|Sat|Sun)\s*[:\-]\s*(.+)$/i)
-      if (!m) return
-      const day = m[1].slice(0, 1).toUpperCase() + m[1].slice(1, 3).toLowerCase()
-      out[day] = m[2]
-        .split(',')
-        .map((x) => x.trim())
-        .filter(Boolean)
-    })
-  return out
+function adminMeetingLegacyFromNotes(notesText) {
+  const n = String(notesText || '')
+  if (!n) return ''
+  const fromNotes = extractMultilineNoteValue(n, 'Meeting Availability')
+  return fromNotes || extractMultilineNoteValue(n, 'Calendar Availability')
 }
 
-function availabilitySlotsForDate(rawAvailability, dateKey) {
-  const day = dayAbbrForDateKey(dateKey)
-  if (!day) return []
-  const map = parseAvailabilityTokens(rawAvailability)
-  const tokens = map[day] || []
-  const labels = []
-  for (const token of tokens) {
-    const pair = String(token).match(/^(\d+)-(\d+)$/)
-    if (pair) {
-      const start = Number(pair[1])
-      const end = Number(pair[2])
-      if (Number.isFinite(start) && Number.isFinite(end) && end > start) {
-        labels.push(`${displayTime(start)} - ${displayTime(end)}`)
-      }
-      continue
-    }
-    const normalized = normalizeRangeLabel(token)
-    if (normalized) labels.push(normalized)
+function dateRangeForMeetingListing(daysAhead) {
+  const today = new Date()
+  today.setHours(0, 0, 0, 0)
+  const end = new Date(today)
+  end.setDate(end.getDate() + daysAhead)
+  const y = (d) => d.getFullYear()
+  const m = (d) => String(d.getMonth() + 1).padStart(2, '0')
+  const day = (d) => String(d.getDate()).padStart(2, '0')
+  return {
+    fromStr: `${y(today)}-${m(today)}-${day(today)}`,
+    toStr: `${y(end)}-${m(end)}-${day(end)}`,
   }
-  return labels
-}
-
-function statusAllowsConflict(statusValue) {
-  const status = String(statusValue || '').trim().toLowerCase()
-  return !STATUS_BLOCKED_VALUES.has(status)
-}
-
-async function fetchAirtableJson(url) {
-  const response = await fetch(url, {
-    headers: { Authorization: `Bearer ${AIRTABLE_TOKEN}` },
-  })
-  if (!response.ok) return null
-  return response.json()
-}
-
-async function listSchedulingRows(filterByFormula = '') {
-  if (!AIRTABLE_TOKEN) return []
-  const rows = []
-  let offset = null
-  do {
-    const url = new URL(`https://api.airtable.com/v0/${AIRTABLE_BASE_ID}/${encodeURIComponent(SCHEDULING_TABLE)}`)
-    if (filterByFormula) url.searchParams.set('filterByFormula', filterByFormula)
-    if (offset) url.searchParams.set('offset', offset)
-    const data = await fetchAirtableJson(url.toString())
-    if (!data) break
-    for (const record of data.records || []) rows.push(record)
-    offset = data.offset || null
-  } while (offset)
-  return rows
-}
-
-/** Admin meeting availability rows (separate table when env split is configured). */
-async function listAllAdminMeetingAvailabilityRecords() {
-  if (!AIRTABLE_TOKEN) return []
-  const baseId = availabilityAirtableBaseId(process.env) || AIRTABLE_BASE_ID
-  const cfg = buildAdminMeetingAvailabilityConfig(process.env)
-  const table = encodeURIComponent(cfg.tableName)
-  const rows = []
-  let offset = null
-  try {
-    do {
-      const url = new URL(`https://api.airtable.com/v0/${baseId}/${table}`)
-      if (offset) url.searchParams.set('offset', offset)
-      const data = await fetchAirtableJson(url.toString())
-      if (!data) break
-      for (const record of data.records || []) rows.push(record)
-      offset = data.offset || null
-    } while (offset)
-  } catch {
-    return []
-  }
-  return rows
-}
-
-function buildMeetingBookingsByAdmin(records) {
-  const out = {}
-  for (const record of records || []) {
-    const fields = record?.fields || {}
-    if (String(fields.Type || '').trim().toLowerCase() !== 'meeting') continue
-    if (!statusAllowsConflict(fields.Status)) continue
-    const adminEmail = String(fields['Manager Email'] || '').trim().toLowerCase()
-    const dateKey = normalizeDateKey(fields['Preferred Date'])
-    const slot = normalizeRangeLabel(fields['Preferred Time'])
-    if (!adminEmail || !dateKey || !slot) continue
-    if (!out[adminEmail]) out[adminEmail] = {}
-    if (!out[adminEmail][dateKey]) out[adminEmail][dateKey] = []
-    if (!out[adminEmail][dateKey].includes(slot)) out[adminEmail][dateKey].push(slot)
-  }
-  return out
-}
-
-function buildMeetingAvailabilityByAdminDate(records) {
-  const out = {}
-  for (const record of records || []) {
-    const fields = record?.fields || {}
-    const type = String(fields.Type || '').trim().toLowerCase()
-    if (!AVAILABILITY_TYPE_VALUES.has(type)) continue
-    if (!statusAllowsConflict(fields.Status)) continue
-    const adminEmail = String(fields['Manager Email'] || '').trim().toLowerCase()
-    const dateKey = normalizeDateKey(fields['Preferred Date'])
-    const slot = normalizeRangeLabel(fields['Preferred Time'])
-    if (!adminEmail || !dateKey || !slot) continue
-    if (!out[adminEmail]) out[adminEmail] = {}
-    if (!out[adminEmail][dateKey]) out[adminEmail][dateKey] = []
-    if (!out[adminEmail][dateKey].includes(slot)) out[adminEmail][dateKey].push(slot)
-  }
-  return out
-}
-
-function enabledAdminProfile(row) {
-  const fields = row?.fields || {}
-  const enabled = fields.Enabled
-  if (
-    enabled === false ||
-    enabled === 0 ||
-    ['false', 'no', 'inactive', 'disabled'].includes(String(enabled || '').trim().toLowerCase())
-  ) {
-    return false
-  }
-  return true
-}
-
-function adminMeetingAvailability(fields = {}) {
-  const explicit = String(fields['Meeting Availability'] || fields['Calendar Availability'] || '').trim()
-  if (explicit) return explicit
-  return extractMultilineNoteValue(fields.Notes, 'Meeting Availability')
 }
 
 export default async function handler(req, res) {
@@ -238,80 +68,76 @@ export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type')
   if (req.method === 'OPTIONS') return res.status(200).end()
 
-  if (!AIRTABLE_TOKEN) {
-    return res.status(503).json({ error: 'Data API token is not configured on the server.' })
-  }
-
   if (req.method === 'GET') {
+    const client = getSupabaseServiceClient()
+    if (!client) {
+      return res.status(200).json({ admins: [] })
+    }
     try {
-      const adminUrl = `https://api.airtable.com/v0/${AIRTABLE_BASE_ID}/${encodeURIComponent(ADMIN_PROFILE_TABLE)}`
-      const [adminData, schedulingRows, maRecords] = await Promise.all([
-        fetchAirtableJson(adminUrl),
-        listSchedulingRows(),
-        listAllAdminMeetingAvailabilityRecords(),
-      ])
-      if (!adminData) return res.status(200).json({ admins: [] })
-      const bookings = buildMeetingBookingsByAdmin(schedulingRows)
-      const availabilityByAdminDate = buildMeetingAvailabilityByAdminDate(schedulingRows)
+      const adminRows = await listActiveAdminsForMeetingDirectory()
       const maCfg = buildAdminMeetingAvailabilityConfig(process.env)
-      const admins = (adminData.records || [])
-        .filter(enabledAdminProfile)
-        .map((row) => {
-          const fields = row.fields || {}
-          const email = String(fields.Email || '').trim().toLowerCase()
-          if (!email.includes('@')) return null
-          const schedulingExplicit = availabilityByAdminDate[email] || {}
-          const legacyText = adminMeetingAvailability(fields)
-          const maByDate = buildGlobalAdminSlotsByDate({
-            records: maRecords,
-            config: maCfg,
-            adminEmail: email,
-            legacyWeeklyText: legacyText,
-            bookedSlotsByDate: bookings[email] || {},
-            daysAhead: 56,
-          })
-          const mergedSlots = {}
-          const keys = new Set([...Object.keys(schedulingExplicit), ...Object.keys(maByDate)])
-          for (const dk of keys) {
-            const sch = schedulingExplicit[dk]
-            if (Array.isArray(sch) && sch.length) mergedSlots[dk] = sch
-            else if (maByDate[dk]?.length) mergedSlots[dk] = maByDate[dk]
+      const { fromStr, toStr } = dateRangeForMeetingListing(56)
+
+      const admins = []
+      for (const row of adminRows) {
+        const email = String(row.email || '').trim().toLowerCase()
+        if (!email.includes('@')) continue
+        const availabilityRows = await getAvailabilityForAdmin(row.id)
+        const virtualRecords = mapAdminMeetingDbRowsToVirtualMaRecords(availabilityRows, email, process.env).map(
+          (r) => ({ id: r.id, fields: r.fields }),
+        )
+        const rawBooked = await listBookedMeetingLabelsByManagerDateRange(row.id, fromStr, toStr)
+        const bookings = {}
+        for (const [dk, labels] of Object.entries(rawBooked)) {
+          for (const lab of labels || []) {
+            const n = normalizeRangeLabel(lab)
+            if (!n) continue
+            if (!bookings[dk]) bookings[dk] = []
+            if (!bookings[dk].includes(n)) bookings[dk].push(n)
           }
-          const availability = adminMeetingAvailability(fields)
-          return {
-            id: row.id,
-            name: String(fields.Name || email).trim(),
-            email,
-            availability,
-            availableSlotsByDate: mergedSlots,
-            /** Raw Scheduling “Meeting Availability” rows only (calendar tab); merged view is `availableSlotsByDate`. */
-            schedulingAvailabilityByDate: schedulingExplicit,
-            bookedSlotsByDate: bookings[email] || {},
-          }
+        }
+        const legacyText = adminMeetingLegacyFromNotes(row.admin_notes)
+        const maByDate = buildGlobalAdminSlotsByDate({
+          records: virtualRecords,
+          config: maCfg,
+          adminEmail: email,
+          legacyWeeklyText: legacyText,
+          bookedSlotsByDate: bookings,
+          daysAhead: 56,
         })
-        .filter(Boolean)
+        admins.push({
+          id: row.id,
+          name: String(row.full_name || email).trim(),
+          email,
+          availability: legacyText,
+          availableSlotsByDate: maByDate,
+          schedulingAvailabilityByDate: {},
+          bookedSlotsByDate: bookings,
+        })
+      }
       return res.status(200).json({ admins })
-    } catch {
+    } catch (err) {
+      console.error('[meeting] GET', err)
       return res.status(200).json({ admins: [] })
     }
   }
 
   if (req.method === 'POST') {
+    const body = req.body && typeof req.body === 'object' ? req.body : {}
     const {
       name,
       email,
       phone,
       notes,
       adminEmail,
-      adminName,
+      adminAppUserId,
       preferredDate,
       preferredTime,
-    } = req.body || {}
+    } = body
 
     const requesterName = String(name || '').trim()
     const requesterEmail = String(email || '').trim().toLowerCase()
     const selectedAdminEmail = String(adminEmail || '').trim().toLowerCase()
-    const selectedAdminName = String(adminName || '').trim()
     const preferredDateKey = normalizeDateKey(preferredDate)
     const preferredTimeLabel = normalizeRangeLabel(preferredTime)
     const preferredRange = parseTimeRangeToMinutes(preferredTimeLabel)
@@ -323,97 +149,81 @@ export default async function handler(req, res) {
       return res.status(400).json({ error: 'Invalid meeting time range.' })
     }
 
-    const adminFormula = encodeURIComponent(`LOWER({Email} & "") = "${selectedAdminEmail.replace(/"/g, '\\"')}"`)
-    const adminUrl = `https://api.airtable.com/v0/${AIRTABLE_BASE_ID}/${encodeURIComponent(ADMIN_PROFILE_TABLE)}?filterByFormula=${adminFormula}&maxRecords=1`
-    const adminData = await fetchAirtableJson(adminUrl)
-    const adminRecord = adminData?.records?.[0]
-    if (!adminRecord || !enabledAdminProfile(adminRecord)) {
-      return res.status(409).json({ error: 'Selected admin is not available for meetings.' })
+    let host = null
+    const aid = String(adminAppUserId || '').trim()
+    if (UUID_RE.test(aid)) {
+      host = await getAppUserById(aid)
+    }
+    if (!host) {
+      host = await getAppUserByEmail(selectedAdminEmail)
+    }
+    if (!host?.id) {
+      return res.status(404).json({ error: 'Selected admin was not found in the portal database.' })
+    }
+    const hostEmail = String(host.email || '').trim().toLowerCase()
+    if (selectedAdminEmail && hostEmail && hostEmail !== selectedAdminEmail) {
+      return res.status(409).json({ error: 'Admin email does not match the selected admin account.' })
     }
 
-    const sameDayFormula = encodeURIComponent(
-      `AND({Preferred Date} = "${preferredDateKey}", LOWER({Manager Email} & "") = "${selectedAdminEmail.replace(/"/g, '\\"')}")`,
-    )
-    const sameDayRows = await listSchedulingRows(sameDayFormula)
-    const availabilityByDate = buildMeetingAvailabilityByAdminDate(sameDayRows)
-    const explicitSlots = availabilityByDate[selectedAdminEmail]?.[preferredDateKey] || []
-    const meetingBookedLabels = []
-    for (const record of sameDayRows) {
-      const f = record?.fields || {}
-      if (String(f.Type || '').trim().toLowerCase() !== 'meeting') continue
-      if (!statusAllowsConflict(f.Status)) continue
-      const lab = normalizeRangeLabel(f['Preferred Time'])
-      if (lab) meetingBookedLabels.push(lab)
+    const isAdmin = await appUserHasRole(host.id, 'admin')
+    if (!isAdmin) {
+      return res.status(403).json({ error: 'Selected host is not available for meeting booking.' })
     }
-    const maCfg = buildAdminMeetingAvailabilityConfig(process.env)
-    const maRows = await listAllAdminMeetingAvailabilityRecords()
-    const mergedFree = mergeGlobalAdminAvailabilityRanges({
-      records: maRows,
-      fieldsConfig: maCfg.fields,
+
+    const availabilityRows = await getAvailabilityForAdmin(host.id)
+    let legacy = ''
+    try {
+      const client = getSupabaseServiceClient()
+      if (client) {
+        const { data: ap } = await client.from('admin_profiles').select('notes').eq('app_user_id', host.id).maybeSingle()
+        legacy = adminMeetingLegacyFromNotes(ap?.notes)
+      }
+    } catch {
+      /* ignore */
+    }
+
+    const bookedRaw = await listBookedMeetingLabelsByManagerDateRange(host.id, preferredDateKey, preferredDateKey)
+    const bookedLabels = (bookedRaw[preferredDateKey] || []).map((x) => normalizeRangeLabel(x)).filter(Boolean)
+
+    const allowed = validateMeetingSlotAgainstAvailability({
       dateKey: preferredDateKey,
-      adminEmail: selectedAdminEmail,
-      legacyWeeklyText: adminMeetingAvailability(adminRecord.fields || {}),
-      bookedSlotLabels: meetingBookedLabels,
+      preferredTimeLabel,
+      adminEmail: hostEmail || selectedAdminEmail,
+      availabilityRows,
+      legacyWeeklyText: legacy || '',
+      bookedSlotLabels: bookedLabels,
     })
-    const maSlots = rangesToSlotLabels(mergedFree)
-    const fallbackAvailability = adminMeetingAvailability(adminRecord.fields || {})
-    const legacyOnly = availabilitySlotsForDate(fallbackAvailability, preferredDateKey)
-    const availableSlots = explicitSlots.length
-      ? explicitSlots
-      : maSlots.length
-        ? maSlots
-        : legacyOnly
-    const allowedSet = new Set(availableSlots.map((slot) => slot.toLowerCase()))
-    if (!allowedSet.has(preferredTimeLabel.toLowerCase())) {
+    if (!allowed) {
       return res.status(409).json({ error: 'That meeting slot is no longer available.' })
     }
 
-    for (const record of sameDayRows) {
-      const fields = record?.fields || {}
-      if (String(fields.Type || '').trim().toLowerCase() !== 'meeting') continue
-      if (!statusAllowsConflict(fields.Status)) continue
-      const rowRange = parseTimeRangeToMinutes(fields['Preferred Time'])
-      if (!rowRange) continue
-      if (rangesOverlap(preferredRange, rowRange)) {
-        return res.status(409).json({ error: 'This meeting time has already been booked. Please choose another slot.' })
-      }
-    }
-
-    const fields = {
-      Name: requesterName,
-      Email: requesterEmail,
-      Type: 'Meeting',
-      Status: 'New',
-      'Preferred Date': preferredDateKey,
-      'Preferred Time': preferredTimeLabel,
-      'Scheduled Date': preferredDateKey,
-      'Scheduled Time': preferredTimeLabel,
-      'Manager Email': selectedAdminEmail,
-      'Tour Manager': selectedAdminName || String(adminRecord.fields?.Name || selectedAdminEmail),
-    }
-    if (phone) fields.Phone = String(phone).trim()
-    const schedulingNotesField =
-      String(
-        process.env.AIRTABLE_SCHEDULING_NOTES_FIELD ||
-          process.env.VITE_AIRTABLE_SCHEDULING_NOTES_FIELD ||
-          'Message',
-      ).trim() || 'Message'
-    if (notes) {
-      const nt = String(notes).trim()
-      if (nt) fields[schedulingNotesField] = nt
+    const times = utcRangeFromDateAndMinutes(preferredDateKey, preferredRange.start, preferredRange.end)
+    if (!times) return res.status(400).json({ error: 'Invalid meeting time.' })
+    if (await hasOverlappingManagerBooking(host.id, times.startIso, times.endIso)) {
+      return res.status(409).json({ error: 'This meeting time has already been booked. Please choose another slot.' })
     }
 
     try {
-      const created = await airtableCreateWithUnknownFieldRetry({
-        baseId: AIRTABLE_BASE_ID,
-        token: AIRTABLE_TOKEN,
-        tableName: SCHEDULING_TABLE,
-        fields,
+      const created = await createScheduledEvent({
+        eventType: 'meeting',
+        propertyId: null,
+        roomId: null,
+        managerAppUserId: host.id,
+        guestName: requesterName,
+        guestEmail: requesterEmail,
+        guestPhone: phone ? String(phone).trim() : null,
+        startAt: times.startIso,
+        endAt: times.endIso,
+        timezone: 'UTC',
+        preferredDate: preferredDateKey,
+        preferredTimeLabel,
+        source: 'meeting_api',
+        notes: notes ? String(notes).trim() : null,
       })
-      return res.status(200).json({ id: created.id })
+      return res.status(200).json({ id: created.id, scheduling: 'postgres' })
     } catch (err) {
-      const msg = err?.message || 'Could not save meeting booking.'
-      return res.status(502).json({ error: msg })
+      console.error('[meeting] POST', err)
+      return res.status(502).json({ error: err?.message || 'Could not save meeting.' })
     }
   }
 

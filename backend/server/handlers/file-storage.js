@@ -436,7 +436,23 @@ async function handleList(res, appUser, resource, body) {
       .eq('property_id', propertyId)
       .order('sort_order', { ascending: true })
     if (error) throw new Error(error.message)
-    return res.status(200).json({ ok: true, rows: data || [] })
+    const rowsIn = data || []
+    const resolvePublicUrls = body.resolvePublicUrls === true
+    const rows =
+      resolvePublicUrls && rowsIn.length
+        ? rowsIn.map((row) => {
+            try {
+              const { publicUrl } = createPublicStorageUrl({
+                bucket: row.storage_bucket,
+                path: row.storage_path,
+              })
+              return { ...row, public_url: publicUrl }
+            } catch {
+              return { ...row, public_url: '' }
+            }
+          })
+        : rowsIn
+    return res.status(200).json({ ok: true, rows })
   }
 
   if (resource === 'room_image') {
@@ -450,7 +466,23 @@ async function handleList(res, appUser, resource, body) {
       .eq('room_id', roomId)
       .order('sort_order', { ascending: true })
     if (error) throw new Error(error.message)
-    return res.status(200).json({ ok: true, rows: data || [] })
+    const rowsIn = data || []
+    const resolvePublicUrls = body.resolvePublicUrls === true
+    const rows =
+      resolvePublicUrls && rowsIn.length
+        ? rowsIn.map((row) => {
+            try {
+              const { publicUrl } = createPublicStorageUrl({
+                bucket: row.storage_bucket,
+                path: row.storage_path,
+              })
+              return { ...row, public_url: publicUrl }
+            } catch {
+              return { ...row, public_url: '' }
+            }
+          })
+        : rowsIn
+    return res.status(200).json({ ok: true, rows })
   }
 
   if (resource === 'work_order_file') {

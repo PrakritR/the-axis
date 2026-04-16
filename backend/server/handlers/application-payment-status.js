@@ -1,9 +1,18 @@
 /**
- * GET /api/portal?action=application-payment-status&applicationRecordId=rec…
+ * GET /api/portal?action=application-payment-status
  *
- * Public. Returns whether Airtable marks Application Paid for this row.
+ * Returns whether Application Paid is true for a given application.
+ *
+ * Dual-path:
+ *   - Internal (UUID): reads from internal applications table (no Airtable).
+ *   - Legacy (rec…):   reads from Airtable (backwards-compatible).
+ *
+ * Public endpoint (no auth required).
  */
 import { airtableAuthHeaders, applicationsTableUrl, getApplicationsAirtableEnv } from '../lib/applications-airtable-env.js'
+import { getApplicationById } from '../lib/applications-service.js'
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
 function isPaidCheckbox(value) {
   if (value === true) return true
@@ -19,18 +28,40 @@ export default async function handler(req, res) {
   if (req.method === 'OPTIONS') return res.status(200).end()
   if (req.method !== 'GET') return res.status(405).json({ error: 'Method not allowed' })
 
-  const env = getApplicationsAirtableEnv()
-  if (!env.token) {
-    return res.status(500).json({ error: 'Data service is not configured on the server.' })
-  }
-
-  const applicationRecordId = String(req.query?.applicationRecordId || '').trim()
-  if (!applicationRecordId.startsWith('rec')) {
-    return res.status(400).json({ error: 'applicationRecordId is required.' })
+  const rawId = String(req.query?.applicationRecordId || req.query?.applicationId || '').trim()
+  if (!rawId) {
+    return res.status(400).json({ error: 'applicationRecordId (or applicationId for internal records) is required.' })
   }
 
   try {
-    const url = `${applicationsTableUrl(env)}/${encodeURIComponent(applicationRecordId)}`
+    // ── Internal path (UUID) ─────────────────────────────────────────────
+    if (UUID_RE.test(rawId)) {
+      const application = await getApplicationById(rawId)
+      if (!application) {
+        return res.status(404).json({ error: 'Application not found.' })
+      }
+      const paid = application.application_fee_paid === true
+      const submitted = !!(application.signer_signature?.trim())
+      return res.status(200).json({
+        paid,
+        submitted,
+        applicationId: application.id,
+        status: application.status,
+        source: 'internal',
+      })
+    }
+
+    // ── Legacy Airtable path (rec…) ──────────────────────────────────────
+    if (!rawId.startsWith('rec')) {
+      return res.status(400).json({ error: 'applicationRecordId must be a UUID or a rec-prefixed Airtable record ID.' })
+    }
+
+    const env = getApplicationsAirtableEnv()
+    if (!env.token) {
+      return res.status(500).json({ error: 'Data service is not configured on the server.' })
+    }
+
+    const url = `${applicationsTableUrl(env)}/${encodeURIComponent(rawId)}`
     const r = await fetch(url, { headers: airtableAuthHeaders(env.token) })
     if (!r.ok) {
       const t = await r.text()
@@ -39,8 +70,12 @@ export default async function handler(req, res) {
     const data = await r.json()
     const paid = isPaidCheckbox(data.fields?.[env.paidField])
     const sig = String(data.fields?.[env.signatureField] || '').trim()
-    const submitted = sig.length > 0
-    return res.status(200).json({ paid, submitted, applicationRecordId: data.id })
+    return res.status(200).json({
+      paid,
+      submitted: sig.length > 0,
+      applicationRecordId: data.id,
+      source: 'airtable',
+    })
   } catch (err) {
     console.error('[application-payment-status]', err)
     return res.status(500).json({ error: err?.message || 'Lookup failed.' })

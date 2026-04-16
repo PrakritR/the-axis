@@ -11,8 +11,18 @@ import {
 
 export { leaseVersionDisplayUploadTime } from '../../../shared/lease-version-airtable-uploader-fields.js'
 import { mergeAxisListingMetaIntoOtherInfo, parseAxisListingMetaBlock } from './axisListingMeta.js'
+import { supabase } from './supabase'
 import { getConfiguredPropertyPhotosFieldName } from './propertyListingPhotos.js'
 import { workOrderPhotoAttachmentFieldNamesOrdered } from './workOrderShared.js'
+import { uploadPropertyImageInternal, publicUrlForPropertyImage } from './internalFileStorage.js'
+
+/** Postgres-backed entity id (properties, rooms, applications, …) — not an Airtable `rec…` record. */
+const INTERNAL_AXIS_UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
+export function isInternalAxisRecordId(id) {
+  return INTERNAL_AXIS_UUID_RE.test(String(id || '').trim())
+}
 
 /** Single Airtable base for the whole app (portal, applications, tour, lease drafts, payments, etc.). */
 const BASE_ID = import.meta.env.VITE_AIRTABLE_BASE_ID || 'appol57LKtMKaQ75T'
@@ -1760,10 +1770,46 @@ function inferPropertyPhotoContentType(file) {
 }
 
 /**
- * Upload a file as an attachment to a property record's Photos/Images field.
- * Uses Airtable's content upload API.
+ * Upload a property-scoped image.
+ * - **Legacy** `rec…` property ids: Airtable attachment upload on the configured Photos field.
+ * - **Internal** UUID `properties.id`: Supabase Storage + `property_images` via `/api/file-storage`
+ *   (manager/owner/admin session). Optional `options` map to metadata (`is_cover`, `sort_order`, etc.).
+ *
+ * @param {string} propertyId
+ * @param {File} file
+ * @param {{
+ *   isGallery?: boolean
+ *   isCover?: boolean
+ *   sortOrder?: number
+ *   altText?: string | null
+ *   bathroomId?: string
+ *   sharedSpaceId?: string
+ * }} [options]
  */
-export async function uploadPropertyImage(propertyId, file) {
+export async function uploadPropertyImage(propertyId, file, options = {}) {
+  const id = String(propertyId || '').trim()
+  if (isInternalAxisRecordId(id)) {
+    const row = await uploadPropertyImageInternal({
+      propertyId: id,
+      file,
+      isGallery: options.isGallery !== false,
+      isCover: Boolean(options.isCover),
+      sortOrder: Number.isFinite(Number(options.sortOrder)) ? Number(options.sortOrder) : 0,
+      altText: options.altText != null ? options.altText : null,
+      bathroomId: options.bathroomId,
+      sharedSpaceId: options.sharedSpaceId,
+    })
+    const url = row?.id ? await publicUrlForPropertyImage(row.id) : ''
+    const photosField = getConfiguredPropertyPhotosFieldName()
+    return {
+      __fromInternalFileStorage: true,
+      id: row?.id,
+      fields: {
+        [photosField]: [{ url, filename: row?.file_name || file.name }],
+        Photos: [{ url, filename: row?.file_name || file.name }],
+      },
+    }
+  }
   const formData = new FormData()
   formData.append('file', file, file.name)
   formData.append('filename', file.name)
@@ -1807,10 +1853,47 @@ export function pickLastPropertyPhotoUrlFromUploadResponse(resp) {
  */
 export async function patchPropertySharedSpaceDetailImageUrls(propertyId, urlsBySlotIndex) {
   const id = String(propertyId || '').trim()
-  if (!/^rec[a-zA-Z0-9]{14,}$/.test(id)) throw new Error('Invalid property id.')
   if (!urlsBySlotIndex || typeof urlsBySlotIndex !== 'object') return null
   const entries = Object.entries(urlsBySlotIndex).filter(([, v]) => Array.isArray(v) && v.some((u) => String(u || '').trim()))
   if (!entries.length) return null
+
+  if (isInternalAxisRecordId(id)) {
+    const { data: sess } = await supabase.auth.getSession()
+    const token = sess?.session?.access_token
+    if (!token) throw new Error('Sign in with your portal account to update shared-space photos.')
+
+    const authH = { Authorization: `Bearer ${token}` }
+    const getRes = await fetch(`/api/properties?id=${encodeURIComponent(id)}`, { headers: authH })
+    const getJson = await getRes.json().catch(() => ({}))
+    if (!getRes.ok) throw new Error(getJson?.error || `Could not load property (${getRes.status}).`)
+
+    const rawOther = String(getJson.property?.notes ?? '')
+    const { userText, meta } = parseAxisListingMetaBlock(rawOther)
+    const m = meta && typeof meta === 'object' ? { ...meta } : {}
+    const detail = Array.isArray(m.sharedSpacesDetail) ? [...m.sharedSpacesDetail] : []
+    for (const [slotKey, urls] of entries) {
+      const idx = Number(slotKey)
+      if (!Number.isFinite(idx) || idx < 0) continue
+      const add = urls.map((u) => String(u || '').trim()).filter(Boolean)
+      if (!add.length) continue
+      const cur = detail[idx] && typeof detail[idx] === 'object' ? { ...detail[idx] } : { title: `Shared space ${idx + 1}` }
+      const prev = Array.isArray(cur.imageUrls) ? cur.imageUrls.map((u) => String(u || '').trim()).filter(Boolean) : []
+      cur.imageUrls = [...new Set([...prev, ...add])]
+      detail[idx] = cur
+    }
+    m.sharedSpacesDetail = detail
+    const nextNotes = mergeAxisListingMetaIntoOtherInfo(userText, m)
+    const patchRes = await fetch(`/api/properties?id=${encodeURIComponent(id)}`, {
+      method: 'PATCH',
+      headers: { ...authH, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ notes: nextNotes }),
+    })
+    const patchJson = await patchRes.json().catch(() => ({}))
+    if (!patchRes.ok) throw new Error(patchJson?.error || `Could not update property notes (${patchRes.status}).`)
+    return patchJson.property || null
+  }
+
+  if (!/^rec[a-zA-Z0-9]{14,}$/.test(id)) throw new Error('Invalid property id.')
 
   const data = await request(`${BASE_URL}/${encodeURIComponent(TABLES.properties)}/${encodeURIComponent(id)}`)
   const rec = mapRecord(data)

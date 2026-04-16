@@ -70,6 +70,19 @@ export async function getAppUserByEmail(email) {
 }
 
 /**
+ * @param {string} id - public.app_users.id
+ * @returns {Promise<object | null>}
+ */
+export async function getAppUserById(id) {
+  const uid = String(id || '').trim()
+  if (!uid) return null
+  const client = requireServiceClient()
+  const { data, error } = await client.from('app_users').select('*').eq('id', uid).maybeSingle()
+  if (error) throw new Error(error.message || 'Failed to load app_users')
+  return data || null
+}
+
+/**
  * Insert or update the profile row for a Supabase Auth user (by auth_user_id).
  * Does not disable is_active unless explicitly passed false.
  *
@@ -100,4 +113,36 @@ export async function ensureAppUserByAuthId(row) {
 
   if (error) throw new Error(error.message || 'Failed to upsert app_users')
   return data
+}
+
+/**
+ * Active app users who have the admin role (for public meeting directory).
+ *
+ * @returns {Promise<{ id: string, email: string, full_name: string | null, admin_notes: string | null }[]>}
+ */
+export async function listActiveAdminsForMeetingDirectory() {
+  const client = requireServiceClient()
+  const { data: roleRows, error: re } = await client.from('app_user_roles').select('app_user_id').eq('role', 'admin')
+  if (re) throw new Error(re.message || 'Failed to list admin roles')
+  const ids = [...new Set((roleRows || []).map((r) => String(r.app_user_id || '').trim()).filter(Boolean))]
+  if (!ids.length) return []
+
+  const { data: users, error: ue } = await client
+    .from('app_users')
+    .select('id, email, full_name, is_active, admin_profiles(notes)')
+    .in('id', ids)
+    .eq('is_active', true)
+    .order('email', { ascending: true })
+  if (ue) throw new Error(ue.message || 'Failed to list admin app users')
+
+  return (users || []).map((u) => {
+    const profiles = u.admin_profiles
+    const ap = Array.isArray(profiles) ? profiles[0] : profiles
+    return {
+      id: String(u.id),
+      email: String(u.email || '').trim().toLowerCase(),
+      full_name: u.full_name != null ? String(u.full_name).trim() : null,
+      admin_notes: ap?.notes != null ? String(ap.notes) : null,
+    }
+  })
 }

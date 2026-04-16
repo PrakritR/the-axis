@@ -9,18 +9,21 @@
  * Props:
  *   manager             – authenticated manager record (for preview check + record id)
  *   onClose()           – called when wizard should close without saving
- *   onCreated(record)   – called after a successful Airtable write
- *   createPropertyAdmin – async fn(fields) → record  (passed from Manager.jsx scope)
+ *   onCreated(record)   – called after a successful save (Airtable row or synthetic manager row for Postgres)
+ *   createPropertyAdmin – optional legacy `async (fields) => record` (Airtable). When omitted, creates via POST /api/properties + rooms.
  */
 
 import React, { useMemo, useRef, useState } from 'react'
 import toast from 'react-hot-toast'
 import Modal from './Modal'
 import {
+  isInternalAxisRecordId,
   patchPropertySharedSpaceDetailImageUrls,
   pickLastPropertyPhotoUrlFromUploadResponse,
   uploadPropertyImage,
 } from '../lib/airtable'
+import { createInternalPropertyAndRooms } from '../lib/internalPropertiesClient.js'
+import { uploadRoomImageInternal } from '../lib/internalFileStorage.js'
 import {
   serializeManagerAddPropertyToAirtableFields,
   emptyRoomRow,
@@ -48,6 +51,7 @@ import {
   MOVE_IN_CHARGE_NAME_OPTIONS,
   LEASE_ACCESS_REQUIREMENT,
   nativeRoomColumnValidationMessage,
+  PROPERTY_AIR,
 } from '../lib/managerPropertyFormAirtableMap.js'
 
 // ─── Wizard step metadata ─────────────────────────────────────────────────────
@@ -308,7 +312,7 @@ export default function AddPropertyWizard({
   manager,
   onClose,
   onCreated,
-  createPropertyAdmin,
+  createPropertyAdmin = null,
   initialValues = null,
   mode = 'create',
   onSubmitProperty = null,
@@ -597,22 +601,85 @@ export default function AddPropertyWizard({
         pricingFees,
       })
 
-      const created = submitProperty
-        ? await submitProperty(fields)
-        : await createPropertyAdmin(fields)
+      let created
+      let effectivePropertyId = ''
+      /** Postgres room rows (same order as wizard `rooms`) when using internal create. */
+      let createdDbRooms = null
+
+      if (submitProperty) {
+        created = await submitProperty(fields)
+        effectivePropertyId = String(created?.id || '').trim()
+      } else if (typeof createPropertyAdmin === 'function') {
+        created = await createPropertyAdmin(fields)
+        effectivePropertyId = String(created?.id || '').trim()
+      } else {
+        const mergedListingNotes = String(fields[PROPERTY_AIR.otherInfo] || '')
+          .trim()
+          .slice(0, 20_000)
+        const notes =
+          mergedListingNotes ||
+          [
+            appFee != null && String(appFee).trim() !== '' ? `Application fee (wizard): ${appFee}` : '',
+            String(otherInfo || '').trim(),
+          ]
+            .filter(Boolean)
+            .join('\n\n')
+            .slice(0, 20_000)
+        const bundle = await createInternalPropertyAndRooms({
+          basics,
+          rooms,
+          manager,
+          notes,
+        })
+        created = bundle.managerRow
+        createdDbRooms = bundle.rooms
+        effectivePropertyId = String(bundle.property?.id || '').trim()
+      }
+
+      const internalProperty = isInternalAxisRecordId(effectivePropertyId)
+      const bathroomSlotIds = bathrooms.map(() =>
+        typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `tmp-${Date.now()}-${Math.random()}`,
+      )
+      const sharedSpaceSlotIds = sharedSpaces.map(() =>
+        typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `tmp-${Date.now()}-${Math.random()}`,
+      )
 
       // Property gallery images (non-fatal individually)
+      let galleryOrder = 0
       for (const img of images) {
-        try { await uploadPropertyImage(created.id, img.file) } catch { /* non-fatal */ }
+        try {
+          if (internalProperty) {
+            await uploadPropertyImage(effectivePropertyId, img.file, {
+              isGallery: galleryOrder > 0,
+              isCover: galleryOrder === 0,
+              sortOrder: galleryOrder,
+            })
+            galleryOrder += 1
+          } else {
+            await uploadPropertyImage(effectivePropertyId, img.file)
+          }
+        } catch { /* non-fatal */ }
       }
       // Per-room media
       for (let ri = 0; ri < rooms.length; ri++) {
+        let roomImgOrder = 0
         for (const item of rooms[ri].media || []) {
           try {
             const f = item.file
             if (!f) continue
-            const renamed = new File([f], `axis-r${ri + 1}-${f.name}`, { type: f.type || 'application/octet-stream' })
-            await uploadPropertyImage(created.id, renamed)
+            if (internalProperty && Array.isArray(createdDbRooms) && createdDbRooms[ri]?.id) {
+              await uploadRoomImageInternal({
+                roomId: String(createdDbRooms[ri].id),
+                file: f,
+                isGallery: roomImgOrder > 0,
+                isCover: roomImgOrder === 0,
+                sortOrder: roomImgOrder,
+              })
+              roomImgOrder += 1
+            } else {
+              const renamed = new File([f], `axis-r${ri + 1}-${f.name}`, { type: f.type || 'application/octet-stream' })
+              await uploadPropertyImage(effectivePropertyId, renamed)
+            }
           } catch { /* non-fatal */ }
         }
       }
@@ -622,7 +689,16 @@ export default function AddPropertyWizard({
             const f = item.file
             if (!f) continue
             const renamed = new File([f], `axis-l${li + 1}-${f.name}`, { type: f.type || 'application/octet-stream' })
-            await uploadPropertyImage(created.id, renamed)
+            if (internalProperty) {
+              await uploadPropertyImage(effectivePropertyId, renamed, {
+                isGallery: true,
+                isCover: false,
+                sortOrder: galleryOrder,
+              })
+              galleryOrder += 1
+            } else {
+              await uploadPropertyImage(effectivePropertyId, renamed)
+            }
           } catch { /* non-fatal */ }
         }
       }
@@ -632,7 +708,17 @@ export default function AddPropertyWizard({
             const f = item.file
             if (!f) continue
             const renamed = new File([f], `axis-b${bi + 1}-${f.name}`, { type: f.type || 'application/octet-stream' })
-            await uploadPropertyImage(created.id, renamed)
+            if (internalProperty) {
+              await uploadPropertyImage(effectivePropertyId, renamed, {
+                isGallery: true,
+                isCover: false,
+                sortOrder: galleryOrder,
+                bathroomId: bathroomSlotIds[bi],
+              })
+              galleryOrder += 1
+            } else {
+              await uploadPropertyImage(effectivePropertyId, renamed)
+            }
           } catch { /* non-fatal */ }
         }
       }
@@ -642,7 +728,16 @@ export default function AddPropertyWizard({
             const f = item.file
             if (!f) continue
             const renamed = new File([f], `axis-k${ki + 1}-${f.name}`, { type: f.type || 'application/octet-stream' })
-            await uploadPropertyImage(created.id, renamed)
+            if (internalProperty) {
+              await uploadPropertyImage(effectivePropertyId, renamed, {
+                isGallery: true,
+                isCover: false,
+                sortOrder: galleryOrder,
+              })
+              galleryOrder += 1
+            } else {
+              await uploadPropertyImage(effectivePropertyId, renamed)
+            }
           } catch { /* non-fatal */ }
         }
       }
@@ -655,7 +750,15 @@ export default function AddPropertyWizard({
             const f = item.file
             if (!f) continue
             const renamed = new File([f], `axis-ss${si + 1}-${f.name}`, { type: f.type || 'application/octet-stream' })
-            const json = await uploadPropertyImage(created.id, renamed)
+            const json = internalProperty
+              ? await uploadPropertyImage(effectivePropertyId, renamed, {
+                  isGallery: true,
+                  isCover: false,
+                  sortOrder: galleryOrder,
+                  sharedSpaceId: sharedSpaceSlotIds[si],
+                })
+              : await uploadPropertyImage(effectivePropertyId, renamed)
+            if (internalProperty) galleryOrder += 1
             const u = pickLastPropertyPhotoUrlFromUploadResponse(json)
             if (u) urls.push(u)
           } catch {
@@ -666,7 +769,7 @@ export default function AddPropertyWizard({
       }
       if (Object.keys(urlsBySlot).length) {
         try {
-          await patchPropertySharedSpaceDetailImageUrls(created.id, urlsBySlot)
+          await patchPropertySharedSpaceDetailImageUrls(effectivePropertyId, urlsBySlot)
         } catch {
           /* non-fatal — photos still on property; meta merge failed */
         }
@@ -678,7 +781,9 @@ export default function AddPropertyWizard({
       onClose()
     } catch (err) {
       const raw = err?.message || 'Could not save property'
-      const friendly = raw.includes('UNKNOWN_FIELD_NAME')
+      const friendly = raw.includes('mailing address on one line')
+        ? raw
+        : raw.includes('UNKNOWN_FIELD_NAME')
         ? /Room\s+\d+\s+Rent/i.test(raw)
           ? 'Airtable rejected a room rent column (unknown field). Add matching "Room N Rent" columns in Airtable or set VITE_AIRTABLE_PROPERTY_ROOM_NATIVE_COLUMN_LIMIT to the highest N that exists, or set VITE_AIRTABLE_WRITE_ROOM_COLUMNS=false.'
           : 'A field name does not match Airtable — check managerPropertyFormAirtableMap.js and your base.'

@@ -128,11 +128,21 @@ export function buildSharedSpaceImagePath(args) {
 }
 
 /**
+ * Work order folder id: internal UUID or legacy Airtable `rec…` id.
+ * @param {string} workOrderId
+ */
+export function sanitizeWorkOrderStorageFolderId(workOrderId) {
+  const s = String(workOrderId || '').trim()
+  if (/^rec[a-zA-Z0-9]{14,}$/.test(s)) return s
+  return assertUuid(s, 'workOrderId')
+}
+
+/**
  * @param {{ workOrderId: string, originalFileName: string }} args
  */
 export function buildWorkOrderImagePath(args) {
-  const workOrderId = assertUuid(args.workOrderId, 'workOrderId')
+  const folder = sanitizeWorkOrderStorageFolderId(args.workOrderId)
   const name = safeStorageFileName(args.originalFileName || 'image.jpg')
-  const path = `work-order-images/${workOrderId}/${randomUUID()}-${name}`
+  const path = `work-order-images/${folder}/${randomUUID()}-${name}`
   return { bucket: STORAGE_BUCKET_WORK_ORDER_IMAGES, path }
 }

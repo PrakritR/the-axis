@@ -17,8 +17,10 @@
  *      → will be removed once all managers are on internal auth
  */
 import { authenticateSupabaseBearerRequest, bearerTokenFromRequest } from '../lib/supabase-bearer-auth.js'
+import { ensureAppUserByAuthId } from '../lib/app-users-service.js'
+import { assignRoleToAppUser } from '../lib/app-user-roles-service.js'
+import { ensureManagerProfileExists, updateManagerProfile } from '../lib/manager-profiles-service.js'
 import {
-  bootstrapManagerAccountFromAuthUser,
   buildManagerSession,
   managerAirtableConfigured,
   getManagerByEmail,
@@ -26,6 +28,12 @@ import {
   updateManager,
   assertManagerCanSignIn,
 } from '../lib/manager-account-service.js'
+import {
+  getManagerOnboardingByEmail,
+  getManagerOnboardingByManagerId,
+  markManagerOnboardingAccountCreated,
+  onboardingToManagerRecord,
+} from '../lib/manager-onboarding-service.js'
 
 function cors(res) {
   res.setHeader('Access-Control-Allow-Origin', '*')
@@ -49,6 +57,52 @@ function userFullName(user) {
     (typeof meta.name === 'string' && meta.name.trim()) ||
     null
   )
+}
+
+function onboardingTierToProfileTier(planType) {
+  const normalized = String(planType || '').trim().toLowerCase()
+  if (normalized === 'business') return 'Premium'
+  if (normalized === 'pro' || normalized === 'free') return 'Standard'
+  return null
+}
+
+async function bootstrapFromManagerOnboarding({ authUserId, email, fullName, managerId }) {
+  const onboarding = managerId
+    ? await getManagerOnboardingByManagerId(managerId)
+    : await getManagerOnboardingByEmail(email)
+
+  if (!onboarding) {
+    throw new Error('No manager onboarding record was found for this account yet.')
+  }
+
+  if (String(onboarding.email || '').trim().toLowerCase() !== email) {
+    throw new Error('This signed-in email does not match the manager invitation record.')
+  }
+
+  const phoneNumber = String(onboarding.phone_number || '').trim() || null
+  const resolvedFullName = fullName || String(onboarding.full_name || '').trim() || null
+  const appUser = await ensureAppUserByAuthId({
+    authUserId,
+    email,
+    fullName: resolvedFullName,
+    phone: phoneNumber,
+  })
+  await assignRoleToAppUser({ appUserId: appUser.id, role: 'manager', isPrimary: true })
+  await ensureManagerProfileExists({
+    appUserId: appUser.id,
+    phone_number: phoneNumber,
+  })
+
+  const patch = {}
+  if (phoneNumber) patch.phone_number = phoneNumber
+  const tier = onboardingTierToProfileTier(onboarding.plan_type)
+  if (tier) patch.tier = tier
+  if (Object.keys(patch).length > 0) {
+    await updateManagerProfile({ appUserId: appUser.id, ...patch })
+  }
+
+  await markManagerOnboardingAccountCreated(email).catch(() => null)
+  return { manager: onboardingToManagerRecord({ ...onboarding, account_created: true }), appUser }
 }
 
 /**
@@ -81,12 +135,11 @@ async function handleSupabaseManagerAuth(req, res) {
   if (!email) return res.status(400).json({ error: 'Authenticated user has no email.' })
 
   try {
-    const { manager, appUser } = await bootstrapManagerAccountFromAuthUser({
+    const { manager, appUser } = await bootstrapFromManagerOnboarding({
       authUserId: auth.user.id,
       email,
       fullName: userFullName(auth.user),
       managerId: req.body?.managerId,
-      secretKey: process.env.STRIPE_SECRET_KEY || '',
     })
     return res.status(200).json({
       ok: true,
@@ -140,11 +193,10 @@ async function handleEmailPasswordAuth(req, res) {
     if (!user?.id) return null // no Supabase user — fall through to legacy
 
     try {
-      const { manager, appUser } = await bootstrapManagerAccountFromAuthUser({
+      const { manager, appUser } = await bootstrapFromManagerOnboarding({
         authUserId: user.id,
         email: normalizedEmail,
         fullName: userFullName(user),
-        secretKey: process.env.STRIPE_SECRET_KEY || '',
       })
 
       return res.status(200).json({

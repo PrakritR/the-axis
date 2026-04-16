@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { Seo } from '../lib/seo'
 import { errorFromAirtableApiBody } from '../lib/airtablePermissionError'
+import { isInternalAxisRecordId } from '../lib/airtable'
 import { isHousingMessageCategoryId } from '../lib/housingSite'
 import {
   AXIS_SCHEDULING_CHANGED_EVENT,
@@ -385,6 +386,10 @@ function HousingScheduler() {
           managerEmail: selectedProperty?.managerEmail || '',
           preferredDate: selectedDate, preferredTime: selectedTime,
           notes: form.notes.trim(),
+          source: 'contact_page',
+          ...(selectedProperty?.id && isInternalAxisRecordId(selectedProperty.id)
+            ? { propertyId: selectedProperty.id }
+            : {}),
         }),
       })
       const data = await res.json()
@@ -720,6 +725,7 @@ function SoftwareMeetingScheduler() {
           notes: form.notes.trim(),
           adminEmail: selectedAdmin?.email || '',
           adminName: selectedAdmin?.name || '',
+          adminAppUserId: selectedAdmin?.id || '',
           preferredDate: selectedDate,
           preferredTime: selectedTime,
         }),
@@ -749,10 +755,9 @@ function SoftwareMeetingScheduler() {
   return (
     <div className="space-y-6">
       <p className="rounded-2xl border border-slate-100 bg-slate-50/90 px-4 py-3 text-sm text-slate-600">
-        Available times come from each team member&apos;s Axis admin calendar: they can add open slots on specific dates
-        in <strong className="font-semibold text-slate-800">Admin portal → Calendar</strong>, or set repeating hours in
-        <strong className="font-semibold text-slate-800"> My Meeting Availability</strong> on their profile. When you book
-        here, the meeting is saved to their calendar and removed from the public list.
+        Available times come from each team member&apos;s weekly meeting windows in{' '}
+        <strong className="font-semibold text-slate-800">Admin portal → Calendar</strong> (saved to the internal
+        database). When you book here, the meeting is saved to their calendar and removed from the public list.
       </p>
       <div>
         <label className="mb-1.5 block text-xs font-semibold text-slate-700">Choose admin</label>

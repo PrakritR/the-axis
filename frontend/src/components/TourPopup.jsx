@@ -1,5 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useLocation } from 'react-router-dom'
+import { isInternalAxisRecordId } from '../lib/airtable'
+import { dispatchAxisSchedulingChanged } from '../lib/portalCalendarSync.js'
 
 function formatPhone(raw) {
   const digits = raw.replace(/\D/g, '').slice(0, 10)
@@ -111,10 +113,13 @@ export default function TourPopup() {
           tourFormat: tourType === 'virtual' ? 'Virtual' : 'In-Person',
           preferredDate,
           preferredTime,
+          source: 'tour_popup',
+          ...(propertyId && isInternalAxisRecordId(propertyId) ? { propertyId } : {}),
         }),
       })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || 'Submission failed.')
+      dispatchAxisSchedulingChanged({ reason: 'tour-popup' })
       setSubmitted(true)
     } catch (err) {
       setSubmitError(err.message || 'Could not submit. Please try again.')

@@ -5,7 +5,13 @@ import PropertyGallery from '../components/PropertyGallery'
 import PropertyMediaPlaceholder from '../components/PropertyMediaPlaceholder'
 import MapView from '../components/Map.jsx'
 import { properties } from '../data/properties'
-import { fetchPropertyRecordById, propertyListingVisibleForMarketing, fetchBlockedTourDatesByName } from '../lib/airtable'
+import {
+  fetchPropertyRecordById,
+  isInternalAxisRecordId,
+  propertyListingVisibleForMarketing,
+  fetchBlockedTourDates,
+  fetchBlockedTourDatesByName,
+} from '../lib/airtable'
 import { mapAirtableRecordToPropertyPage, marketingSlugForAirtablePropertyId } from '../lib/airtablePublicListings'
 import {
   formatBathroomCountForDisplay,
@@ -78,10 +84,18 @@ function dayHasAvailability(text, dateKey) {
   return slotsForDateFromAvailText(text, dateKey).length > 0
 }
 
+function dayHasInternalSlots(slotsByDate, dateKey) {
+  const m = slotsByDate && typeof slotsByDate === 'object' ? slotsByDate : {}
+  const list = m[dateKey]
+  return Array.isArray(list) && list.length > 0
+}
+
 // ─── TourBookingModal ─────────────────────────────────────────────────────────
 function TourBookingModal({ open, onClose, propertyName, tourAvailabilityText, propertyId }) {
   const [blockedDates, setBlockedDates] = useState(new Set())
   const [loadingBlocked, setLoadingBlocked] = useState(false)
+  /** When set, public tour slots for an internal (Postgres) property keyed by YYYY-MM-DD. */
+  const [internalSlotsByDate, setInternalSlotsByDate] = useState(null)
   const [selectedDate, setSelectedDate] = useState('')
   const [selectedTime, setSelectedTime] = useState('')
   const [name, setName] = useState('')
@@ -92,14 +106,51 @@ function TourBookingModal({ open, onClose, propertyName, tourAvailabilityText, p
   const [submitted, setSubmitted] = useState(false)
   const [error, setError] = useState('')
 
-  const hasAvailability = Boolean(String(tourAvailabilityText || '').trim())
+  const internalPid = String(propertyId || '').trim()
+  const useInternalTourGrid = Boolean(internalPid && isInternalAxisRecordId(internalPid))
+  const hasAvailability =
+    Boolean(String(tourAvailabilityText || '').trim()) ||
+    Boolean(
+      internalSlotsByDate &&
+        typeof internalSlotsByDate === 'object' &&
+        Object.keys(internalSlotsByDate).some((k) => (internalSlotsByDate[k] || []).length > 0),
+    )
 
   useEffect(() => {
     if (!open) return
     setSelectedDate(''); setSelectedTime(''); setName(''); setEmail(''); setPhone('')
     setNotes(''); setSubmitted(false); setError('')
-    if (!propertyName) { setBlockedDates(new Set()); return }
+    setInternalSlotsByDate(null)
+    if (!propertyName && !useInternalTourGrid) {
+      setBlockedDates(new Set())
+      return
+    }
     setLoadingBlocked(true)
+    if (useInternalTourGrid) {
+      Promise.all([
+        fetchBlockedTourDates(internalPid),
+        fetch('/api/tour').then((r) => r.json().catch(() => ({}))),
+      ])
+        .then(([records, tourJson]) => {
+          const s = new Set()
+          ;(records || []).forEach((r) => {
+            const d = String(r['Date'] || '').trim().slice(0, 10)
+            if (d) s.add(d)
+          })
+          setBlockedDates(s)
+          const props = Array.isArray(tourJson?.properties) ? tourJson.properties : []
+          const tp = props.find((p) => String(p?.id || '').trim() === internalPid)
+          setInternalSlotsByDate(tp?.availabilitySlotsByDate && typeof tp.availabilitySlotsByDate === 'object'
+            ? tp.availabilitySlotsByDate
+            : {})
+        })
+        .catch(() => {
+          setBlockedDates(new Set())
+          setInternalSlotsByDate({})
+        })
+        .finally(() => setLoadingBlocked(false))
+      return
+    }
     fetchBlockedTourDatesByName(propertyName)
       .then((records) => {
         const s = new Set()
@@ -111,7 +162,7 @@ function TourBookingModal({ open, onClose, propertyName, tourAvailabilityText, p
       })
       .catch(() => setBlockedDates(new Set()))
       .finally(() => setLoadingBlocked(false))
-  }, [open, propertyName])
+  }, [open, propertyName, internalPid, useInternalTourGrid])
 
   const availableDates = useMemo(() => {
     const dates = []
@@ -121,16 +172,24 @@ function TourBookingModal({ open, onClose, propertyName, tourAvailabilityText, p
       d.setDate(today.getDate() + i)
       const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
       const blocked = blockedDates.has(key)
-      const hasSlots = hasAvailability ? dayHasAvailability(tourAvailabilityText, key) : true
+      const hasSlots = hasAvailability
+        ? useInternalTourGrid
+          ? dayHasInternalSlots(internalSlotsByDate, key)
+          : dayHasAvailability(tourAvailabilityText, key)
+        : true
       dates.push({ key, date: d, blocked, hasSlots })
     }
     return dates
-  }, [blockedDates, tourAvailabilityText, hasAvailability])
+  }, [blockedDates, tourAvailabilityText, hasAvailability, useInternalTourGrid, internalSlotsByDate])
 
   const timeSlots = useMemo(() => {
     if (!selectedDate || !hasAvailability) return []
+    if (useInternalTourGrid) {
+      const list = internalSlotsByDate?.[selectedDate]
+      return Array.isArray(list) ? list.map((x) => String(x || '').trim()).filter(Boolean) : []
+    }
     return slotsForDateFromAvailText(tourAvailabilityText, selectedDate)
-  }, [selectedDate, tourAvailabilityText, hasAvailability])
+  }, [selectedDate, tourAvailabilityText, hasAvailability, useInternalTourGrid, internalSlotsByDate])
 
   useEffect(() => { setSelectedTime('') }, [selectedDate])
 
@@ -153,6 +212,7 @@ function TourBookingModal({ open, onClose, propertyName, tourAvailabilityText, p
         preferredTime: selectedTime || 'To be confirmed',
         notes: notes.trim() || undefined,
       }
+      if (useInternalTourGrid && internalPid) body.propertyId = internalPid
       const res = await fetch('/api/forms?action=tour', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -875,14 +935,73 @@ export default function PropertyPage(){
       return undefined
     }
     const rid = String(slug || '').startsWith('axis-') ? String(slug).slice('axis-'.length) : ''
-    if (!/^rec[a-zA-Z0-9]{14,}$/.test(rid)) {
+    if (!rid) {
       setPDynamic(null)
       setTourAvailabilityText('')
       setDynamicPropertyId('')
       return undefined
     }
+
     let cancelled = false
     setDynamicLoading(true)
+
+    if (isInternalAxisRecordId(rid)) {
+      ;(async () => {
+        try {
+          const r = await fetch(`/api/listing-public-media?property_id=${encodeURIComponent(rid)}`)
+          const data = await r.json().catch(() => ({}))
+          if (cancelled) return
+          if (!r.ok || !data?.ok || !data.property) {
+            setPDynamic(null)
+            setTourAvailabilityText('')
+            setDynamicPropertyId('')
+            return
+          }
+          const pr = data.property
+          const addr = [pr.address_line1, pr.address_line2, [pr.city, pr.state, pr.zip].filter(Boolean).join(', ')]
+            .map((x) => String(x || '').trim())
+            .filter(Boolean)
+            .join(', ')
+          const images = (data.property_images || []).map((row) => String(row.public_url || '').trim()).filter(Boolean)
+          setPDynamic({
+            slug,
+            name: String(pr.name || '').trim() || 'Axis home',
+            summary: '',
+            address: addr,
+            images,
+            videos: [],
+            roomPlans: [],
+            bathroomsList: [],
+            sharedSpacesList: [],
+            communityAmenities: [],
+            _fromAirtable: false,
+            _fromInternalPostgres: true,
+            location: { lat: 47.661, lng: -122.318 },
+          })
+          setTourAvailabilityText('')
+          setDynamicPropertyId(rid)
+        } catch {
+          if (!cancelled) {
+            setPDynamic(null)
+            setTourAvailabilityText('')
+            setDynamicPropertyId('')
+          }
+        } finally {
+          if (!cancelled) setDynamicLoading(false)
+        }
+      })()
+      return () => {
+        cancelled = true
+      }
+    }
+
+    if (!/^rec[a-zA-Z0-9]{14,}$/.test(rid)) {
+      setPDynamic(null)
+      setTourAvailabilityText('')
+      setDynamicPropertyId('')
+      setDynamicLoading(false)
+      return undefined
+    }
     fetchPropertyRecordById(rid)
       .then((rec) => {
         if (cancelled || !rec) {

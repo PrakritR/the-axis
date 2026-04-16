@@ -5,6 +5,7 @@
  */
 
 import { requireServiceClient } from './app-users-service.js'
+import { sanitizeWorkOrderStorageFolderId } from './storage/supabase-storage-paths.js'
 
 /**
  * @param {string} applicationId
@@ -67,8 +68,8 @@ export function assertRoomImagePath(roomId, path) {
  */
 export function assertWorkOrderImagePath(workOrderId, path) {
   const p = String(path || '').trim()
-  const wid = String(workOrderId).trim().toLowerCase()
-  if (!p.startsWith(`work-order-images/${wid}/`)) {
+  const folder = String(sanitizeWorkOrderStorageFolderId(workOrderId)).toLowerCase()
+  if (!p.toLowerCase().startsWith(`work-order-images/${folder}/`)) {
     throw new Error('storage_path does not match this work order for work_order_files.')
   }
 }
@@ -125,4 +126,25 @@ export async function deleteFileMetadataRow(table, id) {
   const client = requireServiceClient()
   const { error } = await client.from(table).delete().eq('id', tid)
   if (error) throw new Error(error.message || 'Failed to delete file metadata')
+}
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
+/**
+ * @param {string[]} applicationIds
+ * @returns {Promise<object[]>} lease_files rows (newest first within each app)
+ */
+export async function listLeaseFilesForApplicationIds(applicationIds) {
+  const ids = (Array.isArray(applicationIds) ? applicationIds : [])
+    .map((x) => String(x || '').trim())
+    .filter((x) => UUID_RE.test(x))
+  if (!ids.length) return []
+  const client = requireServiceClient()
+  const { data, error } = await client
+    .from('lease_files')
+    .select('*')
+    .in('application_id', ids)
+    .order('created_at', { ascending: false })
+  if (error) throw new Error(error.message || 'Failed to list lease_files')
+  return data || []
 }

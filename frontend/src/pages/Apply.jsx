@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Seo } from '../lib/seo'
 import { properties } from '../data/properties'
 import { signLease, getSignedLeases } from '../lib/airtable'
@@ -15,6 +15,12 @@ import { readJsonResponse } from '../lib/readJsonResponse'
 import { errorFromAirtableApiBody } from '../lib/airtablePermissionError'
 import { supabase } from '../lib/supabase'
 import { syncAppUserFromSupabaseSession } from '../lib/authAppUserSync'
+import {
+  listApplicationFiles,
+  signedDownloadApplicationFile,
+  deleteApplicationFile,
+  uploadApplicationDocumentInternal,
+} from '../lib/internalFileStorage'
 
 const AIRTABLE_BASE_ID = import.meta.env.VITE_AIRTABLE_BASE_ID || 'appol57LKtMKaQ75T'
 const APPLICATIONS_TABLE = import.meta.env.VITE_AIRTABLE_APPLICATIONS_TABLE || 'Applications'
@@ -1501,6 +1507,156 @@ const COSIGNER_STEPS = [
   },
 ]
 
+const INTERNAL_APP_DOCUMENT_KINDS = [
+  { value: 'id', label: 'Government ID' },
+  { value: 'income_proof', label: 'Income / employment' },
+  { value: 'rental_history', label: 'Rental history' },
+  { value: 'other', label: 'Other' },
+]
+
+/** Supporting documents for Postgres-backed applications (same Supabase session as submit). */
+function InternalApplicationDocumentsSection({ applicationId }) {
+  const [rows, setRows] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [listError, setListError] = useState('')
+  const [actionError, setActionError] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [docKind, setDocKind] = useState('other')
+
+  const reload = useCallback(async () => {
+    setLoading(true)
+    setListError('')
+    try {
+      const next = await listApplicationFiles(applicationId)
+      setRows(next)
+    } catch (e) {
+      setListError(e instanceof Error ? e.message : 'Could not load documents.')
+      setRows([])
+    } finally {
+      setLoading(false)
+    }
+  }, [applicationId])
+
+  useEffect(() => {
+    void reload()
+  }, [reload])
+
+  async function onUpload(ev) {
+    const input = ev.target
+    const fileList = input.files
+    input.value = ''
+    if (!fileList?.length) return
+    setBusy(true)
+    setActionError('')
+    try {
+      for (const file of Array.from(fileList)) {
+        await uploadApplicationDocumentInternal({ applicationId, documentKind: docKind, file })
+      }
+      await reload()
+    } catch (e) {
+      setActionError(e instanceof Error ? e.message : 'Upload failed.')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function onDownload(fileId) {
+    setActionError('')
+    try {
+      const url = await signedDownloadApplicationFile(fileId, 3600)
+      if (!url) throw new Error('No download URL returned.')
+      window.open(url, '_blank', 'noopener,noreferrer')
+    } catch (e) {
+      setActionError(e instanceof Error ? e.message : 'Download failed.')
+    }
+  }
+
+  async function onDelete(fileId) {
+    if (!window.confirm('Remove this file? This cannot be undone.')) return
+    setBusy(true)
+    setActionError('')
+    try {
+      await deleteApplicationFile(fileId)
+      await reload()
+    } catch (e) {
+      setActionError(e instanceof Error ? e.message : 'Delete failed.')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <div className="mt-8 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+      <div className="border-b border-slate-100 bg-slate-50 px-6 py-3">
+        <span className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">Supporting documents</span>
+      </div>
+      <div className="space-y-4 px-6 py-5">
+        <p className="text-sm leading-6 text-slate-600">
+          Upload PDFs or images (JPEG, PNG, WebP, GIF) up to 25 MB each. Files are stored securely with your application — not in Airtable attachments.
+        </p>
+        {listError ? <p className="text-sm text-red-700">{listError}</p> : null}
+        {actionError ? <p className="text-sm text-red-700">{actionError}</p> : null}
+        <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
+          <label className="text-xs font-semibold uppercase tracking-wide text-slate-500 sm:mt-2">Document type</label>
+          <select
+            value={docKind}
+            onChange={(e) => setDocKind(e.target.value)}
+            disabled={busy}
+            className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 sm:max-w-xs"
+          >
+            {INTERNAL_APP_DOCUMENT_KINDS.map((o) => (
+              <option key={o.value} value={o.value}>
+                {o.label}
+              </option>
+            ))}
+          </select>
+          <label className="inline-flex cursor-pointer items-center justify-center rounded-full border-2 border-axis bg-axis px-5 py-2.5 text-sm font-semibold text-white transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60">
+            <input type="file" className="sr-only" multiple accept=".pdf,.doc,.docx,image/*" disabled={busy} onChange={onUpload} />
+            {busy ? 'Working…' : 'Add files'}
+          </label>
+        </div>
+        {loading ? (
+          <p className="text-sm text-slate-500">Loading…</p>
+        ) : rows.length === 0 ? (
+          <p className="text-sm text-slate-500">No documents uploaded yet.</p>
+        ) : (
+          <ul className="divide-y divide-slate-100 rounded-xl border border-slate-100">
+            {rows.map((row) => (
+              <li key={row.id} className="flex flex-col gap-2 py-3 text-sm sm:flex-row sm:items-center sm:justify-between">
+                <div className="min-w-0">
+                  <div className="truncate font-medium text-slate-900">{String(row.file_name || 'File').trim()}</div>
+                  <div className="text-xs text-slate-500">
+                    {String(row.document_kind || 'other')}
+                    {row.file_size_bytes != null ? ` · ${(Number(row.file_size_bytes) / (1024 * 1024)).toFixed(1)} MB` : ''}
+                  </div>
+                </div>
+                <div className="flex shrink-0 gap-2">
+                  <button
+                    type="button"
+                    disabled={busy}
+                    onClick={() => onDownload(row.id)}
+                    className="rounded-full border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-800 hover:bg-slate-50 disabled:opacity-50"
+                  >
+                    Open
+                  </button>
+                  <button
+                    type="button"
+                    disabled={busy}
+                    onClick={() => onDelete(row.id)}
+                    className="rounded-full border border-red-200 px-3 py-1.5 text-xs font-semibold text-red-800 hover:bg-red-50 disabled:opacity-50"
+                  >
+                    Remove
+                  </button>
+                </div>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+    </div>
+  )
+}
+
 export default function Apply() {
   const storedSubmission = typeof window !== 'undefined'
     ? JSON.parse(window.sessionStorage.getItem(APPLICATION_SUBMISSION_STORAGE_KEY) || 'null')
@@ -1561,7 +1717,7 @@ export default function Apply() {
   useEffect(() => {
     if (typeof window === 'undefined' || submitted || applicationType !== 'signer') return
     const recId = String(window.sessionStorage.getItem(APPLICATION_RECORD_ID_KEY) || '').trim()
-    if (!recId.startsWith('rec')) return
+    if (!recId.startsWith('rec') && !isInternalAxisApplicationId(recId)) return
     let cancelled = false
     ;(async () => {
       try {
@@ -2330,6 +2486,8 @@ export default function Apply() {
     const isSigner = effectiveType === 'signer'
     const propertyName = submissionSummary?.propertyName || signer.propertyName
     const roomNumber = submissionSummary?.roomNumber || signer.roomNumber
+    const submittedApplicationRowId = String(submissionSummary?.submittedRecord?.id || submittedRecord?.id || '').trim()
+    const internalAppIdForDocs = isInternalAxisApplicationId(submittedApplicationRowId) ? submittedApplicationRowId : ''
     const submittedFeeUsd = Number(submissionSummary?.applicationFeeUsd)
     const inferredSubmittedApplicationFee =
       Number.isFinite(submittedFeeUsd) && submittedFeeUsd >= 0
@@ -2361,7 +2519,7 @@ export default function Apply() {
 
     function openApplicationFeeCheckoutFromConfirmation() {
       const recordId = String(submissionSummary?.submittedRecord?.id || submittedRecord?.id || '').trim()
-      if (!recordId.startsWith('rec') || feeConfirmBusy || appFeePaid) return
+      if ((!recordId.startsWith('rec') && !isInternalAxisApplicationId(recordId)) || feeConfirmBusy || appFeePaid) return
       const amt = inferredSubmittedApplicationFee
       if (!Number.isFinite(amt) || amt <= 0) return
       setEmbeddedCheckout({
@@ -2431,6 +2589,10 @@ export default function Apply() {
               )}
             </div>
           )}
+
+          {isSigner && internalAppIdForDocs ? (
+            <InternalApplicationDocumentsSection applicationId={internalAppIdForDocs} />
+          ) : null}
 
           {isSigner && submissionSummary?.groupApplicationId ? (
             <div className="mt-6 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">

@@ -13,12 +13,20 @@ import {
   mergePropertyAvailabilityRanges,
   rangesToThirtyMinuteSlotLabels,
 } from '../../../shared/manager-availability-merge.js'
+import { requireServiceClient } from '../lib/app-users-service.js'
+import { listManagerAvailabilityByPropertyId } from '../lib/manager-availability-service.js'
+import { mapDbManagerAvailabilityRowsToVirtualMaRecords } from '../lib/manager-availability-virtual-map.js'
+import { assertInternalTourSlotAllowed } from '../lib/internal-tour-booking.js'
+import { createScheduledEvent, buildInternalTourBookedSlotsByPropertyName } from '../lib/scheduled-events-service.js'
 
 const AIRTABLE_BASE_ID =
   process.env.VITE_AIRTABLE_BASE_ID || process.env.AIRTABLE_BASE_ID || 'appol57LKtMKaQ75T'
 const AIRTABLE_TOKEN = process.env.AIRTABLE_TOKEN || process.env.VITE_AIRTABLE_TOKEN
 const SCHEDULING_TABLE = schedulingAirtableTableName()
 const STATUS_BLOCKED_VALUES = new Set(['declined', 'rejected', 'cancelled', 'canceled'])
+
+const INTERNAL_PROPERTY_UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
 const FALLBACK_PROPERTIES = [
   { id: '4709a', name: '4709A 8th Ave NE', address: '4709A 8th Ave NE, Seattle, WA', rooms: ['Room 1', 'Room 2', 'Room 3', 'Room 4', 'Room 5', 'Room 6', 'Room 7', 'Room 8', 'Room 9', 'Room 10'] },
@@ -212,6 +220,30 @@ async function listAllManagerAvailabilityRecords() {
   return rows
 }
 
+function pad2(n) {
+  return String(n).padStart(2, '0')
+}
+
+/** Merge Airtable Scheduling tour labels with internal `scheduled_events` labels per date. */
+function mergeBookedSlotsByDate(airByDate = {}, intByDate = {}) {
+  const out = { ...airByDate }
+  for (const [dk, labels] of Object.entries(intByDate)) {
+    const merged = [...(out[dk] || []), ...(Array.isArray(labels) ? labels : [])]
+    const seen = new Set()
+    const list = []
+    for (const lab of merged) {
+      const s = String(lab || '').trim()
+      if (!s) continue
+      const key = s.toLowerCase()
+      if (seen.has(key)) continue
+      seen.add(key)
+      list.push(s)
+    }
+    out[dk] = list
+  }
+  return out
+}
+
 function buildBookedSlotsByPropertyDate(records) {
   const out = {}
   for (const record of records || []) {
@@ -384,6 +416,129 @@ function mapProperty(record, roomsByPropertyId) {
   }
 }
 
+function postgresTourAvailabilityText(notesText) {
+  const n = String(notesText || '')
+  return propertyTourAvailabilityFromFields({
+    Notes: n,
+    'Other Info': n,
+    'Tour Availability': '',
+    'Calendar Availability': '',
+  })
+}
+
+/**
+ * Active Postgres properties for public tour picker + slot grids (internal availability only).
+ * @param {any[]} schedulingRecords
+ */
+async function listInternalTourPropertiesForPublicGet(schedulingRecords) {
+  try {
+    const client = requireServiceClient()
+    const { data: props, error: pErr } = await client.from('properties').select('*').eq('active', true)
+    if (pErr || !Array.isArray(props) || !props.length) return []
+    const ids = props.map((p) => p.id).filter((x) => INTERNAL_PROPERTY_UUID_RE.test(String(x)))
+    if (!ids.length) return []
+
+    const { data: roomsData } = await client
+      .from('rooms')
+      .select('property_id, name')
+      .in('property_id', ids)
+      .eq('active', true)
+    const roomsByPid = new Map()
+    for (const row of roomsData || []) {
+      const pid = row.property_id
+      if (!roomsByPid.has(pid)) roomsByPid.set(pid, [])
+      const nm = String(row.name || '').trim()
+      if (nm) roomsByPid.get(pid).push(nm)
+    }
+
+    const { data: allMa } = await client
+      .from('manager_availability')
+      .select('*')
+      .in('property_id', ids)
+      .eq('active', true)
+    const maByPid = new Map()
+    for (const row of allMa || []) {
+      const pid = row.property_id
+      if (!maByPid.has(pid)) maByPid.set(pid, [])
+      maByPid.get(pid).push(row)
+    }
+
+    const mgrIds = [...new Set(props.map((p) => p.managed_by_app_user_id).filter(Boolean))]
+    let emailByMgr = new Map()
+    if (mgrIds.length) {
+      const { data: users } = await client.from('app_users').select('id, email').in('id', mgrIds)
+      emailByMgr = new Map((users || []).map((u) => [u.id, String(u.email || '').trim().toLowerCase()]))
+    }
+
+    const bookedSlotsByPropertyDate = buildBookedSlotsByPropertyDate(schedulingRecords)
+    const maCfg = buildManagerAvailabilityConfig(process.env)
+
+    const today = new Date()
+    today.setHours(0, 0, 0, 0)
+    const end = new Date(today)
+    end.setDate(end.getDate() + 56)
+    const fd = `${today.getFullYear()}-${pad2(today.getMonth() + 1)}-${pad2(today.getDate())}`
+    const td = `${end.getFullYear()}-${pad2(end.getMonth() + 1)}-${pad2(end.getDate())}`
+    let internalBookedMap = {}
+    try {
+      internalBookedMap = await buildInternalTourBookedSlotsByPropertyName(ids, fd, td)
+    } catch {
+      internalBookedMap = {}
+    }
+
+    return props
+      .map((p) => {
+        const name = String(p.name || '').trim()
+        if (!name) return null
+        const pid = String(p.id).trim()
+        const mgrEmail = emailByMgr.get(p.managed_by_app_user_id) || ''
+        const rawMa = maByPid.get(pid) || []
+        const virtualMa = mapDbManagerAvailabilityRowsToVirtualMaRecords(rawMa, {
+          propertyName: name,
+          propertyRecordId: pid,
+          managerEmail: mgrEmail,
+          managerRecordId: '',
+        })
+        const rlist = roomsByPid.get(pid) || []
+        const roomsList =
+          rlist.length > 0 ? rlist : Array.from({ length: Math.max(1, 6) }, (_, i) => `Room ${i + 1}`)
+        const availability = postgresTourAvailabilityText(p.notes)
+        const bookedAir = bookedSlotsByPropertyDate[name.toLowerCase()] || {}
+        const bookedInt = internalBookedMap[name.toLowerCase()] || {}
+        const booked = mergeBookedSlotsByDate(bookedAir, bookedInt)
+        const availabilitySlotsByDate = buildPropertySlotsByDate({
+          records: virtualMa,
+          config: maCfg,
+          propertyName: name,
+          propertyRecordId: pid,
+          managerEmail: mgrEmail,
+          managerRecordId: '',
+          legacyAvailabilityText: availability,
+          bookedSlotsByDate: booked,
+          daysAhead: 56,
+        })
+        return {
+          id: pid,
+          name,
+          address: [p.address_line1, p.address_line2, [p.city, p.state, p.zip].filter(Boolean).join(' ')]
+            .filter(Boolean)
+            .join(', '),
+          rooms: roomsList,
+          managerEmail: mgrEmail,
+          manager: '',
+          availability,
+          notes: '',
+          bookedSlotsByDate: booked,
+          availabilitySlotsByDate,
+        }
+      })
+      .filter(Boolean)
+  } catch (e) {
+    console.error('[tour] internal properties GET', e)
+    return []
+  }
+}
+
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*')
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
@@ -393,67 +548,97 @@ export default async function handler(req, res) {
   // ── GET: return properties ────────────────────────────────────────────────
   if (req.method === 'GET') {
     const fallback = { properties: [] }
-    if (!AIRTABLE_TOKEN) return res.status(200).json(fallback)
+    let schedulingRecords = []
     try {
-      const roomsTable = process.env.VITE_AIRTABLE_ROOMS_TABLE || 'Rooms'
-      const [propRes, roomsRes, schedulingRecords, maRecords] = await Promise.all([
-        fetch(`https://api.airtable.com/v0/${AIRTABLE_BASE_ID}/Properties`, {
-          headers: { Authorization: `Bearer ${AIRTABLE_TOKEN}` },
-        }),
-        fetch(`https://api.airtable.com/v0/${AIRTABLE_BASE_ID}/${encodeURIComponent(roomsTable)}`, {
-          headers: { Authorization: `Bearer ${AIRTABLE_TOKEN}` },
-        }),
-        listSchedulingRows(),
-        listAllManagerAvailabilityRecords(),
-      ])
-      if (!propRes.ok) return res.status(200).json(fallback)
-      const [propData, roomsData] = await Promise.all([propRes.json(), roomsRes.ok ? roomsRes.json() : Promise.resolve({ records: [] })])
-      const roomsByPropertyId = buildRoomsByPropertyId(roomsData.records || [])
-      const allRecords = propData.records || []
-      const approvedRecords = allRecords.filter(propertyRecordVisibleForPublic)
-      const bookedSlotsByPropertyDate = buildBookedSlotsByPropertyDate(schedulingRecords)
-      const maCfg = buildManagerAvailabilityConfig(process.env)
-      const properties = approvedRecords
-        .map((r) => mapProperty(r, roomsByPropertyId))
-        .filter(Boolean)
-        .map((property) => {
-          const booked =
-            bookedSlotsByPropertyDate[String(property.name || '').trim().toLowerCase()] || {}
-          const availabilitySlotsByDate = buildPropertySlotsByDate({
-            records: maRecords,
-            config: maCfg,
-            propertyName: property.name,
-            propertyRecordId: property.id,
-            managerEmail: property.managerEmail,
-            managerRecordId: '',
-            legacyAvailabilityText: property.availability,
-            bookedSlotsByDate: booked,
-            daysAhead: 56,
-          })
-          return {
-            ...property,
-            bookedSlotsByDate: booked,
-            availabilitySlotsByDate,
-          }
-        })
-      if (properties.length) return res.status(200).json({ properties })
-      // Empty table or no approved listings yet.
-      return res.status(200).json({ properties: [] })
+      schedulingRecords = await listSchedulingRows()
     } catch {
-      return res.status(200).json(fallback)
+      schedulingRecords = []
     }
+
+    const merged = []
+    if (AIRTABLE_TOKEN) {
+      try {
+        const roomsTable = process.env.VITE_AIRTABLE_ROOMS_TABLE || 'Rooms'
+        const [propRes, roomsRes, maRecords] = await Promise.all([
+          fetch(`https://api.airtable.com/v0/${AIRTABLE_BASE_ID}/Properties`, {
+            headers: { Authorization: `Bearer ${AIRTABLE_TOKEN}` },
+          }),
+          fetch(`https://api.airtable.com/v0/${AIRTABLE_BASE_ID}/${encodeURIComponent(roomsTable)}`, {
+            headers: { Authorization: `Bearer ${AIRTABLE_TOKEN}` },
+          }),
+          listAllManagerAvailabilityRecords(),
+        ])
+        if (propRes.ok) {
+          const [propData, roomsData] = await Promise.all([
+            propRes.json(),
+            roomsRes.ok ? roomsRes.json() : Promise.resolve({ records: [] }),
+          ])
+          const roomsByPropertyId = buildRoomsByPropertyId(roomsData.records || [])
+          const allRecords = propData.records || []
+          const approvedRecords = allRecords.filter(propertyRecordVisibleForPublic)
+          const bookedSlotsByPropertyDate = buildBookedSlotsByPropertyDate(schedulingRecords)
+          const maCfg = buildManagerAvailabilityConfig(process.env)
+          const properties = approvedRecords
+            .map((r) => mapProperty(r, roomsByPropertyId))
+            .filter(Boolean)
+            .map((property) => {
+              const booked =
+                bookedSlotsByPropertyDate[String(property.name || '').trim().toLowerCase()] || {}
+              const availabilitySlotsByDate = buildPropertySlotsByDate({
+                records: maRecords,
+                config: maCfg,
+                propertyName: property.name,
+                propertyRecordId: property.id,
+                managerEmail: property.managerEmail,
+                managerRecordId: '',
+                legacyAvailabilityText: property.availability,
+                bookedSlotsByDate: booked,
+                daysAhead: 56,
+              })
+              return {
+                ...property,
+                bookedSlotsByDate: booked,
+                availabilitySlotsByDate,
+              }
+            })
+          merged.push(...properties)
+        }
+      } catch {
+        /* Airtable optional during migration */
+      }
+    }
+
+    try {
+      const internal = await listInternalTourPropertiesForPublicGet(schedulingRecords)
+      merged.push(...internal)
+    } catch {
+      /* non-fatal */
+    }
+
+    if (merged.length) return res.status(200).json({ properties: merged })
+    return res.status(200).json(fallback)
   }
 
   // ── POST: schedule a tour ─────────────────────────────────────────────────
   if (req.method === 'POST') {
-    if (!AIRTABLE_TOKEN) {
-      return res.status(500).json({
-        error:
-          'Data API token is not configured on the server. Set AIRTABLE_TOKEN or VITE_AIRTABLE_TOKEN on Vercel (Project → Settings → Environment Variables) for Production and Preview.',
-      })
-    }
-
-    const { name, email, phone, type, property, room, tourFormat, manager, managerEmail, tourAvailability, preferredDate, preferredTime, notes } = req.body ?? {}
+    const {
+      name,
+      email,
+      phone,
+      type,
+      property,
+      propertyId,
+      room,
+      tourFormat,
+      manager,
+      managerEmail,
+      tourAvailability,
+      preferredDate,
+      preferredTime,
+      notes,
+      source: bookingSource,
+    } = req.body ?? {}
+    const bodyPropertyId = String(propertyId || req.body?.property_id || '').trim()
     if (!name || !email) return res.status(400).json({ error: 'Name and email are required.' })
 
     const rawType = String(type || '').trim().toLowerCase()
@@ -468,73 +653,116 @@ export default async function handler(req, res) {
             ? 'Issue'
             : 'Tour'
 
+    const internalTourOnly =
+      normalizedType === 'Tour' && INTERNAL_PROPERTY_UUID_RE.test(bodyPropertyId)
+
+    if (!internalTourOnly && !AIRTABLE_TOKEN) {
+      return res.status(500).json({
+        error:
+          'Data API token is not configured on the server. Set AIRTABLE_TOKEN or VITE_AIRTABLE_TOKEN on Vercel (Project → Settings → Environment Variables) for Production and Preview.',
+      })
+    }
+
     const preferredDateKey = normalizeDateKey(preferredDate)
     const preferredTimeLabel = normalizeRangeLabel(preferredTime)
     /** @type {any[]|null} Reused for conflict check to avoid a second Scheduling fetch for tours. */
     let tourSameDaySchedulingRows = null
+    /** @type {Awaited<ReturnType<typeof assertInternalTourSlotAllowed>> | null} */
+    let internalTourCtx = null
 
     if (normalizedType === 'Tour') {
-      if (!String(property || '').trim()) {
+      if (!String(property || bodyPropertyId).trim()) {
         return res.status(400).json({ error: 'Property is required for tour booking.' })
       }
       if (!preferredDateKey || !preferredTimeLabel) {
         return res.status(400).json({ error: 'Tour date and time are required.' })
       }
 
-      const propertiesRes = await fetch(`https://api.airtable.com/v0/${AIRTABLE_BASE_ID}/Properties`, {
-        headers: { Authorization: `Bearer ${AIRTABLE_TOKEN}` },
-      })
-      if (!propertiesRes.ok) {
-        return res.status(502).json({ error: 'Could not verify tour availability.' })
-      }
-      const propertiesData = await propertiesRes.json()
-      const records = Array.isArray(propertiesData.records) ? propertiesData.records : []
-      const propertyNameLower = String(property || '').trim().toLowerCase()
-      const propertyRecord = records.find((record) => {
-        if (!propertyRecordVisibleForPublic(record)) return false
-        const mappedName = pickPropertyName(record?.fields || {})
-        return String(mappedName || '').trim().toLowerCase() === propertyNameLower
-      })
-      if (!propertyRecord) {
-        return res.status(409).json({ error: 'This property is not available for tours right now.' })
-      }
-      const propertyAvailability = propertyTourAvailabilityFromFields(propertyRecord.fields)
-      const mapped = mapProperty(propertyRecord, new Map())
-      const propertyNameForFormula = String(property || '').trim().toLowerCase()
-      const formulaPartsTour = [`{Preferred Date} = "${preferredDateKey}"`]
-      if (propertyNameForFormula) {
-        formulaPartsTour.push(`LOWER({Property} & "") = "${propertyNameForFormula.replace(/"/g, '\\"')}"`)
-      }
-      const formulaTour = `AND(${formulaPartsTour.join(', ')})`
-      tourSameDaySchedulingRows = await listSchedulingRows(formulaTour)
-      const bookedTourLabels = []
-      for (const record of tourSameDaySchedulingRows || []) {
-        const row = record?.fields || {}
-        if (String(row.Type || '').trim().toLowerCase() !== 'tour') continue
-        if (!statusAllowsConflict(row.Status)) continue
-        const slot = normalizeRangeLabel(row['Preferred Time'])
-        if (slot) bookedTourLabels.push(slot)
-      }
-      const maCfg = buildManagerAvailabilityConfig(process.env)
-      const maRows = await listAllManagerAvailabilityRecords()
-      const mergedRanges = mergePropertyAvailabilityRanges({
-        records: maRows,
-        fieldsConfig: maCfg.fields,
-        dateKey: preferredDateKey,
-        propertyName: mapped?.name || String(property || ''),
-        propertyRecordId: propertyRecord.id,
-        managerEmail: mapped?.managerEmail || String(managerEmail || ''),
-        managerRecordId: '',
-        legacyAvailabilityText: propertyAvailability,
-        bookedSlotLabels: bookedTourLabels,
-      })
-      const mergedLabels = rangesToThirtyMinuteSlotLabels(mergedRanges)
-      const allowedLegacy = availabilitySlotsForDate(propertyAvailability, preferredDateKey)
-      const allowedSet = new Set(
-        [...mergedLabels, ...allowedLegacy].map((slot) => String(slot || '').trim().toLowerCase()),
-      )
-      if (!allowedSet.has(preferredTimeLabel.toLowerCase())) {
-        return res.status(409).json({ error: 'That tour slot is no longer available. Please choose another time.' })
+      if (internalTourOnly) {
+        try {
+          internalTourCtx = await assertInternalTourSlotAllowed({
+            propertyId: bodyPropertyId,
+            preferredDateKey,
+            preferredTimeLabel,
+          })
+        } catch (e) {
+          const code = /** @type {any} */ (e).statusCode || 500
+          return res.status(code).json({ error: e.message || 'Tour booking failed.' })
+        }
+        tourSameDaySchedulingRows = []
+      } else {
+        if (!AIRTABLE_TOKEN) {
+          return res.status(500).json({
+            error:
+              'Data API token is not configured on the server. Set AIRTABLE_TOKEN or VITE_AIRTABLE_TOKEN on Vercel (Project → Settings → Environment Variables) for Production and Preview.',
+          })
+        }
+
+        let propertyRecord = null
+        let mapped = null
+        let propertyAvailability = ''
+        let maRowsForAvailability = []
+        let mergePropertyRecordId = ''
+        let mergePropertyName = ''
+
+        const propertiesRes = await fetch(`https://api.airtable.com/v0/${AIRTABLE_BASE_ID}/Properties`, {
+          headers: { Authorization: `Bearer ${AIRTABLE_TOKEN}` },
+        })
+        if (!propertiesRes.ok) {
+          return res.status(502).json({ error: 'Could not verify tour availability.' })
+        }
+        const propertiesData = await propertiesRes.json()
+        const records = Array.isArray(propertiesData.records) ? propertiesData.records : []
+        const propertyNameLower = String(property || '').trim().toLowerCase()
+        propertyRecord = records.find((record) => {
+          if (!propertyRecordVisibleForPublic(record)) return false
+          const mappedName = pickPropertyName(record?.fields || {})
+          return String(mappedName || '').trim().toLowerCase() === propertyNameLower
+        })
+        if (!propertyRecord) {
+          return res.status(409).json({ error: 'This property is not available for tours right now.' })
+        }
+        propertyAvailability = propertyTourAvailabilityFromFields(propertyRecord.fields)
+        mapped = mapProperty(propertyRecord, new Map())
+        maRowsForAvailability = await listAllManagerAvailabilityRecords()
+        mergePropertyRecordId = propertyRecord.id
+        mergePropertyName = mapped?.name || String(property || '')
+
+        const propertyNameForFormula = String(mergePropertyName || property || '').trim().toLowerCase()
+        const formulaPartsTour = [`{Preferred Date} = "${preferredDateKey}"`]
+        if (propertyNameForFormula) {
+          formulaPartsTour.push(`LOWER({Property} & "") = "${propertyNameForFormula.replace(/"/g, '\\"')}"`)
+        }
+        const formulaTour = `AND(${formulaPartsTour.join(', ')})`
+        tourSameDaySchedulingRows = await listSchedulingRows(formulaTour)
+        const bookedTourLabels = []
+        for (const record of tourSameDaySchedulingRows || []) {
+          const row = record?.fields || {}
+          if (String(row.Type || '').trim().toLowerCase() !== 'tour') continue
+          if (!statusAllowsConflict(row.Status)) continue
+          const slot = normalizeRangeLabel(row['Preferred Time'])
+          if (slot) bookedTourLabels.push(slot)
+        }
+        const maCfg = buildManagerAvailabilityConfig(process.env)
+        const mergedRanges = mergePropertyAvailabilityRanges({
+          records: maRowsForAvailability,
+          fieldsConfig: maCfg.fields,
+          dateKey: preferredDateKey,
+          propertyName: mergePropertyName || String(property || ''),
+          propertyRecordId: mergePropertyRecordId,
+          managerEmail: mapped?.managerEmail || String(managerEmail || ''),
+          managerRecordId: '',
+          legacyAvailabilityText: propertyAvailability,
+          bookedSlotLabels: bookedTourLabels,
+        })
+        const mergedLabels = rangesToThirtyMinuteSlotLabels(mergedRanges)
+        const allowedLegacy = availabilitySlotsForDate(propertyAvailability, preferredDateKey)
+        const allowedSet = new Set(
+          [...mergedLabels, ...allowedLegacy].map((slot) => String(slot || '').trim().toLowerCase()),
+        )
+        if (!allowedSet.has(preferredTimeLabel.toLowerCase())) {
+          return res.status(409).json({ error: 'That tour slot is no longer available. Please choose another time.' })
+        }
       }
     }
 
@@ -566,7 +794,7 @@ export default async function handler(req, res) {
     }
 
     const conflictRange = parseTimeRangeToMinutes(preferredTimeLabel)
-    if (preferredDateKey && conflictRange) {
+    if (!internalTourOnly && preferredDateKey && conflictRange) {
       const propertyName = String(property || '').trim().toLowerCase()
       const managerEmailLower = String(managerEmail || '').trim().toLowerCase()
       const formulaParts = [`{Preferred Date} = "${preferredDateKey}"`]
@@ -598,6 +826,43 @@ export default async function handler(req, res) {
       }
     }
 
+    if (internalTourCtx) {
+      try {
+        const roomIdRaw = String(req.body?.room_id || req.body?.roomId || '').trim()
+        const noteText =
+          notes && String(notes).trim()
+            ? String(notes).trim()
+            : ''
+        const created = await createScheduledEvent({
+          eventType: 'tour',
+          propertyId: bodyPropertyId,
+          roomId: INTERNAL_PROPERTY_UUID_RE.test(roomIdRaw) ? roomIdRaw : null,
+          managerAppUserId: internalTourCtx.managerAppUserId,
+          guestName: String(name).trim(),
+          guestEmail: String(email).trim().toLowerCase(),
+          guestPhone: phone ? String(phone).trim() : null,
+          startAt: internalTourCtx.startIso,
+          endAt: internalTourCtx.endIso,
+          timezone: internalTourCtx.timezone,
+          preferredDate: preferredDateKey,
+          preferredTimeLabel: internalTourCtx.normalizedTimeLabel,
+          source: String(bookingSource || 'tour_api').trim().slice(0, 80) || 'tour_api',
+          notes: noteText || null,
+        })
+        return res.status(200).json({ id: created.id, scheduling: 'postgres' })
+      } catch (err) {
+        console.error('[tour] internal booking', err)
+        return res.status(502).json({ error: err?.message || 'Could not save booking.' })
+      }
+    }
+
+    if (!AIRTABLE_TOKEN) {
+      return res.status(500).json({
+        error:
+          'Data API token is not configured on the server. Set AIRTABLE_TOKEN or VITE_AIRTABLE_TOKEN on Vercel (Project → Settings → Environment Variables) for Production and Preview.',
+      })
+    }
+
     try {
       const data = await airtableCreateWithUnknownFieldRetry({
         baseId: AIRTABLE_BASE_ID,
@@ -605,7 +870,7 @@ export default async function handler(req, res) {
         tableName: SCHEDULING_TABLE,
         fields,
       })
-      return res.status(200).json({ id: data.id })
+      return res.status(200).json({ id: data.id, scheduling: 'airtable' })
     } catch (err) {
       console.error('[tour]', err)
       const msg = err?.message || 'Could not save booking request.'
