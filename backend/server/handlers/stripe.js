@@ -6,6 +6,7 @@
 
 import { randomUUID } from 'node:crypto'
 import { resolveExpectedApplicationFeeUsd } from '../lib/stripe-application-fee-usd.js'
+import { resolveStripeCardServiceFeeUsd, stripeCardServiceFeeLineLabel } from '../lib/stripe-card-service-fee-usd.js'
 
 const STRIPE_API = 'https://api.stripe.com/v1'
 
@@ -104,6 +105,20 @@ async function handleCheckout(req, res, secretKey) {
     ? normalizedItems
     : [{ name: description, description: `${propertyName || ''} ${unitNumber || ''}`.trim(), amount: amountNumber, quantity: 1 }]
 
+  const baseSubtotalUsd = hasItems
+    ? normalizedItems.reduce((sum, it) => sum + Number(it.amount || 0) * Number(it.quantity || 1), 0)
+    : amountNumber
+
+  const cardServiceFeeUsd = resolveStripeCardServiceFeeUsd(baseSubtotalUsd)
+  if (cardServiceFeeUsd > 0) {
+    lineItems.push({
+      name: stripeCardServiceFeeLineLabel(),
+      description: '',
+      amount: cardServiceFeeUsd,
+      quantity: 1,
+    })
+  }
+
   lineItems.forEach((item, index) => {
     form.append(`line_items[${index}][price_data][currency]`, 'usd')
     form.append(`line_items[${index}][price_data][product_data][name]`, item.name)
@@ -140,7 +155,17 @@ async function handleCheckout(req, res, secretKey) {
   } catch {
     return res.status(502).json({ error: 'Stripe returned an invalid checkout response.' })
   }
-  return res.status(200).json({ url: session.url, id: session.id, client_secret: session.client_secret })
+  const amountTotalUsd =
+    typeof session.amount_total === 'number' && session.amount_total > 0
+      ? Math.round(session.amount_total) / 100
+      : undefined
+
+  return res.status(200).json({
+    url: session.url,
+    id: session.id,
+    client_secret: session.client_secret,
+    ...(Number.isFinite(amountTotalUsd) ? { amountTotalUsd } : {}),
+  })
 }
 
 async function handlePortal(req, res, secretKey) {

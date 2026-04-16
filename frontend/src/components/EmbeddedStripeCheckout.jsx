@@ -72,11 +72,15 @@ export function EmbeddedStripeCheckout({ open, title, checkoutRequest, apiEndpoi
         if (!data.client_secret) throw new Error('Stripe did not return an embedded checkout client secret.')
 
         const checkoutSessionId = data.id ? String(data.id) : ''
+        const amountTotalUsd =
+          typeof data.amountTotalUsd === 'number' && Number.isFinite(data.amountTotalUsd) && data.amountTotalUsd > 0
+            ? data.amountTotalUsd
+            : undefined
 
         const embedded = await stripe.initEmbeddedCheckout({
           fetchClientSecret: async () => data.client_secret,
           onComplete: () => {
-            onCompleteRef.current?.({ sessionId: checkoutSessionId })
+            onCompleteRef.current?.({ sessionId: checkoutSessionId, amountTotalUsd })
           },
         })
 

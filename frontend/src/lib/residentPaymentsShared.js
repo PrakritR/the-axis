@@ -392,6 +392,7 @@ export async function finalizeResidentPaymentAfterStripeSuccess(
 ) {
   const {
     amount,
+    amountTotalUsd,
     category = 'rent',
     paymentRecordId,
     syntheticRowId,
@@ -404,6 +405,11 @@ export async function finalizeResidentPaymentAfterStripeSuccess(
 
   const amt = Math.round(Number(amount) * 100) / 100
   if (!resident?.id || !Number.isFinite(amt) || amt <= 0) return null
+
+  const paidTotal =
+    typeof amountTotalUsd === 'number' && Number.isFinite(amountTotalUsd) && amountTotalUsd > 0
+      ? Math.round(amountTotalUsd * 100) / 100
+      : amt
 
   const rid = String(resident.id).trim()
   const resName = String(resident.Name || '').trim()
@@ -418,7 +424,7 @@ export async function finalizeResidentPaymentAfterStripeSuccess(
     const fields = {
       Status: 'Paid',
       'Paid Date': todayIsoDate(),
-      'Amount Paid': amt,
+      'Amount Paid': paidTotal,
       Balance: 0,
     }
     if (stripeRef) fields['Stripe Payment ID'] = stripeRef
@@ -475,8 +481,8 @@ export async function finalizeResidentPaymentAfterStripeSuccess(
     'Resident Email': resEmail || undefined,
     'Property Name': prop || undefined,
     'Room Number': unit || undefined,
-    Amount: amt,
-    'Amount Paid': amt,
+    Amount: paidTotal,
+    'Amount Paid': paidTotal,
     Balance: 0,
     Status: 'Paid',
     'Paid Date': todayIsoDate(),

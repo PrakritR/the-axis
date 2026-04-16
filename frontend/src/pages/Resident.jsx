@@ -2566,7 +2566,15 @@ function PaymentsPanel({ resident, onResidentUpdated, highlightCategory, onPayme
     const pending = pendingStripeCheckoutRef.current
     pendingStripeCheckoutRef.current = null
     const checkoutPayload = pending
-      ? { ...pending, stripeCheckoutSessionId: String(detail?.sessionId || '').trim() || undefined }
+      ? {
+          ...pending,
+          stripeCheckoutSessionId: String(detail?.sessionId || '').trim() || undefined,
+          ...(typeof detail?.amountTotalUsd === 'number' &&
+          Number.isFinite(detail.amountTotalUsd) &&
+          detail.amountTotalUsd > 0
+            ? { amountTotalUsd: detail.amountTotalUsd }
+            : {}),
+        }
       : null
     setLoading(true)
     try {
