@@ -30,9 +30,11 @@ import stripe from '../backend/server/handlers/stripe.js'
 import meeting from '../backend/server/handlers/meeting.js'
 import tour from '../backend/server/handlers/tour.js'
 import syncAppUser from '../backend/server/handlers/sync-app-user.js'
+import adminProfiles from '../backend/server/handlers/admin-profiles.js'
 
 const routes = {
   'admin-portal-auth': adminPortalAuth,
+  'admin-profiles': adminProfiles,
   forms: formsGateway,
   portal: portalGateway,
   stripe,

@@ -4,24 +4,9 @@
  *
  * Headers: Authorization: Bearer <supabase access_token>
  */
-import { createClient } from '@supabase/supabase-js'
+import { authenticateSupabaseBearerRequest } from '../lib/supabase-bearer-auth.js'
 import { ensureAppUserByAuthId } from '../lib/app-users-service.js'
 import { getRolesForAppUserId } from '../lib/app-user-roles-service.js'
-
-function bearerToken(req) {
-  const h = req.headers?.authorization || req.headers?.Authorization
-  const raw = Array.isArray(h) ? h[0] : String(h || '')
-  const m = raw.match(/^Bearer\s+(.+)$/i)
-  return m ? m[1].trim() : ''
-}
-
-function resolveSupabaseUrl() {
-  return String(process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || '').trim()
-}
-
-function resolveSupabaseAnonKey() {
-  return String(process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY || '').trim()
-}
 
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*')
@@ -35,27 +20,12 @@ export default async function handler(req, res) {
     return res.status(405).json({ error: 'Method not allowed' })
   }
 
-  const token = bearerToken(req)
-  if (!token) {
-    return res.status(401).json({ error: 'Missing Authorization Bearer token.' })
+  const auth = await authenticateSupabaseBearerRequest(req)
+  if (!auth.ok) {
+    return res.status(auth.status).json({ error: auth.error })
   }
 
-  const url = resolveSupabaseUrl()
-  const anonKey = resolveSupabaseAnonKey()
-  if (!url || !anonKey) {
-    return res.status(503).json({ error: 'Supabase URL/anon key is not configured on the server.' })
-  }
-
-  const sb = createClient(url, anonKey, {
-    auth: { persistSession: false, autoRefreshToken: false },
-  })
-
-  const { data: userData, error: userErr } = await sb.auth.getUser(token)
-  if (userErr || !userData?.user) {
-    return res.status(401).json({ error: userErr?.message || 'Invalid or expired session.' })
-  }
-
-  const user = userData.user
+  const user = auth.user
   const email = String(user.email || '').trim().toLowerCase()
   if (!email) {
     return res.status(400).json({ error: 'Authenticated user has no email.' })

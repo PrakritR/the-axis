@@ -70,4 +70,5 @@ create policy "residents_own_messages" on work_order_messages
 -- Or: ADMIN_SEED_EMAIL=... npm run seed:admin-role
 
 -- admin_profiles: see supabase/migrations/20260416120200_create_admin_profiles.sql
--- (app_user_id -> app_users.id, unique app_user_id; helpers in backend/server/lib/admin-profiles-service.js)
+-- (app_user_id -> app_users.id, unique app_user_id; backend/server/lib/admin-profiles-service.js)
+-- HTTP: GET|POST|PATCH /api/admin-profiles (Bearer JWT, admin role, service-role writes) — backend/server/handlers/admin-profiles.js
