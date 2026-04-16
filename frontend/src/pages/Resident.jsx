@@ -57,6 +57,8 @@ import {
   fetchInboxThreadStateMap,
   portalInboxAirtableConfigured,
   portalInboxThreadKeyFromRecord,
+  getAnnouncements,
+  announcementMatchesResident,
 } from '../lib/airtable'
 import { supabase } from '../lib/supabase'
 import {
@@ -1232,6 +1234,7 @@ export function ResidentAuthForm({ onLogin, footer = null, variant = 'default' }
 function WorkOrdersPanel({
   resident,
   requests: requestsProp,
+  listError = '',
   onRequestCreated,
   onWorkOrderUpdated,
   onRefresh,
@@ -1374,6 +1377,16 @@ function WorkOrdersPanel({
           </button>
         ) : null}
       </div>
+
+      {listError ? (
+        <div
+          role="alert"
+          className="mb-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950"
+        >
+          <div className="font-semibold text-amber-900">Unable to load work orders</div>
+          <p className="mt-1 text-amber-900/90">{listError}</p>
+        </div>
+      ) : null}
 
       <div className="mb-5 grid gap-2 rounded-[28px] border border-slate-200 bg-slate-50 p-2 sm:grid-cols-2 xl:grid-cols-3">
         {[
@@ -4162,6 +4175,9 @@ function ResidentDashboardHome({
   applicationRejected,
   portalFeaturesLocked,
   inboxUnopenedCount,
+  residentAnnouncements,
+  residentAnnouncementsLoading,
+  residentAnnouncementsError,
 }) {
   const snapshot = useMemo(() => buildResidentRentSnapshot(payments, resident), [payments, resident])
   const duePaymentLines = useMemo(() => listDashboardDuePaymentLines(payments), [payments])
@@ -4271,6 +4287,44 @@ function ResidentDashboardHome({
             Payments, work orders, leasing, and inbox are disabled for this account.
           </p>
         </div>
+      ) : null}
+
+      {!lock ? (
+        <section
+          className="rounded-2xl border border-slate-200 bg-white px-5 py-4 shadow-sm"
+          aria-busy={residentAnnouncementsLoading || undefined}
+        >
+          <h3 className="text-[10px] font-bold uppercase tracking-[0.14em] text-slate-500">Announcements</h3>
+          {residentAnnouncementsLoading ? (
+            <p className="mt-3 text-sm text-slate-500">Loading announcements…</p>
+          ) : null}
+          {!residentAnnouncementsLoading && residentAnnouncementsError ? (
+            <p className="mt-3 text-sm text-red-700" role="alert">
+              {residentAnnouncementsError}
+            </p>
+          ) : null}
+          {!residentAnnouncementsLoading && !residentAnnouncementsError && (!residentAnnouncements || residentAnnouncements.length === 0) ? (
+            <p className="mt-3 text-sm text-slate-500">No announcements right now.</p>
+          ) : null}
+          {!residentAnnouncementsLoading && !residentAnnouncementsError && residentAnnouncements?.length > 0 ? (
+            <ul className="mt-3 space-y-3">
+              {residentAnnouncements.map((row) => (
+                <li key={row.id} className="rounded-xl border border-slate-100 bg-slate-50/90 px-4 py-3">
+                  <div className="flex flex-wrap items-start justify-between gap-2">
+                    <p className="text-sm font-bold text-slate-900">{row.Title}</p>
+                    {row.Pinned ? (
+                      <span className="shrink-0 rounded-full bg-[#2563eb]/10 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-[#1d4ed8]">
+                        Pinned
+                      </span>
+                    ) : null}
+                  </div>
+                  {row['Short Summary'] ? <p className="mt-1 text-xs text-slate-600">{row['Short Summary']}</p> : null}
+                  <p className="mt-2 whitespace-pre-wrap text-sm leading-relaxed text-slate-700">{row.Message || row.Body}</p>
+                </li>
+              ))}
+            </ul>
+          ) : null}
+        </section>
       ) : null}
 
       {/* Metric cards — Lease → Payments → Work orders → Your home */}
@@ -4486,12 +4540,16 @@ function Dashboard({ resident, onResidentUpdated, onSignOut }) {
   useEffect(() => { window.location.hash = tab }, [tab])
   const [paymentFocus, setPaymentFocus] = useState('')
   const [requests, setRequests] = useState([])
+  const [workOrdersError, setWorkOrdersError] = useState('')
   const [payments, setPayments] = useState([])
   const [approvedLease, setApprovedLease] = useState(null)
   const [loading, setLoading] = useState(true)
   const [inboxUnopenedCount, setInboxUnopenedCount] = useState(0)
   /** Postgres + JWT bundle (GET /api/portal?action=resident-context); null when no Supabase session. */
   const [internalContext, setInternalContext] = useState(null)
+  const [residentAnnouncements, setResidentAnnouncements] = useState([])
+  const [residentAnnouncementsLoading, setResidentAnnouncementsLoading] = useState(false)
+  const [residentAnnouncementsError, setResidentAnnouncementsError] = useState('')
 
   const visibleWorkOrders = useMemo(
     () => requests.filter((r) => !isWorkOrderHiddenFromResidentList(r)),
@@ -4518,13 +4576,21 @@ function Dashboard({ resident, onResidentUpdated, onSignOut }) {
 
   const loadData = useCallback(async () => {
     setLoading(true)
+    setWorkOrdersError('')
     try {
-      const [nextRequests, nextPayments, lease] = await Promise.all([
-        getWorkOrdersForResident(resident).catch(() => []),
+      let nextRequests = []
+      try {
+        nextRequests = await getWorkOrdersForResident(resident)
+      } catch (woErr) {
+        console.error('[Resident] getWorkOrdersForResident', woErr)
+        setWorkOrdersError(String(woErr?.message || '').trim() || 'Could not load work orders. Try again in a moment.')
+        nextRequests = []
+      }
+      const [nextPayments, lease] = await Promise.all([
         getPaymentsForResident(resident).catch(() => []),
         getApprovedLeaseForResident(resident.id, resident.Email || '').catch(() => null),
       ])
-      setRequests(nextRequests)
+      setRequests(Array.isArray(nextRequests) ? nextRequests : [])
       setPayments(Array.isArray(nextPayments) ? nextPayments : [])
       setApprovedLease(lease)
 
@@ -4554,8 +4620,14 @@ function Dashboard({ resident, onResidentUpdated, onSignOut }) {
   }, [resident])
 
   const refreshWorkOrdersOnly = useCallback(async () => {
-    const nextRequests = await getWorkOrdersForResident(resident).catch(() => [])
-    setRequests(nextRequests)
+    setWorkOrdersError('')
+    try {
+      const nextRequests = await getWorkOrdersForResident(resident)
+      setRequests(Array.isArray(nextRequests) ? nextRequests : [])
+    } catch (woErr) {
+      console.error('[Resident] refreshWorkOrdersOnly', woErr)
+      setWorkOrdersError(String(woErr?.message || '').trim() || 'Could not refresh work orders.')
+    }
   }, [resident])
 
   useEffect(() => {
@@ -4632,6 +4704,45 @@ function Dashboard({ resident, onResidentUpdated, onSignOut }) {
   )
   const applicationUnlocked = accessState === 'approved'
   const isRejected = accessState === 'rejected'
+
+  useEffect(() => {
+    if (!applicationUnlocked) {
+      setResidentAnnouncements([])
+      setResidentAnnouncementsLoading(false)
+      setResidentAnnouncementsError('')
+      return
+    }
+    let cancelled = false
+    ;(async () => {
+      setResidentAnnouncementsLoading(true)
+      setResidentAnnouncementsError('')
+      try {
+        const { data: sess } = await supabase.auth.getSession()
+        if (!sess?.session?.access_token) {
+          if (!cancelled) {
+            setResidentAnnouncements([])
+            setResidentAnnouncementsLoading(false)
+          }
+          return
+        }
+        const all = await getAnnouncements()
+        const filtered = (Array.isArray(all) ? all : []).filter((a) => announcementMatchesResident(a, resident))
+        if (!cancelled) {
+          setResidentAnnouncements(filtered)
+          setResidentAnnouncementsLoading(false)
+        }
+      } catch (e) {
+        if (!cancelled) {
+          setResidentAnnouncements([])
+          setResidentAnnouncementsError(String(e?.message || '').trim() || 'Could not load announcements.')
+          setResidentAnnouncementsLoading(false)
+        }
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [resident, applicationUnlocked])
 
   useEffect(() => {
     const email = String(resident?.Email || '').trim()
@@ -4723,6 +4834,9 @@ function Dashboard({ resident, onResidentUpdated, onSignOut }) {
             applicationRejected={isRejected}
             portalFeaturesLocked={!applicationUnlocked}
             inboxUnopenedCount={inboxUnopenedCount}
+            residentAnnouncements={residentAnnouncements}
+            residentAnnouncementsLoading={residentAnnouncementsLoading}
+            residentAnnouncementsError={residentAnnouncementsError}
           />
         ) : null}
         {!loading && tab === 'workorders' ? (
@@ -4731,6 +4845,7 @@ function Dashboard({ resident, onResidentUpdated, onSignOut }) {
               <WorkOrdersPanel
                 resident={resident}
                 requests={visibleWorkOrders}
+                listError={workOrdersError}
                 onRequestCreated={loadData}
                 onWorkOrderUpdated={loadData}
                 onRefresh={refreshWorkOrdersOnly}

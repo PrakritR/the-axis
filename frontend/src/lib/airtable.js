@@ -12,9 +12,36 @@ import {
 export { leaseVersionDisplayUploadTime } from '../../../shared/lease-version-airtable-uploader-fields.js'
 import { mergeAxisListingMetaIntoOtherInfo, parseAxisListingMetaBlock } from './axisListingMeta.js'
 import { supabase } from './supabase'
+import {
+  appendWorkOrderUpdateFromResidentSupabase,
+  createWorkOrderSupabase,
+  deleteWorkOrderForResidentSupabase,
+  getAllWorkOrdersSupabase,
+  getWorkOrderByIdSupabase,
+  getWorkOrdersForResidentSupabase,
+  updateWorkOrderStatusSupabase,
+  updateWorkOrderSupabase,
+} from './workOrdersSupabase.js'
 import { getConfiguredPropertyPhotosFieldName } from './propertyListingPhotos.js'
-import { workOrderPhotoAttachmentFieldNamesOrdered } from './workOrderShared.js'
 import { uploadPropertyImageInternal, publicUrlForPropertyImage } from './internalFileStorage.js'
+import { ANNOUNCEMENT_SUBMITTER_TOKEN_PREFIX, buildAnnouncementTargetField } from './announcementAudienceShared.js'
+import {
+  getAnnouncementsSupabase,
+  getAllAnnouncementsAdminSupabase,
+  createAnnouncementSupabase,
+  updateAnnouncementSupabase,
+  deleteAnnouncementSupabase,
+} from './announcementsSupabase.js'
+
+export {
+  ANNOUNCEMENT_SUBMITTER_TOKEN_PREFIX,
+  announcementAudienceDisplayText,
+  announcementResidentTargetTokens,
+  parseAnnouncementSubmitterEmail,
+  buildAnnouncementTargetField,
+  isAnnouncementPending,
+  announcementMatchesResident,
+} from './announcementAudienceShared.js'
 
 /** Postgres-backed entity id (properties, rooms, applications, …) — not an Airtable `rec…` record. */
 const INTERNAL_AXIS_UUID_RE =
@@ -153,12 +180,10 @@ function airtableComputedOrReadOnlyFieldFromErrorMessage(message) {
 }
 
 const TABLES = {
-  workOrders: 'Work Orders',
   messages: 'Messages',
   residents: 'Resident Profile',
   /** Airtable table name (was "Managers" in older bases). */
   managers: 'Manager Profile',
-  announcements: 'Announcements',
   properties: 'Properties',
   rooms: 'Rooms',
   websiteSettings: 'Website Settings',
@@ -471,102 +496,8 @@ export async function getApplicationById(applicationId) {
   }
 }
 
-/** Embedded in Announcements.Target to attribute pending rows; stripped for resident matching. */
-export const ANNOUNCEMENT_SUBMITTER_TOKEN_PREFIX = '__axis_submitter__:'
-
-function splitAnnouncementTargetSegments(raw) {
-  if (raw == null || raw === '') return []
-  if (Array.isArray(raw)) {
-    return raw.flatMap((x) => splitAnnouncementTargetSegments(x))
-  }
-  return String(raw)
-    .split(/[\n,;|]+/)
-    .map((t) => String(t).trim())
-    .filter(Boolean)
-}
-
-/** Human-readable audience string (hides internal submitter token). */
-export function announcementAudienceDisplayText(record) {
-  const pre = ANNOUNCEMENT_SUBMITTER_TOKEN_PREFIX.toLowerCase()
-  const parts = splitAnnouncementTargetSegments(record?.Target ?? record?.['Target Scope'] ?? '')
-  const vis = parts.filter((s) => !String(s).trim().toLowerCase().startsWith(pre))
-  return vis.length ? vis.join(', ') : 'All Properties'
-}
-
-/** Tokens used for resident targeting (excludes internal submitter marker). */
-export function announcementResidentTargetTokens(recordOrTarget) {
-  const raw =
-    typeof recordOrTarget === 'string' || Array.isArray(recordOrTarget)
-      ? recordOrTarget
-      : recordOrTarget?.Target ?? recordOrTarget?.['Target Scope'] ?? ''
-  const pre = ANNOUNCEMENT_SUBMITTER_TOKEN_PREFIX.toLowerCase()
-  return splitAnnouncementTargetSegments(raw)
-    .map((t) => String(t).trim().toLowerCase())
-    .filter((t) => t && !t.startsWith(pre))
-}
-
-export function parseAnnouncementSubmitterEmail(record) {
-  const raw = record?.Target ?? record?.['Target Scope'] ?? ''
-  const pre = ANNOUNCEMENT_SUBMITTER_TOKEN_PREFIX
-  for (const seg of splitAnnouncementTargetSegments(raw)) {
-    const s = String(seg).trim()
-    if (s.toLowerCase().startsWith(pre.toLowerCase())) {
-      return s.slice(pre.length).trim().toLowerCase()
-    }
-  }
-  return ''
-}
-
-export function buildAnnouncementTargetField({ audienceText, submitterEmail, embedSubmitter }) {
-  const base = String(audienceText || '').trim() || 'All Properties'
-  if (!embedSubmitter) return base
-  const em = String(submitterEmail || '')
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9@._+-]+/g, '_')
-  if (!em.includes('@')) return base
-  const tok = `${ANNOUNCEMENT_SUBMITTER_TOKEN_PREFIX}${em}`
-  if (base.toLowerCase().includes(tok.toLowerCase())) return base
-  return `${base}, ${tok}`
-}
-
-export function isAnnouncementPending(record) {
-  if (!record) return false
-  const s = record.Show
-  return s !== true && s !== 1 && s !== '1'
-}
-
 export async function getAnnouncements() {
-  const data = await request(buildUrl(TABLES.announcements, {
-    filterByFormula: '{Show} = TRUE()',
-  }))
-
-  const items = (data.records || []).map((record) => {
-    const a = mapRecord(record)
-    // Target can be an array (multi-select) or a string — normalise to array of lowercase tokens
-    const rawTarget = Array.isArray(a.Target) ? a.Target : String(a.Target || a['Target Scope'] || '').split(/[\n,;]+/)
-    const pre = ANNOUNCEMENT_SUBMITTER_TOKEN_PREFIX.toLowerCase()
-    const targetTokens = rawTarget
-      .map((t) => String(t).trim().toLowerCase())
-      .filter((t) => t && !t.startsWith(pre))
-    return {
-      ...a,
-      Message: a.Message || a.Body || '',
-      'Short Summary': a['Short Summary'] || '',
-      Target: targetTokens,
-      CreatedAt: a['Created At'] || a.created_at,
-    }
-  })
-
-  // Pinned first, then newest first
-  items.sort((a, b) => {
-    const pinnedDiff = Number(Boolean(b.Pinned)) - Number(Boolean(a.Pinned))
-    if (pinnedDiff !== 0) return pinnedDiff
-    return new Date(b['Start Date'] || b['Date Posted'] || b.CreatedAt || b.created_at) -
-           new Date(a['Start Date'] || a['Date Posted'] || a.CreatedAt || a.created_at)
-  })
-
-  return items
+  return getAnnouncementsSupabase()
 }
 
 /** Strips internal portal tag from work order description for display. */
@@ -707,75 +638,12 @@ export function workOrderLinkedApplicationRecordIds(recordOrRaw) {
 }
 
 export async function getWorkOrdersForResident(resident) {
-  // Airtable formulas can't filter by linked-record ID (ARRAYJOIN returns display names, not IDs).
-  // The only reliable approach is to fetch all work orders and filter client-side using the actual
-  // linked-record ID arrays that Airtable returns in record.fields.
-
-  const residentId = String(resident?.id || '').trim()
-  const emailRaw = String(resident?.Email || '').trim().toLowerCase()
-  const portalTag = emailRaw ? `portal_submitter_email:${emailRaw}` : ''
-
-  const allRecords = []
-  let offset = null
-  do {
-    const params = {}
-    if (offset) params.offset = offset
-    const data = await request(buildUrl(TABLES.workOrders, params))
-    ;(data.records || []).forEach((r) => allRecords.push(r))
-    offset = data.offset || null
-  } while (offset)
-
-  const matched = allRecords.filter((record) => {
-    const fields = record.fields || {}
-
-    // 1. Check linked-record fields — these contain actual record ID arrays in the API response
-    if (residentId && workOrderLinkedResidentRecordIds(record).includes(residentId)) return true
-
-    // 2. Check the plain-text Resident Email field we now write on creation
-    if (emailRaw) {
-      const emailField = String(fields['Resident Email'] || '').trim().toLowerCase()
-      if (emailField && emailField === emailRaw) return true
-
-      // 3. Check any configured submitter email field
-      if (WORK_ORDER_SUBMITTER_EMAIL_FIELD) {
-        const se = String(fields[WORK_ORDER_SUBMITTER_EMAIL_FIELD] || '').trim().toLowerCase()
-        if (se && se === emailRaw) return true
-      }
-
-      // 4. Check portal-tag in description (legacy fallback)
-      if (portalTag) {
-        const desc = String(fields.Description || '').toLowerCase()
-        if (desc.includes(portalTag)) return true
-      }
-    }
-
-    return false
-  })
-
-  return matched
-    .map(mapRecord)
-    .sort((a, b) => new Date(b['Date Submitted'] || b.created_at) - new Date(a['Date Submitted'] || a.created_at))
+  return getWorkOrdersForResidentSupabase(resident)
 }
 
 /** Delete a Work Orders row only if it belongs to the signed-in resident. */
 export async function deleteWorkOrderForResident(workOrderId, resident) {
-  const id = String(workOrderId || '').trim()
-  if (!/^rec[a-zA-Z0-9]{14,}$/.test(id)) throw new Error('Invalid work order ID.')
-  const residentWorkOrders = await getWorkOrdersForResident(resident)
-  const owned = residentWorkOrders.some((wo) => String(wo.id || '').trim() === id)
-  if (!owned) {
-    throw new Error('You can only delete your own work orders.')
-  }
-  const wo = residentWorkOrders.find((w) => String(w.id || '').trim() === id)
-  if (wo) {
-    try {
-      const { cleanupPaymentsWhenWorkOrderDeleted } = await import('./roomCleaningWorkOrder.js')
-      await cleanupPaymentsWhenWorkOrderDeleted(wo, resident)
-    } catch (e) {
-      console.warn('[deleteWorkOrderForResident] linked payment cleanup failed', e?.message || e)
-    }
-  }
-  await request(`${tableUrl(TABLES.workOrders)}/${id}`, { method: 'DELETE' })
+  return deleteWorkOrderForResidentSupabase(workOrderId, resident)
 }
 
 async function uploadAttachmentToRecord(table, recordId, fieldName, file) {
@@ -871,231 +739,8 @@ async function patchLeaseVersionFinalizeFields({ recordId, corePatch, uploaderMe
   }
 }
 
-/**
- * Fields on Work Orders that link back to the application (optional on many bases).
- * Returns `{ fields, optionalKeys }` so createWorkOrder can strip keys Airtable rejects (UNKNOWN_FIELD_NAME).
- */
-function workOrderApplicationFieldsFromResident(resident) {
-  const out = {}
-  if (!resident) return { fields: out, optionalKeys: [] }
-
-  const idField = WORK_ORDER_APPLICATION_ID_FIELD
-  if (idField) {
-    const aid = resident['Application ID']
-    if (aid != null && String(aid).trim() !== '') {
-      const n = Number(aid)
-      if (Number.isFinite(n) && String(aid).trim() === String(n)) out[idField] = n
-      else out[idField] = String(aid).trim()
-    }
-  }
-
-  const linkField = WORK_ORDER_APPLICATION_LINK_FIELD
-  if (linkField) {
-    const app = resident.Application
-    if (Array.isArray(app) && app.length && String(app[0]).trim().startsWith('rec')) {
-      out[linkField] = [String(app[0]).trim()]
-    } else if (typeof app === 'string' && app.trim().startsWith('rec')) {
-      out[linkField] = [app.trim()]
-    }
-  }
-
-  return { fields: out, optionalKeys: Object.keys(out) }
-}
-
-export async function createWorkOrder({
-  resident,
-  title,
-  category,
-  urgency,
-  description,
-  preferredEntry,
-  preferredTimeWindow = '',
-  photoFile = null,
-}) {
-  const usePlaceholderResident = Boolean(WORK_ORDER_RESIDENT_PLACEHOLDER_ID)
-  const residentLinkId = usePlaceholderResident ? WORK_ORDER_RESIDENT_PLACEHOLDER_ID : resident?.id
-  if (!residentLinkId) {
-    throw new Error('Resident profile ID is missing. Please reload the page and try again.')
-  }
-  const airtablePriority = urgency === 'Emergency' ? 'Urgent' : urgency
-  let normalizedDescription = urgency === 'Emergency'
-    ? `Resident marked this request as Emergency.\n\n${description}`
-    : description
-  if (
-    usePlaceholderResident &&
-    (!WORK_ORDER_SUBMITTER_EMAIL_FIELD || !String(resident?.Email || '').trim())
-  ) {
-    const tag = workOrderPortalSubmitterDescriptionTag(resident?.Email)
-    if (tag) normalizedDescription = tag + normalizedDescription
-  }
-
-  const envLinkField = String(import.meta.env.VITE_AIRTABLE_WORK_ORDER_RESIDENT_LINK_FIELD ?? '').trim()
-  const linkFieldCandidates = envLinkField
-    ? [envLinkField]
-    : [...new Set([WORK_ORDER_RESIDENT_PROFILE_LINK_FIELD, ...WORK_ORDER_RESIDENT_LINK_FIELD_FALLBACKS])]
-
-  const { fields: appFields, optionalKeys: workOrderOptionalApplicationKeys } = usePlaceholderResident
-    ? { fields: {}, optionalKeys: [] }
-    : workOrderApplicationFieldsFromResident(resident)
-
-  // Attach resident's house/property link and plain-text metadata (optional — stripped on UNKNOWN_FIELD_NAME)
-  const houseOptionalFields = {}
-  const houseOptionalKeys = []
-
-  const preferredTime = String(preferredTimeWindow || '').trim()
-  if (preferredTime) {
-    houseOptionalFields['Preferred Time Window'] = preferredTime
-    houseOptionalKeys.push('Preferred Time Window')
-  }
-
-  // Plain-text email field so getWorkOrdersForResident can match by email
-  const residentEmail = String(resident?.Email || '').trim()
-  if (residentEmail) {
-    houseOptionalFields['Resident Email'] = residentEmail
-    houseOptionalKeys.push('Resident Email')
-  }
-
-  // Plain-text property name so manager portal workOrderInScope() can match by name.
-  // Always copy explicit "Property Name" even when Property is a linked-record array (previous bug skipped it).
-  const explicitPropertyName = String(resident?.['Property Name'] || '').trim()
-  const propertyFromLinked = (() => {
-    for (const key of ['Property', 'House', 'Properties']) {
-      const v = resident?.[key]
-      if (Array.isArray(v) && v.length) continue
-      const s = String(v || '').trim()
-      if (s && !s.startsWith('rec')) return s
-    }
-    return ''
-  })()
-  const propertyNameText = explicitPropertyName || propertyFromLinked
-  if (propertyNameText) {
-    houseOptionalFields['Property Name'] = propertyNameText
-    houseOptionalKeys.push('Property Name')
-  }
-
-  /** First linked Properties record id on the resident profile (House or Property). */
-  let propertyRecordId = ''
-  for (const key of ['House', 'Property', 'Properties']) {
-    const v = resident?.[key]
-    if (Array.isArray(v) && v.length && String(v[0]).trim().startsWith('rec')) {
-      propertyRecordId = String(v[0]).trim()
-      break
-    }
-  }
-
-  const propertyLinkCandidates = WORK_ORDER_PROPERTY_LINK_FIELD
-    ? [WORK_ORDER_PROPERTY_LINK_FIELD]
-    : WORK_ORDER_PROPERTY_LINK_FIELD_FALLBACKS
-  if (propertyRecordId && propertyLinkCandidates.length) {
-    houseOptionalFields[propertyLinkCandidates[0]] = [propertyRecordId]
-    houseOptionalKeys.push(propertyLinkCandidates[0])
-  }
-
-  let lastError = null
-  outer: for (let i = 0; i < linkFieldCandidates.length; i++) {
-    const linkField = linkFieldCandidates[i]
-    let fields = {
-      Title: title,
-      Description: normalizedDescription,
-      Category: category,
-      Priority: airtablePriority,
-      Status: 'Open',
-      'Preferred Entry Time': preferredEntry,
-      [linkField]: [residentLinkId],
-      ...houseOptionalFields,
-      ...appFields,
-    }
-    if (usePlaceholderResident && WORK_ORDER_SUBMITTER_EMAIL_FIELD && String(resident?.Email || '').trim()) {
-      fields[WORK_ORDER_SUBMITTER_EMAIL_FIELD] = String(resident.Email).trim()
-    }
-
-    for (let strip = 0; strip < 10; strip += 1) {
-      const allOptionalKeys = [...houseOptionalKeys, ...workOrderOptionalApplicationKeys]
-      try {
-        const data = await request(tableUrl(TABLES.workOrders), {
-          method: 'POST',
-          body: JSON.stringify({ fields, typecast: true }),
-        })
-        const record = mapRecord(data)
-
-        if (photoFile) {
-          const photoFieldCandidates = workOrderPhotoAttachmentFieldNamesOrdered()
-          let uploaded = false
-          for (const fieldName of photoFieldCandidates) {
-            try {
-              await uploadAttachmentToRecord(TABLES.workOrders, record.id, fieldName, photoFile)
-              uploaded = true
-              break
-            } catch (err) {
-              if (!isUnknownAttachmentFieldError(err?.message)) {
-                console.warn(`Photo upload failed on field "${fieldName}" (work order was still created):`, err.message)
-                break
-              }
-            }
-          }
-          if (!uploaded) {
-            console.warn('Photo upload failed: no matching attachment field on Work Orders (tried Photo, Photos, …).')
-          }
-        }
-
-        return record
-      } catch (err) {
-        lastError = err
-        const unknown = airtableUnknownFieldNameFromErrorMessage(err?.message)
-
-        if (
-          propertyRecordId &&
-          unknown &&
-          propertyLinkCandidates.includes(unknown) &&
-          Object.prototype.hasOwnProperty.call(fields, unknown)
-        ) {
-          const idx = propertyLinkCandidates.indexOf(unknown)
-          if (idx >= 0 && idx < propertyLinkCandidates.length - 1) {
-            const nextField = propertyLinkCandidates[idx + 1]
-            const next = { ...fields }
-            delete next[unknown]
-            next[nextField] = [propertyRecordId]
-            fields = next
-            if (!houseOptionalKeys.includes(nextField)) houseOptionalKeys.push(nextField)
-            console.warn(
-              `[createWorkOrder] Work Orders has no field "${unknown}" — using "${nextField}" for property link.`,
-            )
-            continue
-          }
-        }
-
-        if (
-          unknown &&
-          allOptionalKeys.includes(unknown) &&
-          Object.prototype.hasOwnProperty.call(fields, unknown)
-        ) {
-          const next = { ...fields }
-          delete next[unknown]
-          fields = next
-          console.warn(
-            `[createWorkOrder] Work Orders table has no field "${unknown}" — omitting and retrying (set VITE_AIRTABLE_WORK_ORDER_APPLICATION_ID_FIELD / _LINK_FIELD or "none" in .env to silence).`,
-          )
-          continue
-        }
-
-        if (unknown === 'Status' && fields.Status === 'Open') {
-          fields = { ...fields, Status: 'Submitted' }
-          console.warn('[createWorkOrder] Status "Open" not in Airtable — using "Submitted" (shown as Open in portal).')
-          continue
-        }
-
-        const isWrongResidentField = unknown && unknown === linkField
-        const canRetryLink = isWrongResidentField && i < linkFieldCandidates.length - 1
-        if (canRetryLink) {
-          console.warn(`[createWorkOrder] Retrying: Airtable has no field "${linkField}", trying next resident link field…`)
-          continue outer
-        }
-        throw err
-      }
-    }
-  }
-
-  throw lastError || new Error('Could not create work order.')
+export async function createWorkOrder(args) {
+  return createWorkOrderSupabase(args)
 }
 
 function messageFieldNameConfigured(name) {
@@ -2020,16 +1665,7 @@ export async function updateManager(recordId, fields) {
 // Manager — all work orders (across all properties)
 // ---------------------------------------------------------------------------
 export async function getAllWorkOrders() {
-  const allRecords = []
-  let offset = null
-  do {
-    const params = {}
-    if (offset) params.offset = offset
-    const data = await request(buildUrl(TABLES.workOrders, params))
-    ;(data.records || []).forEach((r) => allRecords.push(mapRecord(r)))
-    offset = data.offset || null
-  } while (offset)
-  return allRecords
+  return getAllWorkOrdersSupabase()
 }
 
 /** All Resident Profile rows (paginated). Used to scope manager work orders by resident → property. */
@@ -2047,50 +1683,22 @@ export async function listAllResidentsRecords() {
 }
 
 export async function getWorkOrderById(recordId) {
-  const id = String(recordId || '').trim()
-  if (!/^rec[a-zA-Z0-9]{14,}$/.test(id)) {
-    throw new Error('Enter a valid record ID (e.g. recXXXXXXXXXXXXXX).')
-  }
-  const data = await request(`${tableUrl(TABLES.workOrders)}/${id}`)
-  return mapRecord(data)
+  return getWorkOrderByIdSupabase(recordId)
 }
 
 /** PATCH any Work Orders fields. Omits undefined entries. */
 export async function updateWorkOrder(recordId, fields) {
-  const id = String(recordId || '').trim()
-  if (!/^rec[a-zA-Z0-9]{14,}$/.test(id)) {
-    throw new Error('Invalid work order record ID.')
-  }
-  const cleaned = Object.fromEntries(
-    Object.entries(fields).filter(([, v]) => v !== undefined),
-  )
-  if (Object.keys(cleaned).length === 0) {
-    throw new Error('No fields to update.')
-  }
-  const data = await request(`${tableUrl(TABLES.workOrders)}/${id}`, {
-    method: 'PATCH',
-    body: JSON.stringify({ fields: cleaned, typecast: true }),
-  })
-  return mapRecord(data)
+  const cleaned = Object.fromEntries(Object.entries(fields).filter(([, v]) => v !== undefined))
+  return updateWorkOrderSupabase(recordId, cleaned)
 }
 
 /** Append to Work Orders "Update" and set "Last Update" (date) when a resident sends a message. */
 export async function appendWorkOrderUpdateFromResident(workOrderId, residentEmail, message) {
-  const lineEmail = String(residentEmail || 'Resident').trim() || 'Resident'
-  const current = await getWorkOrderById(workOrderId)
-  const prev = String(current.Update || '').trim()
-  const stamp = new Date().toLocaleString('en-US', { dateStyle: 'medium', timeStyle: 'short' })
-  const line = `[${stamp}] ${lineEmail}: ${message}`
-  const next = prev ? `${prev}\n\n${line}` : line
-  const today = new Date().toISOString().slice(0, 10)
-  return updateWorkOrder(workOrderId, {
-    Update: next,
-    'Last Update': today,
-  })
+  return appendWorkOrderUpdateFromResidentSupabase(workOrderId, residentEmail, message)
 }
 
 export async function updateWorkOrderStatus(recordId, status) {
-  return updateWorkOrder(recordId, { Status: status })
+  return updateWorkOrderStatusSupabase(recordId, status)
 }
 
 // ---------------------------------------------------------------------------
@@ -2227,21 +1835,11 @@ export async function updateLeaseRecord(recordId, fields) {
 // Manager — announcements management
 // ---------------------------------------------------------------------------
 export async function getAllAnnouncementsAdmin() {
-  const data = await request(buildUrl(TABLES.announcements, {}))
-  const rows = (data.records || []).map(mapRecord)
-  return rows.sort((a, b) => {
-    const ta = new Date(a.created_at || a['Created At'] || 0).getTime()
-    const tb = new Date(b.created_at || b['Created At'] || 0).getTime()
-    return tb - ta
-  })
+  return getAllAnnouncementsAdminSupabase()
 }
 
 export async function createAnnouncement(fields) {
-  const data = await request(tableUrl(TABLES.announcements), {
-    method: 'POST',
-    body: JSON.stringify({ fields, typecast: true }),
-  })
-  return mapRecord(data)
+  return createAnnouncementSupabase(fields)
 }
 
 /**
@@ -2307,15 +1905,11 @@ export async function submitAnnouncementFromInbox({
 }
 
 export async function updateAnnouncement(recordId, fields) {
-  const data = await request(`${tableUrl(TABLES.announcements)}/${recordId}`, {
-    method: 'PATCH',
-    body: JSON.stringify({ fields, typecast: true }),
-  })
-  return mapRecord(data)
+  return updateAnnouncementSupabase(recordId, fields)
 }
 
 export async function deleteAnnouncement(recordId) {
-  await request(`${tableUrl(TABLES.announcements)}/${recordId}`, { method: 'DELETE' })
+  await deleteAnnouncementSupabase(recordId)
 }
 
 // ---------------------------------------------------------------------------

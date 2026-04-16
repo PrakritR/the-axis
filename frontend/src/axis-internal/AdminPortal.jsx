@@ -48,6 +48,7 @@ import { PropertyDetailPanel } from '../lib/propertyDetailPanel.jsx'
 import { AXIS_ADMIN_SESSION_KEY, AXIS_ADMIN_SHOW_PORTAL_HANDOFF_KEY } from './adminSessionConstants'
 import AdminProfilePanel from './AdminProfilePanel.jsx'
 import AdminLeasingTab from './AdminLeasingTab.jsx'
+import AdminAnnouncementsTab from './AdminAnnouncementsTab.jsx'
 import {
   getAllPortalInternalThreadMessages,
   fetchInboxThreadStateMap,
@@ -132,6 +133,7 @@ const ADMIN_TAB_IDS = [
   'properties',
   'accounts',
   'leasing',
+  'announcements',
   'calendar',
   'messages',
   'profile',
@@ -599,6 +601,31 @@ function PortalHandoffCard({ accounts, residents, applications, residentsLoading
               Open
             </button>
           </div>
+          {sortedManagers.length === 0 ? (
+            <div className="mt-2 space-y-2 text-xs leading-snug text-slate-600">
+              <p>
+                This list only includes enabled rows from the Manager Profile sync. To test with a real account, open{' '}
+                <a className="font-semibold text-[#2563eb] underline" href="/portal?portal=manager">
+                  Manager sign-in
+                </a>
+                .
+              </p>
+              <button
+                type="button"
+                className="rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-[11px] font-semibold text-slate-800 shadow-sm transition hover:bg-slate-50"
+                onClick={() => {
+                  seedDeveloperManagerSession()
+                  markDeveloperPortalActive()
+                  window.location.assign('/manager')
+                }}
+              >
+                Open developer manager preview
+              </button>
+              <p className="text-[11px] text-slate-500">
+                Preview uses a stub session; Airtable-backed screens may be empty until your base has matching data.
+              </p>
+            </div>
+          ) : null}
         </div>
         <div className="min-w-0">
           <div className="mb-2 text-[11px] font-bold uppercase tracking-[0.14em] text-sky-800">Resident portal</div>
@@ -636,6 +663,17 @@ function PortalHandoffCard({ accounts, residents, applications, residentsLoading
               Open
             </button>
           </div>
+          {sortedResidents.length === 0 && !residentsLoading ? (
+            <div className="mt-2 text-xs leading-snug text-slate-600">
+              <p>
+                To test with email/password (including Supabase-linked residents), use{' '}
+                <a className="font-semibold text-[#2563eb] underline" href="/portal?portal=resident">
+                  Resident sign-in
+                </a>
+                . The dropdown here only lists Resident Profile rows the admin token can read from Airtable.
+              </p>
+            </div>
+          ) : null}
         </div>
       </div>
     </div>
@@ -880,6 +918,7 @@ export default function AdminPortal() {
     { id: 'properties', label: 'Properties' },
     { id: 'accounts', label: 'Managers' },
     { id: 'leasing', label: 'Leases' },
+    { id: 'announcements', label: 'Announcements' },
     { id: 'calendar', label: 'Calendar' },
     { id: 'messages', label: 'Inbox' },
     { id: 'profile', label: 'Profile' },
@@ -1829,6 +1868,8 @@ export default function AdminPortal() {
       {tab === 'leasing' && (
         <AdminLeasingTab adminUser={user} accounts={accounts} />
       )}
+
+      {tab === 'announcements' && <AdminAnnouncementsTab />}
 
       {tab === 'messages' && (
         <ManagerInboxPage
