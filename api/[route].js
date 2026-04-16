@@ -29,6 +29,7 @@ import softwareTeamMeetings from '../backend/server/handlers/software-team-meeti
 import stripe from '../backend/server/handlers/stripe.js'
 import meeting from '../backend/server/handlers/meeting.js'
 import tour from '../backend/server/handlers/tour.js'
+import syncAppUser from '../backend/server/handlers/sync-app-user.js'
 
 const routes = {
   'admin-portal-auth': adminPortalAuth,
@@ -53,6 +54,7 @@ const routes = {
   'notify-message': notifyMessage,
   'send-lease-invite': sendLeaseInvite,
   'signforge-webhook': signforgeWebhook,
+  'sync-app-user': syncAppUser,
 }
 
 function segment(param) {

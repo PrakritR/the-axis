@@ -1,4 +1,6 @@
 import { Suspense, lazy, useEffect, useLayoutEffect, useMemo, Component } from 'react'
+import { supabase } from './lib/supabase'
+import { clearAppUserBootstrap, syncAppUserFromSupabaseSession } from './lib/authAppUserSync.js'
 import { Routes, Route, useLocation, Navigate } from 'react-router-dom'
 import { AnimatePresence, motion } from 'framer-motion'
 import { Toaster } from 'react-hot-toast'
@@ -117,6 +119,26 @@ class ErrorBoundary extends Component {
 
 function AppInner() {
   const location = useLocation()
+
+  /** Supabase session → ensure public.app_users row + load app_user_roles into sessionStorage. */
+  useEffect(() => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      if (event === 'SIGNED_OUT') {
+        clearAppUserBootstrap()
+        return
+      }
+      if (
+        session?.access_token &&
+        (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED' || event === 'INITIAL_SESSION')
+      ) {
+        void syncAppUserFromSupabaseSession()
+      }
+    })
+    void supabase.auth.getSession().then(({ data: { session } }) => {
+      if (session?.access_token) void syncAppUserFromSupabaseSession()
+    })
+    return () => subscription?.unsubscribe()
+  }, [])
 
   // Manager/admin use the same fixed promo + site header as marketing pages so users can return to the site.
   // Signing and axis-team stay minimal (no header). Paths: /manager/*, /admin/*, /sign/*, /axis-team.

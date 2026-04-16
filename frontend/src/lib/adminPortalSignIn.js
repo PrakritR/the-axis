@@ -6,6 +6,7 @@
  * @returns {Promise<{ ok: true, user: object } | { ok: false, error: string }>}
  */
 import { supabase } from './supabase'
+import { syncAppUserFromSupabaseSession } from './authAppUserSync.js'
 import { isEmailAllowedForAdminPortal } from './adminPortalAuthAllowlist.js'
 
 const NOT_AUTHORIZED = 'This account is not authorized for the admin portal'
@@ -59,6 +60,8 @@ export async function authenticateAdminPortal(identifier, password) {
       String(meta.full_name || meta.name || meta.display_name || '').trim() ||
       signedInEmail.split('@')[0] ||
       signedInEmail
+
+    await syncAppUserFromSupabaseSession().catch(() => {})
 
     return {
       ok: true,

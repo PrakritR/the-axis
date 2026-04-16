@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { supabase } from '../lib/supabase'
+import { syncAppUserFromSupabaseSession } from '../lib/authAppUserSync.js'
 import {
   PortalAuthCard,
   PortalAuthPage,
@@ -27,6 +28,7 @@ export default function Login() {
       if (authError) {
         setError(authError.message || 'Sign in failed. Check your email and password.')
       } else {
+        await syncAppUserFromSupabaseSession().catch(() => {})
         setSuccess(true)
       }
     } catch (err) {
