@@ -20,14 +20,15 @@
 import { createClient } from '@supabase/supabase-js'
 import { ensureAppUserByAuthId } from '../lib/app-users-service.js'
 import { assignRoleToAppUser } from '../lib/app-user-roles-service.js'
-import { ensureManagerProfileExists } from '../lib/manager-profiles-service.js'
+import { ensureManagerProfileExists, updateManagerProfile } from '../lib/manager-profiles-service.js'
 import {
-  getManagerByManagerId,
-  updateManager,
-  deriveManagerId,
   buildManagerSession,
-  managerAirtableConfigured,
 } from '../lib/manager-account-service.js'
+import {
+  getManagerOnboardingByManagerId,
+  markManagerOnboardingAccountCreated,
+  onboardingToManagerRecord,
+} from '../lib/manager-onboarding-service.js'
 
 function cors(res) {
   res.setHeader('Access-Control-Allow-Origin', '*')
@@ -137,98 +138,91 @@ async function createInternalManagerAccount(email, password, name, res) {
   })
 }
 
-/** Mode B — legacy Manager ID onboarding (requires Airtable, deprecated). */
-async function createLegacyManagerAccount(managerId, password, name, res) {
-  if (!managerAirtableConfigured()) {
-    return res.status(500).json({
-      error:
-        'Manager account creation via Manager ID requires the Airtable connection, ' +
-        'which is not configured. Contact your administrator to create your account directly.',
-    })
-  }
+function onboardingTierToProfileTier(planType) {
+  const normalized = String(planType || '').trim().toLowerCase()
+  if (normalized === 'business') return 'Premium'
+  if (normalized === 'pro' || normalized === 'free') return 'Standard'
+  return null
+}
 
+/** Mode B — Manager ID onboarding via internal manager_onboarding table. */
+async function createManagerAccountFromOnboarding(managerId, password, name, res) {
   const normalizedManagerId = String(managerId || '').trim().toUpperCase()
   const normalizedName = String(name || '').trim()
-
-  const manager = await getManagerByManagerId(normalizedManagerId)
-  if (!manager) {
+  const onboarding = await getManagerOnboardingByManagerId(normalizedManagerId)
+  if (!onboarding) {
     return res.status(404).json({
       error: 'No manager subscription record was found for that Manager ID yet.',
     })
   }
 
-  const normalizedEmail = String(manager.Email || '').trim().toLowerCase()
+  const normalizedEmail = String(onboarding.email || '').trim().toLowerCase()
   if (!normalizedEmail) {
     return res.status(400).json({
       error: 'This manager record is missing an email address. Please contact support.',
     })
   }
 
-  // Also create/update the Supabase Auth user so future logins use internal auth
-  let authUserId = null
-  try {
-    const serviceClient = getServiceClient()
-    // Check if user already exists
-    const { data: listData } = await serviceClient.auth.admin.listUsers({ perPage: 1 })
-    // listUsers doesn't filter by email cheaply; use createUser and catch conflict instead
-    const { data: createData, error: createErr } = await serviceClient.auth.admin.createUser({
-      email: normalizedEmail,
-      password,
-      email_confirm: true,
-      ...(normalizedName ? { user_metadata: { full_name: normalizedName } } : {}),
-    })
-    if (!createErr) {
-      authUserId = createData?.user?.id
-    } else if (
-      createErr.message?.toLowerCase().includes('already registered') ||
-      createErr.message?.toLowerCase().includes('already exists')
-    ) {
-      // User already exists in Supabase — update their password
-      // We can't update via admin without the user's ID, so skip for now
-      // They can sign in with the existing credentials + use forgot password if needed
-    }
-  } catch {
-    // Non-critical: Supabase user creation failed. Continue with Airtable-only account.
-  }
-
-  if (manager.Password) {
+  if (onboarding.account_created === true) {
     return res.status(409).json({ error: 'This manager account already exists. Please sign in instead.' })
   }
 
-  // Update Airtable (legacy write — mark account as active)
-  let updated = manager
-  try {
-    updated = await updateManager(manager.id, {
-      'Manager ID': normalizedManagerId,
-      Name: normalizedName || manager.Name || normalizedEmail.split('@')[0],
-      Password: password,
-      Active: true,
-    })
-  } catch {
-    // Airtable write failed — account creation is still partially done
-  }
-
-  // If we got an internal Supabase user, set up internal DB rows
-  let appUser = null
-  if (authUserId) {
-    try {
-      appUser = await ensureAppUserByAuthId({
-        authUserId,
-        email: normalizedEmail,
-        fullName: normalizedName || updated?.Name || null,
+  const serviceClient = getServiceClient()
+  const { data: createData, error: createErr } = await serviceClient.auth.admin.createUser({
+    email: normalizedEmail,
+    password,
+    email_confirm: true,
+    user_metadata: {
+      full_name: normalizedName || onboarding.full_name || normalizedEmail.split('@')[0],
+    },
+  })
+  if (createErr) {
+    if (
+      createErr.message?.toLowerCase().includes('already registered') ||
+      createErr.message?.toLowerCase().includes('already exists')
+    ) {
+      return res.status(409).json({
+        error: 'An account with this email already exists. Please sign in instead.',
       })
-      await assignRoleToAppUser({ appUserId: appUser.id, role: 'manager', isPrimary: true })
-      await ensureManagerProfileExists({ appUserId: appUser.id })
-    } catch {
-      // Non-critical
     }
+    throw createErr
   }
 
-  const session = authUserId ? await signInAfterCreate(normalizedEmail, password) : null
+  const authUserId = createData?.user?.id
+  if (!authUserId) {
+    return res.status(500).json({ error: 'Failed to create authentication record.' })
+  }
+
+  const fullName =
+    normalizedName || String(onboarding.full_name || '').trim() || normalizedEmail.split('@')[0]
+  const phoneNumber = String(onboarding.phone_number || '').trim() || null
+  const appUser = await ensureAppUserByAuthId({
+    authUserId,
+    email: normalizedEmail,
+    fullName,
+    phone: phoneNumber,
+  })
+  await assignRoleToAppUser({ appUserId: appUser.id, role: 'manager', isPrimary: true })
+  await ensureManagerProfileExists({ appUserId: appUser.id, phone_number: phoneNumber })
+
+  const patch = {}
+  const tier = onboardingTierToProfileTier(onboarding.plan_type)
+  if (tier) patch.tier = tier
+  if (phoneNumber) patch.phone_number = phoneNumber
+  if (Object.keys(patch).length > 0) {
+    await updateManagerProfile({ appUserId: appUser.id, ...patch })
+  }
+
+  const marked = await markManagerOnboardingAccountCreated(normalizedEmail).catch(() => onboarding)
+  const session = await signInAfterCreate(normalizedEmail, password)
 
   return res.status(200).json({
     ok: true,
-    manager: buildManagerSession({ manager: updated || manager, appUser }),
+    manager: buildManagerSession({
+      manager: onboardingToManagerRecord(marked || onboarding),
+      appUser,
+      authUserId,
+    }),
     session,
   })
 }
@@ -250,12 +244,12 @@ export default async function handler(req, res) {
       return createInternalManagerAccount(email, password, name, res)
     }
 
-    // Mode B: Manager ID → legacy Airtable onboarding
+    // Mode B: Manager ID → internal onboarding record
     if (managerId) {
-      return createLegacyManagerAccount(managerId, password, name, res)
+      return createManagerAccountFromOnboarding(managerId, password, name, res)
     }
 
-    return res.status(400).json({ error: 'Provide either email (internal) or managerId (legacy).' })
+    return res.status(400).json({ error: 'Provide either email or managerId.' })
   } catch (err) {
     console.error('[manager-create-account]', err)
     return res.status(500).json({ error: 'Could not create the manager account. Please try again.' })
