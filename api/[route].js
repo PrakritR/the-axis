@@ -32,6 +32,7 @@ import tour from '../backend/server/handlers/tour.js'
 import syncAppUser from '../backend/server/handlers/sync-app-user.js'
 import adminProfiles from '../backend/server/handlers/admin-profiles.js'
 import managerProfiles from '../backend/server/handlers/manager-profiles.js'
+import ownerProfiles from '../backend/server/handlers/owner-profiles.js'
 
 const routes = {
   'admin-portal-auth': adminPortalAuth,
@@ -56,6 +57,7 @@ const routes = {
   'manager-start-free-tier': managerStartFreeTier,
   'manager-subscription-complete': managerSubscriptionComplete,
   'notify-message': notifyMessage,
+  'owner-profiles': ownerProfiles,
   'send-lease-invite': sendLeaseInvite,
   'signforge-webhook': signforgeWebhook,
   'sync-app-user': syncAppUser,

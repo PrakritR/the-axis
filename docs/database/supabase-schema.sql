@@ -76,3 +76,7 @@ create policy "residents_own_messages" on work_order_messages
 -- manager_profiles: see supabase/migrations/20260416120300_create_manager_profiles.sql
 -- (app_user_id -> app_users.id, tier Standard|Premium; backend/server/lib/manager-profiles-service.js)
 -- HTTP: GET|POST|PATCH /api/manager-profiles — backend/server/handlers/manager-profiles.js
+
+-- owner_profiles: see supabase/migrations/20260416120400_create_owner_profiles.sql
+-- (Stripe Connect–ready booleans + stripe_connect_account_id; backend/server/lib/owner-profiles-service.js)
+-- HTTP: GET|POST|PATCH /api/owner-profiles — backend/server/handlers/owner-profiles.js
