@@ -24,6 +24,7 @@ const AxisAdminPortal = lazy(() => import('./axis-internal/AdminPortal'))
 const SignLease = lazy(() => import('./pages/SignLease'))
 const AxisTeam = lazy(() => import('./pages/AxisTeam'))
 const OwnersAbout = lazy(() => import('./pages/OwnersAbout'))
+const Login = lazy(() => import('./pages/Login'))
 
 function ScrollToTop() {
   const { pathname, hash, search } = useLocation()
@@ -253,6 +254,7 @@ function AppInner() {
                 <Route path="/apply" element={<AnimatedPage><Apply /></AnimatedPage>} />
                 <Route path="/resident" element={<AnimatedPage><Resident /></AnimatedPage>} />
                 <Route path="/portal" element={<AnimatedPage key="portal-hub"><PortalSelect /></AnimatedPage>} />
+                <Route path="/login" element={<AnimatedPage><Login /></AnimatedPage>} />
                 <Route path="/owners" element={<Navigate to="/owners/about" replace />} />
                 <Route path="/owners/about" element={<AnimatedPage><OwnersAbout /></AnimatedPage>} />
                 <Route path="/owners/pricing" element={<AnimatedPage><JoinUs /></AnimatedPage>} />

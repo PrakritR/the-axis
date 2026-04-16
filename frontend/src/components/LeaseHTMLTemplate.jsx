@@ -243,12 +243,18 @@ export default function LeaseHTMLTemplate({
 
         {/* 2 */}
         <Section number="2" title="Lease Term">
-          <P>
-            This Agreement is for a {termDesc}.
-            {d.isMonthToMonth
-              ? ` Either party may terminate this Agreement by providing at least ${TERMINATION_NOTICE_DAYS} days' written notice prior to the end of a rental period, as required by RCW 59.18.200.`
-              : ` At the expiration of the fixed term, this Agreement shall automatically convert to a month-to-month tenancy unless either party provides written notice of non-renewal at least ${TERMINATION_NOTICE_DAYS} days before the end of the term, or a new written agreement is signed.`}
-          </P>
+          {d.isMonthToMonth ? (
+            <P>
+              The term of this lease shall commence on <strong>{d.leaseStartFmt || '___________'}</strong> and will continue on a month-to-month basis.
+              Either party may terminate this Agreement by providing at least {TERMINATION_NOTICE_DAYS} days&apos; written notice prior to the end of a rental period, as required by RCW 59.18.200.
+            </P>
+          ) : (
+            <P>
+              The term of this lease shall commence on <strong>{d.leaseStartFmt || '___________'}</strong> and will terminate on <strong>{d.leaseEndFmt || '___________'}</strong> at 12:00 pm (noon).
+              Upon expiration of the above-stated Lease term, the agreement will be month-to-month.
+              Either party may then terminate by providing at least {TERMINATION_NOTICE_DAYS} days&apos; written notice prior to the end of a rental period.
+            </P>
+          )}
           <P>
             <strong>2.1 Early termination, mitigation, and lease-break costs.</strong> If Resident vacates before the end of the term without
             Landlord&apos;s prior written consent, Resident remains liable for <em>actual damages</em> permitted by Washington law and
@@ -351,66 +357,49 @@ export default function LeaseHTMLTemplate({
         {/* 4 */}
         <Section number="4" title="Security Deposit">
           <P>
-            Resident shall pay a security deposit of <strong>{d.securityDepositFmt || '$0.00'}</strong> prior to or upon move-in.
-            {(d.adminFee || 0) > 0 ? (
-              <>
-                {' '}
-                Separately, an administrative fee of <strong>{d.adminFeeFmt || '$0.00'}</strong> is due prior to or upon move-in; it
-                is not part of the security deposit and is not held as a deposit under RCW 59.18.260.
-              </>
-            ) : null}{' '}
-            The security deposit shall be held in accordance with RCW 59.18.260. Landlord shall provide a written receipt
-            and identify the financial institution where the deposit is held.
+            The Security Deposit set forth herein shall secure the Resident&apos;s obligations. This deposit may be used by the Landlord for all purposes, including unpaid rent, damage, cleaning, carpet cleaning, blind cleaning, late payment, utilities, keys and other charges. The deposit shall be kept with the Landlord.
           </P>
           <P>
-            The deposit may be applied to unpaid rent, damages beyond normal wear and tear, cleaning costs, and any other
-            amounts owed under this Agreement. Within 21 days of Resident's departure, Landlord shall return the deposit
-            or provide a written itemized statement of deductions, as required by RCW 59.18.280.
+            Resident&apos;s liability is not limited by the amount of the deposit. Resident is prohibited from applying any amount of the deposit to rental or other payments owed to the Landlord.
           </P>
           <P>
-            <strong>4.1 Move-in condition and checklist (Property Condition Addendum).</strong> Landlord and Resident shall complete a
-            written <strong>move-in inspection checklist</strong> describing the condition of the Premises and any furnishings (the
-            Property Condition Addendum). Resident shall return a signed checklist to Landlord within <strong>fourteen (14) calendar days</strong>{' '}
-            after obtaining possession (or complete a joint walkthrough on a mutually agreed date within that window). The
-            checklist, together with dated photographs or short videos reasonably taken at move-in, establishes the baseline for
-            determining whether deposit deductions at move-out reflect damage or uncleanliness <strong>beyond documented move-in
-            condition</strong>, consistent with RCW 59.18.260 and RCW 59.18.280. If Resident fails to return the checklist, Landlord may
-            document condition in good faith and provide a copy; failure to document pre-existing conditions does not authorize
-            deductions for conditions Landlord knew or should have known existed at move-in.
+            At the conclusion of the tenancy, Resident shall provide the Landlord with a single forwarding address to which the deposit accounting and any refund is to be sent.
           </P>
           <P>
-            <strong>4.2 Forwarding address.</strong> Upon vacating, Resident shall provide Landlord in writing a valid
-            forwarding address where deposit accounting and refund may be sent. Failure to provide a forwarding address does
-            not relieve Landlord of the obligation to comply with RCW 59.18.280, but Resident bears the risk of misdelivery if
-            the address is incomplete or inaccurate.
+            Any refund will be by a single check payable to all individual Residents and they shall apportion any refund among themselves. Landlord&apos;s itemized statement for retaining any of the deposit; together with any refund owing shall be sent to Resident&apos;s forwarding address pursuant to RCW 59.18.280 after termination of this Agreement and vacation of the premises, conditioned upon Resident&apos;s compliance with this Agreement and the following:
           </P>
+          <ul className="list-disc space-y-1.5 pl-6 text-sm text-slate-700">
+            <li>Resident shall have complied with all the conditions of this Agreement.</li>
+            <li>Resident shall clean and restore the premises to its condition at the commencement of this tenancy as evidenced by the Property Condition Addendum, which is incorporated herein by reference, less wear and tear from normal usage. Resident agrees that soiling is not wear and tear from normal usage.</li>
+            <li>Resident shall surrender all keys to the Landlord.</li>
+            <li>Resident shall bear the cost to replace or repair any missing or damaged property or fixtures provided by the Landlord.</li>
+            <li>Labor and administrative costs for cleaning and repairing the premises shall be at the rate of $60.00 per hour, except labor performed by parties other than Landlord or agent, which shall be assessed at its actual cost.</li>
+            <li>Resident&apos;s payment of any fees or charges imposed pursuant to this Agreement, including but not limited to early termination charges.</li>
+            <li>The Landlord is in compliance with the law if the required payment, statement, or both are deposited in the U.S. Mail with First Class postage paid, pursuant to RCW 59.18.280 of Landlord learning of the vacancy.</li>
+            <li>Resident is responsible for providing an accurate mailing address to which the itemized statement and/or deposit/rent refund shall be mailed. If Landlord is required to put a &apos;stop payment&apos; on a deposit and/or rent refund check due to an incorrect address or no address being provided then an additional $50.00 stop payment fee will be deducted from the refund amount.</li>
+          </ul>
           <P>
-            <strong>4.3 Itemized deductions.</strong> Any deduction from the deposit shall be listed in writing with a
-            plain-language description of each charge and supporting documentation where reasonably available. Deductions may
-            not include ordinary wear and tear consistent with RCW 59.18.260.
-          </P>
-          <P>
-            <strong>4.4 Deposit deduction categories and cleaning standards.</strong> Deductions may include only lawful categories,
-            including: unpaid rent or other charges expressly permitted under this Agreement; damage to the Premises or
-            Landlord-owned furnishings <strong>beyond ordinary wear and tear</strong>; reasonable cleaning charges to restore the private
-            room to a <strong>rent-ready, professionally clean</strong> standard if left with unreasonable dirt, debris, stains, or odors;
-            carpet or upholstery cleaning only for <strong>tenant-caused</strong> staining or damage (not normal traffic wear); lost keys,
-            fobs, or access devices at documented replacement cost; pest remediation attributable to Resident&apos;s conduct or
-            neglect after notice. Hourly repair labor shall be billed at Landlord&apos;s <strong>documented</strong> reasonable internal rate or
-            vendor invoice, not to exceed prevailing market rates for comparable work. For single-line items over{' '}
-            <strong>$250</strong>, Landlord shall provide an estimate or invoice where practicable before withholding from deposit when timing
-            allows under RCW 59.18.280.
+            <strong>4.1 Move-in condition checklist (Property Condition Addendum).</strong> Landlord and Resident shall complete a written move-in inspection checklist describing the condition of the Premises at move-in. Resident shall return a signed checklist within <strong>fourteen (14) calendar days</strong> after obtaining possession. This checklist establishes the baseline for deposit deductions at move-out, consistent with RCW 59.18.260 and RCW 59.18.280.
           </P>
         </Section>
 
-        {/* 5 */}
-        <Section number="5" title="Utilities and Services Included">
+        {/* 5 — Move In Fee */}
+        {(d.moveInFee || 0) > 0 || (d.adminFee || 0) > 0 ? (
+        <Section number="5" title="Move In Fee">
+          <P>
+            Resident agrees to pay a non-refundable move-in fee of <strong>{(d.moveInFee || 0) > 0 ? d.moveInFeeFmt : d.adminFeeFmt}</strong>. This fee covers administrative processing, lease preparation, and unit turnover costs associated with preparing the premises for occupancy. This fee is not a security deposit and shall not be credited toward rent or returned at the conclusion of the tenancy.
+          </P>
+        </Section>
+        ) : null}
+
+        {/* 6 */}
+        <Section number="6" title="Utilities and Services Included">
           {(d.utilityFee || 0) > 0 ? (
             <P>
               The monthly utilities fee of <strong>{d.utilityFeeFmt || '$0.00'}</strong> covers the Resident&apos;s
-              proportionate share of electricity, gas, water, sewer, and garbage collection, as well as high-speed
-              internet (Wi-Fi). Landlord shall maintain all utility accounts in Landlord&apos;s name. Resident agrees not
-              to add or change any utilities without prior written consent of Landlord.
+              proportionate share of electricity, water, sewer, trash, and gas. Landlord shall maintain all utility
+              accounts in Landlord&apos;s name. Resident agrees not to add or change any utilities without prior written
+              consent of Landlord.
             </P>
           ) : (
             <P>
@@ -420,18 +409,32 @@ export default function LeaseHTMLTemplate({
             </P>
           )}
           <P>
-            <strong>5.1 Utility transfer.</strong> If Landlord ever requires a specific utility account to be transferred to
+            <strong>Excessive usage.</strong> Resident shall not use appliances or devices that cause disproportionate
+            utility consumption, including but not limited to portable space heaters, cryptocurrency mining rigs, or
+            commercial-grade equipment, without prior written approval from Landlord. Landlord may charge Resident for
+            the documented cost of any such excess consumption beyond the normal household share.
+          </P>
+          <P>
+            <strong>Trash and recycling.</strong> Resident shall dispose of all trash, recycling, and compostables in the
+            designated outdoor containers on the scheduled collection days. Improper disposal — including leaving trash
+            bags outside of designated containers, placing trash in non-designated areas, or failing to break down
+            cardboard — is subject to a <strong>$30.00 fee per occurrence</strong>, which Landlord may charge to
+            Resident&apos;s account after written notice. <strong>Do not store trash or recyclable items in hallways,
+            common areas, or anywhere inside the dwelling other than designated kitchen bins.</strong>
+          </P>
+          <P>
+            <strong>6.1 Utility transfer.</strong> If Landlord ever requires a specific utility account to be transferred to
             Resident&apos;s name (for example, for a separately metered service), Resident shall establish service within three
             (3) business days of written notice and shall not allow termination for non-payment that affects habitability of
             other residents.
           </P>
           <P>
-            <strong>5.2 Non-payment of allocated utilities.</strong> Allocated charges shown on a written ledger or invoice
+            <strong>6.2 Non-payment of allocated utilities.</strong> Allocated charges shown on a written ledger or invoice
             are due by the date stated on the invoice or, if none, with the next rent installment. Continued non-payment after
             written notice may be treated as a material default to the extent permitted by RCW Chapter 59.18.
           </P>
           <P>
-            <strong>5.3 Adjustment of utilities fee or allocation.</strong> If Resident pays a recurring utilities or household-services
+            <strong>6.3 Adjustment of utilities fee or allocation.</strong> If Resident pays a recurring utilities or household-services
             component, Landlord may change the amount or allocation method with at least <strong>thirty (30) days&apos; prior written notice</strong>,
             except where a shorter period is required by law or an emergency tariff increase. If a proposed change is not
             permitted by law or is rejected by Resident, Resident&apos;s exclusive remedy is to terminate the tenancy with notice
@@ -447,18 +450,10 @@ export default function LeaseHTMLTemplate({
               Property-specific utilities note: <strong>{d.roomUtilitiesSummary}</strong>
             </P>
           ) : null}
-          {Array.isArray(d.amenities) && d.amenities.length > 0 ? (
-            <>
-              <p className="text-[11px] font-semibold uppercase tracking-[0.1em] text-slate-500 mt-3 mb-1">Community Amenities Included</p>
-              <ul className="list-disc space-y-0.5 pl-6 text-sm text-slate-700">
-                {d.amenities.map((a, i) => <li key={i}>{a}</li>)}
-              </ul>
-            </>
-          ) : null}
         </Section>
 
-        {/* 6 */}
-        <Section number="6" title="Occupancy and Permitted Use">
+        {/* 7 */}
+        <Section number="7" title="Occupancy and Permitted Use">
           {String(d.guestPolicy || '').trim() ? (
             <P>
               <strong>Property-specific guest policy.</strong> {String(d.guestPolicy).trim()}
@@ -476,7 +471,11 @@ export default function LeaseHTMLTemplate({
             require written approval.
           </P>
           <P>
-            <strong>6.1 Guest policy enforcement.</strong> A guest who exceeds the limits above without approval may be
+            <strong>No overnight guests are allowed at any time without prior written approval from Landlord.</strong> Unapproved
+            overnight guests constitute a material breach of this Agreement.
+          </P>
+          <P>
+            <strong>7.1 Guest policy enforcement.</strong> A guest who exceeds the limits above without approval may be
             treated as an unauthorized occupant. Landlord may require removal of the guest or, if the guest remains after
             written notice, pursue remedies for breach consistent with RCW Chapter 59.18.
           </P>
@@ -487,13 +486,8 @@ export default function LeaseHTMLTemplate({
           </P>
         </Section>
 
-        {/* 7 */}
-        <Section number="7" title="Shared Spaces and House Rules">
-          {String(d.houseRules || '').trim() ? (
-            <P>
-              <strong>Property-specific house rules.</strong> {String(d.houseRules).trim()}
-            </P>
-          ) : null}
+        {/* 8 */}
+        <Section number="8" title="Shared Spaces and House Rules">
           {d.bathroomNote ? (
             <P>
               <strong>Bathroom Assignment:</strong> {d.bathroomNote}
@@ -501,25 +495,22 @@ export default function LeaseHTMLTemplate({
           ) : null}
           <P>
             Resident shall share common areas — including kitchen, living room, bathrooms, laundry, and outdoor spaces —
-            with other residents of the dwelling in a respectful and cooperative manner. Resident agrees to:
+            with other residents of the dwelling in a respectful and cooperative manner.
           </P>
-          <ul className="list-disc space-y-1 pl-6 text-sm text-slate-700">
-            <li>Clean up after themselves in all shared spaces promptly after each use.</li>
-            <li>Keep personal items in their private room or designated storage areas only.</li>
-            <li>Maintain reasonable quiet hours between 10:00 PM and 8:00 AM on weekdays and midnight to 9:00 AM on weekends.</li>
-            <li>Not hold gatherings of more than 4 guests without prior notice to Landlord.</li>
-            <li>Dispose of trash and recycling in the designated containers on the scheduled collection days.</li>
-            <li>Not leave food unsecured in common areas in a manner that may attract pests.</li>
-            <li>Report maintenance issues, leaks, or safety hazards to Landlord promptly.</li>
-          </ul>
+          <P>
+            <strong>Please see the attached House Rules document for the complete list of rules governing this property.</strong>{' '}
+            The House Rules are incorporated by reference into this Agreement and have the same force and effect as if set
+            forth herein in full. Resident acknowledges receipt of the House Rules and agrees to comply with all provisions
+            therein.
+          </P>
           <P>
             Failure to comply with house rules after a written warning constitutes grounds for termination of this Agreement
             pursuant to RCW 59.18.180.
           </P>
         </Section>
 
-        {/* 8 */}
-        <Section number="8" title="Furnishings and Personal Property">
+        {/* 9 */}
+        <Section number="9" title="Furnishings and Personal Property">
           <P>
             The Premises and common areas may be provided with furniture and furnishings owned by Landlord. Resident shall
             care for all Landlord-owned furnishings in good condition and shall be liable for damage beyond normal wear and
@@ -540,7 +531,7 @@ export default function LeaseHTMLTemplate({
             encouraged to obtain renters' insurance to protect personal belongings.
           </P>
           <P>
-            <strong>8.1 Limitation of landlord liability.</strong> Except for damages arising from Landlord&apos;s gross negligence
+            <strong>9.1 Limitation of landlord liability.</strong> Except for damages arising from Landlord&apos;s gross negligence
             or willful misconduct, or as otherwise required by RCW Chapter 59.18, Landlord&apos;s aggregate liability for any
             claim arising from this tenancy shall not exceed the amount of rent actually paid by Resident during the twelve
             (12) months preceding the claim. Landlord shall not be liable for interruption of utilities caused by utility
@@ -548,13 +539,13 @@ export default function LeaseHTMLTemplate({
             efforts to restore service.
           </P>
           <P>
-            <strong>8.2 Indemnification.</strong> Resident shall indemnify, defend, and hold harmless Landlord and Landlord&apos;s
+            <strong>9.2 Indemnification.</strong> Resident shall indemnify, defend, and hold harmless Landlord and Landlord&apos;s
             agents from claims, losses, and reasonable attorneys&apos; fees arising from Resident&apos;s or Resident&apos;s guests&apos;
             negligence, intentional misconduct, illegal activity, or breach of this Agreement, except to the extent caused by
             Landlord&apos;s negligence or willful misconduct.
           </P>
           <P>
-            <strong>8.3 Personal safety; crime; third parties.</strong> Landlord does not warrant or guarantee the security of persons or
+            <strong>9.3 Personal safety; crime; third parties.</strong> Landlord does not warrant or guarantee the security of persons or
             property. Resident acknowledges that criminal or harmful conduct may occur without Landlord&apos;s knowledge or control.
             Except as required by RCW Chapter 59.18 or other mandatory law, Landlord shall not be liable for injury or loss caused
             by third parties, other residents, or guests. Resident is encouraged to secure valuables, lock doors, and maintain
@@ -562,8 +553,8 @@ export default function LeaseHTMLTemplate({
           </P>
         </Section>
 
-        {/* 9 */}
-        <Section number="9" title="Maintenance and Repairs">
+        {/* 10 */}
+        <Section number="10" title="Maintenance and Repairs">
           <P>
             Landlord shall maintain the Premises and common areas in a habitable condition in compliance with applicable
             housing codes and RCW 59.18.060, including maintaining structural components, heating systems, hot and cold
@@ -589,33 +580,33 @@ export default function LeaseHTMLTemplate({
             Resident shall be liable for damage caused by Resident's negligence or intentional acts.
           </P>
           <P>
-            <strong>9.1 Smoke detection devices (RCW 43.44.110).</strong> Landlord certifies that the dwelling is equipped
+            <strong>10.1 Smoke detection devices (RCW 43.44.110).</strong> Landlord certifies that the dwelling is equipped
             with smoke detection devices as required by RCW 43.44.110. Resident shall not remove or disable smoke alarms.
             Resident shall test devices as directed by the manufacturer, replace batteries or power sources as required, and
             promptly notify Landlord of any malfunction.
           </P>
           <P>
-            <strong>9.2 Carbon monoxide alarms (RCW 19.27.530).</strong> Where required by RCW 19.27.530 and applicable
+            <strong>10.2 Carbon monoxide alarms (RCW 19.27.530).</strong> Where required by RCW 19.27.530 and applicable
             building codes for the dwelling type, Landlord shall provide approved carbon monoxide alarms in required
             locations. Resident shall not remove or disable CO alarms, shall test as directed, and shall report malfunctions
             promptly.
           </P>
           <P>
-            <strong>9.3 Domestic hot water temperature.</strong> Landlord shall maintain the domestic hot water system so that
+            <strong>10.3 Domestic hot water temperature.</strong> Landlord shall maintain the domestic hot water system so that
             water delivered at fixtures is not scalding, consistent with applicable Washington State codes (including
             tempering or limiting settings where required, commonly not to exceed approximately 120°F at the tank or as
             directed by code). Resident shall not alter water heater thermostats, mixing valves, or tempering devices without
             written permission.
           </P>
           <P>
-            <strong>9.4 Fire safety and egress.</strong> Resident shall keep all means of egress clear, shall not disable or prop open
+            <strong>10.4 Fire safety and egress.</strong> Resident shall keep all means of egress clear, shall not disable or prop open
             self-closing doors on fire-rated paths, shall not use barbecues or open flames indoors or on balconies except as
             law and Landlord permit, and shall follow building fire-safety notices posted by Landlord or required by code.
           </P>
         </Section>
 
-        {/* 10 */}
-        <Section number="10" title="Entry by Landlord">
+        {/* 11 */}
+        <Section number="11" title="Entry by Landlord">
           <P>
             For non-emergency entry to the Resident&apos;s private room (including inspections, repairs, or showings),
             Landlord shall provide at least <strong>{LANDLORD_ENTRY_NOTICE_HOURS} hours&apos;</strong> written notice,
@@ -629,7 +620,7 @@ export default function LeaseHTMLTemplate({
             actual cost, not to exceed the documented invoice from a licensed locksmith or vendor where applicable.
           </P>
           <P>
-            <strong>10.1 Lockouts and self-help prohibited.</strong> Landlord shall not exclude Resident from the Premises,
+            <strong>11.1 Lockouts and self-help prohibited.</strong> Landlord shall not exclude Resident from the Premises,
             change locks, or interrupt utilities for the purpose of evicting Resident without a court order, except as
             expressly permitted for emergency repairs or lawful lock changes that provide Resident immediate replacement keys
             at no charge if Landlord caused the lockout in error. If Resident is locked out due to lost keys, Landlord may
@@ -637,8 +628,8 @@ export default function LeaseHTMLTemplate({
           </P>
         </Section>
 
-        {/* 11 */}
-        <Section number="11" title="Pets and Smoking Policy">
+        {/* 12 */}
+        <Section number="12" title="Pets and Smoking Policy">
           <P>
             <strong>Pets:</strong> No pets are permitted on the Premises without prior written consent of Landlord.
             Approved pets may require an additional pet deposit. Resident is liable for any damage caused by a pet.
@@ -650,16 +641,16 @@ export default function LeaseHTMLTemplate({
           </P>
         </Section>
 
-        {/* 12 */}
-        <Section number="12" title="Subletting and Assignment">
+        {/* 13 */}
+        <Section number="13" title="Subletting and Assignment">
           <P>
             Resident shall not sublet, assign, or transfer any interest in this Agreement or the Premises without the prior
             written consent of Landlord. Any unauthorized subletting shall constitute a material breach of this Agreement.
           </P>
         </Section>
 
-        {/* 13 */}
-        <Section number="13" title="Alterations and Improvements">
+        {/* 14 */}
+        <Section number="14" title="Alterations and Improvements">
           <P>
             Resident shall not make any alterations, installations, or improvements to the Premises — including painting,
             drilling, or mounting of fixtures — without the prior written consent of Landlord. Any approved alterations
@@ -668,15 +659,15 @@ export default function LeaseHTMLTemplate({
           </P>
         </Section>
 
-        {/* 14 */}
-        <Section number="14" title="Move-Out and Surrender of Premises">
+        {/* 15 */}
+        <Section number="15" title="Move-Out and Surrender of Premises">
           <P>
             Upon termination of this Agreement, Resident shall vacate the Premises, remove all personal property, and
             return the Premises in substantially the same condition as received, allowing for normal wear and tear.
             Resident shall return all keys, access fobs, and parking passes to Landlord.
           </P>
           <P>
-            <strong>14.1 Cleaning at move-out.</strong> Resident shall leave the private room broom-clean and free of trash
+            <strong>15.1 Cleaning at move-out.</strong> Resident shall leave the private room broom-clean and free of trash
             and personal property. If professional cleaning of the private room is required due to unreasonable dirt,
             debris, stains, or odors beyond ordinary wear and tear, Landlord may deduct the reasonable cost from the deposit
             with itemization. If the property&apos;s standard includes recurring professional cleaning of common areas, Resident
@@ -684,7 +675,7 @@ export default function LeaseHTMLTemplate({
             Summary or house rules.
           </P>
           <P>
-            <strong>14.2 Abandoned personal property (RCW 59.18.310).</strong> Personal property left in the Premises after
+            <strong>15.2 Abandoned personal property (RCW 59.18.310).</strong> Personal property left in the Premises after
             vacating may be stored and disposed of in accordance with RCW 59.18.310 and related Washington law, including
             written notice to Resident at the last known address, reasonable storage, sale or donation, and application of
             proceeds to storage and removal costs.
@@ -707,8 +698,8 @@ export default function LeaseHTMLTemplate({
           </P>
         </Section>
 
-        {/* 15 */}
-        <Section number="15" title="Default and Landlord Remedies">
+        {/* 16 */}
+        <Section number="16" title="Default and Landlord Remedies">
           <P>
             If Resident fails to pay rent when due or violates any material term of this Agreement, Landlord may serve
             written notices to pay or comply and vacate using the forms and notice periods required by Washington law,
@@ -719,15 +710,15 @@ export default function LeaseHTMLTemplate({
             procedure.
           </P>
           <P>
-            <strong>15.1 Non-waiver.</strong> Landlord&apos;s acceptance of partial or late rent, or Landlord&apos;s failure to object
+            <strong>16.1 Non-waiver.</strong> Landlord&apos;s acceptance of partial or late rent, or Landlord&apos;s failure to object
             to a particular breach, does not waive Landlord&apos;s right to insist on strict performance thereafter, to collect all
             sums owing, or to terminate the tenancy as permitted after proper notice. Any waiver must be in writing signed by
             Landlord.
           </P>
         </Section>
 
-        {/* 16 */}
-        <Section number="16" title="Quiet Enjoyment">
+        {/* 17 */}
+        <Section number="17" title="Quiet Enjoyment">
           <P>
             Provided Resident complies with all terms of this Agreement, Landlord covenants that Resident shall have quiet
             enjoyment of the private room without interference by Landlord, except as otherwise permitted by this Agreement
@@ -735,29 +726,29 @@ export default function LeaseHTMLTemplate({
           </P>
         </Section>
 
-        {/* 17 */}
-        <Section number="17" title="General Provisions">
+        {/* 18 */}
+        <Section number="18" title="General Provisions">
           <P>
-            <strong>17.1 Severability.</strong> If any provision of this Agreement is held invalid or unenforceable, the
+            <strong>18.1 Severability.</strong> If any provision of this Agreement is held invalid or unenforceable, the
             remainder shall remain in full force and effect, and the parties request that any court reform the invalid
             provision to the minimum extent necessary to achieve substantially the same lawful effect.
           </P>
           <P>
-            <strong>17.2 Lead-based paint disclosure (pre-1978 housing).</strong> If any residential structure on the property
+            <strong>18.2 Lead-based paint disclosure (pre-1978 housing).</strong> If any residential structure on the property
             was built before January 1, 1978, Landlord has provided Resident with the EPA pamphlet &quot;Protect Your Family from
             Lead in Your Home&quot; and any disclosure required under 42 U.S.C. 4852d and 40 C.F.R. Part 745 (Residential Lead-Based
             Paint Hazard Reduction Act). Resident acknowledges receipt of the pamphlet and any completed disclosure form prior
             to signing this Agreement. If the dwelling was constructed in 1978 or later, this subsection does not apply.
           </P>
           <P>
-            <strong>17.3 Attorney fees.</strong> In any action to interpret or enforce this Agreement, recover possession, or
+            <strong>18.3 Attorney fees.</strong> In any action to interpret or enforce this Agreement, recover possession, or
             collect sums lawfully owing after default, the <strong>prevailing party</strong> may recover reasonable attorneys&apos; fees and court
             costs <strong>only if and to the extent</strong> authorized by RCW 59.18.290, other applicable Washington statutes, or court rule.
             Nothing herein guarantees fee recovery in any particular dispute.
           </P>
           <P>
             Landlord&apos;s failure to enforce any provision on a particular occasion shall not waive the right to enforce that
-            provision on a later occasion, except as stated in Section 15.1. This Agreement may not be amended except by a
+            provision on a later occasion, except as stated in Section 16.1. This Agreement may not be amended except by a
             written instrument signed by both parties.
           </P>
           <P>
@@ -766,8 +757,8 @@ export default function LeaseHTMLTemplate({
           </P>
         </Section>
 
-        {/* 18 */}
-        <Section number="18" title="Governing Law">
+        {/* 19 */}
+        <Section number="19" title="Governing Law">
           <P>
             This Agreement shall be governed by the laws of the State of Washington, including the Washington Residential
             Landlord-Tenant Act (RCW Chapter 59.18). Venue for any legal action arising from this Agreement shall lie in the
@@ -775,14 +766,14 @@ export default function LeaseHTMLTemplate({
             required by mandatory law based on where the Premises are located.
           </P>
           <P>
-            <strong>18.1 Local ordinances.</strong> If the Premises are within the City of Seattle (or any other jurisdiction
+            <strong>19.1 Local ordinances.</strong> If the Premises are within the City of Seattle (or any other jurisdiction
             with rental housing ordinances), any conflicting term of this Agreement shall give way to mandatory local law only
             to the extent required.
           </P>
         </Section>
 
-        {/* 19 */}
-        <Section number="19" title="Entire Agreement">
+        {/* 20 */}
+        <Section number="20" title="Entire Agreement">
           <P>
             This Agreement, together with any addenda attached hereto, constitutes the entire agreement between the parties
             with respect to the Premises and supersedes all prior negotiations, representations, or agreements, whether
@@ -851,9 +842,9 @@ export default function LeaseHTMLTemplate({
           ) : null}
         </div>
 
-        {/* 20 — Signatures */}
+        {/* 21 — Signatures */}
         <div className="pt-6">
-          <h3 className="mb-4 text-[13px] font-black uppercase tracking-[0.12em] text-slate-800">20. Signatures</h3>
+          <h3 className="mb-4 text-[13px] font-black uppercase tracking-[0.12em] text-slate-800">21. Signatures</h3>
           <P>
             By signing below, the parties agree to all terms and conditions of this Residential Lease Agreement.
           </P>

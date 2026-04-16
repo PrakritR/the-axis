@@ -2,6 +2,13 @@
  * POST /api/stripe
  *   body.action = 'checkout' → create Stripe checkout session
  *   body.action = 'portal'   → create Stripe billing portal session
+ *
+ * Payment routing:
+ *   - Personal properties (Ownership Type = "Personal" or not set): funds go to the main Axis Stripe account.
+ *   - Third-Party Managed properties (Ownership Type = "Third-Party Managed"):
+ *       funds are routed to the owner's Stripe Connect Express account via `transfer_data.destination`.
+ *       The platform management fee (AXIS_MANAGEMENT_FEE_PERCENT, default 10%) is retained by Axis
+ *       via `application_fee_amount`.
  */
 
 import { randomUUID } from 'node:crypto'
@@ -9,6 +16,59 @@ import { resolveExpectedApplicationFeeUsd } from '../lib/stripe-application-fee-
 import { resolveStripeCardServiceFeeUsd, stripeCardServiceFeeLineLabel } from '../lib/stripe-card-service-fee-usd.js'
 
 const STRIPE_API = 'https://api.stripe.com/v1'
+const AIRTABLE_TOKEN = process.env.AIRTABLE_TOKEN || process.env.VITE_AIRTABLE_TOKEN
+const BASE_ID = process.env.VITE_AIRTABLE_BASE_ID || process.env.AIRTABLE_BASE_ID || 'appol57LKtMKaQ75T'
+const PROPERTIES_TABLE = encodeURIComponent(process.env.VITE_AIRTABLE_PROPERTIES_TABLE || 'Properties')
+const OWNER_TABLE = encodeURIComponent(process.env.AIRTABLE_OWNER_PROFILE_TABLE || 'Owner Profile')
+
+/** Platform management fee percentage retained by Axis for third-party managed properties (default 10%). */
+function getPlatformFeePercent() {
+  const raw = Number(process.env.AXIS_MANAGEMENT_FEE_PERCENT)
+  return Number.isFinite(raw) && raw >= 0 && raw <= 100 ? raw : 10
+}
+
+function airtableHeaders() {
+  return { Authorization: `Bearer ${AIRTABLE_TOKEN}`, 'Content-Type': 'application/json' }
+}
+
+/** Resolve ownership routing info for a property by name. Returns null if not found or personal. */
+async function resolvePropertyOwnershipRouting(propertyName) {
+  if (!propertyName || !AIRTABLE_TOKEN) return null
+  try {
+    const escaped = String(propertyName).replace(/"/g, '\\"')
+    const formula = encodeURIComponent(`{Property Name} = "${escaped}"`)
+    const url = `https://api.airtable.com/v0/${BASE_ID}/${PROPERTIES_TABLE}?filterByFormula=${formula}&maxRecords=1`
+    const res = await fetch(url, { headers: airtableHeaders() })
+    if (!res.ok) return null
+    const data = await res.json()
+    const record = data.records?.[0]
+    if (!record) return null
+
+    const ownershipType = String(record.fields?.['Ownership Type'] || '').trim()
+    if (ownershipType !== 'Third-Party Managed') return null
+
+    // Resolve the linked Owner Profile record
+    const ownerLinks = record.fields?.['Property Owner']
+    const ownerRecordId = Array.isArray(ownerLinks) ? ownerLinks[0] : String(ownerLinks || '').trim()
+    if (!ownerRecordId || !ownerRecordId.startsWith('rec')) return null
+
+    // Fetch owner's Stripe Connect account ID
+    const ownerUrl = `https://api.airtable.com/v0/${BASE_ID}/${OWNER_TABLE}/${encodeURIComponent(ownerRecordId)}`
+    const ownerRes = await fetch(ownerUrl, { headers: airtableHeaders() })
+    if (!ownerRes.ok) return null
+    const ownerData = await ownerRes.json()
+    const stripeAccountId = String(ownerData.fields?.['Stripe Connect Account ID'] || '').trim()
+    if (!stripeAccountId || !stripeAccountId.startsWith('acct_')) return null
+
+    // Only route if onboarding is complete
+    const payoutsEnabled = ownerData.fields?.['Stripe Payouts Enabled'] === true
+    if (!payoutsEnabled) return null
+
+    return { ownerStripeAccountId: stripeAccountId, ownershipType }
+  } catch {
+    return null
+  }
+}
 
 function getBaseUrl(req) {
   const proto = req.headers['x-forwarded-proto'] || 'https'
@@ -53,6 +113,11 @@ async function handleCheckout(req, res, secretKey) {
     embedded = false,
   } = req.body || {}
 
+  // Resolve ownership routing for non-application payments
+  const ownershipRouting = category !== 'application_fee'
+    ? await resolvePropertyOwnershipRouting(propertyName)
+    : null
+
   let amountNumber = Number(amount)
   let normalizedItems = Array.isArray(items)
     ? items
@@ -83,6 +148,16 @@ async function handleCheckout(req, res, secretKey) {
   const successUrl = embedded ? embeddedCheckoutReturnUrl(successBase) : successBase
   const cancelUrl = `${getBaseUrl(req)}${cancelPath}`
 
+  // Platform fee and Connect routing for third-party managed properties
+  const totalBeforeCardFee = hasItems
+    ? normalizedItems.reduce((sum, it) => sum + Number(it.amount || 0) * Number(it.quantity || 1), 0)
+    : amountNumber
+  const platformFeePercent = getPlatformFeePercent()
+  const platformFeeUsd = ownershipRouting
+    ? Math.round(totalBeforeCardFee * (platformFeePercent / 100) * 100) / 100
+    : 0
+  const platformFeeCents = Math.round(platformFeeUsd * 100)
+
   const form = toFormBody({
     mode: 'payment',
     ...(embedded
@@ -99,17 +174,23 @@ async function handleCheckout(req, res, secretKey) {
     ...(category === APPLICATION_FEE_STRIPE_CATEGORY && applicationRecordId
       ? { 'metadata[application_record_id]': String(applicationRecordId).trim() }
       : {}),
+    // Third-party managed: route to owner's Stripe Connect account
+    ...(ownershipRouting
+      ? {
+          'payment_intent_data[application_fee_amount]': String(platformFeeCents),
+          'payment_intent_data[transfer_data][destination]': ownershipRouting.ownerStripeAccountId,
+          'metadata[ownership_type]': 'Third-Party Managed',
+          'metadata[platform_fee_usd]': String(platformFeeUsd),
+          'metadata[owner_stripe_account]': ownershipRouting.ownerStripeAccountId,
+        }
+      : {}),
   })
 
   const lineItems = hasItems
     ? normalizedItems
     : [{ name: description, description: `${propertyName || ''} ${unitNumber || ''}`.trim(), amount: amountNumber, quantity: 1 }]
 
-  const baseSubtotalUsd = hasItems
-    ? normalizedItems.reduce((sum, it) => sum + Number(it.amount || 0) * Number(it.quantity || 1), 0)
-    : amountNumber
-
-  const cardServiceFeeUsd = resolveStripeCardServiceFeeUsd(baseSubtotalUsd)
+  const cardServiceFeeUsd = resolveStripeCardServiceFeeUsd(totalBeforeCardFee)
   if (cardServiceFeeUsd > 0) {
     lineItems.push({
       name: stripeCardServiceFeeLineLabel(),

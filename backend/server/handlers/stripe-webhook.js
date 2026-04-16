@@ -86,18 +86,27 @@ export default async function handler(req, res) {
     return res.status(500).json({ error: 'STRIPE_WEBHOOK_SECRET and STRIPE_SECRET_KEY must be set on the server.' })
   }
 
-  const sig = readStripeSignatureHeader(req)
-  if (!sig) return res.status(400).json({ error: 'Missing Stripe-Signature header.' })
-
-  const buf = Buffer.isBuffer(req.body) ? req.body : Buffer.from(String(req.body || ''), 'utf8')
-
   let event
-  try {
-    const stripe = new Stripe(secretKey)
-    event = stripe.webhooks.constructEvent(buf, sig, webhookSecret)
-  } catch (err) {
-    console.error('[stripe-webhook] constructEvent', err?.message || err)
-    return res.status(400).json({ error: `Invalid signature: ${err?.message || 'verify failed'}` })
+
+  // If the upstream route (/api/stripe/webhook) already verified the signature it attaches
+  // the parsed event object directly so we don't run constructEvent twice.
+  if (req._stripeEvent && typeof req._stripeEvent === 'object' && req._stripeEvent.id) {
+    event = req._stripeEvent
+    console.log(`[stripe-webhook] using pre-verified event id=${event.id} type=${event.type}`)
+  } else {
+    const sig = readStripeSignatureHeader(req)
+    if (!sig) return res.status(400).json({ error: 'Missing Stripe-Signature header.' })
+
+    const buf = Buffer.isBuffer(req.body) ? req.body : Buffer.from(String(req.body || ''), 'utf8')
+
+    try {
+      const stripe = new Stripe(secretKey, { apiVersion: '2023-10-16' })
+      event = stripe.webhooks.constructEvent(buf, sig, webhookSecret)
+      console.log(`[stripe-webhook] signature verification SUCCESS — id=${event.id} type=${event.type}`)
+    } catch (err) {
+      console.warn(`[stripe-webhook] signature verification FAILED — ${err?.message || err}`)
+      return res.status(400).json({ error: `Invalid signature: ${err?.message || 'verify failed'}` })
+    }
   }
 
   if (event.type !== 'checkout.session.completed') {
