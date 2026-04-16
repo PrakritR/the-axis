@@ -280,6 +280,30 @@ function buildRoomPlansFromAirtableRecord(rec, meta) {
   })
 }
 
+/**
+ * Distinct room labels for a Properties Airtable row (same naming as public listing floor plans).
+ * Used when managers assign an approved unit to any room on the listing, not only the applicant’s ranked choices.
+ *
+ * @param {Record<string, unknown>} rec
+ * @returns {string[]}
+ */
+export function propertyRoomLabelsFromAirtableRecord(rec) {
+  if (!rec || typeof rec !== 'object') return []
+  const { meta } = parseAxisListingMetaBlock(String(rec['Other Info'] || ''))
+  const plans = buildRoomPlansFromAirtableRecord(rec, meta)
+  const out = []
+  const seen = new Set()
+  for (const plan of plans || []) {
+    for (const room of plan.rooms || []) {
+      const label = trimStr(room?.name)
+      if (!label || seen.has(label)) continue
+      seen.add(label)
+      out.push(label)
+    }
+  }
+  return out
+}
+
 function listingVideosFromRecord(rec, meta) {
   const fromMeta = Array.isArray(meta?.listingVideos) ? meta.listingVideos : []
   const out = []

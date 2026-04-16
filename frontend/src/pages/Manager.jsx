@@ -171,6 +171,7 @@ import {
   sortRowsByPropertyGroupThenUpdatedDesc,
   normalizePropertyFilterKey,
 } from '../lib/portalPropertyTableOrder.js'
+import { propertyRoomLabelsFromAirtableRecord } from '../lib/airtablePublicListings.js'
 // ─── Session ──────────────────────────────────────────────────────────────────
 export const MANAGER_SESSION_KEY = 'axis_manager'
 const MANAGER_ONBOARDING_KEY = 'axis_manager_onboarding'
@@ -5762,7 +5763,7 @@ function ManagerPaymentsPanel({ allowedPropertyNames, allowedPropertyIds }) {
 }
 
 // ─── ApplicationsPanel ────────────────────────────────────────────────────────
-function ApplicationsPanel({ allowedPropertyNames, manager }) {
+function ApplicationsPanel({ allowedPropertyNames, manager, propertyRecords = [] }) {
   const [detailAppId, setDetailAppId] = useState(null)
   const [scopedRows, setScopedRows] = useState([])
   const [loading, setLoading] = useState(true)
@@ -5790,6 +5791,17 @@ function ApplicationsPanel({ allowedPropertyNames, manager }) {
     [],
   )
 
+  const roomsByPropertyNameLower = useMemo(() => {
+    const m = new Map()
+    for (const pr of propertyRecords) {
+      const key = String(pr['Property Name'] || '').trim().toLowerCase()
+      if (!key) continue
+      const labels = propertyRoomLabelsFromAirtableRecord(pr)
+      if (labels.length) m.set(key, labels)
+    }
+    return m
+  }, [propertyRecords])
+
   const buildApprovalRoomChoices = useCallback(
     (row) => {
       if (!row) return []
@@ -5804,9 +5816,16 @@ function ApplicationsPanel({ allowedPropertyNames, manager }) {
       push(row['Room Number'], '1st choice')
       push(row[roomChoice2Key], '2nd choice')
       push(row[roomChoice3Key], '3rd choice')
+      const propKey = String(row['Property Name'] || '').trim().toLowerCase()
+      const houseRooms = propKey ? roomsByPropertyNameLower.get(propKey) : null
+      if (Array.isArray(houseRooms)) {
+        for (const label of houseRooms) {
+          push(label, 'House listing')
+        }
+      }
       return out
     },
-    [roomChoice2Key, roomChoice3Key],
+    [roomChoice2Key, roomChoice3Key, roomsByPropertyNameLower],
   )
 
   useEffect(() => {
@@ -7941,7 +7960,11 @@ function ManagerDashboard({ manager: managerProp, openDraftId, onOpenDraft, onCl
         {dashView === 'profile' ? (
           <ManagerProfilePanel manager={manager} onManagerUpdate={handleManagerUpdate} />
         ) : dashView === 'applications' ? (
-          <ApplicationsPanel allowedPropertyNames={scopedPropertyOptions} manager={manager} />
+          <ApplicationsPanel
+            allowedPropertyNames={scopedPropertyOptions}
+            manager={manager}
+            propertyRecords={propertyRecords}
+          />
         ) : dashView === 'properties' ? (
           <div id="house-management" className="scroll-mt-24">
             <HouseManagementPanel manager={manager} onPropertiesChange={handlePropertiesChange} />
