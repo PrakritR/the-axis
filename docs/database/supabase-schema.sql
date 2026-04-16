@@ -50,3 +50,16 @@ create policy "residents_own_messages" on work_order_messages
       where id = work_order_id and resident_id = auth.uid()
     )
   );
+
+-- ── app_users (internal profiles; source of truth: supabase/migrations/20260416120000_create_app_users.sql) ──
+-- One row per auth user. Linked via auth_user_id -> auth.users(id).
+-- create table public.app_users (
+--   id uuid primary key default gen_random_uuid(),
+--   auth_user_id uuid not null unique references auth.users(id) on delete cascade,
+--   email text not null unique,
+--   full_name text,
+--   phone text,
+--   is_active boolean not null default true,
+--   created_at timestamptz not null default now(),
+--   updated_at timestamptz not null default now()
+-- );
