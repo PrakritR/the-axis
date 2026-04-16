@@ -194,6 +194,7 @@ export default function LeaseHTMLTemplate({
             value={(d.lastMonthRent || 0) > 0 ? d.lastMonthRentFmt : 'Not collected at move-in'}
           />
           {(d.applicationFee || 0) > 0 ? <Row label="Application fee" value={d.applicationFeeFmt} /> : null}
+          {(d.moveInFee || 0) > 0 ? <Row label="Move-in fee" value={d.moveInFeeFmt} /> : null}
           {(d.adminFee || 0) > 0 ? <Row label="Administrative fee" value={d.adminFeeFmt} /> : null}
           {d.proratedDays > 0 ? (
             <>
@@ -488,6 +489,11 @@ export default function LeaseHTMLTemplate({
 
         {/* 7 */}
         <Section number="7" title="Shared Spaces and House Rules">
+          {String(d.houseRules || '').trim() ? (
+            <P>
+              <strong>Property-specific house rules.</strong> {String(d.houseRules).trim()}
+            </P>
+          ) : null}
           {d.bathroomNote ? (
             <P>
               <strong>Bathroom Assignment:</strong> {d.bathroomNote}

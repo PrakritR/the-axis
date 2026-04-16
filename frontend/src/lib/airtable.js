@@ -1463,7 +1463,25 @@ export function normalizePaymentsMappedRecord(mapped) {
 
 export async function getPaymentsForResident(resident) {
   const fieldRef = paymentsResidentFieldFormulaRef()
-  const formula = `FIND("${escapeFormulaValue(resident.id)}", ARRAYJOIN(${fieldRef})) > 0`
+  const escapedId = escapeFormulaValue(resident.id)
+  const residentEmail = String(resident.Email || '').trim().toLowerCase()
+
+  // Use OR conditions to handle all field storage patterns:
+  //  1. Linked-record field (single): {Resident} = "recXXX" — Airtable matches linked records
+  //     by record ID when using the = operator in filter formulas.
+  //  2. Text field or multi-link ARRAYJOIN: FIND(id, ARRAYJOIN) — works when IDs are stored
+  //     as comma-joined strings.
+  //  3. Resident Email text field: fallback for payments where the Resident link was stripped
+  //     (e.g. by createPaymentRecordStrippingUnknownFields) but email was saved.
+  const clauses = [
+    `${fieldRef} = "${escapedId}"`,
+    `FIND("${escapedId}", ARRAYJOIN(${fieldRef})) > 0`,
+  ]
+  if (residentEmail) {
+    clauses.push(`LOWER({Resident Email}) = "${escapeFormulaValue(residentEmail)}"`)
+  }
+  const formula = clauses.length === 1 ? clauses[0] : `OR(${clauses.join(', ')})`
+
   const data = await request(
     buildPaymentsUrl({
       filterByFormula: formula,

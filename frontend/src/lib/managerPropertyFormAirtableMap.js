@@ -825,7 +825,7 @@ export function buildPropertyWizardInitialValues(property) {
         : [],
       guestPolicy: stringOrEmpty(leasingNorm.guestPolicy),
       additionalLeaseTerms: stringOrEmpty(leasingNorm.additionalLeaseTerms),
-      leaseInformation: stringOrEmpty(leasingNorm.leaseInformation),
+      houseRules: stringOrEmpty(leasingNorm.houseRules),
     },
   }
 }
@@ -833,7 +833,7 @@ export function buildPropertyWizardInitialValues(property) {
 /**
  * Read `leasing` from parsed axis meta (Other Info JSON).
  * Supports current Properties field names and legacy camelCase keys.
- * @returns {{ fullHousePrice: string, promoPrice: string, leaseLengthInfo: string, bundles: { name: string, price: string, rooms: string[] }[], guestPolicy: string, additionalLeaseTerms: string, leaseInformation: string }}
+ * @returns {{ fullHousePrice: string, promoPrice: string, leaseLengthInfo: string, bundles: { name: string, price: string, rooms: string[] }[], guestPolicy: string, additionalLeaseTerms: string, houseRules: string, leaseInformation: string }}
  */
 export function normalizeLeasingFromMeta(leasing) {
   const L = leasing && typeof leasing === 'object' ? leasing : {}
@@ -859,6 +859,7 @@ export function normalizeLeasingFromMeta(leasing) {
     bundles,
     guestPolicy: String(L.guestPolicy ?? '').trim(),
     additionalLeaseTerms: String(L.additionalLeaseTerms ?? '').trim(),
+    houseRules: String(L.houseRules ?? '').trim(),
     leaseInformation: String(L.leaseInformation ?? '').trim(),
   }
 }
@@ -1182,6 +1183,8 @@ export function serializeManagerAddPropertyToAirtableFields(params) {
   if (guestPolicySaved) leasingMeta.guestPolicy = guestPolicySaved
   const additionalLeaseTermsSaved = String(leasingObj.additionalLeaseTerms || '').trim()
   if (additionalLeaseTermsSaved) leasingMeta.additionalLeaseTerms = additionalLeaseTermsSaved
+  const houseRulesSaved = String(leasingObj.houseRules || '').trim()
+  if (houseRulesSaved) leasingMeta.houseRules = houseRulesSaved
 
   const axisMeta = {
     ...(ptRaw === 'Other' && ptOther ? { propertyTypeOther: ptOther } : {}),

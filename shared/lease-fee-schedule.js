@@ -46,6 +46,14 @@ export function buildMoveInFeeScheduleRows(d) {
       lines: ['Applied to final rental period after notice', 'Due at move-in if listed above'],
     })
   }
+  const mif = n(d?.moveInFee)
+  if (mif > 0) {
+    rows.push({
+      title: 'Move-in fee',
+      amount: String(d.moveInFeeFmt || '').trim() || '—',
+      lines: ['One-time charge at move-in', 'See Agreement Summary'],
+    })
+  }
   if (n(d?.proratedDays) > 0) {
     const pr = n(d?.proratedRent)
     if (pr > 0) {

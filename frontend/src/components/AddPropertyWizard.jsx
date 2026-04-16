@@ -410,6 +410,7 @@ export default function AddPropertyWizard({
         leaseLengthInfo: String(payload?.leasing?.leaseLengthInfo || DEFAULT_LEASE_INFO),
         guestPolicy: String(payload?.leasing?.guestPolicy || ''),
         additionalLeaseTerms: String(payload?.leasing?.additionalLeaseTerms || ''),
+        houseRules: String(payload?.leasing?.houseRules || ''),
         leaseInformation: String(payload?.leasing?.leaseInformation || ''),
         bundles: Array.isArray(payload?.leasing?.bundles)
           ? payload.leasing.bundles.map((row) => ({
@@ -451,6 +452,7 @@ export default function AddPropertyWizard({
     leaseLengthInfo: initialState.leasing.leaseLengthInfo,
     guestPolicy: initialState.leasing.guestPolicy,
     additionalLeaseTerms: initialState.leasing.additionalLeaseTerms,
+    houseRules: initialState.leasing.houseRules,
     leaseInformation: initialState.leasing.leaseInformation,
     bundles: initialState.leasing.bundles,
   })
@@ -2407,6 +2409,16 @@ export default function AddPropertyWizard({
               onChange={(ev) => setLeasing((L) => ({ ...L, additionalLeaseTerms: ev.target.value }))}
               rows={3}
               placeholder="e.g. Smoking policy, quiet hours, subletting, parking for guests — optional."
+            />
+          </div>
+          <div>
+            <label className={LBL}>House rules (shared spaces)</label>
+            <textarea
+              className={ic('houseRules')}
+              value={leasing.houseRules}
+              onChange={(ev) => setLeasing((L) => ({ ...L, houseRules: ev.target.value }))}
+              rows={4}
+              placeholder="e.g. Quiet hours, kitchen cleanup, trash days, guest limits — appears in Section 7 of generated leases."
             />
           </div>
         </div>

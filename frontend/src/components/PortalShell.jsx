@@ -261,7 +261,7 @@ const DEFAULT_EMPTY_STATE_ICON = (
   </span>
 )
 
-export function DataTable({ columns, rows, empty, emptyIcon = true }) {
+export function DataTable({ columns, rows, empty, emptyIcon = true, expandedKey, renderExpansion }) {
   if (!rows.length) {
     const visual =
       emptyIcon === false
@@ -276,6 +276,7 @@ export function DataTable({ columns, rows, empty, emptyIcon = true }) {
       </div>
     )
   }
+  const colSpan = columns.length
   return (
     <div className="overflow-x-auto rounded-3xl border border-slate-200 bg-white shadow-sm">
       <table className="w-full min-w-[760px] text-sm">
@@ -292,15 +293,28 @@ export function DataTable({ columns, rows, empty, emptyIcon = true }) {
           </tr>
         </thead>
         <tbody className="divide-y divide-slate-100">
-          {rows.map((row, i) => (
-            <tr key={row.key ?? i} className="transition-colors hover:bg-slate-50/80">
-              {columns.map((c) => (
-                <td key={c.key} className={`px-5 py-4 text-slate-700 ${c.cellClassName || ''}`}>
-                  {c.render ? c.render(row.data) : row.data[c.key]}
-                </td>
-              ))}
-            </tr>
-          ))}
+          {rows.map((row, i) => {
+            const rowKey = row.key ?? i
+            const isExpanded = expandedKey != null && expandedKey === rowKey
+            return (
+              <React.Fragment key={rowKey}>
+                <tr className={`transition-colors hover:bg-slate-50/80 ${isExpanded ? 'bg-blue-50/40' : ''}`}>
+                  {columns.map((c) => (
+                    <td key={c.key} className={`px-5 py-4 text-slate-700 ${c.cellClassName || ''}`}>
+                      {c.render ? c.render(row.data) : row.data[c.key]}
+                    </td>
+                  ))}
+                </tr>
+                {isExpanded && renderExpansion ? (
+                  <tr className="bg-slate-50/60">
+                    <td colSpan={colSpan} className="px-5 py-4">
+                      {renderExpansion(row.data)}
+                    </td>
+                  </tr>
+                ) : null}
+              </React.Fragment>
+            )
+          })}
         </tbody>
       </table>
     </div>

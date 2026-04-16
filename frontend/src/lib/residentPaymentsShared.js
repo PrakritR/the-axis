@@ -6,6 +6,23 @@
 import { isFeeWaivePaymentRecord } from '../../../shared/lease-access-requirements.js'
 import { buildPaymentResidentLinkFields } from './airtable.js'
 
+/**
+ * Resident Profile `House` field may be a linked-record array of property record IDs.
+ * Return the first human-readable (non-record-ID) string, or ''.
+ */
+function resolveHouseText(houseField) {
+  if (typeof houseField === 'string') {
+    const s = houseField.trim()
+    if (s && !/^rec[A-Za-z0-9]{14,}$/.test(s)) return s
+  } else if (Array.isArray(houseField)) {
+    for (const x of houseField) {
+      const s = String(x ?? '').trim()
+      if (s && !/^rec[A-Za-z0-9]{14,}$/.test(s)) return s
+    }
+  }
+  return ''
+}
+
 function paymentRawBlob(payment) {
   if (!payment || typeof payment !== 'object') return ''
   return [payment.Type, payment.Category, payment.Kind, payment['Line Item Type'], payment.Month, payment.Notes]
@@ -388,7 +405,9 @@ export async function finalizeResidentPaymentAfterStripeSuccess(
 
   const rid = String(resident.id).trim()
   const resName = String(resident.Name || '').trim()
-  const prop = String(propertyName || resident.House || '').trim()
+  const resEmail = String(resident.Email || '').trim().toLowerCase()
+  // `resident.House` may be a linked-record array of property record IDs — use a safe resolver.
+  const prop = String(propertyName || resolveHouseText(resident.House) || '').trim()
   const unit = String(unitNumber || resident['Unit Number'] || '').trim()
 
   if (paymentRecordId && /^rec[a-zA-Z0-9]{14,}$/.test(String(paymentRecordId).trim())) {
@@ -447,6 +466,7 @@ export async function finalizeResidentPaymentAfterStripeSuccess(
   return createPaymentRecord({
     ...buildPaymentResidentLinkFields(rid),
     'Resident Name': resName || undefined,
+    'Resident Email': resEmail || undefined,
     'Property Name': prop || undefined,
     'Room Number': unit || undefined,
     Amount: amt,

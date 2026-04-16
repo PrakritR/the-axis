@@ -2262,6 +2262,30 @@ export default function Apply() {
     const stepIndex = leaseStep === 'account' ? 0 : leaseStep === 'payment' ? 1 : 2
     const allDone = leaseSigned
 
+    function openApplicationFeeCheckoutFromConfirmation() {
+      const recordId = String(submissionSummary?.submittedRecord?.id || submittedRecord?.id || '').trim()
+      if (!recordId.startsWith('rec') || feeConfirmBusy || appFeePaid) return
+      const amt = inferredSubmittedApplicationFee
+      if (!Number.isFinite(amt) || amt <= 0) return
+      setEmbeddedCheckout({
+        flow: 'application_fee',
+        postSubmit: true,
+        title: 'Application Fee',
+        request: {
+          residentName: signer.fullName,
+          residentEmail: String(submissionSummary?.email || signer.email || '').trim(),
+          propertyName,
+          unitNumber: roomNumber || '',
+          amount: amt,
+          description: `Application fee — ${propertyName || 'Axis housing'}`,
+          category: 'application_fee',
+          applicationRecordId: recordId,
+          successPath: '/apply?payment=fee_success',
+          cancelPath: '/apply?payment=fee_cancelled',
+        },
+      })
+    }
+
     function StepDot({ n, done, active }) {
       return (
         <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-xs font-bold ring-2 transition-all
@@ -2358,15 +2382,27 @@ export default function Apply() {
                     <p className="mb-4 text-sm leading-6 text-slate-600">
                       Use your Application ID and the same email you applied with. Your name, email, and room details load automatically when you create your account.
                       {needsAppFeeReminder
-                        ? ' If an application fee applies, complete it from the secure payment window that opened after you submitted, or anytime under Payments in the Resident Portal after your account exists.'
+                        ? ' If an application fee applies, pay below (or after you create an account under Payments in the Resident Portal).'
                         : ''}
                     </p>
+                    {needsAppFeeReminder ? (
+                      <button
+                        type="button"
+                        onClick={openApplicationFeeCheckoutFromConfirmation}
+                        disabled={feeConfirmBusy || Boolean(embeddedCheckout)}
+                        className="mb-3 w-full rounded-full border-2 border-axis bg-white px-6 py-3 text-sm font-semibold text-axis shadow-sm transition hover:bg-axis/5 disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto"
+                      >
+                        {feeConfirmBusy
+                          ? 'Confirming payment…'
+                          : `Pay application fee ($${inferredSubmittedApplicationFee.toLocaleString()})`}
+                      </button>
+                    ) : null}
                     <div className="flex flex-col gap-3 sm:flex-row">
                       <a
                         href={`/portal?appId=${encodeURIComponent(fullAppId)}`}
                         className="inline-block rounded-full bg-axis px-6 py-3 text-center text-sm font-semibold text-white transition hover:opacity-90"
                       >
-                        {needsAppFeeReminder ? 'Create Resident Account (pay fee first)' : 'Create Resident Account'}
+                        Create Resident Account
                       </a>
                       <button type="button" onClick={() => setLeaseStep('payment')}
                         className="rounded-full border border-slate-200 bg-white px-6 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-50">

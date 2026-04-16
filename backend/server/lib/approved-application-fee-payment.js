@@ -24,6 +24,27 @@ const APPLICATION_APPROVED_ROOM_FIELD = String(
     DEFAULT_AXIS_APPLICATION_APPROVED_ROOM,
 ).trim() || DEFAULT_AXIS_APPLICATION_APPROVED_ROOM
 
+/** Airtable field name that links a Payments row to a Resident Profile record. */
+const PAYMENTS_RESIDENT_LINK_FIELD =
+  String(process.env.VITE_AIRTABLE_PAYMENTS_RESIDENT_LINK_FIELD || process.env.AIRTABLE_PAYMENTS_RESIDENT_LINK_FIELD || 'Resident').trim() || 'Resident'
+
+/**
+ * Resident Profile `House` field may be a linked-record array of property record IDs.
+ * Return the first human-readable (non-record-ID) string value, or the fallback.
+ */
+function resolveHouseText(houseField, fallback) {
+  if (typeof houseField === 'string') {
+    const s = houseField.trim()
+    if (s && !/^rec[A-Za-z0-9]{14,}$/.test(s)) return s
+  } else if (Array.isArray(houseField)) {
+    for (const x of houseField) {
+      const s = String(x ?? '').trim()
+      if (s && !/^rec[A-Za-z0-9]{14,}$/.test(s)) return s
+    }
+  }
+  return typeof fallback === 'string' ? fallback.trim() : ''
+}
+
 export const APPROVED_APP_FEE_MARKER_PREFIX = 'AXIS_APPROVED_APPLICATION_FEE:'
 
 function airtableHeaders() {
@@ -158,7 +179,10 @@ export async function createApprovedApplicationFeePayments({ application, reside
       }
       const resRow = await fetchResidentRecord(rid)
       const resName = String(resRow.Name || application['Signer Full Name'] || '').trim()
-      const prop = String(resRow.House || application['Property Name'] || '').trim()
+      const resEmail = String(resRow.Email || application['Signer Email'] || '').trim().toLowerCase()
+      // Prefer application-derived property name; resident profile `House` may be a
+      // linked-record array of property record IDs rather than a human-readable string.
+      const prop = String(application['Property Name'] || '').trim() || resolveHouseText(resRow.House, '')
       const unit = String(
         resRow['Unit Number'] || applicationApprovedUnitNumber(application, APPLICATION_APPROVED_ROOM_FIELD) || '',
       ).trim()
@@ -173,13 +197,14 @@ export async function createApprovedApplicationFeePayments({ application, reside
           `${CORE_AIRTABLE_BASE_URL}/${encodeURIComponent(PAYMENTS_TABLE)}/${submittedRow.id}`,
           {
             fields: {
-              Resident: [rid],
+              [PAYMENTS_RESIDENT_LINK_FIELD]: [rid],
               Status: 'Paid',
               'Amount Paid': feeUsd,
               Balance: 0,
               'Paid Date': today,
               Notes: updatedNotes,
               'Resident Name': resName || undefined,
+              'Resident Email': resEmail || undefined,
               'Property Name': prop || undefined,
               'Room Number': unit || undefined,
             },
@@ -191,7 +216,7 @@ export async function createApprovedApplicationFeePayments({ application, reside
         // No submitted-time row exists — create fresh
         const created = await airtablePost(payUrl, {
           fields: {
-            Resident: [rid],
+            [PAYMENTS_RESIDENT_LINK_FIELD]: [rid],
             Amount: feeUsd,
             'Amount Paid': feeUsd,
             Balance: 0,
@@ -203,6 +228,7 @@ export async function createApprovedApplicationFeePayments({ application, reside
             Month: 'Application fee',
             Notes: notes,
             'Resident Name': resName || undefined,
+            'Resident Email': resEmail || undefined,
             'Property Name': prop || undefined,
             'Room Number': unit || undefined,
           },

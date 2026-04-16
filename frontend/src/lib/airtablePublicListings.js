@@ -665,6 +665,12 @@ export function financialDisplayFieldsFromAirtableRecord(rec, meta) {
       ? `${formatMoneyLabelFromNumber(adminFeeNum)} administrative (non-refundable)`
       : ''
 
+  const moveInFeeNum = Number(meta?.financials?.moveInFee)
+  const moveInFeeDisplay =
+    Number.isFinite(moveInFeeNum) && moveInFeeNum > 0
+      ? `${formatMoneyLabelFromNumber(moveInFeeNum)} move-in fee`
+      : ''
+
   let utilitiesFee = String(
     rec['Utilities Fee'] ?? rec['Utilities'] ?? rec['House Utilities'] ?? meta?.financials?.utilities ?? '',
   ).trim()
@@ -695,6 +701,7 @@ export function financialDisplayFieldsFromAirtableRecord(rec, meta) {
     applicationFeeDisplay,
     moveInChargesDisplay,
     administrationFeeDisplay,
+    moveInFeeDisplay,
     utilitiesFee,
     securityDeposit,
     showFeesOnListing,
@@ -794,6 +801,9 @@ export function mapAirtableRecordToPropertyPage(rec) {
     leaseTerms: [],
     cleaningFee: '',
     petsPolicy: String(rec[PROPERTY_AIR.pets] ?? rec.Pets ?? '').trim(),
+    guestPolicy: String(leasing.guestPolicy || '').trim(),
+    additionalLeaseTerms: String(leasing.additionalLeaseTerms || '').trim(),
+    houseRules: String(leasing.houseRules || '').trim(),
     sharedSpacesList,
     bathroomsList,
   }

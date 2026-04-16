@@ -125,9 +125,20 @@ export async function ensurePostpayRoomCleaningFeePayment({
   }
 
   const res = residentProfile && typeof residentProfile === 'object' ? residentProfile : {}
-  const prop = String(res.House || '').trim()
+  // Resolve property name safely — `House` may be a linked-record array
+  const houseRaw = res.House
+  let prop = ''
+  if (typeof houseRaw === 'string' && houseRaw.trim() && !/^rec[A-Za-z0-9]{14,}$/.test(houseRaw.trim())) {
+    prop = houseRaw.trim()
+  } else if (Array.isArray(houseRaw)) {
+    for (const x of houseRaw) {
+      const s = String(x ?? '').trim()
+      if (s && !/^rec[A-Za-z0-9]{14,}$/.test(s)) { prop = s; break }
+    }
+  }
   const unit = String(res['Unit Number'] || '').trim()
   const name = String(res.Name || res['Resident Name'] || '').trim()
+  const email = String(res.Email || res['Resident Email'] || '').trim().toLowerCase()
   const dueStr = dueDateIsoForRoomCleaningPayment(dateStr)
 
   await createPaymentRecordStrippingUnknownFields({
@@ -143,6 +154,7 @@ export async function ensurePostpayRoomCleaningFeePayment({
     'Property Name': prop || undefined,
     'Room Number': unit || undefined,
     'Resident Name': name || undefined,
+    'Resident Email': email || undefined,
   })
 
   return { created: true }

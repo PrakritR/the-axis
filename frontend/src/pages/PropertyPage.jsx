@@ -953,9 +953,13 @@ export default function PropertyPage(){
       String(p.utilitiesFee || '').trim().length > 0 ||
       String(p.petsPolicy || '').trim().length > 0 ||
       Boolean(p.administrationFeeDisplay) ||
+      Boolean(p.moveInFeeDisplay) ||
       Boolean(p.showFeesOnListing) ||
       (Array.isArray(p.listingPricingBullets) && p.listingPricingBullets.length > 0) ||
-      String(p.pricingNotesForListing || '').trim().length > 0
+      String(p.pricingNotesForListing || '').trim().length > 0 ||
+      String(p.guestPolicy || '').trim().length > 0 ||
+      String(p.additionalLeaseTerms || '').trim().length > 0 ||
+      String(p.houseRules || '').trim().length > 0
     const hasLocation =
       Boolean(String(p.address || '').trim()) ||
       Boolean(p._fromAirtable && p.location && typeof p.location.lat === 'number' && typeof p.location.lng === 'number')
@@ -1506,6 +1510,17 @@ export default function PropertyPage(){
                         </td>
                       </tr>
                     ) : null}
+                    {p.moveInFeeDisplay ? (
+                      <tr className="border-b border-slate-100">
+                        <th
+                          scope="row"
+                          className="align-top bg-slate-50/80 px-4 py-3.5 text-xs font-bold uppercase tracking-wide text-slate-500 sm:px-5 sm:py-4"
+                        >
+                          Move-in fee
+                        </th>
+                        <td className="align-top px-4 py-3.5 font-semibold text-slate-900 sm:px-5 sm:py-4">{p.moveInFeeDisplay}</td>
+                      </tr>
+                    ) : null}
                     {p.utilitiesFee ? (
                       <tr className="border-b border-slate-100">
                         <th
@@ -1554,6 +1569,31 @@ export default function PropertyPage(){
                 </table>
               </div>
 
+              {String(p.guestPolicy || '').trim() ||
+              String(p.houseRules || '').trim() ||
+              String(p.additionalLeaseTerms || '').trim() ? (
+                <div className="mt-8 space-y-6">
+                  {String(p.guestPolicy || '').trim() ? (
+                    <div className="rounded-xl border border-slate-200 bg-white px-4 py-5 sm:px-6">
+                      <h3 className="text-xs font-black uppercase tracking-[0.14em] text-slate-500">Guest policy</h3>
+                      <p className="mt-2 whitespace-pre-wrap text-sm leading-relaxed text-slate-800">{p.guestPolicy}</p>
+                    </div>
+                  ) : null}
+                  {String(p.houseRules || '').trim() ? (
+                    <div className="rounded-xl border border-slate-200 bg-white px-4 py-5 sm:px-6">
+                      <h3 className="text-xs font-black uppercase tracking-[0.14em] text-slate-500">House rules</h3>
+                      <p className="mt-2 whitespace-pre-wrap text-sm leading-relaxed text-slate-800">{p.houseRules}</p>
+                    </div>
+                  ) : null}
+                  {String(p.additionalLeaseTerms || '').trim() ? (
+                    <div className="rounded-xl border border-slate-200 bg-white px-4 py-5 sm:px-6">
+                      <h3 className="text-xs font-black uppercase tracking-[0.14em] text-slate-500">Other lease terms</h3>
+                      <p className="mt-2 whitespace-pre-wrap text-sm leading-relaxed text-slate-800">{p.additionalLeaseTerms}</p>
+                    </div>
+                  ) : null}
+                </div>
+              ) : null}
+
               {p.showFeesOnListing && (p.listingPricingBullets?.length > 0 || p.pricingNotesForListing) ? (
                 <div className="mt-8 rounded-xl border border-slate-200 bg-slate-50/80 px-4 py-5 sm:px-6">
                   <h3 className="text-sm font-black uppercase tracking-[0.12em] text-slate-600">Pricing transparency</h3>
@@ -1573,7 +1613,11 @@ export default function PropertyPage(){
                 </div>
               ) : null}
 
-              {(p.securityDeposit || p.administrationFeeDisplay || p.applicationFeeDisplay || p.moveInChargesDisplay) ? (
+              {(p.securityDeposit ||
+                p.administrationFeeDisplay ||
+                p.applicationFeeDisplay ||
+                p.moveInChargesDisplay ||
+                p.moveInFeeDisplay) ? (
                 <div className="mt-8 rounded-2xl border border-stone-200 bg-[#faf8f5] px-4 py-5 sm:px-6">
                   <h3 className="text-sm font-black uppercase tracking-[0.12em] text-stone-600">Fee overview</h3>
                   <p className="mt-1 text-xs text-stone-600">
@@ -1609,7 +1653,17 @@ export default function PropertyPage(){
                             <div className="mt-0.5 font-semibold text-stone-900">{p.moveInChargesDisplay}</div>
                           </li>
                         ) : null}
-                        {!p.securityDeposit && !p.administrationFeeDisplay && !p.applicationFeeDisplay && !p.moveInChargesDisplay ? (
+                        {p.moveInFeeDisplay ? (
+                          <li>
+                            <span className="font-bold">Move-in fee</span>
+                            <div className="mt-0.5 font-semibold text-stone-900">{p.moveInFeeDisplay}</div>
+                          </li>
+                        ) : null}
+                        {!p.securityDeposit &&
+                        !p.administrationFeeDisplay &&
+                        !p.applicationFeeDisplay &&
+                        !p.moveInChargesDisplay &&
+                        !p.moveInFeeDisplay ? (
                           <li className="text-xs text-stone-500">See table above for details.</li>
                         ) : null}
                       </ul>

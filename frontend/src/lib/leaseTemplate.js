@@ -84,6 +84,16 @@ function getApplicationFee(propertyName) {
   return parseMoneyStr(prop?.applicationFee) ?? 0
 }
 
+function getMoveInFee(propertyName) {
+  const prop = findPropRecord(propertyName)
+  return parseMoneyStr(prop?.moveInFee) ?? 0
+}
+
+function getHouseRules(propertyName) {
+  const prop = findPropRecord(propertyName)
+  return String(prop?.houseRules || prop?.leasing?.houseRules || '').trim()
+}
+
 function getBathroomNote(propertyName, roomNumber) {
   const prop = findPropRecord(propertyName)
   if (!prop || !roomNumber) return ''
@@ -107,7 +117,7 @@ function getAmenities(propertyName) {
 
 /**
  * @param {object} app - Application record from the applications backend (mapped fields)
- * @param {object} [overrides] - Admin overrides: { rent, deposit, utilityFee, adminFee, lastMonthRent }
+ * @param {object} [overrides] - Admin overrides: { rent, deposit, utilityFee, adminFee, lastMonthRent, moveInFee }
  * @returns {object} Structured lease data object
  */
 export function buildLease(app, overrides = {}) {
@@ -133,6 +143,10 @@ export function buildLease(app, overrides = {}) {
     overrides.adminFee != null && String(overrides.adminFee).trim() !== ''
       ? parseMoneyStr(String(overrides.adminFee)) ?? 0
       : parseMoneyStr(app['Admin Fee'] ?? app['Administration Fee'] ?? app['Move-in Admin Fee']) ?? 0
+  const moveInFee =
+    overrides.moveInFee != null && String(overrides.moveInFee).trim() !== ''
+      ? parseMoneyStr(String(overrides.moveInFee)) ?? 0
+      : getMoveInFee(propertyName)
   let lastMonthRent = 0
   if (overrides.lastMonthRent != null && String(overrides.lastMonthRent).trim() !== '') {
     const fromOverride = parseMoneyStr(String(overrides.lastMonthRent))
@@ -145,6 +159,7 @@ export function buildLease(app, overrides = {}) {
   }
   const bathroomNote = getBathroomNote(propertyName, roomNumber)
   const amenities = getAmenities(propertyName)
+  const houseRules = getHouseRules(propertyName)
 
   // Calculate prorated amounts (days from start to end of first month)
   let proratedRent = 0
@@ -165,7 +180,14 @@ export function buildLease(app, overrides = {}) {
   }
 
   const totalMoveIn =
-    proratedRent + proratedUtility + monthlyRent + utilityFee + securityDeposit + adminFee + lastMonthRent
+    proratedRent +
+    proratedUtility +
+    monthlyRent +
+    utilityFee +
+    securityDeposit +
+    adminFee +
+    lastMonthRent +
+    moveInFee
 
   const today = new Date().toLocaleDateString('en-US', { month: '2-digit', day: '2-digit', year: 'numeric' })
 
@@ -200,6 +222,8 @@ export function buildLease(app, overrides = {}) {
     securityDeposit,
     applicationFee,
     adminFee,
+    lastMonthRent,
+    moveInFee,
     proratedDays,
     proratedRent,
     proratedUtility,
@@ -212,6 +236,7 @@ export function buildLease(app, overrides = {}) {
     applicationFeeFmt: fmtMoney(applicationFee),
     lastMonthRentFmt: fmtMoney(lastMonthRent),
     adminFeeFmt: fmtMoney(adminFee),
+    moveInFeeFmt: fmtMoney(moveInFee),
     proratedRentFmt: fmtMoney(proratedRent),
     proratedUtilityFmt: fmtMoney(proratedUtility),
     totalMoveInFmt: fmtMoney(totalMoveIn),
@@ -222,5 +247,6 @@ export function buildLease(app, overrides = {}) {
     // Property-specific
     bathroomNote,
     amenities,
+    houseRules,
   }
 }

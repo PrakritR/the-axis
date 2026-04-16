@@ -28,6 +28,10 @@ const APPLICATION_APPROVED_ROOM_FIELD = String(
     DEFAULT_AXIS_APPLICATION_APPROVED_ROOM,
 ).trim() || DEFAULT_AXIS_APPLICATION_APPROVED_ROOM
 
+/** Airtable field name that links a Payments row to a Resident Profile record. */
+const PAYMENTS_RESIDENT_LINK_FIELD =
+  String(process.env.VITE_AIRTABLE_PAYMENTS_RESIDENT_LINK_FIELD || process.env.AIRTABLE_PAYMENTS_RESIDENT_LINK_FIELD || 'Resident').trim() || 'Resident'
+
 export const APPROVED_MOVEIN_DEPOSIT_MARKER_PREFIX = 'AXIS_APPROVED_MOVEIN_DEPOSIT:'
 export const APPROVED_MOVEIN_FIRST_RENT_MARKER_PREFIX = 'AXIS_APPROVED_MOVEIN_FIRST_RENT:'
 export const APPROVED_MOVEIN_FIRST_UTIL_MARKER_PREFIX = 'AXIS_APPROVED_MOVEIN_FIRST_UTILITIES:'
@@ -179,6 +183,23 @@ export async function deleteUnpaidApprovedMoveInPaymentsForApplication(applicati
   return { deletedIds }
 }
 
+/**
+ * Resident Profile `House` field may be a linked-record array of record IDs.
+ * Return the first human-readable (non-record-ID) string value, or the fallback.
+ */
+function resolveHouseText(houseField, fallback) {
+  if (typeof houseField === 'string') {
+    const s = houseField.trim()
+    if (s && !/^rec[A-Za-z0-9]{14,}$/.test(s)) return s
+  } else if (Array.isArray(houseField)) {
+    for (const x of houseField) {
+      const s = String(x ?? '').trim()
+      if (s && !/^rec[A-Za-z0-9]{14,}$/.test(s)) return s
+    }
+  }
+  return typeof fallback === 'string' ? fallback.trim() : ''
+}
+
 function dueDateFromLeaseStart(leaseStart) {
   const s = String(leaseStart || '').trim().slice(0, 10)
   if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s
@@ -234,7 +255,10 @@ export async function createApprovedApplicationMoveInPayments({ application, res
     try {
       const resRow = await fetchResidentRecord(rid)
       const resName = String(resRow.Name || application['Signer Full Name'] || '').trim()
-      const prop = String(resRow.House || propName).trim()
+      const resEmail = String(resRow.Email || application['Signer Email'] || '').trim().toLowerCase()
+      // Use application-derived propName as primary source; resident profile `House` may be a
+      // linked-record array of property record IDs rather than a human-readable string.
+      const prop = propName || resolveHouseText(resRow.House, '')
       const unit = String(resRow['Unit Number'] || roomNum).trim()
 
       const rows = [
@@ -276,7 +300,7 @@ export async function createApprovedApplicationMoveInPayments({ application, res
                 ? prevNotes
                 : `${prevNotes} Approved move-in line. ${approvedTag}`.trim()
               await airtablePatchRecord(subRec.id, {
-                Resident: [rid],
+                [PAYMENTS_RESIDENT_LINK_FIELD]: [rid],
                 Amount: spec.amount,
                 Balance: spec.amount,
                 Status: 'Unpaid',
@@ -286,6 +310,7 @@ export async function createApprovedApplicationMoveInPayments({ application, res
                 Month: spec.Month,
                 Notes: nextNotes,
                 'Resident Name': resName || undefined,
+                'Resident Email': resEmail || undefined,
                 'Property Name': prop || undefined,
                 'Room Number': unit || undefined,
               })
@@ -305,7 +330,7 @@ export async function createApprovedApplicationMoveInPayments({ application, res
         }
         const created = await airtablePost(payUrl, {
           fields: {
-            Resident: [rid],
+            [PAYMENTS_RESIDENT_LINK_FIELD]: [rid],
             Amount: spec.amount,
             Balance: spec.amount,
             Status: 'Unpaid',
@@ -315,6 +340,7 @@ export async function createApprovedApplicationMoveInPayments({ application, res
             Month: spec.Month,
             Notes: spec.Notes,
             'Resident Name': resName || undefined,
+            'Resident Email': resEmail || undefined,
             'Property Name': prop || undefined,
             'Room Number': unit || undefined,
           },

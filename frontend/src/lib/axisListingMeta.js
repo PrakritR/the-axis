@@ -13,7 +13,7 @@
  * - `financials.moveInCharges`, `financials.administrationFee` (non-deposit move-in admin; separate from `Security Deposit` column).
  * - `financials.monthlyRoomRent`, `utilityFee`, `holdingDeposit`, `moveInFee`, `lateRentFee`, pet/conditional flags & amounts,
  *   `pricingNotes`, `showFeesOnListing` (manager “Pricing & Fees” wizard; public UI when `showFeesOnListing` is true).
- * - `leasing.guestPolicy`, `leasing.additionalLeaseTerms` — optional text merged into generated lease Section 6.
+ * - `leasing.guestPolicy`, `leasing.additionalLeaseTerms`, `leasing.houseRules` — optional text merged into generated lease (guest/other terms in Section 6; house rules in Section 7).
  * - `listingAvailabilityWindows`, `listingVideos`, `bathroomTotalDecimal`, `sharedSpacesDetail`
  *   (each entry may include `imageUrls[]`; photos may also use `axis-ss{n}-` filenames on Photos like laundry),
  *   `laundryDetail[]` (per laundry slot: extra description for listings; photos use `axis-l{n}-` filenames on Photos),

@@ -110,6 +110,7 @@ export async function ensureWorkOrderManagerChargePayment({
   const prop = paymentPropertyNameFromResident(res)
   const unit = String(res['Unit Number'] || '').trim()
   const name = String(res.Name || res['Resident Name'] || '').trim()
+  const email = String(res.Email || res['Resident Email'] || '').trim().toLowerCase()
   const due = new Date()
   due.setDate(due.getDate() + 14)
   const dueStr = due.toISOString().slice(0, 10)
@@ -127,6 +128,7 @@ export async function ensureWorkOrderManagerChargePayment({
     'Property Name': prop || undefined,
     'Room Number': unit || undefined,
     'Resident Name': name || undefined,
+    'Resident Email': email || undefined,
   })
 
   return { created: true }
@@ -153,6 +155,7 @@ export async function createResidentManualPaymentLine({
   const prop = paymentPropertyNameFromResident(res)
   const unit = String(res['Unit Number'] || '').trim()
   const name = String(res.Name || res['Resident Name'] || '').trim()
+  const email = String(res.Email || res['Resident Email'] || '').trim().toLowerCase()
   const due = String(dueDateIso || '').trim().slice(0, 10) || new Date().toISOString().slice(0, 10)
   const stamp = new Date().toISOString()
   const type = String(typeLabel || 'Fee').trim() || 'Fee'
@@ -171,5 +174,6 @@ export async function createResidentManualPaymentLine({
     'Property Name': prop || undefined,
     'Room Number': unit || undefined,
     'Resident Name': name || undefined,
+    'Resident Email': email || undefined,
   })
 }

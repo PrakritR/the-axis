@@ -380,6 +380,7 @@ function buildLeaseData(app, propertyRecord, overrides = {}) {
     propertyMeta?.leasing && typeof propertyMeta.leasing === 'object' ? propertyMeta.leasing : {}
   const guestPolicy = String(leasingFromMeta.guestPolicy || '').trim()
   const additionalLeaseTerms = String(leasingFromMeta.additionalLeaseTerms || '').trim()
+  const houseRules = String(leasingFromMeta.houseRules || '').trim()
 
   const propertyName = app['Property Name'] || ''
   const effectiveRoomLabel = applicationLeaseRoomNumber(app, APPLICATION_APPROVED_ROOM_FIELD)
@@ -453,6 +454,15 @@ function buildLeaseData(app, propertyRecord, overrides = {}) {
     lastMonthRent = fromApp != null ? fromApp : 0
   }
 
+  let moveInFee = 0
+  if (overrides.moveInFee != null && overrides.moveInFee !== '') {
+    const o = parseMoneyLike(overrides.moveInFee)
+    if (o != null && o >= 0) moveInFee = o
+  } else {
+    const fromMeta = parseMoneyLike(propertyMeta?.financials?.moveInFee)
+    if (fromMeta != null && fromMeta > 0) moveInFee = fromMeta
+  }
+
   // Prorated calculation
   let proratedRent = 0
   let proratedUtility = 0
@@ -472,7 +482,7 @@ function buildLeaseData(app, propertyRecord, overrides = {}) {
   }
 
   const totalMoveIn =
-    proratedRent + proratedUtility + monthlyRent + utilityFee + securityDeposit + adminFee + lastMonthRent
+    proratedRent + proratedUtility + monthlyRent + utilityFee + securityDeposit + adminFee + lastMonthRent + moveInFee
 
   const today = new Date().toLocaleDateString('en-US', { month: '2-digit', day: '2-digit', year: 'numeric' })
 
@@ -502,6 +512,7 @@ function buildLeaseData(app, propertyRecord, overrides = {}) {
     applicationFee,
     lastMonthRent,
     adminFee,
+    moveInFee,
     proratedDays,
     proratedRent,
     proratedUtility,
@@ -515,6 +526,7 @@ function buildLeaseData(app, propertyRecord, overrides = {}) {
     applicationFeeFmt: fmtMoney(applicationFee),
     lastMonthRentFmt: fmtMoney(lastMonthRent),
     adminFeeFmt: fmtMoney(adminFee),
+    moveInFeeFmt: fmtMoney(moveInFee),
     proratedRentFmt: fmtMoney(proratedRent),
     proratedUtilityFmt: fmtMoney(proratedUtility),
     totalMoveInFmt: fmtMoney(totalMoveIn),
@@ -528,6 +540,7 @@ function buildLeaseData(app, propertyRecord, overrides = {}) {
     amenities: axisDetails.amenities || [],
     guestPolicy,
     additionalLeaseTerms,
+    houseRules,
     propertyLeaseInformation: propertyLeaseInformationFromRecord(propertyRecord),
   }
 }

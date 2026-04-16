@@ -3340,6 +3340,98 @@ function HouseManagementPanel({ manager, onPropertiesChange }) {
                   <DataTable
                     empty="No properties in this view"
                     emptyIcon={<PortalEmptyVisual variant="house" />}
+                    expandedKey={detailsPropertyId}
+                    renderExpansion={(p) => (
+                      <div className="space-y-4">
+                        {propertiesSection === 'request_change' && p[PROPERTY_EDIT_REQUEST_FIELD] ? (
+                          <div className="rounded-xl border border-violet-200 bg-violet-50 px-3 py-2 text-sm text-violet-950">
+                            <div className="text-[11px] font-bold uppercase tracking-[0.14em] text-violet-800">From Axis</div>
+                            <p className="mt-1 whitespace-pre-wrap">{p[PROPERTY_EDIT_REQUEST_FIELD]}</p>
+                          </div>
+                        ) : null}
+                        <div className="flex items-start justify-between gap-3">
+                          <div>
+                            <h2 className="text-lg font-black text-slate-900">{propertyRecordName(p) || 'Untitled house'}</h2>
+                            <p className="mt-1 text-sm text-slate-600">{p.Address || 'Address not set'}</p>
+                          </div>
+                          <div className="flex flex-wrap items-center justify-end gap-2">
+                            {propertiesSection === 'listed' ? (
+                              <button
+                                type="button"
+                                disabled={listingBusyPropertyId === p.id || deletingPropertyId === p.id || isManagerInternalPreview(manager)}
+                                onClick={async () => {
+                                  if (!window.confirm(`Unlist "${propertyRecordName(p) || 'this property'}" from the public site? It stays in your portal.`)) return
+                                  setListingBusyPropertyId(p.id)
+                                  try {
+                                    await updatePropertyAdmin(p.id, buildManagerListingPatch(p, false))
+                                    toast.success('Property unlisted')
+                                    await loadProperties()
+                                  } catch (err) {
+                                    toast.error(err.message || 'Unlist failed — add a "Listed" checkbox on the Properties table in Airtable.')
+                                  } finally {
+                                    setListingBusyPropertyId(null)
+                                  }
+                                }}
+                                className={`${MANAGER_PROP_TOOLBAR_BTN} text-slate-800 hover:bg-slate-100`}
+                              >
+                                {listingBusyPropertyId === p.id ? 'Saving…' : 'Unlist'}
+                              </button>
+                            ) : propertiesSection === 'unlisted' ? (
+                              <button
+                                type="button"
+                                disabled={listingBusyPropertyId === p.id || deletingPropertyId === p.id || isManagerInternalPreview(manager)}
+                                onClick={async () => {
+                                  setListingBusyPropertyId(p.id)
+                                  try {
+                                    await updatePropertyAdmin(p.id, buildManagerListingPatch(p, true))
+                                    toast.success('Property listed on the site again')
+                                    await loadProperties()
+                                  } catch (err) {
+                                    toast.error(err.message || 'Relist failed — add a "Listed" checkbox on the Properties table in Airtable.')
+                                  } finally {
+                                    setListingBusyPropertyId(null)
+                                  }
+                                }}
+                                className="rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-xs font-semibold text-emerald-800 transition hover:bg-emerald-100 disabled:opacity-50"
+                              >
+                                {listingBusyPropertyId === p.id ? 'Saving…' : 'Relist'}
+                              </button>
+                            ) : null}
+                            {propertiesSection !== 'rejected' ? (
+                              <button
+                                type="button"
+                                onClick={() => beginEditListing(p)}
+                                className={MANAGER_PROP_TOOLBAR_BTN}
+                              >
+                                Edit listing
+                              </button>
+                            ) : null}
+                            <button
+                              type="button"
+                              disabled={deletingPropertyId === p.id || isManagerInternalPreview(manager)}
+                              onClick={async () => {
+                                if (!window.confirm(`Delete "${propertyRecordName(p) || 'this property'}"? This cannot be undone.`)) return
+                                setDeletingPropertyId(p.id)
+                                try {
+                                  await deletePropertyAdmin(p.id)
+                                  toast.success('Property deleted')
+                                  setDetailsPropertyId(null)
+                                  await loadProperties()
+                                } catch (err) {
+                                  toast.error(err.message || 'Delete failed')
+                                } finally {
+                                  setDeletingPropertyId(null)
+                                }
+                              }}
+                              className="rounded-xl border border-red-200 bg-red-50 px-3 py-1.5 text-xs font-semibold text-red-700 transition hover:bg-red-100 disabled:opacity-50"
+                            >
+                              {deletingPropertyId === p.id ? 'Deleting…' : 'Delete'}
+                            </button>
+                          </div>
+                        </div>
+                        <PropertyDetailPanel property={managerPropertyToDetailPanelModel(p)} ownerLabel={manager?.email || '—'} />
+                      </div>
+                    )}
                     columns={[
                       {
                         key: 'property',
@@ -3384,9 +3476,7 @@ function HouseManagementPanel({ manager, onPropertiesChange }) {
                           <button
                             type="button"
                             className="whitespace-nowrap text-sm font-semibold text-[#2563eb]"
-                            onClick={() => {
-                              setDetailsPropertyId(detailsPropertyId === p.id ? null : p.id)
-                            }}
+                            onClick={() => setDetailsPropertyId(detailsPropertyId === p.id ? null : p.id)}
                           >
                             {detailsPropertyId === p.id ? 'Hide' : 'Details'}
                           </button>
@@ -3395,111 +3485,6 @@ function HouseManagementPanel({ manager, onPropertiesChange }) {
                     ]}
                     rows={managerPropertyTabRows.map((p) => ({ key: p.id, data: p }))}
                   />
-
-                  {selectedManagerProperty ? (
-                    <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm space-y-4">
-                      {propertiesSection === 'request_change' && selectedManagerProperty[PROPERTY_EDIT_REQUEST_FIELD] ? (
-                        <div className="rounded-xl border border-violet-200 bg-violet-50 px-3 py-2 text-sm text-violet-950">
-                          <div className="text-[11px] font-bold uppercase tracking-[0.14em] text-violet-800">From Axis</div>
-                          <p className="mt-1 whitespace-pre-wrap">{selectedManagerProperty[PROPERTY_EDIT_REQUEST_FIELD]}</p>
-                        </div>
-                      ) : null}
-
-                      <div className="flex items-start justify-between gap-3">
-                        <div>
-                          <h2 className="text-lg font-black text-slate-900">{propertyRecordName(selectedManagerProperty) || 'Untitled house'}</h2>
-                          <p className="mt-1 text-sm text-slate-600">{selectedManagerProperty.Address || 'Address not set'}</p>
-                        </div>
-                        <div className="flex flex-wrap items-center justify-end gap-2">
-                          {propertiesSection === 'listed' ? (
-                            <button
-                              type="button"
-                              disabled={
-                                listingBusyPropertyId === selectedManagerProperty.id ||
-                                deletingPropertyId === selectedManagerProperty.id ||
-                                isManagerInternalPreview(manager)
-                              }
-                              onClick={async () => {
-                                if (!window.confirm(`Unlist "${propertyRecordName(selectedManagerProperty) || 'this property'}" from the public site? It stays in your portal.`)) return
-                                setListingBusyPropertyId(selectedManagerProperty.id)
-                                try {
-                                  await updatePropertyAdmin(selectedManagerProperty.id, buildManagerListingPatch(selectedManagerProperty, false))
-                                  toast.success('Property unlisted')
-                                  await loadProperties()
-                                } catch (err) {
-                                  toast.error(err.message || 'Unlist failed — add a "Listed" checkbox on the Properties table in Airtable.')
-                                } finally {
-                                  setListingBusyPropertyId(null)
-                                }
-                              }}
-                              className={`${MANAGER_PROP_TOOLBAR_BTN} text-slate-800 hover:bg-slate-100`}
-                            >
-                              {listingBusyPropertyId === selectedManagerProperty.id ? 'Saving…' : 'Unlist'}
-                            </button>
-                          ) : propertiesSection === 'unlisted' ? (
-                            <button
-                              type="button"
-                              disabled={
-                                listingBusyPropertyId === selectedManagerProperty.id ||
-                                deletingPropertyId === selectedManagerProperty.id ||
-                                isManagerInternalPreview(manager)
-                              }
-                              onClick={async () => {
-                                setListingBusyPropertyId(selectedManagerProperty.id)
-                                try {
-                                  await updatePropertyAdmin(selectedManagerProperty.id, buildManagerListingPatch(selectedManagerProperty, true))
-                                  toast.success('Property listed on the site again')
-                                  await loadProperties()
-                                } catch (err) {
-                                  toast.error(err.message || 'Relist failed — add a "Listed" checkbox on the Properties table in Airtable.')
-                                } finally {
-                                  setListingBusyPropertyId(null)
-                                }
-                              }}
-                              className="rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-xs font-semibold text-emerald-800 transition hover:bg-emerald-100 disabled:opacity-50"
-                            >
-                              {listingBusyPropertyId === selectedManagerProperty.id ? 'Saving…' : 'Relist'}
-                            </button>
-                          ) : null}
-                          <button
-                            type="button"
-                            disabled={deletingPropertyId === selectedManagerProperty.id || isManagerInternalPreview(manager)}
-                            onClick={async () => {
-                              if (!window.confirm(`Delete "${propertyRecordName(selectedManagerProperty) || 'this property'}"? This cannot be undone.`)) return
-                              setDeletingPropertyId(selectedManagerProperty.id)
-                              try {
-                                await deletePropertyAdmin(selectedManagerProperty.id)
-                                toast.success('Property deleted')
-                                setDetailsPropertyId(null)
-                                await loadProperties()
-                              } catch (err) {
-                                toast.error(err.message || 'Delete failed')
-                              } finally {
-                                setDeletingPropertyId(null)
-                              }
-                            }}
-                            className="rounded-xl border border-red-200 bg-red-50 px-3 py-1.5 text-xs font-semibold text-red-700 transition hover:bg-red-100 disabled:opacity-50"
-                          >
-                            {deletingPropertyId === selectedManagerProperty.id ? 'Deleting…' : 'Delete'}
-                          </button>
-                        </div>
-                      </div>
-
-                      <PropertyDetailPanel property={managerPropertyToDetailPanelModel(selectedManagerProperty)} ownerLabel={manager?.email || '—'} />
-
-                      <div className="flex gap-2 border-t border-slate-200 pt-4">
-                        {propertiesSection !== 'rejected' ? (
-                          <button
-                            type="button"
-                            onClick={() => beginEditListing(selectedManagerProperty)}
-                            className={MANAGER_PROP_TOOLBAR_BTN}
-                          >
-                            Edit listing
-                          </button>
-                        ) : null}
-                      </div>
-                    </div>
-                  ) : null}
                 </div>
               ) : (
                 <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50/80 px-6 py-10 text-center">
@@ -4831,78 +4816,8 @@ function WorkOrdersTabPanel({ manager, allowedPropertyNames, allowedPropertyIds 
           <DataTable
             empty={list.length === 0 ? 'No work orders yet' : 'Nothing matches this filter'}
             emptyIcon={<PortalEmptyVisual variant={list.length === 0 ? 'workorders' : 'search'} />}
-            columns={[
-              {
-                key: 'desc',
-                label: 'Description',
-                render: (d) => <span className="font-semibold text-slate-900">{safePortalText(d.Title, 'Untitled request')}</span>,
-              },
-              {
-                key: 'thumb',
-                label: 'Photo',
-                headerClassName: 'w-[72px]',
-                cellClassName: 'w-[72px]',
-                render: (d) => {
-                  const src = workOrderPhotoAttachmentUrls(d)[0]
-                  if (!src) return <span className="text-slate-400">—</span>
-                  return (
-                    <a
-                      href={src}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="inline-block overflow-hidden rounded-xl border border-slate-200 bg-slate-100 shadow-sm"
-                      title="Open photo"
-                      onClick={(e) => e.stopPropagation()}
-                    >
-                      <img src={src} alt="" className="h-12 w-12 object-cover" loading="lazy" />
-                    </a>
-                  )
-                },
-              },
-              {
-                key: 'sub',
-                label: 'Submitted',
-                render: (d) => <span className="text-slate-600">{fmtDate(d['Date Submitted'] || d.created_at)}</span>,
-              },
-              {
-                key: 'prop',
-                label: 'Property',
-                render: (d) => <span className="text-slate-600">{propertyLabelForWorkOrder(d)}</span>,
-              },
-              {
-                key: 'res',
-                label: 'Resident',
-                render: (d) => <span className="text-slate-600">{residentLabelForWorkOrder(d)}</span>,
-              },
-              {
-                key: 'stat',
-                label: 'Status',
-                render: (d) => (
-                  <StatusPill tone={managerWorkOrderStatusPillTone(d)}>{managerWorkOrderStatusLabel(d)}</StatusPill>
-                ),
-              },
-              {
-                key: 'act',
-                label: '',
-                headerClassName: 'text-right',
-                cellClassName: 'text-right',
-                render: (d) => (
-                  <button
-                    type="button"
-                    onClick={() => setRecord((current) => (current?.id === d.id ? null : d))}
-                    className="text-sm font-semibold text-[#2563eb] hover:underline"
-                  >
-                    {record?.id === d.id ? 'Hide' : 'Details'}
-                  </button>
-                ),
-              },
-            ]}
-            rows={filteredList.map((row) => ({ key: row.id, data: row }))}
-          />
-        )}
-
-        {record ? (
-          <div className="border-t border-slate-100 px-4 py-5 sm:px-6">
+            expandedKey={record?.id ?? null}
+            renderExpansion={() => (
           <PortalOpsCard
             title={safePortalText(record.Title, 'Work order')}
             description={`${propertyLabelForWorkOrder(record)} · ${residentLabelForWorkOrder(record)}`}
@@ -4991,11 +4906,6 @@ function WorkOrdersTabPanel({ manager, allowedPropertyNames, allowedPropertyIds 
                     onChange={(e) => setWorkOrderCost(e.target.value)}
                     className={fieldCls}
                   />
-                  <p className="mt-1.5 text-xs text-slate-500">
-                    If greater than zero, Save or Mark completed adds one unpaid line to that resident’s Payments (same
-                    portal as rent). Add a <span className="font-mono">Cost</span> column on Work Orders in Airtable to
-                    store this value (or set <span className="font-mono">VITE_AIRTABLE_WORK_ORDER_COST_FIELD</span>).
-                  </p>
                 </div>
               </div>
 
@@ -5008,8 +4918,76 @@ function WorkOrdersTabPanel({ manager, allowedPropertyNames, allowedPropertyIds 
               </button>
             </form>
           </PortalOpsCard>
-          </div>
-        ) : null}
+            )}
+            columns={[
+              {
+                key: 'desc',
+                label: 'Description',
+                render: (d) => <span className="font-semibold text-slate-900">{safePortalText(d.Title, 'Untitled request')}</span>,
+              },
+              {
+                key: 'thumb',
+                label: 'Photo',
+                headerClassName: 'w-[72px]',
+                cellClassName: 'w-[72px]',
+                render: (d) => {
+                  const src = workOrderPhotoAttachmentUrls(d)[0]
+                  if (!src) return <span className="text-slate-400">—</span>
+                  return (
+                    <a
+                      href={src}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-block overflow-hidden rounded-xl border border-slate-200 bg-slate-100 shadow-sm"
+                      title="Open photo"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <img src={src} alt="" className="h-12 w-12 object-cover" loading="lazy" />
+                    </a>
+                  )
+                },
+              },
+              {
+                key: 'sub',
+                label: 'Submitted',
+                render: (d) => <span className="text-slate-600">{fmtDate(d['Date Submitted'] || d.created_at)}</span>,
+              },
+              {
+                key: 'prop',
+                label: 'Property',
+                render: (d) => <span className="text-slate-600">{propertyLabelForWorkOrder(d)}</span>,
+              },
+              {
+                key: 'res',
+                label: 'Resident',
+                render: (d) => <span className="text-slate-600">{residentLabelForWorkOrder(d)}</span>,
+              },
+              {
+                key: 'stat',
+                label: 'Status',
+                render: (d) => (
+                  <StatusPill tone={managerWorkOrderStatusPillTone(d)}>{managerWorkOrderStatusLabel(d)}</StatusPill>
+                ),
+              },
+              {
+                key: 'act',
+                label: '',
+                headerClassName: 'text-right',
+                cellClassName: 'text-right',
+                render: (d) => (
+                  <button
+                    type="button"
+                    onClick={() => setRecord((current) => (current?.id === d.id ? null : d))}
+                    className="text-sm font-semibold text-[#2563eb] hover:underline"
+                  >
+                    {record?.id === d.id ? 'Hide' : 'Details'}
+                  </button>
+                ),
+              },
+            ]}
+            rows={filteredList.map((row) => ({ key: row.id, data: row }))}
+          />
+        )}
       </div>
     </div>
   )
@@ -5231,6 +5209,7 @@ function ManagerPaymentsPanel({ allowedPropertyNames, allowedPropertyIds }) {
         Balance: 0,
       })
       await load()
+      window.dispatchEvent(new CustomEvent('axis:payments-changed'))
       toast.success('Marked as paid')
     } catch (err) {
       toast.error(err.message || 'Update failed')
@@ -5238,6 +5217,30 @@ function ManagerPaymentsPanel({ allowedPropertyNames, allowedPropertyIds }) {
       setBusy((b) => {
         const n = { ...b }
         delete n[id]
+        return n
+      })
+    }
+  }
+
+  async function markUnpaid(id) {
+    setBusy((b) => ({ ...b, [`unpaid_${id}`]: true }))
+    try {
+      const row = findScopedPaymentById(id) || {}
+      await updatePaymentRecord(id, {
+        Status: 'Unpaid',
+        'Paid Date': '',
+        'Amount Paid': 0,
+        Balance: paymentAmountDue(row),
+      })
+      await load()
+      window.dispatchEvent(new CustomEvent('axis:payments-changed'))
+      toast.success('Moved back to pending')
+    } catch (err) {
+      toast.error(err.message || 'Update failed')
+    } finally {
+      setBusy((b) => {
+        const n = { ...b }
+        delete n[`unpaid_${id}`]
         return n
       })
     }
@@ -5258,6 +5261,7 @@ function ManagerPaymentsPanel({ allowedPropertyNames, allowedPropertyIds }) {
         Notes: updatedNotes,
       })
       await load()
+      window.dispatchEvent(new CustomEvent('axis:payments-changed'))
       toast.success('Marked as paid via Zelle')
     } catch (err) {
       toast.error(err.message || 'Update failed')
@@ -5588,10 +5592,11 @@ function ManagerPaymentsPanel({ allowedPropertyNames, allowedPropertyIds }) {
                 <tbody className="divide-y divide-slate-100">
                   {filteredForList.map((row) => {
                     const computed = row.__computedStatus
+                    const isExpanded = expandedPaymentId === row.id
                     return (
+                      <React.Fragment key={row.id}>
                       <tr
-                        key={row.id}
-                        className={classNames('transition hover:bg-slate-50', expandedPaymentId === row.id ? 'bg-axis/5' : '')}
+                        className={classNames('transition hover:bg-slate-50', isExpanded ? 'bg-blue-50/40' : '')}
                       >
                         <td className="px-4 py-4 text-sm font-semibold text-slate-900">{paymentPropertyLabel(row) || 'House not set'}</td>
                         <td className="px-4 py-4 text-sm text-slate-600">{paymentRoomLabel(row)}</td>
@@ -5606,67 +5611,71 @@ function ManagerPaymentsPanel({ allowedPropertyNames, allowedPropertyIds }) {
                             {paymentStatusLabel(computed)}
                           </PortalOpsStatusBadge>
                         </td>
-                        <td className="min-w-[140px] whitespace-nowrap px-4 py-4 text-right">
-                          <div className="flex flex-wrap items-center justify-end gap-x-2 gap-y-1">
-                            <button
-                              type="button"
-                              onClick={() => setExpandedPaymentId((id) => (id === row.id ? '' : row.id))}
-                              className="text-sm font-semibold text-[#2563eb] hover:underline"
-                            >
-                              {expandedPaymentId === row.id ? 'Hide' : 'Details'}
-                            </button>
-                            <span className="select-none text-slate-300" aria-hidden="true">
-                              |
-                            </span>
-                            <button
-                              type="button"
-                              disabled={Boolean(busy[`del_${row.id}`])}
-                              onClick={() => removePaymentRow(row)}
-                              className="text-sm font-semibold text-red-600 hover:underline disabled:opacity-50"
-                            >
-                              {busy[`del_${row.id}`] ? 'Deleting…' : 'Delete'}
-                            </button>
-                          </div>
+                        <td className="min-w-[100px] whitespace-nowrap px-4 py-4 text-right">
+                          <button
+                            type="button"
+                            onClick={() => setExpandedPaymentId((id) => (id === row.id ? '' : row.id))}
+                            className="text-sm font-semibold text-[#2563eb] hover:underline"
+                          >
+                            {isExpanded ? 'Hide' : 'Details'}
+                          </button>
                         </td>
                       </tr>
+                      {isExpanded ? (
+                        <tr key={`${row.id}__exp`} className="bg-slate-50/70">
+                          <td colSpan={10} className="px-5 py-4">
+                            <div className="flex flex-wrap items-center justify-between gap-3">
+                              <div className="min-w-0">
+                                <div className="text-base font-bold text-slate-900">{paymentResidentLabel(row)}</div>
+                                <div className="mt-0.5 text-sm text-slate-500">{paymentPropertyLabel(row) || 'House not set'} · {paymentRoomLabel(row)}</div>
+                                {row.Notes ? <div className="mt-1 text-xs text-slate-400 max-w-[480px] truncate">{row.Notes}</div> : null}
+                              </div>
+                              <div className="flex flex-wrap items-center gap-2">
+                                {paymentComputedStatus(row) === 'paid' ? (
+                                  <button
+                                    type="button"
+                                    disabled={busy[`unpaid_${row.id}`]}
+                                    onClick={() => markUnpaid(row.id)}
+                                    className="rounded-full border border-slate-200 bg-slate-100 px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-200 disabled:opacity-50"
+                                  >
+                                    {busy[`unpaid_${row.id}`] ? 'Updating…' : 'Move to Pending'}
+                                  </button>
+                                ) : null}
+                                <button
+                                  type="button"
+                                  disabled={busy[row.id]}
+                                  onClick={() => markPaid(row.id)}
+                                  className="rounded-full bg-axis px-4 py-2 text-sm font-semibold text-white transition hover:brightness-105 disabled:opacity-50"
+                                >
+                                  {busy[row.id] ? 'Updating…' : 'Mark paid'}
+                                </button>
+                                <button
+                                  type="button"
+                                  disabled={busy[`zelle_${row.id}`]}
+                                  onClick={() => markPaidWithZelle(row.id)}
+                                  className="rounded-full border border-[#6600cc]/30 bg-[#6600cc]/8 px-4 py-2 text-sm font-semibold text-[#6600cc] transition hover:bg-[#6600cc]/15 disabled:opacity-50"
+                                >
+                                  {busy[`zelle_${row.id}`] ? 'Updating…' : 'Paid with Zelle'}
+                                </button>
+                                <button
+                                  type="button"
+                                  disabled={Boolean(busy[`del_${row.id}`])}
+                                  onClick={() => removePaymentRow(row)}
+                                  className="rounded-full border border-red-200 bg-red-50 px-4 py-2 text-sm font-semibold text-red-700 transition hover:bg-red-100 disabled:opacity-50"
+                                >
+                                  {busy[`del_${row.id}`] ? 'Deleting…' : 'Delete'}
+                                </button>
+                              </div>
+                            </div>
+                          </td>
+                        </tr>
+                      ) : null}
+                      </React.Fragment>
                     )
                   })}
                 </tbody>
               </table>
             </div>
-
-        {selectedRow ? (
-          <div className="scroll-mt-28 border-t border-slate-100 lg:scroll-mt-8">
-            <div className="flex flex-wrap items-start justify-between gap-3 border-b border-slate-100 px-5 py-4">
-              <div className="min-w-0">
-                <h3 className="text-2xl font-black text-slate-900">{paymentResidentLabel(selectedRow)}</h3>
-                <p className="mt-1 text-sm text-slate-600">
-                  {paymentPropertyLabel(selectedRow) || 'House not set'} · {paymentRoomLabel(selectedRow)}
-                </p>
-              </div>
-              {paymentComputedStatus(selectedRow) !== 'paid' ? (
-                <div className="flex shrink-0 flex-wrap gap-2">
-                  <button
-                    type="button"
-                    disabled={busy[selectedRow.id]}
-                    onClick={() => markPaid(selectedRow.id)}
-                    className="rounded-full bg-axis px-4 py-2 text-sm font-semibold text-white transition hover:brightness-105 disabled:opacity-50"
-                  >
-                    {busy[selectedRow.id] ? 'Updating…' : 'Mark paid'}
-                  </button>
-                  <button
-                    type="button"
-                    disabled={busy[`zelle_${selectedRow.id}`]}
-                    onClick={() => markPaidWithZelle(selectedRow.id)}
-                    className="rounded-full border border-[#6600cc]/30 bg-[#6600cc]/8 px-4 py-2 text-sm font-semibold text-[#6600cc] transition hover:bg-[#6600cc]/15 disabled:opacity-50"
-                  >
-                    {busy[`zelle_${selectedRow.id}`] ? 'Updating…' : 'Paid with Zelle'}
-                  </button>
-                </div>
-              ) : null}
-            </div>
-          </div>
-        ) : null}
             </>
           )}
       </div>
@@ -6049,6 +6058,34 @@ function ApplicationsPanel({ allowedPropertyNames, manager }) {
             <DataTable
               empty="No applications in this view"
               emptyIcon={<PortalEmptyVisual variant="applications" />}
+              expandedKey={detailAppId}
+              renderExpansion={(app) => {
+                const row = scopedRows.find((a) => a.id === app.id)
+                const vm = row ? applicationViewModelFromAirtableRow(row) : null
+                const roomChoices = row ? buildApprovalRoomChoices(row) : []
+                const pending = row && deriveApplicationApprovalState(row) === 'pending'
+                return vm ? (
+                  <ApplicationDetailPanel
+                    application={vm}
+                    partnerLabel="—"
+                    onClose={() => setDetailAppId(null)}
+                    adminReview={{
+                      busy: !!approving[app.id],
+                      onApprove: () => handleDecision(app.id, true),
+                      onReject: () => handleDecision(app.id, false),
+                      onUnapprove: () => handleSendBackToPending(app.id),
+                      onRefund: () => handleRefundApplicationFee(app.id),
+                      approvedRoomAssignment: pending
+                        ? {
+                            value: approveAssignedRoom,
+                            onChange: setApproveAssignedRoom,
+                            choices: roomChoices,
+                          }
+                        : undefined,
+                    }}
+                  />
+                ) : null
+              }}
               columns={[
                 {
                   key: 'applicant',
@@ -6117,37 +6154,6 @@ function ApplicationsPanel({ allowedPropertyNames, manager }) {
               ]}
               rows={applications.map((app) => ({ key: app.id, data: app }))}
             />
-            {detailAppId ? (
-              <div className="border-t border-slate-100 px-4 py-5 sm:px-6">
-                {(() => {
-                  const row = scopedRows.find((a) => a.id === detailAppId)
-                  const vm = row ? applicationViewModelFromAirtableRow(row) : null
-                  const roomChoices = row ? buildApprovalRoomChoices(row) : []
-                  const pending = row && deriveApplicationApprovalState(row) === 'pending'
-                  return vm ? (
-                    <ApplicationDetailPanel
-                      application={vm}
-                      partnerLabel="—"
-                      onClose={() => setDetailAppId(null)}
-                      adminReview={{
-                        busy: !!approving[detailAppId],
-                        onApprove: () => handleDecision(detailAppId, true),
-                        onReject: () => handleDecision(detailAppId, false),
-                        onUnapprove: () => handleSendBackToPending(detailAppId),
-                        onRefund: () => handleRefundApplicationFee(detailAppId),
-                        approvedRoomAssignment: pending
-                          ? {
-                              value: approveAssignedRoom,
-                              onChange: setApproveAssignedRoom,
-                              choices: roomChoices,
-                            }
-                          : undefined,
-                      }}
-                    />
-                  ) : null
-                })()}
-              </div>
-            ) : null}
           </>
         )}
       </div>
@@ -7971,6 +7977,10 @@ function ManagerDashboard({ manager: managerProp, openDraftId, onOpenDraft, onCl
                     <span>No leases in this view</span>
                   </div>
                 )}
+                expandedKey={openDraftId}
+                renderExpansion={(draft) => (
+                  <LeaseEditor draftId={draft.id} manager={manager} onBack={onCloseDraft} embedded />
+                )}
                 columns={[
                   {
                     key: 'resident',
@@ -8024,12 +8034,6 @@ function ManagerDashboard({ manager: managerProp, openDraftId, onOpenDraft, onCl
             </div>
           )}
         </div>
-
-        {openDraftId ? (
-          <div className="mt-6">
-            <LeaseEditor draftId={openDraftId} manager={manager} onBack={onCloseDraft} embedded />
-          </div>
-        ) : null}
 
       </>
       )}
