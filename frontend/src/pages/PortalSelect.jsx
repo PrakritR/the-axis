@@ -100,7 +100,11 @@ export default function PortalSelect() {
   const cardTitle = isResident ? 'Resident portal' : isManager ? 'Manager portal' : 'Admin portal'
 
   function handleResidentLogin(resident) {
-    sessionStorage.setItem(RESIDENT_SESSION_KEY, resident.id)
+    // Store full JSON for internal-auth residents; legacy Airtable sessions have a rec ID string
+    const toStore = resident?._internalAuth
+      ? JSON.stringify(resident)
+      : (resident?.id || '')
+    sessionStorage.setItem(RESIDENT_SESSION_KEY, toStore)
     navigate('/resident')
   }
 

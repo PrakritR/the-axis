@@ -58,6 +58,17 @@ import {
   portalInboxAirtableConfigured,
   portalInboxThreadKeyFromRecord,
 } from '../lib/airtable'
+import { supabase } from '../lib/supabase'
+import {
+  ensureResidentInternalProfileRow,
+  fetchResidentInternalProfile,
+  fetchResidentPortalContext,
+  getSignedLeaseDownloadUrl,
+  mapInternalPaymentToResidentPaymentRow,
+  patchResidentInternalProfile,
+} from '../lib/residentPortalInternal.js'
+import { syncAppUserFromSupabaseSession } from '../lib/authAppUserSync.js'
+import { isAirtableRecordId } from '../lib/recordIdentity.js'
 import { applicationRejectedFieldName, deriveApplicationApprovalState } from '../lib/applicationApprovalState.js'
 import { anyLeaseDraftAllowsSignWithoutMoveInPay } from '../lib/leaseMoveInOverride.js'
 import { fmtTs } from '../lib/leaseWorkflowConstants.js'
@@ -92,6 +103,14 @@ import {
 } from '../lib/roomCleaningWorkOrder.js'
 
 const SESSION_KEY = 'axis_resident'
+
+/** Merge Postgres payments (JWT `resident-context`) with Airtable payment rows for dual-path residents. */
+function mergeResidentPaymentRowsWithInternal(internalContext, airtableRows) {
+  const air = Array.isArray(airtableRows) ? airtableRows : []
+  const raw = internalContext?.payments
+  if (!Array.isArray(raw) || raw.length === 0) return air
+  return [...raw.map(mapInternalPaymentToResidentPaymentRow), ...air]
+}
 
 const requestCategories = [
   'Plumbing',
@@ -251,7 +270,7 @@ function isApprovalGranted(value) {
 
 /** Airtable record id pattern for linked Applications rows. */
 function isApplicationRecordId(s) {
-  return /^rec[a-zA-Z0-9]{14}/.test(String(s || '').trim())
+  return isAirtableRecordId(s)
 }
 
 /**
@@ -975,7 +994,52 @@ export function ResidentAuthForm({ onLogin, footer = null, variant = 'default' }
     setSignInError('')
     setPostCreateMessage('')
     try {
-      const resident = await loginResident(signInForm.email.trim(), signInForm.password)
+      const email = signInForm.email.trim()
+      const password = signInForm.password
+
+      // ── PATH 1: Supabase auth (internal accounts — no Airtable required) ─────
+      const { data: authData, error: authErr } = await supabase.auth.signInWithPassword({ email, password })
+      if (!authErr && authData?.user) {
+        await syncAppUserFromSupabaseSession().catch(() => null)
+
+        // Try Airtable for full resident data (portal content uses Airtable fields)
+        let resident = null
+        try { resident = await getResidentByEmail(email) } catch { /* Airtable unavailable */ }
+
+        if (!resident) {
+          // Build minimal internal resident for portals that are fully on internal DB
+          const ctx = await fetchResidentPortalContext().catch(() => null)
+          const appUser = ctx?.app_user || {}
+          const firstApp = ctx?.applications?.[0] || {}
+          resident = {
+            id: appUser.id || authData.user.id,
+            Email: email,
+            Name: appUser.full_name || String(authData.user.user_metadata?.full_name || email.split('@')[0]),
+            Status: 'Active',
+            Approved: firstApp.status === 'approved' || firstApp.approved === true,
+            House: firstApp.property_name || '',
+            'Unit Number': firstApp.room || firstApp.approved_room || '',
+            'Lease Start Date': firstApp.lease_start_date || null,
+            'Lease End Date': firstApp.lease_end_date || null,
+            'Application ID': firstApp.id || '',
+          }
+        }
+
+        // Always mark as _internalAuth when authenticated via Supabase so session
+        // restore uses Supabase session validation rather than Airtable lookups.
+        resident = { ...resident, _internalAuth: true }
+
+        const leaseEnd = resident['Lease End Date']
+        if (leaseEnd && new Date(leaseEnd) < new Date(new Date().toDateString())) {
+          setSignInError('Your lease has ended. Contact Axis to discuss renewal.')
+          return
+        }
+        onLogin(resident)
+        return
+      }
+
+      // ── PATH 2: Legacy Airtable auth (residents without Supabase accounts) ───
+      const resident = await loginResident(email, password)
       if (!resident) {
         setSignInError('Invalid email or password. Contact Axis if you need help.')
         return
@@ -1002,81 +1066,43 @@ export function ResidentAuthForm({ onLogin, footer = null, variant = 'default' }
     setActivationLoading(true)
     setActivationError('')
     try {
-      const app = await getApplicationById(activateForm.applicationId.trim())
-      if (!app) {
-        setActivationError('Application not found. Check your Application ID (format: APP-recXXXXXXXXXXXXXX).')
-        return
-      }
-      const appEmail = String(app['Signer Email'] || '').trim().toLowerCase()
-      if (appEmail !== activateForm.email.trim().toLowerCase()) {
-        setActivationError('Email does not match the application. Use the email you applied with.')
-        return
-      }
-      const rawAppInput = activateForm.applicationId.trim()
-      const applicationRecordId = rawAppInput.startsWith('APP-') ? rawAppInput.slice(4) : rawAppInput
-      const applicationLink =
-        applicationRecordId.startsWith('rec') && applicationRecordId.length > 10
-          ? [applicationRecordId]
-          : null
+      const email = activateForm.email.trim()
+      const password = activateForm.password
+      const applicationId = activateForm.applicationId.trim()
 
-      const existing = await getResidentByEmail(activateForm.email.trim())
-      const activationGate = deriveApplicationApprovalState(app)
-      const approvedUnitForProfile = applicationApprovedUnitNumber(app, APPLICATION_APPROVED_UNIT_FIELD)
-      const approvalPatchFromApp =
-        activationGate === 'approved'
-          ? { Approved: true, 'Application Approval': 'Approved' }
-          : activationGate === 'rejected'
-            ? { Approved: false, 'Application Approval': 'Rejected' }
-            : {}
-
-      if (existing) {
-        if (existing.Password) {
-          setActivationError('An account with this email already exists. Please sign in.')
-          return
-        }
-        const patch = {
-          Password: activateForm.password,
-          Status: 'Active',
-          'Lease Term': existing['Lease Term'] || app['Lease Term'] || '',
-          ...approvalPatchFromApp,
-        }
-        if (approvedUnitForProfile) {
-          patch['Unit Number'] = approvedUnitForProfile
-        }
-        if (applicationLink && !(Array.isArray(existing.Applications) && existing.Applications.length)) {
-          patch.Applications = applicationLink
-        }
-        if (app['Application ID'] != null && existing['Application ID'] == null) {
-          patch['Application ID'] = app['Application ID']
-        }
-        await updateResident(existing.id, patch)
-        setPostCreateMessage(
-          'Account saved. Sign in below — your dashboard will show a short notice until a manager approves your application.',
-        )
-        setSignInForm((c) => ({ ...c, email: activateForm.email.trim(), password: '' }))
-        setActivateForm((c) => ({ ...c, password: '' }))
-        setTab('signin')
-        return
-      }
-      await createResident({
-        Name: app['Signer Full Name'] || '',
-        Email: app['Signer Email'] || '',
-        Password: activateForm.password,
-        Phone: app['Signer Phone Number'] || '',
-        House: app['Property Name'] || '',
-        'Unit Number': approvedUnitForProfile || '',
-        'Lease Term': app['Lease Term'] || '',
-        'Lease Start Date': app['Lease Start Date'] || null,
-        'Lease End Date': app['Lease End Date'] || null,
-        Status: 'Active',
-        ...(Object.keys(approvalPatchFromApp).length ? approvalPatchFromApp : { Approved: false }),
-        ...(applicationLink ? { Applications: applicationLink } : {}),
-        ...(app['Application ID'] != null ? { 'Application ID': app['Application ID'] } : {}),
+      // ── Internal account creation — no Airtable write required ─────────────
+      const createRes = await fetch('/api/resident-create-account', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email,
+          password,
+          applicationId: applicationId || undefined,
+        }),
       })
+
+      const json = await createRes.json().catch(() => ({}))
+
+      if (createRes.status === 409) {
+        setActivationError('An account with this email already exists. Please sign in.')
+        return
+      }
+      if (!createRes.ok) {
+        throw new Error(json.error || 'Could not create account. Please try again.')
+      }
+
+      // Establish Supabase session from backend-issued tokens
+      if (json.session?.access_token && json.session?.refresh_token) {
+        await supabase.auth.setSession({
+          access_token: json.session.access_token,
+          refresh_token: json.session.refresh_token,
+        })
+      }
+
       setPostCreateMessage(
         'Account created. Sign in below — you can use the portal while you wait; full features unlock after manager approval.',
       )
-      setSignInForm((c) => ({ ...c, email: activateForm.email.trim(), password: '' }))
+      setSignInForm((c) => ({ ...c, email, password: '' }))
       setActivateForm({ applicationId: '', email: '', password: '' })
       setTab('signin')
     } catch (err) {
@@ -1599,12 +1625,111 @@ function ProfilePanel({ resident, onUpdated }) {
   const [message, setMessage] = useState('')
   const [saveError, setSaveError] = useState('')
 
+  const [axisProfile, setAxisProfile] = useState(null)
+  /** idle | loading | no_session | ready | error */
+  const [axisProfileStatus, setAxisProfileStatus] = useState('idle')
+  const [axisProfileError, setAxisProfileError] = useState('')
+  const [axisIntPhone, setAxisIntPhone] = useState('')
+  const [axisEmergName, setAxisEmergName] = useState('')
+  const [axisEmergPhone, setAxisEmergPhone] = useState('')
+  const [axisNotes, setAxisNotes] = useState('')
+  const [axisInternalEditing, setAxisInternalEditing] = useState(false)
+  const [axisInternalSaving, setAxisInternalSaving] = useState(false)
+
   useEffect(() => {
     setName(resident.Name || '')
     setEmail(resident.Email || '')
     setPhone(resident.Phone || '')
     setIsEditing(false)
   }, [resident])
+
+  function applyAxisProfileForm(p) {
+    const row = p && typeof p === 'object' ? p : {}
+    setAxisIntPhone(String(row.phone_number || '').trim())
+    setAxisEmergName(String(row.emergency_contact_name || '').trim())
+    setAxisEmergPhone(String(row.emergency_contact_phone || '').trim())
+    setAxisNotes(String(row.notes || '').trim())
+  }
+
+  useEffect(() => {
+    let cancelled = false
+    setAxisProfileStatus('loading')
+    setAxisProfileError('')
+    setAxisInternalEditing(false)
+    ;(async () => {
+      try {
+        const synced = await syncAppUserFromSupabaseSession()
+        if (cancelled) return
+        if (!synced) {
+          setAxisProfile(null)
+          setAxisProfileStatus('no_session')
+          return
+        }
+        const r = await fetchResidentInternalProfile()
+        if (cancelled) return
+        if (!r.ok) {
+          setAxisProfile(null)
+          setAxisProfileStatus('error')
+          setAxisProfileError(r.error || 'Could not load internal profile.')
+          return
+        }
+        setAxisProfile(r.profile)
+        applyAxisProfileForm(r.profile)
+        setAxisProfileStatus('ready')
+      } catch (err) {
+        if (!cancelled) {
+          setAxisProfile(null)
+          setAxisProfileStatus('error')
+          setAxisProfileError(err?.message || 'Could not load internal profile.')
+        }
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [resident.id])
+
+  async function handleCreateAxisProfile() {
+    setAxisInternalSaving(true)
+    setAxisProfileError('')
+    try {
+      const row = await ensureResidentInternalProfileRow({})
+      setAxisProfile(row)
+      applyAxisProfileForm(row)
+      setAxisProfileStatus('ready')
+    } catch (err) {
+      setAxisProfileError(err?.message || 'Could not create internal profile.')
+    } finally {
+      setAxisInternalSaving(false)
+    }
+  }
+
+  async function handleAxisInternalSubmit(event) {
+    event.preventDefault()
+    setAxisInternalSaving(true)
+    setAxisProfileError('')
+    try {
+      const row = await patchResidentInternalProfile({
+        phone_number: axisIntPhone.trim() || null,
+        emergency_contact_name: axisEmergName.trim() || null,
+        emergency_contact_phone: axisEmergPhone.trim() || null,
+        notes: axisNotes.trim() || null,
+      })
+      setAxisProfile(row)
+      applyAxisProfileForm(row)
+      setAxisInternalEditing(false)
+    } catch (err) {
+      setAxisProfileError(err?.message || 'Could not save internal profile.')
+    } finally {
+      setAxisInternalSaving(false)
+    }
+  }
+
+  function handleCancelAxisInternalEdit() {
+    applyAxisProfileForm(axisProfile)
+    setAxisInternalEditing(false)
+    setAxisProfileError('')
+  }
 
   async function handleSubmit(event) {
     event.preventDefault()
@@ -1638,6 +1763,155 @@ function ProfilePanel({ resident, onUpdated }) {
 
   return (
     <div className="mx-auto max-w-4xl space-y-6">
+      <section className="rounded-3xl border border-slate-200 bg-white p-6">
+        <h2 className="text-xl font-black text-slate-900">Axis profile (Postgres)</h2>
+        <p className="mt-2 text-sm leading-relaxed text-slate-600">
+          Contact fields stored in the internal database (scoped to your Supabase session). Full name and email below
+          still update the legacy Airtable resident record until that path is fully retired.
+        </p>
+        {axisProfileStatus === 'loading' ? (
+          <p className="mt-4 text-sm text-slate-400">Loading internal profile…</p>
+        ) : null}
+        {axisProfileStatus === 'no_session' ? (
+          <div className="mt-4">
+            <PortalNotice>
+              No Supabase session in this browser, so internal profile data cannot load. If you use Axis Google sign-in
+              elsewhere, open this portal in the same browser session or complete Supabase login here when that flow is
+              linked to the resident portal.
+            </PortalNotice>
+          </div>
+        ) : null}
+        {axisProfileStatus === 'error' ? (
+          <div className="mt-4">
+            <PortalNotice tone="error">{axisProfileError || 'Internal profile error.'}</PortalNotice>
+          </div>
+        ) : null}
+        {axisProfileStatus === 'ready' && !axisProfile ? (
+          <div className="mt-4 rounded-2xl border border-slate-100 bg-slate-50 px-4 py-4 text-sm text-slate-700">
+            <p>No internal resident_profiles row yet.</p>
+            <button
+              type="button"
+              disabled={axisInternalSaving}
+              onClick={() => void handleCreateAxisProfile()}
+              className="mt-3 rounded-2xl bg-[#2563eb] px-5 py-2.5 text-sm font-semibold text-white transition hover:brightness-110 disabled:opacity-50"
+            >
+              {axisInternalSaving ? 'Creating…' : 'Create internal profile'}
+            </button>
+          </div>
+        ) : null}
+        {axisProfileStatus === 'ready' && axisProfile ? (
+          <div className="mt-5 space-y-4">
+            {!axisInternalEditing ? (
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <p className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">
+                  App user id <span className="font-mono text-slate-800">{String(axisProfile.app_user_id || '—')}</span>
+                </p>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setAxisInternalEditing(true)
+                    setAxisProfileError('')
+                  }}
+                  className="rounded-2xl border border-slate-200 bg-white px-5 py-2 text-sm font-semibold text-slate-800 transition hover:border-[#2563eb]/40 hover:bg-slate-50"
+                >
+                  Edit internal fields
+                </button>
+              </div>
+            ) : null}
+            {!axisInternalEditing ? (
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div className="sm:col-span-2">
+                  <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-400">Phone (internal)</p>
+                  <p className="mt-1 text-sm font-medium text-slate-900">{axisIntPhone || '—'}</p>
+                </div>
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-400">Emergency contact</p>
+                  <p className="mt-1 text-sm font-medium text-slate-900">{axisEmergName || '—'}</p>
+                </div>
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-400">Emergency phone</p>
+                  <p className="mt-1 text-sm font-medium text-slate-900">{axisEmergPhone || '—'}</p>
+                </div>
+                <div className="sm:col-span-2">
+                  <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-400">Notes (internal)</p>
+                  <p className="mt-1 whitespace-pre-wrap text-sm text-slate-800">{axisNotes || '—'}</p>
+                </div>
+              </div>
+            ) : (
+              <form onSubmit={handleAxisInternalSubmit} className="grid gap-4 sm:grid-cols-2">
+                <div className="sm:col-span-2">
+                  <label className="mb-1.5 block text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">
+                    Phone (internal)
+                  </label>
+                  <input
+                    type="tel"
+                    value={axisIntPhone}
+                    onChange={(e) => setAxisIntPhone(e.target.value)}
+                    className={inputCls}
+                    placeholder="+1 …"
+                  />
+                </div>
+                <div>
+                  <label className="mb-1.5 block text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">
+                    Emergency contact name
+                  </label>
+                  <input
+                    type="text"
+                    value={axisEmergName}
+                    onChange={(e) => setAxisEmergName(e.target.value)}
+                    className={inputCls}
+                  />
+                </div>
+                <div>
+                  <label className="mb-1.5 block text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">
+                    Emergency contact phone
+                  </label>
+                  <input
+                    type="tel"
+                    value={axisEmergPhone}
+                    onChange={(e) => setAxisEmergPhone(e.target.value)}
+                    className={inputCls}
+                  />
+                </div>
+                <div className="sm:col-span-2">
+                  <label className="mb-1.5 block text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">
+                    Notes
+                  </label>
+                  <textarea
+                    value={axisNotes}
+                    onChange={(e) => setAxisNotes(e.target.value)}
+                    rows={4}
+                    className={inputCls}
+                  />
+                </div>
+                {axisProfileError ? (
+                  <div className="sm:col-span-2 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+                    {axisProfileError}
+                  </div>
+                ) : null}
+                <div className="flex flex-wrap gap-3 sm:col-span-2">
+                  <button
+                    type="submit"
+                    disabled={axisInternalSaving}
+                    className="rounded-2xl bg-[#2563eb] px-6 py-3 text-sm font-semibold text-white transition hover:brightness-110 disabled:opacity-50"
+                  >
+                    {axisInternalSaving ? 'Saving…' : 'Save internal profile'}
+                  </button>
+                  <button
+                    type="button"
+                    disabled={axisInternalSaving}
+                    onClick={handleCancelAxisInternalEdit}
+                    className="rounded-2xl border border-slate-200 bg-white px-6 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:opacity-50"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </form>
+            )}
+          </div>
+        ) : null}
+      </section>
+
       <section className="rounded-3xl border border-slate-200 bg-white p-6">
         <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
           <h2 className="mt-2 text-2xl font-black text-slate-900">Profile</h2>
@@ -1770,7 +2044,7 @@ function ProfilePanel({ resident, onUpdated }) {
 
 // ─── Payments ─────────────────────────────────────────────────────────────────
 
-function PaymentsPanel({ resident, onResidentUpdated, highlightCategory, onPaymentsDataUpdated }) {
+function PaymentsPanel({ resident, onResidentUpdated, highlightCategory, onPaymentsDataUpdated, internalContext }) {
   const [payments, setPayments] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -1801,10 +2075,10 @@ function PaymentsPanel({ resident, onResidentUpdated, highlightCategory, onPayme
     setLoading(true)
     setError('')
     return getPaymentsForResident(resident)
-      .then(setPayments)
+      .then((rows) => setPayments(mergeResidentPaymentRowsWithInternal(internalContext, rows)))
       .catch((err) => setError(err.message))
       .finally(() => setLoading(false))
-  }, [resident])
+  }, [resident, internalContext])
 
   const reloadLeaseDraftsForPayments = useCallback(() => {
     return getLeaseDraftsForResident(resident.id, resident.Email || '')
@@ -1824,17 +2098,19 @@ function PaymentsPanel({ resident, onResidentUpdated, highlightCategory, onPayme
   useEffect(() => {
     if (loading) return
     const rows = Array.isArray(payments) ? payments : []
-    if (!rows.length) return
-    const sig = rows.map((p) => `${p.id}:${p.Status}:${p.Amount}:${p['Amount Paid']}:${p.Balance}:${p['Due Date']}`).join('|')
+    const airtableOnly = rows.filter((p) => isAirtableRecordId(p?.id))
+    if (!airtableOnly.length) return
+    const sig = airtableOnly.map((p) => `${p.id}:${p.Status}:${p.Amount}:${p['Amount Paid']}:${p.Balance}:${p['Due Date']}`).join('|')
     if (paymentStatusReconcileSigRef.current === sig) return
     paymentStatusReconcileSigRef.current = sig
     let cancelled = false
     ;(async () => {
-      const patched = await reconcilePaymentStatusesInAirtable(rows, updatePaymentRecord)
+      const patched = await reconcilePaymentStatusesInAirtable(airtableOnly, updatePaymentRecord)
       if (cancelled || patched === 0) return
       try {
         const fresh = await getPaymentsForResident(resident)
-        if (!cancelled) setPayments(Array.isArray(fresh) ? fresh : [])
+        if (!cancelled)
+          setPayments(mergeResidentPaymentRowsWithInternal(internalContext, Array.isArray(fresh) ? fresh : []))
       } catch {
         /* ignore */
       }
@@ -1842,7 +2118,7 @@ function PaymentsPanel({ resident, onResidentUpdated, highlightCategory, onPayme
     return () => {
       cancelled = true
     }
-  }, [loading, payments, resident])
+  }, [loading, payments, resident, internalContext])
 
   const amountDueForRecord = useCallback((payment) => {
     const direct = Number(payment?.Amount ?? payment?.['Amount Due'] ?? payment?.Total ?? 0)
@@ -1965,7 +2241,8 @@ function PaymentsPanel({ resident, onResidentUpdated, highlightCategory, onPayme
         })
         if (cancelled || !n) return
         const fresh = await getPaymentsForResident(resident)
-        if (!cancelled) setPayments(Array.isArray(fresh) ? fresh : [])
+        if (!cancelled)
+          setPayments(mergeResidentPaymentRowsWithInternal(internalContext, Array.isArray(fresh) ? fresh : []))
       } catch {
         /* non-fatal */
       }
@@ -1982,6 +2259,7 @@ function PaymentsPanel({ resident, onResidentUpdated, highlightCategory, onPayme
     payPricing.propertyName,
     firstMonthRentPaid,
     firstMonthUtilitiesPaid,
+    internalContext,
   ])
 
   const holdFeePaymentRecord = useMemo(
@@ -2589,7 +2867,7 @@ function PaymentsPanel({ resident, onResidentUpdated, highlightCategory, onPayme
         getLeaseDraftsForResident(resident.id, resident.Email || '').catch(() => []),
       ])
       const rows = Array.isArray(refreshed) ? refreshed : []
-      setPayments(rows)
+      setPayments(mergeResidentPaymentRowsWithInternal(internalContext, rows))
       setLeaseDraftsForPayments(Array.isArray(drafts) ? drafts : [])
       onPaymentsDataUpdated?.(rows)
       // Parent passes `setResident` — must receive a record, not `undefined`, or the whole portal crashes.
@@ -2600,7 +2878,7 @@ function PaymentsPanel({ resident, onResidentUpdated, highlightCategory, onPayme
     } finally {
       setLoading(false)
     }
-  }, [resident, onPaymentsDataUpdated, onResidentUpdated])
+  }, [resident, onPaymentsDataUpdated, onResidentUpdated, internalContext])
 
   return (
     <div className="mb-10">
@@ -2817,7 +3095,7 @@ async function postResidentPortalAction(action, body) {
   return json
 }
 
-function LeasingPanel({ resident, payments, onOpenPayments, onNavigateTab, onLeaseDataRefresh }) {
+function LeasingPanel({ resident, payments, internalLeaseFiles = [], onOpenPayments, onNavigateTab, onLeaseDataRefresh }) {
   const leaseTermLabel = getLeaseTermLabel(resident)
   const isMonthToMonth = leaseTermLabel.toLowerCase().includes('month-to-month')
   const moveInLabel = resident['Lease Start Date'] ? formatDate(resident['Lease Start Date']) : '—'
@@ -2843,6 +3121,7 @@ function LeasingPanel({ resident, payments, onOpenPayments, onNavigateTab, onLea
   const [leaseUploadBusy, setLeaseUploadBusy] = useState(false)
   const [leaseThreadComments, setLeaseThreadComments] = useState([])
   const [leaseThreadLoading, setLeaseThreadLoading] = useState(false)
+  const [internalLeaseDlNote, setInternalLeaseDlNote] = useState('')
   const leasePdfFileInputRef = useRef(null)
 
   useEffect(() => {
@@ -3293,6 +3572,44 @@ function LeasingPanel({ resident, payments, onOpenPayments, onNavigateTab, onLea
           {leaseLoading ? 'Refreshing…' : 'Refresh'}
         </button>
       </div>
+
+      {Array.isArray(internalLeaseFiles) && internalLeaseFiles.length > 0 ? (
+        <div className="mb-5 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 text-sm text-slate-800 shadow-sm">
+          <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-slate-500">Internal lease files</p>
+          <p className="mt-1 text-xs text-slate-600">
+            Documents stored in Axis for your application (Postgres + private storage). Opens a signed download link in
+            a new tab — requires the same browser session as your Supabase-linked account.
+          </p>
+          <ul className="mt-3 space-y-2">
+            {internalLeaseFiles.map((f) => (
+              <li
+                key={f.id}
+                className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-white bg-white px-3 py-2"
+              >
+                <span className="min-w-0 font-medium text-slate-900">
+                  {String(f.file_name || f.file_kind || 'Lease document').trim()}
+                </span>
+                <button
+                  type="button"
+                  className="shrink-0 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-800 hover:bg-slate-50"
+                  onClick={async () => {
+                    setInternalLeaseDlNote('')
+                    try {
+                      const url = await getSignedLeaseDownloadUrl(f.id)
+                      window.open(url, '_blank', 'noopener,noreferrer')
+                    } catch (e) {
+                      setInternalLeaseDlNote(e?.message || 'Could not download.')
+                    }
+                  }}
+                >
+                  Download
+                </button>
+              </li>
+            ))}
+          </ul>
+          {internalLeaseDlNote ? <p className="mt-2 text-xs text-red-600">{internalLeaseDlNote}</p> : null}
+        </div>
+      ) : null}
 
       <div className="mb-5 rounded-2xl border border-slate-200 bg-white px-4 py-4 text-sm text-slate-800 shadow-sm">
         <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-slate-500">Move-in path</p>
@@ -4173,6 +4490,8 @@ function Dashboard({ resident, onResidentUpdated, onSignOut }) {
   const [approvedLease, setApprovedLease] = useState(null)
   const [loading, setLoading] = useState(true)
   const [inboxUnopenedCount, setInboxUnopenedCount] = useState(0)
+  /** Postgres + JWT bundle (GET /api/portal?action=resident-context); null when no Supabase session. */
+  const [internalContext, setInternalContext] = useState(null)
 
   const visibleWorkOrders = useMemo(
     () => requests.filter((r) => !isWorkOrderHiddenFromResidentList(r)),
@@ -4206,7 +4525,7 @@ function Dashboard({ resident, onResidentUpdated, onSignOut }) {
         getApprovedLeaseForResident(resident.id, resident.Email || '').catch(() => null),
       ])
       setRequests(nextRequests)
-      setPayments(nextPayments)
+      setPayments(Array.isArray(nextPayments) ? nextPayments : [])
       setApprovedLease(lease)
 
       try {
@@ -4243,15 +4562,47 @@ function Dashboard({ resident, onResidentUpdated, onSignOut }) {
     loadData()
   }, [loadData])
 
+  useEffect(() => {
+    let cancelled = false
+    ;(async () => {
+      try {
+        const ctx = await fetchResidentPortalContext()
+        if (!cancelled) setInternalContext(ctx && ctx.ok ? ctx : null)
+      } catch {
+        if (!cancelled) setInternalContext(null)
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [resident?.Email])
+
+  const mergedPayments = useMemo(
+    () => mergeResidentPaymentRowsWithInternal(internalContext, payments),
+    [payments, internalContext],
+  )
+
   const applicationRecordIds = useMemo(() => residentApplicationsRecordIds(resident), [resident])
   const [linkedApplicationApprovalState, setLinkedApplicationApprovalState] = useState(null)
 
   useEffect(() => {
-    if (!applicationRecordIds.length) {
-      setLinkedApplicationApprovalState(null)
-      return
-    }
     let cancelled = false
+    const internalApps = internalContext?.applications
+    if (Array.isArray(internalApps) && internalApps.length > 0) {
+      const st = String(internalContext.access_state || 'pending').trim().toLowerCase()
+      if (st === 'approved' || st === 'rejected' || st === 'pending') {
+        if (!cancelled) setLinkedApplicationApprovalState(st)
+      } else if (!cancelled) setLinkedApplicationApprovalState('pending')
+      return () => {
+        cancelled = true
+      }
+    }
+    if (!applicationRecordIds.length) {
+      if (!cancelled) setLinkedApplicationApprovalState(null)
+      return () => {
+        cancelled = true
+      }
+    }
     ;(async () => {
       try {
         const apps = await Promise.all(applicationRecordIds.map((id) => getApplicationById(id)))
@@ -4273,7 +4624,7 @@ function Dashboard({ resident, onResidentUpdated, onSignOut }) {
     return () => {
       cancelled = true
     }
-  }, [applicationRecordIds])
+  }, [applicationRecordIds, internalContext])
 
   const accessState = useMemo(
     () => residentPortalAccessState(resident, linkedApplicationApprovalState),
@@ -4364,7 +4715,7 @@ function Dashboard({ resident, onResidentUpdated, onSignOut }) {
           <ResidentDashboardHome
             resident={resident}
             visibleWorkOrders={visibleWorkOrders}
-            payments={payments}
+            payments={mergedPayments}
             approvedLease={approvedLease}
             onNavigate={handleNavigate}
             setPaymentFocus={setPaymentFocus}
@@ -4398,7 +4749,8 @@ function Dashboard({ resident, onResidentUpdated, onSignOut }) {
           applicationUnlocked ? (
             <LeasingPanel
               resident={resident}
-              payments={payments}
+              payments={mergedPayments}
+              internalLeaseFiles={Array.isArray(internalContext?.lease_files) ? internalContext.lease_files : []}
               onOpenPayments={(focus = '') => {
                 setPaymentFocus(focus)
                 handleNavigate('payments')
@@ -4418,6 +4770,7 @@ function Dashboard({ resident, onResidentUpdated, onSignOut }) {
                 onResidentUpdated={onResidentUpdated}
                 highlightCategory={paymentFocus}
                 onPaymentsDataUpdated={setPayments}
+                internalContext={internalContext}
               />
             </PanelErrorBoundary>
           ) : (
@@ -4441,31 +4794,68 @@ export default function Resident() {
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    if (!airtableReady) { setLoading(false); return }
-    const storedId = sessionStorage.getItem(SESSION_KEY)
-    if (!storedId) { setLoading(false); return }
+    const stored = sessionStorage.getItem(SESSION_KEY)
+    if (!stored) { setLoading(false); return }
     let mounted = true
-    getResidentById(storedId)
-      .then((r) => {
-        if (!mounted || !r) return
-        const leaseEnd = r['Lease End Date']
-        if (leaseEnd && new Date(leaseEnd) < new Date(new Date().toDateString())) {
-          sessionStorage.removeItem(SESSION_KEY)
+
+    async function restoreSession() {
+      try {
+        // New format: full JSON resident object (internal auth)
+        if (stored.startsWith('{')) {
+          const parsed = JSON.parse(stored)
+          if (parsed?.id) {
+            // Re-validate via Supabase session if available
+            if (parsed._internalAuth) {
+              const { data: sessionData } = await supabase.auth.getSession()
+              if (!sessionData?.session?.access_token) {
+                sessionStorage.removeItem(SESSION_KEY)
+                return
+              }
+            }
+            const leaseEnd = parsed['Lease End Date']
+            if (leaseEnd && new Date(leaseEnd) < new Date(new Date().toDateString())) {
+              sessionStorage.removeItem(SESSION_KEY)
+              return
+            }
+            if (mounted) setResident(parsed)
+            return
+          }
+        }
+
+        // Legacy format: Airtable rec ID string
+        if (airtableReady && stored.startsWith('rec')) {
+          const r = await getResidentById(stored)
+          if (!r) { sessionStorage.removeItem(SESSION_KEY); return }
+          const leaseEnd = r['Lease End Date']
+          if (leaseEnd && new Date(leaseEnd) < new Date(new Date().toDateString())) {
+            sessionStorage.removeItem(SESSION_KEY)
+            return
+          }
+          if (mounted) setResident(r)
           return
         }
-        setResident(r)
-      })
-      .catch(() => { sessionStorage.removeItem(SESSION_KEY) })
-      .finally(() => { if (mounted) setLoading(false) })
+
+        // Unrecognized format — clear
+        sessionStorage.removeItem(SESSION_KEY)
+      } catch {
+        sessionStorage.removeItem(SESSION_KEY)
+      } finally {
+        if (mounted) setLoading(false)
+      }
+    }
+
+    restoreSession()
     return () => { mounted = false }
   }, [])
 
   function handleSignOut() {
     sessionStorage.removeItem(SESSION_KEY)
+    supabase.auth.signOut().catch(() => null)
     setResident(null)
   }
 
-  if (!airtableReady) return <SetupRequired />
+  // Only block if Airtable is unconfigured AND there is no Supabase session possible
+  // (airtableReady = false just means the Airtable token is missing, not that auth is broken)
   if (loading) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-[linear-gradient(180deg,#f8fafc_0%,#ffffff_100%)] text-sm text-slate-400">

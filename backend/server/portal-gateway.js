@@ -41,6 +41,10 @@ import applicationRegisterPayment from './handlers/application-register-payment.
 import applicationPaymentStatus from './handlers/application-payment-status.js'
 import applicationStripeSync from './handlers/application-stripe-sync.js'
 import applicationSubmitSigner from './handlers/application-submit-signer.js'
+import portalMyApplications from './handlers/portal-my-applications.js'
+import portalMyPayments from './handlers/portal-my-payments.js'
+import portalResidentContext from './handlers/portal-resident-context.js'
+import applicationSubmitInternal from './handlers/application-submit-internal.js'
 
 const handlers = {
   'application-create-lease-draft': applicationCreateLeaseDraft,
@@ -76,6 +80,12 @@ const handlers = {
   'application-payment-status': applicationPaymentStatus,
   'application-stripe-sync': applicationStripeSync,
   'application-submit-signer': applicationSubmitSigner,
+  // Internal DB-backed resident views (Supabase JWT auth, no manager session required)
+  'my-applications': portalMyApplications,
+  'my-payments': portalMyPayments,
+  'resident-context': portalResidentContext,
+  /** Internal application submission — Supabase JWT auth, maps Airtable field names → internal DB. */
+  'application-submit-internal': applicationSubmitInternal,
 }
 
 // These actions don't require an authenticated manager session
@@ -93,6 +103,12 @@ const NO_AUTH_ACTIONS = new Set([
   'lease-resident-add-comment',
   'lease-resident-upload-pdf',
   'lease-resident-list-comments',
+  /** Internal DB-backed resident views: handle Supabase JWT auth themselves */
+  'my-applications',
+  'my-payments',
+  'resident-context',
+  /** Internal application submission: JWT-authenticated, no manager session needed */
+  'application-submit-internal',
 ])
 
 export default async function portalGateway(req, res) {

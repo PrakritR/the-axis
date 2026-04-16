@@ -39,7 +39,6 @@ import {
 } from '../lib/portalCalendarSync.js'
 import {
   airtableFieldScalar,
-  availabilityTablesAreSplit,
   buildAdminMeetingAvailabilityConfig,
   buildGlobalAdminFreeRangesMapByDate,
   buildManagerAvailabilityConfig,
@@ -56,15 +55,24 @@ import {
   listManagerAvailabilityForProperty,
   listManagerAvailabilityForManagerEmail,
   createManagerAvailabilityRecordsBatch,
-  createAdminMeetingAvailabilityRecord,
   deleteManagerAvailabilityRecord,
-  deleteAdminMeetingAvailabilityRecord,
-  buildAdminMeetingAvailabilityRecordFields,
   buildManagerAvailabilitySlotRowFields,
   formatHHmmFromMinutes,
-  listAdminMeetingAvailabilityRows,
   isManagerAvailabilityTableReachable,
 } from '../lib/managerAvailabilityAirtable.js'
+import { propertyRowUsesPostgresAvailability } from '../lib/propertyIdentity.js'
+import {
+  listInternalManagerAvailabilityAsMaRecords,
+  syncInternalManagerAvailabilitySlots,
+} from '../lib/managerAvailabilityInternal.js'
+import {
+  listInternalAdminMeetingAvailabilityAsMaRecords,
+  syncInternalAdminMeetingAvailabilitySlots,
+} from '../lib/adminMeetingAvailabilityInternal.js'
+import {
+  fetchInternalScheduledEventsSchedulingRows,
+  fetchAllInternalScheduledEventsForAdmin,
+} from '../lib/scheduledEventsInternal.js'
 import ManagerInboxPage from '../components/manager-inbox/ManagerInboxPage'
 import {
   getWorkOrderById,
@@ -84,7 +92,6 @@ import {
   deletePaymentRecord,
   AIRTABLE_PAYMENTS_BASE_ID,
   createRoomRecord,
-  uploadPropertyImage,
   propertyListingVisibleForMarketing,
   getAllPortalInternalThreadMessages,
   fetchInboxThreadStateMap,
@@ -118,6 +125,18 @@ import {
   PROPERTY_EDIT_REQUEST_FIELD,
 } from '../lib/managerPropertyFormAirtableMap.js'
 import {
+  mergeManagerPropertyListRows,
+  buildInternalPropertyWizardInitialValues,
+  applyInternalPropertyEditFromSerializedFields,
+} from '../lib/managerInternalPropertyBootstrap.js'
+import {
+  fetchInternalPropertiesListForSession,
+  fetchInternalPropertyById,
+  fetchInternalRoomsForProperty,
+  mapInternalPropertyToManagerListRow,
+  patchInternalProperty,
+} from '../lib/internalPropertiesClient.js'
+import {
   consolidateManagerDashboardWarnings,
   errorFromAirtableApiBody,
   isAirtablePermissionErrorMessage,
@@ -135,6 +154,7 @@ import {
 import PortalShell, { DataTable, StatusPill } from '../components/PortalShell'
 import { portalChromeSecondaryButtonClass } from '../lib/portalLayout.js'
 import { PortalEmptyVisual } from '../components/portalNavIcons.jsx'
+import { createManagerPortalAccount, signInManagerPortal } from '../lib/managerPortalAuth.js'
 import AddPropertyWizard from '../components/AddPropertyWizard'
 import { PropertyDetailPanel } from '../lib/propertyDetailPanel.jsx'
 import { ApplicationDetailPanel, applicationViewModelFromAirtableRow } from '../lib/applicationDetailPanel.jsx'
@@ -172,6 +192,8 @@ import {
   normalizePropertyFilterKey,
 } from '../lib/portalPropertyTableOrder.js'
 import { propertyRoomLabelsFromAirtableRecord } from '../lib/airtablePublicListings.js'
+import { supabase } from '../lib/supabase'
+import { syncAppUserFromSupabaseSession } from '../lib/authAppUserSync.js'
 // ─── Session ──────────────────────────────────────────────────────────────────
 export const MANAGER_SESSION_KEY = 'axis_manager'
 const MANAGER_ONBOARDING_KEY = 'axis_manager_onboarding'
@@ -2430,6 +2452,15 @@ async function fetchPropertiesAdmin() {
   return rows
 }
 
+/** Airtable legacy rows + Postgres-backed UUID properties (GET /api/properties). */
+async function loadMergedManagerProperties(manager) {
+  const [airtableRows, internalRows] = await Promise.all([
+    fetchPropertiesAdmin(),
+    fetchInternalPropertiesListForSession(),
+  ])
+  return mergeManagerPropertyListRows(airtableRows, internalRows, manager)
+}
+
 async function updatePropertyAdmin(recordId, fields) {
   const data = await atRequest(`${CORE_AIRTABLE_BASE_URL}/Properties/${recordId}`, {
     method: 'PATCH',
@@ -2479,14 +2510,6 @@ function buildManagerListingPatch(property, listed) {
     patch['Admin Listing Status'] = nextListed ? 'Live' : 'Unlisted'
   }
   return patch
-}
-
-async function createPropertyAdmin(fields) {
-  const data = await atRequest(`${CORE_AIRTABLE_BASE_URL}/Properties`, {
-    method: 'POST',
-    body: JSON.stringify({ fields, typecast: true }),
-  })
-  return mapRecord(data)
 }
 
 async function deletePropertyAdmin(recordId) {
@@ -2921,19 +2944,10 @@ export function ManagerAuthForm({ onLogin, footer = null, variant = 'default' })
     setLoginError('')
     setLoginLoading(true)
     try {
-      const res = await fetch('/api/portal?action=manager-auth', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          email: signInForm.email.trim().toLowerCase(),
-          password: signInForm.password,
-        }),
-      })
-      const data = await readJsonResponse(res)
-      if (!res.ok) throw new Error(data.error || 'Login failed')
+      const manager = await signInManagerPortal(signInForm.email, signInForm.password)
       clearOnboarding()
-      sessionStorage.setItem(MANAGER_SESSION_KEY, JSON.stringify(data.manager))
-      onLogin(data.manager)
+      sessionStorage.setItem(MANAGER_SESSION_KEY, JSON.stringify(manager))
+      onLogin(manager)
     } catch (err) {
       setLoginError(err.message || 'Login failed')
     } finally {
@@ -2946,19 +2960,15 @@ export function ManagerAuthForm({ onLogin, footer = null, variant = 'default' })
     setActivationError('')
     setActivationLoading(true)
     try {
-      const res = await fetch('/api/portal?action=manager-create-account', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          managerId: activationForm.managerId.trim().toUpperCase(),
-          password: activationForm.password,
-        }),
+      const manager = await createManagerPortalAccount({
+        email: activationForm.email,
+        password: activationForm.password,
+        name: activationForm.name,
+        managerId: activationForm.managerId,
       })
-      const data = await readJsonResponse(res)
-      if (!res.ok) throw new Error(data.error || 'Could not create manager account')
       clearOnboarding()
-      sessionStorage.setItem(MANAGER_SESSION_KEY, JSON.stringify(data.manager))
-      onLogin(data.manager)
+      sessionStorage.setItem(MANAGER_SESSION_KEY, JSON.stringify(manager))
+      onLogin(manager)
     } catch (err) {
       setActivationError(err.message || 'Could not create manager account')
     } finally {
@@ -3158,10 +3168,15 @@ export function ManagerAuthForm({ onLogin, footer = null, variant = 'default' })
             <PortalNotice tone="error">{activationError}</PortalNotice>
           ) : null}
 
-          <PortalPrimaryButton
-            type="submit"
-            disabled={activationLoading || !activationForm.managerId.trim() || !activationForm.password.trim()}
-          >
+            <PortalPrimaryButton
+              type="submit"
+              disabled={
+                activationLoading ||
+                !activationForm.managerId.trim() ||
+                !activationForm.email.trim() ||
+                !activationForm.password.trim()
+              }
+            >
             {activationLoading ? 'Creating account…' : 'Create account'}
           </PortalPrimaryButton>
 
@@ -3213,6 +3228,8 @@ function HouseManagementPanel({ manager, onPropertiesChange }) {
   const [properties, setProperties] = useState([])
   const [loading, setLoading] = useState(true)
   const [editWizardProperty, setEditWizardProperty] = useState(null)
+  const [editInternalInitialValues, setEditInternalInitialValues] = useState(null)
+  const [editInternalBootstrapLoading, setEditInternalBootstrapLoading] = useState(false)
   const [detailsPropertyId, setDetailsPropertyId] = useState(null)
   const [deletingPropertyId, setDeletingPropertyId] = useState(null)
   const [listingBusyPropertyId, setListingBusyPropertyId] = useState(null)
@@ -3221,7 +3238,7 @@ function HouseManagementPanel({ manager, onPropertiesChange }) {
   const loadProperties = useCallback(async () => {
     setLoading(true)
     try {
-      const records = await fetchPropertiesAdmin()
+      const records = await loadMergedManagerProperties(manager)
       setProperties(records)
       onPropertiesChange?.(records)
     } catch (err) {
@@ -3229,7 +3246,7 @@ function HouseManagementPanel({ manager, onPropertiesChange }) {
     } finally {
       setLoading(false)
     }
-  }, [onPropertiesChange])
+  }, [onPropertiesChange, manager])
 
   useEffect(() => {
     loadProperties()
@@ -3306,6 +3323,34 @@ function HouseManagementPanel({ manager, onPropertiesChange }) {
     setDetailsPropertyId(null)
     setEditWizardProperty(null)
   }, [propertiesSection])
+
+  useEffect(() => {
+    if (!editWizardProperty || !editWizardProperty.__axisInternalPostgres) {
+      setEditInternalInitialValues(null)
+      setEditInternalBootstrapLoading(false)
+      return
+    }
+    let cancelled = false
+    setEditInternalBootstrapLoading(true)
+    setEditInternalInitialValues(null)
+    ;(async () => {
+      try {
+        const iv = await buildInternalPropertyWizardInitialValues(editWizardProperty.id)
+        if (!cancelled) setEditInternalInitialValues(iv)
+      } catch (e) {
+        toast.error(e?.message || 'Could not load property for editing.')
+        if (!cancelled) {
+          setEditWizardProperty(null)
+          setDetailsPropertyId(null)
+        }
+      } finally {
+        if (!cancelled) setEditInternalBootstrapLoading(false)
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [editWizardProperty])
 
   const selectedManagerProperty = useMemo(() => {
     if (!detailsPropertyId) return null
@@ -3404,7 +3449,11 @@ function HouseManagementPanel({ manager, onPropertiesChange }) {
                                   if (!window.confirm(`Unlist "${propertyRecordName(p) || 'this property'}" from the public site? It stays in your portal.`)) return
                                   setListingBusyPropertyId(p.id)
                                   try {
-                                    await updatePropertyAdmin(p.id, buildManagerListingPatch(p, false))
+                                    if (p.__axisInternalPostgres) {
+                                      await patchInternalProperty(p.id, { active: false })
+                                    } else {
+                                      await updatePropertyAdmin(p.id, buildManagerListingPatch(p, false))
+                                    }
                                     toast.success('Property unlisted')
                                     await loadProperties()
                                   } catch (err) {
@@ -3424,7 +3473,11 @@ function HouseManagementPanel({ manager, onPropertiesChange }) {
                                 onClick={async () => {
                                   setListingBusyPropertyId(p.id)
                                   try {
-                                    await updatePropertyAdmin(p.id, buildManagerListingPatch(p, true))
+                                    if (p.__axisInternalPostgres) {
+                                      await patchInternalProperty(p.id, { active: true })
+                                    } else {
+                                      await updatePropertyAdmin(p.id, buildManagerListingPatch(p, true))
+                                    }
                                     toast.success('Property listed on the site again')
                                     await loadProperties()
                                   } catch (err) {
@@ -3454,8 +3507,13 @@ function HouseManagementPanel({ manager, onPropertiesChange }) {
                                 if (!window.confirm(`Delete "${propertyRecordName(p) || 'this property'}"? This cannot be undone.`)) return
                                 setDeletingPropertyId(p.id)
                                 try {
-                                  await deletePropertyAdmin(p.id)
-                                  toast.success('Property deleted')
+                                  if (p.__axisInternalPostgres) {
+                                    await patchInternalProperty(p.id, { active: false })
+                                    toast.success('Property removed from active listings')
+                                  } else {
+                                    await deletePropertyAdmin(p.id)
+                                    toast.success('Property deleted')
+                                  }
                                   setDetailsPropertyId(null)
                                   await loadProperties()
                                 } catch (err) {
@@ -3550,20 +3608,42 @@ function HouseManagementPanel({ manager, onPropertiesChange }) {
               })
               setPropertiesSection('pending')
             }}
-            createPropertyAdmin={createPropertyAdmin}
           />
         ) : null}
 
-        {editWizardProperty ? (
+        {editWizardProperty &&
+        editWizardProperty.__axisInternalPostgres &&
+        (editInternalBootstrapLoading || !editInternalInitialValues) ? (
+          <div className="fixed inset-0 z-[80] flex items-center justify-center bg-slate-900/40 p-4">
+            <div className="rounded-2xl bg-white px-8 py-5 text-sm font-semibold text-slate-800 shadow-2xl">
+              Loading property…
+            </div>
+          </div>
+        ) : null}
+        {editWizardProperty &&
+        (!editWizardProperty.__axisInternalPostgres ||
+          (editInternalInitialValues && !editInternalBootstrapLoading)) ? (
           <AddPropertyWizard
             key={`edit-property-${editWizardProperty.id}`}
             mode="edit"
-            initialValues={buildPropertyWizardInitialValues(editWizardProperty)}
+            initialValues={
+              editWizardProperty.__axisInternalPostgres
+                ? editInternalInitialValues
+                : buildPropertyWizardInitialValues(editWizardProperty)
+            }
             manager={manager}
             onClose={() => {
               setEditWizardProperty(null)
+              setEditInternalInitialValues(null)
             }}
             onSubmitProperty={async (fields) => {
+              if (editWizardProperty.__axisInternalPostgres) {
+                const existingRooms = await fetchInternalRoomsForProperty(editWizardProperty.id)
+                await applyInternalPropertyEditFromSerializedFields(editWizardProperty.id, fields, existingRooms)
+                const fresh = await fetchInternalPropertyById(editWizardProperty.id)
+                if (!fresh) throw new Error('Could not reload property after save.')
+                return mapInternalPropertyToManagerListRow(fresh, manager)
+              }
               const patch = {
                 ...fields,
                 Approved: false,
@@ -3579,6 +3659,7 @@ function HouseManagementPanel({ manager, onPropertiesChange }) {
                 return next
               })
               setEditWizardProperty(null)
+              setEditInternalInitialValues(null)
               setDetailsPropertyId(updated.id)
               setPropertiesSection('pending')
             }}
@@ -6288,7 +6369,6 @@ export function CalendarTabPanel({ manager, allowedPropertyNames, loadAllSchedul
   }, [selectedDateKey, selectedPropertyId])
   const maCfg = useMemo(() => buildManagerAvailabilityConfig(import.meta.env), [])
   const adminMaCfg = useMemo(() => buildAdminMeetingAvailabilityConfig(import.meta.env), [])
-  const splitAdminMa = useMemo(() => availabilityTablesAreSplit(import.meta.env), [])
   const [adminMaRecords, setAdminMaRecords] = useState([])
   /** Tour template: user edited weekly grid — debounced persist to Airtable */
   const availabilityDirtyRef = useRef(false)
@@ -6350,14 +6430,19 @@ export function CalendarTabPanel({ manager, allowedPropertyNames, loadAllSchedul
   }, [loadAllSchedulingRows])
 
   useEffect(() => {
-    if (!loadAllSchedulingRows || !splitAdminMa) {
+    if (!loadAllSchedulingRows) {
+      setAdminMaRecords([])
+      return
+    }
+    const adminEmail = String(manager?.email || '').trim().toLowerCase()
+    if (!adminEmail) {
       setAdminMaRecords([])
       return
     }
     let cancelled = false
     ;(async () => {
       try {
-        const rows = await listAdminMeetingAvailabilityRows('')
+        const rows = await listInternalAdminMeetingAvailabilityAsMaRecords(adminEmail)
         if (!cancelled) setAdminMaRecords(rows)
       } catch {
         if (!cancelled) setAdminMaRecords([])
@@ -6366,19 +6451,26 @@ export function CalendarTabPanel({ manager, allowedPropertyNames, loadAllSchedul
     return () => {
       cancelled = true
     }
-  }, [loadAllSchedulingRows, splitAdminMa, manager?.email])
+  }, [loadAllSchedulingRows, manager?.email])
 
   useEffect(() => {
-    if (!maTableOk || !selectedPropertyId || loadAllSchedulingRows) {
+    if (!selectedPropertyId || loadAllSchedulingRows) {
+      setMaRecords([])
+      return
+    }
+    const prop = properties.find((p) => p.id === selectedPropertyId)
+    const usePostgresMa = Boolean(prop && propertyRowUsesPostgresAvailability(prop))
+    if (!maTableOk && !usePostgresMa) {
       setMaRecords([])
       return
     }
     let cancelled = false
-    const prop = properties.find((p) => p.id === selectedPropertyId)
     const pname = prop ? propertyRecordName(prop) : ''
     ;(async () => {
       try {
-        const rows = await listManagerAvailabilityForProperty(selectedPropertyId, pname)
+        const rows = usePostgresMa
+          ? await listInternalManagerAvailabilityAsMaRecords(selectedPropertyId, prop, managerRef.current)
+          : await listManagerAvailabilityForProperty(selectedPropertyId, pname)
         if (!cancelled) setMaRecords(rows)
       } catch {
         if (!cancelled) setMaRecords([])
@@ -6387,7 +6479,7 @@ export function CalendarTabPanel({ manager, allowedPropertyNames, loadAllSchedul
     return () => {
       cancelled = true
     }
-  }, [maTableOk, selectedPropertyId, properties, loadAllSchedulingRows])
+  }, [maTableOk, selectedPropertyId, properties, loadAllSchedulingRows, manager])
 
   const refreshSchedulingRowsOnly = useCallback(async () => {
     const { loadAll, managerEmail, propertyNames } = calendarFetchScopeRef.current
@@ -6422,7 +6514,7 @@ export function CalendarTabPanel({ manager, allowedPropertyNames, loadAllSchedul
         loadAllSchedulingRows
           ? fetchAllSchedulingRows()
           : fetchSchedulingForManagerScope({ managerEmail: manager?.email, propertyNames: allowedPropertyNames || [] }),
-        fetchPropertiesAdmin(),
+        loadMergedManagerProperties(manager),
         getAllWorkOrders().catch(() => []),
         !loadAllSchedulingRows
           ? listManagerAvailabilityForManagerEmail(manager?.email).catch(() => [])
@@ -6436,7 +6528,6 @@ export function CalendarTabPanel({ manager, allowedPropertyNames, loadAllSchedul
             (allowedPropertyNames || []).map((name) => String(name).trim().toLowerCase()).filter(Boolean),
           )
       const workOrderRows = workOrdersToCalendarRows(workOrders, allowedLower)
-      setSchedulingRows([...sched, ...workOrderRows])
       setProperties(props)
       let approvedAssigned = props.filter((p) => {
         if (loadAllSchedulingRows) return isPropertyRecordApproved(p)
@@ -6485,6 +6576,16 @@ export function CalendarTabPanel({ manager, allowedPropertyNames, loadAllSchedul
           import.meta.env,
         )
       }
+
+      let postgresSchedulingRows = []
+      try {
+        postgresSchedulingRows = loadAllSchedulingRows
+          ? await fetchAllInternalScheduledEventsForAdmin(120)
+          : await fetchInternalScheduledEventsSchedulingRows(approvedAssigned, 120)
+      } catch {
+        postgresSchedulingRows = []
+      }
+      setSchedulingRows([...sched, ...workOrderRows, ...postgresSchedulingRows])
 
       const byProperty = {}
       approvedAssigned.forEach((property) => {
@@ -6580,6 +6681,12 @@ export function CalendarTabPanel({ manager, allowedPropertyNames, loadAllSchedul
     [approvedAssignedProperties, selectedPropertyId],
   )
 
+  const selectedUsesPostgresMa = useMemo(
+    () => Boolean(selectedProperty && propertyRowUsesPostgresAvailability(selectedProperty)),
+    [selectedProperty],
+  )
+  const structuredCalendarEditorEnabled = maTableOk || selectedUsesPostgresMa
+
   const availabilityOwnerOptions = useMemo(
     () => approvedAssignedProperties
       .map((p) => ({ id: p.id, label: propertyRecordName(p) || 'Property' }))
@@ -6593,7 +6700,7 @@ export function CalendarTabPanel({ manager, allowedPropertyNames, loadAllSchedul
   )
 
   const saveTourDirtyIfNeeded = useCallback(async () => {
-    if (maTableOk) {
+    if (maTableOk || selectedUsesPostgresMa) {
       availabilityDirtyRef.current = false
       tourDirtyPayloadRef.current = null
       return true
@@ -6613,54 +6720,27 @@ export function CalendarTabPanel({ manager, allowedPropertyNames, loadAllSchedul
       { id: 'calendar-avail-legacy-blocked', duration: 6000 },
     )
     return true
-  }, [maTableOk, maDisabledByEnv])
+  }, [maTableOk, maDisabledByEnv, selectedUsesPostgresMa])
 
   const persistAdminMeetingAvailability = useCallback(
-    async (dayKey, ranges, existingRows) => {
+    async (dayKey, ranges, _existingRows) => {
       const adminEmail = String(manager?.email || '').trim().toLowerCase()
       if (!adminEmail || !dayKey) return
       setAvailSaving(true)
       try {
-        if (splitAdminMa) {
-          await Promise.all((existingRows || []).map((row) => deleteAdminMeetingAvailabilityRecord(row.id)))
-          const mgrId = String(manager?.airtableRecordId || manager?.id || '').trim()
-          for (const range of ranges || []) {
-            const fields = buildAdminMeetingAvailabilityRecordFields({
-              propertyName: '',
-              propertyRecordId: '',
-              managerEmail: adminEmail,
-              managerRecordId: mgrId,
-              dateKey: dayKey,
-              weekdayAbbr: weekdayAbbrFromDateKey(dayKey),
-              startHHmm: formatHHmmFromMinutes(range.start),
-              endHHmm: formatHHmmFromMinutes(range.end),
-              isRecurring: false,
-            })
-            await createAdminMeetingAvailabilityRecord(fields)
-          }
-          try {
-            const refreshed = await listAdminMeetingAvailabilityRows('')
-            setAdminMaRecords(refreshed)
-          } catch {
-            /* non-fatal */
-          }
-        } else {
-          await Promise.all((existingRows || []).map((row) => deleteSchedulingRecord(row.id)))
-          for (const range of ranges || []) {
-            await createSchedulingRecord({
-              Name: String(manager?.name || 'Axis admin').trim(),
-              Email: adminEmail,
-              Type: 'Meeting Availability',
-              Status: 'Available',
-              'Manager Email': adminEmail,
-              'Tour Manager': String(manager?.name || '').trim(),
-              'Preferred Date': dayKey,
-              'Preferred Time': `${displayTimeFromMinutes(range.start)} - ${displayTimeFromMinutes(range.end)}`,
-              'Scheduled Date': dayKey,
-              'Scheduled Time': `${displayTimeFromMinutes(range.start)} - ${displayTimeFromMinutes(range.end)}`,
-            })
-          }
-        }
+        const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'
+        const slots = (ranges || []).map((range) => ({
+          start_minute: range.start,
+          end_minute: range.end,
+        }))
+        await syncInternalAdminMeetingAvailabilitySlots({
+          dateKey: dayKey,
+          timezone: tz,
+          adminEmail,
+          slots,
+        })
+        const refreshed = await listInternalAdminMeetingAvailabilityAsMaRecords(adminEmail)
+        setAdminMaRecords(refreshed)
         toast.success('Saved', { id: 'calendar-admin-avail-autosave', duration: 1800 })
         await refreshSchedulingRowsOnly()
         dispatchAxisSchedulingChanged({ reason: 'admin-meeting-availability' })
@@ -6671,7 +6751,7 @@ export function CalendarTabPanel({ manager, allowedPropertyNames, loadAllSchedul
         setAvailSaving(false)
       }
     },
-    [manager, refreshSchedulingRowsOnly, splitAdminMa],
+    [manager, refreshSchedulingRowsOnly],
   )
 
   const saveTourDirtyRef = useRef(saveTourDirtyIfNeeded)
@@ -6681,11 +6761,11 @@ export function CalendarTabPanel({ manager, allowedPropertyNames, loadAllSchedul
   persistAdminRef.current = persistAdminMeetingAvailability
 
   const flushPendingCalendarWrites = useCallback(async () => {
-    if (!loadAllSchedulingRows && maTableOk && maDirtyRef.current) {
+    if (!loadAllSchedulingRows && structuredCalendarEditorEnabled && maDirtyRef.current) {
       const ok = await saveMaRef.current()
       if (!ok) return false
     }
-    if (!loadAllSchedulingRows && !maTableOk && availabilityDirtyRef.current) {
+    if (!loadAllSchedulingRows && !structuredCalendarEditorEnabled && availabilityDirtyRef.current) {
       const ok = await saveTourDirtyRef.current()
       if (!ok) return false
     }
@@ -6702,7 +6782,7 @@ export function CalendarTabPanel({ manager, allowedPropertyNames, loadAllSchedul
       }
     }
     return true
-  }, [loadAllSchedulingRows])
+  }, [loadAllSchedulingRows, structuredCalendarEditorEnabled])
 
   flushPendingCalendarWritesRef.current = flushPendingCalendarWrites
 
@@ -6710,18 +6790,18 @@ export function CalendarTabPanel({ manager, allowedPropertyNames, loadAllSchedul
     async (nextId) => {
       const next = String(nextId || '').trim()
       if (!loadAllSchedulingRows && next && next !== String(selectedPropertyId || '').trim()) {
-        if (maTableOk && maDirtyRef.current) {
+        if (structuredCalendarEditorEnabled && maDirtyRef.current) {
           const ok = await saveMaRef.current()
           if (!ok) return
         }
-        if (!maTableOk) {
+        if (!structuredCalendarEditorEnabled) {
           const ok = await saveTourDirtyIfNeeded()
           if (!ok) return
         }
       }
       setSelectedPropertyId(next)
     },
-    [loadAllSchedulingRows, selectedPropertyId, saveTourDirtyIfNeeded, maTableOk],
+    [loadAllSchedulingRows, selectedPropertyId, saveTourDirtyIfNeeded, structuredCalendarEditorEnabled],
   )
 
   // Manager: property-scoped rows. Admin: org-wide tours/work orders/meetings; "Meeting Availability" stays scoped to this admin.
@@ -6733,7 +6813,7 @@ export function CalendarTabPanel({ manager, allowedPropertyNames, loadAllSchedul
         if (!dk) return false
         const type = String(row?.Type || '').trim().toLowerCase()
         const rme = String(row['Manager Email'] || '').trim().toLowerCase()
-        if (type === 'meeting availability') return adminEmail && rme === adminEmail
+        if (type === 'meeting availability') return false
         if (['tour', 'work order', 'meeting', 'issue', 'other', 'availability'].includes(type)) return true
         return adminEmail && rme === adminEmail
       })
@@ -6747,7 +6827,7 @@ export function CalendarTabPanel({ manager, allowedPropertyNames, loadAllSchedul
 
   const computeMergedForDateKey = useCallback(
     (dateKey) => {
-      if (!maTableOk || !selectedProperty) {
+      if (!structuredCalendarEditorEnabled || !selectedProperty) {
         return timeRangesFromWeeklyFree(selectedWeeklyFree, weekdayAbbrFromDateKey(dateKey))
       }
       const selProp = String(propertyRecordName(selectedProperty) || '').trim().toLowerCase()
@@ -6779,7 +6859,7 @@ export function CalendarTabPanel({ manager, allowedPropertyNames, loadAllSchedul
       return normalizeTimeRanges(ranges)
     },
     [
-      maTableOk,
+      structuredCalendarEditorEnabled,
       selectedProperty,
       maRecords,
       maCfg.fields,
@@ -6798,13 +6878,13 @@ export function CalendarTabPanel({ manager, allowedPropertyNames, loadAllSchedul
 
   useEffect(() => {
     if (loadAllSchedulingRows) return
-    if (!maTableOk) return
+    if (!structuredCalendarEditorEnabled) return
     if (maDirtyRef.current) return
     setPendingRanges(mergedForSelectedDay)
-  }, [mergedForSelectedDay, maTableOk, loadAllSchedulingRows, selectedDateKey])
+  }, [mergedForSelectedDay, structuredCalendarEditorEnabled, loadAllSchedulingRows, selectedDateKey])
 
   const managerDayFreeOverrides = useMemo(() => {
-    if (loadAllSchedulingRows || !maTableOk || !selectedProperty) return null
+    if (loadAllSchedulingRows || !structuredCalendarEditorEnabled || !selectedProperty) return null
     const keys = new Set()
     const y = anchorDate.getFullYear()
     const m = anchorDate.getMonth()
@@ -6831,17 +6911,23 @@ export function CalendarTabPanel({ manager, allowedPropertyNames, loadAllSchedul
       out[key] = computeMergedForDateKey(key)
     }
     return out
-  }, [loadAllSchedulingRows, maTableOk, selectedProperty, anchorDate, selectedDateKey, computeMergedForDateKey])
+  }, [loadAllSchedulingRows, structuredCalendarEditorEnabled, selectedProperty, anchorDate, selectedDateKey, computeMergedForDateKey])
 
   const saveManagerAvailabilityToAirtable = useCallback(async () => {
-    if (!maTableOk || !selectedProperty || !manager?.email) {
-      toast.error('Manager Availability is not available or property is not selected.')
+    if (!selectedProperty || !manager?.email) {
+      toast.error('Property is not selected or you are not signed in.')
       return false
     }
     if (!selectedDateKey) {
       toast.error('No date selected.')
       return false
     }
+    const canStructuredSave = maTableOk || selectedUsesPostgresMa
+    if (!canStructuredSave) {
+      toast.error('Manager Availability is not available for this property.')
+      return false
+    }
+
     const dk = selectedDateKey
     const abbr = weekdayAbbrFromDateKey(dk)
     const propName = propertyRecordName(selectedProperty)
@@ -6849,6 +6935,87 @@ export function CalendarTabPanel({ manager, allowedPropertyNames, loadAllSchedul
     const mgrEmail = String(manager.email || '').trim().toLowerCase()
     const mgrId = String(manager.airtableRecordId || manager.id || '').trim()
     const ranges = normalizeTimeRanges(pendingRanges)
+
+    if (selectedUsesPostgresMa) {
+      setAvailSaving(true)
+      try {
+        const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'
+        const slotLabels = expandMinuteRangesToCanonicalTourSlotLabels(ranges)
+        const slots = []
+        for (const label of slotLabels) {
+          const pr = parseTourTimeSlotLabelToMinutesRange(label)
+          if (!pr || pr.end <= pr.start) continue
+          slots.push({
+            slot_start_minutes: pr.start,
+            slot_end_minutes: pr.end,
+            time_slot_label: label,
+          })
+        }
+        await syncInternalManagerAvailabilitySlots({
+          propertyId: propId,
+          dateKey: dk,
+          repeatWeekly,
+          weekdayAbbr: abbr,
+          timezone: tz,
+          slots,
+        })
+        const refreshed = await listInternalManagerAvailabilityAsMaRecords(propId, selectedProperty, manager)
+        const selProp = String(propName || '').trim().toLowerCase()
+        const tourRows = (schedulingRowsForView || []).filter((row) => {
+          const t = String(row.Type || '').trim().toLowerCase()
+          if (t !== 'tour') return false
+          const rowDk = String(row['Preferred Date'] || '').trim().slice(0, 10)
+          if (rowDk !== dk) return false
+          const rp = String(row.Property || '').trim().toLowerCase()
+          return !selProp || rp === selProp || rp.includes(selProp) || selProp.includes(rp)
+        })
+        const bookedLabels = tourRows
+          .map((row) => {
+            const p = parsePreferredTimeRange(row['Preferred Time'])
+            return p ? slotLabelFromRange(p.start, p.end) : ''
+          })
+          .filter(Boolean)
+        const mergedAfter = normalizeTimeRanges(
+          mergePropertyAvailabilityRanges({
+            records: refreshed.map((r) => ({ fields: r })),
+            fieldsConfig: maCfg.fields,
+            dateKey: dk,
+            propertyName: propName,
+            propertyRecordId: propId,
+            managerEmail: mgrEmail,
+            managerRecordId: mgrId,
+            legacyAvailabilityText: propertyTourAvailabilityText(selectedProperty),
+            bookedSlotLabels: bookedLabels,
+          }),
+        )
+        setMaRecords(refreshed)
+        maDirtyRef.current = false
+        setPendingRanges(mergedAfter)
+        toast.success(repeatWeekly ? 'Weekly availability saved' : 'Availability saved')
+        try {
+          if (maTableOk) {
+            const maSort = await listManagerAvailabilityForManagerEmail(mgrEmail)
+            setManagerAvailRowsForSort(Array.isArray(maSort) ? maSort : [])
+          }
+        } catch {
+          /* non-fatal */
+        }
+        await refreshSchedulingRowsOnly()
+        dispatchAxisSchedulingChanged({ reason: 'manager-availability' })
+        return true
+      } catch (err) {
+        toast.error(err.message || 'Failed to save availability')
+        return false
+      } finally {
+        setAvailSaving(false)
+      }
+    }
+
+    if (!maTableOk) {
+      toast.error('Manager Availability is not available or property is not selected.')
+      return false
+    }
+
     const f = maCfg.fields
     const isRecVal = (row) =>
       row[f.isRecurring] === true ||
@@ -6950,6 +7117,7 @@ export function CalendarTabPanel({ manager, allowedPropertyNames, loadAllSchedul
     }
   }, [
     maTableOk,
+    selectedUsesPostgresMa,
     selectedProperty,
     manager,
     selectedDateKey,
@@ -6991,102 +7159,73 @@ export function CalendarTabPanel({ manager, allowedPropertyNames, loadAllSchedul
     if (!loadAllSchedulingRows) return []
     const adminEmail = String(manager?.email || '').trim().toLowerCase()
     if (!adminEmail) return []
-    if (splitAdminMa) {
-      const f = adminMaCfg.fields
-      const wkSel = weekdayAbbrFromDateKey(selectedDateKey)
-      return (adminMaRecords || []).filter((row) => {
-        if (!recordIsGlobalAdminRow(row, f)) return false
-        if (String(row[f.managerEmail] || '').trim().toLowerCase() !== adminEmail) return false
-        const isRec =
-          row[f.isRecurring] === true ||
-          row[f.isRecurring] === 1 ||
-          String(row[f.isRecurring] || '').toLowerCase() === 'true' ||
-          String(row[f.isRecurring] || '').toLowerCase() === 'yes'
-        if (isRec) return normalizeWeekdayAbbr(row[f.weekday]) === wkSel
-        return normalizeDateKey(row[f.date]) === selectedDateKey
-      })
-    }
-    return (schedulingRows || []).filter((row) => {
-      const type = String(row?.Type || '').trim().toLowerCase()
-      if (type !== 'meeting availability') return false
-      const rowDate = String(row?.['Preferred Date'] || '').trim().slice(0, 10)
-      if (rowDate !== selectedDateKey) return false
-      const rowEmail = String(row?.['Manager Email'] || '').trim().toLowerCase()
-      return rowEmail === adminEmail
+    const f = adminMaCfg.fields
+    const wkSel = weekdayAbbrFromDateKey(selectedDateKey)
+    return (adminMaRecords || []).filter((row) => {
+      if (!recordIsGlobalAdminRow(row, f)) return false
+      if (String(row[f.managerEmail] || '').trim().toLowerCase() !== adminEmail) return false
+      const isRec =
+        row[f.isRecurring] === true ||
+        row[f.isRecurring] === 1 ||
+        String(row[f.isRecurring] || '').toLowerCase() === 'true' ||
+        String(row[f.isRecurring] || '').toLowerCase() === 'yes'
+      if (isRec) return normalizeWeekdayAbbr(row[f.weekday]) === wkSel
+      return normalizeDateKey(row[f.date]) === selectedDateKey
     })
-  }, [
-    loadAllSchedulingRows,
-    schedulingRows,
-    manager?.email,
-    selectedDateKey,
-    splitAdminMa,
-    adminMaRecords,
-    adminMaCfg.fields,
-  ])
+  }, [loadAllSchedulingRows, manager?.email, selectedDateKey, adminMaRecords, adminMaCfg.fields])
 
   const adminRangesFromRows = useMemo(() => {
-    if (splitAdminMa) {
-      return normalizeTimeRanges(
-        adminAvailabilityRowsForSelectedDay
-          .map((row) => intervalFromMaRecord(row, adminMaCfg.fields))
-          .filter(Boolean),
-      )
-    }
     return normalizeTimeRanges(
       adminAvailabilityRowsForSelectedDay
-        .map((row) => parsePreferredTimeRange(row?.['Preferred Time']))
+        .map((row) => intervalFromMaRecord(row, adminMaCfg.fields))
         .filter(Boolean),
     )
-  }, [adminAvailabilityRowsForSelectedDay, splitAdminMa, adminMaCfg.fields])
+  }, [adminAvailabilityRowsForSelectedDay, adminMaCfg.fields])
 
   /** Per-date explicit availability (admin calendar) for month/week/day green blocks. */
   const adminMeetingAvailabilityFreeByDate = useMemo(() => {
     if (!loadAllSchedulingRows) return null
     const adminEmail = String(manager?.email || '').trim().toLowerCase()
     if (!adminEmail) return null
-    if (splitAdminMa) {
-      const mapRanges = buildGlobalAdminFreeRangesMapByDate({
-        records: adminMaRecords,
-        config: adminMaCfg,
-        adminEmail,
-        daysAhead: 120,
-      })
-      const byDate = {}
-      for (const [dk, ranges] of Object.entries(mapRanges)) {
-        byDate[dk] = normalizeTimeRanges(ranges)
-      }
-      return byDate
-    }
+    const mapRanges = buildGlobalAdminFreeRangesMapByDate({
+      records: adminMaRecords,
+      config: adminMaCfg,
+      adminEmail,
+      daysAhead: 120,
+    })
     const byDate = {}
-    for (const row of schedulingRows || []) {
-      const type = String(row?.Type || '').trim().toLowerCase()
-      if (type !== 'meeting availability') continue
-      const rme = String(row['Manager Email'] || '').trim().toLowerCase()
-      if (rme !== adminEmail) continue
-      const dk = String(row['Preferred Date'] || '').trim().slice(0, 10)
-      if (!dk) continue
-      const parsed = parsePreferredTimeRange(row['Preferred Time'])
-      if (!parsed) continue
-      if (!byDate[dk]) byDate[dk] = []
-      byDate[dk].push(parsed)
-    }
-    for (const dk of Object.keys(byDate)) {
-      byDate[dk] = normalizeTimeRanges(byDate[dk])
+    for (const [dk, ranges] of Object.entries(mapRanges)) {
+      byDate[dk] = normalizeTimeRanges(ranges)
     }
     return byDate
-  }, [loadAllSchedulingRows, schedulingRows, manager?.email, splitAdminMa, adminMaRecords, adminMaCfg])
+  }, [loadAllSchedulingRows, manager?.email, adminMaRecords, adminMaCfg])
 
   /** Month/week grid: reflect Manager Availability editor state on the selected day (not only rows already in Airtable). */
   const calendarDayFreeOverrides = useMemo(() => {
     if (loadAllSchedulingRows) return adminMeetingAvailabilityFreeByDate
-    if (!maTableOk || !managerDayFreeOverrides) return managerDayFreeOverrides
+    if (!structuredCalendarEditorEnabled || !managerDayFreeOverrides) return managerDayFreeOverrides
     return {
       ...managerDayFreeOverrides,
       [selectedDateKey]: normalizeTimeRanges(pendingRanges),
     }
-  }, [loadAllSchedulingRows, maTableOk, managerDayFreeOverrides, selectedDateKey, pendingRanges, adminMeetingAvailabilityFreeByDate])
+  }, [
+    loadAllSchedulingRows,
+    structuredCalendarEditorEnabled,
+    managerDayFreeOverrides,
+    selectedDateKey,
+    pendingRanges,
+    adminMeetingAvailabilityFreeByDate,
+  ])
 
-  const adminScheduledItemsForDay = scheduledItemsForSelectedDay
+  const adminScheduledItemsForDay = useMemo(() => {
+    return (schedulingRowsForView || []).filter((row) => {
+      const rowDate = String(row['Preferred Date'] || '').trim().slice(0, 10)
+      if (rowDate !== selectedDateKey) return false
+      if (row._workOrder) return true
+      const t = String(row?.Type || '').trim().toLowerCase()
+      return t === 'tour' || t === 'work order' || t === 'meeting'
+    })
+  }, [schedulingRowsForView, selectedDateKey])
 
   useEffect(() => {
     if (!loadAllSchedulingRows) return
@@ -7155,11 +7294,11 @@ export function CalendarTabPanel({ manager, allowedPropertyNames, loadAllSchedul
 
   async function handleSelectDate(key) {
     const nextKey = String(key || '').trim()
-    if (!loadAllSchedulingRows && maTableOk && maDirtyRef.current) {
+    if (!loadAllSchedulingRows && structuredCalendarEditorEnabled && maDirtyRef.current) {
       const ok = await saveManagerAvailabilityToAirtable()
       if (!ok) return
     }
-    if (!loadAllSchedulingRows && !maTableOk && availabilityDirtyRef.current) {
+    if (!loadAllSchedulingRows && !structuredCalendarEditorEnabled && availabilityDirtyRef.current) {
       const ok = await saveTourDirtyIfNeeded()
       if (!ok) return
     }
@@ -7183,13 +7322,13 @@ export function CalendarTabPanel({ manager, allowedPropertyNames, loadAllSchedul
   }
 
   useEffect(() => {
-    if (loadAllSchedulingRows || maTableOk) return
+    if (loadAllSchedulingRows || structuredCalendarEditorEnabled) return
     if (!availabilityDirtyRef.current) return
     const t = window.setTimeout(() => {
       void saveTourDirtyIfNeeded()
     }, 550)
     return () => window.clearTimeout(t)
-  }, [weeklyFreeByProperty, selectedPropertyId, selectedDateKey, loadAllSchedulingRows, saveTourDirtyIfNeeded, maTableOk])
+  }, [weeklyFreeByProperty, selectedPropertyId, selectedDateKey, loadAllSchedulingRows, saveTourDirtyIfNeeded, structuredCalendarEditorEnabled])
 
   adminAutosaveCtxRef.current = {
     manager,
@@ -7283,9 +7422,8 @@ export function CalendarTabPanel({ manager, allowedPropertyNames, loadAllSchedul
 
       {loadAllSchedulingRows ? (
         <div className="mb-5 rounded-2xl border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-900">
-          {splitAdminMa
-            ? 'Admin meeting hours are stored in the Admin Meeting Availability table; confirmed meetings still appear in Scheduling. Public Contact Axis slots update from the API after save.'
-            : 'Meetings and availability here sync to Contact Axis booking (Scheduling rows).'}
+          Admin meeting hours are stored in the internal database (weekly windows per weekday). Confirmed meetings appear
+          on this calendar from Postgres; public Contact Axis reads availability from GET /api/meeting after you save.
         </div>
       ) : null}
 
@@ -7461,24 +7599,28 @@ export function CalendarTabPanel({ manager, allowedPropertyNames, loadAllSchedul
         />
         {!loadAllSchedulingRows && (
           <AvailabilityEditorPanel
-            structuredAvailabilityEnabled={maTableOk}
+            structuredAvailabilityEnabled={structuredCalendarEditorEnabled}
             ranges={
-              maTableOk
+              structuredCalendarEditorEnabled
                 ? pendingRanges
                 : timeRangesFromWeeklyFree(selectedWeeklyFree, weekdayAbbrFromDateKey(selectedDateKey))
             }
             onRangesChange={(ranges) => {
               if (!selectedPropertyId) return
-              if (maTableOk) {
+              if (structuredCalendarEditorEnabled) {
                 maDirtyRef.current = true
                 setPendingRanges(normalizeTimeRanges(ranges))
               }
             }}
-            onSave={() => void (maTableOk ? saveManagerAvailabilityToAirtable() : saveTourDirtyIfNeeded())}
-            repeatWeekly={maTableOk ? repeatWeekly : false}
-            onRepeatWeeklyChange={maTableOk ? (v) => setRepeatWeekly(v) : undefined}
+            onSave={() =>
+              void (structuredCalendarEditorEnabled
+                ? saveManagerAvailabilityToAirtable()
+                : saveTourDirtyIfNeeded())
+            }
+            repeatWeekly={structuredCalendarEditorEnabled ? repeatWeekly : false}
+            onRepeatWeeklyChange={structuredCalendarEditorEnabled ? (v) => setRepeatWeekly(v) : undefined}
             onCancelDraft={
-              maTableOk
+              structuredCalendarEditorEnabled
                 ? () => {
                     maDirtyRef.current = false
                     setPendingRanges(mergedForSelectedDay)
@@ -7486,13 +7628,21 @@ export function CalendarTabPanel({ manager, allowedPropertyNames, loadAllSchedul
                   }
                 : undefined
             }
-            saveButtonLabel={maTableOk ? 'Save availability to Airtable' : undefined}
+            saveButtonLabel={
+              structuredCalendarEditorEnabled
+                ? selectedUsesPostgresMa && !maTableOk
+                  ? 'Save availability'
+                  : 'Save availability to Airtable'
+                : undefined
+            }
             availabilityHint={
-              maTableOk
-                ? 'Drag the timeline to add manager free blocks, then Save (or switch day — unsaved changes save first). “Apply every week” repeats on this weekday from the selected date forward; it resets when you change days. Each saved window is stored as 30-minute rows in Manager Availability with a Time Slot value (e.g. 7:00am-7:30am). Confirmed tours still come from Scheduling.'
-                : maDisabledByEnv
+              !structuredCalendarEditorEnabled
+                ? maDisabledByEnv
                   ? 'Editing is disabled because VITE_USE_MANAGER_AVAILABILITY_TABLE is false. Set it to true (or unset) in .env, restart the dev server, and on Vercel change the variable then redeploy. See docs/AIRTABLE_SETUP_PROMPT.md §2.7.'
                   : 'The Manager Availability table could not be reached (missing table, wrong MANAGER_AVAILABILITY_TABLE / base ID, or token permissions). Fix Airtable per docs/AIRTABLE_SETUP_PROMPT.md §2.7 and refresh.'
+                : selectedUsesPostgresMa && !maTableOk
+                  ? 'Drag the timeline to add manager free blocks, then Save (or switch day — unsaved changes save first). “Apply every week” repeats on this weekday. Availability is stored in the internal database for this property (not the Manager Availability Airtable table). Confirmed tours still come from Scheduling.'
+                  : 'Drag the timeline to add manager free blocks, then Save (or switch day — unsaved changes save first). “Apply every week” repeats on this weekday from the selected date forward; it resets when you change days. Each saved window is stored as 30-minute rows in Manager Availability with a Time Slot value (e.g. 7:00am-7:30am). Confirmed tours still come from Scheduling.'
             }
             hidePropertyPicker
             selectedPropertyRecord={selectedProperty}
@@ -7867,15 +8017,17 @@ function ManagerDashboard({ manager: managerProp, openDraftId, onOpenDraft, onCl
 
   useEffect(() => {
     let cancelled = false
-    fetchPropertiesAdmin()
+    loadMergedManagerProperties(manager)
       .then((records) => {
         if (!cancelled) handlePropertiesChange(records)
       })
       .catch(() => {
         if (!cancelled) handlePropertiesChange([])
       })
-    return () => { cancelled = true }
-  }, [handlePropertiesChange])
+    return () => {
+      cancelled = true
+    }
+  }, [handlePropertiesChange, manager])
 
   const leaseFilterCardId = useMemo(() => {
     const s = filters.status

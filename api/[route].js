@@ -30,6 +30,7 @@ import stripe from '../backend/server/handlers/stripe.js'
 import meeting from '../backend/server/handlers/meeting.js'
 import tour from '../backend/server/handlers/tour.js'
 import syncAppUser from '../backend/server/handlers/sync-app-user.js'
+import residentCreateAccount from '../backend/server/handlers/resident-create-account.js'
 import adminProfiles from '../backend/server/handlers/admin-profiles.js'
 import managerProfiles from '../backend/server/handlers/manager-profiles.js'
 import ownerProfiles from '../backend/server/handlers/owner-profiles.js'
@@ -39,6 +40,10 @@ import rooms from '../backend/server/handlers/rooms.js'
 import applications from '../backend/server/handlers/applications.js'
 import payments from '../backend/server/handlers/payments.js'
 import fileStorage from '../backend/server/handlers/file-storage.js'
+import listingPublicMedia from '../backend/server/handlers/listing-public-media.js'
+import managerAvailability from '../backend/server/handlers/manager-availability.js'
+import adminMeetingAvailability from '../backend/server/handlers/admin-meeting-availability.js'
+import scheduledEvents from '../backend/server/handlers/scheduled-events.js'
 
 const routes = {
   'admin-portal-auth': adminPortalAuth,
@@ -70,9 +75,14 @@ const routes = {
   applications,
   payments,
   'file-storage': fileStorage,
+  'listing-public-media': listingPublicMedia,
+  'manager-availability': managerAvailability,
+  'admin-meeting-availability': adminMeetingAvailability,
+  'scheduled-events': scheduledEvents,
   'send-lease-invite': sendLeaseInvite,
   'signforge-webhook': signforgeWebhook,
   'sync-app-user': syncAppUser,
+  'resident-create-account': residentCreateAccount,
 }
 
 function segment(param) {
