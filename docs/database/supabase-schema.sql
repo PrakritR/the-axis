@@ -63,3 +63,6 @@ create policy "residents_own_messages" on work_order_messages
 --   created_at timestamptz not null default now(),
 --   updated_at timestamptz not null default now()
 -- );
+
+-- app_user_roles: see supabase/migrations/20260416120100_create_app_user_roles.sql
+-- (app_user_id -> app_users.id, role in admin|manager|owner|resident, unique (app_user_id, role))

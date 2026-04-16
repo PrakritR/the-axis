@@ -33,7 +33,7 @@ export function getSupabaseServiceClient() {
   return _serviceClient
 }
 
-function requireServiceClient() {
+export function requireServiceClient() {
   const c = getSupabaseServiceClient()
   if (!c) {
     throw new Error(
