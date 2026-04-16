@@ -1,0 +1,826 @@
+Axis — full Airtable field specification (generated)
+
+Constants: {"MAX_ROOM_SLOTS":20,"MAX_BATHROOM_SLOTS":10,"MAX_BATHROOM_SHARING_SLOTS":5,"MAX_KITCHEN_SLOTS":3,"MAX_SHARED_SPACE_SLOTS":13,"MAX_LAUNDRY_SLOTS":5}
+
+========================================================================================
+CORE BASE
+Primary env: VITE_AIRTABLE_BASE_ID
+========================================================================================
+
+--- Resident Profile (22 fields) ---
+  Table env: VITE_AIRTABLE_RESIDENT_PROFILE_TABLE
+  Base env:  VITE_AIRTABLE_BASE_ID
+  Field                                        Type                   Req  Env / notes
+  ------------------------------------------------------------------------------------------------
+  Name                                         Single line text            syncResidentFromAuth sets Name
+  Email                                        Email                  Y
+  Password                                     Single line text            Portal login (loginResident)
+  Phone                                        Phone number
+  Status                                       Single line text            e.g. Active
+  House                                        Link or single line te      Property link (rec…) or label — work orders try House then Property
+  Unit Number                                  Single line text
+  Lease Term                                   Single line text
+  Lease Start Date                             Date
+  Lease End Date                               Date
+  Supabase User ID                             Single line text            Auth sync
+  Application ID                               Number                      Optional legacy numeric id
+  Applications                                 Link to another record      → Applications
+  Property                                     Link to another record      → Properties (some bases)
+  Property Name                                Single line text            Fetched for payments / display
+  Room Number                                  Single line text
+  Rent Amount                                  Number
+  Security Deposit                             Number
+  Emergency Contact                            Long text                   Optional extended profile
+  Notes                                        Long text
+  Stripe Customer ID                           Single line text            VITE_AIRTABLE_RESIDENT_STRIPE_CUSTOMER_ID_FIELD
+  Stripe Default Payment Method ID             Single line text            VITE_AIRTABLE_RESIDENT_STRIPE_DEFAULT_PM_FIELD
+
+--- Manager Profile (23 fields) ---
+  Table env: VITE_AIRTABLE_MANAGER_PROFILE_TABLE
+  Base env:  VITE_AIRTABLE_BASE_ID
+  Field                                        Type                   Req  Env / notes
+  ------------------------------------------------------------------------------------------------
+  Manager ID                                   Single line text       Y
+  Name                                         Single line text            Some bases use single Name vs First/Last
+  Email                                        Email                  Y
+  Password                                     Single line text            If manager portal uses password auth
+  First Name                                   Single line text
+  Last Name                                    Single line text
+  Phone                                        Phone number
+  Phone Number                                 Phone number                Alternate column label
+  Company                                      Single line text
+  Role                                         Single line text
+  Plan Type                                    Single line text            Legacy billing label
+  Active                                       Checkbox
+  Tour Availability                            Long text
+  Tier                                         Single select               VITE_AIRTABLE_MANAGER_TIER_FIELD — Feature gating
+      options: Standard, Premium
+  Notes                                        Long text
+  Stripe Connect Account ID                    Single line text
+  Stripe Customer ID                           Single line text            Legacy / alternate Stripe id
+  Stripe Subscription ID                       Single line text
+  Promo Code                                   Single line text
+  Stripe Onboarding Complete                   Checkbox
+  Stripe Payouts Enabled                       Checkbox
+  Stripe Charges Enabled                       Checkbox
+  Stripe Details Submitted                     Checkbox
+
+--- Properties (189 fields) ---
+  Table env: VITE_AIRTABLE_PROPERTIES_TABLE
+  Base env:  VITE_AIRTABLE_BASE_ID
+  Field                                        Type                   Req  Env / notes
+  ------------------------------------------------------------------------------------------------
+  Property Name                                Single line text       Y
+  Street Address                               Single line text
+  City                                         Single line text
+  State                                        Single line text
+  ZIP                                          Single line text
+  Latitude                                     Number
+  Longitude                                    Number
+  Property Type                                Single select
+      options: House, Apartment, Townhome, Studio, Condo, Other
+  Bedrooms                                     Number
+  Bathrooms                                    Number
+  Square Feet                                  Number
+  Year Built                                   Number
+  Description                                  Long text
+  Amenities                                    Multiple select
+      options: Wi-Fi, Parking, Laundry, Air Conditioning, Heating, Dishwasher, Gym, Pool, Backyard, Balcony, Elevator, Storage, Bike Storage, EV Charging, Furnished Common Areas, Cleaning Service, Security System, Pet-Friendly, Rooftop, Game Room, Study Room
+  Pet Policy                                   Single select
+      options: Allowed, Not Allowed, Case by Case, Cats Only, Small Dogs OK
+  Furnished                                    Single select
+      options: Yes, No, Partial
+  Utilities Included                           Multiple select
+      options: Water, Gas, Electric, Trash, Internet, Sewer
+  Parking                                      Single line text
+  Laundry                                      Single line text
+  Photos                                       Attachment                  VITE_AIRTABLE_PROPERTY_PHOTOS_FIELD — Listing photos; room shots may use axis-r{n}-* filenames
+  Listing Status                               Single select               VITE_AIRTABLE_LISTING_STATUS_FIELD
+      options: Draft, Active, Leased, Archived
+  Monthly Rent                                 Number
+  Security Deposit                             Number
+  Application Fee                              Number                      Per-property override; tour/lease flows read this
+  Lease Term                                   Single line text
+  Available Date                               Date
+  Manager                                      Link to another record      → Manager Profile
+  Rooms                                        Link to another record      → Rooms (multiple)
+  Other Info                                   Long text              Y    JSON: axisListingMeta (leasing, financials, roomsDetail, tourSettings, …). See axisListingMeta.js
+  Admin Edit Request                           Long text                   VITE_AIRTABLE_PROPERTY_EDIT_REQUEST_FIELD — Manager edit request notes
+  Site Manager Name                            Single line text
+  Site Manager Phone                           Phone number
+  Site Manager Email                           Email
+  Room Count                                   Number                      1–20; drives which Room N * columns are used
+  Bathroom Count                               Number                      0–10
+  Kitchen Count                                Number                      0–3
+  Shared Space Count                           Number                      0–13
+  Laundry Count                                Number                      0–5
+  Room 1 Rent                                  Number                      Currency-style number; empty = no rent for slot
+  Room 1 Availability                          Date                        Move-in / availability date
+  Room 1 Furnished                             Single select               Wizard + PROPERTY_AIR mapping
+      options: Yes, No, Partial
+  Room 1 Utilities Cost                        Number                      Optional per-room utilities $
+  Room 1 Utilities                             Long text                   Only Room 1 has this long-text utilities field in Airtable
+  Room 2 Rent                                  Number                      Currency-style number; empty = no rent for slot
+  Room 2 Availability                          Date                        Move-in / availability date
+  Room 2 Furnished                             Single select               Wizard + PROPERTY_AIR mapping
+      options: Yes, No, Partial
+  Room 2 Utilities Cost                        Number                      Optional per-room utilities $
+  Room 3 Rent                                  Number                      Currency-style number; empty = no rent for slot
+  Room 3 Availability                          Date                        Move-in / availability date
+  Room 3 Furnished                             Single select               Wizard + PROPERTY_AIR mapping
+      options: Yes, No, Partial
+  Room 3 Utilities Cost                        Number                      Optional per-room utilities $
+  Room 4 Rent                                  Number                      Currency-style number; empty = no rent for slot
+  Room 4 Availability                          Date                        Move-in / availability date
+  Room 4 Furnished                             Single select               Wizard + PROPERTY_AIR mapping
+      options: Yes, No, Partial
+  Room 4 Utilities Cost                        Number                      Optional per-room utilities $
+  Room 5 Rent                                  Number                      Currency-style number; empty = no rent for slot
+  Room 5 Availability                          Date                        Move-in / availability date
+  Room 5 Furnished                             Single select               Wizard + PROPERTY_AIR mapping
+      options: Yes, No, Partial
+  Room 5 Utilities Cost                        Number                      Optional per-room utilities $
+  Room 6 Rent                                  Number                      Currency-style number; empty = no rent for slot
+  Room 6 Availability                          Date                        Move-in / availability date
+  Room 6 Furnished                             Single select               Wizard + PROPERTY_AIR mapping
+      options: Yes, No, Partial
+  Room 6 Utilities Cost                        Number                      Optional per-room utilities $
+  Room 7 Rent                                  Number                      Currency-style number; empty = no rent for slot
+  Room 7 Availability                          Date                        Move-in / availability date
+  Room 7 Furnished                             Single select               Wizard + PROPERTY_AIR mapping
+      options: Yes, No, Partial
+  Room 7 Utilities Cost                        Number                      Optional per-room utilities $
+  Room 8 Rent                                  Number                      Currency-style number; empty = no rent for slot
+  Room 8 Availability                          Date                        Move-in / availability date
+  Room 8 Furnished                             Single select               Wizard + PROPERTY_AIR mapping
+      options: Yes, No, Partial
+  Room 8 Utilities Cost                        Number                      Optional per-room utilities $
+  Room 9 Rent                                  Number                      Currency-style number; empty = no rent for slot
+  Room 9 Availability                          Date                        Move-in / availability date
+  Room 9 Furnished                             Single select               Wizard + PROPERTY_AIR mapping
+      options: Yes, No, Partial
+  Room 9 Utilities Cost                        Number                      Optional per-room utilities $
+  Room 10 Rent                                 Number                      Currency-style number; empty = no rent for slot
+  Room 10 Availability                         Date                        Move-in / availability date
+  Room 10 Furnished                            Single select               Wizard + PROPERTY_AIR mapping
+      options: Yes, No, Partial
+  Room 10 Utilities Cost                       Number                      Optional per-room utilities $
+  Room 11 Rent                                 Number                      Currency-style number; empty = no rent for slot
+  Room 11 Availability                         Date                        Move-in / availability date
+  Room 11 Furnished                            Single select               Wizard + PROPERTY_AIR mapping
+      options: Yes, No, Partial
+  Room 11 Utilities Cost                       Number                      Optional per-room utilities $
+  Room 12 Rent                                 Number                      Currency-style number; empty = no rent for slot
+  Room 12 Availability                         Date                        Move-in / availability date
+  Room 12 Furnished                            Single select               Wizard + PROPERTY_AIR mapping
+      options: Yes, No, Partial
+  Room 12 Utilities Cost                       Number                      Optional per-room utilities $
+  Room 13 Rent                                 Number                      Currency-style number; empty = no rent for slot
+  Room 13 Availability                         Date                        Move-in / availability date
+  Room 13 Furnished                            Single select               Wizard + PROPERTY_AIR mapping
+      options: Yes, No, Partial
+  Room 13 Utilities Cost                       Number                      Optional per-room utilities $
+  Room 14 Rent                                 Number                      Currency-style number; empty = no rent for slot
+  Room 14 Availability                         Date                        Move-in / availability date
+  Room 14 Furnished                            Single select               Wizard + PROPERTY_AIR mapping
+      options: Yes, No, Partial
+  Room 14 Utilities Cost                       Number                      Optional per-room utilities $
+  Room 15 Rent                                 Number                      Currency-style number; empty = no rent for slot
+  Room 15 Availability                         Date                        Move-in / availability date
+  Room 15 Furnished                            Single select               Wizard + PROPERTY_AIR mapping
+      options: Yes, No, Partial
+  Room 15 Utilities Cost                       Number                      Optional per-room utilities $
+  Room 16 Rent                                 Number                      Currency-style number; empty = no rent for slot
+  Room 16 Availability                         Date                        Move-in / availability date
+  Room 16 Furnished                            Single select               Wizard + PROPERTY_AIR mapping
+      options: Yes, No, Partial
+  Room 16 Utilities Cost                       Number                      Optional per-room utilities $
+  Room 17 Rent                                 Number                      Currency-style number; empty = no rent for slot
+  Room 17 Availability                         Date                        Move-in / availability date
+  Room 17 Furnished                            Single select               Wizard + PROPERTY_AIR mapping
+      options: Yes, No, Partial
+  Room 17 Utilities Cost                       Number                      Optional per-room utilities $
+  Room 18 Rent                                 Number                      Currency-style number; empty = no rent for slot
+  Room 18 Availability                         Date                        Move-in / availability date
+  Room 18 Furnished                            Single select               Wizard + PROPERTY_AIR mapping
+      options: Yes, No, Partial
+  Room 18 Utilities Cost                       Number                      Optional per-room utilities $
+  Room 19 Rent                                 Number                      Currency-style number; empty = no rent for slot
+  Room 19 Availability                         Date                        Move-in / availability date
+  Room 19 Furnished                            Single select               Wizard + PROPERTY_AIR mapping
+      options: Yes, No, Partial
+  Room 19 Utilities Cost                       Number                      Optional per-room utilities $
+  Room 20 Rent                                 Number                      Currency-style number; empty = no rent for slot
+  Room 20 Availability                         Date                        Move-in / availability date
+  Room 20 Furnished                            Single select               Wizard + PROPERTY_AIR mapping
+      options: Yes, No, Partial
+  Room 20 Utilities Cost                       Number                      Optional per-room utilities $
+  Bathroom 1                                   Long text                   Type + description stored together for manager wizard
+  Rooms Sharing Bathroom 1                     Multiple select             Which rooms share this bathroom
+      options: Room 1, Room 2, Room 3, Room 4, Room 5, Room 6, Room 7, Room 8, Room 9, Room 10, Room 11, Room 12, Room 13, Room 14, Room 15, Room 16, Room 17, Room 18, Room 19, Room 20
+  Bathroom 2                                   Long text                   Type + description stored together for manager wizard
+  Rooms Sharing Bathroom 2                     Multiple select             Which rooms share this bathroom
+      options: Room 1, Room 2, Room 3, Room 4, Room 5, Room 6, Room 7, Room 8, Room 9, Room 10, Room 11, Room 12, Room 13, Room 14, Room 15, Room 16, Room 17, Room 18, Room 19, Room 20
+  Bathroom 3                                   Long text                   Type + description stored together for manager wizard
+  Rooms Sharing Bathroom 3                     Multiple select             Which rooms share this bathroom
+      options: Room 1, Room 2, Room 3, Room 4, Room 5, Room 6, Room 7, Room 8, Room 9, Room 10, Room 11, Room 12, Room 13, Room 14, Room 15, Room 16, Room 17, Room 18, Room 19, Room 20
+  Bathroom 4                                   Long text                   Type + description stored together for manager wizard
+  Rooms Sharing Bathroom 4                     Multiple select             Which rooms share this bathroom
+      options: Room 1, Room 2, Room 3, Room 4, Room 5, Room 6, Room 7, Room 8, Room 9, Room 10, Room 11, Room 12, Room 13, Room 14, Room 15, Room 16, Room 17, Room 18, Room 19, Room 20
+  Bathroom 5                                   Long text                   Type + description stored together for manager wizard
+  Rooms Sharing Bathroom 5                     Multiple select             Which rooms share this bathroom
+      options: Room 1, Room 2, Room 3, Room 4, Room 5, Room 6, Room 7, Room 8, Room 9, Room 10, Room 11, Room 12, Room 13, Room 14, Room 15, Room 16, Room 17, Room 18, Room 19, Room 20
+  Bathroom 6                                   Long text                   Type + description stored together for manager wizard
+  Bathroom 7                                   Long text                   Type + description stored together for manager wizard
+  Bathroom 8                                   Long text                   Type + description stored together for manager wizard
+  Bathroom 9                                   Long text                   Type + description stored together for manager wizard
+  Bathroom 10                                  Long text                   Type + description stored together for manager wizard
+  Kitchen 1                                    Long text
+  Rooms Sharing Kitchen 1                      Multiple select
+      options: Room 1, Room 2, Room 3, Room 4, Room 5, Room 6, Room 7, Room 8, Room 9, Room 10, Room 11, Room 12, Room 13, Room 14, Room 15, Room 16, Room 17, Room 18, Room 19, Room 20
+  Kitchen 2                                    Long text
+  Rooms Sharing Kitchen 2                      Multiple select
+      options: Room 1, Room 2, Room 3, Room 4, Room 5, Room 6, Room 7, Room 8, Room 9, Room 10, Room 11, Room 12, Room 13, Room 14, Room 15, Room 16, Room 17, Room 18, Room 19, Room 20
+  Kitchen 3                                    Long text
+  Rooms Sharing Kitchen 3                      Multiple select
+      options: Room 1, Room 2, Room 3, Room 4, Room 5, Room 6, Room 7, Room 8, Room 9, Room 10, Room 11, Room 12, Room 13, Room 14, Room 15, Room 16, Room 17, Room 18, Room 19, Room 20
+  Laundry 1 Type                               Single line text            Wizard stores type label; paired with sharing + description in meta
+  Rooms Sharing Laundry 1                      Multiple select
+      options: Room 1, Room 2, Room 3, Room 4, Room 5, Room 6, Room 7, Room 8, Room 9, Room 10, Room 11, Room 12, Room 13, Room 14, Room 15, Room 16, Room 17, Room 18, Room 19, Room 20
+  Laundry 2 Type                               Single line text            Wizard stores type label; paired with sharing + description in meta
+  Rooms Sharing Laundry 2                      Multiple select
+      options: Room 1, Room 2, Room 3, Room 4, Room 5, Room 6, Room 7, Room 8, Room 9, Room 10, Room 11, Room 12, Room 13, Room 14, Room 15, Room 16, Room 17, Room 18, Room 19, Room 20
+  Laundry 3 Type                               Single line text            Wizard stores type label; paired with sharing + description in meta
+  Rooms Sharing Laundry 3                      Multiple select
+      options: Room 1, Room 2, Room 3, Room 4, Room 5, Room 6, Room 7, Room 8, Room 9, Room 10, Room 11, Room 12, Room 13, Room 14, Room 15, Room 16, Room 17, Room 18, Room 19, Room 20
+  Laundry 4 Type                               Single line text            Wizard stores type label; paired with sharing + description in meta
+  Rooms Sharing Laundry 4                      Multiple select
+      options: Room 1, Room 2, Room 3, Room 4, Room 5, Room 6, Room 7, Room 8, Room 9, Room 10, Room 11, Room 12, Room 13, Room 14, Room 15, Room 16, Room 17, Room 18, Room 19, Room 20
+  Laundry 5 Type                               Single line text            Wizard stores type label; paired with sharing + description in meta
+  Rooms Sharing Laundry 5                      Multiple select
+      options: Room 1, Room 2, Room 3, Room 4, Room 5, Room 6, Room 7, Room 8, Room 9, Room 10, Room 11, Room 12, Room 13, Room 14, Room 15, Room 16, Room 17, Room 18, Room 19, Room 20
+  Shared Space 1 Name                          Single line text
+  Shared Space 1 Type                          Single select
+      options: Living Room, Dining Room, Lounge, Study Area, Kitchen, Laundry, Backyard, Patio, Storage, Other
+  Access to Shared Space 1                     Multiple select
+      options: Room 1, Room 2, Room 3, Room 4, Room 5, Room 6, Room 7, Room 8, Room 9, Room 10, Room 11, Room 12, Room 13, Room 14, Room 15, Room 16, Room 17, Room 18, Room 19, Room 20
+  Shared Space 2 Name                          Single line text
+  Shared Space 2 Type                          Single select
+      options: Living Room, Dining Room, Lounge, Study Area, Kitchen, Laundry, Backyard, Patio, Storage, Other
+  Access to Shared Space 2                     Multiple select
+      options: Room 1, Room 2, Room 3, Room 4, Room 5, Room 6, Room 7, Room 8, Room 9, Room 10, Room 11, Room 12, Room 13, Room 14, Room 15, Room 16, Room 17, Room 18, Room 19, Room 20
+  Shared Space 3 Name                          Single line text
+  Shared Space 3 Type                          Single select
+      options: Living Room, Dining Room, Lounge, Study Area, Kitchen, Laundry, Backyard, Patio, Storage, Other
+  Access to Shared Space 3                     Multiple select
+      options: Room 1, Room 2, Room 3, Room 4, Room 5, Room 6, Room 7, Room 8, Room 9, Room 10, Room 11, Room 12, Room 13, Room 14, Room 15, Room 16, Room 17, Room 18, Room 19, Room 20
+  Shared Space 4 Name                          Single line text
+  Shared Space 4 Type                          Single select
+      options: Living Room, Dining Room, Lounge, Study Area, Kitchen, Laundry, Backyard, Patio, Storage, Other
+  Access to Shared Space 4                     Multiple select
+      options: Room 1, Room 2, Room 3, Room 4, Room 5, Room 6, Room 7, Room 8, Room 9, Room 10, Room 11, Room 12, Room 13, Room 14, Room 15, Room 16, Room 17, Room 18, Room 19, Room 20
+  Shared Space 5 Name                          Single line text
+  Shared Space 5 Type                          Single select
+      options: Living Room, Dining Room, Lounge, Study Area, Kitchen, Laundry, Backyard, Patio, Storage, Other
+  Access to Shared Space 5                     Multiple select
+      options: Room 1, Room 2, Room 3, Room 4, Room 5, Room 6, Room 7, Room 8, Room 9, Room 10, Room 11, Room 12, Room 13, Room 14, Room 15, Room 16, Room 17, Room 18, Room 19, Room 20
+  Shared Space 6 Name                          Single line text
+  Shared Space 6 Type                          Single select
+      options: Living Room, Dining Room, Lounge, Study Area, Kitchen, Laundry, Backyard, Patio, Storage, Other
+  Access to Shared Space 6                     Multiple select
+      options: Room 1, Room 2, Room 3, Room 4, Room 5, Room 6, Room 7, Room 8, Room 9, Room 10, Room 11, Room 12, Room 13, Room 14, Room 15, Room 16, Room 17, Room 18, Room 19, Room 20
+  Shared Space 7 Name                          Single line text
+  Shared Space 7 Type                          Single select
+      options: Living Room, Dining Room, Lounge, Study Area, Kitchen, Laundry, Backyard, Patio, Storage, Other
+  Access to Shared Space 7                     Multiple select
+      options: Room 1, Room 2, Room 3, Room 4, Room 5, Room 6, Room 7, Room 8, Room 9, Room 10, Room 11, Room 12, Room 13, Room 14, Room 15, Room 16, Room 17, Room 18, Room 19, Room 20
+  Shared Space 8 Name                          Single line text
+  Shared Space 8 Type                          Single select
+      options: Living Room, Dining Room, Lounge, Study Area, Kitchen, Laundry, Backyard, Patio, Storage, Other
+  Access to Shared Space 8                     Multiple select
+      options: Room 1, Room 2, Room 3, Room 4, Room 5, Room 6, Room 7, Room 8, Room 9, Room 10, Room 11, Room 12, Room 13, Room 14, Room 15, Room 16, Room 17, Room 18, Room 19, Room 20
+  Shared Space 9 Name                          Single line text
+  Shared Space 9 Type                          Single select
+      options: Living Room, Dining Room, Lounge, Study Area, Kitchen, Laundry, Backyard, Patio, Storage, Other
+  Access to Shared Space 9                     Multiple select
+      options: Room 1, Room 2, Room 3, Room 4, Room 5, Room 6, Room 7, Room 8, Room 9, Room 10, Room 11, Room 12, Room 13, Room 14, Room 15, Room 16, Room 17, Room 18, Room 19, Room 20
+  Shared Space 10 Name                         Single line text
+  Shared Space 10 Type                         Single select
+      options: Living Room, Dining Room, Lounge, Study Area, Kitchen, Laundry, Backyard, Patio, Storage, Other
+  Access to Shared Space 10                    Multiple select
+      options: Room 1, Room 2, Room 3, Room 4, Room 5, Room 6, Room 7, Room 8, Room 9, Room 10, Room 11, Room 12, Room 13, Room 14, Room 15, Room 16, Room 17, Room 18, Room 19, Room 20
+  Shared Space 11 Name                         Single line text
+  Shared Space 11 Type                         Single select
+      options: Living Room, Dining Room, Lounge, Study Area, Kitchen, Laundry, Backyard, Patio, Storage, Other
+  Access to Shared Space 11                    Multiple select
+      options: Room 1, Room 2, Room 3, Room 4, Room 5, Room 6, Room 7, Room 8, Room 9, Room 10, Room 11, Room 12, Room 13, Room 14, Room 15, Room 16, Room 17, Room 18, Room 19, Room 20
+  Shared Space 12 Name                         Single line text
+  Shared Space 12 Type                         Single select
+      options: Living Room, Dining Room, Lounge, Study Area, Kitchen, Laundry, Backyard, Patio, Storage, Other
+  Access to Shared Space 12                    Multiple select
+      options: Room 1, Room 2, Room 3, Room 4, Room 5, Room 6, Room 7, Room 8, Room 9, Room 10, Room 11, Room 12, Room 13, Room 14, Room 15, Room 16, Room 17, Room 18, Room 19, Room 20
+  Shared Space 13 Name                         Single line text
+  Shared Space 13 Type                         Single select
+      options: Living Room, Dining Room, Lounge, Study Area, Kitchen, Laundry, Backyard, Patio, Storage, Other
+  Access to Shared Space 13                    Multiple select
+      options: Room 1, Room 2, Room 3, Room 4, Room 5, Room 6, Room 7, Room 8, Room 9, Room 10, Room 11, Room 12, Room 13, Room 14, Room 15, Room 16, Room 17, Room 18, Room 19, Room 20
+
+--- Rooms (27 fields) ---
+  Table env: VITE_AIRTABLE_ROOMS_TABLE
+  Base env:  VITE_AIRTABLE_BASE_ID
+  Field                                        Type                   Req  Env / notes
+  ------------------------------------------------------------------------------------------------
+  Room Name                                    Single line text            Or use Room Number as primary label
+  Room Number                                  Single line text
+  Property                                     Link to another record Y    → Properties
+  Monthly Rent                                 Number
+  Security Deposit                             Number
+  Available                                    Checkbox
+  Availability                                 Long text                   Legacy bases use long text
+  Available Date                               Date
+  Furnished                                    Checkbox or single sel      Bases differ
+  Furnishing Detail                            Long text
+  Floor                                        Single line text
+  Bathroom Type                                Single line text
+  Square Feet                                  Number
+  Bed Size                                     Single line text
+  Desk Included                                Checkbox
+  AC                                           Checkbox
+  Closet / Storage                             Long text
+  Windows / Natural Light                      Long text
+  Room Notes                                   Long text
+  Kitchen Included                             Single line text
+  Laundry Access                               Long text
+  Parking Access                               Long text
+  Private Bathroom                             Checkbox
+  Utilities Included                           Multiple select
+      options: Water, Gas, Electric, Trash, Internet, Sewer
+  Description                                  Long text
+  Photos                                       Attachment
+  Current Resident                             Link to another record      → Resident Profile
+
+--- Work Orders (31 fields) ---
+  Table env: VITE_AIRTABLE_WORK_ORDERS_TABLE
+  Base env:  VITE_AIRTABLE_BASE_ID
+  Field                                        Type                   Req  Env / notes
+  ------------------------------------------------------------------------------------------------
+  Title                                        Single line text       Y
+  Description                                  Long text                   May include portal_submitter_email: line when using placeholder resident
+  Category                                     Single line text or si
+  Priority                                     Single select               Portal maps Emergency → Urgent
+      options: Low, Medium, High, Urgent, Emergency
+  Status                                       Single select               createWorkOrder defaults Open; retried as Submitted if Open invalid
+      options: Open, Submitted, In Progress, Scheduled, Completed, Cancelled
+  Preferred Entry Time                         Single line text
+  Preferred Time Window                        Single line text
+  Resident Profile                             Link to another record      VITE_AIRTABLE_WORK_ORDER_RESIDENT_LINK_FIELD — Default field name; fallbacks: Resident profile, Resident, Tenant, Resident Link, Resident ID
+  Resident Email                               Email or single line t      Copied from resident for matching
+  House                                        Link to another record      VITE_AIRTABLE_WORK_ORDER_PROPERTY_LINK_FIELD — Default tries House then Property
+  Property                                     Link to another record      Alternate property link label
+  Application ID                               Number                      VITE_AIRTABLE_WORK_ORDER_APPLICATION_ID_FIELD — Set none to skip
+  Application                                  Link to another record      VITE_AIRTABLE_WORK_ORDER_APPLICATION_LINK_FIELD — Default name Application
+  Management Notes                             Long text                   Scheduled date meta lines e.g. scheduled date: YYYY-MM-DD
+  Manager Notes                                Long text                   Alternate label in some UIs
+  Update                                       Long text
+  Latest Update                                Long text
+  Last Update                                  Date
+  Resolution Summary                           Long text
+  Resolved                                     Checkbox
+  Date Submitted                               Created time                Read-only in API
+  Submitted Date                               Date
+  Scheduled Date                               Date                        VITE_AIRTABLE_WORK_ORDER_SCHEDULED_DATE_FIELD
+  Completed Date                               Date
+  Resident Availability                        Long text
+  Photo                                        Attachment                  First tried; see VITE_AIRTABLE_WORK_ORDER_PHOTO_FIELDS
+  Photos                                       Attachment
+  Attachments                                  Attachment
+  Images                                       Attachment
+  Cost                                         Number                      VITE_AIRTABLE_WORK_ORDER_COST_FIELD
+  (your column for real submitter email)       Single line text            VITE_AIRTABLE_WORK_ORDER_SUBMITTER_EMAIL_FIELD — Required when using VITE_AIRTABLE_WORK_ORDER_RESIDENT_RECORD_ID placeholder resident link
+
+--- Messages (8 fields) ---
+  Table env: VITE_AIRTABLE_MESSAGES_TABLE
+  Base env:  VITE_AIRTABLE_BASE_ID
+  Field                                        Type                   Req  Env / notes
+  ------------------------------------------------------------------------------------------------
+  Message                                      Long text              Y
+  Sender Email                                 Email                  Y
+  Is Admin                                     Checkbox
+  Work Order                                   Link to another record      → Work Orders (work-order threads)
+  Thread Key                                   Single line text            VITE_AIRTABLE_MESSAGE_THREAD_KEY_FIELD — Portal inbox + internal threads
+  Channel                                      Single line text            VITE_AIRTABLE_MESSAGE_CHANNEL_FIELD
+  Subject                                      Single line text            VITE_AIRTABLE_MESSAGE_SUBJECT_FIELD — Set to none to skip writes
+  Timestamp                                    Date                        VITE_AIRTABLE_MESSAGE_TIMESTAMP_FIELD — Optional writable time; omit or none if using createdTime only
+
+--- Inbox Thread State (4 fields) ---
+  Table env: VITE_AIRTABLE_INBOX_THREAD_STATE_TABLE
+  Base env:  VITE_AIRTABLE_BASE_ID
+  Field                                        Type                   Req  Env / notes
+  ------------------------------------------------------------------------------------------------
+  Thread Key                                   Single line text            VITE_AIRTABLE_INBOX_STATE_THREAD_KEY_FIELD — Default Thread Key
+  Participant Email                            Email                       VITE_AIRTABLE_INBOX_STATE_PARTICIPANT_FIELD — Default Participant Email
+  Last Read At                                 Date                        VITE_AIRTABLE_INBOX_STATE_LAST_READ_FIELD
+  Trashed                                      Checkbox                    VITE_AIRTABLE_INBOX_STATE_TRASHED_FIELD
+
+--- Announcements (12 fields) ---
+  Table env: VITE_AIRTABLE_ANNOUNCEMENTS_TABLE
+  Base env:  VITE_AIRTABLE_BASE_ID
+  Field                                        Type                   Req  Env / notes
+  ------------------------------------------------------------------------------------------------
+  Title                                        Single line text       Y
+  Message                                      Long text              Y
+  Body                                         Long text                   Reader fallback when Message empty
+  Short Summary                                Long text
+  Target                                       Multiple select or lon      Audience tokens; may embed __axis_submitter__:email
+  Target Scope                                 Long text                   Fallback read in getAnnouncements
+  Priority                                     Single select
+      options: Normal, High, Low
+  Show                                         Checkbox                    FALSE = pending admin review
+  Pinned                                       Checkbox
+  Start Date                                   Date
+  Date Posted                                  Date
+  Created At                                   Created time
+
+--- Payments (18 fields) ---
+  Table env: VITE_AIRTABLE_PAYMENTS_TABLE / AIRTABLE_PAYMENTS_TABLE
+  Base env:  VITE_AIRTABLE_BASE_ID
+  Field                                        Type                   Req  Env / notes
+  ------------------------------------------------------------------------------------------------
+  Resident                                     Link to another record Y    → Resident Profile
+  Property                                     Link to another record      → Properties
+  Amount                                       Currency               Y
+  Type                                         Single line text or si
+  Category                                     Single line text
+  Kind                                         Single line text
+  Line Item Type                               Single line text
+  Month                                        Single line text
+  Status                                       Single select
+      options: Pending, Completed, Failed, Refunded
+  Due Date                                     Date
+  Paid Date                                    Date
+  Description                                  Long text
+  Notes                                        Long text
+  Stripe Payment ID                            Single line text
+  Property Name                                Single line text
+  Room Number                                  Single line text
+  Balance                                      Number                      Ledger / resident balance
+  Application Fee Paid                         Number                      Some manager UIs read fee columns by this label family
+
+--- Documents (12 fields) ---
+  Table env: VITE_AIRTABLE_DOCUMENTS_TABLE
+  Base env:  VITE_AIRTABLE_BASE_ID
+  Field                                        Type                   Req  Env / notes
+  ------------------------------------------------------------------------------------------------
+  Title                                        Single line text
+  Name                                         Single line text            Alternate primary label
+  Type                                         Single select
+      options: Lease, Addendum, Notice, Receipt, Insurance, ID, Other
+  Category                                     Single line text
+  File                                         Attachment             Y
+  Resident                                     Link to another record      → Resident Profile
+  Visible to Resident                          Checkbox
+  Property                                     Link to another record      → Properties
+  Uploaded By                                  Link to another record
+  Upload Date                                  Date
+  Expires                                      Date
+  Notes                                        Long text
+
+--- Packages (8 fields) ---
+  Table env: VITE_AIRTABLE_PACKAGES_TABLE
+  Base env:  VITE_AIRTABLE_BASE_ID
+  Field                                        Type                   Req  Env / notes
+  ------------------------------------------------------------------------------------------------
+  Tracking Number                              Single line text
+  Carrier                                      Single line text
+  Resident                                     Link to another record Y    → Resident Profile
+  Property                                     Link to another record      → Properties
+  Received Date                                Date
+  Status                                       Single select
+      options: Received, Picked Up, Returned
+  Notes                                        Long text
+  Photo                                        Attachment
+
+--- Lease Drafts (34 fields) ---
+  Table env: VITE_AIRTABLE_LEASE_DRAFTS_TABLE
+  Base env:  VITE_AIRTABLE_BASE_ID
+  Field                                        Type                   Req  Env / notes
+  ------------------------------------------------------------------------------------------------
+  Resident Name                                Single line text
+  Resident Email                               Email
+  Resident Record ID                           Single line text
+  Property                                     Single line text            Often property name string; may be link in some bases
+  Unit                                         Single line text
+  Lease Start Date                             Date
+  Lease End Date                               Date
+  Rent Amount                                  Currency
+  Deposit Amount                               Currency
+  Utilities Fee                                Currency
+  Lease Term                                   Single line text
+  AI Draft Content                             Long text
+  Manager Edited Content                       Long text
+  Lease HTML                                   Long text                   Rendered lease HTML path
+  Lease JSON                                   Long text                   Template + wizard payload
+  Manager Notes                                Long text
+  Status                                       Single select
+      options: Draft, Draft Generated, Pending Signature, Signed, Cancelled, …
+  Updated At                                   Date and time
+  Application Record ID                        Single line text
+  Owner ID                                     Single line text            Manager record id for scoping
+  Approved By                                  Single line text
+  Approved At                                  Date and time
+  Published At                                 Date and time
+  Allow Sign Without Move-In Pay               Checkbox
+  SignForge Envelope ID                        Single line text
+  SignForge Sent At                            Date and time
+  Lease Access Requirement Snapshot            Single line text
+  Lease Access Granted                         Checkbox
+  Lease Access Block Reason                    Long text
+  Lease Access Granted At                      Date and time
+  Lease Token                                  Single line text            Applications / signing flow
+  Lease Signed                                 Checkbox
+  Lease Signed Date                            Date
+  Lease Signature                              Single line text
+
+--- Lease Versions (10 fields) ---
+  Table env: (fixed table name in code)
+  Base env:  VITE_AIRTABLE_BASE_ID
+  Field                                        Type                   Req  Env / notes
+  ------------------------------------------------------------------------------------------------
+  Lease Draft ID                               Single line text            Link target id
+  Version                                      Number
+  Is Current                                   Checkbox
+  PDF File                                     Attachment                  Tried with PDF, Attachment, File
+  Uploader Name                                Single line text            Legacy uploader triad
+  Uploader Role                                Single line text
+  Upload Date                                  Date and time
+  Uploaded By                                  Single line text            Doc-schema uploader
+  Uploaded By Record ID                        Single line text
+  Timestamp                                    Date and time
+
+--- Lease Comments (7 fields) ---
+  Table env: (fixed table name in code)
+  Base env:  VITE_AIRTABLE_BASE_ID
+  Field                                        Type                   Req  Env / notes
+  ------------------------------------------------------------------------------------------------
+  Lease Draft ID                               Single line text       Y
+  Author Name                                  Single line text
+  Author Role                                  Single line text
+  Author Record ID                             Single line text
+  Message                                      Long text
+  Timestamp                                    Date and time
+  Resolved                                     Checkbox
+
+--- Lease Notifications (7 fields) ---
+  Table env: (fixed table name in code)
+  Base env:  VITE_AIRTABLE_BASE_ID
+  Field                                        Type                   Req  Env / notes
+  ------------------------------------------------------------------------------------------------
+  Recipient Record ID                          Single line text
+  Recipient Role                               Single line text
+  Lease Draft ID                               Single line text
+  Message                                      Long text
+  Action Type                                  Single line text
+  Is Read                                      Checkbox
+  Created At                                   Date and time
+
+--- Audit Log (11 fields) ---
+  Table env: VITE_AIRTABLE_AUDIT_LOG_TABLE
+  Base env:  VITE_AIRTABLE_BASE_ID
+  Field                                        Type                   Req  Env / notes
+  ------------------------------------------------------------------------------------------------
+  Lease Draft ID                               Single line text
+  Action Type                                  Single line text       Y
+  Performed By                                 Single line text
+  Performed By Role                            Single line text
+  Timestamp                                    Date and time          Y
+  Notes                                        Long text
+  Action                                       Single line text            Alternate generic schema
+  Entity Type                                  Single line text
+  Entity ID                                    Single line text
+  Details                                      Long text
+  IP Address                                   Single line text
+
+--- Scheduling (24 fields) ---
+  Table env: AIRTABLE_SCHEDULING_TABLE / VITE_AIRTABLE_SCHEDULING_TABLE
+  Base env:  VITE_AIRTABLE_BASE_ID
+  Field                                        Type                   Req  Env / notes
+  ------------------------------------------------------------------------------------------------
+  Type                                         Single line text            tour.js expects Type=tour for tour rows
+  Name                                         Single line text
+  Email                                        Email
+  Phone                                        Phone number
+  Property                                     Single line text            Property name or id string depending on handler
+  Property ID                                  Single line text
+  Property Name                                Single line text
+  Property Address                             Long text
+  Room                                         Single line text
+  Preferred Date                               Date
+  Preferred Time                               Single line text
+  Tour Format                                  Single line text
+  Tour Manager                                 Single line text
+  Tour Availability                            Long text
+  Meeting Format                               Single line text
+  Where to Meet                                Single line text
+  Message                                      Long text
+  Manager Email                                Email
+  Manager Approval                             Single line text
+  Status                                       Single line text
+  Approval Status                              Single line text
+  Approved                                     Checkbox
+  Listed                                       Checkbox
+  Notes                                        Long text                   May embed Site Manager Email, Tour Manager, Tour Notes lines
+
+--- Blocked Tour Dates (4 fields) ---
+  Table env: VITE_AIRTABLE_BLOCKED_TOUR_DATES_TABLE
+  Base env:  VITE_AIRTABLE_BASE_ID
+  Field                                        Type                   Req  Env / notes
+  ------------------------------------------------------------------------------------------------
+  Property                                     Link to another record      → Properties
+  Manager                                      Link to another record      → Manager Profile
+  Blocked Date                                 Date                   Y
+  Reason                                       Long text
+
+--- Manager Availability (8 fields) ---
+  Table env: VITE_AIRTABLE_MANAGER_AVAILABILITY_TABLE
+  Base env:  VITE_AIRTABLE_BASE_ID
+  Field                                        Type                   Req  Env / notes
+  ------------------------------------------------------------------------------------------------
+  Manager                                      Link to another record Y    → Manager Profile
+  Property                                     Link to another record      → Properties
+  Day Of Week                                  Number                      0–6 or 1–7 depending on scripts; align with tour booking code
+  Start Time                                   Single line text
+  End Time                                     Single line text
+  Slot Duration                                Number
+  Timezone                                     Single line text
+  Active                                       Checkbox
+
+--- Admin Meeting Availability (7 fields) ---
+  Table env: VITE_AIRTABLE_ADMIN_MEETING_AVAILABILITY_TABLE
+  Base env:  VITE_AIRTABLE_BASE_ID
+  Field                                        Type                   Req  Env / notes
+  ------------------------------------------------------------------------------------------------
+  Admin                                        Link to another record      → Admin Profile
+  Day Of Week                                  Number
+  Start Time                                   Single line text
+  End Time                                     Single line text
+  Slot Duration                                Number
+  Timezone                                     Single line text
+  Active                                       Checkbox
+
+--- Admin Profile (6 fields) ---
+  Table env: VITE_AIRTABLE_ADMIN_PROFILE_TABLE / AIRTABLE_ADMIN_PROFILE_TABLE
+  Base env:  VITE_AIRTABLE_BASE_ID
+  Field                                        Type                   Req  Env / notes
+  ------------------------------------------------------------------------------------------------
+  Admin ID                                     Single line text       Y
+  Email                                        Email                  Y
+  First Name                                   Single line text
+  Last Name                                    Single line text
+  Role                                         Single select
+      options: Super Admin, Admin, Support
+  Active                                       Checkbox
+
+--- Website Settings (4 fields) ---
+  Table env: VITE_AIRTABLE_WEBSITE_SETTINGS_TABLE
+  Base env:  VITE_AIRTABLE_BASE_ID
+  Field                                        Type                   Req  Env / notes
+  ------------------------------------------------------------------------------------------------
+  Key                                          Single line text       Y
+  Value                                        Long text
+  Description                                  Long text
+  Last Updated                                 Date
+
+--- Co-Signers (27 fields) ---
+  Table env: VITE_AIRTABLE_COAPPLICANTS_TABLE
+  Base env:  VITE_AIRTABLE_BASE_ID
+  Field                                        Type                   Req  Env / notes
+  ------------------------------------------------------------------------------------------------
+  Linked Application                           Link to another record Y    → Applications (Apply.jsx)
+  Role                                         Single line text            Co-Signer
+  Full Name                                    Single line text
+  Email                                        Email
+  Phone Number                                 Phone number
+  Date of Birth                                Date
+  SSN No.                                      Single line text
+  Driving License No.                          Single line text
+  Current Address                              Long text
+  City                                         Single line text
+  State                                        Single line text
+  ZIP                                          Single line text
+  Employer                                     Single line text
+  Employer Address                             Long text
+  Supervisor Name                              Single line text
+  Supervisor Phone                             Phone number
+  Job Title                                    Single line text
+  Monthly Income                               Currency
+  Annual Income                                Currency
+  Employment Start Date                        Date
+  Other Income                                 Long text
+  Bankruptcy History                           Single line text
+  Criminal History                             Single line text
+  Consent for Credit and Background Check      Checkbox
+  Signature                                    Long text                   Apply writes long text signature payload
+  Date Signed                                  Date
+  Notes                                        Long text
+
+========================================================================================
+APPLICATIONS BASE (may overlap core)
+Primary env: AIRTABLE_APPLICATIONS_BASE_ID
+When unset, Applications may live in the same base as VITE_AIRTABLE_BASE_ID.
+========================================================================================
+
+--- Applications (78 fields) ---
+  Table env: VITE_AIRTABLE_APPLICATIONS_TABLE / AIRTABLE_APPLICATIONS_TABLE
+  Base env:  AIRTABLE_APPLICATIONS_BASE_ID or VITE_AIRTABLE_APPLICATIONS_BASE_ID (else VITE_AIRTABLE_BASE_ID)
+  Field                                        Type                   Req  Env / notes
+  ------------------------------------------------------------------------------------------------
+  Application ID                               Autonumber or formula       Display id; API uses Airtable record id rec…
+  Signer Full Name                             Single line text       Y
+  Signer Email                                 Email                  Y
+  Signer Phone Number                          Phone number
+  Signer Date of Birth                         Date
+  Signer SSN No.                               Single line text
+  Signer Driving License No.                   Single line text
+  Property Name                                Single line text
+  Property Address                             Long text
+  Room Number                                  Single line text
+  Lease Term                                   Single line text
+  Month to Month                               Checkbox
+  Lease Start Date                             Date
+  Lease End Date                               Date
+  Signer Current Address                       Long text
+  Signer City                                  Single line text
+  Signer State                                 Single line text
+  Signer ZIP                                   Single line text
+  Current Landlord Name                        Single line text
+  Current Landlord Phone                       Phone number
+  Current Move-In Date                         Date
+  Current Move-Out Date                        Date
+  Current Reason for Leaving                   Long text
+  Previous Address                             Long text
+  Previous City                                Single line text
+  Previous State                               Single line text
+  Previous ZIP                                 Single line text
+  Previous Landlord Name                       Single line text
+  Previous Landlord Phone                      Phone number
+  Previous Move-In Date                        Date
+  Previous Move-Out Date                       Date
+  Previous Reason for Leaving                  Long text
+  Signer Employer                              Single line text
+  Signer Employer Address                      Long text
+  Signer Supervisor Name                       Single line text
+  Signer Supervisor Phone                      Phone number
+  Signer Job Title                             Single line text
+  Signer Monthly Income                        Currency
+  Signer Annual Income                         Currency
+  Signer Employment Start Date                 Date
+  Signer Other Income                          Long text
+  Reference 1 Name                             Single line text
+  Reference 1 Relationship                     Single line text
+  Reference 1 Phone                            Phone number
+  Reference 2 Name                             Single line text
+  Reference 2 Relationship                     Single line text
+  Reference 2 Phone                            Phone number
+  Number of Occupants                          Number
+  Pets                                         Long text
+  Eviction History                             Single line text
+  Signer Bankruptcy History                    Single line text
+  Signer Criminal History                      Single line text
+  Has Co-Signer                                Checkbox
+  Signer Consent for Credit and Background Che Checkbox
+  Signer Signature                             Long text                   AIRTABLE_APPLICATION_SIGNER_SIGNATURE_FIELD / VITE_AIRTABLE_APPLICATION_SIGNER_SIGNATURE_FIELD
+  Signer Date Signed                           Date
+  Additional Notes                             Long text                   Includes Axis meta blocks from buildAxisApplicationMetaNotes
+  Approved                                     Checkbox
+  Rejected                                     Checkbox                    AIRTABLE_APPLICATION_REJECTED_FIELD / VITE_AIRTABLE_APPLICATION_REJECTED_FIELD — Required on many bases so PATCH can clear rejection
+  Approved At                                  Date and time
+  Application Status                           Single line text            Manager approve may set Approved
+  Approval Status                              Single line text
+  Approved Unit Room                           Single line text            AIRTABLE_APPLICATION_APPROVED_ROOM_FIELD / VITE_AIRTABLE_APPLICATION_APPROVED_ROOM_FIELD — Also try legacy column Approved Room
+  Owner ID                                     Single line text            Manager Airtable record id; tenant guard
+  Lease Token                                  Single line text
+  Lease JSON                                   Long text
+  Lease Status                                 Single select
+  Lease Signed                                 Checkbox
+  Lease Signed Date                            Date
+  Lease Signature                              Single line text
+  Application Paid                             Checkbox                    AIRTABLE_APPLICATION_PAID_FIELD — Default Application Paid
+  Stripe Checkout Session                      Single line text            AIRTABLE_STRIPE_CHECKOUT_SESSION_FIELD — Default Stripe Checkout Session
+  Application Fee Due (USD)                    Number                      AIRTABLE_APPLICATION_FEE_DUE_USD_FIELD — Optional column; when unset server skips writes
+  (group apply checkbox)                       Checkbox                    VITE_AIRTABLE_APPLICATION_GROUP_CHECKBOX_FIELD — Exact column name from your base when using optionalApplicationsTableSignerExtras
+  (group size)                                 Number                      VITE_AIRTABLE_APPLICATION_GROUP_SIZE_FIELD
+  (axis group id)                              Single line text            VITE_AIRTABLE_APPLICATION_AXIS_GROUP_ID_FIELD
+  2nd choice (optional)                        Single line text            VITE_AIRTABLE_APPLICATION_ROOM_CHOICE_2_FIELD — Default from shared/application-airtable-fields.js
+  3rd choice (optional)                        Single line text            VITE_AIRTABLE_APPLICATION_ROOM_CHOICE_3_FIELD
+
+========================================================================================
+Other Info JSON keys (Properties → Other Info) — see frontend/src/lib/axisListingMeta.js
+========================================================================================
+
+  Top-level: leasing, financials, roomsDetail, tourSettings, media, compliance, ...
+  leasing: monthlyRent, securityDeposit, applicationFee, adminFee, petFee, parkingFee,
+           utilitiesIncluded[], utilitiesPaidByResident[], leaseTerm, availableDate,
+           guestPolicy, additionalLeaseTerms, houseRules, ...
+  financials: monthlyRent, securityDeposit, applicationFee, adminFee, petFee, parkingFee,
+             proratedRent, totalMoveIn, moveInFee, lastMonthRent, ...
+

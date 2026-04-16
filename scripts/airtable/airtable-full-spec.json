@@ -1,0 +1,3768 @@
+{
+  "generatedConstants": {
+    "MAX_ROOM_SLOTS": 20,
+    "MAX_BATHROOM_SLOTS": 10,
+    "MAX_BATHROOM_SHARING_SLOTS": 5,
+    "MAX_KITCHEN_SLOTS": 3,
+    "MAX_SHARED_SPACE_SLOTS": 13,
+    "MAX_LAUNDRY_SLOTS": 5
+  },
+  "coreBase": {
+    "env": "VITE_AIRTABLE_BASE_ID",
+    "tables": [
+      {
+        "id": "residentProfile",
+        "tableName": "Resident Profile",
+        "tableEnv": "VITE_AIRTABLE_RESIDENT_PROFILE_TABLE",
+        "baseEnv": "VITE_AIRTABLE_BASE_ID",
+        "fieldCount": 22,
+        "fields": [
+          {
+            "name": "Name",
+            "type": "Single line text",
+            "notes": "syncResidentFromAuth sets Name"
+          },
+          {
+            "name": "Email",
+            "type": "Email",
+            "required": true
+          },
+          {
+            "name": "Password",
+            "type": "Single line text",
+            "notes": "Portal login (loginResident)"
+          },
+          {
+            "name": "Phone",
+            "type": "Phone number"
+          },
+          {
+            "name": "Status",
+            "type": "Single line text",
+            "notes": "e.g. Active"
+          },
+          {
+            "name": "House",
+            "type": "Link or single line text",
+            "notes": "Property link (rec…) or label — work orders try House then Property"
+          },
+          {
+            "name": "Unit Number",
+            "type": "Single line text"
+          },
+          {
+            "name": "Lease Term",
+            "type": "Single line text"
+          },
+          {
+            "name": "Lease Start Date",
+            "type": "Date"
+          },
+          {
+            "name": "Lease End Date",
+            "type": "Date"
+          },
+          {
+            "name": "Supabase User ID",
+            "type": "Single line text",
+            "notes": "Auth sync"
+          },
+          {
+            "name": "Application ID",
+            "type": "Number",
+            "notes": "Optional legacy numeric id"
+          },
+          {
+            "name": "Applications",
+            "type": "Link to another record",
+            "notes": "→ Applications"
+          },
+          {
+            "name": "Property",
+            "type": "Link to another record",
+            "notes": "→ Properties (some bases)"
+          },
+          {
+            "name": "Property Name",
+            "type": "Single line text",
+            "notes": "Fetched for payments / display"
+          },
+          {
+            "name": "Room Number",
+            "type": "Single line text"
+          },
+          {
+            "name": "Rent Amount",
+            "type": "Number"
+          },
+          {
+            "name": "Security Deposit",
+            "type": "Number"
+          },
+          {
+            "name": "Emergency Contact",
+            "type": "Long text",
+            "notes": "Optional extended profile"
+          },
+          {
+            "name": "Notes",
+            "type": "Long text"
+          },
+          {
+            "name": "Stripe Customer ID",
+            "type": "Single line text",
+            "env": "VITE_AIRTABLE_RESIDENT_STRIPE_CUSTOMER_ID_FIELD"
+          },
+          {
+            "name": "Stripe Default Payment Method ID",
+            "type": "Single line text",
+            "env": "VITE_AIRTABLE_RESIDENT_STRIPE_DEFAULT_PM_FIELD"
+          }
+        ]
+      },
+      {
+        "id": "managerProfile",
+        "tableName": "Manager Profile",
+        "tableEnv": "VITE_AIRTABLE_MANAGER_PROFILE_TABLE",
+        "baseEnv": "VITE_AIRTABLE_BASE_ID",
+        "fieldCount": 23,
+        "fields": [
+          {
+            "name": "Manager ID",
+            "type": "Single line text",
+            "required": true
+          },
+          {
+            "name": "Name",
+            "type": "Single line text",
+            "notes": "Some bases use single Name vs First/Last"
+          },
+          {
+            "name": "Email",
+            "type": "Email",
+            "required": true
+          },
+          {
+            "name": "Password",
+            "type": "Single line text",
+            "notes": "If manager portal uses password auth"
+          },
+          {
+            "name": "First Name",
+            "type": "Single line text"
+          },
+          {
+            "name": "Last Name",
+            "type": "Single line text"
+          },
+          {
+            "name": "Phone",
+            "type": "Phone number"
+          },
+          {
+            "name": "Phone Number",
+            "type": "Phone number",
+            "notes": "Alternate column label"
+          },
+          {
+            "name": "Company",
+            "type": "Single line text"
+          },
+          {
+            "name": "Role",
+            "type": "Single line text"
+          },
+          {
+            "name": "Plan Type",
+            "type": "Single line text",
+            "notes": "Legacy billing label"
+          },
+          {
+            "name": "Active",
+            "type": "Checkbox"
+          },
+          {
+            "name": "Tour Availability",
+            "type": "Long text"
+          },
+          {
+            "name": "Tier",
+            "type": "Single select",
+            "options": [
+              "Standard",
+              "Premium"
+            ],
+            "env": "VITE_AIRTABLE_MANAGER_TIER_FIELD",
+            "notes": "Feature gating"
+          },
+          {
+            "name": "Notes",
+            "type": "Long text"
+          },
+          {
+            "name": "Stripe Connect Account ID",
+            "type": "Single line text"
+          },
+          {
+            "name": "Stripe Customer ID",
+            "type": "Single line text",
+            "notes": "Legacy / alternate Stripe id"
+          },
+          {
+            "name": "Stripe Subscription ID",
+            "type": "Single line text"
+          },
+          {
+            "name": "Promo Code",
+            "type": "Single line text"
+          },
+          {
+            "name": "Stripe Onboarding Complete",
+            "type": "Checkbox"
+          },
+          {
+            "name": "Stripe Payouts Enabled",
+            "type": "Checkbox"
+          },
+          {
+            "name": "Stripe Charges Enabled",
+            "type": "Checkbox"
+          },
+          {
+            "name": "Stripe Details Submitted",
+            "type": "Checkbox"
+          }
+        ]
+      },
+      {
+        "id": "properties",
+        "tableName": "Properties",
+        "tableEnv": "VITE_AIRTABLE_PROPERTIES_TABLE",
+        "baseEnv": "VITE_AIRTABLE_BASE_ID",
+        "fieldCount": 189,
+        "fields": [
+          {
+            "name": "Property Name",
+            "type": "Single line text",
+            "required": true
+          },
+          {
+            "name": "Street Address",
+            "type": "Single line text"
+          },
+          {
+            "name": "City",
+            "type": "Single line text"
+          },
+          {
+            "name": "State",
+            "type": "Single line text"
+          },
+          {
+            "name": "ZIP",
+            "type": "Single line text"
+          },
+          {
+            "name": "Latitude",
+            "type": "Number"
+          },
+          {
+            "name": "Longitude",
+            "type": "Number"
+          },
+          {
+            "name": "Property Type",
+            "type": "Single select",
+            "options": [
+              "House",
+              "Apartment",
+              "Townhome",
+              "Studio",
+              "Condo",
+              "Other"
+            ]
+          },
+          {
+            "name": "Bedrooms",
+            "type": "Number"
+          },
+          {
+            "name": "Bathrooms",
+            "type": "Number"
+          },
+          {
+            "name": "Square Feet",
+            "type": "Number"
+          },
+          {
+            "name": "Year Built",
+            "type": "Number"
+          },
+          {
+            "name": "Description",
+            "type": "Long text"
+          },
+          {
+            "name": "Amenities",
+            "type": "Multiple select",
+            "options": [
+              "Wi-Fi",
+              "Parking",
+              "Laundry",
+              "Air Conditioning",
+              "Heating",
+              "Dishwasher",
+              "Gym",
+              "Pool",
+              "Backyard",
+              "Balcony",
+              "Elevator",
+              "Storage",
+              "Bike Storage",
+              "EV Charging",
+              "Furnished Common Areas",
+              "Cleaning Service",
+              "Security System",
+              "Pet-Friendly",
+              "Rooftop",
+              "Game Room",
+              "Study Room"
+            ]
+          },
+          {
+            "name": "Pet Policy",
+            "type": "Single select",
+            "options": [
+              "Allowed",
+              "Not Allowed",
+              "Case by Case",
+              "Cats Only",
+              "Small Dogs OK"
+            ]
+          },
+          {
+            "name": "Furnished",
+            "type": "Single select",
+            "options": [
+              "Yes",
+              "No",
+              "Partial"
+            ]
+          },
+          {
+            "name": "Utilities Included",
+            "type": "Multiple select",
+            "options": [
+              "Water",
+              "Gas",
+              "Electric",
+              "Trash",
+              "Internet",
+              "Sewer"
+            ]
+          },
+          {
+            "name": "Parking",
+            "type": "Single line text"
+          },
+          {
+            "name": "Laundry",
+            "type": "Single line text"
+          },
+          {
+            "name": "Photos",
+            "type": "Attachment",
+            "env": "VITE_AIRTABLE_PROPERTY_PHOTOS_FIELD",
+            "notes": "Listing photos; room shots may use axis-r{n}-* filenames"
+          },
+          {
+            "name": "Listing Status",
+            "type": "Single select",
+            "options": [
+              "Draft",
+              "Active",
+              "Leased",
+              "Archived"
+            ],
+            "env": "VITE_AIRTABLE_LISTING_STATUS_FIELD"
+          },
+          {
+            "name": "Monthly Rent",
+            "type": "Number"
+          },
+          {
+            "name": "Security Deposit",
+            "type": "Number"
+          },
+          {
+            "name": "Application Fee",
+            "type": "Number",
+            "notes": "Per-property override; tour/lease flows read this"
+          },
+          {
+            "name": "Lease Term",
+            "type": "Single line text"
+          },
+          {
+            "name": "Available Date",
+            "type": "Date"
+          },
+          {
+            "name": "Manager",
+            "type": "Link to another record",
+            "notes": "→ Manager Profile"
+          },
+          {
+            "name": "Rooms",
+            "type": "Link to another record",
+            "notes": "→ Rooms (multiple)"
+          },
+          {
+            "name": "Other Info",
+            "type": "Long text",
+            "required": true,
+            "notes": "JSON: axisListingMeta (leasing, financials, roomsDetail, tourSettings, …). See axisListingMeta.js"
+          },
+          {
+            "name": "Admin Edit Request",
+            "type": "Long text",
+            "env": "VITE_AIRTABLE_PROPERTY_EDIT_REQUEST_FIELD",
+            "notes": "Manager edit request notes"
+          },
+          {
+            "name": "Site Manager Name",
+            "type": "Single line text"
+          },
+          {
+            "name": "Site Manager Phone",
+            "type": "Phone number"
+          },
+          {
+            "name": "Site Manager Email",
+            "type": "Email"
+          },
+          {
+            "name": "Room Count",
+            "type": "Number",
+            "notes": "1–20; drives which Room N * columns are used"
+          },
+          {
+            "name": "Bathroom Count",
+            "type": "Number",
+            "notes": "0–10"
+          },
+          {
+            "name": "Kitchen Count",
+            "type": "Number",
+            "notes": "0–3"
+          },
+          {
+            "name": "Shared Space Count",
+            "type": "Number",
+            "notes": "0–13"
+          },
+          {
+            "name": "Laundry Count",
+            "type": "Number",
+            "notes": "0–5"
+          },
+          {
+            "name": "Room 1 Rent",
+            "type": "Number",
+            "notes": "Currency-style number; empty = no rent for slot"
+          },
+          {
+            "name": "Room 1 Availability",
+            "type": "Date",
+            "notes": "Move-in / availability date"
+          },
+          {
+            "name": "Room 1 Furnished",
+            "type": "Single select",
+            "options": [
+              "Yes",
+              "No",
+              "Partial"
+            ],
+            "notes": "Wizard + PROPERTY_AIR mapping"
+          },
+          {
+            "name": "Room 1 Utilities Cost",
+            "type": "Number",
+            "notes": "Optional per-room utilities $"
+          },
+          {
+            "name": "Room 1 Utilities",
+            "type": "Long text",
+            "notes": "Only Room 1 has this long-text utilities field in Airtable"
+          },
+          {
+            "name": "Room 2 Rent",
+            "type": "Number",
+            "notes": "Currency-style number; empty = no rent for slot"
+          },
+          {
+            "name": "Room 2 Availability",
+            "type": "Date",
+            "notes": "Move-in / availability date"
+          },
+          {
+            "name": "Room 2 Furnished",
+            "type": "Single select",
+            "options": [
+              "Yes",
+              "No",
+              "Partial"
+            ],
+            "notes": "Wizard + PROPERTY_AIR mapping"
+          },
+          {
+            "name": "Room 2 Utilities Cost",
+            "type": "Number",
+            "notes": "Optional per-room utilities $"
+          },
+          {
+            "name": "Room 3 Rent",
+            "type": "Number",
+            "notes": "Currency-style number; empty = no rent for slot"
+          },
+          {
+            "name": "Room 3 Availability",
+            "type": "Date",
+            "notes": "Move-in / availability date"
+          },
+          {
+            "name": "Room 3 Furnished",
+            "type": "Single select",
+            "options": [
+              "Yes",
+              "No",
+              "Partial"
+            ],
+            "notes": "Wizard + PROPERTY_AIR mapping"
+          },
+          {
+            "name": "Room 3 Utilities Cost",
+            "type": "Number",
+            "notes": "Optional per-room utilities $"
+          },
+          {
+            "name": "Room 4 Rent",
+            "type": "Number",
+            "notes": "Currency-style number; empty = no rent for slot"
+          },
+          {
+            "name": "Room 4 Availability",
+            "type": "Date",
+            "notes": "Move-in / availability date"
+          },
+          {
+            "name": "Room 4 Furnished",
+            "type": "Single select",
+            "options": [
+              "Yes",
+              "No",
+              "Partial"
+            ],
+            "notes": "Wizard + PROPERTY_AIR mapping"
+          },
+          {
+            "name": "Room 4 Utilities Cost",
+            "type": "Number",
+            "notes": "Optional per-room utilities $"
+          },
+          {
+            "name": "Room 5 Rent",
+            "type": "Number",
+            "notes": "Currency-style number; empty = no rent for slot"
+          },
+          {
+            "name": "Room 5 Availability",
+            "type": "Date",
+            "notes": "Move-in / availability date"
+          },
+          {
+            "name": "Room 5 Furnished",
+            "type": "Single select",
+            "options": [
+              "Yes",
+              "No",
+              "Partial"
+            ],
+            "notes": "Wizard + PROPERTY_AIR mapping"
+          },
+          {
+            "name": "Room 5 Utilities Cost",
+            "type": "Number",
+            "notes": "Optional per-room utilities $"
+          },
+          {
+            "name": "Room 6 Rent",
+            "type": "Number",
+            "notes": "Currency-style number; empty = no rent for slot"
+          },
+          {
+            "name": "Room 6 Availability",
+            "type": "Date",
+            "notes": "Move-in / availability date"
+          },
+          {
+            "name": "Room 6 Furnished",
+            "type": "Single select",
+            "options": [
+              "Yes",
+              "No",
+              "Partial"
+            ],
+            "notes": "Wizard + PROPERTY_AIR mapping"
+          },
+          {
+            "name": "Room 6 Utilities Cost",
+            "type": "Number",
+            "notes": "Optional per-room utilities $"
+          },
+          {
+            "name": "Room 7 Rent",
+            "type": "Number",
+            "notes": "Currency-style number; empty = no rent for slot"
+          },
+          {
+            "name": "Room 7 Availability",
+            "type": "Date",
+            "notes": "Move-in / availability date"
+          },
+          {
+            "name": "Room 7 Furnished",
+            "type": "Single select",
+            "options": [
+              "Yes",
+              "No",
+              "Partial"
+            ],
+            "notes": "Wizard + PROPERTY_AIR mapping"
+          },
+          {
+            "name": "Room 7 Utilities Cost",
+            "type": "Number",
+            "notes": "Optional per-room utilities $"
+          },
+          {
+            "name": "Room 8 Rent",
+            "type": "Number",
+            "notes": "Currency-style number; empty = no rent for slot"
+          },
+          {
+            "name": "Room 8 Availability",
+            "type": "Date",
+            "notes": "Move-in / availability date"
+          },
+          {
+            "name": "Room 8 Furnished",
+            "type": "Single select",
+            "options": [
+              "Yes",
+              "No",
+              "Partial"
+            ],
+            "notes": "Wizard + PROPERTY_AIR mapping"
+          },
+          {
+            "name": "Room 8 Utilities Cost",
+            "type": "Number",
+            "notes": "Optional per-room utilities $"
+          },
+          {
+            "name": "Room 9 Rent",
+            "type": "Number",
+            "notes": "Currency-style number; empty = no rent for slot"
+          },
+          {
+            "name": "Room 9 Availability",
+            "type": "Date",
+            "notes": "Move-in / availability date"
+          },
+          {
+            "name": "Room 9 Furnished",
+            "type": "Single select",
+            "options": [
+              "Yes",
+              "No",
+              "Partial"
+            ],
+            "notes": "Wizard + PROPERTY_AIR mapping"
+          },
+          {
+            "name": "Room 9 Utilities Cost",
+            "type": "Number",
+            "notes": "Optional per-room utilities $"
+          },
+          {
+            "name": "Room 10 Rent",
+            "type": "Number",
+            "notes": "Currency-style number; empty = no rent for slot"
+          },
+          {
+            "name": "Room 10 Availability",
+            "type": "Date",
+            "notes": "Move-in / availability date"
+          },
+          {
+            "name": "Room 10 Furnished",
+            "type": "Single select",
+            "options": [
+              "Yes",
+              "No",
+              "Partial"
+            ],
+            "notes": "Wizard + PROPERTY_AIR mapping"
+          },
+          {
+            "name": "Room 10 Utilities Cost",
+            "type": "Number",
+            "notes": "Optional per-room utilities $"
+          },
+          {
+            "name": "Room 11 Rent",
+            "type": "Number",
+            "notes": "Currency-style number; empty = no rent for slot"
+          },
+          {
+            "name": "Room 11 Availability",
+            "type": "Date",
+            "notes": "Move-in / availability date"
+          },
+          {
+            "name": "Room 11 Furnished",
+            "type": "Single select",
+            "options": [
+              "Yes",
+              "No",
+              "Partial"
+            ],
+            "notes": "Wizard + PROPERTY_AIR mapping"
+          },
+          {
+            "name": "Room 11 Utilities Cost",
+            "type": "Number",
+            "notes": "Optional per-room utilities $"
+          },
+          {
+            "name": "Room 12 Rent",
+            "type": "Number",
+            "notes": "Currency-style number; empty = no rent for slot"
+          },
+          {
+            "name": "Room 12 Availability",
+            "type": "Date",
+            "notes": "Move-in / availability date"
+          },
+          {
+            "name": "Room 12 Furnished",
+            "type": "Single select",
+            "options": [
+              "Yes",
+              "No",
+              "Partial"
+            ],
+            "notes": "Wizard + PROPERTY_AIR mapping"
+          },
+          {
+            "name": "Room 12 Utilities Cost",
+            "type": "Number",
+            "notes": "Optional per-room utilities $"
+          },
+          {
+            "name": "Room 13 Rent",
+            "type": "Number",
+            "notes": "Currency-style number; empty = no rent for slot"
+          },
+          {
+            "name": "Room 13 Availability",
+            "type": "Date",
+            "notes": "Move-in / availability date"
+          },
+          {
+            "name": "Room 13 Furnished",
+            "type": "Single select",
+            "options": [
+              "Yes",
+              "No",
+              "Partial"
+            ],
+            "notes": "Wizard + PROPERTY_AIR mapping"
+          },
+          {
+            "name": "Room 13 Utilities Cost",
+            "type": "Number",
+            "notes": "Optional per-room utilities $"
+          },
+          {
+            "name": "Room 14 Rent",
+            "type": "Number",
+            "notes": "Currency-style number; empty = no rent for slot"
+          },
+          {
+            "name": "Room 14 Availability",
+            "type": "Date",
+            "notes": "Move-in / availability date"
+          },
+          {
+            "name": "Room 14 Furnished",
+            "type": "Single select",
+            "options": [
+              "Yes",
+              "No",
+              "Partial"
+            ],
+            "notes": "Wizard + PROPERTY_AIR mapping"
+          },
+          {
+            "name": "Room 14 Utilities Cost",
+            "type": "Number",
+            "notes": "Optional per-room utilities $"
+          },
+          {
+            "name": "Room 15 Rent",
+            "type": "Number",
+            "notes": "Currency-style number; empty = no rent for slot"
+          },
+          {
+            "name": "Room 15 Availability",
+            "type": "Date",
+            "notes": "Move-in / availability date"
+          },
+          {
+            "name": "Room 15 Furnished",
+            "type": "Single select",
+            "options": [
+              "Yes",
+              "No",
+              "Partial"
+            ],
+            "notes": "Wizard + PROPERTY_AIR mapping"
+          },
+          {
+            "name": "Room 15 Utilities Cost",
+            "type": "Number",
+            "notes": "Optional per-room utilities $"
+          },
+          {
+            "name": "Room 16 Rent",
+            "type": "Number",
+            "notes": "Currency-style number; empty = no rent for slot"
+          },
+          {
+            "name": "Room 16 Availability",
+            "type": "Date",
+            "notes": "Move-in / availability date"
+          },
+          {
+            "name": "Room 16 Furnished",
+            "type": "Single select",
+            "options": [
+              "Yes",
+              "No",
+              "Partial"
+            ],
+            "notes": "Wizard + PROPERTY_AIR mapping"
+          },
+          {
+            "name": "Room 16 Utilities Cost",
+            "type": "Number",
+            "notes": "Optional per-room utilities $"
+          },
+          {
+            "name": "Room 17 Rent",
+            "type": "Number",
+            "notes": "Currency-style number; empty = no rent for slot"
+          },
+          {
+            "name": "Room 17 Availability",
+            "type": "Date",
+            "notes": "Move-in / availability date"
+          },
+          {
+            "name": "Room 17 Furnished",
+            "type": "Single select",
+            "options": [
+              "Yes",
+              "No",
+              "Partial"
+            ],
+            "notes": "Wizard + PROPERTY_AIR mapping"
+          },
+          {
+            "name": "Room 17 Utilities Cost",
+            "type": "Number",
+            "notes": "Optional per-room utilities $"
+          },
+          {
+            "name": "Room 18 Rent",
+            "type": "Number",
+            "notes": "Currency-style number; empty = no rent for slot"
+          },
+          {
+            "name": "Room 18 Availability",
+            "type": "Date",
+            "notes": "Move-in / availability date"
+          },
+          {
+            "name": "Room 18 Furnished",
+            "type": "Single select",
+            "options": [
+              "Yes",
+              "No",
+              "Partial"
+            ],
+            "notes": "Wizard + PROPERTY_AIR mapping"
+          },
+          {
+            "name": "Room 18 Utilities Cost",
+            "type": "Number",
+            "notes": "Optional per-room utilities $"
+          },
+          {
+            "name": "Room 19 Rent",
+            "type": "Number",
+            "notes": "Currency-style number; empty = no rent for slot"
+          },
+          {
+            "name": "Room 19 Availability",
+            "type": "Date",
+            "notes": "Move-in / availability date"
+          },
+          {
+            "name": "Room 19 Furnished",
+            "type": "Single select",
+            "options": [
+              "Yes",
+              "No",
+              "Partial"
+            ],
+            "notes": "Wizard + PROPERTY_AIR mapping"
+          },
+          {
+            "name": "Room 19 Utilities Cost",
+            "type": "Number",
+            "notes": "Optional per-room utilities $"
+          },
+          {
+            "name": "Room 20 Rent",
+            "type": "Number",
+            "notes": "Currency-style number; empty = no rent for slot"
+          },
+          {
+            "name": "Room 20 Availability",
+            "type": "Date",
+            "notes": "Move-in / availability date"
+          },
+          {
+            "name": "Room 20 Furnished",
+            "type": "Single select",
+            "options": [
+              "Yes",
+              "No",
+              "Partial"
+            ],
+            "notes": "Wizard + PROPERTY_AIR mapping"
+          },
+          {
+            "name": "Room 20 Utilities Cost",
+            "type": "Number",
+            "notes": "Optional per-room utilities $"
+          },
+          {
+            "name": "Bathroom 1",
+            "type": "Long text",
+            "notes": "Type + description stored together for manager wizard"
+          },
+          {
+            "name": "Rooms Sharing Bathroom 1",
+            "type": "Multiple select",
+            "options": [
+              "Room 1",
+              "Room 2",
+              "Room 3",
+              "Room 4",
+              "Room 5",
+              "Room 6",
+              "Room 7",
+              "Room 8",
+              "Room 9",
+              "Room 10",
+              "Room 11",
+              "Room 12",
+              "Room 13",
+              "Room 14",
+              "Room 15",
+              "Room 16",
+              "Room 17",
+              "Room 18",
+              "Room 19",
+              "Room 20"
+            ],
+            "notes": "Which rooms share this bathroom"
+          },
+          {
+            "name": "Bathroom 2",
+            "type": "Long text",
+            "notes": "Type + description stored together for manager wizard"
+          },
+          {
+            "name": "Rooms Sharing Bathroom 2",
+            "type": "Multiple select",
+            "options": [
+              "Room 1",
+              "Room 2",
+              "Room 3",
+              "Room 4",
+              "Room 5",
+              "Room 6",
+              "Room 7",
+              "Room 8",
+              "Room 9",
+              "Room 10",
+              "Room 11",
+              "Room 12",
+              "Room 13",
+              "Room 14",
+              "Room 15",
+              "Room 16",
+              "Room 17",
+              "Room 18",
+              "Room 19",
+              "Room 20"
+            ],
+            "notes": "Which rooms share this bathroom"
+          },
+          {
+            "name": "Bathroom 3",
+            "type": "Long text",
+            "notes": "Type + description stored together for manager wizard"
+          },
+          {
+            "name": "Rooms Sharing Bathroom 3",
+            "type": "Multiple select",
+            "options": [
+              "Room 1",
+              "Room 2",
+              "Room 3",
+              "Room 4",
+              "Room 5",
+              "Room 6",
+              "Room 7",
+              "Room 8",
+              "Room 9",
+              "Room 10",
+              "Room 11",
+              "Room 12",
+              "Room 13",
+              "Room 14",
+              "Room 15",
+              "Room 16",
+              "Room 17",
+              "Room 18",
+              "Room 19",
+              "Room 20"
+            ],
+            "notes": "Which rooms share this bathroom"
+          },
+          {
+            "name": "Bathroom 4",
+            "type": "Long text",
+            "notes": "Type + description stored together for manager wizard"
+          },
+          {
+            "name": "Rooms Sharing Bathroom 4",
+            "type": "Multiple select",
+            "options": [
+              "Room 1",
+              "Room 2",
+              "Room 3",
+              "Room 4",
+              "Room 5",
+              "Room 6",
+              "Room 7",
+              "Room 8",
+              "Room 9",
+              "Room 10",
+              "Room 11",
+              "Room 12",
+              "Room 13",
+              "Room 14",
+              "Room 15",
+              "Room 16",
+              "Room 17",
+              "Room 18",
+              "Room 19",
+              "Room 20"
+            ],
+            "notes": "Which rooms share this bathroom"
+          },
+          {
+            "name": "Bathroom 5",
+            "type": "Long text",
+            "notes": "Type + description stored together for manager wizard"
+          },
+          {
+            "name": "Rooms Sharing Bathroom 5",
+            "type": "Multiple select",
+            "options": [
+              "Room 1",
+              "Room 2",
+              "Room 3",
+              "Room 4",
+              "Room 5",
+              "Room 6",
+              "Room 7",
+              "Room 8",
+              "Room 9",
+              "Room 10",
+              "Room 11",
+              "Room 12",
+              "Room 13",
+              "Room 14",
+              "Room 15",
+              "Room 16",
+              "Room 17",
+              "Room 18",
+              "Room 19",
+              "Room 20"
+            ],
+            "notes": "Which rooms share this bathroom"
+          },
+          {
+            "name": "Bathroom 6",
+            "type": "Long text",
+            "notes": "Type + description stored together for manager wizard"
+          },
+          {
+            "name": "Bathroom 7",
+            "type": "Long text",
+            "notes": "Type + description stored together for manager wizard"
+          },
+          {
+            "name": "Bathroom 8",
+            "type": "Long text",
+            "notes": "Type + description stored together for manager wizard"
+          },
+          {
+            "name": "Bathroom 9",
+            "type": "Long text",
+            "notes": "Type + description stored together for manager wizard"
+          },
+          {
+            "name": "Bathroom 10",
+            "type": "Long text",
+            "notes": "Type + description stored together for manager wizard"
+          },
+          {
+            "name": "Kitchen 1",
+            "type": "Long text"
+          },
+          {
+            "name": "Rooms Sharing Kitchen 1",
+            "type": "Multiple select",
+            "options": [
+              "Room 1",
+              "Room 2",
+              "Room 3",
+              "Room 4",
+              "Room 5",
+              "Room 6",
+              "Room 7",
+              "Room 8",
+              "Room 9",
+              "Room 10",
+              "Room 11",
+              "Room 12",
+              "Room 13",
+              "Room 14",
+              "Room 15",
+              "Room 16",
+              "Room 17",
+              "Room 18",
+              "Room 19",
+              "Room 20"
+            ]
+          },
+          {
+            "name": "Kitchen 2",
+            "type": "Long text"
+          },
+          {
+            "name": "Rooms Sharing Kitchen 2",
+            "type": "Multiple select",
+            "options": [
+              "Room 1",
+              "Room 2",
+              "Room 3",
+              "Room 4",
+              "Room 5",
+              "Room 6",
+              "Room 7",
+              "Room 8",
+              "Room 9",
+              "Room 10",
+              "Room 11",
+              "Room 12",
+              "Room 13",
+              "Room 14",
+              "Room 15",
+              "Room 16",
+              "Room 17",
+              "Room 18",
+              "Room 19",
+              "Room 20"
+            ]
+          },
+          {
+            "name": "Kitchen 3",
+            "type": "Long text"
+          },
+          {
+            "name": "Rooms Sharing Kitchen 3",
+            "type": "Multiple select",
+            "options": [
+              "Room 1",
+              "Room 2",
+              "Room 3",
+              "Room 4",
+              "Room 5",
+              "Room 6",
+              "Room 7",
+              "Room 8",
+              "Room 9",
+              "Room 10",
+              "Room 11",
+              "Room 12",
+              "Room 13",
+              "Room 14",
+              "Room 15",
+              "Room 16",
+              "Room 17",
+              "Room 18",
+              "Room 19",
+              "Room 20"
+            ]
+          },
+          {
+            "name": "Laundry 1 Type",
+            "type": "Single line text",
+            "notes": "Wizard stores type label; paired with sharing + description in meta"
+          },
+          {
+            "name": "Rooms Sharing Laundry 1",
+            "type": "Multiple select",
+            "options": [
+              "Room 1",
+              "Room 2",
+              "Room 3",
+              "Room 4",
+              "Room 5",
+              "Room 6",
+              "Room 7",
+              "Room 8",
+              "Room 9",
+              "Room 10",
+              "Room 11",
+              "Room 12",
+              "Room 13",
+              "Room 14",
+              "Room 15",
+              "Room 16",
+              "Room 17",
+              "Room 18",
+              "Room 19",
+              "Room 20"
+            ]
+          },
+          {
+            "name": "Laundry 2 Type",
+            "type": "Single line text",
+            "notes": "Wizard stores type label; paired with sharing + description in meta"
+          },
+          {
+            "name": "Rooms Sharing Laundry 2",
+            "type": "Multiple select",
+            "options": [
+              "Room 1",
+              "Room 2",
+              "Room 3",
+              "Room 4",
+              "Room 5",
+              "Room 6",
+              "Room 7",
+              "Room 8",
+              "Room 9",
+              "Room 10",
+              "Room 11",
+              "Room 12",
+              "Room 13",
+              "Room 14",
+              "Room 15",
+              "Room 16",
+              "Room 17",
+              "Room 18",
+              "Room 19",
+              "Room 20"
+            ]
+          },
+          {
+            "name": "Laundry 3 Type",
+            "type": "Single line text",
+            "notes": "Wizard stores type label; paired with sharing + description in meta"
+          },
+          {
+            "name": "Rooms Sharing Laundry 3",
+            "type": "Multiple select",
+            "options": [
+              "Room 1",
+              "Room 2",
+              "Room 3",
+              "Room 4",
+              "Room 5",
+              "Room 6",
+              "Room 7",
+              "Room 8",
+              "Room 9",
+              "Room 10",
+              "Room 11",
+              "Room 12",
+              "Room 13",
+              "Room 14",
+              "Room 15",
+              "Room 16",
+              "Room 17",
+              "Room 18",
+              "Room 19",
+              "Room 20"
+            ]
+          },
+          {
+            "name": "Laundry 4 Type",
+            "type": "Single line text",
+            "notes": "Wizard stores type label; paired with sharing + description in meta"
+          },
+          {
+            "name": "Rooms Sharing Laundry 4",
+            "type": "Multiple select",
+            "options": [
+              "Room 1",
+              "Room 2",
+              "Room 3",
+              "Room 4",
+              "Room 5",
+              "Room 6",
+              "Room 7",
+              "Room 8",
+              "Room 9",
+              "Room 10",
+              "Room 11",
+              "Room 12",
+              "Room 13",
+              "Room 14",
+              "Room 15",
+              "Room 16",
+              "Room 17",
+              "Room 18",
+              "Room 19",
+              "Room 20"
+            ]
+          },
+          {
+            "name": "Laundry 5 Type",
+            "type": "Single line text",
+            "notes": "Wizard stores type label; paired with sharing + description in meta"
+          },
+          {
+            "name": "Rooms Sharing Laundry 5",
+            "type": "Multiple select",
+            "options": [
+              "Room 1",
+              "Room 2",
+              "Room 3",
+              "Room 4",
+              "Room 5",
+              "Room 6",
+              "Room 7",
+              "Room 8",
+              "Room 9",
+              "Room 10",
+              "Room 11",
+              "Room 12",
+              "Room 13",
+              "Room 14",
+              "Room 15",
+              "Room 16",
+              "Room 17",
+              "Room 18",
+              "Room 19",
+              "Room 20"
+            ]
+          },
+          {
+            "name": "Shared Space 1 Name",
+            "type": "Single line text"
+          },
+          {
+            "name": "Shared Space 1 Type",
+            "type": "Single select",
+            "options": [
+              "Living Room",
+              "Dining Room",
+              "Lounge",
+              "Study Area",
+              "Kitchen",
+              "Laundry",
+              "Backyard",
+              "Patio",
+              "Storage",
+              "Other"
+            ]
+          },
+          {
+            "name": "Access to Shared Space 1",
+            "type": "Multiple select",
+            "options": [
+              "Room 1",
+              "Room 2",
+              "Room 3",
+              "Room 4",
+              "Room 5",
+              "Room 6",
+              "Room 7",
+              "Room 8",
+              "Room 9",
+              "Room 10",
+              "Room 11",
+              "Room 12",
+              "Room 13",
+              "Room 14",
+              "Room 15",
+              "Room 16",
+              "Room 17",
+              "Room 18",
+              "Room 19",
+              "Room 20"
+            ]
+          },
+          {
+            "name": "Shared Space 2 Name",
+            "type": "Single line text"
+          },
+          {
+            "name": "Shared Space 2 Type",
+            "type": "Single select",
+            "options": [
+              "Living Room",
+              "Dining Room",
+              "Lounge",
+              "Study Area",
+              "Kitchen",
+              "Laundry",
+              "Backyard",
+              "Patio",
+              "Storage",
+              "Other"
+            ]
+          },
+          {
+            "name": "Access to Shared Space 2",
+            "type": "Multiple select",
+            "options": [
+              "Room 1",
+              "Room 2",
+              "Room 3",
+              "Room 4",
+              "Room 5",
+              "Room 6",
+              "Room 7",
+              "Room 8",
+              "Room 9",
+              "Room 10",
+              "Room 11",
+              "Room 12",
+              "Room 13",
+              "Room 14",
+              "Room 15",
+              "Room 16",
+              "Room 17",
+              "Room 18",
+              "Room 19",
+              "Room 20"
+            ]
+          },
+          {
+            "name": "Shared Space 3 Name",
+            "type": "Single line text"
+          },
+          {
+            "name": "Shared Space 3 Type",
+            "type": "Single select",
+            "options": [
+              "Living Room",
+              "Dining Room",
+              "Lounge",
+              "Study Area",
+              "Kitchen",
+              "Laundry",
+              "Backyard",
+              "Patio",
+              "Storage",
+              "Other"
+            ]
+          },
+          {
+            "name": "Access to Shared Space 3",
+            "type": "Multiple select",
+            "options": [
+              "Room 1",
+              "Room 2",
+              "Room 3",
+              "Room 4",
+              "Room 5",
+              "Room 6",
+              "Room 7",
+              "Room 8",
+              "Room 9",
+              "Room 10",
+              "Room 11",
+              "Room 12",
+              "Room 13",
+              "Room 14",
+              "Room 15",
+              "Room 16",
+              "Room 17",
+              "Room 18",
+              "Room 19",
+              "Room 20"
+            ]
+          },
+          {
+            "name": "Shared Space 4 Name",
+            "type": "Single line text"
+          },
+          {
+            "name": "Shared Space 4 Type",
+            "type": "Single select",
+            "options": [
+              "Living Room",
+              "Dining Room",
+              "Lounge",
+              "Study Area",
+              "Kitchen",
+              "Laundry",
+              "Backyard",
+              "Patio",
+              "Storage",
+              "Other"
+            ]
+          },
+          {
+            "name": "Access to Shared Space 4",
+            "type": "Multiple select",
+            "options": [
+              "Room 1",
+              "Room 2",
+              "Room 3",
+              "Room 4",
+              "Room 5",
+              "Room 6",
+              "Room 7",
+              "Room 8",
+              "Room 9",
+              "Room 10",
+              "Room 11",
+              "Room 12",
+              "Room 13",
+              "Room 14",
+              "Room 15",
+              "Room 16",
+              "Room 17",
+              "Room 18",
+              "Room 19",
+              "Room 20"
+            ]
+          },
+          {
+            "name": "Shared Space 5 Name",
+            "type": "Single line text"
+          },
+          {
+            "name": "Shared Space 5 Type",
+            "type": "Single select",
+            "options": [
+              "Living Room",
+              "Dining Room",
+              "Lounge",
+              "Study Area",
+              "Kitchen",
+              "Laundry",
+              "Backyard",
+              "Patio",
+              "Storage",
+              "Other"
+            ]
+          },
+          {
+            "name": "Access to Shared Space 5",
+            "type": "Multiple select",
+            "options": [
+              "Room 1",
+              "Room 2",
+              "Room 3",
+              "Room 4",
+              "Room 5",
+              "Room 6",
+              "Room 7",
+              "Room 8",
+              "Room 9",
+              "Room 10",
+              "Room 11",
+              "Room 12",
+              "Room 13",
+              "Room 14",
+              "Room 15",
+              "Room 16",
+              "Room 17",
+              "Room 18",
+              "Room 19",
+              "Room 20"
+            ]
+          },
+          {
+            "name": "Shared Space 6 Name",
+            "type": "Single line text"
+          },
+          {
+            "name": "Shared Space 6 Type",
+            "type": "Single select",
+            "options": [
+              "Living Room",
+              "Dining Room",
+              "Lounge",
+              "Study Area",
+              "Kitchen",
+              "Laundry",
+              "Backyard",
+              "Patio",
+              "Storage",
+              "Other"
+            ]
+          },
+          {
+            "name": "Access to Shared Space 6",
+            "type": "Multiple select",
+            "options": [
+              "Room 1",
+              "Room 2",
+              "Room 3",
+              "Room 4",
+              "Room 5",
+              "Room 6",
+              "Room 7",
+              "Room 8",
+              "Room 9",
+              "Room 10",
+              "Room 11",
+              "Room 12",
+              "Room 13",
+              "Room 14",
+              "Room 15",
+              "Room 16",
+              "Room 17",
+              "Room 18",
+              "Room 19",
+              "Room 20"
+            ]
+          },
+          {
+            "name": "Shared Space 7 Name",
+            "type": "Single line text"
+          },
+          {
+            "name": "Shared Space 7 Type",
+            "type": "Single select",
+            "options": [
+              "Living Room",
+              "Dining Room",
+              "Lounge",
+              "Study Area",
+              "Kitchen",
+              "Laundry",
+              "Backyard",
+              "Patio",
+              "Storage",
+              "Other"
+            ]
+          },
+          {
+            "name": "Access to Shared Space 7",
+            "type": "Multiple select",
+            "options": [
+              "Room 1",
+              "Room 2",
+              "Room 3",
+              "Room 4",
+              "Room 5",
+              "Room 6",
+              "Room 7",
+              "Room 8",
+              "Room 9",
+              "Room 10",
+              "Room 11",
+              "Room 12",
+              "Room 13",
+              "Room 14",
+              "Room 15",
+              "Room 16",
+              "Room 17",
+              "Room 18",
+              "Room 19",
+              "Room 20"
+            ]
+          },
+          {
+            "name": "Shared Space 8 Name",
+            "type": "Single line text"
+          },
+          {
+            "name": "Shared Space 8 Type",
+            "type": "Single select",
+            "options": [
+              "Living Room",
+              "Dining Room",
+              "Lounge",
+              "Study Area",
+              "Kitchen",
+              "Laundry",
+              "Backyard",
+              "Patio",
+              "Storage",
+              "Other"
+            ]
+          },
+          {
+            "name": "Access to Shared Space 8",
+            "type": "Multiple select",
+            "options": [
+              "Room 1",
+              "Room 2",
+              "Room 3",
+              "Room 4",
+              "Room 5",
+              "Room 6",
+              "Room 7",
+              "Room 8",
+              "Room 9",
+              "Room 10",
+              "Room 11",
+              "Room 12",
+              "Room 13",
+              "Room 14",
+              "Room 15",
+              "Room 16",
+              "Room 17",
+              "Room 18",
+              "Room 19",
+              "Room 20"
+            ]
+          },
+          {
+            "name": "Shared Space 9 Name",
+            "type": "Single line text"
+          },
+          {
+            "name": "Shared Space 9 Type",
+            "type": "Single select",
+            "options": [
+              "Living Room",
+              "Dining Room",
+              "Lounge",
+              "Study Area",
+              "Kitchen",
+              "Laundry",
+              "Backyard",
+              "Patio",
+              "Storage",
+              "Other"
+            ]
+          },
+          {
+            "name": "Access to Shared Space 9",
+            "type": "Multiple select",
+            "options": [
+              "Room 1",
+              "Room 2",
+              "Room 3",
+              "Room 4",
+              "Room 5",
+              "Room 6",
+              "Room 7",
+              "Room 8",
+              "Room 9",
+              "Room 10",
+              "Room 11",
+              "Room 12",
+              "Room 13",
+              "Room 14",
+              "Room 15",
+              "Room 16",
+              "Room 17",
+              "Room 18",
+              "Room 19",
+              "Room 20"
+            ]
+          },
+          {
+            "name": "Shared Space 10 Name",
+            "type": "Single line text"
+          },
+          {
+            "name": "Shared Space 10 Type",
+            "type": "Single select",
+            "options": [
+              "Living Room",
+              "Dining Room",
+              "Lounge",
+              "Study Area",
+              "Kitchen",
+              "Laundry",
+              "Backyard",
+              "Patio",
+              "Storage",
+              "Other"
+            ]
+          },
+          {
+            "name": "Access to Shared Space 10",
+            "type": "Multiple select",
+            "options": [
+              "Room 1",
+              "Room 2",
+              "Room 3",
+              "Room 4",
+              "Room 5",
+              "Room 6",
+              "Room 7",
+              "Room 8",
+              "Room 9",
+              "Room 10",
+              "Room 11",
+              "Room 12",
+              "Room 13",
+              "Room 14",
+              "Room 15",
+              "Room 16",
+              "Room 17",
+              "Room 18",
+              "Room 19",
+              "Room 20"
+            ]
+          },
+          {
+            "name": "Shared Space 11 Name",
+            "type": "Single line text"
+          },
+          {
+            "name": "Shared Space 11 Type",
+            "type": "Single select",
+            "options": [
+              "Living Room",
+              "Dining Room",
+              "Lounge",
+              "Study Area",
+              "Kitchen",
+              "Laundry",
+              "Backyard",
+              "Patio",
+              "Storage",
+              "Other"
+            ]
+          },
+          {
+            "name": "Access to Shared Space 11",
+            "type": "Multiple select",
+            "options": [
+              "Room 1",
+              "Room 2",
+              "Room 3",
+              "Room 4",
+              "Room 5",
+              "Room 6",
+              "Room 7",
+              "Room 8",
+              "Room 9",
+              "Room 10",
+              "Room 11",
+              "Room 12",
+              "Room 13",
+              "Room 14",
+              "Room 15",
+              "Room 16",
+              "Room 17",
+              "Room 18",
+              "Room 19",
+              "Room 20"
+            ]
+          },
+          {
+            "name": "Shared Space 12 Name",
+            "type": "Single line text"
+          },
+          {
+            "name": "Shared Space 12 Type",
+            "type": "Single select",
+            "options": [
+              "Living Room",
+              "Dining Room",
+              "Lounge",
+              "Study Area",
+              "Kitchen",
+              "Laundry",
+              "Backyard",
+              "Patio",
+              "Storage",
+              "Other"
+            ]
+          },
+          {
+            "name": "Access to Shared Space 12",
+            "type": "Multiple select",
+            "options": [
+              "Room 1",
+              "Room 2",
+              "Room 3",
+              "Room 4",
+              "Room 5",
+              "Room 6",
+              "Room 7",
+              "Room 8",
+              "Room 9",
+              "Room 10",
+              "Room 11",
+              "Room 12",
+              "Room 13",
+              "Room 14",
+              "Room 15",
+              "Room 16",
+              "Room 17",
+              "Room 18",
+              "Room 19",
+              "Room 20"
+            ]
+          },
+          {
+            "name": "Shared Space 13 Name",
+            "type": "Single line text"
+          },
+          {
+            "name": "Shared Space 13 Type",
+            "type": "Single select",
+            "options": [
+              "Living Room",
+              "Dining Room",
+              "Lounge",
+              "Study Area",
+              "Kitchen",
+              "Laundry",
+              "Backyard",
+              "Patio",
+              "Storage",
+              "Other"
+            ]
+          },
+          {
+            "name": "Access to Shared Space 13",
+            "type": "Multiple select",
+            "options": [
+              "Room 1",
+              "Room 2",
+              "Room 3",
+              "Room 4",
+              "Room 5",
+              "Room 6",
+              "Room 7",
+              "Room 8",
+              "Room 9",
+              "Room 10",
+              "Room 11",
+              "Room 12",
+              "Room 13",
+              "Room 14",
+              "Room 15",
+              "Room 16",
+              "Room 17",
+              "Room 18",
+              "Room 19",
+              "Room 20"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "rooms",
+        "tableName": "Rooms",
+        "tableEnv": "VITE_AIRTABLE_ROOMS_TABLE",
+        "baseEnv": "VITE_AIRTABLE_BASE_ID",
+        "fieldCount": 27,
+        "fields": [
+          {
+            "name": "Room Name",
+            "type": "Single line text",
+            "notes": "Or use Room Number as primary label"
+          },
+          {
+            "name": "Room Number",
+            "type": "Single line text"
+          },
+          {
+            "name": "Property",
+            "type": "Link to another record",
+            "required": true,
+            "notes": "→ Properties"
+          },
+          {
+            "name": "Monthly Rent",
+            "type": "Number"
+          },
+          {
+            "name": "Security Deposit",
+            "type": "Number"
+          },
+          {
+            "name": "Available",
+            "type": "Checkbox"
+          },
+          {
+            "name": "Availability",
+            "type": "Long text",
+            "notes": "Legacy bases use long text"
+          },
+          {
+            "name": "Available Date",
+            "type": "Date"
+          },
+          {
+            "name": "Furnished",
+            "type": "Checkbox or single select",
+            "notes": "Bases differ"
+          },
+          {
+            "name": "Furnishing Detail",
+            "type": "Long text"
+          },
+          {
+            "name": "Floor",
+            "type": "Single line text"
+          },
+          {
+            "name": "Bathroom Type",
+            "type": "Single line text"
+          },
+          {
+            "name": "Square Feet",
+            "type": "Number"
+          },
+          {
+            "name": "Bed Size",
+            "type": "Single line text"
+          },
+          {
+            "name": "Desk Included",
+            "type": "Checkbox"
+          },
+          {
+            "name": "AC",
+            "type": "Checkbox"
+          },
+          {
+            "name": "Closet / Storage",
+            "type": "Long text"
+          },
+          {
+            "name": "Windows / Natural Light",
+            "type": "Long text"
+          },
+          {
+            "name": "Room Notes",
+            "type": "Long text"
+          },
+          {
+            "name": "Kitchen Included",
+            "type": "Single line text"
+          },
+          {
+            "name": "Laundry Access",
+            "type": "Long text"
+          },
+          {
+            "name": "Parking Access",
+            "type": "Long text"
+          },
+          {
+            "name": "Private Bathroom",
+            "type": "Checkbox"
+          },
+          {
+            "name": "Utilities Included",
+            "type": "Multiple select",
+            "options": [
+              "Water",
+              "Gas",
+              "Electric",
+              "Trash",
+              "Internet",
+              "Sewer"
+            ]
+          },
+          {
+            "name": "Description",
+            "type": "Long text"
+          },
+          {
+            "name": "Photos",
+            "type": "Attachment"
+          },
+          {
+            "name": "Current Resident",
+            "type": "Link to another record",
+            "notes": "→ Resident Profile"
+          }
+        ]
+      },
+      {
+        "id": "workOrders",
+        "tableName": "Work Orders",
+        "tableEnv": "VITE_AIRTABLE_WORK_ORDERS_TABLE",
+        "baseEnv": "VITE_AIRTABLE_BASE_ID",
+        "fieldCount": 31,
+        "fields": [
+          {
+            "name": "Title",
+            "type": "Single line text",
+            "required": true
+          },
+          {
+            "name": "Description",
+            "type": "Long text",
+            "notes": "May include portal_submitter_email: line when using placeholder resident"
+          },
+          {
+            "name": "Category",
+            "type": "Single line text or single select"
+          },
+          {
+            "name": "Priority",
+            "type": "Single select",
+            "options": [
+              "Low",
+              "Medium",
+              "High",
+              "Urgent",
+              "Emergency"
+            ],
+            "notes": "Portal maps Emergency → Urgent"
+          },
+          {
+            "name": "Status",
+            "type": "Single select",
+            "options": [
+              "Open",
+              "Submitted",
+              "In Progress",
+              "Scheduled",
+              "Completed",
+              "Cancelled"
+            ],
+            "notes": "createWorkOrder defaults Open; retried as Submitted if Open invalid"
+          },
+          {
+            "name": "Preferred Entry Time",
+            "type": "Single line text"
+          },
+          {
+            "name": "Preferred Time Window",
+            "type": "Single line text"
+          },
+          {
+            "name": "Resident Profile",
+            "type": "Link to another record",
+            "env": "VITE_AIRTABLE_WORK_ORDER_RESIDENT_LINK_FIELD",
+            "notes": "Default field name; fallbacks: Resident profile, Resident, Tenant, Resident Link, Resident ID"
+          },
+          {
+            "name": "Resident Email",
+            "type": "Email or single line text",
+            "notes": "Copied from resident for matching"
+          },
+          {
+            "name": "House",
+            "type": "Link to another record",
+            "env": "VITE_AIRTABLE_WORK_ORDER_PROPERTY_LINK_FIELD",
+            "notes": "Default tries House then Property"
+          },
+          {
+            "name": "Property",
+            "type": "Link to another record",
+            "notes": "Alternate property link label"
+          },
+          {
+            "name": "Application ID",
+            "type": "Number",
+            "env": "VITE_AIRTABLE_WORK_ORDER_APPLICATION_ID_FIELD",
+            "notes": "Set none to skip"
+          },
+          {
+            "name": "Application",
+            "type": "Link to another record",
+            "env": "VITE_AIRTABLE_WORK_ORDER_APPLICATION_LINK_FIELD",
+            "notes": "Default name Application"
+          },
+          {
+            "name": "Management Notes",
+            "type": "Long text",
+            "notes": "Scheduled date meta lines e.g. scheduled date: YYYY-MM-DD"
+          },
+          {
+            "name": "Manager Notes",
+            "type": "Long text",
+            "notes": "Alternate label in some UIs"
+          },
+          {
+            "name": "Update",
+            "type": "Long text"
+          },
+          {
+            "name": "Latest Update",
+            "type": "Long text"
+          },
+          {
+            "name": "Last Update",
+            "type": "Date"
+          },
+          {
+            "name": "Resolution Summary",
+            "type": "Long text"
+          },
+          {
+            "name": "Resolved",
+            "type": "Checkbox"
+          },
+          {
+            "name": "Date Submitted",
+            "type": "Created time",
+            "notes": "Read-only in API"
+          },
+          {
+            "name": "Submitted Date",
+            "type": "Date"
+          },
+          {
+            "name": "Scheduled Date",
+            "type": "Date",
+            "env": "VITE_AIRTABLE_WORK_ORDER_SCHEDULED_DATE_FIELD"
+          },
+          {
+            "name": "Completed Date",
+            "type": "Date"
+          },
+          {
+            "name": "Resident Availability",
+            "type": "Long text"
+          },
+          {
+            "name": "Photo",
+            "type": "Attachment",
+            "notes": "First tried; see VITE_AIRTABLE_WORK_ORDER_PHOTO_FIELDS"
+          },
+          {
+            "name": "Photos",
+            "type": "Attachment"
+          },
+          {
+            "name": "Attachments",
+            "type": "Attachment"
+          },
+          {
+            "name": "Images",
+            "type": "Attachment"
+          },
+          {
+            "name": "Cost",
+            "type": "Number",
+            "env": "VITE_AIRTABLE_WORK_ORDER_COST_FIELD"
+          },
+          {
+            "name": "(your column for real submitter email)",
+            "type": "Single line text",
+            "env": "VITE_AIRTABLE_WORK_ORDER_SUBMITTER_EMAIL_FIELD",
+            "notes": "Required when using VITE_AIRTABLE_WORK_ORDER_RESIDENT_RECORD_ID placeholder resident link"
+          }
+        ]
+      },
+      {
+        "id": "messages",
+        "tableName": "Messages",
+        "tableEnv": "VITE_AIRTABLE_MESSAGES_TABLE",
+        "baseEnv": "VITE_AIRTABLE_BASE_ID",
+        "fieldCount": 8,
+        "fields": [
+          {
+            "name": "Message",
+            "type": "Long text",
+            "required": true
+          },
+          {
+            "name": "Sender Email",
+            "type": "Email",
+            "required": true
+          },
+          {
+            "name": "Is Admin",
+            "type": "Checkbox"
+          },
+          {
+            "name": "Work Order",
+            "type": "Link to another record",
+            "notes": "→ Work Orders (work-order threads)"
+          },
+          {
+            "name": "Thread Key",
+            "type": "Single line text",
+            "env": "VITE_AIRTABLE_MESSAGE_THREAD_KEY_FIELD",
+            "notes": "Portal inbox + internal threads"
+          },
+          {
+            "name": "Channel",
+            "type": "Single line text",
+            "env": "VITE_AIRTABLE_MESSAGE_CHANNEL_FIELD"
+          },
+          {
+            "name": "Subject",
+            "type": "Single line text",
+            "env": "VITE_AIRTABLE_MESSAGE_SUBJECT_FIELD",
+            "notes": "Set to none to skip writes"
+          },
+          {
+            "name": "Timestamp",
+            "type": "Date",
+            "env": "VITE_AIRTABLE_MESSAGE_TIMESTAMP_FIELD",
+            "notes": "Optional writable time; omit or none if using createdTime only"
+          }
+        ]
+      },
+      {
+        "id": "inboxThreadState",
+        "tableName": "Inbox Thread State",
+        "tableEnv": "VITE_AIRTABLE_INBOX_THREAD_STATE_TABLE",
+        "baseEnv": "VITE_AIRTABLE_BASE_ID",
+        "fieldCount": 4,
+        "fields": [
+          {
+            "name": "Thread Key",
+            "type": "Single line text",
+            "env": "VITE_AIRTABLE_INBOX_STATE_THREAD_KEY_FIELD",
+            "notes": "Default Thread Key"
+          },
+          {
+            "name": "Participant Email",
+            "type": "Email",
+            "env": "VITE_AIRTABLE_INBOX_STATE_PARTICIPANT_FIELD",
+            "notes": "Default Participant Email"
+          },
+          {
+            "name": "Last Read At",
+            "type": "Date",
+            "env": "VITE_AIRTABLE_INBOX_STATE_LAST_READ_FIELD"
+          },
+          {
+            "name": "Trashed",
+            "type": "Checkbox",
+            "env": "VITE_AIRTABLE_INBOX_STATE_TRASHED_FIELD"
+          }
+        ]
+      },
+      {
+        "id": "announcements",
+        "tableName": "Announcements",
+        "tableEnv": "VITE_AIRTABLE_ANNOUNCEMENTS_TABLE",
+        "baseEnv": "VITE_AIRTABLE_BASE_ID",
+        "fieldCount": 12,
+        "fields": [
+          {
+            "name": "Title",
+            "type": "Single line text",
+            "required": true
+          },
+          {
+            "name": "Message",
+            "type": "Long text",
+            "required": true
+          },
+          {
+            "name": "Body",
+            "type": "Long text",
+            "notes": "Reader fallback when Message empty"
+          },
+          {
+            "name": "Short Summary",
+            "type": "Long text"
+          },
+          {
+            "name": "Target",
+            "type": "Multiple select or long text",
+            "notes": "Audience tokens; may embed __axis_submitter__:email"
+          },
+          {
+            "name": "Target Scope",
+            "type": "Long text",
+            "notes": "Fallback read in getAnnouncements"
+          },
+          {
+            "name": "Priority",
+            "type": "Single select",
+            "options": [
+              "Normal",
+              "High",
+              "Low"
+            ]
+          },
+          {
+            "name": "Show",
+            "type": "Checkbox",
+            "notes": "FALSE = pending admin review"
+          },
+          {
+            "name": "Pinned",
+            "type": "Checkbox"
+          },
+          {
+            "name": "Start Date",
+            "type": "Date"
+          },
+          {
+            "name": "Date Posted",
+            "type": "Date"
+          },
+          {
+            "name": "Created At",
+            "type": "Created time"
+          }
+        ]
+      },
+      {
+        "id": "payments",
+        "tableName": "Payments",
+        "tableEnv": "VITE_AIRTABLE_PAYMENTS_TABLE / AIRTABLE_PAYMENTS_TABLE",
+        "baseEnv": "VITE_AIRTABLE_BASE_ID",
+        "fieldCount": 18,
+        "fields": [
+          {
+            "name": "Resident",
+            "type": "Link to another record",
+            "required": true,
+            "notes": "→ Resident Profile"
+          },
+          {
+            "name": "Property",
+            "type": "Link to another record",
+            "notes": "→ Properties"
+          },
+          {
+            "name": "Amount",
+            "type": "Currency",
+            "required": true
+          },
+          {
+            "name": "Type",
+            "type": "Single line text or single select"
+          },
+          {
+            "name": "Category",
+            "type": "Single line text"
+          },
+          {
+            "name": "Kind",
+            "type": "Single line text"
+          },
+          {
+            "name": "Line Item Type",
+            "type": "Single line text"
+          },
+          {
+            "name": "Month",
+            "type": "Single line text"
+          },
+          {
+            "name": "Status",
+            "type": "Single select",
+            "options": [
+              "Pending",
+              "Completed",
+              "Failed",
+              "Refunded"
+            ]
+          },
+          {
+            "name": "Due Date",
+            "type": "Date"
+          },
+          {
+            "name": "Paid Date",
+            "type": "Date"
+          },
+          {
+            "name": "Description",
+            "type": "Long text"
+          },
+          {
+            "name": "Notes",
+            "type": "Long text"
+          },
+          {
+            "name": "Stripe Payment ID",
+            "type": "Single line text"
+          },
+          {
+            "name": "Property Name",
+            "type": "Single line text"
+          },
+          {
+            "name": "Room Number",
+            "type": "Single line text"
+          },
+          {
+            "name": "Balance",
+            "type": "Number",
+            "notes": "Ledger / resident balance"
+          },
+          {
+            "name": "Application Fee Paid",
+            "type": "Number",
+            "notes": "Some manager UIs read fee columns by this label family"
+          }
+        ]
+      },
+      {
+        "id": "documents",
+        "tableName": "Documents",
+        "tableEnv": "VITE_AIRTABLE_DOCUMENTS_TABLE",
+        "baseEnv": "VITE_AIRTABLE_BASE_ID",
+        "fieldCount": 12,
+        "fields": [
+          {
+            "name": "Title",
+            "type": "Single line text"
+          },
+          {
+            "name": "Name",
+            "type": "Single line text",
+            "notes": "Alternate primary label"
+          },
+          {
+            "name": "Type",
+            "type": "Single select",
+            "options": [
+              "Lease",
+              "Addendum",
+              "Notice",
+              "Receipt",
+              "Insurance",
+              "ID",
+              "Other"
+            ]
+          },
+          {
+            "name": "Category",
+            "type": "Single line text"
+          },
+          {
+            "name": "File",
+            "type": "Attachment",
+            "required": true
+          },
+          {
+            "name": "Resident",
+            "type": "Link to another record",
+            "notes": "→ Resident Profile"
+          },
+          {
+            "name": "Visible to Resident",
+            "type": "Checkbox"
+          },
+          {
+            "name": "Property",
+            "type": "Link to another record",
+            "notes": "→ Properties"
+          },
+          {
+            "name": "Uploaded By",
+            "type": "Link to another record"
+          },
+          {
+            "name": "Upload Date",
+            "type": "Date"
+          },
+          {
+            "name": "Expires",
+            "type": "Date"
+          },
+          {
+            "name": "Notes",
+            "type": "Long text"
+          }
+        ]
+      },
+      {
+        "id": "packages",
+        "tableName": "Packages",
+        "tableEnv": "VITE_AIRTABLE_PACKAGES_TABLE",
+        "baseEnv": "VITE_AIRTABLE_BASE_ID",
+        "fieldCount": 8,
+        "fields": [
+          {
+            "name": "Tracking Number",
+            "type": "Single line text"
+          },
+          {
+            "name": "Carrier",
+            "type": "Single line text"
+          },
+          {
+            "name": "Resident",
+            "type": "Link to another record",
+            "required": true,
+            "notes": "→ Resident Profile"
+          },
+          {
+            "name": "Property",
+            "type": "Link to another record",
+            "notes": "→ Properties"
+          },
+          {
+            "name": "Received Date",
+            "type": "Date"
+          },
+          {
+            "name": "Status",
+            "type": "Single select",
+            "options": [
+              "Received",
+              "Picked Up",
+              "Returned"
+            ]
+          },
+          {
+            "name": "Notes",
+            "type": "Long text"
+          },
+          {
+            "name": "Photo",
+            "type": "Attachment"
+          }
+        ]
+      },
+      {
+        "id": "leaseDrafts",
+        "tableName": "Lease Drafts",
+        "tableEnv": "VITE_AIRTABLE_LEASE_DRAFTS_TABLE",
+        "baseEnv": "VITE_AIRTABLE_BASE_ID",
+        "fieldCount": 34,
+        "fields": [
+          {
+            "name": "Resident Name",
+            "type": "Single line text"
+          },
+          {
+            "name": "Resident Email",
+            "type": "Email"
+          },
+          {
+            "name": "Resident Record ID",
+            "type": "Single line text"
+          },
+          {
+            "name": "Property",
+            "type": "Single line text",
+            "notes": "Often property name string; may be link in some bases"
+          },
+          {
+            "name": "Unit",
+            "type": "Single line text"
+          },
+          {
+            "name": "Lease Start Date",
+            "type": "Date"
+          },
+          {
+            "name": "Lease End Date",
+            "type": "Date"
+          },
+          {
+            "name": "Rent Amount",
+            "type": "Currency"
+          },
+          {
+            "name": "Deposit Amount",
+            "type": "Currency"
+          },
+          {
+            "name": "Utilities Fee",
+            "type": "Currency"
+          },
+          {
+            "name": "Lease Term",
+            "type": "Single line text"
+          },
+          {
+            "name": "AI Draft Content",
+            "type": "Long text"
+          },
+          {
+            "name": "Manager Edited Content",
+            "type": "Long text"
+          },
+          {
+            "name": "Lease HTML",
+            "type": "Long text",
+            "notes": "Rendered lease HTML path"
+          },
+          {
+            "name": "Lease JSON",
+            "type": "Long text",
+            "notes": "Template + wizard payload"
+          },
+          {
+            "name": "Manager Notes",
+            "type": "Long text"
+          },
+          {
+            "name": "Status",
+            "type": "Single select",
+            "options": [
+              "Draft",
+              "Draft Generated",
+              "Pending Signature",
+              "Signed",
+              "Cancelled",
+              "…"
+            ]
+          },
+          {
+            "name": "Updated At",
+            "type": "Date and time"
+          },
+          {
+            "name": "Application Record ID",
+            "type": "Single line text"
+          },
+          {
+            "name": "Owner ID",
+            "type": "Single line text",
+            "notes": "Manager record id for scoping"
+          },
+          {
+            "name": "Approved By",
+            "type": "Single line text"
+          },
+          {
+            "name": "Approved At",
+            "type": "Date and time"
+          },
+          {
+            "name": "Published At",
+            "type": "Date and time"
+          },
+          {
+            "name": "Allow Sign Without Move-In Pay",
+            "type": "Checkbox"
+          },
+          {
+            "name": "SignForge Envelope ID",
+            "type": "Single line text"
+          },
+          {
+            "name": "SignForge Sent At",
+            "type": "Date and time"
+          },
+          {
+            "name": "Lease Access Requirement Snapshot",
+            "type": "Single line text"
+          },
+          {
+            "name": "Lease Access Granted",
+            "type": "Checkbox"
+          },
+          {
+            "name": "Lease Access Block Reason",
+            "type": "Long text"
+          },
+          {
+            "name": "Lease Access Granted At",
+            "type": "Date and time"
+          },
+          {
+            "name": "Lease Token",
+            "type": "Single line text",
+            "notes": "Applications / signing flow"
+          },
+          {
+            "name": "Lease Signed",
+            "type": "Checkbox"
+          },
+          {
+            "name": "Lease Signed Date",
+            "type": "Date"
+          },
+          {
+            "name": "Lease Signature",
+            "type": "Single line text"
+          }
+        ]
+      },
+      {
+        "id": "leaseVersions",
+        "tableName": "Lease Versions",
+        "tableEnv": "(fixed table name in code)",
+        "baseEnv": "VITE_AIRTABLE_BASE_ID",
+        "fieldCount": 10,
+        "fields": [
+          {
+            "name": "Lease Draft ID",
+            "type": "Single line text",
+            "notes": "Link target id"
+          },
+          {
+            "name": "Version",
+            "type": "Number"
+          },
+          {
+            "name": "Is Current",
+            "type": "Checkbox"
+          },
+          {
+            "name": "PDF File",
+            "type": "Attachment",
+            "notes": "Tried with PDF, Attachment, File"
+          },
+          {
+            "name": "Uploader Name",
+            "type": "Single line text",
+            "notes": "Legacy uploader triad"
+          },
+          {
+            "name": "Uploader Role",
+            "type": "Single line text"
+          },
+          {
+            "name": "Upload Date",
+            "type": "Date and time"
+          },
+          {
+            "name": "Uploaded By",
+            "type": "Single line text",
+            "notes": "Doc-schema uploader"
+          },
+          {
+            "name": "Uploaded By Record ID",
+            "type": "Single line text"
+          },
+          {
+            "name": "Timestamp",
+            "type": "Date and time"
+          }
+        ]
+      },
+      {
+        "id": "leaseComments",
+        "tableName": "Lease Comments",
+        "tableEnv": "(fixed table name in code)",
+        "baseEnv": "VITE_AIRTABLE_BASE_ID",
+        "fieldCount": 7,
+        "fields": [
+          {
+            "name": "Lease Draft ID",
+            "type": "Single line text",
+            "required": true
+          },
+          {
+            "name": "Author Name",
+            "type": "Single line text"
+          },
+          {
+            "name": "Author Role",
+            "type": "Single line text"
+          },
+          {
+            "name": "Author Record ID",
+            "type": "Single line text"
+          },
+          {
+            "name": "Message",
+            "type": "Long text"
+          },
+          {
+            "name": "Timestamp",
+            "type": "Date and time"
+          },
+          {
+            "name": "Resolved",
+            "type": "Checkbox"
+          }
+        ]
+      },
+      {
+        "id": "leaseNotifications",
+        "tableName": "Lease Notifications",
+        "tableEnv": "(fixed table name in code)",
+        "baseEnv": "VITE_AIRTABLE_BASE_ID",
+        "fieldCount": 7,
+        "fields": [
+          {
+            "name": "Recipient Record ID",
+            "type": "Single line text"
+          },
+          {
+            "name": "Recipient Role",
+            "type": "Single line text"
+          },
+          {
+            "name": "Lease Draft ID",
+            "type": "Single line text"
+          },
+          {
+            "name": "Message",
+            "type": "Long text"
+          },
+          {
+            "name": "Action Type",
+            "type": "Single line text"
+          },
+          {
+            "name": "Is Read",
+            "type": "Checkbox"
+          },
+          {
+            "name": "Created At",
+            "type": "Date and time"
+          }
+        ]
+      },
+      {
+        "id": "auditLog",
+        "tableName": "Audit Log",
+        "tableEnv": "VITE_AIRTABLE_AUDIT_LOG_TABLE",
+        "baseEnv": "VITE_AIRTABLE_BASE_ID",
+        "fieldCount": 11,
+        "fields": [
+          {
+            "name": "Lease Draft ID",
+            "type": "Single line text"
+          },
+          {
+            "name": "Action Type",
+            "type": "Single line text",
+            "required": true
+          },
+          {
+            "name": "Performed By",
+            "type": "Single line text"
+          },
+          {
+            "name": "Performed By Role",
+            "type": "Single line text"
+          },
+          {
+            "name": "Timestamp",
+            "type": "Date and time",
+            "required": true
+          },
+          {
+            "name": "Notes",
+            "type": "Long text"
+          },
+          {
+            "name": "Action",
+            "type": "Single line text",
+            "notes": "Alternate generic schema"
+          },
+          {
+            "name": "Entity Type",
+            "type": "Single line text"
+          },
+          {
+            "name": "Entity ID",
+            "type": "Single line text"
+          },
+          {
+            "name": "Details",
+            "type": "Long text"
+          },
+          {
+            "name": "IP Address",
+            "type": "Single line text"
+          }
+        ]
+      },
+      {
+        "id": "scheduling",
+        "tableName": "Scheduling",
+        "tableEnv": "AIRTABLE_SCHEDULING_TABLE / VITE_AIRTABLE_SCHEDULING_TABLE",
+        "baseEnv": "VITE_AIRTABLE_BASE_ID",
+        "fieldCount": 24,
+        "fields": [
+          {
+            "name": "Type",
+            "type": "Single line text",
+            "notes": "tour.js expects Type=tour for tour rows"
+          },
+          {
+            "name": "Name",
+            "type": "Single line text"
+          },
+          {
+            "name": "Email",
+            "type": "Email"
+          },
+          {
+            "name": "Phone",
+            "type": "Phone number"
+          },
+          {
+            "name": "Property",
+            "type": "Single line text",
+            "notes": "Property name or id string depending on handler"
+          },
+          {
+            "name": "Property ID",
+            "type": "Single line text"
+          },
+          {
+            "name": "Property Name",
+            "type": "Single line text"
+          },
+          {
+            "name": "Property Address",
+            "type": "Long text"
+          },
+          {
+            "name": "Room",
+            "type": "Single line text"
+          },
+          {
+            "name": "Preferred Date",
+            "type": "Date"
+          },
+          {
+            "name": "Preferred Time",
+            "type": "Single line text"
+          },
+          {
+            "name": "Tour Format",
+            "type": "Single line text"
+          },
+          {
+            "name": "Tour Manager",
+            "type": "Single line text"
+          },
+          {
+            "name": "Tour Availability",
+            "type": "Long text"
+          },
+          {
+            "name": "Meeting Format",
+            "type": "Single line text"
+          },
+          {
+            "name": "Where to Meet",
+            "type": "Single line text"
+          },
+          {
+            "name": "Message",
+            "type": "Long text"
+          },
+          {
+            "name": "Manager Email",
+            "type": "Email"
+          },
+          {
+            "name": "Manager Approval",
+            "type": "Single line text"
+          },
+          {
+            "name": "Status",
+            "type": "Single line text"
+          },
+          {
+            "name": "Approval Status",
+            "type": "Single line text"
+          },
+          {
+            "name": "Approved",
+            "type": "Checkbox"
+          },
+          {
+            "name": "Listed",
+            "type": "Checkbox"
+          },
+          {
+            "name": "Notes",
+            "type": "Long text",
+            "notes": "May embed Site Manager Email, Tour Manager, Tour Notes lines"
+          }
+        ]
+      },
+      {
+        "id": "blockedTourDates",
+        "tableName": "Blocked Tour Dates",
+        "tableEnv": "VITE_AIRTABLE_BLOCKED_TOUR_DATES_TABLE",
+        "baseEnv": "VITE_AIRTABLE_BASE_ID",
+        "fieldCount": 4,
+        "fields": [
+          {
+            "name": "Property",
+            "type": "Link to another record",
+            "notes": "→ Properties"
+          },
+          {
+            "name": "Manager",
+            "type": "Link to another record",
+            "notes": "→ Manager Profile"
+          },
+          {
+            "name": "Blocked Date",
+            "type": "Date",
+            "required": true
+          },
+          {
+            "name": "Reason",
+            "type": "Long text"
+          }
+        ]
+      },
+      {
+        "id": "managerAvailability",
+        "tableName": "Manager Availability",
+        "tableEnv": "VITE_AIRTABLE_MANAGER_AVAILABILITY_TABLE",
+        "baseEnv": "VITE_AIRTABLE_BASE_ID",
+        "fieldCount": 8,
+        "fields": [
+          {
+            "name": "Manager",
+            "type": "Link to another record",
+            "required": true,
+            "notes": "→ Manager Profile"
+          },
+          {
+            "name": "Property",
+            "type": "Link to another record",
+            "notes": "→ Properties"
+          },
+          {
+            "name": "Day Of Week",
+            "type": "Number",
+            "notes": "0–6 or 1–7 depending on scripts; align with tour booking code"
+          },
+          {
+            "name": "Start Time",
+            "type": "Single line text"
+          },
+          {
+            "name": "End Time",
+            "type": "Single line text"
+          },
+          {
+            "name": "Slot Duration",
+            "type": "Number"
+          },
+          {
+            "name": "Timezone",
+            "type": "Single line text"
+          },
+          {
+            "name": "Active",
+            "type": "Checkbox"
+          }
+        ]
+      },
+      {
+        "id": "adminMeetingAvailability",
+        "tableName": "Admin Meeting Availability",
+        "tableEnv": "VITE_AIRTABLE_ADMIN_MEETING_AVAILABILITY_TABLE",
+        "baseEnv": "VITE_AIRTABLE_BASE_ID",
+        "fieldCount": 7,
+        "fields": [
+          {
+            "name": "Admin",
+            "type": "Link to another record",
+            "notes": "→ Admin Profile"
+          },
+          {
+            "name": "Day Of Week",
+            "type": "Number"
+          },
+          {
+            "name": "Start Time",
+            "type": "Single line text"
+          },
+          {
+            "name": "End Time",
+            "type": "Single line text"
+          },
+          {
+            "name": "Slot Duration",
+            "type": "Number"
+          },
+          {
+            "name": "Timezone",
+            "type": "Single line text"
+          },
+          {
+            "name": "Active",
+            "type": "Checkbox"
+          }
+        ]
+      },
+      {
+        "id": "adminProfile",
+        "tableName": "Admin Profile",
+        "tableEnv": "VITE_AIRTABLE_ADMIN_PROFILE_TABLE / AIRTABLE_ADMIN_PROFILE_TABLE",
+        "baseEnv": "VITE_AIRTABLE_BASE_ID",
+        "fieldCount": 6,
+        "fields": [
+          {
+            "name": "Admin ID",
+            "type": "Single line text",
+            "required": true
+          },
+          {
+            "name": "Email",
+            "type": "Email",
+            "required": true
+          },
+          {
+            "name": "First Name",
+            "type": "Single line text"
+          },
+          {
+            "name": "Last Name",
+            "type": "Single line text"
+          },
+          {
+            "name": "Role",
+            "type": "Single select",
+            "options": [
+              "Super Admin",
+              "Admin",
+              "Support"
+            ]
+          },
+          {
+            "name": "Active",
+            "type": "Checkbox"
+          }
+        ]
+      },
+      {
+        "id": "websiteSettings",
+        "tableName": "Website Settings",
+        "tableEnv": "VITE_AIRTABLE_WEBSITE_SETTINGS_TABLE",
+        "baseEnv": "VITE_AIRTABLE_BASE_ID",
+        "fieldCount": 4,
+        "fields": [
+          {
+            "name": "Key",
+            "type": "Single line text",
+            "required": true
+          },
+          {
+            "name": "Value",
+            "type": "Long text"
+          },
+          {
+            "name": "Description",
+            "type": "Long text"
+          },
+          {
+            "name": "Last Updated",
+            "type": "Date"
+          }
+        ]
+      },
+      {
+        "id": "coApplicants",
+        "tableName": "Co-Signers",
+        "tableEnv": "VITE_AIRTABLE_COAPPLICANTS_TABLE",
+        "baseEnv": "VITE_AIRTABLE_BASE_ID",
+        "fieldCount": 27,
+        "fields": [
+          {
+            "name": "Linked Application",
+            "type": "Link to another record",
+            "required": true,
+            "notes": "→ Applications (Apply.jsx)"
+          },
+          {
+            "name": "Role",
+            "type": "Single line text",
+            "notes": "Co-Signer"
+          },
+          {
+            "name": "Full Name",
+            "type": "Single line text"
+          },
+          {
+            "name": "Email",
+            "type": "Email"
+          },
+          {
+            "name": "Phone Number",
+            "type": "Phone number"
+          },
+          {
+            "name": "Date of Birth",
+            "type": "Date"
+          },
+          {
+            "name": "SSN No.",
+            "type": "Single line text"
+          },
+          {
+            "name": "Driving License No.",
+            "type": "Single line text"
+          },
+          {
+            "name": "Current Address",
+            "type": "Long text"
+          },
+          {
+            "name": "City",
+            "type": "Single line text"
+          },
+          {
+            "name": "State",
+            "type": "Single line text"
+          },
+          {
+            "name": "ZIP",
+            "type": "Single line text"
+          },
+          {
+            "name": "Employer",
+            "type": "Single line text"
+          },
+          {
+            "name": "Employer Address",
+            "type": "Long text"
+          },
+          {
+            "name": "Supervisor Name",
+            "type": "Single line text"
+          },
+          {
+            "name": "Supervisor Phone",
+            "type": "Phone number"
+          },
+          {
+            "name": "Job Title",
+            "type": "Single line text"
+          },
+          {
+            "name": "Monthly Income",
+            "type": "Currency"
+          },
+          {
+            "name": "Annual Income",
+            "type": "Currency"
+          },
+          {
+            "name": "Employment Start Date",
+            "type": "Date"
+          },
+          {
+            "name": "Other Income",
+            "type": "Long text"
+          },
+          {
+            "name": "Bankruptcy History",
+            "type": "Single line text"
+          },
+          {
+            "name": "Criminal History",
+            "type": "Single line text"
+          },
+          {
+            "name": "Consent for Credit and Background Check",
+            "type": "Checkbox"
+          },
+          {
+            "name": "Signature",
+            "type": "Long text",
+            "notes": "Apply writes long text signature payload"
+          },
+          {
+            "name": "Date Signed",
+            "type": "Date"
+          },
+          {
+            "name": "Notes",
+            "type": "Long text"
+          }
+        ]
+      }
+    ]
+  },
+  "applicationsBase": {
+    "env": "AIRTABLE_APPLICATIONS_BASE_ID",
+    "note": "When unset, Applications may live in the same base as VITE_AIRTABLE_BASE_ID.",
+    "tables": [
+      {
+        "id": "applications",
+        "tableName": "Applications",
+        "tableEnv": "VITE_AIRTABLE_APPLICATIONS_TABLE / AIRTABLE_APPLICATIONS_TABLE",
+        "baseEnv": "AIRTABLE_APPLICATIONS_BASE_ID or VITE_AIRTABLE_APPLICATIONS_BASE_ID (else VITE_AIRTABLE_BASE_ID)",
+        "fieldCount": 78,
+        "fields": [
+          {
+            "name": "Application ID",
+            "type": "Autonumber or formula",
+            "notes": "Display id; API uses Airtable record id rec…"
+          },
+          {
+            "name": "Signer Full Name",
+            "type": "Single line text",
+            "required": true
+          },
+          {
+            "name": "Signer Email",
+            "type": "Email",
+            "required": true
+          },
+          {
+            "name": "Signer Phone Number",
+            "type": "Phone number"
+          },
+          {
+            "name": "Signer Date of Birth",
+            "type": "Date"
+          },
+          {
+            "name": "Signer SSN No.",
+            "type": "Single line text"
+          },
+          {
+            "name": "Signer Driving License No.",
+            "type": "Single line text"
+          },
+          {
+            "name": "Property Name",
+            "type": "Single line text"
+          },
+          {
+            "name": "Property Address",
+            "type": "Long text"
+          },
+          {
+            "name": "Room Number",
+            "type": "Single line text"
+          },
+          {
+            "name": "Lease Term",
+            "type": "Single line text"
+          },
+          {
+            "name": "Month to Month",
+            "type": "Checkbox"
+          },
+          {
+            "name": "Lease Start Date",
+            "type": "Date"
+          },
+          {
+            "name": "Lease End Date",
+            "type": "Date"
+          },
+          {
+            "name": "Signer Current Address",
+            "type": "Long text"
+          },
+          {
+            "name": "Signer City",
+            "type": "Single line text"
+          },
+          {
+            "name": "Signer State",
+            "type": "Single line text"
+          },
+          {
+            "name": "Signer ZIP",
+            "type": "Single line text"
+          },
+          {
+            "name": "Current Landlord Name",
+            "type": "Single line text"
+          },
+          {
+            "name": "Current Landlord Phone",
+            "type": "Phone number"
+          },
+          {
+            "name": "Current Move-In Date",
+            "type": "Date"
+          },
+          {
+            "name": "Current Move-Out Date",
+            "type": "Date"
+          },
+          {
+            "name": "Current Reason for Leaving",
+            "type": "Long text"
+          },
+          {
+            "name": "Previous Address",
+            "type": "Long text"
+          },
+          {
+            "name": "Previous City",
+            "type": "Single line text"
+          },
+          {
+            "name": "Previous State",
+            "type": "Single line text"
+          },
+          {
+            "name": "Previous ZIP",
+            "type": "Single line text"
+          },
+          {
+            "name": "Previous Landlord Name",
+            "type": "Single line text"
+          },
+          {
+            "name": "Previous Landlord Phone",
+            "type": "Phone number"
+          },
+          {
+            "name": "Previous Move-In Date",
+            "type": "Date"
+          },
+          {
+            "name": "Previous Move-Out Date",
+            "type": "Date"
+          },
+          {
+            "name": "Previous Reason for Leaving",
+            "type": "Long text"
+          },
+          {
+            "name": "Signer Employer",
+            "type": "Single line text"
+          },
+          {
+            "name": "Signer Employer Address",
+            "type": "Long text"
+          },
+          {
+            "name": "Signer Supervisor Name",
+            "type": "Single line text"
+          },
+          {
+            "name": "Signer Supervisor Phone",
+            "type": "Phone number"
+          },
+          {
+            "name": "Signer Job Title",
+            "type": "Single line text"
+          },
+          {
+            "name": "Signer Monthly Income",
+            "type": "Currency"
+          },
+          {
+            "name": "Signer Annual Income",
+            "type": "Currency"
+          },
+          {
+            "name": "Signer Employment Start Date",
+            "type": "Date"
+          },
+          {
+            "name": "Signer Other Income",
+            "type": "Long text"
+          },
+          {
+            "name": "Reference 1 Name",
+            "type": "Single line text"
+          },
+          {
+            "name": "Reference 1 Relationship",
+            "type": "Single line text"
+          },
+          {
+            "name": "Reference 1 Phone",
+            "type": "Phone number"
+          },
+          {
+            "name": "Reference 2 Name",
+            "type": "Single line text"
+          },
+          {
+            "name": "Reference 2 Relationship",
+            "type": "Single line text"
+          },
+          {
+            "name": "Reference 2 Phone",
+            "type": "Phone number"
+          },
+          {
+            "name": "Number of Occupants",
+            "type": "Number"
+          },
+          {
+            "name": "Pets",
+            "type": "Long text"
+          },
+          {
+            "name": "Eviction History",
+            "type": "Single line text"
+          },
+          {
+            "name": "Signer Bankruptcy History",
+            "type": "Single line text"
+          },
+          {
+            "name": "Signer Criminal History",
+            "type": "Single line text"
+          },
+          {
+            "name": "Has Co-Signer",
+            "type": "Checkbox"
+          },
+          {
+            "name": "Signer Consent for Credit and Background Check",
+            "type": "Checkbox"
+          },
+          {
+            "name": "Signer Signature",
+            "type": "Long text",
+            "env": "AIRTABLE_APPLICATION_SIGNER_SIGNATURE_FIELD / VITE_AIRTABLE_APPLICATION_SIGNER_SIGNATURE_FIELD"
+          },
+          {
+            "name": "Signer Date Signed",
+            "type": "Date"
+          },
+          {
+            "name": "Additional Notes",
+            "type": "Long text",
+            "notes": "Includes Axis meta blocks from buildAxisApplicationMetaNotes"
+          },
+          {
+            "name": "Approved",
+            "type": "Checkbox"
+          },
+          {
+            "name": "Rejected",
+            "type": "Checkbox",
+            "env": "AIRTABLE_APPLICATION_REJECTED_FIELD / VITE_AIRTABLE_APPLICATION_REJECTED_FIELD",
+            "notes": "Required on many bases so PATCH can clear rejection"
+          },
+          {
+            "name": "Approved At",
+            "type": "Date and time"
+          },
+          {
+            "name": "Application Status",
+            "type": "Single line text",
+            "notes": "Manager approve may set Approved"
+          },
+          {
+            "name": "Approval Status",
+            "type": "Single line text"
+          },
+          {
+            "name": "Approved Unit Room",
+            "type": "Single line text",
+            "env": "AIRTABLE_APPLICATION_APPROVED_ROOM_FIELD / VITE_AIRTABLE_APPLICATION_APPROVED_ROOM_FIELD",
+            "notes": "Also try legacy column Approved Room"
+          },
+          {
+            "name": "Owner ID",
+            "type": "Single line text",
+            "notes": "Manager Airtable record id; tenant guard"
+          },
+          {
+            "name": "Lease Token",
+            "type": "Single line text"
+          },
+          {
+            "name": "Lease JSON",
+            "type": "Long text"
+          },
+          {
+            "name": "Lease Status",
+            "type": "Single select"
+          },
+          {
+            "name": "Lease Signed",
+            "type": "Checkbox"
+          },
+          {
+            "name": "Lease Signed Date",
+            "type": "Date"
+          },
+          {
+            "name": "Lease Signature",
+            "type": "Single line text"
+          },
+          {
+            "name": "Application Paid",
+            "type": "Checkbox",
+            "env": "AIRTABLE_APPLICATION_PAID_FIELD",
+            "notes": "Default Application Paid"
+          },
+          {
+            "name": "Stripe Checkout Session",
+            "type": "Single line text",
+            "env": "AIRTABLE_STRIPE_CHECKOUT_SESSION_FIELD",
+            "notes": "Default Stripe Checkout Session"
+          },
+          {
+            "name": "Application Fee Due (USD)",
+            "type": "Number",
+            "env": "AIRTABLE_APPLICATION_FEE_DUE_USD_FIELD",
+            "notes": "Optional column; when unset server skips writes"
+          },
+          {
+            "name": "(group apply checkbox)",
+            "type": "Checkbox",
+            "env": "VITE_AIRTABLE_APPLICATION_GROUP_CHECKBOX_FIELD",
+            "notes": "Exact column name from your base when using optionalApplicationsTableSignerExtras"
+          },
+          {
+            "name": "(group size)",
+            "type": "Number",
+            "env": "VITE_AIRTABLE_APPLICATION_GROUP_SIZE_FIELD"
+          },
+          {
+            "name": "(axis group id)",
+            "type": "Single line text",
+            "env": "VITE_AIRTABLE_APPLICATION_AXIS_GROUP_ID_FIELD"
+          },
+          {
+            "name": "2nd choice (optional)",
+            "type": "Single line text",
+            "env": "VITE_AIRTABLE_APPLICATION_ROOM_CHOICE_2_FIELD",
+            "notes": "Default from shared/application-airtable-fields.js"
+          },
+          {
+            "name": "3rd choice (optional)",
+            "type": "Single line text",
+            "env": "VITE_AIRTABLE_APPLICATION_ROOM_CHOICE_3_FIELD"
+          }
+        ]
+      }
+    ]
+  }
+}
