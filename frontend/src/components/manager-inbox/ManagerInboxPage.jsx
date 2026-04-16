@@ -32,6 +32,7 @@ import {
   isAdminPortalAirtableConfigured,
   loadAdminProfilesForInbox,
   loadResidentsForManagerPortalInbox,
+  loadResidentsForAdmin,
 } from '../../lib/adminPortalAirtable.js'
 import { notifyPortalMessage } from '../../lib/notifyPortalMessage.js'
 import {
@@ -492,7 +493,7 @@ export default function ManagerInboxPage({
   }, [loadAll])
 
   useEffect(() => {
-    if (adminFullInbox || inboxScopeLower.size === 0) {
+    if (adminFullInbox) {
       setScopedResidents([])
       setResidentComposeLoading(false)
       return
@@ -506,7 +507,14 @@ export default function ManagerInboxPage({
       }
       setResidentComposeLoading(true)
       try {
-        const list = await loadResidentsForManagerPortalInbox([...inboxScopeLower])
+        let list = []
+        if (inboxScopeLower.size > 0) {
+          list = await loadResidentsForManagerPortalInbox([...inboxScopeLower])
+        }
+        // Fall back to all residents when no scope is configured or scope match returns nothing
+        if (!list.length) {
+          list = await loadResidentsForAdmin()
+        }
         if (!cancelled) setScopedResidents(list)
       } catch (err) {
         if (!cancelled) {
@@ -643,7 +651,11 @@ export default function ManagerInboxPage({
       residentByKey.get(tk).push(m)
     }
     for (const [tk, rmsgs] of residentByKey) {
-      if (!residentLeasingThreadVisibleToManager(rmsgs, inboxScopeLower)) continue
+      // Always show threads the manager sent a message in (bypasses scope check)
+      const managerIsSender = managerEmail
+        ? rmsgs.some((m) => String(m['Sender Email'] || '').trim().toLowerCase() === managerEmail.toLowerCase())
+        : false
+      if (!managerIsSender && !residentLeasingThreadVisibleToManager(rmsgs, inboxScopeLower)) continue
       const sorted = [...rmsgs].sort((a, b) => msgTime(a) - msgTime(b))
       const last = sorted[sorted.length - 1]
       const rid = parseResidentLeasingThreadKey(tk)

@@ -138,17 +138,18 @@ function residentHouseMatchesScope(houseField, allowedNamesLower) {
   if (!allowedNamesLower?.size) return false
   if (houseField == null) return false
   if (Array.isArray(houseField)) {
-    if (houseField.length && String(houseField[0]).trim().startsWith('rec')) return false
-    const text = houseField
+    // Filter out Airtable linked-record IDs (start with 'rec') and match on display text values only
+    const textParts = houseField
       .map((x) => String(x || '').trim())
-      .filter(Boolean)
-      .join(' · ')
-      .trim()
-      .toLowerCase()
-    return Boolean(text && allowedNamesLower.has(text))
+      .filter((s) => s && !s.startsWith('rec'))
+    if (!textParts.length) {
+      // All values are linked record IDs — can't match by name directly; treat as unknown (skip)
+      return false
+    }
+    return textParts.some((part) => allowedNamesLower.has(part.toLowerCase()))
   }
   const text = String(houseField).trim().toLowerCase()
-  return Boolean(text && allowedNamesLower.has(text))
+  return Boolean(text && !text.startsWith('rec') && allowedNamesLower.has(text))
 }
 
 function propertyRecordName(p) {
