@@ -1,51 +1,60 @@
 /**
  * POST /api/notify-message
  * Body:
- *   { toAdmins: true, senderName, subject, portalUrl }   — notify all enabled admins
+ *   { toAdmins: true, senderName, subject, portalUrl }   — notify all admin-role users
  *   { recipientEmail, recipientName, senderName, subject, portalUrl } — notify one person
  *
  * EmailJS `template_params` include `subject`, `mail_subject` ([Axis] prefix), and `portal_url`.
- * Map `mail_subject` (or `subject`) to your template’s subject line field in the EmailJS dashboard.
+ * Map `mail_subject` (or `subject`) to your template's subject line field in the EmailJS dashboard.
  *
- * "Enabled admins" = Admin Profile records where the Enabled field is checked.
- * Field name is configurable via AIRTABLE_ADMIN_ENABLED_FIELD (default: "Enabled").
+ * "Enabled admins" = app_users rows that have an 'admin' role in app_user_roles.
+ * Falls back to env-var AXIS_ADMIN_EMAIL when Supabase has no admin users yet.
  *
  * Always returns 200 — a notification failure must never break the message send.
  */
 
-const AIRTABLE_TOKEN = process.env.AIRTABLE_TOKEN || process.env.VITE_AIRTABLE_TOKEN
-const AIRTABLE_BASE_ID =
-  process.env.VITE_AIRTABLE_BASE_ID || process.env.AIRTABLE_BASE_ID || 'appol57LKtMKaQ75T'
-const ADMIN_PROFILE_TABLE = process.env.AIRTABLE_ADMIN_PROFILE_TABLE || 'Admin Profile'
-const ADMIN_ENABLED_FIELD = process.env.AIRTABLE_ADMIN_ENABLED_FIELD || 'Enabled'
+import { getSupabaseServiceClient } from '../lib/app-users-service.js'
 
-/** Returns [{ email, name }] for every admin whose Enabled checkbox is checked. */
-async function fetchEnabledAdmins() {
-  if (!AIRTABLE_TOKEN) return []
-  const tableEnc = encodeURIComponent(ADMIN_PROFILE_TABLE)
-  const formula = encodeURIComponent(`{${ADMIN_ENABLED_FIELD}}`)
-  const url =
-    `https://api.airtable.com/v0/${AIRTABLE_BASE_ID}/${tableEnc}` +
-    `?filterByFormula=${formula}&fields%5B%5D=Email&fields%5B%5D=Name`
+/** Returns [{ email, name }] for every user with the admin role in app_user_roles. */
+async function fetchAdminUsers() {
   try {
-    const res = await fetch(url, {
-      headers: { Authorization: `Bearer ${AIRTABLE_TOKEN}` },
-    })
-    if (!res.ok) {
-      console.warn('[notify-message] failed to fetch enabled admins:', res.status)
-      return []
+    const client = getSupabaseServiceClient()
+    if (!client) {
+      // Supabase not configured — fall back to env-var admin
+      return envAdminFallback()
     }
-    const data = await res.json()
-    return (data.records || [])
-      .map((r) => ({
-        email: String(r.fields?.Email || '').trim().toLowerCase(),
-        name: String(r.fields?.Name || '').trim(),
+    const { data, error } = await client
+      .from('app_user_roles')
+      .select('app_users(email, full_name)')
+      .eq('role', 'admin')
+    if (error) {
+      console.warn('[notify-message] fetchAdminUsers Supabase error (non-fatal):', error.message)
+      return envAdminFallback()
+    }
+    const admins = (data || [])
+      .map((row) => ({
+        email: String(row.app_users?.email || '').trim().toLowerCase(),
+        name: String(row.app_users?.full_name || '').trim(),
       }))
       .filter((a) => a.email.includes('@'))
+    if (!admins.length) return envAdminFallback()
+    return admins
   } catch (err) {
-    console.warn('[notify-message] fetchEnabledAdmins error (non-fatal):', err.message)
-    return []
+    console.warn('[notify-message] fetchAdminUsers error (non-fatal):', err.message)
+    return envAdminFallback()
   }
+}
+
+/** Fall back to the single env-var admin when the DB has no admin rows yet. */
+function envAdminFallback() {
+  const email = String(
+    process.env.AXIS_ADMIN_EMAIL || process.env.AXIS_CEO_EMAIL || '',
+  ).trim().toLowerCase()
+  const name = String(
+    process.env.AXIS_ADMIN_NAME || process.env.AXIS_CEO_NAME || 'Admin',
+  ).trim()
+  if (!email || !email.includes('@')) return []
+  return [{ email, name }]
 }
 
 async function sendEmailJsNotification({ serviceId, publicKey, templateId, toEmail, toName, senderName, subject, portalUrl }) {
@@ -62,7 +71,6 @@ async function sendEmailJsNotification({ serviceId, publicKey, templateId, toEma
           to_name: toName || toEmail,
           sender_name: senderName || 'Someone',
           subject: subject || 'New message',
-          /** Use in EmailJS as the email “Subject” / title when your template maps it. */
           mail_subject: subject && String(subject).trim()
             ? `[Axis] ${String(subject).trim()}`
             : '[Axis] New portal message',
@@ -98,9 +106,9 @@ export default async function handler(req, res) {
   const emailArgs = { serviceId: EMAILJS_SERVICE_ID, publicKey: EMAILJS_PUBLIC_KEY, templateId: EMAILJS_TEMPLATE, senderName, subject, portalUrl }
 
   if (toAdmins) {
-    const admins = await fetchEnabledAdmins()
+    const admins = await fetchAdminUsers()
     if (!admins.length) {
-      return res.status(200).json({ ok: true, skipped: 'no enabled admins found' })
+      return res.status(200).json({ ok: true, skipped: 'no admin users found' })
     }
     await Promise.all(
       admins.map((a) => sendEmailJsNotification({ ...emailArgs, toEmail: a.email, toName: a.name }))

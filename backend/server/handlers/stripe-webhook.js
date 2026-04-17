@@ -1,15 +1,9 @@
 /**
  * Stripe webhook handler.
  *
- * Internal routing:
- *   New records (created via internal flow) are identified by metadata containing
- *   `axis_payment_key` or a non-"rec"-prefixed `application_id`. These are written
- *   to the internal Supabase/Postgres DB.
- *
- * Legacy routing (Airtable):
- *   Old records are identified by `metadata.application_record_id.startsWith('rec')`
- *   or `metadata.payment_record_id.startsWith('rec')`. These continue to write to
- *   Airtable until that data is migrated.
+ * All payment records are now internal Supabase/Postgres. Legacy Airtable payment paths
+ * have been removed — old "rec…"-prefixed records from Stripe metadata are logged and
+ * acknowledged without writing to Airtable.
  *
  * Events handled:
  *   checkout.session.completed    — primary trigger for internal fee-paid sync
@@ -31,42 +25,12 @@ import {
   updatePayment,
 } from '../lib/payments-service.js'
 import { updateApplication } from '../lib/applications-service.js'
-import {
-  airtableAuthHeaders,
-  airtableErrorMessageFromBody,
-  applicationsTableUrl,
-  getApplicationsAirtableEnv,
-} from '../lib/applications-airtable-env.js'
 import { resolveExpectedApplicationFeeUsd } from '../lib/stripe-application-fee-usd.js'
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function resolveExpectedApplicationFeeCents() {
   return Math.round(resolveExpectedApplicationFeeUsd() * 100)
-}
-
-const CORE_PAYMENTS_BASE_ID =
-  process.env.VITE_AIRTABLE_BASE_ID || process.env.AIRTABLE_BASE_ID || ''
-const PAYMENTS_TABLE_NAME = String(
-  process.env.VITE_AIRTABLE_PAYMENTS_TABLE || process.env.AIRTABLE_PAYMENTS_TABLE || 'Payments',
-).trim() || 'Payments'
-
-async function patchAirtablePaymentsRecord(recordId, fields) {
-  const token = process.env.AIRTABLE_TOKEN || process.env.VITE_AIRTABLE_TOKEN
-  if (!token || !CORE_PAYMENTS_BASE_ID) {
-    return { ok: false, status: 500, text: 'Airtable not configured for Payments.' }
-  }
-  const cleaned = Object.fromEntries(
-    Object.entries(fields).filter(([, v]) => v !== undefined && v !== ''),
-  )
-  const url = `https://api.airtable.com/v0/${CORE_PAYMENTS_BASE_ID}/${encodeURIComponent(PAYMENTS_TABLE_NAME)}/${encodeURIComponent(recordId)}`
-  const patchRes = await fetch(url, {
-    method: 'PATCH',
-    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ fields: cleaned, typecast: true }),
-  })
-  const text = await patchRes.text()
-  return { ok: patchRes.ok, status: patchRes.status, text }
 }
 
 /**
@@ -168,9 +132,8 @@ async function syncApplicationFeeRefundedToApplication(applicationId) {
 // ─── Event handlers ───────────────────────────────────────────────────────────
 
 /**
- * Handle checkout.session.completed:
- * 1. Try internal DB path first.
- * 2. Fall back to legacy Airtable path for "rec"-prefixed IDs.
+ * Handle checkout.session.completed — internal Supabase path only.
+ * Legacy Airtable "rec"-prefixed records are acknowledged without action.
  */
 async function handleCheckoutSessionCompleted(event, res) {
   const session = event.data.object
@@ -247,59 +210,17 @@ async function handleCheckoutSessionCompleted(event, res) {
     })
   }
 
-  // ── Legacy Airtable path ───────────────────────────────────────────────
+  // Legacy Airtable "rec*" IDs — these records have been migrated; acknowledge without action.
   const legacyApplicationRecordId = String(meta.application_record_id || '').trim()
   const legacyPaymentRecordId     = String(meta.payment_record_id     || '').trim()
 
-  if (legacyApplicationRecordId.startsWith('rec')) {
-    const category = String(meta.payment_category || '').trim()
-    if (category !== 'application_fee') {
-      return res.status(200).json({ received: true, ignored: 'legacy_non_app_fee' })
-    }
-    const env = getApplicationsAirtableEnv()
-    if (!env.token) return res.status(500).json({ error: 'Airtable is not configured on the server.' })
-
-    const fields = { [env.paidField]: true }
-    if (env.sessionField) fields[env.sessionField] = session.id
-
-    const url = `${applicationsTableUrl(env)}/${encodeURIComponent(legacyApplicationRecordId)}`
-    const patchRes = await fetch(url, {
-      method: 'PATCH',
-      headers: airtableAuthHeaders(env.token),
-      body: JSON.stringify({ fields, typecast: true }),
+  if (legacyApplicationRecordId.startsWith('rec') || legacyPaymentRecordId.startsWith('rec')) {
+    console.log('[stripe-webhook] legacy Airtable record in metadata — acknowledged without write', {
+      legacyApplicationRecordId: legacyApplicationRecordId || undefined,
+      legacyPaymentRecordId: legacyPaymentRecordId || undefined,
+      sessionId: session.id,
     })
-    if (!patchRes.ok) {
-      const t = await patchRes.text()
-      console.error('[stripe-webhook] Airtable PATCH failed', patchRes.status, t.slice(0, 500))
-      const detail = airtableErrorMessageFromBody(t)
-      return res.status(500).json({ error: 'Could not update Application Paid in Airtable.', airtableStatus: patchRes.status, ...(detail ? { detail } : {}) })
-    }
-    return res.status(200).json({ received: true, legacyApplicationRecordId, checkoutSessionId: session.id })
-  }
-
-  if (legacyPaymentRecordId.startsWith('rec')) {
-    const piId =
-      typeof session.payment_intent === 'string'
-        ? session.payment_intent
-        : session.payment_intent?.id || String(session.id || '')
-    const totalUsd =
-      typeof session.amount_total === 'number' && session.amount_total > 0
-        ? Math.round(session.amount_total) / 100
-        : undefined
-    const paidDate = new Date().toISOString().slice(0, 10)
-    const patchFields = {
-      Status: 'Paid',
-      'Paid Date': paidDate,
-      Balance: 0,
-      ...(Number.isFinite(totalUsd) ? { 'Amount Paid': totalUsd } : {}),
-      'Stripe Payment ID': piId,
-    }
-    const result = await patchAirtablePaymentsRecord(legacyPaymentRecordId, patchFields)
-    if (!result.ok) {
-      const detail = airtableErrorMessageFromBody(result.text || '')
-      return res.status(500).json({ error: 'Could not update Payments row after checkout.', airtableStatus: result.status, ...(detail ? { detail } : {}) })
-    }
-    return res.status(200).json({ received: true, legacyPaymentRecordId, checkoutSessionId: session.id })
+    return res.status(200).json({ received: true, ignored: 'legacy_airtable_record' })
   }
 
   return res.status(200).json({ received: true, ignored: 'no_actionable_metadata' })

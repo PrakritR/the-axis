@@ -1,15 +1,12 @@
 /**
  * POST /api/software-team-meetings
- * body: { password } — must match process.env.AXIS_SOFTWARE_TEAM_SECRET
- * Returns { meetings } from the Scheduling Airtable table (Demo + Software Meeting).
+ * Body: { password } — must match process.env.AXIS_SOFTWARE_TEAM_SECRET
+ *
+ * Returns { meetings } from the internal scheduled_events table.
+ * Filters to event_type = 'meeting' rows (demos, software team meetings, etc.).
  */
 
-import { schedulingAirtableTableName } from '../lib/airtable-scheduling-table.js'
-
-const AIRTABLE_BASE_ID =
-  process.env.VITE_AIRTABLE_BASE_ID || process.env.AIRTABLE_BASE_ID || 'appol57LKtMKaQ75T'
-const AIRTABLE_TOKEN = process.env.AIRTABLE_TOKEN || process.env.VITE_AIRTABLE_TOKEN
-const SCHEDULING_TABLE = schedulingAirtableTableName()
+import { getSupabaseServiceClient } from '../lib/app-users-service.js'
 
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*')
@@ -24,35 +21,37 @@ export default async function handler(req, res) {
   const { password } = req.body || {}
   if (password !== secret) return res.status(401).json({ error: 'Invalid password.' })
 
-  if (!AIRTABLE_TOKEN) return res.status(500).json({ error: 'Server data connection is not configured.' })
-
-  const filter = encodeURIComponent(`OR({Type}='Demo', {Type}='Software Meeting')`)
-  const url = `https://api.airtable.com/v0/${AIRTABLE_BASE_ID}/${encodeURIComponent(SCHEDULING_TABLE)}?filterByFormula=${filter}&pageSize=100&sort%5B0%5D%5Bfield%5D=Preferred%20Date&sort%5B0%5D%5Bdirection%5D=desc`
+  const client = getSupabaseServiceClient()
+  if (!client) return res.status(500).json({ error: 'Internal data service not configured.' })
 
   try {
-    const r = await fetch(url, { headers: { Authorization: `Bearer ${AIRTABLE_TOKEN}` } })
-    if (!r.ok) {
-      const text = await r.text()
-      return res.status(502).json({ error: `Data service error ${r.status}` })
+    const { data, error } = await client
+      .from('scheduled_events')
+      .select('*')
+      .eq('event_type', 'meeting')
+      .order('start_at', { ascending: false })
+      .limit(200)
+
+    if (error) {
+      console.error('[software-team-meetings] Supabase error:', error.message)
+      return res.status(500).json({ error: 'Failed to load meetings.' })
     }
-    const data = await r.json()
-    const meetings = (data.records || []).map((rec) => {
-      const f = rec.fields || {}
-      return {
-        id: rec.id,
-        name: f.Name || '',
-        email: f.Email || '',
-        phone: f.Phone || '',
-        company: f.Company || '',
-        type: f.Type || '',
-        status: f.Status || '',
-        staff: f['Tour Manager'] || '',
-        preferredDate: f['Preferred Date'] || '',
-        preferredTime: f['Preferred Time'] || '',
-        notes: f.Notes || f.Message || '',
-        createdTime: rec.createdTime,
-      }
-    })
+
+    const meetings = (data || []).map((row) => ({
+      id: row.id,
+      name: row.guest_name || '',
+      email: row.guest_email || '',
+      phone: row.guest_phone || '',
+      company: '',
+      type: String(row.source || 'meeting').replace(/_/g, ' '),
+      status: row.status || '',
+      staff: '',
+      preferredDate: row.preferred_date || (row.start_at ? String(row.start_at).slice(0, 10) : ''),
+      preferredTime: row.preferred_time_label || '',
+      notes: row.notes || '',
+      createdTime: row.created_at,
+    }))
+
     return res.status(200).json({ meetings })
   } catch (err) {
     console.error('[software-team-meetings]', err)

@@ -781,18 +781,7 @@ export default function AddPropertyWizard({
       onClose()
     } catch (err) {
       const raw = err?.message || 'Could not save property'
-      const friendly = raw.includes('mailing address on one line')
-        ? raw
-        : raw.includes('UNKNOWN_FIELD_NAME')
-        ? /Room\s+\d+\s+Rent/i.test(raw)
-          ? 'Airtable rejected a room rent column (unknown field). Add matching "Room N Rent" columns in Airtable or set VITE_AIRTABLE_PROPERTY_ROOM_NATIVE_COLUMN_LIMIT to the highest N that exists, or set VITE_AIRTABLE_WRITE_ROOM_COLUMNS=false.'
-          : 'A field name does not match Airtable — check managerPropertyFormAirtableMap.js and your base.'
-        : raw.includes('INVALID_VALUE_FOR_COLUMN')
-        ? 'One or more field values are in the wrong format for Airtable.'
-        : raw.includes('INVALID_PERMISSIONS')
-        ? 'Missing Airtable write permissions — check your API token.'
-        : raw
-      toast.error(friendly)
+      toast.error(raw)
     } finally {
       setSaving(false)
     }

@@ -63,6 +63,8 @@ import {
   fetchAllInternalScheduledEventsForAdmin,
 } from '../lib/scheduledEventsInternal.js'
 import ManagerInboxPage from '../components/manager-inbox/ManagerInboxPage'
+import { isApplicationUuid } from '../../../shared/application-legacy-map.js'
+import { listManagedApplicationsForSession, postApplicationAction } from '../lib/applicationsInternalApi.js'
 import {
   getWorkOrderById,
   updateWorkOrder,
@@ -2247,8 +2249,7 @@ function AdminDayAvailabilityEditor({
     <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm lg:sticky lg:top-6">
       <h2 className={PORTAL_SECTION_TITLE_CLS}>Meeting availability</h2>
       <p className="mt-2 text-xs leading-relaxed text-slate-500">
-        Drag on the timeline to add blocks, then save. Your changes sync to the Scheduling table in Airtable (Contact Axis
-        booking).
+        Drag on the timeline to add blocks, then save. Changes are saved to the internal calendar.
       </p>
 
       <div className="mt-6">
@@ -2286,7 +2287,7 @@ function AdminDayAvailabilityEditor({
             disabled={availSaving}
             className="rounded-xl bg-[linear-gradient(180deg,#2f76ff_0%,#2450eb_100%)] px-4 py-2.5 font-semibold text-white shadow-sm hover:brightness-105 disabled:opacity-40"
           >
-            {availSaving ? 'Saving…' : 'Save to Airtable now'}
+            {availSaving ? 'Saving…' : 'Save availability'}
           </button>
         ) : null}
         <button
@@ -2335,13 +2336,10 @@ async function fetchLeaseDrafts({ status, property, resident } = {}) {
 
 // ─── Applications data layer ──────────────────────────────────────────────────
 async function fetchApplications({ property } = {}) {
-  const url = new URL(`${CORE_AIRTABLE_BASE_URL}/${encodeURIComponent(APPLICATIONS_TABLE_NAME)}`)
-  if (property) {
-    url.searchParams.set('filterByFormula', `FIND("${property.replace(/"/g, '\\"')}", {Property Name}) > 0`)
-  }
-  const data = await atRequest(url.toString())
-  const rows = (data.records || []).map(mapRecord)
-  return rows.sort((a, b) => {
+  const rows = await listManagedApplicationsForSession()
+  const needle = property ? String(property || '').trim() : ''
+  const scoped = needle ? rows.filter((a) => String(a['Property Name'] || '').trim() === needle) : rows
+  return [...scoped].sort((a, b) => {
     const ta = new Date(a.created_at || 0).getTime()
     const tb = new Date(b.created_at || 0).getTime()
     return tb - ta
@@ -2494,44 +2492,9 @@ async function patchManagerRecord(recordId, fields) {
   return mapRecord(data)
 }
 
-async function fetchSchedulingForManagerScope({ managerEmail, propertyNames }) {
-  const rows = []
-  let offset = null
-  do {
-    const url = new URL(`${CORE_AIRTABLE_BASE_URL}/Scheduling`)
-    url.searchParams.set('sort[0][field]', 'Preferred Date')
-    url.searchParams.set('sort[0][direction]', 'desc')
-    if (offset) url.searchParams.set('offset', offset)
-    const data = await atRequest(url.toString())
-    for (const record of data.records || []) rows.push(mapRecord(record))
-    offset = data.offset || null
-  } while (offset)
-  const em = String(managerEmail || '').trim().toLowerCase()
-  const props = (propertyNames || []).map((p) => String(p).trim().toLowerCase()).filter(Boolean)
-  return rows.filter((r) => {
-    const rme = String(r['Manager Email'] || '').trim().toLowerCase()
-    if (em && rme === em) return true
-    const prop = String(r.Property || '').trim().toLowerCase()
-    if (!prop || !props.length) return false
-    return props.some((pn) => prop === pn || prop.includes(pn) || pn.includes(prop))
-  })
-}
-
-/** All Scheduling rows (admin calendar — paginated, no manager/property filter). */
-async function fetchAllSchedulingRows() {
-  const rows = []
-  let offset = null
-  do {
-    const url = new URL(`${CORE_AIRTABLE_BASE_URL}/Scheduling`)
-    url.searchParams.set('sort[0][field]', 'Preferred Date')
-    url.searchParams.set('sort[0][direction]', 'desc')
-    if (offset) url.searchParams.set('offset', offset)
-    const data = await atRequest(url.toString())
-    for (const record of data.records || []) rows.push(mapRecord(record))
-    offset = data.offset || null
-  } while (offset)
-  return rows
-}
+// fetchSchedulingForManagerScope and fetchAllSchedulingRows have been removed.
+// Calendar scheduling data is now loaded from internal scheduled_events via
+// fetchInternalScheduledEventsSchedulingRows / fetchAllInternalScheduledEventsForAdmin.
 
 function workOrdersToCalendarRows(workOrders, allowedPropertyNamesLower) {
   const rows = []
@@ -3411,7 +3374,7 @@ function HouseManagementPanel({ manager, onPropertiesChange }) {
                                     toast.success('Property unlisted')
                                     await loadProperties()
                                   } catch (err) {
-                                    toast.error(err.message || 'Unlist failed — add a "Listed" checkbox on the Properties table in Airtable.')
+                                    toast.error(err.message || 'Could not unlist property. Please try again.')
                                   } finally {
                                     setListingBusyPropertyId(null)
                                   }
@@ -3438,7 +3401,7 @@ function HouseManagementPanel({ manager, onPropertiesChange }) {
                                     toast.success('Property listed on the site again')
                                     await loadProperties()
                                   } catch (err) {
-                                    toast.error(err.message || 'Relist failed — add a "Listed" checkbox on the Properties table in Airtable.')
+                                    toast.error(err.message || 'Could not relist property. Please try again.')
                                   } finally {
                                     setListingBusyPropertyId(null)
                                   }
@@ -5654,19 +5617,7 @@ function ManagerPaymentsPanel({ allowedPropertyNames, allowedPropertyIds }) {
         >
           <div className="font-semibold text-amber-900">Unable to load payments</div>
           <p className="mt-2 text-amber-900/90">{paymentsLoadError}</p>
-          <ul className="mt-3 list-disc space-y-1 pl-5 text-amber-900/85">
-            <li>
-              In your data service’s developer console, open your personal access token and grant access to the base that contains the{' '}
-              <strong>Payments</strong> table.
-            </li>
-            <li>
-              Enable scopes <strong className="font-mono text-xs">data.records:read</strong> and{' '}
-              <strong className="font-mono text-xs">data.records:write</strong> for that base.
-            </li>
-            <li>
-              Payments are read from workspace <code className="rounded bg-white/80 px-1.5 py-0.5 text-xs">{AIRTABLE_PAYMENTS_BASE_ID}</code>.
-            </li>
-          </ul>
+          <p className="mt-2 text-amber-900/80 text-xs">Refresh the page or contact support if this persists.</p>
         </div>
       ) : null}
 
@@ -5977,59 +5928,73 @@ function ApplicationsPanel({ allowedPropertyNames, manager, propertyRecords = []
             }
           }
         }
-        const res = await fetch('/api/portal?action=manager-approve-application', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            applicationRecordId: recordId,
-            managerName: manager?.name || manager?.email || 'Axis Manager',
-            managerRole: manager?.role || 'Manager',
-            managerRecordId: manager?.id || '',
-            approvedRoom,
-          }),
-        })
-        const data = await readJsonResponse(res)
-        if (!res.ok) throw new Error(data.error || 'Could not approve application')
-        setScopedRows((prev) =>
-          prev.map((a) =>
-            a.id === recordId ? { ...a, ...(data.application || {}) } : a,
-          ),
-        )
-        if (Array.isArray(data.residentRecordsUpdated) && data.residentRecordsUpdated.length > 0) {
-          toast.success(
-            (data.message || 'Application approved') +
-              ` Resident portal access updated (${data.residentRecordsUpdated.length} profile${data.residentRecordsUpdated.length === 1 ? '' : 's'})`,
-          )
+        if (isApplicationUuid(recordId)) {
+          const data = await postApplicationAction(recordId, 'approve', { approved_unit_room: roomToApprove })
+          const app = data.application || {}
+          setScopedRows((prev) => prev.map((a) => (a.id === recordId ? { ...a, ...app } : a)))
+          toast.success('Application approved')
         } else {
-          toast.success(data.message || 'Application approved and lease draft generated')
+          const res = await fetch('/api/portal?action=manager-approve-application', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              applicationRecordId: recordId,
+              managerName: manager?.name || manager?.email || 'Axis Manager',
+              managerRole: manager?.role || 'Manager',
+              managerRecordId: manager?.id || '',
+              approvedRoom,
+            }),
+          })
+          const data = await readJsonResponse(res)
+          if (!res.ok) throw new Error(data.error || 'Could not approve application')
+          setScopedRows((prev) =>
+            prev.map((a) =>
+              a.id === recordId ? { ...a, ...(data.application || {}) } : a,
+            ),
+          )
+          if (Array.isArray(data.residentRecordsUpdated) && data.residentRecordsUpdated.length > 0) {
+            toast.success(
+              (data.message || 'Application approved') +
+                ` Resident portal access updated (${data.residentRecordsUpdated.length} profile${data.residentRecordsUpdated.length === 1 ? '' : 's'})`,
+            )
+          } else {
+            toast.success(data.message || 'Application approved and lease draft generated')
+          }
         }
         window.dispatchEvent(new CustomEvent('axis:lease-drafts-changed', {
           detail: { source: 'application-approved', applicationRecordId: recordId },
         }))
       } else {
-        const res = await fetch('/api/portal?action=manager-reject-application', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            applicationRecordId: recordId,
-            managerName: manager?.name || manager?.email || 'Axis Manager',
-            managerRole: manager?.role || 'Manager',
-            managerRecordId: manager?.id || '',
-          }),
-        })
-        const data = await readJsonResponse(res)
-        if (!res.ok) throw new Error(data.error || 'Could not reject application')
-        const rf = applicationRejectedFieldName()
-        const app = data.application || {}
-        setScopedRows((prev) =>
-          prev.map((a) => {
-            if (a.id !== recordId) return a
-            const next = { ...a, ...app, [rf]: true }
-            delete next.Approved
-            return next
-          }),
-        )
-        toast.success(data.message || 'Application rejected')
+        if (isApplicationUuid(recordId)) {
+          const data = await postApplicationAction(recordId, 'reject', {})
+          const app = data.application || {}
+          setScopedRows((prev) => prev.map((a) => (a.id === recordId ? { ...a, ...app } : a)))
+          toast.success('Application rejected')
+        } else {
+          const res = await fetch('/api/portal?action=manager-reject-application', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              applicationRecordId: recordId,
+              managerName: manager?.name || manager?.email || 'Axis Manager',
+              managerRole: manager?.role || 'Manager',
+              managerRecordId: manager?.id || '',
+            }),
+          })
+          const data = await readJsonResponse(res)
+          if (!res.ok) throw new Error(data.error || 'Could not reject application')
+          const rf = applicationRejectedFieldName()
+          const app = data.application || {}
+          setScopedRows((prev) =>
+            prev.map((a) => {
+              if (a.id !== recordId) return a
+              const next = { ...a, ...app, [rf]: true }
+              delete next.Approved
+              return next
+            }),
+          )
+          toast.success(data.message || 'Application rejected')
+        }
       }
     } catch (err) {
       toast.error('Could not update application: ' + err.message)
@@ -6041,18 +6006,23 @@ function ApplicationsPanel({ allowedPropertyNames, manager, propertyRecords = []
   async function handleSendBackToPending(recordId) {
     setApproving((a) => ({ ...a, [recordId]: 'pending' }))
     try {
-      const res = await fetch('/api/portal?action=manager-application-set-pending', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          applicationRecordId: recordId,
-          managerName: manager?.name || manager?.email || 'Axis Manager',
-          managerRole: manager?.role || 'Manager',
-          managerRecordId: manager?.id || '',
-        }),
-      })
-      const data = await readJsonResponse(res)
-      if (!res.ok) throw new Error(data.error || 'Could not move application to pending')
+      let data
+      if (isApplicationUuid(recordId)) {
+        data = await postApplicationAction(recordId, 'set-pending', {})
+      } else {
+        const res = await fetch('/api/portal?action=manager-application-set-pending', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            applicationRecordId: recordId,
+            managerName: manager?.name || manager?.email || 'Axis Manager',
+            managerRole: manager?.role || 'Manager',
+            managerRecordId: manager?.id || '',
+          }),
+        })
+        data = await readJsonResponse(res)
+        if (!res.ok) throw new Error(data.error || 'Could not move application to pending')
+      }
       setScopedRows((prev) => prev.map((a) => (a.id === recordId ? { ...a, ...(data.application || {}) } : a)))
       toast.success(data.message || 'Application moved back to pending')
       window.dispatchEvent(new CustomEvent('axis:lease-drafts-changed', {
