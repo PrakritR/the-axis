@@ -28,6 +28,22 @@ async function fetchManagerPortalSession(managerId = '') {
   return json?.manager || null
 }
 
+/**
+ * If Supabase already has a session (e.g. user refreshed /manager or opened a new tab),
+ * load manager portal state without forcing them back through /portal.
+ * Returns null when there is no session or the user is not allowed into the manager portal.
+ */
+export async function tryRestoreManagerPortalSession() {
+  try {
+    const accessToken = await currentAccessToken()
+    if (!accessToken) return null
+    await syncAppUserFromSupabaseSession().catch(() => null)
+    return await fetchManagerPortalSession()
+  } catch {
+    return null
+  }
+}
+
 export async function signInManagerPortal(identifier, password) {
   const email = String(identifier || '').trim()
   const passwordValue = String(password || '')
@@ -53,11 +69,13 @@ export async function signInManagerPortal(identifier, password) {
   return fetchManagerPortalSession()
 }
 
-export async function createManagerPortalAccount({ email, password, name, managerId }) {
+export async function createManagerPortalAccount({ email, password, name, managerId, phone, accountType = 'manager', ownerCode }) {
   const normalizedEmail = String(email || '').trim().toLowerCase()
   const passwordValue = String(password || '')
   const fullName = String(name || '').trim()
   const normalizedManagerId = String(managerId || '').trim().toUpperCase()
+  const normalizedOwnerCode = String(ownerCode || '').trim().toUpperCase()
+  const normalizedAccountType = String(accountType || 'manager').trim().toLowerCase()
 
   if (!normalizedEmail || !passwordValue) {
     throw new Error('Email and password are required.')
@@ -69,9 +87,18 @@ export async function createManagerPortalAccount({ email, password, name, manage
   // Call backend which handles both modes:
   //   Mode A (no managerId): fully internal — admin.createUser + assign manager role
   //   Mode B (managerId): legacy Airtable onboarding
-  const body = normalizedManagerId
-    ? { managerId: normalizedManagerId, password: passwordValue, name: fullName || undefined }
-    : { email: normalizedEmail, password: passwordValue, name: fullName || undefined }
+  const body = normalizedAccountType === 'owner'
+    ? {
+        accountType: 'owner',
+        email: normalizedEmail,
+        password: passwordValue,
+        name: fullName || undefined,
+        phone: String(phone || '').trim() || undefined,
+        ownerCode: normalizedOwnerCode || undefined,
+      }
+    : normalizedManagerId
+      ? { accountType: 'manager', managerId: normalizedManagerId, password: passwordValue, name: fullName || undefined }
+      : { accountType: 'manager', email: normalizedEmail, password: passwordValue, name: fullName || undefined }
 
   const res = await fetch('/api/manager-create-account', {
     method: 'POST',
@@ -85,7 +112,7 @@ export async function createManagerPortalAccount({ email, password, name, manage
     throw new Error(detail || `Could not create manager account (${res.status}).`)
   }
 
-  const { manager, session } = json
+  const { manager, portal_user: portalUser, session } = json
 
   // Establish Supabase session from backend-issued tokens
   if (session?.access_token && session?.refresh_token) {
@@ -105,5 +132,5 @@ export async function createManagerPortalAccount({ email, password, name, manage
   }
 
   await syncAppUserFromSupabaseSession().catch(() => null)
-  return manager || null
+  return portalUser || manager || null
 }

@@ -14,7 +14,8 @@
     "preview": "vite preview",
     "predeploy": "npm run build && cp dist/index.html dist/404.html",
     "deploy": "gh-pages -d dist",
-    "seed:admin-role": "node scripts/seed-admin-role.mjs"
+    "seed:admin-role": "node scripts/seed-admin-role.mjs",
+    "supabase:reset-managers": "node scripts/supabase-reset-manager-directory.mjs --force"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.82.0",

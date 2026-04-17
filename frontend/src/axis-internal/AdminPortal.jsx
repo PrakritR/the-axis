@@ -18,11 +18,9 @@ import {
   adminRejectProperty,
   adminUnrejectProperty,
   adminRequestPropertyEdits,
-  adminSetManagerActive,
   adminDeleteProperty,
   adminUnlistProperty,
   adminRelistProperty,
-  adminSetPropertyInternalNotes,
   isAdminPortalAirtableConfigured,
   loadAdminPortalDataset,
   loadResidentsForAdmin,
@@ -60,7 +58,6 @@ import { PropertyDetailPanel } from '../lib/propertyDetailPanel.jsx'
 import { AXIS_ADMIN_SESSION_KEY, AXIS_ADMIN_SHOW_PORTAL_HANDOFF_KEY } from './adminSessionConstants'
 import AdminProfilePanel from './AdminProfilePanel.jsx'
 import AdminLeasingTab from './AdminLeasingTab.jsx'
-import AdminAnnouncementsTab from './AdminAnnouncementsTab.jsx'
 import {
   getAllPortalInternalThreadMessages,
   fetchInboxThreadStateMap,
@@ -72,6 +69,7 @@ import {
   deriveApplicationApprovalState,
   applicationDisplayLabelFromApprovalState,
 } from '../lib/applicationApprovalState.js'
+import { fetchAdminManagersList, mapAdminManagersApiToPortalAccounts } from '../lib/adminManagersSupabase.js'
 
 export { AXIS_ADMIN_SESSION_KEY, AXIS_ADMIN_SHOW_PORTAL_HANDOFF_KEY } from './adminSessionConstants'
 
@@ -158,7 +156,6 @@ const ADMIN_TAB_IDS = [
   'properties',
   'accounts',
   'leasing',
-  'announcements',
   'calendar',
   'messages',
   'profile',
@@ -454,7 +451,7 @@ function AdminMeetingAvailabilitySection({ user }) {
   )
 }
 
-function AdminPropertyInternalNotesEditor({ recordId, savedValue, formDisabled, onSaved, persistBackend = 'airtable' }) {
+function AdminPropertyInternalNotesEditor({ recordId, savedValue, formDisabled, onSaved }) {
   const [text, setText] = useState(() => String(savedValue ?? ''))
   const [saving, setSaving] = useState(false)
 
@@ -468,20 +465,11 @@ function AdminPropertyInternalNotesEditor({ recordId, savedValue, formDisabled, 
     if (!recordId || !dirty || saving || formDisabled) return
     setSaving(true)
     try {
-      if (persistBackend === 'supabase') {
-        await adminSetPropertyInternalNotesSupabase(recordId, text)
-      } else {
-        await adminSetPropertyInternalNotes(recordId, text)
-      }
+      await adminSetPropertyInternalNotesSupabase(recordId, text)
       await onSaved()
       toast.success('Internal notes saved')
     } catch (err) {
-      toast.error(
-        err?.message ||
-          (persistBackend === 'supabase'
-            ? 'Could not save internal notes.'
-            : 'Could not save internal notes. Add an "Internal Notes" long-text field on Properties, or set VITE_AIRTABLE_PROPERTY_INTERNAL_NOTES_FIELD to your column name.'),
-      )
+      toast.error(err?.message || 'Could not save internal notes.')
     } finally {
       setSaving(false)
     }
@@ -577,12 +565,22 @@ function residentHandoffHouseLabel(r) {
   return ''
 }
 
-function PortalHandoffCard({ accounts, residents, applications, residentsLoading, residentsError }) {
+function PortalHandoffCard({ residents, applications, residentsLoading, residentsError }) {
   const [selectedManagerId, setSelectedManagerId] = useState('')
   const [selectedResidentId, setSelectedResidentId] = useState('')
+  const [managers, setManagers] = useState([])
+  const [managersLoading, setManagersLoading] = useState(true)
+  const [managersError, setManagersError] = useState('')
+
+  useEffect(() => {
+    setManagersLoading(true)
+    fetchAdminManagersList()
+      .then((list) => { setManagers(list); setManagersLoading(false) })
+      .catch((e) => { setManagersError(String(e?.message || 'Could not load managers.')); setManagersLoading(false) })
+  }, [])
 
   function openManagerPortal() {
-    const manager = accounts.find((a) => a.id === selectedManagerId)
+    const manager = managers.find((m) => m.id === selectedManagerId)
     if (!manager) return
     sessionStorage.setItem('axis_manager', JSON.stringify({
       id: manager.id,
@@ -599,11 +597,10 @@ function PortalHandoffCard({ accounts, residents, applications, residentsLoading
     window.location.assign('/resident')
   }
 
-  const activeManagers = accounts.filter((a) => a.enabled)
-  const sortedManagers = [...activeManagers].sort((a, b) => {
+  const sortedManagers = [...managers].sort((a, b) => {
     const dt = (b.updatedMs || 0) - (a.updatedMs || 0)
     if (dt !== 0) return dt
-    return String(a.id || '').localeCompare(String(b.id || ''))
+    return String(a.name || '').localeCompare(String(b.name || ''))
   })
   const sortedResidents = [...residents].sort((a, b) =>
     residentHandoffDisplayName(a).localeCompare(residentHandoffDisplayName(b), undefined, { sensitivity: 'base' }),
@@ -624,11 +621,15 @@ function PortalHandoffCard({ accounts, residents, applications, residentsLoading
               <option value="">— choose manager —</option>
               {sortedManagers.map((m) => (
                 <option key={m.id} value={m.id}>
-                  {m.name}{m.managedHousesLabel && m.managedHousesLabel !== '—' ? ` · ${m.managedHousesLabel}` : ''}
+                  {m.name || m.email}
                 </option>
               ))}
-              {sortedManagers.length === 0 ? (
-                <option disabled value="">No active managers found</option>
+              {managersLoading ? (
+                <option disabled value="">Loading…</option>
+              ) : sortedManagers.length === 0 ? (
+                <option disabled value="">
+                  {managersError || 'No managers found — run the Supabase role seed first.'}
+                </option>
               ) : null}
             </select>
             <button
@@ -640,31 +641,6 @@ function PortalHandoffCard({ accounts, residents, applications, residentsLoading
               Open
             </button>
           </div>
-          {sortedManagers.length === 0 ? (
-            <div className="mt-2 space-y-2 text-xs leading-snug text-slate-600">
-              <p>
-                This list only includes enabled rows from the Manager Profile sync. To test with a real account, open{' '}
-                <a className="font-semibold text-[#2563eb] underline" href="/portal?portal=manager">
-                  Manager sign-in
-                </a>
-                .
-              </p>
-              <button
-                type="button"
-                className="rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-[11px] font-semibold text-slate-800 shadow-sm transition hover:bg-slate-50"
-                onClick={() => {
-                  seedDeveloperManagerSession()
-                  markDeveloperPortalActive()
-                  window.location.assign('/manager')
-                }}
-              >
-                Open developer manager preview
-              </button>
-              <p className="text-[11px] text-slate-500">
-                Preview uses a stub session; Airtable-backed screens may be empty until your base has matching data.
-              </p>
-            </div>
-          ) : null}
         </div>
         <div className="min-w-0">
           <div className="mb-2 text-[11px] font-bold uppercase tracking-[0.14em] text-sky-800">Resident portal</div>
@@ -807,7 +783,6 @@ export default function AdminPortal() {
   const [propertiesSection, setPropertiesSection] = useState('pending')
   const [managersFilter, setManagersFilter] = useState('current')
   const [selectedManagerAccountId, setSelectedManagerAccountId] = useState(null)
-  const [managerActionBusy, setManagerActionBusy] = useState(false)
   const [properties, setProperties] = useState(() => [])
   const [accounts, setAccounts] = useState(() => [])
   const [applications, setApplications] = useState(() => [])
@@ -876,7 +851,19 @@ export default function AdminPortal() {
       } else {
         setProperties(next.properties || [])
       }
-      setAccounts(next.accounts || [])
+
+      // Managers tab: Supabase only (app_user_roles + profiles + properties). No Airtable Manager Profile.
+      if (hasBearer) {
+        try {
+          const rows = await fetchAdminManagersList()
+          setAccounts(mapAdminManagersApiToPortalAccounts(rows))
+        } catch (e) {
+          console.warn('[AdminPortal] Could not load managers from Supabase', e)
+          setAccounts([])
+        }
+      } else {
+        setAccounts([])
+      }
 
       let applicationRows = next.applications || []
       if (hasBearer) {
@@ -1005,13 +992,12 @@ export default function AdminPortal() {
     { id: 'properties', label: 'Properties' },
     { id: 'accounts', label: 'Managers' },
     { id: 'leasing', label: 'Leases' },
-    { id: 'announcements', label: 'Announcements' },
     { id: 'calendar', label: 'Calendar' },
     { id: 'messages', label: 'Inbox' },
     { id: 'profile', label: 'Profile' },
   ]
 
-  /** First-time submissions awaiting admin review (not admin “request change” flow). */
+  /** First-time submissions awaiting admin review (not admin "request change" flow). */
   const pendingReviewProperties = useMemo(() => properties.filter((p) => p.status === 'pending'), [properties])
   /** Admin asked manager to edit; waiting on manager resubmit → then returns to pending review. */
   const requestChangeProperties = useMemo(() => properties.filter((p) => p.status === 'changes_requested'), [properties])
@@ -1196,7 +1182,6 @@ export default function AdminPortal() {
               </label>
               {showPortalHandoff ? (
                 <PortalHandoffCard
-                  accounts={accounts}
                   residents={residents}
                   applications={applications}
                   residentsLoading={dataLoading}
@@ -1285,7 +1270,7 @@ export default function AdminPortal() {
               className="flex flex-col gap-1 rounded-3xl border border-sky-200/90 bg-sky-50 p-5 text-left transition hover:border-sky-300 hover:bg-sky-100/80 hover:shadow-sm"
             >
               <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-sky-800">Managers · Subscribed</span>
-              <span className="text-3xl font-black tabular-nums text-slate-900">{accounts.filter((a) => a.enabled).length}</span>
+              <span className="text-3xl font-black tabular-nums text-slate-900">{accounts.filter((a) => a.enabled !== false).length}</span>
             </button>
 
             {/* Leases changes needed */}
@@ -1498,7 +1483,6 @@ export default function AdminPortal() {
                     savedValue={approval.adminNotesInternal}
                     formDisabled={approvalBusy}
                     onSaved={refreshPortalData}
-                    persistBackend={approval._supabase ? 'supabase' : 'airtable'}
                   />
                 </div>
               ) : null}
@@ -1588,7 +1572,6 @@ export default function AdminPortal() {
                     savedValue={approval.adminNotesInternal}
                     formDisabled={approvalBusy}
                     onSaved={refreshPortalData}
-                    persistBackend={approval._supabase ? 'supabase' : 'airtable'}
                   />
                 </div>
               ) : null}
@@ -1678,7 +1661,6 @@ export default function AdminPortal() {
                     savedValue={approval.adminNotesInternal}
                     formDisabled={approvalBusy}
                     onSaved={refreshPortalData}
-                    persistBackend={approval._supabase ? 'supabase' : 'airtable'}
                   />
                 </div>
               ) : null}
@@ -1737,7 +1719,6 @@ export default function AdminPortal() {
                     savedValue={approval.adminNotesInternal}
                     formDisabled={approvalBusy}
                     onSaved={refreshPortalData}
-                    persistBackend={approval._supabase ? 'supabase' : 'airtable'}
                   />
                 </div>
               ) : null}
@@ -1839,45 +1820,21 @@ export default function AdminPortal() {
                 </div>
               </div>
               <div className="flex w-full min-w-0 flex-wrap items-center justify-end gap-2">
-                <div className="flex h-[42px] min-w-0 max-w-full items-stretch overflow-hidden rounded-full border border-slate-200 bg-white sm:max-w-[min(100%,320px)]">
-                  <span className="flex shrink-0 items-center border-r border-slate-100 bg-slate-50/80 px-3 text-[10px] font-bold uppercase tracking-[0.1em] text-slate-500">
-                    Select property
-                  </span>
-                  <div className="relative min-w-0 flex-1">
-                    <select
-                      value={managersPropertyKeyFilter}
-                      onChange={(e) => setManagersPropertyKeyFilter(e.target.value)}
-                      className="h-full w-full min-w-0 cursor-pointer appearance-none border-0 bg-transparent py-2 pl-3 pr-9 text-sm font-medium text-slate-800 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-[#2563eb]/25"
-                      aria-label="Select property filter"
-                    >
-                      <option value={ALL_PROPERTIES_FILTER}>All properties (grouped)</option>
-                      {managersPropertySelectOptions.map(({ value, label }) => (
-                        <option key={value} value={value}>
-                          {label}
-                        </option>
-                      ))}
-                    </select>
-                    <span className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400" aria-hidden>
-                      ▾
-                    </span>
-                  </div>
-                </div>
                 <input
                   type="search"
                   value={managersSearch}
                   onChange={(e) => setManagersSearch(e.target.value)}
                   placeholder="Search…"
-                  aria-label="Search managers by name, email, or property"
+                  aria-label="Search managers by name or email"
                   className="h-[42px] w-full min-w-0 flex-1 rounded-full border border-slate-200 bg-white px-4 text-sm text-slate-800 placeholder:text-slate-400 focus:border-[#2563eb] focus:outline-none focus:ring-2 focus:ring-[#2563eb]/20 sm:max-w-[220px]"
                 />
               </div>
               <DataTable
                 empty={managersTableEmpty || `No ${managersFilter === 'current' ? 'active' : 'past'} managers`}
                 columns={[
-                  { key: 'n', label: 'Account', render: (d) => <><div className="font-semibold">{d.businessName || d.name}</div><div className="text-xs text-slate-500">{d.email}</div></> },
-                  { key: 'h', label: 'House / property', render: (d) => <span className="text-slate-700">{d.managedHousesLabel || '—'}</span> },
-                  { key: 'v', label: 'Verification', render: (d) => <StatusPill tone={d.verificationStatus === 'verified' ? 'green' : 'amber'}>{d.verificationStatus}</StatusPill> },
-                  { key: 'p', label: 'Properties', render: (d) => d.propertyCount },
+                  { key: 'n', label: 'Account', render: (d) => <><div className="font-semibold">{d.name}</div><div className="text-xs text-slate-500">{d.email}</div></> },
+                  { key: 'r', label: 'Role', render: (d) => <StatusPill tone="green">{d.role || 'manager'}</StatusPill> },
+                  { key: 'v', label: 'Status', render: (d) => <StatusPill tone={d.enabled !== false ? 'green' : 'red'}>{d.enabled !== false ? 'Active' : 'Disabled'}</StatusPill> },
                   { key: 'act', label: '', render: (d) => (
                     <button
                       type="button"
@@ -1894,7 +1851,7 @@ export default function AdminPortal() {
                 <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
                   <div className="mb-5 flex items-start justify-between gap-4">
                     <div>
-                      <h2 className="text-lg font-black text-slate-900">{selectedManagerAccount.businessName || selectedManagerAccount.name}</h2>
+                      <h2 className="text-lg font-black text-slate-900">{selectedManagerAccount.name}</h2>
                       <p className="mt-0.5 text-sm text-slate-500">{selectedManagerAccount.email}</p>
                     </div>
                     <button
@@ -1908,50 +1865,14 @@ export default function AdminPortal() {
                   </div>
                   <dl className="grid gap-3 sm:grid-cols-2">
                     <div>
-                      <dt className="text-xs font-semibold uppercase tracking-wide text-slate-500">House / property</dt>
-                      <dd className="mt-1 text-sm text-slate-800">{selectedManagerAccount.managedHousesLabel || '—'}</dd>
-                    </div>
-                    <div>
-                      <dt className="text-xs font-semibold uppercase tracking-wide text-slate-500">Properties</dt>
-                      <dd className="mt-1 text-sm text-slate-800">{selectedManagerAccount.propertyCount}</dd>
-                    </div>
-                    <div>
-                      <dt className="text-xs font-semibold uppercase tracking-wide text-slate-500">Verification</dt>
-                      <dd className="mt-1"><StatusPill tone={selectedManagerAccount.verificationStatus === 'verified' ? 'green' : 'amber'}>{selectedManagerAccount.verificationStatus}</StatusPill></dd>
+                      <dt className="text-xs font-semibold uppercase tracking-wide text-slate-500">Role</dt>
+                      <dd className="mt-1"><StatusPill tone="green">{selectedManagerAccount.role || 'manager'}</StatusPill></dd>
                     </div>
                     <div>
                       <dt className="text-xs font-semibold uppercase tracking-wide text-slate-500">Status</dt>
                       <dd className="mt-1"><StatusPill tone={selectedManagerAccount.enabled !== false ? 'green' : 'red'}>{selectedManagerAccount.enabled !== false ? 'Active' : 'Disabled'}</StatusPill></dd>
                     </div>
                   </dl>
-                  <div className="mt-6 border-t border-slate-100 pt-5">
-                    <button
-                      type="button"
-                      disabled={managerActionBusy}
-                      className={`rounded-2xl px-5 py-2.5 text-sm font-semibold transition disabled:opacity-50 ${
-                        selectedManagerAccount.enabled !== false
-                          ? 'bg-red-50 text-red-700 hover:bg-red-100'
-                          : 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100'
-                      }`}
-                      onClick={async () => {
-                        const next = selectedManagerAccount.enabled === false
-                        setManagerActionBusy(true)
-                        setAccounts((ac) => ac.map((x) => (x.id === selectedManagerAccount.id ? { ...x, enabled: next } : x)))
-                        try {
-                          await adminSetManagerActive(selectedManagerAccount.id, next)
-                          toast.success(next ? 'Manager account enabled' : 'Manager account disabled')
-                          await refreshPortalData()
-                        } catch (err) {
-                          toast.error(err?.message || 'Could not update manager')
-                          await refreshPortalData()
-                        } finally {
-                          setManagerActionBusy(false)
-                        }
-                      }}
-                    >
-                      {managerActionBusy ? 'Saving…' : selectedManagerAccount.enabled !== false ? 'Disable account' : 'Enable account'}
-                    </button>
-                  </div>
                 </div>
               ) : null}
             </div>
@@ -1963,8 +1884,6 @@ export default function AdminPortal() {
         <AdminLeasingTab adminUser={user} accounts={accounts} />
       )}
 
-      {tab === 'announcements' && <AdminAnnouncementsTab />}
-
       {tab === 'messages' && (
         <ManagerInboxPage
           adminFullInbox
@@ -1975,7 +1894,7 @@ export default function AdminPortal() {
             .map((a) => ({
               id: a.id,
               email: String(a.email).trim().toLowerCase(),
-              label: `${a.businessName || a.name || 'Manager'} · ${a.email}`,
+              label: `${a.name || 'Manager'} · ${a.email}`,
             }))}
           adminComposeResidents={residents
             .filter((r) => r.id && String(r.id).startsWith('rec'))

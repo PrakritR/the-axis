@@ -145,7 +145,12 @@ import {
 import PortalShell, { DataTable, StatusPill } from '../components/PortalShell'
 import { portalChromeSecondaryButtonClass } from '../lib/portalLayout.js'
 import { PortalEmptyVisual } from '../components/portalNavIcons.jsx'
-import { createManagerPortalAccount, signInManagerPortal } from '../lib/managerPortalAuth.js'
+import { supabase } from '../lib/supabase'
+import {
+  createManagerPortalAccount,
+  signInManagerPortal,
+  tryRestoreManagerPortalSession,
+} from '../lib/managerPortalAuth.js'
 import { MANAGER_ONBOARDING_SESSION_KEY } from '../lib/managerOnboardingSession.js'
 import AddPropertyWizard from '../components/AddPropertyWizard'
 import { PropertyDetailPanel } from '../lib/propertyDetailPanel.jsx'
@@ -171,6 +176,7 @@ import {
   PortalOpsEmptyState,
   PortalOpsStatusBadge,
 } from '../components/PortalOpsUI'
+import { AddOwnerPanel, OwnerPropertiesPanel, PortalPaymentsPanel } from '../components/OwnerAccessPanel.jsx'
 import {
   deriveApplicationApprovalState,
   applicationRejectedFieldName,
@@ -2689,7 +2695,17 @@ export function ManagerAuthForm({ onLogin, footer = null, variant = 'default' })
   const initialView = initialSearch.get('view') === 'create' || initialSearch.get('setup') === 'success' ? 'setup' : 'signin'
   const [activeView, setActiveView] = useState(initialView)
   const [signInForm, setSignInForm] = useState({ email: '', password: '' })
-  const [activationForm, setActivationForm] = useState({ managerId: '', name: '', email: '', phone: '', password: '', planType: '', billingInterval: '' })
+  const [activationForm, setActivationForm] = useState({
+    accountType: 'manager',
+    managerId: '',
+    ownerCode: '',
+    name: '',
+    email: '',
+    phone: '',
+    password: '',
+    planType: '',
+    billingInterval: '',
+  })
   const [subscriptionReady, setSubscriptionReady] = useState(false)
   const [accountExists, setAccountExists] = useState(false)
   const [notice, setNotice] = useState('')
@@ -2828,7 +2844,7 @@ export function ManagerAuthForm({ onLogin, footer = null, variant = 'default' })
   }, [queryString])
 
   useEffect(() => {
-    if (activeView !== 'setup') return undefined
+    if (activeView !== 'setup' || activationForm.accountType !== 'manager') return undefined
 
     const managerId = activationForm.managerId.trim().toUpperCase()
     if (!managerId) return undefined
@@ -2862,7 +2878,7 @@ export function ManagerAuthForm({ onLogin, footer = null, variant = 'default' })
       cancelled = true
       clearTimeout(timer)
     }
-  }, [activeView, activationForm.managerId])
+  }, [activeView, activationForm.accountType, activationForm.managerId])
 
   async function handleSubmit(event) {
     event.preventDefault()
@@ -2889,7 +2905,10 @@ export function ManagerAuthForm({ onLogin, footer = null, variant = 'default' })
         email: activationForm.email,
         password: activationForm.password,
         name: activationForm.name,
+        phone: activationForm.phone,
         managerId: activationForm.managerId,
+        accountType: activationForm.accountType,
+        ownerCode: activationForm.ownerCode,
       })
       clearOnboarding()
       sessionStorage.setItem(MANAGER_SESSION_KEY, JSON.stringify(manager))
@@ -2994,8 +3013,23 @@ export function ManagerAuthForm({ onLogin, footer = null, variant = 'default' })
               </button>
             </div>
           ) : null}
-          {/* Manager ID is optional — only needed for legacy Airtable-onboarded managers.
-               New managers can create an account with just email + password. */}
+          <PortalSegmentedControl
+            tabs={[['manager', 'Manager'], ['owner', 'Owner']]}
+            active={activationForm.accountType}
+            onChange={(value) =>
+              setActivationForm((current) => ({
+                ...current,
+                accountType: value,
+                managerId: '',
+                ownerCode: '',
+                planType: '',
+                billingInterval: '',
+                phone: value === 'owner' ? current.phone : '',
+              }))
+            }
+          />
+
+          {activationForm.accountType === 'manager' ? (
           <PortalField label="Manager ID (optional)">
             <input
               type="text"
@@ -3019,15 +3053,30 @@ export function ManagerAuthForm({ onLogin, footer = null, variant = 'default' })
               className={`${portalAuthInputCls} font-semibold uppercase tracking-[0.04em]`}
             />
           </PortalField>
+          ) : (
+          <PortalField label="Owner Code" required>
+            <input
+              type="text"
+              value={activationForm.ownerCode}
+              onChange={(event) =>
+                setActivationForm((current) => ({ ...current, ownerCode: event.target.value.toUpperCase() }))
+              }
+              placeholder="ABCDE-12345"
+              className={`${portalAuthInputCls} font-semibold uppercase tracking-[0.12em]`}
+              required
+            />
+          </PortalField>
+          )}
 
-          <PortalField label="Full name">
+          <PortalField label="Full name" required={activationForm.accountType === 'owner'}>
             <input
               type="text"
               value={activationForm.name}
-              readOnly={Boolean(activationForm.managerId.trim() && activationForm.name)}
+              readOnly={Boolean(activationForm.accountType === 'manager' && activationForm.managerId.trim() && activationForm.name)}
               onChange={(event) => setActivationForm((current) => ({ ...current, name: event.target.value }))}
-              placeholder={activationForm.managerId.trim() ? 'Loads from your manager record' : 'Your full name'}
-              className={`${portalAuthInputCls}${activationForm.managerId.trim() && activationForm.name ? ' bg-slate-50' : ''}`}
+              placeholder={activationForm.accountType === 'manager' && activationForm.managerId.trim() ? 'Loads from your manager record' : 'Your full name'}
+              className={`${portalAuthInputCls}${activationForm.accountType === 'manager' && activationForm.managerId.trim() && activationForm.name ? ' bg-slate-50' : ''}`}
+              required={activationForm.accountType === 'owner'}
             />
           </PortalField>
 
@@ -3035,16 +3084,16 @@ export function ManagerAuthForm({ onLogin, footer = null, variant = 'default' })
             <input
               type="email"
               value={activationForm.email}
-              readOnly={Boolean(activationForm.managerId.trim() && activationForm.email)}
+              readOnly={Boolean(activationForm.accountType === 'manager' && activationForm.managerId.trim() && activationForm.email)}
               onChange={(event) => setActivationForm((current) => ({ ...current, email: event.target.value.toLowerCase() }))}
-              placeholder={activationForm.managerId.trim() ? 'Loads from your manager record' : 'you@example.com'}
+              placeholder={activationForm.accountType === 'manager' && activationForm.managerId.trim() ? 'Loads from your manager record' : 'you@example.com'}
               required
               autoComplete="email"
-              className={`${portalAuthInputCls}${activationForm.managerId.trim() && activationForm.email ? ' bg-slate-50' : ''}`}
+              className={`${portalAuthInputCls}${activationForm.accountType === 'manager' && activationForm.managerId.trim() && activationForm.email ? ' bg-slate-50' : ''}`}
             />
           </PortalField>
 
-          {activationForm.managerId.trim() ? (
+          {activationForm.accountType === 'manager' && activationForm.managerId.trim() ? (
             <>
               <PortalField label="Phone number">
                 <input
@@ -3066,6 +3115,18 @@ export function ManagerAuthForm({ onLogin, footer = null, variant = 'default' })
                 </PortalField>
               ) : null}
             </>
+          ) : null}
+
+          {activationForm.accountType === 'owner' ? (
+            <PortalField label="Phone number">
+              <input
+                type="text"
+                value={activationForm.phone}
+                onChange={(event) => setActivationForm((current) => ({ ...current, phone: event.target.value }))}
+                placeholder="Optional"
+                className={portalAuthInputCls}
+              />
+            </PortalField>
           ) : null}
 
           <PortalField label="Create password" required>
@@ -3097,11 +3158,19 @@ export function ManagerAuthForm({ onLogin, footer = null, variant = 'default' })
               activationLoading ||
               !activationForm.email.trim() ||
               !activationForm.password.trim() ||
-              (activationForm.managerId.trim() && !activationForm.email.trim())
+              (activationForm.accountType === 'owner' && !activationForm.name.trim()) ||
+              (activationForm.accountType === 'manager' && activationForm.managerId.trim() && !activationForm.email.trim()) ||
+              (activationForm.accountType === 'owner' && !activationForm.ownerCode.trim())
             }
           >
             {activationLoading ? 'Creating account…' : 'Create account'}
           </PortalPrimaryButton>
+
+          {activationForm.accountType === 'owner' ? (
+            <PortalNotice>
+              Owner signup is locked to the exact invited email plus a valid Owner Code. If either one does not match, account creation will fail.
+            </PortalNotice>
+          ) : null}
 
           {subscriptionError ? <PortalNotice tone="error">{subscriptionError}</PortalNotice> : null}
         </form>
@@ -7284,6 +7353,7 @@ export function CalendarTabPanel({ manager, allowedPropertyNames, loadAllSchedul
 const MANAGER_DASH_TABS = [
   ['dashboard', 'Dashboard'],
   ['properties', 'Properties'],
+  ['add-owner', 'Add Owner'],
   ['applications', 'Applications'],
   ['leases', 'Leases'],
   ['payments', 'Payments'],
@@ -7293,15 +7363,32 @@ const MANAGER_DASH_TABS = [
   ['profile', 'Profile'],
 ]
 
-const MANAGER_NAV_ITEMS = MANAGER_DASH_TABS.map(([id, label]) => ({ id, label }))
-
 function ManagerDashboard({ manager: managerProp, openDraftId, onOpenDraft, onCloseDraft, onSignOut, onManagerUpdate }) {
   const [manager, setManager] = useState(managerProp)
+  const isManagerRole = Array.isArray(manager?.roles) ? manager.roles.includes('manager') : true
+  const isOwnerRole = Array.isArray(manager?.roles) ? manager.roles.includes('owner') : false
+  const navItems = useMemo(
+    () =>
+      MANAGER_DASH_TABS
+        .filter(([id]) => {
+          if (id === 'add-owner') return isManagerRole
+          if (['applications', 'leases', 'workorders', 'calendar', 'inbox'].includes(id)) return isManagerRole
+          return true
+        })
+        .map(([id, label]) => ({ id, label })),
+    [isManagerRole],
+  )
   const [dashView, setDashView] = useState(() => {
     const h = window.location.hash.slice(1)
     if (h === 'leasing') return 'leases'
-    return MANAGER_DASH_TABS.some(([id]) => id === h) ? h : 'dashboard'
+    const allowedIds = new Set(navItems.map((item) => item.id))
+    return allowedIds.has(h) ? h : 'dashboard'
   })
+  useEffect(() => {
+    if (!navItems.some((item) => item.id === dashView)) {
+      setDashView('dashboard')
+    }
+  }, [dashView, navItems])
   useEffect(() => { window.location.hash = dashView }, [dashView])
   const [drafts, setDrafts] = useState([])
   const [loading, setLoading] = useState(true)
@@ -7684,7 +7771,7 @@ function ManagerDashboard({ manager: managerProp, openDraftId, onOpenDraft, onCl
       <PortalShell
         brandTitle="Manager"
         desktopNav="sidebar"
-        navItems={MANAGER_NAV_ITEMS}
+        navItems={navItems}
         activeId={dashView}
         onNavigate={setDashView}
         onSignOut={onSignOut}
@@ -7710,10 +7797,36 @@ function ManagerDashboard({ manager: managerProp, openDraftId, onOpenDraft, onCl
           />
         ) : dashView === 'properties' ? (
           <div id="house-management" className="scroll-mt-24">
-            <HouseManagementPanel manager={manager} onPropertiesChange={handlePropertiesChange} />
+            {isManagerRole ? (
+              <HouseManagementPanel manager={manager} onPropertiesChange={handlePropertiesChange} />
+            ) : (
+              <OwnerPropertiesPanel
+                properties={propertyRecords.filter((property) => (manager.ownedPropertyIds || []).includes(property.id))}
+                invitations={[]}
+                payoutSettings={[]}
+                ownerOnly
+              />
+            )}
           </div>
+        ) : dashView === 'add-owner' ? (
+          <AddOwnerPanel
+            portalUser={manager}
+            properties={propertyRecords.filter((property) => (manager.managedPropertyIds || []).includes(property.id))}
+          />
         ) : dashView === 'payments' ? (
-          <ManagerPaymentsPanel allowedPropertyNames={scopedPropertyOptions} allowedPropertyIds={scopedPropertyIds} />
+          <div className="space-y-5">
+            <PortalPaymentsPanel portalUser={manager} roleLabel={isOwnerRole && !isManagerRole ? 'Owner' : 'Manager / Owner'} />
+            {isManagerRole ? (
+              <ManagerPaymentsPanel allowedPropertyNames={scopedPropertyOptions} allowedPropertyIds={scopedPropertyIds} />
+            ) : (
+              <OwnerPropertiesPanel
+                properties={propertyRecords.filter((property) => (manager.ownedPropertyIds || []).includes(property.id))}
+                invitations={[]}
+                payoutSettings={[]}
+                ownerOnly
+              />
+            )}
+          </div>
         ) : dashView === 'workorders' ? (
           <WorkOrdersTabPanel manager={manager} allowedPropertyNames={scopedPropertyOptions} allowedPropertyIds={scopedPropertyIds} />
         ) : dashView === 'calendar' ? (
@@ -8514,17 +8627,45 @@ export default function Manager() {
   const [authChecked, setAuthChecked] = useState(false)
   const [openDraftId, setOpenDraftId] = useState(null)
 
-  // Restore session from sessionStorage on first render
+  // Restore session: sessionStorage first, then Supabase (refresh /manager without losing portal state)
   useEffect(() => {
-    try {
-      const saved = sessionStorage.getItem(MANAGER_SESSION_KEY)
-      if (saved) {
-        setManager(JSON.parse(saved))
+    let cancelled = false
+
+    async function restore() {
+      let fromStorage = null
+      try {
+        const saved = sessionStorage.getItem(MANAGER_SESSION_KEY)
+        if (saved) {
+          fromStorage = JSON.parse(saved)
+        }
+      } catch {
+        sessionStorage.removeItem(MANAGER_SESSION_KEY)
       }
-    } catch {
-      sessionStorage.removeItem(MANAGER_SESSION_KEY)
-    } finally {
-      setAuthChecked(true)
+
+      if (fromStorage) {
+        if (!cancelled) setManager(fromStorage)
+        if (!cancelled) setAuthChecked(true)
+        return
+      }
+
+      try {
+        const restored = await tryRestoreManagerPortalSession()
+        if (!cancelled && restored) {
+          setManager(restored)
+          try {
+            sessionStorage.setItem(MANAGER_SESSION_KEY, JSON.stringify(restored))
+          } catch {
+            // ignore quota / private mode
+          }
+        }
+      } finally {
+        if (!cancelled) setAuthChecked(true)
+      }
+    }
+
+    void restore()
+    return () => {
+      cancelled = true
     }
   }, [])
 
@@ -8535,6 +8676,7 @@ export default function Manager() {
 
   function handleSignOut() {
     sessionStorage.removeItem(MANAGER_SESSION_KEY)
+    void supabase.auth.signOut().catch(() => null)
     setManager(null)
     setAuthChecked(true)
     setOpenDraftId(null)
