@@ -2729,8 +2729,14 @@ export function ManagerAuthForm({ onLogin, footer = null, variant = 'default' })
 
     setSubscriptionReady(nextSubscriptionReady)
     setAccountExists(nextAccountExists)
-    setActiveView(nextAccountExists ? 'signin' : 'setup')
-    setSignInForm((current) => ({ ...current, email: normalizedEmail || current.email }))
+
+    // Don't auto-redirect to signin — stay on setup and show a message so the
+    // user knows to sign in with their existing account instead of creating again.
+    if (nextAccountExists) {
+      setActivationError('An account already exists for this Manager ID. Use Sign in instead.')
+      setSignInForm((current) => ({ ...current, email: normalizedEmail || current.email }))
+    }
+
     setActivationForm((current) => ({
       ...current,
       managerId: normalizedManagerId || current.managerId,
@@ -2758,6 +2764,12 @@ export function ManagerAuthForm({ onLogin, footer = null, variant = 'default' })
       const saved = sessionStorage.getItem(MANAGER_ONBOARDING_SESSION_KEY)
       if (!saved) return
       const parsed = JSON.parse(saved)
+      // Don't restore if accountExists=true — that would pre-populate the form
+      // with a completed Manager ID and confuse a new registration attempt.
+      if (parsed.accountExists) {
+        clearOnboarding()
+        return
+      }
       applyOnboardingState(parsed)
     } catch {
       clearOnboarding()
@@ -2982,15 +2994,9 @@ export function ManagerAuthForm({ onLogin, footer = null, variant = 'default' })
               </button>
             </div>
           ) : null}
-          <PortalNotice>
-            Use the Manager ID from{' '}
-            <Link to="/owners/pricing" className="font-semibold text-[#2563eb] underline underline-offset-2 hover:brightness-110">
-              Partner With Axis pricing
-            </Link>
-            . Your account details load automatically once we find the record.
-          </PortalNotice>
-
-          <PortalField label="Manager ID" required>
+          {/* Manager ID is optional — only needed for legacy Airtable-onboarded managers.
+               New managers can create an account with just email + password. */}
+          <PortalField label="Manager ID (optional)">
             <input
               type="text"
               value={activationForm.managerId}
@@ -3009,7 +3015,7 @@ export function ManagerAuthForm({ onLogin, footer = null, variant = 'default' })
                   billingInterval: '',
                 }))
               }}
-              placeholder="MGR-XXXXXXXXXXXXXX"
+              placeholder="MGR-XXXXXXXXXXXXXX — leave blank to register directly"
               className={`${portalAuthInputCls} font-semibold uppercase tracking-[0.04em]`}
             />
           </PortalField>
@@ -3017,46 +3023,50 @@ export function ManagerAuthForm({ onLogin, footer = null, variant = 'default' })
           <PortalField label="Full name">
             <input
               type="text"
-              readOnly
               value={activationForm.name}
-              placeholder="Loads from your manager record"
-              className={`${portalAuthInputCls} bg-slate-50`}
+              readOnly={Boolean(activationForm.managerId.trim() && activationForm.name)}
+              onChange={(event) => setActivationForm((current) => ({ ...current, name: event.target.value }))}
+              placeholder={activationForm.managerId.trim() ? 'Loads from your manager record' : 'Your full name'}
+              className={`${portalAuthInputCls}${activationForm.managerId.trim() && activationForm.name ? ' bg-slate-50' : ''}`}
             />
           </PortalField>
 
-          <PortalField label="Email">
+          <PortalField label="Email" required>
             <input
               type="email"
-              readOnly
               value={activationForm.email}
-              placeholder="Loads from your manager record"
-              className={`${portalAuthInputCls} bg-slate-50`}
+              readOnly={Boolean(activationForm.managerId.trim() && activationForm.email)}
+              onChange={(event) => setActivationForm((current) => ({ ...current, email: event.target.value.toLowerCase() }))}
+              placeholder={activationForm.managerId.trim() ? 'Loads from your manager record' : 'you@example.com'}
+              required
+              autoComplete="email"
+              className={`${portalAuthInputCls}${activationForm.managerId.trim() && activationForm.email ? ' bg-slate-50' : ''}`}
             />
           </PortalField>
 
-          <PortalField label="Phone number">
-            <input
-              type="text"
-              readOnly
-              value={activationForm.phone}
-              placeholder="Loads from your manager record"
-              className={`${portalAuthInputCls} bg-slate-50`}
-            />
-          </PortalField>
-
-          <PortalField label="Selected tier">
-            <input
-              type="text"
-              readOnly
-              value={
-                activationForm.planType
-                  ? `${activationForm.planType.charAt(0).toUpperCase()}${activationForm.planType.slice(1)}${activationForm.billingInterval && activationForm.billingInterval !== 'free' ? ` · ${activationForm.billingInterval}` : ''}`
-                  : ''
-              }
-              placeholder="Loads from your manager record"
-              className={`${portalAuthInputCls} bg-slate-50`}
-            />
-          </PortalField>
+          {activationForm.managerId.trim() ? (
+            <>
+              <PortalField label="Phone number">
+                <input
+                  type="text"
+                  readOnly
+                  value={activationForm.phone}
+                  placeholder="Loads from your manager record"
+                  className={`${portalAuthInputCls} bg-slate-50`}
+                />
+              </PortalField>
+              {activationForm.planType ? (
+                <PortalField label="Selected tier">
+                  <input
+                    type="text"
+                    readOnly
+                    value={`${activationForm.planType.charAt(0).toUpperCase()}${activationForm.planType.slice(1)}${activationForm.billingInterval && activationForm.billingInterval !== 'free' ? ` · ${activationForm.billingInterval}` : ''}`}
+                    className={`${portalAuthInputCls} bg-slate-50`}
+                  />
+                </PortalField>
+              ) : null}
+            </>
+          ) : null}
 
           <PortalField label="Create password" required>
             <PortalPasswordInput
@@ -3081,15 +3091,15 @@ export function ManagerAuthForm({ onLogin, footer = null, variant = 'default' })
             <PortalNotice tone="error">{activationError}</PortalNotice>
           ) : null}
 
-            <PortalPrimaryButton
-              type="submit"
-              disabled={
-                activationLoading ||
-                !activationForm.managerId.trim() ||
-                !activationForm.email.trim() ||
-                !activationForm.password.trim()
-              }
-            >
+          <PortalPrimaryButton
+            type="submit"
+            disabled={
+              activationLoading ||
+              !activationForm.email.trim() ||
+              !activationForm.password.trim() ||
+              (activationForm.managerId.trim() && !activationForm.email.trim())
+            }
+          >
             {activationLoading ? 'Creating account…' : 'Create account'}
           </PortalPrimaryButton>
 
@@ -5893,6 +5903,10 @@ function ApplicationsPanel({ allowedPropertyNames, manager, propertyRecords = []
   )
 
   async function handleDecision(recordId, approved, opts = {}) {
+    if (!isApplicationUuid(recordId)) {
+      toast.error('Refresh the list — this application cannot be updated from here.')
+      return
+    }
     if (approved) {
       const row = scopedRows.find((a) => a.id === recordId)
       const firstChoice = String(row?.['Room Number'] ?? '').trim()
@@ -5928,73 +5942,18 @@ function ApplicationsPanel({ allowedPropertyNames, manager, propertyRecords = []
             }
           }
         }
-        if (isApplicationUuid(recordId)) {
-          const data = await postApplicationAction(recordId, 'approve', { approved_unit_room: roomToApprove })
-          const app = data.application || {}
-          setScopedRows((prev) => prev.map((a) => (a.id === recordId ? { ...a, ...app } : a)))
-          toast.success('Application approved')
-        } else {
-          const res = await fetch('/api/portal?action=manager-approve-application', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              applicationRecordId: recordId,
-              managerName: manager?.name || manager?.email || 'Axis Manager',
-              managerRole: manager?.role || 'Manager',
-              managerRecordId: manager?.id || '',
-              approvedRoom,
-            }),
-          })
-          const data = await readJsonResponse(res)
-          if (!res.ok) throw new Error(data.error || 'Could not approve application')
-          setScopedRows((prev) =>
-            prev.map((a) =>
-              a.id === recordId ? { ...a, ...(data.application || {}) } : a,
-            ),
-          )
-          if (Array.isArray(data.residentRecordsUpdated) && data.residentRecordsUpdated.length > 0) {
-            toast.success(
-              (data.message || 'Application approved') +
-                ` Resident portal access updated (${data.residentRecordsUpdated.length} profile${data.residentRecordsUpdated.length === 1 ? '' : 's'})`,
-            )
-          } else {
-            toast.success(data.message || 'Application approved and lease draft generated')
-          }
-        }
+        const data = await postApplicationAction(recordId, 'approve', { approved_unit_room: roomToApprove })
+        const app = data.application || {}
+        setScopedRows((prev) => prev.map((a) => (a.id === recordId ? { ...a, ...app } : a)))
+        toast.success('Application approved')
         window.dispatchEvent(new CustomEvent('axis:lease-drafts-changed', {
           detail: { source: 'application-approved', applicationRecordId: recordId },
         }))
       } else {
-        if (isApplicationUuid(recordId)) {
-          const data = await postApplicationAction(recordId, 'reject', {})
-          const app = data.application || {}
-          setScopedRows((prev) => prev.map((a) => (a.id === recordId ? { ...a, ...app } : a)))
-          toast.success('Application rejected')
-        } else {
-          const res = await fetch('/api/portal?action=manager-reject-application', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              applicationRecordId: recordId,
-              managerName: manager?.name || manager?.email || 'Axis Manager',
-              managerRole: manager?.role || 'Manager',
-              managerRecordId: manager?.id || '',
-            }),
-          })
-          const data = await readJsonResponse(res)
-          if (!res.ok) throw new Error(data.error || 'Could not reject application')
-          const rf = applicationRejectedFieldName()
-          const app = data.application || {}
-          setScopedRows((prev) =>
-            prev.map((a) => {
-              if (a.id !== recordId) return a
-              const next = { ...a, ...app, [rf]: true }
-              delete next.Approved
-              return next
-            }),
-          )
-          toast.success(data.message || 'Application rejected')
-        }
+        const data = await postApplicationAction(recordId, 'reject', {})
+        const app = data.application || {}
+        setScopedRows((prev) => prev.map((a) => (a.id === recordId ? { ...a, ...app } : a)))
+        toast.success('Application rejected')
       }
     } catch (err) {
       toast.error('Could not update application: ' + err.message)
@@ -6004,25 +5963,13 @@ function ApplicationsPanel({ allowedPropertyNames, manager, propertyRecords = []
   }
 
   async function handleSendBackToPending(recordId) {
+    if (!isApplicationUuid(recordId)) {
+      toast.error('Refresh the list — this application cannot be updated from here.')
+      return
+    }
     setApproving((a) => ({ ...a, [recordId]: 'pending' }))
     try {
-      let data
-      if (isApplicationUuid(recordId)) {
-        data = await postApplicationAction(recordId, 'set-pending', {})
-      } else {
-        const res = await fetch('/api/portal?action=manager-application-set-pending', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            applicationRecordId: recordId,
-            managerName: manager?.name || manager?.email || 'Axis Manager',
-            managerRole: manager?.role || 'Manager',
-            managerRecordId: manager?.id || '',
-          }),
-        })
-        data = await readJsonResponse(res)
-        if (!res.ok) throw new Error(data.error || 'Could not move application to pending')
-      }
+      const data = await postApplicationAction(recordId, 'set-pending', {})
       setScopedRows((prev) => prev.map((a) => (a.id === recordId ? { ...a, ...(data.application || {}) } : a)))
       toast.success(data.message || 'Application moved back to pending')
       window.dispatchEvent(new CustomEvent('axis:lease-drafts-changed', {
