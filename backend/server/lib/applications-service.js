@@ -15,6 +15,25 @@
  */
 
 import { requireServiceClient } from './app-users-service.js'
+import { getPropertyByName, listProperties } from './properties-service.js'
+import { getRoomByPropertyAndName } from './rooms-service.js'
+
+/** PostgREST embed — keep aligned with {@link ../../../shared/application-legacy-map.js}. */
+export const APPLICATIONS_JOIN_SELECT = `
+  *,
+  property:properties!applications_property_id_fkey(
+    id,
+    name,
+    managed_by_app_user_id,
+    owned_by_app_user_id,
+    address_line1,
+    address_line2,
+    city,
+    state,
+    zip
+  ),
+  room:rooms!applications_room_id_fkey(id,name)
+`
 
 export const APPLICATION_STATUS_DRAFT       = 'draft'
 export const APPLICATION_STATUS_SUBMITTED   = 'submitted'
@@ -218,7 +237,7 @@ export async function getApplicationById(id) {
   const aid = String(id || '').trim()
   if (!aid) return null
   const client = requireServiceClient()
-  const { data, error } = await client.from('applications').select('*').eq('id', aid).maybeSingle()
+  const { data, error } = await client.from('applications').select(APPLICATIONS_JOIN_SELECT).eq('id', aid).maybeSingle()
   if (error) throw new Error(error.message || 'Failed to load application')
   return data || null
 }
@@ -233,9 +252,48 @@ export async function listApplicationsForAppUser({ appUserId, status } = {}) {
   const id = String(appUserId || '').trim()
   if (!id) throw new Error('listApplicationsForAppUser: appUserId is required.')
   const client = requireServiceClient()
-  let query = client.from('applications').select('*').eq('applicant_app_user_id', id)
+  let query = client.from('applications').select(APPLICATIONS_JOIN_SELECT).eq('applicant_app_user_id', id)
   if (status) query = query.eq('status', normalizeApplicationStatus(status))
   query = query.order('created_at', { ascending: false })
+  const { data, error } = await query
+  if (error) throw new Error(error.message || 'Failed to list applications')
+  return data || []
+}
+
+/**
+ * Applications for every property managed by the given app_user (service client).
+ *
+ * @param {{ managerAppUserId: string, status?: string, limit?: number }} args
+ * @returns {Promise<object[]>}
+ */
+export async function listApplicationsForManagedProperties({ managerAppUserId, status, limit = 1500 } = {}) {
+  const mid = String(managerAppUserId || '').trim()
+  if (!mid) throw new Error('listApplicationsForManagedProperties: managerAppUserId is required.')
+
+  const props = await listProperties({ managedByAppUserId: mid, activeOnly: false })
+  const pids = [...new Set((props || []).map((p) => String(p?.id || '').trim()).filter(Boolean))]
+  if (!pids.length) return []
+
+  const client = requireServiceClient()
+  let query = client.from('applications').select(APPLICATIONS_JOIN_SELECT).in('property_id', pids)
+  if (status) query = query.eq('status', normalizeApplicationStatus(status))
+  query = query.order('created_at', { ascending: false }).limit(Math.min(Math.max(Number(limit) || 1500, 1), 5000))
+  const { data, error } = await query
+  if (error) throw new Error(error.message || 'Failed to list applications')
+  return data || []
+}
+
+/**
+ * All applications (admin tooling; service client).
+ *
+ * @param {{ status?: string, limit?: number }} args
+ * @returns {Promise<object[]>}
+ */
+export async function listApplicationsForAdmin({ status, limit = 2500 } = {}) {
+  const client = requireServiceClient()
+  let query = client.from('applications').select(APPLICATIONS_JOIN_SELECT)
+  if (status) query = query.eq('status', normalizeApplicationStatus(status))
+  query = query.order('created_at', { ascending: false }).limit(Math.min(Math.max(Number(limit) || 2500, 1), 8000))
   const { data, error } = await query
   if (error) throw new Error(error.message || 'Failed to list applications')
   return data || []
@@ -251,7 +309,7 @@ export async function listApplicationsForProperty({ propertyId, status } = {}) {
   const pid = String(propertyId || '').trim()
   if (!pid) throw new Error('listApplicationsForProperty: propertyId is required.')
   const client = requireServiceClient()
-  let query = client.from('applications').select('*').eq('property_id', pid)
+  let query = client.from('applications').select(APPLICATIONS_JOIN_SELECT).eq('property_id', pid)
   if (status) query = query.eq('status', normalizeApplicationStatus(status))
   query = query.order('created_at', { ascending: false })
   const { data, error } = await query
@@ -276,7 +334,7 @@ export async function createApplication(args) {
   if (!payload.status) payload.status = APPLICATION_STATUS_DRAFT
 
   const client = requireServiceClient()
-  const { data, error } = await client.from('applications').insert(payload).select('*').single()
+  const { data, error } = await client.from('applications').insert(payload).select(APPLICATIONS_JOIN_SELECT).single()
 
   if (error?.code === '23505') {
     throw new Error(
@@ -304,7 +362,7 @@ export async function updateApplication(args) {
   }
 
   const client = requireServiceClient()
-  const { data, error } = await client.from('applications').update(updates).eq('id', id).select('*').single()
+  const { data, error } = await client.from('applications').update(updates).eq('id', id).select(APPLICATIONS_JOIN_SELECT).single()
 
   if (error?.code === '23505') {
     throw new Error(
@@ -337,7 +395,7 @@ export async function approveApplication({ id, approved_unit_room } = {}) {
   }
 
   const client = requireServiceClient()
-  const { data, error } = await client.from('applications').update(updates).eq('id', aid).select('*').single()
+  const { data, error } = await client.from('applications').update(updates).eq('id', aid).select(APPLICATIONS_JOIN_SELECT).single()
   if (error) throw new Error(error.message || 'Failed to approve application')
   return data
 }
@@ -360,7 +418,113 @@ export async function rejectApplication({ id } = {}) {
   }
 
   const client = requireServiceClient()
-  const { data, error } = await client.from('applications').update(updates).eq('id', aid).select('*').single()
+  const { data, error } = await client.from('applications').update(updates).eq('id', aid).select(APPLICATIONS_JOIN_SELECT).single()
   if (error) throw new Error(error.message || 'Failed to reject application')
   return data
+}
+
+/**
+ * Manager "send back to pending": clears approval flags and returns the row to review.
+ *
+ * @param {{ id: string }} args
+ * @returns {Promise<object>}
+ */
+export async function resetApplicationToPendingReview({ id } = {}) {
+  const aid = String(id || '').trim()
+  if (!aid) throw new Error('resetApplicationToPendingReview: id is required.')
+
+  const updates = {
+    status: APPLICATION_STATUS_UNDER_REVIEW,
+    approved: false,
+    rejected: false,
+    approved_at: null,
+    approved_unit_room: null,
+  }
+
+  const client = requireServiceClient()
+  const { data, error } = await client.from('applications').update(updates).eq('id', aid).select(APPLICATIONS_JOIN_SELECT).single()
+  if (error) throw new Error(error.message || 'Failed to reset application')
+  return data
+}
+
+// ─── Apply pre-submit checks (Supabase-backed, no Airtable) ───────────────────
+
+function rangesOverlapDates(startA, endA, startB, endB) {
+  const aStart = new Date(startA)
+  const bStart = new Date(startB)
+  if (Number.isNaN(aStart.getTime()) || Number.isNaN(bStart.getTime())) return false
+  const aEnd = endA ? new Date(endA) : null
+  const bEnd = endB ? new Date(endB) : null
+  const aEndTime = aEnd && !Number.isNaN(aEnd.getTime()) ? aEnd.getTime() : Number.POSITIVE_INFINITY
+  const bEndTime = bEnd && !Number.isNaN(bEnd.getTime()) ? bEnd.getTime() : Number.POSITIVE_INFINITY
+  return aStart.getTime() <= bEndTime && bStart.getTime() <= aEndTime
+}
+
+/**
+ * True when a non-draft application already exists for this signer email.
+ *
+ * @param {string} email
+ * @param {{ excludeApplicationId?: string }} [opts]
+ */
+export async function hasSubmittedApplicationForSignerEmail(email, { excludeApplicationId } = {}) {
+  const em = String(email || '').trim().toLowerCase()
+  if (!em) return false
+  const client = requireServiceClient()
+  let q = client
+    .from('applications')
+    .select('id')
+    .eq('signer_email', em)
+    .not('status', 'eq', APPLICATION_STATUS_DRAFT)
+    .not('status', 'eq', APPLICATION_STATUS_CANCELLED)
+    .limit(5)
+  const ex = String(excludeApplicationId || '').trim()
+  if (ex) q = q.neq('id', ex)
+  const { data, error } = await q
+  if (error) throw new Error(error.message || 'Duplicate check failed')
+  return (data || []).length > 0
+}
+
+/**
+ * True when another application has overlapping lease dates for the same property + room label.
+ *
+ * @param {{
+ *   propertyName: string
+ *   roomLabel: string
+ *   leaseStart: string
+ *   leaseEnd?: string | null
+ *   excludeApplicationId?: string
+ * }} args
+ */
+export async function hasRoomLeaseOverlapForProperty({ propertyName, roomLabel, leaseStart, leaseEnd, excludeApplicationId } = {}) {
+  const pname = String(propertyName || '').trim()
+  const rname = String(roomLabel || '').trim()
+  const ls = String(leaseStart || '').trim()
+  if (!pname || !rname || !ls) return false
+
+  const prop = await getPropertyByName(pname)
+  if (!prop?.id) return false
+  const room = await getRoomByPropertyAndName({ propertyId: prop.id, name: rname })
+  if (!room?.id) return false
+
+  const client = requireServiceClient()
+  let q = client
+    .from('applications')
+    .select('id, lease_start_date, lease_end_date, status')
+    .eq('property_id', prop.id)
+    .eq('room_id', room.id)
+    .not('status', 'eq', APPLICATION_STATUS_REJECTED)
+    .not('status', 'eq', APPLICATION_STATUS_CANCELLED)
+    .limit(200)
+  const ex = String(excludeApplicationId || '').trim()
+  if (ex) q = q.neq('id', ex)
+  const { data, error } = await q
+  if (error) throw new Error(error.message || 'Room conflict check failed')
+  for (const row of data || []) {
+    if (
+      rangesOverlapDates(ls, leaseEnd || null, row.lease_start_date, row.lease_end_date)
+    ) {
+      return true
+    }
+  }
+  return false
 }

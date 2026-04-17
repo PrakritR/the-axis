@@ -21,6 +21,10 @@ import {
   deleteApplicationFile,
   uploadApplicationDocumentInternal,
 } from '../lib/internalFileStorage'
+import {
+  checkDuplicateApplicationForSession,
+  checkRoomConflictForSession,
+} from '../lib/applicationsInternalApi.js'
 
 const AIRTABLE_BASE_ID = import.meta.env.VITE_AIRTABLE_BASE_ID || 'appol57LKtMKaQ75T'
 const APPLICATIONS_TABLE = import.meta.env.VITE_AIRTABLE_APPLICATIONS_TABLE || 'Applications'
@@ -994,22 +998,18 @@ async function trySubmitSignerApplicationInternal({ applicationRecordId, fields,
 }
 
 async function checkDuplicateApplication(email) {
-  if (!AIRTABLE_TOKEN || !email) return false
-  const url = new URL(`https://api.airtable.com/v0/${AIRTABLE_BASE_ID}/${encodeURIComponent(APPLICATIONS_TABLE)}`)
-  url.searchParams.set('maxRecords', '1')
-  // Ignore unpaid drafts (payment row created before Stripe); only block completed applications.
-  url.searchParams.set(
-    'filterByFormula',
-    `AND({Signer Email} = '${escapeFormulaString(email)}', {Signer Signature} != '')`,
-  )
+  if (!email) return false
   try {
-    const res = await fetch(url.toString(), { headers: { Authorization: `Bearer ${AIRTABLE_TOKEN}` } })
-    if (!res.ok) return false
-    const data = await res.json()
-    return (data.records?.length ?? 0) > 0
+    const { data } = await supabase.auth.getSession()
+    if (data?.session?.access_token) {
+      const draftId = typeof window !== 'undefined' ? String(window.sessionStorage.getItem(APPLICATION_RECORD_ID_KEY) || '').trim() : ''
+      const exclude = INTERNAL_APPLICATION_UUID_RE.test(draftId) ? draftId : ''
+      return await checkDuplicateApplicationForSession(email, exclude)
+    }
   } catch {
-    return false
+    /* fall through */
   }
+  return false
 }
 
 function rangesOverlap(startA, endA, startB, endB) {
@@ -1026,28 +1026,24 @@ function rangesOverlap(startA, endA, startB, endB) {
 }
 
 async function checkRoomConflict(propertyName, roomNumber, leaseStartDate, leaseEndDate) {
-  if (!AIRTABLE_TOKEN || !propertyName || !roomNumber || !leaseStartDate) return false
-  const formula = `AND({Property Name} = '${escapeFormulaString(propertyName)}', {Room Number} = '${escapeFormulaString(roomNumber)}')`
-  const url = new URL(`https://api.airtable.com/v0/${AIRTABLE_BASE_ID}/${encodeURIComponent(APPLICATIONS_TABLE)}`)
-  url.searchParams.set('maxRecords', '100')
-  url.searchParams.append('fields[]', 'Lease Start Date')
-  url.searchParams.append('fields[]', 'Lease End Date')
-  url.searchParams.set('filterByFormula', formula)
+  if (!propertyName || !roomNumber || !leaseStartDate) return false
   try {
-    const res = await fetch(url.toString(), { headers: { Authorization: `Bearer ${AIRTABLE_TOKEN}` } })
-    if (!res.ok) return false
-    const data = await res.json()
-    return (data.records || []).some((record) =>
-      rangesOverlap(
-        leaseStartDate,
-        leaseEndDate,
-        record.fields?.['Lease Start Date'],
-        record.fields?.['Lease End Date'],
-      )
-    )
+    const { data } = await supabase.auth.getSession()
+    if (data?.session?.access_token) {
+      const draftId = typeof window !== 'undefined' ? String(window.sessionStorage.getItem(APPLICATION_RECORD_ID_KEY) || '').trim() : ''
+      const exclude = INTERNAL_APPLICATION_UUID_RE.test(draftId) ? draftId : ''
+      return await checkRoomConflictForSession({
+        propertyName,
+        roomNumber,
+        leaseStart: leaseStartDate,
+        leaseEnd: leaseEndDate || '',
+        excludeApplicationId: exclude,
+      })
+    }
   } catch {
-    return false
+    /* fall through */
   }
+  return false
 }
 
 async function findApplicationRecord({ applicationId, signerName }) {

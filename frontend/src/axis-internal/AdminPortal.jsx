@@ -67,6 +67,11 @@ import {
   portalInboxAirtableConfigured,
   portalInboxThreadKeyFromRecord,
 } from '../lib/airtable.js'
+import { listAdminApplicationsForSession } from '../lib/applicationsInternalApi.js'
+import {
+  deriveApplicationApprovalState,
+  applicationDisplayLabelFromApprovalState,
+} from '../lib/applicationApprovalState.js'
 
 export { AXIS_ADMIN_SESSION_KEY, AXIS_ADMIN_SHOW_PORTAL_HANDOFF_KEY } from './adminSessionConstants'
 
@@ -872,7 +877,31 @@ export default function AdminPortal() {
         setProperties(next.properties || [])
       }
       setAccounts(next.accounts || [])
-      setApplications(next.applications || [])
+
+      let applicationRows = next.applications || []
+      if (hasBearer) {
+        try {
+          const legacyApps = await listAdminApplicationsForSession()
+          applicationRows = legacyApps.map((raw) => {
+            const approvalState = deriveApplicationApprovalState(raw)
+            const updatedMs = new Date(raw.updated_at || raw.created_at || 0).getTime()
+            return {
+              id: raw.id,
+              _airtable: raw,
+              applicantName: String(raw['Signer Full Name'] || '—').trim(),
+              propertyName: String(raw['Property Name'] || '—').trim(),
+              ownerId: String(raw['Owner ID'] || '—').trim(),
+              approvalState,
+              status: applicationDisplayLabelFromApprovalState(approvalState),
+              approvalPending: approvalState === 'pending',
+              updatedMs: Number.isFinite(updatedMs) ? updatedMs : 0,
+            }
+          })
+        } catch (e) {
+          console.warn('[AdminPortal] Supabase applications failed', e)
+        }
+      }
+      setApplications(applicationRows)
 
       let residentList = []
       let residentsErr = ''

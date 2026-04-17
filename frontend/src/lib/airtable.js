@@ -43,6 +43,8 @@ import {
 } from './leaseDraftsSupabase.js'
 import { uploadLeaseFileInternal, signedDownloadLeaseFile } from './internalFileStorage.js'
 import { isInternalUuid, isAirtableRecordId } from './recordIdentity.js'
+import { isApplicationUuid } from '../../../shared/application-legacy-map.js'
+import { getApplicationForSession, tryListManagedApplicationsForSession } from './applicationsInternalApi.js'
 import { readAppUserBootstrap } from './authAppUserSync.js'
 import {
   fetchResidentSelfFullBundle,
@@ -522,13 +524,11 @@ export async function syncResidentFromAuth({ user, resident = null, profile = {}
 }
 
 export async function getApplicationById(applicationId) {
-  // Accepts APP-recXXX or bare recXXX formats
   const raw = String(applicationId || '').trim()
-  const recordId = raw.startsWith('APP-') ? raw.slice(4) : raw
-  if (!recordId.startsWith('rec') || recordId.length < 10) return null
+  if (!isApplicationUuid(raw)) return null
   try {
-    const data = await request(`${applicationsTableUrl()}/${recordId}`)
-    return mapRecord(data)
+    const row = await getApplicationForSession(raw)
+    return row || null
   } catch {
     return null
   }
@@ -1750,24 +1750,19 @@ function applicationsV0BaseUrl() {
  * @param {string} ownerId Manager Profile Airtable record id
  */
 export async function getApplicationsForOwner(ownerId) {
-  const id = String(ownerId || '').trim()
-  if (!id.startsWith('rec') || !API_KEY) return []
-  const root = `${applicationsV0BaseUrl()}/${encodeURIComponent(applicationsTableName())}`
-  const allRecords = []
-  let offset = null
-  do {
-    const url = new URL(root)
-    url.searchParams.set('filterByFormula', `{Owner ID} = "${escapeFormulaValue(id)}"`)
-    if (offset) url.searchParams.set('offset', offset)
-    const data = await request(url.toString())
-    ;(data.records || []).forEach((r) => allRecords.push(mapRecord(r)))
-    offset = data.offset || null
-  } while (offset)
-  return allRecords.sort((a, b) => {
-    const ta = new Date(a.created_at || 0).getTime()
-    const tb = new Date(b.created_at || 0).getTime()
-    return tb - ta
-  })
+  try {
+    const fromSupabase = await tryListManagedApplicationsForSession()
+    if (fromSupabase !== null) {
+      return [...fromSupabase].sort((a, b) => {
+        const ta = new Date(a.created_at || 0).getTime()
+        const tb = new Date(b.created_at || 0).getTime()
+        return tb - ta
+      })
+    }
+  } catch {
+    /* no session or request failed */
+  }
+  return []
 }
 
 export async function getFullApplicationById(recordId) {

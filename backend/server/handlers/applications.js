@@ -21,18 +21,31 @@ import { authenticateAndLoadAppUser } from '../lib/request-auth.js'
 import { getPropertyById } from '../lib/properties-service.js'
 import { createApplicationFeeCheckoutSession } from '../lib/application-fee-checkout-service.js'
 import { createApprovalGeneratedPayments, listPaymentsForApplication } from '../lib/approval-payments-service.js'
+import { mapApplicationRowToLegacyRecord } from '../../../shared/application-legacy-map.js'
 import {
   getApplicationById,
   listApplicationsForAppUser,
   listApplicationsForProperty,
+  listApplicationsForManagedProperties,
+  listApplicationsForAdmin,
   createApplication,
   updateApplication,
   approveApplication,
   rejectApplication,
-  APPLICATION_STATUS_VALUES,
+  resetApplicationToPendingReview,
+  hasSubmittedApplicationForSignerEmail,
+  hasRoomLeaseOverlapForProperty,
   APPLICATION_STATUS_DRAFT,
   APPLICATION_STATUS_SUBMITTED,
 } from '../lib/applications-service.js'
+
+function toLegacyApp(row) {
+  return mapApplicationRowToLegacyRecord(row || {})
+}
+
+function toLegacyAppList(rows) {
+  return (Array.isArray(rows) ? rows : []).map((r) => toLegacyApp(r))
+}
 
 function cors(res) {
   res.setHeader('Access-Control-Allow-Origin', '*')
@@ -135,7 +148,7 @@ export default async function handler(req, res) {
 
         return res.status(200).json({
           ok: true,
-          application: updated,
+          application: toLegacyApp(updated),
           approvalPayments: {
             created: approvalPayments.created,
             skipped: approvalPayments.skipped,
@@ -145,7 +158,26 @@ export default async function handler(req, res) {
 
       if (action === 'reject') {
         const updated = await rejectApplication({ id: appId })
-        return res.status(200).json({ ok: true, application: updated })
+        return res.status(200).json({ ok: true, application: toLegacyApp(updated) })
+      }
+
+      if (action === 'set-pending') {
+        const existingForPending = await getApplicationById(appId)
+        if (!existingForPending) return res.status(404).json({ error: 'Application not found.' })
+
+        const { isAdmin: isAdminP, isManager: isManagerP } = await resolveRoles(appUser.id)
+        if (!canMutate({ isAdmin: isAdminP, isManager: isManagerP })) {
+          return res.status(403).json({ error: 'Admin or manager role required to reset application review state.' })
+        }
+
+        const propertyP = await getPropertyById(existingForPending.property_id)
+        const managedByMeP = isManagerP && propertyP?.managed_by_app_user_id === appUser.id
+        if (!isAdminP && !managedByMeP) {
+          return res.status(403).json({ error: 'Access denied.' })
+        }
+
+        const updated = await resetApplicationToPendingReview({ id: appId })
+        return res.status(200).json({ ok: true, application: toLegacyApp(updated) })
       }
 
       if (action === 'payments') {
@@ -161,7 +193,9 @@ export default async function handler(req, res) {
         return res.status(200).json({ ok: true, payments: appPayments })
       }
 
-      return res.status(400).json({ error: `Unknown action "${action}". Use approve, reject, create-fee-checkout, or payments.` })
+      return res.status(400).json({
+        error: `Unknown action "${action}". Use approve, reject, set-pending, create-fee-checkout, or payments.`,
+      })
     }
 
     // ── GET ?id=<id> ──────────────────────────────────────────────────────
@@ -182,7 +216,7 @@ export default async function handler(req, res) {
         }
       }
 
-      return res.status(200).json({ ok: true, application })
+      return res.status(200).json({ ok: true, application: toLegacyApp(application) })
     }
 
     // ── GET (list) ────────────────────────────────────────────────────────
@@ -190,6 +224,35 @@ export default async function handler(req, res) {
       const { isAdmin, isManager, isOwner } = await resolveRoles(appUser.id)
       const propertyId = String(req.query?.property_id || '').trim() || null
       const statusFilter = String(req.query?.status || '').trim() || undefined
+      const scope = String(req.query?.scope || '').trim().toLowerCase()
+
+      const dupEmail = String(req.query?.check_duplicate_email || '').trim().toLowerCase()
+      if (dupEmail) {
+        const caller = String(appUser.email || '').trim().toLowerCase()
+        if (!caller || caller !== dupEmail) {
+          return res.status(403).json({ error: 'You can only run a duplicate check for your signed-in email.' })
+        }
+        const excludeApplicationId = String(req.query?.exclude_application_id || '').trim() || undefined
+        const duplicate = await hasSubmittedApplicationForSignerEmail(dupEmail, { excludeApplicationId })
+        return res.status(200).json({ ok: true, duplicate })
+      }
+
+      const roomConflict = String(req.query?.check_room_conflict || '').trim()
+      if (roomConflict === '1' || roomConflict.toLowerCase() === 'true') {
+        const propertyName = String(req.query?.property_name || '').trim()
+        const roomNumber = String(req.query?.room_number || '').trim()
+        const leaseStart = String(req.query?.lease_start || '').trim()
+        const leaseEnd = String(req.query?.lease_end || '').trim() || null
+        const excludeApplicationId = String(req.query?.exclude_application_id || '').trim() || undefined
+        const overlap = await hasRoomLeaseOverlapForProperty({
+          propertyName,
+          roomLabel: roomNumber,
+          leaseStart,
+          leaseEnd,
+          excludeApplicationId,
+        })
+        return res.status(200).json({ ok: true, roomConflict: overlap })
+      }
 
       if (propertyId) {
         // Property-scoped listing: manager, owner, or admin only
@@ -205,12 +268,30 @@ export default async function handler(req, res) {
           }
         }
         const applications = await listApplicationsForProperty({ propertyId, status: statusFilter })
-        return res.status(200).json({ ok: true, applications })
+        return res.status(200).json({ ok: true, applications: toLegacyAppList(applications) })
+      }
+
+      if (scope === 'all') {
+        if (!isAdmin) {
+          return res.status(403).json({ error: 'Admin role required for scope=all.' })
+        }
+        const applications = await listApplicationsForAdmin({ status: statusFilter })
+        return res.status(200).json({ ok: true, applications: toLegacyAppList(applications) })
+      }
+
+      if (scope === 'managed') {
+        if (!isAdmin && !isManager) {
+          return res.status(403).json({ error: 'Manager or admin role required for scope=managed.' })
+        }
+        const applications = isAdmin
+          ? await listApplicationsForAdmin({ status: statusFilter })
+          : await listApplicationsForManagedProperties({ managerAppUserId: appUser.id, status: statusFilter })
+        return res.status(200).json({ ok: true, applications: toLegacyAppList(applications) })
       }
 
       // Default: list caller's own applications
       const applications = await listApplicationsForAppUser({ appUserId: appUser.id, status: statusFilter })
-      return res.status(200).json({ ok: true, applications })
+      return res.status(200).json({ ok: true, applications: toLegacyAppList(applications) })
     }
 
     // ── POST (create) ─────────────────────────────────────────────────────
@@ -222,7 +303,7 @@ export default async function handler(req, res) {
         ...body,
         applicant_app_user_id: appUser.id, // always force caller's own id
       })
-      return res.status(201).json({ ok: true, application })
+      return res.status(201).json({ ok: true, application: toLegacyApp(application) })
     }
 
     // ── PATCH ?id=<id> ────────────────────────────────────────────────────
@@ -259,7 +340,7 @@ export default async function handler(req, res) {
       }
 
       const updated = await updateApplication({ id: appId, ...patchBody })
-      return res.status(200).json({ ok: true, application: updated })
+      return res.status(200).json({ ok: true, application: toLegacyApp(updated) })
     }
 
     return res.status(405).json({ error: 'Method not allowed' })

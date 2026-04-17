@@ -10,7 +10,7 @@
  * Public endpoint (no auth required).
  */
 import { airtableAuthHeaders, applicationsTableUrl, getApplicationsAirtableEnv } from '../lib/applications-airtable-env.js'
-import { getApplicationById } from '../lib/applications-service.js'
+import { getApplicationById, APPLICATION_STATUS_DRAFT } from '../lib/applications-service.js'
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
@@ -41,7 +41,7 @@ export default async function handler(req, res) {
         return res.status(404).json({ error: 'Application not found.' })
       }
       const paid = application.application_fee_paid === true
-      const submitted = !!(application.signer_signature?.trim())
+      const submitted = String(application.status || '').trim() !== APPLICATION_STATUS_DRAFT
       return res.status(200).json({
         paid,
         submitted,

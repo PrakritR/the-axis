@@ -54,9 +54,6 @@ import {
   DEFAULT_AXIS_APPLICATION_APPROVED_ROOM,
 } from '../../../shared/application-airtable-fields.js'
 
-const AIRTABLE_TOKEN = import.meta.env.VITE_AIRTABLE_TOKEN
-const CORE_BASE_ID = import.meta.env.VITE_AIRTABLE_BASE_ID || 'appol57LKtMKaQ75T'
-
 /** Match Manager / Applications toolbar — rounded property + refresh */
 const MGR_PILL_SELECT_WRAP_CLS = 'relative min-w-0 flex-1 sm:min-w-[220px] sm:flex-none'
 const MGR_PILL_SELECT_CLS =
@@ -68,12 +65,9 @@ const MGR_PILL_SELECT_CHEVRON = (
 )
 const MGR_PILL_REFRESH_CLS =
   'h-[42px] shrink-0 rounded-full border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-600 transition hover:bg-slate-50 disabled:opacity-50'
-const APPS_BASE_ID = import.meta.env.VITE_AIRTABLE_APPLICATIONS_BASE_ID || CORE_BASE_ID
-const APPLICATIONS_TABLE = (import.meta.env.VITE_AIRTABLE_APPLICATIONS_TABLE || 'Applications').trim() || 'Applications'
 const APPLICATION_APPROVED_ROOM_FIELD =
   String(import.meta.env.VITE_AIRTABLE_APPLICATION_APPROVED_ROOM_FIELD || DEFAULT_AXIS_APPLICATION_APPROVED_ROOM).trim() ||
   DEFAULT_AXIS_APPLICATION_APPROVED_ROOM
-const APPS_BASE = `https://api.airtable.com/v0/${APPS_BASE_ID}`
 
 async function callPortalAction(action, body) {
   const res = await fetch(`/api/portal?action=${action}`, {
@@ -84,33 +78,6 @@ async function callPortalAction(action, body) {
   const json = await res.json().catch(() => ({}))
   if (!res.ok) throw new Error(json.error || `Request failed (${res.status})`)
   return json
-}
-
-function mapRecord(record) {
-  return { id: record.id, ...record.fields, created_at: record.createdTime }
-}
-
-// ─── Data fetching ────────────────────────────────────────────────────────────
-async function fetchApprovedApplicationsForManager(ownerId) {
-  const rows = []
-  let offset = null
-  do {
-    const url = new URL(`${APPS_BASE}/${encodeURIComponent(APPLICATIONS_TABLE)}`)
-    const ownerFormula = ownerId ? `, {Owner ID} = "${String(ownerId).replace(/"/g, '\\"')}"` : ''
-    url.searchParams.set('filterByFormula', `AND({Approved}=TRUE()${ownerFormula})`)
-    url.searchParams.set('sort[0][field]', 'Approved At')
-    url.searchParams.set('sort[0][direction]', 'desc')
-    if (offset) url.searchParams.set('offset', offset)
-    const res = await fetch(url.toString(), { headers: { Authorization: `Bearer ${AIRTABLE_TOKEN}` } })
-    if (!res.ok) {
-      const text = await res.text()
-      throw new Error(text.slice(0, 300))
-    }
-    const data = await res.json()
-    for (const r of (data.records || [])) rows.push(mapRecord(r))
-    offset = data.offset || null
-  } while (offset)
-  return rows
 }
 
 function toSyntheticLeaseDraftFromApplication(app) {
@@ -202,7 +169,7 @@ export default function ManagerLeasingTab({ manager, allowedPropertyNames }) {
       const appById = new Map(appsForOwner.map((a) => [a.id, a]))
       const scopedAfterAppGate = scoped.filter((d) => leaseDraftPassesApplicationApprovalGate(d, appById))
 
-      const approvedApps = await fetchApprovedApplicationsForManager(ownerId).catch(() => [])
+      const approvedApps = appsForOwner.filter((a) => deriveApplicationApprovalState(a) === 'approved')
       const approvedScoped = allowed && allowed.size > 0
         ? approvedApps.filter((a) => allowed.has(String(a['Property Name'] || '')))
         : approvedApps

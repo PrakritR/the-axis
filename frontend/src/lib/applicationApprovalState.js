@@ -88,6 +88,16 @@ function statusPieceApproved(s) {
 export function deriveApplicationApprovalState(raw) {
   if (!raw || typeof raw !== 'object') return 'pending'
 
+  if (raw._fromSupabase === true) {
+    const rejKey = applicationRejectedFieldName()
+    if (raw[rejKey] === true || raw[rejKey] === 1) return 'rejected'
+    if (raw.rejected === true || raw.rejected === 1) return 'rejected'
+    const st = String(raw.status || raw['Application Status'] || '').trim().toLowerCase()
+    if (st === 'rejected') return 'rejected'
+    if (raw.Approved === true || raw.Approved === 1 || st === 'approved') return 'approved'
+    return 'pending'
+  }
+
   const rejKey = applicationRejectedFieldName()
   const rejectedFlag = raw[rejKey]
   if (rejectedFlag === true || rejectedFlag === 1) return 'rejected'
