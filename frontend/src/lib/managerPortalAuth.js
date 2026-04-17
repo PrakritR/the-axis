@@ -81,7 +81,8 @@ export async function createManagerPortalAccount({ email, password, name, manage
 
   const json = await res.json().catch(() => ({}))
   if (!res.ok) {
-    throw new Error(json?.error || 'Could not create manager account.')
+    const detail = [json?.error, json?.detail].filter(Boolean).join(' ')
+    throw new Error(detail || `Could not create manager account (${res.status}).`)
   }
 
   const { manager, session } = json

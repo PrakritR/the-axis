@@ -47,6 +47,7 @@ import {
   normalizePropertyFilterKey,
   sortRowsByPropertyGroupThenUpdatedDesc,
 } from '../lib/portalPropertyTableOrder.js'
+import { listLeaseDraftsSupabase } from '../lib/leaseDraftsSupabase.js'
 import {
   applicationApprovedUnitNumber,
   applicationHasApprovedUnitAssigned,
@@ -72,7 +73,6 @@ const APPLICATIONS_TABLE = (import.meta.env.VITE_AIRTABLE_APPLICATIONS_TABLE || 
 const APPLICATION_APPROVED_ROOM_FIELD =
   String(import.meta.env.VITE_AIRTABLE_APPLICATION_APPROVED_ROOM_FIELD || DEFAULT_AXIS_APPLICATION_APPROVED_ROOM).trim() ||
   DEFAULT_AXIS_APPLICATION_APPROVED_ROOM
-const AT_BASE = `https://api.airtable.com/v0/${CORE_BASE_ID}`
 const APPS_BASE = `https://api.airtable.com/v0/${APPS_BASE_ID}`
 
 async function callPortalAction(action, body) {
@@ -91,50 +91,6 @@ function mapRecord(record) {
 }
 
 // ─── Data fetching ────────────────────────────────────────────────────────────
-async function fetchLeaseDraftsForManager(ownerId) {
-  const rows = []
-  let offset = null
-  do {
-    const url = new URL(`${AT_BASE}/Lease%20Drafts`)
-    // Filter to this manager's owner ID
-    if (ownerId) {
-      url.searchParams.set('filterByFormula', `{Owner ID} = "${ownerId}"`)
-    }
-    url.searchParams.set('sort[0][field]', 'Updated At')
-    url.searchParams.set('sort[0][direction]', 'desc')
-    if (offset) url.searchParams.set('offset', offset)
-    const res = await fetch(url.toString(), { headers: { Authorization: `Bearer ${AIRTABLE_TOKEN}` } })
-    if (!res.ok) {
-      const text = await res.text()
-      throw new Error(text.slice(0, 300))
-    }
-    const data = await res.json()
-    for (const r of (data.records || [])) rows.push({ id: r.id, ...r.fields })
-    offset = data.offset || null
-  } while (offset)
-  return rows
-}
-
-async function fetchAllLeaseDrafts() {
-  const rows = []
-  let offset = null
-  do {
-    const url = new URL(`${AT_BASE}/Lease%20Drafts`)
-    url.searchParams.set('sort[0][field]', 'Updated At')
-    url.searchParams.set('sort[0][direction]', 'desc')
-    if (offset) url.searchParams.set('offset', offset)
-    const res = await fetch(url.toString(), { headers: { Authorization: `Bearer ${AIRTABLE_TOKEN}` } })
-    if (!res.ok) {
-      const text = await res.text()
-      throw new Error(text.slice(0, 300))
-    }
-    const data = await res.json()
-    for (const r of (data.records || [])) rows.push({ id: r.id, ...r.fields })
-    offset = data.offset || null
-  } while (offset)
-  return rows
-}
-
 async function fetchApprovedApplicationsForManager(ownerId) {
   const rows = []
   let offset = null
@@ -231,19 +187,13 @@ export default function ManagerLeasingTab({ manager, allowedPropertyNames }) {
     setLoading(true)
     setLoadError('')
     try {
-      const allFromOwner = await fetchLeaseDraftsForManager(ownerId)
-      // Scope to allowed properties if provided
+      const fromSb = await listLeaseDraftsSupabase()
+      const sourceRows = Array.isArray(fromSb) ? fromSb : []
       const allowed = Array.isArray(allowedPropertyNames)
         ? new Set(allowedPropertyNames)
         : allowedPropertyNames instanceof Set
         ? allowedPropertyNames
         : null
-      // Fallback: if owner-id scoped rows are empty, fetch all drafts and scope by property names.
-      // This ensures newly approved applications show up even if Owner ID is not yet populated on the draft.
-      let sourceRows = allFromOwner
-      if (sourceRows.length === 0 && allowed && allowed.size > 0) {
-        sourceRows = await fetchAllLeaseDrafts()
-      }
       const scoped = allowed && allowed.size > 0
         ? sourceRows.filter(d => allowed.has(d['Property']))
         : sourceRows

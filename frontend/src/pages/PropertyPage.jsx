@@ -5,14 +5,13 @@ import PropertyGallery from '../components/PropertyGallery'
 import PropertyMediaPlaceholder from '../components/PropertyMediaPlaceholder'
 import MapView from '../components/Map.jsx'
 import { properties } from '../data/properties'
+import { fetchBlockedTourDates, fetchBlockedTourDatesByName } from '../lib/airtable'
+import { isInternalAxisRecordId } from '../lib/axisRecordIds.js'
 import {
-  fetchPropertyRecordById,
-  isInternalAxisRecordId,
-  propertyListingVisibleForMarketing,
-  fetchBlockedTourDates,
-  fetchBlockedTourDatesByName,
-} from '../lib/airtable'
-import { mapAirtableRecordToPropertyPage, marketingSlugForAirtablePropertyId } from '../lib/airtablePublicListings'
+  fetchInternalPublicListingById,
+  fetchInternalPublicListingByLegacyAirtableId,
+  mapInternalListingToPropertyPage,
+} from '../lib/internalPublicListings'
 import {
   formatBathroomCountForDisplay,
   parseAvailabilityAfterStartingPhrases,
@@ -923,6 +922,7 @@ export default function PropertyPage(){
   const pStatic = properties.find((x) => x.slug === slug)
   const [pDynamic, setPDynamic] = useState(null)
   const [dynamicLoading, setDynamicLoading] = useState(false)
+  const [dynamicError, setDynamicError] = useState('')
   const [tourAvailabilityText, setTourAvailabilityText] = useState('')
   const [dynamicPropertyId, setDynamicPropertyId] = useState('')
   const [showTourModal, setShowTourModal] = useState(false)
@@ -932,6 +932,7 @@ export default function PropertyPage(){
       setPDynamic(null)
       setTourAvailabilityText('')
       setDynamicPropertyId('')
+      setDynamicError('')
       return undefined
     }
     const rid = String(slug || '').startsWith('axis-') ? String(slug).slice('axis-'.length) : ''
@@ -939,93 +940,50 @@ export default function PropertyPage(){
       setPDynamic(null)
       setTourAvailabilityText('')
       setDynamicPropertyId('')
+      setDynamicError('')
       return undefined
     }
 
     let cancelled = false
     setDynamicLoading(true)
+    setDynamicError('')
 
-    if (isInternalAxisRecordId(rid)) {
-      ;(async () => {
-        try {
-          const r = await fetch(`/api/listing-public-media?property_id=${encodeURIComponent(rid)}`)
-          const data = await r.json().catch(() => ({}))
-          if (cancelled) return
-          if (!r.ok || !data?.ok || !data.property) {
-            setPDynamic(null)
-            setTourAvailabilityText('')
-            setDynamicPropertyId('')
-            return
-          }
-          const pr = data.property
-          const addr = [pr.address_line1, pr.address_line2, [pr.city, pr.state, pr.zip].filter(Boolean).join(', ')]
-            .map((x) => String(x || '').trim())
-            .filter(Boolean)
-            .join(', ')
-          const images = (data.property_images || []).map((row) => String(row.public_url || '').trim()).filter(Boolean)
-          setPDynamic({
-            slug,
-            name: String(pr.name || '').trim() || 'Axis home',
-            summary: '',
-            address: addr,
-            images,
-            videos: [],
-            roomPlans: [],
-            bathroomsList: [],
-            sharedSpacesList: [],
-            communityAmenities: [],
-            _fromAirtable: false,
-            _fromInternalPostgres: true,
-            location: { lat: 47.661, lng: -122.318 },
-          })
-          setTourAvailabilityText('')
-          setDynamicPropertyId(rid)
-        } catch {
-          if (!cancelled) {
-            setPDynamic(null)
-            setTourAvailabilityText('')
-            setDynamicPropertyId('')
-          }
-        } finally {
-          if (!cancelled) setDynamicLoading(false)
+    ;(async () => {
+      try {
+        let listing = null
+        if (isInternalAxisRecordId(rid)) {
+          listing = await fetchInternalPublicListingById(rid)
+        } else if (/^rec[a-zA-Z0-9]{14,}$/.test(rid)) {
+          listing = await fetchInternalPublicListingByLegacyAirtableId(rid)
+        } else {
+          throw new Error('This listing link is not valid.')
         }
-      })()
-      return () => {
-        cancelled = true
-      }
-    }
-
-    if (!/^rec[a-zA-Z0-9]{14,}$/.test(rid)) {
-      setPDynamic(null)
-      setTourAvailabilityText('')
-      setDynamicPropertyId('')
-      setDynamicLoading(false)
-      return undefined
-    }
-    fetchPropertyRecordById(rid)
-      .then((rec) => {
-        if (cancelled || !rec) {
-          if (!cancelled) { setPDynamic(null); setTourAvailabilityText(''); setDynamicPropertyId('') }
-          return
-        }
-        const expected = marketingSlugForAirtablePropertyId(rec.id)
-        if (!propertyListingVisibleForMarketing(rec) || expected !== slug) {
+        if (cancelled) return
+        if (!listing) {
           setPDynamic(null)
           setTourAvailabilityText('')
           setDynamicPropertyId('')
+          setDynamicError('This listing is not available.')
           return
         }
-        setPDynamic(mapAirtableRecordToPropertyPage(rec))
-        setTourAvailabilityText(tourAvailabilityFromRaw(rec))
-        setDynamicPropertyId(rec.id || '')
-      })
-      .catch(() => {
-        if (!cancelled) { setPDynamic(null); setTourAvailabilityText(''); setDynamicPropertyId('') }
-      })
-      .finally(() => {
+        setPDynamic(mapInternalListingToPropertyPage(listing))
+        setTourAvailabilityText('')
+        setDynamicPropertyId(String(listing?.property?.id || rid))
+      } catch (err) {
+        if (!cancelled) {
+          setPDynamic(null)
+          setTourAvailabilityText('')
+          setDynamicPropertyId('')
+          setDynamicError(err?.message || 'Could not load this listing.')
+        }
+      } finally {
         if (!cancelled) setDynamicLoading(false)
-      })
-    return () => { cancelled = true }
+      }
+    })()
+
+    return () => {
+      cancelled = true
+    }
   }, [slug, pStatic])
 
   const p = pStatic || pDynamic
@@ -1061,7 +1019,7 @@ export default function PropertyPage(){
     const amenities = Array.isArray(p.communityAmenities) ? p.communityAmenities : []
     const hasAmenities = amenities.length > 0
     const hasLeaseBasics =
-      Boolean(p._fromAirtable) ||
+      Boolean(p._fromAirtable || p._fromInternalPostgres) ||
       String(p.policies || '').trim().length > 0 ||
       (Array.isArray(p.leasingPackages) && p.leasingPackages.length > 0) ||
       String(p.listingAvailabilitySummary || '').trim().length > 0 ||
@@ -1081,7 +1039,7 @@ export default function PropertyPage(){
       String(p.houseRules || '').trim().length > 0
     const hasLocation =
       Boolean(String(p.address || '').trim()) ||
-      Boolean(p._fromAirtable && p.location && typeof p.location.lat === 'number' && typeof p.location.lng === 'number')
+      Boolean(p.location && typeof p.location.lat === 'number' && typeof p.location.lng === 'number')
     const tabs = []
     if (hasFloorPlans) tabs.push(['floor-plans', 'Floor plans'])
     if (hasAmenities) tabs.push(['amenities', 'Amenities'])
@@ -1318,8 +1276,19 @@ export default function PropertyPage(){
     return <div className="container mx-auto px-6 py-16 text-center text-sm text-slate-600">Loading listing…</div>
   }
 
+  if (!pStatic && dynamicError) {
+    return (
+      <div className="container mx-auto max-w-lg px-6 py-16 text-center">
+        <p className="text-sm font-semibold text-slate-900">Listing unavailable</p>
+        <p className="mt-2 text-sm text-slate-600" role="alert">
+          {dynamicError}
+        </p>
+      </div>
+    )
+  }
+
   if (!p) {
-    return <div className="container mx-auto px-6 py-12">Property not found</div>
+    return <div className="container mx-auto px-6 py-12 text-sm text-slate-600">Property not found</div>
   }
 
   const galleryImages = (p.images && p.images.length) ? p.images : []

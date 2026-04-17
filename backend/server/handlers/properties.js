@@ -17,6 +17,7 @@ import {
   createProperty,
   updateProperty,
   OWNERSHIP_TYPE_VALUES,
+  LISTING_STATUS_VALUES,
   MAX_PROPERTY_NAME_LENGTH,
   MAX_PROPERTY_ADDRESS_LENGTH,
   MAX_PROPERTY_CITY_LENGTH,
@@ -175,6 +176,20 @@ export default async function handler(req, res) {
       }
       if (legacyParsed !== undefined) args.legacy_airtable_record_id = legacyParsed
 
+      const listingStatus = optionalString(body, 'listing_status')
+      if (listingStatus && typeof listingStatus === 'object' && 'error' in listingStatus) {
+        return res.status(400).json({ error: listingStatus.error })
+      }
+      if (listingStatus !== undefined) args.listing_status = listingStatus
+
+      for (const key of ['admin_internal_notes', 'edit_request_notes']) {
+        const parsed = optionalStringOrNull(body, key)
+        if (parsed && typeof parsed === 'object' && 'error' in parsed) {
+          return res.status(400).json({ error: parsed.error })
+        }
+        if (parsed !== undefined) args[key] = parsed
+      }
+
       const property = await createProperty(args)
       return res.status(201).json({ ok: true, property })
     }
@@ -227,9 +242,23 @@ export default async function handler(req, res) {
       }
       if (legacyPatch !== undefined) patch.legacy_airtable_record_id = legacyPatch
 
+      const listingStatusPatch = optionalString(body, 'listing_status')
+      if (listingStatusPatch && typeof listingStatusPatch === 'object' && 'error' in listingStatusPatch) {
+        return res.status(400).json({ error: listingStatusPatch.error })
+      }
+      if (listingStatusPatch !== undefined) patch.listing_status = listingStatusPatch
+
+      for (const key of ['admin_internal_notes', 'edit_request_notes']) {
+        const parsed = optionalStringOrNull(body, key)
+        if (parsed && typeof parsed === 'object' && 'error' in parsed) {
+          return res.status(400).json({ error: parsed.error })
+        }
+        if (parsed !== undefined) patch[key] = parsed
+      }
+
       if (Object.keys(patch).length <= 1) {
         return res.status(400).json({
-          error: `Provide at least one of: name, address_line1, address_line2, city, state, zip, ownership_type (${OWNERSHIP_TYPE_VALUES.join(' | ')}), owned_by_app_user_id, managed_by_app_user_id, notes, active, legacy_airtable_record_id. Max lengths: name ${MAX_PROPERTY_NAME_LENGTH}, address ${MAX_PROPERTY_ADDRESS_LENGTH}, city ${MAX_PROPERTY_CITY_LENGTH}, state ${MAX_PROPERTY_STATE_LENGTH}, zip ${MAX_PROPERTY_ZIP_LENGTH}.`,
+          error: `Provide at least one of: name, address_line1, address_line2, city, state, zip, ownership_type (${OWNERSHIP_TYPE_VALUES.join(' | ')}), owned_by_app_user_id, managed_by_app_user_id, notes, active, legacy_airtable_record_id, listing_status (${LISTING_STATUS_VALUES.join(' | ')}), admin_internal_notes, edit_request_notes. Max lengths: name ${MAX_PROPERTY_NAME_LENGTH}, address ${MAX_PROPERTY_ADDRESS_LENGTH}, city ${MAX_PROPERTY_CITY_LENGTH}, state ${MAX_PROPERTY_STATE_LENGTH}, zip ${MAX_PROPERTY_ZIP_LENGTH}.`,
         })
       }
 

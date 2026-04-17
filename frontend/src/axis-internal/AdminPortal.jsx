@@ -30,7 +30,19 @@ import {
   fetchAdminProfileRecord,
   updateAdminMeetingAvailability,
 } from '../lib/adminPortalAirtable.js'
+import {
+  adminApprovePropertySupabase,
+  adminDeletePropertySupabase,
+  adminRejectPropertySupabase,
+  adminRelistPropertySupabase,
+  adminRequestPropertyEditsSupabase,
+  adminUnlistPropertySupabase,
+  adminUnrejectPropertySupabase,
+  adminSetPropertyInternalNotesSupabase,
+  fetchAdminPropertiesSupabaseList,
+} from '../lib/adminPortalPropertiesSupabase.js'
 import { readJsonResponse } from '../lib/readJsonResponse'
+import { countLeaseDraftsAdminQueueSupabase } from '../lib/leaseDraftsSupabase.js'
 import { supabase } from '../lib/supabase'
 import { authenticateAdminPortal } from '../lib/adminPortalSignIn'
 import {
@@ -91,6 +103,14 @@ async function fetchAdminCalendarEventsCount() {
 }
 
 async function fetchAdminLeaseReviewQueueCount() {
+  const { data: sess } = await supabase.auth.getSession()
+  if (sess?.session?.access_token) {
+    try {
+      return await countLeaseDraftsAdminQueueSupabase()
+    } catch {
+      return 0
+    }
+  }
   if (!AIRTABLE_TOKEN) return 0
   let total = 0
   let offset = null
@@ -429,7 +449,7 @@ function AdminMeetingAvailabilitySection({ user }) {
   )
 }
 
-function AdminPropertyInternalNotesEditor({ recordId, savedValue, formDisabled, onSaved }) {
+function AdminPropertyInternalNotesEditor({ recordId, savedValue, formDisabled, onSaved, persistBackend = 'airtable' }) {
   const [text, setText] = useState(() => String(savedValue ?? ''))
   const [saving, setSaving] = useState(false)
 
@@ -443,13 +463,19 @@ function AdminPropertyInternalNotesEditor({ recordId, savedValue, formDisabled, 
     if (!recordId || !dirty || saving || formDisabled) return
     setSaving(true)
     try {
-      await adminSetPropertyInternalNotes(recordId, text)
+      if (persistBackend === 'supabase') {
+        await adminSetPropertyInternalNotesSupabase(recordId, text)
+      } else {
+        await adminSetPropertyInternalNotes(recordId, text)
+      }
       await onSaved()
       toast.success('Internal notes saved')
     } catch (err) {
       toast.error(
         err?.message ||
-          'Could not save internal notes. Add an "Internal Notes" long-text field on Properties, or set VITE_AIRTABLE_PROPERTY_INTERNAL_NOTES_FIELD to your column name.',
+          (persistBackend === 'supabase'
+            ? 'Could not save internal notes.'
+            : 'Could not save internal notes. Add an "Internal Notes" long-text field on Properties, or set VITE_AIRTABLE_PROPERTY_INTERNAL_NOTES_FIELD to your column name.'),
       )
     } finally {
       setSaving(false)
@@ -538,7 +564,15 @@ function residentHandoffDisplayName(r) {
   return String(r?.Name || r?.['Resident Name'] || r?.Email || r?.id || '').trim() || 'Resident'
 }
 
-function PortalHandoffCard({ accounts, residents, applications, residentsLoading }) {
+function residentHandoffHouseLabel(r) {
+  const explicit = String(r?.['Property Name'] || '').trim()
+  if (explicit) return explicit
+  const h = r?.House
+  if (typeof h === 'string' && h.trim() && !String(h).startsWith('rec')) return h.trim()
+  return ''
+}
+
+function PortalHandoffCard({ accounts, residents, applications, residentsLoading, residentsError }) {
   const [selectedManagerId, setSelectedManagerId] = useState('')
   const [selectedResidentId, setSelectedResidentId] = useState('')
 
@@ -556,7 +590,7 @@ function PortalHandoffCard({ accounts, residents, applications, residentsLoading
   function openResidentPortal() {
     const resident = residents.find((r) => r.id === selectedResidentId)
     if (!resident) return
-    sessionStorage.setItem('axis_resident', resident.id)
+    sessionStorage.setItem('axis_resident', JSON.stringify({ ...resident, _staffHandoff: true }))
     window.location.assign('/resident')
   }
 
@@ -641,7 +675,7 @@ function PortalHandoffCard({ accounts, residents, applications, residentsLoading
                 return (
                   <option key={r.id} value={r.id}>
                     {residentHandoffDisplayName(r)}
-                    {r.House ? ` · ${r.House}` : ''}
+                    {residentHandoffHouseLabel(r) ? ` · ${residentHandoffHouseLabel(r)}` : ''}
                     {roomLabel ? ` ${roomLabel}` : ''}
                   </option>
                 )
@@ -650,7 +684,9 @@ function PortalHandoffCard({ accounts, residents, applications, residentsLoading
                 <option disabled value="">
                   {residentsLoading
                     ? 'Loading residents…'
-                    : 'No resident profiles found — confirm the Airtable token can read Resident Profile (or refresh).'}
+                    : residentsError
+                      ? `Residents: ${residentsError}`
+                      : 'No residents found — confirm you are signed in with Supabase and have admin/manager access.'}
                 </option>
               ) : null}
             </select>
@@ -665,12 +701,13 @@ function PortalHandoffCard({ accounts, residents, applications, residentsLoading
           </div>
           {sortedResidents.length === 0 && !residentsLoading ? (
             <div className="mt-2 text-xs leading-snug text-slate-600">
+              {residentsError ? <p className="text-red-700">{residentsError}</p> : null}
               <p>
-                To test with email/password (including Supabase-linked residents), use{' '}
+                To test with email/password, use{' '}
                 <a className="font-semibold text-[#2563eb] underline" href="/portal?portal=resident">
                   Resident sign-in
                 </a>
-                . The dropdown here only lists Resident Profile rows the admin token can read from Airtable.
+                . The dropdown lists internal residents (Postgres) when your admin session has a Supabase access token.
               </p>
             </div>
           ) : null}
@@ -772,6 +809,7 @@ export default function AdminPortal() {
   const [selectedApprovalId, setSelectedApprovalId] = useState(null)
   const [selectedApplicationId, setSelectedApplicationId] = useState(null)
   const [residents, setResidents] = useState([])
+  const [residentsLoadError, setResidentsLoadError] = useState('')
   const [dataLoading, setDataLoading] = useState(() => {
     if (!isAdminPortalAirtableConfigured()) return false
     try {
@@ -800,8 +838,6 @@ export default function AdminPortal() {
       return true
     }
   })
-  const airtableConfigWarned = useRef(false)
-
   const user = session
 
   useEffect(() => {
@@ -810,19 +846,48 @@ export default function AdminPortal() {
 
   const refreshPortalData = useCallback(async () => {
     if (!session) return
-    if (!isAdminPortalAirtableConfigured()) return
     setDataLoading(true)
     try {
-      const [next, residentList, calendarCount, leaseChangesCount] = await Promise.all([
-        loadAdminPortalDataset(),
-        loadResidentsForAdmin().catch(() => []),
+      const { data: sess } = await supabase.auth.getSession()
+      const hasBearer = Boolean(sess?.session?.access_token)
+
+      let propertyRows = []
+      if (hasBearer) {
+        try {
+          propertyRows = await fetchAdminPropertiesSupabaseList()
+        } catch (e) {
+          console.warn('[AdminPortal] Supabase properties failed', e)
+          toast.error(e?.message || 'Could not load properties from Supabase.')
+        }
+      }
+
+      let next = { properties: [], accounts: [], applications: [] }
+      if (isAdminPortalAirtableConfigured()) {
+        next = await loadAdminPortalDataset()
+      }
+
+      if (propertyRows.length) {
+        setProperties(propertyRows)
+      } else {
+        setProperties(next.properties || [])
+      }
+      setAccounts(next.accounts || [])
+      setApplications(next.applications || [])
+
+      let residentList = []
+      let residentsErr = ''
+      try {
+        residentList = await loadResidentsForAdmin()
+      } catch (e) {
+        residentsErr = String(e?.message || '').trim() || 'Could not load residents.'
+        residentList = []
+      }
+      const [calendarCount, leaseChangesCount] = await Promise.all([
         fetchAdminCalendarEventsCount().catch(() => 0),
         fetchAdminLeaseReviewQueueCount().catch(() => 0),
       ])
-      setProperties(next.properties)
-      setAccounts(next.accounts)
-      setApplications(next.applications)
       setResidents(residentList)
+      setResidentsLoadError(residentsErr)
       setCalendarEventsCount(calendarCount)
       setLeaseChangesNeededCount(leaseChangesCount)
     } catch (e) {
@@ -834,13 +899,6 @@ export default function AdminPortal() {
 
   useEffect(() => {
     if (!session) return
-    if (!isAdminPortalAirtableConfigured()) {
-      if (!airtableConfigWarned.current) {
-        airtableConfigWarned.current = true
-        toast.error('Admin data needs API token and base ID configured (same as manager portal).')
-      }
-      return
-    }
     refreshPortalData()
   }, [session, refreshPortalData])
 
@@ -848,7 +906,7 @@ export default function AdminPortal() {
     setSession(u)
     sessionStorage.setItem(AXIS_ADMIN_SESSION_KEY, JSON.stringify(u))
     if (u) markDeveloperPortalActive()
-    if (u && isAdminPortalAirtableConfigured()) setDataLoading(true)
+    if (u) setDataLoading(true)
   }
 
   async function handleSignOut() {
@@ -1083,7 +1141,7 @@ export default function AdminPortal() {
           </div>
 
           {/* Portal handoff — optional (persisted in this browser) */}
-          {isAdminPortalAirtableConfigured() ? (
+          {session ? (
             <div className="min-w-0 space-y-3">
               <label className="flex cursor-pointer items-start gap-3 rounded-2xl border border-slate-200 bg-white px-4 py-3 shadow-sm touch-manipulation">
                 <input
@@ -1113,6 +1171,7 @@ export default function AdminPortal() {
                   residents={residents}
                   applications={applications}
                   residentsLoading={dataLoading}
+                  residentsError={residentsLoadError}
                 />
               ) : null}
             </div>
@@ -1323,7 +1382,7 @@ export default function AdminPortal() {
                             if (!approval?.id) return
                             setApprovalBusy(true)
                             try {
-                              await adminDeleteProperty(approval.id)
+                              await (approval._supabase ? adminDeletePropertySupabase(approval.id) : adminDeleteProperty(approval.id))
                               toast.success('Property deleted')
                               setSelectedApprovalId(null)
                               await refreshPortalData()
@@ -1347,7 +1406,7 @@ export default function AdminPortal() {
                               if (!approval?.id) return
                               setApprovalBusy(true)
                               try {
-                                await adminApproveProperty(approval.id)
+                                await (approval._supabase ? adminApprovePropertySupabase(approval.id) : adminApproveProperty(approval.id))
                                 await refreshPortalData()
                                 toast.success('Property approved')
                                 setSelectedApprovalId(null)
@@ -1380,7 +1439,7 @@ export default function AdminPortal() {
                               if (!approval?.id) return
                               setApprovalBusy(true)
                               try {
-                                await adminRejectProperty(approval.id)
+                                await (approval._supabase ? adminRejectPropertySupabase(approval.id) : adminRejectProperty(approval.id))
                                 await refreshPortalData()
                                 toast.success('Property rejected')
                                 setSelectedApprovalId(null)
@@ -1410,6 +1469,7 @@ export default function AdminPortal() {
                     savedValue={approval.adminNotesInternal}
                     formDisabled={approvalBusy}
                     onSaved={refreshPortalData}
+                    persistBackend={approval._supabase ? 'supabase' : 'airtable'}
                   />
                 </div>
               ) : null}
@@ -1443,7 +1503,7 @@ export default function AdminPortal() {
                           if (!window.confirm(`Unlist "${approval.name}"? It will stay in the portal but hide from the public site.`)) return
                           setApprovalBusy(true)
                           try {
-                            await adminUnlistProperty(approval.id)
+                            await (approval._supabase ? adminUnlistPropertySupabase(approval.id) : adminUnlistProperty(approval.id))
                             toast.success('Property unlisted')
                             setSelectedApprovalId(null)
                             await refreshPortalData()
@@ -1476,7 +1536,7 @@ export default function AdminPortal() {
                           if (!window.confirm(`Permanently delete "${approval.name}"? This cannot be undone.`)) return
                           setApprovalBusy(true)
                           try {
-                            await adminDeleteProperty(approval.id)
+                            await (approval._supabase ? adminDeletePropertySupabase(approval.id) : adminDeleteProperty(approval.id))
                             toast.success('Property deleted')
                             setSelectedApprovalId(null)
                             await refreshPortalData()
@@ -1499,6 +1559,7 @@ export default function AdminPortal() {
                     savedValue={approval.adminNotesInternal}
                     formDisabled={approvalBusy}
                     onSaved={refreshPortalData}
+                    persistBackend={approval._supabase ? 'supabase' : 'airtable'}
                   />
                 </div>
               ) : null}
@@ -1531,7 +1592,7 @@ export default function AdminPortal() {
                         onClick={async () => {
                           setApprovalBusy(true)
                           try {
-                            await adminRelistProperty(approval.id)
+                            await (approval._supabase ? adminRelistPropertySupabase(approval.id) : adminRelistProperty(approval.id))
                             toast.success('Property listed again')
                             setSelectedApprovalId(null)
                             await refreshPortalData()
@@ -1564,7 +1625,7 @@ export default function AdminPortal() {
                           if (!window.confirm(`Permanently delete "${approval.name}"? This cannot be undone.`)) return
                           setApprovalBusy(true)
                           try {
-                            await adminDeleteProperty(approval.id)
+                            await (approval._supabase ? adminDeletePropertySupabase(approval.id) : adminDeleteProperty(approval.id))
                             toast.success('Property deleted')
                             setSelectedApprovalId(null)
                             await refreshPortalData()
@@ -1588,6 +1649,7 @@ export default function AdminPortal() {
                     savedValue={approval.adminNotesInternal}
                     formDisabled={approvalBusy}
                     onSaved={refreshPortalData}
+                    persistBackend={approval._supabase ? 'supabase' : 'airtable'}
                   />
                 </div>
               ) : null}
@@ -1623,7 +1685,7 @@ export default function AdminPortal() {
                           if (!approval?.id) return
                           setApprovalBusy(true)
                           try {
-                            await adminUnrejectProperty(approval.id)
+                            await (approval._supabase ? adminUnrejectPropertySupabase(approval.id) : adminUnrejectProperty(approval.id))
                             await refreshPortalData()
                             toast.success('Property moved back to pending review')
                             setPropertiesSection('pending')
@@ -1646,6 +1708,7 @@ export default function AdminPortal() {
                     savedValue={approval.adminNotesInternal}
                     formDisabled={approvalBusy}
                     onSaved={refreshPortalData}
+                    persistBackend={approval._supabase ? 'supabase' : 'airtable'}
                   />
                 </div>
               ) : null}
@@ -1689,7 +1752,9 @@ export default function AdminPortal() {
                     if (!approval?.id) return
                     setApprovalBusy(true)
                     try {
-                      await adminRequestPropertyEdits(approval.id, requestEditsNotes)
+                      await (approval._supabase
+                        ? adminRequestPropertyEditsSupabase(approval.id, requestEditsNotes)
+                        : adminRequestPropertyEdits(approval.id, requestEditsNotes))
                       await refreshPortalData()
                       toast.success('Edit request sent — property unlisted until the manager resubmits')
                       setRequestEditsModalOpen(false)

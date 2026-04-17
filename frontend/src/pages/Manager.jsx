@@ -103,7 +103,10 @@ import {
   fetchBlockedTourDates,
   createBlockedTourDate,
   deleteBlockedTourDate,
+  updateLeaseDraftRecord,
 } from '../lib/airtable'
+import { listLeaseDraftsForSession, getLeaseDraftByIdForSession } from '../lib/leaseDraftsInternalApi.js'
+import { isLeaseDraftUuid } from '../lib/leaseDraftsSupabase.js'
 import {
   ensurePostpayRoomCleaningFeePayment,
   workOrderShouldCreatePaymentWhenScheduled,
@@ -155,6 +158,7 @@ import PortalShell, { DataTable, StatusPill } from '../components/PortalShell'
 import { portalChromeSecondaryButtonClass } from '../lib/portalLayout.js'
 import { PortalEmptyVisual } from '../components/portalNavIcons.jsx'
 import { createManagerPortalAccount, signInManagerPortal } from '../lib/managerPortalAuth.js'
+import { MANAGER_ONBOARDING_SESSION_KEY } from '../lib/managerOnboardingSession.js'
 import AddPropertyWizard from '../components/AddPropertyWizard'
 import { PropertyDetailPanel } from '../lib/propertyDetailPanel.jsx'
 import { ApplicationDetailPanel, applicationViewModelFromAirtableRow } from '../lib/applicationDetailPanel.jsx'
@@ -184,6 +188,7 @@ import {
   applicationRejectedFieldName,
   leaseDraftPassesApplicationApprovalGate,
 } from '../lib/applicationApprovalState.js'
+import { isInternalUuid, isAirtableRecordId } from '../lib/recordIdentity.js'
 import ManagerLeasingTab from './ManagerLeasingTab.jsx'
 import {
   ALL_PROPERTIES_FILTER,
@@ -192,11 +197,8 @@ import {
   normalizePropertyFilterKey,
 } from '../lib/portalPropertyTableOrder.js'
 import { propertyRoomLabelsFromAirtableRecord } from '../lib/airtablePublicListings.js'
-import { supabase } from '../lib/supabase'
-import { syncAppUserFromSupabaseSession } from '../lib/authAppUserSync.js'
 // ─── Session ──────────────────────────────────────────────────────────────────
 export const MANAGER_SESSION_KEY = 'axis_manager'
-const MANAGER_ONBOARDING_KEY = 'axis_manager_onboarding'
 
 /** Pill toolbar controls — Calendar property picker matches Leases / Applications row */
 const MANAGER_PILL_SELECT_WRAP_CLS = 'relative min-w-0 flex-1 sm:min-w-[220px] sm:flex-none'
@@ -346,10 +348,12 @@ function propertyRecordName(p) {
 
 /** House visible in manager portal lists once Axis marks it approved / live. */
 function isPropertyRecordApproved(p) {
+  const a = String(p['Approval Status'] || '').trim().toLowerCase()
+  if (a === 'changes requested' || a === 'changes_requested') return false
+
   const s = String(p.Status || '').trim().toLowerCase()
   if (s === 'pending_review' || s === 'pending review') return false
 
-  const a = String(p['Approval Status'] || '').trim().toLowerCase()
   /** Awaiting first admin review — must win over a stray Listed checkbox default in Airtable. */
   if (a === 'pending') return false
   if (a === 'rejected') return false
@@ -870,14 +874,15 @@ function paymentResidentRecordId(record) {
   const raw = record?.Resident
   if (!Array.isArray(raw) || raw.length === 0) return ''
   const id = String(raw[0]).trim()
-  return /^rec[a-zA-Z0-9]{14,}$/.test(id) ? id : ''
+  if (isAirtableRecordId(id) || isInternalUuid(id)) return id
+  return ''
 }
 
 /** Resident filter value is either a `rec…` id (from roster / linked payment) or a normalized name key from legacy rows. */
 function paymentRowMatchesResidentFilter(p, filterVal) {
   const fv = String(filterVal || '').trim()
   if (!fv) return true
-  if (/^rec[a-zA-Z0-9]{14,}$/.test(fv)) {
+  if (isAirtableRecordId(fv) || isInternalUuid(fv)) {
     return paymentResidentRecordId(p) === fv
   }
   return normalizePropertyFilterKey(paymentResidentLabel(p)) === fv
@@ -2346,36 +2351,7 @@ async function atRequest(url, options = {}) {
 // ─── Data layer ───────────────────────────────────────────────────────────────
 
 async function fetchLeaseDrafts({ status, property, resident } = {}) {
-  const url = new URL(`${CORE_AIRTABLE_BASE_URL}/Lease%20Drafts`)
-  const parts = []
-  if (status)   parts.push(`{Status} = "${status}"`)
-  if (property) parts.push(`FIND("${property.replace(/"/g, '\\"')}", {Property}) > 0`)
-  if (resident) parts.push(`FIND("${resident.replace(/"/g, '\\"').toLowerCase()}", LOWER({Resident Name})) > 0`)
-
-  if (parts.length > 0) {
-    url.searchParams.set('filterByFormula', parts.length === 1 ? parts[0] : `AND(${parts.join(',')})`)
-  }
-  url.searchParams.set('sort[0][field]', 'Updated At')
-  url.searchParams.set('sort[0][direction]', 'desc')
-
-  const data = await atRequest(url.toString())
-  return (data.records || []).map(mapRecord)
-}
-
-/** Full list for manager calendar (Airtable returns max ~100 rows per request without pagination). */
-async function fetchAllLeaseDraftsForCalendar() {
-  const rows = []
-  let offset = null
-  do {
-    const url = new URL(`${CORE_AIRTABLE_BASE_URL}/Lease%20Drafts`)
-    url.searchParams.set('sort[0][field]', 'Updated At')
-    url.searchParams.set('sort[0][direction]', 'desc')
-    if (offset) url.searchParams.set('offset', offset)
-    const data = await atRequest(url.toString())
-    for (const r of data.records || []) rows.push(mapRecord(r))
-    offset = data.offset || null
-  } while (offset)
-  return rows
+  return listLeaseDraftsForSession({ status, property, resident })
 }
 
 // ─── Applications data layer ──────────────────────────────────────────────────
@@ -2405,12 +2381,23 @@ async function patchApplication(recordId, fields) {
 }
 
 async function fetchLeaseDraft(recordId) {
-  const data = await atRequest(`${CORE_AIRTABLE_BASE_URL}/Lease%20Drafts/${recordId}`)
+  const id = String(recordId || '').trim()
+  if (!id) throw new Error('Lease draft id is required.')
+  if (isLeaseDraftUuid(id)) {
+    const row = await getLeaseDraftByIdForSession(id)
+    if (!row) throw new Error('Lease draft not found.')
+    return row
+  }
+  const data = await atRequest(`${CORE_AIRTABLE_BASE_URL}/Lease%20Drafts/${id}`)
   return mapRecord(data)
 }
 
 async function patchLeaseDraft(recordId, fields) {
-  const data = await atRequest(`${CORE_AIRTABLE_BASE_URL}/Lease%20Drafts/${recordId}`, {
+  const id = String(recordId || '').trim()
+  if (isLeaseDraftUuid(id)) {
+    return updateLeaseDraftRecord(id, fields)
+  }
+  const data = await atRequest(`${CORE_AIRTABLE_BASE_URL}/Lease%20Drafts/${id}`, {
     method: 'PATCH',
     body: JSON.stringify({ fields, typecast: true }),
   })
@@ -2439,26 +2426,10 @@ async function fetchPropertyRecordForLeaseEditor(propertyName) {
   return rec ? mapRecord(rec) : null
 }
 
-async function fetchPropertiesAdmin() {
-  const rows = []
-  let offset = null
-  do {
-    const url = new URL(`${CORE_AIRTABLE_BASE_URL}/Properties`)
-    if (offset) url.searchParams.set('offset', offset)
-    const data = await atRequest(url.toString())
-    for (const record of (data.records || [])) rows.push(mapRecord(record))
-    offset = data.offset || null
-  } while (offset)
-  return rows
-}
-
-/** Airtable legacy rows + Postgres-backed UUID properties (GET /api/properties). */
+/** Postgres-backed properties for this manager (GET /api/properties). */
 async function loadMergedManagerProperties(manager) {
-  const [airtableRows, internalRows] = await Promise.all([
-    fetchPropertiesAdmin(),
-    fetchInternalPropertiesListForSession(),
-  ])
-  return mergeManagerPropertyListRows(airtableRows, internalRows, manager)
+  const internalRows = await fetchInternalPropertiesListForSession()
+  return mergeManagerPropertyListRows([], internalRows, manager)
 }
 
 async function updatePropertyAdmin(recordId, fields) {
@@ -2790,7 +2761,7 @@ export function ManagerAuthForm({ onLogin, footer = null, variant = 'default' })
 
   function persistOnboarding(nextData) {
     try {
-      sessionStorage.setItem(MANAGER_ONBOARDING_KEY, JSON.stringify(nextData))
+      sessionStorage.setItem(MANAGER_ONBOARDING_SESSION_KEY, JSON.stringify(nextData))
     } catch {
       // ignore session storage issues
     }
@@ -2798,7 +2769,7 @@ export function ManagerAuthForm({ onLogin, footer = null, variant = 'default' })
 
   function clearOnboarding() {
     try {
-      sessionStorage.removeItem(MANAGER_ONBOARDING_KEY)
+      sessionStorage.removeItem(MANAGER_ONBOARDING_SESSION_KEY)
     } catch {
       // ignore session storage issues
     }
@@ -2842,7 +2813,7 @@ export function ManagerAuthForm({ onLogin, footer = null, variant = 'default' })
 
   useEffect(() => {
     try {
-      const saved = sessionStorage.getItem(MANAGER_ONBOARDING_KEY)
+      const saved = sessionStorage.getItem(MANAGER_ONBOARDING_SESSION_KEY)
       if (!saved) return
       const parsed = JSON.parse(saved)
       applyOnboardingState(parsed)
@@ -3252,8 +3223,18 @@ function HouseManagementPanel({ manager, onPropertiesChange }) {
     loadProperties()
   }, [loadProperties])
 
+  const changesRequestedAssigned = useMemo(
+    () => properties.filter((p) => propertyAssignedToManager(p, manager) && propertyNeedsAdminEditRequest(p)),
+    [properties, manager],
+  )
   const approvedAssigned = useMemo(
-    () => properties.filter((p) => propertyAssignedToManager(p, manager) && isPropertyRecordApproved(p)),
+    () =>
+      properties.filter(
+        (p) =>
+          propertyAssignedToManager(p, manager) &&
+          isPropertyRecordApproved(p) &&
+          !propertyNeedsAdminEditRequest(p),
+      ),
     [properties, manager],
   )
   const rejectedAssigned = useMemo(
@@ -3266,26 +3247,17 @@ function HouseManagementPanel({ manager, onPropertiesChange }) {
         (p) =>
           propertyAssignedToManager(p, manager) &&
           !isPropertyRecordApproved(p) &&
-          !isPropertyRecordRejected(p),
+          !isPropertyRecordRejected(p) &&
+          !propertyNeedsAdminEditRequest(p),
       ),
     [properties, manager],
   )
-  const changesRequestedAssigned = useMemo(
-    () => approvedAssigned.filter((p) => propertyNeedsAdminEditRequest(p)),
-    [approvedAssigned],
-  )
   const listedAssigned = useMemo(
-    () =>
-      approvedAssigned.filter(
-        (p) => propertyListingVisibleForMarketing(p) && !propertyNeedsAdminEditRequest(p),
-      ),
+    () => approvedAssigned.filter((p) => propertyListingVisibleForMarketing(p)),
     [approvedAssigned],
   )
   const unlistedAssigned = useMemo(
-    () =>
-      approvedAssigned.filter(
-        (p) => !propertyListingVisibleForMarketing(p) && !propertyNeedsAdminEditRequest(p),
-      ),
+    () => approvedAssigned.filter((p) => !propertyListingVisibleForMarketing(p)),
     [approvedAssigned],
   )
   const managedPropertyCount =
@@ -3450,7 +3422,10 @@ function HouseManagementPanel({ manager, onPropertiesChange }) {
                                   setListingBusyPropertyId(p.id)
                                   try {
                                     if (p.__axisInternalPostgres) {
-                                      await patchInternalProperty(p.id, { active: false })
+                                      await patchInternalProperty(p.id, {
+                                        active: false,
+                                        listing_status: 'unlisted',
+                                      })
                                     } else {
                                       await updatePropertyAdmin(p.id, buildManagerListingPatch(p, false))
                                     }
@@ -3474,7 +3449,10 @@ function HouseManagementPanel({ manager, onPropertiesChange }) {
                                   setListingBusyPropertyId(p.id)
                                   try {
                                     if (p.__axisInternalPostgres) {
-                                      await patchInternalProperty(p.id, { active: true })
+                                      await patchInternalProperty(p.id, {
+                                        active: true,
+                                        listing_status: 'live',
+                                      })
                                     } else {
                                       await updatePropertyAdmin(p.id, buildManagerListingPatch(p, true))
                                     }
@@ -3508,7 +3486,10 @@ function HouseManagementPanel({ manager, onPropertiesChange }) {
                                 setDeletingPropertyId(p.id)
                                 try {
                                   if (p.__axisInternalPostgres) {
-                                    await patchInternalProperty(p.id, { active: false })
+                                    await patchInternalProperty(p.id, {
+                                      active: false,
+                                      listing_status: 'rejected',
+                                    })
                                     toast.success('Property removed from active listings')
                                   } else {
                                     await deletePropertyAdmin(p.id)
@@ -4489,7 +4470,7 @@ function WorkOrdersTabPanel({ manager, allowedPropertyNames, allowedPropertyIds 
       const linkedName = String(linkedResident?.Name || linkedResident?.['Resident Name'] || '').trim()
       if (linkedName) return linkedName
       const fallback = String(paymentResidentLabel(row)).trim()
-      if (/^rec[a-zA-Z0-9]{14,}$/.test(fallback)) return 'Resident not set'
+      if (isAirtableRecordId(fallback) || isInternalUuid(fallback)) return 'Resident not set'
       return fallback || 'Resident not set'
     },
     [residentRecordForWorkOrder],
@@ -4498,7 +4479,7 @@ function WorkOrdersTabPanel({ manager, allowedPropertyNames, allowedPropertyIds 
   const propertyLabelForWorkOrder = useCallback(
     (row) => {
       const fromRow = String(workOrderPropertyLabel(row)).trim()
-      if (fromRow && !/^rec[a-zA-Z0-9]{14,}$/.test(fromRow)) return fromRow
+      if (fromRow && !isAirtableRecordId(fromRow) && !isInternalUuid(fromRow)) return fromRow
       const linkedResident = residentRecordForWorkOrder(row)
       const fromResident = String(residentDisplayPropertyName(linkedResident)).trim()
       if (fromResident) return fromResident
@@ -5135,6 +5116,8 @@ function ManagerPaymentsPanel({ allowedPropertyNames, allowedPropertyIds }) {
   const [payPropertyFilter, setPayPropertyFilter] = useState('')
   const [payResidentFilter, setPayResidentFilter] = useState('')
   const [manualResidents, setManualResidents] = useState([])
+  const [manualResidentsLoading, setManualResidentsLoading] = useState(false)
+  const [manualResidentsError, setManualResidentsError] = useState('')
   const [manualResidentId, setManualResidentId] = useState('')
   const [manualAmount, setManualAmount] = useState('')
   const [manualType, setManualType] = useState('Fee')
@@ -5152,10 +5135,8 @@ function ManagerPaymentsPanel({ allowedPropertyNames, allowedPropertyIds }) {
     setPaymentsLoadError('')
     try {
       const all = await getAllPaymentsRecords()
-      const scopedAll =
-        scopeLower.size || scopeIds.size
-          ? all.filter((p) => paymentInScope(p, scopeLower, scopeIds))
-          : []
+      const haveScope = scopeLower.size || scopeIds.size
+      const scopedAll = haveScope ? all.filter((p) => paymentInScope(p, scopeLower, scopeIds)) : all
       const allSorted = [...scopedAll].sort(
         (a, b) =>
           new Date(b['Due Date'] || b.created_at || 0) - new Date(a['Due Date'] || a.created_at || 0),
@@ -5188,6 +5169,8 @@ function ManagerPaymentsPanel({ allowedPropertyNames, allowedPropertyIds }) {
 
   useEffect(() => {
     let cancelled = false
+    setManualResidentsLoading(true)
+    setManualResidentsError('')
     ;(async () => {
       try {
         const all = await listAllResidentsRecords()
@@ -5201,8 +5184,15 @@ function ManagerPaymentsPanel({ allowedPropertyNames, allowedPropertyIds }) {
           ),
         )
         setManualResidents(scoped)
-      } catch {
-        if (!cancelled) setManualResidents([])
+      } catch (err) {
+        if (!cancelled) {
+          setManualResidents([])
+          setManualResidentsError(
+            String(err?.message || '').trim() || 'Could not load residents from Supabase. Try signing in again.',
+          )
+        }
+      } finally {
+        if (!cancelled) setManualResidentsLoading(false)
       }
     })()
     return () => {
@@ -5258,7 +5248,7 @@ function ManagerPaymentsPanel({ allowedPropertyNames, allowedPropertyIds }) {
 
     for (const r of manualResidentsForPropertyFilter) {
       const rid = String(r?.id || '').trim()
-      if (!/^rec[a-zA-Z0-9]{14,}$/.test(rid)) continue
+      if (!isAirtableRecordId(rid) && !isInternalUuid(rid)) continue
       const name = String(r.Name || r['Resident Name'] || '').trim()
       const email = String(r.Email || '').trim().toLowerCase()
       const display = name && email ? `${name} (${email})` : name || email || 'Resident'
@@ -5474,8 +5464,8 @@ function ManagerPaymentsPanel({ allowedPropertyNames, allowedPropertyIds }) {
     if (!id) return
     const paid = isManagerPaidTabRow(row) || paymentComputedStatus(row) === 'paid'
     const msg = paid
-      ? 'This line looks paid/settled. Delete it from Airtable anyway? This cannot be undone.'
-      : 'Delete this payment line from Airtable? This cannot be undone.'
+      ? 'This line looks paid/settled. Cancel it in the ledger anyway? You can refresh to confirm.'
+      : 'Cancel this payment line in the ledger? Pending lines will be marked cancelled.'
     if (!window.confirm(msg)) return
     setBusy((b) => ({ ...b, [`del_${id}`]: true }))
     try {
@@ -5593,9 +5583,16 @@ function ManagerPaymentsPanel({ allowedPropertyNames, allowedPropertyIds }) {
                 <label className="mb-1 block text-[11px] font-bold uppercase tracking-[0.12em] text-slate-400">
                   Resident
                 </label>
+                {manualResidentsError ? (
+                  <p className="mb-2 text-xs text-red-600">{manualResidentsError}</p>
+                ) : null}
+                {manualResidentsLoading ? (
+                  <p className="mb-2 text-xs text-slate-500">Loading residents…</p>
+                ) : null}
                 <select
                   value={manualResidentId}
                   onChange={(e) => setManualResidentId(e.target.value)}
+                  disabled={manualResidentsLoading || Boolean(manualResidentsError)}
                   className="h-[42px] w-full rounded-xl border border-slate-200 bg-white px-3 text-sm font-medium text-slate-800 outline-none focus:border-[#2563eb] focus:ring-2 focus:ring-[#2563eb]/20"
                 >
                   <option value="">— Select resident —</option>

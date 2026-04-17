@@ -82,6 +82,60 @@ export async function getAppUserById(id) {
   return data || null
 }
 
+const MAX_APP_USER_FULL_NAME = 500
+const MAX_APP_USER_PHONE = 40
+
+/**
+ * Partial update for public.app_users (service role). Used by resident profile PATCH.
+ *
+ * @param {string} appUserId
+ * @param {{ full_name?: string | null, phone?: string | null }} updates
+ * @returns {Promise<object>} updated row
+ */
+export async function updateAppUserContactFields(appUserId, updates) {
+  const id = String(appUserId || '').trim()
+  if (!id) throw new Error('updateAppUserContactFields: appUserId is required.')
+
+  const patch = {}
+  if (updates.full_name !== undefined) {
+    if (updates.full_name === null) {
+      patch.full_name = null
+    } else if (typeof updates.full_name !== 'string') {
+      throw new Error('full_name must be a string or null.')
+    } else {
+      const s = updates.full_name.trim()
+      if (s.length > MAX_APP_USER_FULL_NAME) {
+        throw new Error(`full_name exceeds max length (${MAX_APP_USER_FULL_NAME}).`)
+      }
+      patch.full_name = s.length ? s : null
+    }
+  }
+  if (updates.phone !== undefined) {
+    if (updates.phone === null) {
+      patch.phone = null
+    } else if (typeof updates.phone !== 'string') {
+      throw new Error('phone must be a string or null.')
+    } else {
+      const s = updates.phone.trim()
+      if (s.length > MAX_APP_USER_PHONE) {
+        throw new Error(`phone exceeds max length (${MAX_APP_USER_PHONE}).`)
+      }
+      patch.phone = s.length ? s : null
+    }
+  }
+
+  if (Object.keys(patch).length === 0) {
+    const existing = await getAppUserById(id)
+    if (!existing) throw new Error('App user not found.')
+    return existing
+  }
+
+  const client = requireServiceClient()
+  const { data, error } = await client.from('app_users').update(patch).eq('id', id).select('*').single()
+  if (error) throw new Error(error.message || 'Failed to update app_users')
+  return data
+}
+
 /**
  * Insert or update the profile row for a Supabase Auth user (by auth_user_id).
  * Does not disable is_active unless explicitly passed false.

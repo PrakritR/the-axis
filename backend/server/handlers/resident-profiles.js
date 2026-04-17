@@ -1,15 +1,17 @@
 /**
  * resident_profiles (Postgres), authenticated by Supabase JWT.
  *
- * - GET  /api/resident-profiles — own profile or null (403 if not resident/admin)
+ * - GET  /api/resident-profiles?list=1 — admin/manager: all residents (directory bundles + legacy display)
+ * - GET  /api/resident-profiles — resident: own profile row + app_user + legacy `display` for portal UI
+ *        admin without resident role: own resident_profiles row or null (legacy)
  * - POST /api/resident-profiles — ensure row (resident only); optional body fields
- * - PATCH /api/resident-profiles — partial update (resident only)
+ * - PATCH /api/resident-profiles — partial update (resident only): resident_profiles fields + optional app_users full_name/phone
  *
  * Headers: Authorization: Bearer <supabase access_token>
  * Prereq: POST /api/sync-app-user so app_users row exists.
  */
 import { authenticateSupabaseBearerRequest } from '../lib/supabase-bearer-auth.js'
-import { getAppUserByAuthUserId } from '../lib/app-users-service.js'
+import { getAppUserByAuthUserId, updateAppUserContactFields } from '../lib/app-users-service.js'
 import { appUserHasRole } from '../lib/app-user-roles-service.js'
 import {
   getResidentProfileByAppUserId,
@@ -19,6 +21,9 @@ import {
   MAX_RESIDENT_PROFILE_EMERGENCY_CONTACT_NAME_LENGTH,
   MAX_RESIDENT_PROFILE_EMERGENCY_CONTACT_PHONE_LENGTH,
   MAX_RESIDENT_PROFILE_NOTES_LENGTH,
+  listResidentDirectoryBundlesForStaff,
+  getResidentDirectoryBundleForAppUserId,
+  mapInternalBundleToLegacyResidentRecord,
 } from '../lib/resident-profiles-service.js'
 
 function cors(res) {
@@ -57,14 +62,47 @@ export default async function handler(req, res) {
 
   try {
     if (req.method === 'GET') {
-      const [isResident, isAdmin] = await Promise.all([
+      const list = String(req.query?.list || '').trim() === '1'
+      const [isResident, isAdmin, isManager] = await Promise.all([
         appUserHasRole(appUser.id, 'resident'),
         appUserHasRole(appUser.id, 'admin'),
+        appUserHasRole(appUser.id, 'manager'),
       ])
+
+      if (list) {
+        if (!isAdmin && !isManager) {
+          return res.status(403).json({ error: 'Admin or manager role required to list residents.' })
+        }
+        const bundles = await listResidentDirectoryBundlesForStaff()
+        const residents = bundles.map((b) => ({
+          ...b,
+          display: mapInternalBundleToLegacyResidentRecord(b),
+        }))
+        return res.status(200).json({ ok: true, residents })
+      }
+
       if (!isResident && !isAdmin) {
         return res.status(403).json({ error: 'Resident or admin role required to read resident_profiles.' })
       }
+
       const profile = await getResidentProfileByAppUserId(appUser.id)
+
+      if (isResident) {
+        const bundle = await getResidentDirectoryBundleForAppUserId(appUser.id)
+        const display = bundle ? mapInternalBundleToLegacyResidentRecord(bundle) : null
+        return res.status(200).json({
+          ok: true,
+          profile: profile || null,
+          app_user: {
+            id: appUser.id,
+            email: appUser.email,
+            full_name: appUser.full_name ?? null,
+            phone: appUser.phone ?? null,
+          },
+          display,
+        })
+      }
+
       return res.status(200).json({ ok: true, profile: profile || null })
     }
 
@@ -104,14 +142,52 @@ export default async function handler(req, res) {
         if (parsed !== undefined) patch[key] = parsed
       }
 
-      if (Object.keys(patch).length === 0) {
+      let appUserPatch = {}
+      if ('full_name' in body) {
+        const parsed = optionalStringOrNull(body, 'full_name')
+        if (parsed && typeof parsed === 'object' && 'error' in parsed) {
+          return res.status(400).json({ error: parsed.error })
+        }
+        if (parsed !== undefined) appUserPatch.full_name = parsed
+      }
+      if ('phone' in body) {
+        const parsed = optionalStringOrNull(body, 'phone')
+        if (parsed && typeof parsed === 'object' && 'error' in parsed) {
+          return res.status(400).json({ error: parsed.error })
+        }
+        if (parsed !== undefined) appUserPatch.phone = parsed
+      }
+
+      if (Object.keys(patch).length === 0 && Object.keys(appUserPatch).length === 0) {
         return res.status(400).json({
-          error: `Provide at least one of: phone_number, emergency_contact_name, emergency_contact_phone, notes. Max lengths: phone ${MAX_RESIDENT_PROFILE_PHONE_LENGTH}, emergency_contact_name ${MAX_RESIDENT_PROFILE_EMERGENCY_CONTACT_NAME_LENGTH}, emergency_contact_phone ${MAX_RESIDENT_PROFILE_EMERGENCY_CONTACT_PHONE_LENGTH}, notes ${MAX_RESIDENT_PROFILE_NOTES_LENGTH}.`,
+          error: `Provide at least one of: phone_number, emergency_contact_name, emergency_contact_phone, notes, full_name, phone. Max lengths: phone ${MAX_RESIDENT_PROFILE_PHONE_LENGTH}, emergency_contact_name ${MAX_RESIDENT_PROFILE_EMERGENCY_CONTACT_NAME_LENGTH}, emergency_contact_phone ${MAX_RESIDENT_PROFILE_EMERGENCY_CONTACT_PHONE_LENGTH}, notes ${MAX_RESIDENT_PROFILE_NOTES_LENGTH}.`,
         })
       }
 
-      const profile = await updateResidentProfile({ appUserId: appUser.id, ...patch })
-      return res.status(200).json({ ok: true, profile })
+      let updatedAppUser = null
+      if (Object.keys(appUserPatch).length > 0) {
+        updatedAppUser = await updateAppUserContactFields(appUser.id, appUserPatch)
+      }
+
+      let profile = null
+      if (Object.keys(patch).length > 0) {
+        profile = await updateResidentProfile({ appUserId: appUser.id, ...patch })
+      } else {
+        profile = await getResidentProfileByAppUserId(appUser.id)
+      }
+
+      return res.status(200).json({
+        ok: true,
+        profile,
+        app_user: updatedAppUser
+          ? {
+              id: updatedAppUser.id,
+              email: updatedAppUser.email,
+              full_name: updatedAppUser.full_name ?? null,
+              phone: updatedAppUser.phone ?? null,
+            }
+          : undefined,
+      })
     }
 
     return res.status(405).json({ error: 'Method not allowed' })

@@ -252,6 +252,11 @@ export default async function handler(req, res) {
     return res.status(400).json({ error: 'Provide either email or managerId.' })
   } catch (err) {
     console.error('[manager-create-account]', err)
-    return res.status(500).json({ error: 'Could not create the manager account. Please try again.' })
+    const msg = String(err?.message || '').trim()
+    const hint =
+      msg.includes('Supabase service client not configured') || msg.includes('SUPABASE_SERVICE_ROLE_KEY')
+        ? 'Server is missing Supabase credentials (SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY).'
+        : msg || 'Could not create the manager account. Please try again.'
+    return res.status(500).json({ error: hint })
   }
 }

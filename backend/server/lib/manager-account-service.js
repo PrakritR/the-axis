@@ -43,6 +43,20 @@ export function deriveManagerId(recordId) {
   return `MGR-${suffix}`
 }
 
+/**
+ * Public "MGR-…" id for the manager session: Airtable rows derive from rec…;
+ * internal / onboarding rows must use the explicit {@link Manager ID} field.
+ */
+export function resolveSessionManagerId(manager) {
+  const fromField = String(manager?.['Manager ID'] || '').trim().toUpperCase()
+  if (fromField.startsWith('MGR-')) return fromField
+  const isInternalOnly = Boolean(manager?._internalOnly)
+  if (isInternalOnly) return ''
+  const recId = String(manager?.id || '').trim()
+  if (recId.startsWith('rec')) return deriveManagerId(recId)
+  return ''
+}
+
 async function fetchManagerByFormula(formula) {
   const url = `https://api.airtable.com/v0/${BASE_ID}/${MANAGER_TABLE_ENC}?filterByFormula=${encodeURIComponent(formula)}&maxRecords=1`
   const atRes = await fetch(url, { headers: airtableHeaders() })
@@ -320,8 +334,10 @@ export function buildManagerSession({ manager, appUser, authUserId = '' }) {
   // Airtable rec IDs start with 'rec' — UUIDs are internal
   const airtableRecordId = isInternalOnly
     ? null
-    : String(manager?.id || '').trim() || null
-  const derivedManagerId = isInternalOnly ? '' : deriveManagerId(manager?.id)
+    : String(manager?.id || '').trim().startsWith('rec')
+      ? String(manager.id).trim()
+      : null
+  const derivedManagerId = resolveSessionManagerId(manager)
   const roleRaw = String(manager?.Role || manager?.role || '').trim().toLowerCase()
   const role = roleRaw === 'admin' ? 'admin' : 'Manager'
 

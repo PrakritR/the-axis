@@ -23,6 +23,14 @@ import {
   leaseVersionDocUploaderPayload,
   stripLeaseVersionUploaderFieldVariants,
 } from '../../../shared/lease-version-airtable-uploader-fields.js'
+import { getSupabaseServiceClient } from '../lib/app-users-service.js'
+import {
+  appendLeaseCommentJsonb,
+  fetchLeaseDraftJoined,
+  isLeaseDraftUuid,
+  saveLeaseDraftComments,
+  updateLeaseDraftById,
+} from '../lib/lease-drafts-service.js'
 
 const AIRTABLE_TOKEN = process.env.AIRTABLE_TOKEN || process.env.VITE_AIRTABLE_TOKEN
 const BASE_ID = process.env.VITE_AIRTABLE_BASE_ID || process.env.AIRTABLE_BASE_ID || 'appol57LKtMKaQ75T'
@@ -194,7 +202,6 @@ export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type')
   if (req.method === 'OPTIONS') return res.status(200).end()
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' })
-  if (!AIRTABLE_TOKEN) return res.status(500).json({ error: 'Server not configured.' })
 
   const {
     leaseDraftId,
@@ -210,6 +217,104 @@ export default async function handler(req, res) {
   if (newStatus && !VALID_STATUSES.has(newStatus)) {
     return res.status(400).json({ error: `Invalid status: ${newStatus}` })
   }
+
+  if (isLeaseDraftUuid(leaseDraftId)) {
+    const client = getSupabaseServiceClient()
+    if (!client) return res.status(500).json({ error: 'Supabase is not configured on the server.' })
+    const tenant = req._tenant
+    if (!tenant?.isAdmin) return res.status(403).json({ error: 'Access denied.' })
+    try {
+      const row = await fetchLeaseDraftJoined(client, leaseDraftId)
+      if (!row) return res.status(404).json({ error: 'Lease draft not found.' })
+
+      let mergedLeaseJson =
+        row.lease_json && typeof row.lease_json === 'object' ? { ...row.lease_json } : {}
+      if (Object.keys(updatedFields || {}).length > 0) {
+        if (updatedFields.residentName) mergedLeaseJson.tenantName = updatedFields.residentName
+        if (updatedFields.property) mergedLeaseJson.propertyName = updatedFields.property
+        if (updatedFields.unit) mergedLeaseJson.roomNumber = updatedFields.unit
+        if (updatedFields.leaseStart) mergedLeaseJson.leaseStart = updatedFields.leaseStart
+        if (updatedFields.leaseEnd) mergedLeaseJson.leaseEnd = updatedFields.leaseEnd
+        if (updatedFields.rent != null) mergedLeaseJson.monthlyRent = Number(updatedFields.rent)
+        if (updatedFields.deposit != null) mergedLeaseJson.securityDeposit = Number(updatedFields.deposit)
+        if (updatedFields.utilityFee != null) mergedLeaseJson.utilityFee = Number(updatedFields.utilityFee)
+        if (updatedFields.specialTerms) mergedLeaseJson.specialTerms = updatedFields.specialTerms
+      }
+
+      const adminResponsePayload = {
+        freeText: adminNotes,
+        updatedFields,
+        respondedAt: new Date().toISOString(),
+        respondedBy: adminName,
+      }
+
+      const patch = {
+        admin_response_notes: JSON.stringify(adminResponsePayload),
+        lease_json: mergedLeaseJson,
+      }
+      if (newStatus) patch.status = newStatus
+
+      let newVersionNumber = null
+      if (newVersion?.pdfUrl || newVersion?.fileName) {
+        const currentVersion = Number(row.current_version || 1)
+        newVersionNumber = currentVersion + 1
+        patch.current_version = newVersionNumber
+        patch.current_pdf_url = String(newVersion.pdfUrl || '').trim()
+        patch.current_pdf_file_name = String(newVersion.fileName || `lease-v${newVersionNumber}.pdf`).trim()
+      }
+
+      if (newStatus === 'Sent Back to Manager') {
+        patch.manager_edit_notes = ''
+      }
+
+      await updateLeaseDraftById(client, leaseDraftId, patch)
+
+      let fresh = await fetchLeaseDraftJoined(client, leaseDraftId)
+      const skipThreadComment = newStatus === 'Sent Back to Manager' && !String(adminNotes || '').trim()
+
+      if (newStatus === 'Sent Back to Manager') {
+        const comments = Array.isArray(fresh.lease_comments)
+          ? fresh.lease_comments.map((c) => ({ ...c, Resolved: true }))
+          : []
+        await saveLeaseDraftComments(client, leaseDraftId, comments)
+        fresh = await fetchLeaseDraftJoined(client, leaseDraftId)
+      }
+
+      if (!skipThreadComment) {
+        const changeLines = []
+        if (updatedFields.residentName) changeLines.push(`• Resident Name: ${updatedFields.residentName}`)
+        if (updatedFields.property) changeLines.push(`• Property: ${updatedFields.property}`)
+        if (updatedFields.unit) changeLines.push(`• Unit: ${updatedFields.unit}`)
+        if (updatedFields.leaseStart) changeLines.push(`• Lease Start: ${updatedFields.leaseStart}`)
+        if (updatedFields.leaseEnd) changeLines.push(`• Lease End: ${updatedFields.leaseEnd}`)
+        if (updatedFields.rent) changeLines.push(`• Monthly Rent: $${updatedFields.rent}`)
+        if (updatedFields.deposit) changeLines.push(`• Deposit: $${updatedFields.deposit}`)
+        if (updatedFields.utilityFee) changeLines.push(`• Utility Fee: $${updatedFields.utilityFee}`)
+        if (updatedFields.specialTerms) changeLines.push(`• Special Terms: ${updatedFields.specialTerms}`)
+
+        let commentMessage = `**Admin Update** — Status set to: ${newStatus || 'unchanged'}\n\n${adminNotes}`
+        if (changeLines.length > 0) commentMessage += '\n\n**Fields updated:**\n' + changeLines.join('\n')
+        if (newVersionNumber) {
+          commentMessage += `\n\n**New lease version uploaded:** v${newVersionNumber} — ${newVersion?.fileName || 'lease.pdf'}`
+        }
+
+        const nextComments = appendLeaseCommentJsonb(fresh.lease_comments, {
+          authorName: adminName,
+          authorRole: 'Admin',
+          authorRecordId: adminRecordId || '',
+          message: commentMessage,
+        })
+        await saveLeaseDraftComments(client, leaseDraftId, nextComments)
+      }
+
+      return res.status(200).json({ ok: true, newVersionNumber })
+    } catch (err) {
+      console.error('[lease-admin-respond] supabase', err)
+      return res.status(500).json({ error: err.message || 'Failed to respond to lease request.' })
+    }
+  }
+
+  if (!AIRTABLE_TOKEN) return res.status(500).json({ error: 'Server not configured.' })
 
   try {
     // Fetch the current draft to get Lease JSON and Owner ID for notification

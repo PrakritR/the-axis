@@ -12,6 +12,16 @@
  *   notes           – free-form text (required when action === "request-changes")
  */
 
+import { getSupabaseServiceClient } from '../lib/app-users-service.js'
+import {
+  appendLeaseCommentJsonb,
+  assertTenantCanWriteLeaseDraft,
+  fetchLeaseDraftJoined,
+  isLeaseDraftUuid,
+  saveLeaseDraftComments,
+  updateLeaseDraftById,
+} from '../lib/lease-drafts-service.js'
+
 const AIRTABLE_TOKEN = process.env.AIRTABLE_TOKEN || process.env.VITE_AIRTABLE_TOKEN
 const BASE_ID = process.env.VITE_AIRTABLE_BASE_ID || process.env.AIRTABLE_BASE_ID || 'appol57LKtMKaQ75T'
 const BASE_URL = `https://api.airtable.com/v0/${BASE_ID}`
@@ -108,7 +118,6 @@ export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type')
   if (req.method === 'OPTIONS') return res.status(200).end()
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' })
-  if (!AIRTABLE_TOKEN) return res.status(500).json({ error: 'Server not configured.' })
 
   const {
     leaseDraftId,
@@ -125,6 +134,51 @@ export default async function handler(req, res) {
   if (action === 'request-changes' && !notes.trim()) {
     return res.status(400).json({ error: 'notes are required when requesting changes.' })
   }
+
+  if (isLeaseDraftUuid(leaseDraftId)) {
+    const client = getSupabaseServiceClient()
+    if (!client) return res.status(500).json({ error: 'Supabase is not configured on the server.' })
+    const tenant = req._tenant
+    try {
+      const row = await fetchLeaseDraftJoined(client, leaseDraftId)
+      if (!row) return res.status(404).json({ error: 'Lease draft not found.' })
+      assertTenantCanWriteLeaseDraft(tenant, row)
+
+      const newStatus = action === 'approve' ? 'Manager Approved' : 'Submitted to Admin'
+      const patch = { status: newStatus }
+      if (action === 'request-changes') {
+        patch.manager_edit_notes = JSON.stringify({
+          freeText: notes,
+          submittedAt: new Date().toISOString(),
+          submittedBy: managerName,
+          isFollowUp: true,
+        })
+      }
+      await updateLeaseDraftById(client, leaseDraftId, patch)
+
+      const fresh = await fetchLeaseDraftJoined(client, leaseDraftId)
+      const commentMessage =
+        action === 'approve'
+          ? `**Manager Approved** ✓\n\nLease approved and ready for admin finalization.\n${notes ? `\nNotes: ${notes}` : ''}`
+          : `**More Changes Requested**\n\n${notes}`
+
+      const nextComments = appendLeaseCommentJsonb(fresh.lease_comments, {
+        authorName: managerName,
+        authorRole: 'Manager',
+        authorRecordId: managerRecordId || '',
+        message: commentMessage,
+      })
+      await saveLeaseDraftComments(client, leaseDraftId, nextComments)
+
+      return res.status(200).json({ ok: true, newStatus })
+    } catch (err) {
+      const code = err.statusCode || 500
+      console.error('[lease-manager-review] supabase', err)
+      return res.status(code).json({ error: err.message || 'Failed to submit review.' })
+    }
+  }
+
+  if (!AIRTABLE_TOKEN) return res.status(500).json({ error: 'Server not configured.' })
 
   try {
     const newStatus = action === 'approve' ? 'Manager Approved' : 'Submitted to Admin'

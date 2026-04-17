@@ -1,5 +1,5 @@
 /**
- * Ensures recurring monthly Payments rows exist in Airtable so Manager and Resident portals
+ * Ensures recurring monthly payment rows exist in Supabase so Manager and Resident portals
  * share the same schedule (replaces synthetic month rows that managers could not see).
  *
  * Move-in lines (deposit, first rent, first utilities) are created by application approval
@@ -10,12 +10,8 @@ import {
   recurringRentLedgerMarker,
   recurringUtilitiesLedgerMarker,
 } from '../../../shared/payments-ledger-markers.js'
-import {
-  buildPaymentPropertyLinkFields,
-  buildPaymentResidentLinkFields,
-  createPaymentRecord,
-  getPropertyByName,
-} from './airtable.js'
+import { buildPaymentResidentLinkFields, createPaymentRecord, getResidentById } from './airtable.js'
+import { isInternalUuid, isAirtableRecordId } from './recordIdentity.js'
 import {
   dueDateStringForMonth,
   findRentPaymentForBillingMonth,
@@ -31,6 +27,24 @@ function extendKnown(known, created) {
   }
 }
 
+async function resolveLedgerAppUserId(resident) {
+  const rid = String(resident?.id || '').trim()
+  if (!rid) return ''
+  if (isInternalUuid(rid)) return rid
+  const su = String(resident?.['Supabase User ID'] || '').trim()
+  if (isInternalUuid(su)) return su
+  if (isAirtableRecordId(rid)) {
+    try {
+      const full = await getResidentById(rid)
+      const x = String(full?.['Supabase User ID'] || '').trim()
+      if (isInternalUuid(x)) return x
+    } catch {
+      /* ignore */
+    }
+  }
+  return ''
+}
+
 /**
  * @param {{
  *   resident: Record<string, unknown>,
@@ -39,7 +53,7 @@ function extendKnown(known, created) {
  *   firstMonthRentPaid: boolean,
  *   firstMonthUtilitiesPaid: boolean,
  * }} p
- * @returns {Promise<number>} number of Airtable rows created
+ * @returns {Promise<number>} number of new ledger rows created
  */
 export async function ensureResidentPaymentLedgerMaterialized(p) {
   const resident = p?.resident
@@ -48,8 +62,9 @@ export async function ensureResidentPaymentLedgerMaterialized(p) {
   const firstMonthRentPaid = Boolean(p?.firstMonthRentPaid)
   const firstMonthUtilitiesPaid = Boolean(p?.firstMonthUtilitiesPaid)
 
-  const rid = String(resident?.id || '').trim()
-  if (!/^rec[a-zA-Z0-9]{14,}$/.test(rid)) return 0
+  const residentPrimaryId = String(resident?.id || '').trim()
+  const appUserId = await resolveLedgerAppUserId(resident)
+  if (!appUserId) return 0
 
   let createdCount = 0
   const known = [...sortedPayments]
@@ -59,18 +74,21 @@ export async function ensureResidentPaymentLedgerMaterialized(p) {
   const resName = String(resident?.Name || '').trim()
   const resEmail = String(resident?.Email || '').trim().toLowerCase()
 
-  const propertyRec = propName ? await getPropertyByName(propName).catch(() => null) : null
-  const propertyLink = buildPaymentPropertyLinkFields(propertyRec?.id)
-
   const leaseStart = String(resident?.['Lease Start Date'] || '').trim()
   const leaseEnd = String(resident?.['Lease End Date'] || '').trim()
 
   const monthlyRent = Math.round(Number(payPricing.monthlyRent) * 100) / 100
   const utilitiesFee = Math.round(Number(payPricing.utilitiesFee) * 100) / 100
 
+  const internalProp = String(resident?.__internal_property_id || '').trim()
+  const internalApp = String(resident?.__internal_application_id || resident?.['Application ID'] || '').trim()
+
+  const markerKey = isAirtableRecordId(residentPrimaryId) ? residentPrimaryId : appUserId
+
   const baseFields = () => ({
-    ...buildPaymentResidentLinkFields(rid),
-    ...propertyLink,
+    ...buildPaymentResidentLinkFields(appUserId),
+    ...(internalProp && isInternalUuid(internalProp) ? { _internal_property_id: internalProp } : {}),
+    ...(internalApp && isInternalUuid(internalApp) ? { _internal_application_id: internalApp } : {}),
     'Resident Name': resName || undefined,
     'Resident Email': resEmail || undefined,
     'Property Name': propName || undefined,
@@ -88,7 +106,7 @@ export async function ensureResidentPaymentLedgerMaterialized(p) {
       const dueStr = dueDateStringForMonth(ym, rd)
       if (!dueStr) continue
 
-      const rentMarker = recurringRentLedgerMarker(rid, ym)
+      const rentMarker = recurringRentLedgerMarker(markerKey, ym)
       if (!findRentPaymentForBillingMonth(known, ym) && !markerTaken(rentMarker)) {
         const row = await createPaymentRecord({
           ...baseFields(),
@@ -102,13 +120,14 @@ export async function ensureResidentPaymentLedgerMaterialized(p) {
           'Line Item Type': 'Recurring',
           Month: `${longMonthLabel(ym)} rent`,
           Notes: `Scheduled monthly rent (portal ledger). ${rentMarker}`,
+          _axis_payment_key: rentMarker,
         })
         extendKnown(known, row)
         createdCount += 1
       }
 
       if (utilitiesFee > 0 && firstMonthUtilitiesPaid) {
-        const utilMarker = recurringUtilitiesLedgerMarker(rid, ym)
+        const utilMarker = recurringUtilitiesLedgerMarker(markerKey, ym)
         if (!findUtilitiesPaymentForBillingMonth(known, ym) && !markerTaken(utilMarker)) {
           const row = await createPaymentRecord({
             ...baseFields(),
@@ -122,6 +141,7 @@ export async function ensureResidentPaymentLedgerMaterialized(p) {
             'Line Item Type': 'Recurring',
             Month: `${longMonthLabel(ym)} utilities`,
             Notes: `Scheduled monthly utilities (portal ledger). ${utilMarker}`,
+            _axis_payment_key: utilMarker,
           })
           extendKnown(known, row)
           createdCount += 1

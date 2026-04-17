@@ -83,6 +83,11 @@ export default async function handler(req, res) {
     })
   } catch (err) {
     console.error('Free tier setup error:', err)
-    return res.status(500).json({ error: err?.message || 'Could not start the free tier setup.' })
+    const msg = String(err?.message || '').trim()
+    const hint =
+      msg.includes('Supabase service client not configured') || msg.includes('SUPABASE_SERVICE_ROLE_KEY')
+        ? 'Server is missing Supabase credentials (SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY).'
+        : msg || 'Could not start the free tier setup.'
+    return res.status(500).json({ error: hint })
   }
 }

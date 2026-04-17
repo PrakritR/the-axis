@@ -12,6 +12,7 @@ import {
   applicationRejectedFieldName,
 } from './applicationApprovalState.js'
 import { PROPERTY_EDIT_REQUEST_FIELD } from './managerPropertyFormAirtableMap.js'
+import { fetchStaffResidentsLegacyList } from './residentsStaffSupabase.js'
 
 const BASE_ID = import.meta.env.VITE_AIRTABLE_BASE_ID || 'appol57LKtMKaQ75T'
 const API_KEY = import.meta.env.VITE_AIRTABLE_TOKEN
@@ -641,20 +642,9 @@ export async function adminUnapproveApplication(recordId) {
   })
 }
 
-/** Load all resident profiles for CEO/admin portal handoff. */
+/** Load all resident profiles for CEO/admin portal handoff (Supabase directory). */
 export async function loadResidentsForAdmin() {
-  if (!isAdminPortalAirtableConfigured()) return []
-  try {
-    const out = await fetchResidentProfileRecords()
-    return out.sort((a, b) =>
-      String(a.Name || a['Resident Name'] || '').localeCompare(String(b.Name || b['Resident Name'] || ''), undefined, {
-        sensitivity: 'base',
-      }),
-    )
-  } catch (e) {
-    console.error('[adminPortalAirtable] loadResidentsForAdmin', e?.message || e)
-    return []
-  }
+  return fetchStaffResidentsLegacyList()
 }
 
 /**
@@ -662,14 +652,13 @@ export async function loadResidentsForAdmin() {
  * @param {string[]} allowedPropertyNames — display names from Properties / manager session
  */
 export async function loadResidentsForManagerPortalInbox(allowedPropertyNames) {
-  if (!isAdminPortalAirtableConfigured()) return []
   const allowed = new Set(
     (allowedPropertyNames || []).map((n) => String(n).trim().toLowerCase()).filter(Boolean),
   )
   if (!allowed.size) return []
   let rows = []
   try {
-    rows = await fetchResidentProfileRecords()
+    rows = await fetchStaffResidentsLegacyList()
   } catch {
     return []
   }

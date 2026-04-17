@@ -8,6 +8,14 @@
  * Body: { leaseDraftId, managerName }
  */
 
+import { getSupabaseServiceClient } from '../lib/app-users-service.js'
+import {
+  fetchLeaseDraftJoined,
+  isLeaseDraftUuid,
+  mapLeaseDraftRowToLegacyRecord,
+  updateLeaseDraftById,
+} from '../lib/lease-drafts-service.js'
+
 const AIRTABLE_TOKEN = process.env.AIRTABLE_TOKEN || process.env.VITE_AIRTABLE_TOKEN
 const CORE_BASE_ID =
   process.env.VITE_AIRTABLE_BASE_ID || process.env.AIRTABLE_BASE_ID || 'appol57LKtMKaQ75T'
@@ -78,8 +86,6 @@ export default async function handler(req, res) {
   if (req.method === 'OPTIONS') return res.status(200).end()
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' })
 
-  if (!AIRTABLE_TOKEN) return res.status(500).json({ error: 'Data service not configured.' })
-
   const { leaseDraftId, managerName, origin } = req.body || {}
 
   if (!leaseDraftId) return res.status(400).json({ error: 'leaseDraftId is required.' })
@@ -87,26 +93,47 @@ export default async function handler(req, res) {
   try {
     const now = new Date().toISOString()
 
-    // Fetch draft to get tenant details for email
-    const draftData = await airtableGet(
-      `https://api.airtable.com/v0/${CORE_BASE_ID}/Lease%20Drafts/${leaseDraftId}`
-    )
-    const draft = { id: draftData.id, ...draftData.fields }
+    let draft = null
+    let outDraft = null
 
-    // Only allow sending from certain statuses
-    const currentStatus = String(draft.Status || '').trim()
-    if (currentStatus === 'Signed') {
-      return res.status(400).json({ error: 'Lease is already signed and cannot be re-sent.' })
+    if (isLeaseDraftUuid(leaseDraftId)) {
+      const client = getSupabaseServiceClient()
+      if (!client) return res.status(500).json({ error: 'Supabase is not configured on the server.' })
+      const row = await fetchLeaseDraftJoined(client, leaseDraftId)
+      if (!row) return res.status(404).json({ error: 'Lease draft not found.' })
+      draft = mapLeaseDraftRowToLegacyRecord(row)
+      const currentStatus = String(draft.Status || '').trim()
+      if (currentStatus === 'Signed') {
+        return res.status(400).json({ error: 'Lease is already signed and cannot be re-sent.' })
+      }
+      await updateLeaseDraftById(client, leaseDraftId, {
+        status: 'Published',
+        published_at: now,
+        updated_at: now,
+      })
+      const fresh = await fetchLeaseDraftJoined(client, leaseDraftId)
+      outDraft = mapLeaseDraftRowToLegacyRecord(fresh)
+    } else {
+      if (!AIRTABLE_TOKEN) return res.status(500).json({ error: 'Data service not configured.' })
+
+      const draftData = await airtableGet(
+        `https://api.airtable.com/v0/${CORE_BASE_ID}/Lease%20Drafts/${leaseDraftId}`
+      )
+      draft = { id: draftData.id, ...draftData.fields }
+
+      const currentStatus = String(draft.Status || '').trim()
+      if (currentStatus === 'Signed') {
+        return res.status(400).json({ error: 'Lease is already signed and cannot be re-sent.' })
+      }
+
+      const updated = await airtablePatch('Lease Drafts', leaseDraftId, {
+        Status: 'Published',
+        'Sent At': now,
+        'Updated At': now,
+      })
+      outDraft = { id: updated.id, ...updated.fields }
     }
 
-    // Publish the draft
-    const updated = await airtablePatch('Lease Drafts', leaseDraftId, {
-      Status: 'Published',
-      'Sent At': now,
-      'Updated At': now,
-    })
-
-    // Parse lease data for email
     let leaseData = {}
     try {
       leaseData = JSON.parse(draft['Lease JSON'] || '{}')
@@ -124,9 +151,11 @@ export default async function handler(req, res) {
       origin,
     })
 
+    void managerName
+
     return res.status(200).json({
       success: true,
-      draft: { id: updated.id, ...updated.fields },
+      draft: outDraft,
       message: 'Lease sent to resident.',
     })
   } catch (err) {

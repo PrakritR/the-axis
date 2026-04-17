@@ -32,6 +32,32 @@ import {
   updateAnnouncementSupabase,
   deleteAnnouncementSupabase,
 } from './announcementsSupabase.js'
+import {
+  getApprovedLeaseForResidentSupabase,
+  getCurrentLeaseVersionSupabase,
+  getLeaseCommentsForDraftSupabase,
+  getLeaseDraftByIdSupabase,
+  getLeaseDraftsForResidentSupabase,
+  isLeaseDraftUuid,
+  updateLeaseDraftRecordSupabase,
+} from './leaseDraftsSupabase.js'
+import { uploadLeaseFileInternal, signedDownloadLeaseFile } from './internalFileStorage.js'
+import { isInternalUuid, isAirtableRecordId } from './recordIdentity.js'
+import { readAppUserBootstrap } from './authAppUserSync.js'
+import {
+  fetchResidentSelfFullBundle,
+  mapInternalPaymentToResidentPaymentRow,
+  patchResidentPortalProfile,
+} from './residentPortalInternal.js'
+import { fetchStaffResidentsLegacyList } from './residentsStaffSupabase.js'
+import {
+  createPaymentRecordInternal,
+  deletePaymentRecordInternal,
+  fetchStaffPaymentsRows,
+  isSupabasePaymentRecordId,
+  listPaymentsMappedForResident,
+  patchPaymentRecordInternal,
+} from './paymentsInternalApi.js'
 
 export {
   ANNOUNCEMENT_SUBMITTER_TOKEN_PREFIX,
@@ -43,13 +69,7 @@ export {
   announcementMatchesResident,
 } from './announcementAudienceShared.js'
 
-/** Postgres-backed entity id (properties, rooms, applications, …) — not an Airtable `rec…` record. */
-const INTERNAL_AXIS_UUID_RE =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
-
-export function isInternalAxisRecordId(id) {
-  return INTERNAL_AXIS_UUID_RE.test(String(id || '').trim())
-}
+export { isInternalAxisRecordId } from './axisRecordIds.js'
 
 /** Single Airtable base for the whole app (portal, applications, tour, lease drafts, payments, etc.). */
 const BASE_ID = import.meta.env.VITE_AIRTABLE_BASE_ID || 'appol57LKtMKaQ75T'
@@ -187,7 +207,6 @@ const TABLES = {
   properties: 'Properties',
   rooms: 'Rooms',
   websiteSettings: 'Website Settings',
-  payments: 'Payments',
   documents: 'Documents',
   packages: 'Packages',
 }
@@ -213,10 +232,6 @@ function tableUrl(table) {
   return `${BASE_URL}/${encodeURIComponent(table)}`
 }
 
-function paymentsTableUrl() {
-  return `${BASE_URL}/${encodeURIComponent(TABLES.payments)}`
-}
-
 function applySearchParams(url, params = {}) {
   Object.entries(params).forEach(([key, value]) => {
     if (value === undefined || value === null || value === '') return
@@ -235,12 +250,6 @@ function applySearchParams(url, params = {}) {
 
 function buildUrl(table, params = {}) {
   const url = new URL(tableUrl(table))
-  applySearchParams(url, params)
-  return url.toString()
-}
-
-function buildPaymentsUrl(params = {}) {
-  const url = new URL(paymentsTableUrl())
   applySearchParams(url, params)
   return url.toString()
 }
@@ -420,7 +429,15 @@ function titleCaseFromEmail(email) {
 }
 
 export async function getResidentById(recordId) {
-  const data = await request(`${tableUrl(TABLES.residents)}/${recordId}`)
+  const id = String(recordId || '').trim()
+  if (isInternalUuid(id)) {
+    const boot = readAppUserBootstrap()
+    if (String(boot?.appUserId || '').trim() !== id) return null
+    const bundle = await fetchResidentSelfFullBundle()
+    if (!bundle.ok || !bundle.display) return null
+    return bundle.display
+  }
+  const data = await request(`${tableUrl(TABLES.residents)}/${id}`)
   return mapRecord(data)
 }
 
@@ -452,7 +469,28 @@ export async function createResident(fields) {
 }
 
 export async function updateResident(recordId, fields) {
-  const data = await request(`${tableUrl(TABLES.residents)}/${recordId}`, {
+  const id = String(recordId || '').trim()
+  if (isInternalUuid(id)) {
+    const boot = readAppUserBootstrap()
+    if (String(boot?.appUserId || '').trim() !== id) {
+      throw new Error('You can only update your own resident profile.')
+    }
+    const patch = {}
+    if (fields && typeof fields === 'object') {
+      if ('Name' in fields) patch.full_name = fields.Name == null ? null : String(fields.Name)
+      if ('Phone' in fields) patch.phone = fields.Phone == null ? null : String(fields.Phone)
+    }
+    if (Object.keys(patch).length === 0) {
+      return getResidentById(id)
+    }
+    await patchResidentPortalProfile(patch)
+    const again = await fetchResidentSelfFullBundle()
+    if (!again.ok || !again.display) {
+      throw new Error(again.error || 'Could not reload profile after save.')
+    }
+    return again.display
+  }
+  const data = await request(`${tableUrl(TABLES.residents)}/${id}`, {
     method: 'PATCH',
     body: JSON.stringify({ fields, typecast: true }),
   })
@@ -579,10 +617,11 @@ export function workOrderLinkedResidentRecordIds(recordOrRaw) {
     if (Array.isArray(val)) {
       for (const x of val) {
         const s = String(x).trim()
-        if (/^rec[a-zA-Z0-9]{14,}$/.test(s)) ids.push(s)
+        if (isAirtableRecordId(s) || isInternalUuid(s)) ids.push(s)
       }
-    } else if (typeof val === 'string' && /^rec[a-zA-Z0-9]{14,}$/.test(val.trim())) {
-      ids.push(val.trim())
+    } else if (typeof val === 'string') {
+      const s = val.trim()
+      if (isAirtableRecordId(s) || isInternalUuid(s)) ids.push(s)
     }
   }
   return [...new Set(ids)]
@@ -1134,13 +1173,30 @@ export function normalizePaymentsMappedRecord(mapped) {
   return { ...mapped, Resident: fromLink }
 }
 
+async function resolveResidentAppUserIdForPayments(resident, rid) {
+  const r = String(rid || '').trim()
+  if (isInternalUuid(r)) return r
+  const direct = String(resident?.['Supabase User ID'] || resident?.supabaseUserId || '').trim()
+  if (isInternalUuid(direct)) return direct
+  if (isAirtableRecordId(r)) {
+    try {
+      const full = await getResidentById(r)
+      const su = String(full?.['Supabase User ID'] || '').trim()
+      if (isInternalUuid(su)) return su
+    } catch {
+      /* ignore */
+    }
+  }
+  return ''
+}
+
 export async function getPaymentsForResident(resident) {
   const rid = String(resident?.id || '').trim()
   if (!rid) return []
 
   /** Work-order / manager paths often pass `{ id }` only — load profile so email clause + filters work. */
   let res = resident && typeof resident === 'object' ? { ...resident, id: rid } : { id: rid }
-  if (!String(res.Email || '').trim()) {
+  if (!String(res.Email || '').trim() && isAirtableRecordId(rid)) {
     try {
       const full = await getResidentById(rid)
       if (full && typeof full === 'object') res = { ...full, ...res, id: full.id || rid }
@@ -1149,80 +1205,27 @@ export async function getPaymentsForResident(resident) {
     }
   }
 
-  const fieldRef = paymentsResidentFieldFormulaRef()
-  const escapedId = escapeFormulaValue(rid)
-  const residentEmail = String(res.Email || '').trim().toLowerCase()
-
-  // Use OR conditions to handle all field storage patterns:
-  //  1. Linked-record field (single): {Resident} = "recXXX" — Airtable matches linked records
-  //     by record ID when using the = operator in filter formulas.
-  //  2. Text field or multi-link ARRAYJOIN: FIND(id, ARRAYJOIN) — works when IDs are stored
-  //     as comma-joined strings.
-  //  3. Resident Email text field: fallback for payments where the Resident link was stripped
-  //     (e.g. by createPaymentRecordStrippingUnknownFields) but email was saved.
-  const baseClauses = [
-    `${fieldRef} = "${escapedId}"`,
-    `FIND("${escapedId}", ARRAYJOIN(${fieldRef})) > 0`,
-  ]
-
-  const buildFormula = (includeEmailClause) => {
-    const clauses = [...baseClauses]
-    if (includeEmailClause && residentEmail) {
-      clauses.push(`LOWER({Resident Email}) = "${escapeFormulaValue(residentEmail)}"`)
-    }
-    return clauses.length === 1 ? clauses[0] : `OR(${clauses.join(', ')})`
-  }
-
-  const run = async (formula) =>
-    request(
-      buildPaymentsUrl({
-        filterByFormula: formula,
-        sort: [{ field: 'Due Date', direction: 'desc' }],
-      }),
-    )
-
-  try {
-    const data = await run(buildFormula(true))
-    return (data.records || []).map((r) => normalizePaymentsMappedRecord(mapRecord(r)))
-  } catch (e) {
-    const msg = String(e?.message || '')
-    const maybeMissingEmailField =
-      /resident email/i.test(msg) &&
-      (/unknown field/i.test(msg) || /not\s+recognized/i.test(msg) || /invalid_filter_by_formula/i.test(msg))
-    if (residentEmail && maybeMissingEmailField) {
-      const data = await run(buildFormula(false))
-      return (data.records || []).map((r) => normalizePaymentsMappedRecord(mapRecord(r)))
-    }
-    throw e
-  }
+  const appUserId = await resolveResidentAppUserIdForPayments(res, rid)
+  if (!appUserId) return []
+  return listPaymentsMappedForResident({ preferredAppUserId: appUserId }).catch(() => [])
 }
 
-/** All payment rows (paginated) — manager portal rent overview. */
+/** All payment rows — manager / admin portal (Supabase ledger, scoped server-side). */
 export async function getAllPaymentsRecords() {
-  const allRecords = []
-  let offset = null
-  do {
-    const params = {}
-    if (offset) params.offset = offset
-    const data = await request(buildPaymentsUrl(params))
-    ;(data.records || []).forEach((r) => allRecords.push(normalizePaymentsMappedRecord(mapRecord(r))))
-    offset = data.offset || null
-  } while (offset)
-  return allRecords
+  const rows = await fetchStaffPaymentsRows().catch(() => [])
+  return rows.map(mapInternalPaymentToResidentPaymentRow)
 }
 
 export async function updatePaymentRecord(recordId, fields) {
   const id = String(recordId || '').trim()
-  if (!/^rec[a-zA-Z0-9]{14,}$/.test(id)) {
-    throw new Error('Invalid payment record ID.')
+  if (!isSupabasePaymentRecordId(id)) {
+    throw new Error(
+      'Unsupported payment record id. Payments now live in Supabase — refresh the page and use rows from the internal ledger.',
+    )
   }
   const cleaned = Object.fromEntries(Object.entries(fields).filter(([, v]) => v !== undefined))
   if (Object.keys(cleaned).length === 0) throw new Error('No fields to update.')
-  const data = await request(`${paymentsTableUrl()}/${id}`, {
-    method: 'PATCH',
-    body: JSON.stringify({ fields: cleaned, typecast: true }),
-  })
-  return normalizePaymentsMappedRecord(mapRecord(data))
+  return patchPaymentRecordInternal(id, cleaned)
 }
 
 /** Notes marker for room-hold fee rows created from the resident portal (one row per resident; idempotent). */
@@ -1239,39 +1242,32 @@ export function buildResidentPortalRoomHoldNotes(residentRecordId) {
  */
 export async function listResidentPortalRoomHoldPaymentRecords(residentRecordId) {
   const rid = String(residentRecordId || '').trim()
-  if (!/^rec[a-zA-Z0-9]{14,}$/.test(rid)) return []
-  const legacySub = 'room hold without signing lease (resident portal)'
-  const fieldRef = paymentsResidentFieldFormulaRef()
-  const escRid = escapeFormulaValue(rid)
-  const linkClause = `OR(${fieldRef} = "${escRid}", FIND("${escRid}", ARRAYJOIN(${fieldRef})) > 0)`
-  const formula = `AND(${linkClause}, OR(FIND("${escapeFormulaValue(AXIS_ROOM_HOLD_WITHOUT_LEASE_MARKER_PREFIX)}", {Notes}) > 0, AND({Type} = "Room Hold Fee", FIND("${escapeFormulaValue(legacySub)}", LOWER({Notes})) > 0)))`
-  const data = await request(
-    buildPaymentsUrl({
-      filterByFormula: formula,
-      maxRecords: 20,
-    }),
-  )
-  return (data.records || []).map((r) => normalizePaymentsMappedRecord(mapRecord(r)))
+  if (!rid) return []
+  const rows = await getPaymentsForResident({ id: rid }).catch(() => [])
+  const list = Array.isArray(rows) ? rows : []
+  const legacySub = 'room hold without signing lease (resident portal)'.toLowerCase()
+  const prefix = AXIS_ROOM_HOLD_WITHOUT_LEASE_MARKER_PREFIX.toLowerCase()
+  return list.filter((p) => {
+    const notes = String(p.Notes || '').toLowerCase()
+    if (notes.includes(prefix)) return true
+    return String(p.Type || '').toLowerCase() === 'room hold fee' && notes.includes(legacySub)
+  })
 }
 
 export async function deletePaymentRecord(recordId) {
   const id = String(recordId || '').trim()
-  if (!/^rec[a-zA-Z0-9]{14,}$/.test(id)) {
-    throw new Error('Invalid payment record ID.')
+  if (!isSupabasePaymentRecordId(id)) {
+    throw new Error('Unsupported payment record id. Only internal payment rows can be cancelled.')
   }
-  await request(`${paymentsTableUrl()}/${id}`, { method: 'DELETE' })
+  await deletePaymentRecordInternal(id)
   return { id, deleted: true }
 }
 
-/** Create a Payments row (e.g. manager-posted fine). `fields` must match your Airtable Payments table. */
+/** Create a payment ledger row (manager / system). Fields use the legacy Airtable-shaped keys. */
 export async function createPaymentRecord(fields) {
   const cleaned = Object.fromEntries(Object.entries(fields || {}).filter(([, v]) => v !== undefined))
   if (Object.keys(cleaned).length === 0) throw new Error('No fields to create payment.')
-  const data = await request(paymentsTableUrl(), {
-    method: 'POST',
-    body: JSON.stringify({ fields: cleaned, typecast: true }),
-  })
-  return normalizePaymentsMappedRecord(mapRecord(data))
+  return createPaymentRecordInternal(cleaned)
 }
 
 export async function getPropertyByName(propertyName) {
@@ -1668,18 +1664,9 @@ export async function getAllWorkOrders() {
   return getAllWorkOrdersSupabase()
 }
 
-/** All Resident Profile rows (paginated). Used to scope manager work orders by resident → property. */
+/** All internal residents (Supabase). Used to scope manager work orders by resident → property. */
 export async function listAllResidentsRecords() {
-  const allRecords = []
-  let offset = null
-  do {
-    const params = {}
-    if (offset) params.offset = offset
-    const data = await request(buildUrl(TABLES.residents, params))
-    ;(data.records || []).forEach((r) => allRecords.push(mapRecord(r)))
-    offset = data.offset || null
-  } while (offset)
-  return allRecords
+  return fetchStaffResidentsLegacyList()
 }
 
 export async function getWorkOrderById(recordId) {
@@ -1913,123 +1900,57 @@ export async function deleteAnnouncement(recordId) {
 }
 
 // ---------------------------------------------------------------------------
-// Lease Drafts — resident-facing read
+// Lease Drafts — resident-facing read (Supabase `/api/lease-drafts` only)
 // ---------------------------------------------------------------------------
 
-async function listLeaseDraftsByFormula(formula) {
-  const table = 'Lease Drafts'
-  const allRecords = []
-  let offset = null
-  do {
-    const params = { filterByFormula: formula }
-    if (offset) params.offset = offset
-    const data = await request(buildUrl(table, params))
-    ;(data.records || []).forEach((r) => allRecords.push(mapRecord(r)))
-    offset = data.offset || null
-  } while (offset)
-  return allRecords
-}
-
-function sortLeaseDraftRowsForResident(allRecords) {
-  allRecords.sort((a, b) => {
-    const pb = new Date(b['Published At'] || 0).getTime()
-    const pa = new Date(a['Published At'] || 0).getTime()
-    if (pb !== pa) return pb - pa
-    return new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime()
-  })
-  return allRecords
-}
-
 // Returns the most recent published (or signed) lease draft for dashboard /
-// snapshots. Pass `residentEmail` so drafts match when `Resident Record ID` on the row is blank.
+// snapshots. `residentRecordId` / `residentEmail` are ignored — visibility is enforced server-side from the JWT.
 export async function getApprovedLeaseForResident(residentRecordId, residentEmail = '') {
-  if (!residentRecordId) return null
-  const escaped = escapeFormulaValue(residentRecordId)
-  const statusOr = `OR({Status} = "Published", {Status} = "Signed", {Status} = "Ready for Signature")`
-  const byIdFormula = `AND({Resident Record ID} = "${escaped}", ${statusOr})`
-
-  const fetchOne = async (formula) => {
-    const url = new URL(`${BASE_URL}/Lease%20Drafts`)
-    url.searchParams.set('filterByFormula', formula)
-    url.searchParams.set('sort[0][field]', 'Published At')
-    url.searchParams.set('sort[0][direction]', 'desc')
-    url.searchParams.set('maxRecords', '1')
-    const data = await request(url.toString())
-    const record = data.records?.[0]
-    return record ? mapRecord(record) : null
-  }
-
-  let found = await fetchOne(byIdFormula)
-  if (found) return found
-
-  const em = String(residentEmail || '').trim().toLowerCase()
-  if (em) {
-    try {
-      const byEmailFormula = `AND(LOWER(TRIM({Resident Email})) = "${escapeFormulaValue(em)}", ${statusOr})`
-      found = await fetchOne(byEmailFormula)
-      if (found) return found
-    } catch {
-      /* Resident Email field missing or renamed */
-    }
-  }
-
+  void residentRecordId
+  void residentEmail
+  const { data: sess } = await supabase.auth.getSession()
+  if (!sess?.session?.access_token) return null
   try {
-    const byLinkFormula = `AND({Resident} = "${escaped}", ${statusOr})`
-    return await fetchOne(byLinkFormula)
-  } catch {
+    return await getApprovedLeaseForResidentSupabase()
+  } catch (err) {
+    console.warn('[getApprovedLeaseForResident]', err?.message || err)
     return null
   }
 }
 
 /**
- * All lease draft rows for a resident (any status), newest first — for portal stage filter.
- * Matches `{Resident Record ID}` first, then `{Resident Email}`, then linked `{Resident}` if present,
- * so the resident portal still loads drafts when the application never copied the profile id onto the row.
- * @param {string} residentRecordId
- * @param {string} [residentEmail] — portal sign-in email (same as Lease Drafts `Resident Email`)
+ * All lease draft rows for the signed-in applicant (any status), newest first.
+ * @param {string} residentRecordId legacy param (ignored; use Supabase session)
+ * @param {string} [residentEmail] legacy param (ignored)
  */
 export async function getLeaseDraftsForResident(residentRecordId, residentEmail = '') {
-  if (!residentRecordId) return []
-  const escaped = escapeFormulaValue(residentRecordId)
-  const byId = await listLeaseDraftsByFormula(`{Resident Record ID} = "${escaped}"`)
-  const merged = new Map(byId.map((r) => [r.id, r]))
-
-  if (merged.size === 0) {
-    const em = String(residentEmail || '').trim().toLowerCase()
-    if (em) {
-      try {
-        const byEmail = await listLeaseDraftsByFormula(
-          `LOWER(TRIM({Resident Email})) = "${escapeFormulaValue(em)}"`,
-        )
-        for (const r of byEmail) merged.set(r.id, r)
-      } catch {
-        /* e.g. column renamed away from `Resident Email` */
-      }
-    }
+  void residentRecordId
+  void residentEmail
+  const { data: sess } = await supabase.auth.getSession()
+  if (!sess?.session?.access_token) return []
+  try {
+    return await getLeaseDraftsForResidentSupabase()
+  } catch (err) {
+    console.warn('[getLeaseDraftsForResident]', err?.message || err)
+    return []
   }
-
-  if (merged.size === 0) {
-    try {
-      const byLink = await listLeaseDraftsByFormula(`{Resident} = "${escaped}"`)
-      for (const r of byLink) merged.set(r.id, r)
-    } catch {
-      /* "Resident" link field may not exist in this base */
-    }
-  }
-
-  const allRecords = sortLeaseDraftRowsForResident([...merged.values()])
-  return allRecords
 }
 
 export async function getLeaseDraftById(leaseDraftId) {
   const id = String(leaseDraftId || '').trim()
-  if (!/^rec[a-zA-Z0-9]{14,}$/.test(id)) throw new Error('Invalid lease draft ID.')
-  const data = await request(`${BASE_URL}/${encodeURIComponent('Lease Drafts')}/${id}`)
-  return mapRecord(data)
+  if (isLeaseDraftUuid(id)) {
+    const row = await getLeaseDraftByIdSupabase(id)
+    if (!row) throw new Error('Lease draft not found.')
+    return row
+  }
+  throw new Error('Lease drafts are stored in Supabase only — expected a UUID lease draft id.')
 }
 
 export async function updateLeaseDraftRecord(leaseDraftId, fields) {
   const id = String(leaseDraftId || '').trim()
+  if (isLeaseDraftUuid(id)) {
+    return updateLeaseDraftRecordSupabase(id, fields)
+  }
   if (!/^rec[a-zA-Z0-9]{14,}$/.test(id)) throw new Error('Invalid lease draft ID.')
   const cleaned = Object.fromEntries(Object.entries(fields || {}).filter(([, value]) => value !== undefined))
   if (Object.keys(cleaned).length === 0) throw new Error('No lease draft fields to update.')
@@ -2050,7 +1971,7 @@ export async function updateLeaseDraftRecord(leaseDraftId, fields) {
  */
 export async function patchLeaseDraftRecordPreferServer(leaseDraftId, fields, options = {}) {
   const id = String(leaseDraftId || '').trim()
-  if (!/^rec[a-zA-Z0-9]{14,}$/.test(id)) throw new Error('Invalid lease draft ID.')
+  if (!isLeaseDraftUuid(id) && !/^rec[a-zA-Z0-9]{14,}$/.test(id)) throw new Error('Invalid lease draft ID.')
   const cleaned = Object.fromEntries(Object.entries(fields || {}).filter(([, value]) => value !== undefined))
   if (Object.keys(cleaned).length === 0) throw new Error('No lease draft fields to update.')
   const managerRecordId = String(options.managerRecordId || '').trim()
@@ -2086,6 +2007,14 @@ export async function patchLeaseDraftRecordPreferServer(leaseDraftId, fields, op
 
 export async function getLeaseCommentsForDraft(leaseDraftId) {
   const id = String(leaseDraftId || '').trim()
+  if (isLeaseDraftUuid(id)) {
+    try {
+      const draft = await getLeaseDraftByIdSupabase(id)
+      return getLeaseCommentsForDraftSupabase(draft)
+    } catch {
+      return []
+    }
+  }
   if (!/^rec[a-zA-Z0-9]{14,}$/.test(id)) return []
   const formula = `{Lease Draft ID} = "${escapeFormulaValue(id)}"`
   const data = await request(buildUrl('Lease Comments', {
@@ -2104,8 +2033,31 @@ export async function addLeaseCommentRecord({
 }) {
   const draftId = String(leaseDraftId || '').trim()
   const text = String(message || '').trim()
-  if (!/^rec[a-zA-Z0-9]{14,}$/.test(draftId)) throw new Error('Invalid lease draft ID.')
   if (!text) throw new Error('Comment is required.')
+  if (isLeaseDraftUuid(draftId)) {
+    const res = await fetch(`/api/portal?action=lease-add-comment`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        leaseDraftId: draftId,
+        authorName,
+        authorRole,
+        authorRecordId,
+        message: text,
+      }),
+    })
+    const data = await res.json().catch(() => ({}))
+    if (!res.ok) throw new Error(data.error || 'Could not add comment.')
+    return {
+      id: data.id || `lc-${Date.now()}`,
+      'Author Name': String(authorName || 'Unknown').trim() || 'Unknown',
+      'Author Role': String(authorRole || 'Resident').trim() || 'Resident',
+      'Author Record ID': String(authorRecordId || '').trim(),
+      Message: text,
+      Timestamp: new Date().toISOString(),
+    }
+  }
+  if (!/^rec[a-zA-Z0-9]{14,}$/.test(draftId)) throw new Error('Invalid lease draft ID.')
   const data = await request(`${BASE_URL}/${encodeURIComponent('Lease Comments')}`, {
     method: 'POST',
     body: JSON.stringify({
@@ -2165,6 +2117,28 @@ export async function createLeaseNotification({ recipientRecordId, recipientRole
 
 export async function getCurrentLeaseVersion(leaseDraftId) {
   const id = String(leaseDraftId || '').trim()
+  if (isLeaseDraftUuid(id)) {
+    try {
+      const draft = await getLeaseDraftByIdSupabase(id)
+      const v = getCurrentLeaseVersionSupabase(draft)
+      if (!v) return null
+      const raw = String(draft?.current_pdf_url || '').trim()
+      if (raw.startsWith('leasefile:')) {
+        const fileId = raw.slice('leasefile:'.length).trim()
+        if (fileId) {
+          try {
+            const signed = await signedDownloadLeaseFile(fileId, 60 * 60 * 12)
+            if (signed) return { ...v, 'PDF URL': signed }
+          } catch {
+            /* fall through to stored URL */
+          }
+        }
+      }
+      return v
+    } catch {
+      return null
+    }
+  }
   if (!/^rec[a-zA-Z0-9]{14,}$/.test(id)) return null
   const formula = `{Lease Draft ID} = "${escapeFormulaValue(id)}"`
   const data = await request(buildUrl('Lease Versions', {
@@ -2186,8 +2160,25 @@ export async function upsertCurrentLeaseVersion({
 }) {
   const draftId = String(leaseDraftId || '').trim()
   const nextPdfUrl = String(pdfUrl || '').trim()
-  if (!/^rec[a-zA-Z0-9]{14,}$/.test(draftId)) throw new Error('Invalid lease draft ID.')
   if (!nextPdfUrl) throw new Error('PDF URL is required.')
+
+  if (isLeaseDraftUuid(draftId)) {
+    const draft = await getLeaseDraftByIdSupabase(draftId)
+    if (!draft) throw new Error('Lease draft not found.')
+    const versionNumber = Number(draft['Current Version'] || 1) || 1
+    void notes
+    void uploaderName
+    void uploaderRole
+    void uploaderRecordId
+    await updateLeaseDraftRecordSupabase(draftId, {
+      current_pdf_url: nextPdfUrl,
+      current_pdf_file_name: String(fileName || '').trim() || `lease-v${versionNumber}.pdf`,
+      'Current Version': versionNumber,
+    })
+    return getCurrentLeaseVersion(draftId)
+  }
+
+  if (!/^rec[a-zA-Z0-9]{14,}$/.test(draftId)) throw new Error('Invalid lease draft ID.')
 
   const draft = await getLeaseDraftById(draftId)
   const current = await getCurrentLeaseVersion(draftId)
@@ -2232,10 +2223,39 @@ export async function uploadLeaseVersionPdfFile({
   const draftId = String(leaseDraftId || '').trim()
   const nextFile = file
   const nextFileName = String(nextFile?.name || '').trim()
-  if (!/^rec[a-zA-Z0-9]{14,}$/.test(draftId)) throw new Error('Invalid lease draft ID.')
+  if (!isLeaseDraftUuid(draftId) && !/^rec[a-zA-Z0-9]{14,}$/.test(draftId)) throw new Error('Invalid lease draft ID.')
   if (!nextFile || typeof nextFile !== 'object' || !nextFileName) throw new Error('PDF file is required.')
   if (!/\.pdf$/i.test(nextFileName) && String(nextFile?.type || '').trim() !== 'application/pdf') {
     throw new Error('Select a PDF file.')
+  }
+
+  if (isLeaseDraftUuid(draftId)) {
+    const draft = await getLeaseDraftByIdSupabase(draftId)
+    if (!draft) throw new Error('Lease draft not found.')
+    const appId = String(draft['Application Record ID'] || '').trim()
+    if (!INTERNAL_AXIS_UUID_RE.test(appId)) {
+      throw new Error('This lease draft is missing a linked application id for file storage.')
+    }
+    void notes
+    void uploaderName
+    void uploaderRole
+    void uploaderRecordId
+    const row = await uploadLeaseFileInternal({
+      applicationId: appId,
+      file: nextFile,
+      leaseId: draftId,
+      fileKind: 'lease-draft-pdf',
+      variant: 'lease-draft-version',
+    })
+    const fileId = String(row?.id || '').trim()
+    if (!fileId) throw new Error('Upload did not return a file id.')
+    const versionNumber = Number(draft['Current Version'] || 1) || 1
+    await updateLeaseDraftRecordSupabase(draftId, {
+      current_pdf_url: `leasefile:${fileId}`,
+      current_pdf_file_name: nextFileName || `lease-v${versionNumber}.pdf`,
+      'Current Version': versionNumber,
+    })
+    return getCurrentLeaseVersion(draftId)
   }
 
   const draft = await getLeaseDraftById(draftId)
@@ -2316,8 +2336,40 @@ export async function submitResidentLeaseChangeRequest({
 }) {
   const draftId = String(draft?.id || '').trim()
   const text = String(message || '').trim()
-  if (!/^rec[a-zA-Z0-9]{14,}$/.test(draftId)) throw new Error('Invalid lease draft ID.')
+  if (!isLeaseDraftUuid(draftId) && !/^rec[a-zA-Z0-9]{14,}$/.test(draftId)) throw new Error('Invalid lease draft ID.')
   if (!text) throw new Error('Please describe the lease change you need.')
+
+  if (isLeaseDraftUuid(draftId)) {
+    const email = String(resident?.Email || '').trim().toLowerCase()
+    if (!email) throw new Error('Missing resident email — cannot submit change request.')
+    if (String(pdfUrl || '').trim()) {
+      throw new Error(
+        'Attaching a PDF with this request is not supported for internal lease drafts yet. Use the lease PDF upload in the portal, or describe the change in text.',
+      )
+    }
+    const res = await fetch('/api/portal?action=lease-resident-add-comment', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        leaseDraftId: draftId,
+        residentRecordId: String(resident?.id || '').trim(),
+        residentEmail: email,
+        authorName: resident?.Name || resident?.Email || 'Resident',
+        message: text,
+        alsoSetStatus: 'Changes Needed',
+      }),
+    })
+    const data = await res.json().catch(() => ({}))
+    if (!res.ok) throw new Error(data.error || 'Could not submit change request.')
+    await createLeaseNotification({
+      recipientRecordId: draft?.['Owner ID'] || '',
+      recipientRole: 'manager',
+      leaseDraftId: draftId,
+      message: `${resident?.Name || 'Resident'} requested lease changes: ${text.length > 220 ? `${text.slice(0, 220)}…` : text}`,
+      actionType: 'resident-requested-changes',
+    }).catch(() => null)
+    return getLeaseDraftById(draftId)
+  }
 
   await addLeaseCommentRecord({
     leaseDraftId: draftId,
@@ -2364,8 +2416,34 @@ export async function submitResidentLeaseChangeRequest({
 export async function submitResidentLeaseIssueReport({ draft, resident, message }) {
   const draftId = String(draft?.id || '').trim()
   const text = String(message || '').trim()
-  if (!/^rec[a-zA-Z0-9]{14,}$/.test(draftId)) throw new Error('Invalid lease draft ID.')
+  if (!isLeaseDraftUuid(draftId) && !/^rec[a-zA-Z0-9]{14,}$/.test(draftId)) throw new Error('Invalid lease draft ID.')
   if (!text) throw new Error('Please describe the issue or change you need.')
+
+  if (isLeaseDraftUuid(draftId)) {
+    const email = String(resident?.Email || '').trim().toLowerCase()
+    if (!email) throw new Error('Missing resident email — cannot send message.')
+    const res = await fetch('/api/portal?action=lease-resident-add-comment', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        leaseDraftId: draftId,
+        residentRecordId: String(resident?.id || '').trim(),
+        residentEmail: email,
+        authorName: resident?.Name || resident?.Email || 'Resident',
+        message: `**Request to manager:**\n\n${text}`,
+      }),
+    })
+    const data = await res.json().catch(() => ({}))
+    if (!res.ok) throw new Error(data.error || 'Could not send message.')
+    await createLeaseNotification({
+      recipientRecordId: draft?.['Owner ID'] || '',
+      recipientRole: 'manager',
+      leaseDraftId: draftId,
+      message: `${resident?.Name || 'Resident'} flagged a lease question: ${text.length > 220 ? `${text.slice(0, 220)}…` : text}`,
+      actionType: 'resident-lease-issue',
+    }).catch(() => null)
+    return getLeaseDraftById(draftId)
+  }
 
   await addLeaseCommentRecord({
     leaseDraftId: draftId,

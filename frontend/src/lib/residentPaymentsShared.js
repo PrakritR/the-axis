@@ -5,6 +5,7 @@
 
 import { isFeeWaivePaymentRecord } from '../../../shared/lease-access-requirements.js'
 import { buildPaymentResidentLinkFields } from './airtable.js'
+import { isInternalUuid } from './recordIdentity.js'
 
 /**
  * Resident Profile `House` field may be a linked-record array of property record IDs.
@@ -109,6 +110,7 @@ function dashboardPaymentDueLineLabel(p) {
  */
 export function isPaymentRowDueOnResidentHome(p) {
   if (!p || typeof p !== 'object' || isFeeWaivePaymentRecord(p)) return false
+  if (p._internalPayment && String(p._internalPayment.status || '').trim().toLowerCase() === 'cancelled') return false
   if (isPostpayRoomCleaningPaymentRecord(p)) return false
   if (computedResidentPaymentStatusLabel(p) === 'Paid') return false
   if (balanceFor(p) <= 0) return false
@@ -353,7 +355,7 @@ export async function reconcilePaymentStatusesInAirtable(rows, updatePaymentReco
   let patched = 0
   for (const p of rows || []) {
     const id = String(p?.id || '').trim()
-    if (!/^rec[a-zA-Z0-9]{14,}$/.test(id)) continue
+    if (!isInternalUuid(id)) continue
     const nextLabel = computedResidentPaymentStatusLabel(p)
     const next = airtableStatusForLabel(nextLabel)
     if (statusesMatch(p.Status, nextLabel)) continue
@@ -420,7 +422,8 @@ export async function finalizeResidentPaymentAfterStripeSuccess(
 
   const stripeRef = String(stripePaymentIntentId || stripeCheckoutSessionId || '').trim()
 
-  if (paymentRecordId && /^rec[a-zA-Z0-9]{14,}$/.test(String(paymentRecordId).trim())) {
+  const prid = String(paymentRecordId || '').trim()
+  if (prid && isInternalUuid(prid)) {
     const fields = {
       Status: 'Paid',
       'Paid Date': todayIsoDate(),
@@ -428,7 +431,7 @@ export async function finalizeResidentPaymentAfterStripeSuccess(
       Balance: 0,
     }
     if (stripeRef) fields['Stripe Payment ID'] = stripeRef
-    return updatePaymentRecord(String(paymentRecordId).trim(), fields)
+    return updatePaymentRecord(prid, fields)
   }
 
   let type = 'Rent'

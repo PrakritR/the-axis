@@ -39,12 +39,15 @@ function createManagerId() {
 export function onboardingToManagerRecord(row) {
   if (!row) return null
   return {
+    /** Postgres onboarding row id — not an Airtable record; never pass to deriveManagerId. */
     id: String(row.id || '').trim(),
+    _internalOnly: true,
     Name: String(row.full_name || '').trim(),
     Email: normalizeEmail(row.email),
     'Phone Number': String(row.phone_number || '').trim(),
     tier: normalizePlanType(row.plan_type),
     'Manager ID': normalizeManagerId(row.manager_id),
+    Role: 'Manager',
     Active: true,
     account_created: row.account_created === true,
     onboarding_source: normalizeNullableText(row.onboarding_source),

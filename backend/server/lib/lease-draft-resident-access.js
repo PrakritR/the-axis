@@ -12,6 +12,26 @@ function firstLinkedRecordId(raw) {
   return String(raw || '').trim()
 }
 
+/**
+ * Supabase `lease_drafts` row (+ nested application) — match portal resident by signer email only.
+ * @param {object} row - joined lease_drafts row from Postgres
+ * @param {string} residentEmail
+ */
+export function draftBelongsToResidentSupabaseRow(row, residentEmail) {
+  const em = normEmail(residentEmail)
+  if (!em) return false
+  const app = row?.application && typeof row.application === 'object' ? row.application : {}
+  if (normEmail(app.signer_email) === em) return true
+  try {
+    const lj = row?.lease_json
+    const j = typeof lj === 'object' && lj != null ? lj : JSON.parse(String(row?.lease_json || '{}'))
+    if (normEmail(j?.tenantEmail) === em || normEmail(j?.signerEmail) === em) return true
+  } catch {
+    /* ignore */
+  }
+  return false
+}
+
 export function draftBelongsToResident(draft, residentRecordId, residentEmail) {
   const rid = String(residentRecordId || '').trim()
   const em = normEmail(residentEmail)

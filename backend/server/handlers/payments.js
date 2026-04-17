@@ -3,7 +3,9 @@
  *
  * Routes (all under /api/payments):
  *   GET   ?id=<id>                 — single payment
- *   GET   (no id)                  — list (scoped by role)
+ *   GET   (no id)                  — list caller’s own payments (resident)
+ *   GET   ?scope=staff             — manager: managed properties; admin: all (JSON `payments[]`)
+ *   GET   ?app_user_id=<uuid>      — list that user’s ledger (self, admin, or authorized manager)
  *   GET   ?property_id=<id>        — list for property (manager/owner/admin)
  *   POST  (no id)                  — create payment (admin/manager only)
  *   PATCH ?id=<id>                 — partial update  (admin/manager only)
@@ -17,13 +19,18 @@
  */
 import { appUserHasRole } from '../lib/app-user-roles-service.js'
 import { authenticateAndLoadAppUser } from '../lib/request-auth.js'
-import { getPropertyById } from '../lib/properties-service.js'
+import { getPropertyById, listProperties } from '../lib/properties-service.js'
+import { listApplicationsForAppUser } from '../lib/applications-service.js'
 import {
   getPaymentById,
   listPaymentsForAppUser,
   listPaymentsForPropertyScope,
+  listPaymentsForManagedPropertiesScope,
+  listAllPaymentsForAdmin,
   createPayment,
   updatePayment,
+  normalizePaymentStatus,
+  normalizePaymentType,
   PAYMENT_STATUS_VALUES,
   PAYMENT_TYPE_VALUES,
 } from '../lib/payments-service.js'
@@ -41,6 +48,23 @@ async function resolveRoles(appUserId) {
     appUserHasRole(appUserId, 'owner'),
   ])
   return { isAdmin, isManager, isOwner }
+}
+
+/**
+ * True when the resident has at least one application tied to a property this manager manages.
+ *
+ * @param {{ managerAppUserId: string, residentAppUserId: string }} args
+ */
+async function managerMayAccessResidentAppUser({ managerAppUserId, residentAppUserId }) {
+  const mid = String(managerAppUserId || '').trim()
+  const uid = String(residentAppUserId || '').trim()
+  if (!mid || !uid) return false
+  const apps = await listApplicationsForAppUser({ appUserId: uid })
+  if (!apps.length) return false
+  const props = await listProperties({ managedByAppUserId: mid, activeOnly: false })
+  const allowed = new Set((props || []).map((p) => String(p.id || '').trim()).filter(Boolean))
+  if (!allowed.size) return false
+  return apps.some((a) => allowed.has(String(a.property_id || '').trim()))
 }
 
 export default async function handler(req, res) {
@@ -80,6 +104,62 @@ export default async function handler(req, res) {
       const { isAdmin, isManager, isOwner } = await resolveRoles(appUser.id)
       const statusFilter      = String(req.query?.status       || '').trim() || undefined
       const paymentTypeFilter = String(req.query?.payment_type || '').trim() || undefined
+      const staffScope        = String(req.query?.scope || '').trim().toLowerCase() === 'staff'
+      const targetAppUserId   = String(req.query?.app_user_id || '').trim() || null
+
+      if (staffScope) {
+        if (!isAdmin && !isManager) {
+          return res.status(403).json({ error: 'Admin or manager role required to list staff payments.' })
+        }
+        let payments = isAdmin
+          ? await listAllPaymentsForAdmin({ limit: 4000 })
+          : await listPaymentsForManagedPropertiesScope({ managerAppUserId: appUser.id, limit: 2000 })
+        if (statusFilter) {
+          try {
+            const st = normalizePaymentStatus(statusFilter)
+            payments = payments.filter((p) => String(p?.status || '').toLowerCase() === st)
+          } catch {
+            return res.status(400).json({ error: `Invalid status filter. Use: ${PAYMENT_STATUS_VALUES.join(' | ')}.` })
+          }
+        }
+        if (paymentTypeFilter) {
+          try {
+            const pt = normalizePaymentType(paymentTypeFilter)
+            payments = payments.filter((p) => String(p?.payment_type || '').toLowerCase() === pt)
+          } catch (e) {
+            return res.status(400).json({ error: e?.message || 'Invalid payment_type filter.' })
+          }
+        }
+        return res.status(200).json({ ok: true, payments })
+      }
+
+      if (targetAppUserId) {
+        if (targetAppUserId === appUser.id) {
+          const payments = await listPaymentsForAppUser({
+            appUserId: appUser.id,
+            status: statusFilter,
+            paymentType: paymentTypeFilter,
+          })
+          return res.status(200).json({ ok: true, payments })
+        }
+        if (!isAdmin && !isManager) {
+          return res.status(403).json({ error: 'Access denied.' })
+        }
+        if (!isAdmin) {
+          const ok = await managerMayAccessResidentAppUser({
+            managerAppUserId: appUser.id,
+            residentAppUserId: targetAppUserId,
+          })
+          if (!ok) return res.status(403).json({ error: 'Access denied.' })
+        }
+        const payments = await listPaymentsForAppUser({
+          appUserId: targetAppUserId,
+          status: statusFilter,
+          paymentType: paymentTypeFilter,
+          limit: 500,
+        })
+        return res.status(200).json({ ok: true, payments })
+      }
 
       if (propertyId) {
         if (!isAdmin && !isManager && !isOwner) {
@@ -126,6 +206,26 @@ export default async function handler(req, res) {
         })
       }
 
+      if (!isAdmin && isManager) {
+        const pid = String(body.property_id || '').trim()
+        const targetUser = String(body.app_user_id || '').trim()
+        let allowed = false
+        if (pid) {
+          const prop = await getPropertyById(pid)
+          allowed = prop?.managed_by_app_user_id === appUser.id
+        } else if (targetUser) {
+          allowed = await managerMayAccessResidentAppUser({
+            managerAppUserId: appUser.id,
+            residentAppUserId: targetUser,
+          })
+        }
+        if (!allowed) {
+          return res.status(403).json({
+            error: 'Not allowed to create payments for this property or resident.',
+          })
+        }
+      }
+
       const payment = await createPayment(body)
       return res.status(201).json({ ok: true, payment })
     }
@@ -141,6 +241,24 @@ export default async function handler(req, res) {
 
       const existing = await getPaymentById(paymentId)
       if (!existing) return res.status(404).json({ error: 'Payment not found.' })
+
+      if (!isAdmin && isManager) {
+        const pid = String(existing.property_id || '').trim()
+        let allowed = false
+        if (pid) {
+          const prop = await getPropertyById(pid)
+          allowed = prop?.managed_by_app_user_id === appUser.id
+        } else {
+          const uid = String(existing.app_user_id || '').trim()
+          if (uid) {
+            allowed = await managerMayAccessResidentAppUser({
+              managerAppUserId: appUser.id,
+              residentAppUserId: uid,
+            })
+          }
+        }
+        if (!allowed) return res.status(403).json({ error: 'Access denied.' })
+      }
 
       if (Object.keys(body).length === 0) {
         return res.status(400).json({

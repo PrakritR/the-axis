@@ -18,6 +18,16 @@
  *       rent, deposit, utilities, specialTerms }
  */
 
+import { getSupabaseServiceClient } from '../lib/app-users-service.js'
+import {
+  appendLeaseCommentJsonb,
+  assertTenantCanWriteLeaseDraft,
+  fetchLeaseDraftJoined,
+  isLeaseDraftUuid,
+  saveLeaseDraftComments,
+  updateLeaseDraftById,
+} from '../lib/lease-drafts-service.js'
+
 const AIRTABLE_TOKEN = process.env.AIRTABLE_TOKEN || process.env.VITE_AIRTABLE_TOKEN
 const BASE_ID = process.env.VITE_AIRTABLE_BASE_ID || process.env.AIRTABLE_BASE_ID || 'appol57LKtMKaQ75T'
 const BASE_URL = `https://api.airtable.com/v0/${BASE_ID}`
@@ -114,7 +124,6 @@ export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type')
   if (req.method === 'OPTIONS') return res.status(200).end()
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' })
-  if (!AIRTABLE_TOKEN) return res.status(500).json({ error: 'Server not configured.' })
 
   const {
     leaseDraftId,
@@ -125,6 +134,78 @@ export default async function handler(req, res) {
   } = req.body || {}
 
   if (!leaseDraftId) return res.status(400).json({ error: 'leaseDraftId is required.' })
+
+  if (isLeaseDraftUuid(leaseDraftId)) {
+    const client = getSupabaseServiceClient()
+    if (!client) return res.status(500).json({ error: 'Supabase is not configured on the server.' })
+    const tenant = req._tenant
+    try {
+      const row = await fetchLeaseDraftJoined(client, leaseDraftId)
+      if (!row) return res.status(404).json({ error: 'Lease draft not found.' })
+      assertTenantCanWriteLeaseDraft(tenant, row)
+
+      const notesPayload = {
+        freeText: editNotes,
+        requestedFields,
+        submittedAt: new Date().toISOString(),
+        submittedBy: managerName,
+      }
+
+      const draftUpdate = {
+        status: 'Submitted to Admin',
+        manager_edit_notes: JSON.stringify(notesPayload),
+      }
+      if (requestedFields.tenantName) {
+        const lj = row.lease_json && typeof row.lease_json === 'object' ? { ...row.lease_json } : {}
+        lj.tenantName = requestedFields.tenantName
+        draftUpdate.lease_json = lj
+      }
+      if (requestedFields.property) {
+        const lj = draftUpdate.lease_json || (row.lease_json && typeof row.lease_json === 'object' ? { ...row.lease_json } : {})
+        lj.propertyName = requestedFields.property
+        draftUpdate.lease_json = lj
+      }
+      if (requestedFields.room) {
+        const lj = draftUpdate.lease_json || (row.lease_json && typeof row.lease_json === 'object' ? { ...row.lease_json } : {})
+        lj.roomNumber = requestedFields.room
+        draftUpdate.lease_json = lj
+      }
+
+      await updateLeaseDraftById(client, leaseDraftId, draftUpdate)
+
+      const fieldLines = []
+      if (requestedFields.tenantName) fieldLines.push(`• Tenant Name: ${requestedFields.tenantName}`)
+      if (requestedFields.property) fieldLines.push(`• Property: ${requestedFields.property}`)
+      if (requestedFields.room) fieldLines.push(`• Room: ${requestedFields.room}`)
+      if (requestedFields.leaseStart) fieldLines.push(`• Lease Start: ${requestedFields.leaseStart}`)
+      if (requestedFields.leaseEnd) fieldLines.push(`• Lease End: ${requestedFields.leaseEnd}`)
+      if (requestedFields.rent) fieldLines.push(`• Monthly Rent: $${requestedFields.rent}`)
+      if (requestedFields.deposit) fieldLines.push(`• Deposit: $${requestedFields.deposit}`)
+      if (requestedFields.utilities) fieldLines.push(`• Utilities: $${requestedFields.utilities}`)
+      if (requestedFields.specialTerms) fieldLines.push(`• Special Terms: ${requestedFields.specialTerms}`)
+
+      let commentMessage = `**Edit Request Submitted**\n\n${editNotes}`
+      if (fieldLines.length > 0) {
+        commentMessage += '\n\n**Requested field changes:**\n' + fieldLines.join('\n')
+      }
+
+      const nextComments = appendLeaseCommentJsonb(row.lease_comments, {
+        authorName: managerName,
+        authorRole: 'Manager',
+        authorRecordId: managerRecordId || '',
+        message: commentMessage,
+      })
+      await saveLeaseDraftComments(client, leaseDraftId, nextComments)
+
+      return res.status(200).json({ ok: true })
+    } catch (err) {
+      const code = err.statusCode || 500
+      console.error('[lease-submit-edit-request] supabase', err)
+      return res.status(code).json({ error: err.message || 'Failed to submit edit request.' })
+    }
+  }
+
+  if (!AIRTABLE_TOKEN) return res.status(500).json({ error: 'Server not configured.' })
 
   try {
     // Build the raw JSON snapshot of requested fields so admin can read it clearly

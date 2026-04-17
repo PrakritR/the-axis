@@ -28,30 +28,7 @@ import {
   normalizePropertyFilterKey,
   sortRowsByPropertyGroupThenUpdatedDesc,
 } from '../lib/portalPropertyTableOrder.js'
-
-const AIRTABLE_TOKEN = import.meta.env.VITE_AIRTABLE_TOKEN
-const CORE_BASE_ID = import.meta.env.VITE_AIRTABLE_BASE_ID || 'appol57LKtMKaQ75T'
-const AT_BASE = `https://api.airtable.com/v0/${CORE_BASE_ID}`
-
-async function fetchAllLeaseDrafts() {
-  const rows = []
-  let offset = null
-  do {
-    const url = new URL(`${AT_BASE}/Lease%20Drafts`)
-    url.searchParams.set('sort[0][field]', 'Updated At')
-    url.searchParams.set('sort[0][direction]', 'desc')
-    if (offset) url.searchParams.set('offset', offset)
-    const res = await fetch(url.toString(), { headers: { Authorization: `Bearer ${AIRTABLE_TOKEN}` } })
-    if (!res.ok) {
-      const text = await res.text()
-      throw new Error(text.slice(0, 300))
-    }
-    const data = await res.json()
-    for (const record of data.records || []) rows.push({ id: record.id, ...record.fields })
-    offset = data.offset || null
-  } while (offset)
-  return rows
-}
+import { listLeaseDraftsSupabase } from '../lib/leaseDraftsSupabase.js'
 
 async function callPortalAction(action, body) {
   const response = await fetch(`/api/portal?action=${encodeURIComponent(action)}`, {
@@ -241,11 +218,12 @@ export default function AdminLeasingTab({ adminUser, accounts = [] }) {
     setLoading(true)
     setLoadError('')
     try {
-      const all = await fetchAllLeaseDrafts()
+      const all = await listLeaseDraftsSupabase()
       setDrafts(all)
     } catch (err) {
-      setLoadError(err.message || 'Could not load leases')
-      toast.error('Could not load lease records')
+      const msg = err.message || 'Could not load leases'
+      setLoadError(msg)
+      toast.error(msg.includes('Sign in') ? 'Sign in to load lease drafts from the database.' : 'Could not load lease records')
     } finally {
       setLoading(false)
     }

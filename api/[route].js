@@ -39,8 +39,10 @@ import properties from '../backend/server/handlers/properties.js'
 import rooms from '../backend/server/handlers/rooms.js'
 import applications from '../backend/server/handlers/applications.js'
 import payments from '../backend/server/handlers/payments.js'
+import leaseDrafts from '../backend/server/handlers/lease-drafts.js'
 import fileStorage from '../backend/server/handlers/file-storage.js'
 import listingPublicMedia from '../backend/server/handlers/listing-public-media.js'
+import publicListings from '../backend/server/handlers/public-listings.js'
 import managerAvailability from '../backend/server/handlers/manager-availability.js'
 import adminMeetingAvailability from '../backend/server/handlers/admin-meeting-availability.js'
 import scheduledEvents from '../backend/server/handlers/scheduled-events.js'
@@ -74,8 +76,10 @@ const routes = {
   rooms,
   applications,
   payments,
+  'lease-drafts': leaseDrafts,
   'file-storage': fileStorage,
   'listing-public-media': listingPublicMedia,
+  'public-listings': publicListings,
   'manager-availability': managerAvailability,
   'admin-meeting-availability': adminMeetingAvailability,
   'scheduled-events': scheduledEvents,

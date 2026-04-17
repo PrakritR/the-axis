@@ -10,6 +10,7 @@ import {
   laundryTypeField,
   laundryRoomsSharingField,
 } from './managerPropertyFormAirtableMap.js'
+import { buildAdminPropertyDetailSyntheticAirtable } from './adminPortalPropertiesSupabase.js'
 
 const MAX_ROOMS = 20
 const MAX_BATHROOMS = 10
@@ -325,7 +326,7 @@ export const PROPERTY_FIELD_GROUPS = [
  * @param {{ property: { id: string, name: string, address?: string, status: string, _airtable: object }, ownerLabel?: string }} props
  */
 export function PropertyDetailPanel({ property, ownerLabel }) {
-  const raw = property?._airtable
+  const raw = property?._airtable || buildAdminPropertyDetailSyntheticAirtable(property)
   if (!raw) return null
 
   const fmt = formatApplicationDetailValue

@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { Link, useLocation } from 'react-router-dom'
 import { Seo } from '../lib/seo'
 import { readJsonResponse } from '../lib/readJsonResponse'
+import { MANAGER_ONBOARDING_SESSION_KEY } from '../lib/managerOnboardingSession.js'
 import { EmbeddedStripeCheckout } from '../components/EmbeddedStripeCheckout'
 
 const DOWNLOAD_URL = import.meta.env.VITE_AXIS_DOWNLOAD_URL || import.meta.env.VITE_AXIS_DOWNLOAD_MAC_URL || ''
@@ -81,8 +82,6 @@ function CheckIcon() {
     </svg>
   )
 }
-
-const FREE_TIER_ONBOARDING_KEY = 'axis_manager_onboarding'
 
 function PlanCard({ plan, activePlan, billingCycle, onChoosePlan, onRevealPartnerSignup }) {
   const isSelected = activePlan === plan.id
@@ -232,9 +231,8 @@ export default function JoinUs() {
         const data = await readJsonResponse(res)
         if (!res.ok) throw new Error(data.error || 'Could not start free setup.')
 
-        sessionStorage.setItem(FREE_TIER_ONBOARDING_KEY, JSON.stringify(data))
-        setManagerId(data.managerId || '')
-        setManagerLoading(false)
+        sessionStorage.setItem(MANAGER_ONBOARDING_SESSION_KEY, JSON.stringify(data))
+        setManagerId(String(data.managerId || '').trim())
         return
       }
 
@@ -246,10 +244,9 @@ export default function JoinUs() {
         planType: selectedPlan,
         billingInterval: billingCycle,
       })
-      setManagerLoading(false)
-      return
     } catch (err) {
       setManagerError(err.message || 'Could not start checkout.')
+    } finally {
       setManagerLoading(false)
     }
   }
@@ -270,8 +267,11 @@ export default function JoinUs() {
         apiEndpoint="/api/portal?action=manager-create-subscription-session"
         checkoutRequest={embeddedCheckout}
         onClose={() => { setEmbeddedCheckout(null); setManagerLoading(false) }}
-        onComplete={() => {
-          window.location.href = '/portal?portal=manager&setup=success'
+        onComplete={(result) => {
+          const sid = result && typeof result.sessionId === 'string' ? result.sessionId.trim() : ''
+          const qs = new URLSearchParams({ portal: 'manager', setup: 'success', view: 'create' })
+          if (sid) qs.set('session_id', sid)
+          window.location.href = `/portal?${qs.toString()}`
         }}
       />
 
@@ -440,7 +440,11 @@ export default function JoinUs() {
               </div>
             </div>
 
-            <form onSubmit={handleManagerAccess} className="mt-8 grid gap-4 md:grid-cols-2">
+            <form
+              onSubmit={handleManagerAccess}
+              className="mt-8 grid gap-4 md:grid-cols-2"
+              aria-busy={managerLoading}
+            >
               <div className="md:col-span-2">
                 <label className="mb-2 block text-sm font-semibold text-slate-700">Full name</label>
                 <input
@@ -490,7 +494,10 @@ export default function JoinUs() {
               ) : null}
 
               {managerError ? (
-                <div className="md:col-span-2 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+                <div
+                  role="alert"
+                  className="md:col-span-2 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700"
+                >
                   {managerError}
                 </div>
               ) : null}

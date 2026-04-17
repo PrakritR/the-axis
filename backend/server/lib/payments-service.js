@@ -10,6 +10,7 @@
  */
 
 import { requireServiceClient } from './app-users-service.js'
+import { listProperties } from './properties-service.js'
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -310,6 +311,46 @@ export async function listPaymentsForPropertyScope({ propertyId, status, payment
   query = query.order('created_at', { ascending: false }).limit(limit)
   const { data, error } = await query
   if (error) throw new Error(error.message || 'Failed to list payments')
+  return data || []
+}
+
+/**
+ * All payments for properties managed by this manager (internal ledger).
+ *
+ * @param {{ managerAppUserId: string, limit?: number }} args
+ * @returns {Promise<object[]>}
+ */
+export async function listPaymentsForManagedPropertiesScope({ managerAppUserId, limit = 1200 } = {}) {
+  const uid = String(managerAppUserId || '').trim()
+  if (!uid) throw new Error('listPaymentsForManagedPropertiesScope: managerAppUserId is required.')
+  const props = await listProperties({ managedByAppUserId: uid, activeOnly: false })
+  const ids = [...new Set((props || []).map((p) => String(p.id || '').trim()).filter(Boolean))]
+  if (!ids.length) return []
+  const client = requireServiceClient()
+  const { data, error } = await client
+    .from('payments')
+    .select('*')
+    .in('property_id', ids)
+    .order('created_at', { ascending: false })
+    .limit(limit)
+  if (error) throw new Error(error.message || 'Failed to list payments for managed properties')
+  return data || []
+}
+
+/**
+ * Full ledger read for admin dashboards (service role; caller authorization in handler).
+ *
+ * @param {{ limit?: number }} [args]
+ * @returns {Promise<object[]>}
+ */
+export async function listAllPaymentsForAdmin({ limit = 4000 } = {}) {
+  const client = requireServiceClient()
+  const { data, error } = await client
+    .from('payments')
+    .select('*')
+    .order('created_at', { ascending: false })
+    .limit(limit)
+  if (error) throw new Error(error.message || 'Failed to list all payments')
   return data || []
 }
 

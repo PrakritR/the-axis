@@ -4,6 +4,7 @@
  */
 
 import { buildPaymentResidentLinkFields, createPaymentRecord, getPaymentsForResident } from './airtable.js'
+import { isInternalUuid, isAirtableRecordId } from './recordIdentity.js'
 
 function paymentPropertyNameFromResident(res) {
   const explicit = String(res?.['Property Name'] || '').trim()
@@ -67,6 +68,7 @@ export function readWorkOrderCostFromRecord(record) {
     'Work Order Cost',
     'Charge',
     'Billable Amount',
+    'manager_cost_usd',
   ]
   for (const k of keys) {
     const raw = record[k]
@@ -95,20 +97,21 @@ export async function ensureWorkOrderManagerChargePayment({
   const woId = String(workOrder?.id || '').trim()
   const rid = String(billingResidentId || '').trim()
   const cost = Number(costUsd)
-  if (!woId || !/^rec[a-zA-Z0-9]{14,}$/.test(rid) || !(cost > 0) || !Number.isFinite(cost)) {
+  if (!woId || !(isAirtableRecordId(rid) || isInternalUuid(rid)) || !(cost > 0) || !Number.isFinite(cost)) {
     return { created: false, reason: 'invalid' }
   }
 
   const tag = paymentNotesTagForWorkOrderCharge(woId)
+  const resProf = residentProfile && typeof residentProfile === 'object' ? residentProfile : {}
   const payments =
     paymentsPrefetch != null
       ? paymentsPrefetch
-      : await getPaymentsForResident(res && res.id ? res : { id: rid }).catch(() => [])
+      : await getPaymentsForResident(resProf.id ? resProf : { id: rid }).catch(() => [])
   if ((Array.isArray(payments) ? payments : []).some((p) => String(p.Notes || '').includes(tag))) {
     return { created: false, reason: 'already_exists' }
   }
 
-  const res = residentProfile && typeof residentProfile === 'object' ? residentProfile : {}
+  const res = resProf
   const prop = paymentPropertyNameFromResident(res)
   const unit = String(res['Unit Number'] || '').trim()
   const name = String(res.Name || res['Resident Name'] || '').trim()
@@ -117,8 +120,13 @@ export async function ensureWorkOrderManagerChargePayment({
   due.setDate(due.getDate() + 14)
   const dueStr = due.toISOString().slice(0, 10)
 
+  const internalProp = String(res.__internal_property_id || '').trim()
+  const internalApp = String(res.__internal_application_id || res['Application ID'] || '').trim()
+
   await createPaymentRecordStrippingUnknownFields({
-    ...buildPaymentResidentLinkFields(rid),
+    ...buildPaymentResidentLinkFields(isInternalUuid(rid) ? rid : String(res['Supabase User ID'] || '').trim() || rid),
+    ...(internalProp && isInternalUuid(internalProp) ? { _internal_property_id: internalProp } : {}),
+    ...(internalApp && isInternalUuid(internalApp) ? { _internal_application_id: internalApp } : {}),
     Amount: Math.round(cost * 100) / 100,
     Balance: Math.round(cost * 100) / 100,
     Status: 'Unpaid',
@@ -149,7 +157,7 @@ export async function createResidentManualPaymentLine({
 }) {
   const rid = String(billingResidentId || '').trim()
   const amt = Number(amountUsd)
-  if (!/^rec[a-zA-Z0-9]{14,}$/.test(rid) || !(amt > 0) || !Number.isFinite(amt)) {
+  if (!(isAirtableRecordId(rid) || isInternalUuid(rid)) || !(amt > 0) || !Number.isFinite(amt)) {
     throw new Error('Select a resident and enter a valid amount greater than zero.')
   }
 
@@ -163,8 +171,14 @@ export async function createResidentManualPaymentLine({
   const type = String(typeLabel || 'Fee').trim() || 'Fee'
   const extra = String(notes || '').trim()
 
+  const linkId = isInternalUuid(rid) ? rid : String(res['Supabase User ID'] || '').trim() || rid
+  const internalProp = String(res.__internal_property_id || '').trim()
+  const internalApp = String(res.__internal_application_id || res['Application ID'] || '').trim()
+
   await createPaymentRecordStrippingUnknownFields({
-    ...buildPaymentResidentLinkFields(rid),
+    ...buildPaymentResidentLinkFields(linkId),
+    ...(internalProp && isInternalUuid(internalProp) ? { _internal_property_id: internalProp } : {}),
+    ...(internalApp && isInternalUuid(internalApp) ? { _internal_application_id: internalApp } : {}),
     Amount: Math.round(amt * 100) / 100,
     Balance: Math.round(amt * 100) / 100,
     Status: 'Unpaid',

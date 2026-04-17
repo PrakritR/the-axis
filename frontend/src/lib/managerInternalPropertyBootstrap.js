@@ -4,7 +4,7 @@
  * @module
  */
 
-import { isInternalAxisRecordId } from './airtable.js'
+import { isInternalAxisRecordId } from './axisRecordIds.js'
 import { parseAxisListingMetaBlock } from './axisListingMeta.js'
 import {
   PROPERTY_AIR,

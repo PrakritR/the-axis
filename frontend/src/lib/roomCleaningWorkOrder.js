@@ -14,6 +14,7 @@ import {
   getPaymentsForResident,
 } from './airtable.js'
 import { computedResidentPaymentStatusLabel } from './residentPaymentsShared.js'
+import { isInternalUuid } from './recordIdentity.js'
 import { workOrderScheduledMeta } from './workOrderShared.js'
 
 export const ROOM_CLEANING_PAYMENT_MARKER = 'AXIS_ROOM_CLEANING_PREPAID'
@@ -116,15 +117,16 @@ export async function ensurePostpayRoomCleaningFeePayment({
   if (!dateStr) return { created: false, reason: 'no_schedule_date' }
 
   const tag = paymentNotesTagForCleaningWorkOrder(woId)
+  const resProf = residentProfile && typeof residentProfile === 'object' ? residentProfile : {}
   const payments =
     paymentsPrefetch != null
       ? paymentsPrefetch
-      : await getPaymentsForResident(res && res.id ? res : { id: rid }).catch(() => [])
+      : await getPaymentsForResident(resProf.id ? resProf : { id: rid }).catch(() => [])
   if ((Array.isArray(payments) ? payments : []).some((p) => String(p.Notes || '').includes(tag))) {
     return { created: false, reason: 'already_exists' }
   }
 
-  const res = residentProfile && typeof residentProfile === 'object' ? residentProfile : {}
+  const res = resProf
   // Resolve property name safely — `House` may be a linked-record array
   const houseRaw = res.House
   let prop = ''
@@ -141,8 +143,14 @@ export async function ensurePostpayRoomCleaningFeePayment({
   const email = String(res.Email || res['Resident Email'] || '').trim().toLowerCase()
   const dueStr = dueDateIsoForRoomCleaningPayment(dateStr)
 
+  const linkId = isInternalUuid(rid) ? rid : String(res['Supabase User ID'] || '').trim() || rid
+  const internalProp = String(res.__internal_property_id || '').trim()
+  const internalApp = String(res.__internal_application_id || res['Application ID'] || '').trim()
+
   await createPaymentRecordStrippingUnknownFields({
-    ...buildPaymentResidentLinkFields(rid),
+    ...buildPaymentResidentLinkFields(linkId),
+    ...(internalProp && isInternalUuid(internalProp) ? { _internal_property_id: internalProp } : {}),
+    ...(internalApp && isInternalUuid(internalApp) ? { _internal_application_id: internalApp } : {}),
     Amount: ROOM_CLEANING_FEE_USD,
     Balance: ROOM_CLEANING_FEE_USD,
     Status: 'Unpaid',

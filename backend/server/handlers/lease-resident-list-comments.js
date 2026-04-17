@@ -5,7 +5,9 @@
  * Returns { comments: [{ id, Author Name, Author Role, Message, Timestamp, ... }] }
  */
 
-import { draftBelongsToResident } from '../lib/lease-draft-resident-access.js'
+import { draftBelongsToResident, draftBelongsToResidentSupabaseRow } from '../lib/lease-draft-resident-access.js'
+import { getSupabaseServiceClient } from '../lib/app-users-service.js'
+import { fetchLeaseDraftJoined, isLeaseDraftUuid } from '../lib/lease-drafts-service.js'
 
 const AIRTABLE_TOKEN = process.env.AIRTABLE_TOKEN || process.env.VITE_AIRTABLE_TOKEN
 const BASE_ID = process.env.VITE_AIRTABLE_BASE_ID || process.env.AIRTABLE_BASE_ID || 'appol57LKtMKaQ75T'
@@ -38,12 +40,34 @@ export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type')
   if (req.method === 'OPTIONS') return res.status(200).end()
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' })
-  if (!AIRTABLE_TOKEN) return res.status(500).json({ error: 'Server not configured.' })
 
   const { leaseDraftId, residentRecordId, residentEmail } = req.body || {}
   const id = String(leaseDraftId || '').trim()
   const rid = String(residentRecordId || '').trim()
   const email = String(residentEmail || '').trim().toLowerCase()
+
+  if (!id) return res.status(400).json({ error: 'leaseDraftId is required.' })
+
+  if (isLeaseDraftUuid(id)) {
+    if (!email) return res.status(400).json({ error: 'residentEmail is required.' })
+    const client = getSupabaseServiceClient()
+    if (!client) return res.status(500).json({ error: 'Supabase is not configured on the server.' })
+    try {
+      const row = await fetchLeaseDraftJoined(client, id)
+      if (!row) return res.status(404).json({ error: 'Lease draft not found.' })
+      if (!draftBelongsToResidentSupabaseRow(row, email)) {
+        return res.status(403).json({ error: 'Access denied.' })
+      }
+      const raw = Array.isArray(row.lease_comments) ? row.lease_comments : []
+      const comments = [...raw].sort((a, b) => new Date(a.Timestamp || 0) - new Date(b.Timestamp || 0))
+      return res.status(200).json({ comments })
+    } catch (err) {
+      console.error('[lease-resident-list-comments] supabase', err)
+      return res.status(500).json({ error: err.message || 'Failed to load comments.' })
+    }
+  }
+
+  if (!AIRTABLE_TOKEN) return res.status(500).json({ error: 'Server not configured.' })
 
   if (!id.startsWith('rec')) return res.status(400).json({ error: 'leaseDraftId is required.' })
   if (!rid.startsWith('rec') || !email) {

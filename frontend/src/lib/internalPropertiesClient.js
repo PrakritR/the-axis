@@ -7,6 +7,7 @@
 import { supabase } from './supabase'
 import { syncAppUserFromSupabaseSession, readAppUserBootstrap } from './authAppUserSync.js'
 import { parseAxisListingMetaBlock } from './axisListingMeta.js'
+import { PROPERTY_EDIT_REQUEST_FIELD } from './managerPropertyFormAirtableMap.js'
 
 async function bearerHeaders() {
   const { data } = await supabase.auth.getSession()
@@ -63,17 +64,34 @@ export function mapInternalPropertyToManagerListRow(property, manager) {
   const kitchensDetail = Array.isArray(m.kitchensDetail) ? m.kitchensDetail : []
   const bathroomsDetail = Array.isArray(m.bathroomsDetail) ? m.bathroomsDetail : []
   const roomCountDisplay = roomDetails.length > 0 ? roomDetails.length : null
-  const live = p.active !== false && p.active !== 0
+  const lsRaw = String(p.listing_status || '').trim().toLowerCase()
+  const ls =
+    lsRaw ||
+    (p.active === true || p.active === 1 ? 'live' : 'pending_review')
+  const onPublicSite = ls === 'live' && p.active !== false && p.active !== 0
+  const approvalMap = {
+    pending_review: 'Pending',
+    changes_requested: 'Changes Requested',
+    live: 'Approved',
+    unlisted: 'Unlisted',
+    rejected: 'Rejected',
+  }
+  const approvalStatus = approvalMap[ls] || (onPublicSite ? 'Approved' : 'Pending')
+  const adminApproved = ls !== 'pending_review' && ls !== 'rejected'
+  const editNotes = String(p.edit_request_notes || '').trim()
+  const internalNotes = String(p.admin_internal_notes || '').trim()
   return {
     id: String(p.id || '').trim(),
     Name: name,
     'Property Name': name,
     Address: addr,
-    Approved: live,
-    Listed: live,
-    'Approval Status': live ? 'Approved' : 'Pending',
-    Status: live ? 'Approved' : 'Pending',
+    Approved: adminApproved,
+    Listed: onPublicSite,
+    'Approval Status': approvalStatus,
+    Status: approvalStatus,
     'Owner ID': String(manager?.id || '').trim(),
+    ...(internalNotes ? { 'Internal Notes': internalNotes } : {}),
+    ...(editNotes ? { [PROPERTY_EDIT_REQUEST_FIELD]: editNotes } : {}),
     ...(roomCountDisplay != null ? { 'Room Count': roomCountDisplay } : {}),
     ...(bathroomsDetail.length ? { 'Bathroom Count': bathroomsDetail.length } : {}),
     ...(kitchensDetail.length ? { 'Kitchen Count': kitchensDetail.length } : {}),

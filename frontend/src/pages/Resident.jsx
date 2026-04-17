@@ -32,7 +32,6 @@ const APPLICATION_APPROVED_UNIT_FIELD =
 
 import {
   airtableReady,
-  createResident,
   createWorkOrder,
   deleteWorkOrderForResident,
   getApplicationById,
@@ -65,12 +64,15 @@ import {
   ensureResidentInternalProfileRow,
   fetchResidentInternalProfile,
   fetchResidentPortalContext,
+  fetchResidentSelfFullBundle,
+  enrichPortalContextWithPropertyNames,
+  buildResidentLegacyFromPortalContext,
   getSignedLeaseDownloadUrl,
   mapInternalPaymentToResidentPaymentRow,
   patchResidentInternalProfile,
 } from '../lib/residentPortalInternal.js'
 import { syncAppUserFromSupabaseSession } from '../lib/authAppUserSync.js'
-import { isAirtableRecordId } from '../lib/recordIdentity.js'
+import { isAirtableRecordId, isInternalUuid } from '../lib/recordIdentity.js'
 import { applicationRejectedFieldName, deriveApplicationApprovalState } from '../lib/applicationApprovalState.js'
 import { anyLeaseDraftAllowsSignWithoutMoveInPay } from '../lib/leaseMoveInOverride.js'
 import { fmtTs } from '../lib/leaseWorkflowConstants.js'
@@ -106,12 +108,15 @@ import {
 
 const SESSION_KEY = 'axis_resident'
 
-/** Merge Postgres payments (JWT `resident-context`) with Airtable payment rows for dual-path residents. */
-function mergeResidentPaymentRowsWithInternal(internalContext, airtableRows) {
-  const air = Array.isArray(airtableRows) ? airtableRows : []
+/** Merge Postgres payments (JWT `resident-context`) with `/api/payments` rows; dedupe by id (internal wins). */
+function mergeResidentPaymentRowsWithInternal(internalContext, remoteRows) {
+  const remote = Array.isArray(remoteRows) ? remoteRows : []
   const raw = internalContext?.payments
-  if (!Array.isArray(raw) || raw.length === 0) return air
-  return [...raw.map(mapInternalPaymentToResidentPaymentRow), ...air]
+  if (!Array.isArray(raw) || raw.length === 0) return remote
+  const internalMapped = raw.map(mapInternalPaymentToResidentPaymentRow)
+  const seen = new Set(internalMapped.map((p) => String(p?.id || '').trim()).filter(Boolean))
+  const rest = remote.filter((p) => !seen.has(String(p?.id || '').trim()))
+  return [...internalMapped, ...rest]
 }
 
 const requestCategories = [
@@ -1004,27 +1009,28 @@ export function ResidentAuthForm({ onLogin, footer = null, variant = 'default' }
       if (!authErr && authData?.user) {
         await syncAppUserFromSupabaseSession().catch(() => null)
 
-        // Try Airtable for full resident data (portal content uses Airtable fields)
         let resident = null
-        try { resident = await getResidentByEmail(email) } catch { /* Airtable unavailable */ }
-
+        const bundle = await fetchResidentSelfFullBundle().catch(() => null)
+        if (bundle?.ok && bundle.display) {
+          resident = bundle.display
+        }
         if (!resident) {
-          // Build minimal internal resident for portals that are fully on internal DB
-          const ctx = await fetchResidentPortalContext().catch(() => null)
-          const appUser = ctx?.app_user || {}
-          const firstApp = ctx?.applications?.[0] || {}
-          resident = {
-            id: appUser.id || authData.user.id,
-            Email: email,
-            Name: appUser.full_name || String(authData.user.user_metadata?.full_name || email.split('@')[0]),
-            Status: 'Active',
-            Approved: firstApp.status === 'approved' || firstApp.approved === true,
-            House: firstApp.property_name || '',
-            'Unit Number': firstApp.room || firstApp.approved_room || '',
-            'Lease Start Date': firstApp.lease_start_date || null,
-            'Lease End Date': firstApp.lease_end_date || null,
-            'Application ID': firstApp.id || '',
+          try {
+            resident = await getResidentByEmail(email)
+          } catch {
+            /* Airtable unavailable */
           }
+        }
+        if (!resident) {
+          const rawCtx = await fetchResidentPortalContext().catch(() => null)
+          const ctx = rawCtx?.ok ? await enrichPortalContextWithPropertyNames(rawCtx) : null
+          if (ctx?.ok) {
+            resident = buildResidentLegacyFromPortalContext(ctx, authData.user)
+          }
+        }
+        if (!resident) {
+          setSignInError('Could not load your resident profile. Confirm your account has the resident role, then try again.')
+          return
         }
 
         // Always mark as _internalAuth when authenticated via Supabase so session
@@ -1779,8 +1785,9 @@ function ProfilePanel({ resident, onUpdated }) {
       <section className="rounded-3xl border border-slate-200 bg-white p-6">
         <h2 className="text-xl font-black text-slate-900">Axis profile (Postgres)</h2>
         <p className="mt-2 text-sm leading-relaxed text-slate-600">
-          Contact fields stored in the internal database (scoped to your Supabase session). Full name and email below
-          still update the legacy Airtable resident record until that path is fully retired.
+          Contact fields stored in the internal database (scoped to your Supabase session). Emergency details and notes
+          live here; your display name and phone can also be edited under Profile when your account uses Postgres-backed
+          resident data.
         </p>
         {axisProfileStatus === 'loading' ? (
           <p className="mt-4 text-sm text-slate-400">Loading internal profile…</p>
@@ -1950,7 +1957,11 @@ function ProfilePanel({ resident, onUpdated }) {
               <div className={`${readonlyCls} font-mono text-sm tracking-tight`}>
                 {String(resident.id || '').trim() || '—'}
               </div>
-              <p className="mt-1.5 text-xs text-slate-500">Your Axis / Airtable resident record id (for support and linking).</p>
+              <p className="mt-1.5 text-xs text-slate-500">
+                {resident._fromSupabaseResidents
+                  ? 'Your internal Axis resident id (Postgres app user).'
+                  : 'Your Axis / Airtable resident record id (for support and linking).'}
+              </p>
             </div>
             <div>
               <p className="mb-1.5 text-sm font-semibold text-slate-700">Full name</p>
@@ -1987,10 +1998,14 @@ function ProfilePanel({ resident, onUpdated }) {
               <input
                 type="email"
                 required
+                readOnly={Boolean(resident._fromSupabaseResidents)}
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                className={inputCls}
+                className={resident._fromSupabaseResidents ? readonlyCls : inputCls}
               />
+              {resident._fromSupabaseResidents ? (
+                <p className="mt-1 text-xs text-slate-500">Email is managed through your Axis sign-in account.</p>
+              ) : null}
             </div>
             <div>
               <label className="mb-1.5 block text-sm font-semibold text-slate-700">Phone</label>
@@ -2111,14 +2126,14 @@ function PaymentsPanel({ resident, onResidentUpdated, highlightCategory, onPayme
   useEffect(() => {
     if (loading) return
     const rows = Array.isArray(payments) ? payments : []
-    const airtableOnly = rows.filter((p) => isAirtableRecordId(p?.id))
-    if (!airtableOnly.length) return
-    const sig = airtableOnly.map((p) => `${p.id}:${p.Status}:${p.Amount}:${p['Amount Paid']}:${p.Balance}:${p['Due Date']}`).join('|')
+    const syncable = rows.filter((p) => isInternalUuid(String(p?.id || '').trim()))
+    if (!syncable.length) return
+    const sig = syncable.map((p) => `${p.id}:${p.Status}:${p.Amount}:${p['Amount Paid']}:${p.Balance}:${p['Due Date']}`).join('|')
     if (paymentStatusReconcileSigRef.current === sig) return
     paymentStatusReconcileSigRef.current = sig
     let cancelled = false
     ;(async () => {
-      const patched = await reconcilePaymentStatusesInAirtable(airtableOnly, updatePaymentRecord)
+      const patched = await reconcilePaymentStatusesInAirtable(syncable, updatePaymentRecord)
       if (cancelled || patched === 0) return
       try {
         const fresh = await getPaymentsForResident(resident)
@@ -2952,7 +2967,8 @@ function PaymentsPanel({ resident, onResidentUpdated, highlightCategory, onPayme
         <>
           {error ? (
             <div className="mb-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
-              Payment history could not be loaded right now. Try refreshing
+              <div className="font-semibold text-amber-900">Could not load payments</div>
+              <p className="mt-1 text-amber-900/90">{String(error || '').trim() || 'Try refreshing the page.'}</p>
             </div>
           ) : null}
 
@@ -4919,6 +4935,15 @@ export default function Resident() {
         if (stored.startsWith('{')) {
           const parsed = JSON.parse(stored)
           if (parsed?.id) {
+            if (parsed._staffHandoff) {
+              const leaseEndHandoff = parsed['Lease End Date']
+              if (leaseEndHandoff && new Date(leaseEndHandoff) < new Date(new Date().toDateString())) {
+                sessionStorage.removeItem(SESSION_KEY)
+                return
+              }
+              if (mounted) setResident(parsed)
+              return
+            }
             // Re-validate via Supabase session if available
             if (parsed._internalAuth) {
               const { data: sessionData } = await supabase.auth.getSession()
@@ -4933,6 +4958,13 @@ export default function Resident() {
               return
             }
             if (mounted) setResident(parsed)
+            if (parsed._internalAuth) {
+              ;(async () => {
+                const fresh = await fetchResidentSelfFullBundle().catch(() => null)
+                if (!mounted || !fresh?.ok || !fresh.display) return
+                setResident((prev) => ({ ...(prev && typeof prev === 'object' ? prev : {}), ...fresh.display, _internalAuth: true }))
+              })()
+            }
             return
           }
         }

@@ -27,6 +27,7 @@ import {
   deriveManagerId,
   updateManager,
   assertManagerCanSignIn,
+  bootstrapManagerAccountFromAuthUser,
 } from '../lib/manager-account-service.js'
 import {
   getManagerOnboardingByEmail,
@@ -135,11 +136,12 @@ async function handleSupabaseManagerAuth(req, res) {
   if (!email) return res.status(400).json({ error: 'Authenticated user has no email.' })
 
   try {
-    const { manager, appUser } = await bootstrapFromManagerOnboarding({
+    const { manager, appUser } = await bootstrapManagerAccountFromAuthUser({
       authUserId: auth.user.id,
       email,
       fullName: userFullName(auth.user),
       managerId: req.body?.managerId,
+      secretKey: process.env.STRIPE_SECRET_KEY,
     })
     return res.status(200).json({
       ok: true,
@@ -193,10 +195,12 @@ async function handleEmailPasswordAuth(req, res) {
     if (!user?.id) return null // no Supabase user — fall through to legacy
 
     try {
-      const { manager, appUser } = await bootstrapFromManagerOnboarding({
+      const { manager, appUser } = await bootstrapManagerAccountFromAuthUser({
         authUserId: user.id,
         email: normalizedEmail,
         fullName: userFullName(user),
+        managerId: req.body?.managerId,
+        secretKey: process.env.STRIPE_SECRET_KEY,
       })
 
       return res.status(200).json({

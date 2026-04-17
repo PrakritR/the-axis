@@ -4,8 +4,7 @@ import { motion, AnimatePresence } from 'framer-motion'
 import Hero from '../components/Hero'
 import PropertyCard from '../components/PropertyCard'
 import { properties } from '../data/properties'
-import { fetchApprovedPropertiesForMarketing } from '../lib/airtable'
-import { mapAirtableRecordToHomeProperty } from '../lib/airtablePublicListings'
+import { fetchInternalPublicListings, mapInternalListingToHomeProperty } from '../lib/internalPublicListings'
 import { parseAvailabilityAfterStartingPhrases } from '../lib/listingRoomDisplay.js'
 import { Seo, buildWebsiteSchema } from '../lib/seo'
 import scrollToTop from '../utils/scrollToTop'
@@ -510,17 +509,27 @@ function PropertyCarousel({ extraListings = [] }) {
 // ── Page ─────────────────────────────────────────────────────────────────────
 
 export default function Home() {
-  const [airtableListings, setAirtableListings] = useState([])
+  const [dynamicListings, setDynamicListings] = useState([])
+  const [listingsLoading, setListingsLoading] = useState(true)
+  const [listingsError, setListingsError] = useState('')
 
   useEffect(() => {
     let cancelled = false
-    fetchApprovedPropertiesForMarketing()
+    setListingsLoading(true)
+    setListingsError('')
+    fetchInternalPublicListings()
       .then((rows) => {
         if (cancelled) return
-        setAirtableListings(rows.map(mapAirtableRecordToHomeProperty).filter((x) => x.slug))
+        setDynamicListings(rows.map(mapInternalListingToHomeProperty).filter((x) => x.slug))
       })
-      .catch(() => {
-        if (!cancelled) setAirtableListings([])
+      .catch((err) => {
+        if (!cancelled) {
+          setDynamicListings([])
+          setListingsError(err?.message || 'Could not load live listings.')
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setListingsLoading(false)
       })
     return () => { cancelled = true }
   }, [])
@@ -538,11 +547,19 @@ export default function Home() {
       <Hero heading="Find housing that works for you" />
 
       {/* ── ROOM FINDER ── */}
-      <RoomFinder listings={airtableListings} />
+      <RoomFinder listings={dynamicListings} />
 
       {/* ── PROPERTIES ── */}
       <section id="properties" className="scroll-mt-20 border-t border-slate-200/25 bg-transparent py-8 sm:py-10">
-        <PropertyCarousel extraListings={airtableListings} />
+        {listingsError ? (
+          <div className="mx-auto max-w-3xl px-4 text-center text-sm text-amber-800" role="alert">
+            {listingsError}
+          </div>
+        ) : null}
+        {listingsLoading ? (
+          <div className="mx-auto max-w-3xl px-4 py-6 text-center text-sm text-slate-500">Loading listings…</div>
+        ) : null}
+        <PropertyCarousel extraListings={dynamicListings} />
       </section>
     </div>
   )

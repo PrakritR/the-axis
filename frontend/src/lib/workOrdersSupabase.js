@@ -144,6 +144,7 @@ export async function mapWorkOrderRowToLegacyRecord(row, property, residentUser)
   const propName = property?.name || ''
   const legacyProp = property?.legacy_airtable_record_id || ''
   const legacyRes = row.legacy_airtable_resident_profile_id || ''
+  const residentAppUserId = row.resident_app_user_id ? String(row.resident_app_user_id).trim() : ''
   const appEmail = String(residentUser?.email || row.resident_display_email || '').trim()
 
   const scheduledDate = row.scheduled_visit_date ? String(row.scheduled_visit_date).slice(0, 10) : ''
@@ -201,6 +202,8 @@ export async function mapWorkOrderRowToLegacyRecord(row, property, residentUser)
 
   if (legacyRes) {
     rec[linkResField] = [legacyRes]
+  } else if (residentAppUserId && UUID_RE.test(residentAppUserId)) {
+    rec[linkResField] = [residentAppUserId]
   }
   if (legacyProp) {
     rec[linkPropField] = [legacyProp]

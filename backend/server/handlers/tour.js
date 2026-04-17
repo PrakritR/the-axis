@@ -14,6 +14,7 @@ import {
   rangesToThirtyMinuteSlotLabels,
 } from '../../../shared/manager-availability-merge.js'
 import { requireServiceClient } from '../lib/app-users-service.js'
+import { listPublicMarketingProperties } from '../lib/properties-service.js'
 import { listManagerAvailabilityByPropertyId } from '../lib/manager-availability-service.js'
 import { mapDbManagerAvailabilityRowsToVirtualMaRecords } from '../lib/manager-availability-virtual-map.js'
 import { assertInternalTourSlotAllowed } from '../lib/internal-tour-booking.js'
@@ -433,8 +434,13 @@ function postgresTourAvailabilityText(notesText) {
 async function listInternalTourPropertiesForPublicGet(schedulingRecords) {
   try {
     const client = requireServiceClient()
-    const { data: props, error: pErr } = await client.from('properties').select('*').eq('active', true)
-    if (pErr || !Array.isArray(props) || !props.length) return []
+    let props = []
+    try {
+      props = await listPublicMarketingProperties()
+    } catch {
+      props = []
+    }
+    if (!Array.isArray(props) || !props.length) return []
     const ids = props.map((p) => p.id).filter((x) => INTERNAL_PROPERTY_UUID_RE.test(String(x)))
     if (!ids.length) return []
 
@@ -556,57 +562,6 @@ export default async function handler(req, res) {
     }
 
     const merged = []
-    if (AIRTABLE_TOKEN) {
-      try {
-        const roomsTable = process.env.VITE_AIRTABLE_ROOMS_TABLE || 'Rooms'
-        const [propRes, roomsRes, maRecords] = await Promise.all([
-          fetch(`https://api.airtable.com/v0/${AIRTABLE_BASE_ID}/Properties`, {
-            headers: { Authorization: `Bearer ${AIRTABLE_TOKEN}` },
-          }),
-          fetch(`https://api.airtable.com/v0/${AIRTABLE_BASE_ID}/${encodeURIComponent(roomsTable)}`, {
-            headers: { Authorization: `Bearer ${AIRTABLE_TOKEN}` },
-          }),
-          listAllManagerAvailabilityRecords(),
-        ])
-        if (propRes.ok) {
-          const [propData, roomsData] = await Promise.all([
-            propRes.json(),
-            roomsRes.ok ? roomsRes.json() : Promise.resolve({ records: [] }),
-          ])
-          const roomsByPropertyId = buildRoomsByPropertyId(roomsData.records || [])
-          const allRecords = propData.records || []
-          const approvedRecords = allRecords.filter(propertyRecordVisibleForPublic)
-          const bookedSlotsByPropertyDate = buildBookedSlotsByPropertyDate(schedulingRecords)
-          const maCfg = buildManagerAvailabilityConfig(process.env)
-          const properties = approvedRecords
-            .map((r) => mapProperty(r, roomsByPropertyId))
-            .filter(Boolean)
-            .map((property) => {
-              const booked =
-                bookedSlotsByPropertyDate[String(property.name || '').trim().toLowerCase()] || {}
-              const availabilitySlotsByDate = buildPropertySlotsByDate({
-                records: maRecords,
-                config: maCfg,
-                propertyName: property.name,
-                propertyRecordId: property.id,
-                managerEmail: property.managerEmail,
-                managerRecordId: '',
-                legacyAvailabilityText: property.availability,
-                bookedSlotsByDate: booked,
-                daysAhead: 56,
-              })
-              return {
-                ...property,
-                bookedSlotsByDate: booked,
-                availabilitySlotsByDate,
-              }
-            })
-          merged.push(...properties)
-        }
-      } catch {
-        /* Airtable optional during migration */
-      }
-    }
 
     try {
       const internal = await listInternalTourPropertiesForPublicGet(schedulingRecords)
