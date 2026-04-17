@@ -551,30 +551,20 @@ export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type')
   if (req.method === 'OPTIONS') return res.status(200).end()
 
-  // ── GET: return properties ────────────────────────────────────────────────
+  // ── GET: return properties (Supabase only) ────────────────────────────────
   if (req.method === 'GET') {
-    const fallback = { properties: [] }
-    let schedulingRecords = []
     try {
-      schedulingRecords = await listSchedulingRows()
-    } catch {
-      schedulingRecords = []
+      // Use only Supabase-backed properties for public tour picker
+      const internal = await listInternalTourPropertiesForPublicGet([])
+      if (internal.length) return res.status(200).json({ properties: internal })
+      return res.status(200).json({ properties: [] })
+    } catch (e) {
+      console.error('[tour] GET error', e)
+      return res.status(200).json({ properties: [] })
     }
-
-    const merged = []
-
-    try {
-      const internal = await listInternalTourPropertiesForPublicGet(schedulingRecords)
-      merged.push(...internal)
-    } catch {
-      /* non-fatal */
-    }
-
-    if (merged.length) return res.status(200).json({ properties: merged })
-    return res.status(200).json(fallback)
   }
 
-  // ── POST: schedule a tour ─────────────────────────────────────────────────
+  // ── POST: schedule a tour (Supabase only) ────────────────────────────────
   if (req.method === 'POST') {
     const {
       name,
@@ -608,228 +598,53 @@ export default async function handler(req, res) {
             ? 'Issue'
             : 'Tour'
 
-    const internalTourOnly =
-      normalizedType === 'Tour' && INTERNAL_PROPERTY_UUID_RE.test(bodyPropertyId)
-
-    if (!internalTourOnly && !AIRTABLE_TOKEN) {
-      return res.status(500).json({
-        error:
-          'Data API token is not configured on the server. Set AIRTABLE_TOKEN or VITE_AIRTABLE_TOKEN on Vercel (Project → Settings → Environment Variables) for Production and Preview.',
-      })
+    // Only allow bookings for valid UUID property IDs (Supabase properties)
+    if (!INTERNAL_PROPERTY_UUID_RE.test(bodyPropertyId)) {
+      return res.status(400).json({ error: 'Property is required and must be a valid property.' })
     }
 
     const preferredDateKey = normalizeDateKey(preferredDate)
     const preferredTimeLabel = normalizeRangeLabel(preferredTime)
-    /** @type {any[]|null} Reused for conflict check to avoid a second Scheduling fetch for tours. */
-    let tourSameDaySchedulingRows = null
-    /** @type {Awaited<ReturnType<typeof assertInternalTourSlotAllowed>> | null} */
+    if (!preferredDateKey || !preferredTimeLabel) {
+      return res.status(400).json({ error: 'Tour date and time are required.' })
+    }
+
+    // Check slot availability and conflicts using Supabase
     let internalTourCtx = null
-
-    if (normalizedType === 'Tour') {
-      if (!String(property || bodyPropertyId).trim()) {
-        return res.status(400).json({ error: 'Property is required for tour booking.' })
-      }
-      if (!preferredDateKey || !preferredTimeLabel) {
-        return res.status(400).json({ error: 'Tour date and time are required.' })
-      }
-
-      if (internalTourOnly) {
-        try {
-          internalTourCtx = await assertInternalTourSlotAllowed({
-            propertyId: bodyPropertyId,
-            preferredDateKey,
-            preferredTimeLabel,
-          })
-        } catch (e) {
-          const code = /** @type {any} */ (e).statusCode || 500
-          return res.status(code).json({ error: e.message || 'Tour booking failed.' })
-        }
-        tourSameDaySchedulingRows = []
-      } else {
-        if (!AIRTABLE_TOKEN) {
-          return res.status(500).json({
-            error:
-              'Data API token is not configured on the server. Set AIRTABLE_TOKEN or VITE_AIRTABLE_TOKEN on Vercel (Project → Settings → Environment Variables) for Production and Preview.',
-          })
-        }
-
-        let propertyRecord = null
-        let mapped = null
-        let propertyAvailability = ''
-        let maRowsForAvailability = []
-        let mergePropertyRecordId = ''
-        let mergePropertyName = ''
-
-        const propertiesRes = await fetch(`https://api.airtable.com/v0/${AIRTABLE_BASE_ID}/Properties`, {
-          headers: { Authorization: `Bearer ${AIRTABLE_TOKEN}` },
-        })
-        if (!propertiesRes.ok) {
-          return res.status(502).json({ error: 'Could not verify tour availability.' })
-        }
-        const propertiesData = await propertiesRes.json()
-        const records = Array.isArray(propertiesData.records) ? propertiesData.records : []
-        const propertyNameLower = String(property || '').trim().toLowerCase()
-        propertyRecord = records.find((record) => {
-          if (!propertyRecordVisibleForPublic(record)) return false
-          const mappedName = pickPropertyName(record?.fields || {})
-          return String(mappedName || '').trim().toLowerCase() === propertyNameLower
-        })
-        if (!propertyRecord) {
-          return res.status(409).json({ error: 'This property is not available for tours right now.' })
-        }
-        propertyAvailability = propertyTourAvailabilityFromFields(propertyRecord.fields)
-        mapped = mapProperty(propertyRecord, new Map())
-        maRowsForAvailability = await listAllManagerAvailabilityRecords()
-        mergePropertyRecordId = propertyRecord.id
-        mergePropertyName = mapped?.name || String(property || '')
-
-        const propertyNameForFormula = String(mergePropertyName || property || '').trim().toLowerCase()
-        const formulaPartsTour = [`{Preferred Date} = "${preferredDateKey}"`]
-        if (propertyNameForFormula) {
-          formulaPartsTour.push(`LOWER({Property} & "") = "${propertyNameForFormula.replace(/"/g, '\\"')}"`)
-        }
-        const formulaTour = `AND(${formulaPartsTour.join(', ')})`
-        tourSameDaySchedulingRows = await listSchedulingRows(formulaTour)
-        const bookedTourLabels = []
-        for (const record of tourSameDaySchedulingRows || []) {
-          const row = record?.fields || {}
-          if (String(row.Type || '').trim().toLowerCase() !== 'tour') continue
-          if (!statusAllowsConflict(row.Status)) continue
-          const slot = normalizeRangeLabel(row['Preferred Time'])
-          if (slot) bookedTourLabels.push(slot)
-        }
-        const maCfg = buildManagerAvailabilityConfig(process.env)
-        const mergedRanges = mergePropertyAvailabilityRanges({
-          records: maRowsForAvailability,
-          fieldsConfig: maCfg.fields,
-          dateKey: preferredDateKey,
-          propertyName: mergePropertyName || String(property || ''),
-          propertyRecordId: mergePropertyRecordId,
-          managerEmail: mapped?.managerEmail || String(managerEmail || ''),
-          managerRecordId: '',
-          legacyAvailabilityText: propertyAvailability,
-          bookedSlotLabels: bookedTourLabels,
-        })
-        const mergedLabels = rangesToThirtyMinuteSlotLabels(mergedRanges)
-        const allowedLegacy = availabilitySlotsForDate(propertyAvailability, preferredDateKey)
-        const allowedSet = new Set(
-          [...mergedLabels, ...allowedLegacy].map((slot) => String(slot || '').trim().toLowerCase()),
-        )
-        if (!allowedSet.has(preferredTimeLabel.toLowerCase())) {
-          return res.status(409).json({ error: 'That tour slot is no longer available. Please choose another time.' })
-        }
-      }
-    }
-
-    const fields = {
-      'Name': String(name).trim(),
-      'Email': String(email).trim().toLowerCase(),
-      'Type': normalizedType,
-      'Status': normalizedType === 'Meeting Availability' ? 'Available' : 'New',
-    }
-    if (phone)             fields['Phone'] = String(phone).trim()
-    if (property)          fields['Property'] = String(property).trim()
-    if (room)              fields['Room'] = String(room).trim()
-    if (tourFormat)        fields['Tour Format'] = tourFormat
-    if (manager)           fields['Tour Manager'] = String(manager).trim()
-    if (managerEmail)      fields['Manager Email'] = String(managerEmail).trim().toLowerCase()
-    if (tourAvailability)  fields['Tour Availability'] = String(tourAvailability).trim()
-    if (preferredDateKey)  fields['Preferred Date'] = preferredDateKey
-    if (preferredTimeLabel) fields['Preferred Time'] = preferredTimeLabel
-    /** Guest / requester notes: portal schema uses `Message`; older bases used `Notes`. Unknown keys are stripped on retry. */
-    const schedulingNotesField =
-      String(
-        process.env.AIRTABLE_SCHEDULING_NOTES_FIELD ||
-          process.env.VITE_AIRTABLE_SCHEDULING_NOTES_FIELD ||
-          'Message',
-      ).trim() || 'Message'
-    if (notes) {
-      const nt = String(notes).trim()
-      if (nt) fields[schedulingNotesField] = nt
-    }
-
-    const conflictRange = parseTimeRangeToMinutes(preferredTimeLabel)
-    if (!internalTourOnly && preferredDateKey && conflictRange) {
-      const propertyName = String(property || '').trim().toLowerCase()
-      const managerEmailLower = String(managerEmail || '').trim().toLowerCase()
-      const formulaParts = [`{Preferred Date} = "${preferredDateKey}"`]
-      if (propertyName) formulaParts.push(`LOWER({Property} & "") = "${propertyName.replace(/"/g, '\\"')}"`)
-      const formula = `AND(${formulaParts.join(', ')})`
-      const existingRows =
-        normalizedType === 'Tour' && Array.isArray(tourSameDaySchedulingRows)
-          ? tourSameDaySchedulingRows
-          : await listSchedulingRows(formula)
-      for (const record of existingRows) {
-        const row = record?.fields || {}
-        if (!statusAllowsConflict(row.Status)) continue
-        const rowType = String(row.Type || '').trim().toLowerCase()
-        const rowManagerEmail = String(row['Manager Email'] || '').trim().toLowerCase()
-        const rowProperty = String(row.Property || '').trim().toLowerCase()
-        const shouldCheckManager = managerEmailLower && rowManagerEmail && managerEmailLower === rowManagerEmail
-        const shouldCheckProperty = propertyName && rowProperty === propertyName
-        if (!shouldCheckManager && !shouldCheckProperty && normalizedType !== 'Tour') continue
-        const rowRange = parseTimeRangeToMinutes(row['Preferred Time'])
-        if (!rowRange) continue
-        if (rangesOverlap(conflictRange, rowRange)) {
-          if (normalizedType === 'Tour' || rowType === 'tour') {
-            return res.status(409).json({ error: 'This tour slot has already been booked. Please choose another time.' })
-          }
-          if (shouldCheckManager) {
-            return res.status(409).json({ error: 'That time conflicts with an existing calendar event.' })
-          }
-        }
-      }
-    }
-
-    if (internalTourCtx) {
-      try {
-        const roomIdRaw = String(req.body?.room_id || req.body?.roomId || '').trim()
-        const noteText =
-          notes && String(notes).trim()
-            ? String(notes).trim()
-            : ''
-        const created = await createScheduledEvent({
-          eventType: 'tour',
-          propertyId: bodyPropertyId,
-          roomId: INTERNAL_PROPERTY_UUID_RE.test(roomIdRaw) ? roomIdRaw : null,
-          managerAppUserId: internalTourCtx.managerAppUserId,
-          guestName: String(name).trim(),
-          guestEmail: String(email).trim().toLowerCase(),
-          guestPhone: phone ? String(phone).trim() : null,
-          startAt: internalTourCtx.startIso,
-          endAt: internalTourCtx.endIso,
-          timezone: internalTourCtx.timezone,
-          preferredDate: preferredDateKey,
-          preferredTimeLabel: internalTourCtx.normalizedTimeLabel,
-          source: String(bookingSource || 'tour_api').trim().slice(0, 80) || 'tour_api',
-          notes: noteText || null,
-        })
-        return res.status(200).json({ id: created.id, scheduling: 'postgres' })
-      } catch (err) {
-        console.error('[tour] internal booking', err)
-        return res.status(502).json({ error: err?.message || 'Could not save booking.' })
-      }
-    }
-
-    if (!AIRTABLE_TOKEN) {
-      return res.status(500).json({
-        error:
-          'Data API token is not configured on the server. Set AIRTABLE_TOKEN or VITE_AIRTABLE_TOKEN on Vercel (Project → Settings → Environment Variables) for Production and Preview.',
+    try {
+      internalTourCtx = await assertInternalTourSlotAllowed({
+        propertyId: bodyPropertyId,
+        preferredDateKey,
+        preferredTimeLabel,
       })
+    } catch (e) {
+      const code = /** @type {any} */ (e).statusCode || 500
+      return res.status(code).json({ error: e.message || 'Tour booking failed.' })
     }
 
     try {
-      const data = await airtableCreateWithUnknownFieldRetry({
-        baseId: AIRTABLE_BASE_ID,
-        token: AIRTABLE_TOKEN,
-        tableName: SCHEDULING_TABLE,
-        fields,
+      const roomIdRaw = String(req.body?.room_id || req.body?.roomId || '').trim()
+      const noteText = notes && String(notes).trim() ? String(notes).trim() : ''
+      const created = await createScheduledEvent({
+        eventType: 'tour',
+        propertyId: bodyPropertyId,
+        roomId: INTERNAL_PROPERTY_UUID_RE.test(roomIdRaw) ? roomIdRaw : null,
+        managerAppUserId: internalTourCtx.managerAppUserId,
+        guestName: String(name).trim(),
+        guestEmail: String(email).trim().toLowerCase(),
+        guestPhone: phone ? String(phone).trim() : null,
+        startAt: internalTourCtx.startIso,
+        endAt: internalTourCtx.endIso,
+        timezone: internalTourCtx.timezone,
+        preferredDate: preferredDateKey,
+        preferredTimeLabel: internalTourCtx.normalizedTimeLabel,
+        source: String(bookingSource || 'tour_api').trim().slice(0, 80) || 'tour_api',
+        notes: noteText || null,
       })
-      return res.status(200).json({ id: data.id, scheduling: 'airtable' })
+      return res.status(200).json({ id: created.id, scheduling: 'postgres' })
     } catch (err) {
-      console.error('[tour]', err)
-      const msg = err?.message || 'Could not save booking request.'
-      return res.status(502).json({ error: msg })
+      console.error('[tour] internal booking', err)
+      return res.status(502).json({ error: err?.message || 'Could not save booking.' })
     }
   }
 

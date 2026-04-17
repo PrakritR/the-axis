@@ -38,7 +38,6 @@ import {
   dispatchAxisSchedulingChanged,
 } from '../lib/portalCalendarSync.js'
 import {
-  airtableFieldScalar,
   buildAdminMeetingAvailabilityConfig,
   buildGlobalAdminFreeRangesMapByDate,
   buildManagerAvailabilityConfig,
@@ -51,16 +50,6 @@ import {
   expandMinuteRangesToCanonicalTourSlotLabels,
   parseTourTimeSlotLabelToMinutesRange,
 } from '../../../shared/manager-availability-merge.js'
-import {
-  listManagerAvailabilityForProperty,
-  listManagerAvailabilityForManagerEmail,
-  createManagerAvailabilityRecordsBatch,
-  deleteManagerAvailabilityRecord,
-  buildManagerAvailabilitySlotRowFields,
-  formatHHmmFromMinutes,
-  isManagerAvailabilityTableReachable,
-} from '../lib/managerAvailabilityAirtable.js'
-import { propertyRowUsesPostgresAvailability } from '../lib/propertyIdentity.js'
 import {
   listInternalManagerAvailabilityAsMaRecords,
   syncInternalManagerAvailabilitySlots,
@@ -100,9 +89,6 @@ import {
   siteManagerThreadKey,
   housingPublicAdminPropertyThread,
   HOUSING_PUBLIC_ADMIN_GENERAL_THREAD,
-  fetchBlockedTourDates,
-  createBlockedTourDate,
-  deleteBlockedTourDate,
   updateLeaseDraftRecord,
 } from '../lib/airtable'
 import { listLeaseDraftsForSession, getLeaseDraftByIdForSession } from '../lib/leaseDraftsInternalApi.js'
@@ -343,7 +329,7 @@ const TOUR_DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
 const TOUR_SLOTS = ['9:00 AM', '10:30 AM', '12:00 PM', '1:30 PM', '3:00 PM', '4:30 PM', '6:00 PM']
 
 function propertyRecordName(p) {
-  return String(p?.['Property Name'] || p?.Name || p?.Property || '').trim()
+  return String(p?.['Property Name'] || p?.Name || p?.name || p?.Property || '').trim()
 }
 
 /** House visible in manager portal lists once Axis marks it approved / live. */
@@ -1749,7 +1735,7 @@ function TimeRangeList({ ranges, onChangeRange, onRemoveRange, disabled = false 
   )
 }
 
-function AvailabilityCalendar({ view, anchorDate, selectedDateKey, onSelectDate, weeklyFree, bookedByDate, blockedDates, dayFreeOverrides }) {
+function AvailabilityCalendar({ view, anchorDate, selectedDateKey, onSelectDate, bookedByDate, dayFreeOverrides }) {
   const y = anchorDate.getFullYear()
   const m = anchorDate.getMonth()
   const daysInMonth = new Date(y, m + 1, 0).getDate()
@@ -1759,25 +1745,19 @@ function AvailabilityCalendar({ view, anchorDate, selectedDateKey, onSelectDate,
   const weekDays = Array.from({ length: 7 }, (_, i) => addDaysDate(weekStart, i))
 
   const dayRanges = (key) => {
-    if (dayFreeOverrides != null) {
-      if (!Object.prototype.hasOwnProperty.call(dayFreeOverrides, key)) {
-        return []
-      }
-      const o = dayFreeOverrides[key]
-      return Array.isArray(o) ? normalizeTimeRanges(o) : []
+    if (dayFreeOverrides == null || !Object.prototype.hasOwnProperty.call(dayFreeOverrides, key)) {
+      return []
     }
-    // Manager tour template: show the same weekly pattern on every day in month/week (not only selected).
-    return timeRangesFromWeeklyFree(weeklyFree, weekdayAbbrFromDateKey(key))
+    const o = dayFreeOverrides[key]
+    return Array.isArray(o) ? normalizeTimeRanges(o) : []
   }
   const bookings = (key) => bookedByDate.get(key) || []
-  const isBlocked = (key) => Boolean(blockedDates?.has(key))
 
   const renderDayCard = (dateKey, dayLabel, dateLabel) => {
     const ranges = dayRanges(dateKey)
     const dayBookings = bookings(dateKey)
     const selected = selectedDateKey === dateKey
-    const blocked = isBlocked(dateKey)
-    const aria = `${dayLabel} ${dateLabel}${blocked ? ', blocked' : ''}`
+    const aria = `${dayLabel} ${dateLabel}`
     return (
       <button
         key={dateKey}
@@ -1788,22 +1768,15 @@ function AvailabilityCalendar({ view, anchorDate, selectedDateKey, onSelectDate,
         className={classNames(
           'min-h-[118px] rounded-2xl border p-2 text-left transition',
           selected ? 'border-[#2563eb] bg-[#2563eb]/5 ring-2 ring-[#2563eb]/20' : 'border-slate-200 bg-white hover:border-slate-300',
-          blocked ? 'border-red-200 bg-red-50/50' : '',
           dateKey === todayKey && !selected ? 'ring-1 ring-slate-300' : '',
         )}
       >
         <span className="sr-only">{aria}</span>
         <div className="flex items-start justify-between gap-1">
-          {blocked ? (
-            <span className="rounded bg-red-100 px-1 py-0.5 text-[9px] font-bold uppercase tracking-wide text-red-700">
-              Off
-            </span>
-          ) : (
-            <span className="inline-block w-6 shrink-0" aria-hidden />
-          )}
+          <span className="inline-block w-6 shrink-0" aria-hidden />
           <span className="ml-auto text-xs font-black tabular-nums text-slate-800">{dateLabel}</span>
         </div>
-        <MonthDayMiniStrip ranges={ranges} dayBookings={dayBookings} blocked={blocked} />
+        <MonthDayMiniStrip ranges={ranges} dayBookings={dayBookings} blocked={false} />
       </button>
     )
   }
@@ -1958,7 +1931,6 @@ function AvailabilityCalendar({ view, anchorDate, selectedDateKey, onSelectDate,
               const ranges = dayRanges(dk)
               const dayBookings = bookings(dk)
               const { tours: colTours, workOrders: colWo } = splitCalendarStripBookings(dayBookings)
-              const blocked = isBlocked(dk)
               const selected = selectedDateKey === dk
               return (
                 <div
@@ -1982,9 +1954,6 @@ function AvailabilityCalendar({ view, anchorDate, selectedDateKey, onSelectDate,
                       style={{ top: `${(h / totalHours) * 100}%` }}
                     />
                   ))}
-                  {blocked ? (
-                    <div className="pointer-events-none absolute inset-0 z-30 rounded-none bg-red-200/40" />
-                  ) : null}
                   <div className="pointer-events-none absolute inset-y-0 left-[4%] z-[1] w-[28%]">
                     {ranges.map((range) => (
                       <div
@@ -2064,14 +2033,12 @@ function AvailabilityEditorPanel({
   onCopyHoursToWholeWeek,
   scheduledItems,
   availSaving,
+  availLoading = false,
+  availError = '',
   manager,
   propertyOptions,
   selectedPropertyId,
   onSelectProperty,
-  isDateBlocked,
-  onBlockDay,
-  onUnblockDay,
-  blockSaving,
   repeatWeekly = false,
   onRepeatWeeklyChange,
   onCancelDraft,
@@ -2184,8 +2151,20 @@ function AvailabilityEditorPanel({
         </label>
       ) : null}
 
+      {availError ? (
+        <div className="mt-4 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
+          {availError}
+        </div>
+      ) : null}
+
+      {availLoading ? (
+        <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-500">
+          Loading availability…
+        </div>
+      ) : null}
+
       <div className="mt-6">
-        <DayAvailabilityTimeline ranges={ranges} onRangesChange={onRangesChange} disabled={disabled} />
+        <DayAvailabilityTimeline ranges={ranges} onRangesChange={onRangesChange} disabled={disabled || availLoading} />
       </div>
 
       <div className="mt-6">
@@ -2245,7 +2224,7 @@ function AvailabilityEditorPanel({
           <button
             type="button"
             onClick={onSave}
-            disabled={availSaving || isManagerInternalPreview(manager) || !hasApprovedPick}
+            disabled={availSaving || availLoading || isManagerInternalPreview(manager) || !hasApprovedPick}
             className="w-full rounded-2xl bg-[linear-gradient(180deg,#2f76ff_0%,#2450eb_100%)] px-4 py-3 text-sm font-semibold text-white shadow-[0_12px_28px_rgba(37,99,235,0.22)] disabled:opacity-50"
           >
             {availSaving ? 'Saving…' : saveButtonLabel || 'Save to property & calendar'}
@@ -6344,19 +6323,12 @@ export function CalendarTabPanel({ manager, allowedPropertyNames, loadAllSchedul
   const [schedulingRows, setSchedulingRows] = useState([])
   const [loading, setLoading] = useState(true)
   const [properties, setProperties] = useState([])
-  /** Per-property weekly tour-availability grid (half-hour indices by weekday). */
-  const [weeklyFreeByProperty, setWeeklyFreeByProperty] = useState({})
   const [selectedPropertyId, setSelectedPropertyId] = useState('')
   const [availSaving, setAvailSaving] = useState(false)
+  const [availabilityLoading, setAvailabilityLoading] = useState(false)
+  const [availabilityError, setAvailabilityError] = useState('')
   const [adminDayRanges, setAdminDayRanges] = useState([])
-  const [blockedDateRecords, setBlockedDateRecords] = useState([])
-  const [blockSaving, setBlockSaving] = useState(false)
-  /** Structured Manager Availability table (per-date + weekly recurring). Falls back to legacy property text when unset/disabled. */
-  const [maTableOk, setMaTableOk] = useState(false)
-  const [maDisabledByEnv, setMaDisabledByEnv] = useState(false)
   const [maRecords, setMaRecords] = useState([])
-  /** All Manager Availability rows for this manager — property dropdown sort (structured table + Properties tour text). */
-  const [managerAvailRowsForSort, setManagerAvailRowsForSort] = useState([])
   const [pendingRanges, setPendingRanges] = useState([])
   const [repeatWeekly, setRepeatWeekly] = useState(false)
   const maDirtyRef = useRef(false)
@@ -6367,14 +6339,10 @@ export function CalendarTabPanel({ manager, allowedPropertyNames, loadAllSchedul
   const maCfg = useMemo(() => buildManagerAvailabilityConfig(import.meta.env), [])
   const adminMaCfg = useMemo(() => buildAdminMeetingAvailabilityConfig(import.meta.env), [])
   const [adminMaRecords, setAdminMaRecords] = useState([])
-  /** Tour template: user edited weekly grid — debounced persist to Airtable */
-  const availabilityDirtyRef = useRef(false)
   const adminAvailabilityDirtyRef = useRef(false)
   /** Latest Properties rows for autosave (avoid stale closure in debounced timeout). */
   const propertiesRef = useRef([])
   const managerRef = useRef(manager)
-  /** Pending tour grid to write — keyed so property switch still saves the edited property. */
-  const tourDirtyPayloadRef = useRef(null)
   /** Latest admin-day editor context for autosave / flush. */
   const adminAutosaveCtxRef = useRef({})
   const flushPendingCalendarWritesRef = useRef(async () => true)
@@ -6403,30 +6371,6 @@ export function CalendarTabPanel({ manager, allowedPropertyNames, loadAllSchedul
   }, [loadAllSchedulingRows, manager?.email, allowedPropertyNames])
 
   useEffect(() => {
-    if (loadAllSchedulingRows) return
-    const raw = String(import.meta.env.VITE_USE_MANAGER_AVAILABILITY_TABLE || '').trim().toLowerCase()
-    const envOff = raw === 'false' || raw === '0' || raw === 'none' || raw === 'off'
-    if (envOff) {
-      setMaDisabledByEnv(true)
-      setMaTableOk(false)
-      return
-    }
-    setMaDisabledByEnv(false)
-    let cancelled = false
-    ;(async () => {
-      try {
-        const ok = await isManagerAvailabilityTableReachable()
-        if (!cancelled) setMaTableOk(ok)
-      } catch {
-        if (!cancelled) setMaTableOk(false)
-      }
-    })()
-    return () => {
-      cancelled = true
-    }
-  }, [loadAllSchedulingRows])
-
-  useEffect(() => {
     if (!loadAllSchedulingRows) {
       setAdminMaRecords([])
       return
@@ -6453,45 +6397,52 @@ export function CalendarTabPanel({ manager, allowedPropertyNames, loadAllSchedul
   useEffect(() => {
     if (!selectedPropertyId || loadAllSchedulingRows) {
       setMaRecords([])
+      setAvailabilityLoading(false)
+      setAvailabilityError('')
       return
     }
-    const prop = properties.find((p) => p.id === selectedPropertyId)
-    const usePostgresMa = Boolean(prop && propertyRowUsesPostgresAvailability(prop))
-    if (!maTableOk && !usePostgresMa) {
-      setMaRecords([])
-      return
-    }
+    const prop = properties.find((p) => p.id === selectedPropertyId) || null
     let cancelled = false
-    const pname = prop ? propertyRecordName(prop) : ''
+    setAvailabilityLoading(true)
+    setAvailabilityError('')
     ;(async () => {
       try {
-        const rows = usePostgresMa
-          ? await listInternalManagerAvailabilityAsMaRecords(selectedPropertyId, prop, managerRef.current)
-          : await listManagerAvailabilityForProperty(selectedPropertyId, pname)
-        if (!cancelled) setMaRecords(rows)
-      } catch {
-        if (!cancelled) setMaRecords([])
+        const rows = await listInternalManagerAvailabilityAsMaRecords(selectedPropertyId, prop, managerRef.current)
+        if (!cancelled) {
+          setMaRecords(rows)
+          setAvailabilityError('')
+        }
+      } catch (err) {
+        if (!cancelled) {
+          setMaRecords([])
+          setAvailabilityError(formatDataLoadError(err) || 'Could not load manager availability.')
+        }
+      } finally {
+        if (!cancelled) setAvailabilityLoading(false)
       }
     })()
     return () => {
       cancelled = true
     }
-  }, [maTableOk, selectedPropertyId, properties, loadAllSchedulingRows, manager])
+  }, [selectedPropertyId, properties, loadAllSchedulingRows, manager])
 
   const refreshSchedulingRowsOnly = useCallback(async () => {
-    const { loadAll, managerEmail, propertyNames } = calendarFetchScopeRef.current
+    const { loadAll, propertyNames } = calendarFetchScopeRef.current
     try {
-      const sched = loadAll
-        ? await fetchAllSchedulingRows()
-        : await fetchSchedulingForManagerScope({ managerEmail, propertyNames })
-      const workOrders = await getAllWorkOrders().catch(() => [])
+      const [workOrders, internalEvents] = await Promise.all([
+        getAllWorkOrders().catch(() => []),
+        (loadAll
+          ? fetchAllInternalScheduledEventsForAdmin(120)
+          : fetchInternalScheduledEventsSchedulingRows(propertiesRef.current, 120)
+        ).catch(() => []),
+      ])
       const allowedLower = loadAll
         ? null
         : new Set(
             (propertyNames || []).map((name) => String(name).trim().toLowerCase()).filter(Boolean),
           )
       const workOrderRows = workOrdersToCalendarRows(workOrders, allowedLower)
-      setSchedulingRows([...sched, ...workOrderRows])
+      setSchedulingRows([...internalEvents, ...workOrderRows])
     } catch (err) {
       console.error('[CalendarTabPanel] refreshSchedulingRowsOnly', err)
     }
@@ -6504,21 +6455,11 @@ export function CalendarTabPanel({ manager, allowedPropertyNames, loadAllSchedul
       return
     }
     setLoading(true)
-    availabilityDirtyRef.current = false
-    tourDirtyPayloadRef.current = null
     try {
-      const [sched, props, workOrders, maRowsForSort] = await Promise.all([
-        loadAllSchedulingRows
-          ? fetchAllSchedulingRows()
-          : fetchSchedulingForManagerScope({ managerEmail: manager?.email, propertyNames: allowedPropertyNames || [] }),
+      const [props, workOrders] = await Promise.all([
         loadMergedManagerProperties(manager),
         getAllWorkOrders().catch(() => []),
-        !loadAllSchedulingRows
-          ? listManagerAvailabilityForManagerEmail(manager?.email).catch(() => [])
-          : Promise.resolve([]),
       ])
-      if (!loadAllSchedulingRows) setManagerAvailRowsForSort(Array.isArray(maRowsForSort) ? maRowsForSort : [])
-      else setManagerAvailRowsForSort([])
       const allowedLower = loadAllSchedulingRows
         ? null
         : new Set(
@@ -6533,14 +6474,12 @@ export function CalendarTabPanel({ manager, allowedPropertyNames, loadAllSchedul
           propertyNameInAllowedScope(p, allowedPropertyNames)
         )
       })
-      if (!loadAllSchedulingRows) {
-        approvedAssigned = sortPropertiesByManagerCalendarPriority(
-          approvedAssigned,
-          Array.isArray(maRowsForSort) ? maRowsForSort : [],
-          import.meta.env,
-        )
-      } else {
+      if (loadAllSchedulingRows) {
         approvedAssigned = [...approvedAssigned].sort((a, b) => String(a.id || '').localeCompare(String(b.id || '')))
+      } else {
+        approvedAssigned = [...approvedAssigned].sort((a, b) =>
+          propertyRecordName(a).localeCompare(propertyRecordName(b), undefined, { sensitivity: 'base' }),
+        )
       }
 
       // Email-based fallback: if the normal assignment checks found nothing and we have a
@@ -6555,10 +6494,8 @@ export function CalendarTabPanel({ manager, allowedPropertyNames, loadAllSchedul
             return (me && me === em) || (sme && sme === em)
           })
           if (emailFallback.length > 0) {
-            approvedAssigned = sortPropertiesByManagerCalendarPriority(
-              emailFallback,
-              Array.isArray(maRowsForSort) ? maRowsForSort : [],
-              import.meta.env,
+            approvedAssigned = [...emailFallback].sort((a, b) =>
+              propertyRecordName(a).localeCompare(propertyRecordName(b), undefined, { sensitivity: 'base' }),
             )
           }
         }
@@ -6567,10 +6504,8 @@ export function CalendarTabPanel({ manager, allowedPropertyNames, loadAllSchedul
       // Last-resort fallback: if still empty (data not yet linked), show all named properties
       // so the manager can still set availability.
       if (approvedAssigned.length === 0 && !loadAllSchedulingRows) {
-        approvedAssigned = sortPropertiesByManagerCalendarPriority(
-          props.filter((p) => Boolean(propertyRecordName(p))),
-          Array.isArray(maRowsForSort) ? maRowsForSort : [],
-          import.meta.env,
+        approvedAssigned = [...props.filter((p) => Boolean(propertyRecordName(p)))].sort((a, b) =>
+          propertyRecordName(a).localeCompare(propertyRecordName(b), undefined, { sensitivity: 'base' }),
         )
       }
 
@@ -6582,14 +6517,8 @@ export function CalendarTabPanel({ manager, allowedPropertyNames, loadAllSchedul
       } catch {
         postgresSchedulingRows = []
       }
-      setSchedulingRows([...sched, ...workOrderRows, ...postgresSchedulingRows])
+      setSchedulingRows([...workOrderRows, ...postgresSchedulingRows])
 
-      const byProperty = {}
-      approvedAssigned.forEach((property) => {
-        const text = propertyTourAvailabilityText(property) || ''
-        byProperty[property.id] = text ? weeklyFreeArraysFromTourText(text) : emptyWeeklyFreeArrays()
-      })
-      setWeeklyFreeByProperty(byProperty)
       setSelectedPropertyId((current) => {
         if (approvedAssigned.some((p) => p.id === current)) return current
         return approvedAssigned[0]?.id || ''
@@ -6649,11 +6578,13 @@ export function CalendarTabPanel({ manager, allowedPropertyNames, loadAllSchedul
         .filter((p) => isPropertyRecordApproved(p))
         .sort((a, b) => String(a.id || '').localeCompare(String(b.id || '')))
     }
+    const sortByName = (list) => [...list].sort((a, b) =>
+      propertyRecordName(a).localeCompare(propertyRecordName(b), undefined, { sensitivity: 'base' }),
+    )
     const primary = properties.filter((p) => (
       propertyEligibleForManagerCalendarScheduling(p, manager) ||
       propertyNameInAllowedScope(p, allowedPropertyNames)
     ))
-    const sortMgr = (list) => sortPropertiesByManagerCalendarPriority(list, managerAvailRowsForSort, import.meta.env)
     // Email fallback (same logic as load())
     if (primary.length === 0 && manager?.email) {
       const em = String(manager.email || '').trim().toLowerCase()
@@ -6663,26 +6594,22 @@ export function CalendarTabPanel({ manager, allowedPropertyNames, loadAllSchedul
           const sme = String(p['Site Manager Email'] || '').trim().toLowerCase()
           return (me && me === em) || (sme && sme === em)
         })
-        if (fallback.length > 0) return sortMgr(fallback)
+        if (fallback.length > 0) return sortByName(fallback)
       }
     }
-    const results = sortMgr(primary)
+    const results = sortByName(primary)
     if (results.length === 0) {
-      return sortMgr(properties.filter((p) => Boolean(propertyRecordName(p))))
+      return sortByName(properties.filter((p) => Boolean(propertyRecordName(p))))
     }
     return results
-  }, [properties, manager, loadAllSchedulingRows, allowedPropertyNames, managerAvailRowsForSort])
+  }, [properties, manager, loadAllSchedulingRows, allowedPropertyNames])
 
   const selectedProperty = useMemo(
     () => approvedAssignedProperties.find((p) => p.id === selectedPropertyId) || null,
     [approvedAssignedProperties, selectedPropertyId],
   )
 
-  const selectedUsesPostgresMa = useMemo(
-    () => Boolean(selectedProperty && propertyRowUsesPostgresAvailability(selectedProperty)),
-    [selectedProperty],
-  )
-  const structuredCalendarEditorEnabled = maTableOk || selectedUsesPostgresMa
+  const structuredCalendarEditorEnabled = Boolean(selectedPropertyId)
 
   const availabilityOwnerOptions = useMemo(
     () => approvedAssignedProperties
@@ -6690,34 +6617,6 @@ export function CalendarTabPanel({ manager, allowedPropertyNames, loadAllSchedul
       .filter((option) => Boolean(String(option.label || '').trim())),
     [approvedAssignedProperties],
   )
-
-  const selectedWeeklyFree = useMemo(
-    () => weeklyFreeByProperty[selectedPropertyId] || emptyWeeklyFreeArrays(),
-    [weeklyFreeByProperty, selectedPropertyId],
-  )
-
-  const saveTourDirtyIfNeeded = useCallback(async () => {
-    if (maTableOk || selectedUsesPostgresMa) {
-      availabilityDirtyRef.current = false
-      tourDirtyPayloadRef.current = null
-      return true
-    }
-    if (!availabilityDirtyRef.current) return true
-    const pending = tourDirtyPayloadRef.current
-    if (!pending?.propertyId) {
-      availabilityDirtyRef.current = false
-      return true
-    }
-    availabilityDirtyRef.current = false
-    tourDirtyPayloadRef.current = null
-    toast.error(
-      maDisabledByEnv
-        ? 'Manager Availability is off (VITE_USE_MANAGER_AVAILABILITY_TABLE=false). Set true or remove the line, restart locally, and on Vercel update env then redeploy.'
-        : 'Tour blocks are not saved without the Manager Availability Airtable table. Add the table and env from docs/AIRTABLE_SETUP_PROMPT.md §2.7, then Save.',
-      { id: 'calendar-avail-legacy-blocked', duration: 6000 },
-    )
-    return true
-  }, [maTableOk, maDisabledByEnv, selectedUsesPostgresMa])
 
   const persistAdminMeetingAvailability = useCallback(
     async (dayKey, ranges, _existingRows) => {
@@ -6751,8 +6650,6 @@ export function CalendarTabPanel({ manager, allowedPropertyNames, loadAllSchedul
     [manager, refreshSchedulingRowsOnly],
   )
 
-  const saveTourDirtyRef = useRef(saveTourDirtyIfNeeded)
-  saveTourDirtyRef.current = saveTourDirtyIfNeeded
   const saveMaRef = useRef(async () => true)
   const persistAdminRef = useRef(persistAdminMeetingAvailability)
   persistAdminRef.current = persistAdminMeetingAvailability
@@ -6760,10 +6657,6 @@ export function CalendarTabPanel({ manager, allowedPropertyNames, loadAllSchedul
   const flushPendingCalendarWrites = useCallback(async () => {
     if (!loadAllSchedulingRows && structuredCalendarEditorEnabled && maDirtyRef.current) {
       const ok = await saveMaRef.current()
-      if (!ok) return false
-    }
-    if (!loadAllSchedulingRows && !structuredCalendarEditorEnabled && availabilityDirtyRef.current) {
-      const ok = await saveTourDirtyRef.current()
       if (!ok) return false
     }
     if (loadAllSchedulingRows && adminAvailabilityDirtyRef.current) {
@@ -6791,14 +6684,10 @@ export function CalendarTabPanel({ manager, allowedPropertyNames, loadAllSchedul
           const ok = await saveMaRef.current()
           if (!ok) return
         }
-        if (!structuredCalendarEditorEnabled) {
-          const ok = await saveTourDirtyIfNeeded()
-          if (!ok) return
-        }
       }
       setSelectedPropertyId(next)
     },
-    [loadAllSchedulingRows, selectedPropertyId, saveTourDirtyIfNeeded, structuredCalendarEditorEnabled],
+    [loadAllSchedulingRows, selectedPropertyId, structuredCalendarEditorEnabled],
   )
 
   // Manager: property-scoped rows. Admin: org-wide tours/work orders/meetings; "Meeting Availability" stays scoped to this admin.
@@ -6824,9 +6713,7 @@ export function CalendarTabPanel({ manager, allowedPropertyNames, loadAllSchedul
 
   const computeMergedForDateKey = useCallback(
     (dateKey) => {
-      if (!structuredCalendarEditorEnabled || !selectedProperty) {
-        return timeRangesFromWeeklyFree(selectedWeeklyFree, weekdayAbbrFromDateKey(dateKey))
-      }
+      if (!structuredCalendarEditorEnabled || !selectedProperty) return []
       const selProp = String(propertyRecordName(selectedProperty) || '').trim().toLowerCase()
       const tourRows = (schedulingRowsForView || []).filter((row) => {
         const t = String(row.Type || '').trim().toLowerCase()
@@ -6864,7 +6751,6 @@ export function CalendarTabPanel({ manager, allowedPropertyNames, loadAllSchedul
       manager?.airtableRecordId,
       manager?.id,
       schedulingRowsForView,
-      selectedWeeklyFree,
     ],
   )
 
@@ -6910,18 +6796,13 @@ export function CalendarTabPanel({ manager, allowedPropertyNames, loadAllSchedul
     return out
   }, [loadAllSchedulingRows, structuredCalendarEditorEnabled, selectedProperty, anchorDate, selectedDateKey, computeMergedForDateKey])
 
-  const saveManagerAvailabilityToAirtable = useCallback(async () => {
+  const saveManagerAvailability = useCallback(async () => {
     if (!selectedProperty || !manager?.email) {
       toast.error('Property is not selected or you are not signed in.')
       return false
     }
     if (!selectedDateKey) {
       toast.error('No date selected.')
-      return false
-    }
-    const canStructuredSave = maTableOk || selectedUsesPostgresMa
-    if (!canStructuredSave) {
-      toast.error('Manager Availability is not available for this property.')
       return false
     }
 
@@ -6933,138 +6814,28 @@ export function CalendarTabPanel({ manager, allowedPropertyNames, loadAllSchedul
     const mgrId = String(manager.airtableRecordId || manager.id || '').trim()
     const ranges = normalizeTimeRanges(pendingRanges)
 
-    if (selectedUsesPostgresMa) {
-      setAvailSaving(true)
-      try {
-        const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'
-        const slotLabels = expandMinuteRangesToCanonicalTourSlotLabels(ranges)
-        const slots = []
-        for (const label of slotLabels) {
-          const pr = parseTourTimeSlotLabelToMinutesRange(label)
-          if (!pr || pr.end <= pr.start) continue
-          slots.push({
-            slot_start_minutes: pr.start,
-            slot_end_minutes: pr.end,
-            time_slot_label: label,
-          })
-        }
-        await syncInternalManagerAvailabilitySlots({
-          propertyId: propId,
-          dateKey: dk,
-          repeatWeekly,
-          weekdayAbbr: abbr,
-          timezone: tz,
-          slots,
-        })
-        const refreshed = await listInternalManagerAvailabilityAsMaRecords(propId, selectedProperty, manager)
-        const selProp = String(propName || '').trim().toLowerCase()
-        const tourRows = (schedulingRowsForView || []).filter((row) => {
-          const t = String(row.Type || '').trim().toLowerCase()
-          if (t !== 'tour') return false
-          const rowDk = String(row['Preferred Date'] || '').trim().slice(0, 10)
-          if (rowDk !== dk) return false
-          const rp = String(row.Property || '').trim().toLowerCase()
-          return !selProp || rp === selProp || rp.includes(selProp) || selProp.includes(rp)
-        })
-        const bookedLabels = tourRows
-          .map((row) => {
-            const p = parsePreferredTimeRange(row['Preferred Time'])
-            return p ? slotLabelFromRange(p.start, p.end) : ''
-          })
-          .filter(Boolean)
-        const mergedAfter = normalizeTimeRanges(
-          mergePropertyAvailabilityRanges({
-            records: refreshed.map((r) => ({ fields: r })),
-            fieldsConfig: maCfg.fields,
-            dateKey: dk,
-            propertyName: propName,
-            propertyRecordId: propId,
-            managerEmail: mgrEmail,
-            managerRecordId: mgrId,
-            legacyAvailabilityText: propertyTourAvailabilityText(selectedProperty),
-            bookedSlotLabels: bookedLabels,
-          }),
-        )
-        setMaRecords(refreshed)
-        maDirtyRef.current = false
-        setPendingRanges(mergedAfter)
-        toast.success(repeatWeekly ? 'Weekly availability saved' : 'Availability saved')
-        try {
-          if (maTableOk) {
-            const maSort = await listManagerAvailabilityForManagerEmail(mgrEmail)
-            setManagerAvailRowsForSort(Array.isArray(maSort) ? maSort : [])
-          }
-        } catch {
-          /* non-fatal */
-        }
-        await refreshSchedulingRowsOnly()
-        dispatchAxisSchedulingChanged({ reason: 'manager-availability' })
-        return true
-      } catch (err) {
-        toast.error(err.message || 'Failed to save availability')
-        return false
-      } finally {
-        setAvailSaving(false)
-      }
-    }
-
-    if (!maTableOk) {
-      toast.error('Manager Availability is not available or property is not selected.')
-      return false
-    }
-
-    const f = maCfg.fields
-    const isRecVal = (row) =>
-      row[f.isRecurring] === true ||
-      row[f.isRecurring] === 1 ||
-      String(row[f.isRecurring] || '').toLowerCase() === 'true' ||
-      String(row[f.isRecurring] || '').toLowerCase() === 'yes'
-    const isActiveVal = (row) => {
-      const v = row[f.active]
-      if (v === false || v === 0 || String(v).toLowerCase() === 'false') return false
-      return true
-    }
     setAvailSaving(true)
     try {
-      const toDelete = maRecords.filter((row) => {
-        if (!isActiveVal(row)) return false
-        const rowPropId = airtableFieldScalar(row[f.propertyRecordId])
-        const rowPropName = String(row[f.propertyName] || '').trim().toLowerCase()
-        const matchesProp =
-          (propId && rowPropId === propId) ||
-          (propName.trim().toLowerCase() && rowPropName === propName.trim().toLowerCase())
-        const rowMgrId = airtableFieldScalar(row[f.managerRecordId])
-        const rowMgrEmail = String(row[f.managerEmail] || '').trim().toLowerCase()
-        const matchesMgr =
-          rowMgrEmail === mgrEmail || (mgrId && rowMgrId === mgrId)
-        if (!matchesProp || !matchesMgr) return false
-        if (repeatWeekly) return isRecVal(row) && normalizeWeekdayAbbr(row[f.weekday]) === abbr
-        return !isRecVal(row) && normalizeDateKey(row[f.date]) === dk
-      })
-      await Promise.all(toDelete.map((row) => deleteManagerAvailabilityRecord(row.id)))
       const slotLabels = expandMinuteRangesToCanonicalTourSlotLabels(ranges)
-      const fieldsList = []
+      const slots = []
       for (const label of slotLabels) {
         const pr = parseTourTimeSlotLabelToMinutesRange(label)
         if (!pr || pr.end <= pr.start) continue
-        fieldsList.push(
-          buildManagerAvailabilitySlotRowFields({
-            propertyName: propName,
-            propertyRecordId: propId,
-            managerEmail: mgrEmail,
-            managerRecordId: mgrId,
-            dateKey: dk,
-            weekdayAbbr: abbr,
-            slotStartMinutes: pr.start,
-            slotLabel: label,
-            status: 'available',
-            isRecurring: repeatWeekly,
-            source: 'manager_portal',
-          }),
-        )
+        slots.push({
+          slot_start_minutes: pr.start,
+          slot_end_minutes: pr.end,
+          time_slot_label: label,
+        })
       }
-      await createManagerAvailabilityRecordsBatch(fieldsList)
-      const refreshed = await listManagerAvailabilityForProperty(propId, propName)
+      await syncInternalManagerAvailabilitySlots({
+        propertyId: propId,
+        dateKey: dk,
+        repeatWeekly,
+        weekdayAbbr: abbr,
+        timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC',
+        slots,
+      })
+      const refreshed = await listInternalManagerAvailabilityAsMaRecords(propId, selectedProperty, manager)
       const selProp = String(propName || '').trim().toLowerCase()
       const tourRows = (schedulingRowsForView || []).filter((row) => {
         const t = String(row.Type || '').trim().toLowerCase()
@@ -7097,12 +6868,6 @@ export function CalendarTabPanel({ manager, allowedPropertyNames, loadAllSchedul
       maDirtyRef.current = false
       setPendingRanges(mergedAfter)
       toast.success(repeatWeekly ? 'Weekly availability saved' : 'Availability saved')
-      try {
-        const maSort = await listManagerAvailabilityForManagerEmail(mgrEmail)
-        setManagerAvailRowsForSort(Array.isArray(maSort) ? maSort : [])
-      } catch {
-        /* non-fatal */
-      }
       await refreshSchedulingRowsOnly()
       dispatchAxisSchedulingChanged({ reason: 'manager-availability' })
       return true
@@ -7113,8 +6878,6 @@ export function CalendarTabPanel({ manager, allowedPropertyNames, loadAllSchedul
       setAvailSaving(false)
     }
   }, [
-    maTableOk,
-    selectedUsesPostgresMa,
     selectedProperty,
     manager,
     selectedDateKey,
@@ -7127,8 +6890,8 @@ export function CalendarTabPanel({ manager, allowedPropertyNames, loadAllSchedul
   ])
 
   useEffect(() => {
-    saveMaRef.current = saveManagerAvailabilityToAirtable
-  }, [saveManagerAvailabilityToAirtable])
+    saveMaRef.current = saveManagerAvailability
+  }, [saveManagerAvailability])
 
   const bookedByDate = useMemo(() => {
     const map = new Map()
@@ -7230,73 +6993,10 @@ export function CalendarTabPanel({ manager, allowedPropertyNames, loadAllSchedul
     setAdminDayRanges(adminRangesFromRows)
   }, [loadAllSchedulingRows, adminRangesFromRows, selectedDateKey])
 
-  // Load blocked dates whenever the selected property changes
-  useEffect(() => {
-    if (!selectedPropertyId) {
-      setBlockedDateRecords([])
-      return
-    }
-    fetchBlockedTourDates(selectedPropertyId)
-      .then(setBlockedDateRecords)
-      .catch(() => setBlockedDateRecords([]))
-  }, [selectedPropertyId])
-
-  const blockedDatesSet = useMemo(() => {
-    const s = new Set()
-    for (const rec of blockedDateRecords) {
-      const d = String(rec['Date'] || '').trim().slice(0, 10)
-      if (d) s.add(d)
-    }
-    return s
-  }, [blockedDateRecords])
-
-  const blockedRecordForSelectedDay = useMemo(
-    () => blockedDateRecords.find((r) => String(r['Date'] || '').trim().slice(0, 10) === selectedDateKey) || null,
-    [blockedDateRecords, selectedDateKey],
-  )
-
-  async function handleBlockDay() {
-    if (!selectedProperty || !selectedDateKey) return
-    setBlockSaving(true)
-    try {
-      const newRec = await createBlockedTourDate({
-        propertyId: selectedPropertyId,
-        propertyName: propertyRecordName(selectedProperty),
-        date: selectedDateKey,
-        managerId: manager?.id || '',
-        managerName: manager?.name || manager?.email || '',
-      })
-      setBlockedDateRecords((prev) => [...prev, newRec])
-      toast.success(`${selectedDateKey} blocked`)
-    } catch (err) {
-      toast.error(err.message || 'Could not block day')
-    } finally {
-      setBlockSaving(false)
-    }
-  }
-
-  async function handleUnblockDay() {
-    if (!blockedRecordForSelectedDay) return
-    setBlockSaving(true)
-    try {
-      await deleteBlockedTourDate(blockedRecordForSelectedDay.id)
-      setBlockedDateRecords((prev) => prev.filter((r) => r.id !== blockedRecordForSelectedDay.id))
-      toast.success(`${selectedDateKey} unblocked`)
-    } catch (err) {
-      toast.error(err.message || 'Could not unblock day')
-    } finally {
-      setBlockSaving(false)
-    }
-  }
-
   async function handleSelectDate(key) {
     const nextKey = String(key || '').trim()
     if (!loadAllSchedulingRows && structuredCalendarEditorEnabled && maDirtyRef.current) {
-      const ok = await saveManagerAvailabilityToAirtable()
-      if (!ok) return
-    }
-    if (!loadAllSchedulingRows && !structuredCalendarEditorEnabled && availabilityDirtyRef.current) {
-      const ok = await saveTourDirtyIfNeeded()
+      const ok = await saveManagerAvailability()
       if (!ok) return
     }
     if (loadAllSchedulingRows && adminAvailabilityDirtyRef.current) {
@@ -7317,15 +7017,6 @@ export function CalendarTabPanel({ manager, allowedPropertyNames, loadAllSchedul
     setSelectedDateKey(nextKey)
     setAnchorDate(dateFromCalendarKey(nextKey))
   }
-
-  useEffect(() => {
-    if (loadAllSchedulingRows || structuredCalendarEditorEnabled) return
-    if (!availabilityDirtyRef.current) return
-    const t = window.setTimeout(() => {
-      void saveTourDirtyIfNeeded()
-    }, 550)
-    return () => window.clearTimeout(t)
-  }, [weeklyFreeByProperty, selectedPropertyId, selectedDateKey, loadAllSchedulingRows, saveTourDirtyIfNeeded, structuredCalendarEditorEnabled])
 
   adminAutosaveCtxRef.current = {
     manager,
@@ -7424,6 +7115,18 @@ export function CalendarTabPanel({ manager, allowedPropertyNames, loadAllSchedul
         </div>
       ) : null}
 
+      {!loadAllSchedulingRows && loading ? (
+        <div className="mb-5 rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-500">
+          Loading manager calendar…
+        </div>
+      ) : null}
+
+      {!loadAllSchedulingRows && !loading && availabilityOwnerOptions.length === 0 ? (
+        <div className="mb-5 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+          No properties are assigned to this manager yet, so availability cannot be edited here.
+        </div>
+      ) : null}
+
       <div className="mb-5 grid gap-2 rounded-[28px] border border-slate-200 bg-slate-50 p-2 sm:grid-cols-2 xl:grid-cols-4">
         <button
           type="button"
@@ -7510,8 +7213,8 @@ export function CalendarTabPanel({ manager, allowedPropertyNames, loadAllSchedul
             Work order
           </span>
           <span className="min-w-0 text-[11px] font-normal leading-snug text-slate-500">
-            Green blocks follow Manager Availability (and property tour windows when that table is off). Tour bookings stay
-            in Scheduling (violet).
+            Green blocks come from the internal manager availability table in Supabase. Tours and work orders remain separate
+            booked items on the calendar.
           </span>
         </div>
       ) : null}
@@ -7589,70 +7292,44 @@ export function CalendarTabPanel({ manager, allowedPropertyNames, loadAllSchedul
           anchorDate={anchorDate}
           selectedDateKey={selectedDateKey}
           onSelectDate={handleSelectDate}
-          weeklyFree={selectedWeeklyFree}
           bookedByDate={bookedByDate}
-          blockedDates={loadAllSchedulingRows ? new Set() : blockedDatesSet}
           dayFreeOverrides={calendarDayFreeOverrides}
         />
         {!loadAllSchedulingRows && (
           <AvailabilityEditorPanel
             structuredAvailabilityEnabled={structuredCalendarEditorEnabled}
-            ranges={
-              structuredCalendarEditorEnabled
-                ? pendingRanges
-                : timeRangesFromWeeklyFree(selectedWeeklyFree, weekdayAbbrFromDateKey(selectedDateKey))
-            }
+            ranges={pendingRanges}
             onRangesChange={(ranges) => {
               if (!selectedPropertyId) return
-              if (structuredCalendarEditorEnabled) {
-                maDirtyRef.current = true
-                setPendingRanges(normalizeTimeRanges(ranges))
-              }
+              maDirtyRef.current = true
+              setPendingRanges(normalizeTimeRanges(ranges))
             }}
-            onSave={() =>
-              void (structuredCalendarEditorEnabled
-                ? saveManagerAvailabilityToAirtable()
-                : saveTourDirtyIfNeeded())
-            }
-            repeatWeekly={structuredCalendarEditorEnabled ? repeatWeekly : false}
-            onRepeatWeeklyChange={structuredCalendarEditorEnabled ? (v) => setRepeatWeekly(v) : undefined}
+            onSave={() => void saveManagerAvailability()}
+            repeatWeekly={repeatWeekly}
+            onRepeatWeeklyChange={(v) => setRepeatWeekly(v)}
             onCancelDraft={
-              structuredCalendarEditorEnabled
-                ? () => {
-                    maDirtyRef.current = false
-                    setPendingRanges(mergedForSelectedDay)
-                    setRepeatWeekly(false)
-                  }
-                : undefined
+              () => {
+                maDirtyRef.current = false
+                setPendingRanges(mergedForSelectedDay)
+                setRepeatWeekly(false)
+              }
             }
-            saveButtonLabel={
-              structuredCalendarEditorEnabled
-                ? selectedUsesPostgresMa && !maTableOk
-                  ? 'Save availability'
-                  : 'Save availability to Airtable'
-                : undefined
-            }
+            saveButtonLabel="Save availability"
             availabilityHint={
-              !structuredCalendarEditorEnabled
-                ? maDisabledByEnv
-                  ? 'Editing is disabled because VITE_USE_MANAGER_AVAILABILITY_TABLE is false. Set it to true (or unset) in .env, restart the dev server, and on Vercel change the variable then redeploy. See docs/AIRTABLE_SETUP_PROMPT.md §2.7.'
-                  : 'The Manager Availability table could not be reached (missing table, wrong MANAGER_AVAILABILITY_TABLE / base ID, or token permissions). Fix Airtable per docs/AIRTABLE_SETUP_PROMPT.md §2.7 and refresh.'
-                : selectedUsesPostgresMa && !maTableOk
-                  ? 'Drag the timeline to add manager free blocks, then Save (or switch day — unsaved changes save first). “Apply every week” repeats on this weekday. Availability is stored in the internal database for this property (not the Manager Availability Airtable table). Confirmed tours still come from Scheduling.'
-                  : 'Drag the timeline to add manager free blocks, then Save (or switch day — unsaved changes save first). “Apply every week” repeats on this weekday from the selected date forward; it resets when you change days. Each saved window is stored as 30-minute rows in Manager Availability with a Time Slot value (e.g. 7:00am-7:30am). Confirmed tours still come from Scheduling.'
+              !selectedPropertyId
+                ? 'Choose a property to load its availability.'
+                : 'Drag the timeline to set available hours, then save. “Apply every week” repeats the same hours on this weekday from the selected date forward. Confirmed tours and work orders stay on the calendar as separate bookings.'
             }
             hidePropertyPicker
             selectedPropertyRecord={selectedProperty}
             scheduledItems={scheduledItemsForSelectedDay}
             availSaving={availSaving}
+            availLoading={availabilityLoading}
+            availError={availabilityError}
             manager={manager}
             propertyOptions={availabilityOwnerOptions}
             selectedPropertyId={selectedPropertyId}
             onSelectProperty={(id) => void selectPropertyAndFlush(id)}
-            isDateBlocked={blockedDatesSet.has(selectedDateKey)}
-            onBlockDay={handleBlockDay}
-            onUnblockDay={handleUnblockDay}
-            blockSaving={blockSaving}
           />
         )}
         {loadAllSchedulingRows ? (

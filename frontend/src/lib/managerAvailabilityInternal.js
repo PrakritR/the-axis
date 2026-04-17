@@ -6,7 +6,17 @@
 
 import { supabase } from './supabase'
 import { buildManagerAvailabilityConfig, airtableFieldScalar } from '../../../shared/manager-availability-merge.js'
-import { formatHHmmFromMinutes } from './managerAvailabilityAirtable.js'
+
+function pad2(n) {
+  return String(n).padStart(2, '0')
+}
+
+function formatHHmmFromMinutes(totalMinutes) {
+  const m = Math.max(0, Math.min(24 * 60 - 1, Math.round(Number(totalMinutes))))
+  const h = Math.floor(m / 60)
+  const mm = m % 60
+  return `${pad2(h)}:${pad2(mm)}`
+}
 
 async function bearerHeaders() {
   const { data } = await supabase.auth.getSession()
@@ -20,11 +30,11 @@ async function bearerHeaders() {
 
 function propertyDisplayName(propertyRow) {
   const r = propertyRow && typeof propertyRow === 'object' ? propertyRow : {}
-  return String(r['Property Name'] || r.Name || r.Property || '').trim()
+  return String(r['Property Name'] || r.Name || r.name || r.Property || '').trim()
 }
 
 /**
- * Map API rows to the same flat shape as {@link ../lib/managerAvailabilityAirtable.js} `mapRecord`.
+ * Map API rows to the same flat shape the legacy manager calendar merge expects.
  *
  * @param {object[]} apiRows
  * @param {object} propertyRow
